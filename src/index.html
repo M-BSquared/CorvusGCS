@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="icon" type="image/png" href="assets/CorvusGCS_logo.png" />
+<title>CORVUS GCS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" rel="stylesheet" />
+<link rel="stylesheet" href="css/main.css" />
+</head>
+<body>
+<div class="app" id="app">
+
+  <header class="top-bar" id="topBar" aria-label="Vehicle status"></header>
+
+  <div class="body">
+    <nav class="left-nav" id="leftNav"></nav>
+
+    <main class="main" id="main">
+      <div id="mapView" class="map-view">
+        <div id="map" class="map"></div>
+        <div class="map-controls" id="mapControls"></div>
+        <div class="layers-popover" id="layersPopover" hidden></div>
+
+        <div class="flight-actions" id="flightActions">
+          <button class="fa-btn arm" id="btnArm" title="Arm / Disarm">
+            <i data-lucide="power"></i>
+            <span>ARM</span>
+          </button>
+          <button class="fa-btn takeoff" id="btnTakeoff" title="Takeoff">
+            <i data-lucide="arrow-up"></i>
+            <span>TAKEOFF</span>
+          </button>
+          <button class="fa-btn land" id="btnLand" title="Land">
+            <i data-lucide="arrow-down"></i>
+            <span>LAND</span>
+          </button>
+          <button class="fa-btn rtl" id="btnRTL" title="Return to Launch">
+            <i data-lucide="home"></i>
+            <span>RTL</span>
+          </button>
+          <div class="fa-divider"></div>
+          <select class="mode-selector" id="modeSelector" title="Flight Mode">
+            <option value="">SELECT MODE</option>
+          </select>
+        </div>
+
+        <div class="takeoff-panel" id="takeoffPanel" hidden>
+          <div class="takeoff-header">
+            <span class="takeoff-title">TAKEOFF ALTITUDE</span>
+            <button class="icon-btn" id="takeoffClose"><i data-lucide="x"></i></button>
+          </div>
+          <div class="takeoff-body">
+            <div class="takeoff-slider-row">
+              <input type="range" min="1" max="50" value="10" step="1" class="takeoff-slider" id="takeoffAlt" />
+              <span class="takeoff-alt-value" id="takeoffAltValue">10 m</span>
+            </div>
+            <button class="takeoff-confirm" id="takeoffConfirm">
+              <i data-lucide="arrow-up"></i>
+              <span>CONFIRM TAKEOFF</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="flight-overlay" id="flightOverlay">
+          <div class="instruments">
+            <div class="instrument compass-wrap">
+              <svg class="compass" viewBox="-100 -100 200 200" aria-label="Compass">
+                <circle class="compass-ring" cx="0" cy="0" r="88" />
+                <g id="compassCard"></g>
+                <g id="compassArrow"></g>
+                <g class="compass-fixed">
+                  <rect class="compass-window" x="-26" y="-94" width="52" height="20" rx="4" />
+                  <text class="compass-window-text" id="compassWindow" x="0" y="-84" text-anchor="middle" dominant-baseline="central">000</text>
+                </g>
+                <circle class="compass-hub" cx="0" cy="0" r="3" />
+              </svg>
+              <div class="instrument-readout">
+                <span class="readout-label">HEADING</span>
+                <span class="readout-value" id="compassValue">000°</span>
+              </div>
+            </div>
+
+            <div class="instrument attitude-wrap">
+              <svg class="attitude" viewBox="-100 -100 200 200" aria-label="Attitude indicator">
+                <defs>
+                  <clipPath id="adi-clip"><circle cx="0" cy="0" r="88" /></clipPath>
+                </defs>
+                <g clip-path="url(#adi-clip)">
+                  <g id="adiInner"></g>
+                </g>
+                <g id="adiRollScale" class="adi-roll-scale"></g>
+                <g class="adi-aircraft">
+                  <line class="adi-wing" x1="-36" y1="0" x2="-14" y2="0" />
+                  <line class="adi-wing" x1="14" y1="0" x2="36" y2="0" />
+                  <line class="adi-tail" x1="0" y1="0" x2="0" y2="12" />
+                  <circle class="adi-center" cx="0" cy="0" r="2.5" />
+                </g>
+                <circle class="adi-bezel" cx="0" cy="0" r="88" />
+              </svg>
+              <div class="instrument-readout">
+                <span class="readout-label">ATTITUDE</span>
+                <span class="readout-value" id="attitudeValue">P 0 / R 0</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="flight-telemetry" id="flightTelemetry"></div>
+        </div>
+      </div>
+
+      <div id="pageView" class="page-view" hidden></div>
+    </main>
+
+    <aside class="right-panel" id="rightPanel" data-state="open">
+      <button class="panel-handle" id="panelHandle" title="Collapse panel" aria-label="Toggle panel">
+        <i data-lucide="chevron-right"></i>
+      </button>
+      <div class="panel-body" id="panelBody">
+        <div class="panel-tabs" id="panelTabs">
+          <button class="tab active" data-tab="link">LINK</button>
+          <button class="tab" data-tab="console">CONSOLE</button>
+          <button class="tab" data-tab="ssh">SSH</button>
+          <button class="tab" data-tab="future">FUTURE</button>
+        </div>
+        <div class="panel-content">
+          <section class="tab-panel active" data-panel="link">
+            <div class="panel-section-header">
+              <span class="panel-section-title">Connection</span>
+            </div>
+            <div class="link-content" id="linkContent">
+              <div class="link-card">
+                <div class="link-card-title">
+                  <i data-lucide="cable"></i>
+                  <span>Serial</span>
+                </div>
+                <div class="link-field">
+                  <label class="link-field-label" for="linkSerialPort">Port</label>
+                  <div class="link-row">
+                    <select class="link-select" id="linkSerialPort" autocomplete="off" aria-label="Serial port">
+                      <option value="">Select serial port…</option>
+                    </select>
+                    <button class="icon-btn" id="linkRefreshPorts" type="button"
+                      title="Refresh serial ports" aria-label="Refresh serial ports">
+                      <i data-lucide="refresh-cw"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="link-field">
+                  <label class="link-field-label" for="linkBaud">Baud</label>
+                  <select class="link-select" id="linkBaud" autocomplete="off" aria-label="Baud rate">
+                    <option value="9600">9600</option>
+                    <option value="19200">19200</option>
+                    <option value="38400">38400</option>
+                    <option value="57600" selected>57600 (SiK Radio v3)</option>
+                    <option value="115200">115200</option>
+                    <option value="230400">230400</option>
+                  </select>
+                </div>
+                <button class="link-connect" id="linkSerialConnect" type="button">
+                  <i data-lucide="plug"></i>
+                  <span>Connect</span>
+                </button>
+              </div>
+
+              <div class="link-card">
+                <div class="link-card-title">
+                  <i data-lucide="network"></i>
+                  <span>UDP / TCP</span>
+                </div>
+                <div class="link-field">
+                  <label class="link-field-label" for="linkCustomConn">Connection string</label>
+                  <input class="link-input" id="linkCustomConn" type="text"
+                    placeholder="udp:0.0.0.0:14540" autocomplete="off" spellcheck="false" />
+                </div>
+                <button class="link-connect" id="linkCustomConnect" type="button">
+                  <i data-lucide="plug"></i>
+                  <span>Connect</span>
+                </button>
+              </div>
+
+              <div class="link-status" id="linkStatus">
+                <div class="link-status-main">
+                  <span class="link-status-dot off" id="linkStatusDot"></span>
+                  <span class="link-status-label" id="linkStatusLabel">DISCONNECTED</span>
+                  <button class="link-reconnect" id="linkReconnect" type="button" hidden>
+                    <i data-lucide="refresh-cw"></i>
+                    <span>Reconnect</span>
+                  </button>
+                </div>
+                <div class="link-status-conn" id="linkStatusConn" hidden>No connection</div>
+                <div class="link-status-error" id="linkStatusError" hidden></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="tab-panel" data-panel="console">
+            <div class="panel-section-header">
+              <span class="panel-section-title">MAVLink Console</span>
+              <div class="header-actions">
+                <button class="icon-btn" id="consoleAutoscroll" title="Toggle auto-scroll">
+                  <i data-lucide="arrow-down-to-line"></i>
+                </button>
+                <button class="icon-btn" id="clearConsole" title="Clear console">
+                  <i data-lucide="rotate-ccw"></i>
+                </button>
+              </div>
+            </div>
+            <div class="console-output" id="consoleOutput"></div>
+            <div class="console-input-row">
+              <span class="console-prompt">&gt;&gt;</span>
+              <input type="text" id="consoleInput" class="console-input" placeholder="Enter MAVLink command..." autocomplete="off" spellcheck="false" />
+              <button class="console-send" id="consoleSend" title="Send">
+                <i data-lucide="send"></i>
+              </button>
+            </div>
+          </section>
+
+          <section class="tab-panel" data-panel="ssh">
+            <div class="panel-section-header">
+              <span class="panel-section-title">SSH Access</span>
+              <div class="header-actions">
+                <button class="icon-btn" id="addSsh" title="Add connection">
+                  <i data-lucide="plus"></i>
+                </button>
+              </div>
+            </div>
+            <div class="ssh-content" id="sshContent"></div>
+          </section>
+
+          <section class="tab-panel" data-panel="future">
+            <div class="panel-section-header">
+              <span class="panel-section-title">Future Tools / Plugins</span>
+            </div>
+            <div class="future-empty" id="futureContent"></div>
+          </section>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <section class="warnings-popover" id="warningsPopover" role="dialog"
+    aria-labelledby="warningsTitle" aria-modal="false" hidden>
+    <div class="wp-header">
+      <span class="wp-title" id="warningsTitle">Notifications</span>
+      <button class="icon-btn" id="wpClose" type="button" aria-label="Close notifications" title="Close">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+    <div class="wp-list" id="warningsList"></div>
+  </section>
+  <div class="sr-only" id="notificationLive" role="status" aria-live="assertive" aria-atomic="true"></div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="js/telemetry.js"></script>
+<script src="js/notification_dedupe.js"></script>
+<script src="js/map.js"></script>
+<script src="js/instruments.js"></script>
+<script src="js/panel.js"></script>
+<script src="js/link.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

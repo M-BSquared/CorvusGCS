@@ -1,0 +1,14 @@
+name: corvus-gcs
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - pytest>=7.0
+  - pip:
+      - pymavlink>=2.4
+      - paramiko>=3.0
+      - pyserial>=3.5
+      - PyQt6>=6.6
+      - PyQt6-WebEngine>=6.6
