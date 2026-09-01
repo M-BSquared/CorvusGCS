@@ -15,7 +15,8 @@ them. References to "Orchestrator" and "Review-Agent" in this file mean those
 agents.
 
 - `orchestrator` (primary) — decomposes requirements, assigns subtasks,
-  enforces invariants. Writes no product code.
+  enforces invariants, owns the release `VERSION` bump, and commits completed
+  work. Writes no product code except the `VERSION` file.
 - `backend` — Vehicle State Store, HTTP/SSE, version endpoint, process
   supervisor, PX4 schema registry.
 - `mavlink` — MAVLink v1/v2, autopilot comms, version-aware parameter schema.

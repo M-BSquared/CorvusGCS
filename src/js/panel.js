@@ -285,11 +285,11 @@ Corvus.panel = (function () {
   }
 
   function initFuture() {
-    futureContent.innerHTML =
-      '<div class="future-icon" data-lucide="puzzle"></div>' +
-      '<div class="future-title">Future Tools / Plugins</div>' +
-      '<div class="future-desc">Hier können zukünftige Funktionen integriert werden.<br><br>' +
-      'This panel is the extension point of Corvus GCS — additional modules will plug in here.</div>';
+    // The FUTURE tab is the extension point of Corvus GCS. plugins.js renders
+    // the registered-plugin grid (or the placeholder when none registered) and
+    // owns the open/close lifecycle. The api object is built inside
+    // plugins.init so the plugin contract stays self-contained here.
+    Corvus.plugins.init(futureContent, Corvus.telemetry);
   }
 
   function toggle() {

@@ -42,6 +42,10 @@
             <i data-lucide="home"></i>
             <span>RTL</span>
           </button>
+          <button class="fa-btn plan" id="btnPlan" title="Plan fly-to-points mission" disabled>
+            <i data-lucide="route"></i>
+            <span>PLAN</span>
+          </button>
           <div class="fa-divider"></div>
           <select class="mode-selector" id="modeSelector" title="Flight Mode">
             <option value="">SELECT MODE</option>
@@ -62,6 +66,33 @@
               <i data-lucide="arrow-up"></i>
               <span>CONFIRM TAKEOFF</span>
             </button>
+          </div>
+        </div>
+
+        <div class="plan-panel" id="planPanel" hidden>
+          <div class="plan-header">
+            <span class="plan-title">FLY TO POINTS</span>
+            <button class="icon-btn" id="planClose" aria-label="Close planning panel" title="Close"><i data-lucide="x"></i></button>
+          </div>
+          <div class="plan-body">
+            <div class="plan-count-row">
+              <span class="plan-count-label">POINTS</span>
+              <span class="plan-count-value" id="planCount">0</span>
+            </div>
+            <div class="takeoff-slider-row">
+              <input type="range" min="1" max="50" value="10" step="1" class="takeoff-slider" id="planAlt" aria-label="Waypoint altitude above home" />
+              <span class="takeoff-alt-value" id="planAltValue">10 m AGL</span>
+            </div>
+            <div class="plan-actions">
+              <button class="plan-fly" id="planFly" disabled>
+                <i data-lucide="send"></i>
+                <span>FLY</span>
+              </button>
+              <button class="plan-clear" id="planClear">
+                <i data-lucide="rotate-ccw"></i>
+                <span>CLEAR</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -257,12 +288,21 @@
 
 <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/lucide@latest"></script>
+<script src="vendor/plotly-basic.min.js"></script>
 <script src="js/telemetry.js"></script>
 <script src="js/notification_dedupe.js"></script>
+<script src="js/topbar.js"></script>
 <script src="js/map.js"></script>
 <script src="js/instruments.js"></script>
 <script src="js/panel.js"></script>
 <script src="js/link.js"></script>
+<script src="js/plugins.js"></script>
+<script src="js/plugin-vibration.js"></script>
+<script src="js/setup-shared.js"></script>
+<script src="js/setup-calibration.js"></script>
+<script src="js/setup-parameters.js"></script>
+<script src="js/setup.js"></script>
+<script src="js/sidenav.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

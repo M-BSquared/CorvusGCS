@@ -35,6 +35,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 WEB_DIR = REPO_ROOT / "src"
 TELEMETRY_SSE_CAPACITY = 1
 CONSOLE_SSE_CAPACITY = 100
+PARAMS_SSE_CAPACITY = 16
+CALIB_SENSORS = frozenset({
+    "gyro", "compass", "baro", "accel", "level", "accel_quick", "airspeed",
+})
+AUTOTUNE_AXES = frozenset({"roll", "pitch", "yaw", "all"})
 
 
 class _BoundedSseBuffer:
@@ -180,6 +185,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"modes": []})
         elif path == "/api/mavlink/serial-ports":
             self._api_mavlink_serial_ports()
+        elif path == "/api/params":
+            self._api_params()
+        elif path == "/api/params/progress":
+            self._sse_params()
         else:
             self._send_json({"error": "not found"}, 404)
 
@@ -199,6 +208,29 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"ports": [], "error": str(exc)})
             return
         self._send_json({"ports": ports})
+
+    def _api_params(self) -> None:
+        """Return parameter-download status and, when complete, the full list."""
+        if self.mavlink is None:
+            self._send_json({
+                "state": "idle",
+                "count": 0,
+                "received": 0,
+                "complete": False,
+                "params": [],
+            })
+            return
+        st = self.mavlink.param_status()
+        complete = st["state"] == "complete"
+        # lean: partial param lists are not sent — the editor waits for a complete set
+        params = self.mavlink.get_params() if complete else []
+        self._send_json({
+            "state": st["state"],
+            "count": st["count"],
+            "received": st["received"],
+            "complete": complete,
+            "params": params,
+        })
 
     # ---- POST API ----
     def _handle_api_post(self, path: str) -> None:
@@ -227,12 +259,24 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._api_mavlink_land(payload)
         elif path == "/api/mavlink/rtl":
             self._api_mavlink_rtl(payload)
+        elif path == "/api/mavlink/gotopoints":
+            self._api_mavlink_gotopoints(payload)
         elif path == "/api/ssh/connect":
             self._api_ssh_connect(payload)
         elif path == "/api/ssh/send":
             self._api_ssh_send(payload)
         elif path == "/api/ssh/disconnect":
             self._api_ssh_disconnect(payload)
+        elif path == "/api/params/download":
+            self._api_params_download(payload)
+        elif path == "/api/params/set":
+            self._api_params_set(payload)
+        elif path == "/api/calibrate":
+            self._api_calibrate(payload)
+        elif path == "/api/autotune":
+            self._api_autotune(payload)
+        elif path == "/api/vibration/stream":
+            self._api_vibration_stream(payload)
         else:
             self._send_json({"error": "not found"}, 404)
 
@@ -355,6 +399,58 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "not connected"}, 400)
 
+    def _api_mavlink_gotopoints(self, payload: dict) -> None:
+        """Dispatch a multi-waypoint fly-to command to the vehicle."""
+        raw_points = payload.get("points")
+        if not isinstance(raw_points, list) or not raw_points:
+            self._send_json({"ok": False, "error": "points must be a non-empty list"}, 400)
+            return
+        cleaned: list[dict[str, float]] = []
+        for index, item in enumerate(raw_points):
+            if not isinstance(item, dict):
+                self._send_json({"ok": False, "error": f"point {index} must be an object"}, 400)
+                return
+            lat = item.get("lat")
+            lon = item.get("lon")
+            alt_agl = item.get("alt_agl")
+            # bool is a subclass of int — reject it so True is never coerced to 1.0
+            if isinstance(lat, bool) or not isinstance(lat, (int, float)) or not math.isfinite(float(lat)):
+                self._send_json({"ok": False, "error": f"point {index} lat must be a finite number"}, 400)
+                return
+            if isinstance(lon, bool) or not isinstance(lon, (int, float)) or not math.isfinite(float(lon)):
+                self._send_json({"ok": False, "error": f"point {index} lon must be a finite number"}, 400)
+                return
+            if isinstance(alt_agl, bool) or not isinstance(alt_agl, (int, float)) or not math.isfinite(float(alt_agl)):
+                self._send_json({"ok": False, "error": f"point {index} alt_agl must be a finite number"}, 400)
+                return
+            lat_f = float(lat)
+            lon_f = float(lon)
+            alt_f = float(alt_agl)
+            if not -90.0 <= lat_f <= 90.0:
+                self._send_json({"ok": False, "error": f"point {index} lat must be between -90 and 90"}, 400)
+                return
+            if not -180.0 <= lon_f <= 180.0:
+                self._send_json({"ok": False, "error": f"point {index} lon must be between -180 and 180"}, 400)
+                return
+            if not TAKEOFF_ALTITUDE_MIN_M <= alt_f <= TAKEOFF_ALTITUDE_MAX_M:
+                self._send_json(
+                    {"ok": False, "error": f"point {index} alt_agl must be between "
+                     f"{TAKEOFF_ALTITUDE_MIN_M:.0f} and {TAKEOFF_ALTITUDE_MAX_M:.0f} m AGL"},
+                    400,
+                )
+                return
+            cleaned.append({"lat": lat_f, "lon": lon_f, "alt_agl": alt_f})
+        if self.mavlink is None:
+            self._send_json({"error": "not connected"}, 400)
+            return
+        ok = self.mavlink.fly_to_points(cleaned)
+        if ok:
+            self._send_json({"ok": True})
+        else:
+            error = self.mavlink.get_last_command_error() or "fly to points failed"
+            status = 503 if "DISCONNECTED" in error else 409
+            self._send_json({"ok": False, "error": error}, status)
+
     def _api_ssh_connect(self, payload: dict) -> None:
         if not self.ssh:
             self._send_json({"error": "ssh not ready"}, 500)
@@ -387,6 +483,109 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"ok": ok})
         else:
             self._send_json({"error": "no session"}, 400)
+
+    def _api_params_download(self, payload: dict) -> None:
+        """Trigger a full parameter-list download from the vehicle."""
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        ok = self.mavlink.request_param_list()
+        if ok:
+            self._send_json({"ok": True, "state": "downloading"})
+        else:
+            error = self.mavlink.get_last_command_error() or "not connected"
+            self._send_json({"ok": False, "error": error}, 503)
+
+    def _api_params_set(self, payload: dict) -> None:
+        """Write a single parameter value to the vehicle."""
+        name = payload.get("name", "")
+        value = payload.get("value")
+        if not isinstance(name, str) or not name:
+            self._send_json({"ok": False, "error": "name must be a non-empty string"}, 400)
+            return
+        # bool is a subclass of int — reject it explicitly so we never write 0/1 silently
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            self._send_json({"ok": False, "error": "value must be a number"}, 400)
+            return
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        ok = self.mavlink.set_param(name, float(value))
+        if ok:
+            self._send_json({"ok": True})
+        else:
+            error = self.mavlink.get_last_command_error() or "parameter write failed"
+            status = 503 if "not connected" in error else 409
+            self._send_json({"ok": False, "error": error}, status)
+
+    def _api_calibrate(self, payload: dict) -> None:
+        """Start a sensor calibration on the vehicle."""
+        raw = payload.get("type", "")
+        if not isinstance(raw, str) or raw.lower() not in CALIB_SENSORS:
+            self._send_json({"ok": False, "error": "unknown calibration type"}, 400)
+            return
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        sensor = raw.lower()
+        ok = self.mavlink.calibrate(sensor)
+        if ok:
+            self._send_json({"ok": True})
+        else:
+            error = self.mavlink.get_last_command_error() or "calibration failed"
+            status = 503 if "not connected" in error else 409
+            self._send_json({"ok": False, "error": error}, status)
+
+    def _api_autotune(self, payload: dict) -> None:
+        """Start an autotune on the given axis."""
+        raw = payload.get("axis", "")
+        if not isinstance(raw, str) or raw.lower() not in AUTOTUNE_AXES:
+            self._send_json({"ok": False, "error": "unknown autotune axis"}, 400)
+            return
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        axis = raw.lower()
+        ok = self.mavlink.autotune(axis)
+        if ok:
+            self._send_json({"ok": True})
+        else:
+            error = self.mavlink.get_last_command_error() or "autotune failed"
+            status = 503 if "not connected" in error else 409
+            self._send_json({"ok": False, "error": error}, status)
+
+    def _api_vibration_stream(self, payload: dict) -> None:
+        """Enable/disable high-rate VIBRATION telemetry on demand.
+
+        Read-only stream-rate control — safe while armed, unlike
+        params/calibrate/autotune. The frontend toggles this when the
+        vibration plugin opens/closes (lean: high-rate only while open).
+        """
+        enabled = payload.get("enabled")
+        if not isinstance(enabled, bool):
+            self._send_json({"ok": False, "error": "enabled must be boolean"}, 400)
+            return
+        raw_rate = payload.get("rate_hz", 10)
+        # bool is a subclass of int — reject it so True is never coerced to 1 Hz
+        if isinstance(raw_rate, bool) or not isinstance(raw_rate, (int, float)):
+            self._send_json({"ok": False, "error": "rate_hz must be a number"}, 400)
+            return
+        rate_hz = int(raw_rate)
+        if raw_rate != rate_hz or not 1 <= rate_hz <= 50:
+            self._send_json(
+                {"ok": False, "error": "rate_hz must be between 1 and 50 Hz"}, 400
+            )
+            return
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        ok = self.mavlink.set_vibration_stream(enabled, rate_hz)
+        if ok:
+            self._send_json({"ok": True, "enabled": enabled, "rate_hz": rate_hz})
+        else:
+            error = self.mavlink.get_last_command_error() or "vibration stream request failed"
+            status = 503 if "not connected" in error else 409
+            self._send_json({"ok": False, "error": error}, status)
 
     # ---- SSE endpoints ----
     def _sse_telemetry(self) -> None:
@@ -437,6 +636,43 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         finally:
             if self.mavlink:
                 self.mavlink.remove_console_sub(listener)
+
+    def _sse_params(self) -> None:
+        """SSE stream of parameter-download progress (latest-wins, coalesced)."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        q = _BoundedSseBuffer(PARAMS_SSE_CAPACITY)
+        listener = q.put_latest
+        if self.mavlink:
+            self.mavlink.add_param_listener(listener)
+            status = self.mavlink.param_status()
+        else:
+            status = {"state": "idle", "count": 0, "received": 0}
+        self._send_sse("progress", json.dumps(_sanitize({
+            "state": status["state"],
+            "count": status["count"],
+            "received": status["received"],
+        })))
+        try:
+            while True:
+                try:
+                    entry = q.get(timeout=15)
+                    self._send_sse("progress", json.dumps({
+                        "state": entry["state"],
+                        "count": entry["count"],
+                        "received": entry["received"],
+                    }))
+                except queue.Empty:
+                    self._send_sse("ping", "{}")
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            if self.mavlink:
+                self.mavlink.remove_param_listener(listener)
 
     def _sse_ssh_stream(self) -> None:
         self.send_response(200)

@@ -99,6 +99,15 @@ Corvus.map = (function () {
   let started = false;
   let firstFix = true;
 
+  // Waypoint planning ("Punktabflug") state — operator-clicked route points,
+  // their parallel DOM markers, the dashed plan-line source, and the
+  // subscription set the gui registers against to track the count / FLY state.
+  let waypoints = [];          // {lat, lon}[] in entry order
+  let wpMarkers = [];          // maplibregl.Marker[] parallel to waypoints
+  let wpRouteSource = null;    // GeoJSON source of the dashed plan polyline
+  let waypointMode = false;    // crosshair + click/right-click/Esc active
+  const waypointSubs = new Set();
+
   // Interpolation state for the vehicle marker. TARGET = latest telemetry;
   // DISPLAYED = the value currently shown, eased toward TARGET each frame.
   let vehTarget = null;
@@ -173,6 +182,26 @@ Corvus.map = (function () {
       paint: { "line-color": "#4CC9FF", "line-width": 2.4, "line-opacity": 0.9 },
     });
     pathSource = map.getSource("vehicle-path");
+  }
+
+  function addWaypointRouteLayer() {
+    map.addSource("waypoints-route", {
+      type: "geojson",
+      data: { type: "Feature", geometry: { type: "LineString", coordinates: [] }, properties: {} },
+    });
+    map.addLayer({
+      id: "waypoints-route",
+      source: "waypoints-route",
+      type: "line",
+      layout: { "line-cap": "butt", "line-join": "round" },
+      paint: {
+        "line-color": "#F5C842",
+        "line-width": 2,
+        "line-opacity": 0.9,
+        "line-dasharray": [3, 2],
+      },
+    });
+    wpRouteSource = map.getSource("waypoints-route");
   }
 
   function initialStyle(key) {
@@ -343,6 +372,130 @@ Corvus.map = (function () {
     }
   }
 
+  // ---- waypoint planning ("Punktabflug") ----
+
+  /** Build the numbered DOM element for a waypoint marker (1-based index). */
+  function buildWpMarker(idx) {
+    const el = document.createElement("div");
+    el.className = "wp-marker";
+    const num = document.createElement("span");
+    num.className = "wp-marker-num";
+    num.textContent = String(idx);
+    el.appendChild(num);
+    return el;
+  }
+
+  /** Append a waypoint at [lng, lat], add its marker, refresh the route. */
+  function addWaypoint(lng, lat) {
+    if (!map || !started) return;
+    waypoints.push({ lat, lon: lng });
+    const idx = waypoints.length;            // 1-based label
+    const m = new maplibregl.Marker({ element: buildWpMarker(idx), anchor: "center" })
+      .setLngLat([lng, lat]).addTo(map);
+    wpMarkers.push(m);
+    updateRoute();
+    notifyWaypoints();
+  }
+
+  /** Remove the most recently added waypoint (right-click). Earlier labels
+   *  keep their numbers — only the tail is popped, so no renumbering. */
+  function removeLastWaypoint() {
+    if (!waypoints.length) return;
+    waypoints.pop();
+    const m = wpMarkers.pop();
+    if (m) m.remove();
+    updateRoute();
+    notifyWaypoints();
+  }
+
+  /** Remove every waypoint + the planned route; notify subscribers with []. */
+  function clearWaypoints() {
+    waypoints = [];
+    wpMarkers.forEach((m) => m.remove());
+    wpMarkers = [];
+    updateRoute();
+    notifyWaypoints();
+  }
+
+  /** Push the current waypoint coordinates into the dashed route source.
+   *  A LineString needs >= 2 points, so < 2 renders an empty line. */
+  function updateRoute() {
+    if (!wpRouteSource) return;
+    const coords = waypoints.length >= 2
+      ? waypoints.map((w) => [w.lon, w.lat])
+      : [];
+    wpRouteSource.setData({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: coords },
+      properties: {},
+    });
+  }
+
+  /** Notify subscribers with a fresh copy of the current waypoint list. */
+  function notifyWaypoints() {
+    const snap = waypoints.map((w) => ({ lat: w.lat, lon: w.lon }));
+    waypointSubs.forEach((cb) => {
+      try { cb(snap); } catch (_) { /* one bad subscriber must not break others */ }
+    });
+  }
+
+  /** Current waypoints as {lat, lon}[] (fresh copy, entry order). */
+  function getWaypoints() {
+    return waypoints.map((w) => ({ lat: w.lat, lon: w.lon }));
+  }
+
+  /** Register a callback fired whenever the waypoint set changes. */
+  function onWaypointsUpdate(cb) {
+    if (typeof cb === "function") waypointSubs.add(cb);
+  }
+
+  // Planning-mode handlers. Attached/detached as a set by setWaypointMode so
+  // nothing leaks globally when planning is off. Each guards `waypointMode`
+  // defensively — they are only registered while in mode, but the guard makes
+  // a teardown race harmless. MapLibre markers stop pointer propagation, so
+  // these never fire for clicks on vehicle/home/waypoint markers.
+  function onPlanningClick(e) {
+    if (!waypointMode || !e || !e.lngLat) return;
+    addWaypoint(e.lngLat.lng, e.lngLat.lat);
+  }
+
+  function onPlanningRightClick(e) {
+    if (!waypointMode) return;
+    if (e && e.preventDefault) e.preventDefault();   // suppress browser menu
+    removeLastWaypoint();
+  }
+
+  function onPlanningKey(e) {
+    if (!waypointMode) return;
+    if (e.key === "Escape" || e.key === "Esc") {
+      if (e.preventDefault) e.preventDefault();
+      setWaypointMode(false);
+    }
+  }
+
+  /**
+   * Toggle planning mode. On: cursor → crosshair, left-click appends a
+   * waypoint, right-click removes the last, Esc exits. Off: handlers detach
+   * but existing waypoints stay (clearWaypoints removes them). Idempotent.
+   */
+  function setWaypointMode(enabled) {
+    enabled = !!enabled;
+    if (waypointMode === enabled) return;
+    if (!map || !started) return;   // planning needs a loaded map
+    waypointMode = enabled;
+    if (enabled) {
+      map.getCanvas().style.cursor = "crosshair";
+      map.on("click", onPlanningClick);
+      map.on("contextmenu", onPlanningRightClick);
+      document.addEventListener("keydown", onPlanningKey);
+    } else {
+      map.getCanvas().style.cursor = "";
+      map.off("click", onPlanningClick);
+      map.off("contextmenu", onPlanningRightClick);
+      document.removeEventListener("keydown", onPlanningKey);
+    }
+  }
+
   function init(mapEl, controlsEl, layersPopover) {
     map = new maplibregl.Map({
       container: mapEl,
@@ -357,6 +510,7 @@ Corvus.map = (function () {
     });
     map.on("load", () => {
       addPathLayer();
+      addWaypointRouteLayer();
 
       homeMarker = new maplibregl.Marker({ element: buildHomeMarker(), anchor: "center" })
         .setLngLat(DEFAULT_CENTER).addTo(map);
@@ -392,5 +546,14 @@ Corvus.map = (function () {
     });
   }
 
-  return { init, centerOnVehicle, getMap: () => map, isReady: () => started };
+  return {
+    init,
+    centerOnVehicle,
+    getMap: () => map,
+    isReady: () => started,
+    setWaypointMode,
+    getWaypoints,
+    clearWaypoints,
+    onWaypointsUpdate,
+  };
 })();

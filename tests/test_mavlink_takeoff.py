@@ -73,15 +73,15 @@ def ready_bridge() -> MavlinkBridge:
 def test_px4_auto_submodes_use_bits_24_to_31() -> None:
     bridge = MavlinkBridge(VehicleStateStore())
     expected = {
-        1: "AUTO.READY",
-        2: "AUTO.TAKEOFF",
-        3: "AUTO.LOITER",
-        4: "AUTO.MISSION",
-        5: "AUTO.RTL",
-        6: "AUTO.LAND",
-        7: "AUTO.RTGS",
-        9: "AUTO.PRECLAND",
-        11: "AUTO.EXTERNAL1",
+        1: "READY",
+        2: "TAKEOFF",
+        3: "LOITER",
+        4: "MISSION",
+        5: "RTL",
+        6: "LAND",
+        7: "RTGS",
+        9: "PRECLAND",
+        11: "EXTERNAL1",
     }
     for submode, name in expected.items():
         msg = SimpleNamespace(custom_mode=(submode << 24) | (4 << 16))

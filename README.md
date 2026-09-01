@@ -54,6 +54,36 @@ python3 serve.py
 # -> http://localhost:8000/
 ```
 
+### AppImage (Linux x86_64)
+
+A single self-contained `.AppImage` that runs on a clean Ubuntu/Debian
+x86_64 install with no system Python or Qt needed — the easiest way to
+ship the app to the offline field laptop. The build host needs
+Ubuntu/Debian x86_64, `python3` (3.10+), `pip`, `wget` or `curl`, and
+roughly 1 GB of free disk for the build cache. No conda required.
+
+```bash
+# one command — builds a self-contained Linux x86_64 AppImage
+./build-appimage.sh
+```
+
+The script writes `Corvus_GCS-<version>-x86_64.AppImage` to the repo
+root, where `<version>` is read from the `VERSION` file (see
+[Version control](#version-control)). On the field laptop:
+
+```bash
+chmod +x Corvus_GCS-*-x86_64.AppImage
+./Corvus_GCS-*-x86_64.AppImage
+# optional MAVLink connection:
+./Corvus_GCS-*-x86_64.AppImage 8000 serial:/dev/ttyUSB0:57600
+```
+
+The first run downloads `appimagetool` and the Python wheels (PyQt6 /
+QtWebEngine, pymavlink, paramiko, pyserial); `appimagetool` is cached
+under `build/` for fast re-runs. The AppImage bundles the app version
+from `VERSION`, so to release a new version you only bump `VERSION` and
+rebuild. Build artifacts (`build/`, `*.AppImage`) are gitignored.
+
 ---
 
 ## Connecting to a drone
@@ -112,11 +142,115 @@ heartbeat timeout (10 s), and reconnects with backoff if the link drops.
 
 ---
 
+## Plugins (FUTURE tab)
+
+The **FUTURE** tab in the right-side panel is the extension point of
+Corvus GCS. It shows a grid of plugin cards; clicking a card opens that
+plugin's view with a back button, and opening another plugin first
+closes the current one so its teardown runs exactly once (no listener
+leaks). The first shipped plugin is the **Vibration Monitor**.
+
+### Vibration Monitor
+
+A live Plotly line graph of the PX4 `VIBRATION` message, plus a stats
+row of cumulative accelerometer-clipping counters (3 counters). When the
+plugin opens it asks PX4 to stream `VIBRATION` at ~10 Hz **on demand**;
+closing the plugin restores PX4's default rate. High-rate vibration data
+flows only while someone is watching, so the serial link stays
+uncongested the rest of the time — the lean, field-first pattern used
+throughout Corvus.
+
+The graph shows three traces:
+
+| Trace | `VIBRATION` field | Color | Meaning |
+|-------|-------------------|-------|---------|
+| Gyro coning | `vibration_x` | Blue | Gyro delta-angle coning metric |
+| Gyro HF vibration | `vibration_y` | Yellow | Gyro high-frequency vibration |
+| Accel HF vibration | `vibration_z` | Red | Accelerometer high-frequency vibration — the main mechanical-health indicator |
+
+**PX4-specific semantics** (verified from PX4 source
+`src/modules/mavlink/streams/VIBRATION.hpp`): PX4 repurposes the three
+standard MAVLink `VIBRATION` fields — `vibration_x` is a gyro delta-angle
+coning metric, `vibration_y` is gyro high-frequency vibration, and
+`vibration_z` is accelerometer high-frequency vibration. A rising
+**accel-HF (red)** trace means more mechanical vibration — suspect motor
+imbalance, a loose or chipped prop, or worn bearings. Operators should
+read the red trace first as the mechanical-health indicator.
+
+On-demand streaming uses `MAV_CMD_SET_MESSAGE_INTERVAL`, PX4's standard
+per-message rate control (works on v1.16–v1.18). Plotly is **vendored
+locally** at `src/vendor/plotly-basic.min.js`, so the graph renders with
+no internet connection — matching the offline field-use requirement.
+
+---
+
+## Setup page
+
+The Setup page (left nav) holds the parameter editor and the
+calibration / autotune tiles. All three features are **lazy** and
+**armed-safe**: nothing is fetched until the operator opens a tile, and
+every parameter write, calibration, and autotune is refused while the
+vehicle is armed.
+
+### Parameters
+
+Parameters are downloaded **lazily** — only when the operator opens the
+**Parameters** tile. Until then Corvus streams only the telemetry needed
+to fly (GPS, attitude, etc.), keeping the GCS lean and fast to
+ready-for-flight. The download shows a live progress indicator, and the
+editor is usable only after the full parameter set has arrived (the
+operator must wait for completion). The editor lets the operator change
+any parameter; writes go through `PARAM_SET` and are confirmed by a
+`PARAM_VALUE` echo. Parameter writes are **refused while armed** (safety).
+
+### Sensor calibration
+
+Setup → **Calibration** tile: one-tap sensor calibration for:
+
+- Compass (magnetometer)
+- Gyroscope
+- Accelerometer
+- Level Horizon
+- Airspeed
+- Baro
+
+Calibration is **refused while armed**. PX4 also rejects calibration
+when armed, but Corvus refuses client-side first. During interactive
+calibrations (compass rotation, accelerometer positions) PX4 streams
+step-by-step guidance as `STATUSTEXT`, which appears in the MAVLink
+console and the warnings popover.
+
+### Autotune
+
+Setup → **Calibration** tile → **POD Tuning** subsection: PX4 autotune
+via `MAV_CMD_DO_AUTOTUNE_ENABLE`. The operator picks an axis — **Roll,
+Pitch, Yaw, or All**. Autotune tunes the rate and attitude controllers
+together (PX4 module `mc_autotune_attitude_control`). Autotune is
+**refused while armed**, and tuning progress streams as `STATUSTEXT`.
+
+> **No velocity-controller autotune in PX4.** PX4 provides only rate +
+> attitude autotune — there is no velocity-controller autotune. The UI
+> marks the velocity controller as unsupported rather than sending a
+> command the firmware does not understand.
+
+The autotune graphs (roll rate, roll attitude, horizontal velocity) use
+Plotly. These traces come from existing telemetry that streams
+continuously (not on-demand like vibration): roll rate from the
+`ATTITUDE` body rate `rollspeed`, roll attitude from `ATTITUDE` roll,
+and horizontal velocity from `VFR_HUD` groundspeed /
+`GLOBAL_POSITION_INT`.
+
+Body angular rates (`rollspeed`, `pitchspeed`, `yawspeed`, in deg/s)
+are now part of the telemetry state.
+
+---
+
 ## Architecture
 
 ```
 serve.py                     # browser-mode entry point
 run.sh                       # standalone app launcher (conda env + PyQt6)
+build-appimage.sh            # build a self-contained Linux x86_64 AppImage
 ├── corvus/                  # Python backend package
 │   ├── app.py               # standalone PyQt6 + QtWebEngine app wrapper
 │   ├── version.py           # reads VERSION file (single source of truth)
@@ -127,12 +261,17 @@ run.sh                       # standalone app launcher (conda env + PyQt6)
 ├── src/                     # web frontend
 │   ├── index.html
 │   ├── css/main.css
-│   └── js/
+│   ├── js/
 │       ├── telemetry.js     # SSE client for real telemetry
 │       ├── map.js           # MapLibre map, vehicle tracking
 │       ├── instruments.js   # compass + attitude indicator
-│       ├── panel.js         # MAVLink console + SSH + future
+│       ├── link.js          # LINK tab (serial/UDP/TCP connect)
+│       ├── panel.js         # MAVLink console + SSH
+│       ├── plugins.js       # FUTURE-tab plugin system (extension point)
+│       ├── plugin-vibration.js  # Vibration Monitor plugin
 │       └── app.js           # top bar, left nav, wiring
+│   └── vendor/
+│       └── plotly-basic.min.js  # vendored Plotly (offline graphs)
 ├── assets/                  # logo artwork
 └── VERSION                  # single-source version string
 ```
@@ -163,6 +302,13 @@ Telemetry is pushed from backend to frontend via **Server-Sent Events**
 | GET | `/api/mavlink/serial-ports` | List available serial ports → `{"ports": [{"device", "description", "hwid"}, ...]}` |
 | POST | `/api/mavlink/arm` | Arm/disarm vehicle |
 | POST | `/api/mavlink/mode` | Set flight mode |
+| POST | `/api/params/download` | Start a full parameter download (lazy) |
+| GET | `/api/params` | Parameter cache + download status (params only sent when complete — lean) |
+| GET | `/api/params/progress` | SSE stream of parameter download progress |
+| POST | `/api/params/set` | Write a parameter (refused while armed) |
+| POST | `/api/calibrate` | Run a sensor calibration `{type: gyro\|compass\|baro\|accel\|level\|airspeed}` (refused while armed) |
+| POST | `/api/autotune` | Run PX4 autotune `{axis: roll\|pitch\|yaw\|all}` (refused while armed) |
+| POST | `/api/vibration/stream` | Request high-rate VIBRATION streaming on demand `{enabled, rate_hz}` (lean: restore default on close) |
 | POST | `/api/ssh/connect` | Open SSH session |
 | POST | `/api/ssh/send` | Send input to SSH shell |
 | POST | `/api/ssh/disconnect` | Close SSH session |

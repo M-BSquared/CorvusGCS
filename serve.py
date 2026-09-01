@@ -51,8 +51,8 @@ def main() -> None:
     server_thread.start()
 
     try:
-        while not shutting_down.is_set():
-            signal.pause()
+        # Event.wait() is race-free; signal.pause() can miss a signal delivered between the check and the call.
+        shutting_down.wait()
     except (KeyboardInterrupt, SystemExit):
         pass
 

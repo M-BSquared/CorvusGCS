@@ -55,15 +55,16 @@ PX4_MAIN_MODE: dict[int, str] = {
     5: "ACRO", 6: "OFFBOARD", 7: "STABILIZED", 8: "RATTITUDE",
 }
 
-# PX4 AUTO sub_mode values (bits 24-31 of custom_mode when main_mode=4)
+# PX4 AUTO sub_mode values (bits 24-31 of custom_mode when main_mode=4).
+# Prefix-less so state.mode matches PX4_AVAILABLE_MODES and the mode selector.
 PX4_AUTO_SUBMODE: dict[int, str] = {
-    1: "AUTO.READY", 2: "AUTO.TAKEOFF", 3: "AUTO.LOITER",
-    4: "AUTO.MISSION", 5: "AUTO.RTL", 6: "AUTO.LAND",
-    7: "AUTO.RTGS", 8: "AUTO.FOLLOW_TARGET",
-    9: "AUTO.PRECLAND", 10: "AUTO.VTOL_TAKEOFF",
-    11: "AUTO.EXTERNAL1", 12: "AUTO.EXTERNAL2", 13: "AUTO.EXTERNAL3",
-    14: "AUTO.EXTERNAL4", 15: "AUTO.EXTERNAL5", 16: "AUTO.EXTERNAL6",
-    17: "AUTO.EXTERNAL7", 18: "AUTO.EXTERNAL8",
+    1: "READY", 2: "TAKEOFF", 3: "LOITER",
+    4: "MISSION", 5: "RTL", 6: "LAND",
+    7: "RTGS", 8: "FOLLOW_TARGET",
+    9: "PRECLAND", 10: "VTOL_TAKEOFF",
+    11: "EXTERNAL1", 12: "EXTERNAL2", 13: "EXTERNAL3",
+    14: "EXTERNAL4", 15: "EXTERNAL5", 16: "EXTERNAL6",
+    17: "EXTERNAL7", 18: "EXTERNAL8",
 }
 
 PX4_AVAILABLE_MODES: list[str] = [
@@ -87,6 +88,15 @@ class _PendingAck:
     result: int | None = None
 
 
+@dataclass
+class ParamEntry:
+    name: str
+    value: float
+    type: int        # MAV_PARAM_TYPE_* from the PARAM_VALUE message
+    index: int
+    count: int
+
+
 class MavlinkBridge:
     """MAVLink connection manager running on a background thread."""
 
@@ -100,6 +110,7 @@ class MavlinkBridge:
         self._conn: Any = None
         self._thread: threading.Thread | None = None
         self._hb_thread: threading.Thread | None = None
+        self._version_retry_thread: threading.Thread | None = None
         self._running = threading.Event()
         self._console_subs: list[Callable[[dict[str, Any]], None]] = []
         self._target_system: int = 1
@@ -116,6 +127,20 @@ class MavlinkBridge:
         self._position_home_alt_amsl: float | None = None
         self._command_context = threading.local()
         self._reconnect_attempt: int = 1
+        self._params: dict[str, ParamEntry] = {}
+        self._param_count: int = -1
+        self._param_received: int = 0
+        self._param_download_state: str = "idle"
+        self._param_seen_indices: set[int] = set()
+        self._param_lock = threading.Lock()
+        self._param_listeners: list[Callable[[dict[str, Any]], None]] = []
+        self._param_set_pending: dict[str, _PendingAck] = {}
+        # Mission-upload handshake state (set only during fly_to_points). The
+        # receive thread reads _mission_items on MISSION_REQUEST_INT and wakes
+        # _pending_mission_ack on MISSION_ACK; _mission_lock guards both.
+        self._mission_lock = threading.Lock()
+        self._mission_items: list[dict[str, Any]] | None = None
+        self._pending_mission_ack: _PendingAck | None = None
 
     def set_connection(self, conn_str: str) -> None:
         self._conn_str = conn_str
@@ -191,6 +216,13 @@ class MavlinkBridge:
         self._running.clear()
         self._store.update(link_status="disconnected")
         self._cancel_pending_commands()
+        # Wake any pending set_param waiters and mark download idle.
+        with self._param_lock:
+            self._param_download_state = "idle"
+            for pending in self._param_set_pending.values():
+                pending.result = -2
+                pending.event.set()
+            self._param_set_pending.clear()
         if self._conn:
             try:
                 self._conn.close()
@@ -295,7 +327,7 @@ class MavlinkBridge:
             main_mode = (custom >> 16) & 0xFF
             sub_mode = (custom >> 24) & 0xFF
             if main_mode == 4:
-                return PX4_AUTO_SUBMODE.get(sub_mode, f"AUTO.{sub_mode}")
+                return PX4_AUTO_SUBMODE.get(sub_mode, f"SUBMODE_{sub_mode}")
             return PX4_MAIN_MODE.get(main_mode, f"MODE_{custom}")
         except Exception:
             return ""
@@ -381,6 +413,70 @@ class MavlinkBridge:
                     )
             except Exception:
                 pass
+        self._schedule_version_retry()
+
+    def _schedule_version_retry(self) -> None:
+        """Send one delayed AUTOPILOT_VERSION retry if the first got no reply.
+
+        PX4 v1.18.0-alpha1 SITL ACKs the capabilities command with
+        MAV_RESULT_UNSUPPORTED, so AUTOPILOT_VERSION never arrives; a single
+        retry ~4s after connect covers slow/lossy responders without looping
+        or spamming the link. Daemon thread; checks _running/_conn so it stays
+        silent after shutdown and is never joined by stop().
+        """
+        if not self._running.is_set():
+            return
+        prior = self._version_retry_thread
+        if prior is not None and prior.is_alive():
+            return
+
+        def _retry() -> None:
+            time.sleep(4.0)
+            if not self._running.is_set() or not self._conn:
+                return
+            if self._store.get_snapshot().get("px4_version"):
+                return
+            try:
+                with self._send_lock:
+                    if not self._running.is_set() or not self._conn:
+                        return
+                    self._conn.mav.autopilot_version_request_send(
+                        self._target_system, self._target_component,
+                    )
+            except Exception:
+                pass
+
+        self._version_retry_thread = threading.Thread(
+            target=_retry, name="px4-ver-retry", daemon=True,
+        )
+        self._version_retry_thread.start()
+
+    @staticmethod
+    def _decode_git_hash(raw: Any) -> str:
+        """Decode AUTOPILOT_VERSION.flight_custom_version into a lowercase hex git hash.
+
+        PX4 packs the first 5 bytes of the git SHA-1 into the high bytes of a
+        little-endian uint64 (px4_update_git_header.py + mavlink_main.cpp
+        send_autopilot_capabilities), so the wire bytes for a stock build are
+        ``[0,0,0, g4, g3, g2, g1, g0]``. Reverse to big-endian, strip the NUL
+        padding, and hex-encode. Returns "" when the field is empty or all-zero.
+        Handles list/bytes/bytearray/str inputs (pymavlink yields a list of
+        ints for uint8_t[] arrays).
+        """
+        if isinstance(raw, str):
+            raw = raw.encode("latin-1", "replace")
+        elif isinstance(raw, (list, tuple)):
+            try:
+                raw = bytes(int(x) & 0xFF for x in raw)
+            except (TypeError, ValueError):
+                return ""
+        elif isinstance(raw, (bytes, bytearray)):
+            raw = bytes(raw)
+        else:
+            return ""
+        if raw[:1] == b"\x00":
+            raw = raw[::-1]
+        return raw.rstrip(b"\x00").hex()
 
     def _heartbeat_timeout(self) -> float:
         """Stale-heartbeat threshold; serial tolerates longer radio dropouts."""
@@ -420,6 +516,11 @@ class MavlinkBridge:
                         pending.result = msg.result
                         pending.event.set()
 
+        if name in ("MISSION_REQUEST_INT", "MISSION_REQUEST"):
+            self._handle_mission_request(msg, as_int=(name == "MISSION_REQUEST_INT"))
+        elif name == "MISSION_ACK":
+            self._handle_mission_ack(msg)
+
         if name == "HEARTBEAT":
             self._store.heartbeat()
             vtype = MAV_TYPE_MAP.get(msg.type, f"TYPE_{msg.type}")
@@ -442,6 +543,9 @@ class MavlinkBridge:
                 roll=round(math.degrees(msg.roll), 1),
                 pitch=round(math.degrees(msg.pitch), 1),
                 yaw=round(math.degrees(msg.yaw), 1),
+                rollspeed=round(math.degrees(msg.rollspeed), 1),
+                pitchspeed=round(math.degrees(msg.pitchspeed), 1),
+                yawspeed=round(math.degrees(msg.yawspeed), 1),
             )
         elif name == "VFR_HUD":
             self._store.update(
@@ -475,7 +579,22 @@ class MavlinkBridge:
                 major = (sw >> 24) & 0xFF
                 minor = (sw >> 16) & 0xFF
                 patch = (sw >> 8) & 0xFF
-                self._store.update(px4_version=f"v{major}.{minor}.{patch}")
+                detail = self._decode_git_hash(getattr(msg, "flight_custom_version", b""))
+                self._store.update(
+                    px4_version=f"v{major}.{minor}.{patch}",
+                    px4_version_detail=detail,
+                )
+        elif name == "PARAM_VALUE":
+            self._handle_param_value(msg)
+        elif name == "VIBRATION":
+            self._store.update(
+                vibration_x=round(float(msg.vibration_x), 4),
+                vibration_y=round(float(msg.vibration_y), 4),
+                vibration_z=round(float(msg.vibration_z), 4),
+                clipping_0=int(msg.clipping_0),
+                clipping_1=int(msg.clipping_1),
+                clipping_2=int(msg.clipping_2),
+            )
         elif name == "HOME_POSITION":
             lat = msg.latitude / 1e7
             lon = msg.longitude / 1e7
@@ -496,11 +615,95 @@ class MavlinkBridge:
         expected_component = getattr(self._conn, "source_component", 0)
         return not (target_component and expected_component and target_component != expected_component)
 
+    def _handle_mission_request(self, msg: Any, as_int: bool) -> None:
+        """Serve one MISSION_ITEM(_INT) during an upload we initiated."""
+        if not self._conn or not self._ack_is_for_us(msg):
+            return
+        seq = int(getattr(msg, "seq", -1))
+        with self._mission_lock:
+            items = self._mission_items
+        if items is None or not (0 <= seq < len(items)):
+            return
+        item = items[seq]
+        try:
+            with self._send_lock:
+                if as_int:
+                    self._conn.mav.mission_item_int_send(
+                        self._target_system, self._target_component, seq,
+                        item["frame"], item["command"], item["current"],
+                        item["autocontinue"], item["param1"], item["param2"],
+                        item["param3"], item["param4"], item["x_int"],
+                        item["y_int"], item["z"],
+                    )
+                else:
+                    self._conn.mav.mission_item_send(
+                        self._target_system, self._target_component, seq,
+                        item["frame"], item["command"], item["current"],
+                        item["autocontinue"], item["param1"], item["param2"],
+                        item["param3"], item["param4"], item["x_f"],
+                        item["y_f"], item["z"],
+                    )
+        except Exception as exc:
+            logger.debug("mission item send failed (seq=%d): %s", seq, exc)
+
+    def _handle_mission_ack(self, msg: Any) -> None:
+        """Resolve the pending upload waiter with the MISSION_ACK result."""
+        if not self._ack_is_for_us(msg):
+            return
+        ack_type = int(getattr(msg, "type", -1))
+        text = f"MISSION_ACK: type={ack_type}"
+        level = "success" if ack_type == mavutil.mavlink.MAV_MISSION_ACCEPTED else "error"
+        self._console_publish("GOTOPOINTS", text, level)
+        with self._mission_lock:
+            pending = self._pending_mission_ack
+            if pending is not None and pending.result is None:
+                pending.result = ack_type
+                pending.event.set()
+
+    def _upload_mission(self, items: list[dict[str, Any]]) -> int:
+        """Upload mission items and wait for MISSION_ACK.
+
+        Returns MAV_MISSION_ACCEPTED on success, the MISSION_ACK type on
+        rejection, -1 on timeout, -2 on disconnect/shutdown.
+        """
+        pending = _PendingAck()
+        with self._mission_lock:
+            self._mission_items = list(items)
+            self._pending_mission_ack = pending
+        try:
+            try:
+                with self._send_lock:
+                    self._conn.mav.mission_count_send(
+                        self._target_system, self._target_component, len(items),
+                    )
+            except Exception as exc:
+                logger.error("mission_count_send failed: %s", exc)
+                return -2
+            # Upload time scales with item count; PX4 requests items one at a time.
+            timeout = 5.0 + 2.0 * len(items)
+            if not pending.event.wait(timeout=timeout):
+                return -1
+            return pending.result if pending.result is not None else -1
+        finally:
+            with self._mission_lock:
+                if self._pending_mission_ack is pending:
+                    self._pending_mission_ack = None
+                self._mission_items = None
+
     def _cancel_pending_commands(self) -> None:
         with self._ack_lock:
             for pending in self._pending_acks.values():
                 pending.result = -2
                 pending.event.set()
+        # Wake a blocked fly_to_points uploader so shutdown cannot hang.
+        with self._mission_lock:
+            items = self._mission_items
+            self._mission_items = None
+            pending = self._pending_mission_ack
+            self._pending_mission_ack = None
+        if items is not None and pending is not None:
+            pending.result = -2
+            pending.event.set()
 
     def _connection_ready(self) -> bool:
         return bool(
@@ -508,7 +711,6 @@ class MavlinkBridge:
             and self._store.get_snapshot().get("connected")
             and not self._store.is_stale(timeout=HEARTBEAT_TIMEOUT_S)
         )
-
     def _handle_statustext(self, msg: Any) -> None:
         """Reassemble MAVLink2 STATUSTEXT chunks and publish complete messages."""
         now = time.monotonic()
@@ -810,3 +1012,490 @@ class MavlinkBridge:
                 return self._command_failure("RTL", result)
             self._console_publish("RTL", "RTL accepted", "success")
             return True
+
+    # ------------------------------------------------------------------
+    # Fly to points (Punktabflug)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _fly_to_point_number(value: Any) -> float | None:
+        """Coerce a point field to float, rejecting bool (subclass of int)."""
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        return float(value)
+
+    def _validate_fly_to_points(
+        self, points: list[dict[str, float]],
+    ) -> list[tuple[float, float, float]] | None:
+        """Validate the operator payload. Returns cleaned points or None."""
+        if not isinstance(points, list) or not points:
+            self._set_command_error("points must be a non-empty list")
+            return None
+        cleaned: list[tuple[float, float, float]] = []
+        for idx, entry in enumerate(points):
+            if not isinstance(entry, dict):
+                self._set_command_error(f"point {idx} must be an object")
+                return None
+            lat = self._fly_to_point_number(entry.get("lat"))
+            lon = self._fly_to_point_number(entry.get("lon"))
+            alt = self._fly_to_point_number(entry.get("alt_agl"))
+            if lat is None:
+                self._set_command_error(f"point {idx} lat must be a number")
+                return None
+            if not math.isfinite(lat) or not -90.0 <= lat <= 90.0:
+                self._set_command_error(f"point {idx} lat out of range")
+                return None
+            if lon is None:
+                self._set_command_error(f"point {idx} lon must be a number")
+                return None
+            if not math.isfinite(lon) or not -180.0 <= lon <= 180.0:
+                self._set_command_error(f"point {idx} lon out of range")
+                return None
+            if alt is None:
+                self._set_command_error(f"point {idx} alt_agl must be a number")
+                return None
+            if not math.isfinite(alt) or not (
+                TAKEOFF_ALTITUDE_MIN_M <= alt <= TAKEOFF_ALTITUDE_MAX_M
+            ):
+                self._set_command_error(
+                    f"point {idx} alt_agl must be between "
+                    f"{TAKEOFF_ALTITUDE_MIN_M:.0f} and {TAKEOFF_ALTITUDE_MAX_M:.0f} m"
+                )
+                return None
+            cleaned.append((lat, lon, alt))
+        return cleaned
+
+    @staticmethod
+    def _build_mission_item_spec(
+        seq: int, command: int, lat: float, lon: float, alt: float,
+        p1: float, p2: float, p3: float, p4: float,
+    ) -> dict[str, Any]:
+        """Build one MISSION_ITEM_INT / MISSION_ITEM send-spec.
+
+        Frame is MAV_FRAME_GLOBAL_RELATIVE_ALT (relative to home = AGL),
+        supported by PX4 v1.16-v1.18 for MISSION_ITEM_INT.
+        """
+        return {
+            "frame": mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
+            "command": command,
+            "current": 1 if seq == 0 else 0,
+            "autocontinue": 1,
+            "param1": float(p1), "param2": float(p2),
+            "param3": float(p3), "param4": float(p4),
+            "x_int": int(round(lat * 1e7)),
+            "y_int": int(round(lon * 1e7)),
+            "x_f": float(lat), "y_f": float(lon), "z": float(alt),
+        }
+
+    @staticmethod
+    def _mission_ack_to_result(ack_type: int) -> int:
+        """Map MAV_MISSION_RESULT to MAV_RESULT for "Fly to points failed: ..."."""
+        if ack_type == mavutil.mavlink.MAV_MISSION_ACCEPTED:
+            return mavutil.mavlink.MAV_RESULT_ACCEPTED
+        if ack_type == mavutil.mavlink.MAV_MISSION_DENIED:
+            return mavutil.mavlink.MAV_RESULT_DENIED
+        # 2 = MAV_MISSION_UNSUPPORTED_FRAME, 3 = MAV_MISSION_UNSUPPORTED
+        if ack_type in (2, 3):
+            return mavutil.mavlink.MAV_RESULT_UNSUPPORTED
+        return mavutil.mavlink.MAV_RESULT_FAILED
+
+    def fly_to_points(self, points: list[dict[str, float]]) -> bool:
+        """Fly to the given points in order (Punktabflug) by uploading a mission.
+
+        Each point is ``{"lat","lon","alt_agl"}`` with ``alt_agl`` in metres
+        above home (same reference as :meth:`takeoff`). Uploads a
+        MISSION_ITEM_INT mission (MAV_FRAME_GLOBAL_RELATIVE_ALT), starts it
+        with MAV_CMD_MISSION_START, switches to AUTO.MISSION, and arms if
+        needed. Returns True only when the mission is accepted, started, and
+        the vehicle is armed. Works on PX4 v1.16, v1.17, and v1.18.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            cleaned = self._validate_fly_to_points(points)
+            if cleaned is None:
+                return False
+            if not self._connection_ready():
+                return self._command_failure("Fly to points", -2)
+            # Reuse the takeoff altitude reference. The relative-alt frame
+            # below carries AGL directly, so the AMSL value only validates
+            # that a home/global altitude reference exists.
+            for _, _, alt_agl in cleaned:
+                if self._takeoff_altitude_amsl(alt_agl) is None:
+                    text = "Fly to points failed: no home or global altitude reference"
+                    self._set_command_error(
+                        "no home or global altitude reference"
+                    )
+                    self._console_publish("GOTOPOINTS", text, "error")
+                    self._store_update_warning(text, "critical")
+                    return False
+
+            snapshot = self._store.get_snapshot()
+            on_ground = float(snapshot.get("altitude_agl", 0.0)) < 0.5
+            nan = float("nan")
+            items: list[dict[str, Any]] = []
+            seq = 0
+            if on_ground:
+                # Climb to the first waypoint's AGL, then proceed to the points.
+                takeoff_agl = cleaned[0][2]
+                items.append(self._build_mission_item_spec(
+                    seq, mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+                    0.0, 0.0, takeoff_agl, nan, nan, nan, nan,
+                ))
+                seq += 1
+            for lat, lon, alt_agl in cleaned:
+                items.append(self._build_mission_item_spec(
+                    seq, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+                    lat, lon, alt_agl, 0.0, nan, nan, nan,
+                ))
+                seq += 1
+
+            self._console_publish(
+                "GOTOPOINTS", f"Uploading {len(items)} mission item(s) …", "info",
+            )
+            ack = self._upload_mission(items)
+            if ack != mavutil.mavlink.MAV_MISSION_ACCEPTED:
+                result = ack if ack < 0 else self._mission_ack_to_result(ack)
+                return self._command_failure("Fly to points", result)
+
+            self._console_publish(
+                "GOTOPOINTS", "Mission accepted; starting …", "info",
+            )
+            # param1 = first item index, param2 = last item index (unambiguous
+            # across PX4 v1.16-v1.18; avoids the "0 = last item" convention).
+            result = self._send_command_and_wait(
+                mavutil.mavlink.MAV_CMD_MISSION_START,
+                [0.0, float(len(items) - 1), nan, nan, nan, nan, nan],
+                timeout=5.0, retries=1,
+            )
+            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                return self._command_failure("Fly to points", result)
+
+            # AUTO.MISSION mode + arming starts the uploaded mission from item 0.
+            if not self.set_mode("MISSION"):
+                return False
+            if not self.arm(True):
+                return False
+
+            self._console_publish("GOTOPOINTS", "Fly to points started", "success")
+            return True
+
+    # ------------------------------------------------------------------
+    # Parameter protocol
+    # ------------------------------------------------------------------
+
+    def request_param_list(self) -> bool:
+        """Start a full parameter download from the vehicle.
+
+        Lazy, operator-triggered — keeps the GCS lean; only GPS/telemetry
+        streams until requested. Returns False when disconnected.
+        """
+        with self._operation_lock:
+            if not self._connection_ready():
+                return False
+            with self._param_lock:
+                self._param_download_state = "downloading"
+                self._params.clear()
+                self._param_received = 0
+                self._param_count = -1
+                self._param_seen_indices = set()
+            with self._send_lock:
+                self._conn.mav.param_request_list_send(
+                    self._target_system, self._target_component,
+                )
+            return True
+
+    def request_param(self, name: str) -> bool:
+        """Request a single parameter by name (param_index=-1)."""
+        with self._operation_lock:
+            if not self._connection_ready():
+                return False
+            with self._send_lock:
+                self._conn.mav.param_request_read_send(
+                    self._target_system, self._target_component,
+                    name.encode(), -1,
+                )
+            return True
+
+    def _wait_for_param(self, name: str, timeout: float = 2.0) -> ParamEntry | None:
+        """Poll the param cache until *name* appears or *timeout* expires."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            with self._param_lock:
+                entry = self._params.get(name)
+            if entry is not None:
+                return entry
+            time.sleep(0.02)
+        return None
+
+    def set_param(self, name: str, value: float) -> bool:
+        """Write a parameter and confirm the echoed PARAM_VALUE matches."""
+        with self._operation_lock:
+            self._set_command_error("")
+            if not self._connection_ready():
+                self._set_command_error("not connected")
+                return False
+            # Defense-in-depth: refuse while armed (PX4 also rejects).
+            if self._store.get_snapshot().get("armed"):
+                self._set_command_error("cannot set parameter while armed")
+                return False
+            with self._param_lock:
+                entry = self._params.get(name)
+            if entry is None:
+                # Ad-hoc fetch: request then wait for the value to arrive.
+                self.request_param(name)
+                entry = self._wait_for_param(name, timeout=2.0)
+                if entry is None:
+                    self._set_command_error("parameter not found on vehicle")
+                    return False
+            pending = _PendingAck()
+            with self._param_lock:
+                self._param_set_pending[name] = pending
+            try:
+                for attempt in range(3):
+                    if not self._connection_ready():
+                        return False
+                    with self._send_lock:
+                        self._conn.mav.param_set_send(
+                            self._target_system, self._target_component,
+                            name.encode(), float(value), entry.type,
+                        )
+                    if pending.event.wait(timeout=1.0):
+                        break
+                else:
+                    self._set_command_error("parameter write not confirmed (timeout)")
+                    return False
+            finally:
+                with self._param_lock:
+                    if self._param_set_pending.get(name) is pending:
+                        self._param_set_pending.pop(name, None)
+            with self._param_lock:
+                echoed = self._params.get(name)
+            if echoed is None:
+                self._set_command_error("parameter write not confirmed (no echo)")
+                return False
+            if abs(echoed.value - float(value)) <= max(1e-4, 1e-3 * abs(float(value))):
+                self._console_publish("PARAM", f"{name} set to {value}", "success")
+                return True
+            text = (f"parameter write not confirmed (got {echoed.value} expected {value})")
+            self._set_command_error(text)
+            return False
+
+    def get_params(self) -> list[dict[str, Any]]:
+        """Return cached parameters as sorted ``{"name","value","type"}`` dicts."""
+        with self._param_lock:
+            return [
+                {"name": e.name, "value": e.value, "type": e.type}
+                for _, e in sorted(self._params.items())
+            ]
+
+    def get_param(self, name: str) -> dict[str, Any] | None:
+        """Return a single cached parameter dict or None."""
+        with self._param_lock:
+            entry = self._params.get(name)
+            if entry is None:
+                return None
+            return {"name": entry.name, "value": entry.value, "type": entry.type}
+
+    def param_status(self) -> dict[str, Any]:
+        """Return ``{"state","count","received"}`` for the download progress."""
+        with self._param_lock:
+            return {
+                "state": self._param_download_state,
+                "count": self._param_count,
+                "received": self._param_received,
+            }
+
+    def add_param_listener(self, fn: Callable[[dict[str, Any]], None]) -> None:
+        with self._param_lock:
+            self._param_listeners.append(fn)
+
+    def remove_param_listener(self, fn: Callable[[dict[str, Any]], None]) -> None:
+        with self._param_lock:
+            try:
+                self._param_listeners.remove(fn)
+            except ValueError:
+                pass
+
+    def _notify_param_listeners(self, status: dict[str, Any]) -> None:
+        with self._param_lock:
+            listeners = list(self._param_listeners)
+        for fn in listeners:
+            try:
+                fn(status)
+            except Exception:
+                pass
+
+    def _handle_param_value(self, msg: Any) -> None:
+        """Cache a received PARAM_VALUE and notify listeners."""
+        raw_id = msg.param_id
+        if isinstance(raw_id, bytes):
+            pname = raw_id.split(b"\x00", 1)[0].decode("utf-8", errors="replace")
+        else:
+            pname = str(raw_id).split("\x00", 1)[0]
+        pval = float(msg.param_value)
+        ptype = int(msg.param_type)
+        pindex = int(msg.param_index)
+        pcount = int(msg.param_count)
+        with self._param_lock:
+            is_new = pname not in self._params
+            if is_new:
+                self._param_received += 1
+            self._param_seen_indices.add(pindex)
+            self._params[pname] = ParamEntry(pname, pval, ptype, pindex, pcount)
+            if pcount > 0:
+                self._param_count = max(self._param_count, pcount)
+            if self._param_count > 0 and self._param_received >= self._param_count:
+                self._param_download_state = "complete"
+            status = {
+                "state": self._param_download_state,
+                "count": self._param_count,
+                "received": self._param_received,
+                "name": pname,
+                "value": pval,
+                "type": ptype,
+            }
+            # Wake a pending set_param waiter if the echoed name matches.
+            pending = self._param_set_pending.get(pname)
+            if pending is not None:
+                pending.result = 0
+                pending.event.set()
+        self._notify_param_listeners(status)
+
+    # ------------------------------------------------------------------
+    # Sensor calibration
+    # ------------------------------------------------------------------
+
+    _CALIBRATION_MAP: dict[str, list[float]] = {
+        # MAV_CMD_PREFLIGHT_CALIBRATION (241) — verified against PX4 v1.18
+        # Commander.cpp ~line 1430. Unset params are NaN; the selected one 1.0.
+        "gyro":        [1.0, float("nan"), float("nan"), float("nan"), float("nan"), float("nan"), float("nan")],
+        "compass":     [float("nan"), 1.0, float("nan"), float("nan"), float("nan"), float("nan"), float("nan")],
+        "baro":        [float("nan"), float("nan"), 1.0, float("nan"), float("nan"), float("nan"), float("nan")],
+        "accel":      [float("nan"), float("nan"), float("nan"), float("nan"), 1.0, float("nan"), float("nan")],
+        "level":       [float("nan"), float("nan"), float("nan"), float("nan"), 2.0, float("nan"), float("nan")],
+        "accel_quick": [float("nan"), float("nan"), float("nan"), float("nan"), 4.0, float("nan"), float("nan")],
+        "airspeed":    [float("nan"), float("nan"), float("nan"), float("nan"), float("nan"), 1.0, float("nan")],
+    }
+
+    def calibrate(self, sensor: str) -> bool:
+        """Start a PX4 sensor calibration via MAV_CMD_PREFLIGHT_CALIBRATION.
+
+        Calibration is interactive: the ACCEPTED ACK arrives quickly (PX4
+        starts a worker task); the operator then follows STATUSTEXT guidance
+        (compass rotation, accel positions, etc.) which flows through
+        ``_handle_statustext``.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            params = self._CALIBRATION_MAP.get(sensor)
+            if params is None:
+                self._set_command_error(f"unknown calibration: {sensor}")
+                return False
+            # Defense-in-depth: refuse while armed (PX4 also rejects).
+            if self._store.get_snapshot().get("armed"):
+                self._set_command_error("cannot calibrate while armed")
+                return False
+            if not self._connection_ready():
+                return self._command_failure(f"Calibrate {sensor}", -2)
+            result = self._send_command_and_wait(
+                mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION,
+                params, timeout=5.0, retries=0,
+            )
+            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                return self._command_failure(f"Calibrate {sensor}", result)
+            self._console_publish("CALIBRATE", f"{sensor} calibration started", "success")
+            return True
+
+    # ------------------------------------------------------------------
+    # Autotune
+    # ------------------------------------------------------------------
+
+    _AUTOTUNE_AXIS_MAP: dict[str, float] = {
+        # AUTOTUNE_AXIS bitmask — verified against PX4 v1.18 mavlink_receiver.cpp
+        # and the AUTOTUNE_AXIS enum (roll=1, pitch=2, yaw=4; 0 = tune all).
+        "roll": 1.0,
+        "pitch": 2.0,
+        "yaw": 4.0,
+        "all": 0.0,
+    }
+
+    def autotune(self, axis: str) -> bool:
+        """Start PX4 autotune via MAV_CMD_DO_AUTOTUNE_ENABLE (212).
+
+        param1=1 (enable), param2=axis bitmask. The ACK (ACCEPTED) arrives
+        when PX4 starts the autotune task; tuning progress streams as
+        STATUSTEXT. PX4 v1.18 only runs the full tune (param2=0); specific
+        axes are DENIED — the operator should use ``"all"``.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            axis_val = self._AUTOTUNE_AXIS_MAP.get(axis)
+            if axis_val is None:
+                self._set_command_error(f"unknown autotune axis: {axis}")
+                return False
+            # Defense-in-depth: refuse while armed.
+            if self._store.get_snapshot().get("armed"):
+                self._set_command_error("cannot autotune while armed")
+                return False
+            if not self._connection_ready():
+                return self._command_failure(f"Autotune {axis}", -2)
+            nan = float("nan")
+            result = self._send_command_and_wait(
+                mavutil.mavlink.MAV_CMD_DO_AUTOTUNE_ENABLE,
+                [1.0, axis_val, nan, nan, nan, nan, nan],
+                timeout=5.0, retries=0,
+            )
+            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                return self._command_failure(f"Autotune {axis}", result)
+            self._console_publish("AUTOTUNE", f"Autotune ({axis}) started", "success")
+            return True
+
+    # ------------------------------------------------------------------
+    # Per-message rate control
+    # ------------------------------------------------------------------
+
+    def set_message_interval(self, msg_id: int, interval_us: int) -> bool:
+        """Request PX4 to stream a specific MAVLink message at a given interval.
+
+        Standard PX4 per-message rate control (replaces REQUEST_DATA_STREAM);
+        works v1.16-v1.18. ``interval_us`` < 0 disables the stream, 0 restores
+        the default rate, a positive value sets the interval in microseconds.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            if not self._connection_ready():
+                return False
+            nan = float("nan")
+            result = self._send_command_and_wait(
+                mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+                [float(msg_id), float(interval_us), nan, nan, nan, nan, nan],
+                timeout=3.0, retries=1,
+            )
+            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                return self._command_failure("Set message interval", result)
+            self._console_publish(
+                "STREAM",
+                f"Message {msg_id} interval set to {interval_us} us", "success",
+            )
+            return True
+
+    def set_vibration_stream(self, enabled: bool, rate_hz: int = 10) -> bool:
+        """Enable/disable high-rate VIBRATION streaming from the vehicle.
+
+        Lean — VIBRATION defaults to 0.1 Hz on PX4; the GCS requests ~10 Hz
+        only while the vibration plugin is open, then restores the default.
+        Safe to call while armed (vibration data is read-only telemetry).
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            if enabled:
+                if not isinstance(rate_hz, int) or not (1 <= rate_hz <= 50):
+                    self._set_command_error("vibration rate must be between 1 and 50 Hz")
+                    return False
+                interval_us = max(1, int(1_000_000 / rate_hz))
+            else:
+                # 0 = restore PX4 default rate (lean: high-rate only on demand).
+                interval_us = 0
+            return self.set_message_interval(
+                mavutil.mavlink.MAVLINK_MSG_ID_VIBRATION, interval_us,
+            )

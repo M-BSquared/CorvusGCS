@@ -1,0 +1,10 @@
+# build artifacts
+/build/
+/dist/
+*.AppImage
+appimagetool-x86_64.AppImage
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
