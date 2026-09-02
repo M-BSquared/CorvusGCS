@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Corvus GCS — pre-commit version stamp (CalVer YYYY.MM.PP)
+#
+# Bumps the repo-root VERSION on every commit so the version tracks every
+# change automatically. VERSION is the single source of truth consumed by
+# corvus/version.py, GET /api/version, the AppImage filename, and release
+# tags. Nobody hand-edits VERSION for routine commits.
+#
+# Format: YYYY.MM.PP   (e.g. 2026.09.01)
+#   YYYY — 4-digit year   (real-world UTC date)
+#   MM   — 2-digit month  (real-world UTC date, zero-padded)
+#   PP   — 2-digit per-month commit counter, zero-padded (grows past 99 if needed)
+#
+# Rule:
+#   - VERSION's year-month == today's year-month  -> PP += 1
+#   - otherwise (new month, first run, or migrated scheme) -> PP = 01, month = today
+#
+# Install (one-time per clone):  git config core.hooksPath .githooks
+# Skip for one commit (rare):    git commit --no-verify
+# Preview the next version:      DRY_RUN=1 bash .githooks/pre-commit
+
+set -euo pipefail
+
+REPO_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+VERSION_FILE="$REPO_DIR/VERSION"
+
+# Today's CalVer year-month (UTC, so the version is stable across timezones).
+TODAY_Y="$(date -u +%Y)"
+TODAY_M="$(date -u +%m)"
+
+# Current VERSION (tolerant of trailing whitespace, empty, missing, or old scheme).
+CURRENT="$(tr -d '[:space:]' < "$VERSION_FILE" 2>/dev/null || true)"
+
+fmt() {  # <year> <month> <patch> -> YYYY.MM.PP
+    # 10# forces base-10 so a leading-zero month (e.g. "09") is not read as octal.
+    printf '%04d.%02d.%02d' "$((10#$1))" "$((10#$2))" "$((10#$3))"
+}
+
+if [[ "$CURRENT" =~ ^([0-9]{4})\.([0-9]{1,2})\.([0-9]{1,})$ ]]; then
+    CY="${BASH_REMATCH[1]}"
+    CM="$(printf '%02d' "$((10#${BASH_REMATCH[2]}))")"
+    CP="${BASH_REMATCH[3]}"
+    # Compare year-month as a single integer so a future-dated VERSION (manual
+    # override) is never downgraded: keep its date and increment the counter.
+    V=$((10#$CY * 100 + 10#$CM))
+    T=$((10#$TODAY_Y * 100 + 10#$TODAY_M))
+    if   (( V == T )); then NEXT="$(fmt "$TODAY_Y" "$TODAY_M" "$((10#$CP + 1))")"
+    elif (( V >  T )); then NEXT="$(fmt "$CY"      "$CM"      "$((10#$CP + 1))")"
+    else                    NEXT="$(fmt "$TODAY_Y" "$TODAY_M" 1)"
+    fi
+else
+    # Empty / unparseable / legacy single-segment -> start fresh this month.
+    NEXT="$(fmt "$TODAY_Y" "$TODAY_M" 1)"
+fi
+
+if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    echo "corvus-gcs: version would be -> $NEXT  (current: ${CURRENT:-<empty>})"
+    exit 0
+fi
+
+if [[ "$CURRENT" != "$NEXT" ]]; then
+    printf '%s\n' "$NEXT" > "$VERSION_FILE"
+fi
+# Stage so the bump ships with this commit regardless of what else is staged.
+git add "$VERSION_FILE"
+echo "corvus-gcs: version -> $NEXT"

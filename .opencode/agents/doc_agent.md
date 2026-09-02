@@ -25,7 +25,7 @@ purely on readability and structure.
 
 ## 3. Version control (consumer, with a guard)
 
-- Documentation may *reference* the version (e.g. "Corvus GCS 1.4.2") by
+- Documentation may *reference* the version (e.g. "Corvus GCS 2026.09.01") by
   reading the canonical source, but must never hardcode a version literal as
   the source of truth. If a doc shows a version number, it is generated from
   `VERSION` at build time, not typed by hand.

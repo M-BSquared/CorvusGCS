@@ -29,6 +29,10 @@ window.Corvus = window.Corvus || {};
 Corvus.pluginVibration = (function () {
   const MAX_POINTS = 600;          // ~60 s at 10 Hz — capped memory
   const REDRAW_MIN_MS = 100;       // throttle Plotly.react to ~10 Hz
+  // Illustrative accel-HF (vibration_z) threshold for a one-shot operator
+  // alert; tune per airframe. The accel-HF trace is the mechanical-health
+  // indicator (see the note rendered in the UI below).
+  const HIGH_VIB_Z = 30;
 
   // Trace colours reuse the app's semantic palette: nav blue (info), warning
   // yellow, critical red. The accel-HF trace (red) is the health indicator.
@@ -144,6 +148,9 @@ Corvus.pluginVibration = (function () {
     const startMs = Date.now();
     const buf = { t: [], vx: [], vy: [], vz: [] };
     let lastRedraw = 0;
+    // Latches so a sustained high-vibration episode warns once, then resets
+    // when accel-HF recovers — keeps the warnings popover from flooding.
+    let notifiedHigh = false;
 
     function buildTraces() {
       return [
@@ -203,6 +210,17 @@ Corvus.pluginVibration = (function () {
       const tSec = (Date.now() - startMs) / 1000;
       updateBuffer(buf, s, tSec);
       updateStats(s);
+      // Best-effort operator alert on a sustained high accel-HF episode.
+      // Latch so we warn once per crossing, then reset on recovery.
+      const vz = Number(s.vibration_z) || 0;
+      if (vz >= HIGH_VIB_Z && !notifiedHigh) {
+        notifiedHigh = true;
+        if (api && typeof api.notification === "function") {
+          api.notification("warning", `High accelerometer vibration (vibration_z = ${vz.toFixed(2)})`);
+        }
+      } else if (vz < HIGH_VIB_Z && notifiedHigh) {
+        notifiedHigh = false;
+      }
       // Throttle Plotly.react to ~10 Hz even on rapid updates. The telemetry
       // callback already runs on a rAF (telemetry.js notifySubscribers), so a
       // direct call here stays on the compositor clock (apple-design).

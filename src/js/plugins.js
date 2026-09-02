@@ -7,10 +7,45 @@ window.Corvus = window.Corvus || {};
  * The FUTURE tab is the documented extension point of Corvus GCS. Plugins
  * register here at module load (IIFE side-effect) and the grid renders them as
  * cards; clicking a card swaps the grid for the plugin's container and hands
- * it a lean `api` (telemetry subscribe/getState + the one-shot requestJson /
- * postAction config actions + a reduced-motion probe). Only one plugin is
- * open at a time; opening another first closes the current so destroy() runs
- * exactly once (no listener leaks — apple-design "interruptible by default").
+ * it a lean `api`. Only one plugin is open at a time; opening another first
+ * closes the current so destroy() runs exactly once (no listener leaks —
+ * apple-design "interruptible by default").
+ *
+ * Plugin `api` contract (built once in init(), handed to every plugin.init):
+ *
+ *   telemetry {Object|null}       The live Corvus.telemetry module. Plugins may
+ *                                 call it directly or via the bound helpers.
+ *   subscribe(cb) {() => unsub}   Subscribe to the coalesced telemetry stream.
+ *                                 Returns an unsubscribe fn; call it in
+ *                                 destroy() to avoid listener leaks.
+ *   getState() {() => state}      Synchronous snapshot of the latest state.
+ *   requestJson(url)              GET a JSON endpoint; rejects on HTTP/network
+ *                                 error or invalid JSON (see telemetry.js).
+ *   postAction(url, body)         POST a config action; rejects on a vehicle
+ *                                 rejection so callers can surface failures.
+ *   reducedMotion() {() => bool}  True when the OS asks for less motion
+ *                                 (prefers-reduced-motion: reduce).
+ *   console(text, level)          Append a line to the MAVLink console output
+ *                                 (panel.addConsoleLine). Best-effort + guarded:
+ *                                 a missing/broken panel never crashes a plugin.
+ *                                 `level` is one of the existing console classes:
+ *                                 "" (plain), "cmd", "success", "warning",
+ *                                 "error", "nav", "info". Unrecognised/missing
+ *                                 levels default to "" (plain).
+ *   notification(level, message)  Surface a local notification in the warnings
+ *                                 popover via the corvus:notification window
+ *                                 event (the topbar already listens for it).
+ *                                 `level` is "info" | "warning" | "critical";
+ *                                 default "info". Best-effort + guarded.
+ *   modes() {() => Promise<string[]>}
+ *                                 The connected firmware's flight-mode list
+ *                                 (GET /api/mavlink/modes). Cached for the
+ *                                 session (modes rarely change per firmware);
+ *                                 resolves to [] on error or when no transport.
+ *                                 Lets a plugin offer mode-aware UI without
+ *                                 duplicating the fetch.
+ *
+ * All feedback helpers are frontend-only: they never fork the server.
  */
 Corvus.plugins = (function () {
   // Insertion-ordered map: id -> spec. A Map preserves registration order so
@@ -21,6 +56,15 @@ Corvus.plugins = (function () {
   let api = null;        // the shared api object handed to every plugin
   let activeId = null;   // currently-open plugin id (null = grid showing)
   let activeContainer = null;  // the container handed to the active plugin
+
+  // Levels accepted by api.console(); they map 1:1 to the con-line CSS classes
+  // used by the MAVLink console (panel.addConsoleLine). "" is the plain style.
+  const CONSOLE_LEVELS = new Set(["", "cmd", "success", "warning", "error", "nav", "info"]);
+
+  // Session cache for api.modes(): the flight-mode list rarely changes per
+  // firmware, so a single fetch serves every plugin for the session.
+  let modesCache = null;      // settled modes array (null = not yet loaded)
+  let modesInFlight = null;   // pending promise, dedupes concurrent callers
 
   function refreshIcons() {
     if (window.lucide && lucide.createIcons) lucide.createIcons();
@@ -143,7 +187,9 @@ Corvus.plugins = (function () {
 
     const back = document.createElement("button");
     back.type = "button";
-    back.className = "plugin-back";
+    back.className = "btn plugin-back";
+    back.setAttribute("data-variant", "ghost");
+    back.setAttribute("data-size", "sm");
     const backIcon = document.createElement("i");
     backIcon.setAttribute("data-lucide", "chevron-left");
     const backLabel = document.createElement("span");
@@ -234,6 +280,64 @@ Corvus.plugins = (function () {
   }
 
   /**
+   * Append a line to the MAVLink console (panel.addConsoleLine). Best-effort
+   * and guarded: a missing/broken panel never throws into a plugin.
+   * @param {*} text      Message text (coerced to string).
+   * @param {string} [level] One of CONSOLE_LEVELS; defaults to "" (plain).
+   */
+  function pluginConsole(text, level) {
+    const lv = CONSOLE_LEVELS.has(level) ? level : "";
+    try {
+      if (window.Corvus && window.Corvus.panel
+        && typeof window.Corvus.panel.addConsoleLine === "function") {
+        window.Corvus.panel.addConsoleLine(lv, String(text));
+      }
+    } catch (_e) {
+      // A missing/broken console must never crash a plugin.
+    }
+  }
+
+  /**
+   * Surface a local notification in the warnings popover by dispatching the
+   * corvus:notification window event the topbar already listens for. Best-effort
+   * and guarded: a missing topbar / event target never throws into a plugin.
+   * @param {string} [level] "info" | "warning" | "critical"; default "info".
+   * @param {*} message     Message text (coerced to string).
+   */
+  function pluginNotification(level, message) {
+    const lv = (level === "warning" || level === "critical") ? level : "info";
+    try {
+      window.dispatchEvent(new CustomEvent("corvus:notification", {
+        detail: { level: lv, message: String(message) },
+      }));
+    } catch (_e) {
+      // No topbar / no event target — never crash a plugin.
+    }
+  }
+
+  /**
+   * Return the connected firmware's flight-mode list (GET /api/mavlink/modes).
+   * Cached for the session; concurrent callers share one fetch; a transient
+   * error resolves to [] and clears the in-flight promise so a later call
+   * retries. Resolves to [] when no requestJson transport is available.
+   * @returns {Promise<string[]>}
+   */
+  function pluginModes() {
+    if (modesCache) return Promise.resolve(modesCache);
+    if (modesInFlight) return modesInFlight;
+    const req = api && api.requestJson;
+    if (typeof req !== "function") return Promise.resolve([]);
+    modesInFlight = Promise.resolve()
+      .then(() => req("/api/mavlink/modes"))
+      .then(
+        (data) => { modesCache = Array.isArray(data && data.modes) ? data.modes : []; return modesCache; },
+        () => []   // best-effort: an error never rejects a plugin's UI
+      )
+      .then((result) => { modesInFlight = null; return result; });
+    return modesInFlight;
+  }
+
+  /**
    * Build the shared api once and wire the FUTURE content element.
    * Call from panel.initFuture(). Building api here (not in panel.js) keeps
    * the plugin contract self-contained in this module.
@@ -251,6 +355,9 @@ Corvus.plugins = (function () {
       postAction: t ? t.postAction.bind(t) : null,
       reducedMotion: () => !!(typeof window !== "undefined" && window.matchMedia
         && window.matchMedia("(prefers-reduced-motion: reduce)").matches),
+      console: pluginConsole,
+      notification: pluginNotification,
+      modes: pluginModes,
     };
     renderGrid();
   }

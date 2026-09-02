@@ -4,6 +4,9 @@ window.Corvus = window.Corvus || {};
 Corvus.instruments = (function () {
   const NS = "http://www.w3.org/2000/svg";
   let compassCard, compassArrow, compassValue, adiInner, adiRollScale, attitudeValue, ftGrid;
+  // key -> value span, cached at build time so updateFlightTelemetry does not
+  // re-query the grid on every telemetry tick (≤30 Hz after backend coalescing).
+  const ftCells = {};
   const PPD = 2.0;
 
   // Interpolation state. TARGET = latest telemetry; DISPLAYED = eased value the
@@ -229,17 +232,21 @@ Corvus.instruments = (function () {
       { label: "SAT", key: "sats", cls: "" },
     ];
     ftGrid.innerHTML = "";
+    for (const k in ftCells) delete ftCells[k];   // refresh on rebuild
     cells.forEach((c) => {
       const cell = document.createElement("div");
       cell.className = "ft-cell";
       cell.innerHTML = `<span class="ft-label">${c.label}</span><span class="ft-value ${c.cls}" data-ft="${c.key}">\u2014</span>`;
       ftGrid.appendChild(cell);
     });
+    // Cache the value span for each key once, here, so the per-tick update is a
+    // plain map lookup + textContent set instead of 6 querySelector calls.
+    cells.forEach((c) => { ftCells[c.key] = ftGrid.querySelector(`[data-ft="${c.key}"]`); });
   }
 
   function updateFlightTelemetry(s) {
     const set = (k, v) => {
-      const n = ftGrid.querySelector(`[data-ft="${k}"]`);
+      const n = ftCells[k];
       if (n) n.textContent = v;
     };
     if (!s.connected) {

@@ -13,13 +13,16 @@ import math
 import mimetypes
 import os
 import queue
+import re
 import socketserver
 import threading
 import time
+import urllib.request
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
+from . import tile_sources
 from .mavlink_bridge import (
     TAKEOFF_ALTITUDE_MAX_M,
     TAKEOFF_ALTITUDE_MIN_M,
@@ -27,6 +30,7 @@ from .mavlink_bridge import (
 )
 from .ssh_bridge import SshBridge
 from .state_store import VehicleStateStore, _sanitize
+from .tile_cache import TileCache, default_cache_dir
 from .version import get_version
 
 logger = logging.getLogger("corvus.server")
@@ -36,10 +40,32 @@ WEB_DIR = REPO_ROOT / "src"
 TELEMETRY_SSE_CAPACITY = 1
 CONSOLE_SSE_CAPACITY = 100
 PARAMS_SSE_CAPACITY = 16
+TILES_PROGRESS_SSE_CAPACITY = 16
+TILE_UPSTREAM_TIMEOUT_S = 10
+# Path-parameter tile route: /api/tiles/<source>/<z>/<x>/<y>.png
+# Checked in _handle_api_get only when the path ends in ".png", so it can
+# never shadow the exact /api/tiles/{sources,jobs,progress,download,cancel}
+# routes (none of which end in ".png" with four numeric segments).
+_TILE_PATH_RE = re.compile(r"^/api/tiles/([^/]+)/(\d+)/(\d+)/(\d+)\.png$")
 CALIB_SENSORS = frozenset({
     "gyro", "compass", "baro", "accel", "level", "accel_quick", "airspeed",
 })
 AUTOTUNE_AXES = frozenset({"roll", "pitch", "yaw", "all"})
+
+# Route registry: the @route decorator tags handler methods while the
+# CorvusHandler class body executes; the pending entries are wired onto the
+# class-level _GET_ROUTES/_POST_ROUTES tables after the class is defined. The
+# dispatch methods then resolve path -> method name by lookup instead of an
+# if/elif chain, so adding an endpoint is just "decorate a method".
+_pending_routes: list[tuple[str, str, str]] = []
+
+
+def route(http_method: str, path: str):
+    """Register the decorated handler as the route for *path*."""
+    def decorator(func):
+        _pending_routes.append((http_method, path, func.__name__))
+        return func
+    return decorator
 
 
 class _BoundedSseBuffer:
@@ -97,6 +123,173 @@ class _BoundedSseBuffer:
             return len(self._items)
 
 
+class _TileProgressBus:
+    """Pub-sub fan-out so many SSE clients can watch one download job.
+
+    The downloader accepts a single ``on_progress`` callback per job (set at
+    ``start()`` time); SSE clients come and go. The bus is the one callback the
+    downloader calls; it reads ``job_id`` from the progress dict and fans the
+    dict out to every registered subscriber for that job.
+
+    Contract handed to the downloader: it invokes ``on_progress(progress)``
+    with a dict containing at least ``{job_id, state, done, total, failed}``
+    — the same shape its own ``status()`` returns. Without ``job_id`` the bus
+    cannot route, so the call is dropped.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._subs: dict[str, list[Any]] = collections.defaultdict(list)
+
+    def subscribe(self, job_id: str, fn: Any) -> None:
+        with self._lock:
+            self._subs[job_id].append(fn)
+
+    def unsubscribe(self, job_id: str, fn: Any) -> None:
+        with self._lock:
+            try:
+                self._subs[job_id].remove(fn)
+            except ValueError:
+                pass
+            if not self._subs[job_id]:
+                self._subs.pop(job_id, None)
+
+    def make_on_progress(self) -> Any:
+        """Return the single ``on_progress`` callback to hand to the downloader."""
+        def _on_progress(progress: Any) -> None:
+            if not isinstance(progress, dict):
+                return
+            job_id = progress.get("job_id")
+            if not job_id:
+                return
+            with self._lock:
+                subs = list(self._subs.get(job_id, ()))
+            for fn in subs:
+                try:
+                    fn(progress)
+                except Exception:  # noqa: BLE001 - a bad subscriber must not kill the download
+                    logger.exception("tile progress subscriber raised")
+        return _on_progress
+
+
+class _TileDownloaderPool:
+    """Unified facade over one TileDownloader per source.
+
+    ``TileDownloader`` binds a single ``TileCache`` at construction (see its
+    contract); we keep one cache per source so ``/api/tiles/<source>/...``
+    serves the correct raster, which requires one downloader per source. The
+    pool exposes the single ``start``/``cancel``/``status``/``list_jobs``/
+    ``shutdown`` surface the HTTP layer wants and routes by source (``start``)
+    or ``job_id`` (``cancel``/``status``).
+    """
+
+    def __init__(
+        self,
+        caches: dict[str, TileCache],
+        downloader_cls: Any,
+        max_workers: int = 3,
+    ) -> None:
+        self._downloaders: dict[str, Any] = {
+            sid: downloader_cls(cache, max_workers=max_workers)
+            for sid, cache in caches.items()
+        }
+
+    def start(
+        self,
+        source: str,
+        upstream: str,
+        bounds: tuple,
+        minzoom: int,
+        maxzoom: int,
+        on_progress: Any = None,
+    ) -> str:
+        dl = self._downloaders.get(source)
+        if dl is None:
+            raise ValueError(f"no downloader for source {source!r}")
+        return dl.start(source, upstream, bounds, minzoom, maxzoom, on_progress=on_progress)
+
+    def cancel(self, job_id: str) -> bool:
+        for dl in self._downloaders.values():
+            if dl.cancel(job_id):
+                return True
+        return False
+
+    def status(self, job_id: str) -> dict | None:
+        for dl in self._downloaders.values():
+            st = dl.status(job_id)
+            if st is not None:
+                return st
+        return None
+
+    def list_jobs(self) -> list[dict]:
+        jobs: list[dict] = []
+        for dl in self._downloaders.values():
+            jobs.extend(dl.list_jobs())
+        return jobs
+
+    def shutdown(self) -> None:
+        for dl in self._downloaders.values():
+            try:
+                dl.shutdown()
+            except Exception:  # noqa: BLE001 - shutdown must not raise
+                logger.exception("tile downloader shutdown failed")
+        self._downloaders.clear()
+
+
+def _build_tile_downloader(
+    caches: dict[str, TileCache],
+) -> _TileDownloaderPool | None:
+    """Construct the per-source downloader pool, or None if the (parallel-built)
+    ``tile_downloader`` module is not importable yet — keeps the server usable
+    while that module is mid-edit."""
+    try:
+        from .tile_downloader import TileDownloader  # lazy: module may be mid-edit
+    except ImportError:
+        logger.warning("tile_downloader module not available; download endpoints disabled")
+        return None
+    return _TileDownloaderPool(caches, TileDownloader)
+
+
+def _validate_tile_bounds(bounds: Any) -> tuple[str | None, tuple[float, float, float, float] | None]:
+    """Validate a ``{w,s,e,n}`` bounds object.
+
+    Returns ``(error, None)`` on failure or ``(None, (w,s,e,n))`` on success.
+    """
+    if not isinstance(bounds, dict):
+        return ("bounds must be an object {w,s,e,n}", None)
+    for key in ("w", "s", "e", "n"):
+        value = bounds.get(key)
+        # bool is a subclass of int — reject it so True is never coerced to 1.0
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            return (f"bounds.{key} must be a finite number", None)
+    w, s, e, n = float(bounds["w"]), float(bounds["s"]), float(bounds["e"]), float(bounds["n"])
+    if not -180.0 <= w <= 180.0 or not -180.0 <= e <= 180.0:
+        return ("bounds w/e must be in [-180, 180]", None)
+    if not -90.0 <= s <= 90.0 or not -90.0 <= n <= 90.0:
+        return ("bounds s/n must be in [-90, 90]", None)
+    if w > e or s > n:
+        return ("bounds must satisfy w<=e and s<=n", None)
+    return (None, (w, s, e, n))
+
+
+def _validate_tile_zooms(minzoom: Any, maxzoom: Any, src_maxzoom: int) -> str | None:
+    """Validate ``minzoom``/``maxzoom`` (ints, 0..22, min<=max, within source cap)."""
+    if isinstance(minzoom, bool) or not isinstance(minzoom, (int, float)):
+        return "minzoom must be a number"
+    if isinstance(maxzoom, bool) or not isinstance(maxzoom, (int, float)):
+        return "maxzoom must be a number"
+    if float(minzoom) != int(minzoom) or float(maxzoom) != int(maxzoom):
+        return "zooms must be integers"
+    mz, Mz = int(minzoom), int(maxzoom)
+    if not 0 <= mz <= 22 or not 0 <= Mz <= 22:
+        return "zooms must be in [0, 22]"
+    if mz > Mz:
+        return "minzoom must be <= maxzoom"
+    if Mz > src_maxzoom:
+        return f"maxzoom exceeds source max ({src_maxzoom})"
+    return None
+
+
 def _parse_takeoff_altitude(value: object) -> float:
     if isinstance(value, bool):
         raise ValueError("takeoff altitude must be a number")
@@ -114,12 +307,65 @@ def _parse_takeoff_altitude(value: object) -> float:
     return altitude
 
 
+# 1-slot memoization of the serialized telemetry snapshot, keyed by the
+# store's mutation version: N browser tabs sharing one backend re-serialize
+# the SAME snapshot exactly once per version instead of N times. The store
+# reference is held (``is``) so a GC-reused id can never match a stale entry,
+# and a stale snapshot from the SSE queue is never cached for a newer
+# version (see the ``is store.get_snapshot()`` guard).
+_serialize_lock = threading.Lock()
+_last_serialized_store: VehicleStateStore | None = None
+_last_serialized_version: int | None = None
+_last_serialized_bytes: bytes = b""
+
+
+def _serialize_telemetry_snapshot(
+    store: VehicleStateStore, snap: dict[str, Any]
+) -> bytes:
+    """Serialize *snap* once per store version, reusing cached bytes.
+
+    With N connected SSE clients the same snapshot version is serialized at
+    most once: the first client to see a new version pays the ``json.dumps`` +
+    ``_sanitize`` cost and stores the bytes; every other client (and every
+    later read at the same version) reuses them. ``_sanitize`` is applied
+    here, once, so NaN/Inf never reach the wire.
+
+    A snapshot pulled from the SSE queue may be stale (the store advanced
+    between the listener push and this call): it is serialized and sent
+    as-is (matching the pre-optimization behaviour) but is cached only when
+    it is still the store's current snapshot, so a stale snapshot can never
+    poison the cache for the fresh version.
+    """
+    global _last_serialized_store, _last_serialized_version, _last_serialized_bytes
+    version = store.version()
+    with _serialize_lock:
+        if _last_serialized_store is store and version == _last_serialized_version:
+            return _last_serialized_bytes
+        data = json.dumps(_sanitize(snap)).encode("utf-8")
+        # Cache only when snap is still the store's current (cached) snapshot
+        # for this version; a stale snap from the queue is sent but not cached.
+        if snap is store.get_snapshot():
+            _last_serialized_store = store
+            _last_serialized_version = version
+            _last_serialized_bytes = data
+        return data
+
+
 class CorvusHandler(http.server.BaseHTTPRequestHandler):
     """Request handler routing between static files and API endpoints."""
 
     mavlink: MavlinkBridge | None = None
     store: VehicleStateStore | None = None
     ssh: SshBridge | None = None
+    # Tile resources: per-source caches + a single downloader facade + the
+    # progress pub-sub bus. None when tiles are not configured (e.g. the
+    # parallel-built tile_downloader module is mid-edit).
+    tile_caches: dict[str, TileCache] | None = None
+    tile_downloader: Any = None
+    tile_progress_bus: _TileProgressBus | None = None
+
+    _GET_ROUTES: dict[str, str] = {}
+    _POST_ROUTES: dict[str, str] = {}
 
     def log_message(self, fmt: str, *args) -> None:
         logger.debug("%s - %s", self.address_string(), fmt % args)
@@ -135,6 +381,13 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
     def _send_sse(self, event: str, data: str) -> None:
         self.wfile.write(f"event: {event}\ndata: {data}\n\n".encode("utf-8"))
+        self.wfile.flush()
+
+    def _send_sse_bytes(self, event: str, data: bytes) -> None:
+        # data is pre-encoded utf-8 JSON; write the framing directly to avoid
+        # the double encode that ``_send_sse`` would incur for a str payload.
+        # Wire output is byte-identical to ``_send_sse(event, data.decode())``.
+        self.wfile.write(b"event: " + event.encode("utf-8") + b"\ndata: " + data + b"\n\n")
         self.wfile.flush()
 
     def do_GET(self) -> None:
@@ -153,45 +406,61 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
     # ---- GET API ----
     def _handle_api_get(self, path: str) -> None:
-        if path == "/api/version":
-            px4_profile = "undetected"
-            if self.store:
-                px4_profile = self.store.get_snapshot().get("px4_version") or px4_profile
-            self._send_json({
-                "product": "Corvus GCS",
-                "version": get_version(),
-                "px4_profile": px4_profile,
-            })
-        elif path == "/api/state":
-            if self.store:
-                self._send_json(self.store.get_snapshot())
+        if path.startswith("/api/"):
+            # Path-parameter tile route: /api/tiles/<source>/<z>/<x>/<y>.png
+            # Only matched when the path ends in ".png", so the exact
+            # /api/tiles/{sources,jobs,progress} routes are never shadowed.
+            if path.startswith("/api/tiles/") and path.endswith(".png"):
+                m = _TILE_PATH_RE.match(path)
+                if m is not None:
+                    self._api_tiles_serve(
+                        m.group(1),
+                        int(m.group(2)),
+                        int(m.group(3)),
+                        int(m.group(4)),
+                    )
+                    return
+            method_name = self._GET_ROUTES.get(path)
+            if method_name is not None:
+                getattr(self, method_name)()
             else:
-                self._send_json({"error": "no store"}, 500)
-        elif path == "/api/telemetry":
-            self._sse_telemetry()
-        elif path == "/api/console/stream":
-            self._sse_console()
-        elif path == "/api/ssh/sessions":
-            if self.ssh:
-                self._send_json({"sessions": self.ssh.list_sessions()})
-            else:
-                self._send_json({"sessions": []})
-        elif path == "/api/ssh/stream":
-            self._sse_ssh_stream()
-        elif path == "/api/mavlink/modes":
-            if self.mavlink:
-                self._send_json({"modes": self.mavlink.get_available_modes()})
-            else:
-                self._send_json({"modes": []})
-        elif path == "/api/mavlink/serial-ports":
-            self._api_mavlink_serial_ports()
-        elif path == "/api/params":
-            self._api_params()
-        elif path == "/api/params/progress":
-            self._sse_params()
+                self._send_json({"error": "not found"}, 404)
         else:
-            self._send_json({"error": "not found"}, 404)
+            self._serve_static(path)
 
+    @route("GET", "/api/version")
+    def _api_version(self) -> None:
+        px4_profile = "undetected"
+        if self.store:
+            px4_profile = self.store.get_snapshot().get("px4_version") or px4_profile
+        self._send_json({
+            "product": "Corvus GCS",
+            "version": get_version(),
+            "px4_profile": px4_profile,
+        })
+
+    @route("GET", "/api/state")
+    def _api_state(self) -> None:
+        if self.store:
+            self._send_json(self.store.get_snapshot())
+        else:
+            self._send_json({"error": "no store"}, 500)
+
+    @route("GET", "/api/ssh/sessions")
+    def _api_ssh_sessions(self) -> None:
+        if self.ssh:
+            self._send_json({"sessions": self.ssh.list_sessions()})
+        else:
+            self._send_json({"sessions": []})
+
+    @route("GET", "/api/mavlink/modes")
+    def _api_mavlink_modes(self) -> None:
+        if self.mavlink:
+            self._send_json({"modes": self.mavlink.get_available_modes()})
+        else:
+            self._send_json({"modes": []})
+
+    @route("GET", "/api/mavlink/serial-ports")
     def _api_mavlink_serial_ports(self) -> None:
         """Enumerate serial ports for the connection manager UI.
 
@@ -209,6 +478,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             return
         self._send_json({"ports": ports})
 
+    @route("GET", "/api/params")
     def _api_params(self) -> None:
         """Return parameter-download status and, when complete, the full list."""
         if self.mavlink is None:
@@ -245,41 +515,16 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"error": "json payload must be an object"}, 400)
             return
 
-        if path == "/api/console/command":
-            self._api_console_command(payload)
-        elif path == "/api/mavlink/connect":
-            self._api_mavlink_connect(payload)
-        elif path == "/api/mavlink/arm":
-            self._api_mavlink_arm(payload)
-        elif path == "/api/mavlink/mode":
-            self._api_mavlink_mode(payload)
-        elif path == "/api/mavlink/takeoff":
-            self._api_mavlink_takeoff(payload)
-        elif path == "/api/mavlink/land":
-            self._api_mavlink_land(payload)
-        elif path == "/api/mavlink/rtl":
-            self._api_mavlink_rtl(payload)
-        elif path == "/api/mavlink/gotopoints":
-            self._api_mavlink_gotopoints(payload)
-        elif path == "/api/ssh/connect":
-            self._api_ssh_connect(payload)
-        elif path == "/api/ssh/send":
-            self._api_ssh_send(payload)
-        elif path == "/api/ssh/disconnect":
-            self._api_ssh_disconnect(payload)
-        elif path == "/api/params/download":
-            self._api_params_download(payload)
-        elif path == "/api/params/set":
-            self._api_params_set(payload)
-        elif path == "/api/calibrate":
-            self._api_calibrate(payload)
-        elif path == "/api/autotune":
-            self._api_autotune(payload)
-        elif path == "/api/vibration/stream":
-            self._api_vibration_stream(payload)
+        if path.startswith("/api/"):
+            method_name = self._POST_ROUTES.get(path)
+            if method_name is not None:
+                getattr(self, method_name)(payload)
+            else:
+                self._send_json({"error": "not found"}, 404)
         else:
             self._send_json({"error": "not found"}, 404)
 
+    @route("POST", "/api/console/command")
     def _api_console_command(self, payload: dict) -> None:
         command_value = payload.get("command", "")
         cmd = command_value.strip() if isinstance(command_value, str) else ""
@@ -321,6 +566,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             status = 503 if "DISCONNECTED" in error else 409
             self._send_json({"ok": False, "error": error}, status)
 
+    @route("POST", "/api/mavlink/connect")
     def _api_mavlink_connect(self, payload: dict) -> None:
         conn = payload.get("connection", "udp:127.0.0.1:14540")
         if self.mavlink:
@@ -329,6 +575,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self.mavlink.start()
         self._send_json({"ok": True, "connection": conn})
 
+    @route("POST", "/api/mavlink/arm")
     def _api_mavlink_arm(self, payload: dict) -> None:
         arm = payload.get("arm", True)
         if not isinstance(arm, bool):
@@ -345,6 +592,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "not connected"}, 400)
 
+    @route("POST", "/api/mavlink/mode")
     def _api_mavlink_mode(self, payload: dict) -> None:
         mode = payload.get("mode", "")
         if self.mavlink and isinstance(mode, str) and mode:
@@ -358,6 +606,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "not connected or no mode"}, 400)
 
+    @route("POST", "/api/mavlink/takeoff")
     def _api_mavlink_takeoff(self, payload: dict) -> None:
         try:
             alt = _parse_takeoff_altitude(payload.get("altitude", 10.0))
@@ -375,6 +624,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "not connected"}, 400)
 
+    @route("POST", "/api/mavlink/land")
     def _api_mavlink_land(self, payload: dict) -> None:
         if self.mavlink:
             ok = self.mavlink.land()
@@ -387,6 +637,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "not connected"}, 400)
 
+    @route("POST", "/api/mavlink/rtl")
     def _api_mavlink_rtl(self, payload: dict) -> None:
         if self.mavlink:
             ok = self.mavlink.rtl()
@@ -399,6 +650,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "not connected"}, 400)
 
+    @route("POST", "/api/mavlink/gotopoints")
     def _api_mavlink_gotopoints(self, payload: dict) -> None:
         """Dispatch a multi-waypoint fly-to command to the vehicle."""
         raw_points = payload.get("points")
@@ -451,6 +703,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             status = 503 if "DISCONNECTED" in error else 409
             self._send_json({"ok": False, "error": error}, status)
 
+    @route("POST", "/api/ssh/connect")
     def _api_ssh_connect(self, payload: dict) -> None:
         if not self.ssh:
             self._send_json({"error": "ssh not ready"}, 500)
@@ -467,6 +720,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         ok = self.ssh.connect(name, host, port, username, password, key_path)
         self._send_json({"ok": ok, "connected": ok})
 
+    @route("POST", "/api/ssh/send")
     def _api_ssh_send(self, payload: dict) -> None:
         name = payload.get("name", "")
         data = payload.get("data", "")
@@ -476,6 +730,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "no session"}, 400)
 
+    @route("POST", "/api/ssh/disconnect")
     def _api_ssh_disconnect(self, payload: dict) -> None:
         name = payload.get("name", "")
         if self.ssh and name:
@@ -484,6 +739,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "no session"}, 400)
 
+    @route("POST", "/api/params/download")
     def _api_params_download(self, payload: dict) -> None:
         """Trigger a full parameter-list download from the vehicle."""
         if self.mavlink is None:
@@ -496,6 +752,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             error = self.mavlink.get_last_command_error() or "not connected"
             self._send_json({"ok": False, "error": error}, 503)
 
+    @route("POST", "/api/params/set")
     def _api_params_set(self, payload: dict) -> None:
         """Write a single parameter value to the vehicle."""
         name = payload.get("name", "")
@@ -518,6 +775,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             status = 503 if "not connected" in error else 409
             self._send_json({"ok": False, "error": error}, status)
 
+    @route("POST", "/api/calibrate")
     def _api_calibrate(self, payload: dict) -> None:
         """Start a sensor calibration on the vehicle."""
         raw = payload.get("type", "")
@@ -536,6 +794,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             status = 503 if "not connected" in error else 409
             self._send_json({"ok": False, "error": error}, status)
 
+    @route("POST", "/api/autotune")
     def _api_autotune(self, payload: dict) -> None:
         """Start an autotune on the given axis."""
         raw = payload.get("axis", "")
@@ -554,6 +813,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             status = 503 if "not connected" in error else 409
             self._send_json({"ok": False, "error": error}, status)
 
+    @route("POST", "/api/vibration/stream")
     def _api_vibration_stream(self, payload: dict) -> None:
         """Enable/disable high-rate VIBRATION telemetry on demand.
 
@@ -588,6 +848,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": error}, status)
 
     # ---- SSE endpoints ----
+    @route("GET", "/api/telemetry")
     def _sse_telemetry(self) -> None:
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -597,14 +858,21 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         q = _BoundedSseBuffer(TELEMETRY_SSE_CAPACITY)
         listener = q.put_latest
-        if self.store:
-            self.store.add_listener(listener)
-            self._send_sse("state", json.dumps(_sanitize(self.store.get_snapshot())))
         try:
+            if self.store:
+                self.store.add_listener(listener)
+                # Serialize the initial snapshot through the version-keyed cache so
+                # a second tab connecting at the same version reuses these bytes.
+                self._send_sse_bytes(
+                    "state",
+                    _serialize_telemetry_snapshot(self.store, self.store.get_snapshot()),
+                )
             while True:
                 try:
                     snap = q.get(timeout=15)
-                    self._send_sse("state", json.dumps(_sanitize(snap)))
+                    self._send_sse_bytes(
+                        "state", _serialize_telemetry_snapshot(self.store, snap)
+                    )
                 except queue.Empty:
                     self._send_sse("ping", "{}")
         except (BrokenPipeError, ConnectionResetError):
@@ -613,6 +881,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             if self.store:
                 self.store.remove_listener(listener)
 
+    @route("GET", "/api/console/stream")
     def _sse_console(self) -> None:
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -637,6 +906,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             if self.mavlink:
                 self.mavlink.remove_console_sub(listener)
 
+    @route("GET", "/api/params/progress")
     def _sse_params(self) -> None:
         """SSE stream of parameter-download progress (latest-wins, coalesced)."""
         self.send_response(200)
@@ -647,17 +917,17 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         q = _BoundedSseBuffer(PARAMS_SSE_CAPACITY)
         listener = q.put_latest
-        if self.mavlink:
-            self.mavlink.add_param_listener(listener)
-            status = self.mavlink.param_status()
-        else:
-            status = {"state": "idle", "count": 0, "received": 0}
-        self._send_sse("progress", json.dumps(_sanitize({
-            "state": status["state"],
-            "count": status["count"],
-            "received": status["received"],
-        })))
         try:
+            if self.mavlink:
+                self.mavlink.add_param_listener(listener)
+                status = self.mavlink.param_status()
+            else:
+                status = {"state": "idle", "count": 0, "received": 0}
+            self._send_sse("progress", json.dumps(_sanitize({
+                "state": status["state"],
+                "count": status["count"],
+                "received": status["received"],
+            })))
             while True:
                 try:
                     entry = q.get(timeout=15)
@@ -674,6 +944,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             if self.mavlink:
                 self.mavlink.remove_param_listener(listener)
 
+    @route("GET", "/api/ssh/stream")
     def _sse_ssh_stream(self) -> None:
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -708,6 +979,186 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 if session:
                     session.remove_sub(listener)
 
+    # ---- Tile cache / download / serve ----
+    @route("GET", "/api/tiles/sources")
+    def _api_tiles_sources(self) -> None:
+        """List every source with its live cache stats; always 200."""
+        caches = self.tile_caches or {}
+        sources = []
+        for entry in tile_sources.list_sources():
+            sid = entry["id"]
+            cache = caches.get(sid)
+            stats = cache.stats() if cache is not None else {"count": 0, "minzoom": None, "maxzoom": None}
+            sources.append({
+                "id": sid,
+                "label": entry["label"],
+                "maxzoom": entry["maxzoom"],
+                "cached_count": stats["count"],
+                "minzoom": stats["minzoom"],
+                "maxzoom": stats["maxzoom"],
+            })
+        self._send_json({"sources": sources})
+
+    @route("GET", "/api/tiles/jobs")
+    def _api_tiles_jobs(self) -> None:
+        """List all download jobs across every source."""
+        if self.tile_downloader is None:
+            self._send_json({"jobs": []})
+            return
+        self._send_json({"jobs": self.tile_downloader.list_jobs()})
+
+    @route("POST", "/api/tiles/download")
+    def _api_tiles_download(self, payload: dict) -> None:
+        """Start a tile download job for a source within bounds/zooms."""
+        if self.tile_downloader is None:
+            self._send_json({"ok": False, "error": "tile service unavailable"}, 503)
+            return
+        source = payload.get("source")
+        if not isinstance(source, str) or tile_sources.get(source) is None:
+            self._send_json({"ok": False, "error": "unknown source"}, 400)
+            return
+        src = tile_sources.get(source)
+        err, bounds = _validate_tile_bounds(payload.get("bounds"))
+        if err is not None:
+            self._send_json({"ok": False, "error": err}, 400)
+            return
+        zoom_err = _validate_tile_zooms(payload.get("minzoom"), payload.get("maxzoom"), src["maxzoom"])
+        if zoom_err is not None:
+            self._send_json({"ok": False, "error": zoom_err}, 400)
+            return
+        minzoom = int(payload["minzoom"])
+        maxzoom = int(payload["maxzoom"])
+        on_progress = None
+        if self.tile_progress_bus is not None:
+            on_progress = self.tile_progress_bus.make_on_progress()
+        try:
+            job_id = self.tile_downloader.start(
+                source, src["upstream"], bounds, minzoom, maxzoom, on_progress=on_progress
+            )
+        except Exception as exc:  # noqa: BLE001 - a download submit must never 500
+            logger.exception("tile download start failed")
+            self._send_json({"ok": False, "error": f"start failed: {exc}"}, 500)
+            return
+        status = self.tile_downloader.status(job_id) if job_id else None
+        if status and status.get("state") == "failed":
+            self._send_json(
+                {"ok": False, "error": status.get("error", "download failed")}, 409
+            )
+            return
+        self._send_json({"job_id": job_id})
+
+    @route("POST", "/api/tiles/cancel")
+    def _api_tiles_cancel(self, payload: dict) -> None:
+        """Cancel a running download job by id."""
+        if self.tile_downloader is None:
+            self._send_json({"ok": False, "error": "tile service unavailable"}, 503)
+            return
+        job_id = payload.get("id")
+        if not isinstance(job_id, str) or not job_id:
+            self._send_json({"ok": False, "error": "id required"}, 400)
+            return
+        if self.tile_downloader.cancel(job_id):
+            self._send_json({"ok": True})
+        else:
+            self._send_json({"ok": False, "error": "unknown job"}, 404)
+
+    @route("GET", "/api/tiles/progress")
+    def _sse_tiles_progress(self) -> None:
+        """SSE stream of one download job's progress (latest-wins, coalesced)."""
+        query = urlparse(self.path).query
+        params = parse_qs(query)
+        job_id = params.get("id", [None])[0]
+        if not job_id:
+            self._send_json({"error": "missing id"}, 400)
+            return
+        if self.tile_downloader is None:
+            self._send_json({"error": "tile service unavailable"}, 503)
+            return
+        status = self.tile_downloader.status(job_id)
+        if status is None:
+            self._send_json({"error": "unknown job"}, 404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        q = _BoundedSseBuffer(TILES_PROGRESS_SSE_CAPACITY)
+        listener = q.put_latest
+        try:
+            if self.tile_progress_bus is not None:
+                self.tile_progress_bus.subscribe(job_id, listener)
+            self._send_sse("progress", json.dumps(_sanitize(status)))
+            while True:
+                try:
+                    entry = q.get(timeout=15)
+                    self._send_sse("progress", json.dumps(_sanitize(entry)))
+                    state = entry.get("state") if isinstance(entry, dict) else None
+                    if state in ("done", "cancelled", "failed"):
+                        break
+                except queue.Empty:
+                    self._send_sse("ping", "{}")
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            if self.tile_progress_bus is not None:
+                self.tile_progress_bus.unsubscribe(job_id, listener)
+
+    def _api_tiles_serve(self, source: str, z: int, x: int, y: int) -> None:
+        """Serve a cached tile, transparently fetching+ caching from upstream.
+
+        Online: a cache miss is filled from the upstream template (short
+        timeout) then stored, so the map works and the cache grows in the
+        field. Offline (or fetch failure): a miss is a 404.
+        """
+        if tile_sources.get(source) is None:
+            self._send_json({"error": "not found"}, 404)
+            return
+        if z < 0 or z > 22 or x < 0 or y < 0 or x >= (1 << z) or y >= (1 << z):
+            self._send_json({"error": "tile out of range"}, 404)
+            return
+        caches = self.tile_caches or {}
+        cache = caches.get(source)
+        blob = cache.get_tile(z, x, y) if cache is not None else None
+        if blob is None:
+            blob = self._fetch_upstream_tile(source, z, x, y)
+            if blob is None:
+                self._send_json({"error": "tile not available"}, 404)
+                return
+            if cache is not None:
+                try:
+                    cache.put_tile(z, x, y, blob)
+                except Exception:  # noqa: BLE001 - caching is best-effort
+                    logger.exception("tile cache write failed")
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(blob)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "max-age=86400")
+        self.end_headers()
+        self.wfile.write(blob)
+
+    def _fetch_upstream_tile(self, source: str, z: int, x: int, y: int) -> bytes | None:
+        """Best-effort online cache-fill for a single tile; None on any failure."""
+        src = tile_sources.get(source)
+        if src is None:
+            return None
+        url = (src["upstream"]
+               .replace("{z}", str(z))
+               .replace("{y}", str(y))
+               .replace("{x}", str(x)))
+        try:
+            req = urllib.request.Request(
+                url, headers={"User-Agent": f"CorvusGCS/{get_version()}"}
+            )
+            with urllib.request.urlopen(req, timeout=TILE_UPSTREAM_TIMEOUT_S) as resp:
+                data = resp.read()
+        except Exception:  # noqa: BLE001 - offline field use must never 500
+            logger.debug("upstream tile fetch failed: %s", url, exc_info=True)
+            return None
+        return data or None
+
     # ---- Static files ----
     def _serve_static(self, path: str) -> None:
         if path == "/":
@@ -733,10 +1184,46 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+# Wire @route declarations collected during the CorvusHandler class body onto
+# the class-level route tables that _handle_api_get/_handle_api_post dispatch
+# through.
+for _http_method, _path, _name in _pending_routes:
+    table = CorvusHandler._GET_ROUTES if _http_method == "GET" else CorvusHandler._POST_ROUTES
+    table[_path] = _name
+_pending_routes.clear()
+
+
 class CorvusServer(socketserver.ThreadingTCPServer):
     """Threaded TCP server with clean shutdown."""
     allow_reuse_address = True
     daemon_threads = True
+
+    def shutdown(self) -> None:
+        """Stop the HTTP loop and release every tile resource.
+
+        Download workers are stopped first so they are not mid-write to the
+        caches; the HTTP serve loop is then stopped; caches are closed last so
+        no in-flight handler touches a closed SQLite handle during teardown.
+        Any failure is logged, never raised — shutdown must always complete.
+        """
+        downloader = getattr(self, "tile_downloader", None)
+        if downloader is not None:
+            try:
+                downloader.shutdown()
+            except Exception:  # noqa: BLE001 - shutdown must not raise
+                logger.exception("tile downloader shutdown failed")
+        try:
+            super().shutdown()
+        except Exception:  # noqa: BLE001 - shutdown must not raise
+            logger.exception("http server shutdown failed")
+        caches = getattr(self, "tile_caches", None) or {}
+        for cache in caches.values():
+            try:
+                cache.close()
+            except Exception:  # noqa: BLE001 - shutdown must not raise
+                logger.exception("tile cache close failed")
+        self.tile_downloader = None
+        self.tile_caches = {}
 
 
 def create_server(
@@ -748,13 +1235,29 @@ def create_server(
     mavlink = MavlinkBridge(store, mavlink_conn)
     ssh = SshBridge()
 
+    # Tile resources: one MBTiles cache per source under ~/.corvus/tiles/.
+    # TileDownloader binds a single cache at construction, so per-source caches
+    # imply per-source downloaders; _TileDownloaderPool presents them as one.
+    cache_dir = default_cache_dir()
+    tile_caches: dict[str, TileCache] = {
+        sid: TileCache(os.path.join(cache_dir, f"{sid}.mbtiles"))
+        for sid in tile_sources.TILE_SOURCES
+    }
+    tile_progress_bus = _TileProgressBus()
+    tile_downloader = _build_tile_downloader(tile_caches)
+
     CorvusHandler.store = store
     CorvusHandler.mavlink = mavlink
     CorvusHandler.ssh = ssh
+    CorvusHandler.tile_caches = tile_caches
+    CorvusHandler.tile_downloader = tile_downloader
+    CorvusHandler.tile_progress_bus = tile_progress_bus
 
     server = CorvusServer(("", port), CorvusHandler)
     server.mavlink = mavlink
     server.ssh = ssh
     server.store = store
+    server.tile_caches = tile_caches
+    server.tile_downloader = tile_downloader
     mavlink.start()
     return server

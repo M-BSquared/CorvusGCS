@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+# Tooling-only placeholder. The real app version is the VERSION file at the
+# repo root consumed by corvus.version; it is never read from here.
+name = "corvus-gcs"
+version = "0.0.0"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: marks tests as slow (deselect with `-m \"not slow\"`)",
+    "sitl: marks tests requiring a live PX4 SITL connection",
+    "frontend: marks tests for the JS frontend (currently run via node, but declare the marker for future)",
+]

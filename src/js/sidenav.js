@@ -8,7 +8,7 @@ Corvus.sidenav = (function () {
   const NAV = [
     { id: "setup", label: "SETUP", icon: "sliders-horizontal" },
     { id: "logs", label: "LOGS", icon: "file-text" },
-    { id: "analysis", label: "ANALYSIS", icon: "bar-chart-3" },
+    { id: "analysis", label: "ANALYSIS", icon: "chart-column" },
   ];
 
   function icon(name) {
@@ -204,7 +204,10 @@ Corvus.sidenav = (function () {
       card2.appendChild(row("PX4 Profile", v.px4_profile || "—"));
     }).catch(() => card2.appendChild(row("Version", "Unavailable")));
     s2.appendChild(card2);
-    container.appendChild(s, s2);
+    // appendChild takes a single node; s2 (the About/version card) was being
+    // dropped by the old two-arg call.
+    container.appendChild(s);
+    container.appendChild(s2);
   }
 
   function renderPlaceholder(container) {

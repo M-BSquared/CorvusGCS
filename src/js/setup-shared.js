@@ -74,7 +74,9 @@ Corvus.setupShared = (function () {
   function backButton(onBack) {
     const b = document.createElement("button");
     b.type = "button";
-    b.className = "setup-back";
+    b.className = "btn setup-back";
+    b.setAttribute("data-variant", "ghost");
+    b.setAttribute("data-size", "sm");
     b.appendChild(icon("chevron-left"));
     b.appendChild(el("span", null, "Setup"));
     b.setAttribute("aria-label", "Back to Setup");

@@ -333,7 +333,10 @@ def test_receive_loop_checks_heartbeat_after_non_heartbeat_telemetry() -> None:
     telemetry = FakeMessage(message_type="ATTITUDE", roll=0.0, pitch=0.0, yaw=0.0)
     bridge._conn = FakeConnection()
     bridge._conn.recv_match = lambda blocking, timeout: telemetry  # type: ignore[attr-defined]
-    checks = iter([False, True])
+    # Two-tier staleness (A3): warn(False) before recv → proceed; after the
+    # telemetry dispatch the warn check is True AND the drop check is True,
+    # so the loop raises only once the DROP threshold is exceeded.
+    checks = iter([False, True, True])
     bridge._store.is_stale = lambda timeout: next(checks)  # type: ignore[method-assign]
 
     with pytest.raises(ConnectionError, match="heartbeat timeout"):

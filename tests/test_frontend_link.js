@@ -86,7 +86,6 @@ require("../src/js/link.js");
 
 // Stand-in for Corvus.app.refreshModes used by link.js on connect transition.
 let refreshModesCalls = 0;
-let refreshModesModes = null;
 Corvus.app = {
   refreshModes() {
     refreshModesCalls++;

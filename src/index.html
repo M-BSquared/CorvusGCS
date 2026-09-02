@@ -10,6 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 <link href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" rel="stylesheet" />
 <link rel="stylesheet" href="css/main.css" />
+<link rel="stylesheet" href="css/components.css" />
 </head>
 <body>
 <div class="app" id="app">
@@ -23,9 +24,15 @@
       <div id="mapView" class="map-view">
         <div id="map" class="map"></div>
         <div class="map-controls" id="mapControls"></div>
-        <div class="layers-popover" id="layersPopover" hidden></div>
+        <div class="layers-popover glass" id="layersPopover" hidden></div>
 
-        <div class="flight-actions" id="flightActions">
+        <button class="tiles-trigger" id="tilesTrigger" type="button"
+          title="Download offline map" aria-label="Download offline map">
+          <i data-lucide="download"></i>
+        </button>
+        <div class="tiles-popover glass corvus-enter" id="tilesPopover" hidden></div>
+
+        <div class="flight-actions glass" id="flightActions">
           <button class="fa-btn arm" id="btnArm" title="Arm / Disarm">
             <i data-lucide="power"></i>
             <span>ARM</span>
@@ -52,7 +59,7 @@
           </select>
         </div>
 
-        <div class="takeoff-panel" id="takeoffPanel" hidden>
+        <div class="takeoff-panel glass" id="takeoffPanel" hidden>
           <div class="takeoff-header">
             <span class="takeoff-title">TAKEOFF ALTITUDE</span>
             <button class="icon-btn" id="takeoffClose"><i data-lucide="x"></i></button>
@@ -69,7 +76,7 @@
           </div>
         </div>
 
-        <div class="plan-panel" id="planPanel" hidden>
+        <div class="plan-panel glass" id="planPanel" hidden>
           <div class="plan-header">
             <span class="plan-title">FLY TO POINTS</span>
             <button class="icon-btn" id="planClose" aria-label="Close planning panel" title="Close"><i data-lucide="x"></i></button>
@@ -96,7 +103,7 @@
           </div>
         </div>
 
-        <div class="flight-overlay" id="flightOverlay">
+        <div class="flight-overlay glass" id="flightOverlay">
           <div class="instruments">
             <div class="instrument compass-wrap">
               <svg class="compass" viewBox="-100 -100 200 200" aria-label="Compass">
@@ -191,7 +198,7 @@
                     <option value="230400">230400</option>
                   </select>
                 </div>
-                <button class="link-connect" id="linkSerialConnect" type="button">
+                <button class="btn link-connect" id="linkSerialConnect" type="button" data-variant="primary" data-shape="block">
                   <i data-lucide="plug"></i>
                   <span>Connect</span>
                 </button>
@@ -207,7 +214,7 @@
                   <input class="link-input" id="linkCustomConn" type="text"
                     placeholder="udp:0.0.0.0:14540" autocomplete="off" spellcheck="false" />
                 </div>
-                <button class="link-connect" id="linkCustomConnect" type="button">
+                <button class="btn link-connect" id="linkCustomConnect" type="button" data-variant="primary" data-shape="block">
                   <i data-lucide="plug"></i>
                   <span>Connect</span>
                 </button>
@@ -217,7 +224,7 @@
                 <div class="link-status-main">
                   <span class="link-status-dot off" id="linkStatusDot"></span>
                   <span class="link-status-label" id="linkStatusLabel">DISCONNECTED</span>
-                  <button class="link-reconnect" id="linkReconnect" type="button" hidden>
+                  <button class="btn link-reconnect" id="linkReconnect" type="button" data-variant="secondary" data-size="sm" hidden>
                     <i data-lucide="refresh-cw"></i>
                     <span>Reconnect</span>
                   </button>
@@ -244,7 +251,7 @@
             <div class="console-input-row">
               <span class="console-prompt">&gt;&gt;</span>
               <input type="text" id="consoleInput" class="console-input" placeholder="Enter MAVLink command..." autocomplete="off" spellcheck="false" />
-              <button class="console-send" id="consoleSend" title="Send">
+              <button class="btn console-send" id="consoleSend" title="Send" data-variant="primary" data-shape="round">
                 <i data-lucide="send"></i>
               </button>
             </div>
@@ -273,7 +280,7 @@
     </aside>
   </div>
 
-  <section class="warnings-popover" id="warningsPopover" role="dialog"
+  <section class="warnings-popover glass" id="warningsPopover" role="dialog"
     aria-labelledby="warningsTitle" aria-modal="false" hidden>
     <div class="wp-header">
       <span class="wp-title" id="warningsTitle">Notifications</span>
@@ -289,6 +296,7 @@
 <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/lucide@latest"></script>
 <script src="vendor/plotly-basic.min.js"></script>
+<script src="js/ui.js"></script>
 <script src="js/telemetry.js"></script>
 <script src="js/notification_dedupe.js"></script>
 <script src="js/topbar.js"></script>
@@ -303,6 +311,7 @@
 <script src="js/setup-parameters.js"></script>
 <script src="js/setup.js"></script>
 <script src="js/sidenav.js"></script>
+<script src="js/tiles.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

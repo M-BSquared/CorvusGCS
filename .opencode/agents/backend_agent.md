@@ -25,8 +25,8 @@ architecture and data flow in Python.
 - Serve `GET /api/version` returning
   `{"product": "Corvus GCS", "version": "...", "px4_profile": "..."}`. The
   frontend, the app wrapper, and logs all read the version through this single
-  Python path. Bumping `VERSION` is the only release edit for the version
-  string.
+  Python path. `VERSION` auto-bumps on every commit via `.githooks/pre-commit`
+  (CalVer `YYYY.MM.PP`); no manual release edit is needed for the version.
 
 ## 3. PX4 version management
 

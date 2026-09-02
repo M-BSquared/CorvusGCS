@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from corvus.server import CorvusHandler
 from corvus.state_store import VehicleStateStore
 

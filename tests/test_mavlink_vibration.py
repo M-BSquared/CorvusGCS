@@ -9,9 +9,8 @@ VIBRATION to 0.1 Hz).
 from __future__ import annotations
 
 import math
-import time
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Callable
 
 import pytest
 from pymavlink import mavutil

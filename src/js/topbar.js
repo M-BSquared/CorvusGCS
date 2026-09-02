@@ -3,6 +3,9 @@ window.Corvus = window.Corvus || {};
 
 Corvus.topbar = (function () {
   let topBar, warningsPopover, warningsList, notificationLive;
+  // block key -> {root, vMain, sub, dot, value}, cached once at first build so
+  // updateTopBarValues does not re-query the bar on every telemetry tick.
+  let blockEls = {};
   let warningsOpen = false;
   let lastState = null;
   let renderedWarningSignature = "";
@@ -150,12 +153,30 @@ Corvus.topbar = (function () {
 
   function renderTopBar(state) {
     if (!topBarBuilt) {
+      const blkData = blocks(state);
       topBar.innerHTML = "";
-      blocks(state).forEach((b) => topBar.appendChild(renderBlock(b)));
+      blkData.forEach((b) => topBar.appendChild(renderBlock(b)));
       const spacer = document.createElement("div");
       spacer.className = "tb-spacer";
       topBar.appendChild(spacer);
       if (window.lucide && lucide.createIcons) lucide.createIcons();
+      // Cache each value block's sub-element refs once: the bar is built only
+      // once per session (topBarBuilt), so these refs stay valid for every
+      // later update. If the bar were ever rebuilt, this must re-run — it is
+      // inside the (!topBarBuilt) branch on purpose.
+      blockEls = {};
+      blkData.forEach((b) => {
+        if (!b.key || b.type === "warnings") return;
+        const root = topBar.querySelector(`[data-block="${b.key}"]`);
+        if (!root) return;
+        blockEls[b.key] = {
+          root,
+          vMain: root.querySelector(".v-main"),
+          sub: root.querySelector(".sub"),
+          dot: root.querySelector(".tb-dot"),
+          value: root.querySelector(".tb-value"),
+        };
+      });
       topBarBuilt = true;
       updateTopBarValues(state);
     } else {
@@ -166,21 +187,25 @@ Corvus.topbar = (function () {
   function updateTopBarValues(state) {
     const blkData = blocks(state);
     blkData.forEach((b) => {
-      const el = b.key ? topBar.querySelector(`[data-block="${b.key}"]`) : null;
-      if (!el || b.type === "warnings") return;
-      const valEl = el.querySelector(".v-main");
+      if (!b.key || b.type === "warnings") return;
+      const cached = blockEls[b.key];
+      if (!cached) return;
+      const el = cached.root;
+      const valEl = cached.vMain;
       if (valEl && valEl.textContent !== b.value) valEl.textContent = b.value;
-      const subEl = el.querySelector(".sub");
+      const subEl = cached.sub;
       if (subEl && b.sub !== undefined) subEl.textContent = b.sub;
       if (subEl && b.subCls !== undefined) subEl.className = "sub" + (b.subCls ? " " + b.subCls : "");
       if (b.title !== undefined) el.title = b.title || "";
-      const dotEl = el.querySelector(".tb-dot");
+      const dotEl = cached.dot;
       if (dotEl && b.dot) {
         dotEl.className = "tb-dot " + b.dot;
       }
-      const valSpan = el.querySelector(".tb-value");
+      const valSpan = cached.value;
       if (valSpan) valSpan.className = "tb-value" + (b.cls ? " " + b.cls : "");
     });
+    // Warnings block has a distinct structure (badge, not v-main/sub); keep
+    // its single per-update query as-is rather than over-caching it.
     const warnEl = topBar.querySelector(".tb-block.warnings .tb-warn-badge");
     if (warnEl) {
       const notifications = visibleNotifications(state);

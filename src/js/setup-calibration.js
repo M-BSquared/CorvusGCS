@@ -40,7 +40,7 @@ Corvus.setupCalibration = (function () {
       { type: "compass", label: "Compass", icon: "compass" },
       { type: "gyro", label: "Gyroscope", icon: "rotate-3d" },
       { type: "accel", label: "Accelerometer", icon: "move-3d" },
-      { type: "level", label: "Level Horizon", icon: "horizon" },
+      { type: "level", label: "Level Horizon", icon: "separator-horizontal" },
       { type: "airspeed", label: "Airspeed", icon: "wind" },
       { type: "baro", label: "Baro", icon: "gauge" },
     ];
@@ -49,7 +49,8 @@ Corvus.setupCalibration = (function () {
     const calibBtns = calibTypes.map((c) => {
       const b = document.createElement("button");
       b.type = "button";
-      b.className = "calib-btn";
+      b.className = "btn calib-btn";
+      b.setAttribute("data-variant", "secondary");
       b.dataset.type = c.type;
       b.appendChild(S.icon(c.icon));
       b.appendChild(S.el("span", "calib-btn-label", c.label));
@@ -99,7 +100,8 @@ Corvus.setupCalibration = (function () {
     const autotuneBtns = axisTypes.map((a) => {
       const b = document.createElement("button");
       b.type = "button";
-      b.className = "calib-btn autotune-btn";
+      b.className = "btn calib-btn autotune-btn";
+      b.setAttribute("data-variant", "secondary");
       b.dataset.axis = a.axis;
       b.appendChild(S.el("span", "calib-btn-label", a.label));
       b.appendChild(S.el("span", "calib-btn-status", ""));

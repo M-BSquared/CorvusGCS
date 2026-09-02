@@ -2,7 +2,7 @@
 window.Corvus = window.Corvus || {};
 
 Corvus.panel = (function () {
-  let panel, handle, body, tabs, output, input, sendBtn, clearBtn, autoBtn;
+  let panel, handle, tabs, output, input, sendBtn, clearBtn, autoBtn;
   let autoscroll = true;
   let history = [];
   let histIdx = -1;
@@ -97,7 +97,9 @@ Corvus.panel = (function () {
           <span class="ssh-status" data-status="${dev.name}"><span class="dot"></span>OFFLINE</span>
         </div>`;
       const btn = document.createElement("button");
-      btn.className = "ssh-connect";
+      btn.className = "btn ssh-connect";
+      btn.setAttribute("data-variant", "primary");
+      btn.setAttribute("data-shape", "block");
       btn.textContent = "CONNECT";
       btn.dataset.host = dev.host;
       btn.dataset.name = dev.name;
@@ -106,10 +108,9 @@ Corvus.panel = (function () {
       sshContent.appendChild(card);
     });
     const addBtn = document.createElement("button");
-    addBtn.className = "ssh-connect";
-    addBtn.style.background = "var(--surface-2)";
-    addBtn.style.color = "var(--text-1)";
-    addBtn.style.border = "1px solid var(--border)";
+    addBtn.className = "btn ssh-connect";
+    addBtn.setAttribute("data-variant", "secondary");
+    addBtn.setAttribute("data-shape", "block");
     addBtn.textContent = "+ ADD CONNECTION";
     addBtn.addEventListener("click", addSSHConnection);
     sshContent.appendChild(addBtn);
@@ -158,7 +159,9 @@ Corvus.panel = (function () {
         <input class="ssh-input" id="sshInput" placeholder="type a command..." autocomplete="off" spellcheck="false" />
       </div>`;
     const discBtn = document.createElement("button");
-    discBtn.className = "ssh-connect disconnect";
+    discBtn.className = "btn ssh-connect disconnect";
+    discBtn.setAttribute("data-variant", "secondary");
+    discBtn.setAttribute("data-shape", "block");
     discBtn.textContent = "DISCONNECT";
     discBtn.addEventListener("click", async () => {
       await fetch("/api/ssh/disconnect", {
@@ -248,8 +251,8 @@ Corvus.panel = (function () {
           <input type="password" class="ssh-field-input mono" id="sshFldPass" placeholder="••••••••" />
         </div>
         <div class="ssh-modal-actions">
-          <button class="ssh-modal-btn secondary" id="sshModalCancel">CANCEL</button>
-          <button class="ssh-modal-btn primary" id="sshModalConnect">
+          <button class="btn ssh-modal-btn" data-variant="secondary" id="sshModalCancel">CANCEL</button>
+          <button class="btn ssh-modal-btn" data-variant="primary" id="sshModalConnect">
             <i data-lucide="plug"></i>
             <span>CONNECT</span>
           </button>
@@ -272,13 +275,17 @@ Corvus.panel = (function () {
       const password = overlay.querySelector("#sshFldPass").value || null;
       if (!host) return;
       overlay.remove();
-      const res = await fetch("/api/ssh/connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, host, port, username, password }),
-      }).then((r) => r.json());
-      if (res.ok) renderSSHTerminal(name, host);
-      else renderSSHTerminal(name, host, res.error || "Connection failed");
+      try {
+        const res = await fetch("/api/ssh/connect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, host, port, username, password }),
+        }).then((r) => r.json());
+        if (res.ok) renderSSHTerminal(name, host);
+        else renderSSHTerminal(name, host, res.error || "Connection failed");
+      } catch (err) {
+        renderSSHTerminal(name, host, (err && err.message) || "Connection failed");
+      }
     });
 
     overlay.querySelector("#sshFldHost").focus();
@@ -307,7 +314,6 @@ Corvus.panel = (function () {
   function init() {
     panel = document.getElementById("rightPanel");
     handle = document.getElementById("panelHandle");
-    body = document.getElementById("panelBody");
     tabs = document.getElementById("panelTabs");
     output = document.getElementById("consoleOutput");
     input = document.getElementById("consoleInput");

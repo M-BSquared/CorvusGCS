@@ -1,6 +1,21 @@
 "use strict";
 window.Corvus = window.Corvus || {};
 
+/*
+  Corvus.app — frontend orchestrator.
+
+  Module load order (defined by the <script> tags in src/index.html):
+    maplibre-gl, lucide, plotly-basic, ui, telemetry, notification_dedupe,
+    topbar, map, instruments, panel, link, plugins, plugin-vibration,
+    setup-shared, setup-calibration, setup-parameters, setup, sidenav,
+    tiles, app (this file).
+
+  Contract: every Corvus.<module> exposes a no-arg init() (some take a few
+  DOM roots) and owns a narrow public API; nothing imports another module's
+  internals. app.init() orchestrates them in dependency order — tiles.init
+  runs AFTER map.init so the tiles panel can read Corvus.map.getMap(). The
+  version is never hardcoded here; it is read from GET /api/version.
+*/
 Corvus.app = (function () {
   // Idempotency guard for the flight-mode selector: only repopulate when the
   // mode list returned by the backend actually changes (or once per connect).
@@ -17,7 +32,7 @@ Corvus.app = (function () {
       const s = Corvus.telemetry.getState();
       const willArm = !s?.armed;
       const attempt = Corvus.topbar.beginCommand(willArm ? "arm" : "disarm");
-      btnArm.disabled = true;
+      Corvus.ui.setBusy(btnArm, true);
       try {
         await Corvus.telemetry.postAction("/api/mavlink/arm", { arm: willArm });
         Corvus.topbar.succeedCommand(attempt);
@@ -26,7 +41,7 @@ Corvus.app = (function () {
         Corvus.topbar.failCommand(attempt);
         Corvus.topbar.notifyError(error.message || (willArm ? "Arm failed" : "Disarm failed"), attempt);
       } finally {
-        btnArm.disabled = false;
+        Corvus.ui.setBusy(btnArm, false);
       }
     });
 
@@ -50,7 +65,7 @@ Corvus.app = (function () {
       const attempt = Corvus.topbar.beginCommand(["takeoff", "arm"]);
       document.getElementById("takeoffPanel").hidden = true;
       const btn = document.getElementById("takeoffConfirm");
-      btn.disabled = true;
+      Corvus.ui.setBusy(btn, true);
       try {
         await Corvus.telemetry.postAction("/api/mavlink/takeoff", { altitude: alt });
         Corvus.topbar.succeedCommand(attempt);
@@ -58,13 +73,13 @@ Corvus.app = (function () {
         Corvus.topbar.failCommand(attempt);
         Corvus.topbar.notifyError(error.message || "Takeoff rejected by autopilot", attempt);
       } finally {
-        btn.disabled = false;
+        Corvus.ui.setBusy(btn, false);
       }
     });
 
     btnLand.addEventListener("click", async () => {
       const attempt = Corvus.topbar.beginCommand("land");
-      btnLand.disabled = true;
+      Corvus.ui.setBusy(btnLand, true);
       try {
         await Corvus.telemetry.postAction("/api/mavlink/land", {});
         Corvus.topbar.succeedCommand(attempt);
@@ -72,13 +87,13 @@ Corvus.app = (function () {
         Corvus.topbar.failCommand(attempt);
         Corvus.topbar.notifyError(error.message || "Land rejected", attempt);
       } finally {
-        btnLand.disabled = false;
+        Corvus.ui.setBusy(btnLand, false);
       }
     });
 
     btnRTL.addEventListener("click", async () => {
       const attempt = Corvus.topbar.beginCommand("rtl");
-      btnRTL.disabled = true;
+      Corvus.ui.setBusy(btnRTL, true);
       try {
         await Corvus.telemetry.postAction("/api/mavlink/rtl", {});
         Corvus.topbar.succeedCommand(attempt);
@@ -86,7 +101,7 @@ Corvus.app = (function () {
         Corvus.topbar.failCommand(attempt);
         Corvus.topbar.notifyError(error.message || "RTL rejected", attempt);
       } finally {
-        btnRTL.disabled = false;
+        Corvus.ui.setBusy(btnRTL, false);
       }
     });
 
@@ -187,7 +202,7 @@ Corvus.app = (function () {
       const altAgl = Math.min(50, Math.max(1, isFinite(alt) ? alt : 10));
       const points = pts.map((p) => ({ lat: p.lat, lon: p.lon, alt_agl: altAgl }));
       const attempt = Corvus.topbar.beginCommand("gotopoints");
-      planFly.disabled = true;
+      Corvus.ui.setBusy(planFly, true);
       try {
         await Corvus.telemetry.postAction("/api/mavlink/gotopoints", { points });
         Corvus.topbar.succeedCommand(attempt);
@@ -199,7 +214,9 @@ Corvus.app = (function () {
       } catch (error) {
         Corvus.topbar.failCommand(attempt);
         Corvus.topbar.notifyError(error.message || "Fly to points rejected", attempt);
-        refreshPlanFly(); // keep the plan so the operator can retry
+      } finally {
+        Corvus.ui.setBusy(planFly, false);
+        refreshPlanFly(); // re-gate from live state (keep the plan so the operator can retry)
       }
     });
 
@@ -277,6 +294,8 @@ Corvus.app = (function () {
     Corvus.panel.init();
     Corvus.link.init();
     initFlightActions();
+    Corvus.tiles.init(document.getElementById("tilesTrigger"),
+      document.getElementById("tilesPopover"));
 
     Corvus.telemetry.connect();
     if (window.lucide && lucide.createIcons) lucide.createIcons();

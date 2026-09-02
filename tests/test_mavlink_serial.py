@@ -10,10 +10,9 @@ integration lands.
 from __future__ import annotations
 
 import sys
-import threading
 import time
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Any
 
 import pytest
 from pymavlink import mavutil
@@ -218,17 +217,56 @@ def test_heartbeat_timeout_longer_for_serial() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _reconnect_delay
+# _reconnect_delay (A4: exponential backoff + jitter, unified serial/udp)
 # ---------------------------------------------------------------------------
 
-def test_reconnect_delay_escalates_and_caps_for_serial() -> None:
+def test_reconnect_delay_grows_then_caps(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Deterministic jitter (zero) so the exponential curve is exact.
+    monkeypatch.setattr(
+        "corvus.mavlink_bridge.random.uniform", lambda a, b: 0.0,
+    )
     bridge = MavlinkBridge(VehicleStateStore(), "serial:/dev/ttyUSB0:57600")
-    assert [bridge._reconnect_delay(a) for a in (1, 2, 3, 4)] == [2.0, 4.0, 5.0, 5.0]
+    # base=0.5, cap=8.0: 0.5, 1.0, 2.0, 4.0, 8.0, 8.0, 8.0 …
+    assert [bridge._reconnect_delay(a) for a in (1, 2, 3, 4, 5, 6, 99)] == [
+        0.5, 1.0, 2.0, 4.0, 8.0, 8.0, 8.0,
+    ]
 
 
-def test_reconnect_delay_constant_for_udp() -> None:
+def test_reconnect_delay_applies_jitter_within_bounds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Jitter of +/-25% must keep the delay within [base*0.75, base*1.25].
+    monkeypatch.setattr(
+        "corvus.mavlink_bridge.random.uniform", lambda a, b: b,
+    )
     bridge = MavlinkBridge(VehicleStateStore(), "udp:0.0.0.0:14540")
-    assert [bridge._reconnect_delay(a) for a in (1, 5, 99)] == [2.0, 2.0, 2.0]
+    # attempt 1: base 0.5 * (1 + 0.25) = 0.625
+    assert bridge._reconnect_delay(1) == pytest.approx(0.625)
+    # attempt 5: capped at 8.0 * 1.25 = 10.0
+    assert bridge._reconnect_delay(5) == pytest.approx(10.0)
+
+
+def test_reconnect_delay_never_below_floor(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Worst-case negative jitter still respects the 0.1s floor.
+    monkeypatch.setattr(
+        "corvus.mavlink_bridge.random.uniform", lambda a, b: a,
+    )
+    bridge = MavlinkBridge(VehicleStateStore(), "udp:0.0.0.0:14540")
+    assert bridge._reconnect_delay(1) == pytest.approx(0.5 * 0.75)
+    assert bridge._reconnect_delay(1) >= 0.1
+
+
+def test_reconnect_delay_is_unified_across_serial_and_udp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A4 removed the serial/udp split — both use the same exponential curve.
+    monkeypatch.setattr(
+        "corvus.mavlink_bridge.random.uniform", lambda a, b: 0.0,
+    )
+    serial = MavlinkBridge(VehicleStateStore(), "serial:/dev/ttyUSB0:57600")
+    udp = MavlinkBridge(VehicleStateStore(), "udp:0.0.0.0:14540")
+    for attempt in (1, 2, 3, 4, 5):
+        assert serial._reconnect_delay(attempt) == udp._reconnect_delay(attempt)
 
 
 # ---------------------------------------------------------------------------

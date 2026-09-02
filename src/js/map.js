@@ -119,21 +119,19 @@ Corvus.map = (function () {
   const HDG_EPS = 0.05;     // degrees
 
   const DEFAULT_CENTER = [8.539, 47.378];
+  // All tile traffic routes through the backend serve endpoint so the map works
+  // fully offline once tiles are cached. Online, the backend fetches+caches
+  // transparently, so the online experience is unchanged. The browser never
+  // talks to the internet directly.
   const TILE = {
-    satellite: {
-      tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
-      maxzoom: 19,
-    },
-    streets: {
-      tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"],
-      maxzoom: 19,
-    },
-    hybrid: {
-      tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
-      maxzoom: 19,
-      labels: ["https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"],
-    },
+    satellite: { label: "Satellite", maxzoom: 19 },
+    streets: { label: "Streets", maxzoom: 19 },
+    hybrid: { label: "Hybrid", maxzoom: 19 },
   };
+
+  function tileUrl(key) {
+    return "/api/tiles/" + key + "/{z}/{x}/{y}.png";
+  }
 
   function icon(name, size) {
     const i = document.createElement("i");
@@ -205,30 +203,21 @@ Corvus.map = (function () {
   }
 
   function initialStyle(key) {
-    const spec = TILE[key];
+    const spec = TILE[key] || TILE.satellite;
     const sources = {
-      base: { type: "raster", tiles: spec.tiles, tileSize: 256, maxzoom: spec.maxzoom },
+      base: { type: "raster", tiles: [tileUrl(key)], tileSize: 256, maxzoom: spec.maxzoom },
     };
     const layers = [{ id: "base", type: "raster", source: "base" }];
-    if (spec.labels) {
-      sources["base-labels-src"] = { type: "raster", tiles: spec.labels, tileSize: 256, maxzoom: spec.maxzoom };
-      layers.push({ id: "base-labels", type: "raster", source: "base-labels-src" });
-    }
     return { version: 8, sources, layers, glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf" };
   }
 
   function setBaseLayer(key) {
-    const spec = TILE[key];
-    if (map.getLayer("base-labels")) map.removeLayer("base-labels");
-    if (map.getSource("base-labels-src")) map.removeSource("base-labels-src");
+    const spec = TILE[key] || TILE.satellite;
     if (map.getLayer("base")) map.removeLayer("base");
     if (map.getSource("base")) map.removeSource("base");
-    map.addSource("base", { type: "raster", tiles: spec.tiles, tileSize: 256, maxzoom: spec.maxzoom });
+    map.addSource("base", { type: "raster", tiles: [tileUrl(key)], tileSize: 256, maxzoom: spec.maxzoom });
+    // Insert base BELOW "path-glow" so the track/waypoints stay on top.
     map.addLayer({ id: "base", type: "raster", source: "base" }, "path-glow");
-    if (spec.labels) {
-      map.addSource("base-labels-src", { type: "raster", tiles: spec.labels, tileSize: 256, maxzoom: spec.maxzoom });
-      map.addLayer({ id: "base-labels", type: "raster", source: "base-labels-src" }, "path-glow");
-    }
   }
 
   function buildControls(container, layersPopover) {
@@ -357,7 +346,11 @@ Corvus.map = (function () {
     const last = pathCoords[pathCoords.length - 1];
     if (!last || last[0] !== state.position[0] || last[1] !== state.position[1]) {
       pathCoords.push(state.position.slice());
-      if (pathCoords.length > 500) pathCoords = pathCoords.slice(-500);
+      // shift-on-overflow instead of slice-every-time: drop ONE point when
+      // over cap rather than re-allocating the whole 500-element array on
+      // every sample. Both are O(n) at n=500, but shift avoids a second full
+      // allocation + copy beyond MapLibre's own internal copy.
+      if (pathCoords.length > 500) pathCoords.shift();
       if (pathSource) {
         pathSource.setData({
           type: "Feature",
@@ -447,6 +440,37 @@ Corvus.map = (function () {
   /** Register a callback fired whenever the waypoint set changes. */
   function onWaypointsUpdate(cb) {
     if (typeof cb === "function") waypointSubs.add(cb);
+  }
+
+  // ---- offline tile-source introspection (best-effort) ----
+  // Any error (network, 404, parse) collapses to an empty result. Not called
+  // on load; invoke lazily when source/cache info is needed.
+
+  /** List of tile sources the backend reports, or [] on any error. */
+  async function getSources() {
+    try {
+      const res = await fetch("/api/tiles/sources");
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data && data.sources) || [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /** Cache stats for *sourceId* from /api/tiles/sources, or null on any error.
+   *  Without a sourceId, returns the whole source list. */
+  async function getCacheStats(sourceId) {
+    try {
+      const res = await fetch("/api/tiles/sources");
+      if (!res.ok) return null;
+      const data = await res.json();
+      const list = (data && data.sources) || [];
+      if (!sourceId) return list;
+      return list.find((s) => s.id === sourceId) || null;
+    } catch (_) {
+      return null;
+    }
   }
 
   // Planning-mode handlers. Attached/detached as a set by setWaypointMode so
@@ -555,5 +579,7 @@ Corvus.map = (function () {
     getWaypoints,
     clearWaypoints,
     onWaypointsUpdate,
+    getSources,
+    getCacheStats,
   };
 })();

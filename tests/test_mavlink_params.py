@@ -11,12 +11,12 @@ import math
 import threading
 import time
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Callable
 
 import pytest
 from pymavlink import mavutil
 
-from corvus.mavlink_bridge import MavlinkBridge, ParamEntry
+from corvus.mavlink_bridge import MavlinkBridge
 from corvus.state_store import VehicleStateStore
 
 

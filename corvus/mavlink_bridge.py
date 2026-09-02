@@ -9,8 +9,12 @@ control station and allows arming and mode changes.
 """
 from __future__ import annotations
 
+import collections
+import datetime
 import logging
 import math
+import os
+import random
 import re
 import threading
 import time
@@ -20,8 +24,19 @@ from typing import Any, Callable
 from pymavlink import mavutil
 
 from .state_store import VehicleStateStore
+from .tlog import TlogWriter
 
 logger = logging.getLogger("corvus.mavlink")
+
+
+def default_log_dir() -> str:
+    """Return the conventional on-disk location for tlog files.
+
+    Mirrors ``tile_cache.default_cache_dir``: the directory is created lazily
+    by whoever first writes here (the bridge on connect). Tests monkeypatch
+    this to stay hermetic.
+    """
+    return os.path.expanduser("~/.corvus/logs")
 
 MAV_TYPE_MAP: dict[int, str] = {
     0: "GENERIC", 1: "FIXED_WING", 2: "QUADROTOR", 3: "COAXIAL",
@@ -81,6 +96,25 @@ STATUSTEXT_CHUNK_TIMEOUT_S = 10.0
 # Linux 8250 platform serial ports (always phantom on field laptops).
 _PHANTOM_TTY_RE = re.compile(r"^/dev/ttyS[0-9]+$")
 
+# Two-tier heartbeat staleness (A3). WARN marks the link degraded (socket
+# stays open, parsing continues); DROP tears it down and reconnects. Serial
+# tolerates longer SiK-radio dropouts than UDP/SITL.
+HEARTBEAT_WARN_TIMEOUT_SERIAL = 6.0
+HEARTBEAT_WARN_TIMEOUT_UDP = 3.0
+HEARTBEAT_DROP_TIMEOUT_SERIAL = 15.0
+HEARTBEAT_DROP_TIMEOUT_UDP = 8.0
+
+# Exponential reconnect backoff (A4): base*2^(n-1), capped, +/- jitter.
+RECONNECT_BASE_S = 0.5
+RECONNECT_CAP_S = 8.0
+RECONNECT_JITTER = 0.25
+RECONNECT_MIN_S = 0.1
+
+# SiK radio RSSI is a 0-255 relative scale; ~150 strong, ~40 weak. Used to
+# map RADIO_STATUS.remrssi (the drone's signal as seen by the radio) to 0-100.
+_SIK_RSSI_STRONG = 150.0
+_SIK_RSSI_WEAK = 40.0
+
 
 @dataclass
 class _PendingAck:
@@ -111,6 +145,9 @@ class MavlinkBridge:
         self._thread: threading.Thread | None = None
         self._hb_thread: threading.Thread | None = None
         self._version_retry_thread: threading.Thread | None = None
+        # Raw-frame tlog: one file per connect cycle, owned by the bridge so a
+        # reconnect closes the old file and starts a fresh one. None = inactive.
+        self._tlog: TlogWriter | None = None
         self._running = threading.Event()
         self._console_subs: list[Callable[[dict[str, Any]], None]] = []
         self._target_system: int = 1
@@ -127,6 +164,14 @@ class MavlinkBridge:
         self._position_home_alt_amsl: float | None = None
         self._command_context = threading.local()
         self._reconnect_attempt: int = 1
+        # Heartbeat inter-arrival timestamps for jitter (A1); rolling window.
+        self._hb_times: collections.deque[float] = collections.deque(maxlen=30)
+        # Per-connection-cycle flags (A3): warn-once guard and radio presence.
+        self._degraded_warned: bool = False
+        self._radio_status_seen: bool = False
+        # Last computed uplink score; kept so heartbeat-only links can leave
+        # it at 0 and link_quality can fall back to heartbeat freshness.
+        self._uplink_score: int = 0
         self._params: dict[str, ParamEntry] = {}
         self._param_count: int = -1
         self._param_received: int = 0
@@ -214,6 +259,7 @@ class MavlinkBridge:
 
     def stop(self) -> None:
         self._running.clear()
+        self._stop_tlog()
         self._store.update(link_status="disconnected")
         self._cancel_pending_commands()
         # Wake any pending set_param waiters and mark download idle.
@@ -244,6 +290,8 @@ class MavlinkBridge:
                 cycle_exc = exc
                 logger.error("MAVLink error: %s", exc)
             self._cancel_pending_commands()
+            # Close this cycle's tlog so a reconnect opens a fresh file.
+            self._stop_tlog()
             conn = self._conn
             self._conn = None
             if conn:
@@ -266,16 +314,26 @@ class MavlinkBridge:
                 self._reconnect_attempt += 1
 
     def _reconnect_delay(self, attempt: int) -> float:
-        """Backoff between reconnect cycles; serial escalates and caps at 5s."""
-        if self._is_serial():
-            return min(2.0 * attempt, 5.0)
-        return 2.0
+        """Exponential backoff with jitter between reconnect cycles (A4).
+
+        Unified for serial and UDP — the old linear serial backoff (2s/attempt,
+        cap 5s) was too aggressive on lossy 57 kbps radios, hammering the link
+        while it was still recovering. base*2^(n-1), capped, +/- 25% jitter.
+        """
+        raw = min(RECONNECT_BASE_S * (2 ** max(0, attempt - 1)), RECONNECT_CAP_S)
+        delayed = raw * (1.0 + random.uniform(-RECONNECT_JITTER, RECONNECT_JITTER))
+        return max(RECONNECT_MIN_S, delayed)
 
     def _connect(self) -> None:
         logger.info("Connecting to %s …", self._conn_str)
         self._request_sent = False
         self._home_alt_amsl = None
         self._position_home_alt_amsl = None
+        # Per-connection-cycle state (A1/A3): fresh jitter window + flags.
+        self._hb_times.clear()
+        self._degraded_warned = False
+        self._radio_status_seen = False
+        self._uplink_score = 0
         self._store.update(
             link_status="connecting",
             link_connection=self._conn_str,
@@ -316,9 +374,17 @@ class MavlinkBridge:
         )
         self._store.heartbeat()
         self._build_mode_mapping()
+        # REQUEST_DATA_STREAM first as a fallback for v1.12-v1.15, then the
+        # modern per-message SET_MESSAGE_INTERVAL (A5) for v1.16-v1.18.
         self._request_streams()
+        self._request_message_intervals()
         self._request_version()
         self._start_gcs_heartbeat()
+        # Start a fresh tlog for this flight session. Gated on _running so the
+        # direct-_connect() unit tests (which never start() the bridge) do not
+        # open files or spawn writer threads in ~/.corvus/logs; in production
+        # _run only calls _connect while _running is set.
+        self._start_tlog()
 
     def _decode_mode(self, hb: Any) -> str:
         """Decode the PX4 custom mode layout used by PX4 v1.16-v1.18."""
@@ -352,20 +418,84 @@ class MavlinkBridge:
         self._hb_thread.start()
 
     def _gcs_hb_loop(self) -> None:
+        # Runs while _running is set regardless of link_status: a degraded
+        # link (A3) must NOT stop the GCS heartbeat, or the autopilot drops us
+        # while we wait for its heartbeat to return (A7).
         while self._running.is_set():
             if not self._conn:
                 time.sleep(1)
                 continue
             try:
                 with self._send_lock:
+                    # Re-check under the lock: stop()/reconnect can clear
+                    # _conn or _running while we waited for the lock.
+                    if not self._running.is_set() or not self._conn:
+                        break
                     self._conn.mav.heartbeat_send(
                         mavutil.mavlink.MAV_TYPE_GCS,
                         mavutil.mavlink.MAV_AUTOPILOT_INVALID,
                         0, 0, 0,
                     )
             except Exception:
-                pass
+                # Socket closed under us: exit cleanly so _start_gcs_heartbeat
+                # can spawn a fresh loop on reconnect (A6).
+                break
             time.sleep(1)
+        # Allow _start_gcs_heartbeat to restart us on the next connect.
+        self._hb_thread = None
+
+    # ------------------------------------------------------------------
+    # Telemetry log (tlog) — one file per connect cycle (F2)
+    # ------------------------------------------------------------------
+
+    def _start_tlog(self) -> None:
+        """Open a fresh tlog for this flight session.
+
+        No-op when the bridge is not running (e.g. direct-_connect unit tests)
+        so they stay hermetic. A log-dir permission error must never break the
+        link: on failure the tlog is simply disabled for the session.
+        """
+        if not self._running.is_set():
+            return
+        # Close any leftover writer from a prior cycle (defensive: _run tears
+        # down between reconnects, but guard against a double connect).
+        self._stop_tlog()
+        try:
+            log_dir = default_log_dir()
+            os.makedirs(log_dir, exist_ok=True)
+            # Microsecond-precision name: sortable and collision-free even on a
+            # sub-second reconnect, so each flight session gets its own file.
+            name = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".tlog"
+            path = os.path.join(log_dir, name)
+            self._tlog = TlogWriter(path)
+            self._tlog.set_conn(self._conn_str)
+        except Exception as exc:
+            logger.warning("tlog disabled: %s", exc)
+            self._tlog = None
+
+    def _stop_tlog(self) -> None:
+        """Stop and close the current tlog if active; idempotent."""
+        tlog = self._tlog
+        if tlog is None:
+            return
+        self._tlog = None
+        try:
+            tlog.stop()
+        except Exception as exc:
+            logger.debug("tlog stop failed: %s", exc)
+
+    def _write_tlog(self, msg: Any) -> None:
+        """Log a raw MAVLink frame if a tlog is active; never breaks the link."""
+        tlog = self._tlog
+        if tlog is None:
+            return
+        try:
+            get_buf = getattr(msg, "get_msgbuf", None)
+            if get_buf is None:
+                return
+            tlog.write_frame(get_buf())
+        except Exception as exc:
+            logger.debug("tlog write failed: %s", exc)
 
     def _stream_rates(self) -> dict[int, int]:
         """Per-stream REQUEST_DATA_STREAM rates, throttled on serial links.
@@ -403,6 +533,44 @@ class MavlinkBridge:
                     self._target_system, self._target_component, stream, rate, 1,
                 )
         self._request_sent = True
+
+    def _message_intervals(self) -> dict[int, int]:
+        """Per-message MAV_CMD_SET_MESSAGE_INTERVAL targets in microseconds.
+
+        Modern PX4 (v1.16-v1.18) rate-control; REQUEST_DATA_STREAM (above) is
+        the fallback for v1.12-v1.15. Serial links are throttled to fit a
+        57 kbps SiK radio. VIBRATION is on-demand only (not listed here).
+        """
+        m = mavutil.mavlink
+        if self._is_serial():
+            return {
+                m.MAVLINK_MSG_ID_ATTITUDE: 100000,            # 10 Hz
+                m.MAVLINK_MSG_ID_GLOBAL_POSITION_INT: 200000,  # 5 Hz
+                m.MAVLINK_MSG_ID_VFR_HUD: 200000,             # 5 Hz
+                m.MAVLINK_MSG_ID_SYS_STATUS: 1_000_000,       # 1 Hz
+                m.MAVLINK_MSG_ID_GPS_RAW_INT: 1_000_000,      # 1 Hz
+            }
+        return {
+            m.MAVLINK_MSG_ID_HEARTBEAT: 1_000_000,            # 1 Hz
+            m.MAVLINK_MSG_ID_ATTITUDE: 20_000,                # 50 Hz
+            m.MAVLINK_MSG_ID_GLOBAL_POSITION_INT: 100_000,    # 10 Hz
+            m.MAVLINK_MSG_ID_VFR_HUD: 100_000,               # 10 Hz
+            m.MAVLINK_MSG_ID_SYS_STATUS: 1_000_000,          # 1 Hz
+            m.MAVLINK_MSG_ID_GPS_RAW_INT: 1_000_000,         # 1 Hz
+            m.MAVLINK_MSG_ID_HOME_POSITION: 1_000_000,       # 1 Hz
+        }
+
+    def _request_message_intervals(self) -> None:
+        """Ask PX4 for per-message stream intervals (A5).
+
+        Best-effort: a firmware that DENIES one message must not block the
+        rest. Each call goes through _send_command_and_wait (ACK-confirmed).
+        """
+        for msg_id, interval_us in self._message_intervals().items():
+            try:
+                self.set_message_interval(msg_id, interval_us)
+            except Exception as exc:
+                logger.debug("SET_MESSAGE_INTERVAL msg %d failed: %s", msg_id, exc)
 
     def _request_version(self) -> None:
         if self._conn:
@@ -479,25 +647,70 @@ class MavlinkBridge:
         return raw.rstrip(b"\x00").hex()
 
     def _heartbeat_timeout(self) -> float:
-        """Stale-heartbeat threshold; serial tolerates longer radio dropouts."""
+        """Stale threshold for _connection_ready() (command dispatch gate).
+
+        Kept at the legacy 10s serial / 5s udp so a briefly-degraded link
+        still rejects new operator commands. The receive loop uses the
+        two-tier _warn_timeout() / _drop_timeout() instead (A3).
+        """
         return 10.0 if self._is_serial() else HEARTBEAT_TIMEOUT_S
+
+    def _warn_timeout(self) -> float:
+        """Heartbeat-late threshold: link becomes 'degraded' (A3)."""
+        return (
+            HEARTBEAT_WARN_TIMEOUT_SERIAL if self._is_serial()
+            else HEARTBEAT_WARN_TIMEOUT_UDP
+        )
+
+    def _drop_timeout(self) -> float:
+        """Heartbeat-lost threshold: tear down and reconnect (A3)."""
+        return (
+            HEARTBEAT_DROP_TIMEOUT_SERIAL if self._is_serial()
+            else HEARTBEAT_DROP_TIMEOUT_UDP
+        )
 
     def _receive_loop(self) -> None:
         while self._running.is_set() and self._conn:
+            # Snapshot the connection (A6): a concurrent stop()/reconnect can
+            # close self._conn under us; use the local ref for recv_match.
+            conn = self._conn
             try:
-                if self._store.is_stale(timeout=self._heartbeat_timeout()):
-                    raise ConnectionError("heartbeat timeout")
-                msg = self._conn.recv_match(blocking=True, timeout=1)
+                if self._store.is_stale(timeout=self._warn_timeout()):
+                    if self._store.is_stale(timeout=self._drop_timeout()):
+                        raise ConnectionError("heartbeat timeout")
+                    self._mark_degraded_once()
+                msg = conn.recv_match(blocking=True, timeout=1)
                 self._cleanup_statustext_chunks()
                 if msg is None:
                     continue
+                # Connection swapped under us during recv: drop this message.
+                if conn is not self._conn:
+                    continue
+                # Capture the raw frame before dispatch; a log write never
+                # blocks the recv loop (TlogWriter.enqueue is non-blocking) and
+                # never breaks the link (guarded).
+                self._write_tlog(msg)
                 self._dispatch(msg)
-                if self._store.is_stale(timeout=self._heartbeat_timeout()):
-                    raise ConnectionError("heartbeat timeout")
+                if self._store.is_stale(timeout=self._warn_timeout()):
+                    if self._store.is_stale(timeout=self._drop_timeout()):
+                        raise ConnectionError("heartbeat timeout")
+                    self._mark_degraded_once()
             except ConnectionError:
                 raise
             except Exception as exc:
                 logger.debug("recv error: %s", exc)
+
+    def _mark_degraded_once(self) -> None:
+        """Transition to degraded link quality once per connection cycle (A3).
+
+        Guarded so the receive loop does not spam the store every iteration
+        while heartbeats are late but not yet drop-timeout-lost.
+        """
+        if self._degraded_warned:
+            return
+        self._degraded_warned = True
+        self._store.update(link_status="degraded", link_quality="poor")
+        logger.warning("Link degraded: heartbeat late (>%.0fs)", self._warn_timeout())
 
     _CONSOLE_MSGS = frozenset({"COMMAND_ACK"})
 
@@ -523,11 +736,17 @@ class MavlinkBridge:
 
         if name == "HEARTBEAT":
             self._store.heartbeat()
+            # Rolling inter-arrival timestamps for jitter (A1).
+            self._hb_times.append(time.monotonic())
+            self._publish_heartbeat_jitter()
             vtype = MAV_TYPE_MAP.get(msg.type, f"TYPE_{msg.type}")
             autopilot = MAV_AUTOPILOT_MAP.get(msg.autopilot, f"AP_{msg.autopilot}")
             armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
             mode = self._decode_mode(msg)
             self._store.update(vehicle_type=vtype, autopilot=autopilot, armed=armed, mode=mode)
+            # A heartbeat recovers a degraded link; recompute quality. When no
+            # RADIO_STATUS arrives (UDP SITL), quality is heartbeat-driven.
+            self._publish_link_quality()
         elif name == "GLOBAL_POSITION_INT":
             altitude_amsl = msg.alt / 1000.0
             altitude_agl = msg.relative_alt / 1000.0
@@ -568,7 +787,6 @@ class MavlinkBridge:
             )
         elif name == "SYSTEM_TIME":
             if msg.time_unix_usec:
-                import datetime
                 t = datetime.datetime.utcfromtimestamp(msg.time_unix_usec / 1e6)
                 self._store.update(time=t.strftime("%H:%M:%S UTC"))
         elif name == "STATUSTEXT":
@@ -600,6 +818,102 @@ class MavlinkBridge:
             lon = msg.longitude / 1e7
             self._home_alt_amsl = msg.altitude / 1000.0
             self._store.update(home=[lon, lat])
+        elif name == "RADIO_STATUS":
+            self._handle_radio_status(msg)
+
+    # ------------------------------------------------------------------
+    # Link-quality tracking (A1)
+    # ------------------------------------------------------------------
+
+    def _handle_radio_status(self, msg: Any) -> None:
+        """Parse RADIO_STATUS into uplink score and radio metrics (A1).
+
+        SiK radios report RSSI on a 0-255 relative scale; remrssi is the
+        drone's signal as seen by the ground radio (the uplink quality
+        proxy). txbuf near 100 means the buffer is full (congested).
+        rxerrors/fixed are cumulative counters from the radio — stored as-is.
+        """
+        # Full RADIO_STATUS fields; rssi/noise/remnoise are parsed for
+        # completeness and future use (the uplink score uses remrssi + txbuf).
+        _rssi = float(getattr(msg, "rssi", 0))
+        remrssi = float(getattr(msg, "remrssi", 0))
+        txbuf = float(getattr(msg, "txbuf", 0))
+        _noise = float(getattr(msg, "noise", 0))
+        _remnoise = float(getattr(msg, "remnoise", 0))
+        rxerrors = int(getattr(msg, "rxerrors", 0))
+        fixed = int(getattr(msg, "fixed", 0))
+        # 0/255 remrssi on SiK means no remote signal reading → unknown
+        # uplink: keep the last score (avoids a momentary 0 flapping the link
+        # to "poor" while the radio resyncs). Real signal loss is caught by
+        # the heartbeat two-tier path (A3).
+        self._radio_status_seen = True
+        if remrssi not in (0.0, 255.0):
+            remrssi_pct = max(
+                0.0, min(100.0, (remrssi - _SIK_RSSI_WEAK)
+                         / (_SIK_RSSI_STRONG - _SIK_RSSI_WEAK) * 100.0)
+            )
+            txbuf_pct = max(0.0, min(100.0, txbuf))
+            score = round(0.7 * remrssi_pct + 0.3 * txbuf_pct)
+            self._uplink_score = max(0, min(100, score))
+        self._store.update(
+            uplink=self._uplink_score,
+            uplink_rssi=remrssi,
+            uplink_rxerrors=rxerrors,
+            uplink_fixed=fixed,
+        )
+        self._publish_link_quality()
+
+    def _publish_heartbeat_jitter(self) -> None:
+        """Publish rolling stddev of heartbeat inter-arrival in ms (A1).
+
+        Needs at least two timestamps to compute one interval; below that
+        the link is too fresh to characterize and jitter stays 0.
+        """
+        times = list(self._hb_times)
+        if len(times) < 2:
+            self._store.update(heartbeat_jitter_ms=0.0)
+            return
+        intervals_ms = [
+            (times[i] - times[i - 1]) * 1000.0 for i in range(1, len(times))
+        ]
+        mean = sum(intervals_ms) / len(intervals_ms)
+        var = sum((v - mean) ** 2 for v in intervals_ms) / len(intervals_ms)
+        self._store.update(heartbeat_jitter_ms=round(math.sqrt(var), 1))
+
+    def _current_jitter_ms(self) -> float:
+        """Latest published heartbeat jitter (0 before two heartbeats)."""
+        times = list(self._hb_times)
+        if len(times) < 2:
+            return 0.0
+        intervals_ms = [
+            (times[i] - times[i - 1]) * 1000.0 for i in range(1, len(times))
+        ]
+        mean = sum(intervals_ms) / len(intervals_ms)
+        var = sum((v - mean) ** 2 for v in intervals_ms) / len(intervals_ms)
+        return round(math.sqrt(var), 1)
+
+    def _publish_link_quality(self) -> None:
+        """Derive the link_quality string from uplink + jitter (A1).
+
+        With RADIO_STATUS: good/fair/poor from uplink score + jitter. Without
+        RADIO_STATUS (UDP SITL): heartbeat-freshness-driven — good when fresh,
+        left to A3 to mark poor/lost on staleness. 'lost' is owned by A3's drop
+        path, not here.
+        """
+        jitter = self._current_jitter_ms()
+        if not self._radio_status_seen:
+            # Heartbeat-driven: a fresh heartbeat just arrived (we're in the
+            # HEARTBEAT branch) → good. A3 flips to poor/lost on staleness.
+            self._store.update(link_quality="good")
+            return
+        uplink = self._uplink_score
+        if uplink >= 70 and jitter < 50.0:
+            quality = "good"
+        elif uplink >= 40:
+            quality = "fair"
+        else:
+            quality = "poor"
+        self._store.update(link_quality=quality)
 
     def _ack_is_for_us(self, msg: Any) -> bool:
         if not self._conn:
@@ -617,7 +931,8 @@ class MavlinkBridge:
 
     def _handle_mission_request(self, msg: Any, as_int: bool) -> None:
         """Serve one MISSION_ITEM(_INT) during an upload we initiated."""
-        if not self._conn or not self._ack_is_for_us(msg):
+        conn = self._conn
+        if not conn or not self._ack_is_for_us(msg):
             return
         seq = int(getattr(msg, "seq", -1))
         with self._mission_lock:
@@ -627,8 +942,11 @@ class MavlinkBridge:
         item = items[seq]
         try:
             with self._send_lock:
+                # Connection swapped under us (A6): drop the request.
+                if conn is not self._conn:
+                    return
                 if as_int:
-                    self._conn.mav.mission_item_int_send(
+                    conn.mav.mission_item_int_send(
                         self._target_system, self._target_component, seq,
                         item["frame"], item["command"], item["current"],
                         item["autocontinue"], item["param1"], item["param2"],
@@ -636,7 +954,7 @@ class MavlinkBridge:
                         item["y_int"], item["z"],
                     )
                 else:
-                    self._conn.mav.mission_item_send(
+                    conn.mav.mission_item_send(
                         self._target_system, self._target_component, seq,
                         item["frame"], item["command"], item["current"],
                         item["autocontinue"], item["param1"], item["param2"],
@@ -671,9 +989,12 @@ class MavlinkBridge:
             self._mission_items = list(items)
             self._pending_mission_ack = pending
         try:
+            conn = self._conn
             try:
                 with self._send_lock:
-                    self._conn.mav.mission_count_send(
+                    if conn is not self._conn:
+                        return -2
+                    conn.mav.mission_count_send(
                         self._target_system, self._target_component, len(items),
                     )
             except Exception as exc:
@@ -816,6 +1137,10 @@ class MavlinkBridge:
         with self._operation_lock:
             if not self._connection_ready():
                 return -2
+            # Snapshot the connection (A6): if a concurrent stop()/reconnect
+            # swaps self._conn, bail with -2 instead of sending on a closed
+            # socket.
+            conn = self._conn
             p = list(params or [])[:7]
             p.extend([float("nan")] * (7 - len(p)))
             pending = _PendingAck()
@@ -824,11 +1149,13 @@ class MavlinkBridge:
 
             try:
                 for attempt in range(retries + 1):
-                    if not self._connection_ready():
+                    if conn is not self._conn or not self._connection_ready():
                         return -2
                     try:
                         with self._send_lock:
-                            self._conn.mav.command_long_send(
+                            if conn is not self._conn:
+                                return -2
+                            conn.mav.command_long_send(
                                 self._target_system, self._target_component, command,
                                 0 if attempt == 0 else 1,
                                 p[0], p[1], p[2], p[3], p[4], p[5], p[6],
@@ -836,7 +1163,10 @@ class MavlinkBridge:
                     except Exception as exc:
                         logger.error("send command %d failed: %s", command, exc)
                         return -2
-
+                    # Connection swapped during/after the send: don't wait for
+                    # an ACK on a torn-down link (A6).
+                    if conn is not self._conn:
+                        return -2
                     if pending.event.wait(timeout=timeout):
                         return pending.result if pending.result is not None else -1
                     logger.warning("Command %d ACK timeout (attempt %d)", command, attempt + 1)

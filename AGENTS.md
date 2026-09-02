@@ -23,7 +23,21 @@ agents.
 - `gui` — web UI, desktop app wrapper, lifecycle/shutdown path.
 - `map` — map engine, GIS transforms, offline tile cache, DEM.
 - `perf` — frame-rate/latency optimization, leak hunting.
-- `doc` — documentation only; never changes logic.
+- `doc` — code/architecture/user documentation only; never changes logic.
+  Owns docstrings, the user manual, the offline install guide, and the deep
+  API reference.
+- `readme` — GitHub-facing README and marketing copy. Owns the top-level
+  `README.md`: badges (including "Vibecoded"), screenshots, plain-language
+  project description, quick start, and the Universität der Bundeswehr
+  München attribution. Promotes Corvus GCS (CGCS); never hardcodes a version.
+- `build` — packaging/distribution. Owns `build-appimage.sh` and produces a
+  reproducible, self-contained `Corvus_GCS-<version>-x86_64.AppImage` after
+  every major change; never hardcodes a version.
+- `devops` — CI/CD and release automation. Owns the CI pipeline
+  (`.gitlab-ci.yml` on the self-hosted GitLab at `git.unibw.de`;
+  `.github/workflows/` if a GitHub mirror is added) and the release pipeline
+  (tag -> AppImage -> release); automates the build after every major change;
+  never hardcodes a version.
 - `review` — final safety/reliability audit and test authoring.
 
 ## Product
@@ -60,12 +74,28 @@ all child processes (e.g. MAVLink bridges) and guarantees clean teardown.
 ## Version control — single source of truth (mandatory)
 
 The app is called **Corvus GCS**. Its version must never be hardcoded in more
-than one place. Every component reads from the same source so that a single
-bump on release propagates everywhere automatically.
+than one place. Every component reads from the same source so a single bump
+propagates everywhere automatically. The version **auto-increments on every
+commit**, so it tracks every change — small or large — with no manual editing.
 
-- **Canonical source:** a `VERSION` file at the repository root holding one
-  semver string, e.g. `1.4.2`. This file is the *only* place the version string
-  is authored by hand.
+- **Format:** CalVer `YYYY.MM.PP` (e.g. `2026.09.01`).
+  - `YYYY` — 4-digit year, real-world UTC date.
+  - `MM` — 2-digit month, zero-padded; the counter resets to `01` on a new
+    month.
+  - `PP` — 2-digit per-month commit counter, zero-padded (grows past 99 if a
+    month has more than 99 commits).
+- **Canonical source:** the `VERSION` file at the repository root holds the
+  one version string. This is the *only* place it is stored; it is **not**
+  hand-edited for routine commits (see *Auto-bump* below). A manual override is
+  permitted only when the user explicitly asks for a specific version.
+- **Auto-bump (the mechanism):** `.githooks/pre-commit` bumps `VERSION` on
+  every `git commit`. Rule: if `VERSION`'s year-month == today's year-month,
+  `PP += 1`; otherwise (new month, first run, or migrated scheme) `PP = 01`
+  with today's year-month. A future-dated `VERSION` is never downgraded — its
+  counter simply increments. The hook re-stages `VERSION` so the bump ships
+  with the commit. One-time setup per clone:
+  `git config core.hooksPath .githooks`. Skip for a single commit (rare) with
+  `git commit --no-verify`; the version then does not bump for that commit.
 - **Python:** `corvus/version.py` reads `VERSION` at import time and exposes
   `__version__`, `VERSION` (the string), and `get_version()`. No other Python
   module may contain a literal version string — it imports from `corvus.version`.
@@ -73,14 +103,20 @@ bump on release propagates everywhere automatically.
   `{"product": "Corvus GCS", "version": "...", "px4_profile": "..."}`). The
   frontend fetches it once on load; the HUD / About dialog / window title all
   read from that value. Never hardcode a version in HTML or JS.
+- **README / marketing:** the top-level `README.md` (owned by the `readme`
+  agent) uses **dynamic** version badges (e.g. the GitLab release/tag badge)
+  so the displayed version tracks releases automatically. A version literal
+  is never typed into the README.
 - **App wrapper:** the desktop wrapper imports `corvus.version` (or reads
   `VERSION`) for the window title, the `--app` window title, the About page,
   and any user-agent string it sets.
 - **Logs:** tlogs and flight logs record the GCS version in their metadata
   header so a log is always attributable to the build that produced it.
-- **Release:** bumping `VERSION` is the entire release action for the version
-  string; no secondary edits across components. A release/build script may
-  verify that no component carries a stale or hardcoded version.
+- **Release:** a release is `git commit` (hook bumps `VERSION`) -> the
+  orchestrator tags `v<VERSION>` -> devops/build produce the AppImage from
+  that tag. There is no separate hand-edit of `VERSION` for a release. A
+  release/build script may verify that no component carries a stale or
+  hardcoded version.
 
 **Enforcement:** the Orchestrator rejects any change that duplicates the
 version string outside `VERSION` / `corvus/version.py`. The Review-Agent

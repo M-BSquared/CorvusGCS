@@ -82,7 +82,8 @@ Corvus.setupParameters = (function () {
 
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "params-download-btn";
+    btn.className = "btn params-download-btn";
+    btn.setAttribute("data-variant", "primary");
     btn.appendChild(S.icon("download"));
     btn.appendChild(S.el("span", null, "Download Parameters"));
     card.appendChild(btn);
@@ -277,7 +278,9 @@ Corvus.setupParameters = (function () {
 
     const applyBtn = document.createElement("button");
     applyBtn.type = "button";
-    applyBtn.className = "params-apply";
+    applyBtn.className = "btn params-apply";
+    applyBtn.setAttribute("data-variant", "primary");
+    applyBtn.setAttribute("data-size", "sm");
     applyBtn.textContent = "Apply";
     applyBtn.disabled = true;   // only enabled when the value changed & is valid
     row.appendChild(applyBtn);
