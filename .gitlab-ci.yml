@@ -14,6 +14,14 @@
 # release build needs ~1 GB free disk for the AppDir + Qt wheels + appimagetool.
 # The release stage also requires the runner to be able to fetch GitLab's
 # release-cli (registry.gitlab.com) for the `release:` keyword.
+#
+# macOS artifact: a .app/.dmg can only be produced on a macOS host, and this
+# instance has no macOS runner. It is built either locally
+# (`./build.sh --dmg` -> build-macos-app.sh) or by the `macos-app` job in
+# .github/workflows/build.yml on a GitHub macOS runner. Add a `macos`-tagged
+# runner here and the same one-line `./build.sh --dmg` produces it in CI.
+# Keep this pipeline and .github/workflows/build.yml in sync — they must not
+# drift.
 # =============================================================================
 
 variables:

@@ -211,7 +211,17 @@ python3 serve.py
 # -> http://localhost:8000/
 ```
 
-### AppImage (Linux x86_64)
+### Packaged builds (AppImage / macOS .app)
+
+One entry point builds the artifact for whatever host you are on — it
+dispatches to the platform script and never pretends to cross-build:
+
+```bash
+./build.sh          # Linux -> AppImage,  macOS -> .app
+./build.sh --dmg    # macOS: also produce a .dmg
+```
+
+#### AppImage (Linux x86_64)
 
 A single self-contained `.AppImage` that runs on a clean Ubuntu/Debian x86_64
 install with no system Python or Qt needed — the easiest way to ship the app to
@@ -240,6 +250,45 @@ QtWebEngine, pymavlink, paramiko, pyserial); `appimagetool` is cached under
 `build/` for fast re-runs. The AppImage bundles the app version from `VERSION`,
 so to release a new version you only bump `VERSION` and rebuild. Build artifacts
 (`build/`, `*.AppImage`) are gitignored.
+
+#### macOS app (Apple Silicon / Intel)
+
+A standard `.app` bundle with the same guarantees: a relocatable CPython, Qt,
+and every runtime dependency inside `Corvus GCS.app`, so it runs on a clean Mac
+with no Homebrew, no conda, and no Qt install. The build host needs macOS with
+the Xcode command line tools (`xcode-select --install`) and a **framework**
+CPython 3.10+ — Homebrew's `python@3.11` or a python.org install. A conda
+interpreter cannot be relocated into a bundle and is rejected with a clear
+error.
+
+```bash
+# one command — builds Corvus GCS.app (add --dmg for a disk image)
+./build-macos-app.sh --dmg
+```
+
+The script writes `dist/Corvus GCS.app` and, with `--dmg`,
+`Corvus_GCS-<version>-macOS-<arch>.dmg` to the repo root — `<version>` from the
+`VERSION` file, `<arch>` from `uname -m`. Drag the app to `/Applications` and
+launch it like any other app, or start it from a terminal to pass a port and a
+MAVLink connection:
+
+```bash
+"/Applications/Corvus GCS.app/Contents/MacOS/corvus-gcs" 8000 serial:/dev/tty.usbserial-0001:57600
+```
+
+The bundle is **ad-hoc signed and not notarized**, so the first launch on
+another Mac needs right-click -> Open (or
+`xattr -dr com.apple.quarantine "Corvus GCS.app"`). Set
+`CODESIGN_IDENTITY="Developer ID Application: ..."` to sign it properly.
+Artifacts (`dist/`, `*.dmg`) are gitignored.
+
+#### Continuous builds
+
+Both pipelines run the same `./build.sh`:
+[`.gitlab-ci.yml`](.gitlab-ci.yml) (primary, `git.unibw.de`: tests + AppImage
+release) and [`.github/workflows/build.yml`](.github/workflows/build.yml)
+(tests, frontend assertions, AppImage, macOS `.app`/`.dmg`, and a GitHub
+Release on a version tag).
 
 ---
 
@@ -478,7 +527,9 @@ hardcoded version — see [Version control](#version-control)).
 serve.py                      # browser-mode entry point (HTTP server only)
 run.sh                        # standalone launcher: conda env + PyQt6/QtWebEngine
 launch.sh                     # launch in an existing conda env (no rebuild)
+build.sh                      # build the artifact for the current host
 build-appimage.sh             # build a self-contained Linux x86_64 AppImage
+build-macos-app.sh            # build a self-contained macOS .app (+ .dmg)
 environment.yml               # conda env spec (PyQt6, pymavlink, paramiko, pyserial)
 pyproject.toml                # tooling/pytest config (version comes from VERSION, not here)
 ├── corvus/                   # Python backend package

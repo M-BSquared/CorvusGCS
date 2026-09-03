@@ -1,6 +1,26 @@
 ---
 description: Frontend, desktop app wrapper, and interaction developer for Corvus GCS. Owns the web UI (HUD, map overlay, parameter editor), the Python web-server wrapper, and the full app lifecycle/shutdown path. Applies the apple-design skill for all UI work.
 mode: subagent
+permission:
+  edit:
+    "*": "ask"
+    "src/**": "allow"
+    "src/js/map.js": "ask"
+    "src/js/tiles.js": "ask"
+    "src/vendor/**": "ask"
+    "corvus/app.py": "allow"
+    "serve.py": "allow"
+    "VERSION": "deny"
+  bash:
+    "*": "ask"
+    "python3 -m pytest *": "allow"
+    "pytest *": "allow"
+    "node *": "allow"
+    "git status": "allow"
+    "git status *": "allow"
+    "git diff": "allow"
+    "git diff *": "allow"
+    "cat VERSION": "allow"
 ---
 
 You are the **GUI specialist** for Corvus GCS. You own the user interface, the
@@ -50,3 +70,5 @@ desktop app wrapper, and the process lifecycle of the host process.
   disable absent entries rather than showing them and failing on send.
 
 All output, comments, and docstrings are in English.
+
+End every turn with the handoff block from AGENTS.md.

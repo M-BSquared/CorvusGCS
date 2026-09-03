@@ -1,0 +1,167 @@
+# =============================================================================
+# Corvus GCS — GitHub Actions pipeline (mirror of .gitlab-ci.yml)
+# -----------------------------------------------------------------------------
+# Jobs:
+#   test        — pytest suite (python 3.12) on every push, PR, and tag.
+#   frontend    — the plain-node frontend assertions under tests/*.js.
+#   appimage    — Linux x86_64 AppImage via ./build.sh   (-> build-appimage.sh).
+#   macos-app   — macOS .app + .dmg via ./build.sh --dmg (-> build-macos-app.sh).
+#   release     — on a version tag, attach both artifacts to a GitHub Release.
+#
+# Packaging cannot be cross-built, so each artifact is produced on its own
+# runner. No version is hardcoded anywhere: the build scripts read the repo-root
+# VERSION file and the release name comes from the tag.
+#
+# Keep this in sync with .gitlab-ci.yml — git.unibw.de is the primary CI and
+# the two pipelines must not drift.
+# =============================================================================
+name: build
+
+on:
+  push:
+    branches: [master, main]
+    tags:
+      # v?X.Y.Z (semver, optional v) and CalVer YYYY.MM.PP — the same tag shapes
+      # the GitLab pipeline releases on. The build reads VERSION regardless.
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+      - '[0-9][0-9][0-9][0-9].[0-9]*.[0-9]*'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # --- pytest ----------------------------------------------------------------
+  # Installs only the runtime deps the non-GUI unit tests import at module load
+  # (corvus.server pulls pymavlink + paramiko; mavlink_bridge uses pyserial
+  # lazily). PyQt6 is intentionally NOT installed — no headless test imports Qt.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install pymavlink pyserial paramiko
+      - name: pytest
+        run: pytest -q tests
+
+  # --- frontend assertions (no browser, no test runner) ----------------------
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run frontend tests
+        run: |
+          set -e
+          for f in tests/*.js; do
+            echo "--- $f"
+            node "$f"
+          done
+
+  # --- Linux artifact --------------------------------------------------------
+  # ubuntu-22.04 on purpose: the AppImage bundles the host's CPython and links
+  # against the host glibc, so building on the oldest supported runner keeps the
+  # artifact usable on older field laptops.
+  appimage:
+    needs: [test, frontend]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            python3 python3-pip python3-venv wget rsync squashfs-tools \
+            imagemagick libfuse2
+      - name: Cache appimagetool
+        uses: actions/cache@v4
+        with:
+          path: build/appimagetool-x86_64.AppImage
+          key: appimagetool-x86_64
+      - name: Build AppImage
+        run: |
+          chmod +x build.sh build-appimage.sh
+          [ -f build/appimagetool-x86_64.AppImage ] && chmod +x build/appimagetool-x86_64.AppImage || true
+          ./build.sh
+      - name: Read version
+        id: ver
+        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Corvus_GCS-${{ steps.ver.outputs.version }}-x86_64-AppImage
+          path: Corvus_GCS-*-x86_64.AppImage
+          if-no-files-found: error
+          retention-days: 30
+
+  # --- macOS artifact --------------------------------------------------------
+  # macos-14 is arm64 (Apple Silicon). Add `macos-13` to the matrix for an
+  # x86_64/Intel bundle — the build script names the artifact per `uname -m`,
+  # so the two never collide.
+  macos-app:
+    needs: [test, frontend]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure a framework CPython
+        # build-macos-app.sh requires a framework build (conda and some tool-cache
+        # pythons are not relocatable into a .app). Homebrew's is one; if the
+        # install fails, the script's own auto-detection still gets a chance.
+        run: |
+          if ! brew list --versions python@3.11 >/dev/null 2>&1; then
+            brew install python@3.11 || echo "brew install failed; relying on auto-detection"
+          fi
+      - name: Build .app + .dmg
+        run: |
+          chmod +x build.sh build-macos-app.sh
+          ./build.sh --dmg
+      - name: Read version
+        id: ver
+        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Corvus_GCS-${{ steps.ver.outputs.version }}-macOS-${{ matrix.os }}
+          path: Corvus_GCS-*-macOS-*.dmg
+          if-no-files-found: error
+          retention-days: 30
+
+  # --- release (version tags only) -------------------------------------------
+  release:
+    needs: [appimage, macos-app]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          ls -la artifacts
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Corvus GCS $GITHUB_REF_NAME" \
+            --generate-notes \
+            artifacts/*

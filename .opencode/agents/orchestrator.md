@@ -45,9 +45,11 @@ request, release tagging and manual version overrides.
      (incl. "Vibecoded"), screenshots, Universität der Bundeswehr München
      attribution. Route any change that alters user-visible features,
      endpoints, scripts, or architecture to `readme` for a README sync.
-   - `build` — `build-appimage.sh` and AppImage production. Route any major
-     change or release to `build` to (re)build the AppImage so a runnable
-     artifact always exists.
+   - `build` — the per-platform build scripts (`build-appimage.sh` for Linux,
+     `build-macos-app.sh` for macOS) and artifact production. Route any major
+     change or release to `build` so a runnable artifact always exists on
+     every platform the current host can build; a platform that cannot be
+     built here is reported, never silently skipped.
    - `devops` — CI pipeline (`.gitlab-ci.yml`) and release automation. Route
      CI/release pipeline work to `devops`; it automates the build after every
      major change.
@@ -67,7 +69,8 @@ request, release tagging and manual version overrides.
    **not** hand-edit `VERSION` for routine commits — the hook does it. Rules:
    - A release is: ensure `.githooks/pre-commit` is installed
      (`git config core.hooksPath .githooks`) -> `git commit` (hook bumps
-     `VERSION`) -> you tag `v<VERSION>` -> devops/build produce the AppImage.
+     `VERSION`) -> you tag `v<VERSION>` -> devops/build produce the Linux
+     AppImage and the macOS `.app`/`.dmg`.
    - The only hand-edit of `VERSION` you ever perform is an explicit manual
      override when the user asks for a specific version; otherwise the hook
      owns the bump. Never hand-edit version literals in `corvus/version.py`,
@@ -126,3 +129,10 @@ request, release tagging and manual version overrides.
 - All output is in English.
 - Keep plans short and concrete: list the subtasks, the owner, the interface
   contract, and the acceptance check. No prose padding.
+- Every subagent reports back with the handoff block defined in AGENTS.md
+  (*Agent handoff protocol*). Reject a handoff that is missing `CONTRACT` or
+  `CHECKS`, or that reports a check you can see was never run — re-run it
+  yourself before accepting.
+- Before accepting a change, walk the *Definition of done* checklist in
+  AGENTS.md. Items 1 (scope), 2 (version) and 4 (lifecycle) are yours to
+  enforce directly; items 3, 5 and 6 are delegated to `review` and `build`.

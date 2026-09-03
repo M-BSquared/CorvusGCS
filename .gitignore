@@ -3,6 +3,8 @@
 /dist/
 *.AppImage
 appimagetool-x86_64.AppImage
+*.dmg
+*.app/
 
 # python
 __pycache__/

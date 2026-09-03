@@ -30,14 +30,15 @@ agents.
   `README.md`: badges (including "Vibecoded"), screenshots, plain-language
   project description, quick start, and the Universität der Bundeswehr
   München attribution. Promotes Corvus GCS (CGCS); never hardcodes a version.
-- `build` — packaging/distribution. Owns `build-appimage.sh` and produces a
-  reproducible, self-contained `Corvus_GCS-<version>-x86_64.AppImage` after
-  every major change; never hardcodes a version.
+- `build` — packaging/distribution for every supported platform. Owns
+  `build-appimage.sh` (Linux AppImage) and `build-macos-app.sh` (macOS `.app`
+  bundle + optional `.dmg`), and produces reproducible, self-contained
+  artifacts after every major change; never hardcodes a version.
 - `devops` — CI/CD and release automation. Owns the CI pipeline
   (`.gitlab-ci.yml` on the self-hosted GitLab at `git.unibw.de`;
   `.github/workflows/` if a GitHub mirror is added) and the release pipeline
-  (tag -> AppImage -> release); automates the build after every major change;
-  never hardcodes a version.
+  (tag -> AppImage + macOS `.app` -> release); automates the build after every
+  major change; never hardcodes a version.
 - `review` — final safety/reliability audit and test authoring.
 
 ## Product
@@ -70,6 +71,46 @@ all child processes (e.g. MAVLink bridges) and guarantees clean teardown.
   map. Telemetry is pushed from the backend; the frontend never polls for live
   data.
 - **Maps:** local tile cache (MBTiles/SQLite) for full offline field use.
+
+## Platforms & packaging
+
+Corvus GCS ships as a self-contained desktop artifact per platform. Both
+artifacts run the *same* `corvus/app.py` (PyQt6 + QtWebEngine wrapper) and both
+derive their version from the one `VERSION` read at build time.
+
+`./build.sh` is the one entry point: it dispatches to the platform script for
+the current host and fails loudly rather than pretending to cross-build.
+
+| Platform | Script | Artifact | Notes |
+| --- | --- | --- | --- |
+| Linux x86_64 | `./build.sh` -> `build-appimage.sh` | `Corvus_GCS-<version>-x86_64.AppImage` | `appimagetool`, bundled CPython + Qt |
+| macOS (arm64 / x86_64) | `./build.sh --dmg` -> `build-macos-app.sh` | `dist/Corvus GCS.app` (+ `Corvus_GCS-<version>-macOS-<arch>.dmg`) | relocatable framework CPython, ad-hoc codesigned |
+
+Both CI pipelines call the same `./build.sh`: `.gitlab-ci.yml` (primary, on
+`git.unibw.de`, Linux only — no macOS runner) and `.github/workflows/build.yml`
+(test + frontend + appimage + macos-app + release). They must not drift.
+
+Shared packaging invariants — a violation of any of these is a build bug:
+
+- **Self-contained.** Bundled CPython + stdlib + PyQt6/QtWebEngine +
+  pymavlink/paramiko/pyserial. No system Python, no conda, no Qt install on the
+  target machine.
+- **Offline at runtime.** The build may download wheels and packaging tools
+  once; the *running* app must never need the network.
+- **Layout contract.** `VERSION`, `corvus/`, `src/`, and `assets/` stay
+  siblings inside the bundle, because `corvus/version.py` and `corvus/server.py`
+  resolve them as `Path(__file__).parent.parent / …`.
+- **Signal-transparent launcher.** The platform launcher (`AppRun`,
+  `Contents/MacOS/corvus-gcs`) `exec`s the bundled interpreter so `SIGINT` /
+  `SIGTERM` reach `corvus/app.py` directly and its handlers tear down cleanly.
+- **No version literal** in any script, launcher, `Info.plist`, or desktop
+  entry — every one of them reads `VERSION`.
+- Artifacts (`build/`, `dist/`, `*.AppImage`, `*.dmg`) are gitignored and never
+  committed.
+
+Adding a platform means adding a `build-<platform>.sh` that honours all of the
+above, plus a row in this table and in the README — never a fork of the app
+code.
 
 ## Version control — single source of truth (mandatory)
 
@@ -169,3 +210,61 @@ logs.
 - **Dependencies:** stdlib first. Justify any third-party add.
 - **Testing:** `pytest` for unit/integration tests. MAVLink parsers, the
   state store, and HTTP/SSE endpoints must have tests.
+
+## Definition of done
+
+A subtask is not finished until every applicable box is true. The Orchestrator
+does not accept a handoff that skips one; `review` fails it.
+
+1. **Scope.** Only the files the subtask owns were touched (see the ownership
+   map in each agent file). Anything outside it was handed back, not edited.
+2. **Version.** No new version literal anywhere; every consumer still reads
+   `VERSION` -> `corvus.version` -> `GET /api/version`.
+3. **PX4.** Any parameter / mode / `MAV_CMD` change was checked against v1.16,
+   v1.17 and v1.18, with a graceful fallback when absent.
+4. **Lifecycle.** Every thread, socket, subprocess and file handle the change
+   introduces is torn down on the `atexit` + `SIGINT`/`SIGTERM` path.
+5. **Tests.** `python3 -m pytest -q` passes; new behaviour has a test, fixed
+   bugs have a regression test.
+6. **Packaging.** If the change adds a file, dependency, or runtime path, both
+   `build-appimage.sh` and `build-macos-app.sh` still bundle it, and both CI
+   pipelines (`.gitlab-ci.yml`, `.github/workflows/build.yml`) still pass.
+7. **Docs.** User-visible changes were routed to `readme` (README) and `doc`
+   (manual / API reference).
+
+## Agent handoff protocol
+
+Every subagent ends its turn with this exact block, so the Orchestrator can
+chain work without re-reading the diff:
+
+```
+DONE:    <one line: what changed>
+FILES:   <paths touched>
+CONTRACT:<endpoints / SSE event names / state-store fields / function
+          signatures other agents must match — or "none">
+CHECKS:  <commands run and their result, e.g. "pytest -q: 42 passed">
+RISKS:   <what a reviewer should look at hardest — or "none">
+NEXT:    <follow-up work and the agent that owns it — or "none">
+```
+
+Rules that keep the chain honest:
+
+- Report failures verbatim. A skipped check is reported as skipped, never as
+  passed.
+- If a subtask requires editing a file another agent owns, stop and return it
+  under `NEXT` instead of editing across the boundary.
+- Never bump `VERSION` or commit; both belong to the Orchestrator.
+
+## Commands
+
+```
+python3 -m pytest -q            # test suite (the gate for every change)
+./run.sh                        # conda env create/update + launch desktop app
+./launch.sh                     # launch in an existing conda env
+python3 serve.py                # backend only, UI in a normal browser
+./build.sh [--dmg]              # artifact for the current host (dispatches below)
+./build-appimage.sh             # Linux artifact  (x86_64)
+./build-macos-app.sh [--dmg]    # macOS artifact  (arm64 / x86_64)
+for f in tests/*.js; do node "$f"; done   # frontend assertions
+git config core.hooksPath .githooks   # one-time, enables the VERSION auto-bump
+```

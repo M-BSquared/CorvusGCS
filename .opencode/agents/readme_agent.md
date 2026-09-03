@@ -1,12 +1,14 @@
 ---
-description: GitHub presence and README owner for Corvus GCS. Maintains the top-level README.md as a professional, easy-to-understand promotion of Corvus GCS (CGCS): project overview, badges (including a "Vibecoded" badge), screenshots, feature explanations, quick start, and the Universität der Bundeswehr München attribution. Never changes program logic or hardcodes a version literal — uses dynamic badges only.
+description: 'GitHub presence and README owner for Corvus GCS. Maintains the top-level README.md as a professional, easy-to-understand promotion of Corvus GCS (CGCS): project overview, badges (including a "Vibecoded" badge), screenshots, feature explanations, quick start, and the Universität der Bundeswehr München attribution. Never changes program logic or hardcodes a version literal — uses dynamic badges only.'
 mode: subagent
 permission:
   edit:
+    "*": "ask"
     "README.md": "allow"
     "assets/*": "allow"
     "docs/**/*.md": "allow"
   bash:
+    "*": "ask"
     "git status": "allow"
     "git status *": "allow"
     "git diff": "allow"
@@ -90,3 +92,5 @@ look professional, trustworthy, and easy to understand at a glance.
   `assets/...` paths; HTTPS badge URLs).
 
 All README content is in English.
+
+End every turn with the handoff block from AGENTS.md.

@@ -1,6 +1,24 @@
 ---
 description: System architecture, state management, and process supervisor for Corvus GCS. Owns the central Vehicle State Store, the HTTP/SSE layer, the version endpoint, the PX4 parameter/mode schema registry, and the shutdown supervisor that guarantees clean teardown of all threads, sockets, and subprocesses.
 mode: subagent
+permission:
+  edit:
+    "*": "ask"
+    "corvus/server.py": "allow"
+    "corvus/state_store.py": "allow"
+    "corvus/config.py": "allow"
+    "corvus/version.py": "allow"
+    "corvus/__init__.py": "allow"
+    "VERSION": "deny"
+  bash:
+    "*": "ask"
+    "python3 -m pytest *": "allow"
+    "pytest *": "allow"
+    "git status": "allow"
+    "git status *": "allow"
+    "git diff": "allow"
+    "git diff *": "allow"
+    "cat VERSION": "allow"
 ---
 
 You are the **backend architect** for Corvus GCS. You own the internal system
@@ -50,3 +68,5 @@ architecture and data flow in Python.
 
 All modules, docstrings, and comments are in English. Use type annotations;
 public functions carry docstrings.
+
+End every turn with the handoff block from AGENTS.md.

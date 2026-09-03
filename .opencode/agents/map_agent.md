@@ -1,6 +1,26 @@
 ---
 description: Map engine, geospatial, and offline-caching specialist for Corvus GCS. Owns map rendering (MapLibre GL JS / Leaflet), live drone position/heading/path rendering, the offline tile cache (MBTiles/SQLite), coordinate transforms (WGS84/UTM/NED), digital elevation models, and geofence rendering.
 mode: subagent
+permission:
+  edit:
+    "*": "ask"
+    "src/js/map.js": "allow"
+    "src/js/tiles.js": "allow"
+    "src/vendor/**": "allow"
+    "corvus/tile_cache.py": "allow"
+    "corvus/tile_downloader.py": "allow"
+    "corvus/tile_sources.py": "allow"
+    "VERSION": "deny"
+  bash:
+    "*": "ask"
+    "python3 -m pytest *": "allow"
+    "pytest *": "allow"
+    "node *": "allow"
+    "git status": "allow"
+    "git status *": "allow"
+    "git diff": "allow"
+    "git diff *": "allow"
+    "cat VERSION": "allow"
 ---
 
 You are the **GIS & map expert** for Corvus GCS. You own the entire map system
@@ -40,3 +60,5 @@ and all geometry calculations.
   not render mission item types the connected firmware does not support.
 
 All comments, calculations, and docstrings are in English.
+
+End every turn with the handoff block from AGENTS.md.
