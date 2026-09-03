@@ -16,24 +16,45 @@ from __future__ import annotations
 
 from typing import Any
 
-# The source registry. ``upstream`` carries the {z}/{y}/{x} template tokens
-# the downloader/serve path substitute at fetch time. ``maxzoom`` is the
-# highest zoom the upstream serves (requests above it cannot be filled).
+# The source registry. ``upstream`` carries the {z}/{y}/{x} (or {z}/{x}/{y})
+# template tokens the downloader/serve path substitute at fetch time. The
+# token substitution is order-agnostic, so ArcGIS's {z}/{y}/{x} and OSM's
+# {z}/{x}/{y} both work unchanged. ``maxzoom`` is the highest zoom the
+# upstream serves (requests above it cannot be filled). ``attribution`` is
+# the legally-required credit string for the source; the frontend mirrors
+# it on its raster source so MapLibre's attribution control can show it.
 TILE_SOURCES: dict[str, dict[str, Any]] = {
     "satellite": {
         "label": "Satellite",
         "upstream": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         "maxzoom": 19,
+        "attribution": "© Esri, Maxar, Earthstar Geographics",
     },
     "streets": {
         "label": "Streets",
         "upstream": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
         "maxzoom": 19,
+        "attribution": "© Esri, HERE, Garmin, NGA, USGS",
     },
     "hybrid": {
         "label": "Hybrid",
         "upstream": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         "maxzoom": 19,
+        "attribution": "© Esri, Maxar, Earthstar Geographics",
+    },
+    "topo": {
+        "label": "Topographic",
+        "upstream": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+        "maxzoom": 19,
+        "attribution": "© Esri, HERE, Garmin, USGS, NGA",
+    },
+    # OSM serves slippy-order tiles ({z}/{x}/{y}); the substitution code is
+    # order-agnostic so this needs no special handling.
+    "osm": {
+        "label": "OpenStreetMap",
+        "upstream": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "maxzoom": 19,
+        "attribution": "© OpenStreetMap contributors",
     },
 }
 

@@ -123,10 +123,17 @@ Corvus.map = (function () {
   // fully offline once tiles are cached. Online, the backend fetches+caches
   // transparently, so the online experience is unchanged. The browser never
   // talks to the internet directly.
+  // MapLibre GL JS v4.7.1 is vendored locally at src/vendor/maplibre-gl.min.js
+  // (offline fix: the field laptop has no internet, so the CDN load failed and
+  // left #map empty). Keep this in sync with src/index.html and the vendor file.
+  // `attribution` mirrors corvus/tile_sources.py (manual dual-maintenance, same
+  // as label/maxzoom) so MapLibre's attribution control can credit the source.
   const TILE = {
-    satellite: { label: "Satellite", maxzoom: 19 },
-    streets: { label: "Streets", maxzoom: 19 },
-    hybrid: { label: "Hybrid", maxzoom: 19 },
+    satellite: { label: "Satellite", maxzoom: 19, attribution: "© Esri, Maxar, Earthstar Geographics" },
+    hybrid: { label: "Hybrid", maxzoom: 19, attribution: "© Esri, Maxar, Earthstar Geographics" },
+    topo: { label: "Topographic", maxzoom: 19, attribution: "© Esri, HERE, Garmin, USGS, NGA" },
+    osm: { label: "OpenStreetMap", maxzoom: 19, attribution: "© OpenStreetMap contributors" },
+    streets: { label: "Streets", maxzoom: 19, attribution: "© Esri, HERE, Garmin, NGA, USGS" },
   };
 
   function tileUrl(key) {
@@ -205,17 +212,31 @@ Corvus.map = (function () {
   function initialStyle(key) {
     const spec = TILE[key] || TILE.satellite;
     const sources = {
-      base: { type: "raster", tiles: [tileUrl(key)], tileSize: 256, maxzoom: spec.maxzoom },
+      base: {
+        type: "raster",
+        tiles: [tileUrl(key)],
+        tileSize: 256,
+        maxzoom: spec.maxzoom,
+        attribution: spec.attribution,
+      },
     };
     const layers = [{ id: "base", type: "raster", source: "base" }];
-    return { version: 8, sources, layers, glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf" };
+    // No `glyphs`: every base layer is a raster and there are no symbol/text
+    // layers, so fonts are unused. MapLibre may log a harmless warning.
+    return { version: 8, sources, layers };
   }
 
   function setBaseLayer(key) {
     const spec = TILE[key] || TILE.satellite;
     if (map.getLayer("base")) map.removeLayer("base");
     if (map.getSource("base")) map.removeSource("base");
-    map.addSource("base", { type: "raster", tiles: [tileUrl(key)], tileSize: 256, maxzoom: spec.maxzoom });
+    map.addSource("base", {
+      type: "raster",
+      tiles: [tileUrl(key)],
+      tileSize: 256,
+      maxzoom: spec.maxzoom,
+      attribution: spec.attribution,
+    });
     // Insert base BELOW "path-glow" so the track/waypoints stay on top.
     map.addLayer({ id: "base", type: "raster", source: "base" }, "path-glow");
   }
@@ -247,6 +268,8 @@ Corvus.map = (function () {
     const layers = [
       { id: "satellite", label: "Satellite" },
       { id: "hybrid", label: "Hybrid" },
+      { id: "topo", label: "Topographic" },
+      { id: "osm", label: "OpenStreetMap" },
       { id: "streets", label: "Streets" },
     ];
     layersPopover.innerHTML = "<h4>Map layers</h4>";
@@ -528,7 +551,7 @@ Corvus.map = (function () {
       pitch: 0,
       bearing: 0,
       style: initialStyle("satellite"),
-      attributionControl: false,
+      attributionControl: true,
       dragRotate: true,
       keyboard: false,
     });
@@ -581,5 +604,10 @@ Corvus.map = (function () {
     onWaypointsUpdate,
     getSources,
     getCacheStats,
+    // test hook: expose the static tile-source mirror so a node test can assert
+    // the frontend `TILE` stays in sync with corvus/tile_sources.py (5 entries,
+    // each with a non-empty attribution). Read-only; mirrors the `_animators`
+    // hook convention on Corvus.anim above.
+    _TILE: () => TILE,
   };
 })();

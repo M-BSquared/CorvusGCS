@@ -170,7 +170,7 @@ def _post(server: CorvusServer, path: str, payload: dict) -> tuple[int, bytes]:
 # GET /api/tiles/sources
 # ---------------------------------------------------------------------------
 
-def test_tiles_sources_returns_all_three(tile_server) -> None:
+def test_tiles_sources_returns_all_registered(tile_server) -> None:
     server, _, _ = tile_server
     status, body = _get(server, "/api/tiles/sources")
     assert status == 200

@@ -68,7 +68,9 @@ wrapped into a single standalone desktop app — designed first for the person
 standing next to an aircraft on a flight line, not for a desk.
 
 The interface is **dark and operator-oriented**. The visual center is a **large
-satellite map** that tracks the vehicle in real time. Overlaid on the map is a
+map** that tracks the vehicle in real time, with a choice of **five base
+layers** — OpenStreetMap plus ESRI Satellite, Hybrid, Topographic, and Streets.
+Overlaid on the map is a
 **floating flight-instrument HUD** — a compass, an attitude indicator, and the
 telemetry numbers that matter while you fly, always visible. On the right side,
 a **collapsible engineering workspace** holds the tools you reach for between
@@ -79,6 +81,10 @@ From one window you can:
 
 - **Fly** — live HUD, map, attitude, GPS, and body angular rates pushed from the
   autopilot over Server-Sent Events (the frontend never polls).
+- **Read the map** — five base layers (OpenStreetMap, ESRI Satellite / Hybrid /
+  Topographic / Streets), per-source attribution, and a download-a-region
+  button for fully offline field use. MapLibre GL JS is bundled locally, so the
+  map renders with no internet.
 - **Connect** — serial, UDP, or TCP telemetry radios, with a live serial-port
   picker and sensible defaults for the Holybro SiK Radio V3.
 - **Tune parameters** — a lazy, armed-safe parameter editor; the full set is
@@ -100,10 +106,11 @@ The driving constraint is the field: a laptop with **no internet**, a
 **serial/UDP/TCP telemetry radio**, and a **clean shutdown between flights**.
 Corvus GCS is built around that:
 
-- The core ground station — telemetry, HUD, parameters, calibration, autotune,
-  and the vibration monitor — runs **fully offline**. Plotly is **vendored
-  locally** at `src/vendor/plotly-basic.min.js`, so graphs render with no
-  connection.
+- The core ground station — telemetry, HUD, map, parameters, calibration,
+  autotune, and the vibration monitor — runs **fully offline**. Both Plotly and
+  MapLibre GL JS are **vendored locally** (`src/vendor/plotly-basic.min.js` and
+  `src/vendor/maplibre-gl.min.js` + `maplibre-gl.css`), so the map and the graphs
+  render with no connection.
 - On a serial link it automatically applies conservative MAVLink stream rates so
   a 57 kbps radio isn't saturated, uses a longer heartbeat timeout (10 s), and
   reconnects with backoff if the link drops.
@@ -113,12 +120,17 @@ Corvus GCS is built around that:
   logs. The field laptop is rebooted between flights, and the app must disappear
   perfectly on `SIGINT` / `SIGTERM` / `atexit`.
 
-> **Map tiles, fonts & icons (honest caveat):** the frontend currently loads
-> MapLibre GL JS, Lucide icons, and Google Fonts from CDNs, so the satellite
-> map and icons need an internet connection (or a local cache). An offline
-> **MBTiles (SQLite) tile-cache store** is already implemented in
-> `corvus/tile_cache.py` and tested, but is not yet wired into the map. Everything
-> else works offline.
+> **Map tiles, fonts & icons (honest caveat):** the map *library* now renders
+> fully offline — MapLibre GL JS is **vendored locally** at
+> `src/vendor/maplibre-gl.min.js`. The **map tiles** themselves (the imagery from
+> ESRI / OpenStreetMap) still come from the internet, but all tile traffic is
+> routed through the backend (`/api/tiles/...`), which fetches and caches into the
+> offline **MBTiles (SQLite) tile-cache store** in `corvus/tile_cache.py` —
+> covering all five base sources. Use the on-map "Download offline map" button to
+> cache a region, and the map then works fully offline. The last remaining CDN
+> dependencies are **Lucide icons** (`unpkg`) and **Google Fonts** (Inter /
+> JetBrains Mono); offline, icons are absent (most controls keep a text label)
+> and fonts fall back to system defaults.
 
 ---
 
@@ -415,6 +427,8 @@ pyproject.toml                # tooling/pytest config (version comes from VERSIO
 │   │   ├── ui.js             # reusable UI component helpers
 │   │   └── app.js            # top bar wiring + flight actions
 │   └── vendor/
+│       ├── maplibre-gl.min.js   # vendored MapLibre GL JS (offline map)
+│       ├── maplibre-gl.css      # vendored MapLibre GL stylesheet
 │       └── plotly-basic.min.js  # vendored Plotly (offline graphs)
 ├── assets/                   # logo + screenshots
 └── VERSION                   # single-source version string

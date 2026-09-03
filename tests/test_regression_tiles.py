@@ -147,13 +147,13 @@ def _post(server, path, payload: dict) -> tuple[int, bytes]:
 # 1. GET /api/tiles/sources
 # ---------------------------------------------------------------------------
 
-def test_tiles_sources_returns_three_ids(tile_server) -> None:
+def test_tiles_sources_returns_all_registered_ids(tile_server) -> None:
     server, _ = tile_server
     status, body, _ = _get(server, "/api/tiles/sources")
     assert status == 200
     data = json.loads(body)
     ids = {s["id"] for s in data["sources"]}
-    assert ids == {"satellite", "streets", "hybrid"}
+    assert ids == {"satellite", "streets", "hybrid", "topo", "osm"}
     assert ids == set(TILE_SOURCES)
     # Each source entry carries the cache stats fields the frontend needs.
     for s in data["sources"]:
