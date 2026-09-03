@@ -50,6 +50,7 @@ ever typed into this README.
 - [Connecting to a drone](#connecting-to-a-drone)
 - [Plugins — Vibration Monitor](#plugins--vibration-monitor)
 - [Setup — Parameters, Calibration, Autotune, Firmware](#setup--parameters-calibration-autotune-firmware)
+- [Offline map — named areas](#offline-map--named-areas)
 - [Settings — Appearance, SSH, Map](#settings--appearance-ssh-map)
 - [Architecture](#architecture)
 - [API endpoints](#api-endpoints)
@@ -82,11 +83,13 @@ From one window you can:
 
 - **Fly** — live HUD, map, attitude, GPS, and body angular rates pushed from the
   autopilot over Server-Sent Events (the frontend never polls).
-- **Read the map** — five base layers (OpenStreetMap, ESRI Satellite / Hybrid /
-  Topographic / Streets), per-source attribution, and a download-a-region
-  button for fully offline field use. The selected base layer is saved to
-  config and restored on the next launch. MapLibre GL JS is bundled locally,
-  so the map renders with no internet.
+- **Read the map** — four map services (Esri, OpenStreetMap, Google, Bing) with
+  twelve base layers between them, per-source attribution, and a
+  download-a-region dialog for fully offline field use. Downloaded areas are
+  **named**, listed, and drawn on the map, so "what do I have offline?" has an
+  answer you can act on. The selected service and layer are saved to config and
+  restored on the next launch. MapLibre GL JS is bundled locally, so the map
+  renders with no internet.
 - **Connect** — serial, UDP, or TCP telemetry radios, with a live serial-port
   picker and sensible defaults for the Holybro SiK Radio V3.
 - **Tune parameters** — a lazy, armed-safe parameter editor; the full set is
@@ -108,10 +111,11 @@ From one window you can:
   remove from the SSH tab or Settings), with password **or** key-file auth.
 - **Extend** — a plugin system (the **TOOLS** tab, "Tools & Plugins") where new
   specialist views plug in without touching the core.
-- **Configure** — an editable **Settings** page (left nav → SET): a live
-  accent/theme picker (preset swatches + custom color, applied instantly and
-  persisted), saved SSH connections, the live MAVLink/HTTP connection summary,
-  and the persisted map base layer. See [Settings](#settings--appearance-ssh-map).
+- **Configure** — an editable **Settings** page (left nav → SET): five
+  predefined color themes (including a full light theme), the map service to
+  use (Esri, OpenStreetMap, Google, Bing) and which of its layers, saved SSH
+  connections, and the live MAVLink/HTTP connection summary. Everything applies
+  instantly and is persisted. See [Settings](#settings--appearance-ssh-map).
 
 ### The field-use case
 
@@ -139,8 +143,8 @@ Corvus GCS is built around that:
 > ESRI / OpenStreetMap) still come from the internet, but all tile traffic is
 > routed through the backend (`/api/tiles/...`), which fetches and caches into the
 > offline **MBTiles (SQLite) tile-cache store** in `corvus/tile_cache.py` —
-> covering all five base sources. Use the on-map "Download offline map" button to
-> cache a region, and the map then works fully offline. The last remaining CDN
+> covering every registered source. Use the on-map "Download offline map" button
+> to cache a **named area**, and the map then works fully offline. The last remaining CDN
 > dependencies are **Lucide icons** (`unpkg`) and **Google Fonts** (Inter /
 > JetBrains Mono); offline, icons are absent (most controls keep a text label)
 > and fonts fall back to system defaults.
@@ -410,6 +414,21 @@ editor lets the operator change any parameter; writes go through `PARAM_SET` and
 are confirmed by a `PARAM_VALUE` echo. Parameter writes are **refused while
 armed** (safety).
 
+**Export / Import.** *Export* opens a dialog with the **file name** and the
+**folder**, both prefilled — the name as
+`corvus-params_<vehicle>_<YYYY-MM-DD_HH-MM>.json` (readable date and airframe,
+because a folder of exports has to be scannable by eye), the folder from
+`params_dir` in the config (default `~/.corvus/params`, editable per export and
+in Settings → Files). The confirmation names the full path the file was written
+to. *Import* reads the same file back and uploads it to the vehicle.
+
+> The file is written by the **backend**, not pulled as a browser download. The
+> desktop build runs this UI inside QtWebEngine, which drops an `<a download>`
+> unless the host application implements a download handler — so the previous
+> blob-based export silently produced no file at all there. Writing it
+> server-side behaves identically in the desktop app and in a browser, lands it
+> in a folder the operator chose, and can report exactly where it went.
+
 ### Sensor calibration
 
 Setup → **Calibration** tile: one-tap sensor calibration for:
@@ -473,7 +492,38 @@ the bootloader protocol. Flashing is also **refused while the vehicle is armed**
 
 ---
 
+## Offline map — named areas
+
+The **Download offline map** button on the map opens a dialog (not a popover:
+as an anchored panel it was constantly covered by the flight bar, the HUD, the
+layer switcher and the right panel). It is centred above everything, closes on
+Escape or a click outside, and a download in flight is **not** tied to it —
+close the dialog, keep flying, re-open it and the live progress is still there.
+
+Each download is recorded as a **named area** in the source's `.mbtiles` file
+(the `corvus_regions` table in `corvus/tile_cache.py`), so the names travel with
+the tiles they describe: copy the file to another laptop and the areas come
+along; delete it and they go with it.
+
+- **Name it when you download it.** Optional — an unnamed area is named after
+  its centre coordinates, which is exact but not memorable, so rows can be
+  renamed later from the list.
+- **See what you have.** Every area is drawn on the map as a dashed outline with
+  its name at the centre, and listed in the dialog with its service, zoom span,
+  tile count and date. The map rail's frame button toggles the overlay.
+- **Go to an area.** Clicking a row frames it on the map and closes the dialog.
+- **Reclaim disk.** Deleting an area removes its record *and* its tiles — except
+  tiles another area still covers. Areas overlap by design (a wide low-zoom
+  region with a high-zoom landing site inside it), so a naive delete would punch
+  holes in the neighbour.
+
+---
+
 ## Settings — Appearance, SSH, Map
+
+<!-- The heading (and therefore the #settings--appearance-ssh-map anchor the
+     links above use) is deliberately unchanged; "Map" now means the map-service
+     picker inside Appearance rather than a separate read-only section. -->
 
 The **SET** page in the left nav is the operator's settings surface. It used to
 be a read-only summary; it is now **editable**, and the connection settings it
@@ -482,14 +532,39 @@ page is persisted in the single config store, `~/.corvus/config.json`, which is
 written **atomically** and chmod'd to **0o600** because it may hold SSH
 credentials. The same file backs the right-panel SSH tab.
 
-### Appearance (accent / theme picker)
+### Appearance (color theme + map service)
 
-The app stays dark-mode; the one customizable knob is the **accent color**. The
-Appearance section offers five preset swatches — **Green, Blue, Orange, Red,
-Purple** — plus a custom color picker (any `#RRGGBB`). The chosen accent is
-applied **live** through the `--accent` CSS custom property and saved to config,
-so it survives a restart. The derived accent tokens stay at their dark-mode
-defaults for now (a documented limitation of the current picker).
+**Color theme.** Five complete predefined themes, defined in
+[`src/css/themes.css`](src/css/themes.css): **Green** (default), **Blue**,
+**Pink**, **Orange**, and **Light** — the white/black theme, where every dark
+surface in the app becomes light and the accent is near-black. Selecting one
+writes `data-theme="<id>"` on `<html>`; because every color, shadow, and
+translucency in the app is a token defined in that one file, the whole UI —
+map chrome, HUD, popovers, terminal — restyles at once, with no per-component
+overrides. This replaces the v1 accent picker, where `--accent` was the only
+themeable value and everything else stayed dark.
+
+The choice is stored twice on purpose: in `localStorage`, so a small inline
+script in `index.html` can apply it **before first paint** (no flash of the
+default theme), and in `~/.corvus/config.json` under `theme.name`, so it
+survives a cache clear. A config carrying the legacy `theme.accent` hex still
+loads — it maps to the nearest predefined theme.
+
+**Map service.** Which tile service to use — **Esri**, **OpenStreetMap**,
+**Google**, or **Bing** — and which of its layers (Satellite / Streets /
+Hybrid / Topographic, whichever that service serves). Switching service keeps
+the equivalent layer where there is one, so Esri Satellite → Google lands on
+Google Satellite rather than resetting. The choice applies to the live map
+immediately, keeps the Home tab's layer switcher in sync, is persisted as
+`map.base_layer` + `map.provider`, and is what the **offline map downloader**
+opens on. Each row shows how many tiles that layer already has cached.
+
+> **Terms of service.** Only the Esri and OpenStreetMap endpoints are
+> documented public tile services. The Google and Bing entries address those
+> providers' internal tile endpoints directly, which their terms of service do
+> not permit outside their own SDKs/APIs. Shipping them needs a licensed key
+> (Google Maps Tile API / Bing Maps Key) swapped into the template in
+> `corvus/tile_sources.py` first.
 
 ### SSH Connections
 
@@ -505,14 +580,25 @@ list; each row has a **CONNECT** button and a **REMOVE** (trash) button.
 - **Remove** — first disconnects any live session for that name, then deletes
   the saved entry. The endpoint is idempotent.
 
-### Connection & Map
+### Connection
 
 - **Connection** — the live MAVLink connection string and HTTP port, shown
   exactly as the backend sees them (no longer hardcoded).
-- **Map** — the persisted map **base layer** (OpenStreetMap, ESRI Satellite /
-  Hybrid / Topographic / Streets) is shown here; the operator picks the layer
-  from the on-map control and the choice is saved to config and restored on the
-  next launch.
+
+The map base layer used to be a read-only row here; it is now editable in
+**Appearance** above (and still switchable from the on-map layer control, which
+stays in sync with it).
+
+### Files
+
+- **Parameter export folder** — where Setup → Parameters → *Export* writes
+  parameter files, on the machine running Corvus. Empty means
+  `~/.corvus/params`. Persisted as `params_dir`; the export dialog can still
+  override it per file.
+
+The tile-cache and tlog directories are config keys too (`tile_cache_dir` /
+`tlog_dir`) but are read at startup, so they stay config-file-only rather than
+appearing here as settings that silently need a restart.
 
 ### About
 
@@ -539,13 +625,14 @@ pyproject.toml                # tooling/pytest config (version comes from VERSIO
 │   ├── state_store.py        # thread-safe Vehicle State Store
 │   ├── mavlink_bridge.py     # pymavlink connection + message parsing
 │   ├── ssh_bridge.py         # paramiko SSH sessions
-│   ├── tile_cache.py         # offline MBTiles (SQLite) tile-cache store
+│   ├── tile_cache.py         # offline MBTiles store + named downloaded areas
 │   └── server.py             # HTTP + SSE + API server
 ├── src/                      # web frontend
 │   ├── index.html
 │   ├── css/
-│   │   ├── main.css          # layout + semantic palette
-│   │   └── components.css     # reusable component styles (.btn system)
+│   │   ├── themes.css        # ALL design tokens + the 5 color themes
+│   │   ├── main.css          # layout + screen-specific styling (no tokens)
+│   │   └── components.css    # reusable component styles (.btn/.field/.tile/.modal/…)
 │   ├── js/
 │   │   ├── telemetry.js          # SSE client for real telemetry
 │   │   ├── notification_dedupe.js # dedupes STATUSTEXT / warnings
@@ -603,6 +690,15 @@ The frontend never polls.
 | GET | `/api/params` | Parameter cache + download status (params only sent when complete — lean) |
 | GET | `/api/params/progress` | SSE stream of parameter download progress |
 | POST | `/api/params/set` | Write a parameter (refused while armed) |
+| GET | `/api/params/export/target` | Where an export would be written + the default filename |
+| POST | `/api/params/export` | Write a parameter file to disk; returns the full path |
+| GET | `/api/tiles/sources` | Registered tile sources + the provider grouping + cache stats |
+| POST | `/api/tiles/download` | Start a tile download for a named area |
+| POST | `/api/tiles/cancel` | Cancel a running download job |
+| GET | `/api/tiles/progress` | SSE stream of one download job's progress |
+| GET | `/api/tiles/regions` | The named, pre-downloaded areas across every source |
+| POST | `/api/tiles/regions/rename` | Rename a stored area |
+| POST | `/api/tiles/regions/remove` | Forget an area, optionally deleting the tiles no other area covers |
 | POST | `/api/calibrate` | Run a sensor calibration `{type: gyro\|compass\|baro\|accel\|level\|airspeed}` (refused while armed) |
 | POST | `/api/autotune` | Run PX4 autotune `{axis: roll\|pitch\|yaw\|all}` (refused while armed) |
 | POST | `/api/vibration/stream` | Request high-rate VIBRATION streaming on demand `{enabled, rate_hz}` (lean: restore default on close) |
@@ -635,7 +731,10 @@ rtl         — return to launch
 
 ## Color system
 
-The UI follows a strict semantic palette (defined in `src/css/main.css`):
+The UI follows a strict semantic palette. Every design token lives in
+`src/css/themes.css`; `main.css` and `components.css` only consume them. The
+table below shows the **Green** (default) theme — each other theme redefines
+the same token names:
 
 | Color | Hex | Meaning |
 |-------|-----|---------|
@@ -645,10 +744,30 @@ The UI follows a strict semantic palette (defined in `src/css/main.css`):
 | Yellow | `#F5C842` | warning |
 | Red | `#FF514D` | critical / error |
 
-The **accent** color (the Forest Green above, `#3DA876`) is now
-operator-customizable via **Settings → Appearance** — preset swatches plus a
-custom color picker, applied live and persisted. The app stays dark-mode; only
-the accent changes. See [Settings](#settings--appearance-ssh-map).
+The operator picks a whole **theme**, not a single color, via
+**Settings → Appearance** — Green, Blue, Pink, Orange, or Light — applied live
+and persisted. See [Settings](#settings--appearance-ssh-map).
+
+### Component layer
+
+UI is composed from `Corvus.ui` (`src/js/ui.js`) and its matching CSS in
+`src/css/components.css` — one factory per control, never hand-rolled markup at
+the call site:
+
+| Factory | Class system | Used for |
+|---------|--------------|----------|
+| `button` / `iconButton` | `.btn` / `.icon-btn` | every button in the app |
+| `label` / `field` / `select` / `input` | `.field-*` | every form control |
+| `card` / `section` / `pageHeader` / `row` / `empty` / `actions` | `.page-*` / `.ui-actions` | page structure |
+| `optionCards` / `optionList` | `.option-cards` / `.option-list` | theme + map-service pickers, layer switcher |
+| `tile` | `.tile` | Setup grid, Plugins grid |
+| `navItem` | `.nav-item` | left rail |
+| `progress` / `message` | `.ui-progress` / `.ui-msg` | download progress, inline status |
+| `modal` | `.modal` | offline map, SSH add, parameter export, motor-calibration confirm |
+| `statusDot` | `.status-dot` | connection / health indicators |
+
+A screen-specific class layers a *modifier* on top (`.calib-btn`,
+`.link-select`, `.setup-tile`) rather than re-implementing the control.
 
 ---
 

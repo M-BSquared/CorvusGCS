@@ -1,0 +1,252 @@
+/*
+  Corvus GCS — design tokens and the predefined color themes.
+
+  Loaded FIRST (before main.css and components.css) because it owns every
+  design token in the app: the palette, the translucency/shadow recipes, and
+  the structural constants (radii, bar sizes, fonts). Nothing else defines a
+  token — main.css and components.css only consume them. That is what makes a
+  whole-app theme switch a single attribute write.
+
+  How a theme is selected
+  -----------------------
+  Corvus.theme writes `data-theme="<id>"` on <html>. Bare `:root` carries the
+  DEFAULT theme (green) in full, so the app is completely styled before any
+  script runs and an unknown/missing id degrades to green rather than to an
+  unpainted page. Each `[data-theme]` block then overrides only what differs.
+
+  The four dark themes differ solely in their accent family, so their blocks
+  are short. "light" is the white/black theme: it inverts the whole surface,
+  text, border, translucency, and shadow stack, and takes near-black as its
+  accent — so on it every dark surface reads light, which is exactly the point
+  of that theme. Because every dark value in the app is a token, the inversion
+  needs no per-component overrides.
+
+  Channel tokens (--glass-rgb, --tint-rgb, --input-rgb) hold bare `R G B`
+  triples so a component can pick its own alpha with
+  `rgb(var(--glass-rgb) / 0.6)` without the theme having to enumerate every
+  alpha it might want. --tint-rgb is the "contrast overlay" channel: white on
+  the dark themes, black on light, so hover washes and hairline borders flip
+  direction automatically.
+*/
+
+/* ===================================================================
+   Structural tokens — identical in every theme (no block overrides these)
+   =================================================================== */
+:root {
+  --radius: 8px;
+  --radius-btn: 6px;
+  --radius-lg: 12px;
+  --top-h: 60px;
+  --left-w: 70px;
+  --panel-w: 380px;
+  --panel-w-collapsed: 24px;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* ===================================================================
+   DEFAULT THEME — green. Also the complete dark base every other dark
+   theme builds on, so those blocks only restate the accent family.
+   =================================================================== */
+:root {
+  color-scheme: dark;
+
+  --bg: #0B0E12;
+  --surface-1: #11161D;
+  --surface-2: #171D25;
+  --surface-3: #1C232C;
+  --surface-hover: #222A34;
+  --surface-active: #29323D;
+
+  --accent: #3DA876;
+  --accent-dim: rgba(61, 168, 118, 0.16);
+  --accent-bright: #5BC896;
+  --accent-dark: #1A3D2E;
+  --accent-hover: #4FBF8A;
+  --accent-pressed: #2D8862;
+
+  --healthy: #45D483;
+  --healthy-dark: #183A2A;
+  --healthy-bright: #63E89A;
+  --warning: #F5C842;
+  --warning-dark: #403716;
+  --critical: #FF514D;
+  --critical-dark: #421D1C;
+  --critical-bright: #FF726E;
+
+  --nav: #4CC9FF;
+  --nav-dark: #17394A;
+  --nav-bright: #7DDEFF;
+  --nav-dim: rgba(76, 201, 255, 0.18);
+  --waypoint: #62D6FF;
+  --vehicle: #FF514D;
+  --vehicle-rgb: 255 81 77;
+
+  --text-1: #F2F4F7;
+  --text-2: #A5ADB8;
+  --text-3: #69737F;
+  --text-disabled: #4A535E;
+  --text-inverted: #0B0E12;
+
+  --border: #2A3038;
+  --border-soft: #20262E;
+  --border-strong: #39424D;
+
+  --terminal-bg: #0A0D10;
+  --terminal-text: #D7DCE2;
+  --terminal-muted: #6F7882;
+  --terminal-cmd: #5BC896;
+  --ssh-bg: #090C0F;
+
+  --horizon-sky: #4CC9FF;
+  --horizon-ground: #8A5A32;
+  --graph-tertiary: #7C7F87;
+
+  /* --- Translucency channels ---
+     --glass-rgb  : the floating-surface material (popovers, HUD, map chrome)
+     --input-rgb  : recessed field wells, darker than the surface they sit on
+     --tint-rgb   : the contrast overlay — white on dark themes, black on light
+     Consumers pick their own alpha: rgb(var(--glass-rgb) / 0.55). */
+  --glass-rgb: 17 22 29;
+  --input-rgb: 11 14 18;
+  --tint-rgb: 255 255 255;
+  --scrim: rgba(0, 0, 0, 0.5);
+  --blur: blur(28px) saturate(180%);
+  --blur-soft: blur(24px) saturate(180%);
+
+  /* --- Elevation. Composite so a theme can retune spread AND alpha, which
+     a light theme must (a 0.45-black drop shadow looks like dirt on white). */
+  --shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  --shadow-soft: 0 2px 10px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 4px 16px rgba(0, 0, 0, 0.3);
+  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+/* ===================================================================
+   BLUE — dark base, cyan-blue accent family.
+   =================================================================== */
+:root[data-theme="blue"] {
+  --accent: #3B9EFF;
+  --accent-dim: rgba(59, 158, 255, 0.16);
+  --accent-bright: #6FBCFF;
+  --accent-dark: #14304F;
+  --accent-hover: #55ADFF;
+  --accent-pressed: #2B7FD4;
+  /* The nav family is cyan by default and would collide with a blue accent;
+     shift it to teal so "navigation" stays visually distinct from "accent". */
+  --nav: #35D6C4;
+  --nav-dark: #10403C;
+  --nav-bright: #6BE8DA;
+  --nav-dim: rgba(53, 214, 196, 0.18);
+  --waypoint: #35D6C4;
+  --terminal-cmd: #6FBCFF;
+}
+
+/* ===================================================================
+   PINK — dark base, magenta accent family.
+   =================================================================== */
+:root[data-theme="pink"] {
+  --accent: #F0509B;
+  --accent-dim: rgba(240, 80, 155, 0.16);
+  --accent-bright: #FF7DB8;
+  --accent-dark: #4A1733;
+  --accent-hover: #FF66A9;
+  --accent-pressed: #C93F7F;
+  --terminal-cmd: #FF7DB8;
+}
+
+/* ===================================================================
+   ORANGE — dark base, amber accent family.
+   =================================================================== */
+:root[data-theme="orange"] {
+  --accent: #F58A2B;
+  --accent-dim: rgba(245, 138, 43, 0.16);
+  --accent-bright: #FFAA5C;
+  --accent-dark: #4A2A10;
+  --accent-hover: #FF9C42;
+  --accent-pressed: #CC7020;
+  /* Default --warning is amber and would be indistinguishable from this
+     accent on the flight-action bar; pull warning toward yellow. */
+  --warning: #FFD966;
+  --warning-dark: #46400F;
+  --terminal-cmd: #FFAA5C;
+}
+
+/* ===================================================================
+   LIGHT — the white/black theme. Everything dark becomes light: surfaces
+   invert, text inverts, the contrast overlay flips from white to black,
+   and the status colors are re-picked at darker, more saturated values so
+   they keep AA contrast against white instead of glowing off it.
+   The accent is near-black, which is what makes this the "white & black"
+   theme rather than a light tint of one of the colored ones.
+   =================================================================== */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #F4F6F8;
+  --surface-1: #FFFFFF;
+  --surface-2: #F1F3F6;
+  --surface-3: #E8EBF0;
+  --surface-hover: #E2E6EC;
+  --surface-active: #D6DBE3;
+
+  --accent: #1B1F26;
+  --accent-dim: rgba(27, 31, 38, 0.10);
+  --accent-bright: #343B45;
+  --accent-dark: #E2E6EC;
+  --accent-hover: #2C323B;
+  --accent-pressed: #0E1116;
+
+  --healthy: #0F8B50;
+  --healthy-dark: #D8F1E3;
+  --healthy-bright: #0B7343;
+  --warning: #B07600;
+  --warning-dark: #FAEDCC;
+  --critical: #D62B26;
+  --critical-dark: #FBDCDB;
+  --critical-bright: #B32020;
+
+  --nav: #0B6FC0;
+  --nav-dark: #D8E9F8;
+  --nav-bright: #085A9C;
+  --nav-dim: rgba(11, 111, 192, 0.14);
+  --waypoint: #0B6FC0;
+  --vehicle: #D62B26;
+  --vehicle-rgb: 214 43 38;
+
+  --text-1: #12151A;
+  --text-2: #4C555F;
+  --text-3: #79828D;
+  --text-disabled: #A9B1BA;
+  --text-inverted: #FFFFFF;
+
+  --border: #D3D8DF;
+  --border-soft: #E4E8ED;
+  --border-strong: #B6BEC8;
+
+  --terminal-bg: #FFFFFF;
+  --terminal-text: #1B1F26;
+  --terminal-muted: #79828D;
+  --terminal-cmd: #0F8B50;
+  --ssh-bg: #F7F8FA;
+
+  --horizon-sky: #58ADE4;
+  --horizon-ground: #B08050;
+  --graph-tertiary: #6B7480;
+
+  /* Glass frosts white; the contrast overlay flips to black so every hover
+     wash and hairline border in the app darkens instead of lightening. */
+  --glass-rgb: 255 255 255;
+  --input-rgb: 255 255 255;
+  --tint-rgb: 0 0 0;
+  --scrim: rgba(22, 28, 38, 0.35);
+
+  /* Shadows on white must be far lighter and tinted toward the surface, or
+     they read as smudges rather than elevation. */
+  --shadow: 0 6px 20px rgba(22, 28, 38, 0.12);
+  --shadow-soft: 0 2px 10px rgba(22, 28, 38, 0.08);
+  --shadow-pop: 0 4px 16px rgba(22, 28, 38, 0.10);
+  --shadow-glass: 0 8px 32px rgba(22, 28, 38, 0.14);
+  --shadow-modal: 0 16px 48px rgba(22, 28, 38, 0.18);
+}

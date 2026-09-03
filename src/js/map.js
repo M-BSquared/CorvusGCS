@@ -126,33 +126,56 @@ Corvus.map = (function () {
   // MapLibre GL JS v4.7.1 is vendored locally at src/vendor/maplibre-gl.min.js
   // (offline fix: the field laptop has no internet, so the CDN load failed and
   // left #map empty). Keep this in sync with src/index.html and the vendor file.
-  // `attribution` mirrors corvus/tile_sources.py (manual dual-maintenance, same
-  // as label/maxzoom) so MapLibre's attribution control can credit the source.
-  const TILE = {
-    satellite: { label: "Satellite", maxzoom: 19, attribution: "© Esri, Maxar, Earthstar Geographics" },
-    hybrid: { label: "Hybrid", maxzoom: 19, attribution: "© Esri, Maxar, Earthstar Geographics" },
-    topo: { label: "Topographic", maxzoom: 19, attribution: "© Esri, HERE, Garmin, USGS, NGA" },
-    osm: { label: "OpenStreetMap", maxzoom: 19, attribution: "© OpenStreetMap contributors" },
-    streets: { label: "Streets", maxzoom: 19, attribution: "© Esri, HERE, Garmin, NGA, USGS" },
+
+  // The source catalogue is HYDRATED from GET /api/tiles/sources, which reads
+  // corvus/tile_sources.py — the single registry. The frontend used to carry a
+  // hand-copied mirror of every id, label, maxzoom, and attribution, which had
+  // to be updated in lockstep with the Python side and was the one place a new
+  // source could ship uncredited. BOOTSTRAP is the only entry still stated
+  // here, because the map paints its first frame before any fetch can resolve.
+  const BOOTSTRAP_LAYER = "satellite";
+  const BOOTSTRAP = {
+    id: BOOTSTRAP_LAYER,
+    label: "Satellite",
+    provider: "esri",
+    style: "satellite",
+    maxzoom: 19,
+    attribution: "\u00a9 Esri, Maxar, Earthstar Geographics",
   };
 
-  // Module-level so the config-load path and setBaseLayer can update the active
-  // base layer independently of the buildControls closure (which used to own a
-  // local `active`). `layersPopoverEl` lets setBaseLayer sync button .active
-  // classes from outside the click handler.
-  let activeLayer = "satellite";
+  // id -> source descriptor, and the provider grouping used by the layer
+  // switcher. Both stay at their bootstrap value if the fetch fails, so a
+  // backend hiccup degrades to "satellite only" rather than a blank map.
+  let sources = { [BOOTSTRAP_LAYER]: BOOTSTRAP };
+  let providers = [];
+
+  /** Descriptor for *key*, falling back to the bootstrap entry so a raster
+   *  source is never added without a maxzoom or an attribution string. */
+  function specFor(key) {
+    return sources[key] || BOOTSTRAP;
+  }
+
+  // Which base layer is showing. Module-level so the config-load path,
+  // setBaseLayer, and the Settings map-service picker all agree on it
+  // independently of the buildControls closure.
+  let activeLayer = BOOTSTRAP_LAYER;
   let layersPopoverEl = null;
+  // Handle returned by Corvus.ui.optionList — it owns the "which layer is
+  // active" highlight, so setBaseLayer never has to walk the DOM for it.
+  let layerPicker = null;
+
+  // Downloaded-area overlay: the named regions from GET /api/tiles/regions,
+  // drawn as outlined rectangles with a DOM label at each centre. Labels are
+  // markers rather than a MapLibre symbol layer on purpose — a text layer
+  // needs a glyphs URL, and the field laptop has no internet to fetch fonts
+  // from (the whole reason these regions exist).
+  let regions = [];
+  let regionSource = null;
+  let regionMarkers = [];
+  let regionsVisible = true;
 
   function tileUrl(key) {
     return "/api/tiles/" + key + "/{z}/{x}/{y}.png";
-  }
-
-  function icon(name, size) {
-    const i = document.createElement("i");
-    i.setAttribute("data-lucide", name);
-    i.style.width = size + "px";
-    i.style.height = size + "px";
-    return i;
   }
 
   function buildVehicleMarker() {
@@ -196,6 +219,115 @@ Corvus.map = (function () {
     pathSource = map.getSource("vehicle-path");
   }
 
+  function addRegionLayer() {
+    map.addSource("offline-regions", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+    // Below the flight track and the plan route: knowing where your tiles are
+    // must never obscure where the aircraft is.
+    map.addLayer({
+      id: "offline-regions-fill",
+      source: "offline-regions",
+      type: "fill",
+      paint: { "fill-color": "#4CC9FF", "fill-opacity": 0.06 },
+    });
+    map.addLayer({
+      id: "offline-regions-line",
+      source: "offline-regions",
+      type: "line",
+      layout: { "line-cap": "square", "line-join": "miter" },
+      paint: {
+        "line-color": "#4CC9FF",
+        "line-width": 1.4,
+        "line-opacity": 0.85,
+        "line-dasharray": [4, 3],
+      },
+    });
+    regionSource = map.getSource("offline-regions");
+  }
+
+  /** Closed [lng,lat] ring for a {w,s,e,n} bounds (GeoJSON needs the first
+   *  point repeated at the end). */
+  function boundsRing(b) {
+    return [[
+      [b.w, b.s], [b.e, b.s], [b.e, b.n], [b.w, b.n], [b.w, b.s],
+    ]];
+  }
+
+  function buildRegionLabel(region) {
+    const el = document.createElement("div");
+    el.className = "region-label" + (region.state === "running" ? " downloading" : "");
+    const name = document.createElement("span");
+    name.className = "region-label-name";
+    name.textContent = region.name || "Region";
+    el.appendChild(name);
+    const meta = document.createElement("span");
+    meta.className = "region-label-meta";
+    meta.textContent = region.state === "running"
+      ? "downloading\u2026"
+      : `z${region.minzoom}\u2013${region.maxzoom}`;
+    el.appendChild(meta);
+    return el;
+  }
+
+  /**
+   * Replace the drawn set of downloaded areas. Safe before the map has loaded
+   * (the list is stored and drawn on "load"), and safe to call repeatedly —
+   * every marker from the previous call is removed first, so a region that
+   * was renamed or deleted cannot leave a stale label behind.
+   */
+  function setRegions(list) {
+    regions = Array.isArray(list) ? list.slice() : [];
+    if (!map || !started || !regionSource) return;
+
+    regionSource.setData({
+      type: "FeatureCollection",
+      features: regionsVisible ? regions.map((r) => ({
+        type: "Feature",
+        geometry: { type: "Polygon", coordinates: boundsRing(r.bounds || {}) },
+        properties: { id: r.id, name: r.name || "" },
+      })) : [],
+    });
+
+    regionMarkers.forEach((m) => m.remove());
+    regionMarkers = [];
+    if (!regionsVisible) return;
+    regions.forEach((r) => {
+      const b = r.bounds || {};
+      const centre = [((b.w + b.e) / 2), ((b.s + b.n) / 2)];
+      if (!isFinite(centre[0]) || !isFinite(centre[1])) return;
+      regionMarkers.push(
+        new maplibregl.Marker({ element: buildRegionLabel(r), anchor: "center" })
+          .setLngLat(centre).addTo(map));
+    });
+  }
+
+  /** Fetch the named areas from the backend and draw them. Failure is silent:
+   *  the overlay is informational, and a missing backend already shows up
+   *  everywhere else. */
+  function loadRegions() {
+    return Corvus.telemetry.requestJson("/api/tiles/regions").then((data) => {
+      setRegions((data && data.regions) || []);
+      return regions;
+    }).catch(() => regions);
+  }
+
+  /** Show/hide the overlay without discarding the list. Returns the new state. */
+  function setRegionsVisible(on) {
+    regionsVisible = !!on;
+    setRegions(regions);
+    return regionsVisible;
+  }
+
+  /** Frame a {w,s,e,n} bounds in the viewport, with room around it. */
+  function fitBounds(b) {
+    if (!map || !b) return;
+    const w = Number(b.w), s = Number(b.s), e = Number(b.e), n = Number(b.n);
+    if (![w, s, e, n].every(isFinite)) return;
+    map.fitBounds([[w, s], [e, n]], { padding: 60, duration: 700 });
+  }
+
   function addWaypointRouteLayer() {
     map.addSource("waypoints-route", {
       type: "geojson",
@@ -217,7 +349,7 @@ Corvus.map = (function () {
   }
 
   function initialStyle(key) {
-    const spec = TILE[key] || TILE.satellite;
+    const spec = specFor(key);
     const sources = {
       base: {
         type: "raster",
@@ -233,9 +365,16 @@ Corvus.map = (function () {
     return { version: 8, sources, layers };
   }
 
+  /** Swap the base raster layer. Safe to call before the map has loaded (the
+   *  choice is remembered and applied on "load") and idempotent otherwise. */
   function setBaseLayer(key) {
-    const spec = TILE[key] || TILE.satellite;
+    if (!sources[key] && key !== BOOTSTRAP_LAYER) return;
     activeLayer = key;
+    // Sync the switcher before the early-out, so a choice made from Settings
+    // while the map is still loading is already reflected when it appears.
+    if (layerPicker) layerPicker.setValue(key);
+    if (!map || !started) return;
+    const spec = specFor(key);
     if (map.getLayer("base")) map.removeLayer("base");
     if (map.getSource("base")) map.removeSource("base");
     map.addSource("base", {
@@ -247,13 +386,6 @@ Corvus.map = (function () {
     });
     // Insert base BELOW "path-glow" so the track/waypoints stay on top.
     map.addLayer({ id: "base", type: "raster", source: "base" }, "path-glow");
-    // Keep the layer-switcher buttons in sync. The popover may not exist yet
-    // during the initial config-load race (buildControls runs on map "load"),
-    // so guard defensively.
-    if (layersPopoverEl) {
-      layersPopoverEl.querySelectorAll(".layer-opt").forEach((x) =>
-        x.classList.toggle("active", x.dataset.layer === key));
-    }
   }
 
   function buildControls(container, layersPopover) {
@@ -264,6 +396,7 @@ Corvus.map = (function () {
       { id: "center", icon: "crosshair", title: "Center on vehicle" },
       { id: "divider" },
       { id: "layers", icon: "layers", title: "Map layers" },
+      { id: "regions", icon: "frame", title: "Show downloaded areas", active: true },
       { id: "three", icon: "box", title: "3D mode" },
     ];
     items.forEach((it) => {
@@ -273,36 +406,19 @@ Corvus.map = (function () {
         container.appendChild(d);
         return;
       }
-      const b = document.createElement("button");
-      b.className = "mc-btn";
-      b.title = it.title;
+      // Same factory as every other icon button in the app; .mc-btn only
+      // supplies the map-chrome surface, not the button's construction.
+      const b = Corvus.ui.iconButton(it.icon, {
+        className: "mc-btn",
+        title: it.title,
+        size: 17,
+        variant: it.active ? "active" : undefined,
+      });
       b.dataset.act = it.id;
-      b.appendChild(icon(it.icon, 17));
       container.appendChild(b);
     });
 
-    const layers = [
-      { id: "satellite", label: "Satellite" },
-      { id: "hybrid", label: "Hybrid" },
-      { id: "topo", label: "Topographic" },
-      { id: "osm", label: "OpenStreetMap" },
-      { id: "streets", label: "Streets" },
-    ];
-    layersPopover.innerHTML = "<h4>Map layers</h4>";
-    layers.forEach((l) => {
-      const b = document.createElement("button");
-      b.className = "layer-opt" + (l.id === activeLayer ? " active" : "");
-      b.dataset.layer = l.id;
-      b.innerHTML = '<span class="dot"></span>' + l.label;
-      b.addEventListener("click", () => {
-        setBaseLayer(l.id);
-        // Persist the choice so it survives restarts. Fire-and-forget: a
-        // failed save (backend busy/offline) must never break the switch.
-        Corvus.telemetry.postAction("/api/config", { map: { base_layer: l.id } })
-          .catch(() => {});
-      });
-      layersPopover.appendChild(b);
-    });
+    renderLayersPopover();
 
     container.addEventListener("click", (e) => {
       const b = e.target.closest(".mc-btn");
@@ -317,6 +433,8 @@ Corvus.map = (function () {
         const open = !layersPopover.hidden;
         layersPopover.hidden = open;
         b.classList.toggle("active", !open);
+      } else if (act === "regions") {
+        b.classList.toggle("active", setRegionsVisible(!regionsVisible));
       } else if (act === "three") {
         const on = map.getPitch() < 10;
         map.easeTo({ pitch: on ? 50 : 0, duration: 500 });
@@ -331,6 +449,89 @@ Corvus.map = (function () {
         if (lb) lb.classList.remove("active");
       }
     });
+  }
+
+  /**
+   * (Re)build the layer switcher from the hydrated source catalogue. Layers are
+   * grouped under their service (Esri / OpenStreetMap / Google / Bing) so the
+   * twelve entries stay scannable and the operator can see which service a
+   * layer belongs to without opening Settings. Called once from buildControls
+   * with just the bootstrap entry, and again after the catalogue loads.
+   */
+  function renderLayersPopover() {
+    if (!layersPopoverEl) return;
+    Corvus.ui.clear(layersPopoverEl);
+
+    const head = document.createElement("h4");
+    head.textContent = "Map layers";
+    layersPopoverEl.appendChild(head);
+
+    // Fall back to a single ungrouped group before the catalogue arrives.
+    const groups = providers.length
+      ? providers
+      : [{ id: BOOTSTRAP.provider, label: "", sources: [BOOTSTRAP_LAYER] }];
+
+    // One picker across all groups so exactly one layer is ever marked active;
+    // the group headings are interleaved into the same element afterwards.
+    const options = [];
+    groups.forEach((g) => {
+      (g.sources || []).forEach((id) => {
+        const s = sources[id];
+        if (s) options.push({ id, label: s.label || id, group: g.label });
+      });
+    });
+
+    layerPicker = Corvus.ui.optionList({
+      ariaLabel: "Map layer",
+      value: activeLayer,
+      options,
+      onChange: (id) => {
+        setBaseLayer(id);
+        // Persist the choice so it survives restarts. Fire-and-forget: a
+        // failed save (backend busy/offline) must never break the switch.
+        Corvus.telemetry.postAction("/api/config", {
+          map: { base_layer: id, provider: specFor(id).provider },
+        }).catch(() => {});
+      },
+    });
+
+    // Insert a heading before the first item of each group. Skipped when there
+    // is only one group (no point labelling a single section).
+    if (groups.length > 1) {
+      const items = Array.from(layerPicker.el.children);
+      let cursor = 0;
+      groups.forEach((g) => {
+        const count = (g.sources || []).filter((id) => sources[id]).length;
+        if (!count) return;
+        const h = document.createElement("div");
+        h.className = "layer-group";
+        h.textContent = g.label;
+        layerPicker.el.insertBefore(h, items[cursor]);
+        cursor += count;
+      });
+    }
+
+    layersPopoverEl.appendChild(layerPicker.el);
+  }
+
+  /**
+   * Load the source catalogue from the backend and rebuild the layer switcher.
+   * Failure is non-fatal: the bootstrap entry keeps the map painting, so the
+   * worst case is a switcher with one option rather than a broken map.
+   */
+  function loadSources() {
+    return Corvus.telemetry.requestJson("/api/tiles/sources").then((data) => {
+      const list = (data && data.sources) || [];
+      if (!list.length) return;
+      const next = {};
+      list.forEach((s) => { next[s.id] = s; });
+      sources = next;
+      providers = (data && data.providers) || [];
+      renderLayersPopover();
+      // The active layer's attribution/maxzoom may have been the bootstrap
+      // fallback until now; re-apply so MapLibre credits the real source.
+      if (started && activeLayer !== BOOTSTRAP_LAYER) setBaseLayer(activeLayer);
+    }).catch(() => {});
   }
 
   function centerOnVehicle(animate) {
@@ -607,6 +808,9 @@ Corvus.map = (function () {
       keyboard: false,
     });
     map.on("load", () => {
+      // Regions first: their layers must sit UNDER the track and plan route,
+      // and MapLibre stacks in insertion order.
+      addRegionLayer();
       addPathLayer();
       addWaypointRouteLayer();
 
@@ -640,16 +844,22 @@ Corvus.map = (function () {
       buildControls(controlsEl, layersPopover);
       Corvus.telemetry.subscribe(updateVehicle);
       started = true;
+      // Draw whatever regions arrived while the style was still loading, then
+      // refresh from the backend.
+      setRegions(regions);
+      loadRegions();
       window.dispatchEvent(new Event("corvus:mapready"));
     });
 
-    // Load the operator's saved base layer and swap to it. The map already
-    // rendered "satellite" synchronously above, so a slow or failed fetch just
-    // leaves the default — the map is never blank (offline-safe). Errors are
+    // Hydrate the source catalogue, then apply the operator's saved base layer.
+    // Order matters: the catalogue has to land first, or a saved Google/Bing
+    // layer would be rejected as unknown. The map already rendered the
+    // bootstrap layer synchronously above, so a slow or failed fetch just
+    // leaves that default — the map is never blank (offline-safe). Errors are
     // swallowed: /api/config may not exist yet or the backend may be busy.
-    Corvus.telemetry.requestJson("/api/config").then((res) => {
+    loadSources().then(() => Corvus.telemetry.requestJson("/api/config")).then((res) => {
       const key = res && res.config && res.config.map && res.config.map.base_layer;
-      if (!key || !TILE[key] || key === "satellite") return;
+      if (!key || !sources[key] || key === activeLayer) return;
       activeLayer = key;
       if (started) setBaseLayer(key);
       else window.addEventListener("corvus:mapready", () => setBaseLayer(key), { once: true });
@@ -667,16 +877,28 @@ Corvus.map = (function () {
     onWaypointsUpdate,
     getSources,
     getCacheStats,
-    // test hook: expose the static tile-source mirror so a node test can assert
-    // the frontend `TILE` stays in sync with corvus/tile_sources.py (5 entries,
-    // each with a non-empty attribution). Read-only; mirrors the `_animators`
-    // hook convention on Corvus.anim above.
-    _TILE: () => TILE,
+    // Settings' map-service picker drives the live map through this, so the
+    // Home tab's layer switcher and the Appearance page can never disagree
+    // about which base layer is showing.
+    setBaseLayer,
+    getBaseLayer: () => activeLayer,
+    // Downloaded-area overlay, driven by the offline-map dialog.
+    setRegions,
+    loadRegions,
+    setRegionsVisible,
+    getRegions: () => regions.slice(),
+    fitBounds,
+    // test hook: the hydrated source catalogue (id -> descriptor). Before
+    // /api/tiles/sources resolves this holds only the bootstrap entry, which
+    // is exactly what a test asserting the offline fallback wants to see.
+    // Read-only; mirrors the `_animators` hook convention on Corvus.anim.
+    _sources: () => sources,
+    _bootstrap: () => BOOTSTRAP,
     // test hook: pure coordinate computation for the plan route (vehicle
     // position prefix + operator waypoints, or []). Accepts an optional
     // waypoint list for testing in Node, where the internal `waypoints` array
     // cannot be populated without a map; omit it to use the live waypoints.
-    // Never touches wpRouteSource (null in Node). Mirrors the _TILE convention.
+    // Never touches wpRouteSource (null in Node). Mirrors the _sources convention.
     _planRouteCoords: (wps) => computePlanCoords(wps),
   };
 })();

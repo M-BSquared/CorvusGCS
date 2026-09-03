@@ -4,7 +4,8 @@ Zero-config field use is the default: if no config file is present the app
 behaves exactly as before. An operator who wants to pin a default MAVLink
 connection, custom tile upstreams, the cache dir, or stream-rate overrides
 drops a small JSON file at ``~/.corvus/config.json`` (or a path passed to
-:func:`load_config`) instead of forking the code.
+:func:`load_config`) instead of forking the code. The Settings page writes the
+same file for the UI state it owns (color theme, map service, SSH list).
 
 Design rules (mandated by AGENTS.md):
 - Fully optional and importable without side effects. No file is read at
@@ -40,6 +41,7 @@ _CONFIG_FIELD_ORDER: tuple[str, ...] = (
     "http_port",
     "tile_cache_dir",
     "tlog_dir",
+    "params_dir",
     "tile_sources",
     "stream_rates",
     "ssh_connections",
@@ -56,21 +58,25 @@ _SSH_CONN_KEYS: tuple[str, ...] = ("name", "host", "port", "username", "key_path
 class CorvusConfig:
     """Operator-tunable runtime defaults.
 
-    Empty-string dir fields (``tile_cache_dir``/``tlog_dir``) mean "use the
-    built-in default" (``~/.corvus/tiles`` / ``~/.corvus/logs``); a non-empty
-    value pins the location. ``None`` dict fields mean "use built-in
+    Empty-string dir fields (``tile_cache_dir``/``tlog_dir``/``params_dir``)
+    mean "use the built-in default" (``~/.corvus/tiles`` / ``~/.corvus/logs``
+    / ``~/.corvus/params``); a non-empty value pins the location. ``None`` dict fields mean "use built-in
     defaults"; a dict overrides the whole registry.
 
-    ``ssh_connections``/``theme``/``map`` are persisted operator UI state
-    (the SSH connection list, the accent color, the map base-layer). They
-    default to empty/None so an old config file with none of these keys
-    still loads cleanly.
+    ``ssh_connections``/``theme``/``map`` are persisted operator UI state:
+    the SSH connection list, the selected color theme (``{"name": ...}``, one
+    of the predefined themes in ``src/css/themes.css``; the legacy
+    ``{"accent": "#RRGGBB"}`` from the old accent picker is still parsed), and
+    the map service + base layer (``{"provider": ..., "base_layer": ...}``,
+    see ``corvus/tile_sources.py``). They default to empty/None so an old
+    config file with none of these keys still loads cleanly.
     """
 
     mavlink_connection: str = "udp:0.0.0.0:14540"
     http_port: int = 8000
     tile_cache_dir: str = ""          # "" = ~/.corvus/tiles (default_cache_dir)
     tlog_dir: str = ""               # "" = ~/.corvus/logs
+    params_dir: str = ""             # "" = ~/.corvus/params (exported param files)
     tile_sources: dict[str, dict] | None = None
     stream_rates: dict | None = None
     ssh_connections: list[dict[str, Any]] = dataclasses.field(default_factory=list)
@@ -163,24 +169,44 @@ def _coerce_ssh_connections(raw: Any) -> list[dict[str, Any]]:
     return out
 
 
-def _coerce_theme(raw: Any) -> dict[str, Any] | None:
-    """Keep ``accent`` only when it is a string; else None (use defaults)."""
+def _coerce_str_keys(raw: Any, keys: tuple[str, ...]) -> dict[str, Any] | None:
+    """Keep the string-valued entries of *raw* named in *keys*; else None.
+
+    The shared coercion behind ``theme`` and ``map``: both are small,
+    open-ended string maps whose unknown/mistyped members must be dropped
+    rather than crash the load. Only keys actually present AND string-valued
+    survive, so an old config file round-trips byte-for-byte and a partially
+    written one still loads. Returns None (= "use defaults") when nothing
+    usable is left, matching the ``None`` semantics of the dataclass fields.
+    """
     if not isinstance(raw, dict):
         return None
-    accent = raw.get("accent")
-    if not isinstance(accent, str):
-        return None
-    return {"accent": accent}
+    out = {k: raw[k] for k in keys if isinstance(raw.get(k), str)}
+    return out or None
+
+
+def _coerce_theme(raw: Any) -> dict[str, Any] | None:
+    """Keep the string-valued ``name``/``accent`` theme keys; else None.
+
+    ``name`` selects one of the predefined CSS themes shipped in
+    ``src/css/themes.css`` (green/blue/pink/orange/light) and is what the
+    Appearance settings write today. ``accent`` is the legacy single-color
+    override from the v1 accent picker: still parsed so an existing
+    ``~/.corvus/config.json`` keeps loading, no longer written by the UI.
+    """
+    return _coerce_str_keys(raw, ("name", "accent"))
 
 
 def _coerce_map(raw: Any) -> dict[str, Any] | None:
-    """Keep ``base_layer`` only when it is a string; else None."""
-    if not isinstance(raw, dict):
-        return None
-    base_layer = raw.get("base_layer")
-    if not isinstance(base_layer, str):
-        return None
-    return {"base_layer": base_layer}
+    """Keep the string-valued ``base_layer``/``provider`` map keys; else None.
+
+    ``provider`` names the tile service (esri/osm/google/bing) and
+    ``base_layer`` the concrete source id within it; see
+    ``corvus/tile_sources.py``. Neither is validated against the registry
+    here — an unknown value must not stop the config from loading, so the
+    frontend falls back to its defaults when it cannot resolve one.
+    """
+    return _coerce_str_keys(raw, ("base_layer", "provider"))
 
 
 def _build_config(data: dict[str, Any]) -> CorvusConfig:
@@ -210,6 +236,10 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
     if isinstance(data.get("tlog_dir"), str):
         tlog_dir = data["tlog_dir"]
 
+    params_dir = defaults.params_dir
+    if isinstance(data.get("params_dir"), str):
+        params_dir = data["params_dir"]
+
     tile_sources = defaults.tile_sources
     if isinstance(data.get("tile_sources"), dict):
         tile_sources = data["tile_sources"]
@@ -227,6 +257,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         http_port=http_port,
         tile_cache_dir=tile_cache_dir,
         tlog_dir=tlog_dir,
+        params_dir=params_dir,
         tile_sources=tile_sources,
         stream_rates=stream_rates,
         ssh_connections=ssh_connections,
@@ -271,6 +302,7 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
         "http_port": cfg.http_port,
         "tile_cache_dir": cfg.tile_cache_dir,
         "tlog_dir": cfg.tlog_dir,
+        "params_dir": cfg.params_dir,
         "ssh_connections": [dict(entry) for entry in cfg.ssh_connections],
     }
     if cfg.tile_sources is not None:

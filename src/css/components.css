@@ -1,18 +1,19 @@
 /*
   Corvus GCS — reusable component layer.
-  Loaded AFTER main.css so it can extend :root and layer component styles on
-  top of the layout/panel CSS without redefining the palette. The .btn system
-  replaces the dozen hand-rolled button classes (.fa-btn, .link-connect,
-  .plan-fly, .params-apply, ...) with one attribute-driven foundation; the
-  migration of existing call sites happens in a later wave, so this file
-  must stand alone and not assume any refactor.
-*/
 
-/* Only token main.css does not already define: a brighter critical for the
-   danger hover state. main.css owns the rest of the palette. */
-:root {
-  --critical-bright: #ff726e;
-}
+  Loaded LAST (after css/themes.css and css/main.css) so it can layer the
+  shared component system on top of the page/panel layout. It defines no
+  design tokens: every value here reads a var() from themes.css, which is
+  what makes a theme switch restyle every component at once.
+
+  This is the CSS half of src/js/ui.js — one class system per factory there:
+  .btn / .icon-btn (button, iconButton), .field-* (label, field, select,
+  input), .option-cards / .option-list (optionCards, optionList),
+  .ui-progress / .ui-msg / .ui-actions (progress, message, actions), .glass
+  (every floating surface), .status-dot (statusDot). New UI is composed from
+  these; a screen-specific class layers a modifier on top rather than
+  re-implementing the control.
+*/
 
 /* ===== .glass — one translucent material for every floating surface =====
    apple-design §12: translucency conveys hierarchy. A single definition keeps
@@ -20,11 +21,11 @@
    one family. Each surface keeps its own positioning/size in main.css; this
    class supplies the shared blur, border, and shadow depth only. */
 .glass {
-  background: rgba(17, 22, 29, 0.6);
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  background: rgb(var(--glass-rgb) / 0.6);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border: 1px solid rgb(var(--tint-rgb) / 0.08);
+  box-shadow: var(--shadow-glass);
 }
 /* Reduced transparency: frost the material to a solid surface so text stays
    legible without the blur (apple-design §14). */
@@ -256,4 +257,351 @@
    frost here. No translucent .btn surfaces today, so nothing to override. */
 @media (prefers-reduced-transparency: reduce) {
   /* reserved for translucent .btn variants */
+}
+
+/* ===== Form fields — .field / .field-label / .field-select / .field-input =====
+   One field system for every form control in the app (link setup, offline-map
+   downloader, settings). Replaces the four near-identical .link-* / .tiles-* /
+   .params-* input rules that each re-declared the same well, border, focus
+   ring and dropdown chevron. Screen-specific classes may still adjust width
+   or spacing; nothing re-declares the control's own look. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+/* An inline field shares a row with its siblings and splits the width evenly
+   (the downloader's min/max zoom pair). */
+.field-inline { flex: 1; }
+
+.field-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.7px;
+  color: var(--text-3);
+  text-transform: uppercase;
+}
+.field-hint {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-3);
+}
+
+.field-select,
+.field-input {
+  width: 100%;
+  /* A recessed well: darker than its surface on the dark themes, white on
+     light. --input-rgb flips with the theme so this needs no override. */
+  background: rgb(var(--input-rgb) / 0.6);
+  color: var(--text-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-btn);
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: var(--sans);
+  outline: none;
+  appearance: none;
+  transition: border-color 130ms, box-shadow 130ms;
+}
+.field-select:disabled,
+.field-input:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.field-select {
+  padding-right: 26px;
+  cursor: pointer;
+  /* Inline chevron so the control needs no extra DOM. currentColor is not
+     available inside a data: URI, so the stroke is the muted text color and
+     is restated for the light theme below. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2369737F' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+.field-select option { background: var(--surface-1); color: var(--text-1); }
+
+.field-input-mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.field-select:focus,
+.field-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+/* Invalid input: the border and ring go critical, overriding the focus ring
+   so a focused bad value still reads as an error. */
+.field-input.invalid,
+.field-input.invalid:focus {
+  border-color: var(--critical);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--critical) 20%, transparent);
+}
+
+/* ===== .ui-actions — horizontal button group ===== */
+.ui-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Stretch makes every child share the width equally (a two-button confirm
+   row); without it buttons keep their intrinsic width. */
+.ui-actions-stretch > .btn { flex: 1; }
+
+/* ===== .tile — large clickable tile (Setup grid, Plugins grid) =====
+   apple-design: lift on hover, scale on press, keyboard focus ring,
+   transform/opacity only. The two grids differ solely in flow direction, icon
+   size and padding, so those are the only things their own classes set. */
+.tile {
+  display: flex;
+  text-align: left;
+  cursor: pointer;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              background 130ms, border-color 130ms, box-shadow 160ms;
+  will-change: transform;
+}
+.tile:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-soft);
+}
+.tile:active { transform: translateY(0) scale(0.99); }
+.tile:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+
+.tile-icon {
+  border-radius: var(--radius-btn);
+  background: var(--accent-dark);
+  color: var(--accent-bright);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+.tile-body { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.tile-title { font-size: 14px; font-weight: 600; color: var(--text-1); letter-spacing: 0.2px; }
+.tile-desc { font-size: 11.5px; color: var(--text-3); line-height: 1.45; }
+/* Trailing affordance chevron (Setup tiles). */
+.tile > svg, .tile > i[data-lucide="chevron-right"] {
+  width: 16px; height: 16px; color: var(--text-3); flex: 0 0 auto; align-self: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile, .tile:hover, .tile:active {
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
+/* ===== .option-cards — grid of selectable cards =====
+   The theme picker and the map-service picker are the same control with
+   different content, so they are the same component. --option-columns lets a
+   call site pick the density; the grid still wraps below its min width. */
+.option-cards {
+  display: grid;
+  grid-template-columns: repeat(var(--option-columns, 2), minmax(0, 1fr));
+  gap: 8px;
+}
+.option-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-btn);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+  transition: background 130ms, border-color 130ms, color 130ms,
+              transform 100ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.option-card:hover { background: var(--surface-hover); color: var(--text-1); }
+.option-card:active { transform: scale(0.98); }
+.option-card:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+/* Selected: accent border plus a ring, so the choice survives the swatch
+   colors being arbitrary (a border alone can vanish against its own swatch). */
+.option-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  background: var(--accent-dark);
+  color: var(--text-1);
+}
+
+/* The palette preview: one chip per color, butted together into a single
+   rounded pill so a theme reads as one swatch rather than three dots. */
+.option-card-swatch {
+  display: flex;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 22px;
+  border-radius: 5px;
+  overflow: hidden;
+  border: 1px solid rgb(var(--tint-rgb) / 0.12);
+}
+.option-card-chip { flex: 1; min-width: 0; }
+.option-card-icon { flex: 0 0 auto; width: 16px; height: 16px; }
+
+.option-card-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.option-card-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.option-card-desc {
+  font-size: 10.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.option-card.selected .option-card-desc { color: var(--text-2); }
+
+/* ===== .option-list — vertical single-line chooser (map layer switcher) ===== */
+.option-list { display: flex; flex-direction: column; gap: 2px; }
+.option-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: var(--radius-btn);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 130ms, color 130ms;
+}
+.option-item:hover { background: var(--surface-hover); color: var(--text-1); }
+.option-item:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: -2px; }
+.option-item.active { background: var(--accent-dark); color: var(--text-1); }
+.option-item-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--text-3);
+  transition: background 130ms, box-shadow 130ms;
+}
+.option-item.active .option-item-dot {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
+.option-item-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===== .ui-progress — determinate bar + caption ===== */
+.ui-progress { display: flex; flex-direction: column; gap: 8px; }
+.ui-progress[hidden] { display: none; }
+.ui-progress-text {
+  font-size: 11px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== .ui-msg — inline status message =====
+   Three severities sharing one shape. The tinted background is derived from
+   the severity color so a theme only has to redefine the color itself. */
+.ui-msg {
+  font-size: 11.5px;
+  line-height: 1.4;
+  padding: 8px 10px;
+  border-radius: var(--radius-btn);
+}
+.ui-msg[hidden] { display: none; }
+.ui-msg.ok   { color: var(--healthy);  background: var(--healthy-dark);  border: 1px solid var(--healthy); }
+.ui-msg.err  { color: var(--critical); background: var(--critical-dark); border: 1px solid var(--critical); }
+.ui-msg.warn { color: var(--warning);  background: var(--warning-dark);  border: 1px solid var(--warning); }
+
+/* ===== Light-theme corrections =====
+   Two places cannot read a token: the chevron baked into the select's data:
+   URI, and Lucide's stroke inside an <img>-like context. Only the chevron
+   needs a fix — restate it with the light theme's muted text color. */
+:root[data-theme="light"] .field-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2379828D' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+}
+
+/* ===== .modal — one dialog for the whole app =====
+   Dimmed, blurred scrim with a centred glass panel. Replaces the three
+   hand-rolled overlays (.ssh-modal-*, .motor-calib-*, and the offline-map
+   panel that used to be an anchored popover on the map). Sits above the map
+   chrome and the right panel so nothing can cover it — which is why the
+   offline-map downloader is a dialog now and not a popover. */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: var(--scrim);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  animation: corvus-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.modal {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* Never taller than the viewport: the body scrolls, the header and the
+     action row stay pinned. A long region list must not push the buttons off
+     screen. */
+  max-height: 100%;
+  width: 100%;
+  max-width: 420px;
+  padding: 22px;
+  border-radius: 14px;
+  background: rgb(var(--glass-rgb) / 0.7);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  border: 1px solid rgb(var(--tint-rgb) / 0.08);
+  box-shadow: var(--shadow-modal);
+  animation: corvus-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.modal[data-size="sm"] { max-width: 360px; }
+.modal[data-size="lg"] { max-width: 560px; }
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 0 0 auto;
+  margin-bottom: 16px;
+}
+.modal-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-1);
+  letter-spacing: 0.3px;
+}
+.modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* Room for the focus ring on controls flush with the scroll edge. */
+  padding: 2px;
+  margin: -2px;
+}
+.modal-actions { flex: 0 0 auto; margin-top: 18px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay, .modal { animation: none !important; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .modal {
+    background: var(--surface-1);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .modal-overlay { backdrop-filter: none; -webkit-backdrop-filter: none; }
 }

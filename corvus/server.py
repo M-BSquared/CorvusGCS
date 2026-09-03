@@ -15,6 +15,7 @@ import os
 import queue
 import re
 import socketserver
+import tempfile
 import threading
 import time
 import urllib.request
@@ -293,6 +294,121 @@ def _build_tile_resources(
     return tile_caches, tile_progress_bus, tile_downloader
 
 
+def _params_export_dir(cfg: Any) -> str:
+    """Directory exported parameter files are written to.
+
+    The operator's ``params_dir`` when set, otherwise ``~/.corvus/params`` —
+    the same "empty string means the built-in default" convention the tile
+    cache and tlog directories use.
+    """
+    configured = getattr(cfg, "params_dir", "") or ""
+    if configured.strip():
+        return os.path.expanduser(configured.strip())
+    return os.path.expanduser("~/.corvus/params")
+
+
+def _slugify(value: Any) -> str:
+    """Lowercase, filename-safe slug of *value* ("" when there is nothing)."""
+    text = re.sub(r"[^A-Za-z0-9]+", "-", str(value or "")).strip("-").lower()
+    return text
+
+
+def _default_params_filename(vehicle_tag: str = "") -> str:
+    """Build a readable default name for an exported parameter file.
+
+    ``corvus-params_<vehicle>_<YYYY-MM-DD_HH-MM>.json``. Local time and a
+    vehicle tag rather than the old epoch-milliseconds name: a folder of
+    exports has to be scannable by eye, and "which airframe was this?" is the
+    first question asked of an old parameter file.
+    """
+    stamp = time.strftime("%Y-%m-%d_%H-%M")
+    tag = _slugify(vehicle_tag)
+    return f"corvus-params_{tag}_{stamp}.json" if tag else f"corvus-params_{stamp}.json"
+
+
+def _safe_filename(raw: Any, fallback: str) -> str:
+    """Reduce *raw* to a single safe filename, or return *fallback*.
+
+    Strips any directory component (so ``../../etc/x`` cannot escape the export
+    directory), rejects the empty/dot names, and forces a ``.json`` suffix so
+    the file is recognizable and re-importable. A non-string takes the fallback
+    rather than being coerced — a client bug should produce the sensible
+    default name, not a file called ``42.json``.
+    """
+    if not isinstance(raw, str):
+        return fallback
+    name = os.path.basename(raw.strip())
+    name = re.sub(r'[\x00-\x1f<>:"/\\|?*]', "", name).strip()
+    if not name or name in (".", ".."):
+        return fallback
+    if name.lower().endswith(".json"):
+        name = name[:-5]
+    # Truncate the STEM, then re-attach the suffix — truncating afterwards
+    # would chop ".json" off a long name and leave an unrecognizable file.
+    name = name[:115].rstrip() or fallback
+    return name + ".json"
+
+
+# A region name is operator-typed free text that ends up in the UI and in the
+# .mbtiles file. Keep it short and single-line; everything else about it is the
+# operator's business.
+_MAX_REGION_NAME = 60
+
+
+def _clean_region_name(raw: Any) -> str:
+    """Normalize an operator-supplied region name, or return "" if unusable.
+
+    Collapses whitespace (a pasted multi-line name would break the list
+    layout) and truncates. Non-strings become "", so the caller falls back to
+    a generated name rather than rejecting the download.
+    """
+    if not isinstance(raw, str):
+        return ""
+    name = " ".join(raw.split())
+    return name[:_MAX_REGION_NAME]
+
+
+def _default_region_name(bounds: tuple[float, float, float, float]) -> str:
+    """Generate a name for an unnamed download: its centre coordinates.
+
+    Not a timestamp — in the field the operator recognizes an area by where it
+    is, and a list of identical-looking timestamps is no better than no names
+    at all. They can rename it afterwards.
+    """
+    w, s, e, n = bounds
+    lat = (s + n) / 2.0
+    lon = (w + e) / 2.0
+    return f"{abs(lat):.3f}\u00b0{'N' if lat >= 0 else 'S'} {abs(lon):.3f}\u00b0{'E' if lon >= 0 else 'W'}"
+
+
+def _delete_region_tiles(cache: Any, region: dict) -> int:
+    """Delete the tiles of *region* that no other region still covers.
+
+    Regions overlap by design (an operator pre-downloads a wide area at low
+    zoom and a landing site at high zoom inside it). Deleting one region's
+    full tile set would punch holes in the other, so every candidate tile is
+    checked against the remaining regions first and kept if any still needs
+    it. Returns the number of tiles actually removed.
+    """
+    from corvus.tile_downloader import enumerate_tiles
+
+    def _tiles_of(r: dict) -> set:
+        b = r.get("bounds") or {}
+        return set(enumerate_tiles(
+            (b.get("w", 0.0), b.get("s", 0.0), b.get("e", 0.0), b.get("n", 0.0)),
+            int(r.get("minzoom", 0)), int(r.get("maxzoom", 0)),
+        ))
+
+    doomed = _tiles_of(region)
+    for other in cache.list_regions():
+        if other["id"] == region["id"]:
+            continue
+        doomed -= _tiles_of(other)
+        if not doomed:
+            break
+    return cache.delete_tiles(doomed) if doomed else 0
+
+
 def _validate_tile_bounds(bounds: Any) -> tuple[str | None, tuple[float, float, float, float] | None]:
     """Validate a ``{w,s,e,n}`` bounds object.
 
@@ -493,6 +609,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             "http_port": cfg.http_port,
             "tile_cache_dir": cfg.tile_cache_dir,
             "tlog_dir": cfg.tlog_dir,
+            "params_dir": cfg.params_dir,
             "ssh_connections": [dict(e) for e in cfg.ssh_connections],
         }
         if cfg.tile_sources is not None:
@@ -506,7 +623,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
         known = {
             "mavlink_connection", "http_port", "tile_cache_dir", "tlog_dir",
-            "tile_sources", "stream_rates", "ssh_connections", "theme", "map",
+            "params_dir", "tile_sources", "stream_rates", "ssh_connections",
+            "theme", "map",
         }
         for key, value in partial.items():
             if key not in known:
@@ -548,6 +666,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 if not isinstance(value, str):
                     return None, "tlog_dir must be a string"
                 merged["tlog_dir"] = value
+            elif key == "params_dir":
+                if not isinstance(value, str):
+                    return None, "params_dir must be a string"
+                merged["params_dir"] = value
             elif key == "tile_sources":
                 if not isinstance(value, dict):
                     return None, "tile_sources must be an object"
@@ -569,6 +691,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         cfg.http_port = new_cfg.http_port
         cfg.tile_cache_dir = new_cfg.tile_cache_dir
         cfg.tlog_dir = new_cfg.tlog_dir
+        cfg.params_dir = new_cfg.params_dir
         cfg.tile_sources = new_cfg.tile_sources
         cfg.stream_rates = new_cfg.stream_rates
         cfg.ssh_connections = new_cfg.ssh_connections
@@ -1190,6 +1313,101 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             error = self.mavlink.get_last_command_error() or "not connected"
             self._send_json({"ok": False, "error": error}, 503)
 
+    @route("GET", "/api/params/export/target")
+    def _api_params_export_target(self) -> None:
+        """Report where a parameter export would be written, and a filename.
+
+        The dialog prefills from this so the operator sees the real path before
+        committing, rather than a file vanishing into a browser download folder
+        they then have to hunt for. Always 200.
+        """
+        self._send_json({
+            "dir": _params_export_dir(self._live_config()),
+            "filename": _default_params_filename(self._vehicle_tag()),
+        })
+
+    def _vehicle_tag(self) -> str:
+        """Short identifier for the connected vehicle, or "" when unknown.
+
+        Used only to make an exported filename recognizable ("...px4-quad...").
+        Never fails: no telemetry, no tag.
+        """
+        try:
+            state = self.state_store.snapshot() if self.state_store is not None else {}
+        except Exception:  # noqa: BLE001 - a filename hint must never raise
+            return ""
+        parts = [state.get("autopilot"), state.get("vehicle_type")]
+        return "-".join(_slugify(p) for p in parts if p)
+
+    @route("POST", "/api/params/export")
+    def _api_params_export(self, payload: dict) -> None:
+        """Write an exported parameter file to disk and return its full path.
+
+        Saving server-side rather than as a browser download is deliberate:
+        the desktop build runs the UI inside QtWebEngine, where an
+        ``<a download>`` is dropped unless the host app implements a download
+        handler — so the old export silently produced nothing there. Writing
+        the file here works identically in the desktop app and in a browser,
+        and can report exactly where it landed.
+
+        ``dir`` and ``filename`` are optional; both default to what
+        ``GET /api/params/export/target`` reports. The filename is sanitized to
+        a single path component, so a caller cannot write outside *dir*.
+        """
+        params = payload.get("params")
+        if not isinstance(params, list) or not params:
+            self._send_json({"ok": False, "error": "params must be a non-empty list"}, 400)
+            return
+
+        raw_dir = payload.get("dir")
+        target_dir = raw_dir if isinstance(raw_dir, str) and raw_dir.strip() else \
+            _params_export_dir(self._live_config())
+        target_dir = os.path.expanduser(target_dir.strip())
+
+        filename = _safe_filename(
+            payload.get("filename"), _default_params_filename(self._vehicle_tag()))
+
+        doc = {
+            "product": "Corvus GCS",
+            "version": get_version(),
+            "exported_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "vehicle": self._vehicle_tag(),
+            "param_count": len(params),
+            "params": params,
+        }
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+            path = os.path.join(target_dir, filename)
+            # Atomic: a half-written parameter file is worse than none, because
+            # it looks importable. Same temp-then-replace shape as save_config.
+            fd, tmp_name = tempfile.mkstemp(prefix=filename + ".", suffix=".tmp", dir=target_dir)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(doc, f, indent=2, ensure_ascii=False)
+                    f.write("\n")
+                os.replace(tmp_name, path)
+            except BaseException:
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
+                raise
+        except OSError as exc:
+            self._send_json(
+                {"ok": False, "error": f"could not write to {target_dir}: {exc.strerror or exc}"},
+                400)
+            return
+        except Exception as exc:  # noqa: BLE001 - an export must never 500
+            logger.exception("parameter export failed")
+            self._send_json({"ok": False, "error": f"export failed: {exc}"}, 500)
+            return
+
+        logger.info("exported %d parameters to %s", len(params), path)
+        self._send_json({
+            "ok": True, "path": path, "dir": target_dir,
+            "filename": filename, "param_count": len(params),
+        })
+
     @route("POST", "/api/params/set")
     def _api_params_set(self, payload: dict) -> None:
         """Write a single parameter value to the vehicle."""
@@ -1634,13 +1852,27 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             sources.append({
                 "id": sid,
                 "label": entry["label"],
+                # Provider grouping so the UI can offer "which map service"
+                # as one choice and then filter the layer/download pickers to
+                # that service. Mirrors corvus/tile_sources.PROVIDERS.
+                "provider": entry["provider"],
+                "style": entry["style"],
+                # The legally-required credit string. Served here so the
+                # frontend can put it on its MapLibre raster source instead of
+                # hand-mirroring the registry — that mirror was the one place
+                # a new source could silently ship without attribution.
+                "attribution": entry["attribution"],
                 "minzoom": 0,
                 "maxzoom": entry["maxzoom"],
                 "cached_count": stats["count"],
                 "cached_minzoom": stats["minzoom"],
                 "cached_maxzoom": stats["maxzoom"],
             })
-        self._send_json({"sources": sources})
+        self._send_json({
+            "sources": sources,
+            "providers": tile_sources.list_providers(),
+            "default_provider": tile_sources.DEFAULT_PROVIDER,
+        })
 
     @route("GET", "/api/tiles/jobs")
     def _api_tiles_jobs(self) -> None:
@@ -1671,9 +1903,13 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             return
         minzoom = int(payload["minzoom"])
         maxzoom = int(payload["maxzoom"])
-        on_progress = None
-        if self.tile_progress_bus is not None:
-            on_progress = self.tile_progress_bus.make_on_progress()
+        # The operator's name for this area. Optional: an unnamed download is
+        # still recorded, under a generated name, so every cached area is
+        # accounted for in the region list rather than silently invisible.
+        name = _clean_region_name(payload.get("name")) or _default_region_name(bounds)
+
+        cache = (self.tile_caches or {}).get(source)
+        on_progress = self._make_tile_progress(cache)
         try:
             job_id = self.tile_downloader.start(
                 source, src["upstream"], bounds, minzoom, maxzoom, on_progress=on_progress
@@ -1688,7 +1924,142 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 {"ok": False, "error": status.get("error", "download failed")}, 409
             )
             return
-        self._send_json({"job_id": job_id})
+        # Record the region as soon as the job exists, keyed by the job id, so
+        # the area shows on the map while it is still downloading. The progress
+        # callback patches the final tile count and state when the job ends.
+        if cache is not None:
+            w, s, e, n = bounds
+            try:
+                cache.add_region({
+                    "id": job_id, "name": name, "source": source,
+                    "w": w, "s": s, "e": e, "n": n,
+                    "minzoom": minzoom, "maxzoom": maxzoom,
+                    "tile_count": 0, "state": "running",
+                })
+            except Exception:  # noqa: BLE001 - bookkeeping must not fail the download
+                logger.exception("region record write failed")
+        self._send_json({"job_id": job_id, "name": name})
+
+    def _make_tile_progress(self, cache: Any) -> Any:
+        """Compose the progress callback handed to the downloader.
+
+        Two jobs on one callback because the downloader accepts exactly one:
+        fan the update out to the SSE subscribers (the bus), and keep the
+        region record in step with the job. The bus half runs first and is
+        never skipped, so a bookkeeping failure cannot cost the operator their
+        live progress. Returns None when there is nothing to do.
+        """
+        bus_fn = (self.tile_progress_bus.make_on_progress()
+                  if self.tile_progress_bus is not None else None)
+        if cache is None:
+            return bus_fn
+
+        # The terminal update must be applied once. The downloader fires
+        # progress from several worker threads, so guard the transition with a
+        # flag rather than relying on the last call winning.
+        finished: dict[str, bool] = {"done": False}
+
+        def _on_progress(progress: Any) -> None:
+            if bus_fn is not None:
+                bus_fn(progress)
+            if not isinstance(progress, dict):
+                return
+            state = progress.get("state")
+            if state not in ("done", "cancelled", "failed") or finished["done"]:
+                return
+            finished["done"] = True
+            try:
+                # `done` counts tiles now present in the cache — fetched plus
+                # the ones that were already there — so it is exactly how much
+                # of the region is available offline.
+                cache.update_region(
+                    progress.get("job_id", ""),
+                    tile_count=progress.get("done", 0),
+                    state=state,
+                )
+            except Exception:  # noqa: BLE001 - never kill the download
+                logger.exception("region record update failed")
+
+        return _on_progress
+
+    @route("GET", "/api/tiles/regions")
+    def _api_tiles_regions(self) -> None:
+        """List every named, pre-downloaded area across all sources.
+
+        Always 200: a source whose cache cannot be read contributes nothing
+        rather than failing the whole list, because the map draws these and a
+        500 here would blank every region the operator does have.
+        """
+        regions: list[dict] = []
+        for sid, cache in (self.tile_caches or {}).items():
+            try:
+                for region in cache.list_regions():
+                    region["source"] = region.get("source") or sid
+                    regions.append(region)
+            except Exception:  # noqa: BLE001
+                logger.exception("region list failed for source %s", sid)
+        regions.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+        self._send_json({"regions": regions})
+
+    @route("POST", "/api/tiles/regions/rename")
+    def _api_tiles_regions_rename(self, payload: dict) -> None:
+        """Rename a stored region.
+
+        Areas downloaded without a name get a coordinate-derived one, which is
+        exact but not memorable; this is how "47.350°N 8.550°E" becomes
+        "Landing site".
+        """
+        source = payload.get("source")
+        region_id = payload.get("id")
+        name = _clean_region_name(payload.get("name"))
+        if not isinstance(region_id, str) or not region_id:
+            self._send_json({"ok": False, "error": "id required"}, 400)
+            return
+        if not name:
+            self._send_json({"ok": False, "error": "name required"}, 400)
+            return
+        cache = (self.tile_caches or {}).get(source) if isinstance(source, str) else None
+        if cache is None:
+            self._send_json({"ok": False, "error": "unknown source"}, 400)
+            return
+        if not cache.update_region(region_id, name=name):
+            self._send_json({"ok": False, "error": "unknown region"}, 404)
+            return
+        self._send_json({"ok": True, "name": name})
+
+    @route("POST", "/api/tiles/regions/remove")
+    def _api_tiles_regions_remove(self, payload: dict) -> None:
+        """Forget a named region, optionally deleting its cached tiles.
+
+        ``delete_tiles`` defaults to False: regions overlap, so dropping the
+        tiles of one can silently punch holes in another. The caller asks for
+        it explicitly, and only the tiles no OTHER region still covers are
+        removed.
+        """
+        source = payload.get("source")
+        region_id = payload.get("id")
+        if not isinstance(region_id, str) or not region_id:
+            self._send_json({"ok": False, "error": "id required"}, 400)
+            return
+        cache = (self.tile_caches or {}).get(source) if isinstance(source, str) else None
+        if cache is None:
+            self._send_json({"ok": False, "error": "unknown source"}, 400)
+            return
+        region = cache.get_region(region_id)
+        if region is None:
+            self._send_json({"ok": False, "error": "unknown region"}, 404)
+            return
+
+        removed_tiles = 0
+        if payload.get("delete_tiles") is True:
+            try:
+                removed_tiles = _delete_region_tiles(cache, region)
+            except Exception as exc:  # noqa: BLE001 - deletion must never 500
+                logger.exception("region tile deletion failed")
+                self._send_json({"ok": False, "error": f"tile deletion failed: {exc}"}, 500)
+                return
+        cache.remove_region(region_id)
+        self._send_json({"ok": True, "removed_tiles": removed_tiles})
 
     @route("POST", "/api/tiles/cancel")
     def _api_tiles_cancel(self, payload: dict) -> None:
@@ -1806,10 +2177,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         src = tile_sources.get(source)
         if src is None:
             return None
-        url = (src["upstream"]
-               .replace("{z}", str(z))
-               .replace("{y}", str(y))
-               .replace("{x}", str(x)))
+        url = tile_sources.build_tile_url(src["upstream"], z, x, y)
         try:
             req = urllib.request.Request(
                 url, headers={"User-Agent": f"CorvusGCS/{get_version()}"}

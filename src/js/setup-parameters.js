@@ -102,59 +102,104 @@ Corvus.setupParameters = (function () {
 
   /** Build an Export/Import action button (mirrors renderDownloadPrompt's btn). */
   function makeActionButton(iconName, label) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn";
-    btn.setAttribute("data-variant", "primary");
-    btn.setAttribute("data-size", "sm");
-    btn.appendChild(S.icon(iconName));
-    btn.appendChild(S.el("span", null, label));
-    return btn;
+    return Corvus.ui.button({
+      variant: "primary", size: "sm", icon: iconName, label,
+    });
   }
 
   /**
-   * Export the loaded parameter set to a Corvus param file (JSON) and trigger a
-   * browser download. The version in the file metadata comes from GET /api/version
-   * — never a hardcoded literal.
+   * Export the loaded parameter set to a Corvus param file (JSON).
+   *
+   * Opens a dialog with the filename and the folder, both prefilled from
+   * GET /api/params/export/target, then POSTs to /api/params/export which
+   * writes the file and reports the full path back.
+   *
+   * The file is written by the BACKEND, not pulled as a browser download.
+   * The desktop build runs this UI inside QtWebEngine, which drops an
+   * `<a download>` unless the host app implements a download handler — so the
+   * previous export silently produced no file there at all. Writing it
+   * server-side behaves identically in the desktop app and in a browser, lands
+   * it in a folder the operator chose, and can say exactly where it went.
    */
   async function exportParams(state) {
     if (!state.params || !state.params.length) return;
-    exportBtnSafe(state, true);
-    let version = "unknown";
-    try {
-      const v = await Corvus.telemetry.requestJson("/api/version");
-      version = (v && v.version) || "unknown";
-    } catch (_e) { /* offline: keep "unknown" so the export still works */ }
-    try {
-      const doc = {
-        product: "Corvus GCS",
-        version,
-        exported_at: new Date().toISOString(),
-        param_count: state.params.length,
-        params: state.params.map((p) => ({ name: p.name, value: p.value, type: p.type })),
-      };
-      const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `corvus-params-${Date.now()}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      window.dispatchEvent(new CustomEvent("corvus:notification",
-        { detail: { level: "info", message: `Exported ${state.params.length} parameters` } }));
-    } catch (err) {
-      const msg = (err && err.message) || "Export failed";
-      window.dispatchEvent(new CustomEvent("corvus:notification",
-        { detail: { level: "critical", message: msg } }));
-    } finally {
-      exportBtnSafe(state, !state.params.length);
-    }
-  }
 
-  function exportBtnSafe(state, disabled) {
-    if (state.exportBtn) state.exportBtn.disabled = disabled;
+    let target = {};
+    try {
+      target = await Corvus.telemetry.requestJson("/api/params/export/target");
+    } catch (_e) { /* offline/unsupported: the dialog falls back to placeholders */ }
+
+    const nameInput = Corvus.ui.input({
+      id: "paramsExportName",
+      ariaLabel: "File name",
+      value: target.filename || "",
+      placeholder: "corvus-params.json",
+      mono: true,
+      autocomplete: false,
+    });
+    const dirInput = Corvus.ui.input({
+      id: "paramsExportDir",
+      ariaLabel: "Folder",
+      value: target.dir || "",
+      placeholder: "~/.corvus/params",
+      mono: true,
+      autocomplete: false,
+      spellcheck: false,
+    });
+
+    const body = document.createDocumentFragment();
+    body.appendChild(S.el("div", "params-desc",
+      `${state.params.length} parameters will be written as a Corvus parameter ` +
+      "file. The same file can be re-imported with Import."));
+    body.appendChild(Corvus.ui.field({ label: "File name", control: nameInput }));
+    body.appendChild(Corvus.ui.field({
+      label: "Folder",
+      control: dirInput,
+      hint: "On the machine running Corvus. Created if it does not exist.",
+    }));
+    const msg = Corvus.ui.message();
+    body.appendChild(msg.el);
+
+    const cancelBtn = Corvus.ui.button({
+      variant: "secondary", label: "Cancel", onClick: () => dialog.close(),
+    });
+    const saveBtn = Corvus.ui.button({
+      variant: "primary", icon: "download", label: "Save", onClick: save,
+    });
+
+    const dialog = Corvus.ui.modal({
+      title: "Export parameters",
+      size: "md",
+      body,
+      actions: [cancelBtn, saveBtn],
+    });
+    dialog.open();
+
+    async function save() {
+      msg.hide();
+      Corvus.ui.setBusy(saveBtn, true);
+      try {
+        const res = await Corvus.telemetry.requestJson("/api/params/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filename: nameInput.value.trim(),
+            dir: dirInput.value.trim(),
+            params: state.params.map((p) => ({ name: p.name, value: p.value, type: p.type })),
+          }),
+        });
+        dialog.close();
+        // The saved path is the useful part of the confirmation — it is what
+        // the operator needs to find the file afterwards.
+        setStatus(state, "ok", `Saved ${res.param_count} parameters to ${res.path}`);
+        window.dispatchEvent(new CustomEvent("corvus:notification",
+          { detail: { level: "info", message: `Parameters exported to ${res.path}` } }));
+      } catch (err) {
+        msg.show((err && err.message) || "Export failed", "err");
+      } finally {
+        Corvus.ui.setBusy(saveBtn, false);
+      }
+    }
   }
 
   /**
@@ -317,12 +362,12 @@ Corvus.setupParameters = (function () {
       "You must wait for the full set before editing.";
     card.appendChild(desc);
 
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn params-download-btn";
-    btn.setAttribute("data-variant", "primary");
-    btn.appendChild(S.icon("download"));
-    btn.appendChild(S.el("span", null, "Download Parameters"));
+    const btn = Corvus.ui.button({
+      variant: "primary",
+      className: "params-download-btn",
+      icon: "download",
+      label: "Download Parameters",
+    });
     card.appendChild(btn);
 
     const status = S.el("div", "params-status");
@@ -445,7 +490,7 @@ Corvus.setupParameters = (function () {
     const toolbar = S.el("div", "params-toolbar");
     const search = document.createElement("input");
     search.type = "text";
-    search.className = "params-search";
+    search.className = "field-input params-search";
     search.placeholder = "Filter by names…";
     search.setAttribute("aria-label", "Filter parameters by name");
     const count = S.el("span", "params-count", "");
@@ -506,7 +551,7 @@ Corvus.setupParameters = (function () {
 
     const valueInput = document.createElement("input");
     valueInput.type = "text";
-    valueInput.className = "params-value";
+    valueInput.className = "field-input field-input-mono params-value";
     valueInput.value = String(param.value);
     valueInput.inputMode = "decimal";
     valueInput.setAttribute("aria-label", `Value for ${param.name}`);
@@ -514,13 +559,13 @@ Corvus.setupParameters = (function () {
 
     row.appendChild(S.el("span", "params-type", param.type ? String(param.type) : ""));
 
-    const applyBtn = document.createElement("button");
-    applyBtn.type = "button";
-    applyBtn.className = "btn params-apply";
-    applyBtn.setAttribute("data-variant", "primary");
-    applyBtn.setAttribute("data-size", "sm");
-    applyBtn.textContent = "Apply";
-    applyBtn.disabled = true;   // only enabled when the value changed & is valid
+    const applyBtn = Corvus.ui.button({
+      variant: "primary",
+      size: "sm",
+      className: "params-apply",
+      label: "Apply",
+      disabled: true,   // only enabled when the value changed & is valid
+    });
     row.appendChild(applyBtn);
 
     const status = S.el("span", "params-row-status", "");

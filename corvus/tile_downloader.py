@@ -25,6 +25,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Iterator, Optional
 
+from corvus import tile_sources
 from corvus.tile_cache import TileCache
 
 # A single job never exceeds this many tiles; bigger regions must be split.
@@ -271,10 +272,7 @@ class TileDownloader:
         cancel = job["_cancel"]
         if cancel.is_set() or self._stop_event.is_set():
             return
-        url = (job["_template"]
-               .replace("{z}", str(z))
-               .replace("{x}", str(x))
-               .replace("{y}", str(y)))
+        url = tile_sources.build_tile_url(job["_template"], z, x, y)
         blob: Optional[bytes] = None
         for attempt in range(2):  # one retry on transient network errors
             try:

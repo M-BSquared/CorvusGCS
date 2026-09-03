@@ -10,3 +10,6 @@ appimagetool-x86_64.AppImage
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# macOS
+.DS_Store

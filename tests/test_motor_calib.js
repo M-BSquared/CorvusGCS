@@ -138,13 +138,27 @@ global.document = {
   createTextNode: (t) => ({ nodeType: 3, textContent: String(t), _isText: true }),
   getElementById: (id) => (id === "pageView" ? pageViewEl : null),
   querySelectorAll: () => [],
+  // Both halves of the listener pair: Corvus.ui.modal registers a document
+  // keydown handler while a dialog is mounted and removes it on close, so a
+  // stub with only addEventListener makes teardown throw.
   addEventListener: () => {},
+  removeEventListener: () => {},
 };
 
 // Helpers ---------------------------------------------------------------------
 function flushMicrotasks() { return new Promise((r) => setTimeout(r, 0)); }
 function findByClass(root, cls) { return root.querySelectorAll("." + cls); }
 function findOneByClass(root, cls) { return root.querySelector("." + cls); }
+/** Find a button in the safety dialog by its visible label. The dialog is a
+ *  Corvus.ui.modal, so its buttons carry the shared .btn classes rather than
+ *  a per-screen one — the label is what identifies them. Corvus.ui.button
+ *  wraps the label in a <span>, and the stub's textContent is per-node, so
+ *  the search looks at the button and its children. */
+function findModalButton(root, label) {
+  const text = (el) => [el.textContent || "", ...(el.children || []).map((c) => c.textContent || "")]
+    .map((s) => s.trim()).filter(Boolean);
+  return findByClass(root, "btn").find((b) => text(b).includes(label)) || null;
+}
 /** Fire all listeners of a given type on an element (simulate a click). */
 function fire(el, type) {
   const listeners = (el && el._listeners && el._listeners[type]) || [];
@@ -201,6 +215,9 @@ function makeFakeTelemetry(opts = {}) {
 // Load ONLY the modules under test — NOT setup.js (its Firmware work is in-flight
 // and breaks the combined suite). setup-calibration.js depends only on
 // setup-shared.js + Corvus.telemetry.
+// ui.js first: it defines Corvus.ui, the component layer every other
+// module builds its DOM with (index.html loads it in the same order).
+require("../src/js/ui.js");
 require("../src/js/setup-shared.js");
 require("../src/js/setup-calibration.js");
 
@@ -246,7 +263,7 @@ async function testMotorClickOpensModalNoPost() {
   fire(motor, "click");
 
   // Modal opened under `page` (reachable via the container walk).
-  assert.ok(findOneByClass(container, "motor-calib-overlay"), "motor safety modal opened");
+  assert.ok(findOneByClass(container, "modal-overlay"), "motor safety modal opened");
   // Opening the gate must NOT fire the POST — only confirm does.
   assert.equal(fake.postCalls.filter((c) => c.url === "/api/calibrate").length, 0,
     "no POST on direct motor click");
@@ -262,13 +279,13 @@ async function testMotorConfirmPostsMotorType() {
     .find((b) => b.dataset.type === "motor");
   fire(motor, "click");
 
-  const confirm = findOneByClass(container, "motor-calib-confirm");
+  const confirm = findModalButton(container, "Calibrate Motors");
   assert.ok(confirm, "confirm button present in modal");
   fire(confirm, "click");
   await flushMicrotasks();
 
   // Confirm dismisses the modal then POSTs {type:"motor"}.
-  assert.ok(!findOneByClass(container, "motor-calib-overlay"), "modal closed on confirm");
+  assert.ok(!findOneByClass(container, "modal-overlay"), "modal closed on confirm");
   const call = fake.postCalls.find((c) => c.url === "/api/calibrate");
   assert.ok(call, "POST /api/calibrate issued on confirm");
   assert.deepEqual(call.payload, { type: "motor" }, "confirm posts {type:'motor'}");
@@ -284,11 +301,11 @@ async function testMotorCancelNoPost() {
     .find((b) => b.dataset.type === "motor");
   fire(motor, "click");
 
-  const cancel = findOneByClass(container, "motor-calib-cancel");
+  const cancel = findModalButton(container, "Cancel");
   assert.ok(cancel, "cancel button present in modal");
   fire(cancel, "click");
 
-  assert.ok(!findOneByClass(container, "motor-calib-overlay"), "modal closed on cancel");
+  assert.ok(!findOneByClass(container, "modal-overlay"), "modal closed on cancel");
   assert.equal(fake.postCalls.filter((c) => c.url === "/api/calibrate").length, 0,
     "no POST on cancel");
 
@@ -302,12 +319,12 @@ async function testMotorModalCleanedOnDestroy() {
   const motor = findByClass(findOneByClass(container, "calib-grid"), "calib-btn")
     .find((b) => b.dataset.type === "motor");
   fire(motor, "click");
-  assert.ok(findOneByClass(container, "motor-calib-overlay"), "modal opened before destroy");
+  assert.ok(findOneByClass(container, "modal-overlay"), "modal opened before destroy");
 
   destroy();
 
   // destroy() must drop an open modal so no DOM subtree leaks on back/re-render.
-  assert.ok(!findOneByClass(container, "motor-calib-overlay"), "modal removed on destroy");
+  assert.ok(!findOneByClass(container, "modal-overlay"), "modal removed on destroy");
   assert.equal(fake.unsubCalls, 1, "telemetry unsubscribed exactly once");
 }
 

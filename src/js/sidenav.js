@@ -2,31 +2,82 @@
 window.Corvus = window.Corvus || {};
 
 /*
-  Corvus.theme — accent picker v1. The accent is the single runtime-overridable
-  theme knob: setAccent(hex) writes the CSS custom property --accent on the
-  document root and caches it in localStorage so the next load can apply it
-  synchronously (no flicker) before the backend config fetch confirms it.
-  The derived --accent-bright/-hover/-dim/-dark tokens stay at their :root
-  defaults for now (documented v1 limitation).
+  Corvus.theme — the predefined color themes.
+
+  A theme is a complete palette defined in css/themes.css under a
+  `[data-theme="<id>"]` selector; selecting one is a single attribute write on
+  <html>. There is deliberately no runtime color math here: the CSS is the
+  source of truth for what a theme looks like, and this module only decides
+  WHICH one is active. That is what replaced the v1 accent picker, where the
+  only themeable value was --accent and every other color stayed dark.
+
+  THEMES mirrors the blocks in css/themes.css and must stay in step with them
+  (the ids are the contract). `swatch` is the preview shown in the picker:
+  accent, panel surface, page background — the three colors that actually tell
+  the themes apart at a glance.
+
+  Persistence is two-layered on purpose: localStorage so the choice can be
+  applied before first paint (see the inline script in index.html) and the
+  backend config so it survives a cache clear and follows the operator's
+  profile. localStorage is written first and never blocks on the network.
 */
 Corvus.theme = (function () {
-  const KEY = "corvus.accent";
-  const DEFAULT = "#3DA876";
+  const KEY = "corvus.theme";
+  const DEFAULT = "green";
 
-  function setAccent(hex) {
-    const v = (typeof hex === "string" && hex.trim()) ? hex.trim() : DEFAULT;
-    try { document.documentElement.style.setProperty("--accent", v); } catch (_e) {}
+  const THEMES = [
+    { id: "green",  label: "Green",  desc: "Default",       swatch: ["#3DA876", "#171D25", "#0B0E12"] },
+    { id: "blue",   label: "Blue",   desc: "Cool",          swatch: ["#3B9EFF", "#171D25", "#0B0E12"] },
+    { id: "pink",   label: "Pink",   desc: "Magenta",       swatch: ["#F0509B", "#171D25", "#0B0E12"] },
+    { id: "orange", label: "Orange", desc: "Amber",         swatch: ["#F58A2B", "#171D25", "#0B0E12"] },
+    { id: "light",  label: "Light",  desc: "White & black", swatch: ["#1B1F26", "#F1F3F6", "#FFFFFF"] },
+  ];
+
+  const IDS = THEMES.map((t) => t.id);
+
+  /** True when *id* names a theme css/themes.css actually defines. */
+  function isKnown(id) { return IDS.indexOf(id) !== -1; }
+
+  /**
+   * Apply *id* to the document and cache it. An unknown id (a config from a
+   * newer build, a corrupted storage value) falls back to the default rather
+   * than leaving the app on a half-applied palette. Returns the id applied.
+   */
+  function setTheme(id) {
+    const v = isKnown(id) ? id : DEFAULT;
+    try { document.documentElement.setAttribute("data-theme", v); } catch (_e) {}
     try { localStorage.setItem(KEY, v); } catch (_e) {}
-  }
-
-  function applySaved() {
-    let v = DEFAULT;
-    try { v = localStorage.getItem(KEY) || DEFAULT; } catch (_e) {}
-    setAccent(v);
     return v;
   }
 
-  return { setAccent, applySaved, DEFAULT };
+  /** Apply the locally cached theme (called before the config fetch lands). */
+  function applySaved() {
+    let v = DEFAULT;
+    try { v = localStorage.getItem(KEY) || DEFAULT; } catch (_e) {}
+    return setTheme(v);
+  }
+
+  /**
+   * Resolve the theme a backend config asks for. `theme.name` is what the
+   * settings page writes today; `theme.accent` is the legacy v1 hex from the
+   * old accent picker, kept readable so an existing ~/.corvus/config.json is
+   * not a hard error — its nearest predefined theme is used when it matches
+   * one, and the default otherwise. Returns null when the config names
+   * nothing, so the caller can leave the cached theme alone.
+   */
+  function fromConfig(cfg) {
+    const theme = cfg && cfg.theme;
+    if (!theme) return null;
+    if (isKnown(theme.name)) return theme.name;
+    if (typeof theme.accent === "string") {
+      const hex = theme.accent.trim().toLowerCase();
+      const match = THEMES.find((t) => t.swatch[0].toLowerCase() === hex);
+      return match ? match.id : DEFAULT;
+    }
+    return null;
+  }
+
+  return { setTheme, applySaved, isKnown, fromConfig, THEMES, IDS, DEFAULT };
 })();
 
 Corvus.sidenav = (function () {
@@ -45,59 +96,39 @@ Corvus.sidenav = (function () {
     { id: "analysis", label: "ANALYSIS", icon: "chart-column" },
   ];
 
-  function icon(name) {
-    const i = document.createElement("i");
-    i.setAttribute("data-lucide", name);
-    return i;
+  function renderLeftNav() {
+    Corvus.ui.clear(leftNav);
+
+    // One list drives the whole rail: HOME and SET differ from the middle
+    // entries only by the separator/spacer around them, not by how the
+    // button itself is built, so they share ui.navItem like everything else.
+    const items = [
+      { id: "home", label: "HOME", icon: "house", after: "divider" },
+      ...NAV,
+      { id: "settings", label: "SET", icon: "settings", title: "Settings", before: "spacer" },
+    ];
+
+    items.forEach((n) => {
+      if (n.before) leftNav.appendChild(railFiller(n.before));
+      leftNav.appendChild(Corvus.ui.navItem({
+        id: n.id,
+        icon: n.icon,
+        label: n.label,
+        title: n.title,
+        active: n.id === activeNav,
+        onClick: () => switchTo(n.id),
+      }));
+      if (n.after) leftNav.appendChild(railFiller(n.after));
+    });
+    Corvus.ui.refreshIcons();
   }
 
-  function renderLeftNav() {
-    leftNav.innerHTML = "";
-
-    const home = document.createElement("button");
-    home.className = "nav-item" + (activeNav === "home" ? " active" : "");
-    home.dataset.nav = "home";
-    home.appendChild(icon("house"));
-    const hl = document.createElement("span");
-    hl.className = "nav-label";
-    hl.textContent = "HOME";
-    home.appendChild(hl);
-    home.addEventListener("click", () => switchTo("home"));
-    leftNav.appendChild(home);
-
-    const divider = document.createElement("div");
-    divider.className = "nav-divider";
-    leftNav.appendChild(divider);
-
-    NAV.forEach((n) => {
-      const item = document.createElement("button");
-      item.className = "nav-item" + (n.id === activeNav ? " active" : "");
-      item.dataset.nav = n.id;
-      item.appendChild(icon(n.icon));
-      const lbl = document.createElement("span");
-      lbl.className = "nav-label";
-      lbl.textContent = n.label;
-      item.appendChild(lbl);
-      item.addEventListener("click", () => switchTo(n.id));
-      leftNav.appendChild(item);
-    });
-
-    const spacer = document.createElement("div");
-    spacer.className = "nav-spacer";
-    leftNav.appendChild(spacer);
-
-    const settings = document.createElement("button");
-    settings.className = "nav-item" + (activeNav === "settings" ? " active" : "");
-    settings.dataset.nav = "settings";
-    settings.title = "Settings";
-    settings.appendChild(icon("settings"));
-    const sl = document.createElement("span");
-    sl.className = "nav-label";
-    sl.textContent = "SET";
-    settings.appendChild(sl);
-    settings.addEventListener("click", () => switchTo("settings"));
-    leftNav.appendChild(settings);
-    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  /** Rail filler: "divider" is the hairline under HOME, "spacer" the flexible
+   *  gap that pushes SET to the bottom of the rail. */
+  function railFiller(kind) {
+    const d = document.createElement("div");
+    d.className = kind === "spacer" ? "nav-spacer" : "nav-divider";
+    return d;
   }
 
   function switchTo(navId) {
@@ -137,33 +168,18 @@ Corvus.sidenav = (function () {
       settings: renderSettingsPage,
     };
     const fn = pages[navId] || renderPlaceholder;
-    pageView.innerHTML = "";
+    Corvus.ui.clear(pageView);
     fn(pageView);
-    if (window.lucide && lucide.createIcons) lucide.createIcons();
+    Corvus.ui.refreshIcons();
   }
 
-  function pageHeader(title, subtitle) {
-    const h = document.createElement("div");
-    h.className = "page-header";
-    h.innerHTML = `<div class="page-title">${title}</div><div class="page-subtitle">${subtitle}</div>`;
-    return h;
-  }
-
-  function sectionTitle(text) {
-    const t = document.createElement("div");
-    t.className = "page-section-title";
-    t.textContent = text;
-    return t;
-  }
-
-  function row(label, value) {
-    const r = document.createElement("div");
-    r.className = "page-row";
-    r.innerHTML = `<span class="page-row-label"></span><span class="page-row-value"></span>`;
-    r.querySelector(".page-row-label").textContent = label;
-    r.querySelector(".page-row-value").textContent = value;
-    return r;
-  }
+  // Layout primitives come from the shared component layer — these are local
+  // names for them, not local implementations. pageHeader in particular used
+  // to build its markup with innerHTML and interpolated arguments; ui.pageHeader
+  // sets textContent instead, so a title sourced from the backend can no
+  // longer inject markup.
+  const pageHeader = Corvus.ui.pageHeader;
+  const row = Corvus.ui.row;
 
   function renderSetupPage(container) {
     // The whole Setup page (tile grid + sub-pages) is owned by Corvus.setup.
@@ -178,11 +194,7 @@ Corvus.sidenav = (function () {
 
   function renderLogsPage(container) {
     container.appendChild(pageHeader("Logs", "Flight logs and MAVLink message history"));
-    const s = document.createElement("div");
-    s.className = "page-section";
-    s.appendChild(sectionTitle("Recent Console Output"));
-    const card = document.createElement("div");
-    card.className = "page-card";
+    const card = Corvus.ui.card({});
     const lines = document.querySelectorAll("#consoleOutput .con-line");
     const recent = Array.from(lines).slice(-30).map((l) => {
       const t = l.querySelector(".con-time")?.textContent || "";
@@ -190,7 +202,7 @@ Corvus.sidenav = (function () {
       return `${t}  ${m}`;
     });
     if (recent.length === 0) {
-      card.innerHTML = '<div class="page-card-desc">No log entries yet.</div>';
+      card.appendChild(Corvus.ui.empty("No log entries yet."));
     } else {
       const pre = document.createElement("pre");
       pre.style.fontFamily = "var(--mono)";
@@ -201,18 +213,13 @@ Corvus.sidenav = (function () {
       pre.textContent = recent.join("\n");
       card.appendChild(pre);
     }
-    s.appendChild(card);
-    container.appendChild(s);
+    container.appendChild(Corvus.ui.section({ title: "Recent Console Output", body: card }));
   }
 
   function renderAnalysisPage(container) {
     container.appendChild(pageHeader("Analysis", "Telemetry analysis and flight statistics"));
-    const s = document.createElement("div");
-    s.className = "page-section";
-    s.appendChild(sectionTitle("Current Telemetry"));
     const state = Corvus.telemetry.getState() || {};
-    const card = document.createElement("div");
-    card.className = "page-card";
+    const card = Corvus.ui.card({});
     if (state.connected) {
       card.appendChild(row("Altitude AMSL", `${Math.round(state.altitude_amsl)} m`));
       card.appendChild(row("Altitude AGL", `${Math.round(state.altitude_agl)} m`));
@@ -224,47 +231,17 @@ Corvus.sidenav = (function () {
       card.appendChild(row("Battery", `${state.battery_voltage.toFixed(1)} V (${state.battery_percent}%)`));
       card.appendChild(row("GPS Fix", `${state.gps_fix} (${state.gps_satellites} sats)`));
     } else {
-      card.innerHTML = '<div class="page-card-desc">Vehicle not connected.</div>';
+      card.appendChild(Corvus.ui.empty("Vehicle not connected."));
     }
-    s.appendChild(card);
-    container.appendChild(s);
+    container.appendChild(Corvus.ui.section({ title: "Current Telemetry", body: card }));
   }
 
   // --- Settings page data ---
-  // Accent presets for the theme picker v1. Green is the default and matches
-  // the :root --accent value in main.css.
-  const ACCENT_PRESETS = [
-    { name: "Green", hex: "#3DA876" },
-    { name: "Blue", hex: "#4CC9FF" },
-    { name: "Orange", hex: "#F5A623" },
-    { name: "Red", hex: "#FF514D" },
-    { name: "Purple", hex: "#A371F7" },
-  ];
-  // Map base-layer id -> human label. Mirrors the map agent's TILE registry
-  // (corvus/tile_sources.py) so the read-only settings row shows the same
-  // label the layers popover uses. The actual picker is owned by the map agent.
-  const BASE_LAYER_LABELS = {
-    satellite: "Satellite",
-    streets: "Streets",
-    hybrid: "Hybrid",
-    topo: "Topographic",
-    osm: "OpenStreetMap",
-  };
 
-  function normalizeHex(v) {
-    if (typeof v !== "string") return null;
-    const s = v.trim();
-    if (/^#?[0-9a-fA-F]{6}$/.test(s)) return s.startsWith("#") ? s : "#" + s;
-    return null;
-  }
-  function sameHex(a, b) {
-    const na = normalizeHex(a), nb = normalizeHex(b);
-    return !!na && !!nb && na.toLowerCase() === nb.toLowerCase();
-  }
-
-  // POST a partial config update; best-effort (accent is already applied live,
-  // a persist failure is non-fatal). Reuses the telemetry transport so HTTP
-  // errors reject instead of resolving with a bogus body.
+  // POST a partial config update; best-effort (the change is already applied
+  // live, a persist failure is non-fatal for this session). Reuses the
+  // telemetry transport so HTTP errors reject instead of resolving with a
+  // bogus body.
   function postConfig(body) {
     return Corvus.telemetry.requestJson("/api/config", {
       method: "POST",
@@ -289,114 +266,184 @@ Corvus.sidenav = (function () {
     }
   }
 
-  // --- Section A: Appearance (accent / theme picker) ---
-  function renderAppearanceSection(container, cfg) {
-    const sec = document.createElement("div");
-    sec.className = "page-section";
-    sec.appendChild(sectionTitle("Appearance"));
-    const card = document.createElement("div");
-    card.className = "page-card";
+  // --- Section A: Appearance (color theme + map service) ---
+  // Two operator choices that both change how the app looks, so they share one
+  // section. Each is a Corvus.ui.optionCards group: same control, different
+  // content. Both apply immediately and persist in the background — nothing
+  // here has a Save button, because there is nothing to get wrong and undoing
+  // is one more click.
+  function renderAppearanceSection(container, cfg, gen) {
+    const body = document.createDocumentFragment();
+    body.appendChild(themeCard(cfg));
+    body.appendChild(mapServiceCard(cfg, gen));
+    container.appendChild(Corvus.ui.section({ title: "Appearance", body }));
+  }
 
-    const current = (cfg.theme && cfg.theme.accent) || Corvus.theme.DEFAULT;
-    Corvus.theme.setAccent(current);   // authoritative value from config wins
+  // Color theme picker. The config is authoritative over the locally cached
+  // theme, so applying it here also corrects a stale localStorage value the
+  // pre-paint script in index.html may have used.
+  function themeCard(cfg) {
+    const current = Corvus.theme.fromConfig(cfg) || Corvus.theme.applySaved();
+    Corvus.theme.setTheme(current);
 
-    const curRow = row("Accent", current);
-    const curVal = curRow.querySelector(".page-row-value");
-    card.appendChild(curRow);
-
-    const swatchRow = document.createElement("div");
-    swatchRow.className = "settings-swatches";
-    const swatches = [];
-    ACCENT_PRESETS.forEach((p) => {
-      const sw = document.createElement("button");
-      sw.type = "button";
-      sw.className = "settings-swatch" + (sameHex(current, p.hex) ? " selected" : "");
-      sw.style.background = p.hex;
-      sw.title = p.name;
-      sw.setAttribute("aria-label", `Accent ${p.name}`);
-      sw.dataset.hex = p.hex;
-      sw.addEventListener("click", () => selectAccent(p.hex));
-      swatchRow.appendChild(sw);
-      swatches.push(sw);
+    const picker = Corvus.ui.optionCards({
+      ariaLabel: "Color theme",
+      columns: 2,
+      value: current,
+      options: Corvus.theme.THEMES,
+      onChange: (id) => {
+        Corvus.theme.setTheme(id);
+        postConfig({ theme: { name: id } });
+      },
     });
-    card.appendChild(swatchRow);
 
-    const customRow = document.createElement("div");
-    customRow.className = "settings-accent-row";
-    const colorInput = document.createElement("input");
-    colorInput.type = "color";
-    colorInput.className = "settings-color-input";
-    colorInput.value = normalizeHex(current) || Corvus.theme.DEFAULT;
-    colorInput.title = "Custom accent color";
-    colorInput.setAttribute("aria-label", "Custom accent color");
-    const hexInput = document.createElement("input");
-    hexInput.type = "text";
-    hexInput.className = "settings-hex-input";
-    hexInput.value = current;
-    hexInput.placeholder = "#RRGGBB";
-    hexInput.setAttribute("aria-label", "Accent hex value");
-    customRow.appendChild(colorInput);
-    customRow.appendChild(hexInput);
-    card.appendChild(customRow);
-
-    let persistTimer = null;
-    function persistDebounced(hex) {
-      if (persistTimer) clearTimeout(persistTimer);
-      persistTimer = setTimeout(() => postConfig({ theme: { accent: hex } }), 250);
-    }
-    function persistNow(hex) {
-      if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
-      postConfig({ theme: { accent: hex } });
-    }
-
-    function syncSelected(hex) {
-      swatches.forEach((sw) => sw.classList.toggle("selected", sameHex(sw.dataset.hex, hex)));
-    }
-    function selectAccent(hex) {
-      Corvus.theme.setAccent(hex);
-      curVal.textContent = hex;
-      colorInput.value = normalizeHex(hex) || colorInput.value;
-      hexInput.value = hex;
-      syncSelected(hex);
-      persistNow(hex);
-    }
-
-    // color input: live-apply on every input (cheap CSS var write), debounce
-    // the persist; flush immediately on change (release).
-    colorInput.addEventListener("input", () => {
-      const v = colorInput.value;
-      hexInput.value = v;
-      curVal.textContent = v;
-      Corvus.theme.setAccent(v);
-      syncSelected(v);
-      persistDebounced(v);
+    return Corvus.ui.card({
+      title: "Color theme",
+      body: picker.el,
     });
-    colorInput.addEventListener("change", () => persistNow(colorInput.value));
+  }
 
-    // hex text input: validate on input, apply + debounce; finalize on change.
-    hexInput.addEventListener("input", () => {
-      const v = normalizeHex(hexInput.value);
-      if (!v) return;
-      colorInput.value = v;
-      curVal.textContent = v;
-      Corvus.theme.setAccent(v);
-      syncSelected(v);
-      persistDebounced(v);
-    });
-    hexInput.addEventListener("change", () => {
-      const v = normalizeHex(hexInput.value);
-      if (v) {
-        hexInput.value = v;
-        colorInput.value = v;
-        curVal.textContent = v;
-        Corvus.theme.setAccent(v);
-        syncSelected(v);
-        persistNow(v);
+  // Map service picker. The source list is fetched rather than mirrored here:
+  // corvus/tile_sources.py is the single registry, and /api/tiles/sources
+  // reports both the provider grouping and each source's live cache stats.
+  // `gen` gates the async render so a navigation away mid-fetch cannot append
+  // into a pageView that has since been repurposed (same contract as the SSH
+  // and About sections).
+  function mapServiceCard(cfg, gen) {
+    const card = Corvus.ui.card({ title: "Map service" });
+    const desc = Corvus.ui.empty("Loading map services\u2026");
+    card.appendChild(desc);
+
+    Corvus.telemetry.requestJson("/api/tiles/sources").then((data) => {
+      if (gen !== undefined && gen !== navGeneration) return;
+      const providers = (data && data.providers) || [];
+      const sources = (data && data.sources) || [];
+      if (!providers.length) {
+        desc.textContent = "No map services available.";
+        return;
       }
+      card.removeChild(desc);
+      card.appendChild(buildMapServicePicker(providers, sources, cfg, data.default_provider));
+      Corvus.ui.refreshIcons();
+    }).catch(() => {
+      if (gen !== undefined && gen !== navGeneration) return;
+      desc.textContent = "Could not load map services.";
     });
 
-    sec.appendChild(card);
-    container.appendChild(sec);
+    return card;
+  }
+
+  function buildMapServicePicker(providers, sources, cfg, fallbackProvider) {
+    const wrap = document.createElement("div");
+    const byId = {};
+    sources.forEach((s) => { byId[s.id] = s; });
+
+    // The persisted base layer is the source of truth for which service is
+    // active — the provider key is a convenience mirror, so a config that has
+    // one but not the other still resolves. base_layer wins on a conflict
+    // because it is what the map actually renders.
+    const savedLayer = (cfg.map && cfg.map.base_layer) || "";
+    const activeProvider =
+      (byId[savedLayer] && byId[savedLayer].provider) ||
+      ((cfg.map && cfg.map.provider) || "") ||
+      fallbackProvider ||
+      (providers[0] && providers[0].id);
+
+    const picker = Corvus.ui.optionCards({
+      ariaLabel: "Map service",
+      columns: 2,
+      value: activeProvider,
+      options: providers.map((p) => ({
+        id: p.id,
+        label: p.label,
+        desc: describeProvider(p, byId),
+        icon: "map",
+      })),
+      onChange: (id) => selectProvider(id),
+    });
+    wrap.appendChild(picker.el);
+
+    // Within the chosen service, which of its layers to show. A service with
+    // a single layer (OpenStreetMap) hides this row entirely rather than
+    // showing a one-option control the operator cannot act on.
+    const layerField = document.createElement("div");
+    layerField.className = "settings-map-layer";
+    wrap.appendChild(layerField);
+
+    const note = Corvus.ui.empty("");
+    note.className = "field-hint";
+    wrap.appendChild(note);
+
+    function currentStyleOf(layerId) {
+      return byId[layerId] ? byId[layerId].style : null;
+    }
+
+    function renderLayerField(providerId, selectedLayer) {
+      Corvus.ui.clear(layerField);
+      const prov = providers.find((p) => p.id === providerId);
+      const ids = (prov && prov.sources) || [];
+      if (ids.length < 2) return;
+      const sel = Corvus.ui.select({
+        id: "settingsMapLayer",
+        ariaLabel: "Map layer",
+        value: selectedLayer,
+        options: ids.map((id) => ({ value: id, label: (byId[id] || {}).label || id })),
+        onChange: (id) => applyLayer(id),
+      });
+      layerField.appendChild(Corvus.ui.field({ label: "Layer", control: sel }));
+    }
+
+    function describeCache(layerId) {
+      const s = byId[layerId];
+      if (!s) return "";
+      const n = s.cached_count || 0;
+      return n > 0
+        ? `${n.toLocaleString()} tiles cached offline \u00b7 up to z${s.maxzoom}`
+        : `Nothing cached yet \u00b7 up to z${s.maxzoom}`;
+    }
+
+    // Switching service keeps the operator on the equivalent layer where the
+    // new service has one (Esri Satellite -> Google Satellite), and falls back
+    // to that service's first layer otherwise.
+    function selectProvider(providerId) {
+      const prov = providers.find((p) => p.id === providerId);
+      if (!prov || !prov.sources.length) return;
+      const wantStyle = currentStyleOf(activeLayerId);
+      const match = prov.sources.find((id) => byId[id] && byId[id].style === wantStyle);
+      applyLayer(match || prov.sources[0]);
+    }
+
+    function applyLayer(layerId) {
+      if (!byId[layerId]) return;
+      activeLayerId = layerId;
+      const providerId = byId[layerId].provider;
+      picker.setValue(providerId);
+      renderLayerField(providerId, layerId);
+      note.textContent = describeCache(layerId);
+      // Apply to the live map immediately, then persist. The map module owns
+      // the switch so the layers popover on the Home tab stays in sync.
+      if (Corvus.map && typeof Corvus.map.setBaseLayer === "function") {
+        Corvus.map.setBaseLayer(layerId);
+      }
+      postConfig({ map: { base_layer: layerId, provider: providerId } });
+    }
+
+    let activeLayerId =
+      (byId[savedLayer] && savedLayer) ||
+      ((providers.find((p) => p.id === activeProvider) || {}).sources || [])[0];
+
+    renderLayerField(activeProvider, activeLayerId);
+    note.textContent = describeCache(activeLayerId);
+    return wrap;
+  }
+
+  /** One-line summary of what a service offers: its layer count, plus how many
+   *  of those layers already have tiles on disk (what matters in the field). */
+  function describeProvider(prov, byId) {
+    const ids = prov.sources || [];
+    const cached = ids.filter((id) => byId[id] && (byId[id].cached_count || 0) > 0).length;
+    const layers = ids.length === 1 ? "1 layer" : `${ids.length} layers`;
+    return cached > 0 ? `${layers} \u00b7 ${cached} cached` : layers;
   }
 
   // --- Section B: SSH Connections (saved-connection manager) ---
@@ -404,52 +451,46 @@ Corvus.sidenav = (function () {
   // so a navigation that repurposes pageView mid-fetch can't append into a
   // detached list. Post-render refreshes (add/connect handlers) pass no gen.
   function renderSSHSection(container, gen) {
-    const sec = document.createElement("div");
-    sec.className = "page-section";
-    sec.appendChild(sectionTitle("SSH Connections"));
-    const card = document.createElement("div");
-    card.className = "page-card";
     const list = document.createElement("div");
-    card.appendChild(list);
     refreshSettingsSSHList(list, gen);
-    sec.appendChild(card);
-    container.appendChild(sec);
+    container.appendChild(Corvus.ui.section({
+      title: "SSH Connections",
+      body: Corvus.ui.card({ body: list }),
+    }));
   }
 
   function refreshSettingsSSHList(list, gen) {
-    list.innerHTML = '<div class="page-card-desc">Loading…</div>';
+    Corvus.ui.clear(list).appendChild(Corvus.ui.empty("Loading\u2026"));
     Corvus.telemetry.requestJson("/api/ssh/connections").then((data) => {
       // Skip if the page was repurposed after this render started. Handler-
       // driven refreshes (add/connect) pass no gen and always refresh.
       if (gen !== undefined && gen !== navGeneration) return;
       const conns = (data && data.connections) || [];
-      list.innerHTML = "";
+      Corvus.ui.clear(list);
       if (!conns.length) {
-        const empty = document.createElement("div");
-        empty.className = "page-card-desc";
-        empty.textContent = "No saved SSH connections. Click + to add one.";
-        list.appendChild(empty);
+        list.appendChild(Corvus.ui.empty("No saved SSH connections. Click + to add one."));
       } else {
         conns.forEach((c) => list.appendChild(settingsSSHRow(c, list)));
       }
-      const addBtn = document.createElement("button");
-      addBtn.className = "btn";
-      addBtn.setAttribute("data-variant", "secondary");
-      addBtn.setAttribute("data-shape", "block");
-      addBtn.style.marginTop = "10px";
-      addBtn.textContent = "+ ADD CONNECTION";
       // Reuse the SSH tab's add modal; refresh this list once the save lands.
-      addBtn.addEventListener("click", () => {
-        if (Corvus.panel && typeof Corvus.panel.addSSHConnection === "function") {
-          Corvus.panel.addSSHConnection(() => refreshSettingsSSHList(list));
-        }
+      const addBtn = Corvus.ui.button({
+        variant: "secondary",
+        shape: "block",
+        icon: "plus",
+        label: "ADD CONNECTION",
+        onClick: () => {
+          if (Corvus.panel && typeof Corvus.panel.addSSHConnection === "function") {
+            Corvus.panel.addSSHConnection(() => refreshSettingsSSHList(list));
+          }
+        },
       });
+      addBtn.style.marginTop = "10px";
       list.appendChild(addBtn);
-      if (window.lucide && lucide.createIcons) lucide.createIcons();
+      Corvus.ui.refreshIcons();
     }).catch(() => {
       if (gen !== undefined && gen !== navGeneration) return;
-      list.innerHTML = '<div class="page-card-desc">Could not load SSH connections.</div>';
-      if (window.lucide && lucide.createIcons) lucide.createIcons();
+      Corvus.ui.clear(list).appendChild(Corvus.ui.empty("Could not load SSH connections."));
+      Corvus.ui.refreshIcons();
     });
   }
 
@@ -463,13 +504,13 @@ Corvus.sidenav = (function () {
     const actions = document.createElement("div");
     actions.className = "settings-ssh-actions";
 
-    const connectBtn = document.createElement("button");
-    connectBtn.className = "btn";
-    connectBtn.setAttribute("data-variant", "primary");
-    connectBtn.setAttribute("data-size", "sm");
-    connectBtn.textContent = "CONNECT";
     const note = document.createElement("span");
     note.className = "settings-ssh-note";
+    const connectBtn = Corvus.ui.button({
+      variant: "primary",
+      size: "sm",
+      label: "CONNECT",
+    });
     connectBtn.addEventListener("click", async () => {
       connectBtn.textContent = "CONNECTING…";
       connectBtn.disabled = true;
@@ -502,13 +543,10 @@ Corvus.sidenav = (function () {
     actions.appendChild(connectBtn);
     actions.appendChild(note);
 
-    const rm = document.createElement("button");
-    rm.className = "icon-btn";
-    rm.setAttribute("aria-label", `Remove ${c.name}`);
-    rm.title = `Remove ${c.name}`;
-    const trash = document.createElement("i");
-    trash.setAttribute("data-lucide", "trash-2");
-    rm.appendChild(trash);
+    const rm = Corvus.ui.iconButton("trash-2", {
+      title: `Remove ${c.name}`,
+      ariaLabel: `Remove ${c.name}`,
+    });
     rm.addEventListener("click", async () => {
       if (!confirm(`Remove connection ${c.name}?`)) return;
       try {
@@ -528,30 +566,38 @@ Corvus.sidenav = (function () {
 
   // --- Section C: Connection (read-only, accurate from config) ---
   function renderConnectionSection(container, cfg) {
-    const sec = document.createElement("div");
-    sec.className = "page-section";
-    sec.appendChild(sectionTitle("Connection"));
-    const card = document.createElement("div");
-    card.className = "page-card";
-    card.appendChild(row("MAVLink", cfg.mavlink_connection || "—"));
-    const httpPort = cfg.http_port != null ? String(cfg.http_port) : "—";
-    card.appendChild(row("HTTP Port", httpPort));
-    sec.appendChild(card);
-    container.appendChild(sec);
+    const card = Corvus.ui.card({});
+    card.appendChild(row("MAVLink", cfg.mavlink_connection || "\u2014"));
+    card.appendChild(row("HTTP Port", cfg.http_port != null ? String(cfg.http_port) : "\u2014"));
+    container.appendChild(Corvus.ui.section({ title: "Connection", body: card }));
   }
 
-  // --- Section D: Map (display the persisted base layer; read-only) ---
-  function renderMapSection(container, cfg) {
-    const sec = document.createElement("div");
-    sec.className = "page-section";
-    sec.appendChild(sectionTitle("Map"));
-    const card = document.createElement("div");
-    card.className = "page-card";
-    const baseLayer = (cfg.map && cfg.map.base_layer) || "";
-    const label = BASE_LAYER_LABELS[baseLayer] || baseLayer || "—";
-    card.appendChild(row("Base layer", label));
-    sec.appendChild(card);
-    container.appendChild(sec);
+  // --- Section D: Files (where Corvus writes what it saves) ---
+  // One editable folder today (parameter exports). The tile cache and tlog
+  // directories are also config keys but are read at startup, so changing them
+  // here would silently not take effect until a restart — they stay
+  // config-file-only until that is handled.
+  function renderFilesSection(container, cfg) {
+    const card = Corvus.ui.card({});
+    const dirInput = Corvus.ui.input({
+      id: "settingsParamsDir",
+      value: cfg.params_dir || "",
+      placeholder: "~/.corvus/params",
+      mono: true,
+      ariaLabel: "Parameter export folder",
+      autocomplete: false,
+      spellcheck: false,
+      // Persist on blur/Enter rather than per keystroke: a half-typed path is
+      // never a folder the operator meant.
+      onChange: (value) => postConfig({ params_dir: value.trim() }),
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Parameter export folder",
+      control: dirInput,
+      hint: "Where Export writes parameter files, on the machine running Corvus. " +
+            "Leave empty for ~/.corvus/params. The export dialog can still override it per file.",
+    }));
+    container.appendChild(Corvus.ui.section({ title: "Files", body: card }));
   }
 
   // --- Section E: About (existing — reads /api/version, no hardcoded version) ---
@@ -559,11 +605,7 @@ Corvus.sidenav = (function () {
   // fetch so it can't append rows to a pageView that has since been repurposed.
   // Undefined gen ⇒ no guard (keeps the helper callable from non-render contexts).
   function renderAboutSection(container, gen) {
-    const sec = document.createElement("div");
-    sec.className = "page-section";
-    sec.appendChild(sectionTitle("About"));
-    const card = document.createElement("div");
-    card.className = "page-card";
+    const card = Corvus.ui.card({});
     Corvus.telemetry.requestJson("/api/version").then((v) => {
       if (gen !== undefined && gen !== navGeneration) return;
       card.appendChild(row("Product", v.product || "Corvus GCS"));
@@ -573,8 +615,7 @@ Corvus.sidenav = (function () {
       if (gen !== undefined && gen !== navGeneration) return;
       card.appendChild(row("Version", "Unavailable"));
     });
-    sec.appendChild(card);
-    container.appendChild(sec);
+    container.appendChild(Corvus.ui.section({ title: "About", body: card }));
   }
 
   function renderSettingsPage(container) {
@@ -590,20 +631,19 @@ Corvus.sidenav = (function () {
     Corvus.telemetry.requestJson("/api/config").then((res) => {
       if (gen !== navGeneration) return;
       const cfg = (res && res.config) || {};
-      renderAppearanceSection(container, cfg);
+      renderAppearanceSection(container, cfg, gen);
       renderSSHSection(container, gen);
       renderConnectionSection(container, cfg);
-      renderMapSection(container, cfg);
+      renderFilesSection(container, cfg);
       renderAboutSection(container, gen);
-      if (window.lucide && lucide.createIcons) lucide.createIcons();
+      Corvus.ui.refreshIcons();
     }).catch(() => {
       if (gen !== navGeneration) return;
-      const note = document.createElement("div");
-      note.className = "page-card";
-      note.innerHTML = '<div class="page-card-desc">Settings unavailable. Could not load configuration from the backend.</div>';
-      container.appendChild(note);
+      container.appendChild(Corvus.ui.card({
+        body: "Settings unavailable. Could not load configuration from the backend.",
+      }));
       renderAboutSection(container, gen);   // About has its own fetch + graceful fallback
-      if (window.lucide && lucide.createIcons) lucide.createIcons();
+      Corvus.ui.refreshIcons();
     });
   }
 

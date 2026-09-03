@@ -96,7 +96,7 @@ Corvus.setupFirmware = (function () {
     const fileInput = document.createElement("input");
     fileInput.type = "file";
     fileInput.accept = ".px4,.bin";
-    fileInput.className = "firmware-file-input";
+    fileInput.className = "field-input firmware-file-input";
     fileInput.setAttribute("aria-label", "Select PX4 firmware file");
     const filename = S.el("span", "firmware-filename", "No file selected");
     fileRow.appendChild(fileInput);
@@ -105,21 +105,21 @@ Corvus.setupFirmware = (function () {
 
     // Action row: Upload (primary) + Cancel (secondary, only while flashing).
     const actionRow = S.el("div", "firmware-file-row");
-    const uploadBtn = document.createElement("button");
-    uploadBtn.type = "button";
-    uploadBtn.className = "btn params-download-btn";
-    uploadBtn.setAttribute("data-variant", "primary");
-    uploadBtn.appendChild(S.icon("upload-cloud"));
-    uploadBtn.appendChild(S.el("span", null, "Flash Firmware"));
-    uploadBtn.disabled = true;
+    const uploadBtn = Corvus.ui.button({
+      variant: "primary",
+      className: "params-download-btn",
+      icon: "upload-cloud",
+      label: "Flash Firmware",
+      disabled: true,
+    });
 
-    const cancelBtn = document.createElement("button");
-    cancelBtn.type = "button";
-    cancelBtn.className = "btn firmware-cancel";
-    cancelBtn.setAttribute("data-variant", "secondary");
-    cancelBtn.setAttribute("data-size", "sm");
-    cancelBtn.appendChild(S.icon("x"));
-    cancelBtn.appendChild(S.el("span", null, "Cancel"));
+    const cancelBtn = Corvus.ui.button({
+      variant: "secondary",
+      size: "sm",
+      className: "firmware-cancel",
+      icon: "x",
+      label: "Cancel",
+    });
     cancelBtn.hidden = true;
 
     actionRow.appendChild(uploadBtn);

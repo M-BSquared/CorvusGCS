@@ -13,10 +13,6 @@ Corvus.panel = (function () {
   let sshConnectedName = null;
   let sshSseSource = null;
 
-  function refreshIcons() {
-    if (window.lucide && lucide.createIcons) lucide.createIcons();
-  }
-
   function nowTs() {
     const d = new Date();
     const p = (n) => String(n).padStart(2, "0");
@@ -107,21 +103,19 @@ Corvus.panel = (function () {
         </div>`;
       const actions = document.createElement("div");
       actions.className = "ssh-card-actions";
-      const btn = document.createElement("button");
-      btn.className = "btn ssh-connect";
-      btn.setAttribute("data-variant", "primary");
-      btn.setAttribute("data-shape", "block");
-      btn.textContent = "CONNECT";
+      const btn = Corvus.ui.button({
+        variant: "primary",
+        shape: "block",
+        className: "ssh-connect",
+        label: "CONNECT",
+        onClick: () => connectSSH(dev.name, dev.host, btn),
+      });
       btn.dataset.name = dev.name;
-      btn.addEventListener("click", () => connectSSH(dev.name, dev.host, btn));
       actions.appendChild(btn);
-      const rm = document.createElement("button");
-      rm.className = "icon-btn";
-      rm.setAttribute("aria-label", `Remove ${dev.name}`);
-      rm.title = `Remove ${dev.name}`;
-      const trash = document.createElement("i");
-      trash.setAttribute("data-lucide", "trash-2");
-      rm.appendChild(trash);
+      const rm = Corvus.ui.iconButton("trash-2", {
+        title: `Remove ${dev.name}`,
+        ariaLabel: `Remove ${dev.name}`,
+      });
       rm.addEventListener("click", async () => {
         if (!confirm(`Remove connection ${dev.name}?`)) return;
         try {
@@ -137,14 +131,15 @@ Corvus.panel = (function () {
       card.appendChild(actions);
       sshContent.appendChild(card);
     });
-    const addBtn = document.createElement("button");
-    addBtn.className = "btn ssh-connect";
-    addBtn.setAttribute("data-variant", "secondary");
-    addBtn.setAttribute("data-shape", "block");
-    addBtn.textContent = "+ ADD CONNECTION";
-    addBtn.addEventListener("click", () => addSSHConnection());
-    sshContent.appendChild(addBtn);
-    refreshIcons();
+    sshContent.appendChild(Corvus.ui.button({
+      variant: "secondary",
+      shape: "block",
+      className: "ssh-connect",
+      icon: "plus",
+      label: "ADD CONNECTION",
+      onClick: () => addSSHConnection(),
+    }));
+    Corvus.ui.refreshIcons();
   }
 
   // Surface a connect failure inline in the existing SSH card (the card list
@@ -230,11 +225,12 @@ Corvus.panel = (function () {
         <span class="t-line"><span class="t-user">corvus@companion</span><span class="t-path">:~$</span>&nbsp;</span>
         <input class="ssh-input" id="sshInput" placeholder="type a command..." autocomplete="off" spellcheck="false" />
       </div>`;
-    const discBtn = document.createElement("button");
-    discBtn.className = "btn ssh-connect disconnect";
-    discBtn.setAttribute("data-variant", "secondary");
-    discBtn.setAttribute("data-shape", "block");
-    discBtn.textContent = "DISCONNECT";
+    const discBtn = Corvus.ui.button({
+      variant: "secondary",
+      shape: "block",
+      className: "ssh-connect disconnect",
+      label: "DISCONNECT",
+    });
     discBtn.addEventListener("click", async () => {
       await fetch("/api/ssh/disconnect", {
         method: "POST",
@@ -247,7 +243,7 @@ Corvus.panel = (function () {
     });
     card.appendChild(discBtn);
     sshContent.appendChild(card);
-    refreshIcons();
+    Corvus.ui.refreshIcons();
 
     sshOutputEl = card.querySelector("#sshTerm");
     sshInputEl = card.querySelector("#sshInput");
@@ -293,73 +289,74 @@ Corvus.panel = (function () {
     sshOutputEl.scrollTop = sshOutputEl.scrollHeight;
   }
 
+  // The fields of the add-SSH dialog, in the order they are shown. One list
+  // drives both the DOM and the read-back, so a field can never be rendered
+  // and then forgotten when the form is submitted.
+  const SSH_FIELDS = [
+    { key: "name", label: "Name", placeholder: "CORVUS-01" },
+    { key: "host", label: "Host", placeholder: "192.168.2.10", mono: true, autofocus: true },
+    { key: "port", label: "Port", type: "number", value: "22", mono: true },
+    { key: "username", label: "Username", placeholder: "corvus", value: "corvus" },
+    { key: "password", label: "Password", type: "password", mono: true,
+      placeholder: "optional — use key file" },
+    { key: "key_path", label: "Key file", mono: true, placeholder: "/home/user/.ssh/id_rsa" },
+  ];
+
   function addSSHConnection(onSaved) {
     // onSaved: optional () => void, invoked after a successful save so a caller
     // (e.g. the Settings page) can refresh its own list. A click Event passed
     // via addEventListener is not a function, so it is safely ignored.
     const onSavedCb = typeof onSaved === "function" ? onSaved : null;
-    const overlay = document.createElement("div");
-    overlay.className = "ssh-modal-overlay";
-    overlay.innerHTML = `
-      <div class="ssh-modal">
-        <div class="ssh-modal-header">
-          <span class="ssh-modal-title">Add SSH Connection</span>
-          <button class="icon-btn" id="sshModalClose"><i data-lucide="x"></i></button>
-        </div>
-        <div class="ssh-field">
-          <label class="ssh-field-label">Name</label>
-          <input type="text" class="ssh-field-input" id="sshFldName" placeholder="CORVUS-01" value="" />
-        </div>
-        <div class="ssh-field">
-          <label class="ssh-field-label">Host</label>
-          <input type="text" class="ssh-field-input mono" id="sshFldHost" placeholder="192.168.2.10" />
-        </div>
-        <div class="ssh-field">
-          <label class="ssh-field-label">Port</label>
-          <input type="number" class="ssh-field-input mono" id="sshFldPort" value="22" />
-        </div>
-        <div class="ssh-field">
-          <label class="ssh-field-label">Username</label>
-          <input type="text" class="ssh-field-input" id="sshFldUser" placeholder="corvus" value="corvus" />
-        </div>
-        <div class="ssh-field">
-          <label class="ssh-field-label">Password</label>
-          <input type="password" class="ssh-field-input mono" id="sshFldPass" placeholder="optional — use key file" />
-        </div>
-        <div class="ssh-field">
-          <label class="ssh-field-label">Key file</label>
-          <input type="text" class="ssh-field-input mono" id="sshFldKey" placeholder="/home/user/.ssh/id_rsa" />
-        </div>
-        <div class="ssh-modal-error" id="sshModalError"></div>
-        <div class="ssh-modal-actions">
-          <button class="btn ssh-modal-btn" data-variant="secondary" id="sshModalCancel">CANCEL</button>
-          <button class="btn ssh-modal-btn" data-variant="primary" id="sshModalConnect">
-            <i data-lucide="plug"></i>
-            <span>CONNECT</span>
-          </button>
-        </div>
-      </div>`;
-    document.body.appendChild(overlay);
-    refreshIcons();
 
-    const close = () => overlay.remove();
-    overlay.querySelector("#sshModalClose").addEventListener("click", close);
-    overlay.querySelector("#sshModalCancel").addEventListener("click", close);
-    overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
-    overlay.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+    const body = document.createDocumentFragment();
+    const inputs = {};
+    let autofocusEl = null;
+    SSH_FIELDS.forEach((f) => {
+      const control = Corvus.ui.input({
+        id: "sshFld_" + f.key,
+        type: f.type || "text",
+        value: f.value,
+        placeholder: f.placeholder,
+        mono: f.mono,
+        ariaLabel: f.label,
+        autocomplete: false,
+      });
+      inputs[f.key] = control;
+      if (f.autofocus) autofocusEl = control;
+      body.appendChild(Corvus.ui.field({ label: f.label, control }));
+    });
+    const error = Corvus.ui.message();
+    body.appendChild(error.el);
 
-    const errEl = overlay.querySelector("#sshModalError");
-    const showError = (msg) => { if (errEl) errEl.textContent = msg || ""; };
+    const cancelBtn = Corvus.ui.button({
+      variant: "secondary", label: "CANCEL", onClick: () => dialog.close(),
+    });
+    const connectBtn = Corvus.ui.button({
+      variant: "primary", icon: "plug", label: "CONNECT", onClick: submit,
+    });
 
-    overlay.querySelector("#sshModalConnect").addEventListener("click", async () => {
-      const name = overlay.querySelector("#sshFldName").value.trim() || "DEVICE";
-      const host = overlay.querySelector("#sshFldHost").value.trim();
-      const port = parseInt(overlay.querySelector("#sshFldPort").value) || 22;
-      const username = overlay.querySelector("#sshFldUser").value.trim() || "corvus";
-      const password = overlay.querySelector("#sshFldPass").value || null;
-      const key_path = overlay.querySelector("#sshFldKey").value.trim() || null;
-      if (!host) { showError("Host is required."); return; }
-      showError("");
+    const dialog = Corvus.ui.modal({
+      title: "Add SSH Connection",
+      size: "sm",
+      body,
+      actions: [cancelBtn, connectBtn],
+    });
+    dialog.open();
+    // ui.modal focuses its first control (Name); Host is the field that
+    // actually needs filling in, so take focus from there.
+    if (autofocusEl && typeof autofocusEl.focus === "function") autofocusEl.focus();
+
+    function value(key) { return (inputs[key].value || "").trim(); }
+
+    async function submit() {
+      const name = value("name") || "DEVICE";
+      const host = value("host");
+      const port = parseInt(inputs.port.value, 10) || 22;
+      const username = value("username") || "corvus";
+      const password = inputs.password.value || null;
+      const key_path = value("key_path") || null;
+      if (!host) { error.show("Host is required.", "err"); return; }
+      error.hide();
 
       // 1) Save first so connect-by-name can load the creds from config.
       let saveRes;
@@ -370,15 +367,15 @@ Corvus.panel = (function () {
           body: JSON.stringify({ name, host, port, username, password, key_path }),
         }).then((r) => r.json());
       } catch (err) {
-        showError((err && err.message) || "Save failed");
+        error.show((err && err.message) || "Save failed", "err");
         return;
       }
       if (!saveRes || !saveRes.ok) {
-        showError((saveRes && saveRes.error) || "Save failed");
+        error.show((saveRes && saveRes.error) || "Save failed", "err");
         return;
       }
       if (onSavedCb) onSavedCb();
-      close();
+      dialog.close();
 
       // 2) Connect by name — the creds are now persisted.
       try {
@@ -396,9 +393,7 @@ Corvus.panel = (function () {
       } catch (err) {
         renderSSHTerminal(name, host, (err && err.message) || "Connection failed");
       }
-    });
-
-    overlay.querySelector("#sshFldHost").focus();
+    }
   }
 
   function initFuture() {
@@ -417,7 +412,7 @@ Corvus.panel = (function () {
     const i = document.createElement("i");
     i.setAttribute("data-lucide", collapsed ? "chevron-left" : "chevron-right");
     handle.appendChild(i);
-    refreshIcons();
+    Corvus.ui.refreshIcons();
     setTimeout(() => window.dispatchEvent(new Event("resize")), 300);
   }
 
@@ -474,7 +469,7 @@ Corvus.panel = (function () {
     initConsole();
     renderSSHCards();
     initFuture();
-    refreshIcons();
+    Corvus.ui.refreshIcons();
   }
 
   return { init, toggle, addConsoleLine, addSSHConnection, showSSHTerminal };

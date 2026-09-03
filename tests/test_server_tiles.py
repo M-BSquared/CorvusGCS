@@ -36,7 +36,7 @@ def test_tile_sources_list_sources_shape() -> None:
     sources = list_sources()
     assert [s["id"] for s in sources] == list(TILE_SOURCES)
     for s in sources:
-        assert set(s) == {"id", "label", "maxzoom"}
+        assert set(s) == {"id", "label", "provider", "style", "maxzoom", "attribution"}
         assert isinstance(s["maxzoom"], int) and s["maxzoom"] > 0
 
 

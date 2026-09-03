@@ -286,12 +286,14 @@ Corvus.app = (function () {
   }
 
   function init() {
-    // Apply the cached accent synchronously (no FOUC) before the map/UI paint,
+    // Apply the cached theme synchronously (no FOUC) before the map/UI paint,
     // then let the backend config override it as the authoritative source.
+    // The inline script in index.html has usually done this already; repeating
+    // it here also covers the case where that script could not read storage.
     Corvus.theme.applySaved();
     Corvus.telemetry.requestJson("/api/config").then((res) => {
-      const accent = res && res.config && res.config.theme && res.config.theme.accent;
-      if (accent) Corvus.theme.setAccent(accent);
+      const name = Corvus.theme.fromConfig(res && res.config);
+      if (name) Corvus.theme.setTheme(name);
     }).catch(() => {});
 
     Corvus.topbar.init();
@@ -302,11 +304,12 @@ Corvus.app = (function () {
     Corvus.panel.init();
     Corvus.link.init();
     initFlightActions();
-    Corvus.tiles.init(document.getElementById("tilesTrigger"),
-      document.getElementById("tilesPopover"));
+    // The offline-map panel is a modal now (it mounts itself to <body>), so
+    // only the trigger is wired here — there is no anchored popover element.
+    Corvus.tiles.init(document.getElementById("tilesTrigger"));
 
     Corvus.telemetry.connect();
-    if (window.lucide && lucide.createIcons) lucide.createIcons();
+    Corvus.ui.refreshIcons();
 
     Corvus.telemetry.requestJson("/api/version").then((v) => {
       document.title = `CORVUS GCS v${v.version}`;

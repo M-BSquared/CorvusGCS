@@ -1,18 +1,21 @@
 "use strict";
 
 /**
- * Frontend test for src/js/map.js — the tile-source mirror (TILE).
+ * Frontend test for src/js/map.js — the tile-source catalogue.
  *
  * Plain Node-runnable assertions (no browser, no test runner), using the same
  * pattern as tests/test_frontend_link.js: stub the browser globals the module
  * touches at LOAD time, require the source, and assert on the exposed surface.
  * init() is never called, so maplibregl is never needed.
  *
- * The Python registry `corvus/tile_sources.TILE_SOURCES` is the single source of
- * truth for ids+labels+attribution; the frontend `TILE` is a hand-mirrored copy
- * (documented dual-maintenance in map.js). This test asserts the mirror stays
- * in sync: the same 5 ids, each with a non-empty `attribution`, and the
- * `attributionControl: true` flag so MapLibre actually renders the credit.
+ * `corvus/tile_sources.TILE_SOURCES` is the single source of truth for
+ * ids + labels + attribution. The frontend used to keep a hand-mirrored copy
+ * of it (documented dual-maintenance); it now HYDRATES the catalogue from
+ * GET /api/tiles/sources at init. What this test pins is the consequence of
+ * that change: before the fetch resolves the module holds exactly one
+ * bootstrap entry — enough to paint an attributed map offline — and the
+ * bootstrap entry itself still matches the Python registry, since it is the
+ * one source declared in two places.
  *
  * Run:
  *   node tests/test_frontend_map.js
@@ -61,17 +64,21 @@ global.document = {
   addEventListener() {},
 };
 
-// Load the map module. Defines Corvus.map (with the _TILE test hook).
+// Load the map module. Defines Corvus.map (with the _sources test hook).
+// ui.js first: it defines Corvus.ui, the component layer every other
+// module builds its DOM with (index.html loads it in the same order).
+require("../src/js/ui.js");
 require("../src/js/map.js");
 
 const map = Corvus.map;
 assert.ok(map, "Corvus.map must be defined after requiring map.js");
-assert.strictEqual(typeof map._TILE, "function", "Corvus.map must expose the _TILE test hook");
+assert.strictEqual(typeof map._sources, "function", "Corvus.map must expose the _sources test hook");
+assert.strictEqual(typeof map._bootstrap, "function", "Corvus.map must expose the _bootstrap test hook");
+assert.strictEqual(typeof map.setBaseLayer, "function", "Corvus.map must expose setBaseLayer for the settings picker");
 
 // ---------------------------------------------------------------------------
-// The authoritative Python registry, read from disk so this test fails loud if
-// the frontend mirror desyncs from it. Kept in sync by the dual-maintenance
-// contract documented in map.js.
+// The authoritative Python registry, read from disk so the one entry the
+// frontend still declares (the bootstrap layer) cannot drift away from it.
 // ---------------------------------------------------------------------------
 const tileSourcesPy = fs.readFileSync(
   path.join(__dirname, "..", "corvus", "tile_sources.py"),
@@ -90,63 +97,79 @@ function registryEntry(id) {
   };
 }
 
-const REGISTRY_IDS = ["satellite", "streets", "hybrid", "topo", "osm"];
+// The single layer map.js declares itself, so it can paint an attributed
+// first frame before /api/tiles/sources resolves.
+const BOOTSTRAP_ID = "satellite";
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-function testTileHasExactlyFiveEntries() {
-  const tile = map._TILE();
-  assert.ok(tile, "_TILE() must return the tile mirror object");
-  const ids = Object.keys(tile);
-  assert.strictEqual(ids.length, 5, `TILE must have exactly 5 entries, got ${ids.length}: ${ids}`);
-  for (const id of REGISTRY_IDS) {
-    assert.ok(id in tile, `TILE missing entry for ${id}`);
-  }
-}
-
-function testTileLabelsMatchRegistry() {
-  const tile = map._TILE();
-  for (const id of REGISTRY_IDS) {
-    const reg = registryEntry(id);
-    assert.ok(reg.label, `registry entry for ${id} has no label (test parse bug?)`);
-    assert.strictEqual(
-      tile[id].label, reg.label,
-      `TILE[${id}].label (${tile[id].label}) != registry (${reg.label})`,
-    );
-  }
-}
-
-function testEveryTileEntryHasNonEmptyAttribution() {
-  const tile = map._TILE();
-  for (const id of Object.keys(tile)) {
-    const attr = tile[id].attribution;
-    assert.ok(
-      typeof attr === "string" && attr.trim().length > 0,
-      `TILE[${id}].attribution must be a non-empty string (got ${JSON.stringify(attr)})`,
-    );
-  }
-}
-
-function testTileAttributionsMatchRegistry() {
-  const tile = map._TILE();
-  for (const id of REGISTRY_IDS) {
-    const reg = registryEntry(id);
-    assert.ok(reg.attribution, `registry entry for ${id} has no attribution (test parse bug?)`);
-    assert.strictEqual(
-      tile[id].attribution, reg.attribution,
-      `TILE[${id}].attribution != registry attribution for ${id}`,
-    );
-  }
-}
-
-function testOsmAttributionIsCorrect() {
-  const tile = map._TILE();
-  assert.strictEqual(
-    tile.osm.attribution, "© OpenStreetMap contributors",
-    "OSM attribution must be the legally-required credit string",
+function testCatalogueStartsWithOnlyTheBootstrapEntry() {
+  const cat = map._sources();
+  assert.ok(cat, "_sources() must return the catalogue object");
+  const ids = Object.keys(cat);
+  assert.deepStrictEqual(
+    ids, [BOOTSTRAP_ID],
+    `before /api/tiles/sources resolves the catalogue must hold only the ` +
+    `bootstrap entry, got: ${ids}`,
   );
+}
+
+function testBootstrapEntryMatchesTheRegistry() {
+  const reg = registryEntry(BOOTSTRAP_ID);
+  const boot = map._bootstrap();
+  assert.ok(reg.label, `registry entry for ${BOOTSTRAP_ID} has no label (test parse bug?)`);
+  assert.strictEqual(boot.id, BOOTSTRAP_ID, "bootstrap id must be the registry's default layer");
+  assert.strictEqual(
+    boot.label, reg.label,
+    `bootstrap label (${boot.label}) != registry (${reg.label})`,
+  );
+  assert.strictEqual(
+    boot.attribution, reg.attribution,
+    `bootstrap attribution != registry attribution for ${BOOTSTRAP_ID}`,
+  );
+  assert.ok(
+    typeof boot.maxzoom === "number" && boot.maxzoom > 0,
+    "bootstrap entry must carry a usable maxzoom",
+  );
+}
+
+function testBootstrapEntryHasNonEmptyAttribution() {
+  // Offline, with the backend unreachable, this is the only credit string the
+  // map has — it must never be blank.
+  const attr = map._bootstrap().attribution;
+  assert.ok(
+    typeof attr === "string" && attr.trim().length > 0,
+    `bootstrap attribution must be a non-empty string (got ${JSON.stringify(attr)})`,
+  );
+}
+
+function testSetBaseLayerRejectsUnknownSources() {
+  // A persisted base_layer from a newer build must not blank the map: an id
+  // outside the catalogue is ignored and the active layer is left alone.
+  const before = map.getBaseLayer();
+  map.setBaseLayer("not-a-real-source");
+  assert.strictEqual(
+    map.getBaseLayer(), before,
+    "setBaseLayer must ignore an id that is not in the catalogue",
+  );
+}
+
+function testSourceTextDoesNotMirrorTheRegistry() {
+  // The catalogue is fetched; a re-introduced hardcoded table would silently
+  // desync from corvus/tile_sources.py again.
+  const src = fs.readFileSync(path.join(__dirname, "..", "src", "js", "map.js"), "utf-8");
+  assert.ok(
+    src.includes("/api/tiles/sources"),
+    "map.js must fetch the source catalogue from /api/tiles/sources",
+  );
+  for (const id of ["osm", "topo", "hybrid", "streets"]) {
+    assert.ok(
+      !src.includes(`"${id}"`),
+      `map.js hardcodes the source id "${id}"; the catalogue is fetched`,
+    );
+  }
 }
 
 function testSourceTextEnablesAttributionControl() {
@@ -252,11 +275,11 @@ function testPlanRouteMissingTelemetryDegradesToWaypointsOnly() {
 }
 
 const tests = [
-  testTileHasExactlyFiveEntries,
-  testTileLabelsMatchRegistry,
-  testEveryTileEntryHasNonEmptyAttribution,
-  testTileAttributionsMatchRegistry,
-  testOsmAttributionIsCorrect,
+  testCatalogueStartsWithOnlyTheBootstrapEntry,
+  testBootstrapEntryMatchesTheRegistry,
+  testBootstrapEntryHasNonEmptyAttribution,
+  testSetBaseLayerRejectsUnknownSources,
+  testSourceTextDoesNotMirrorTheRegistry,
   testSourceTextEnablesAttributionControl,
   testPlanRouteHookExists,
   testPlanRouteEmptyWhenNoWaypoints,

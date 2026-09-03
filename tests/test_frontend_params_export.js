@@ -103,8 +103,11 @@ function makeEl(tag) {
     toggle(c, force) { const has = e.classList.contains(c); const next = force === undefined ? !has : !!force; if (next) e.classList.add(c); else e.classList.remove(c); return next; },
     contains(c) { return e.className.split(/\s+/).includes(c); },
   };
-  e.appendChild = (c) => { e.children.push(c); return c; };
-  e.removeChild = (c) => { const i = e.children.indexOf(c); if (i >= 0) e.children.splice(i, 1); return c; };
+  // parentNode is maintained like a real DOM so the standard
+  // `node.parentNode.removeChild(node)` removal idiom works under the stub —
+  // Corvus.ui.modal.close() uses it to unmount a dialog.
+  e.appendChild = (c) => { c.parentNode = e; e.children.push(c); return c; };
+  e.removeChild = (c) => { const i = e.children.indexOf(c); if (i >= 0) e.children.splice(i, 1); c.parentNode = null; return c; };
   e.remove = () => { /* no-op: detached in the stub */ };
   e.insertBefore = (n, ref) => { const i = ref ? e.children.indexOf(ref) : e.children.length; if (i < 0) e.children.push(n); else e.children.splice(i, 0, n); return n; };
   Object.defineProperty(e, "firstChild", { get() { return e.children[0] || null; } });
@@ -140,27 +143,25 @@ let pageViewEl = null;
 const bodyEl = makeEl("body");
 global.document = {
   createElement: makeEl,
+  // Corvus.ui.modal assembles its body in a fragment. The stub models it as a
+  // plain element: appendChild/children behave the same, which is all the
+  // module and these assertions need.
+  createDocumentFragment: () => makeEl("fragment"),
   createTextNode: (t) => ({ nodeType: 3, textContent: String(t), _isText: true }),
   getElementById: (id) => (id === "pageView" ? pageViewEl : null),
   querySelectorAll: () => [],
+  // Both halves of the pair: ui.modal registers a document keydown handler
+  // while a dialog is mounted and removes it on close.
   addEventListener: () => {},
+  removeEventListener: () => {},
   body: bodyEl,
 };
 
 // ---------------------------------------------------------------------------
-// Blob + URL.createObjectURL stubs so exportParams can build the download.
-// captureExport holds the last exported JSON string so the test can assert it.
+// The export writes the file through the BACKEND (POST /api/params/export), so
+// there is no Blob and no object URL to stub any more — what the tests assert
+// is the request the dialog sends and the path it reports back.
 // ---------------------------------------------------------------------------
-let capturedExport = null;
-let createdObjectUrls = [];
-let revokedUrls = [];
-global.Blob = class Blob {
-  constructor(parts) { this.text = (parts && parts[0]) || ""; }
-};
-global.URL = {
-  createObjectURL(blob) { const url = "blob:" + Math.random(); createdObjectUrls.push(url); capturedExport = (blob && blob.text) || null; return url; },
-  revokeObjectURL(url) { revokedUrls.push(url); },
-};
 
 // FileReader fallback (unused when file.text() is defined, but kept for safety).
 global.FileReader = class FileReader {
@@ -202,6 +203,7 @@ function fire(el, type, payload) {
 function makeFakeTelemetry(opts = {}) {
   const postCalls = [];
   const requests = [];
+  const jsonCalls = [];   // requestJson calls that carried an init (i.e. POSTs)
   let subCb = null;
   let unsubCalls = 0;
   const unsub = () => { unsubCalls++; };
@@ -212,6 +214,10 @@ function makeFakeTelemetry(opts = {}) {
   const versionResponse = opts.versionResponse || { product: "Corvus GCS", version: "0.0.0-test" };
   let paramsResponse = opts.paramsResponse || { complete: false, received: 0, count: 0, params: [] };
   const uploadResultResponse = opts.uploadResultResponse || { written: 0, failed: 0, errors: [] };
+  // What GET /api/params/export/target reports: where the file would go and
+  // the backend-generated default name.
+  const exportTargetResponse = opts.exportTargetResponse ||
+    { dir: "/home/pilot/.corvus/params", filename: "corvus-params_px4-quadrotor_2026-01-02_03-04.json" };
   let state = opts.state || { armed: false, connected: true };
   const telemetry = {
     postAction(url, payload) {
@@ -221,17 +227,32 @@ function makeFakeTelemetry(opts = {}) {
       }
       return Promise.resolve({ ok: true, state: "uploading", count: payload && payload.params ? payload.params.length : 0 });
     },
-    requestJson(url) {
+    requestJson(url, init) {
       requests.push(url);
+      // The export flow POSTs through requestJson, so the init is captured for
+      // assertions (postCalls only covers postAction).
+      if (init) jsonCalls.push({ url, init, body: init.body ? JSON.parse(init.body) : null });
       if (url === "/api/version") return Promise.resolve(versionResponse);
       if (url === "/api/params/upload/result") return Promise.resolve(uploadResultResponse);
+      if (url === "/api/params/export/target") return Promise.resolve(exportTargetResponse);
+      if (url === "/api/params/export") {
+        if (opts.exportReject) return Promise.reject(new Error(opts.exportReject));
+        const body = init && init.body ? JSON.parse(init.body) : {};
+        return Promise.resolve({
+          ok: true,
+          dir: body.dir,
+          filename: body.filename,
+          path: `${body.dir}/${body.filename}`,
+          param_count: (body.params || []).length,
+        });
+      }
       return Promise.resolve(paramsResponse);
     },
     subscribe(fn) { subCb = fn; return unsub; },
     getState() { return state; },
   };
   return {
-    telemetry, postCalls, requests,
+    telemetry, postCalls, requests, jsonCalls,
     get unsubCalls() { return unsubCalls; },
     getSubCb: () => subCb,
     setParamsResponse(r) { paramsResponse = r; },
@@ -245,6 +266,9 @@ function makeFakeTelemetry(opts = {}) {
 // NOT load setup.js (the orchestrator) — these tests drive setupParameters
 // directly so they focus on the export/import actions.
 // ---------------------------------------------------------------------------
+// ui.js first: it defines Corvus.ui, the component layer every other
+// module builds its DOM with (index.html loads it in the same order).
+require("../src/js/ui.js");
 require("../src/js/setup-shared.js");
 require("../src/js/setup-parameters.js");
 
@@ -284,13 +308,23 @@ async function testActionsBarRendersWithInitialState() {
 
 // ===========================================================================
 // Test 2 — after a complete download, Export becomes enabled; clicking it
-// fetches /api/version, builds a Blob, and triggers a download whose JSON
-// carries product / version / exported_at / params (no hardcoded version).
+// opens the export dialog prefilled from GET /api/params/export/target, and
+// Save POSTs the parameter set to /api/params/export and reports the path the
+// backend wrote it to.
+//
+// The file is written server-side, not pulled as a browser download: the
+// desktop build runs inside QtWebEngine, which drops an <a download> unless
+// the host app implements a download handler, so the old blob export produced
+// no file there at all. The version metadata is stamped by the backend for the
+// same single-source reason — the frontend must not put one in the payload.
 // ===========================================================================
-async function testExportAfterDownloadFetchesVersionAndDownloads() {
+async function testExportOpensDialogAndSavesThroughBackend() {
   const fake = makeFakeTelemetry({
     state: { armed: false, connected: true },
-    versionResponse: { product: "Corvus GCS", version: "2026.09.42" },
+    exportTargetResponse: {
+      dir: "/home/pilot/.corvus/params",
+      filename: "corvus-params_px4-quadrotor_2026-01-02_03-04.json",
+    },
     paramsResponse: {
       complete: true, received: 2, count: 2, state: "complete",
       params: [
@@ -306,9 +340,6 @@ async function testExportAfterDownloadFetchesVersionAndDownloads() {
   intervalCbs.length = 0;
   clearedIds.clear();
   dispatched.length = 0;
-  capturedExport = null;
-  createdObjectUrls = [];
-  revokedUrls = [];
 
   const destroy = Corvus.setupParameters.render(container, () => {});
   await flushMicrotasks();
@@ -330,30 +361,114 @@ async function testExportAfterDownloadFetchesVersionAndDownloads() {
     || findByClass(actions, "btn").find((b) => b.children.some((c) => c._attrs && c._attrs["data-lucide"] === "download"));
   assert.equal(exportBtn.disabled, false, "Export enabled after the full set is loaded");
 
-  // Click Export → fetches /api/version → builds the Blob → download.
+  // Click Export → asks the backend where the file would go → opens the dialog.
   fire(exportBtn, "click");
-  await flushMicrotasks();   // requestJson(/api/version)
-  await flushMicrotasks();   // Blob + click + notification
+  await flushMicrotasks();   // requestJson(/api/params/export/target)
+  await flushMicrotasks();   // dialog build + open
 
-  assert.ok(fake.requests.includes("/api/version"), "GET /api/version fetched for export metadata");
-  assert.ok(capturedExport, "export JSON captured from the Blob");
-  const doc = JSON.parse(capturedExport);
-  assert.equal(doc.product, "Corvus GCS", "export product is Corvus GCS");
-  assert.equal(doc.version, "2026.09.42", "export version comes from /api/version (not a literal)");
-  assert.equal(doc.param_count, 2, "param_count matches the loaded set");
-  assert.equal(doc.params.length, 2, "params array matches the loaded set");
-  assert.ok(typeof doc.exported_at === "string" && doc.exported_at.length > 0, "exported_at is a string");
+  assert.ok(fake.requests.includes("/api/params/export/target"),
+    "the dialog asks the backend for the target folder + default filename");
+
+  const dialog = findOneByClass(bodyEl, "modal");
+  assert.ok(dialog, "export dialog opened");
+  // The DOM stub's selector engine handles classes and tags, not #id, so the
+  // shared field controls are found by class and matched on their id property.
+  const fieldById = (root, id) => findByClass(root, "field-input").find((e) => e.id === id) || null;
+  const nameInput = fieldById(dialog, "paramsExportName");
+  const dirInput = fieldById(dialog, "paramsExportDir");
+  assert.ok(nameInput && dirInput, "dialog has a filename and a folder field");
+  assert.equal(nameInput.value, "corvus-params_px4-quadrotor_2026-01-02_03-04.json",
+    "filename prefilled from the backend (readable date + vehicle, not an epoch)");
+  assert.equal(dirInput.value, "/home/pilot/.corvus/params",
+    "folder prefilled from the backend");
+
+  // The operator retargets the export, then saves.
+  nameInput.value = "before-maiden-flight.json";
+  dirInput.value = "/mnt/usb/flights";
+  const saveBtn = findByClass(findOneByClass(bodyEl, "modal-actions"), "btn")
+    .find((b) => b.getAttribute("data-variant") === "primary");
+  assert.ok(saveBtn, "dialog has a Save button");
+  fire(saveBtn, "click");
+  await flushMicrotasks();   // POST /api/params/export
+  await flushMicrotasks();   // close + status + notification
+
+  const post = fake.jsonCalls.find((c) => c.url === "/api/params/export");
+  assert.ok(post, "POST /api/params/export sent");
+  assert.equal(post.init.method, "POST", "export is a POST");
+  assert.equal(post.body.filename, "before-maiden-flight.json", "operator filename is sent");
+  assert.equal(post.body.dir, "/mnt/usb/flights", "operator folder is sent");
+  assert.equal(post.body.params.length, 2, "the full loaded set is sent");
   assert.deepEqual(
-    doc.params.map((p) => p.name).sort(),
+    post.body.params.map((p) => p.name).sort(),
     ["FW_ACRO_LIM", "MC_ROLL_P"],
     "params carry name + value + type",
   );
-  assert.ok(createdObjectUrls.length === 1, "one object URL created");
-  assert.ok(revokedUrls.length === 1, "object URL revoked after download");
-  // An info notification was dispatched for the export.
-  const note = dispatched.find((e) => e.type === "corvus:notification" && /Exported 2 parameters/.test(e.detail.message));
-  assert.ok(note, "info notification dispatched for the export");
+  // The backend stamps product/version/exported_at; a frontend copy would be a
+  // second source of truth for the version.
+  assert.equal(post.body.version, undefined, "frontend does not stamp a version");
+  assert.equal(post.body.product, undefined, "frontend does not stamp product metadata");
+
+  assert.ok(!findOneByClass(bodyEl, "modal"), "dialog closed after a successful save");
+
+  // The saved path is surfaced — it is what the operator needs to find the file.
+  const note = dispatched.find((e) => e.type === "corvus:notification"
+    && /\/mnt\/usb\/flights\/before-maiden-flight\.json/.test(e.detail.message));
+  assert.ok(note, "notification names the full path the file was written to");
   assert.equal(note.detail.level, "info", "export notification is info level");
+  const status = findOneByClass(container, "params-actions-status");
+  assert.ok(/\/mnt\/usb\/flights\/before-maiden-flight\.json/.test(status.textContent),
+    "the actions status line names the saved path");
+
+  destroy();
+}
+
+// ===========================================================================
+// Test 2b — a failing export keeps the dialog open and shows the reason, so
+// the operator can fix the folder and retry instead of losing the export.
+// ===========================================================================
+async function testExportFailureKeepsDialogOpenWithReason() {
+  const fake = makeFakeTelemetry({
+    state: { armed: false, connected: true },
+    exportReject: "could not write to /mnt/usb/flights: Read-only file system",
+    paramsResponse: {
+      complete: true, received: 1, count: 1, state: "complete",
+      params: [{ name: "MC_ROLL_P", value: 6, type: 9 }],
+    },
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  clock = 1000;
+  eventSources.length = 0;
+  intervalCbs.length = 0;
+  clearedIds.clear();
+  dispatched.length = 0;
+
+  const destroy = Corvus.setupParameters.render(container, () => {});
+  await flushMicrotasks();
+  fire(findOneByClass(container, "params-download-btn"), "click");
+  await flushMicrotasks();
+  eventSources[0].emit("progress", { state: "complete", received: 1, count: 1 });
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  const actions = findOneByClass(container, "params-actions");
+  const exportBtn = findByClass(actions, "btn")
+    .find((b) => b.children.some((c) => c._attrs && c._attrs["data-lucide"] === "download"));
+  fire(exportBtn, "click");
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  const saveBtn = findByClass(findOneByClass(bodyEl, "modal-actions"), "btn")
+    .find((b) => b.getAttribute("data-variant") === "primary");
+  fire(saveBtn, "click");
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  assert.ok(findOneByClass(bodyEl, "modal"), "dialog stays open when the save fails");
+  const msg = findOneByClass(bodyEl, "ui-msg");
+  assert.ok(msg && /Read-only file system/.test(msg.textContent),
+    "the backend's reason is shown in the dialog");
+  assert.equal(saveBtn.disabled, false, "Save is usable again so the operator can retry");
 
   destroy();
 }
@@ -586,7 +701,8 @@ async function testDestroyClosesUploadSse() {
 // ===========================================================================
 async function run() {
   await testActionsBarRendersWithInitialState();
-  await testExportAfterDownloadFetchesVersionAndDownloads();
+  await testExportOpensDialogAndSavesThroughBackend();
+  await testExportFailureKeepsDialogOpenWithReason();
   await testImportValidFileUploadsAndSummarises();
   await testImportInvalidJsonNotifiesAndDoesNotPost();
   await testArmedGatingDisablesImport();

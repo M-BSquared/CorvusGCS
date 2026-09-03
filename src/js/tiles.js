@@ -2,11 +2,11 @@
 window.Corvus = window.Corvus || {};
 
 /*
-  Corvus.tiles — offline-map download panel (Task D5).
+  Corvus.tiles — offline-map download dialog.
 
   Contract:
-    init(triggerEl, popoverEl) — wire the floating trigger + popover. Called
-      from app.init AFTER Corvus.map.init so the map is available.
+    init(triggerEl) — wire the floating trigger on the map. Called from
+      app.init AFTER Corvus.map.init so the map is available.
     Reads the current map view bounds from Corvus.map.getMap().getBounds()
     (a MapLibre LngLatBounds: .getWest/.getSouth/.getEast/.getNorth), prefills
     minzoom = current zoom, maxzoom = current zoom + 4 (capped at the source
@@ -14,34 +14,48 @@ window.Corvus = window.Corvus || {};
     POST /api/tiles/download starts a job; an EventSource streams progress from
     /api/tiles/progress?id=<job_id>; POST /api/tiles/cancel aborts it.
 
-  Version is never referenced here. Every control is a .btn built via
-  Corvus.ui; the popover reuses the shared .glass material and .corvus-enter
-  entrance defined in components.css.
+  Why a dialog and not a popover: this panel used to be anchored to the map's
+  top-right corner, where the flight-action bar, the HUD, the layer switcher
+  and the right panel all took turns covering it. It is a modal now
+  (Corvus.ui.modal) — centred, above every other surface, dismissed with
+  Escape or a click on the scrim. A download in flight is NOT tied to the
+  dialog: closing it leaves the job running, and re-opening re-attaches to the
+  live progress stream.
 
-  NOTE on the source cap: /api/tiles/sources returns the real upstream
-  raster cap under "maxzoom" (19) and the CACHED tile range under
-  "cached_minzoom"/"cached_maxzoom" (null when the cache is empty). The
-  duplicate-key bug that previously shadowed "maxzoom" has been fixed in the
-  backend. SOURCE_ZOOM_CAP stays as a safe fallback matching that upstream
-  raster cap (19), shared by every configured ArcGIS source; it is a
-  tile-source characteristic, not a version literal, and still clamps the
-  zoom inputs in refreshFromMap/onSourceOrZoomChange.
+  Named regions: every download is recorded in the source's .mbtiles as a
+  named area (see corvus/tile_cache.py), so "what do I have offline?" has an
+  answer beyond a tile count. The dialog lists them and the map draws them;
+  each row can be renamed, framed on the map, or deleted.
+
+  Every control is built with Corvus.ui (button / select / field / progress /
+  message); the dialog reuses the shared .modal material. Version is never
+  referenced here.
+
+  Zoom caps are PER SOURCE. /api/tiles/sources reports each source's real
+  upstream cap under "maxzoom" (19 for the ArcGIS/OSM/Bing layers, 20 for
+  Google satellite) and its CACHED range under "cached_minzoom" /
+  "cached_maxzoom" (null when the cache is empty). capFor() reads the fetched
+  value and only falls back to the constant before the list has loaded.
 */
 Corvus.tiles = (function () {
-  const AVG_TILE_KB = 15;     // rough raster-tile size for the disk estimate
-  const ZOOM_SPAN = 4;        // default maxzoom = current zoom + this
-  const SOURCE_ZOOM_CAP = 19; // upstream cap for the configured ArcGIS sources
+  const AVG_TILE_KB = 15;       // rough raster-tile size for the disk estimate
+  const ZOOM_SPAN = 4;          // default maxzoom = current zoom + this
+  const FALLBACK_ZOOM_CAP = 19; // used only until /api/tiles/sources responds
   const HARD_ZOOM_FLOOR = 0;
-  const HARD_ZOOM_CEIL = 22;  // server rejects z > 22 on the serve path
+  const HARD_ZOOM_CEIL = 22;    // server rejects z > 22 on the serve path
+  const BIG_JOB_TILES = 100000; // above this, warn before the operator commits
 
   let triggerEl = null;
-  let popoverEl = null;
 
-  let sources = [];           // last /api/tiles/sources result
-  let captured = null;        // {w,s,e,n} captured from the map at open/recapture
-  let es = null;              // active EventSource for the running job
-  let jobId = null;           // id of the running job (for cancel)
-  let dom = {};               // populated by buildPopover
+  let sources = [];    // last /api/tiles/sources result
+  let providers = [];  // service grouping from the same response
+  let regions = [];    // last /api/tiles/regions result
+  let captured = null; // {w,s,e,n,zoom} captured from the map at open/recapture
+  let es = null;       // active EventSource for the running job
+  let jobId = null;    // id of the running job (for cancel / re-attach)
+  let jobState = null; // last known state of that job
+  let dialog = null;   // Corvus.ui.modal handle while the dialog is open
+  let dom = {};        // populated by buildDialog
 
   // ---- slippy-map tile math (Web Mercator / XYZ) ----
   function lonToX(lon, z) { return Math.floor(((lon + 180) / 360) * Math.pow(2, z)); }
@@ -65,6 +79,19 @@ Corvus.tiles = (function () {
     return count;
   }
 
+  /** Upstream zoom cap for a source, from the fetched catalogue. Falls back to
+   *  the conservative constant before the list has loaded, so the clamping
+   *  math below never sees `undefined`. */
+  function capFor(sourceId) {
+    const s = sources.find((x) => x.id === sourceId);
+    return (s && typeof s.maxzoom === "number") ? s.maxzoom : FALLBACK_ZOOM_CAP;
+  }
+
+  /** Cap for whatever the picker currently shows. */
+  function currentCap() {
+    return capFor(dom.srcSelect ? dom.srcSelect.value : null);
+  }
+
   function fmtCount(n) {
     if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
     if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
@@ -77,10 +104,40 @@ Corvus.tiles = (function () {
     return Math.round(kb) + " KB";
   }
 
+  /** ISO timestamp -> a short local date, or "" when unparseable. */
+  function fmtDate(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? "" : d.toLocaleDateString();
+  }
+
   function el(tag, cls) {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
     return e;
+  }
+
+  /** Provider label for *id*, or the raw id when the grouping is unavailable. */
+  function providerLabel(id) {
+    const p = providers.find((x) => x.id === id);
+    return (p && p.label) || id || "";
+  }
+
+  /**
+   * "Service · Layer" for a source. A bare "Satellite" is ambiguous now that
+   * four services offer one. Where a service's only layer carries the service's
+   * own name (OpenStreetMap), the prefix is dropped rather than stuttered.
+   */
+  function sourceLabel(s) {
+    if (!s) return "";
+    const layer = s.label || s.id;
+    if (!providers.length) return layer;
+    const prov = providerLabel(s.provider);
+    return prov === layer ? layer : `${prov} · ${layer}`;
+  }
+
+  function sourceLabelById(id) {
+    return sourceLabel(sources.find((s) => s.id === id)) || id || "";
   }
 
   /** True if the MapLibre map is ready for a bounds read. */
@@ -101,121 +158,116 @@ Corvus.tiles = (function () {
     return captured;
   }
 
-  // ---- popover DOM (built once; this module owns it) ----
-  function buildPopover() {
-    popoverEl.innerHTML = "";
+  // ---- dialog DOM (rebuilt on every open; this module owns it) ----
+  function buildDialog() {
+    const body = document.createDocumentFragment();
 
-    const header = el("div", "tiles-header");
-    const title = el("span", "tiles-title"); title.textContent = "OFFLINE MAP";
-    const closeBtn = Corvus.ui.iconButton("x", { title: "Close" });
-    closeBtn.id = "tilesClose";
-    header.appendChild(title); header.appendChild(closeBtn);
-    popoverEl.appendChild(header);
+    // Source picker. Changing it re-clamps the zoom range to that source's own
+    // cap, which is why the handler is onSourceOrZoomChange, not updateEstimate.
+    const srcSelect = Corvus.ui.select({
+      id: "tilesSource",
+      ariaLabel: "Tile source",
+      onChange: onSourceOrZoomChange,
+    });
+    body.appendChild(Corvus.ui.field({ label: "Source", control: srcSelect }));
 
-    const body = el("div", "tiles-body");
+    // Name for this area. Optional — the backend falls back to the centre
+    // coordinates — but naming it here is the difference between a list the
+    // operator can act on and a list of numbers.
+    const nameInput = Corvus.ui.input({
+      id: "tilesRegionName",
+      ariaLabel: "Name for this area",
+      placeholder: "e.g. Landing site north",
+      autocomplete: false,
+    });
+    body.appendChild(Corvus.ui.field({
+      label: "Area name",
+      control: nameInput,
+      hint: "Optional — defaults to the area's centre coordinates.",
+    }));
 
-    // source picker
-    const srcField = el("div", "tiles-field");
-    srcField.appendChild(makeLabel("Source"));
-    const srcSelect = el("select", "tiles-select"); srcSelect.id = "tilesSource";
-    srcField.appendChild(srcSelect);
-    body.appendChild(srcField);
-
-    // captured bounds + recapture
-    const bndField = el("div", "tiles-field");
+    // Captured bounds + recapture
+    const bndField = el("div", "field");
     const bndHead = el("div", "tiles-bounds-head");
-    bndHead.appendChild(makeLabel("Region (current view)"));
-    const recapture = Corvus.ui.iconButton("locate-fixed", { title: "Recapture current view" });
-    recapture.id = "tilesRecapture";
-    bndHead.appendChild(recapture);
+    bndHead.appendChild(Corvus.ui.label("Region (current view)"));
+    bndHead.appendChild(Corvus.ui.iconButton("locate-fixed", {
+      title: "Recapture current view",
+      onClick: refreshFromMap,
+    }));
     bndField.appendChild(bndHead);
-    const bndValue = el("span", "tiles-bounds"); bndValue.id = "tilesBounds";
+    const bndValue = el("span", "tiles-bounds");
     bndField.appendChild(bndValue);
     body.appendChild(bndField);
 
-    // zoom inputs
+    // Zoom range
+    const minZoom = makeZoomInput("tilesMinZoom", "Minimum zoom");
+    const maxZoom = makeZoomInput("tilesMaxZoom", "Maximum zoom");
     const zoomRow = el("div", "tiles-zoom-row");
-    zoomRow.appendChild(makeZoomField("Min zoom", "tilesMinZoom"));
-    zoomRow.appendChild(makeZoomField("Max zoom", "tilesMaxZoom"));
+    zoomRow.appendChild(Corvus.ui.field({ label: "Min zoom", control: minZoom, inline: true }));
+    zoomRow.appendChild(Corvus.ui.field({ label: "Max zoom", control: maxZoom, inline: true }));
     body.appendChild(zoomRow);
 
-    // estimate
+    // Estimate
     const est = el("div", "tiles-estimate");
-    est.appendChild(makeLabel("Estimate"));
+    est.appendChild(Corvus.ui.label("Estimate"));
     const estWrap = el("div", "tiles-estimate-val");
-    const estVal = el("span", "tiles-estimate-value"); estVal.id = "tilesEstimate";
-    const estSub = el("span", "tiles-estimate-sub"); estSub.id = "tilesEstimateSub";
+    const estVal = el("span", "tiles-estimate-value");
+    const estSub = el("span", "tiles-estimate-sub");
     estWrap.appendChild(estVal); estWrap.appendChild(estSub);
     est.appendChild(estWrap);
     body.appendChild(est);
 
-    // actions
-    const actions = el("div", "tiles-actions");
-    const dlBtn = Corvus.ui.button({ variant: "primary", icon: "download", label: "Download" });
-    dlBtn.id = "tilesDownload";
-    const cancelBtn = Corvus.ui.button({ variant: "danger", icon: "x", label: "Cancel", disabled: true });
-    cancelBtn.id = "tilesCancel";
-    actions.appendChild(dlBtn); actions.appendChild(cancelBtn);
-    body.appendChild(actions);
+    // Progress + status message (both hidden until a job starts / reports)
+    const progress = Corvus.ui.progress({ hidden: true });
+    body.appendChild(progress.el);
+    const msg = Corvus.ui.message();
+    body.appendChild(msg.el);
 
-    // progress (hidden until a job starts)
-    const progress = el("div", "tiles-progress"); progress.id = "tilesProgress"; progress.hidden = true;
-    const bar = el("div", "progress-bar");
-    const fill = el("div", "progress-bar-fill"); fill.id = "tilesBarFill";
-    bar.appendChild(fill); progress.appendChild(bar);
-    const progressText = el("div", "tiles-progress-text"); progressText.id = "tilesProgressText";
-    progressText.textContent = "0 / 0 (0%)";
-    progress.appendChild(progressText);
-    body.appendChild(progress);
+    // Downloaded areas
+    const regionsHead = el("div", "tiles-regions-head");
+    regionsHead.appendChild(Corvus.ui.label("Downloaded areas"));
+    const regionsCount = el("span", "tiles-regions-count");
+    regionsHead.appendChild(regionsCount);
+    body.appendChild(regionsHead);
+    const regionList = el("div", "tiles-regions");
+    body.appendChild(regionList);
 
-    // status message
-    const msg = el("div", "tiles-msg"); msg.id = "tilesMsg"; msg.hidden = true;
-    body.appendChild(msg);
-
-    // cached stats
-    body.appendChild(makeLabel("Cached", "tiles-stats-title"));
-    const stats = el("div", "tiles-stats"); stats.id = "tilesStats";
-    body.appendChild(stats);
-
-    popoverEl.appendChild(body);
+    const dlBtn = Corvus.ui.button({
+      variant: "primary", icon: "download", label: "Download", onClick: startDownload,
+    });
+    const cancelBtn = Corvus.ui.button({
+      variant: "danger", icon: "x", label: "Cancel", disabled: true, onClick: cancelDownload,
+    });
 
     dom = {
-      srcSelect, bndValue, recapture, dlBtn, cancelBtn,
-      progress, fill, progressText, msg, stats,
-      minZoom: document.getElementById("tilesMinZoom"),
-      maxZoom: document.getElementById("tilesMaxZoom"),
-      estVal, estSub,
+      srcSelect, nameInput, bndValue, dlBtn, cancelBtn,
+      progress, msg, regionList, regionsCount, minZoom, maxZoom, estVal, estSub,
     };
 
-    closeBtn.addEventListener("click", close);
-    dom.recapture.addEventListener("click", refreshFromMap);
-    dom.srcSelect.addEventListener("change", onSourceOrZoomChange);
-    dom.minZoom.addEventListener("change", onSourceOrZoomChange);
-    dom.maxZoom.addEventListener("change", onSourceOrZoomChange);
-    dom.minZoom.addEventListener("input", updateEstimate);
-    dom.maxZoom.addEventListener("input", updateEstimate);
-    dom.dlBtn.addEventListener("click", startDownload);
-    dom.cancelBtn.addEventListener("click", cancelDownload);
+    minZoom.addEventListener("change", onSourceOrZoomChange);
+    maxZoom.addEventListener("change", onSourceOrZoomChange);
+    minZoom.addEventListener("input", updateEstimate);
+    maxZoom.addEventListener("input", updateEstimate);
+
+    return Corvus.ui.modal({
+      title: "Offline map",
+      size: "lg",
+      body,
+      actions: [dlBtn, cancelBtn],
+      onClose: onDialogClosed,
+    });
   }
 
-  function makeLabel(text, id) {
-    const s = el("span", "tiles-field-label");
-    s.textContent = text;
-    if (id) s.id = id;
-    return s;
-  }
-
-  function makeZoomField(label, id) {
-    const f = el("div", "tiles-field tiles-field-inline");
-    f.appendChild(makeLabel(label));
-    const input = el("input", "tiles-input");
-    input.type = "number";
-    input.id = id;
-    input.min = HARD_ZOOM_FLOOR;
-    input.max = HARD_ZOOM_CEIL;
-    input.step = 1;
-    f.appendChild(input);
-    return f;
+  function makeZoomInput(id, ariaLabel) {
+    return Corvus.ui.input({
+      id,
+      type: "number",
+      ariaLabel,
+      mono: true,
+      min: HARD_ZOOM_FLOOR,
+      max: HARD_ZOOM_CEIL,
+      step: 1,
+    });
   }
 
   // ---- source list + cached stats ----
@@ -223,87 +275,209 @@ Corvus.tiles = (function () {
     return Corvus.telemetry.requestJson("/api/tiles/sources")
       .then((data) => {
         sources = (data && data.sources) || [];
+        providers = (data && data.providers) || [];
         renderSourceSelect();
-        renderStats();
       })
       .catch(() => {
         sources = [];
+        providers = [];
         renderSourceSelect();
-        renderStats();
       });
   }
 
+  /**
+   * Fill the source picker. Options are ordered by service (the registry's own
+   * order) and labelled "Service · Layer". The initial selection follows the
+   * base layer currently on the map, so opening the dialog pre-downloads what
+   * the operator is actually looking at — that is how the map service chosen
+   * in Settings > Appearance reaches the downloader.
+   */
   function renderSourceSelect() {
     const sel = dom.srcSelect;
-    const prev = sel.value;
-    sel.innerHTML = "";
+    if (!sel) return;
     if (!sources.length) {
-      const opt = el("option", ""); opt.value = ""; opt.textContent = "No sources";
-      sel.appendChild(opt);
+      Corvus.ui.setOptions(sel, [{ value: "", label: "No sources" }]);
       sel.disabled = true;
       return;
     }
     sel.disabled = false;
-    sources.forEach((s) => {
-      const opt = el("option", "");
-      opt.value = s.id;
-      opt.textContent = s.label || s.id;
-      sel.appendChild(opt);
-    });
-    if (prev && sources.some((s) => s.id === prev)) sel.value = prev;
-    else sel.value = sources[0].id;
+    const options = sources.map((s) => ({ value: s.id, label: sourceLabel(s) }));
+    // Keep an explicit choice the operator already made; otherwise follow the
+    // map. Falls back to the first source when neither resolves.
+    const prev = sel.value;
+    const known = (id) => !!id && sources.some((s) => s.id === id);
+    const mapLayer = (Corvus.map && typeof Corvus.map.getBaseLayer === "function")
+      ? Corvus.map.getBaseLayer()
+      : null;
+    Corvus.ui.setOptions(sel, options,
+      known(prev) ? prev : (known(mapLayer) ? mapLayer : sources[0].id));
   }
 
-  function renderStats() {
-    const host = dom.stats;
-    host.innerHTML = "";
-    if (!sources.length) {
-      const empty = el("div", "tiles-stat-empty"); empty.textContent = "No cache info";
+  // ---- downloaded areas ----
+  function loadRegions() {
+    return Corvus.telemetry.requestJson("/api/tiles/regions")
+      .then((data) => {
+        regions = (data && data.regions) || [];
+        renderRegions();
+        // The map overlay reads the same list, so both are refreshed together
+        // and can never disagree about what is cached.
+        if (Corvus.map && typeof Corvus.map.setRegions === "function") {
+          Corvus.map.setRegions(regions);
+        }
+        return regions;
+      })
+      .catch(() => {
+        regions = [];
+        renderRegions();
+        return regions;
+      });
+  }
+
+  function renderRegions() {
+    const host = dom.regionList;
+    if (!host) return;
+    Corvus.ui.clear(host);
+    if (dom.regionsCount) {
+      dom.regionsCount.textContent = regions.length
+        ? `${regions.length} area${regions.length === 1 ? "" : "s"}`
+        : "";
+    }
+    if (!regions.length) {
+      const empty = el("div", "tiles-stat-empty");
+      empty.textContent = "Nothing downloaded yet. Frame an area on the map and download it.";
       host.appendChild(empty);
       return;
     }
-    sources.forEach((s) => {
-      const row = el("div", "tiles-stat-row");
-      const left = el("div", "tiles-stat-left");
-      const name = el("span", "tiles-stat-name"); name.textContent = s.label || s.id;
-      const meta = el("span", "tiles-stat-meta");
-      const cnt = s.cached_count || 0;
-      // Cached range now lives in cached_minzoom/cached_maxzoom (null when the
-      // cache is empty); minzoom/maxzoom are the source floor/cap and are
-      // always numbers, so they must NOT be used for the cached-range display.
-      const hasRange = typeof s.cached_minzoom === "number" && typeof s.cached_maxzoom === "number";
-      meta.textContent = cnt > 0
-        ? `${fmtCount(cnt)} tiles` + (hasRange ? ` · z${s.cached_minzoom}–${s.cached_maxzoom}` : "")
-        : "not cached";
-      left.appendChild(name); left.appendChild(meta);
-      // Clear-cache endpoint does not exist yet: disabled with an explanatory
-      // tooltip so the row still reads as actionable-in-future (apple-design §6).
-      const clearBtn = Corvus.ui.button({ variant: "ghost", size: "sm", icon: "trash-2", disabled: true });
-      clearBtn.title = "Clearing not yet supported";
-      clearBtn.setAttribute("aria-label", "Clear cache (not yet supported)");
-      row.appendChild(left); row.appendChild(clearBtn);
-      host.appendChild(row);
+    regions.forEach((r) => host.appendChild(regionRow(r)));
+    Corvus.ui.refreshIcons();
+  }
+
+  function regionRow(region) {
+    const row = el("div", "tiles-region-row" + (region.state === "running" ? " downloading" : ""));
+
+    // The whole identity block is the "show me this area" affordance — a
+    // separate locate button next to a name that does nothing would be worse.
+    const locate = el("button", "tiles-region-main");
+    locate.type = "button";
+    locate.title = "Show this area on the map";
+    const name = el("span", "tiles-region-name");
+    name.textContent = region.name || "Region";
+    const meta = el("span", "tiles-region-meta");
+    meta.textContent = regionMeta(region);
+    locate.appendChild(name);
+    locate.appendChild(meta);
+    locate.addEventListener("click", () => {
+      if (Corvus.map && typeof Corvus.map.fitBounds === "function") {
+        Corvus.map.fitBounds(region.bounds);
+      }
+      close();
     });
+    row.appendChild(locate);
+
+    const actions = el("div", "tiles-region-actions");
+    actions.appendChild(Corvus.ui.iconButton("pencil", {
+      title: "Rename this area",
+      ariaLabel: `Rename ${region.name}`,
+      onClick: () => renameRegion(region),
+    }));
+    actions.appendChild(Corvus.ui.iconButton("trash-2", {
+      title: "Delete this area and its tiles",
+      ariaLabel: `Delete ${region.name}`,
+      onClick: () => deleteRegion(region),
+    }));
+    row.appendChild(actions);
+    return row;
+  }
+
+  function regionMeta(region) {
+    const parts = [sourceLabelById(region.source)];
+    parts.push(`z${region.minzoom}–${region.maxzoom}`);
+    parts.push(region.state === "running"
+      ? "downloading…"
+      : `${fmtCount(region.tile_count || 0)} tiles`);
+    const date = fmtDate(region.created_at);
+    if (date) parts.push(date);
+    return parts.filter(Boolean).join(" · ");
+  }
+
+  function renameRegion(region) {
+    if (typeof window.prompt !== "function") return;
+    const next = window.prompt("Name for this area", region.name || "");
+    if (next === null) return;                 // cancelled
+    const name = next.trim();
+    if (!name || name === region.name) return;
+    Corvus.telemetry.requestJson("/api/tiles/regions/rename", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: region.source, id: region.id, name }),
+    }).then(loadRegions)
+      .catch((err) => showMsg((err && err.message) || "Rename failed", "err"));
+  }
+
+  function deleteRegion(region) {
+    // Deleting frees disk, so it is worth a confirm. The backend keeps any
+    // tile another region still covers, which is what the wording promises.
+    if (typeof window.confirm === "function" &&
+        !window.confirm(
+          `Delete "${region.name}" and its cached tiles?\n\n` +
+          "Tiles shared with another downloaded area are kept.")) {
+      return;
+    }
+    Corvus.telemetry.requestJson("/api/tiles/regions/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: region.source, id: region.id, delete_tiles: true }),
+    }).then((res) => {
+      const freed = (res && res.removed_tiles) || 0;
+      showMsg(`Deleted "${region.name}" — ${fmtCount(freed)} tiles removed.`, "ok");
+      return loadRegions();
+    }).catch((err) => showMsg((err && err.message) || "Delete failed", "err"));
   }
 
   // ---- open / close / refresh ----
   function open() {
-    refreshFromMap();
-    popoverEl.hidden = false;
+    if (dialog) return;
+    dialog = buildDialog();
+    dialog.open();
     if (triggerEl) triggerEl.classList.add("active");
-    loadSources();   // refresh cached_count (may have changed since last open)
+
+    refreshFromMap();
+    renderRegions();
+    // Refresh the catalogue on every open: the base layer may have changed
+    // since last time, and cached counts move as jobs finish. Re-clamp the
+    // zoom range afterwards, because the source that just became selected may
+    // have a different cap than the one refreshFromMap assumed.
+    loadSources().then(() => onSourceOrZoomChange());
+    loadRegions();
+    // A job started before the dialog was last closed is still running in the
+    // background; re-attach so its progress reappears instead of looking lost.
+    if (jobId && jobState !== "done" && jobState !== "failed" && jobState !== "cancelled") {
+      Corvus.ui.setBusy(dom.dlBtn, true);
+      dom.cancelBtn.disabled = false;
+      dom.progress.el.hidden = false;
+      openProgress(jobId);
+    }
   }
 
   function close() {
-    popoverEl.hidden = true;
-    if (triggerEl) triggerEl.classList.remove("active");
-    // A running job keeps streaming in the background; only tear down the UI
-    // surface. The EventSource is closed when the job ends or on re-open.
+    if (dialog) dialog.close();   // onClose does the teardown
   }
 
-  function toggle() { popoverEl.hidden ? open() : close(); }
+  /** Called by the modal for every close path (button, scrim, Escape). */
+  function onDialogClosed() {
+    dialog = null;
+    dom = {};
+    if (triggerEl) triggerEl.classList.remove("active");
+    // A running job keeps streaming in the background; only the UI surface is
+    // torn down. The stream is closed here and re-opened on the next open()
+    // so it is not writing into detached nodes in the meantime.
+    closeEventSource();
+  }
+
+  function toggle() { dialog ? close() : open(); }
 
   function refreshFromMap() {
+    if (!dom.bndValue) return;
     const b = captureBounds();
     if (!b) {
       dom.bndValue.textContent = "Map not ready";
@@ -314,25 +488,30 @@ Corvus.tiles = (function () {
     }
     dom.bndValue.textContent =
       `W ${b.w.toFixed(2)}  S ${b.s.toFixed(2)}  E ${b.e.toFixed(2)}  N ${b.n.toFixed(2)}`;
-    const cap = SOURCE_ZOOM_CAP;
-    const minZ = Math.max(HARD_ZOOM_FLOOR, Math.min(b.zoom, cap));
-    const maxZ = Math.min(b.zoom + ZOOM_SPAN, cap);
-    dom.minZoom.value = minZ;
+    const cap = currentCap();
+    dom.minZoom.value = Math.max(HARD_ZOOM_FLOOR, Math.min(b.zoom, cap));
     dom.minZoom.max = cap;
-    dom.maxZoom.value = maxZ;
+    dom.maxZoom.value = Math.min(b.zoom + ZOOM_SPAN, cap);
     dom.maxZoom.max = cap;
     dom.dlBtn.disabled = false;
     updateEstimate();
   }
 
   function onSourceOrZoomChange() {
-    // Clamp min <= max within the source cap; keep the estimate in sync.
-    const cap = SOURCE_ZOOM_CAP;
+    if (!dom.minZoom) return;
+    // Clamp min <= max within the SELECTED source's cap and re-publish that cap
+    // on the inputs. Both matter: the cap changes when the source changes (and
+    // when the catalogue first loads, since refreshFromMap ran before it), so
+    // updating only the values would leave the spinners offering zooms the
+    // upstream cannot serve.
+    const cap = currentCap();
     let lo = clampInt(dom.minZoom.value, HARD_ZOOM_FLOOR, cap);
     let hi = clampInt(dom.maxZoom.value, HARD_ZOOM_FLOOR, cap);
     if (lo > hi) { const t = lo; lo = hi; hi = t; }
     dom.minZoom.value = lo;
     dom.maxZoom.value = hi;
+    dom.minZoom.max = cap;
+    dom.maxZoom.max = cap;
     updateEstimate();
   }
 
@@ -343,13 +522,14 @@ Corvus.tiles = (function () {
   }
 
   function updateEstimate() {
-    if (!captured) return;
-    const lo = clampInt(dom.minZoom.value, HARD_ZOOM_FLOOR, SOURCE_ZOOM_CAP);
-    const hi = clampInt(dom.maxZoom.value, HARD_ZOOM_FLOOR, SOURCE_ZOOM_CAP);
+    if (!captured || !dom.estVal) return;
+    const cap = currentCap();
+    const lo = clampInt(dom.minZoom.value, HARD_ZOOM_FLOOR, cap);
+    const hi = clampInt(dom.maxZoom.value, HARD_ZOOM_FLOOR, cap);
     const count = estimateTileCount(captured.w, captured.s, captured.e, captured.n, lo, hi);
     dom.estVal.textContent = `≈ ${fmtCount(count)} tiles`;
     dom.estSub.textContent = `~ ${fmtSize(count * AVG_TILE_KB)}`;
-    if (count > 100000) showMsg("Very large region — consider a smaller zoom range.", "warn");
+    if (count > BIG_JOB_TILES) showMsg("Very large region — consider a smaller zoom range.", "warn");
     else if (!dom.dlBtn.classList.contains("is-busy")) hideMsg();
   }
 
@@ -357,15 +537,15 @@ Corvus.tiles = (function () {
   function startDownload() {
     if (!captured) return;
     const source = dom.srcSelect.value;
-    const minzoom = clampInt(dom.minZoom.value, HARD_ZOOM_FLOOR, SOURCE_ZOOM_CAP);
-    const maxzoom = clampInt(dom.maxZoom.value, HARD_ZOOM_FLOOR, SOURCE_ZOOM_CAP);
+    const cap = capFor(source);
+    const minzoom = clampInt(dom.minZoom.value, HARD_ZOOM_FLOOR, cap);
+    const maxzoom = clampInt(dom.maxZoom.value, HARD_ZOOM_FLOOR, cap);
     if (!source || minzoom > maxzoom) return;
 
     Corvus.ui.setBusy(dom.dlBtn, true);
     dom.cancelBtn.disabled = false;
-    dom.progress.hidden = false;
-    dom.fill.style.width = "0%";
-    dom.progressText.textContent = "0 / 0 (0%)";
+    dom.progress.el.hidden = false;
+    dom.progress.reset();
     hideMsg();
     closeEventSource();
 
@@ -374,6 +554,7 @@ Corvus.tiles = (function () {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         source,
+        name: dom.nameInput.value.trim(),
         bounds: { w: captured.w, s: captured.s, e: captured.e, n: captured.n },
         minzoom, maxzoom,
       }),
@@ -381,7 +562,11 @@ Corvus.tiles = (function () {
       const id = data && data.job_id;
       if (!id) throw new Error("No job id returned");
       jobId = id;
+      jobState = "running";
       openProgress(id);
+      // The area is recorded the moment the job exists, so it appears on the
+      // map as "downloading" rather than only once it finishes.
+      loadRegions();
     }).catch((err) => {
       failStart(err && err.message ? err.message : "Download request failed");
     });
@@ -406,45 +591,47 @@ Corvus.tiles = (function () {
 
   function onProgress(data) {
     if (!data) return;
-    const done = data.done || 0;
-    const total = data.total || 0;
-    const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
-    dom.fill.style.width = pct + "%";
-    dom.progressText.textContent = `${done} / ${total} (${pct}%)`;
-    const state = data.state;
-    if (state === "done") finishOk(data);
-    else if (state === "failed") finishFail(data);
-    else if (state === "cancelled") finishCancelled(data);
+    jobState = data.state || jobState;
+    if (dom.progress) dom.progress.set(data.done || 0, data.total || 0);
+    if (data.state === "done") finishOk();
+    else if (data.state === "failed") finishFail(data);
+    else if (data.state === "cancelled") finishCancelled();
   }
 
   function finishOk() {
     closeEventSource();
-    Corvus.ui.setBusy(dom.dlBtn, false);
-    dom.cancelBtn.disabled = true;
+    resetButtons();
     showMsg("Download complete. Tiles cached for offline use.", "ok");
-    loadSources();   // refresh cached_count
+    loadRegions();
   }
 
   function finishFail(data) {
     closeEventSource();
-    Corvus.ui.setBusy(dom.dlBtn, false);
-    dom.cancelBtn.disabled = true;
+    resetButtons();
     showMsg(`Download failed: ${(data && data.error) || "unknown error"}`, "err");
+    loadRegions();
   }
 
   function finishCancelled() {
     closeEventSource();
-    Corvus.ui.setBusy(dom.dlBtn, false);
-    dom.cancelBtn.disabled = true;
-    showMsg("Download cancelled.", "warn");
+    resetButtons();
+    showMsg("Download cancelled. Tiles fetched so far stay cached.", "warn");
+    loadRegions();
   }
 
   function failStart(message) {
     closeEventSource();
+    jobState = "failed";
+    resetButtons();
+    if (dom.progress) dom.progress.el.hidden = true;
+    showMsg(message, "err");
+  }
+
+  /** Return the action row to its idle state. No-op once the dialog is gone. */
+  function resetButtons() {
+    if (!dom.dlBtn) return;
     Corvus.ui.setBusy(dom.dlBtn, false);
     dom.cancelBtn.disabled = true;
-    dom.progress.hidden = true;
-    showMsg(message, "err");
   }
 
   function cancelDownload() {
@@ -455,46 +642,29 @@ Corvus.tiles = (function () {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: jobId }),
     }).catch(() => { /* best-effort; the progress stream reports the outcome */ })
-      .finally(() => { Corvus.ui.setBusy(dom.cancelBtn, false); });
+      .finally(() => { if (dom.cancelBtn) Corvus.ui.setBusy(dom.cancelBtn, false); });
   }
 
   function closeEventSource() {
     if (es) { try { es.close(); } catch (_) {} es = null; }
   }
 
-  function showMsg(text, kind) {
-    dom.msg.hidden = false;
-    dom.msg.textContent = text;
-    dom.msg.className = "tiles-msg" + (kind ? " " + kind : "");
-  }
+  function showMsg(text, kind) { if (dom.msg) dom.msg.show(text, kind); }
+  function hideMsg() { if (dom.msg) dom.msg.hide(); }
 
-  function hideMsg() { dom.msg.hidden = true; dom.msg.textContent = ""; }
-
-  // ---- outside-click + Escape (consistent with the layers popover) ----
-  function onDocClick(e) {
-    if (popoverEl.hidden) return;
-    if (e.target.closest(".tiles-trigger") || e.target.closest(".tiles-popover")) return;
-    close();
-  }
-
-  function onDocKey(e) {
-    if (e.key === "Escape" && !popoverEl.hidden) close();
-  }
-
-  function init(trigger, popover) {
+  function init(trigger) {
     triggerEl = trigger;
-    popoverEl = popover;
-    if (!triggerEl || !popoverEl) return;
-    buildPopover();
+    if (!triggerEl) return;
     triggerEl.addEventListener("click", () => toggle());
-    document.addEventListener("click", onDocClick);
-    document.addEventListener("keydown", onDocKey);
   }
 
   return {
     init,
+    open,
+    close,
     // exposed for testability / reuse
     estimateTileCount,
     loadSources,
+    loadRegions,
   };
 })();

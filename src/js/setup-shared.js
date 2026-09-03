@@ -36,30 +36,15 @@ Corvus.setupShared = (function () {
     return e;
   }
 
-  /** Build a lucide <i data-lucide="name"> icon element. */
-  function icon(name) {
-    const i = document.createElement("i");
-    i.setAttribute("data-lucide", name);
-    return i;
-  }
-
-  /** Refresh lucide icons if the library is present (no-op otherwise). */
-  function refreshIcons() {
-    if (window.lucide && lucide.createIcons) lucide.createIcons();
-  }
-
-  /** Page header shared by the grid and both sub-pages. */
-  function pageHeader(title, subtitle) {
-    const h = el("div", "page-header");
-    h.appendChild(el("div", "page-title", title));
-    h.appendChild(el("div", "page-subtitle", subtitle));
-    return h;
-  }
-
-  /** Section title (the underlined label used inside pages). */
-  function sectionTitle(text) {
-    return el("div", "page-section-title", text);
-  }
+  // Icons, the lucide refresh, and the page header/section title come from the
+  // shared component layer. Setup used to carry its own copies of all four;
+  // these are re-exports so the Setup sub-modules keep their short S.* names.
+  // Icons are built with "auto" sizing because Setup's stylesheet already owns
+  // their dimensions (.setup-tile .tile-icon svg, .calib-btn svg, ...).
+  function icon(name) { return Corvus.ui.icon(name, "auto"); }
+  const refreshIcons = Corvus.ui.refreshIcons;
+  const pageHeader = Corvus.ui.pageHeader;
+  const sectionTitle = Corvus.ui.sectionTitle;
 
   /**
    * A labelled value row used in the Vehicle Info card.
@@ -82,16 +67,15 @@ Corvus.setupShared = (function () {
   /** Back button used at the top of each sub-page (apple-design: same path in
    *  and out — back returns along the entry path). */
   function backButton(onBack) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "btn setup-back";
-    b.setAttribute("data-variant", "ghost");
-    b.setAttribute("data-size", "sm");
-    b.appendChild(icon("chevron-left"));
-    b.appendChild(el("span", null, "Setup"));
-    b.setAttribute("aria-label", "Back to Setup");
-    b.addEventListener("click", onBack);
-    return b;
+    return Corvus.ui.button({
+      variant: "ghost",
+      size: "sm",
+      className: "setup-back",
+      icon: "chevron-left",
+      label: "Setup",
+      ariaLabel: "Back to Setup",
+      onClick: onBack,
+    });
   }
 
   /**

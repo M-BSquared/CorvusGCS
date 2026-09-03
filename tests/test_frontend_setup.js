@@ -125,8 +125,11 @@ function makeEl(tag) {
     toggle(c, force) { const has = e.classList.contains(c); const next = force === undefined ? !has : !!force; if (next) e.classList.add(c); else e.classList.remove(c); return next; },
     contains(c) { return e.className.split(/\s+/).includes(c); },
   };
-  e.appendChild = (c) => { e.children.push(c); return c; };
-  e.removeChild = (c) => { const i = e.children.indexOf(c); if (i >= 0) e.children.splice(i, 1); return c; };
+  // parentNode is maintained like a real DOM so the standard
+  // `node.parentNode.removeChild(node)` removal idiom works under the stub —
+  // Corvus.ui.modal.close() uses it to unmount a dialog.
+  e.appendChild = (c) => { c.parentNode = e; e.children.push(c); return c; };
+  e.removeChild = (c) => { const i = e.children.indexOf(c); if (i >= 0) e.children.splice(i, 1); c.parentNode = null; return c; };
   e.insertBefore = (n, ref) => { const i = ref ? e.children.indexOf(ref) : e.children.length; if (i < 0) e.children.push(n); else e.children.splice(i, 0, n); return n; };
   Object.defineProperty(e, "firstChild", { get() { return e.children[0] || null; } });
   e.setAttribute = (k, v) => { e._attrs[k] = String(v); if (k === "class") e.className = String(v); };
@@ -162,7 +165,11 @@ global.document = {
   createTextNode: (t) => ({ nodeType: 3, textContent: String(t), _isText: true }),
   getElementById: (id) => (id === "pageView" ? pageViewEl : null),
   querySelectorAll: () => [],
+  // Both halves of the listener pair: Corvus.ui.modal registers a document
+  // keydown handler while a dialog is mounted and removes it on close, so a
+  // stub with only addEventListener makes teardown throw.
   addEventListener: () => {},
+  removeEventListener: () => {},
 };
 
 // Helpers ---------------------------------------------------------------------
@@ -247,6 +254,9 @@ function makeFakeTelemetry(opts = {}) {
 // parameters page, and the thin orchestrator. Load them in the same order as
 // index.html so dependencies resolve.
 // ---------------------------------------------------------------------------
+// ui.js first: it defines Corvus.ui, the component layer every other
+// module builds its DOM with (index.html loads it in the same order).
+require("../src/js/ui.js");
 require("../src/js/setup-shared.js");
 require("../src/js/setup-calibration.js");
 require("../src/js/setup-parameters.js");
@@ -272,8 +282,10 @@ async function testTileGridRendersTwoTiles() {
   assert.equal(tiles[1].dataset.view, "parameters", "second tile is Parameters");
   assert.equal(tiles[2].dataset.view, "firmware", "third tile is Firmware");
 
-  // Tile titles are real text nodes.
-  const titles = tiles.map((t) => findOneByClass(t, "setup-tile-title").textContent);
+  // Tile titles are real text nodes. Setup tiles are Corvus.ui.tile instances
+  // (shared with the Plugins grid), so the title carries the component's
+  // .tile-title class; .setup-tile is now only the layout modifier.
+  const titles = tiles.map((t) => findOneByClass(t, "tile-title").textContent);
   assert.deepEqual(titles, ["Calibration", "Parameters", "Firmware"]);
 }
 
@@ -434,7 +446,13 @@ async function testCalibrationButtonsMapToTypes() {
     fire(btn, "click");
     await flushMicrotasks();
     if (type === "motor") {
-      const confirmBtn = findByClass(container, "motor-calib-confirm")[0];
+      // The safety dialog is a Corvus.ui.modal: its buttons carry the shared
+      // .btn classes, so the destructive one is identified by living in the
+      // dialog's action row with the danger variant.
+      const actionRow = findByClass(container, "modal-actions")[0];
+      assert.ok(actionRow, "motor calibration modal opened");
+      const confirmBtn = findByClass(actionRow, "btn")
+        .find((b) => b.getAttribute("data-variant") === "danger");
       assert.ok(confirmBtn, "motor calibration modal confirm button present");
       fire(confirmBtn, "click");
       await flushMicrotasks();

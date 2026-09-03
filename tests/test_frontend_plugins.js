@@ -80,8 +80,11 @@ function makeEl(tag) {
     toggle(c, force) { const has = e.classList.contains(c); const next = force === undefined ? !has : !!force; if (next) e.classList.add(c); else e.classList.remove(c); return next; },
     contains(c) { return e.className.split(/\s+/).includes(c); },
   };
-  e.appendChild = (c) => { e.children.push(c); return c; };
-  e.removeChild = (c) => { const i = e.children.indexOf(c); if (i >= 0) e.children.splice(i, 1); return c; };
+  // parentNode is maintained like a real DOM so the standard
+  // `node.parentNode.removeChild(node)` removal idiom works under the stub —
+  // Corvus.ui.modal.close() uses it to unmount a dialog.
+  e.appendChild = (c) => { c.parentNode = e; e.children.push(c); return c; };
+  e.removeChild = (c) => { const i = e.children.indexOf(c); if (i >= 0) e.children.splice(i, 1); c.parentNode = null; return c; };
   e.insertBefore = (n, ref) => { const i = ref ? e.children.indexOf(ref) : e.children.length; if (i < 0) e.children.push(n); else e.children.splice(i, 0, n); return n; };
   Object.defineProperty(e, "firstChild", { get() { return e.children[0] || null; } });
   e.setAttribute = (k, v) => { e._attrs[k] = String(v); if (k === "class") e.className = String(v); };
@@ -125,6 +128,9 @@ function flushMicrotasks() { return new Promise((r) => setTimeout(r, 0)); }
 // Load order mirrors src/index.html for the new modules: plugins.js first, then
 // plugin-vibration.js (which registers itself at load).
 // ---------------------------------------------------------------------------
+// ui.js first: it defines Corvus.ui, the component layer every other
+// module builds its DOM with (index.html loads it in the same order).
+require("../src/js/ui.js");
 require("../src/js/plugins.js");
 require("../src/js/plugin-vibration.js");
 

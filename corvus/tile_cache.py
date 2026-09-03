@@ -5,6 +5,14 @@ must resolve locally. This module is the cache STORE only — MapLibre wiring
 and the download UI live in the frontend. stdlib ``sqlite3`` only,
 thread-safe so the backend's ``ThreadingHTTPServer`` can serve tiles from
 many HTTP threads.
+
+Alongside the MBTiles ``tiles``/``metadata`` tables the file carries one
+Corvus-specific table, ``corvus_regions``: the named areas the operator has
+pre-downloaded. Keeping them in the same file as the tiles they describe is
+what makes the pairing self-consistent — delete the ``.mbtiles`` and its
+region list goes with it, copy it to another machine and the names travel
+along. MBTiles readers ignore tables they do not know, so the file stays a
+valid MBTiles archive.
 """
 from __future__ import annotations
 
@@ -12,11 +20,56 @@ import os
 import pathlib
 import sqlite3
 import threading
+import time
+from typing import Iterable
 
 
 def xyz_to_tms(z: int, y: int) -> int:
     """Convert an XYZ (slippy-map) row *y* at zoom *z* to a TMS (y-flipped) row."""
     return (1 << z) - 1 - y
+
+
+# The columns a region record carries, with the default used when a caller
+# omits one. Centralized so add_region can never write a partial row and the
+# HTTP layer has one place to read the shape from.
+_REGION_DEFAULTS: dict = {
+    "id": "",
+    "name": "Region",
+    "source": "",
+    "w": 0.0, "s": 0.0, "e": 0.0, "n": 0.0,
+    "minzoom": 0,
+    "maxzoom": 0,
+    "tile_count": 0,
+    "created_at": "",
+    "state": "done",
+}
+
+
+def _clean_region(region: dict) -> dict:
+    """Coerce *region* to the stored column set, filling in defaults.
+
+    Never raises: a value that will not coerce falls back to its default, so a
+    malformed record degrades to a harmless row instead of losing the download
+    it describes. ``created_at`` defaults to now, in UTC ISO-8601.
+    """
+    src = region if isinstance(region, dict) else {}
+    out: dict = {}
+    for key, default in _REGION_DEFAULTS.items():
+        value = src.get(key, default)
+        try:
+            if isinstance(default, float):
+                out[key] = float(value)
+            elif isinstance(default, int):
+                out[key] = int(value)
+            else:
+                out[key] = str(value)
+        except (TypeError, ValueError):
+            out[key] = default
+    if not out["created_at"]:
+        out["created_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    if not out["name"]:
+        out["name"] = _REGION_DEFAULTS["name"]
+    return out
 
 
 def default_cache_dir() -> str:
@@ -75,6 +128,22 @@ class TileCache:
                 "CREATE UNIQUE INDEX IF NOT EXISTS tiles_idx "
                 "ON tiles(zoom_level, tile_column, tile_row)"
             )
+            # Corvus extension (see the module docstring): the named areas the
+            # operator pre-downloaded. CREATE IF NOT EXISTS means an .mbtiles
+            # written by an older build gains the table on first open.
+            self._conn.execute(
+                """CREATE TABLE IF NOT EXISTS corvus_regions (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    source TEXT,
+                    w REAL, s REAL, e REAL, n REAL,
+                    minzoom INTEGER,
+                    maxzoom INTEGER,
+                    tile_count INTEGER,
+                    created_at TEXT,
+                    state TEXT
+                )"""
+            )
             self._conn.commit()
 
     def get_tile(self, z: int, x: int, y: int) -> bytes | None:
@@ -125,6 +194,124 @@ class TileCache:
                 (z, x, row_num),
             )
             return cur.fetchone() is not None
+
+    # ---- named regions (Corvus extension) ----
+    #
+    # A "region" is one named area the operator pre-downloaded: the bounds and
+    # zoom span that were requested, plus how many tiles actually landed. It is
+    # what lets the UI answer "which areas do I have offline?" instead of only
+    # "how many tiles do I have", which is a number nobody can act on.
+
+    def add_region(self, region: dict) -> dict:
+        """Insert or replace a region record. Returns the stored record.
+
+        Keyed by ``id`` (the caller supplies one — the download job id, so a
+        progress update can find the row again). Unknown keys are dropped;
+        missing ones take a benign default, so a partially-built record can
+        never raise here and lose the download that produced it.
+        """
+        if self._closed:
+            return dict(region)
+        row = _clean_region(region)
+        with self._lock:
+            self._conn.execute(
+                """INSERT OR REPLACE INTO corvus_regions
+                   (id, name, source, w, s, e, n, minzoom, maxzoom,
+                    tile_count, created_at, state)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (row["id"], row["name"], row["source"],
+                 row["w"], row["s"], row["e"], row["n"],
+                 row["minzoom"], row["maxzoom"], row["tile_count"],
+                 row["created_at"], row["state"]),
+            )
+            self._conn.commit()
+        return row
+
+    def update_region(self, region_id: str, **fields: object) -> bool:
+        """Patch the named columns of one region. Returns True if it existed.
+
+        Used when a download finishes: the row is written at job start (so the
+        area shows up as in-progress) and patched with the real tile count and
+        final state when the job ends.
+        """
+        if self._closed:
+            return False
+        allowed = {"name", "tile_count", "state"}
+        sets = {k: v for k, v in fields.items() if k in allowed}
+        if not sets:
+            return False
+        cols = ", ".join(f"{k}=?" for k in sets)
+        with self._lock:
+            cur = self._conn.execute(
+                f"UPDATE corvus_regions SET {cols} WHERE id=?",
+                (*sets.values(), region_id),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def list_regions(self) -> list[dict]:
+        """Return every region record, newest first."""
+        if self._closed:
+            return []
+        with self._lock:
+            cur = self._conn.execute(
+                """SELECT id, name, source, w, s, e, n, minzoom, maxzoom,
+                          tile_count, created_at, state
+                   FROM corvus_regions ORDER BY created_at DESC, rowid DESC"""
+            )
+            rows = cur.fetchall()
+        return [
+            {
+                "id": r[0], "name": r[1], "source": r[2],
+                "bounds": {"w": r[3], "s": r[4], "e": r[5], "n": r[6]},
+                "minzoom": r[7], "maxzoom": r[8],
+                "tile_count": r[9], "created_at": r[10], "state": r[11],
+            }
+            for r in rows
+        ]
+
+    def get_region(self, region_id: str) -> dict | None:
+        """Return one region record by id, or None."""
+        for r in self.list_regions():
+            if r["id"] == region_id:
+                return r
+        return None
+
+    def remove_region(self, region_id: str) -> bool:
+        """Delete a region record. Returns True if a row was removed.
+
+        Only the record — the tiles stay cached, because regions overlap and
+        another region may need them. :meth:`delete_region_tiles` is the
+        explicit, separate step for reclaiming disk.
+        """
+        if self._closed:
+            return False
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM corvus_regions WHERE id=?", (region_id,)
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def delete_tiles(self, tiles: "Iterable[tuple[int, int, int]]") -> int:
+        """Delete the given XYZ ``(z, x, y)`` tiles. Returns the rows removed.
+
+        Deleted in one transaction so a half-deleted region can never be left
+        behind. XYZ→TMS conversion happens here, exactly as in put/get.
+        """
+        if self._closed:
+            return 0
+        removed = 0
+        with self._lock:
+            for z, x, y in tiles:
+                cur = self._conn.execute(
+                    "DELETE FROM tiles "
+                    "WHERE zoom_level=? AND tile_column=? AND tile_row=?",
+                    (z, x, xyz_to_tms(z, y)),
+                )
+                removed += cur.rowcount
+            self._conn.commit()
+        return removed
 
     def stats(self) -> dict:
         """Return {count, minzoom, maxzoom} from the tiles table.

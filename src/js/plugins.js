@@ -66,10 +66,6 @@ Corvus.plugins = (function () {
   let modesCache = null;      // settled modes array (null = not yet loaded)
   let modesInFlight = null;   // pending promise, dedupes concurrent callers
 
-  function refreshIcons() {
-    if (window.lucide && lucide.createIcons) lucide.createIcons();
-  }
-
   /**
    * Register a plugin. Returns true on success, false on rejection.
    * Duplicate or empty ids are rejected (returns false) rather than throwing,
@@ -131,7 +127,7 @@ Corvus.plugins = (function () {
       '<div class="future-title">Tools & Plugins</div>' +
       '<div class="future-desc">Extensions and tools plug in here.</div>';
     rootEl.classList.add("future-empty");
-    refreshIcons();
+    Corvus.ui.refreshIcons();
   }
 
   /** Render the responsive card grid from the registry. */
@@ -145,36 +141,22 @@ Corvus.plugins = (function () {
     const grid = document.createElement("div");
     grid.className = "plugin-grid";
     plugins.forEach((p) => {
-      const card = document.createElement("button");
-      card.type = "button";
-      card.className = "plugin-card";
+      // Same control as a Setup tile, laid out as a column instead of a row —
+      // ui.tile builds it from createElement (never innerHTML), so a plugin's
+      // name/description stay real text nodes and cannot inject markup.
+      const card = Corvus.ui.tile({
+        className: "plugin-card",
+        icon: p.icon,
+        title: p.name,
+        desc: p.description,
+        ariaLabel: p.name,
+        onClick: () => open(p.id),
+      });
       card.dataset.pluginId = p.id;
-      card.setAttribute("aria-label", p.name);
-
-      // Build the card with createElement (not innerHTML) so the structure is
-      // introspectable and a plugin's name/desc are real text nodes.
-      const iconWrap = document.createElement("span");
-      iconWrap.className = "plugin-card-icon";
-      const iconEl = document.createElement("i");
-      iconEl.setAttribute("data-lucide", p.icon);
-      iconWrap.appendChild(iconEl);
-
-      const nameEl = document.createElement("span");
-      nameEl.className = "plugin-card-name";
-      nameEl.textContent = p.name;
-
-      const descEl = document.createElement("span");
-      descEl.className = "plugin-card-desc";
-      descEl.textContent = p.description;
-
-      card.appendChild(iconWrap);
-      card.appendChild(nameEl);
-      card.appendChild(descEl);
-      card.addEventListener("click", () => open(p.id));
       grid.appendChild(card);
     });
     rootEl.appendChild(grid);
-    refreshIcons();
+    Corvus.ui.refreshIcons();
   }
 
   /** Render the opened-plugin view: back button + header + fresh container. */
@@ -185,19 +167,15 @@ Corvus.plugins = (function () {
     const view = document.createElement("div");
     view.className = "plugin-view";
 
-    const back = document.createElement("button");
-    back.type = "button";
-    back.className = "btn plugin-back";
-    back.setAttribute("data-variant", "ghost");
-    back.setAttribute("data-size", "sm");
-    const backIcon = document.createElement("i");
-    backIcon.setAttribute("data-lucide", "chevron-left");
-    const backLabel = document.createElement("span");
-    backLabel.textContent = "Plugins";
-    back.appendChild(backIcon);
-    back.appendChild(backLabel);
-    back.setAttribute("aria-label", "Back to plugins");
-    back.addEventListener("click", close);
+    const back = Corvus.ui.button({
+      variant: "ghost",
+      size: "sm",
+      className: "plugin-back",
+      icon: "chevron-left",
+      label: "Plugins",
+      ariaLabel: "Back to plugins",
+      onClick: close,
+    });
 
     const header = document.createElement("div");
     header.className = "plugin-header";
@@ -221,7 +199,7 @@ Corvus.plugins = (function () {
     view.appendChild(header);
     view.appendChild(container);
     rootEl.appendChild(view);
-    refreshIcons();
+    Corvus.ui.refreshIcons();
     return container;
   }
 

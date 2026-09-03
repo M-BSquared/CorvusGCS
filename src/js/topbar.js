@@ -16,11 +16,9 @@ Corvus.topbar = (function () {
   const dismissedNotifications = new Set();
   const commandDedupe = Corvus.notificationDedupe.createTracker({ windowMs: 3000 });
 
-  function icon(name) {
-    const i = document.createElement("i");
-    i.setAttribute("data-lucide", name);
-    return i;
-  }
+  /* Top-bar icons are sized by main.css, so they are built without an inline
+     size ("auto") — an inline width/height would override those rules. */
+  function icon(name) { return Corvus.ui.icon(name, "auto"); }
 
   function vehicleLabel(state) {
     if (!state.connected) return "DISCONNECTED";
@@ -159,7 +157,7 @@ Corvus.topbar = (function () {
       const spacer = document.createElement("div");
       spacer.className = "tb-spacer";
       topBar.appendChild(spacer);
-      if (window.lucide && lucide.createIcons) lucide.createIcons();
+      Corvus.ui.refreshIcons();
       // Cache each value block's sub-element refs once: the bar is built only
       // once per session (topBarBuilt), so these refs stay valid for every
       // later update. If the bar were ever rebuilt, this must re-run — it is
@@ -287,7 +285,7 @@ Corvus.topbar = (function () {
       });
     }
     warningsList.scrollTop = Math.min(scrollTop, warningsList.scrollHeight);
-    if (window.lucide && lucide.createIcons) lucide.createIcons({ attrs: { "aria-hidden": "true" } });
+    Corvus.ui.refreshIcons({ attrs: { "aria-hidden": "true" } });
     if (focusedKey) {
       const focusedItem = Array.from(warningsList.querySelectorAll(".wp-item"))
         .find((item) => item.dataset.notificationKey === focusedKey);

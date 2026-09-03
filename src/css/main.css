@@ -1,64 +1,12 @@
-:root {
-  --bg: #0B0E12;
-  --surface-1: #11161D;
-  --surface-2: #171D25;
-  --surface-3: #1C232C;
-  --surface-hover: #222A34;
-  --surface-active: #29323D;
+/*
+  Corvus GCS — layout, panels, and screen-specific styling.
 
-  --accent: #3DA876;
-  --accent-dim: rgba(61, 168, 118, 0.16);
-  --accent-bright: #5BC896;
-  --accent-dark: #1A3D2E;
-  --accent-hover: #4FBF8A;
-  --accent-pressed: #2D8862;
-
-  --healthy: #45D483;
-  --healthy-dark: #183A2A;
-  --healthy-bright: #63E89A;
-  --warning: #F5C842;
-  --warning-dark: #403716;
-  --critical: #FF514D;
-  --critical-dark: #421D1C;
-
-  --nav: #4CC9FF;
-  --nav-dark: #17394A;
-  --nav-bright: #7DDEFF;
-  --nav-dim: rgba(76, 201, 255, 0.18);
-  --waypoint: #62D6FF;
-  --vehicle: #FF514D;
-
-  --text-1: #F2F4F7;
-  --text-2: #A5ADB8;
-  --text-3: #69737F;
-  --text-disabled: #4A535E;
-  --text-inverted: #0B0E12;
-
-  --border: #2A3038;
-  --border-soft: #20262E;
-  --border-strong: #39424D;
-
-  --terminal-bg: #0A0D10;
-  --terminal-text: #D7DCE2;
-  --terminal-muted: #6F7882;
-  --terminal-cmd: #5BC896;
-  --ssh-bg: #090C0F;
-
-  --horizon-sky: #4CC9FF;
-  --horizon-ground: #8A5A32;
-  --graph-tertiary: #7C7F87;
-
-  --radius: 8px;
-  --radius-btn: 6px;
-  --top-h: 60px;
-  --left-w: 70px;
-  --panel-w: 380px;
-  --panel-w-collapsed: 24px;
-  --shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
-  --shadow-soft: 0 2px 10px rgba(0, 0, 0, 0.35);
-  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-  --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
+  Loaded AFTER css/themes.css (which owns every design token) and BEFORE
+  css/components.css (the reusable .btn / .glass / field component layer).
+  This file defines no tokens of its own: every color, radius, shadow, and
+  translucency here reads a var() from themes.css, which is what lets the
+  light theme invert the whole app without a single override in this file.
+*/
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
@@ -221,12 +169,12 @@ svg { display: block; }
 }
 .fa-btn i, .fa-btn svg { width: 17px; height: 17px; }
 /* Hover: subtle lift + a wash in the action's identity colour. */
-.fa-btn:hover { color: var(--text-1); background: rgba(255, 255, 255, 0.06); transform: translateY(-1px); }
+.fa-btn:hover { color: var(--text-1); background: rgb(var(--tint-rgb) / 0.06); transform: translateY(-1px); }
 /* Per-action colour identity on hover (semantic tokens). */
-.fa-btn.arm:hover { color: var(--healthy); background: rgba(69, 212, 131, 0.14); }
-.fa-btn.takeoff:hover { color: var(--healthy-bright); background: rgba(99, 232, 154, 0.14); transform: translateY(-2px); }
-.fa-btn.land:hover { color: var(--warning); background: rgba(245, 200, 66, 0.14); }
-.fa-btn.rtl:hover { color: var(--nav-bright); background: rgba(76, 201, 255, 0.14); }
+.fa-btn.arm:hover { color: var(--healthy); background: color-mix(in srgb, var(--healthy) 14%, transparent); }
+.fa-btn.takeoff:hover { color: var(--healthy-bright); background: color-mix(in srgb, var(--healthy-bright) 14%, transparent); transform: translateY(-2px); }
+.fa-btn.land:hover { color: var(--warning); background: color-mix(in srgb, var(--warning) 14%, transparent); }
+.fa-btn.rtl:hover { color: var(--nav-bright); background: color-mix(in srgb, var(--nav) 14%, transparent); }
 .fa-btn.plan:hover { color: var(--accent-bright); background: var(--accent-dim); }
 /* Press: instant scale(0.96), no overshoot (apple-design §1). */
 .fa-btn:active:not(:disabled):not(.is-busy) { transform: scale(0.96); }
@@ -240,7 +188,7 @@ svg { display: block; }
   color: var(--text-inverted);
   background: var(--healthy);
   border-color: var(--healthy);
-  box-shadow: 0 0 0 1px rgba(69, 212, 131, 0.35), 0 4px 14px rgba(69, 212, 131, 0.35);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--healthy) 35%, transparent), 0 4px 14px color-mix(in srgb, var(--healthy) 35%, transparent);
 }
 .fa-btn.armed:hover { background: var(--healthy-bright); color: var(--text-inverted); }
 /* PLAN engaged: filled accent. */
@@ -265,23 +213,20 @@ svg { display: block; }
     transition: none !important; animation: none !important; transform: none !important;
   }
 }
-.mode-selector {
-  background: rgba(11, 14, 18, 0.55); border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-btn); padding: 8px 10px;
-  color: var(--text-1); font-size: 11px; font-weight: 600; letter-spacing: 0.5px;
-  outline: none; cursor: pointer; min-width: 120px;
-  font-family: var(--sans);
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2369737F' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 8px center;
-  padding-right: 26px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+/* .field-select on the glass flight bar: it keeps the shared control's
+   metrics, chevron and focus ring, and only swaps the recessed well for the
+   translucent material so it sits in the bar rather than on it. The chevron
+   is a background-image on .field-select, so background-color must be set
+   on its own longhand here — the shorthand would erase it. */
+.field-select.mode-selector {
+  background-color: rgb(var(--glass-rgb) / 0.55);
+  border-color: rgb(var(--tint-rgb) / 0.08);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.5px;
+  min-width: 120px;
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  box-shadow: var(--shadow-soft);
 }
-.mode-selector:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
-.mode-selector option { background: var(--surface-1); color: var(--text-1); }
 
 /* ===== TAKEOFF PANEL ===== */
 .takeoff-panel {
@@ -303,7 +248,7 @@ svg { display: block; }
   -webkit-appearance: none; appearance: none;
   width: 16px; height: 16px; border-radius: 50%;
   background: var(--accent); cursor: pointer; border: 2px solid var(--text-1);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-soft);
 }
 .takeoff-slider::-moz-range-thumb {
   width: 16px; height: 16px; border-radius: 50%;
@@ -364,42 +309,6 @@ svg { display: block; }
 .plan-clear:hover { background: var(--surface-hover); }
 .plan-clear i, .plan-clear svg { width: 14px; height: 14px; }
 
-/* ===== SSH ADD DIALOG ===== */
-.ssh-modal-overlay {
-  position: fixed; inset: 0; z-index: 100;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  display: grid; place-items: center;
-  animation: corvus-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.ssh-modal {
-  background: rgba(17, 22, 29, 0.7);
-  backdrop-filter: blur(32px) saturate(180%);
-  -webkit-backdrop-filter: blur(32px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  padding: 24px; width: 360px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
-  animation: corvus-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.ssh-modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-.ssh-modal-title { font-size: 15px; font-weight: 700; color: var(--text-1); letter-spacing: 0.3px; }
-.ssh-field { margin-bottom: 12px; }
-.ssh-field-label { font-size: 10px; font-weight: 600; letter-spacing: 0.7px; color: var(--text-3); text-transform: uppercase; margin-bottom: 4px; display: block; }
-.ssh-field-input {
-  width: 100%; background: rgba(11, 14, 18, 0.6);
-  border: 1px solid var(--border); border-radius: var(--radius-btn);
-  padding: 10px 12px; color: var(--text-1); font-size: 13px;
-  outline: none; transition: border-color 130ms;
-  font-family: var(--sans);
-}
-.ssh-field-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
-.ssh-field-input.mono { font-family: var(--mono); font-size: 12px; }
-.ssh-modal-actions { display: flex; gap: 10px; margin-top: 18px; }
-/* Layout-only override: the two modal actions flex equally; colour/border
-   come from .btn + data-variant in components.css. */
-.ssh-modal-btn { flex: 1; }
 
 /* ===== PAGE VIEW ===== */
 .page-header { margin-bottom: 28px; }
@@ -416,7 +325,7 @@ svg { display: block; }
 .page-row-value { font-size: 13px; color: var(--text-2); font-family: var(--mono); }
 
 /* ===== MAIN / MAP ===== */
-.main { flex: 1; position: relative; min-width: 0; background: #05070A; }
+.main { flex: 1; position: relative; min-width: 0; background: var(--bg); }
 .map-view { position: absolute; inset: 0; }
 .map { position: absolute; inset: 0; }
 .page-view { position: absolute; inset: 0; overflow-y: auto; padding: 32px 40px; }
@@ -424,9 +333,9 @@ svg { display: block; }
 /* OSM/Esri attribution must stay visible (legal requirement); tint the control
    into the dark glass family instead of the MapLibre default. */
 .maplibregl-ctrl-attrib {
-  background: rgba(17, 22, 29, 0.55);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  background: rgb(var(--glass-rgb) / 0.55);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
   border-radius: var(--radius);
   font-size: 10px;
   color: var(--text-3);
@@ -434,16 +343,28 @@ svg { display: block; }
 .maplibregl-ctrl-attrib a { color: var(--text-3); }
 .maplibregl-ctrl-logo { opacity: 0.35 !important; }
 
+/* Geometry shared by the map chrome. The right-hand control rail is the
+   anchor; everything else that floats beside it is positioned off these two
+   values rather than off a hand-computed pixel offset, which is how the
+   download trigger came to overlap the zoom buttons. */
+.map-view {
+  --map-rail-inset: 14px;                 /* rail distance from the viewport edge */
+  --map-rail-w: 48px;                     /* 34px button + 6px padding + 1px border, both sides */
+  --map-rail-gap: 8px;                    /* breathing room between rail and neighbours */
+  /* First free x-offset to the LEFT of the rail. */
+  --map-rail-clear: calc(var(--map-rail-inset) + var(--map-rail-w) + var(--map-rail-gap));
+}
+
 .map-controls {
-  position: absolute; top: 14px; right: 14px; z-index: 10;
+  position: absolute; top: var(--map-rail-inset); right: var(--map-rail-inset); z-index: 10;
   display: flex; flex-direction: column; gap: 6px;
-  background: rgba(17, 22, 29, 0.55);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgb(var(--glass-rgb) / 0.55);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
+  border: 1px solid rgb(var(--tint-rgb) / 0.06);
   border-radius: var(--radius);
   padding: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-pop);
 }
 .mc-btn {
   width: 34px; height: 34px; display: grid; place-items: center;
@@ -457,35 +378,38 @@ svg { display: block; }
 .mc-divider { height: 1px; background: var(--border-soft); margin: 2px 4px; }
 
 .layers-popover {
-  position: absolute; top: 156px; right: 60px; z-index: 11;
+  position: absolute; top: 156px; right: var(--map-rail-clear); z-index: 11;
   border-radius: var(--radius);
   padding: 8px; min-width: 168px;
   animation: corvus-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .layers-popover h4 { font-size: 10px; color: var(--text-3); letter-spacing: 0.8px; margin: 4px 6px 6px; text-transform: uppercase; }
-.layer-opt {
-  display: flex; align-items: center; gap: 8px; width: 100%;
-  padding: 7px 8px; border-radius: var(--radius-btn); color: var(--text-2);
-  font-size: 12px; font-weight: 500; text-align: left;
+/* The layer rows themselves are .option-item from components.css — the popover
+   only contributes its own sizing and the per-service group headings that are
+   interleaved between them. */
+.layers-popover { max-height: 60vh; overflow-y: auto; }
+.layer-group {
+  font-size: 9.5px; font-weight: 600; letter-spacing: 0.9px;
+  color: var(--text-3); text-transform: uppercase;
+  margin: 8px 6px 3px; padding-top: 6px;
+  border-top: 1px solid var(--border-soft);
 }
-.layer-opt:hover { background: var(--surface-hover); color: var(--text-1); }
-.layer-opt.active { background: var(--accent-dark); color: var(--text-1); }
-.layer-opt .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); }
-.layer-opt.active .dot { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.layer-group:first-of-type { margin-top: 2px; padding-top: 0; border-top: none; }
 
-/* ===== TILES DOWNLOAD (offline map cache) =====
-   A standalone floating trigger + popover beside the map controls. The
-   popover uses the shared .glass material + .corvus-enter entrance; only the
-   positioning and the inner controls' layout live here. */
+/* ===== OFFLINE MAP (tile download) =====
+   Only the floating trigger lives on the map; the panel itself is a
+   Corvus.ui.modal (see components.css) because as an anchored popover it was
+   constantly covered by the flight bar, the HUD and the right panel. What
+   remains here is the trigger and the dialog's own inner layout. */
 .tiles-trigger {
-  position: absolute; top: 14px; right: 56px; z-index: 10;
+  position: absolute; top: var(--map-rail-inset); right: var(--map-rail-clear); z-index: 10;
   width: 34px; height: 34px; display: grid; place-items: center;
   border-radius: var(--radius);
-  background: rgba(17, 22, 29, 0.55);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  background: rgb(var(--glass-rgb) / 0.55);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
+  border: 1px solid rgb(var(--tint-rgb) / 0.06);
+  box-shadow: var(--shadow-pop);
   color: var(--text-2);
   transition: background 130ms, color 130ms;
 }
@@ -493,39 +417,16 @@ svg { display: block; }
 .tiles-trigger.active { background: var(--accent-dark); color: var(--accent-bright); }
 .tiles-trigger i, .tiles-trigger svg { width: 17px; height: 17px; }
 
-.tiles-popover {
-  position: absolute; top: 54px; right: 56px; z-index: 11;
-  width: 280px; padding: 14px;
-  border-radius: var(--radius);
-}
-.tiles-popover[hidden] { display: none; }
-.tiles-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.tiles-title { font-size: 11px; font-weight: 600; letter-spacing: 1px; color: var(--text-2); }
-.tiles-body { display: flex; flex-direction: column; gap: 12px; }
-.tiles-field { display: flex; flex-direction: column; gap: 5px; }
-.tiles-field-label { font-size: 10px; font-weight: 600; letter-spacing: 0.7px; color: var(--text-3); text-transform: uppercase; }
-.tiles-stats-title { margin-top: 2px; }
+/* --- dialog contents ---
+   Fields, buttons, progress bar and status message are the shared .field-* /
+   .btn / .ui-progress / .ui-msg components; only what is specific to this
+   panel lives here. */
 .tiles-bounds-head { display: flex; align-items: center; justify-content: space-between; }
 .tiles-bounds {
   font-size: 11px; color: var(--text-2); font-family: var(--mono);
   font-variant-numeric: tabular-nums; line-height: 1.4;
 }
 .tiles-zoom-row { display: flex; gap: 10px; }
-.tiles-field-inline { flex: 1; }
-.tiles-select, .tiles-input {
-  width: 100%; background: rgba(11, 14, 18, 0.6); color: var(--text-1);
-  border: 1px solid var(--border); border-radius: var(--radius-btn);
-  padding: 8px 10px; font-size: 12px; outline: none; font-family: var(--sans);
-  transition: border-color 130ms, box-shadow 130ms; appearance: none;
-}
-.tiles-select {
-  padding-right: 26px; cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2369737F' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 8px center;
-}
-.tiles-select option { background: var(--surface-1); color: var(--text-1); }
-.tiles-input { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.tiles-select:focus, .tiles-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
 .tiles-estimate {
   display: flex; align-items: center; justify-content: space-between;
   padding: 8px 10px; border-radius: var(--radius-btn);
@@ -534,50 +435,97 @@ svg { display: block; }
 .tiles-estimate-val { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 .tiles-estimate-value { font-size: 13px; font-weight: 700; color: var(--accent-bright); font-variant-numeric: tabular-nums; }
 .tiles-estimate-sub { font-size: 10px; color: var(--text-3); font-variant-numeric: tabular-nums; }
-.tiles-actions { display: flex; gap: 8px; }
-.tiles-actions .btn { flex: 1; }
-.tiles-progress { display: flex; flex-direction: column; gap: 8px; }
-.tiles-progress-text { font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; }
-.tiles-msg {
-  font-size: 11.5px; line-height: 1.4; padding: 8px 10px; border-radius: var(--radius-btn);
+
+/* --- downloaded areas list --- */
+.tiles-regions-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  padding-top: 6px; border-top: 1px solid var(--border-soft);
 }
-.tiles-msg[hidden] { display: none; }
-.tiles-msg.ok { color: var(--healthy); background: var(--healthy-dark); border: 1px solid var(--healthy); }
-.tiles-msg.err { color: var(--critical); background: var(--critical-dark); border: 1px solid var(--critical); }
-.tiles-msg.warn { color: var(--warning); background: var(--warning-dark); border: 1px solid var(--warning); }
-.tiles-stats { display: flex; flex-direction: column; gap: 6px; }
-.tiles-stat-row {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 7px 10px; border-radius: var(--radius-btn);
+.tiles-regions-count { font-size: 10px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.tiles-regions { display: flex; flex-direction: column; gap: 6px; }
+.tiles-region-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 6px 4px 10px; border-radius: var(--radius-btn);
   background: var(--surface-2); border: 1px solid var(--border-soft);
+  transition: background 130ms, border-color 130ms;
 }
-.tiles-stat-left { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.tiles-stat-name { font-size: 11px; font-weight: 600; color: var(--text-1); }
-.tiles-stat-meta { font-size: 10px; color: var(--text-3); font-variant-numeric: tabular-nums; }
-.tiles-stat-empty { font-size: 11px; color: var(--text-3); padding: 6px 2px; }
+.tiles-region-row:hover { background: var(--surface-hover); border-color: var(--border); }
+/* An in-flight download is marked on the row as well as on the map label, so
+   the list never claims an area is ready before it is. */
+.tiles-region-row.downloading { border-color: var(--warning); }
+/* The identity block IS the "frame this area" button — a name that does
+   nothing beside a locate icon that does would be the worse split. */
+.tiles-region-main {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px;
+  padding: 5px 0; text-align: left; cursor: pointer; background: none; border: none;
+}
+.tiles-region-main:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; border-radius: var(--radius-btn); }
+.tiles-region-name {
+  font-size: 12px; font-weight: 600; color: var(--text-1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tiles-region-meta {
+  font-size: 10px; color: var(--text-3); font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tiles-region-row.downloading .tiles-region-meta { color: var(--warning); }
+.tiles-region-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.tiles-stat-empty { font-size: 11px; color: var(--text-3); line-height: 1.5; padding: 6px 2px; }
 
 /* vehicle marker */
 .vehicle-marker { width: 44px; height: 44px; display: grid; place-items: center; }
 .vehicle-marker .v-body {
   width: 36px; height: 36px; border-radius: 50%;
-  background: rgba(255, 81, 77, 0.18); border: 2.5px solid #FF514D;
+  background: rgb(var(--vehicle-rgb) / 0.18); border: 2.5px solid var(--vehicle);
   display: grid; place-items: center;
-  box-shadow: 0 0 14px rgba(255, 81, 77, 0.6);
+  box-shadow: 0 0 14px rgb(var(--vehicle-rgb) / 0.6);
 }
-.vehicle-marker .v-body svg { width: 20px; height: 20px; color: #FF514D; transform: rotate(0deg); }
+.vehicle-marker .v-body svg { width: 20px; height: 20px; color: var(--vehicle); transform: rotate(0deg); }
 .vehicle-marker .v-dir {
   position: absolute; top: -5px; left: 50%; transform: translateX(-50%);
   width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent;
-  border-bottom: 11px solid #FF514D; filter: drop-shadow(0 0 5px #FF514D);
+  border-bottom: 11px solid var(--vehicle); filter: drop-shadow(0 0 5px var(--vehicle));
 }
 
 .home-marker { width: 26px; height: 26px; display: grid; place-items: center; }
 .home-marker .h-body {
   width: 24px; height: 24px; border-radius: 50%;
-  background: rgba(69, 212, 131, 0.18); border: 1.5px solid var(--healthy);
+  background: color-mix(in srgb, var(--healthy) 18%, transparent); border: 1.5px solid var(--healthy);
   display: grid; place-items: center;
 }
 .home-marker .h-body svg { width: 13px; height: 13px; color: var(--healthy); }
+
+/* downloaded-area label — the name badge at the centre of each cached region.
+   A DOM marker, not a MapLibre symbol layer: a text layer needs a glyphs URL
+   and the field laptop has no internet to fetch fonts from. Non-interactive so
+   it never swallows a map click meant for waypoint planning underneath it. */
+.region-label {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 4px 8px; border-radius: var(--radius-btn);
+  background: rgb(var(--glass-rgb) / 0.72);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
+  border: 1px solid color-mix(in srgb, var(--nav) 45%, transparent);
+  box-shadow: var(--shadow-soft);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.region-label-name {
+  font-size: 11px; font-weight: 600; color: var(--text-1); letter-spacing: 0.2px;
+}
+.region-label-meta {
+  font-size: 9px; color: var(--text-3); letter-spacing: 0.5px;
+  font-variant-numeric: tabular-nums;
+}
+/* An in-flight download pulses so "downloading…" reads as live, not stuck. */
+.region-label.downloading { border-color: var(--warning); }
+.region-label.downloading .region-label-meta {
+  color: var(--warning);
+  animation: livePulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .region-label.downloading .region-label-meta { animation: none !important; }
+}
 
 /* waypoint (plan) marker — amber, translucent, same circular language as
    home/vehicle. Glow sits between home (none) and vehicle (strong) so the
@@ -586,9 +534,9 @@ svg { display: block; }
   width: 28px; height: 28px;
   display: grid; place-items: center;
   border-radius: 50%;
-  background: rgba(245, 200, 66, 0.18);
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
   border: 1.5px solid var(--warning);
-  box-shadow: 0 0 10px rgba(245, 200, 66, 0.45);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--warning) 45%, transparent);
 }
 .wp-marker-num {
   font-family: var(--sans);
@@ -609,12 +557,12 @@ svg { display: block; }
 .instruments { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .instrument { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .compass, .attitude { width: 100%; aspect-ratio: 1; }
-.compass-ring { fill: rgba(0, 0, 0, 0.25); stroke: rgba(255, 255, 255, 0.08); stroke-width: 1.5; }
-#compassArrow .arrow-body { fill: #FF514D; }
-#compassArrow .arrow-tail { fill: rgba(255, 81, 77, 0.3); }
-.compass-window { fill: rgba(11, 14, 18, 0.92); stroke: #38bdf8; stroke-width: 1.2; }
-.compass-window-text { font: 700 13px var(--sans); fill: #38bdf8; font-variant-numeric: tabular-nums; }
-.compass-hub { fill: #0B0E12; stroke: #FF514D; stroke-width: 1.5; }
+.compass-ring { fill: rgb(var(--input-rgb) / 0.25); stroke: rgb(var(--tint-rgb) / 0.08); stroke-width: 1.5; }
+#compassArrow .arrow-body { fill: var(--vehicle); }
+#compassArrow .arrow-tail { fill: rgb(var(--vehicle-rgb) / 0.3); }
+.compass-window { fill: rgb(var(--input-rgb) / 0.92); stroke: var(--nav); stroke-width: 1.2; }
+.compass-window-text { font: 700 13px var(--sans); fill: var(--nav); font-variant-numeric: tabular-nums; }
+.compass-hub { fill: var(--bg); stroke: var(--vehicle); stroke-width: 1.5; }
 
 .attitude .adi-bezel { fill: none; stroke: var(--border); stroke-width: 2; }
 .adi-roll-scale .roll-tick { stroke: var(--text-3); stroke-width: 1.2; }
@@ -632,7 +580,7 @@ svg { display: block; }
   background: var(--border-soft); border: 1px solid var(--border-soft);
   border-radius: var(--radius-btn); overflow: hidden;
 }
-.ft-cell { background: rgba(17, 22, 29, 0.4); padding: 7px 9px; display: flex; flex-direction: column; gap: 2px; }
+.ft-cell { background: rgb(var(--glass-rgb) / 0.4); padding: 7px 9px; display: flex; flex-direction: column; gap: 2px; }
 .ft-cell .ft-label { font-size: 8.5px; font-weight: 600; letter-spacing: 0.7px; color: var(--text-3); text-transform: uppercase; }
 .ft-cell .ft-value { font-size: 15px; font-weight: 600; color: var(--text-1); font-variant-numeric: tabular-nums; line-height: 1.1; }
 .ft-cell .ft-value.nav { color: var(--nav); }
@@ -821,37 +769,13 @@ svg { display: block; }
   gap: 10px;
   align-content: start;
 }
-.plugin-card {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
-  padding: 14px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  text-align: left;
-  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
-              background 130ms, border-color 130ms, box-shadow 160ms;
-  will-change: transform;
-}
-/* apple-design: feedback on press, instant; lift on hover; keyboard focus ring. */
-.plugin-card:hover {
-  background: var(--surface-hover);
-  border-color: var(--border-strong);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-soft);
-}
-.plugin-card:active { transform: translateY(0) scale(0.99); }
-.plugin-card:focus-visible {
-  outline: 2px solid var(--accent-bright);
-  outline-offset: 2px;
-}
-.plugin-card-icon {
-  width: 34px; height: 34px; border-radius: var(--radius-btn);
-  background: var(--accent-dark); color: var(--accent-bright);
-  display: grid; place-items: center;
-}
-.plugin-card-icon svg { width: 17px; height: 17px; }
-.plugin-card-name { font-size: 13px; font-weight: 600; color: var(--text-1); letter-spacing: 0.2px; }
-.plugin-card-desc { font-size: 11px; color: var(--text-3); line-height: 1.45; }
+/* .tile stacked as a column: icon chip above the text. Interaction comes from
+   .tile in components.css; only the flow, sizing and type scale differ. */
+.plugin-card { flex-direction: column; align-items: flex-start; gap: 8px; padding: 14px; }
+.plugin-card .tile-icon { width: 34px; height: 34px; }
+.plugin-card .tile-icon svg, .plugin-card .tile-icon i { width: 17px; height: 17px; }
+.plugin-card .tile-title { font-size: 13px; }
+.plugin-card .tile-desc { font-size: 11px; }
 
 /* ----- PLUGIN VIEW (opened plugin) ----- */
 .plugin-view {
@@ -904,14 +828,8 @@ svg { display: block; }
 
 /* Reduced motion: disable card/view/popover transitions (apple-design §14). */
 @media (prefers-reduced-motion: reduce) {
-  .plugin-card,
-  .plugin-card:hover,
-  .plugin-card:active,
   .plugin-view,
   .plugin-back,
-  .setup-tile,
-  .setup-tile:hover,
-  .setup-tile:active,
   .setup-back,
   .calib-btn,
   .autotune-btn,
@@ -921,10 +839,9 @@ svg { display: block; }
   .plan-panel,
   .takeoff-panel,
   .layers-popover,
-  .warnings-popover,
-  .ssh-modal-overlay,
-  .ssh-modal,
-  .tiles-popover { transition: none !important; animation: none !important; transform: none !important; }
+  .warnings-popover { transition: none !important; animation: none !important; transform: none !important; }
+  /* Dialogs are .modal (components.css) and carry their own reduced-motion
+     override there; the offline-map panel is one of them now. */
 }
 
 /* ----- LINK (connection manager) ----- */
@@ -948,25 +865,13 @@ svg { display: block; }
   text-transform: uppercase;
 }
 .link-row { display: flex; align-items: stretch; gap: 6px; }
+/* The link fields ARE .field-select / .field-input (see index.html); this is
+   the only delta — the connection panel wants slightly taller controls than
+   the default field metrics. components.css loads AFTER this file, so a delta
+   must out-specify the base rule: every override below is written as
+   `.field-*.<modifier>` (two classes) rather than the modifier alone. */
 .link-row .link-select { flex: 1; min-width: 0; }
-.link-select, .link-input {
-  width: 100%; background: rgba(11, 14, 18, 0.6); color: var(--text-1);
-  border: 1px solid var(--border); border-radius: var(--radius-btn);
-  padding: 9px 11px; font-size: 12px; outline: none; font-family: var(--sans);
-  transition: border-color 130ms, box-shadow 130ms;
-  appearance: none;
-}
-.link-input { font-family: var(--mono); font-size: 12px; }
-.link-select {
-  font-family: var(--mono); font-size: 12px; padding-right: 26px; cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2369737F' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 8px center;
-}
-.link-select option { background: var(--surface-1); color: var(--text-1); }
-.link-select:focus, .link-input:focus {
-  border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim);
-}
+.field-select.link-select, .field-input.link-input { padding: 9px 11px; }
 /* .link-connect is .btn primary block; keep the bolder weight + icon sizing
    for pixel-close parity with the prior hand-rolled style. */
 .btn.link-connect { font-weight: 700; }
@@ -1024,39 +929,12 @@ svg { display: block; }
   gap: 14px;
   align-content: start;
 }
-/* apple-design tile: lift on hover, scale on press, focus ring, transform/opacity only. */
-.setup-tile {
-  display: flex; align-items: center; gap: 14px;
-  padding: 18px 20px; text-align: left;
-  background: var(--surface-2); border: 1px solid var(--border);
-  border-radius: var(--radius);
-  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
-              background 130ms, border-color 130ms, box-shadow 160ms;
-  will-change: transform;
-}
-.setup-tile:hover {
-  background: var(--surface-hover);
-  border-color: var(--border-strong);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-soft);
-}
-.setup-tile:active { transform: translateY(0) scale(0.99); }
-.setup-tile:focus-visible {
-  outline: 2px solid var(--accent-bright);
-  outline-offset: 2px;
-}
-.setup-tile-icon {
-  width: 40px; height: 40px; border-radius: var(--radius-btn);
-  background: var(--accent-dark); color: var(--accent-bright);
-  display: grid; place-items: center; flex: 0 0 auto;
-}
-.setup-tile-icon svg, .setup-tile-icon i { width: 20px; height: 20px; }
-.setup-tile-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.setup-tile-title { font-size: 14px; font-weight: 600; color: var(--text-1); letter-spacing: 0.2px; }
-.setup-tile-desc { font-size: 11.5px; color: var(--text-3); line-height: 1.45; }
-.setup-tile > svg, .setup-tile > i[data-lucide="chevron-right"] {
-  width: 16px; height: 16px; color: var(--text-3); flex: 0 0 auto;
-}
+/* .tile laid out as a row: icon, text, trailing chevron. The interaction
+   (hover lift / press scale / focus ring) comes from .tile in components.css. */
+.setup-tile { align-items: center; gap: 14px; padding: 18px 20px; }
+.setup-tile .tile-icon { width: 40px; height: 40px; }
+.setup-tile .tile-icon svg, .setup-tile .tile-icon i { width: 20px; height: 20px; }
+.setup-tile .tile-body { flex: 1; }
 
 /* ----- CALIBRATION ----- */
 .setup-sensor-card { display: flex; flex-direction: column; gap: 12px; }
@@ -1085,46 +963,16 @@ svg { display: block; }
    coherently. Other calib buttons keep the default accent-bright icon. */
 .btn.calib-btn[data-variant="danger"] > svg,
 .btn.calib-btn[data-variant="danger"] > i[data-lucide] { color: #fff; }
-.btn.calib-btn[data-variant="danger"] .calib-btn-status { color: rgba(255, 255, 255, 0.8); }
+.btn.calib-btn[data-variant="danger"] .calib-btn-status { color: rgba(255, 255, 255, 0.8); } /* danger fill is red in every theme */
 .btn.calib-btn[data-variant="danger"] .calib-btn-status.busy,
 .btn.calib-btn[data-variant="danger"] .calib-btn-status.ok,
 .btn.calib-btn[data-variant="danger"] .calib-btn-status.err { color: #fff; }
 
-/* ----- MOTOR / ESC SAFETY MODAL -----
-   Mirrors the .ssh-modal* glass material (apple-design §12: a translucent
-   functional layer + dimming scrim) so the danger confirmation reads as the
-   same surface language as the rest of the app. Entrance is a gentle
-   scale+opacity (§12 "materialize, don't just fade"); reduced motion drops
-   the scale and keeps a short cross-fade (§14). Reduced transparency makes
-   the material frostier/solid (§14). */
-.motor-calib-overlay {
-  position: fixed; inset: 0; z-index: 100;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  display: grid; place-items: center;
-  animation: motor-calib-enter 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.motor-calib-modal {
-  background: rgba(17, 22, 29, 0.7);
-  backdrop-filter: blur(32px) saturate(180%);
-  -webkit-backdrop-filter: blur(32px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  padding: 24px; width: 400px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
-  animation: motor-calib-enter 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-@keyframes motor-calib-enter {
-  from { opacity: 0; transform: scale(0.96); }
-  to   { opacity: 1; transform: scale(1); }
-}
-.motor-calib-title {
-  font-size: 15px; font-weight: 700; color: var(--text-1);
-  letter-spacing: 0.3px; margin-bottom: 14px;
-  /* Subtle critical cue so the title reads as a warning, not a plain label. */
-  padding-left: 10px; border-left: 3px solid var(--critical);
-}
+/* ----- MOTOR / ESC SAFETY WARNING -----
+   The dialog shell (scrim, glass panel, entrance, reduced-motion and
+   reduced-transparency handling) is .modal in components.css. All that is
+   specific to this one is the red warning block inside it — the danger the
+   operator is acknowledging. */
 .motor-calib-warning {
   display: flex; flex-direction: column; gap: 8px;
   font-size: 12px; line-height: 1.5;
@@ -1132,22 +980,12 @@ svg { display: block; }
   border-radius: var(--radius-btn); padding: 12px 14px;
 }
 .motor-calib-warning-line { color: var(--text-1); }
-.motor-calib-actions { display: flex; gap: 10px; margin-top: 18px; }
-.motor-calib-cancel, .motor-calib-confirm { flex: 1; }
-@media (prefers-reduced-motion: reduce) {
-  .motor-calib-overlay, .motor-calib-modal {
-    animation: none !important; transform: none !important;
-  }
-}
-@media (prefers-reduced-transparency: reduce) {
-  .motor-calib-overlay {
-    background: rgba(0, 0, 0, 0.7);
-    backdrop-filter: none; -webkit-backdrop-filter: none;
-  }
-  .motor-calib-modal {
-    background: var(--surface-1);
-    backdrop-filter: none; -webkit-backdrop-filter: none;
-  }
+/* Critical cue on the shared dialog title, so this one reads as a warning
+   rather than a plain label. Scoped to the dialog that contains the warning
+   block, so no other .modal is affected. */
+.modal:has(.motor-calib-warning) .modal-title {
+  padding-left: 10px;
+  border-left: 3px solid var(--critical);
 }
 
 .guidance-title {
@@ -1248,13 +1086,8 @@ svg { display: block; }
   display: flex; align-items: center; gap: 10px;
   padding: 4px 0 6px; border-bottom: 1px solid var(--border-soft);
 }
-.params-search {
-  flex: 1; min-width: 0; background: rgba(11, 14, 18, 0.6);
-  border: 1px solid var(--border); border-radius: var(--radius-btn);
-  padding: 8px 11px; color: var(--text-1); font-size: 12px; outline: none;
-  font-family: var(--sans); transition: border-color 130ms, box-shadow 130ms;
-}
-.params-search:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+/* .field-input, widened to fill its toolbar row. */
+.field-input.params-search { flex: 1; min-width: 0; padding: 8px 11px; }
 .params-count { font-size: 11px; color: var(--text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 .params-table { display: flex; flex-direction: column; }
@@ -1266,16 +1099,10 @@ svg { display: block; }
 }
 .params-row:last-child { border-bottom: none; }
 .params-name { font-family: var(--mono); font-size: 12px; color: var(--text-1); word-break: break-all; }
-.params-value {
-  width: 100%; background: rgba(11, 14, 18, 0.6);
-  border: 1px solid var(--border); border-radius: var(--radius-btn);
-  padding: 6px 9px; color: var(--text-1); font-size: 12px; outline: none;
-  font-family: var(--mono); font-variant-numeric: tabular-nums;
-  transition: border-color 130ms, box-shadow 130ms;
-}
-.params-value:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
-.params-value.invalid { border-color: var(--critical); box-shadow: 0 0 0 2px rgba(255, 81, 77, 0.2); }
-.params-value[readOnly] { background: var(--surface-2); color: var(--text-2); cursor: not-allowed; }
+/* .field-input.field-input-mono, tightened for the dense parameter table.
+   The .invalid state comes from components.css. */
+.field-input.params-value { padding: 6px 9px; }
+.field-input.params-value[readOnly] { background: var(--surface-2); color: var(--text-2); cursor: not-allowed; }
 .params-type { font-size: 10px; color: var(--text-3); font-family: var(--mono); text-align: center; }
 /* .params-apply is .btn primary sm; preserve the muted (gray) disabled look
    so a disabled Apply reads as inert, not as a faded green button. */
@@ -1302,15 +1129,9 @@ svg { display: block; }
    page reads as its own surface, not a params reuse. */
 .firmware-card { display: flex; flex-direction: column; gap: 12px; }
 .firmware-file-row { display: flex; align-items: center; gap: 10px; }
-/* .firmware-file-input mirrors .params-search (same surface/border/radius/focus
-   ring) so the native file picker reads as part of the same form language. */
-.firmware-file-input {
-  background: rgba(11, 14, 18, 0.6);
-  border: 1px solid var(--border); border-radius: var(--radius-btn);
-  padding: 6px 10px; color: var(--text-1); font-size: 12px; outline: none;
-  font-family: var(--sans);
-}
-.firmware-file-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+/* .field-input; the native file picker only needs its own width/padding so
+   the browser-drawn "Choose file" button is not cramped. */
+.field-input.firmware-file-input { width: auto; padding: 6px 10px; }
 .firmware-filename {
   font-family: var(--mono); font-size: 11.5px; color: var(--text-2);
   word-break: break-all;

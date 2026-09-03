@@ -133,23 +133,15 @@ Corvus.setup = (function () {
    * ring, spring-eased motion (handled in CSS via transform/opacity only).
    */
   function makeTile(viewId, iconId, title, desc) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "setup-tile";
+    const btn = Corvus.ui.tile({
+      className: "setup-tile",
+      icon: iconId,
+      title,
+      desc,
+      chevron: true,
+      onClick: () => openView(viewId),
+    });
     btn.dataset.view = viewId;
-    btn.setAttribute("aria-label", title);
-
-    const iconWrap = S.el("span", "setup-tile-icon");
-    iconWrap.appendChild(S.icon(iconId));
-
-    const body = S.el("div", "setup-tile-body");
-    body.appendChild(S.el("span", "setup-tile-title", title));
-    body.appendChild(S.el("span", "setup-tile-desc", desc));
-
-    btn.appendChild(iconWrap);
-    btn.appendChild(body);
-    btn.appendChild(S.icon("chevron-right"));
-    btn.addEventListener("click", () => openView(viewId));
     return btn;
   }
 

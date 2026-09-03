@@ -9,8 +9,26 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 <link href="vendor/maplibre-gl.css" rel="stylesheet" />
+<!-- Load order is load-bearing: themes.css owns every design token, main.css
+     consumes them for layout/screens, components.css layers the shared
+     component system on top. Neither of the latter two defines a token. -->
+<link rel="stylesheet" href="css/themes.css" />
 <link rel="stylesheet" href="css/main.css" />
 <link rel="stylesheet" href="css/components.css" />
+<script>
+/* Apply the saved theme BEFORE first paint. Corvus.theme re-applies (and
+   reconciles with the backend config) once the app boots; doing it here as
+   well is what stops the default green flashing over a light/blue operator
+   theme on every load. Deliberately inline, tiny, and dependency-free —
+   it must run before the stylesheets paint anything. Any failure (private
+   mode, disabled storage) silently leaves the default theme. */
+(function () {
+  try {
+    var t = localStorage.getItem("corvus.theme");
+    if (t) document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+})();
+</script>
 </head>
 <body>
 <div class="app" id="app">
@@ -30,7 +48,6 @@
           title="Download offline map" aria-label="Download offline map">
           <i data-lucide="download"></i>
         </button>
-        <div class="tiles-popover glass corvus-enter" id="tilesPopover" hidden></div>
 
         <div class="flight-actions glass" id="flightActions">
           <button class="fa-btn arm" id="btnArm" title="Arm / Disarm">
@@ -54,7 +71,7 @@
             <span>PLAN</span>
           </button>
           <div class="fa-divider"></div>
-          <select class="mode-selector" id="modeSelector" title="Flight Mode">
+          <select class="field-select mode-selector" id="modeSelector" title="Flight Mode">
             <option value="">SELECT MODE</option>
           </select>
         </div>
@@ -178,7 +195,7 @@
                 <div class="link-field">
                   <label class="link-field-label" for="linkSerialPort">Port</label>
                   <div class="link-row">
-                    <select class="link-select" id="linkSerialPort" autocomplete="off" aria-label="Serial port">
+                    <select class="field-select field-input-mono link-select" id="linkSerialPort" autocomplete="off" aria-label="Serial port">
                       <option value="">Select serial port…</option>
                     </select>
                     <button class="icon-btn" id="linkRefreshPorts" type="button"
@@ -189,7 +206,7 @@
                 </div>
                 <div class="link-field">
                   <label class="link-field-label" for="linkBaud">Baud</label>
-                  <select class="link-select" id="linkBaud" autocomplete="off" aria-label="Baud rate">
+                  <select class="field-select field-input-mono link-select" id="linkBaud" autocomplete="off" aria-label="Baud rate">
                     <option value="9600">9600</option>
                     <option value="19200">19200</option>
                     <option value="38400">38400</option>
@@ -211,7 +228,7 @@
                 </div>
                 <div class="link-field">
                   <label class="link-field-label" for="linkCustomConn">Connection string</label>
-                  <input class="link-input" id="linkCustomConn" type="text"
+                  <input class="field-input field-input-mono link-input" id="linkCustomConn" type="text"
                     placeholder="udp:0.0.0.0:14540" autocomplete="off" spellcheck="false" />
                 </div>
                 <button class="btn link-connect" id="linkCustomConnect" type="button" data-variant="primary" data-shape="block">

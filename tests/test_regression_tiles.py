@@ -153,11 +153,19 @@ def test_tiles_sources_returns_all_registered_ids(tile_server) -> None:
     assert status == 200
     data = json.loads(body)
     ids = {s["id"] for s in data["sources"]}
-    assert ids == {"satellite", "streets", "hybrid", "topo", "osm"}
     assert ids == set(TILE_SOURCES)
-    # Each source entry carries the cache stats fields the frontend needs.
+    # The four map services the Appearance settings offer must all be reachable.
+    assert {s["provider"] for s in data["sources"]} == {"esri", "osm", "google", "bing"}
+    # Each source entry carries what the frontend needs: identity, the provider
+    # grouping, the credit string (the frontend no longer mirrors it), and the
+    # cache stats.
     for s in data["sources"]:
-        assert {"id", "label", "maxzoom", "cached_count"} <= set(s)
+        assert {"id", "label", "provider", "style", "maxzoom",
+                "attribution", "cached_count"} <= set(s)
+    # The response also carries the provider grouping itself, which drives the
+    # map-service picker.
+    assert {p["id"] for p in data["providers"]} == {"esri", "osm", "google", "bing"}
+    assert data["default_provider"] in {p["id"] for p in data["providers"]}
 
 
 # ---------------------------------------------------------------------------
