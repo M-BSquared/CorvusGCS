@@ -136,6 +136,13 @@ Corvus.map = (function () {
     streets: { label: "Streets", maxzoom: 19, attribution: "© Esri, HERE, Garmin, NGA, USGS" },
   };
 
+  // Module-level so the config-load path and setBaseLayer can update the active
+  // base layer independently of the buildControls closure (which used to own a
+  // local `active`). `layersPopoverEl` lets setBaseLayer sync button .active
+  // classes from outside the click handler.
+  let activeLayer = "satellite";
+  let layersPopoverEl = null;
+
   function tileUrl(key) {
     return "/api/tiles/" + key + "/{z}/{x}/{y}.png";
   }
@@ -228,6 +235,7 @@ Corvus.map = (function () {
 
   function setBaseLayer(key) {
     const spec = TILE[key] || TILE.satellite;
+    activeLayer = key;
     if (map.getLayer("base")) map.removeLayer("base");
     if (map.getSource("base")) map.removeSource("base");
     map.addSource("base", {
@@ -239,9 +247,17 @@ Corvus.map = (function () {
     });
     // Insert base BELOW "path-glow" so the track/waypoints stay on top.
     map.addLayer({ id: "base", type: "raster", source: "base" }, "path-glow");
+    // Keep the layer-switcher buttons in sync. The popover may not exist yet
+    // during the initial config-load race (buildControls runs on map "load"),
+    // so guard defensively.
+    if (layersPopoverEl) {
+      layersPopoverEl.querySelectorAll(".layer-opt").forEach((x) =>
+        x.classList.toggle("active", x.dataset.layer === key));
+    }
   }
 
   function buildControls(container, layersPopover) {
+    layersPopoverEl = layersPopover;
     const items = [
       { id: "in", icon: "plus", title: "Zoom in" },
       { id: "out", icon: "minus", title: "Zoom out" },
@@ -273,17 +289,17 @@ Corvus.map = (function () {
       { id: "streets", label: "Streets" },
     ];
     layersPopover.innerHTML = "<h4>Map layers</h4>";
-    let active = "satellite";
     layers.forEach((l) => {
       const b = document.createElement("button");
-      b.className = "layer-opt" + (l.id === active ? " active" : "");
+      b.className = "layer-opt" + (l.id === activeLayer ? " active" : "");
       b.dataset.layer = l.id;
       b.innerHTML = '<span class="dot"></span>' + l.label;
       b.addEventListener("click", () => {
-        active = l.id;
         setBaseLayer(l.id);
-        layersPopover.querySelectorAll(".layer-opt").forEach((x) =>
-          x.classList.toggle("active", x.dataset.layer === l.id));
+        // Persist the choice so it survives restarts. Fire-and-forget: a
+        // failed save (backend busy/offline) must never break the switch.
+        Corvus.telemetry.postAction("/api/config", { map: { base_layer: l.id } })
+          .catch(() => {});
       });
       layersPopover.appendChild(b);
     });
@@ -359,7 +375,11 @@ Corvus.map = (function () {
     if (!vehicleMarker || !state.connected) return;
     setVehicleTarget(state);
 
-    if (firstFix) {
+    if (firstFix && state.position && state.position[0] !== 0 && state.position[1] !== 0) {
+      // Only center on a REAL GPS fix: state.connected reflects the MAVLink
+      // heartbeat (not GPS), and the state store defaults position to [0,0]
+      // until a fix arrives, so centering on the first connected sample
+      // would ease to "null island" at zoom 16 before the real fix lands.
       firstFix = false;
       map.easeTo({ center: state.position, zoom: 16, duration: 1000 });
     }
@@ -381,6 +401,10 @@ Corvus.map = (function () {
           properties: {},
         });
       }
+      // The plan line's first segment starts at the vehicle, so it must track
+      // the vehicle too. Only when a plan exists — avoids repainting the route
+      // source on every telemetry sample when no waypoints are planned.
+      if (waypoints.length > 0) updateRoute();
     }
 
     if (state.home && state.home[0] !== 0 && homeMarker) {
@@ -433,16 +457,43 @@ Corvus.map = (function () {
     notifyWaypoints();
   }
 
-  /** Push the current waypoint coordinates into the dashed route source.
-   *  A LineString needs >= 2 points, so < 2 renders an empty line. */
+  /** Current vehicle [lng, lat] when telemetry reports a real GPS fix, else
+   *  null. Rendering-only: never exposed as a flyable waypoint, so
+   *  getWaypoints/notifyWaypoints and the gotopoints payload stay
+   *  operator-only. Mirrors the defensive `Corvus.telemetry && ...getState()`
+   *  style used elsewhere so a not-yet-loaded telemetry module degrades to []. */
+  function vehicleLngLat() {
+    const s = Corvus.telemetry && Corvus.telemetry.getState();
+    if (!s || !s.connected || !s.position) return null;
+    const lng = s.position[0], lat = s.position[1];
+    if (!isFinite(lng) || !isFinite(lat)) return null;
+    if (lng === 0 && lat === 0) return null;   // no GPS fix
+    return [lng, lat];
+  }
+
+  /** Plan-route coordinates: the vehicle position (when a real fix is
+   *  available) prepended to the operator waypoints, in [lng, lat] form, so
+   *  the first segment (drone -> wp1) renders even with a single waypoint. A
+   *  LineString needs >= 2 points, so a lone waypoint without a vehicle fix
+   *  collapses to [] rather than feeding MapLibre a 1-point array. Pure: no
+   *  source mutation, safe in Node (wpRouteSource is null there). */
+  function computePlanCoords(wps) {
+    const list = wps || waypoints;
+    if (!list.length) return [];
+    const wpCoords = list.map((w) => [w.lon, w.lat]);
+    const veh = vehicleLngLat();
+    if (veh) return [veh, ...wpCoords];
+    return wpCoords.length >= 2 ? wpCoords : [];
+  }
+
+  /** Push the plan-route coordinates into the dashed route source. The line
+   *  starts at the vehicle's current position (when connected) so the drone
+   *  -> wp1 segment is visible and follows the vehicle as it moves. */
   function updateRoute() {
     if (!wpRouteSource) return;
-    const coords = waypoints.length >= 2
-      ? waypoints.map((w) => [w.lon, w.lat])
-      : [];
     wpRouteSource.setData({
       type: "Feature",
-      geometry: { type: "LineString", coordinates: coords },
+      geometry: { type: "LineString", coordinates: computePlanCoords() },
       properties: {},
     });
   }
@@ -591,6 +642,18 @@ Corvus.map = (function () {
       started = true;
       window.dispatchEvent(new Event("corvus:mapready"));
     });
+
+    // Load the operator's saved base layer and swap to it. The map already
+    // rendered "satellite" synchronously above, so a slow or failed fetch just
+    // leaves the default — the map is never blank (offline-safe). Errors are
+    // swallowed: /api/config may not exist yet or the backend may be busy.
+    Corvus.telemetry.requestJson("/api/config").then((res) => {
+      const key = res && res.config && res.config.map && res.config.map.base_layer;
+      if (!key || !TILE[key] || key === "satellite") return;
+      activeLayer = key;
+      if (started) setBaseLayer(key);
+      else window.addEventListener("corvus:mapready", () => setBaseLayer(key), { once: true });
+    }).catch(() => {});
   }
 
   return {
@@ -609,5 +672,11 @@ Corvus.map = (function () {
     // each with a non-empty attribution). Read-only; mirrors the `_animators`
     // hook convention on Corvus.anim above.
     _TILE: () => TILE,
+    // test hook: pure coordinate computation for the plan route (vehicle
+    // position prefix + operator waypoints, or []). Accepts an optional
+    // waypoint list for testing in Node, where the internal `waypoints` array
+    // cannot be populated without a map; omit it to use the live waypoints.
+    // Never touches wpRouteSource (null in Node). Mirrors the _TILE convention.
+    _planRouteCoords: (wps) => computePlanCoords(wps),
   };
 })();

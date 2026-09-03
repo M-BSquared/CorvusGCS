@@ -11,6 +11,7 @@ from __future__ import annotations
 import http.client
 import json
 import queue
+import sqlite3
 import threading
 import urllib.error
 from typing import Any
@@ -328,6 +329,87 @@ def test_tiles_serve_out_of_range_zoom_returns_404(tile_server) -> None:
     # z=30 exceeds the 0..22 cap; the regex matches digits, the handler rejects.
     status, _ = _get(server, "/api/tiles/satellite/30/0/0.png")
     assert status == 404
+
+
+def _get_full(server: CorvusServer, path: str) -> tuple[int, str, bytes]:
+    """Like _get but also returns the response headers (for Content-Type checks)."""
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=5)
+    conn.request("GET", path)
+    resp = conn.getresponse()
+    body = resp.read()
+    ctype = resp.getheader("Content-Type", "")
+    conn.close()
+    return resp.status, ctype, body
+
+
+def test_tiles_sources_exposes_cached_minmax_and_source_cap(tile_server) -> None:
+    """``maxzoom`` is the SOURCE cap (19); cached stats live under cached_*.
+
+    Pins the duplicate-key rename: previously a second ``maxzoom`` key held the
+    cache max (or null when empty), clobbering the real 19 cap and forcing a
+    hardcoded SOURCE_ZOOM_CAP workaround in the UI.
+    """
+    server, _, caches = tile_server
+    caches["satellite"].put_tile(5, 3, 2, b"\x89PNG\r\n\x1a\n" + b"x")
+    status, body = _get(server, "/api/tiles/sources")
+    assert status == 200
+    src = next(s for s in json.loads(body)["sources"] if s["id"] == "satellite")
+    # maxzoom is the constant source cap, NOT the cache max (5).
+    assert src["maxzoom"] == 19
+    assert src["minzoom"] == 0
+    # The cache stats are under distinct keys that can never clobber maxzoom.
+    assert src["cached_count"] == 1
+    assert src["cached_minzoom"] == 5
+    assert src["cached_maxzoom"] == 5
+    # An empty cache reports null cached_* (not 0) so the UI can tell "no tiles".
+    empty = next(s for s in json.loads(body)["sources"] if s["id"] == "streets")
+    assert empty["cached_count"] == 0
+    assert empty["cached_minzoom"] is None
+    assert empty["cached_maxzoom"] is None
+
+
+def test_tiles_serve_get_tile_exception_treated_as_miss(tile_server, monkeypatch) -> None:
+    """A raised get_tile (closed/corrupt cache) must NOT 500 — it's a cache miss.
+
+    The handler wraps the cache read in try/except so a closed SQLite handle
+    during the shutdown close-race falls through to the upstream fetch (or a
+    404 offline) instead of crashing the request handler.
+    """
+    server, _, caches = tile_server
+
+    def boom(z: int, x: int, y: int) -> bytes | None:
+        raise sqlite3.ProgrammingError("Cannot operate on a closed database")
+
+    monkeypatch.setattr(caches["satellite"], "get_tile", boom)
+    # Offline so the fall-through upstream fetch also fails -> 404, not 500.
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda *a, **k: (_ for _ in ()).throw(urllib.error.URLError("offline")),
+    )
+    status, _ = _get(server, "/api/tiles/satellite/5/0/0.png")
+    assert status == 404
+
+
+def test_tiles_serve_sniffs_jpeg_content_type(tile_server) -> None:
+    """Satellite tiles are JPEG; the Content-Type is sniffed from magic bytes."""
+    server, _, caches = tile_server
+    jpeg = b"\xff\xd8\xff\xe0" + b"JFIF-data"
+    caches["satellite"].put_tile(6, 1, 1, jpeg)
+    status, ctype, body = _get_full(server, "/api/tiles/satellite/6/1/1.png")
+    assert status == 200
+    assert ctype == "image/jpeg", f"JPEG magic must sniff as image/jpeg, got {ctype!r}"
+    assert body == jpeg
+
+
+def test_tiles_serve_sniffs_png_content_type(tile_server) -> None:
+    """Streets/topo tiles are PNG; the magic-byte sniff labels them image/png."""
+    server, _, caches = tile_server
+    png = b"\x89PNG\r\n\x1a\n" + b"PNG-data"
+    caches["streets"].put_tile(6, 1, 1, png)
+    status, ctype, body = _get_full(server, "/api/tiles/streets/6/1/1.png")
+    assert status == 200
+    assert ctype == "image/png"
+    assert body == png
 
 
 # ---------------------------------------------------------------------------

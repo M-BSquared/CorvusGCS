@@ -42,7 +42,7 @@ Corvus.panel = (function () {
       try {
         const entry = JSON.parse(e.data);
         if (entry.name === "ping") return;
-        addConsoleLine(entry.level, entry.text || entry.name);
+        addConsoleLine(entry.name === "SHELL" ? "shell" : entry.level, entry.text || entry.name);
       } catch (err) {
         console.error("console SSE parse:", err);
       }
@@ -60,9 +60,11 @@ Corvus.panel = (function () {
     try {
       const res = await Corvus.telemetry.sendCommand(v);
       if (res.help) {
-        addConsoleLine("", "Available: arm, disarm, mode <MODE>, takeoff [ALT], land, rtl, help");
+        addConsoleLine("", "Available: arm, disarm, mode <MODE>, takeoff [ALT], land, rtl, listener <topic>, top, free, dmesg, shell <cmd>, help");
       } else if (res.error) {
         addConsoleLine("error", res.error);
+      } else if (res.shell) {
+        addConsoleLine("info", "Shell command sent — output streaming…");
       } else if (res.ok) {
         addConsoleLine("success", `Command sent: ${v}`);
       }
@@ -78,33 +80,61 @@ Corvus.panel = (function () {
     connectConsoleSSE();
   }
 
-  function renderSSHCards() {
-    const devices = [
-      { name: "CORVUS-01", host: "192.168.2.10" },
-      { name: "CORVUS-GCS", host: "192.168.2.5" },
-    ];
+  async function renderSSHCards() {
     sshContent.innerHTML = "";
+    let devices = [];
+    try {
+      const data = await Corvus.telemetry.requestJson("/api/ssh/connections");
+      devices = (data && data.connections) || [];
+    } catch (_e) {
+      const note = document.createElement("div");
+      note.className = "ssh-card";
+      note.innerHTML = '<div class="page-card-desc">Could not load connections.</div>';
+      sshContent.appendChild(note);
+    }
     devices.forEach((dev) => {
       const card = document.createElement("div");
       card.className = "ssh-card";
+      const connected = !!dev.connected;
       card.innerHTML =
         `<div class="ssh-card-top">
           <div class="ssh-icon" data-lucide="server"></div>
           <div class="ssh-info">
             <span class="ssh-name">${dev.name}</span>
-            <span class="ssh-host">${dev.host}</span>
+            <span class="ssh-host">${dev.host}${dev.port ? ":" + dev.port : ""}</span>
           </div>
-          <span class="ssh-status" data-status="${dev.name}"><span class="dot"></span>OFFLINE</span>
+          <span class="ssh-status${connected ? " connected" : ""}"><span class="dot"></span>${connected ? "CONNECTED" : "OFFLINE"}</span>
         </div>`;
+      const actions = document.createElement("div");
+      actions.className = "ssh-card-actions";
       const btn = document.createElement("button");
       btn.className = "btn ssh-connect";
       btn.setAttribute("data-variant", "primary");
       btn.setAttribute("data-shape", "block");
       btn.textContent = "CONNECT";
-      btn.dataset.host = dev.host;
       btn.dataset.name = dev.name;
       btn.addEventListener("click", () => connectSSH(dev.name, dev.host, btn));
-      card.appendChild(btn);
+      actions.appendChild(btn);
+      const rm = document.createElement("button");
+      rm.className = "icon-btn";
+      rm.setAttribute("aria-label", `Remove ${dev.name}`);
+      rm.title = `Remove ${dev.name}`;
+      const trash = document.createElement("i");
+      trash.setAttribute("data-lucide", "trash-2");
+      rm.appendChild(trash);
+      rm.addEventListener("click", async () => {
+        if (!confirm(`Remove connection ${dev.name}?`)) return;
+        try {
+          await fetch("/api/ssh/connections/remove", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: dev.name }),
+          }).then((r) => r.json());
+        } catch (_e) {}
+        renderSSHCards();
+      });
+      actions.appendChild(rm);
+      card.appendChild(actions);
       sshContent.appendChild(card);
     });
     const addBtn = document.createElement("button");
@@ -112,35 +142,77 @@ Corvus.panel = (function () {
     addBtn.setAttribute("data-variant", "secondary");
     addBtn.setAttribute("data-shape", "block");
     addBtn.textContent = "+ ADD CONNECTION";
-    addBtn.addEventListener("click", addSSHConnection);
+    addBtn.addEventListener("click", () => addSSHConnection());
     sshContent.appendChild(addBtn);
     refreshIcons();
   }
 
+  // Surface a connect failure inline in the existing SSH card (the card list
+  // stays visible) instead of opening a fresh terminal + /api/ssh/stream SSE
+  // on a failed connection — which previously leaked an SSE and rendered a
+  // misleading "CONNECTED" terminal for a connection that did not succeed.
+  // The console error log (addConsoleLine) is kept on the res.error path.
+  function showSSHCardError(btn, msg) {
+    if (!btn) return;   // no card to surface into — caller logs elsewhere
+    btn.textContent = "CONNECT";
+    const actions = btn.parentNode;
+    if (!actions) return;
+    let note = actions.querySelector(".ssh-card-error");
+    if (!note) {
+      note = document.createElement("span");
+      note.className = "ssh-card-error";
+      note.style.color = "var(--critical)";
+      note.style.fontSize = "11px";
+      note.style.marginLeft = "8px";
+      actions.appendChild(note);
+    }
+    note.textContent = msg || "Connection failed";
+  }
+
   async function connectSSH(name, host, btn) {
-    btn.textContent = "CONNECTING …";
-    btn.disabled = true;
+    if (btn) { btn.textContent = "CONNECTING …"; btn.disabled = true; }
+    let res;
     try {
-      const res = await fetch("/api/ssh/connect", {
+      res = await fetch("/api/ssh/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, host, username: "corvus", port: 22 }),
+        body: JSON.stringify({ name }),   // connect by name; backend loads saved creds
       }).then((r) => r.json());
 
       if (res.ok && res.connected) {
         sshConnectedName = name;
         renderSSHTerminal(name, host);
       } else {
+        // Failure: do NOT open a fresh terminal/SSE — surface the error in the
+        // existing card so the operator can retry from the connection list.
         addConsoleLine("error", `SSH connect failed: ${res.error || host}`);
-        renderSSHTerminal(name, host, res.error || "Connection failed");
+        showSSHCardError(btn, res.error || "Connection failed");
       }
     } catch (err) {
-      renderSSHTerminal(name, host, err.message);
+      res = { ok: false, error: err.message };
+      showSSHCardError(btn, err.message);
     }
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
+    return res;
+  }
+
+  // Hand off to the live terminal view from outside the SSH tab (e.g. the
+  // Settings page CONNECT button). Sets the connected-name state and renders
+  // the terminal + SSE stream exactly once; does NOT issue a connect POST
+  // (the caller already connected by name).
+  function showSSHTerminal(name, host) {
+    sshConnectedName = name;
+    renderSSHTerminal(name, host);
   }
 
   function renderSSHTerminal(name, host, errorMsg) {
+    // Close any prior SSH stream BEFORE opening a new one. Without this,
+    // connecting to device B while A is connected (via the card CONNECT, the
+    // Add-Connection modal, or showSSHTerminal) overwrites the reference and
+    // leaves A's /api/ssh/stream open for the page lifetime — a leaked socket
+    // whose output listener still calls appendSSHOutput into the now-different
+    // sshOutputEl (cross-session output bleed).
+    if (sshSseSource) { try { sshSseSource.close(); } catch (_e) {} sshSseSource = null; }
     sshContent.innerHTML = "";
     const card = document.createElement("div");
     card.className = "ssh-card";
@@ -221,7 +293,11 @@ Corvus.panel = (function () {
     sshOutputEl.scrollTop = sshOutputEl.scrollHeight;
   }
 
-  function addSSHConnection() {
+  function addSSHConnection(onSaved) {
+    // onSaved: optional () => void, invoked after a successful save so a caller
+    // (e.g. the Settings page) can refresh its own list. A click Event passed
+    // via addEventListener is not a function, so it is safely ignored.
+    const onSavedCb = typeof onSaved === "function" ? onSaved : null;
     const overlay = document.createElement("div");
     overlay.className = "ssh-modal-overlay";
     overlay.innerHTML = `
@@ -248,8 +324,13 @@ Corvus.panel = (function () {
         </div>
         <div class="ssh-field">
           <label class="ssh-field-label">Password</label>
-          <input type="password" class="ssh-field-input mono" id="sshFldPass" placeholder="••••••••" />
+          <input type="password" class="ssh-field-input mono" id="sshFldPass" placeholder="optional — use key file" />
         </div>
+        <div class="ssh-field">
+          <label class="ssh-field-label">Key file</label>
+          <input type="text" class="ssh-field-input mono" id="sshFldKey" placeholder="/home/user/.ssh/id_rsa" />
+        </div>
+        <div class="ssh-modal-error" id="sshModalError"></div>
         <div class="ssh-modal-actions">
           <button class="btn ssh-modal-btn" data-variant="secondary" id="sshModalCancel">CANCEL</button>
           <button class="btn ssh-modal-btn" data-variant="primary" id="sshModalConnect">
@@ -267,22 +348,51 @@ Corvus.panel = (function () {
     overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
     overlay.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
 
+    const errEl = overlay.querySelector("#sshModalError");
+    const showError = (msg) => { if (errEl) errEl.textContent = msg || ""; };
+
     overlay.querySelector("#sshModalConnect").addEventListener("click", async () => {
       const name = overlay.querySelector("#sshFldName").value.trim() || "DEVICE";
       const host = overlay.querySelector("#sshFldHost").value.trim();
       const port = parseInt(overlay.querySelector("#sshFldPort").value) || 22;
       const username = overlay.querySelector("#sshFldUser").value.trim() || "corvus";
       const password = overlay.querySelector("#sshFldPass").value || null;
-      if (!host) return;
-      overlay.remove();
+      const key_path = overlay.querySelector("#sshFldKey").value.trim() || null;
+      if (!host) { showError("Host is required."); return; }
+      showError("");
+
+      // 1) Save first so connect-by-name can load the creds from config.
+      let saveRes;
+      try {
+        saveRes = await fetch("/api/ssh/connections", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, host, port, username, password, key_path }),
+        }).then((r) => r.json());
+      } catch (err) {
+        showError((err && err.message) || "Save failed");
+        return;
+      }
+      if (!saveRes || !saveRes.ok) {
+        showError((saveRes && saveRes.error) || "Save failed");
+        return;
+      }
+      if (onSavedCb) onSavedCb();
+      close();
+
+      // 2) Connect by name — the creds are now persisted.
       try {
         const res = await fetch("/api/ssh/connect", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, host, port, username, password }),
+          body: JSON.stringify({ name }),
         }).then((r) => r.json());
-        if (res.ok) renderSSHTerminal(name, host);
-        else renderSSHTerminal(name, host, res.error || "Connection failed");
+        if (res.ok && res.connected) {
+          sshConnectedName = name;
+          renderSSHTerminal(name, host);
+        } else {
+          renderSSHTerminal(name, host, res.error || "Connection failed");
+        }
       } catch (err) {
         renderSSHTerminal(name, host, (err && err.message) || "Connection failed");
       }
@@ -367,5 +477,5 @@ Corvus.panel = (function () {
     refreshIcons();
   }
 
-  return { init, toggle, addConsoleLine };
+  return { init, toggle, addConsoleLine, addSSHConnection, showSSHTerminal };
 })();

@@ -10,6 +10,7 @@ RTL, etc.). Mirrors the patterns in ``tests/test_mavlink_params.py`` and
 """
 from __future__ import annotations
 
+import math
 import sys
 from typing import Any
 
@@ -75,7 +76,7 @@ def test_autotune_refused_while_armed_no_command_sent() -> None:
     assert bridge._conn.mav.commands == []
 
 
-@pytest.mark.parametrize("sensor", ["gyro", "compass", "baro", "accel", "airspeed"])
+@pytest.mark.parametrize("sensor", ["gyro", "compass", "baro", "accel", "airspeed", "motor"])
 def test_every_calibration_sensor_refused_while_armed(sensor: str) -> None:
     bridge = _armed_bridge_with_autoack()
     assert bridge.calibrate(sensor) is False
@@ -179,3 +180,26 @@ def test_disarmed_vehicle_allows_set_param_calibrate_autotune() -> None:
     assert "armed" not in bridge.get_last_command_error()
     assert bridge.autotune("all") is True
     assert "armed" not in bridge.get_last_command_error()
+
+
+def test_calibrate_motor_disarmed_sends_preflight_with_param7_one() -> None:
+    """Motor/ESC calibration (disarmed) must send exactly one
+    MAV_CMD_PREFLIGHT_CALIBRATION with param7=1.0 and params 1-6 NaN — the
+    PX4 Commander.cpp motor/ESC path verified across v1.16/1.17/1.18."""
+    bridge = ready_bridge()
+    assert bridge._store.get_snapshot()["armed"] is False
+
+    def on_send(args: tuple) -> None:
+        bridge._dispatch(ack(int(args[2]), mavutil.mavlink.MAV_RESULT_ACCEPTED))
+    bridge._conn.mav.on_send = on_send
+
+    assert bridge.calibrate("motor") is True
+    assert "armed" not in bridge.get_last_command_error()
+
+    cmds = bridge._conn.mav.commands
+    assert len(cmds) == 1, "exactly one COMMAND_LONG sent (retries=0)"
+    cmd = cmds[0]
+    # command_long_send args: (sys, comp, cmd, confirm, p1..p7) -> p7 is index 10.
+    assert int(cmd[2]) == mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION
+    assert cmd[10] == 1.0, "param7=1.0 selects motor/ESC calibration"
+    assert all(math.isnan(cmd[i]) for i in range(4, 10)), "params 1-6 are NaN"

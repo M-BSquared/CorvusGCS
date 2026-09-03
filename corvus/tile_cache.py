@@ -22,10 +22,14 @@ def xyz_to_tms(z: int, y: int) -> int:
 def default_cache_dir() -> str:
     """Return the conventional on-disk location for the tile cache.
 
-    The directory is created elsewhere (lazily, by whoever first opens a
-    cache there); this helper only reports the path string.
+    Honors an operator override via the CORVUS_TILE_CACHE_DIR env var (set
+    from cfg.tile_cache_dir by serve.py/app.py) so the configured cache dir
+    is no longer silently ignored; falls back to ~/.corvus/tiles. The
+    directory is created elsewhere (lazily, by whoever first opens a cache
+    there via mkdir(parents=True, exist_ok=True)), mirroring
+    mavlink_bridge.default_log_dir; this helper only reports the path.
     """
-    return os.path.expanduser("~/.corvus/tiles")
+    return os.environ.get("CORVUS_TILE_CACHE_DIR") or os.path.expanduser("~/.corvus/tiles")
 
 
 class TileCache:
@@ -78,6 +82,12 @@ class TileCache:
 
         Rows are stored in TMS (y-flipped) form per the MBTiles spec.
         """
+        # Shutdown close-race: CorvusServer.shutdown() may close this
+        # connection while an in-flight HTTP handler thread (daemon, not
+        # joined) still calls get_tile. Bail to the safe default instead of
+        # hitting sqlite3.ProgrammingError on a closed connection.
+        if self._closed:
+            return None
         row_num = xyz_to_tms(z, y)
         with self._lock:
             cur = self._conn.execute(
@@ -90,6 +100,8 @@ class TileCache:
 
     def put_tile(self, z: int, x: int, y: int, blob: bytes) -> None:
         """Insert or replace the tile for XYZ (z,x,y). No-op on an empty blob."""
+        if self._closed:
+            return
         if not blob:
             return
         row_num = xyz_to_tms(z, y)
@@ -103,6 +115,8 @@ class TileCache:
 
     def has_tile(self, z: int, x: int, y: int) -> bool:
         """Return True if a tile for XYZ (z,x,y) is present in the cache."""
+        if self._closed:
+            return False
         row_num = xyz_to_tms(z, y)
         with self._lock:
             cur = self._conn.execute(
@@ -117,6 +131,8 @@ class TileCache:
 
         ``minzoom``/``maxzoom`` are None when the cache is empty.
         """
+        if self._closed:
+            return {"count": 0, "minzoom": None, "maxzoom": None}
         with self._lock:
             cur = self._conn.execute(
                 "SELECT COUNT(*), MIN(zoom_level), MAX(zoom_level) FROM tiles"
@@ -148,6 +164,8 @@ class TileCache:
 
     def set_metadata(self, name: str, value: str) -> None:
         """Insert or replace a metadata row keyed by *name*."""
+        if self._closed:
+            return
         with self._lock:
             self._conn.execute(
                 "INSERT OR REPLACE INTO metadata (name, value) VALUES (?,?)",
@@ -157,6 +175,8 @@ class TileCache:
 
     def get_metadata(self, name: str) -> str | None:
         """Return the metadata value for *name*, or None if absent."""
+        if self._closed:
+            return None
         with self._lock:
             cur = self._conn.execute(
                 "SELECT value FROM metadata WHERE name=?", (name,)

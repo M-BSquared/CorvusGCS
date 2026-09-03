@@ -250,7 +250,7 @@
             <div class="console-output" id="consoleOutput"></div>
             <div class="console-input-row">
               <span class="console-prompt">&gt;&gt;</span>
-              <input type="text" id="consoleInput" class="console-input" placeholder="Enter MAVLink command..." autocomplete="off" spellcheck="false" />
+              <input type="text" id="consoleInput" class="console-input" placeholder="Enter MAVLink command (try: listener sensor_combined)…" autocomplete="off" spellcheck="false" />
               <button class="btn console-send" id="consoleSend" title="Send" data-variant="primary" data-shape="round">
                 <i data-lucide="send"></i>
               </button>
@@ -284,9 +284,14 @@
     aria-labelledby="warningsTitle" aria-modal="false" hidden>
     <div class="wp-header">
       <span class="wp-title" id="warningsTitle">Notifications</span>
-      <button class="icon-btn" id="wpClose" type="button" aria-label="Close notifications" title="Close">
-        <i data-lucide="x"></i>
-      </button>
+      <div class="wp-actions">
+        <button class="icon-btn wp-clear-all" id="wpClearAll" type="button" aria-label="Clear all notifications" title="Clear all" disabled aria-disabled="true">
+          <i data-lucide="trash-2"></i>
+        </button>
+        <button class="icon-btn" id="wpClose" type="button" aria-label="Close notifications" title="Close">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
     </div>
     <div class="wp-list" id="warningsList"></div>
   </section>
@@ -309,6 +314,7 @@
 <script src="js/setup-shared.js"></script>
 <script src="js/setup-calibration.js"></script>
 <script src="js/setup-parameters.js"></script>
+<script src="js/setup-firmware.js"></script>
 <script src="js/setup.js"></script>
 <script src="js/sidenav.js"></script>
 <script src="js/tiles.js"></script>

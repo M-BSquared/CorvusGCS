@@ -55,6 +55,28 @@ class FakeEventSource {
 }
 global.EventSource = FakeEventSource;
 
+// Stub fetch for the firmware upload (raw binary POST, not postAction). The
+// firmware page POSTs the file body directly via fetch and reads res.json();
+// tests drive the response via setFetchResponse. Reset per test with resetFetch.
+let fetchCalls = [];
+let _fetchResp = { ok: true, json: async () => ({ ok: true, state: "flashing" }) };
+global.fetch = (url, opts) => {
+  fetchCalls.push({ url, opts });
+  return Promise.resolve(_fetchResp);
+};
+function setFetchResponse(resp) { _fetchResp = resp; }
+function resetFetch() {
+  fetchCalls = [];
+  _fetchResp = { ok: true, json: async () => ({ ok: true, state: "flashing" }) };
+}
+
+// AbortController stub — the firmware uploader creates one per upload and
+// aborts it on teardown. The signal is a plain object with a no-op listener API.
+global.AbortController = class AbortController {
+  constructor() { this.signal = { aborted: false, addEventListener() {}, removeEventListener() {} }; }
+  abort() { if (this.signal) this.signal.aborted = true; }
+};
+
 // Capture setInterval callbacks so the ~1s params poll can be driven manually
 // (never auto-fires — keeps the tests deterministic). clearInterval marks cleared.
 const intervalCbs = [];
@@ -148,8 +170,20 @@ function flushMicrotasks() { return new Promise((r) => setTimeout(r, 0)); }
 
 function findByClass(root, cls) { return root.querySelectorAll("." + cls); }
 function findOneByClass(root, cls) { return root.querySelector("." + cls); }
+// Walk every descendant of `root` and return those whose `dataset[key]`
+// matches `value`. (Cannot use findByClass(root, "*") — the stub's querySel
+// only supports class/tag selectors, and ".*" matches nothing.)
 function findByDataset(root, key, value) {
-  return findByClass(root, "*").filter((e) => e.dataset && e.dataset[key] === value);
+  const out = [];
+  function walk(list) {
+    for (const e of list) {
+      if (!e || !e._isEl) continue;
+      if (e.dataset && e.dataset[key] === value) out.push(e);
+      if (e.children) walk(e.children);
+    }
+  }
+  walk(root.children || []);
+  return out;
 }
 
 /** Fire all listeners of a given type on an element (simulate a click/input). */
@@ -216,6 +250,7 @@ function makeFakeTelemetry(opts = {}) {
 require("../src/js/setup-shared.js");
 require("../src/js/setup-calibration.js");
 require("../src/js/setup-parameters.js");
+require("../src/js/setup-firmware.js");
 require("../src/js/setup.js");
 
 // ===========================================================================
@@ -232,13 +267,14 @@ async function testTileGridRendersTwoTiles() {
   Corvus.setup.render(container);
 
   const tiles = findByClass(container, "setup-tile");
-  assert.equal(tiles.length, 2, "two tiles rendered");
+  assert.equal(tiles.length, 3, "three tiles rendered");
   assert.equal(tiles[0].dataset.view, "calibration", "first tile is Calibration");
   assert.equal(tiles[1].dataset.view, "parameters", "second tile is Parameters");
+  assert.equal(tiles[2].dataset.view, "firmware", "third tile is Firmware");
 
   // Tile titles are real text nodes.
   const titles = tiles.map((t) => findOneByClass(t, "setup-tile-title").textContent);
-  assert.deepEqual(titles, ["Calibration", "Parameters"]);
+  assert.deepEqual(titles, ["Calibration", "Parameters", "Firmware"]);
 }
 
 async function testClickTileSwapsToSubPageAndBackReturns() {
@@ -276,11 +312,11 @@ async function testTeardownRunsOnSwap() {
   Corvus.setup.render(container);
   fire(findByClass(container, "setup-tile")[0], "click");   // open calibration
   assert.equal(plot.reactCalls.length, 3, "three graphs initialised");
-  assert.equal(fake.unsubCalls, 0, "no unsub before leaving");
+  assert.equal(fake.unsubCalls, 1, "grid unsub fired on openView");
 
-  // Click back → teardown runs: unsub once, Plotly.purge exactly 3.
+  // Click back → teardown runs: grid + calibration unsub, Plotly.purge exactly 3.
   fire(findOneByClass(container, "setup-back"), "click");
-  assert.equal(fake.unsubCalls, 1, "telemetry unsub called exactly once on back");
+  assert.equal(fake.unsubCalls, 2, "grid + calibration unsub on back");
   assert.equal(plot.purgeCalls.length, 3, "Plotly.purge called exactly once per graph on back");
   delete window.Plotly;
 }
@@ -302,10 +338,55 @@ async function testReRenderTearsDownActiveSubPage() {
 
   // Re-render (left-nav re-entry) → teardown of the calibration sub-page.
   Corvus.setup.render(container);
-  assert.equal(fake.unsubCalls, 1, "unsub on re-render");
+  assert.equal(fake.unsubCalls, 2, "unsub on re-render");
   assert.equal(plot.purgeCalls.length, 3, "purge on re-render");
   assert.ok(findOneByClass(container, "setup-tiles"), "tile grid restored on re-render");
   delete window.Plotly;
+}
+
+// The Vehicle Info card must update live: PX4 version only arrives a few
+// seconds after connect via AUTOPILOT_VERSION, so the initial getState()
+// snapshot would otherwise show "—" forever. The grid subscribes once on
+// render and updates only the five row values per telemetry push.
+async function testVehicleInfoUpdatesLive() {
+  const fake = makeFakeTelemetry({
+    state: { connected: false, armed: false, autopilot: "", vehicle_type: "", px4_version: "" },
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  pageViewEl = container;
+  clock = 1000;
+
+  Corvus.setup.render(container);
+  // Grid subscribed once; fake.getSubCb() returns the grid's callback.
+
+  // Initial: every Vehicle Info row reflects the empty/disconnected snapshot.
+  assert.equal(findByDataset(container, "infoKey", "px4_version")[0].textContent, "—",
+    "PX4 Version row initially shows —");
+  assert.equal(findByDataset(container, "infoKey", "autopilot")[0].textContent, "—",
+    "Autopilot row initially shows —");
+  assert.equal(findByDataset(container, "infoKey", "connected")[0].textContent, "No",
+    "Connected row initially shows No");
+
+  // Emit a telemetry push with a real PX4 version → rows update live.
+  fake.getSubCb()({
+    connected: true, armed: false,
+    autopilot: "PX4", vehicle_type: "Standard", px4_version: "v1.18.0",
+  });
+  assert.equal(findByDataset(container, "infoKey", "px4_version")[0].textContent, "v1.18.0",
+    "PX4 Version row updated to v1.18.0");
+  assert.equal(findByDataset(container, "infoKey", "autopilot")[0].textContent, "PX4",
+    "Autopilot row updated to PX4");
+  assert.equal(findByDataset(container, "infoKey", "vehicle_type")[0].textContent, "Standard",
+    "Vehicle Type row updated to Standard");
+  assert.equal(findByDataset(container, "infoKey", "connected")[0].textContent, "Yes",
+    "Connected row updated to Yes");
+
+  // Re-render: the grid's teardown fires its unsub (no leak), then the grid
+  // re-subscribes. fake.unsubCalls increments by exactly 1 for the grid unsub.
+  const before = fake.unsubCalls;
+  Corvus.setup.render(container);
+  assert.equal(fake.unsubCalls, before + 1, "grid unsub called on re-render (no leak)");
 }
 
 // ===========================================================================
@@ -324,11 +405,12 @@ async function testCalibrationButtonsMapToTypes() {
 
   const grid = findOneByClass(container, "calib-grid");
   const btns = findByClass(grid, "calib-btn");
-  assert.equal(btns.length, 6, "six sensor-calibration buttons");
+  assert.equal(btns.length, 7, "seven sensor-calibration buttons (incl. motor/ESC)");
 
   const expected = {
     compass: "Compass", gyro: "Gyroscope", accel: "Accelerometer",
     level: "Level Horizon", airspeed: "Airspeed", baro: "Baro",
+    motor: "Motors (ESC)",
   };
   for (const btn of btns) {
     const type = btn.dataset.type;
@@ -344,12 +426,19 @@ async function testCalibrationButtonsMapToTypes() {
   assert.ok(cal, "POST /api/calibrate was issued");
   assert.deepEqual(cal.payload, { type: "compass" }, "compass maps to {type:'compass'}");
 
-  // Each of the six maps to its own type.
+  // Each button maps to its own type. The motor/ESC button opens a safety-
+  // confirm modal first; the POST only fires after the operator confirms.
   for (const type of Object.keys(expected)) {
     const btn = btns.find((b) => b.dataset.type === type);
     fake.postCalls.length = 0;
     fire(btn, "click");
     await flushMicrotasks();
+    if (type === "motor") {
+      const confirmBtn = findByClass(container, "motor-calib-confirm")[0];
+      assert.ok(confirmBtn, "motor calibration modal confirm button present");
+      fire(confirmBtn, "click");
+      await flushMicrotasks();
+    }
     const call = fake.postCalls.find((c) => c.url === "/api/calibrate");
     assert.deepEqual(call.payload, { type }, `button ${type} posts {type:'${type}'}`);
   }
@@ -802,13 +891,13 @@ async function testParametersTeardownClosesSseAndPoll() {
   const sse = eventSources[0];
   const pollId = intervalCbs[0].id;
   assert.equal(sse.closed, false, "SSE open before teardown");
-  assert.equal(fake.unsubCalls, 0, "no unsub before teardown");
+  assert.equal(fake.unsubCalls, 1, "grid unsub fired on openView");
 
   // Leave the parameters sub-page (back) → teardown closes SSE, clears poll, unsubs.
   fire(findOneByClass(container, "setup-back"), "click");
   assert.equal(sse.closed, true, "params-progress SSE closed on teardown");
   assert.ok(clearedIds.has(pollId), "params poll timer cleared on teardown");
-  assert.equal(fake.unsubCalls, 1, "telemetry unsub called on teardown");
+  assert.equal(fake.unsubCalls, 2, "grid + params unsub on back");
   assert.ok(findOneByClass(container, "setup-tiles"), "tile grid restored after back");
 }
 
@@ -831,8 +920,215 @@ async function testParametersTeardownOnReRender() {
 
   Corvus.setup.render(container);   // left-nav re-entry
   assert.equal(sse.closed, true, "SSE closed on re-render");
-  assert.equal(fake.unsubCalls, 1, "unsub on re-render");
+  assert.equal(fake.unsubCalls, 2, "unsub on re-render");
   assert.ok(findOneByClass(container, "setup-tiles"), "tiles restored on re-render");
+}
+
+// ===========================================================================
+// PART G — Firmware sub-page (Corvus.setupFirmware)
+// ===========================================================================
+//
+// The firmware page flashes PX4 firmware over a direct USB connection only.
+// It renders a Connection card (transport + the USB-only gate banner + an
+// armed banner) and a Firmware File card (file input + Upload + progress +
+// flash log). The backend gate (can_flash) drives the UI; live telemetry's
+// armed flag is overlaid. Upload POSTs the raw binary via fetch and opens a
+// /api/firmware/progress SSE; terminal events fire corvus:notifications.
+
+/** Render the firmware sub-page directly with a controllable status payload. */
+async function renderFirmware(opts = {}) {
+  const status = opts.status || {
+    can_flash: true, transport: "usb", state: "idle",
+    device: "/dev/ttyACM0", armed: false, progress: 0, message: "",
+  };
+  const fake = makeFakeTelemetry({ state: opts.telemetryState || { armed: false, connected: true } });
+  fake.setParamsResponse(status);
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  pageViewEl = container;
+  resetFetch();
+  eventSources.length = 0;
+  const navigateBack = opts.navigateBack || (() => {});
+  const destroy = Corvus.setupFirmware.render(container, navigateBack);
+  await flushMicrotasks(); // refreshStatus().then(applyStatus) resolves
+  return { container, destroy, fake, navigateBack };
+}
+
+/** Select a file in the firmware file input and return the chosen file name. */
+function selectFirmwareFile(container, name) {
+  const fileInput = findOneByClass(container, "firmware-file-input");
+  fileInput.files = [{ name: name || "px4_fmu-v5.px4", size: 1024 }];
+  fire(fileInput, "change");
+  return fileInput;
+}
+
+/** Upload (open the progress SSE). Assumes a file is selected and the gate is open. */
+async function performUpload(container) {
+  resetFetch();
+  eventSources.length = 0;
+  fire(findByClass(container, "params-download-btn")[0], "click");
+  await flushMicrotasks();
+  await flushMicrotasks();
+  await flushMicrotasks();
+  return eventSources[eventSources.length - 1];
+}
+
+async function testFirmwareSubPageRendersCardsAndControls() {
+  const { container } = await renderFirmware();
+  // Back button.
+  assert.ok(findOneByClass(container, "setup-back"), "back button rendered");
+  // Connection + Firmware File section titles.
+  const titleTexts = findByClass(container, "page-section-title").map((t) => t.textContent);
+  assert.ok(titleTexts.includes("Connection"), "Connection card present");
+  assert.ok(titleTexts.includes("Firmware File"), "Firmware File card present");
+  // File input + Upload button.
+  assert.ok(findOneByClass(container, "firmware-file-input"), "file input rendered");
+  const uploadBtn = findByClass(container, "params-download-btn")[0];
+  assert.ok(uploadBtn, "Upload (Flash Firmware) button rendered");
+  // Upload starts disabled (no file selected yet, even with the gate open).
+  assert.equal(uploadBtn.disabled, true, "Upload disabled until a file is selected");
+}
+
+async function testFirmwareUsbGateDisablesUploadAndShowsBanner() {
+  const { container } = await renderFirmware({
+    status: { can_flash: false, transport: "sik", state: "idle",
+      device: "/dev/ttyUSB0", armed: false, progress: 0, message: "" },
+  });
+  const banners = findByClass(container, "params-banner");
+  const gateBanner = banners[0];
+  assert.ok(!gateBanner.hidden, "gate banner shown when not can_flash");
+  assert.ok(/USB/.test(gateBanner.textContent), "gate banner mentions USB");
+  const uploadBtn = findByClass(container, "params-download-btn")[0];
+  assert.equal(uploadBtn.disabled, true, "Upload disabled over a non-USB link");
+}
+
+async function testFirmwareUsbAllowedHidesBannerAndEnablesUploadAfterFile() {
+  const { container } = await renderFirmware({
+    status: { can_flash: true, transport: "usb", state: "idle",
+      device: "/dev/ttyACM0", armed: false, progress: 0, message: "" },
+  });
+  const banners = findByClass(container, "params-banner");
+  const gateBanner = banners[0];
+  assert.ok(gateBanner.hidden, "gate banner hidden over direct USB");
+  const uploadBtn = findByClass(container, "params-download-btn")[0];
+  assert.equal(uploadBtn.disabled, true, "Upload disabled before a file is selected");
+  selectFirmwareFile(container);
+  assert.equal(uploadBtn.disabled, false, "Upload enabled after selecting a file over USB");
+}
+
+async function testFirmwareArmedGateDisablesUploadAndShowsBanner() {
+  const { container } = await renderFirmware({
+    status: { can_flash: false, transport: "usb", state: "idle",
+      device: "/dev/ttyACM0", armed: true, progress: 0, message: "" },
+    telemetryState: { armed: true, connected: true },
+  });
+  const banners = findByClass(container, "params-banner");
+  const armedBanner = banners[1];
+  assert.ok(!armedBanner.hidden, "armed banner shown while armed");
+  assert.ok(/arm/i.test(armedBanner.textContent), "armed banner mentions arm");
+  const uploadBtn = findByClass(container, "params-download-btn")[0];
+  assert.equal(uploadBtn.disabled, true, "Upload disabled while armed");
+}
+
+async function testFirmwareUploadCallsFetchAndOpensSse() {
+  const { container } = await renderFirmware();
+  selectFirmwareFile(container);
+  await performUpload(container);
+  assert.ok(fetchCalls.length >= 1, "fetch called on Upload");
+  const call = fetchCalls[0];
+  assert.ok(call.url.indexOf("/api/firmware/upload") === 0, "fetch targets the upload endpoint");
+  assert.equal(call.opts.method, "POST", "upload is a POST");
+  assert.ok(eventSources.length >= 1, "progress SSE opened after upload");
+  assert.ok(
+    eventSources[eventSources.length - 1].url.indexOf("/api/firmware/progress") === 0,
+    "SSE opened on the progress endpoint",
+  );
+}
+
+async function testFirmwareProgressSseUpdatesBar() {
+  const { container } = await renderFirmware();
+  selectFirmwareFile(container);
+  const sse = await performUpload(container);
+  assert.ok(sse, "SSE open after upload");
+  const fill = findOneByClass(container, "progress-bar-fill");
+  sse.emit("progress", { state: "programming", percent: 42, message: "Programming…" });
+  assert.equal(fill.style.width, "42%", "progress bar fill width set from the SSE percent");
+}
+
+async function testFirmwareDoneNotifiesInfo() {
+  const { container, fake } = await renderFirmware();
+  selectFirmwareFile(container);
+  const sse = await performUpload(container);
+  // The progress handler calls refreshStatus() on a terminal event; route the
+  // status fetch to a "done" payload so applyStatus fires the info notification.
+  fake.setParamsResponse({
+    can_flash: true, transport: "usb", state: "done", device: "/dev/ttyACM0",
+    armed: false, progress: 100, message: "Firmware flashed successfully",
+  });
+  dispatched.length = 0;
+  sse.emit("progress", { state: "done", percent: 100, message: "Firmware flashed successfully" });
+  await flushMicrotasks();
+  await flushMicrotasks();
+  const note = dispatched.find((e) => e.type === "corvus:notification");
+  assert.ok(note, "a corvus:notification was dispatched on done");
+  assert.equal(note.detail.level, "info", "done notifies at info level");
+}
+
+async function testFirmwareFailedNotifiesCritical() {
+  const { container, fake } = await renderFirmware();
+  selectFirmwareFile(container);
+  const sse = await performUpload(container);
+  fake.setParamsResponse({
+    can_flash: false, transport: "usb", state: "failed", device: "/dev/ttyACM0",
+    armed: false, progress: 50, message: "firmware CRC mismatch — not booting",
+  });
+  dispatched.length = 0;
+  sse.emit("progress", { state: "failed", percent: 50, message: "CRC mismatch" });
+  await flushMicrotasks();
+  await flushMicrotasks();
+  const note = dispatched.find((e) => e.type === "corvus:notification");
+  assert.ok(note, "a corvus:notification was dispatched on failed");
+  assert.equal(note.detail.level, "critical", "failed notifies at critical level");
+}
+
+async function testFirmwareDestroyClosesSseAndUnsubscribes() {
+  const { container, destroy, fake } = await renderFirmware();
+  selectFirmwareFile(container);
+  const sse = await performUpload(container);
+  assert.equal(sse.closed, false, "SSE open before destroy");
+  const unsubBefore = fake.unsubCalls;
+  destroy();
+  assert.equal(sse.closed, true, "SSE closed on destroy");
+  assert.equal(fake.unsubCalls, unsubBefore + 1, "telemetry unsub on destroy");
+}
+
+async function testFirmwareBackCallsDestroyNoLeak() {
+  // End-to-end via the orchestrator: open Firmware from the grid, upload (open
+  // the SSE), then click back — the orchestrator's teardown runs the firmware
+  // destroy (SSE closed, telemetry unsub) and re-renders the grid. No leak.
+  const fake = makeFakeTelemetry({ state: { armed: false, connected: true } });
+  fake.setParamsResponse({
+    can_flash: true, transport: "usb", state: "idle", device: "/dev/ttyACM0",
+    armed: false, progress: 0, message: "",
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  pageViewEl = container;
+  resetFetch();
+  eventSources.length = 0;
+  Corvus.setup.render(container);
+  // Open the Firmware sub-page (third tile).
+  fire(findByClass(container, "setup-tile")[2], "click");
+  await flushMicrotasks();
+  selectFirmwareFile(container);
+  const sse = await performUpload(container);
+  assert.equal(sse.closed, false, "SSE open while on the firmware sub-page");
+  const unsubBefore = fake.unsubCalls;
+  // Back → orchestrator teardown runs the firmware destroy, then re-renders grid.
+  fire(findOneByClass(container, "setup-back"), "click");
+  assert.equal(sse.closed, true, "SSE closed on back (destroy ran)");
+  assert.equal(fake.unsubCalls, unsubBefore + 1, "firmware telemetry unsub on back");
+  assert.ok(findOneByClass(container, "setup-tiles"), "tile grid restored after back");
 }
 
 // ===========================================================================
@@ -860,6 +1156,7 @@ async function run() {
   await withReset(testClickTileSwapsToSubPageAndBackReturns);
   await withReset(testTeardownRunsOnSwap);
   await withReset(testReRenderTearsDownActiveSubPage);
+  await withReset(testVehicleInfoUpdatesLive);
 
   await withReset(testCalibrationButtonsMapToTypes);
   await withReset(testCalibrationArmedGating);
@@ -881,6 +1178,17 @@ async function run() {
 
   await withReset(testParametersTeardownClosesSseAndPoll);
   await withReset(testParametersTeardownOnReRender);
+
+  await withReset(testFirmwareSubPageRendersCardsAndControls);
+  await withReset(testFirmwareUsbGateDisablesUploadAndShowsBanner);
+  await withReset(testFirmwareUsbAllowedHidesBannerAndEnablesUploadAfterFile);
+  await withReset(testFirmwareArmedGateDisablesUploadAndShowsBanner);
+  await withReset(testFirmwareUploadCallsFetchAndOpensSse);
+  await withReset(testFirmwareProgressSseUpdatesBar);
+  await withReset(testFirmwareDoneNotifiesInfo);
+  await withReset(testFirmwareFailedNotifiesCritical);
+  await withReset(testFirmwareDestroyClosesSseAndUnsubscribes);
+  await withReset(testFirmwareBackCallsDestroyNoLeak);
 
   // Let any best-effort microtasks drain so the process exits cleanly.
   await flushMicrotasks();

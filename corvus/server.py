@@ -23,6 +23,13 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from . import tile_sources
+from .config import (
+    CorvusConfig,
+    default_config_path,
+    load_config,
+    save_config,
+    to_public_dict,
+)
 from .mavlink_bridge import (
     TAKEOFF_ALTITUDE_MAX_M,
     TAKEOFF_ALTITUDE_MIN_M,
@@ -41,16 +48,31 @@ TELEMETRY_SSE_CAPACITY = 1
 CONSOLE_SSE_CAPACITY = 100
 PARAMS_SSE_CAPACITY = 16
 TILES_PROGRESS_SSE_CAPACITY = 16
+FIRMWARE_SSE_CAPACITY = 16
 TILE_UPSTREAM_TIMEOUT_S = 10
+# Body-size caps defend against a malformed/huge Content-Length: an unguarded
+# int() crashes the handler on a non-numeric header, and an unbounded read
+# can exhaust memory. General JSON API vs raw firmware binary (a few MB).
+MAX_JSON_BODY_BYTES = 8 * 1024 * 1024
+MAX_FIRMWARE_BODY_BYTES = 64 * 1024 * 1024
 # Path-parameter tile route: /api/tiles/<source>/<z>/<x>/<y>.png
 # Checked in _handle_api_get only when the path ends in ".png", so it can
 # never shadow the exact /api/tiles/{sources,jobs,progress,download,cancel}
 # routes (none of which end in ".png" with four numeric segments).
 _TILE_PATH_RE = re.compile(r"^/api/tiles/([^/]+)/(\d+)/(\d+)/(\d+)\.png$")
+# "motor" = ESC/motor calibration (MAV_CMD_PREFLIGHT_CALIBRATION param7=1.0); motors spin — props must be removed
 CALIB_SENSORS = frozenset({
-    "gyro", "compass", "baro", "accel", "level", "accel_quick", "airspeed",
+    "gyro", "compass", "baro", "accel", "level", "accel_quick", "airspeed", "motor",
 })
 AUTOTUNE_AXES = frozenset({"roll", "pitch", "yaw", "all"})
+# PX4 NuttShell (NSH) builtins with no MAVLink-command equivalent (e.g.
+# `listener <topic>` subscribes to a uORB topic and prints it). Routed to the
+# serial-control debug shell, not a MAV_CMD. `help` stays the local help and
+# `param` is not a console command, so this set is disjoint from the Corvus
+# command set above.
+SHELL_COMMANDS = frozenset({
+    "listener", "top", "free", "dmesg", "tasks", "perf", "boot_log", "hrt",
+})
 
 # Route registry: the @route decorator tags handler methods while the
 # CorvusHandler class body executes; the pending entries are wired onto the
@@ -250,6 +272,27 @@ def _build_tile_downloader(
     return _TileDownloaderPool(caches, TileDownloader)
 
 
+def _build_tile_resources(
+    cache_dir: str,
+) -> tuple[dict[str, TileCache], "_TileProgressBus", Any]:
+    """Build the per-source tile caches, progress bus, and downloader pool.
+
+    Shared by ``create_server`` (browser mode) and ``corvus.app.start_backend``
+    (desktop mode) so the two entry points never diverge on how tile resources
+    are wired — the desktop app's offline maps depend on the exact same
+    per-source caches + downloader the browser mode uses. The caller picks the
+    cache dir (operator-config override or the default); this helper only
+    constructs the objects rooted at that dir.
+    """
+    tile_caches: dict[str, TileCache] = {
+        sid: TileCache(os.path.join(cache_dir, f"{sid}.mbtiles"))
+        for sid in tile_sources.TILE_SOURCES
+    }
+    tile_progress_bus = _TileProgressBus()
+    tile_downloader = _build_tile_downloader(tile_caches)
+    return tile_caches, tile_progress_bus, tile_downloader
+
+
 def _validate_tile_bounds(bounds: Any) -> tuple[str | None, tuple[float, float, float, float] | None]:
     """Validate a ``{w,s,e,n}`` bounds object.
 
@@ -357,6 +400,17 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     mavlink: MavlinkBridge | None = None
     store: VehicleStateStore | None = None
     ssh: SshBridge | None = None
+    # Live operator config (loaded once at startup, mutated by the config
+    # endpoints). The HTTP layer is the only writer; the MAVLink/SSH bridges
+    # never touch it. None when the server is constructed without one (the
+    # unit-test fixtures), in which case the config endpoints fall back to
+    # fresh defaults on every read so they still answer.
+    config: CorvusConfig | None = None
+    config_path: str | None = None
+    # Firmware-flash service (direct USB only). None when not wired (e.g. the
+    # parallel-built flash_service module is mid-edit or the handler is used in
+    # a unit test that only sets mavlink/store).
+    flash: Any = None
     # Tile resources: per-source caches + a single downloader facade + the
     # progress pub-sub bus. None when tiles are not configured (e.g. the
     # parallel-built tile_downloader module is mid-edit).
@@ -390,6 +444,161 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(b"event: " + event.encode("utf-8") + b"\ndata: " + data + b"\n\n")
         self.wfile.flush()
 
+    # ---- Live config helpers ----
+    def _live_config(self) -> CorvusConfig:
+        """Return the live CorvusConfig, loading from disk on first access.
+
+        Handlers reach config through here so the unit-test fixtures that do
+        not set ``self.config`` still get a fresh-defaults instance per call
+        (no shared mutable state between tests).
+        """
+        if self.config is not None:
+            return self.config
+        path = self.config_path or default_config_path()
+        cfg = load_config(path)
+        self.config = cfg
+        self.config_path = path
+        return cfg
+
+    def _save_live_config(self) -> None:
+        """Persist the live config to its path; never raises into the handler."""
+        cfg = self._live_config()
+        try:
+            save_config(cfg, self.config_path)
+        except OSError as exc:
+            # A failed write must not crash the HTTP handler; the operator's
+            # in-memory state is still correct for this session.
+            logger.error("config save to %s failed: %s", self.config_path, exc)
+
+    def _public_config(self) -> dict[str, Any]:
+        """Return the live config as a redacted dict (passwords stripped)."""
+        try:
+            return to_public_dict(self._live_config())
+        except Exception as exc:  # noqa: BLE001 - GET /api/config must never 500
+            logger.exception("public config build failed; returning defaults")
+            return {}
+
+    def _apply_config_partial(self, partial: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+        """Validate + merge a partial config update; return (public, error).
+
+        Unknown keys are dropped with a warning log (never crash). Known keys
+        are type-coerced via the same defensive coercion the load path uses,
+        by round-tripping the merged dict back through ``_build_config``. The
+        merged config is persisted atomically. Returns the new redacted
+        public dict, or ``(None, error_message)`` on a validation failure.
+        """
+        cfg = self._live_config()
+        merged: dict[str, Any] = {
+            "mavlink_connection": cfg.mavlink_connection,
+            "http_port": cfg.http_port,
+            "tile_cache_dir": cfg.tile_cache_dir,
+            "tlog_dir": cfg.tlog_dir,
+            "ssh_connections": [dict(e) for e in cfg.ssh_connections],
+        }
+        if cfg.tile_sources is not None:
+            merged["tile_sources"] = cfg.tile_sources
+        if cfg.stream_rates is not None:
+            merged["stream_rates"] = cfg.stream_rates
+        if cfg.theme is not None:
+            merged["theme"] = cfg.theme
+        if cfg.map is not None:
+            merged["map"] = cfg.map
+
+        known = {
+            "mavlink_connection", "http_port", "tile_cache_dir", "tlog_dir",
+            "tile_sources", "stream_rates", "ssh_connections", "theme", "map",
+        }
+        for key, value in partial.items():
+            if key not in known:
+                logger.warning("dropping unknown config key %r in POST /api/config", key)
+                continue
+            if key == "ssh_connections":
+                # Coerce each entry defensively before storing; a non-list or
+                # bad entry is dropped, never crashes.
+                if not isinstance(value, list):
+                    return None, "ssh_connections must be a list"
+                merged["ssh_connections"] = value
+            elif key == "theme":
+                if not isinstance(value, dict):
+                    return None, "theme must be an object"
+                merged["theme"] = value
+            elif key == "map":
+                if not isinstance(value, dict):
+                    return None, "map must be an object"
+                merged["map"] = value
+            elif key == "mavlink_connection":
+                if not isinstance(value, str) or not value:
+                    return None, "mavlink_connection must be a non-empty string"
+                merged["mavlink_connection"] = value
+            elif key == "http_port":
+                if isinstance(value, bool):
+                    return None, "http_port must be an integer"
+                try:
+                    port = int(value)
+                except (TypeError, ValueError):
+                    return None, "http_port must be an integer"
+                if not 0 <= port <= 65535:
+                    return None, "http_port must be between 0 and 65535"
+                merged["http_port"] = port
+            elif key == "tile_cache_dir":
+                if not isinstance(value, str):
+                    return None, "tile_cache_dir must be a string"
+                merged["tile_cache_dir"] = value
+            elif key == "tlog_dir":
+                if not isinstance(value, str):
+                    return None, "tlog_dir must be a string"
+                merged["tlog_dir"] = value
+            elif key == "tile_sources":
+                if not isinstance(value, dict):
+                    return None, "tile_sources must be an object"
+                merged["tile_sources"] = value
+            elif key == "stream_rates":
+                if not isinstance(value, dict):
+                    return None, "stream_rates must be an object"
+                merged["stream_rates"] = value
+
+        # Re-build through the same coercion the load path uses, so a partial
+        # update gets the exact same defensive treatment as a full file.
+        from .config import _build_config
+        new_cfg = _build_config(merged)
+        # Mutate the live config object IN PLACE (not replace). The class
+        # attribute (and every concurrent handler) shares this one object;
+        # replacing it would set a per-request instance attribute that dies
+        # with the handler, leaving the next request reading a stale value.
+        cfg.mavlink_connection = new_cfg.mavlink_connection
+        cfg.http_port = new_cfg.http_port
+        cfg.tile_cache_dir = new_cfg.tile_cache_dir
+        cfg.tlog_dir = new_cfg.tlog_dir
+        cfg.tile_sources = new_cfg.tile_sources
+        cfg.stream_rates = new_cfg.stream_rates
+        cfg.ssh_connections = new_cfg.ssh_connections
+        cfg.theme = new_cfg.theme
+        cfg.map = new_cfg.map
+        self._save_live_config()
+        return to_public_dict(cfg), None
+
+    def _ssh_connections_public(self) -> list[dict[str, Any]]:
+        """Return the persisted ssh_connections with live ``connected`` merged.
+
+        ``connected`` is computed from the live SshBridge sessions (matched
+        by name) so the UI reflects what is actually open right now. The
+        ``password`` key is stripped from every entry.
+        """
+        cfg = self._live_config()
+        live: dict[str, bool] = {}
+        if self.ssh is not None:
+            for s in self.ssh.list_sessions():
+                live[s.get("name", "")] = bool(s.get("connected", False))
+        out: list[dict[str, Any]] = []
+        for entry in cfg.ssh_connections:
+            if not isinstance(entry, dict):
+                continue
+            clean = dict(entry)
+            clean.pop("password", None)
+            clean["connected"] = live.get(clean.get("name", ""), False)
+            out.append(clean)
+        return out
+
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path.startswith("/api/"):
@@ -399,6 +608,11 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        # Firmware upload carries a raw octet-stream body, not JSON. Handle it
+        # before the JSON dispatcher so the binary payload is never json-parsed.
+        if path == "/api/firmware/upload":
+            self._api_firmware_upload_raw()
+            return
         if path.startswith("/api/"):
             self._handle_api_post(path)
         else:
@@ -453,6 +667,26 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         else:
             self._send_json({"sessions": []})
 
+    @route("GET", "/api/config")
+    def _api_config(self) -> None:
+        """Return the live operator config with secrets redacted.
+
+        Every SSH ``password`` is stripped from ``ssh_connections``; all other
+        fields (including ``key_path``) are returned. Never crashes; on any
+        error returns ``{"config": {}}`` so the UI can still render defaults.
+        """
+        self._send_json({"config": self._public_config()})
+
+    @route("GET", "/api/ssh/connections")
+    def _api_ssh_connections(self) -> None:
+        """Return the persisted SSH connections with live ``connected`` status.
+
+        Builds the list from ``config.ssh_connections`` and merges the live
+        ``connected`` flag by matching names against ``ssh.list_sessions()``.
+        No password is ever echoed back.
+        """
+        self._send_json({"connections": self._ssh_connections_public()})
+
     @route("GET", "/api/mavlink/modes")
     def _api_mavlink_modes(self) -> None:
         if self.mavlink:
@@ -504,7 +738,21 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
     # ---- POST API ----
     def _handle_api_post(self, path: str) -> None:
-        length = int(self.headers.get("Content-Length", 0))
+        # Guard the Content-Length parse: a non-numeric header raises ValueError
+        # uncaught (dropping the connection) if read here without the try/except.
+        # Cap the body so a huge Content-Length cannot exhaust memory (DoS)
+        # before json.loads ever runs.
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            self._send_json({"error": "invalid content-length"}, 400)
+            return
+        if length < 0:
+            self._send_json({"error": "invalid content-length"}, 400)
+            return
+        if length > MAX_JSON_BODY_BYTES:
+            self._send_json({"error": "request too large"}, 413)
+            return
         raw = self.rfile.read(length) if length else b"{}"
         try:
             payload = json.loads(raw)
@@ -556,6 +804,28 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         elif parts[0] == "help":
             self._send_json({"ok": True, "help": True})
             return
+        elif parts[0] == "shell" or parts[0] == "nsh":
+            # Strip the prefix from the ORIGINAL cmd so the rest keeps its case
+            # (NSH is case-sensitive, e.g. `listener sensor_combined`).
+            shell_text = cmd.split(maxsplit=1)[1] if len(cmd.split(maxsplit=1)) > 1 else ""
+            ok_shell = self.mavlink.send_shell_command(shell_text)
+            if ok_shell:
+                self._send_json({"ok": True, "shell": True})
+            else:
+                error = self.mavlink.get_last_command_error() or f"shell command failed: {cmd}"
+                status = 503 if "DISCONNECTED" in error else 409
+                self._send_json({"ok": False, "error": error}, status)
+            return
+        elif parts[0] in SHELL_COMMANDS:
+            # Send the full original cmd (case-preserved) to the NSH shell.
+            ok_shell = self.mavlink.send_shell_command(cmd)
+            if ok_shell:
+                self._send_json({"ok": True, "shell": True})
+            else:
+                error = self.mavlink.get_last_command_error() or f"shell command failed: {cmd}"
+                status = 503 if "DISCONNECTED" in error else 409
+                self._send_json({"ok": False, "error": error}, status)
+            return
         else:
             self._send_json({"error": f"unknown command: {cmd}"}, 400)
             return
@@ -569,10 +839,24 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     @route("POST", "/api/mavlink/connect")
     def _api_mavlink_connect(self, payload: dict) -> None:
         conn = payload.get("connection", "udp:127.0.0.1:14540")
-        if self.mavlink:
+        # Validate the connection string up front: a non-string/empty value
+        # would be passed straight to the bridge. set_connection() now raises
+        # ValueError on a bad spec — surface that as a 400, not a 500.
+        if not isinstance(conn, str) or not conn:
+            self._send_json(
+                {"ok": False, "error": "connection must be a non-empty string"}, 400,
+            )
+            return
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "mavlink not ready"}, 503)
+            return
+        try:
             self.mavlink.stop()
             self.mavlink.set_connection(conn)
             self.mavlink.start()
+        except ValueError as exc:
+            self._send_json({"ok": False, "error": str(exc)}, 400)
+            return
         self._send_json({"ok": True, "connection": conn})
 
     @route("POST", "/api/mavlink/arm")
@@ -710,20 +994,174 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             return
         name = payload.get("name", "device")
         host = payload.get("host", "")
-        port = int(payload.get("port", 22))
+        # Validate name/host types up front: a non-string (int/list/dict) would
+        # crash the saved-entry lookup or the bridge call. Empty host is allowed
+        # here — the connect-by-name path below fills it from a saved entry (or
+        # 400s with "no host" when none matches), preserving the UI's
+        # "connect by name" button.
+        if not isinstance(name, str) or not name:
+            self._send_json({"error": "name must be a non-empty string"}, 400)
+            return
+        if not isinstance(host, str):
+            self._send_json({"error": "host must be a string"}, 400)
+            return
+        # Port coercion mirrors _api_ssh_connections_upsert: reject bool, then
+        # try/except, then range-check. The unguarded int(payload...) crashed on
+        # "abc"/list/dict/null.
+        raw_port = payload.get("port", 22)
+        if isinstance(raw_port, bool):
+            self._send_json({"error": "port must be an integer"}, 400)
+            return
+        try:
+            port = int(raw_port)
+        except (TypeError, ValueError):
+            self._send_json({"error": "port must be an integer"}, 400)
+            return
+        if not 0 <= port <= 65535:
+            self._send_json({"error": "port must be between 0 and 65535"}, 400)
+            return
         username = payload.get("username", "corvus")
         password = payload.get("password")
         key_path = payload.get("key_path")
+        # Connect-by-name: when host is absent/empty BUT name matches a saved
+        # connection, load the saved creds (host, port, username, key_path,
+        # password) and connect with those. This lets the UI's card CONNECT
+        # button connect by name without the UI holding the password.
         if not host:
-            self._send_json({"error": "no host"}, 400)
-            return
+            saved = None
+            for entry in self._live_config().ssh_connections:
+                if isinstance(entry, dict) and entry.get("name") == name:
+                    saved = entry
+                    break
+            if saved is None:
+                self._send_json({"error": "no host"}, 400)
+                return
+            host = saved.get("host", "")
+            port = int(saved.get("port", 22))
+            username = saved.get("username", username)
+            # The UI never holds the password; only the saved entry does.
+            if password is None:
+                password = saved.get("password") or None
+            if not key_path:
+                key_path = saved.get("key_path") or None
+            if not host:
+                self._send_json({"error": "no host"}, 400)
+                return
         ok = self.ssh.connect(name, host, port, username, password, key_path)
         self._send_json({"ok": ok, "connected": ok})
+
+    @route("POST", "/api/config")
+    def _api_config_update(self, payload: dict) -> None:
+        """Apply a partial config update, persist atomically, return redacted.
+
+        Accepts any subset of the known config keys. Unknown keys are dropped
+        with a warning log (never crash). On a validation failure returns
+        ``400 {"error": "..."}``. Never crashes on a bad payload — the
+        ``do_POST`` dispatcher already rejected non-dict bodies.
+        """
+        public, error = self._apply_config_partial(payload)
+        if error is not None:
+            self._send_json({"error": error}, 400)
+            return
+        self._send_json({"ok": True, "config": public})
+
+    @route("POST", "/api/ssh/connections")
+    def _api_ssh_connections_upsert(self, payload: dict) -> None:
+        """Upsert a saved SSH connection by name; does NOT connect.
+
+        Validates ``name`` (non-empty str), ``host`` (non-empty str),
+        ``port`` (int, default 22), ``username`` (str). ``key_path`` and
+        ``password`` are optional and may be ``""``. Replaces any existing
+        entry with the same name; appends otherwise. Persists atomically.
+        Returns the redacted connection list (no password).
+        """
+        name = payload.get("name")
+        host = payload.get("host")
+        if not isinstance(name, str) or not name:
+            self._send_json({"error": "name must be a non-empty string"}, 400)
+            return
+        if not isinstance(host, str) or not host:
+            self._send_json({"error": "host must be a non-empty string"}, 400)
+            return
+        raw_port = payload.get("port", 22)
+        if isinstance(raw_port, bool):
+            self._send_json({"error": "port must be an integer"}, 400)
+            return
+        try:
+            port = int(raw_port)
+        except (TypeError, ValueError):
+            self._send_json({"error": "port must be an integer"}, 400)
+            return
+        if not 0 <= port <= 65535:
+            self._send_json({"error": "port must be between 0 and 65535"}, 400)
+            return
+        username = payload.get("username", "")
+        if not isinstance(username, str):
+            self._send_json({"error": "username must be a string"}, 400)
+            return
+        key_path = payload.get("key_path", "")
+        if not isinstance(key_path, str):
+            key_path = ""
+        password = payload.get("password", "")
+        if not isinstance(password, str):
+            password = ""
+
+        entry = {
+            "name": name,
+            "host": host,
+            "port": port,
+            "username": username,
+            "key_path": key_path,
+            "password": password,
+        }
+        cfg = self._live_config()
+        replaced = False
+        for i, existing in enumerate(cfg.ssh_connections):
+            if isinstance(existing, dict) and existing.get("name") == name:
+                cfg.ssh_connections[i] = entry
+                replaced = True
+                break
+        if not replaced:
+            cfg.ssh_connections.append(entry)
+        self._save_live_config()
+        self._send_json({"ok": True, "connections": self._ssh_connections_public()})
+
+    @route("POST", "/api/ssh/connections/remove")
+    def _api_ssh_connections_remove(self, payload: dict) -> None:
+        """Disconnect (if live) and remove a saved SSH connection by name.
+
+        Order matters: stop the live subprocess FIRST (so its reader thread
+        is joined before the entry vanishes), then drop the entry from the
+        persisted list, then save atomically. Idempotent: a name that is
+        neither live nor saved still returns ``{"ok": true}``.
+        """
+        name = payload.get("name")
+        if not isinstance(name, str) or not name:
+            self._send_json({"error": "name must be a non-empty string"}, 400)
+            return
+        if self.ssh is not None:
+            try:
+                self.ssh.disconnect(name)
+            except Exception as exc:  # noqa: BLE001 - a bad live session must not block removal
+                logger.warning("ssh disconnect for %r during remove failed: %s", name, exc)
+        cfg = self._live_config()
+        cfg.ssh_connections = [
+            entry for entry in cfg.ssh_connections
+            if isinstance(entry, dict) and entry.get("name") != name
+        ]
+        self._save_live_config()
+        self._send_json({"ok": True, "connections": self._ssh_connections_public()})
 
     @route("POST", "/api/ssh/send")
     def _api_ssh_send(self, payload: dict) -> None:
         name = payload.get("name", "")
         data = payload.get("data", "")
+        # data is written verbatim to the remote shell; a non-string (int/list/
+        # dict) would crash channel.send or silently mis-send. Validate before
+        # touching the bridge; keep reporting ok from the bridge unchanged.
+        if not isinstance(data, str):
+            self._send_json({"ok": False, "error": "data must be a string"}, 400)
+            return
         if self.ssh and name:
             ok = self.ssh.send(name, data)
             self._send_json({"ok": ok})
@@ -774,6 +1212,72 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             error = self.mavlink.get_last_command_error() or "parameter write failed"
             status = 503 if "not connected" in error else 409
             self._send_json({"ok": False, "error": error}, status)
+
+    @route("POST", "/api/params/upload")
+    def _api_params_upload(self, payload: dict) -> None:
+        """Apply a saved parameter file to the vehicle as a background upload.
+
+        Validates the list up front, hands the clean list to the bridge's
+        background uploader, and returns immediately. The writes happen on a
+        worker thread; progress flows over ``/api/params/progress`` SSE (state
+        ``"uploading"`` -> ``"upload_complete"``) and the final tally is read
+        from ``/api/params/upload/result``. Keeping the HTTP thread short means
+        N parameter writes never block a request (lean: fire-and-forget start,
+        observe over SSE).
+        """
+        params = payload.get("params")
+        if not isinstance(params, list) or not params:
+            self._send_json({"ok": False, "error": "params must be a non-empty list"}, 400)
+            return
+        clean: list[dict[str, Any]] = []
+        for index, entry in enumerate(params):
+            if not isinstance(entry, dict):
+                self._send_json(
+                    {"ok": False, "error": f"invalid parameter at index {index}: must be an object"},
+                    400,
+                )
+                return
+            name = entry.get("name")
+            if not isinstance(name, str) or not name:
+                self._send_json(
+                    {"ok": False, "error": f"invalid parameter at index {index}: name must be a non-empty string"},
+                    400,
+                )
+                return
+            value = entry.get("value")
+            # bool is a subclass of int — reject it so True is never coerced to 1.0
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                self._send_json(
+                    {"ok": False, "error": f"invalid parameter at index {index}: value must be a number"},
+                    400,
+                )
+                return
+            clean.append({"name": name, "value": float(value)})
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        ok = self.mavlink.start_param_upload(clean)
+        if ok:
+            self._send_json({"ok": True, "state": "uploading", "count": len(clean)})
+        else:
+            error = self.mavlink.get_last_command_error() or "parameter upload failed"
+            status = 503 if "not connected" in error else 409
+            self._send_json({"ok": False, "error": error}, status)
+
+    @route("GET", "/api/params/upload/result")
+    def _api_params_upload_result(self) -> None:
+        """Return the final tally of the last background parameter upload.
+
+        The upload runs on a worker thread; the UI watches
+        ``/api/params/progress`` for ``"upload_complete"`` then reads the
+        written/failed counts here. Returns the idle default when no bridge is
+        attached so the UI can render before a vehicle is connected.
+        """
+        if self.mavlink is None:
+            self._send_json({"state": "idle", "written": 0, "failed": 0, "errors": []})
+            return
+        result = self.mavlink.get_param_upload_result()
+        self._send_json(result)
 
     @route("POST", "/api/calibrate")
     def _api_calibrate(self, payload: dict) -> None:
@@ -846,6 +1350,92 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             error = self.mavlink.get_last_command_error() or "vibration stream request failed"
             status = 503 if "not connected" in error else 409
             self._send_json({"ok": False, "error": error}, status)
+
+    @route("POST", "/api/warnings/clear")
+    def _api_warnings_clear(self, payload: dict) -> None:
+        """Clear all warnings from the vehicle state store.
+
+        Empties the remote warning list so every connected client's notification
+        popover reflects an empty set on the next telemetry push. Responds
+        ``{"ok": true}`` even when no store is configured so the frontend always
+        succeeds (the no-store unit-test fixture case).
+        """
+        if self.store is not None:
+            self.store.clear_warnings()
+        self._send_json({"ok": True})
+
+    # ---- Firmware flash ----
+    @route("GET", "/api/firmware/status")
+    def _api_firmware_status(self) -> None:
+        """Live flash status + the USB gate. Always 200."""
+        if self.flash is None:
+            transport = "unknown"
+            device = ""
+            armed = False
+            if self.mavlink is not None:
+                transport = self.mavlink.transport()
+                device = self.mavlink.serial_device()
+            if self.store is not None:
+                armed = bool(self.store.get_snapshot().get("armed"))
+            self._send_json({
+                "state": "idle",
+                "transport": transport,
+                "device": device,
+                "can_flash": False,
+                "armed": armed,
+                "progress": 0,
+                "message": "",
+            })
+            return
+        self._send_json(self.flash.status())
+
+    def _api_firmware_upload_raw(self) -> None:
+        """Receive a raw firmware binary and start a flash.
+
+        Bypasses the JSON dispatcher (the body is ``application/octet-stream``).
+        Returns ``{"ok": true, "state": "flashing"}`` (200) on accept, or
+        ``{"ok": false, "error": ...}`` (400/409/503) on a gate refusal.
+        """
+        # Guard the Content-Length parse (a non-numeric header must 400, not
+        # drop the connection) and cap the body so a huge Content-Length cannot
+        # exhaust memory before the flash service ever sees it.
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            self._send_json({"ok": False, "error": "invalid content-length"}, 400)
+            return
+        if length < 0:
+            self._send_json({"ok": False, "error": "invalid content-length"}, 400)
+            return
+        if length > MAX_FIRMWARE_BODY_BYTES:
+            self._send_json({"ok": False, "error": "request too large"}, 413)
+            return
+        # Refuse BEFORE draining the body: if the flash service or the MAVLink
+        # bridge is not wired there is nothing to do with the bytes, so 503
+        # immediately rather than reading MBs and then refusing.
+        if self.flash is None or self.mavlink is None:
+            self._send_json({"ok": False, "error": "flash service unavailable"}, 503)
+            return
+        if length <= 0:
+            self._send_json({"ok": False, "error": "empty firmware body"}, 400)
+            return
+        raw = self.rfile.read(length)
+        ok = self.flash.start(raw)
+        if ok:
+            self._send_json({"ok": True, "state": "flashing"})
+        else:
+            err = getattr(self.flash, "last_error", "") or "flash refused"
+            self._send_json({"ok": False, "error": err}, 409)
+
+    @route("POST", "/api/firmware/cancel")
+    def _api_firmware_cancel(self, payload: dict) -> None:
+        if self.flash is None:
+            self._send_json({"ok": False, "error": "flash service unavailable"}, 503)
+            return
+        if self.flash.cancel():
+            self._send_json({"ok": True})
+        else:
+            self._send_json({"ok": False, "error": "no flash in progress"})
 
     # ---- SSE endpoints ----
     @route("GET", "/api/telemetry")
@@ -979,23 +1569,76 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 if session:
                     session.remove_sub(listener)
 
+    @route("GET", "/api/firmware/progress")
+    def _sse_firmware(self) -> None:
+        """SSE stream of flash progress (every event delivered; low-rate).
+
+        Uses an unbounded ``queue.Queue`` (not the coalescing bounded buffer) so
+        every erase/program/verify step reaches the client — flashing is
+        low-rate and each step matters to the operator.
+        """
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        q: queue.Queue = queue.Queue()
+        listener = q.put
+        try:
+            if self.flash is not None:
+                self.flash.add_listener(listener)
+                st = self.flash.status()
+                self._send_sse("progress", json.dumps(_sanitize({
+                    "state": st["state"],
+                    "percent": st["progress"],
+                    "message": st["message"],
+                })))
+            while True:
+                try:
+                    entry = q.get(timeout=15)
+                    self._send_sse("progress", json.dumps(_sanitize({
+                        "state": entry.get("state"),
+                        "percent": entry.get("percent"),
+                        "message": entry.get("message"),
+                    })))
+                except queue.Empty:
+                    self._send_sse("ping", "{}")
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            if self.flash is not None:
+                self.flash.remove_listener(listener)
+
     # ---- Tile cache / download / serve ----
     @route("GET", "/api/tiles/sources")
     def _api_tiles_sources(self) -> None:
-        """List every source with its live cache stats; always 200."""
+        """List every source with its source cap and live cache stats; always 200.
+
+        ``maxzoom`` is the SOURCE cap (the highest zoom the upstream serves,
+        e.g. 19) — a constant capability, never the cache contents. ``minzoom``
+        is the source floor (every registered source serves a single z0 world
+        tile). The cache stats are reported under distinct ``cached_*`` keys so
+        they can never clobber the source cap: the prior duplicate ``maxzoom``
+        key returned the cache max (or null when empty), hiding the real 19
+        cap from the UI and forcing a hardcoded ``SOURCE_ZOOM_CAP`` workaround.
+        """
         caches = self.tile_caches or {}
         sources = []
         for entry in tile_sources.list_sources():
             sid = entry["id"]
             cache = caches.get(sid)
-            stats = cache.stats() if cache is not None else {"count": 0, "minzoom": None, "maxzoom": None}
+            stats = cache.stats() if cache is not None else {
+                "count": 0, "minzoom": None, "maxzoom": None,
+            }
             sources.append({
                 "id": sid,
                 "label": entry["label"],
+                "minzoom": 0,
                 "maxzoom": entry["maxzoom"],
                 "cached_count": stats["count"],
-                "minzoom": stats["minzoom"],
-                "maxzoom": stats["maxzoom"],
+                "cached_minzoom": stats["minzoom"],
+                "cached_maxzoom": stats["maxzoom"],
             })
         self._send_json({"sources": sources})
 
@@ -1120,7 +1763,16 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             return
         caches = self.tile_caches or {}
         cache = caches.get(source)
-        blob = cache.get_tile(z, x, y) if cache is not None else None
+        # Guard the cache read: a closed/corrupt cache must not 500 the tile
+        # request — treat a raised get_tile like a miss and fall through to the
+        # upstream fetch (or 404 offline), matching the existing put_tile guard.
+        try:
+            blob = cache.get_tile(z, x, y) if cache is not None else None
+        except Exception:  # noqa: BLE001 - a read failure is a cache miss
+            logger.debug(
+                "tile cache read failed: %s/%d/%d/%d", source, z, x, y, exc_info=True,
+            )
+            blob = None
         if blob is None:
             blob = self._fetch_upstream_tile(source, z, x, y)
             if blob is None:
@@ -1131,8 +1783,18 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                     cache.put_tile(z, x, y, blob)
                 except Exception:  # noqa: BLE001 - caching is best-effort
                     logger.exception("tile cache write failed")
+        # Sniff the image magic bytes for the Content-Type: satellite tiles are
+        # JPEG, streets/topo/osm are PNG. A hardcoded image/png would mislabel
+        # JPEG bytes; the correct type keeps caches/proxies and the offline
+        # MBTiles round-trip honest.
+        if blob[:8] == b"\x89PNG\r\n\x1a\n":
+            ctype = "image/png"
+        elif blob[:3] == b"\xff\xd8\xff":
+            ctype = "image/jpeg"
+        else:
+            ctype = "image/png"
         self.send_response(200)
-        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(blob)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", "max-age=86400")
@@ -1212,6 +1874,14 @@ class CorvusServer(socketserver.ThreadingTCPServer):
                 downloader.shutdown()
             except Exception:  # noqa: BLE001 - shutdown must not raise
                 logger.exception("tile downloader shutdown failed")
+        # Stop the flash service before the HTTP loop so a running upload is
+        # cancelled/joined before its (shared) MAVLink bridge is torn down.
+        flash = getattr(self, "flash", None)
+        if flash is not None:
+            try:
+                flash.shutdown()
+            except Exception:  # noqa: BLE001 - shutdown must not raise
+                logger.exception("flash service shutdown failed")
         try:
             super().shutdown()
         except Exception:  # noqa: BLE001 - shutdown must not raise
@@ -1229,34 +1899,52 @@ class CorvusServer(socketserver.ThreadingTCPServer):
 def create_server(
     port: int = 8000,
     mavlink_conn: str = "udp:127.0.0.1:14540",
+    config_path: str | None = None,
 ) -> CorvusServer:
     """Create and wire up the full Corvus backend server."""
     store = VehicleStateStore()
     mavlink = MavlinkBridge(store, mavlink_conn)
     ssh = SshBridge()
 
+    # Operator config: loaded once at startup; the /api/config endpoints
+    # mutate the live object and persist it back through save_config. The
+    # CLI args (port/mavlink_conn) still beat the file for the bind/conn.
+    cfg_path = config_path or default_config_path()
+    config = load_config(cfg_path)
+
     # Tile resources: one MBTiles cache per source under ~/.corvus/tiles/.
     # TileDownloader binds a single cache at construction, so per-source caches
     # imply per-source downloaders; _TileDownloaderPool presents them as one.
-    cache_dir = default_cache_dir()
-    tile_caches: dict[str, TileCache] = {
-        sid: TileCache(os.path.join(cache_dir, f"{sid}.mbtiles"))
-        for sid in tile_sources.TILE_SOURCES
-    }
-    tile_progress_bus = _TileProgressBus()
-    tile_downloader = _build_tile_downloader(tile_caches)
+    # Built through the shared _build_tile_resources helper so the desktop app
+    # (app.start_backend) and browser mode (create_server) never diverge.
+    tile_caches, tile_progress_bus, tile_downloader = _build_tile_resources(default_cache_dir())
 
     CorvusHandler.store = store
     CorvusHandler.mavlink = mavlink
     CorvusHandler.ssh = ssh
+    CorvusHandler.config = config
+    CorvusHandler.config_path = cfg_path
     CorvusHandler.tile_caches = tile_caches
     CorvusHandler.tile_downloader = tile_downloader
     CorvusHandler.tile_progress_bus = tile_progress_bus
+
+    # Firmware-flash service (direct USB only). Imported lazily so the server
+    # still builds if a parallel edit to flash_service is mid-flight.
+    flash: Any = None
+    try:
+        from .flash_service import FlashService
+        flash = FlashService(mavlink, store)
+    except Exception:  # noqa: BLE001 - never block server creation
+        logger.exception("flash service unavailable; firmware endpoints disabled")
+    CorvusHandler.flash = flash
 
     server = CorvusServer(("", port), CorvusHandler)
     server.mavlink = mavlink
     server.ssh = ssh
     server.store = store
+    server.config = config
+    server.config_path = cfg_path
+    server.flash = flash
     server.tile_caches = tile_caches
     server.tile_downloader = tile_downloader
     mavlink.start()

@@ -4,11 +4,12 @@ window.Corvus = window.Corvus || {};
 /**
  * Corvus.setup — the Setup page (left-nav "SETUP").
  *
- * Thin orchestrator: renders the tile grid (Calibration, Parameters) plus a
- * compact Vehicle Info card, and routes to the sub-pages. The actual page
- * content lives in its own file:
+ * Thin orchestrator: renders the tile grid (Calibration, Parameters, Firmware)
+ * plus a compact Vehicle Info card, and routes to the sub-pages. The actual
+ * page content lives in its own file:
  *   - setup-calibration.js  (Corvus.setupCalibration)
  *   - setup-parameters.js   (Corvus.setupParameters)
+ *   - setup-firmware.js     (Corvus.setupFirmware)
  * Shared helpers live in setup-shared.js (Corvus.setupShared).
  *
  * Lifecycle: each sub-page render returns a `destroy()` that the orchestrator
@@ -21,12 +22,19 @@ window.Corvus = window.Corvus || {};
 Corvus.setup = (function () {
   const S = Corvus.setupShared;
 
-  // Active view of the Setup page: "tiles" (the grid) | "calibration" | "parameters".
+  // Active view of the Setup page: "tiles" (the grid) | "calibration" | "parameters" | "firmware".
   let activeView = "tiles";
 
   // Teardown handle for the currently-rendered view. `render` calls this before
   // building anything new, so re-entering Setup via the left-nav is always clean.
   let activeDestroy = null;
+
+  // Teardown handle for the tile grid's own telemetry subscription (the Vehicle
+  // Info card updates live — PX4 version arrives a few seconds after connect via
+  // AUTOPILOT_VERSION, so the initial getState() snapshot would otherwise show
+  // "—" forever). Paired 1:1 with `teardown()`: every subscribe has a matching
+  // unsub, so the grid never leaks a listener across re-render / sub-page swaps.
+  let gridUnsub = null;
 
   /**
    * Public entry: render the Setup page into `container`. Always tears down any
@@ -41,12 +49,17 @@ Corvus.setup = (function () {
     renderTiles(container);
   }
 
-  /** Run the active view's teardown if present, then clear it. Idempotent. */
+  /** Run the active view's teardown if present, then clear it. Also tears down
+   *  the tile grid's telemetry subscription. Idempotent. */
   function teardown() {
     if (typeof activeDestroy === "function") {
       try { activeDestroy(); } catch (err) { console.error("setup teardown failed:", err); }
     }
     activeDestroy = null;
+    if (typeof gridUnsub === "function") {
+      try { gridUnsub(); } catch (err) { console.error("setup grid teardown failed:", err); }
+    }
+    gridUnsub = null;
   }
 
   function renderTiles(container) {
@@ -58,21 +71,60 @@ Corvus.setup = (function () {
     const state = (Corvus.telemetry && Corvus.telemetry.getState()) || {};
     const infoCard = S.el("div", "page-card setup-vehicle-info");
     infoCard.appendChild(S.sectionTitle("Vehicle Info"));
-    infoCard.appendChild(S.infoRow("Autopilot", state.autopilot || "—"));
-    infoCard.appendChild(S.infoRow("Vehicle Type", state.vehicle_type || "—"));
-    infoCard.appendChild(S.infoRow("PX4 Version", state.px4_version || "—"));
-    infoCard.appendChild(S.infoRow("Connected", state.connected ? "Yes" : "No"));
-    infoCard.appendChild(S.infoRow("Armed", state.armed ? "Yes" : "No"));
+
+    // Build the five Vehicle Info rows. `dataKey` is written to each value
+    // span's `dataset.infoKey` so tests (and any future caller) can locate a
+    // row by key. Capture direct refs to the value spans here so the live
+    // telemetry subscription below can update each row in place without a
+    // per-tick DOM query.
+    const rowDefs = [
+      { key: "autopilot",    label: "Autopilot",    value: state.autopilot    || "—" },
+      { key: "vehicle_type", label: "Vehicle Type", value: state.vehicle_type || "—" },
+      { key: "px4_version",  label: "PX4 Version",  value: state.px4_version  || "—" },
+      { key: "connected",    label: "Connected",    value: state.connected ? "Yes" : "No" },
+      { key: "armed",        label: "Armed",        value: state.armed ? "Yes" : "No" },
+    ];
+    const rowValues = {};
+    for (const def of rowDefs) {
+      const row = S.infoRow(def.label, def.value, def.key);
+      rowValues[def.key] = row.querySelector(".page-row-value");
+      infoCard.appendChild(row);
+    }
     container.appendChild(infoCard);
 
-    // Tile grid: Calibration + Parameters. Keyboard-focusable buttons so the
-    // whole tile is reachable and announces as a control.
+    // Tile grid: Calibration + Parameters + Firmware. Keyboard-focusable buttons
+    // so the whole tile is reachable and announces as a control.
     const grid = S.el("div", "setup-tiles");
     grid.appendChild(makeTile("calibration", "sliders-horizontal", "Calibration",
       "Sensor calibration, level/airspeed, and POD autotune with live graphs."));
     grid.appendChild(makeTile("parameters", "list", "Parameters",
       "Download all PX4 parameters on demand, then edit any value."));
+    grid.appendChild(makeTile("firmware", "cpu", "Firmware",
+      "Flash PX4 firmware over a direct USB connection only."));
     container.appendChild(grid);
+
+    // Subscribe to telemetry so the Vehicle Info rows update live. PX4 version
+    // only arrives a few seconds after connect via AUTOPILOT_VERSION, so the
+    // initial getState() snapshot above would otherwise stay "—" forever. The
+    // subscription updates only the five row values per push; the tiles and
+    // header are static. Stored in `gridUnsub` so `teardown()` can release it.
+    if (Corvus.telemetry && typeof Corvus.telemetry.subscribe === "function") {
+      gridUnsub = Corvus.telemetry.subscribe((s) => {
+        if (!s) return;
+        const next = {
+          autopilot:    s.autopilot    || "—",
+          vehicle_type: s.vehicle_type || "—",
+          px4_version:  s.px4_version  || "—",
+          connected:    s.connected ? "Yes" : "No",
+          armed:        s.armed ? "Yes" : "No",
+        };
+        for (const key of Object.keys(next)) {
+          const span = rowValues[key];
+          if (span && span.textContent !== next[key]) span.textContent = next[key];
+        }
+      });
+    }
+
     S.refreshIcons();
   }
 
@@ -103,7 +155,7 @@ Corvus.setup = (function () {
 
   /** Swap the container to a sub-page. Tears the grid down first. */
   function openView(viewId) {
-    if (viewId !== "calibration" && viewId !== "parameters") return;
+    if (viewId !== "calibration" && viewId !== "parameters" && viewId !== "firmware") return;
     teardown();
     activeView = viewId;
     const container = document.getElementById("pageView");
@@ -120,11 +172,18 @@ Corvus.setup = (function () {
     };
     if (viewId === "calibration") {
       activeDestroy = Corvus.setupCalibration.render(container, navigateBack);
-    } else {
+    } else if (viewId === "parameters") {
       activeDestroy = Corvus.setupParameters.render(container, navigateBack);
+    } else { // firmware
+      activeDestroy = Corvus.setupFirmware.render(container, navigateBack);
     }
     S.refreshIcons();
   }
 
-  return { render };
+  // `teardown` is exported alongside `render` so the left-nav (sidenav.js)
+  // can release the active sub-page + the grid's telemetry subscription when
+  // the operator leaves the Setup page via the left-nav — not only on Back or
+  // re-entry. Idempotent: safe to call when nothing is active, and safe to
+  // call again after Back already tore down (no double-unsub, no throw).
+  return { render, teardown };
 })();

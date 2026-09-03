@@ -75,7 +75,7 @@ PX4_MAIN_MODE: dict[int, str] = {
 PX4_AUTO_SUBMODE: dict[int, str] = {
     1: "READY", 2: "TAKEOFF", 3: "LOITER",
     4: "MISSION", 5: "RTL", 6: "LAND",
-    7: "RTGS", 8: "FOLLOW_TARGET",
+    7: "RTGS", 8: "FOLLOWME",
     9: "PRECLAND", 10: "VTOL_TAKEOFF",
     11: "EXTERNAL1", 12: "EXTERNAL2", 13: "EXTERNAL3",
     14: "EXTERNAL4", 15: "EXTERNAL5", 16: "EXTERNAL6",
@@ -85,8 +85,21 @@ PX4_AUTO_SUBMODE: dict[int, str] = {
 PX4_AVAILABLE_MODES: list[str] = [
     "MANUAL", "ALTCTL", "POSCTL", "STABILIZED", "ACRO", "RATTITUDE",
     "LOITER", "MISSION", "RTL", "LAND", "TAKEOFF",
-    "OFFBOARD", "FOLLOWME",
+    "OFFBOARD", "RTGS", "FOLLOWME",
 ]
+
+# Built-in (base_mode, main_mode, sub_mode) tuples keyed by the fallback mode
+# names, mirroring pymavlink's px4_map. Used when mode_mapping() returns empty
+# so set_mode and get_available_modes stay consistent (BUG 9). PX4 sends these
+# exact base_mode values (216 = MAV_MODE_FLAG_CUSTOM_MODE_ENABLED is the
+# generic custom-mode flag; the per-mode base_mode below is what px4_map uses).
+PX4_FALLBACK_MODE_VALUES: dict[str, tuple[int, int, int]] = {
+    "MANUAL": (81, 1, 0), "ALTCTL": (81, 2, 0), "POSCTL": (81, 3, 0),
+    "STABILIZED": (81, 7, 0), "ACRO": (65, 5, 0), "RATTITUDE": (65, 8, 0),
+    "LOITER": (29, 4, 3), "MISSION": (29, 4, 4), "RTL": (29, 4, 5),
+    "LAND": (29, 4, 6), "TAKEOFF": (29, 4, 2), "OFFBOARD": (29, 6, 0),
+    "RTGS": (29, 4, 7), "FOLLOWME": (29, 4, 8),
+}
 
 TAKEOFF_ALTITUDE_MIN_M = 1.0
 TAKEOFF_ALTITUDE_MAX_M = 50.0
@@ -95,6 +108,24 @@ STATUSTEXT_CHUNK_BYTES = 50
 STATUSTEXT_CHUNK_TIMEOUT_S = 10.0
 # Linux 8250 platform serial ports (always phantom on field laptops).
 _PHANTOM_TTY_RE = re.compile(r"^/dev/ttyS[0-9]+$")
+
+# Firmware-Flash transport classification. A CDC ACM node is a DIRECT USB link
+# to a Pixhawk-class flight controller (flashable); a /dev/ttyUSB* node is a
+# USB-to-serial adapter (SiK radio, NOT flashable). _BYID_TOKENS are the
+# Pixhawk/STM32 vendor identifiers that appear in /dev/serial/by-id/ names and
+# pyserial hwid strings (26AC = Pixhawk vendor ID, 0483 = STMicro STM32).
+_DIRECT_USB_ACM_RE = re.compile(r"^/dev/ttyACM[0-9]+$")
+_SIK_RADIO_RE = re.compile(r"^/dev/ttyUSB[0-9]+$")
+_BYID_TOKENS: tuple[str, ...] = (
+    "px4", "pixhawk", "fmu",
+    "3d_robotics", "3d robotics",
+    "hex_proficnc", "arducy", "mro",
+    "hex ",
+    "usb vid:pid=26ac", "usb vid:pid=0483",
+)
+_PIXHAWK_BYID_RE = re.compile(
+    "|".join(re.escape(t) for t in _BYID_TOKENS), re.IGNORECASE,
+)
 
 # Two-tier heartbeat staleness (A3). WARN marks the link degraded (socket
 # stays open, parsing continues); DROP tears it down and reconnects. Serial
@@ -114,6 +145,20 @@ RECONNECT_MIN_S = 0.1
 # map RADIO_STATUS.remrssi (the drone's signal as seen by the radio) to 0-100.
 _SIK_RSSI_STRONG = 150.0
 _SIK_RSSI_WEAK = 40.0
+
+# NSH debug-shell chunk-pull cap. PX4 streams the shell response one 70-byte
+# SERIAL_CONTROL per reply; we pull the next chunk on each reply (event-driven
+# so the receive loop isn't pinned). The cap stops a runaway response (e.g.
+# ``dmesg`` on a chatty build) from streaming forever.
+SHELL_MAX_CHUNKS = 256
+
+# Lossy-link parameter-download recovery (BUG 5). After the PARAM_VALUE burst
+# settles, re-request missing indices (bounded rounds), then give up to a
+# terminal "incomplete" state so the editor is never stuck at complete:false.
+PARAM_DOWNLOAD_INACTIVITY_S = 1.0
+PARAM_DOWNLOAD_MAX_ROUNDS = 3
+PARAM_DOWNLOAD_TIMEOUT_S = 30.0
+PARAM_WATCHDOG_TICK_S = 0.5
 
 
 @dataclass
@@ -145,10 +190,17 @@ class MavlinkBridge:
         self._thread: threading.Thread | None = None
         self._hb_thread: threading.Thread | None = None
         self._version_retry_thread: threading.Thread | None = None
+        # Deferred MAV_CMD_SET_MESSAGE_INTERVAL worker (BUG 1): the ACK-confirmed
+        # interval requests must run AFTER the receive loop exists, so they are
+        # scheduled here and joined in stop().
+        self._intervals_thread: threading.Thread | None = None
         # Raw-frame tlog: one file per connect cycle, owned by the bridge so a
         # reconnect closes the old file and starts a fresh one. None = inactive.
         self._tlog: TlogWriter | None = None
         self._running = threading.Event()
+        # Complement of _running: set by stop() so daemon workers can sleep via
+        # _interruptible_sleep and wake immediately on shutdown (BUG 1, 12).
+        self._stop_event = threading.Event()
         self._console_subs: list[Callable[[dict[str, Any]], None]] = []
         self._target_system: int = 1
         self._target_component: int = 1
@@ -177,18 +229,63 @@ class MavlinkBridge:
         self._param_received: int = 0
         self._param_download_state: str = "idle"
         self._param_seen_indices: set[int] = set()
+        # Lossy-link download recovery (BUG 5): the watchdog re-requests lost
+        # PARAM_VALUEs once the burst settles, then flips to a terminal
+        # "incomplete" so the editor never waits forever at complete:false.
+        self._param_download_started_at: float = 0.0
+        self._param_retransmit_round: int = 0
+        self._param_last_value_at: float = 0.0
+        self._param_watchdog_thread: threading.Thread | None = None
         self._param_lock = threading.Lock()
         self._param_listeners: list[Callable[[dict[str, Any]], None]] = []
         self._param_set_pending: dict[str, _PendingAck] = {}
+        # Background batch-upload state. The worker thread owns the loop; the
+        # fields are touched under _param_lock so the SSE/HTTP readers see a
+        # consistent snapshot. _param_upload_failed is reset per start_param_upload
+        # and copied out into _param_upload_result at completion.
+        self._param_upload_thread: threading.Thread | None = None
+        self._param_upload_failed: list[dict[str, Any]] = []
+        self._param_upload_result: dict[str, Any] = {}
         # Mission-upload handshake state (set only during fly_to_points). The
         # receive thread reads _mission_items on MISSION_REQUEST_INT and wakes
         # _pending_mission_ack on MISSION_ACK; _mission_lock guards both.
         self._mission_lock = threading.Lock()
         self._mission_items: list[dict[str, Any]] | None = None
         self._pending_mission_ack: _PendingAck | None = None
+        # NSH debug-shell state: line reassembly buffer + per-command chunk
+        # pull counter (capped by SHELL_MAX_CHUNKS, reset per send_shell).
+        self._shell_buffer: str = ""
+        self._shell_chunks_pulled: int = 0
+
+    # Accepted MAVLink connection-string prefixes (BUG 2). set_connection()
+    # rejects anything else so a non-str/empty/garbage JSON value cannot reach
+    # _is_serial() (AttributeError on .startswith) or mavlink_connection("")
+    # (which hangs/reconnect-storms).
+    _VALID_PREFIXES: tuple[str, ...] = (
+        "udp:", "udpin:", "udpbcast:", "tcp:", "serial:",
+    )
 
     def set_connection(self, conn_str: str) -> None:
+        # The server passes raw JSON here; validate before storing so an
+        # invalid value cannot crash _is_serial() or hang mavlink_connection.
+        if not isinstance(conn_str, str) or not conn_str:
+            raise ValueError("connection must be a non-empty string")
+        if not conn_str.startswith(self._VALID_PREFIXES):
+            raise ValueError(
+                "connection must start with one of: "
+                + ", ".join(self._VALID_PREFIXES)
+            )
+        if conn_str.startswith("serial:"):
+            device, baud = self._parse_serial(conn_str)
+            if not device:
+                raise ValueError("serial connection requires a device path")
+            if not isinstance(baud, int) or baud <= 0:
+                raise ValueError("serial connection requires a numeric baud rate")
         self._conn_str = conn_str
+
+    def connection_string(self) -> str:
+        """Return the configured MAVLink connection string (read-only accessor)."""
+        return self._conn_str
 
     @staticmethod
     def list_serial_ports() -> list[dict[str, str]]:
@@ -250,17 +347,71 @@ class MavlinkBridge:
         # No colon, or the suffix wasn't numeric → whole remainder is device.
         return rest, 57600
 
+    def transport(self) -> str:
+        """Classify the configured connection: 'usb' | 'sik' | 'udp' | 'tcp' | 'unknown'.
+
+        'usb' = a DIRECT USB link to the flight controller (flashable). This is a
+        serial: connection whose device is a CDC ACM node (/dev/ttyACM*, /dev/serial/by-id/*
+        pointing at a known Pixhawk-class FC), NOT a USB-to-serial radio adapter.
+        'sik' = a SiK Telemetry Radio or other USB-to-serial adapter (/dev/ttyUSB*).
+        'udp' = any udp:/udpin:/udpbcast: connection.
+        'tcp' = any tcp: connection.
+        'unknown' = anything else (including unrecognised serial devices).
+        """
+        conn = self._conn_str
+        if conn.startswith("udp:") or conn.startswith("udpin:") or conn.startswith("udpbcast:"):
+            return "udp"
+        if conn.startswith("tcp:"):
+            return "tcp"
+        if conn.startswith("serial:"):
+            # Reuse the existing parser so the device/baud split stays in one
+            # place (the trailing ':baud' is stripped here, not duplicated).
+            device, _ = self._parse_serial(conn)
+            if _DIRECT_USB_ACM_RE.match(device):
+                return "usb"
+            if device.startswith("/dev/serial/by-id/") and _PIXHAWK_BYID_RE.search(device):
+                return "usb"
+            if _SIK_RADIO_RE.match(device):
+                return "sik"
+            return "unknown"
+        return "unknown"
+
+    def is_direct_usb(self) -> bool:
+        """True when the link is a direct FC USB connection (transport() == 'usb')."""
+        return self.transport() == "usb"
+
+    def serial_device(self) -> str:
+        """Return the serial device path for a serial: connection (stripped of the
+        'serial:' prefix and the trailing ':baud'), or '' for non-serial links.
+        """
+        if self._conn_str.startswith("serial:"):
+            device, _ = self._parse_serial(self._conn_str)
+            return device
+        return ""
+
     def start(self) -> None:
+        self._stop_event.clear()
         if self._thread and self._thread.is_alive():
-            return
+            if self._running.is_set():
+                # A healthy MAVLink thread is already running — don't spawn a
+                # second one (preserves the original idempotent no-op).
+                return
+            # stop() was just called but the old thread hasn't fully died yet
+            # (its join timed out while _connect() was blocked). Join briefly,
+            # then proceed so a fresh start() can reconnect (BUG 3).
+            self._thread.join(timeout=1.0)
         self._running.set()
         self._thread = threading.Thread(target=self._run, name="mavlink", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
         self._running.clear()
+        self._stop_event.set()
         self._stop_tlog()
         self._store.update(link_status="disconnected")
+        # Mark the vehicle disconnected so _connection_ready() returns False and
+        # any in-flight command/param writer bails (BUG 3, 7).
+        self._store.set_disconnected()
         self._cancel_pending_commands()
         # Wake any pending set_param waiters and mark download idle.
         with self._param_lock:
@@ -269,11 +420,39 @@ class MavlinkBridge:
                 pending.result = -2
                 pending.event.set()
             self._param_set_pending.clear()
+        # Release exclusive NSH shell mode before the link closes so PX4 frees
+        # the shell for other clients. Best-effort; never masks teardown.
+        try:
+            self.stop_shell()
+        except Exception:
+            pass
+        # Join the batch-upload worker. Its set_param calls were already woken
+        # with result=-2 by the _param_set_pending block above, and it re-checks
+        # _running each iteration, so it exits promptly; the daemon flag is a
+        # backstop. Done before the socket close so a mid-flight send isn't
+        # writing on a torn-down link.
+        if self._param_upload_thread:
+            self._param_upload_thread.join(timeout=3)
+            self._param_upload_thread = None
         if self._conn:
             try:
                 self._conn.close()
             except Exception:
                 pass
+            # Clear immediately so _send_command_and_wait's `conn is not
+            # self._conn` guard bails on remaining loop iterations (BUG 3).
+            self._conn = None
+        # Join the deferred daemon workers so stop() never leaves them
+        # spinning. _stop_event wakes their interruptible sleeps promptly.
+        if self._param_watchdog_thread:
+            self._param_watchdog_thread.join(timeout=2)
+            self._param_watchdog_thread = None
+        if self._version_retry_thread:
+            self._version_retry_thread.join(timeout=2)
+            self._version_retry_thread = None
+        if self._intervals_thread:
+            self._intervals_thread.join(timeout=2)
+            self._intervals_thread = None
         if self._thread:
             self._thread.join(timeout=3)
         if self._hb_thread:
@@ -285,6 +464,11 @@ class MavlinkBridge:
             try:
                 self._connect()
                 self._reconnect_attempt = 1
+                # Defer the ACK-confirmed interval requests until the receive
+                # loop is draining the socket (BUG 1): _connect() used to run
+                # them before _receive_loop() existed, so every COMMAND_ACK
+                # timed out and stalled all operator commands issued then.
+                self._schedule_message_intervals()
                 self._receive_loop()
             except Exception as exc:
                 cycle_exc = exc
@@ -375,9 +559,10 @@ class MavlinkBridge:
         self._store.heartbeat()
         self._build_mode_mapping()
         # REQUEST_DATA_STREAM first as a fallback for v1.12-v1.15, then the
-        # modern per-message SET_MESSAGE_INTERVAL (A5) for v1.16-v1.18.
+        # modern per-message SET_MESSAGE_INTERVAL (A5) for v1.16-v1.18. The
+        # ACK-confirmed interval requests are deferred to _run() so the
+        # receive loop exists to dispatch their COMMAND_ACKs (BUG 1).
         self._request_streams()
-        self._request_message_intervals()
         self._request_version()
         self._start_gcs_heartbeat()
         # Start a fresh tlog for this flight session. Gated on _running so the
@@ -408,8 +593,12 @@ class MavlinkBridge:
                 return
         except Exception as exc:
             logger.debug("mode_mapping error: %s", exc)
+        # Fallback (BUG 9): no live mode_mapping — populate _mode_values from
+        # the built-in px4_map so set_mode and get_available_modes stay
+        # consistent (the fallback list and the value table share the same
+        # names, including RTGS and FOLLOWME).
         self._mode_mapping = set()
-        self._mode_values = {}
+        self._mode_values = dict(PX4_FALLBACK_MODE_VALUES)
 
     def _start_gcs_heartbeat(self) -> None:
         if self._hb_thread and self._hb_thread.is_alive():
@@ -560,6 +749,53 @@ class MavlinkBridge:
             m.MAVLINK_MSG_ID_HOME_POSITION: 1_000_000,       # 1 Hz
         }
 
+    def _interruptible_sleep(self, seconds: float) -> None:
+        """Sleep that returns early when _stop_event is set.
+
+        Sleeps in small slices via time.sleep so tests that monkeypatch
+        ``corvus.mavlink_bridge.time.sleep`` still short-circuit the whole
+        delay, while stop() can wake the daemon worker within one slice
+        (~0.1 s). Used by the deferred interval worker and the version retry
+        (BUG 1, 12).
+        """
+        slept = 0.0
+        while slept < seconds:
+            if self._stop_event.is_set():
+                return
+            chunk = min(0.1, seconds - slept)
+            time.sleep(chunk)
+            slept += chunk
+
+    def _schedule_message_intervals(self) -> None:
+        """Defer _request_message_intervals until the receive loop is running.
+
+        MAV_CMD_SET_MESSAGE_INTERVAL is ACK-confirmed and the ACK is
+        dispatched by _receive_loop(). Requesting intervals from _connect()
+        (before the loop exists) made every ACK time out. This spawns a
+        one-shot daemon that fires once the loop is draining the socket, so
+        COMMAND_ACKs are actually delivered (BUG 1).
+        """
+        prior = self._intervals_thread
+        if prior is not None and prior.is_alive():
+            return
+
+        def _runner() -> None:
+            # Let the receive loop start draining the socket first.
+            self._interruptible_sleep(0.05)
+            if not self._running.is_set() or not self._conn:
+                return
+            if self._stop_event.is_set():
+                return
+            try:
+                self._request_message_intervals()
+            except Exception as exc:
+                logger.debug("deferred message intervals failed: %s", exc)
+
+        self._intervals_thread = threading.Thread(
+            target=_runner, name="mavlink-intervals", daemon=True,
+        )
+        self._intervals_thread.start()
+
     def _request_message_intervals(self) -> None:
         """Ask PX4 for per-message stream intervals (A5).
 
@@ -589,8 +825,9 @@ class MavlinkBridge:
         PX4 v1.18.0-alpha1 SITL ACKs the capabilities command with
         MAV_RESULT_UNSUPPORTED, so AUTOPILOT_VERSION never arrives; a single
         retry ~4s after connect covers slow/lossy responders without looping
-        or spamming the link. Daemon thread; checks _running/_conn so it stays
-        silent after shutdown and is never joined by stop().
+        or spamming the link. Daemon thread; checks _running/_conn/_stop_event
+        so it stays silent after shutdown, and the 4s wait uses
+        _interruptible_sleep so stop() can wake it and join it promptly (BUG 12).
         """
         if not self._running.is_set():
             return
@@ -599,7 +836,7 @@ class MavlinkBridge:
             return
 
         def _retry() -> None:
-            time.sleep(4.0)
+            self._interruptible_sleep(4.0)
             if not self._running.is_set() or not self._conn:
                 return
             if self._store.get_snapshot().get("px4_version"):
@@ -733,6 +970,12 @@ class MavlinkBridge:
             self._handle_mission_request(msg, as_int=(name == "MISSION_REQUEST_INT"))
         elif name == "MISSION_ACK":
             self._handle_mission_ack(msg)
+
+        # NSH debug-shell reply (device=SHELL). Routed as a standalone branch
+        # so a chatty shell never starves the telemetry elif chain; the
+        # handler never blocks the receive loop.
+        if name == "SERIAL_CONTROL":
+            self._handle_serial_control(msg)
 
         if name == "HEARTBEAT":
             self._store.heartbeat()
@@ -1517,21 +1760,37 @@ class MavlinkBridge:
         """Start a full parameter download from the vehicle.
 
         Lazy, operator-triggered — keeps the GCS lean; only GPS/telemetry
-        streams until requested. Returns False when disconnected.
+        streams until requested. Returns False when disconnected or another
+        parameter operation is in progress.
         """
         with self._operation_lock:
             if not self._connection_ready():
+                # Surface a fresh error rather than a stale thread-local one
+                # (BUG 11).
+                self._set_command_error("not connected")
                 return False
             with self._param_lock:
+                # Guard against a concurrent upload/download (BUG 4): the upload
+                # worker reads self._params for MAV_PARAM_TYPE, so clobbering it
+                # here would corrupt an in-flight upload.
+                if self._param_download_state in ("downloading", "uploading"):
+                    self._set_command_error("another parameter operation in progress")
+                    return False
                 self._param_download_state = "downloading"
                 self._params.clear()
                 self._param_received = 0
                 self._param_count = -1
                 self._param_seen_indices = set()
+                # Lossy-link recovery bookkeeping (BUG 5).
+                now = time.monotonic()
+                self._param_download_started_at = now
+                self._param_last_value_at = now
+                self._param_retransmit_round = 0
             with self._send_lock:
                 self._conn.mav.param_request_list_send(
                     self._target_system, self._target_component,
                 )
+            self._start_param_watchdog()
             return True
 
     def request_param(self, name: str) -> bool:
@@ -1610,6 +1869,148 @@ class MavlinkBridge:
             self._set_command_error(text)
             return False
 
+    def start_param_upload(self, params: list[dict]) -> bool:
+        """Apply a saved parameter file to the vehicle as a background upload.
+
+        Validates the list up front, flips the protocol state to ``"uploading"``,
+        and spawns one daemon worker that walks the list calling :meth:`set_param`
+        (the confirmed-write path). Progress is published over the existing
+        param listeners so ``GET /api/params/progress`` emits per-param updates;
+        the final tally is read via :meth:`get_param_upload_result`. Mirrors
+        :meth:`request_param_list`: the validation+start run under
+        ``_operation_lock`` so they cannot race with ``set_param``/``stop``.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            if not isinstance(params, list) or not params:
+                self._set_command_error("invalid parameter list")
+                return False
+            for entry in params:
+                if not isinstance(entry, dict):
+                    self._set_command_error("invalid parameter list")
+                    return False
+                name = entry.get("name")
+                value = entry.get("value")
+                if not isinstance(name, str) or not name:
+                    self._set_command_error("invalid parameter list")
+                    return False
+                # bool is a subclass of int — reject it so True is never coerced
+                # to 1.0 and silently written to the autopilot.
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    self._set_command_error("invalid parameter list")
+                    return False
+            if not self._connection_ready():
+                self._set_command_error("not connected")
+                return False
+            # Defense-in-depth: PX4 also rejects param writes while armed, but
+            # refuse up front so the operator gets a clear error instead of N
+            # per-param failures from the worker.
+            if self._store.get_snapshot().get("armed"):
+                self._set_command_error("cannot upload parameters while armed")
+                return False
+            with self._param_lock:
+                if self._param_download_state in ("downloading", "uploading"):
+                    self._set_command_error("another parameter operation in progress")
+                    return False
+                self._param_download_state = "uploading"
+                self._param_count = len(params)
+                self._param_received = 0
+                self._param_upload_failed = []
+                self._param_upload_result = {}
+            # set_param acquires _operation_lock internally; since this runs on
+            # the worker thread (not this one) there is no recursive-lock
+            # issue, and we deliberately do NOT hold _operation_lock across
+            # the loop — that would block every other command for the whole
+            # upload.
+            self._param_upload_thread = threading.Thread(
+                target=self.set_params_batch, args=(params,),
+                name="param-upload", daemon=True,
+            )
+            self._param_upload_thread.start()
+            return True
+
+    def set_params_batch(self, params: list[dict]) -> None:
+        """Worker target: write each parameter via the confirmed-write path.
+
+        Runs on the ``param-upload`` daemon thread. Reuses :meth:`set_param`
+        so each write inherits the armed-check, cache-lookup, and PARAM_VALUE
+        echo confirmation. Per-param progress is pushed to the param listeners
+        (the SSE handler reads only ``state``/``count``/``received``); the
+        terminal ``"upload_complete"`` status is always emitted, even on error,
+        so the UI never waits on a stuck ``"uploading"`` state.
+        """
+        failed: list[dict[str, Any]] = []
+        try:
+            for p in params:
+                if not self._running.is_set():
+                    break
+                name = p["name"]
+                value = float(p["value"])
+                ok = self.set_param(name, value)
+                with self._param_lock:
+                    if ok:
+                        self._param_received += 1
+                    else:
+                        # Read the error on this worker thread (set_param sets
+                        # the thread-local _command_context here); copy it out
+                        # under the lock so the result is self-consistent.
+                        failed.append({
+                            "name": name,
+                            "error": self.get_last_command_error() or "write failed",
+                        })
+                    status = {
+                        "state": self._param_download_state,
+                        "count": self._param_count,
+                        "received": self._param_received,
+                        "name": name,
+                        "value": value,
+                    }
+                self._notify_param_listeners(status)
+        except Exception as exc:
+            logger.error("param upload failed: %s", exc)
+            with self._param_lock:
+                self._param_download_state = "upload_complete"
+                self._param_upload_result = {
+                    "state": "upload_complete",
+                    "written": self._param_received,
+                    "failed": len(failed),
+                    "errors": list(failed),
+                }
+                final = {
+                    "state": "upload_complete",
+                    "count": self._param_count,
+                    "received": self._param_received,
+                }
+            self._notify_param_listeners(final)
+            return
+        with self._param_lock:
+            self._param_download_state = "upload_complete"
+            self._param_upload_result = {
+                "state": "upload_complete",
+                "written": self._param_received,
+                "failed": len(failed),
+                "errors": list(failed),
+            }
+            final = {
+                "state": "upload_complete",
+                "count": self._param_count,
+                "received": self._param_received,
+            }
+        self._notify_param_listeners(final)
+
+    def get_param_upload_result(self) -> dict[str, Any]:
+        """Return the final tally of the last batch upload.
+
+        ``{"state","written","failed","errors"}`` — idle default before any
+        upload has run so the HTTP endpoint can render before a vehicle is
+        connected. Copied under ``_param_lock`` so concurrent readers see a
+        stable snapshot.
+        """
+        with self._param_lock:
+            if not self._param_upload_result:
+                return {"state": "idle", "written": 0, "failed": 0, "errors": []}
+            return dict(self._param_upload_result)
+
     def get_params(self) -> list[dict[str, Any]]:
         """Return cached parameters as sorted ``{"name","value","type"}`` dicts."""
         with self._param_lock:
@@ -1671,6 +2072,9 @@ class MavlinkBridge:
             if is_new:
                 self._param_received += 1
             self._param_seen_indices.add(pindex)
+            # Last-arrival timestamp feeds the watchdog's inactivity retransmit
+            # (BUG 5).
+            self._param_last_value_at = time.monotonic()
             self._params[pname] = ParamEntry(pname, pval, ptype, pindex, pcount)
             if pcount > 0:
                 self._param_count = max(self._param_count, pcount)
@@ -1692,12 +2096,101 @@ class MavlinkBridge:
         self._notify_param_listeners(status)
 
     # ------------------------------------------------------------------
+    # Lossy-link parameter-download recovery (BUG 5)
+    # ------------------------------------------------------------------
+
+    def _start_param_watchdog(self) -> None:
+        """Spawn the download watchdog (only while the bridge is running)."""
+        if not self._running.is_set():
+            return
+        if self._param_watchdog_thread and self._param_watchdog_thread.is_alive():
+            return
+        self._param_watchdog_thread = threading.Thread(
+            target=self._param_watchdog, name="param-watchdog", daemon=True,
+        )
+        self._param_watchdog_thread.start()
+
+    def _finish_param_download_incomplete(self) -> None:
+        """Flip a stuck download to a terminal "incomplete" (partial params kept)."""
+        with self._param_lock:
+            if self._param_download_state != "downloading":
+                return
+            self._param_download_state = "incomplete"
+            status = {
+                "state": "incomplete",
+                "count": self._param_count,
+                "received": self._param_received,
+            }
+        self._notify_param_listeners(status)
+
+    def _param_watchdog(self) -> None:
+        """Re-request lost PARAM_VALUEs and time out a stuck download (BUG 5).
+
+        PX4 bursts the full parameter list on PARAM_REQUEST_LIST; on a lossy
+        link some PARAM_VALUEs are lost and _param_received never reaches
+        _param_count, leaving the editor stuck at complete:false. This
+        watchdog wakes periodically and, once the burst has settled (no new
+        PARAM_VALUE for PARAM_DOWNLOAD_INACTIVITY_S), re-requests the missing
+        indices via param_request_read_send. After PARAM_DOWNLOAD_MAX_ROUNDS
+        or PARAM_DOWNLOAD_TIMEOUT_S it flips the state to a terminal
+        "incomplete" (partial params kept) so the UI never waits forever.
+        Bounded: never loops past the rounds/timeout caps.
+        """
+        while self._running.is_set() and not self._stop_event.is_set():
+            self._interruptible_sleep(PARAM_WATCHDOG_TICK_S)
+            with self._param_lock:
+                state = self._param_download_state
+                if state != "downloading":
+                    return
+                count = self._param_count
+                received = self._param_received
+                seen = set(self._param_seen_indices)
+                started_at = self._param_download_started_at
+                last_value = self._param_last_value_at
+                round_ = self._param_retransmit_round
+            if count <= 0:
+                continue
+            if received >= count:
+                return
+            now = time.monotonic()
+            if now - started_at > PARAM_DOWNLOAD_TIMEOUT_S:
+                self._finish_param_download_incomplete()
+                return
+            if now - last_value < PARAM_DOWNLOAD_INACTIVITY_S:
+                continue
+            if round_ >= PARAM_DOWNLOAD_MAX_ROUNDS:
+                self._finish_param_download_incomplete()
+                return
+            missing = set(range(count)) - seen
+            if not missing:
+                return
+            with self._param_lock:
+                self._param_retransmit_round = round_ + 1
+            conn = self._conn
+            if conn is None or conn is not self._conn:
+                return
+            # Re-request each missing index by index (name=b"", index=idx).
+            for idx in sorted(missing):
+                try:
+                    with self._send_lock:
+                        if conn is not self._conn:
+                            return
+                        conn.mav.param_request_read_send(
+                            self._target_system, self._target_component,
+                            b"", idx,
+                        )
+                except Exception as exc:
+                    logger.debug("param retransmit idx=%d failed: %s", idx, exc)
+
+    # ------------------------------------------------------------------
     # Sensor calibration
     # ------------------------------------------------------------------
 
     _CALIBRATION_MAP: dict[str, list[float]] = {
-        # MAV_CMD_PREFLIGHT_CALIBRATION (241) — verified against PX4 v1.18
-        # Commander.cpp ~line 1430. Unset params are NaN; the selected one 1.0.
+        # MAV_CMD_PREFLIGHT_CALIBRATION (241) — verified against PX4 v1.16,
+        # v1.17, v1.18 (Commander.cpp ~line 1430). Unset params are NaN; the
+        # selected one 1.0. Motor/ESC calibration (param7=1.0) verified across
+        # all three target versions.
         "gyro":        [1.0, float("nan"), float("nan"), float("nan"), float("nan"), float("nan"), float("nan")],
         "compass":     [float("nan"), 1.0, float("nan"), float("nan"), float("nan"), float("nan"), float("nan")],
         "baro":        [float("nan"), float("nan"), 1.0, float("nan"), float("nan"), float("nan"), float("nan")],
@@ -1705,6 +2198,8 @@ class MavlinkBridge:
         "level":       [float("nan"), float("nan"), float("nan"), float("nan"), 2.0, float("nan"), float("nan")],
         "accel_quick": [float("nan"), float("nan"), float("nan"), float("nan"), 4.0, float("nan"), float("nan")],
         "airspeed":    [float("nan"), float("nan"), float("nan"), float("nan"), float("nan"), 1.0, float("nan")],
+        # motor/ESC calibration — props MUST be removed; motors spin at max PWM
+        "motor":       [float("nan"), float("nan"), float("nan"), float("nan"), float("nan"), float("nan"), 1.0],
     }
 
     def calibrate(self, sensor: str) -> bool:
@@ -1781,6 +2276,56 @@ class MavlinkBridge:
             return True
 
     # ------------------------------------------------------------------
+    # Reboot to bootloader (Firmware Flash)
+    # ------------------------------------------------------------------
+
+    def reboot_to_bootloader(self) -> bool:
+        """Reboot the autopilot into its USB bootloader (for firmware flashing).
+
+        Sends MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN with the param that PX4
+        v1.16-v1.18 interpret as 'reboot to bootloader'. Refused while armed
+        (defense-in-depth, even though PX4 would reject too). Returns True only
+        if PX4 ACCEPTED.
+
+        Verified param1 = 3.0 (REBOOT_TO_BOOTLOADER) against PX4 source
+        (src/modules/commander/Commander.cpp — the uORB vehicle_command handler,
+        NOT commander_helper.cpp which only deals with LEDs/tunes):
+          - v1.16.0  Commander.cpp:1254-1256
+            `else if ((param1 == 3) && !isArmed() &&
+                       (px4_reboot_request(REBOOT_TO_BOOTLOADER, 400_ms) == 0))`
+          - v1.17.0  Commander.cpp:1274-1276  (identical)
+          - v1.18    Commander.cpp:1415-1417  (v1.18.0-beta2; v1.18.0 final is
+            not yet tagged, beta2 is the latest pre-release — identical)
+        All three: param1==3 → px4_reboot_request(REBOOT_TO_BOOTLOADER), ACK =
+        VEHICLE_CMD_RESULT_ACCEPTED, then the commander parks in a busy loop
+        until the board resets. Armed or boards without CONFIG_BOARDCTL_RESET
+        fall through to VEHICLE_CMD_RESULT_DENIED. The three target versions
+        agree on param1=3, so we send one shot (retries=0) with a short 3 s
+        timeout — the ACK arrives before the FC actually resets. We do NOT stop
+        the bridge or close the connection here: the caller (FlashService) owns
+        teardown ordering so the bootloader stays reachable on the same device.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            # Defense-in-depth: PX4 gates every reboot branch on !isArmed()
+            # (Commander.cpp), so an armed FC would DENY us regardless.
+            if self._store.get_snapshot().get("armed"):
+                self._set_command_error("cannot reboot to bootloader while armed")
+                return False
+            if not self._connection_ready():
+                return self._command_failure("Reboot to bootloader", -2)
+            nan = float("nan")
+            result = self._send_command_and_wait(
+                mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
+                [3.0, nan, nan, nan, nan, nan, nan],
+                timeout=3.0, retries=0,
+            )
+            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                return self._command_failure("Reboot to bootloader", result)
+            self._console_publish("REBOOT", "Reboot to bootloader accepted", "success")
+            return True
+
+    # ------------------------------------------------------------------
     # Per-message rate control
     # ------------------------------------------------------------------
 
@@ -1829,3 +2374,154 @@ class MavlinkBridge:
             return self.set_message_interval(
                 mavutil.mavlink.MAVLINK_MSG_ID_VIBRATION, interval_us,
             )
+
+    # ------------------------------------------------------------------
+    # PX4 NuttShell (NSH) debug shell — SERIAL_CONTROL device=SHELL
+    # ------------------------------------------------------------------
+    #
+    # The NSH shell is the only MAVLink path to NSH builtins with no MAV_CMD
+    # equivalent — ``listener <topic>``, ``top``, ``free``, ``dmesg``. PX4
+    # exposes it over SERIAL_CONTROL with device=SERIAL_CONTROL_DEV_SHELL;
+    # this is the standard QGC MAVLink Console mechanism, stable across PX4
+    # v1.16, v1.17, and v1.18. The debug shell must be enabled on the
+    # autopilot: it is on by default for SITL; on hardware the MAVLink
+    # instance must permit shell access (MAV_ADVANCED_PARAMS / instance
+    # config). REPLY|EXCLUSIVE makes PX4 stream the response back one
+    # 70-byte chunk per SERIAL_CONTROL; we pull the next chunk on each
+    # reply so multi-packet output (e.g. ``listener sensor_accel``) streams
+    # without pinning the receive loop.
+
+    def send_shell_command(self, text: str) -> bool:
+        """Send ``text`` (plus a newline) to the PX4 NSH debug shell.
+
+        Sends one ``SERIAL_CONTROL`` with ``device=SHELL`` and
+        ``flags=REPLY|EXCLUSIVE`` (=5) so PX4 streams the response back;
+        ``_handle_serial_control`` pulls each following chunk. Returns
+        ``True`` if the SERIAL_CONTROL was sent, ``False`` on disconnect
+        or send failure (mirrors the ``-2``/``False`` convention of the
+        other command methods). Resets the per-command chunk-pull counter.
+        """
+        # Clear any stale thread-local error so the caller sees a fresh result
+        # (BUG 10). The success path leaves it empty; the failure paths set it.
+        self._set_command_error("")
+        with self._send_lock:
+            conn = self._conn
+            # A6: bail if stop()/reconnect swapped the connection, or the
+            # link isn't healthy enough to dispatch an operator command.
+            if conn is not self._conn or not self._connection_ready():
+                return self._command_failure("Shell", -2)
+            payload = (text + "\n").encode("utf-8", errors="replace")
+            # SERIAL_CONTROL.data is a fixed 70-byte array; pad with NUL.
+            data = payload.ljust(70, b"\x00")
+            try:
+                conn.mav.serial_control_send(
+                    mavutil.mavlink.SERIAL_CONTROL_DEV_SHELL,
+                    mavutil.mavlink.SERIAL_CONTROL_FLAG_REPLY
+                    | mavutil.mavlink.SERIAL_CONTROL_FLAG_EXCLUSIVE,
+                    0, 0, len(payload), data,
+                )
+            except Exception as exc:
+                logger.error("shell command send failed: %s", exc)
+                # Surface the real cause instead of a stale/generic error (BUG 10).
+                self._set_command_error(f"shell send failed: {exc}")
+                return False
+            # Reset the per-command chunk counter so this response can
+            # stream up to SHELL_MAX_CHUNKS chunks.
+            self._shell_chunks_pulled = 0
+            return True
+
+    def stop_shell(self) -> None:
+        """Release exclusive NSH shell mode and clear the line buffer.
+
+        Sends a ``SERIAL_CONTROL`` with ``flags=0`` and ``count=0`` (the
+        documented release) so the autopilot stops streaming shell output
+        and frees the shell for other clients. Best-effort and idempotent:
+        swallows exceptions and is a safe no-op when not connected. Called
+        from :meth:`stop` so exclusive mode is released on shutdown.
+        """
+        self._shell_buffer = ""
+        with self._send_lock:
+            conn = self._conn
+            # A6: only release on the connection we snapshotted; no-op if
+            # the link was already torn down (best-effort release).
+            if conn is None or conn is not self._conn:
+                return
+            try:
+                conn.mav.serial_control_send(
+                    mavutil.mavlink.SERIAL_CONTROL_DEV_SHELL,
+                    0, 0, 0, 0, b"\x00" * 70,
+                )
+            except Exception:
+                pass
+
+    def _handle_serial_control(self, msg: Any) -> None:
+        """Reassemble an NSH-shell SERIAL_CONTROL reply into console lines.
+
+        PX4 streams the shell response one 70-byte chunk per SERIAL_CONTROL.
+        Each chunk is decoded, sanitized (CR stripped, backspace applied),
+        appended to the line buffer, and complete lines are published to the
+        console subscribers. On a non-empty reply (``count > 0``) we pull the
+        next chunk; ``count == 0`` is the end-of-response and is not pulled.
+        Robust to stray shell traffic when no command is in flight: it just
+        publishes. Runs in the receive loop — must never block or raise.
+        """
+        try:
+            if int(getattr(msg, "device", -1)) != mavutil.mavlink.SERIAL_CONTROL_DEV_SHELL:
+                return
+            count = int(getattr(msg, "count", 0))
+            if count <= 0:
+                # End of response (or empty): do not pull another chunk.
+                return
+            raw = bytes(msg.data)[:count]
+            text = raw.decode("utf-8", errors="replace")
+            # Sanitize: drop CR (NSH sends \r\n); apply BS by removing the
+            # previous char — in this chunk, or the buffer tail if a
+            # backspace crosses a chunk boundary (NSH line-edit echo).
+            chunk: list[str] = []
+            for ch in text:
+                if ch == "\r":
+                    continue
+                if ch == "\b":
+                    if chunk:
+                        chunk.pop()
+                    elif self._shell_buffer:
+                        self._shell_buffer = self._shell_buffer[:-1]
+                    continue
+                chunk.append(ch)
+            self._shell_buffer += "".join(chunk)
+            # Publish each complete line; keep the trailing partial line.
+            while "\n" in self._shell_buffer:
+                line, self._shell_buffer = self._shell_buffer.split("\n", 1)
+                line = line.strip()
+                if line:
+                    self._console_publish("SHELL", line, "info")
+            # Event-driven chunk pull: one request per reply returns the
+            # receive loop to normal recv between pulls (no tight loop).
+            self._pull_next_shell_chunk()
+        except Exception as exc:
+            logger.debug("SERIAL_CONTROL handling failed: %s", exc)
+
+    def _pull_next_shell_chunk(self) -> None:
+        """Send one empty SERIAL_CONTROL to request the next shell chunk.
+
+        Capped by :data:`SHELL_MAX_CHUNKS` per command (counter reset in
+        :meth:`send_shell_command`) so a runaway shell response cannot
+        stream forever. Best-effort: a torn-down link simply stops pulling.
+        """
+        if self._shell_chunks_pulled >= SHELL_MAX_CHUNKS:
+            return
+        self._shell_chunks_pulled += 1
+        with self._send_lock:
+            conn = self._conn
+            # A6: drop the pull if stop()/reconnect swapped the connection.
+            if conn is None or conn is not self._conn:
+                return
+            try:
+                conn.mav.serial_control_send(
+                    mavutil.mavlink.SERIAL_CONTROL_DEV_SHELL,
+                    mavutil.mavlink.SERIAL_CONTROL_FLAG_REPLY
+                    | mavutil.mavlink.SERIAL_CONTROL_FLAG_EXCLUSIVE,
+                    0, 0, 0, b"\x00" * 70,
+                )
+            except Exception:
+                pass

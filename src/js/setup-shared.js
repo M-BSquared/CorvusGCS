@@ -61,11 +61,21 @@ Corvus.setupShared = (function () {
     return el("div", "page-section-title", text);
   }
 
-  /** A labelled value row used in the Vehicle Info card. */
-  function infoRow(label, value) {
+  /**
+   * A labelled value row used in the Vehicle Info card.
+   * @param {string} label
+   * @param {string|number} value
+   * @param {string} [dataKey] Optional key written to the value span's
+   *   `dataset.infoKey` so callers can look the row up later for live updates
+   *   (e.g. the Setup tile grid's telemetry subscription). Omit to leave the
+   *   span unmarked — backwards-compatible with the original 2-arg call.
+   */
+  function infoRow(label, value, dataKey) {
     const r = el("div", "page-row");
     r.appendChild(el("span", "page-row-label", label));
-    r.appendChild(el("span", "page-row-value", String(value)));
+    const v = el("span", "page-row-value", String(value));
+    if (dataKey) v.dataset.infoKey = dataKey;
+    r.appendChild(v);
     return r;
   }
 

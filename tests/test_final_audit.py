@@ -31,16 +31,21 @@ _EXPECTED_GET = {
     "/api/version",
     "/api/state",
     "/api/ssh/sessions",
+    "/api/ssh/connections",
     "/api/ssh/stream",
     "/api/mavlink/modes",
     "/api/mavlink/serial-ports",
     "/api/params",
     "/api/params/progress",
+    "/api/params/upload/result",
     "/api/telemetry",
     "/api/console/stream",
     "/api/tiles/sources",
     "/api/tiles/jobs",
     "/api/tiles/progress",
+    "/api/config",
+    "/api/firmware/status",
+    "/api/firmware/progress",
 }
 
 _EXPECTED_POST = {
@@ -55,13 +60,19 @@ _EXPECTED_POST = {
     "/api/ssh/connect",
     "/api/ssh/send",
     "/api/ssh/disconnect",
+    "/api/ssh/connections",
+    "/api/ssh/connections/remove",
+    "/api/config",
     "/api/params/download",
     "/api/params/set",
+    "/api/params/upload",
     "/api/calibrate",
     "/api/autotune",
     "/api/vibration/stream",
     "/api/tiles/download",
     "/api/tiles/cancel",
+    "/api/firmware/cancel",
+    "/api/warnings/clear",
 }
 
 

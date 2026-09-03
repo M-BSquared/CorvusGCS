@@ -239,6 +239,21 @@ class VehicleStateStore:
             for fn in listeners:
                 fn(snapshot)
 
+    def clear_warnings(self) -> None:
+        """Atomically clear all warnings and notify listeners.
+
+        The warning list is replaced with an empty list; listeners are notified
+        so the UI popover empties immediately. Shares the coalesce window with
+        telemetry (immediate=False), matching ``merge_warning``.
+        """
+        with self._lock:
+            self._data["warnings"] = []
+            self._data_version += 1
+            snapshot, listeners = self._dispatch_locked(immediate=False)
+        if snapshot is not None:
+            for fn in listeners:
+                fn(snapshot)
+
     def heartbeat(self) -> None:
         """Record that a heartbeat was received.
 

@@ -43,6 +43,9 @@ Corvus.setupCalibration = (function () {
       { type: "level", label: "Level Horizon", icon: "separator-horizontal" },
       { type: "airspeed", label: "Airspeed", icon: "wind" },
       { type: "baro", label: "Baro", icon: "gauge" },
+      // ESC/motor calibration via MAV_CMD_PREFLIGHT_CALIBRATION param7=1.0.
+      // "fan" is lucide's propeller glyph (verified in the bundled set).
+      { type: "motor", label: "Motors (ESC)", icon: "fan" },
     ];
 
     const calibGrid = S.el("div", "calib-grid");
@@ -50,12 +53,19 @@ Corvus.setupCalibration = (function () {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "btn calib-btn";
-      b.setAttribute("data-variant", "secondary");
+      // Motor/ESC calibration spins motors at max PWM — flag it as a danger
+      // tile so the operator sees a red button, not a benign secondary one.
+      b.setAttribute("data-variant", c.type === "motor" ? "danger" : "secondary");
       b.dataset.type = c.type;
       b.appendChild(S.icon(c.icon));
       b.appendChild(S.el("span", "calib-btn-label", c.label));
       b.appendChild(S.el("span", "calib-btn-status", ""));
-      b.addEventListener("click", () => runCalibration(c.type));
+      // The motor button is gated by a safety-confirm modal (props-off +
+      // battery procedure); every other calibration runs directly.
+      b.addEventListener("click", () => {
+        if (c.type === "motor") runMotorCalibration();
+        else runCalibration(c.type);
+      });
       calibGrid.appendChild(b);
       return b;
     });
@@ -226,6 +236,30 @@ Corvus.setupCalibration = (function () {
       if (cur) onTelemetry(cur);
     }
 
+    // Tracks the open motor-safety modal so destroy() can remove it on
+    // back/re-render (no leaked DOM subtree if the operator leaves mid-gate).
+    let motorModal = null;
+
+    // Modal close + Escape handler live at render scope so destroy() can reuse
+    // closeMotorModal() (DRY). Before this, onKeydown was added to document
+    // inside runMotorCalibration but only closeMotorModal removed it — so
+    // navigating back with the modal open leaked a keydown listener on
+    // document. closeMotorModal is idempotent (no-op when motorModal is null),
+    // so destroy() calling it is safe whether or not the modal was opened.
+    function closeMotorModal() {
+      if (!motorModal) return;
+      if (motorModal.parentNode) motorModal.parentNode.removeChild(motorModal);
+      motorModal = null;
+      // The test-harness document stub defines addEventListener but not
+      // removeEventListener; guard so teardown doesn't throw under it.
+      if (typeof document.removeEventListener === "function") {
+        document.removeEventListener("keydown", onKeydown);
+      }
+    }
+    function onKeydown(e) {
+      if (e && e.key === "Escape") closeMotorModal();
+    }
+
     async function runCalibration(type) {
       await S.runConfigAction(calibBtns, findBtn(calibBtns, "type", type),
         "/api/calibrate", { type }, "Calibrating…", "Calibrated");
@@ -236,12 +270,67 @@ Corvus.setupCalibration = (function () {
         "/api/autotune", { axis }, "Tuning…", "Autotune started");
     }
 
+    // Motor/ESC calibration is dangerous (PX4 spins motors at max PWM). Gate
+    // it behind a safety-confirm modal so the operator must acknowledge the
+    // prop-off + battery procedure before the POST goes out. The modal is
+    // appended to `page` (NOT document.body) so the DOM-stub test harness —
+    // which has no document.body and only walks the container subtree — can
+    // reach it; position:fixed still covers the viewport regardless of parent.
+    function runMotorCalibration() {
+      if (motorModal) return;   // already open — ignore re-clicks
+
+      const overlay = S.el("div", "motor-calib-overlay");
+      const card = S.el("div", "motor-calib-modal");
+
+      card.appendChild(S.el("div", "motor-calib-title", "Motor / ESC Calibration"));
+
+      const warning = S.el("div", "motor-calib-warning");
+      warning.appendChild(S.el("div", "motor-calib-warning-line",
+        "Motors will spin at maximum PWM. Remove ALL propellers before continuing."));
+      warning.appendChild(S.el("div", "motor-calib-warning-line",
+        "Disconnect the flight battery now. The ESCs are powered by re-plugging the battery AFTER you press Calibrate, when PX4 instructs you to."));
+      warning.appendChild(S.el("div", "motor-calib-warning-line",
+        "Follow the live STATUSTEXT guidance below the sensor buttons during calibration."));
+      card.appendChild(warning);
+
+      const actions = S.el("div", "motor-calib-actions");
+      const cancel = S.el("button", "btn motor-calib-cancel", "Cancel");
+      cancel.type = "button";
+      cancel.setAttribute("data-variant", "secondary");
+      const confirm = S.el("button", "btn motor-calib-confirm", "Calibrate Motors");
+      confirm.type = "button";
+      confirm.setAttribute("data-variant", "danger");
+      actions.appendChild(cancel);
+      actions.appendChild(confirm);
+      card.appendChild(actions);
+
+      overlay.appendChild(card);
+
+      cancel.addEventListener("click", closeMotorModal);
+      // A click on the backdrop (not the card) dismisses without calibrating.
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) closeMotorModal(); });
+      document.addEventListener("keydown", onKeydown);
+      confirm.addEventListener("click", () => {
+        closeMotorModal();
+        const motorBtn = findBtn(calibBtns, "type", "motor");
+        S.runConfigAction(calibBtns, motorBtn, "/api/calibrate",
+          { type: "motor" }, "Calibrating…", "Calibration started");
+      });
+
+      page.appendChild(overlay);
+      motorModal = overlay;
+    }
+
     function findBtn(list, key, val) {
       return list.find((b) => b.dataset[key] === val) || list[0];
     }
 
     // Teardown returned to the caller (setup.js). Idempotent + guarded.
     function destroy() {
+      // Release the motor-safety modal AND its document keydown listener via
+      // closeMotorModal() (DRY). Idempotent: no-op when the modal was never
+      // opened, and safe to call again after it already ran (motorModal null).
+      closeMotorModal();
       if (unsub) { try { unsub(); } catch (_e) {} unsub = null; }
       if (typeof window !== "undefined" && typeof window.Plotly !== "undefined" && window.Plotly) {
         graphs.forEach((g) => {

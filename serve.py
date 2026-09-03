@@ -39,6 +39,16 @@ def _stop_all(server) -> None:
     in-flight handler touches a closed DB). Each step is independently
     guarded so a failure in one cannot skip the rest.
     """
+    # Flash uses the MAVLink bridge (it stops/starts it), so cancel/join the
+    # uploader BEFORE tearing the bridge down.
+    flash = getattr(server, "flash", None)
+    if flash is not None:
+        try:
+            logger.info("stopping flash …")
+            flash.shutdown()
+            logger.info("flash stopped")
+        except Exception:
+            logger.exception("flash shutdown failed")
     mavlink = getattr(server, "mavlink", None)
     if mavlink is not None:
         try:
@@ -104,6 +114,20 @@ def main() -> None:
 
     server = create_server(port=port, mavlink_conn=mavlink_conn)
     shutting_down = threading.Event()
+    # _torn_down tracks whether _stop_all has actually run, so the atexit
+    # teardown (which fires if the main thread exits abnormally before the
+    # normal wait->_stop_all path) never double-tears-down with the normal
+    # path. Without a real atexit teardown the daemon threads were killed by
+    # the OS with no flush/close — tlogs could truncate, violating the clean
+    # shutdown contract.
+    _torn_down = threading.Event()
+
+    def _teardown() -> None:
+        """Run _stop_all exactly once; safe from the normal path and atexit."""
+        if _torn_down.is_set():
+            return
+        _torn_down.set()
+        _stop_all(server)
 
     def shutdown(*_args) -> None:
         if shutting_down.is_set():
@@ -112,7 +136,12 @@ def main() -> None:
 
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
-    atexit.register(lambda: shutdown())
+    # Real teardown at interpreter exit: if the normal wait->_stop_all path
+    # already ran, _torn_down is set and this is a no-op; if the main thread
+    # died early (uncaught exception), this is the only chance to flush tlogs
+    # and join threads. The signal handlers still only set the event, so the
+    # normal wait->_stop_all path works exactly as before.
+    atexit.register(_teardown)
 
     logger.info("CORVUS GCS v%s — http://localhost:%d/ (MAVLink: %s)",
                 get_version(), port, mavlink_conn)
@@ -146,8 +175,12 @@ def main() -> None:
         pass
 
     logger.info("Shutting down — stopping all connections …")
+    _teardown()
+    # Start the watchdog AFTER teardown returns so it can never pre-empt
+    # _stop_all: mavlink.stop() joins up to ~8s, and a 2s watchdog firing
+    # mid-teardown would cut the tlog flush short. The watchdog now only
+    # guards the final server_thread.join against a hang.
     watchdog.start()
-    _stop_all(server)
     try:
         server_thread.join(timeout=2)
     except Exception:

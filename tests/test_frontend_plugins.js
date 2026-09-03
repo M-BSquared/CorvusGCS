@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Frontend tests for the FUTURE-tab plugin registry (Corvus.plugins) and the
+ * Frontend tests for the TOOLS-tab plugin registry (Corvus.plugins) and the
  * Vibration Monitor plugin (Corvus.pluginVibration).
  *
  * Plain Node-runnable assertions (no browser, no test runner) following the

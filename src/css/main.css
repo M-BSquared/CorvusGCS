@@ -327,7 +327,7 @@ svg { display: block; }
    Shares the .glass material/depth so the two planning surfaces read as
    one family; only the body composition differs (count + slider + actions). */
 .plan-panel {
-  position: absolute; top: 72px; left: 14px; z-index: 12;
+  position: absolute; top: 92px; left: 14px; z-index: 12;
   border-radius: var(--radius);
   padding: 14px; width: 260px;
   animation: corvus-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -649,6 +649,9 @@ svg { display: block; }
 .warnings-popover[hidden] { display: none; }
 .wp-header { display: flex; align-items: center; justify-content: space-between; padding: 11px 13px; border-bottom: 1px solid var(--border-soft); }
 .wp-title { font-size: 12px; font-weight: 600; letter-spacing: 0.5px; }
+.wp-actions { display: flex; gap: 4px; }
+.wp-clear-all:disabled, .wp-clear-all[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
+.wp-clear-all:disabled:hover, .wp-clear-all[aria-disabled="true"]:hover { background: transparent; color: var(--text-3); }
 .wp-list { max-height: 280px; overflow-y: auto; }
 .wp-item { display: flex; gap: 10px; padding: 10px 13px; border-bottom: 1px solid var(--border-soft); align-items: flex-start; }
 .wp-item:last-child { border-bottom: none; }
@@ -738,6 +741,7 @@ svg { display: block; }
 .con-line.nav .con-msg { color: var(--nav); }
 .con-line.cmd .con-arrow { color: var(--terminal-cmd); }
 .con-line.cmd .con-msg { color: var(--terminal-cmd); }
+.con-line.shell .con-msg { color: var(--nav-bright); }
 
 .console-input-row {
   display: flex; align-items: center; gap: 8px;
@@ -1075,6 +1079,77 @@ svg { display: block; }
 .calib-btn-status.err { color: var(--critical); }
 .btn.calib-btn.busy { border-color: var(--nav); }
 
+/* Motor/ESC button wears data-variant="danger" (red tile in the grid). The
+   default .calib-btn icon is accent-bright green, which would clash with the
+   red surface — override the icon + status to white so the danger tile reads
+   coherently. Other calib buttons keep the default accent-bright icon. */
+.btn.calib-btn[data-variant="danger"] > svg,
+.btn.calib-btn[data-variant="danger"] > i[data-lucide] { color: #fff; }
+.btn.calib-btn[data-variant="danger"] .calib-btn-status { color: rgba(255, 255, 255, 0.8); }
+.btn.calib-btn[data-variant="danger"] .calib-btn-status.busy,
+.btn.calib-btn[data-variant="danger"] .calib-btn-status.ok,
+.btn.calib-btn[data-variant="danger"] .calib-btn-status.err { color: #fff; }
+
+/* ----- MOTOR / ESC SAFETY MODAL -----
+   Mirrors the .ssh-modal* glass material (apple-design §12: a translucent
+   functional layer + dimming scrim) so the danger confirmation reads as the
+   same surface language as the rest of the app. Entrance is a gentle
+   scale+opacity (§12 "materialize, don't just fade"); reduced motion drops
+   the scale and keeps a short cross-fade (§14). Reduced transparency makes
+   the material frostier/solid (§14). */
+.motor-calib-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: grid; place-items: center;
+  animation: motor-calib-enter 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.motor-calib-modal {
+  background: rgba(17, 22, 29, 0.7);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 24px; width: 400px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  animation: motor-calib-enter 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes motor-calib-enter {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.motor-calib-title {
+  font-size: 15px; font-weight: 700; color: var(--text-1);
+  letter-spacing: 0.3px; margin-bottom: 14px;
+  /* Subtle critical cue so the title reads as a warning, not a plain label. */
+  padding-left: 10px; border-left: 3px solid var(--critical);
+}
+.motor-calib-warning {
+  display: flex; flex-direction: column; gap: 8px;
+  font-size: 12px; line-height: 1.5;
+  background: var(--critical-dark); border: 1px solid var(--critical);
+  border-radius: var(--radius-btn); padding: 12px 14px;
+}
+.motor-calib-warning-line { color: var(--text-1); }
+.motor-calib-actions { display: flex; gap: 10px; margin-top: 18px; }
+.motor-calib-cancel, .motor-calib-confirm { flex: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .motor-calib-overlay, .motor-calib-modal {
+    animation: none !important; transform: none !important;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .motor-calib-overlay {
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  .motor-calib-modal {
+    background: var(--surface-1);
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+}
+
 .guidance-title {
   display: flex; align-items: center; gap: 6px;
   font-size: 11px; font-weight: 600; letter-spacing: 0.5px; color: var(--text-2);
@@ -1222,6 +1297,26 @@ svg { display: block; }
 }
 .params-banner[hidden] { display: none; }
 
+/* ----- FIRMWARE ----- */
+/* Dedicated card class (mirrors .params-card's column layout) so the firmware
+   page reads as its own surface, not a params reuse. */
+.firmware-card { display: flex; flex-direction: column; gap: 12px; }
+.firmware-file-row { display: flex; align-items: center; gap: 10px; }
+/* .firmware-file-input mirrors .params-search (same surface/border/radius/focus
+   ring) so the native file picker reads as part of the same form language. */
+.firmware-file-input {
+  background: rgba(11, 14, 18, 0.6);
+  border: 1px solid var(--border); border-radius: var(--radius-btn);
+  padding: 6px 10px; color: var(--text-1); font-size: 12px; outline: none;
+  font-family: var(--sans);
+}
+.firmware-file-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+.firmware-filename {
+  font-family: var(--mono); font-size: 11.5px; color: var(--text-2);
+  word-break: break-all;
+}
+.firmware-cancel { margin-left: auto; }
+
 /* Reduced transparency: make translucent/animated surfaces frostier (apple-design §14). */
 @media (prefers-reduced-transparency: reduce) {
   .autotune-live-dot { animation: none; }
@@ -1249,3 +1344,12 @@ svg { display: block; }
   .flight-overlay .instruments { grid-template-columns: 1fr; }
   .nav-item .nav-label { display: none; }
 }
+
+/* ===== Parameter Export/Import actions (setup-parameters) ===== */
+.params-actions { display: flex; align-items: center; gap: 10px; padding: 4px 0 8px; flex-wrap: wrap; }
+.params-actions .btn { padding: 8px 13px; font-weight: 700; gap: 6px; }
+.params-actions .btn i, .params-actions .btn svg { width: 14px; height: 14px; }
+.params-actions-status { font-size: 11.5px; color: var(--text-2); min-width: 0; flex: 1; }
+.params-actions-status.pending { color: var(--nav); }
+.params-actions-status.ok { color: var(--healthy); }
+.params-actions-status.err { color: var(--critical); }

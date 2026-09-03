@@ -19,15 +19,25 @@ class FakeParamBridge:
         params: list[dict] | None = None,
         result: bool = True,
         error: str = "",
+        upload_ok: bool = True,
+        upload_result: dict | None = None,
     ) -> None:
         self._param_status = param_status or {"state": "idle", "count": 0, "received": 0}
         self._params = params or []
         self.result = result
         self.error = error
+        self.upload_ok = upload_ok
+        self.upload_result = upload_result or {
+            "state": "idle",
+            "written": 0,
+            "failed": 0,
+            "errors": [],
+        }
         self.requested_lists: int = 0
         self.set_calls: list[tuple[str, float]] = []
         self.calibrate_calls: list[str] = []
         self.autotune_calls: list[str] = []
+        self.upload_calls: list[list[dict]] = []
         self.param_listeners: list[Any] = []
         self.add_listener_calls: int = 0
         self.remove_listener_calls: int = 0
@@ -73,6 +83,13 @@ class FakeParamBridge:
     def autotune(self, axis: str) -> bool:
         self.autotune_calls.append(axis)
         return self.result
+
+    def start_param_upload(self, params: list[dict]) -> bool:
+        self.upload_calls.append(params)
+        return self.upload_ok
+
+    def get_param_upload_result(self) -> dict:
+        return dict(self.upload_result)
 
     def get_last_command_error(self) -> str:
         return self.error
@@ -282,6 +299,172 @@ def test_params_set_without_bridge_returns_503() -> None:
     assert responses == [({"ok": False, "error": "not connected"}, 503)]
 
 
+# ---- POST /api/params/upload ----
+
+def test_params_upload_ok_starts_upload() -> None:
+    bridge = FakeParamBridge(upload_ok=True)
+    handler, responses = _handler_with_bridge(bridge)
+
+    handler._api_params_upload({
+        "params": [
+            {"name": "MC_ROLL_P", "value": 6.5},
+            {"name": "MC_PITCH_P", "value": 7.0},
+        ],
+    })
+
+    assert bridge.upload_calls == [[
+        {"name": "MC_ROLL_P", "value": 6.5},
+        {"name": "MC_PITCH_P", "value": 7.0},
+    ]]
+    assert responses == [({"ok": True, "state": "uploading", "count": 2}, 200)]
+
+
+def test_params_upload_rejects_empty_list() -> None:
+    bridge = FakeParamBridge(upload_ok=True)
+    handler, responses = _handler_with_bridge(bridge)
+
+    handler._api_params_upload({"params": []})
+
+    assert bridge.upload_calls == []
+    assert responses == [({"ok": False, "error": "params must be a non-empty list"}, 400)]
+
+
+def test_params_upload_rejects_non_list() -> None:
+    bridge = FakeParamBridge(upload_ok=True)
+    handler, responses = _handler_with_bridge(bridge)
+
+    handler._api_params_upload({"params": "x"})
+
+    assert bridge.upload_calls == []
+    assert responses == [({"ok": False, "error": "params must be a non-empty list"}, 400)]
+
+
+def test_params_upload_rejects_bool_value() -> None:
+    bridge = FakeParamBridge(upload_ok=True)
+    handler, responses = _handler_with_bridge(bridge)
+
+    handler._api_params_upload({"params": [{"name": "X", "value": True}]})
+
+    assert bridge.upload_calls == []
+    assert responses == [({
+        "ok": False,
+        "error": "invalid parameter at index 0: value must be a number",
+    }, 400)]
+
+
+def test_params_upload_rejects_missing_name() -> None:
+    bridge = FakeParamBridge(upload_ok=True)
+    handler, responses = _handler_with_bridge(bridge)
+
+    handler._api_params_upload({"params": [{"value": 1.0}]})
+
+    assert bridge.upload_calls == []
+    assert responses == [({
+        "ok": False,
+        "error": "invalid parameter at index 0: name must be a non-empty string",
+    }, 400)]
+
+
+def test_params_upload_disconnected_returns_503() -> None:
+    bridge = FakeParamBridge(upload_ok=False, error="not connected")
+    handler, responses = _handler_with_bridge(bridge)
+
+    handler._api_params_upload({"params": [{"name": "MC_ROLL_P", "value": 6.5}]})
+
+    assert responses == [({"ok": False, "error": "not connected"}, 503)]
+
+
+def test_params_upload_armed_returns_409() -> None:
+    bridge = FakeParamBridge(upload_ok=False, error="cannot upload parameters while armed")
+    handler, responses = _handler_with_bridge(bridge)
+
+    handler._api_params_upload({"params": [{"name": "MC_ROLL_P", "value": 6.5}]})
+
+    assert responses == [({
+        "ok": False,
+        "error": "cannot upload parameters while armed",
+    }, 409)]
+
+
+def test_params_upload_busy_returns_409() -> None:
+    bridge = FakeParamBridge(upload_ok=False, error="another parameter operation in progress")
+    handler, responses = _handler_with_bridge(bridge)
+
+    handler._api_params_upload({"params": [{"name": "MC_ROLL_P", "value": 6.5}]})
+
+    assert responses == [({
+        "ok": False,
+        "error": "another parameter operation in progress",
+    }, 409)]
+
+
+def test_params_upload_without_bridge_returns_503() -> None:
+    handler, responses = _handler_without_bridge()
+
+    handler._api_params_upload({"params": [{"name": "MC_ROLL_P", "value": 6.5}]})
+
+    assert responses == [({"ok": False, "error": "not connected"}, 503)]
+
+
+def test_post_params_upload_route_dispatches_to_helper() -> None:
+    bridge = FakeParamBridge(upload_ok=True)
+    handler, responses = _handler_with_bridge(bridge)
+    body = (
+        b'{"params": [{"name": "MC_ROLL_P", "value": 6.5}, '
+        b'{"name": "MC_PITCH_P", "value": 7.0}]}'
+    )
+    handler.headers = _Headers(body)  # type: ignore[assignment]
+    handler.rfile = _ScriptedReader([body])  # type: ignore[assignment]
+
+    handler._handle_api_post("/api/params/upload")
+
+    assert bridge.upload_calls == [[
+        {"name": "MC_ROLL_P", "value": 6.5},
+        {"name": "MC_PITCH_P", "value": 7.0},
+    ]]
+    assert responses == [({"ok": True, "state": "uploading", "count": 2}, 200)]
+
+
+# ---- GET /api/params/upload/result ----
+
+def test_params_upload_result_returns_bridge_result() -> None:
+    upload_result = {
+        "state": "upload_complete",
+        "written": 3,
+        "failed": 1,
+        "errors": [{"name": "X", "error": "denied"}],
+    }
+    bridge = FakeParamBridge(upload_result=upload_result)
+    handler, responses = _handler_with_bridge(bridge)
+
+    handler._api_params_upload_result()
+
+    assert responses == [(upload_result, 200)]
+
+
+def test_params_upload_result_without_bridge_returns_idle_default() -> None:
+    handler, responses = _handler_without_bridge()
+
+    handler._api_params_upload_result()
+
+    assert responses == [({"state": "idle", "written": 0, "failed": 0, "errors": []}, 200)]
+
+
+def test_get_params_upload_result_route_dispatches() -> None:
+    upload_result = {
+        "state": "upload_complete",
+        "written": 2,
+        "failed": 0,
+        "errors": [],
+    }
+    bridge = FakeParamBridge(upload_result=upload_result)
+    handler, responses = _handler_with_bridge(bridge)
+
+    handler._handle_api_get("/api/params/upload/result")
+
+    assert responses == [(upload_result, 200)]
+
+
 # ---- POST /api/calibrate ----
 
 def test_calibrate_compass_ok_calls_bridge_lowercased() -> None:
@@ -291,6 +474,16 @@ def test_calibrate_compass_ok_calls_bridge_lowercased() -> None:
     handler._api_calibrate({"type": "compass"})
 
     assert bridge.calibrate_calls == ["compass"]
+    assert responses == [({"ok": True}, 200)]
+
+
+def test_calibrate_motor_ok_calls_bridge() -> None:
+    bridge = FakeParamBridge(result=True)
+    handler, responses = _handler_with_bridge(bridge)
+
+    handler._api_calibrate({"type": "motor"})
+
+    assert bridge.calibrate_calls == ["motor"]
     assert responses == [({"ok": True}, 200)]
 
 

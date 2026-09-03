@@ -15,6 +15,8 @@ from corvus.config import (
     CorvusConfig,
     default_config_path,
     load_config,
+    save_config,
+    to_public_dict,
 )
 
 
@@ -170,3 +172,258 @@ def test_apply_overrides_returns_new_config_non_none_only() -> None:
     assert base.mavlink_connection == _defaults().mavlink_connection
     # Unknown kwargs are dropped (no attribute created).
     assert not hasattr(overridden, "not_a_field")
+
+
+# ---------------------------------------------------------------------------
+# New optional fields: ssh_connections, theme, map
+# ---------------------------------------------------------------------------
+
+def test_default_config_has_empty_new_fields() -> None:
+    """A fresh CorvusConfig ships with empty ssh_connections and None theme/map."""
+    cfg = CorvusConfig()
+    assert cfg.ssh_connections == []
+    assert cfg.theme is None
+    assert cfg.map is None
+
+
+def test_load_config_parses_ssh_connections(tmp_path) -> None:
+    """ssh_connections parses to a clean list of dicts with int ports."""
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({
+        "ssh_connections": [
+            {"name": "CORVUS-01", "host": "192.168.2.10", "port": 22,
+             "username": "corvus", "key_path": "", "password": "secret"},
+            {"name": "PI", "host": "10.0.0.5", "port": "2222",  # str -> int
+             "username": "pi"},
+        ],
+    }), encoding="utf-8")
+    cfg = load_config(str(p))
+    assert len(cfg.ssh_connections) == 2
+    first = cfg.ssh_connections[0]
+    assert first["name"] == "CORVUS-01"
+    assert first["host"] == "192.168.2.10"
+    assert first["port"] == 22
+    assert isinstance(first["port"], int)
+    assert first["password"] == "secret"
+    second = cfg.ssh_connections[1]
+    assert second["port"] == 2222
+    # Missing keys fall back to sane empty defaults.
+    assert second["key_path"] == ""
+    assert second["password"] == ""
+
+
+def test_load_config_ssh_connections_malformed_falls_back_to_empty(tmp_path) -> None:
+    """A non-list ssh_connections or non-dict entries never crash."""
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({
+        "ssh_connections": [
+            "not-a-dict",
+            {"host": "x", "port": 22},          # no name -> dropped
+            {"name": 42, "host": "y"},           # name not a string -> dropped
+            {"name": "OK", "host": "z", "port": "nope", "username": 5},
+        ],
+    }), encoding="utf-8")
+    cfg = load_config(str(p))
+    assert len(cfg.ssh_connections) == 1
+    only = cfg.ssh_connections[0]
+    assert only["name"] == "OK"
+    assert only["host"] == "z"
+    assert only["port"] == 22  # bad port coerced to default
+    assert only["username"] == ""  # non-string username -> empty str
+
+
+def test_load_config_ssh_connections_non_list_returns_empty(tmp_path) -> None:
+    """A ssh_connections that is not a list at all yields an empty list."""
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"ssh_connections": {"name": "x"}}), encoding="utf-8")
+    cfg = load_config(str(p))
+    assert cfg.ssh_connections == []
+
+
+def test_load_config_parses_theme(tmp_path) -> None:
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"theme": {"accent": "#3DA876"}}), encoding="utf-8")
+    cfg = load_config(str(p))
+    assert cfg.theme == {"accent": "#3DA876"}
+
+
+def test_load_config_theme_non_string_accent_dropped(tmp_path) -> None:
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"theme": {"accent": 42}}), encoding="utf-8")
+    cfg = load_config(str(p))
+    assert cfg.theme is None  # bad accent -> None (use defaults)
+
+
+def test_load_config_theme_non_dict_returns_none(tmp_path) -> None:
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"theme": "dark"}), encoding="utf-8")
+    cfg = load_config(str(p))
+    assert cfg.theme is None
+
+
+def test_load_config_parses_map(tmp_path) -> None:
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"map": {"base_layer": "satellite"}}), encoding="utf-8")
+    cfg = load_config(str(p))
+    assert cfg.map == {"base_layer": "satellite"}
+
+
+def test_load_config_map_non_string_base_layer_dropped(tmp_path) -> None:
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"map": {"base_layer": 3}}), encoding="utf-8")
+    cfg = load_config(str(p))
+    assert cfg.map is None
+
+
+def test_load_config_map_non_dict_returns_none(tmp_path) -> None:
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"map": "satellite"}), encoding="utf-8")
+    cfg = load_config(str(p))
+    assert cfg.map is None
+
+
+def test_load_config_old_file_without_new_fields_still_loads(tmp_path) -> None:
+    """An old config file with none of the new keys loads with defaults."""
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({
+        "mavlink_connection": "udp:0.0.0.0:14540",
+        "http_port": 8000,
+    }), encoding="utf-8")
+    cfg = load_config(str(p))
+    assert cfg.ssh_connections == []
+    assert cfg.theme is None
+    assert cfg.map is None
+
+
+# ---------------------------------------------------------------------------
+# save_config: atomic write, chmod 600, round-trip
+# ---------------------------------------------------------------------------
+
+def test_save_config_creates_parent_dir_and_writes_file(tmp_path) -> None:
+    cfg = CorvusConfig(
+        mavlink_connection="udp:1.2.3.4:14550",
+        http_port=9001,
+        ssh_connections=[{"name": "X", "host": "h", "port": 22,
+                          "username": "u", "key_path": "", "password": "p"}],
+        theme={"accent": "#abcdef"},
+        map={"base_layer": "satellite"},
+    )
+    path = tmp_path / "nested" / "config.json"
+    save_config(cfg, str(path))
+    assert path.is_file()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["mavlink_connection"] == "udp:1.2.3.4:14550"
+    assert data["http_port"] == 9001
+    assert data["ssh_connections"][0]["name"] == "X"
+    assert data["theme"] == {"accent": "#abcdef"}
+    assert data["map"] == {"base_layer": "satellite"}
+
+
+def test_save_config_file_mode_is_600(tmp_path) -> None:
+    """The saved config is owner-read/write-only because it may hold passwords."""
+    cfg = CorvusConfig(
+        ssh_connections=[{"name": "X", "host": "h", "port": 22,
+                          "username": "u", "key_path": "", "password": "hunter2"}],
+    )
+    path = tmp_path / "config.json"
+    save_config(cfg, str(path))
+    mode = path.stat().st_mode & 0o777
+    assert mode == 0o600, f"expected 0o600, got {oct(mode)}"
+
+
+def test_save_config_round_trip_load_returns_equivalent(tmp_path) -> None:
+    cfg = CorvusConfig(
+        mavlink_connection="tcp:1.2.3.4:5760",
+        http_port=7777,
+        tile_cache_dir="/tmp/x",
+        tlog_dir="/tmp/y",
+        tile_sources={"satellite": {"label": "S", "upstream": "u", "maxzoom": 18}},
+        stream_rates={"ATTITUDE": 10},
+        ssh_connections=[{"name": "A", "host": "h1", "port": 22,
+                          "username": "u", "key_path": "k", "password": "p1"}],
+        theme={"accent": "#3DA876"},
+        map={"base_layer": "topo"},
+    )
+    path = tmp_path / "config.json"
+    save_config(cfg, str(path))
+    loaded = load_config(str(path))
+    assert loaded.mavlink_connection == cfg.mavlink_connection
+    assert loaded.http_port == cfg.http_port
+    assert loaded.tile_cache_dir == cfg.tile_cache_dir
+    assert loaded.tlog_dir == cfg.tlog_dir
+    assert loaded.tile_sources == cfg.tile_sources
+    assert loaded.stream_rates == cfg.stream_rates
+    assert loaded.ssh_connections == cfg.ssh_connections
+    assert loaded.theme == cfg.theme
+    assert loaded.map == cfg.map
+
+
+def test_save_config_omits_none_optional_fields(tmp_path) -> None:
+    """None tile_sources/theme/map are not written; the file stays lean."""
+    cfg = CorvusConfig()  # all None / empty defaults
+    path = tmp_path / "config.json"
+    save_config(cfg, str(path))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert "tile_sources" not in data
+    assert "stream_rates" not in data
+    assert "theme" not in data
+    assert "map" not in data
+    # ssh_connections is real operator state; kept even when empty.
+    assert data["ssh_connections"] == []
+
+
+def test_save_config_atomic_no_partial_file_on_success(tmp_path) -> None:
+    """After a successful save there are no leftover .tmp files in the dir."""
+    cfg = CorvusConfig()
+    path = tmp_path / "config.json"
+    save_config(cfg, str(path))
+    leftovers = [p for p in tmp_path.iterdir() if p.name.endswith(".tmp")]
+    assert leftovers == []
+
+
+def test_save_config_default_path_creates_corvus_dir(tmp_path, monkeypatch) -> None:
+    """save_config(cfg) with no path writes to ~/.corvus/config.json (mode 600)."""
+    fake_home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(fake_home))
+    save_config(CorvusConfig(http_port=12345))
+    p = fake_home / ".corvus" / "config.json"
+    assert p.is_file()
+    assert (p.stat().st_mode & 0o777) == 0o600
+    assert json.loads(p.read_text(encoding="utf-8"))["http_port"] == 12345
+
+
+# ---------------------------------------------------------------------------
+# to_public_dict: the single redaction point
+# ---------------------------------------------------------------------------
+
+def test_to_public_dict_strips_password_from_ssh_connections() -> None:
+    cfg = CorvusConfig(
+        ssh_connections=[
+            {"name": "A", "host": "h", "port": 22, "username": "u",
+             "key_path": "/k", "password": "hunter2"},
+            {"name": "B", "host": "h2", "port": 22, "username": "u",
+             "key_path": "", "password": "s3cret"},
+        ],
+    )
+    public = to_public_dict(cfg)
+    for entry in public["ssh_connections"]:
+        assert "password" not in entry
+        # key_path is a path, not a secret — kept.
+        assert "key_path" in entry
+    # Non-ssh fields are untouched.
+    assert "mavlink_connection" in public
+    assert "http_port" in public
+
+
+def test_to_public_dict_preserves_theme_and_map() -> None:
+    cfg = CorvusConfig(theme={"accent": "#3DA876"}, map={"base_layer": "satellite"})
+    public = to_public_dict(cfg)
+    assert public["theme"] == {"accent": "#3DA876"}
+    assert public["map"] == {"base_layer": "satellite"}
+
+
+def test_to_public_dict_on_defaults_returns_redactable_shape() -> None:
+    """A defaults config still serializes to a dict with ssh_connections key."""
+    public = to_public_dict(CorvusConfig())
+    assert public["ssh_connections"] == []
+    assert public["mavlink_connection"] == CorvusConfig().mavlink_connection

@@ -166,6 +166,91 @@ function testSourceTextEnablesAttributionControl() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// _planRouteCoords: plan-route coordinate computation.
+//
+// The dashed plan line must start at the drone's position, so a single
+// waypoint still renders (drone -> wp1). The hook reads live
+// Corvus.telemetry.getState() and, by default, the module-internal waypoints.
+// In Node the internal array can only be filled via addWaypoint (which needs
+// a map), so each case passes the waypoint list explicitly and stubs
+// Corvus.telemetry right before the call — the hook reads it live, so swapping
+// states per-case is fine.
+// ---------------------------------------------------------------------------
+function setTelemetryState(state) {
+  global.Corvus.telemetry = { getState: () => state };
+}
+function clearTelemetry() { delete global.Corvus.telemetry; }
+
+function testPlanRouteHookExists() {
+  assert.strictEqual(
+    typeof map._planRouteCoords, "function",
+    "Corvus.map must expose the _planRouteCoords test hook",
+  );
+}
+
+function testPlanRouteEmptyWhenNoWaypoints() {
+  setTelemetryState({ connected: true, position: [8.5, 47.3] });
+  assert.deepStrictEqual(map._planRouteCoords([]), [],
+    "0 waypoints must yield []");
+}
+
+function testPlanRoutePrependsVehicleForSingleWaypoint() {
+  setTelemetryState({ connected: true, position: [8.5, 47.3] });
+  assert.deepStrictEqual(
+    map._planRouteCoords([{ lat: 47.4, lon: 8.6 }]),
+    [[8.5, 47.3], [8.6, 47.4]],
+    "1 waypoint + connected vehicle must prepend the vehicle [lng, lat]",
+  );
+}
+
+function testPlanRouteNoVehicleOneWaypointCollapsesToEmpty() {
+  setTelemetryState({ connected: false, position: [0, 0] });
+  assert.deepStrictEqual(
+    map._planRouteCoords([{ lat: 47.4, lon: 8.6 }]),
+    [],
+    "1 waypoint + no vehicle fix must collapse to [] (>=2-or-empty invariant)",
+  );
+}
+
+function testPlanRouteNoVehicleTwoWaypointsRendersLine() {
+  setTelemetryState({ connected: false, position: [0, 0] });
+  assert.deepStrictEqual(
+    map._planRouteCoords([{ lat: 47.4, lon: 8.6 }, { lat: 47.5, lon: 8.7 }]),
+    [[8.6, 47.4], [8.7, 47.5]],
+    "2 waypoints + no vehicle must fall back to waypoint coords only",
+  );
+}
+
+function testPlanRoutePrependsVehicleForMultipleWaypoints() {
+  setTelemetryState({ connected: true, position: [8.5, 47.3] });
+  assert.deepStrictEqual(
+    map._planRouteCoords([{ lat: 47.4, lon: 8.6 }, { lat: 47.5, lon: 8.7 }]),
+    [[8.5, 47.3], [8.6, 47.4], [8.7, 47.5]],
+    ">=1 waypoint + connected vehicle must prepend vehicle then list wps",
+  );
+}
+
+function testPlanRouteZeroPositionTreatedAsNoFix() {
+  // connected:true but position [0,0] means no GPS fix -> no vehicle prefix.
+  setTelemetryState({ connected: true, position: [0, 0] });
+  assert.deepStrictEqual(
+    map._planRouteCoords([{ lat: 47.4, lon: 8.6 }, { lat: 47.5, lon: 8.7 }]),
+    [[8.6, 47.4], [8.7, 47.5]],
+    "connected but [0,0] (no fix) must not prepend a vehicle prefix",
+  );
+}
+
+function testPlanRouteMissingTelemetryDegradesToWaypointsOnly() {
+  // Corvus.telemetry undefined entirely -> defensive null -> waypoints only.
+  clearTelemetry();
+  assert.deepStrictEqual(
+    map._planRouteCoords([{ lat: 47.4, lon: 8.6 }, { lat: 47.5, lon: 8.7 }]),
+    [[8.6, 47.4], [8.7, 47.5]],
+    "missing Corvus.telemetry must degrade to waypoint coords only",
+  );
+}
+
 const tests = [
   testTileHasExactlyFiveEntries,
   testTileLabelsMatchRegistry,
@@ -173,6 +258,14 @@ const tests = [
   testTileAttributionsMatchRegistry,
   testOsmAttributionIsCorrect,
   testSourceTextEnablesAttributionControl,
+  testPlanRouteHookExists,
+  testPlanRouteEmptyWhenNoWaypoints,
+  testPlanRoutePrependsVehicleForSingleWaypoint,
+  testPlanRouteNoVehicleOneWaypointCollapsesToEmpty,
+  testPlanRouteNoVehicleTwoWaypointsRendersLine,
+  testPlanRoutePrependsVehicleForMultipleWaypoints,
+  testPlanRouteZeroPositionTreatedAsNoFix,
+  testPlanRouteMissingTelemetryDegradesToWaypointsOnly,
 ];
 
 let failed = 0;

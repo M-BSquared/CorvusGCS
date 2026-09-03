@@ -501,3 +501,137 @@ def test_stop_wakes_pending_param_set_waiters(
     # The pending set_param should have been woken with -2 → returns False.
     assert results == [False]
     assert bridge._param_download_state == "idle"
+
+
+# ---------------------------------------------------------------------------
+# Batch parameter upload (start_param_upload / set_params_batch / result)
+# ---------------------------------------------------------------------------
+
+def test_start_param_upload_starts_worker_and_sets_uploading(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge = ready_bridge()
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    # ready_bridge() never calls start(), so _running is clear; the worker
+    # loop checks _running each iteration, so set it for the upload to run.
+    bridge._running.set()
+    # Pre-populate the cache so set_param takes the cache-hit path.
+    bridge._dispatch(param_value("A", 0.0, index=0, count=0))
+    bridge._dispatch(param_value("B", 0.0, index=1, count=0))
+
+    # Gate the worker inside the first param_set_send so the "uploading" state
+    # can be asserted before the worker races to completion. The echo is
+    # dispatched after the gate opens, so set_param confirms each write.
+    gate = threading.Event()
+
+    def on_send(args: tuple) -> None:
+        # args = ("param_set", sys, comp, name_bytes, value, ptype)
+        gate.wait(timeout=5)
+        name = args[3].decode("utf-8")
+        value = args[4]
+        ptype = args[5]
+        bridge._dispatch(param_value(name, value, ptype=ptype, index=0, count=0))
+
+    bridge._conn.mav.on_send = on_send
+
+    assert bridge.start_param_upload([
+        {"name": "A", "value": 1.0},
+        {"name": "B", "value": 2.0},
+    ]) is True
+    assert bridge._param_download_state == "uploading"
+    assert bridge._param_count == 2
+    assert bridge._param_received == 0
+
+    gate.set()
+    bridge._param_upload_thread.join(timeout=5)
+    assert not bridge._param_upload_thread.is_alive()
+
+    assert bridge._param_download_state == "upload_complete"
+    assert bridge._param_received == 2
+    result = bridge.get_param_upload_result()
+    assert result["written"] == 2
+    assert result["failed"] == 0
+    assert result["errors"] == []
+
+
+def test_start_param_upload_refuses_if_armed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge = ready_bridge()
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    bridge._dispatch(param_value("X", 1.0, index=0, count=0))
+    bridge._store.update(armed=True)
+    assert bridge.start_param_upload([{"name": "X", "value": 2.0}]) is False
+    assert "armed" in bridge.get_last_command_error()
+    # No worker thread should have been started.
+    assert bridge._param_upload_thread is None
+
+
+def test_start_param_upload_refuses_when_disconnected() -> None:
+    bridge = MavlinkBridge(VehicleStateStore())
+    assert bridge.start_param_upload([{"name": "X", "value": 1.0}]) is False
+    assert "not connected" in bridge.get_last_command_error()
+    assert bridge._param_upload_thread is None
+
+
+def test_start_param_upload_refuses_while_downloading() -> None:
+    bridge = ready_bridge()
+    bridge._param_download_state = "downloading"
+    assert bridge.start_param_upload([{"name": "X", "value": 1.0}]) is False
+    assert "in progress" in bridge.get_last_command_error()
+    assert bridge._param_upload_thread is None
+
+
+def test_start_param_upload_rejects_invalid_entry() -> None:
+    bridge = ready_bridge()
+    # value must be a number (str is not).
+    assert bridge.start_param_upload([{"name": "X", "value": "not-a-number"}]) is False
+    assert "invalid parameter list" in bridge.get_last_command_error()
+    # name must be a non-empty string.
+    assert bridge.start_param_upload([{"name": "", "value": 1.0}]) is False
+    assert "invalid parameter list" in bridge.get_last_command_error()
+    # empty list is not a valid upload.
+    assert bridge.start_param_upload([]) is False
+    assert "invalid parameter list" in bridge.get_last_command_error()
+    assert bridge._param_upload_thread is None
+
+
+def test_get_param_upload_result_idle_default() -> None:
+    bridge = ready_bridge()
+    result = bridge.get_param_upload_result()
+    assert result == {"state": "idle", "written": 0, "failed": 0, "errors": []}
+
+
+def test_stop_joins_upload_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge = ready_bridge()
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    # ready_bridge() never calls start(); set _running so the worker loop
+    # enters its first iteration (stop() clears it to break the loop).
+    bridge._running.set()
+    # Pre-populate the cache so set_param takes the cache-hit path and reaches
+    # the echo wait (avoids the 2s _wait_for_param spin on a cache miss).
+    bridge._dispatch(param_value("MC_ROLL_P", 5.0, index=0, count=0))
+
+    # on_send does NOT echo → set_param blocks on pending.event.wait(1.0).
+    # send_seen fires inside param_set_send (after the pending entry is
+    # registered), so the test can wait for the worker to be past the
+    # registration before calling stop().
+    send_seen = threading.Event()
+
+    def on_send(args: tuple) -> None:
+        send_seen.set()
+
+    bridge._conn.mav.on_send = on_send
+
+    assert bridge.start_param_upload([{"name": "MC_ROLL_P", "value": 8.0}]) is True
+    worker = bridge._param_upload_thread
+    assert worker is not None
+    # Wait until the worker has sent param_set_send (pending registered).
+    assert send_seen.wait(timeout=2.0)
+
+    bridge.stop()
+    # stop() joined the worker and cleared the field.
+    assert bridge._param_upload_thread is None
+    assert not worker.is_alive()

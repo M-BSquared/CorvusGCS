@@ -128,8 +128,8 @@ Corvus.plugins = (function () {
   function renderEmpty() {
     rootEl.innerHTML =
       '<div class="future-icon" data-lucide="puzzle"></div>' +
-      '<div class="future-title">Future Tools / Plugins</div>' +
-      '<div class="future-desc">This panel is the extension point of Corvus GCS — additional modules will plug in here.</div>';
+      '<div class="future-title">Tools & Plugins</div>' +
+      '<div class="future-desc">Extensions and tools plug in here.</div>';
     rootEl.classList.add("future-empty");
     refreshIcons();
   }

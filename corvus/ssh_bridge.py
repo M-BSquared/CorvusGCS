@@ -155,15 +155,37 @@ class SshBridge:
         password: str | None = None,
         key_path: str | None = None,
     ) -> bool:
-        """Open (or replace) a named SSH session."""
+        """Open (or replace) a named SSH session.
+
+        The blocking ``paramiko`` connect can take up to ~8s, so it runs
+        OUTSIDE ``self._lock`` — otherwise the whole SSH API surface
+        (list_sessions/disconnect/send) freezes for every session during a
+        connect. The lock is only held for the brief dict mutation: disconnect
+        the existing same-name session first, and insert the new one after a
+        successful connect.
+        """
+        # Disconnect any existing session under the same name first (under the
+        # lock, brief — only the reader-thread join, up to 2s). The entry stays
+        # in the dict (now disconnected) so a failed reconnect matches the
+        # prior behaviour: the name remains, just not connected.
         with self._lock:
-            if name in self._sessions:
-                self._sessions[name].disconnect()
-            session = SshSession(name, host, port, username, password, key_path)
-            ok = session.connect()
-            if ok:
-                self._sessions[name] = session
+            old = self._sessions.get(name)
+            if old is not None:
+                old.disconnect()
+        # Build + connect OUTSIDE the lock so the SSH API stays responsive.
+        session = SshSession(name, host, port, username, password, key_path)
+        ok = session.connect()
+        if not ok:
             return ok
+        with self._lock:
+            # A concurrent connect() under the same name may have replaced the
+            # entry while we connected without the lock; disconnect that one so
+            # only the latest successful session survives.
+            sneaked = self._sessions.get(name)
+            if sneaked is not None and sneaked is not session:
+                sneaked.disconnect()
+            self._sessions[name] = session
+        return ok
 
     def disconnect(self, name: str) -> bool:
         """Close a named session."""

@@ -49,7 +49,8 @@ ever typed into this README.
 - [Quick start](#quick-start)
 - [Connecting to a drone](#connecting-to-a-drone)
 - [Plugins — Vibration Monitor](#plugins--vibration-monitor)
-- [Setup — Parameters, Calibration, Autotune](#setup--parameters-calibration-autotune)
+- [Setup — Parameters, Calibration, Autotune, Firmware](#setup--parameters-calibration-autotune-firmware)
+- [Settings — Appearance, SSH, Map](#settings--appearance-ssh-map)
 - [Architecture](#architecture)
 - [API endpoints](#api-endpoints)
 - [Console commands](#console-commands)
@@ -83,22 +84,34 @@ From one window you can:
   autopilot over Server-Sent Events (the frontend never polls).
 - **Read the map** — five base layers (OpenStreetMap, ESRI Satellite / Hybrid /
   Topographic / Streets), per-source attribution, and a download-a-region
-  button for fully offline field use. MapLibre GL JS is bundled locally, so the
-  map renders with no internet.
+  button for fully offline field use. The selected base layer is saved to
+  config and restored on the next launch. MapLibre GL JS is bundled locally,
+  so the map renders with no internet.
 - **Connect** — serial, UDP, or TCP telemetry radios, with a live serial-port
   picker and sensible defaults for the Holybro SiK Radio V3.
 - **Tune parameters** — a lazy, armed-safe parameter editor; the full set is
   fetched only when you open it.
 - **Calibrate sensors** — one-tap compass, gyro, accelerometer, level-horizon,
   airspeed, and baro calibration, with live PX4 step guidance.
+- **Calibrate motors (ESC)** — PX4 motor/ESC calibration behind a safety-confirm
+  modal (remove propellers first; motors spin at max PWM), with live STATUSTEXT
+  guidance. Refused while armed.
 - **Autotune** — PX4 rate + attitude autotune per axis (roll / pitch / yaw / all),
   with live progress and graphs.
+- **Flash firmware** — flash PX4 firmware to the flight controller from the
+  Setup page, over a **direct USB connection only** (`/dev/ttyACM*`); refused
+  over a SiK radio (`/dev/ttyUSB*`) or UDP / TCP, and refused while armed.
 - **Diagnose vibration** — a Vibration Monitor plugin with a live Plotly graph of
   the PX4 `VIBRATION` message and cumulative clipping counters.
 - **Reach the companion** — an SSH terminal for an onboard companion computer,
-  over the same link.
-- **Extend** — a plugin system (the **FUTURE** tab) where new specialist views plug
-  in without touching the core.
+  over the same link. Connections are **saved by name** in config (add and
+  remove from the SSH tab or Settings), with password **or** key-file auth.
+- **Extend** — a plugin system (the **TOOLS** tab, "Tools & Plugins") where new
+  specialist views plug in without touching the core.
+- **Configure** — an editable **Settings** page (left nav → SET): a live
+  accent/theme picker (preset swatches + custom color, applied instantly and
+  persisted), saved SSH connections, the live MAVLink/HTTP connection summary,
+  and the persisted map base layer. See [Settings](#settings--appearance-ssh-map).
 
 ### The field-use case
 
@@ -290,11 +303,11 @@ timeout (10 s), and reconnects with backoff if the link drops.
 
 ## Plugins — Vibration Monitor
 
-The **FUTURE** tab in the right-side panel is the extension point of Corvus GCS.
-It shows a grid of plugin cards; clicking a card opens that plugin's view with a
-back button, and opening another plugin first closes the current one so its
-teardown runs exactly once (no listener leaks). The first shipped plugin is the
-**Vibration Monitor**.
+The **TOOLS** tab (labelled "Tools & Plugins") in the right-side panel is the
+extension point of Corvus GCS. It shows a grid of plugin cards; clicking a card
+opens that plugin's view with a back button, and opening another plugin first
+closes the current one so its teardown runs exactly once (no listener leaks).
+The first shipped plugin is the **Vibration Monitor**.
 
 ### Vibration Monitor
 
@@ -329,12 +342,13 @@ connection — matching the offline field-use requirement.
 
 ---
 
-## Setup — Parameters, Calibration, Autotune
+## Setup — Parameters, Calibration, Autotune, Firmware
 
-The Setup page (left nav) holds the parameter editor and the
-calibration / autotune tiles. All three features are **lazy** and
-**armed-safe**: nothing is fetched until the operator opens a tile, and every
-parameter write, calibration, and autotune is refused while the vehicle is armed.
+The Setup page (left nav) holds the parameter editor, the
+calibration / autotune tiles, and a firmware flash tab. The parameter editor,
+calibration, and autotune are **lazy** and **armed-safe**: nothing is fetched
+until the operator opens a tile, and every parameter write, calibration,
+autotune, and firmware flash is refused while the vehicle is armed.
 
 ### Parameters
 
@@ -363,6 +377,16 @@ but Corvus refuses client-side first. During interactive calibrations (compass
 rotation, accelerometer positions) PX4 streams step-by-step guidance as
 `STATUSTEXT`, which appears in the MAVLink console and the warnings popover.
 
+### Motors (ESC) calibration
+
+Setup → **Calibration** tile → **Motors (ESC)** button: PX4 motor/ESC
+calibration via `MAV_CMD_PREFLIGHT_CALIBRATION` (param7 = 1.0). A
+safety-confirm modal opens first — **remove all propellers** and follow the
+battery procedure (disconnect the flight battery, then re-plug it to power
+the ESCs when PX4 instructs). Motors spin at maximum PWM during calibration.
+Calibration is **refused while armed**, and PX4 streams step-by-step guidance
+as `STATUSTEXT` into the guidance list.
+
 ### Autotune
 
 Setup → **Calibration** tile → **POD Tuning** subsection: PX4 autotune via
@@ -385,6 +409,67 @@ groundspeed / `GLOBAL_POSITION_INT`.
 Body angular rates (`rollspeed`, `pitchspeed`, `yawspeed`, in deg/s) are part of
 the telemetry state.
 
+### Firmware
+
+Setup → **Firmware** tab (alongside **Calibration** and **Parameters**): flashes
+PX4 firmware onto the flight controller. The operator selects a PX4 firmware
+file (`.px4` / `.bin`); Corvus reboots the autopilot into its USB bootloader,
+uploads and verifies the image, then reboots into the new firmware.
+
+**Direct-USB-only (hard constraint):** flashing is permitted **only** over a
+direct USB connection to the flight controller's CDC ACM device
+(`/dev/ttyACM*`). It is **refused** over a SiK telemetry radio
+(`/dev/ttyUSB*`) and over any UDP / TCP link — those transports cannot carry
+the bootloader protocol. Flashing is also **refused while the vehicle is armed**.
+
+---
+
+## Settings — Appearance, SSH, Map
+
+The **SET** page in the left nav is the operator's settings surface. It used to
+be a read-only summary; it is now **editable**, and the connection settings it
+shows are read live from the backend (no longer hardcoded). Everything on the
+page is persisted in the single config store, `~/.corvus/config.json`, which is
+written **atomically** and chmod'd to **0o600** because it may hold SSH
+credentials. The same file backs the right-panel SSH tab.
+
+### Appearance (accent / theme picker)
+
+The app stays dark-mode; the one customizable knob is the **accent color**. The
+Appearance section offers five preset swatches — **Green, Blue, Orange, Red,
+Purple** — plus a custom color picker (any `#RRGGBB`). The chosen accent is
+applied **live** through the `--accent` CSS custom property and saved to config,
+so it survives a restart. The derived accent tokens stay at their dark-mode
+defaults for now (a documented limitation of the current picker).
+
+### SSH Connections
+
+Saved SSH connections live in `~/.corvus/config.json` as a persisted list, so
+the operator connects **by name** instead of re-typing credentials every flight.
+Both the right-panel **SSH** tab and this Settings page show the same saved
+list; each row has a **CONNECT** button and a **REMOVE** (trash) button.
+
+- **Add** — name, host, port, username, and either a **password** (optional)
+  or a **key file** path for key-based auth (e.g. `~/.ssh/id_rsa`).
+- **Connect** — connects by name; the credentials load from config, so a
+  password is never echoed back over the API.
+- **Remove** — first disconnects any live session for that name, then deletes
+  the saved entry. The endpoint is idempotent.
+
+### Connection & Map
+
+- **Connection** — the live MAVLink connection string and HTTP port, shown
+  exactly as the backend sees them (no longer hardcoded).
+- **Map** — the persisted map **base layer** (OpenStreetMap, ESRI Satellite /
+  Hybrid / Topographic / Streets) is shown here; the operator picks the layer
+  from the on-map control and the choice is saved to config and restored on the
+  next launch.
+
+### About
+
+Reads `GET /api/version` for the product name, version, and PX4 profile (no
+hardcoded version — see [Version control](#version-control)).
+
 ---
 
 ## Architecture
@@ -399,6 +484,7 @@ pyproject.toml                # tooling/pytest config (version comes from VERSIO
 ├── corvus/                   # Python backend package
 │   ├── app.py                # standalone PyQt6 + QtWebEngine app wrapper
 │   ├── version.py            # reads VERSION (single source of truth)
+│   ├── config.py             # operator config (~/.corvus/config.json, atomic, 0o600)
 │   ├── state_store.py        # thread-safe Vehicle State Store
 │   ├── mavlink_bridge.py     # pymavlink connection + message parsing
 │   ├── ssh_bridge.py         # paramiko SSH sessions
@@ -415,15 +501,15 @@ pyproject.toml                # tooling/pytest config (version comes from VERSIO
 │   │   ├── topbar.js         # top bar: arm/takeoff/land/RTL, mode, status
 │   │   ├── map.js            # MapLibre map, vehicle tracking
 │   │   ├── instruments.js    # compass + attitude indicator (HUD)
-│   │   ├── panel.js          # MAVLink console + SSH
+│   │   ├── panel.js          # MAVLink console + SSH (saved connections)
 │   │   ├── link.js           # LINK tab (serial/UDP/TCP connect)
-│   │   ├── plugins.js        # FUTURE-tab plugin system (extension point)
+│   │   ├── plugins.js        # TOOLS-tab plugin system (extension point)
 │   │   ├── plugin-vibration.js # Vibration Monitor plugin
 │   │   ├── setup.js          # Setup page orchestrator (tile grid)
 │   │   ├── setup-calibration.js # calibration + autotune sub-page
 │   │   ├── setup-parameters.js  # parameter editor sub-page
 │   │   ├── setup-shared.js   # shared Setup-page helpers
-│   │   ├── sidenav.js        # left navigation
+│   │   ├── sidenav.js        # left navigation + Settings page
 │   │   ├── ui.js             # reusable UI component helpers
 │   │   └── app.js            # top bar wiring + flight actions
 │   └── vendor/
@@ -452,6 +538,8 @@ The frontend never polls.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/version` | GCS version + PX4 profile |
+| GET | `/api/config` | Live operator config (SSH passwords redacted) |
+| POST | `/api/config` | Apply a partial config update; persist atomically (chmod 0o600) |
 | GET | `/api/state` | Current vehicle state (JSON) |
 | GET | `/api/telemetry` | SSE stream of vehicle state |
 | GET | `/api/console/stream` | SSE stream of MAVLink messages |
@@ -467,7 +555,10 @@ The frontend never polls.
 | POST | `/api/calibrate` | Run a sensor calibration `{type: gyro\|compass\|baro\|accel\|level\|airspeed}` (refused while armed) |
 | POST | `/api/autotune` | Run PX4 autotune `{axis: roll\|pitch\|yaw\|all}` (refused while armed) |
 | POST | `/api/vibration/stream` | Request high-rate VIBRATION streaming on demand `{enabled, rate_hz}` (lean: restore default on close) |
-| POST | `/api/ssh/connect` | Open SSH session |
+| GET | `/api/ssh/connections` | Saved SSH connections + live `connected` status (no password echoed) |
+| POST | `/api/ssh/connections` | Upsert a saved SSH connection by name (does not connect) |
+| POST | `/api/ssh/connections/remove` | Disconnect (if live) and remove a saved SSH connection by name |
+| POST | `/api/ssh/connect` | Open SSH session (by saved name or explicit host/port/user) |
 | POST | `/api/ssh/send` | Send input to SSH shell |
 | POST | `/api/ssh/disconnect` | Close SSH session |
 | GET | `/api/ssh/stream` | SSE stream of SSH output |
@@ -502,6 +593,11 @@ The UI follows a strict semantic palette (defined in `src/css/main.css`):
 | Forest Green | `#3DA876` | UI interaction accent (not status) |
 | Yellow | `#F5C842` | warning |
 | Red | `#FF514D` | critical / error |
+
+The **accent** color (the Forest Green above, `#3DA876`) is now
+operator-customizable via **Settings → Appearance** — preset swatches plus a
+custom color picker, applied live and persisted. The app stays dark-mode; only
+the accent changes. See [Settings](#settings--appearance-ssh-map).
 
 ---
 

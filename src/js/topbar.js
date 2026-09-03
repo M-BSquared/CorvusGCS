@@ -236,6 +236,16 @@ Corvus.topbar = (function () {
     document.getElementById("warningsTitle").textContent =
       `${notifications.length} Notification${notifications.length === 1 ? "" : "s"}`;
 
+    // Toggle the "clear all" button: disabled when empty, enabled when there
+    // are notifications to clear. Guarded so a missing button never breaks the
+    // popover render (e.g. if the header markup changes).
+    const clearAllBtn = document.getElementById("wpClearAll");
+    if (clearAllBtn) {
+      const empty = notifications.length === 0;
+      clearAllBtn.disabled = empty;
+      clearAllBtn.setAttribute("aria-disabled", String(empty));
+    }
+
     if (!notifications.length) {
       const empty = document.createElement("div");
       empty.className = "wp-empty";
@@ -335,6 +345,25 @@ Corvus.topbar = (function () {
     }
   }
 
+  // Best-effort "clear all": ask the backend to drop its warnings store (the
+  // next telemetry push then sends an empty `warnings` array) and clear every
+  // local notification + the dismissed-key set. Remote warnings are NOT
+  // mutated client-side — they disappear via the next SSE push.
+  async function clearAllNotifications() {
+    try {
+      await Corvus.telemetry.postAction("/api/warnings/clear", {});
+    } catch (err) {
+      console.error("clear warnings failed:", err);
+    }
+    localNotifications.forEach((notification) => {
+      if (notification.timer) window.clearTimeout(notification.timer);
+    });
+    localNotifications.clear();
+    dismissedNotifications.clear();
+    renderedWarningSignature = "";
+    refreshNotifications();
+  }
+
   function removeLocalNotification(id) {
     const notification = localNotifications.get(id);
     if (!notification) return false;
@@ -420,6 +449,8 @@ Corvus.topbar = (function () {
     Corvus.telemetry.subscribe(handleTelemetryState);
     warningsList.setAttribute("role", "list");
     document.getElementById("wpClose").addEventListener("click", () => closeWarnings(true));
+    const wpClearAll = document.getElementById("wpClearAll");
+    if (wpClearAll) wpClearAll.addEventListener("click", clearAllNotifications);
 
     document.addEventListener("click", (e) => {
       if (warningsOpen && !e.target.closest(".warnings-popover") && !e.target.closest(".tb-block.warnings")) {

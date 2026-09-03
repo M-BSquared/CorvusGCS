@@ -13,6 +13,11 @@ Design rules (mandated by AGENTS.md):
   warning logged to ``corvus.config``. The app NEVER crashes on a bad config.
 - Unknown keys are ignored; known keys are type-coerced where reasonable.
 
+``save_config`` writes the file **atomically** with mode 0o600 because the
+file may carry SSH passwords. ``to_public_dict`` is the single redaction
+point: it strips ``password`` from every ``ssh_connections`` entry so no
+HTTP response ever echoes a secret back.
+
 stdlib only.
 """
 from __future__ import annotations
@@ -22,9 +27,29 @@ import json
 import logging
 import os
 import pathlib
+import tempfile
 from typing import Any
 
 logger = logging.getLogger("corvus.config")
+
+# Canonical key order for the serialized config file. Keeping it stable makes
+# diffs of the on-disk JSON readable across edits (an operator can review a
+# git diff of ~/.corvus/config.json in the field).
+_CONFIG_FIELD_ORDER: tuple[str, ...] = (
+    "mavlink_connection",
+    "http_port",
+    "tile_cache_dir",
+    "tlog_dir",
+    "tile_sources",
+    "stream_rates",
+    "ssh_connections",
+    "theme",
+    "map",
+)
+
+# Required keys on a saved ssh_connections entry; missing keys default to a
+# sane empty value so a partial entry never crashes the parser.
+_SSH_CONN_KEYS: tuple[str, ...] = ("name", "host", "port", "username", "key_path", "password")
 
 
 @dataclasses.dataclass
@@ -35,6 +60,11 @@ class CorvusConfig:
     built-in default" (``~/.corvus/tiles`` / ``~/.corvus/logs``); a non-empty
     value pins the location. ``None`` dict fields mean "use built-in
     defaults"; a dict overrides the whole registry.
+
+    ``ssh_connections``/``theme``/``map`` are persisted operator UI state
+    (the SSH connection list, the accent color, the map base-layer). They
+    default to empty/None so an old config file with none of these keys
+    still loads cleanly.
     """
 
     mavlink_connection: str = "udp:0.0.0.0:14540"
@@ -43,6 +73,9 @@ class CorvusConfig:
     tlog_dir: str = ""               # "" = ~/.corvus/logs
     tile_sources: dict[str, dict] | None = None
     stream_rates: dict | None = None
+    ssh_connections: list[dict[str, Any]] = dataclasses.field(default_factory=list)
+    theme: dict[str, Any] | None = None
+    map: dict[str, Any] | None = None
 
     def apply_overrides(self, **kwargs: Any) -> "CorvusConfig":
         """Return a copy with non-None kwargs overriding matching fields.
@@ -70,6 +103,84 @@ def _coerce_int(value: Any, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _coerce_ssh_entry(raw: Any) -> dict[str, Any] | None:
+    """Coerce one ssh_connections entry to a clean dict, or None to drop it.
+
+    Tolerates missing and extra keys: a non-dict entry is dropped, a dict
+    missing keys gets the sane empty defaults. ``port`` is int-coerced.
+    """
+    if not isinstance(raw, dict):
+        return None
+    name = raw.get("name")
+    if not isinstance(name, str) or not name:
+        # A nameless entry is useless to the SSH UI (sessions are keyed by
+        # name); drop it rather than synthesize one.
+        return None
+    host = raw.get("host", "")
+    if not isinstance(host, str):
+        host = ""
+    port = _coerce_int(raw.get("port", 22), 22)
+    username = raw.get("username", "")
+    if not isinstance(username, str):
+        username = ""
+    key_path = raw.get("key_path", "")
+    if not isinstance(key_path, str):
+        key_path = ""
+    password = raw.get("password", "")
+    if not isinstance(password, str):
+        password = ""
+    return {
+        "name": name,
+        "host": host,
+        "port": port,
+        "username": username,
+        "key_path": key_path,
+        "password": password,
+    }
+
+
+def _coerce_ssh_connections(raw: Any) -> list[dict[str, Any]]:
+    """Coerce the ``ssh_connections`` field to a clean list; never raises."""
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for entry in raw:
+        coerced = _coerce_ssh_entry(entry)
+        if coerced is None:
+            continue
+        # Later entries win on a duplicate name (matches POST upsert).
+        if coerced["name"] in seen:
+            for i, existing in enumerate(out):
+                if existing["name"] == coerced["name"]:
+                    out[i] = coerced
+                    break
+        else:
+            out.append(coerced)
+            seen.add(coerced["name"])
+    return out
+
+
+def _coerce_theme(raw: Any) -> dict[str, Any] | None:
+    """Keep ``accent`` only when it is a string; else None (use defaults)."""
+    if not isinstance(raw, dict):
+        return None
+    accent = raw.get("accent")
+    if not isinstance(accent, str):
+        return None
+    return {"accent": accent}
+
+
+def _coerce_map(raw: Any) -> dict[str, Any] | None:
+    """Keep ``base_layer`` only when it is a string; else None."""
+    if not isinstance(raw, dict):
+        return None
+    base_layer = raw.get("base_layer")
+    if not isinstance(base_layer, str):
+        return None
+    return {"base_layer": base_layer}
 
 
 def _build_config(data: dict[str, Any]) -> CorvusConfig:
@@ -107,6 +218,10 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
     if isinstance(data.get("stream_rates"), dict):
         stream_rates = data["stream_rates"]
 
+    ssh_connections = _coerce_ssh_connections(data.get("ssh_connections"))
+    theme = _coerce_theme(data.get("theme"))
+    map_cfg = _coerce_map(data.get("map"))
+
     return CorvusConfig(
         mavlink_connection=mavlink_connection,
         http_port=http_port,
@@ -114,6 +229,9 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         tlog_dir=tlog_dir,
         tile_sources=tile_sources,
         stream_rates=stream_rates,
+        ssh_connections=ssh_connections,
+        theme=theme,
+        map=map_cfg,
     )
 
 
@@ -135,6 +253,97 @@ def load_config(path: str | None = None) -> CorvusConfig:
         return CorvusConfig()
     if not isinstance(data, dict):
         logger.warning("config file %s top-level is not a JSON object; "
-                        "using defaults", cfg_path)
+                       "using defaults", cfg_path)
         return CorvusConfig()
     return _build_config(data)
+
+
+def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
+    """Serialize a CorvusConfig to a plain dict in stable key order.
+
+    Omits ``None`` optional dict fields (``tile_sources``/``stream_rates``/
+    ``theme``/``map``) so the on-disk file stays lean when nothing overrides
+    them; an empty ``ssh_connections`` list is kept (it is real operator
+    state, the absence of which still round-trips through ``[]``).
+    """
+    out: dict[str, Any] = {
+        "mavlink_connection": cfg.mavlink_connection,
+        "http_port": cfg.http_port,
+        "tile_cache_dir": cfg.tile_cache_dir,
+        "tlog_dir": cfg.tlog_dir,
+        "ssh_connections": [dict(entry) for entry in cfg.ssh_connections],
+    }
+    if cfg.tile_sources is not None:
+        out["tile_sources"] = cfg.tile_sources
+    if cfg.stream_rates is not None:
+        out["stream_rates"] = cfg.stream_rates
+    if cfg.theme is not None:
+        out["theme"] = dict(cfg.theme)
+    if cfg.map is not None:
+        out["map"] = dict(cfg.map)
+    # Stable key order for a readable on-disk diff.
+    return {k: out[k] for k in _CONFIG_FIELD_ORDER if k in out}
+
+
+def save_config(cfg: CorvusConfig, path: str | None = None) -> None:
+    """Persist *cfg* to JSON at *path* (default: ``~/.corvus/config.json``).
+
+    Atomic + 0o600: the file may carry SSH passwords, so it is written to a
+    temp file in the same directory, chmod'd 0o600, then ``os.replace``'d
+    onto the final path (so a reader never sees a half-written file). The
+    parent directory is created with ``exist_ok=True``.
+
+    Stdlib convention: genuine IO failures raise OSError; everything else
+    (e.g. a non-serializable value) is logged and returns. The password-
+    bearing file is never left in a partial state on disk.
+    """
+    cfg_path = pathlib.Path(path) if path else pathlib.Path(default_config_path())
+    data = _config_to_dict(cfg)
+    try:
+        text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    except (TypeError, ValueError) as exc:
+        # Should not happen — every value is JSON-native — but never let a
+        # serialization bug leave a password file in a bad state.
+        logger.error("config serialization failed; not writing %s: %s", cfg_path, exc)
+        return
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    # NamedTemporaryFile in the same dir guarantees the os.replace is on the
+    # same filesystem (atomic). delete=False so we can chmod + replace it.
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=cfg_path.name + ".", suffix=".tmp", dir=str(cfg_path.parent),
+    )
+    tmp_path = pathlib.Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        # Restrict to owner-only BEFORE the replace so the final file is
+        # never briefly world-readable.
+        os.chmod(tmp_path, 0o600)
+        os.replace(tmp_path, cfg_path)
+    except OSError:
+        # Genuine IO failure — surface it (stdlib convention) but clean up.
+        try:
+            tmp_path.unlink()
+        except OSError:
+            pass
+        raise
+
+
+def to_public_dict(cfg: CorvusConfig) -> dict[str, Any]:
+    """Return the config as a dict with every SSH ``password`` stripped.
+
+    The single redaction point: ``GET /api/config`` and
+    ``GET /api/ssh/connections`` both build their response from this so no
+    HTTP response ever echoes a password back. ``key_path`` is kept (it is a
+    path, not a secret).
+    """
+    public = _config_to_dict(cfg)
+    redacted: list[dict[str, Any]] = []
+    for entry in public.get("ssh_connections", []):
+        if not isinstance(entry, dict):
+            continue
+        clean = dict(entry)
+        clean.pop("password", None)
+        redacted.append(clean)
+    public["ssh_connections"] = redacted
+    return public

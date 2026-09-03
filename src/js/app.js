@@ -286,6 +286,14 @@ Corvus.app = (function () {
   }
 
   function init() {
+    // Apply the cached accent synchronously (no FOUC) before the map/UI paint,
+    // then let the backend config override it as the authoritative source.
+    Corvus.theme.applySaved();
+    Corvus.telemetry.requestJson("/api/config").then((res) => {
+      const accent = res && res.config && res.config.theme && res.config.theme.accent;
+      if (accent) Corvus.theme.setAccent(accent);
+    }).catch(() => {});
+
     Corvus.topbar.init();
     Corvus.sidenav.init();
     Corvus.map.init(document.getElementById("map"), document.getElementById("mapControls"),

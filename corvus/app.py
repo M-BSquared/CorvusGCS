@@ -64,20 +64,59 @@ def find_free_port(preferred: int = 8000) -> int:
 
 def start_backend(port: int, mavlink_conn: str) -> tuple:
     """Start the HTTP/SSE server and MAVLink bridge in-process. Return (server, mavlink, ssh)."""
-    from corvus.server import CorvusHandler, CorvusServer
+    from corvus.server import CorvusHandler, CorvusServer, _build_tile_resources
+    from corvus.tile_cache import default_cache_dir
 
     store = VehicleStateStore()
     mavlink = MavlinkBridge(store, mavlink_conn)
     ssh = SshBridge()
 
+    # Operator config: the desktop app reads the same config file browser mode
+    # does, so /api/config and the tile cache dir honor the operator override.
+    # Set these on the class BEFORE constructing the server so every handler
+    # shares the one live config object (per-request instance attrs would not
+    # persist, leaving the next request reading a stale/default value).
+    cfg = load_config()
+    cfg_path = default_config_path()
+    CorvusHandler.config = cfg
+    CorvusHandler.config_path = cfg_path
+
     CorvusHandler.store = store
     CorvusHandler.mavlink = mavlink
     CorvusHandler.ssh = ssh
+
+    # Tile resources: built through the SAME helper create_server() uses so
+    # offline maps work in the desktop app too (POST /api/tiles/download,
+    # /api/tiles/sources cached_count, local MBTiles caching). Without this
+    # the desktop app's tile endpoints 503 and tiles never cache locally.
+    # Honor the operator config override for the cache dir.
+    cache_dir = cfg.tile_cache_dir or default_cache_dir()
+    tile_caches, tile_progress_bus, tile_downloader = _build_tile_resources(cache_dir)
+    CorvusHandler.tile_caches = tile_caches
+    CorvusHandler.tile_downloader = tile_downloader
+    CorvusHandler.tile_progress_bus = tile_progress_bus
+
+    # Firmware-flash service (direct USB only). Wired on the independently-
+    # built server so the desktop app supports flashing too.
+    flash = None
+    try:
+        from corvus.flash_service import FlashService
+        flash = FlashService(mavlink, store)
+    except Exception:
+        logger.exception("flash service unavailable")
+    CorvusHandler.flash = flash
 
     server = CorvusServer(("", port), CorvusHandler)
     server.mavlink = mavlink
     server.ssh = ssh
     server.store = store
+    server.config = cfg
+    server.config_path = cfg_path
+    server.flash = flash
+    # Mirror tile resources onto the server instance so CorvusServer.shutdown()
+    # closes the caches and stops the downloader (no leaked SQLite handles).
+    server.tile_caches = tile_caches
+    server.tile_downloader = tile_downloader
     mavlink.start()
 
     backend_thread = threading.Thread(
@@ -96,6 +135,16 @@ def _stop_all(server) -> None:
     SQLite handles last). Each step is independently guarded so a failure
     in one cannot skip the rest.
     """
+    # Flash uses the MAVLink bridge (it stops/starts it), so cancel/join the
+    # uploader BEFORE tearing the bridge down.
+    flash = getattr(server, "flash", None)
+    if flash is not None:
+        try:
+            logger.info("stopping flash …")
+            flash.shutdown()
+            logger.info("flash stopped")
+        except Exception:
+            logger.exception("flash shutdown failed")
     mavlink = getattr(server, "mavlink", None)
     if mavlink is not None:
         try:
@@ -197,12 +246,21 @@ def main() -> int:
             return
         shutting_down.set()
 
+        logger.info("Shutting down — stopping all connections …")
+        _stop_all(server)
+
         # Bounded exit watchdog. The Qt event loop normally returns cleanly
         # and main() then sys.exit(ret); but QtWebEngine child processes
         # and stuck daemon threads can block interpreter teardown. The
         # daemon sleeps 2s and forces os._exit(0) if the main thread is
         # still alive then — the app never hangs on quit. It dies with the
         # process on a clean exit, so the normal path is just sys.exit.
+        #
+        # Why start AFTER _stop_all: so the watchdog cannot pre-empt the
+        # bounded joins inside mavlink.stop() (which flushes the tlog) and
+        # cut that flush short on a lossy link. It only guards the post-
+        # teardown phase (Qt page deleteLater + the app.exec() return),
+        # matching the same fix already applied in serve.py.
         def _watchdog() -> None:
             time.sleep(2.0)
             if threading.main_thread().is_alive():
@@ -210,8 +268,6 @@ def main() -> int:
                 os._exit(0)
         _t.Thread(target=_watchdog, name="exit-watchdog", daemon=True).start()
 
-        logger.info("Shutting down — stopping all connections …")
-        _stop_all(server)
         try:
             web.page().deleteLater()
         except Exception:

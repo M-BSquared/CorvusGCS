@@ -32,6 +32,21 @@ Corvus.setupParameters = (function () {
     page.appendChild(S.backButton(navigateBack));
     page.appendChild(S.pageHeader("Parameters", "Download all PX4 parameters, then edit"));
 
+    // Actions bar (Export / Import + status). Lives in `page`, sibling of the
+    // `section`, so it stays visible across every phase — the editor's `card`
+    // wipes its innerHTML per phase and would otherwise drop these buttons.
+    const actions = S.el("div", "params-actions");
+    const exportBtn = makeActionButton("download", "Export");
+    const importBtn = makeActionButton("upload", "Import");
+    const actionsStatus = S.el("div", "params-actions-status");
+    actions.appendChild(exportBtn);
+    actions.appendChild(importBtn);
+    actions.appendChild(actionsStatus);
+    page.appendChild(actions);
+    exportBtn.disabled = true;   // enabled once params are loaded
+    const cur = Corvus.telemetry && Corvus.telemetry.getState();
+    importBtn.disabled = !!(cur && cur.armed);
+
     const section = S.el("div", "page-section");
     const card = S.el("div", "page-card params-card");
     section.appendChild(card);
@@ -39,13 +54,20 @@ Corvus.setupParameters = (function () {
     container.appendChild(page);
 
     // Local param cache + the progress SSE/poll handles, captured here so
-    // teardown can close everything.
+    // teardown can close everything. The export/import buttons are hoisted onto
+    // `state` because finishDownload/openUploadProgress are module-level helpers
+    // that cannot see this closure.
     const state = {
       params: [],          // the editable list (only once complete)
       eventSource: null,   // the /api/params/progress SSE
       pollTimer: null,     // the ~1 s GET /api/params fallback
       unsub: null,          // telemetry subscription (armed gating)
       rendered: false,
+      exportBtn,           // enabled once the full param set is loaded
+      importBtn,           // armed-gated; disabled during upload
+      actionsStatus,
+      uploadEventSource: null,   // the /api/params/progress SSE for an import
+      uploading: false,
     };
 
     // Phase 1: show the Download button (do NOT auto-download — lean + on-demand).
@@ -53,20 +75,235 @@ Corvus.setupParameters = (function () {
 
     // Subscribe to telemetry so the editor's armed banner gates live. The
     // download prompt has no banner; the editor applies the state on render and
-    // on every armed transition while it is open.
+    // on every armed transition while it is open. The same callback also gates
+    // the Import button (uploads are refused while armed).
     if (Corvus.telemetry && typeof Corvus.telemetry.subscribe === "function") {
       state.unsub = Corvus.telemetry.subscribe((s) => {
         if (card._editorView) applyArmedToEditor(card._editorView, !!(s && s.armed));
+        if (!state.uploading) importBtn.disabled = !!(s && s.armed);
       });
     }
+
+    // Export: serialise the loaded set to a Corvus param file (JSON) and download
+    // it. No version literal — the metadata version comes from GET /api/version.
+    exportBtn.addEventListener("click", () => exportParams(state));
+    // Import: pick a file, validate, confirm, POST to the drone, follow the SSE.
+    importBtn.addEventListener("click", () => importParams(state));
 
     function destroy() {
       if (state.unsub) { try { state.unsub(); } catch (_e) {} state.unsub = null; }
       if (state.eventSource) { try { state.eventSource.close(); } catch (_e) {} state.eventSource = null; }
       if (state.pollTimer) { try { window.clearInterval(state.pollTimer); } catch (_e) {} state.pollTimer = null; }
+      if (state.uploadEventSource) { try { state.uploadEventSource.close(); } catch (_e) {} state.uploadEventSource = null; }
     }
 
     return destroy;
+  }
+
+  /** Build an Export/Import action button (mirrors renderDownloadPrompt's btn). */
+  function makeActionButton(iconName, label) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn";
+    btn.setAttribute("data-variant", "primary");
+    btn.setAttribute("data-size", "sm");
+    btn.appendChild(S.icon(iconName));
+    btn.appendChild(S.el("span", null, label));
+    return btn;
+  }
+
+  /**
+   * Export the loaded parameter set to a Corvus param file (JSON) and trigger a
+   * browser download. The version in the file metadata comes from GET /api/version
+   * — never a hardcoded literal.
+   */
+  async function exportParams(state) {
+    if (!state.params || !state.params.length) return;
+    exportBtnSafe(state, true);
+    let version = "unknown";
+    try {
+      const v = await Corvus.telemetry.requestJson("/api/version");
+      version = (v && v.version) || "unknown";
+    } catch (_e) { /* offline: keep "unknown" so the export still works */ }
+    try {
+      const doc = {
+        product: "Corvus GCS",
+        version,
+        exported_at: new Date().toISOString(),
+        param_count: state.params.length,
+        params: state.params.map((p) => ({ name: p.name, value: p.value, type: p.type })),
+      };
+      const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `corvus-params-${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      window.dispatchEvent(new CustomEvent("corvus:notification",
+        { detail: { level: "info", message: `Exported ${state.params.length} parameters` } }));
+    } catch (err) {
+      const msg = (err && err.message) || "Export failed";
+      window.dispatchEvent(new CustomEvent("corvus:notification",
+        { detail: { level: "critical", message: msg } }));
+    } finally {
+      exportBtnSafe(state, !state.params.length);
+    }
+  }
+
+  function exportBtnSafe(state, disabled) {
+    if (state.exportBtn) state.exportBtn.disabled = disabled;
+  }
+
+  /**
+   * Import: open a file picker, read + validate a Corvus param file, confirm
+   * with the operator, POST the params to the drone, then follow the upload
+   * progress SSE to completion.
+   */
+  function importParams(state) {
+    if (state.uploading) return;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.setAttribute("accept", ".json,application/json");
+    document.body.appendChild(input);
+    input.addEventListener("change", () => {
+      input.remove();
+      onImportFile(state, input).catch((err) => {
+        const msg = (err && err.message) || "Import failed";
+        setStatus(state, "err", msg);
+        window.dispatchEvent(new CustomEvent("corvus:notification",
+          { detail: { level: "critical", message: msg } }));
+        const s = Corvus.telemetry && Corvus.telemetry.getState();
+        state.importBtn.disabled = !!(s && s.armed);
+      });
+    });
+    input.click();
+  }
+
+  async function onImportFile(state, input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const text = await readFileText(file);
+    let doc;
+    try {
+      doc = JSON.parse(text);
+    } catch (_e) {
+      throw new Error("File is not valid JSON");
+    }
+    if (!doc || !Array.isArray(doc.params) || !doc.params.length) {
+      throw new Error("Parameter file has no parameters");
+    }
+    const clean = [];
+    for (const p of doc.params) {
+      if (!p || typeof p.name !== "string" || !p.name.length || typeof p.value !== "number") {
+        throw new Error("Parameter file has an invalid entry");
+      }
+      clean.push({ name: p.name, value: p.value });
+    }
+    if (typeof window.confirm === "function" &&
+        !window.confirm(`Apply ${clean.length} parameters to the drone?`)) return;
+    try {
+      await Corvus.telemetry.postAction("/api/params/upload", { params: clean });
+      openUploadProgress(state, clean.length);
+    } catch (err) {
+      const msg = (err && err.message) || "Upload failed";
+      setStatus(state, "err", msg);
+      window.dispatchEvent(new CustomEvent("corvus:notification",
+        { detail: { level: "critical", message: msg } }));
+      const s = Corvus.telemetry && Corvus.telemetry.getState();
+      state.importBtn.disabled = !!(s && s.armed);
+    }
+  }
+
+  /** Read a File as text, preferring file.text() with a FileReader fallback. */
+  function readFileText(file) {
+    if (typeof file.text === "function") return file.text();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Could not read file"));
+      reader.readAsText(file);
+    });
+  }
+
+  /**
+   * Upload progress view: the /api/params/progress SSE emits `{state,count,
+   * received}`. During an upload the backend sets state to "uploading" then
+   * "upload_complete"; we close the SSE and fetch the final result on the
+   * latter. No poll fallback — the final result is GET /api/params/upload/result.
+   */
+  function openUploadProgress(state, total) {
+    state.uploading = true;
+    state.importBtn.disabled = true;
+    setStatus(state, "pending", `Uploading 0 / ${total} parameters…`);
+    try {
+      state.uploadEventSource = new EventSource("/api/params/progress");
+      state.uploadEventSource.addEventListener("progress", (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          if (d.state === "upload_complete") {
+            closeUploadSse(state);
+            finishUpload(state);
+          } else {
+            setStatus(state, "pending",
+              `Uploading ${d.received || 0} / ${d.count || 0} parameters…`);
+          }
+        } catch (_e) { /* keep waiting — the upload_complete event will arrive */ }
+      });
+      state.uploadEventSource.addEventListener("ping", () => {});
+      state.uploadEventSource.onerror = () => { /* keep waiting; user may retry */ };
+    } catch (_e) { /* no EventSource — finishUpload can still fetch the result */ }
+  }
+
+  function closeUploadSse(state) {
+    if (state.uploadEventSource) {
+      try { state.uploadEventSource.close(); } catch (_e) {}
+      state.uploadEventSource = null;
+    }
+  }
+
+  /** Fetch the final upload result and summarise written/failed counts. */
+  async function finishUpload(state) {
+    let r;
+    try {
+      r = await Corvus.telemetry.requestJson("/api/params/upload/result");
+    } catch (err) {
+      const msg = (err && err.message) || "Upload result unavailable";
+      setStatus(state, "err", msg);
+      window.dispatchEvent(new CustomEvent("corvus:notification",
+        { detail: { level: "critical", message: msg } }));
+      state.uploading = false;
+      const s = Corvus.telemetry && Corvus.telemetry.getState();
+      state.importBtn.disabled = !!(s && s.armed);
+      return;
+    }
+    const written = (r && r.written) || 0;
+    const failed = (r && r.failed) || 0;
+    const errors = (r && Array.isArray(r.errors)) ? r.errors : [];
+    if (failed === 0) {
+      setStatus(state, "ok", `Uploaded ${written} parameters`);
+      window.dispatchEvent(new CustomEvent("corvus:notification",
+        { detail: { level: "info", message: `Uploaded ${written} parameters` } }));
+    } else {
+      const cls = written > 0 ? "ok" : "err";
+      let text = `Uploaded ${written}, ${failed} failed`;
+      if (errors.length) text += `: ${errors.slice(0, 3).map((e) => e.name).join(", ")}`;
+      setStatus(state, cls, text);
+      window.dispatchEvent(new CustomEvent("corvus:notification",
+        { detail: { level: "critical", message: text } }));
+    }
+    state.uploading = false;
+    const s = Corvus.telemetry && Corvus.telemetry.getState();
+    state.importBtn.disabled = !!(s && s.armed);
+  }
+
+  /** Apply the status class + text to the actions status line. */
+  function setStatus(state, cls, text) {
+    if (!state.actionsStatus) return;
+    state.actionsStatus.className = "params-actions-status" + (cls ? " " + cls : "");
+    state.actionsStatus.textContent = text || "";
   }
 
   /** Phase 1: the Download-on-demand prompt + explanation (lean philosophy). */
@@ -177,6 +414,7 @@ Corvus.setupParameters = (function () {
         return;
       }
       state.params = d.params.slice().sort(byName);
+      if (state.exportBtn) state.exportBtn.disabled = false;   // params loaded → Export usable
       state.rendered = true;
       renderEditor(card, state);
     }).catch((err) => {

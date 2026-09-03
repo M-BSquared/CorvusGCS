@@ -18,12 +18,14 @@ window.Corvus = window.Corvus || {};
   Corvus.ui; the popover reuses the shared .glass material and .corvus-enter
   entrance defined in components.css.
 
-  NOTE on the source cap: /api/tiles/sources currently returns the *cached*
-  max zoom under the "maxzoom" key (the source-cap value is shadowed by a
-  duplicate key in the backend response). The map agent owns the backend, so
-  this module clamps to SOURCE_ZOOM_CAP — the upstream raster cap shared by
-  every configured ArcGIS source (19), matching corvus.tile_sources. It is a
-  tile-source characteristic, not a version literal.
+  NOTE on the source cap: /api/tiles/sources returns the real upstream
+  raster cap under "maxzoom" (19) and the CACHED tile range under
+  "cached_minzoom"/"cached_maxzoom" (null when the cache is empty). The
+  duplicate-key bug that previously shadowed "maxzoom" has been fixed in the
+  backend. SOURCE_ZOOM_CAP stays as a safe fallback matching that upstream
+  raster cap (19), shared by every configured ArcGIS source; it is a
+  tile-source characteristic, not a version literal, and still clamps the
+  zoom inputs in refreshFromMap/onSourceOrZoomChange.
 */
 Corvus.tiles = (function () {
   const AVG_TILE_KB = 15;     // rough raster-tile size for the disk estimate
@@ -266,10 +268,12 @@ Corvus.tiles = (function () {
       const name = el("span", "tiles-stat-name"); name.textContent = s.label || s.id;
       const meta = el("span", "tiles-stat-meta");
       const cnt = s.cached_count || 0;
-      // The endpoint's minzoom/maxzoom are the CACHED range (None when empty).
-      const hasRange = typeof s.minzoom === "number" && typeof s.maxzoom === "number";
+      // Cached range now lives in cached_minzoom/cached_maxzoom (null when the
+      // cache is empty); minzoom/maxzoom are the source floor/cap and are
+      // always numbers, so they must NOT be used for the cached-range display.
+      const hasRange = typeof s.cached_minzoom === "number" && typeof s.cached_maxzoom === "number";
       meta.textContent = cnt > 0
-        ? `${fmtCount(cnt)} tiles` + (hasRange ? ` · z${s.minzoom}–${s.maxzoom}` : "")
+        ? `${fmtCount(cnt)} tiles` + (hasRange ? ` · z${s.cached_minzoom}–${s.cached_maxzoom}` : "")
         : "not cached";
       left.appendChild(name); left.appendChild(meta);
       // Clear-cache endpoint does not exist yet: disabled with an explanatory
