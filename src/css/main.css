@@ -325,7 +325,18 @@ svg { display: block; }
 .page-subtitle { font-size: 13px; color: var(--text-3); }
 .page-section { margin-bottom: 24px; }
 .page-section-title { font-size: 13px; font-weight: 600; letter-spacing: 0.6px; color: var(--text-2); text-transform: uppercase; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border-soft); }
-.page-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-bottom: 12px; }
+/* Cards wear the same subtle glass as the buttons inside them, so a settings
+   page reads as one substance. The fill is a touch heavier than a button's
+   because a card is a surface things sit ON, not a control. */
+.page-card {
+  background: var(--panel-fill);
+  backdrop-filter: var(--blur-fine);
+  -webkit-backdrop-filter: var(--blur-fine);
+  border: 1px solid var(--panel-hairline);
+  border-radius: var(--radius);
+  padding: 18px;
+  margin-bottom: 12px;
+}
 .page-card-title { font-size: 14px; font-weight: 600; color: var(--text-1); margin-bottom: 6px; }
 .page-card-desc { font-size: 12px; color: var(--text-3); line-height: 1.5; }
 .page-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-soft); }
@@ -439,7 +450,7 @@ svg { display: block; }
 .tiles-estimate {
   display: flex; align-items: center; justify-content: space-between;
   padding: 8px 10px; border-radius: var(--radius-btn);
-  background: var(--surface-2); border: 1px solid var(--border-soft);
+  background: var(--panel-fill); border: 1px solid var(--panel-hairline);
 }
 .tiles-estimate-val { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 .tiles-estimate-value { font-size: 13px; font-weight: 700; color: var(--accent-bright); font-variant-numeric: tabular-nums; }
@@ -455,10 +466,10 @@ svg { display: block; }
 .tiles-region-row {
   display: flex; align-items: center; gap: 8px;
   padding: 4px 6px 4px 10px; border-radius: var(--radius-btn);
-  background: var(--surface-2); border: 1px solid var(--border-soft);
+  background: var(--panel-fill); border: 1px solid var(--panel-hairline);
   transition: background 130ms, border-color 130ms;
 }
-.tiles-region-row:hover { background: var(--surface-hover); border-color: var(--border); }
+.tiles-region-row:hover { background: var(--panel-fill-hover); border-color: var(--panel-hairline-hover); }
 /* An in-flight download is marked on the row as well as on the map label, so
    the list never claims an area is ready before it is. */
 .tiles-region-row.downloading { border-color: var(--warning); }
@@ -1275,3 +1286,112 @@ svg { display: block; }
 .params-actions-status.pending { color: var(--nav); }
 .params-actions-status.ok { color: var(--healthy); }
 .params-actions-status.err { color: var(--critical); }
+
+/* ===== CONSOLE — filters, status bar, hints =====
+   The console is the operator's direct line to the airframe, so its chrome is
+   dense and quiet: everything here sits between the header and the output, and
+   none of it should compete with the stream for attention. */
+.console-filters {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 0 8px;
+}
+.console-filter { flex: 1; min-width: 0; padding: 6px 9px; font-size: 11.5px; }
+.console-levels { display: flex; gap: 2px; flex: 0 0 auto; }
+.console-level {
+  padding: 5px 8px;
+  border-radius: var(--radius-btn);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.7px;
+  font-family: var(--sans);
+  cursor: pointer;
+  transition: background 130ms, color 130ms, border-color 130ms;
+}
+.console-level:hover { background: var(--panel-wash); color: var(--text-1); }
+.console-level.active {
+  background: var(--panel-fill);
+  border-color: var(--panel-hairline);
+  color: var(--text-1);
+}
+/* The severity chips carry their own colour when active, so the filter in use
+   is readable at a glance rather than only by position. */
+.console-level[data-level="warning"].active { color: var(--warning); }
+.console-level[data-level="error"].active { color: var(--critical); }
+.console-level:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 1px; }
+
+.console-statusbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 5px 2px 0;
+  font-size: 10px; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.console-paused {
+  color: var(--warning); font-weight: 700; letter-spacing: 0.8px;
+  animation: livePulse 1.6s ease-in-out infinite;
+}
+.console-paused[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .console-paused { animation: none !important; }
+}
+
+/* Completion / argument hint under the input. Monospace because it is echoing
+   command syntax, and it must not shift the layout when it appears. */
+.console-hint {
+  min-height: 15px;
+  padding: 3px 2px 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.console-hint[hidden] { display: none; }
+
+/* ===== LINK — quality, disconnect, presets, recents ===== */
+.link-quality {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.8px;
+  padding: 2px 6px; border-radius: 999px;
+  border: 1px solid currentColor;
+  flex: 0 0 auto;
+}
+.link-quality[hidden] { display: none; }
+.link-quality[data-level="healthy"] { color: var(--healthy); }
+.link-quality[data-level="warning"] { color: var(--warning); }
+.link-quality[data-level="critical"] { color: var(--critical); }
+.link-quality[data-level="off"] { color: var(--text-3); }
+
+/* Disconnect is deliberately quiet: it is the destructive option on this
+   panel, so it reads as available rather than inviting. */
+.btn.link-disconnect { color: var(--text-3); }
+.btn.link-disconnect:hover { color: var(--critical); background: color-mix(in srgb, var(--critical) 12%, transparent); }
+
+.link-presets { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.btn.link-preset {
+  padding: 4px 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.2px;
+}
+
+.link-recent { display: flex; flex-direction: column; gap: 5px; }
+.link-recent-list { display: flex; flex-direction: column; gap: 3px; }
+.link-recent-row {
+  display: flex; align-items: center; gap: 4px;
+  border-radius: var(--radius-btn);
+}
+.link-recent-conn {
+  flex: 1; min-width: 0;
+  padding: 6px 9px;
+  border-radius: var(--radius-btn);
+  background: var(--panel-fill);
+  border: 1px solid var(--panel-hairline);
+  color: var(--text-2);
+  font-family: var(--mono); font-size: 11px;
+  text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  cursor: pointer;
+  transition: background 130ms, color 130ms, border-color 130ms;
+}
+.link-recent-conn:hover {
+  background: var(--panel-fill-hover);
+  border-color: var(--panel-hairline-hover);
+  color: var(--text-1);
+}
+.link-recent-conn:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 1px; }

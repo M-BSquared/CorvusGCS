@@ -52,7 +52,9 @@ _EXPECTED_GET = {
 
 _EXPECTED_POST = {
     "/api/console/command",
+    "/api/console/save",
     "/api/mavlink/connect",
+    "/api/mavlink/disconnect",
     "/api/mavlink/arm",
     "/api/mavlink/mode",
     "/api/mavlink/takeoff",

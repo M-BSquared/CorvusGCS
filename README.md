@@ -54,6 +54,8 @@ ever typed into this README.
 - [Screenshots & imagery](#screenshots--imagery)
 - [Quick start](#quick-start)
 - [Connecting to a drone](#connecting-to-a-drone)
+- [MAVLink console](#mavlink-console)
+- [Connection (LINK)](#connection-link)
 - [Plugins — Vibration Monitor](#plugins--vibration-monitor)
 - [Setup — Parameters, Calibration, Autotune, Firmware](#setup--parameters-calibration-autotune-firmware)
 - [Flight HUD — a movable window](#flight-hud--a-movable-window)
@@ -388,6 +390,53 @@ timeout (10 s), and reconnects with backoff if the link drops.
 | Reconnecting | Yellow dot, last error shown |
 | Armed | Green "ARMED" |
 | Disarmed | Gray "DISARMED" |
+
+---
+
+## MAVLink console
+
+The operator's direct line to the airframe, built to stay usable when a lot is
+happening rather than only when the stream is quiet:
+
+- **Filter** — substring match over the live stream, applied to lines already on
+  screen as well as new ones.
+- **Severity** — ALL / INFO / WARN / ERR. The severity is a *floor*, not an
+  equality test: asking for warnings still shows the errors that followed them,
+  because hiding those would actively mislead.
+- **Pause** — freezes the view while still buffering, so reading a message does
+  not mean losing the next fifty. The status bar reports how many are held.
+- **Copy / Save** — the visible lines, for a bug report or a flight log. Save
+  writes server-side (`POST /api/console/save`) beside the tlogs, for the same
+  reason parameter export does.
+- **Tab completion** — completes an unambiguous command, lists the candidates
+  otherwise; `?` prints the whole command table into the console where it can be
+  scrolled back to, and works with the link down.
+- **History** — persisted across launches, not just across tab switches.
+  `Ctrl/Cmd-L` clears.
+
+The stream is a buffer of records, not just DOM — filtering has to be able to
+reveal a line it previously hid, so the line must still exist somewhere. Clearing
+drops the buffer as well, or the next filter change would resurrect everything
+just dismissed.
+
+---
+
+## Connection (LINK)
+
+- **Disconnect.** Previously the only way out of a link was into another one, so
+  freeing the radio — to hand the aircraft to another GCS, swap a cable, or stop
+  a reconnect loop hammering a port that moved — meant quitting the app.
+  Available while *connecting* too, which is exactly when a retry loop needs
+  stopping.
+- **Link quality** from the same SSE field the top bar uses. "Connected" says the
+  socket is up; this says whether it is worth flying on.
+- **Recent connections**, persisted and one click to reuse. Kept exact:
+  `serial:/dev/ttyUSB0:57600` and `…:115200` are different links, and collapsing
+  them would silently reconnect at the wrong baud.
+- **Presets** for the endpoints PX4 publishes. They fill the field rather than
+  connecting outright, because a preset is a starting point you may want to edit.
+- **Port re-enumeration** when the tab is opened — a radio plugged in after
+  launch no longer needs the refresh button found.
 
 ---
 
@@ -764,7 +813,9 @@ The frontend never polls.
 | GET | `/api/telemetry` | SSE stream of vehicle state |
 | GET | `/api/console/stream` | SSE stream of MAVLink messages |
 | POST | `/api/console/command` | Send MAVLink command |
+| POST | `/api/console/save` | Write the console transcript beside the tlogs; returns the path |
 | POST | `/api/mavlink/connect` | Reconnect with different connection string |
+| POST | `/api/mavlink/disconnect` | Close the link and leave it closed (idempotent) |
 | GET | `/api/mavlink/serial-ports` | List available serial ports → `{"ports": [{"device", "description", "hwid"}, ...]}` |
 | POST | `/api/mavlink/arm` | Arm/disarm vehicle |
 | POST | `/api/mavlink/mode` | Set flight mode |
@@ -857,6 +908,17 @@ the call site:
 
 A screen-specific class layers a *modifier* on top (`.calib-btn`,
 `.link-select`, `.setup-tile`) rather than re-implementing the control.
+
+### Surface material
+
+Buttons, cards, tiles and option cards share one subtle glass material, defined
+once in `themes.css` as `--panel-fill` / `--panel-hairline` / `--panel-wash`:
+a translucent fill, a hairline of the contrast overlay, and a light blur — the
+flight-action bar's substance at smaller scale, so a settings page and the map
+chrome read as the same app. It is deliberately restrained: over an opaque page
+there is nothing to blur, and the honest result there is a slightly lifted tint
+rather than a frosted slab. The light theme carries more fill and a black
+hairline, because white at 55% over a near-white page reads as nothing.
 
 ---
 

@@ -161,6 +161,51 @@ function testStatusInfo() {
 }
 
 // ---------------------------------------------------------------------------
+// LINK tab: link quality.
+//
+// "Connected" says the socket is up; quality says whether the link is worth
+// flying on, which is the question actually being asked. The mapping drives a
+// coloured badge, so a wrong level here is a wrong colour on the panel.
+// ---------------------------------------------------------------------------
+function testQualityInfo() {
+  const link = Corvus.link;
+  assert.deepEqual(link.qualityInfo("good"), { label: "GOOD", level: "healthy" });
+  assert.deepEqual(link.qualityInfo("fair"), { label: "FAIR", level: "warning" });
+  assert.deepEqual(link.qualityInfo("poor"), { label: "POOR", level: "critical" });
+  // "lost" is the bridge's own drop state and must read as critical, not as
+  // an absent value.
+  assert.deepEqual(link.qualityInfo("lost"), { label: "LOST", level: "critical" });
+
+  // Anything unrecognised yields an EMPTY label, which is what hides the badge
+  // — better than showing "UNKNOWN" next to a healthy link.
+  [undefined, null, "", "unknown", "banana"].forEach((v) => {
+    assert.equal(link.qualityInfo(v).label, "", `quality ${JSON.stringify(v)} must render no badge`);
+    assert.equal(link.qualityInfo(v).level, "off");
+  });
+
+  // Case-insensitive: the field is produced by the backend, not typed here.
+  assert.equal(link.qualityInfo("GOOD").label, "GOOD");
+}
+
+// ---------------------------------------------------------------------------
+// LINK tab: connection presets.
+//
+// Presets exist so the common endpoints are a click rather than a remembered
+// string; a preset with a malformed connection string would be worse than none.
+// ---------------------------------------------------------------------------
+function testPresets() {
+  const link = Corvus.link;
+  assert.ok(Array.isArray(link.PRESETS) && link.PRESETS.length, "presets must exist");
+  link.PRESETS.forEach((p) => {
+    assert.ok(p.label && p.label.length > 2, "preset needs a readable label");
+    assert.ok(/^(udp|tcp|serial):/.test(p.conn),
+      `preset "${p.label}" has a connection string the backend would reject: ${p.conn}`);
+  });
+  const conns = link.PRESETS.map((p) => p.conn);
+  assert.equal(new Set(conns).size, conns.length, "duplicate preset connection string");
+}
+
+// ---------------------------------------------------------------------------
 // LINK tab: modes re-fetch-on-connect idempotency (signature-based).
 //
 // link.js calls Corvus.app.refreshModes() on a transition to "connected". The
@@ -411,6 +456,8 @@ function run() {
   testBuildConnectionString();
   testPortOptionText();
   testStatusInfo();
+  testQualityInfo();
+  testPresets();
   testModesIdempotency();
   testRefreshModesOnConnectTransition();
   testHeadingShortestPath();

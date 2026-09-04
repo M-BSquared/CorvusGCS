@@ -1,8 +1,66 @@
 "use strict";
 window.Corvus = window.Corvus || {};
 
+/*
+  Corvus.panel — the right-hand workspace: MAVLink console, SSH, plugins.
+
+  The console is the operator's direct line to the airframe, so it is built to
+  be usable when a lot is happening at once rather than only when the stream is
+  quiet:
+
+    filter       substring match over the live stream, applied to lines already
+                 on screen as well as new ones
+    severity     show only errors, or errors+warnings, when STATUSTEXT is noisy
+    pause        freeze the view while still buffering, so reading a message
+                 does not mean losing the next fifty
+    copy / save  the visible lines, for a bug report or a flight log
+    completion   Tab completes a command; "?" lists them with what they do
+    history      persisted across launches, not just across tab switches
+
+  The stream itself is a buffer of records, not just DOM: filtering has to be
+  able to reveal a line that was previously hidden, which means the line has to
+  still exist somewhere. The DOM is a rendering of that buffer.
+*/
 Corvus.panel = (function () {
+  const HISTORY_KEY = "corvus.console.history";
+  const MAX_HISTORY = 50;
+  // How many records to retain. The DOM only ever holds the visible subset, so
+  // this is the real memory bound and it is generous: an operator scrolling
+  // back after an incident wants the whole session, not the last screen.
+  const MAX_LINES = 2000;
+
+  /* The command surface, in one place: used by the "?" listing, by Tab
+     completion, and by the placeholder. Mirrors what
+     CorvusHandler._api_console_command accepts — SHELL_COMMANDS included,
+     which are forwarded verbatim to the PX4 NSH shell. */
+  const COMMANDS = [
+    { name: "arm", args: "", help: "Arm the vehicle (refused unless PX4 is happy)" },
+    { name: "disarm", args: "", help: "Disarm the vehicle" },
+    { name: "mode", args: "<MODE>", help: "Set flight mode, e.g. mode HOLD" },
+    { name: "takeoff", args: "[ALT]", help: "Take off to ALT metres AGL (default 10)" },
+    { name: "land", args: "", help: "Land at the current position" },
+    { name: "rtl", args: "", help: "Return to launch" },
+    { name: "listener", args: "<topic>", help: "Stream a uORB topic, e.g. listener sensor_combined" },
+    { name: "top", args: "", help: "PX4 task/CPU listing" },
+    { name: "free", args: "", help: "Free memory" },
+    { name: "dmesg", args: "", help: "PX4 boot/kernel log" },
+    { name: "tasks", args: "", help: "Running tasks" },
+    { name: "perf", args: "", help: "Performance counters" },
+    { name: "boot_log", args: "", help: "Boot log" },
+    { name: "hrt", args: "", help: "High-resolution timer info" },
+    { name: "shell", args: "<cmd>", help: "Send a raw NSH command (case preserved)" },
+    { name: "help", args: "", help: "Ask the backend what it accepts" },
+  ];
+
+  const LEVELS = [
+    { id: "all", label: "ALL" },
+    { id: "info", label: "INFO" },
+    { id: "warning", label: "WARN" },
+    { id: "error", label: "ERR" },
+  ];
+
   let panel, handle, tabs, output, input, sendBtn, clearBtn, autoBtn;
+  let pauseBtn, copyBtn, saveBtn, filterInput, levelHost, countEl, pausedNote, hintEl;
   let autoscroll = true;
   let history = [];
   let histIdx = -1;
@@ -13,6 +71,15 @@ Corvus.panel = (function () {
   let sshConnectedName = null;
   let sshSseSource = null;
 
+  // The console stream as data. `lines` is the retained history; the DOM shows
+  // whichever of them pass the current filter.
+  let lines = [];
+  let filterText = "";
+  let levelFilter = "all";
+  let paused = false;
+  // Records that arrived while paused, held back rather than dropped.
+  let pendingLines = [];
+
   function nowTs() {
     const d = new Date();
     const p = (n) => String(n).padStart(2, "0");
@@ -20,15 +87,217 @@ Corvus.panel = (function () {
     return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${ms}`;
   }
 
-  function addConsoleLine(level, text) {
+  // ---- history persistence ----
+
+  function loadHistory() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+      history = Array.isArray(raw) ? raw.filter((s) => typeof s === "string" && s) : [];
+    } catch (_e) {
+      history = [];
+    }
+    histIdx = history.length;
+  }
+
+  function saveHistory() {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-MAX_HISTORY)));
+    } catch (_e) {}
+  }
+
+  // ---- the line buffer ----
+
+  /**
+   * Does a record survive the given filter? Pure — the module state is passed
+   * in, so the rule can be tested without a DOM.
+   *
+   * Severity is a FLOOR, not an exact match: choosing WARN shows warnings and
+   * errors, because "show me warnings" while hiding the errors that followed
+   * them would be actively misleading. Untagged lines read as info, which is
+   * what the app's own banner lines and command echoes are.
+   */
+  function matchesFilter(rec, text, level) {
+    if (level && level !== "all") {
+      const rank = { error: 3, warning: 2, info: 1 };
+      const want = rank[level] || 0;
+      const got = rank[rec.level] || 1;
+      if (got < want) return false;
+    }
+    if (text && String(rec.text).toLowerCase().indexOf(text) === -1) return false;
+    return true;
+  }
+
+  /** matchesFilter bound to the module's current filter state. */
+  function passesFilter(rec) {
+    return matchesFilter(rec, filterText, levelFilter);
+  }
+
+  function lineEl(rec) {
     const line = document.createElement("div");
-    line.className = "con-line " + (level || "");
-    line.innerHTML = `<span class="con-time">${nowTs()}</span> ` +
-      `<span class="con-arrow">&gt;&gt;</span> <span class="con-msg"></span>`;
-    line.querySelector(".con-msg").textContent = text;
-    output.appendChild(line);
-    if (output.children.length > 800) output.removeChild(output.firstChild);
+    line.className = "con-line " + (rec.level || "");
+    const time = document.createElement("span");
+    time.className = "con-time";
+    time.textContent = rec.ts;
+    const arrow = document.createElement("span");
+    arrow.className = "con-arrow";
+    arrow.textContent = ">>";
+    const msg = document.createElement("span");
+    msg.className = "con-msg";
+    msg.textContent = rec.text;
+    line.appendChild(time);
+    line.appendChild(document.createTextNode(" "));
+    line.appendChild(arrow);
+    line.appendChild(document.createTextNode(" "));
+    line.appendChild(msg);
+    return line;
+  }
+
+  /** Append a record and, if it passes the filter, show it. */
+  function addConsoleLine(level, text) {
+    const rec = { ts: nowTs(), level: level || "", text: String(text == null ? "" : text) };
+    if (paused) {
+      // Held, not dropped — the point of pausing is to read without losing
+      // what arrives meanwhile.
+      pendingLines.push(rec);
+      if (pendingLines.length > MAX_LINES) pendingLines.shift();
+      updateCount();
+      return;
+    }
+    pushLine(rec);
+  }
+
+  function pushLine(rec) {
+    lines.push(rec);
+    if (lines.length > MAX_LINES) lines.shift();
+    if (passesFilter(rec)) {
+      output.appendChild(lineEl(rec));
+      while (output.children.length > MAX_LINES) output.removeChild(output.firstChild);
+      if (autoscroll) output.scrollTop = output.scrollHeight;
+    }
+    updateCount();
+  }
+
+  /** Re-render the visible set from the buffer. Called when a filter changes. */
+  function renderLines() {
+    Corvus.ui.clear(output);
+    const visible = lines.filter(passesFilter);
+    // Only the tail is rendered: the buffer can hold far more than is useful
+    // to have in the DOM, and the operator scrolls back through what is shown.
+    visible.slice(-MAX_LINES).forEach((rec) => output.appendChild(lineEl(rec)));
     if (autoscroll) output.scrollTop = output.scrollHeight;
+    updateCount();
+  }
+
+  function updateCount() {
+    if (!countEl) return;
+    const visible = lines.filter(passesFilter).length;
+    const held = pendingLines.length;
+    const parts = [];
+    if (filterText || levelFilter !== "all") parts.push(`${visible} of ${lines.length}`);
+    else parts.push(`${lines.length} line${lines.length === 1 ? "" : "s"}`);
+    if (held) parts.push(`${held} held`);
+    countEl.textContent = parts.join("  ·  ");
+  }
+
+  function setPaused(next) {
+    paused = !!next;
+    if (!paused) {
+      // Flush what arrived while frozen, in order.
+      pendingLines.forEach(pushLine);
+      pendingLines = [];
+    }
+    if (pauseBtn) {
+      pauseBtn.classList.toggle("active", paused);
+      pauseBtn.title = paused ? "Resume the stream" : "Pause the stream";
+      pauseBtn.setAttribute("aria-label", pauseBtn.title);
+      Corvus.ui.clear(pauseBtn).appendChild(Corvus.ui.icon(paused ? "play" : "pause", 15));
+      Corvus.ui.refreshIcons();
+    }
+    if (pausedNote) pausedNote.hidden = !paused;
+    updateCount();
+  }
+
+  /** The currently visible lines as plain text — what copy and save both use. */
+  function visibleText() {
+    return lines.filter(passesFilter)
+      .map((r) => `${r.ts}  ${r.level ? "[" + r.level + "] " : ""}${r.text}`)
+      .join("\n");
+  }
+
+  async function copyVisible() {
+    const text = visibleText();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      addConsoleLine("info", `Copied ${lines.filter(passesFilter).length} lines to the clipboard.`);
+    } catch (_e) {
+      // Clipboard access is refused in some embeddings; say so rather than
+      // failing silently and leaving the operator to wonder.
+      addConsoleLine("error", "Clipboard unavailable — use Save instead.");
+    }
+  }
+
+  function saveLog() {
+    const text = visibleText();
+    if (!text) return;
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    Corvus.telemetry.requestJson("/api/console/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: `corvus-console_${stamp}.log`, text }),
+    }).then((res) => {
+      addConsoleLine("success", `Console log written to ${res.path}`);
+    }).catch((err) => {
+      addConsoleLine("error", (err && err.message) || "Could not save the log");
+    });
+  }
+
+  // ---- command entry ----
+
+  /** Commands whose name starts with the current token. */
+  function completionsFor(text) {
+    const head = text.split(/\s+/)[0].toLowerCase();
+    if (!head) return [];
+    return COMMANDS.filter((c) => c.name.startsWith(head) && c.name !== head);
+  }
+
+  function showHint(text) {
+    if (!hintEl) return;
+    hintEl.textContent = text || "";
+    hintEl.hidden = !text;
+  }
+
+  /** Tab: complete the command when it is unambiguous, otherwise list the
+   *  candidates. The shell convention, because that is what this looks like. */
+  function completeCommand() {
+    const matches = completionsFor(input.value);
+    if (!matches.length) { showHint(""); return; }
+    if (matches.length === 1) {
+      const c = matches[0];
+      input.value = c.name + (c.args ? " " : "");
+      showHint(c.args ? `${c.name} ${c.args} — ${c.help}` : c.help);
+      return;
+    }
+    showHint(matches.map((c) => c.name).join("  "));
+  }
+
+  /** Print the command list into the console itself, where it can be scrolled
+   *  back to — unlike a tooltip. */
+  function printCommandList() {
+    addConsoleLine("info", "Commands:");
+    COMMANDS.forEach((c) => {
+      const sig = c.args ? `${c.name} ${c.args}` : c.name;
+      addConsoleLine("", `  ${sig.padEnd(18)}${c.help}`);
+    });
+  }
+
+  /** Clear the console — buffer and DOM. Clearing only the DOM would let the
+   *  next filter change resurrect every line the operator just dismissed. */
+  function clearConsole() {
+    lines = [];
+    pendingLines = [];
+    Corvus.ui.clear(output);
+    updateCount();
   }
 
   function connectConsoleSSE() {
@@ -49,14 +318,26 @@ Corvus.panel = (function () {
   async function sendCommand() {
     const v = input.value.trim();
     if (!v) return;
+    // "?" is the local shortcut for the command list — no round trip, and it
+    // works when the link is down, which is exactly when you need to look
+    // something up.
+    if (v === "?") {
+      input.value = "";
+      showHint("");
+      printCommandList();
+      return;
+    }
     history.push(v);
+    if (history.length > MAX_HISTORY) history.shift();
     histIdx = history.length;
+    saveHistory();
     addConsoleLine("cmd", v);
     input.value = "";
+    showHint("");
     try {
       const res = await Corvus.telemetry.sendCommand(v);
       if (res.help) {
-        addConsoleLine("", "Available: arm, disarm, mode <MODE>, takeoff [ALT], land, rtl, listener <topic>, top, free, dmesg, shell <cmd>, help");
+        printCommandList();
       } else if (res.error) {
         addConsoleLine("error", res.error);
       } else if (res.shell) {
@@ -69,10 +350,37 @@ Corvus.panel = (function () {
     }
   }
 
+  function buildLevelFilter() {
+    if (!levelHost) return;
+    Corvus.ui.clear(levelHost);
+    LEVELS.forEach((l) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "console-level" + (l.id === levelFilter ? " active" : "");
+      b.dataset.level = l.id;
+      b.textContent = l.label;
+      b.title = l.id === "all" ? "Show everything" : `Show ${l.label.toLowerCase()} and worse`;
+      b.setAttribute("aria-pressed", l.id === levelFilter ? "true" : "false");
+      b.addEventListener("click", () => {
+        levelFilter = l.id;
+        levelHost.querySelectorAll(".console-level").forEach((x) => {
+          const on = x.dataset.level === levelFilter;
+          x.classList.toggle("active", on);
+          x.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+        renderLines();
+      });
+      levelHost.appendChild(b);
+    });
+  }
+
   function initConsole() {
+    loadHistory();
+    buildLevelFilter();
+    setPaused(false);
     addConsoleLine("", "Corvus GCS — MAVLink console.");
     addConsoleLine("", "Listening for live MAVLink messages …");
-    addConsoleLine("", "Type \"help\" for available commands.");
+    addConsoleLine("", "Type \"?\" for the command list, Tab to complete.");
     connectConsoleSSE();
   }
 
@@ -425,6 +733,14 @@ Corvus.panel = (function () {
     sendBtn = document.getElementById("consoleSend");
     clearBtn = document.getElementById("clearConsole");
     autoBtn = document.getElementById("consoleAutoscroll");
+    pauseBtn = document.getElementById("consolePause");
+    copyBtn = document.getElementById("consoleCopy");
+    saveBtn = document.getElementById("consoleSave");
+    filterInput = document.getElementById("consoleFilter");
+    levelHost = document.getElementById("consoleLevels");
+    countEl = document.getElementById("consoleCount");
+    pausedNote = document.getElementById("consolePausedNote");
+    hintEl = document.getElementById("consoleHint");
     sshContent = document.getElementById("sshContent");
     futureContent = document.getElementById("futureContent");
     autoBtn.classList.add("active");
@@ -445,17 +761,43 @@ Corvus.panel = (function () {
     sendBtn.addEventListener("click", sendCommand);
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") sendCommand();
-      else if (e.key === "ArrowUp") {
+      else if (e.key === "Tab") {
+        // Shell convention: Tab completes rather than moving focus. The send
+        // button is one Shift-Tab away, so nothing becomes unreachable.
+        e.preventDefault();
+        completeCommand();
+      } else if (e.key === "ArrowUp") {
         e.preventDefault();
         if (histIdx > 0) { histIdx--; input.value = history[histIdx] || ""; }
       } else if (e.key === "ArrowDown") {
         e.preventDefault();
         if (histIdx < history.length - 1) { histIdx++; input.value = history[histIdx] || ""; }
         else { histIdx = history.length; input.value = ""; }
+      } else if (e.key === "l" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        clearConsole();
       }
     });
+    // Live hint as the command is typed, so the argument shape is visible
+    // before pressing Enter rather than after it fails.
+    input.addEventListener("input", () => {
+      const head = input.value.trim().split(/\s+/)[0].toLowerCase();
+      const exact = COMMANDS.find((c) => c.name === head);
+      if (exact) showHint(exact.args ? `${exact.name} ${exact.args} — ${exact.help}` : exact.help);
+      else showHint("");
+    });
 
-    clearBtn.addEventListener("click", () => { output.innerHTML = ""; });
+    if (filterInput) {
+      filterInput.addEventListener("input", () => {
+        filterText = filterInput.value.trim().toLowerCase();
+        renderLines();
+      });
+    }
+    if (pauseBtn) pauseBtn.addEventListener("click", () => setPaused(!paused));
+    if (copyBtn) copyBtn.addEventListener("click", copyVisible);
+    if (saveBtn) saveBtn.addEventListener("click", saveLog);
+
+    clearBtn.addEventListener("click", clearConsole);
     autoBtn.addEventListener("click", () => {
       autoscroll = !autoscroll;
       autoBtn.classList.toggle("active", autoscroll);
@@ -472,5 +814,11 @@ Corvus.panel = (function () {
     Corvus.ui.refreshIcons();
   }
 
-  return { init, toggle, addConsoleLine, addSSHConnection, showSSHTerminal };
+  return {
+    init, toggle, addConsoleLine, addSSHConnection, showSSHTerminal,
+    // Exposed for tests: the console's pure pieces, assertable without a DOM.
+    matchesFilter,
+    completionsFor,
+    COMMANDS,
+  };
 })();

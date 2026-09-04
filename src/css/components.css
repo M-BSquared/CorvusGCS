@@ -59,6 +59,12 @@
    classes (.is-active, .is-busy, .armed). apple-design: instant press
    feedback on :active, no overshoot (critically-damped cubic-bezier),
    reduced-motion safe. */
+/* The hidden attribute must win over the display below. Without this a .btn
+   with [hidden] set stays on screen, because a class rule's `display` beats
+   the UA's `[hidden] { display: none }` — which is why Reconnect was visible
+   while disconnected. */
+.btn[hidden] { display: none !important; }
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -82,8 +88,14 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* A 1px lift on hover — the same cue the flight-action buttons give, at half
+   the distance because these sit in dense lists rather than on open map. */
+.btn:hover:not(:disabled):not(.is-busy) {
+  transform: translateY(-1px);
+}
 /* Instant feedback on press — respond on the press, not the release
-   (apple-design §1). No scale while disabled or busy. */
+   (apple-design §1). Declared after the lift so the press wins while held.
+   No scale while disabled or busy. */
 .btn:active:not(:disabled):not(.is-busy) {
   transform: scale(0.97);
 }
@@ -123,12 +135,21 @@
    The base .btn is layout-only (no bg); every visual variant is explicit so
    a bare <button class="btn"> is never half-styled. secondary is the
    helper default. */
+/* The default variant wears the subtle glass: a translucent fill, a hairline
+   of the contrast overlay, and a light blur — the flight-action bar's material
+   at button scale. Over an opaque page this reads as a slightly lifted tint
+   rather than a frosted slab, which is the honest result and the intent. */
 .btn[data-variant="secondary"] {
-  background: var(--surface-2);
+  background: var(--panel-fill);
+  backdrop-filter: var(--blur-fine);
+  -webkit-backdrop-filter: var(--blur-fine);
   color: var(--text-1);
-  border: 1px solid var(--border);
+  border: 1px solid var(--panel-hairline);
 }
-.btn[data-variant="secondary"]:hover { background: var(--surface-hover); }
+.btn[data-variant="secondary"]:hover {
+  background: var(--panel-fill-hover);
+  border-color: var(--panel-hairline-hover);
+}
 
 .btn[data-variant="primary"] {
   background: var(--accent);
@@ -140,8 +161,10 @@
   background: transparent;
   color: var(--text-2);
 }
+/* A wash rather than a solid fill, so a ghost button over the map tints what
+   is behind it instead of punching a hole in it. */
 .btn[data-variant="ghost"]:hover {
-  background: var(--surface-hover);
+  background: var(--panel-wash);
   color: var(--text-1);
 }
 
@@ -245,6 +268,7 @@
    No press scale, no transitions, no busy pulse. */
 @media (prefers-reduced-motion: reduce) {
   .btn,
+  .btn:hover,
   .btn:active,
   .btn.is-busy::after {
     transition: none !important;
@@ -351,16 +375,18 @@
   display: flex;
   text-align: left;
   cursor: pointer;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  background: var(--panel-fill);
+  backdrop-filter: var(--blur-fine);
+  -webkit-backdrop-filter: var(--blur-fine);
+  border: 1px solid var(--panel-hairline);
   border-radius: var(--radius);
   transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
               background 130ms, border-color 130ms, box-shadow 160ms;
   will-change: transform;
 }
 .tile:hover {
-  background: var(--surface-hover);
-  border-color: var(--border-strong);
+  background: var(--panel-fill-hover);
+  border-color: var(--panel-hairline-hover);
   transform: translateY(-2px);
   box-shadow: var(--shadow-soft);
 }
@@ -406,15 +432,17 @@
   min-width: 0;
   padding: 10px 12px;
   border-radius: var(--radius-btn);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  background: var(--panel-fill);
+  backdrop-filter: var(--blur-fine);
+  -webkit-backdrop-filter: var(--blur-fine);
+  border: 1px solid var(--panel-hairline);
   color: var(--text-2);
   text-align: left;
   cursor: pointer;
   transition: background 130ms, border-color 130ms, color 130ms,
               transform 100ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.option-card:hover { background: var(--surface-hover); color: var(--text-1); }
+.option-card:hover { background: var(--panel-fill-hover); border-color: var(--panel-hairline-hover); color: var(--text-1); }
 .option-card:active { transform: scale(0.98); }
 .option-card:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
 /* Selected: accent border plus a ring, so the choice survives the swatch
@@ -630,8 +658,8 @@
   gap: 2px;
   padding: 9px 11px;
   border-radius: var(--radius-btn);
-  background: var(--surface-2);
-  border: 1px solid var(--border-soft);
+  background: var(--panel-fill);
+  border: 1px solid var(--panel-hairline);
 }
 .credits-entry-head {
   display: flex;

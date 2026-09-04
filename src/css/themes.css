@@ -113,6 +113,24 @@
   --scrim: rgba(0, 0, 0, 0.5);
   --blur: blur(28px) saturate(180%);
   --blur-soft: blur(24px) saturate(180%);
+  /* A lighter blur for the small surfaces — buttons and cards. The heavy
+     28px blur is for full panels floating over the map; on a 34px button it
+     costs compositing for an effect nobody can see. */
+  --blur-fine: blur(12px) saturate(140%);
+
+  /* --- Subtle glass, the material shared by buttons and cards ---
+     The flight-action bar is the reference: a translucent fill over whatever
+     is behind, a hairline of the contrast overlay, and a wash on hover. These
+     are the same three values everywhere so a button and a card read as the
+     same substance at different sizes. Deliberately restrained — over an
+     opaque page there is nothing to blur, and the honest effect there is a
+     slightly lifted tint, not a frosted slab. */
+  --panel-fill: rgb(var(--glass-rgb) / 0.55);
+  --panel-fill-hover: rgb(var(--glass-rgb) / 0.78);
+  --panel-hairline: rgb(var(--tint-rgb) / 0.10);
+  --panel-hairline-hover: rgb(var(--tint-rgb) / 0.18);
+  /* The wash a bare (transparent) control gets on hover — .fa-btn's move. */
+  --panel-wash: rgb(var(--tint-rgb) / 0.06);
 
   /* --- Brand mark ---
      The logo is artwork, not a tintable glyph, so it ships in two cuts: white
@@ -253,6 +271,15 @@
   --input-rgb: 255 255 255;
   --tint-rgb: 0 0 0;
   --scrim: rgba(22, 28, 38, 0.35);
+
+  /* White at 55% over a near-white page reads as nothing, so the light theme
+     carries more fill; the hairline is black here (--tint-rgb flipped) and a
+     little of it goes a long way. */
+  --panel-fill: rgb(var(--glass-rgb) / 0.82);
+  --panel-fill-hover: rgb(var(--glass-rgb) / 0.95);
+  --panel-hairline: rgb(var(--tint-rgb) / 0.09);
+  --panel-hairline-hover: rgb(var(--tint-rgb) / 0.15);
+  --panel-wash: rgb(var(--tint-rgb) / 0.04);
 
   /* The white mark is invisible on a white top bar; use the black cut. */
   --logo-mark: url("../assets/CorvusGCS_logo_inverted.png");

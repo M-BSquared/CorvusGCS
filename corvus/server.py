@@ -409,14 +409,14 @@ def _default_params_filename(vehicle_tag: str = "") -> str:
     return f"corvus-params_{tag}_{stamp}.json" if tag else f"corvus-params_{stamp}.json"
 
 
-def _safe_filename(raw: Any, fallback: str) -> str:
+def _safe_filename(raw: Any, fallback: str, suffix: str = ".json") -> str:
     """Reduce *raw* to a single safe filename, or return *fallback*.
 
-    Strips any directory component (so ``../../etc/x`` cannot escape the export
-    directory), rejects the empty/dot names, and forces a ``.json`` suffix so
-    the file is recognizable and re-importable. A non-string takes the fallback
-    rather than being coerced — a client bug should produce the sensible
-    default name, not a file called ``42.json``.
+    Strips any directory component (so ``../../etc/x`` cannot escape the target
+    directory), rejects the empty/dot names, and forces *suffix* so the file is
+    recognizable (and, for parameter files, re-importable). A non-string takes
+    the fallback rather than being coerced — a client bug should produce the
+    sensible default name, not a file called ``42.json``.
     """
     if not isinstance(raw, str):
         return fallback
@@ -424,12 +424,12 @@ def _safe_filename(raw: Any, fallback: str) -> str:
     name = re.sub(r'[\x00-\x1f<>:"/\\|?*]', "", name).strip()
     if not name or name in (".", ".."):
         return fallback
-    if name.lower().endswith(".json"):
-        name = name[:-5]
+    if name.lower().endswith(suffix.lower()):
+        name = name[: -len(suffix)]
     # Truncate the STEM, then re-attach the suffix — truncating afterwards
-    # would chop ".json" off a long name and leave an unrecognizable file.
+    # would chop the extension off a long name and leave an unrecognizable file.
     name = name[:115].rstrip() or fallback
-    return name + ".json"
+    return name + suffix
 
 
 # A region name is operator-typed free text that ends up in the UI and in the
@@ -1044,6 +1044,58 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             status = 503 if "DISCONNECTED" in error else 409
             self._send_json({"ok": False, "error": error}, status)
 
+    @route("POST", "/api/console/save")
+    def _api_console_save(self, payload: dict) -> None:
+        """Write the console transcript to disk and return the path.
+
+        Server-side for the same reason parameter export is: the desktop build
+        runs in QtWebEngine, which drops an ``<a download>`` unless the host
+        app implements a handler, so a browser-download route would silently
+        produce nothing there. Logs land beside the tlogs, since that is where
+        someone reconstructing a flight will already be looking.
+        """
+        text = payload.get("text")
+        if not isinstance(text, str) or not text.strip():
+            self._send_json({"ok": False, "error": "text must be a non-empty string"}, 400)
+            return
+
+        cfg = self._live_config()
+        target_dir = os.path.expanduser(
+            (cfg.tlog_dir or "").strip() or "~/.corvus/logs")
+        filename = _safe_filename(
+            payload.get("filename"),
+            time.strftime("corvus-console_%Y-%m-%d_%H-%M.log"),
+            suffix=".log",
+        )
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+            path = os.path.join(target_dir, filename)
+            fd, tmp_name = tempfile.mkstemp(prefix=filename + ".", suffix=".tmp", dir=target_dir)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(text)
+                    if not text.endswith("\n"):
+                        f.write("\n")
+                os.replace(tmp_name, path)
+            except BaseException:
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
+                raise
+        except OSError as exc:
+            self._send_json(
+                {"ok": False, "error": f"could not write to {target_dir}: {exc.strerror or exc}"},
+                400)
+            return
+        except Exception as exc:  # noqa: BLE001 - a log save must never 500
+            logger.exception("console log save failed")
+            self._send_json({"ok": False, "error": f"save failed: {exc}"}, 500)
+            return
+
+        logger.info("console log written to %s", path)
+        self._send_json({"ok": True, "path": path, "dir": target_dir, "filename": filename})
+
     @route("POST", "/api/mavlink/connect")
     def _api_mavlink_connect(self, payload: dict) -> None:
         conn = payload.get("connection", "udp:127.0.0.1:14540")
@@ -1066,6 +1118,34 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": str(exc)}, 400)
             return
         self._send_json({"ok": True, "connection": conn})
+
+    @route("POST", "/api/mavlink/disconnect")
+    def _api_mavlink_disconnect(self, payload: dict) -> None:
+        """Close the MAVLink link and leave it closed.
+
+        Until now the only way out of a connection was to make another one, so
+        an operator who wanted the radio free — to hand the aircraft to another
+        GCS, to swap a cable, to stop a reconnect loop hammering a port that
+        moved — had to quit the app. ``stop()`` already does the full teardown
+        (tlog closed, pending commands cancelled, shell released), so this is
+        that call plus an honest reply.
+
+        Idempotent: disconnecting an already-closed link is a success, because
+        the state the caller asked for is the state they get.
+
+        Takes ``payload`` because every POST handler is dispatched with the
+        parsed body, even the ones with nothing to read from it.
+        """
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "mavlink not ready"}, 503)
+            return
+        try:
+            self.mavlink.stop()
+        except Exception as exc:  # noqa: BLE001 - teardown must never 500
+            logger.exception("mavlink disconnect failed")
+            self._send_json({"ok": False, "error": f"disconnect failed: {exc}"}, 500)
+            return
+        self._send_json({"ok": True})
 
     @route("POST", "/api/mavlink/arm")
     def _api_mavlink_arm(self, payload: dict) -> None:
