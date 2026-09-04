@@ -96,6 +96,10 @@ Corvus.map = (function () {
   let homeMarker = null;
   let pathSource = null;
   let pathCoords = [];
+  // Autopilot uptime last seen. A value that moves BACKWARDS means the vehicle
+  // rebooted, which is the only thing that should discard a flown track — a
+  // link drop must not throw away the flight in progress.
+  let lastBootMs = null;
   let started = false;
   let firstFix = true;
 
@@ -113,6 +117,14 @@ Corvus.map = (function () {
   let vehTarget = null;
   let vehDisplay = null;
   let vehAnimator = null;
+  // Track retention. The old 500-point cap held under a minute of flight at
+  // 5-10 Hz, so a track quietly ate its own beginning mid-sortie. Points are
+  // decimated by DISTANCE instead — a hovering aircraft adds nothing, a moving
+  // one adds a point every few metres — which makes the cap an hours-long
+  // budget rather than a stopwatch.
+  const TRACK_MIN_MOVE_M = 2.0;   // metres before a new point is recorded
+  const TRACK_MAX_POINTS = 20000; // ~40 km of track at the spacing above
+
   const POS_TAU = 0.22;     // seconds — ease-out time constant for lng/lat
   const HDG_TAU = 0.18;     // seconds — ease-out time constant for heading
   const POS_EPS = 1e-7;     // ~1 cm; below this we consider the marker settled
@@ -166,6 +178,8 @@ Corvus.map = (function () {
   // Handle returned by Corvus.ui.optionList — it owns the "which layer is
   // active" highlight, so setBaseLayer never has to walk the DOM for it.
   let layerPicker = null;
+  // The little clear-track control. Only in the DOM while a track exists.
+  let trackClearEl = null;
 
   // Downloaded-area overlay: the named regions from GET /api/tiles/regions,
   // drawn as outlined rectangles with a DOM label at each centre. Labels are
@@ -181,25 +195,82 @@ Corvus.map = (function () {
     return "/api/tiles/" + key + "/{z}/{x}/{y}.png";
   }
 
+  /**
+   * The vehicle marker.
+   *
+   * Drawn as one SVG rather than stacked divs so every part scales together
+   * and the heading stays exactly aligned with the body. The layers, outward
+   * in: a heading cone that says which way the nose points, a white ring that
+   * separates the marker from ANY imagery underneath it (the previous marker
+   * had no outline and disappeared over red roofs), the coloured body, and a
+   * centre dot marking the actual reported position — the thing an operator is
+   * really reading when they ask "where is it".
+   */
   function buildVehicleMarker() {
     const el = document.createElement("div");
     el.className = "vehicle-marker";
     el.innerHTML =
-      '<div class="v-dir"></div>' +
-      '<div class="v-body"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
-      'stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L4 20l8-4 8 4z"/></svg></div>';
+      '<div class="v-halo"></div>' +
+      '<svg class="v-body" viewBox="0 0 48 48" aria-hidden="true">' +
+        // Heading cone — a tapered wedge, wider than the old flat triangle so
+        // the direction reads at a glance while the map is moving.
+        '<path class="v-cone" d="M24 1 L31.5 15.5 A16 16 0 0 0 16.5 15.5 Z"/>' +
+        '<circle class="v-ring" cx="24" cy="24" r="10.5"/>' +
+        '<circle class="v-fill" cx="24" cy="24" r="9"/>' +
+        '<circle class="v-centre" cx="24" cy="24" r="2.4"/>' +
+      "</svg>";
     return el;
   }
 
+  /**
+   * The home / launch point.
+   *
+   * A landing-pad mark rather than a house glyph: "H" in a ring is what the
+   * symbol means to anyone who flies, and it stays legible at the size this
+   * renders at, where a house silhouette turned to mush. Crosshair ticks mark
+   * the exact coordinate, because unlike the vehicle this marker is a place
+   * the aircraft has to come back to precisely.
+   *
+   * Deliberately quieter than the vehicle: smaller, no halo. Where the
+   * aircraft IS must win over where it started.
+   */
   function buildHomeMarker() {
     const el = document.createElement("div");
     el.className = "home-marker";
-    el.innerHTML = '<div class="h-body"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
-      'stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
-      '<polyline points="9 22 9 12 15 12 15 22"/></svg></div>';
+    el.innerHTML =
+      '<svg class="h-body" viewBox="0 0 32 32" aria-hidden="true">' +
+        '<g class="h-ticks">' +
+          '<line x1="16" y1="0.5" x2="16" y2="4.5"/>' +
+          '<line x1="16" y1="27.5" x2="16" y2="31.5"/>' +
+          '<line x1="0.5" y1="16" x2="4.5" y2="16"/>' +
+          '<line x1="27.5" y1="16" x2="31.5" y2="16"/>' +
+        "</g>" +
+        '<circle class="h-ring" cx="16" cy="16" r="10"/>' +
+        '<circle class="h-fill" cx="16" cy="16" r="8.6"/>' +
+        // "H" drawn as strokes, not text: no font dependency, and it stays
+        // crisp at any zoom.
+        '<g class="h-glyph">' +
+          '<line x1="12.4" y1="11.6" x2="12.4" y2="20.4"/>' +
+          '<line x1="19.6" y1="11.6" x2="19.6" y2="20.4"/>' +
+          '<line x1="12.4" y1="16" x2="19.6" y2="16"/>' +
+        "</g>" +
+      "</svg>";
     return el;
   }
 
+  /**
+   * The flown track: three stacked lines rather than one.
+   *
+   * A single stroke over satellite imagery is legible on grass and invisible
+   * over a red-tiled roof or a ploughed field. The casing (a dark, wider line
+   * underneath) gives the track an edge against ANY background, the glow lifts
+   * it off the map, and the core carries the colour. This is the same trick
+   * road maps use, and it is why the track stays readable while the aircraft
+   * flies over mixed terrain.
+   *
+   * Colours come from --track (themes.css) resolved at build time; MapLibre
+   * takes literals, so repaintTrack() re-reads them when the theme changes.
+   */
   function addPathLayer() {
     map.addSource("vehicle-path", {
       type: "geojson",
@@ -210,16 +281,113 @@ Corvus.map = (function () {
       source: "vehicle-path",
       type: "line",
       layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": "#4CC9FF", "line-width": 8, "line-blur": 6, "line-opacity": 0.22 },
+      paint: { "line-width": 11, "line-blur": 8, "line-opacity": 0.3 },
+    });
+    map.addLayer({
+      id: "path-casing",
+      source: "vehicle-path",
+      type: "line",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-width": 5.5, "line-opacity": 0.55 },
     });
     map.addLayer({
       id: "path-line",
       source: "vehicle-path",
       type: "line",
       layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": "#4CC9FF", "line-width": 2.4, "line-opacity": 0.9 },
+      paint: { "line-width": 2.6, "line-opacity": 0.95 },
     });
     pathSource = map.getSource("vehicle-path");
+    repaintTrack();
+  }
+
+  /**
+   * Metres between two [lng, lat] points — equirectangular, which is exact
+   * enough at the scale of consecutive telemetry samples and far cheaper than
+   * haversine at 10 Hz.
+   */
+  function metresBetween(a, b) {
+    const R = 6371000;
+    const lat1 = (a[1] * Math.PI) / 180;
+    const lat2 = (b[1] * Math.PI) / 180;
+    const dLat = lat2 - lat1;
+    const dLng = ((b[0] - a[0]) * Math.PI) / 180;
+    const x = dLng * Math.cos((lat1 + lat2) / 2);
+    return Math.sqrt(x * x + dLat * dLat) * R;
+  }
+
+  /**
+   * Append *position* to the track if the aircraft has actually moved.
+   * Returns true when the track changed.
+   *
+   * Distance decimation is what lets the track cover a whole sortie: a hover
+   * contributes one point, not six hundred, so the cap is an hours-long budget
+   * instead of a stopwatch.
+   */
+  function recordTrackPoint(position) {
+    if (!position || position.length < 2) return false;
+    const lng = position[0], lat = position[1];
+    if (!isFinite(lng) || !isFinite(lat)) return false;
+    // [0,0] is the state store's "no fix yet" default, not the Gulf of Guinea.
+    if (lng === 0 && lat === 0) return false;
+
+    const last = pathCoords[pathCoords.length - 1];
+    if (last && metresBetween(last, [lng, lat]) < TRACK_MIN_MOVE_M) return false;
+
+    pathCoords.push([lng, lat]);
+    // shift-on-overflow rather than slice: drop ONE point when over cap instead
+    // of re-allocating the whole array on every sample.
+    if (pathCoords.length > TRACK_MAX_POINTS) pathCoords.shift();
+    return true;
+  }
+
+  /**
+   * Has the autopilot rebooted since the last sample?
+   *
+   * time_boot_ms restarts near zero on boot, so a value that moves backwards
+   * is a new flight session. Deliberately NOT keyed on the link: a dropped
+   * radio would otherwise erase a flight that is still in the air.
+   */
+  function checkForReboot(bootMs) {
+    if (typeof bootMs !== "number" || bootMs <= 0) return false;
+    const previous = lastBootMs;
+    lastBootMs = bootMs;
+    return previous !== null && bootMs < previous;
+  }
+
+  /** Discard the flown track and repaint. */
+  function clearTrack() {
+    pathCoords = [];
+    if (pathSource) {
+      pathSource.setData({
+        type: "Feature", geometry: { type: "LineString", coordinates: [] }, properties: {},
+      });
+    }
+    updateTrackControl();
+    // The plan line starts at the vehicle, not at the track, so it is
+    // unaffected — but it shares the source update cadence, so keep it honest.
+    if (waypoints.length > 0) updateRoute();
+  }
+
+  /** Show the clear-track control only while there is a track to clear. */
+  function updateTrackControl() {
+    if (!trackClearEl) return;
+    trackClearEl.hidden = pathCoords.length < 2;
+  }
+
+  /** Push the current theme's track colours onto the three track layers. */
+  function repaintTrack() {
+    if (!map) return;
+    const track = Corvus.ui.token("--track", "#E4322F");
+    // The casing is the page background, not black: on the light theme a black
+    // outline would be heavier than the track it is meant to support.
+    const casing = Corvus.ui.token("--bg", "#0B0E12");
+    const set = (layer, prop, value) => {
+      if (map.getLayer(layer)) map.setPaintProperty(layer, prop, value);
+    };
+    set("path-glow", "line-color", track);
+    set("path-casing", "line-color", casing);
+    set("path-line", "line-color", track);
   }
 
   function addRegionLayer() {
@@ -455,6 +623,26 @@ Corvus.map = (function () {
   }
 
   /**
+   * The clear-track control: a very small, quiet button in the map's bottom-left
+   * corner. It only exists in the DOM while there IS a track, and fades up on
+   * hover — an always-visible button for an action taken once a flight would be
+   * more prominent than the thing it acts on.
+   */
+  function buildTrackControl(mapEl) {
+    if (!mapEl) return;
+    trackClearEl = Corvus.ui.iconButton("trash-2", {
+      className: "track-clear",
+      title: "Clear the flown track",
+      ariaLabel: "Clear the flown track",
+      size: 12,
+      onClick: clearTrack,
+    });
+    trackClearEl.hidden = true;
+    mapEl.appendChild(trackClearEl);
+    Corvus.ui.refreshIcons();
+  }
+
+  /**
    * (Re)build the layer switcher from the hydrated source catalogue. Layers are
    * grouped under their service (Esri / OpenStreetMap / Google / Bing) so the
    * twelve entries stay scannable and the operator can see which service a
@@ -571,6 +759,8 @@ Corvus.map = (function () {
   function renderVehicle() {
     if (!vehicleMarker || !vehDisplay) return;
     vehicleMarker.setLngLat([vehDisplay.lng, vehDisplay.lat]);
+    // The whole SVG rotates, so the heading cone and the body stay locked
+    // together — they used to be separate elements and could disagree.
     const body = vehicleMarker.getElement().querySelector(".v-body");
     if (body) body.style.transform = `rotate(${vehDisplay.heading}deg)`;
   }
@@ -588,16 +778,13 @@ Corvus.map = (function () {
       map.easeTo({ center: state.position, zoom: 16, duration: 1000 });
     }
 
-    // Path recording stays on the TARGET (latest telemetry) so the track is
+    // A reboot — and only a reboot — discards the track. A link drop must not,
+    // or a radio glitch would erase the flight so far.
+    if (checkForReboot(state.boot_ms)) clearTrack();
+
+    // Track recording stays on the TARGET (latest telemetry) so the track is
     // accurate; interpolation is purely a rendering concern.
-    const last = pathCoords[pathCoords.length - 1];
-    if (!last || last[0] !== state.position[0] || last[1] !== state.position[1]) {
-      pathCoords.push(state.position.slice());
-      // shift-on-overflow instead of slice-every-time: drop ONE point when
-      // over cap rather than re-allocating the whole 500-element array on
-      // every sample. Both are O(n) at n=500, but shift avoids a second full
-      // allocation + copy beyond MapLibre's own internal copy.
-      if (pathCoords.length > 500) pathCoords.shift();
+    if (recordTrackPoint(state.position)) {
       if (pathSource) {
         pathSource.setData({
           type: "Feature",
@@ -605,6 +792,7 @@ Corvus.map = (function () {
           properties: {},
         });
       }
+      updateTrackControl();
       // The plan line's first segment starts at the vehicle, so it must track
       // the vehicle too. Only when a plan exists — avoids repainting the route
       // source on every telemetry sample when no waypoints are planned.
@@ -818,6 +1006,7 @@ Corvus.map = (function () {
     // on the map object (which exists from the constructor), and setBaseLayer
     // already defers its own work until `started`.
     buildControls(controlsEl, layersPopover);
+    buildTrackControl(mapEl);
 
     map.on("load", () => {
       // Regions first: their layers must sit UNDER the track and plan route,
@@ -855,6 +1044,9 @@ Corvus.map = (function () {
 
       Corvus.telemetry.subscribe(updateVehicle);
       started = true;
+      // MapLibre paint properties are literal colours, so a theme switch has
+      // to push new ones — the same reason the Plotly charts subscribe.
+      Corvus.ui.onThemeChange(repaintTrack);
       // Draw whatever regions arrived while the style was still loading, then
       // refresh from the backend.
       setRegions(regions);
@@ -894,6 +1086,8 @@ Corvus.map = (function () {
     setBaseLayer,
     getBaseLayer: () => activeLayer,
     // Downloaded-area overlay, driven by the offline-map dialog.
+    clearTrack,
+    getTrack: () => pathCoords.map((c) => c.slice()),
     setRegions,
     loadRegions,
     setRegionsVisible,
@@ -905,6 +1099,11 @@ Corvus.map = (function () {
     // Read-only; mirrors the `_animators` hook convention on Corvus.anim.
     _sources: () => sources,
     _bootstrap: () => BOOTSTRAP,
+    // test hooks: the pure track rules — distance decimation and the reboot
+    // edge — assertable without a map.
+    _recordTrackPoint: (pos) => recordTrackPoint(pos),
+    _checkForReboot: (ms) => checkForReboot(ms),
+    _resetTrackState: () => { pathCoords = []; lastBootMs = null; },
     // test hook: pure coordinate computation for the plan route (vehicle
     // position prefix + operator waypoints, or []). Accepts an optional
     // waypoint list for testing in Node, where the internal `waypoints` array

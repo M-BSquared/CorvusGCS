@@ -106,6 +106,11 @@ class VehicleStateStore:
             "time": "",
             "warnings": [],
             "home": [0.0, 0.0],
+            # Autopilot uptime in ms (SYSTEM_TIME.time_boot_ms). 0 until the
+            # first message. A value that goes BACKWARDS means the vehicle
+            # rebooted — the map clears the flown track on that transition,
+            # since a link drop must not throw away a flight in progress.
+            "boot_ms": 0,
             "mission": [],
         }
         self._history: dict[str, collections.deque] = {

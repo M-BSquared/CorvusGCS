@@ -1032,6 +1032,14 @@ class MavlinkBridge:
             if msg.time_unix_usec:
                 t = datetime.datetime.utcfromtimestamp(msg.time_unix_usec / 1e6)
                 self._store.update(time=t.strftime("%H:%M:%S UTC"))
+            # Autopilot uptime. Published because it is the only honest signal
+            # that the vehicle REBOOTED as opposed to the link having dropped:
+            # time_boot_ms restarts near zero on boot, so a value that moves
+            # backwards means a new flight session. The map uses it to decide
+            # when the flown track belongs to a previous flight.
+            boot_ms = getattr(msg, "time_boot_ms", None)
+            if isinstance(boot_ms, (int, float)) and boot_ms >= 0:
+                self._store.update(boot_ms=int(boot_ms))
         elif name == "STATUSTEXT":
             self._handle_statustext(msg)
         elif name == "AUTOPILOT_VERSION":

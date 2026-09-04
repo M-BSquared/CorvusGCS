@@ -58,6 +58,7 @@ ever typed into this README.
 - [Connection (LINK)](#connection-link)
 - [Plugins — Vibration Monitor](#plugins--vibration-monitor)
 - [Setup — Parameters, Calibration, Autotune, Firmware](#setup--parameters-calibration-autotune-firmware)
+- [The map — aircraft, home, and the flown track](#the-map--aircraft-home-and-the-flown-track)
 - [Flight HUD — a movable window](#flight-hud--a-movable-window)
 - [Offline map — named areas](#offline-map--named-areas)
 - [Settings — Appearance, SSH, Map](#settings--appearance-ssh-map)
@@ -95,6 +96,12 @@ From one window you can:
   movable window: drag it by its title bar, pin it so a stray gesture cannot
   shift it, shrink it to compact, or collapse it to the bar alone — its
   position and state survive a restart.
+- **Read the aircraft** — the vehicle marker carries a heading cone and a white
+  separating ring so it stays visible over any imagery; the home point is a
+  landing-pad mark with crosshair ticks on the exact coordinate. The flown
+  track is a red trail with a casing, and it survives a link drop — only an
+  actual vehicle reboot discards it, or a small clear button in the map's
+  corner.
 - **Read the map** — four map services (Esri, OpenStreetMap, Google, Bing) with
   twelve base layers between them, per-source attribution, and a
   download-a-region dialog for fully offline field use. Downloaded areas are
@@ -575,6 +582,42 @@ direct USB connection to the flight controller's CDC ACM device
 (`/dev/ttyACM*`). It is **refused** over a SiK telemetry radio
 (`/dev/ttyUSB*`) and over any UDP / TCP link — those transports cannot carry
 the bootloader protocol. Flashing is also **refused while the vehicle is armed**.
+
+---
+
+## The map — aircraft, home, and the flown track
+
+**Vehicle marker.** A heading cone, a white separating ring, the vehicle colour,
+and a centre dot on the reported position. The ring is the part that matters:
+the previous marker had no outline and disappeared over imagery its own colour.
+The whole thing is one SVG, so the cone and the body cannot drift apart.
+
+**Home point.** A landing-pad mark — "H" in a ring with crosshair ticks on the
+exact coordinate — rather than a house glyph, which turned to mush at the size
+it renders. Deliberately quieter than the vehicle: where the aircraft *is* has
+to win over where it started.
+
+**Flown track.** Three stacked lines, not one: a casing underneath, a glow, and
+the coloured core. A single stroke is legible on grass and invisible over a
+red-tiled roof; the casing gives the track an edge against any background, which
+is the same trick road maps use. The colour is `--track` (a deeper red than the
+vehicle marker, so the live position stays pickable out of its own history), and
+each theme's casing is the opposite lightness of its track.
+
+Two things about the track are deliberate:
+
+- **It survives a link drop.** Only an actual vehicle reboot discards it,
+  detected from `SYSTEM_TIME.time_boot_ms` moving *backwards* — the one honest
+  signal that the airframe restarted rather than the radio glitching. A track
+  erased by a dropped packet would be a real loss.
+- **It is decimated by distance, not time.** A hovering aircraft adds one point,
+  not six hundred, so the buffer is an hours-long budget instead of a stopwatch.
+  The old 500-sample cap held under a minute of flight and quietly ate its own
+  beginning mid-sortie.
+
+A very small trash button appears in the map's bottom-left corner while a track
+exists, at low opacity until reached for. An action taken once a flight should
+not out-shout the thing it acts on.
 
 ---
 

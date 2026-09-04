@@ -190,6 +190,125 @@ function testSourceTextEnablesAttributionControl() {
 }
 
 // ---------------------------------------------------------------------------
+// Flown track: distance decimation and reboot detection.
+//
+// Two rules the operator depends on and neither is visible until it is wrong:
+//  - a hovering aircraft must not fill the track buffer with the same point,
+//    or a long sortie silently eats its own beginning;
+//  - the track must survive a LINK drop and only be discarded on an actual
+//    vehicle reboot, or a radio glitch erases a flight that is still airborne.
+// ---------------------------------------------------------------------------
+
+function testTrackRecordsTheFirstFix() {
+  map._resetTrackState();
+  assert.equal(map._recordTrackPoint([8.5, 47.3]), true, "first fix starts the track");
+  assert.equal(map.getTrack().length, 1);
+}
+
+function testTrackIgnoresNullIsland() {
+  // [0,0] is the state store's "no fix yet" default, not a position.
+  map._resetTrackState();
+  assert.equal(map._recordTrackPoint([0, 0]), false, "[0,0] is not a fix");
+  assert.equal(map.getTrack().length, 0);
+}
+
+function testTrackIgnoresNonFiniteAndMalformedPositions() {
+  map._resetTrackState();
+  [[NaN, 47.3], [8.5, Infinity], [], [8.5], null, undefined].forEach((pos) => {
+    assert.equal(map._recordTrackPoint(pos), false, `rejects ${JSON.stringify(pos)}`);
+  });
+  assert.equal(map.getTrack().length, 0);
+}
+
+function testHoveringDoesNotGrowTheTrack() {
+  map._resetTrackState();
+  map._recordTrackPoint([8.5, 47.3]);
+  // 200 samples of a stationary aircraft. GNSS jitter OSCILLATES around a
+  // point rather than drifting away from it, so the samples alternate sign —
+  // a monotonic ramp would be real movement and ought to be recorded.
+  for (let i = 0; i < 200; i++) {
+    const j = (i % 2 ? 1 : -1) * 6e-7;   // ~7 cm, well inside the threshold
+    map._recordTrackPoint([8.5 + j, 47.3 + j]);
+  }
+  assert.equal(map.getTrack().length, 1,
+    "a hover must contribute one point, not one per sample");
+}
+
+function testSlowDriftIsStillRecorded() {
+  // The threshold rejects jitter, not slow flight: a steady crawl past 2 m
+  // must still lay down track, or a slow approach would leave a gap.
+  map._resetTrackState();
+  map._recordTrackPoint([8.5, 47.3]);
+  for (let i = 1; i <= 60; i++) map._recordTrackPoint([8.5, 47.3 + i * 5e-6]);  // ~0.55 m/sample
+  const n = map.getTrack().length;
+  assert.ok(n > 5 && n < 61,
+    `slow drift should be decimated but recorded, got ${n} points from 60 samples`);
+}
+
+function testMovingGrowsTheTrack() {
+  map._resetTrackState();
+  map._recordTrackPoint([8.5, 47.3]);
+  // ~0.0001 deg of latitude is ~11 m — comfortably past the 2 m threshold.
+  for (let i = 1; i <= 5; i++) map._recordTrackPoint([8.5, 47.3 + i * 0.0001]);
+  assert.equal(map.getTrack().length, 6, "each real move adds a point");
+}
+
+function testTrackThresholdIsAboutTwoMetres() {
+  // Just under and just over, on latitude where 1e-5 deg ~ 1.11 m.
+  map._resetTrackState();
+  map._recordTrackPoint([8.5, 47.3]);
+  assert.equal(map._recordTrackPoint([8.5, 47.3 + 0.0000135]), false, "~1.5 m is below the threshold");
+  assert.equal(map._recordTrackPoint([8.5, 47.3 + 0.000027]), true, "~3 m is above it");
+}
+
+function testClearTrackEmptiesIt() {
+  map._resetTrackState();
+  map._recordTrackPoint([8.5, 47.3]);
+  map._recordTrackPoint([8.5, 47.31]);
+  assert.ok(map.getTrack().length >= 2);
+  map.clearTrack();
+  assert.deepEqual(map.getTrack(), [], "clearTrack discards every point");
+}
+
+function testGetTrackReturnsACopy() {
+  map._resetTrackState();
+  map._recordTrackPoint([8.5, 47.3]);
+  const snapshot = map.getTrack();
+  snapshot[0][0] = 999;
+  snapshot.push([1, 1]);
+  assert.equal(map.getTrack()[0][0], 8.5, "caller cannot mutate the live track");
+  assert.equal(map.getTrack().length, 1);
+}
+
+function testRebootIsDetectedWhenUptimeGoesBackwards() {
+  map._resetTrackState();
+  // First reading establishes a baseline — it is not itself a reboot, or the
+  // track would be wiped the moment the app connects.
+  assert.equal(map._checkForReboot(500000), false, "the first uptime seen is not a reboot");
+  assert.equal(map._checkForReboot(501000), false, "uptime climbing is normal");
+  assert.equal(map._checkForReboot(1200), true, "uptime restarting near zero is a reboot");
+  assert.equal(map._checkForReboot(2400), false, "and the new session then climbs normally");
+}
+
+function testMissingUptimeIsNotAReboot() {
+  // Vehicles that never send SYSTEM_TIME, and the 0 default before the first
+  // message, must not be read as a reboot on every single sample.
+  map._resetTrackState();
+  [undefined, null, 0, -1, "12345", NaN].forEach((v) => {
+    assert.equal(map._checkForReboot(v), false, `uptime ${JSON.stringify(v)} is not a reboot`);
+  });
+}
+
+function testLinkDropDoesNotLookLikeAReboot() {
+  // A dropped link stops the samples; when they resume the uptime has moved
+  // FORWARD, so the flight in progress keeps its track.
+  map._resetTrackState();
+  map._checkForReboot(300000);
+  assert.equal(map._checkForReboot(345000), false,
+    "a gap in telemetry must not discard the track");
+}
+
+// ---------------------------------------------------------------------------
 // _planRouteCoords: plan-route coordinate computation.
 //
 // The dashed plan line must start at the drone's position, so a single
@@ -281,6 +400,18 @@ const tests = [
   testSetBaseLayerRejectsUnknownSources,
   testSourceTextDoesNotMirrorTheRegistry,
   testSourceTextEnablesAttributionControl,
+  testTrackRecordsTheFirstFix,
+  testTrackIgnoresNullIsland,
+  testTrackIgnoresNonFiniteAndMalformedPositions,
+  testHoveringDoesNotGrowTheTrack,
+  testSlowDriftIsStillRecorded,
+  testMovingGrowsTheTrack,
+  testTrackThresholdIsAboutTwoMetres,
+  testClearTrackEmptiesIt,
+  testGetTrackReturnsACopy,
+  testRebootIsDetectedWhenUptimeGoesBackwards,
+  testMissingUptimeIsNotAReboot,
+  testLinkDropDoesNotLookLikeAReboot,
   testPlanRouteHookExists,
   testPlanRouteEmptyWhenNoWaypoints,
   testPlanRoutePrependsVehicleForSingleWaypoint,

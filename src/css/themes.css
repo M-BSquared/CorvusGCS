@@ -81,6 +81,13 @@
   --waypoint: #62D6FF;
   --vehicle: #FF514D;
   --vehicle-rgb: 255 81 77;
+  /* The flown track. A deeper, more saturated red than the vehicle marker so
+     the two read as related but distinct — the marker is where the aircraft
+     IS, the track is where it has been, and a trail in the marker's exact
+     colour makes the live position hard to pick out of its own history. Holds
+     up over both bright and dark satellite imagery. */
+  --track: #E4322F;
+  --track-rgb: 228 50 47;
 
   --text-1: #F2F4F7;
   --text-2: #A5ADB8;
@@ -244,6 +251,9 @@
   --waypoint: #0B6FC0;
   --vehicle: #D62B26;
   --vehicle-rgb: 214 43 38;
+  /* Deeper still on light imagery, where a bright red loses definition. */
+  --track: #B81E1B;
+  --track-rgb: 184 30 27;
 
   --text-1: #12151A;
   --text-2: #4C555F;

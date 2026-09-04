@@ -492,28 +492,94 @@ svg { display: block; }
 .tiles-region-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
 .tiles-stat-empty { font-size: 11px; color: var(--text-3); line-height: 1.5; padding: 6px 2px; }
 
-/* vehicle marker */
-.vehicle-marker { width: 44px; height: 44px; display: grid; place-items: center; }
-.vehicle-marker .v-body {
-  width: 36px; height: 36px; border-radius: 50%;
-  background: rgb(var(--vehicle-rgb) / 0.18); border: 2.5px solid var(--vehicle);
-  display: grid; place-items: center;
-  box-shadow: 0 0 14px rgb(var(--vehicle-rgb) / 0.6);
+/* ===== VEHICLE MARKER =====
+   One SVG so the heading cone and the body cannot drift apart, plus a soft
+   halo behind it. The white ring is what makes the marker survive being flown
+   over a red roof or a bright field — the previous marker had no outline and
+   simply vanished against imagery its own colour. */
+.vehicle-marker { width: 48px; height: 48px; display: grid; place-items: center; }
+.vehicle-marker .v-halo {
+  position: absolute;
+  width: 34px; height: 34px; border-radius: 50%;
+  background: rgb(var(--vehicle-rgb) / 0.22);
+  filter: blur(5px);
 }
-.vehicle-marker .v-body svg { width: 20px; height: 20px; color: var(--vehicle); transform: rotate(0deg); }
-.vehicle-marker .v-dir {
-  position: absolute; top: -5px; left: 50%; transform: translateX(-50%);
-  width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent;
-  border-bottom: 11px solid var(--vehicle); filter: drop-shadow(0 0 5px var(--vehicle));
+.vehicle-marker .v-body {
+  position: relative;
+  width: 48px; height: 48px;
+  /* Rotated by map.js to the vehicle heading; the transition is off because
+     the heading is already eased frame-by-frame by the shared rAF loop. */
+  transform: rotate(0deg);
+  transform-origin: 50% 50%;
+  overflow: visible;
+}
+/* The heading cone carries safety-relevant information — which way the nose is
+   pointing — so it is not as faint as a decorative flourish would be. The white
+   edge keeps it readable over light ground, where a translucent red wash alone
+   washes out. */
+.vehicle-marker .v-cone {
+  fill: rgb(var(--vehicle-rgb) / 0.62);
+  stroke: rgb(255 255 255 / 0.55);
+  stroke-width: 0.9;
+}
+/* The separating ring — white on dark themes, and still white on light,
+   because it separates the marker from IMAGERY, not from the UI. */
+.vehicle-marker .v-ring { fill: #fff; }
+.vehicle-marker .v-fill { fill: var(--vehicle); }
+.vehicle-marker .v-centre { fill: #fff; }
+
+/* ===== HOME / LAUNCH POINT =====
+   A landing-pad mark: "H" in a ring, with crosshair ticks on the exact
+   coordinate. Quieter than the vehicle on purpose — where the aircraft IS has
+   to win over where it started. */
+.home-marker { width: 32px; height: 32px; display: grid; place-items: center; }
+.home-marker .h-body { width: 32px; height: 32px; overflow: visible; }
+.home-marker .h-ticks {
+  stroke: var(--healthy);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  opacity: 0.8;
+}
+.home-marker .h-ring { fill: #fff; }
+.home-marker .h-fill { fill: color-mix(in srgb, var(--healthy) 88%, #000); }
+.home-marker .h-glyph {
+  stroke: #fff;
+  stroke-width: 2;
+  stroke-linecap: round;
 }
 
-.home-marker { width: 26px; height: 26px; display: grid; place-items: center; }
-.home-marker .h-body {
-  width: 24px; height: 24px; border-radius: 50%;
-  background: color-mix(in srgb, var(--healthy) 18%, transparent); border: 1.5px solid var(--healthy);
+/* ===== CLEAR FLOWN TRACK =====
+   Deliberately the smallest control on the map. It appears only while there IS
+   a track, sits in the one free corner, and stays at a low opacity until
+   reached for — an action taken once per flight should not out-shout the
+   track it clears. */
+.track-clear {
+  position: absolute;
+  left: var(--map-rail-inset, 14px);
+  bottom: var(--map-rail-inset, 14px);
+  z-index: 10;
+  width: 22px; height: 22px;
   display: grid; place-items: center;
+  border-radius: 6px;
+  background: rgb(var(--glass-rgb) / 0.5);
+  backdrop-filter: var(--blur-fine);
+  -webkit-backdrop-filter: var(--blur-fine);
+  border: 1px solid rgb(var(--tint-rgb) / 0.06);
+  color: var(--text-3);
+  opacity: 0.45;
+  transition: opacity 140ms, color 140ms, background 140ms;
 }
-.home-marker .h-body svg { width: 13px; height: 13px; color: var(--healthy); }
+.track-clear:hover {
+  opacity: 1;
+  color: var(--track);
+  background: rgb(var(--glass-rgb) / 0.75);
+}
+.track-clear:focus-visible { opacity: 1; outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+.track-clear[hidden] { display: none; }
+.track-clear i, .track-clear svg { width: 12px; height: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  .track-clear { transition: none; }
+}
 
 /* downloaded-area label — the name badge at the centre of each cached region.
    A DOM marker, not a MapLibre symbol layer: a text layer needs a glyphs URL
