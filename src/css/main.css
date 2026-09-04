@@ -556,12 +556,70 @@ svg { display: block; }
 }
 
 /* ===== FLIGHT OVERLAY ===== */
+/* ===== FLIGHT HUD PANEL =====
+   A movable window over the map (Corvus.hudPanel): drag by the title bar, pin
+   to lock the position, shrink to compact, collapse to the bar alone. It sits
+   at the bottom-right until it is moved; .is-placed then drops that anchoring
+   so the dragged left/top wins. --hud-w is the one number the compact state
+   changes, so every child scales from a single declaration. */
 .flight-overlay {
+  --hud-w: 320px;
   position: absolute; right: 16px; bottom: 16px; z-index: 12;
-  width: 320px;
+  width: var(--hud-w);
   border-radius: 14px;
-  padding: 14px;
-  display: flex; flex-direction: column; gap: 10px;
+  padding: 10px 14px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+  transition: width 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+/* Dragged at least once: positioned from the top-left corner instead. */
+.flight-overlay.is-placed { right: auto; bottom: auto; }
+/* No transition mid-drag — the width animation would lag the pointer. */
+.flight-overlay.is-dragging { transition: none; user-select: none; }
+/* A ratio, not a fixed width: the base --hud-w changes per
+   breakpoint, and compact has to stay smaller than all of them. */
+.flight-overlay.is-compact { width: calc(var(--hud-w) * 0.72); }
+.flight-overlay.is-collapsed { padding-bottom: 10px; }
+
+.hud-head {
+  display: flex; align-items: center; gap: 7px;
+  /* The title bar IS the drag handle, so it advertises that with its cursor —
+     except when pinned, where the whole point is that it will not move. */
+  cursor: grab;
+  margin: -2px -4px 0;
+  padding: 2px 4px 6px;
+  border-bottom: 1px solid var(--border-soft);
+  touch-action: none;   /* let the pointer handlers own the gesture */
+}
+.flight-overlay.is-dragging .hud-head { cursor: grabbing; }
+.flight-overlay.is-pinned .hud-head { cursor: default; }
+.hud-grip { color: var(--text-3); flex: 0 0 auto; }
+.flight-overlay.is-pinned .hud-grip { opacity: 0.35; }
+.hud-title {
+  flex: 1; min-width: 0;
+  font-size: 9.5px; font-weight: 700; letter-spacing: 1.2px;
+  color: var(--text-3); text-transform: uppercase;
+}
+.hud-actions { display: flex; align-items: center; gap: 1px; flex: 0 0 auto; }
+/* Tighter than the default .icon-btn: three of them share a 320px title bar. */
+.hud-actions .icon-btn { width: 22px; height: 22px; border-radius: 5px; }
+.hud-actions .icon-btn svg, .hud-actions .icon-btn i { width: 13px; height: 13px; }
+
+.hud-body { display: flex; flex-direction: column; gap: 10px; }
+.hud-body[hidden] { display: none; }
+
+/* Compact: the instruments carry the size change, since the dials are what
+   dominate the panel. The readouts and telemetry cells only tighten. */
+.is-compact .instruments { gap: 8px; }
+.is-compact .instrument { gap: 3px; }
+.is-compact .readout-label { font-size: 7.5px; letter-spacing: 0.7px; }
+.is-compact .readout-value { font-size: 11px; }
+.is-compact .ft-cell { padding: 5px 7px; }
+.is-compact .ft-cell .ft-label { font-size: 7.5px; }
+.is-compact .ft-cell .ft-value { font-size: 12px; }
+.is-compact .hud-body { gap: 7px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .flight-overlay { transition: none !important; }
 }
 .instruments { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .instrument { display: flex; flex-direction: column; align-items: center; gap: 6px; }
@@ -1158,19 +1216,19 @@ svg { display: block; }
   .tb-value { font-size: 14px; }
   .nav-item .nav-label { display: none; }
   .nav-item { padding: 12px 0; }
-  .flight-overlay { width: 290px; }
+  .flight-overlay { --hud-w: 290px; }
 }
 @media (max-width: 959px) {
   :root { --panel-w: 320px; }
   .right-panel:not(.collapsed) { width: var(--panel-w); }
-  .flight-overlay { width: 270px; bottom: 12px; right: 12px; }
+  .flight-overlay { --hud-w: 270px; bottom: 12px; right: 12px; }
   .tb-block[data-priority="low"] { display: none; }
 }
 @media (max-width: 600px) {
   .top-bar { height: 52px; padding: 0 6px; }
   .tb-logo-sub { display: none; }
   .tb-block[data-priority="mid"] { display: none; }
-  .flight-overlay { width: 240px; }
+  .flight-overlay { --hud-w: 240px; }
   .flight-overlay .instruments { grid-template-columns: 1fr; }
   .nav-item .nav-label { display: none; }
 }

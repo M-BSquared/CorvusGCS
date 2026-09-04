@@ -606,15 +606,26 @@ Corvus.sidenav = (function () {
   // Undefined gen ⇒ no guard (keeps the helper callable from non-render contexts).
   function renderAboutSection(container, gen) {
     const card = Corvus.ui.card({});
+    const rows = document.createElement("div");
+    card.appendChild(rows);
     Corvus.telemetry.requestJson("/api/version").then((v) => {
       if (gen !== undefined && gen !== navGeneration) return;
-      card.appendChild(row("Product", v.product || "Corvus GCS"));
-      card.appendChild(row("Version", v.version || "—"));
-      card.appendChild(row("PX4 Profile", v.px4_profile || "—"));
+      rows.appendChild(row("Product", v.product || "Corvus GCS"));
+      rows.appendChild(row("Version", v.version || "\u2014"));
+      rows.appendChild(row("PX4 Profile", v.px4_profile || "\u2014"));
     }).catch(() => {
       if (gen !== undefined && gen !== navGeneration) return;
-      card.appendChild(row("Version", "Unavailable"));
+      rows.appendChild(row("Version", "Unavailable"));
     });
+    // Appended outside the fetch so the button is there even when the backend
+    // is unreachable — the credits it opens are static apart from the map
+    // attributions, which degrade on their own.
+    card.appendChild(Corvus.ui.actions(Corvus.ui.button({
+      variant: "secondary",
+      icon: "info",
+      label: "Credits",
+      onClick: () => Corvus.credits.open(),
+    })));
     container.appendChild(Corvus.ui.section({ title: "About", body: card }));
   }
 

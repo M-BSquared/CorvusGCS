@@ -605,3 +605,76 @@
   }
   .modal-overlay { backdrop-filter: none; -webkit-backdrop-filter: none; }
 }
+
+/* ===== Credits dialog (Settings > About > Credits) =====
+   A reading surface, not a control panel: the type scale is a touch larger than
+   the dense telemetry lists, and each entry is name + license on one line with
+   its purpose underneath, so the list can be skimmed for "what is this and what
+   licence am I bound by". */
+.credits-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.credits-product { font-size: 16px; font-weight: 700; color: var(--text-1); letter-spacing: 0.3px; }
+.credits-author { font-size: 13px; font-weight: 600; color: var(--accent-bright); }
+.credits-org { font-size: 11.5px; color: var(--text-3); }
+.credits-note { font-size: 11.5px; color: var(--text-2); line-height: 1.5; margin-top: 8px; }
+
+.credits-group { display: flex; flex-direction: column; gap: 8px; }
+.credits-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 11px;
+  border-radius: var(--radius-btn);
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+}
+.credits-entry-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.credits-entry-name { font-size: 12.5px; font-weight: 600; color: var(--text-1); }
+.credits-entry-license {
+  font-size: 10px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.credits-entry-role { font-size: 11px; color: var(--text-2); line-height: 1.45; }
+/* The URL is reference text, not a link — offline there is nothing to follow,
+   so it is styled to be read and typed out elsewhere rather than clicked. */
+.credits-entry-url {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-3);
+  word-break: break-all;
+}
+.credits-footer {
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.5;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+
+/* The institution's wordmark in the credits dialog. Official marks are shown
+   in their own colours — never filtered or recoloured to match a theme — so on
+   the dark themes it sits on a light plate that gives the grey half of the
+   logo something to read against. The light theme needs no plate. */
+.credits-orgmark {
+  display: block;
+  width: 190px;
+  max-width: 100%;
+  height: auto;
+  margin-top: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-btn);
+  background: var(--orgmark-plate);
+}

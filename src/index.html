@@ -11,9 +11,7 @@
 <link rel="icon" type="image/png" media="(prefers-color-scheme: dark)" href="assets/CorvusGCS_logo.png" />
 <link rel="icon" type="image/png" href="assets/CorvusGCS_logo_inverted.png" />
 <title>CORVUS GCS</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="vendor/fonts.css" />
 <link href="vendor/maplibre-gl.css" rel="stylesheet" />
 <!-- Load order is load-bearing: themes.css owns every design token, main.css
      consumes them for layout/screens, components.css layers the shared
@@ -322,14 +320,16 @@
 </div>
 
 <script src="vendor/maplibre-gl.min.js"></script>
-<script src="https://unpkg.com/lucide@latest"></script>
+<script src="vendor/lucide.min.js"></script>
 <script src="vendor/plotly-basic.min.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/credits.js"></script>
 <script src="js/telemetry.js"></script>
 <script src="js/notification_dedupe.js"></script>
 <script src="js/topbar.js"></script>
 <script src="js/map.js"></script>
 <script src="js/instruments.js"></script>
+<script src="js/hud-panel.js"></script>
 <script src="js/panel.js"></script>
 <script src="js/link.js"></script>
 <script src="js/plugins.js"></script>

@@ -56,6 +56,7 @@ ever typed into this README.
 - [Connecting to a drone](#connecting-to-a-drone)
 - [Plugins — Vibration Monitor](#plugins--vibration-monitor)
 - [Setup — Parameters, Calibration, Autotune, Firmware](#setup--parameters-calibration-autotune-firmware)
+- [Flight HUD — a movable window](#flight-hud--a-movable-window)
 - [Offline map — named areas](#offline-map--named-areas)
 - [Settings — Appearance, SSH, Map](#settings--appearance-ssh-map)
 - [Architecture](#architecture)
@@ -88,7 +89,10 @@ specialist views.
 From one window you can:
 
 - **Fly** — live HUD, map, attitude, GPS, and body angular rates pushed from the
-  autopilot over Server-Sent Events (the frontend never polls).
+  autopilot over Server-Sent Events (the frontend never polls). The HUD is a
+  movable window: drag it by its title bar, pin it so a stray gesture cannot
+  shift it, shrink it to compact, or collapse it to the bar alone — its
+  position and state survive a restart.
 - **Read the map** — four map services (Esri, OpenStreetMap, Google, Bing) with
   twelve base layers between them, per-source attribution, and a
   download-a-region dialog for fully offline field use. Downloaded areas are
@@ -143,17 +147,19 @@ Corvus GCS is built around that:
   logs. The field laptop is rebooted between flights, and the app must disappear
   perfectly on `SIGINT` / `SIGTERM` / `atexit`.
 
-> **Map tiles, fonts & icons (honest caveat):** the map *library* now renders
-> fully offline — MapLibre GL JS is **vendored locally** at
-> `src/vendor/maplibre-gl.min.js`. The **map tiles** themselves (the imagery from
-> ESRI / OpenStreetMap) still come from the internet, but all tile traffic is
-> routed through the backend (`/api/tiles/...`), which fetches and caches into the
-> offline **MBTiles (SQLite) tile-cache store** in `corvus/tile_cache.py` —
-> covering every registered source. Use the on-map "Download offline map" button
-> to cache a **named area**, and the map then works fully offline. The last remaining CDN
-> dependencies are **Lucide icons** (`unpkg`) and **Google Fonts** (Inter /
-> JetBrains Mono); offline, icons are absent (most controls keep a text label)
-> and fonts fall back to system defaults.
+> **Fully offline:** the interface loads **nothing from the internet**. MapLibre
+> GL JS, Plotly, Lucide icons and both webfonts (Inter / JetBrains Mono) are all
+> vendored under `src/vendor/`, so icons render and type is correct on a laptop
+> that has never seen a network. The **map tiles** are the one thing that must
+> originate online, and even those never touch the browser directly: all tile
+> traffic is routed through the backend (`/api/tiles/...`), which fetches and
+> caches into the offline **MBTiles (SQLite) tile-cache store** in
+> `corvus/tile_cache.py`. Use the on-map "Download offline map" button to cache
+> a **named area** while you still have a connection, and the map then works in
+> the field with no connection at all.
+>
+> Every vendored dependency and its license is listed in **Settings → About →
+> Credits**.
 
 ---
 
@@ -514,6 +520,29 @@ the bootloader protocol. Flashing is also **refused while the vehicle is armed**
 
 ---
 
+## Flight HUD — a movable window
+
+The HUD (compass, attitude indicator, and the live telemetry grid) used to be
+nailed to the bottom-right corner of the map, which is as often as not exactly
+the ground being flown over. It is now a small window with a title bar:
+
+- **Drag** it anywhere over the map by the title bar. It is clamped so a strip
+  always stays reachable — it cannot be thrown off screen, and it is pulled
+  back in if the window or the right panel shrinks the map underneath it.
+- **Pin** locks the position. This is the one that matters in the field, where
+  the panel sits under a thumb on a trackpad while the aircraft is airborne.
+- **Compact** keeps every readout but shrinks the instruments and tightens the
+  grid, for when the map matters more than the numbers.
+- **Collapse** reduces it to the title bar.
+- **Double-click the title bar** returns it to its default corner.
+
+Position and state persist in `localStorage`, so the panel stays where it was
+put. The behaviour lives in `src/js/hud-panel.js`, deliberately separate from
+`instruments.js`: that module renders the dials and knows nothing about where
+the panel sits, and this one moves the box and never touches its contents.
+
+---
+
 ## Offline map — named areas
 
 The **Download offline map** button on the map opens a dialog (not a popover:
@@ -627,6 +656,16 @@ appearing here as settings that silently need a restart.
 Reads `GET /api/version` for the product name, version, and PX4 profile (no
 hardcoded version — see [Version control](#version-control)).
 
+**Credits** opens a dialog listing everything in the product that someone else
+wrote — vendored libraries with their versions and licenses, the two typefaces,
+the Python runtime dependencies, and the map services — alongside the project
+credit. The library half is a static list in `src/js/credits.js` (with a
+maintenance note: bump it when a file under `src/vendor/` is replaced); the map
+attributions are read live from `/api/tiles/sources`, because those are legally
+required, change whenever a source is added, and already have a single home in
+`corvus/tile_sources.py`. URLs are shown as plain text rather than links — the
+field laptop has no internet, so a link would be a dead end.
+
 ---
 
 ## Architecture
@@ -671,11 +710,16 @@ pyproject.toml                # tooling/pytest config (version comes from VERSIO
 │   │   ├── setup-shared.js   # shared Setup-page helpers
 │   │   ├── sidenav.js        # left navigation + Settings page
 │   │   ├── ui.js             # reusable UI component helpers
+│   │   ├── credits.js        # third-party attribution dialog
+│   │   ├── hud-panel.js      # movable/collapsible flight HUD window
 │   │   └── app.js            # top bar wiring + flight actions
-│   └── vendor/
-│       ├── maplibre-gl.min.js   # vendored MapLibre GL JS (offline map)
-│       ├── maplibre-gl.css      # vendored MapLibre GL stylesheet
-│       └── plotly-basic.min.js  # vendored Plotly (offline graphs)
+│   └── vendor/                  # everything the UI loads — no CDN, no network
+│       ├── maplibre-gl.min.js   # MapLibre GL JS (offline map)
+│       ├── maplibre-gl.css      # MapLibre GL stylesheet
+│       ├── plotly-basic.min.js  # Plotly (offline graphs)
+│       ├── lucide.min.js        # Lucide icon set (pinned, not @latest)
+│       ├── fonts.css            # @font-face for the two vendored families
+│       └── fonts/               # Inter + JetBrains Mono, latin subsets
 ├── assets/                   # logo (white + inverted cuts) + screenshots
 └── VERSION                   # single-source version string
 ```

@@ -122,6 +122,9 @@
      image on a role="img" span rather than an <img src>, since CSS cannot
      reach into an element's src. Paths are relative to this stylesheet. */
   --logo-mark: url("../assets/CorvusGCS_logo.png");
+  /* Plate behind a third-party logo that must keep its own colours. The dark
+     themes need one; the light theme sets it to transparent. */
+  --orgmark-plate: rgba(255, 255, 255, 0.9);
 
   /* --- Elevation. Composite so a theme can retune spread AND alpha, which
      a light theme must (a 0.45-black drop shadow looks like dirt on white). */
@@ -253,6 +256,8 @@
 
   /* The white mark is invisible on a white top bar; use the black cut. */
   --logo-mark: url("../assets/CorvusGCS_logo_inverted.png");
+  /* Already on white — a plate would just draw a box around the logo. */
+  --orgmark-plate: transparent;
 
   /* Shadows on white must be far lighter and tinted toward the surface, or
      they read as smudges rather than elevation. */
