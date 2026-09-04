@@ -94,10 +94,14 @@ def _handler(
 class _FakeMavlink:
     """Minimal bridge stand-in whose ``set_connection`` validates prefixes.
 
-    Mirrors the real ``MavlinkBridge.set_connection`` contract: a non-string
-    or empty value, or an unknown prefix, raises ``ValueError`` so the HTTP
-    layer surfaces a 400. ``stop``/``start`` are no-ops so the connect handler
-    can run its stop->set->start sequence without a live bridge.
+    Mirrors the real bridge's contract: a non-string or empty value, or an
+    unknown prefix, raises ``ValueError`` so the HTTP layer surfaces a 400.
+    ``stop``/``start`` are no-ops so the connect handler can run its
+    stop->set->start sequence without a live bridge.
+
+    ``validate_connection`` is the same check without the store, which the
+    connect handler now calls FIRST so a rejected string cannot tear down a
+    working link before it is found to be bad.
     """
 
     _VALID = ("udp:", "udpin:", "udpbcast:", "tcp:", "serial:")
@@ -112,14 +116,17 @@ class _FakeMavlink:
     def start(self) -> None:
         pass
 
-    def set_connection(self, conn_str: str) -> None:
-        self.set_calls.append(conn_str)
+    def validate_connection(self, conn_str: str) -> None:
         if not isinstance(conn_str, str) or not conn_str:
             raise ValueError("connection must be a non-empty string")
         if not conn_str.startswith(self._VALID):
             raise ValueError(
                 "connection must start with one of: " + ", ".join(self._VALID)
             )
+
+    def set_connection(self, conn_str: str) -> None:
+        self.set_calls.append(conn_str)
+        self.validate_connection(conn_str)
         self.connection = conn_str
 
 

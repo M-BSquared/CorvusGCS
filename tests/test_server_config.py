@@ -790,3 +790,141 @@ def test_http_saved_config_file_is_chmod_600(http_server) -> None:
     })
     mode = stat.S_IMODE(cfg_path.stat().st_mode)
     assert mode == 0o600, f"expected 0o600, got {oct(mode)}"
+
+
+# ---------------------------------------------------------------------------
+# Company logo (GET/POST /api/branding/logo, POST /api/branding/logo/remove)
+#
+# The logo is optional operator branding: nothing ships with the app, the
+# bytes live beside the config file (never inside it), and the config only
+# records the display filename.
+# ---------------------------------------------------------------------------
+
+# Smallest valid PNG (1x1, transparent) — enough for the magic-byte gate.
+_PNG_1PX = bytes.fromhex(
+    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+    "1f15c4890000000a49444154789c6360000002000100ffff0300000600"
+    "05574bd0f70000000049454e44ae426082"
+)
+
+
+class _Capture:
+    """Collects the raw (non-JSON) response an image handler writes."""
+
+    def __init__(self) -> None:
+        self.status: int | None = None
+        self.headers: dict[str, str] = {}
+        self.body = b""
+
+
+def _logo_handler(tmp_path, body: bytes = b"", name: str = "") -> tuple[Any, list, _Capture]:
+    """Handler wired for the branding routes, with a raw-response capture."""
+    import io
+
+    handler, responses = _handler(
+        config=CorvusConfig(), config_path=str(tmp_path / "config.json"),
+    )
+    handler.path = "/api/branding/logo" + (f"?name={name}" if name else "")
+    handler.headers = {"Content-Length": str(len(body))}
+    handler.rfile = io.BytesIO(body)
+    cap = _Capture()
+    handler.send_response = lambda status: setattr(cap, "status", status)
+    handler.send_header = lambda k, v: cap.headers.__setitem__(k, v)
+    handler.end_headers = lambda: None
+    handler.wfile = io.BytesIO()
+    return handler, responses, cap
+
+
+def test_no_company_logo_by_default(tmp_path) -> None:
+    """Nothing is configured out of the box: GET 404s and the config is bare."""
+    handler, responses, _cap = _logo_handler(tmp_path)
+    handler._api_branding_logo()
+    payload, status = responses[0]
+    assert status == 404
+    assert "branding" not in handler._public_config()
+
+
+def test_post_company_logo_stores_file_and_records_name(tmp_path) -> None:
+    cfg_path = tmp_path / "config.json"
+    handler, responses, _cap = _logo_handler(tmp_path, _PNG_1PX, "unibw.png")
+    handler._api_branding_logo_upload_raw()
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["ok"] is True
+    assert payload["logo"] == "unibw.png"
+    # Bytes on disk beside the config, name in the config — not the other way.
+    stored = tmp_path / "branding" / "logo.png"
+    assert stored.read_bytes() == _PNG_1PX
+    on_disk = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert on_disk["branding"] == {"logo": "unibw.png"}
+    assert "89504e47" not in cfg_path.read_text(encoding="utf-8")
+
+
+def test_get_company_logo_serves_the_stored_png(tmp_path) -> None:
+    handler, _responses, _cap = _logo_handler(tmp_path, _PNG_1PX, "unibw.png")
+    handler._api_branding_logo_upload_raw()
+
+    handler2, _responses2, cap = _logo_handler(tmp_path)
+    handler2._api_branding_logo()
+    assert cap.status == 200
+    assert cap.headers["Content-Type"] == "image/png"
+    assert handler2.wfile.getvalue() == _PNG_1PX
+
+
+def test_post_company_logo_rejects_non_png(tmp_path) -> None:
+    """A renamed JPEG is refused here, not rendered as a broken top-bar image."""
+    jpeg = b"\xff\xd8\xff\xe0" + b"0" * 64
+    handler, responses, _cap = _logo_handler(tmp_path, jpeg, "logo.png")
+    handler._api_branding_logo_upload_raw()
+    payload, status = responses[0]
+    assert status == 400
+    assert payload["ok"] is False
+    assert not (tmp_path / "branding" / "logo.png").exists()
+
+
+def test_post_company_logo_rejects_empty_and_oversize(tmp_path) -> None:
+    handler, responses, _cap = _logo_handler(tmp_path, b"", "logo.png")
+    handler._api_branding_logo_upload_raw()
+    assert responses[0][1] == 400
+
+    from corvus.server import MAX_LOGO_BODY_BYTES
+    handler2, responses2, _cap2 = _logo_handler(tmp_path, b"", "logo.png")
+    handler2.headers = {"Content-Length": str(MAX_LOGO_BODY_BYTES + 1)}
+    handler2._api_branding_logo_upload_raw()
+    assert responses2[0][1] == 413
+    assert not (tmp_path / "branding" / "logo.png").exists()
+
+
+def test_post_company_logo_name_is_basename_only(tmp_path) -> None:
+    """The stored name is display metadata; a path in it never escapes."""
+    handler, responses, _cap = _logo_handler(
+        tmp_path, _PNG_1PX, "..%2F..%2Fevil.png",
+    )
+    handler._api_branding_logo_upload_raw()
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["logo"] == "evil.png"
+    assert (tmp_path / "branding" / "logo.png").is_file()
+    assert not (tmp_path.parent / "evil.png").exists()
+
+
+def test_remove_company_logo_clears_file_and_config(tmp_path) -> None:
+    handler, _responses, _cap = _logo_handler(tmp_path, _PNG_1PX, "unibw.png")
+    handler._api_branding_logo_upload_raw()
+
+    handler2, responses2, _cap2 = _logo_handler(tmp_path)
+    handler2._api_branding_logo_remove({})
+    payload, status = responses2[0]
+    assert status == 200
+    assert payload["ok"] is True
+    assert not (tmp_path / "branding" / "logo.png").exists()
+    assert "branding" not in payload["config"]
+
+
+def test_remove_company_logo_is_idempotent(tmp_path) -> None:
+    """Removing when none is set succeeds — a stale UI never sees an error."""
+    handler, responses, _cap = _logo_handler(tmp_path)
+    handler._api_branding_logo_remove({})
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["ok"] is True

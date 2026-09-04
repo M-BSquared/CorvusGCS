@@ -282,6 +282,32 @@ def test_load_config_map_non_dict_returns_none(tmp_path) -> None:
     assert cfg.map is None
 
 
+def test_load_config_parses_branding(tmp_path) -> None:
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"branding": {"logo": "unibw.png"}}), encoding="utf-8")
+    cfg = load_config(str(p))
+    assert cfg.branding == {"logo": "unibw.png"}
+
+
+def test_branding_defaults_to_none(tmp_path) -> None:
+    """No company logo ships with the app: an untouched config carries none."""
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"http_port": 8000}), encoding="utf-8")
+    assert load_config(str(p)).branding is None
+
+
+def test_load_config_branding_non_string_logo_dropped(tmp_path) -> None:
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"branding": {"logo": 7}}), encoding="utf-8")
+    assert load_config(str(p)).branding is None
+
+
+def test_branding_round_trips_through_save(tmp_path) -> None:
+    p = tmp_path / "config.json"
+    save_config(CorvusConfig(branding={"logo": "unibw.png"}), str(p))
+    assert load_config(str(p)).branding == {"logo": "unibw.png"}
+
+
 def test_load_config_old_file_without_new_fields_still_loads(tmp_path) -> None:
     """An old config file with none of the new keys loads with defaults."""
     p = tmp_path / "config.json"

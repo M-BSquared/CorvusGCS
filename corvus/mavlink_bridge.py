@@ -265,9 +265,15 @@ class MavlinkBridge:
         "udp:", "udpin:", "udpbcast:", "tcp:", "serial:",
     )
 
-    def set_connection(self, conn_str: str) -> None:
-        # The server passes raw JSON here; validate before storing so an
-        # invalid value cannot crash _is_serial() or hang mavlink_connection.
+    def validate_connection(self, conn_str: str) -> None:
+        """Raise ValueError if *conn_str* is not a usable connection spec.
+
+        Split out from :meth:`set_connection` so a caller can check a candidate
+        BEFORE tearing down the link it already has. ``/api/mavlink/connect``
+        used to stop the bridge and only then validate, so a typo in the
+        connection field killed a working radio link and returned a 400 —
+        the operator lost the aircraft to a spelling mistake.
+        """
         if not isinstance(conn_str, str) or not conn_str:
             raise ValueError("connection must be a non-empty string")
         if not conn_str.startswith(self._VALID_PREFIXES):
@@ -281,6 +287,11 @@ class MavlinkBridge:
                 raise ValueError("serial connection requires a device path")
             if not isinstance(baud, int) or baud <= 0:
                 raise ValueError("serial connection requires a numeric baud rate")
+
+    def set_connection(self, conn_str: str) -> None:
+        # The server passes raw JSON here; validate before storing so an
+        # invalid value cannot crash _is_serial() or hang mavlink_connection.
+        self.validate_connection(conn_str)
         self._conn_str = conn_str
 
     def connection_string(self) -> str:

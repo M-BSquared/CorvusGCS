@@ -68,6 +68,23 @@ svg { display: block; }
 .tb-logo-name { font-size: 15px; font-weight: 700; letter-spacing: 1.4px; }
 .tb-logo-sub { font-size: 9px; color: var(--text-3); letter-spacing: 1.6px; font-weight: 600; margin-top: 3px; }
 
+/* Optional operator branding at the far right of the bar, fenced off by its
+   own rule so it never reads as part of the Corvus lockup on the left. Hidden
+   unless a logo is configured; height-capped so a large PNG cannot stretch
+   the bar. */
+.tb-company-logo {
+  flex: 0 0 auto;
+  align-self: center;
+  height: 32px;
+  max-width: 160px;
+  width: auto;
+  object-fit: contain;
+  margin-left: 10px;
+  padding-left: 14px;
+  border-left: 1px solid var(--border-soft);
+}
+.tb-company-logo[hidden] { display: none; }
+
 .tb-block {
   display: flex; flex-direction: column; justify-content: center;
   min-width: 0; padding: 6px 12px; border-radius: var(--radius-btn);
@@ -855,21 +872,44 @@ svg { display: block; }
 
 /* ----- CONSOLE ----- */
 .console-output {
-  flex: 1; min-height: 0; overflow-y: auto; padding: 8px 12px;
+  flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 8px 12px;
   font-family: var(--mono); font-size: 12px; line-height: 1.55;
   background: var(--terminal-bg); color: var(--terminal-text);
+  /* Rounded and hairlined so the stream reads as a surface in its own right
+     rather than a hole cut in the panel. */
+  border-radius: var(--radius-btn);
+  border: 1px solid var(--border-soft);
 }
-.con-line { white-space: pre-wrap; word-break: break-all; padding: 1px 0; }
+/* Severity lives in the line itself — there is no severity filter to consult,
+   so colour has to carry it. The rail is what makes a warning or an error
+   findable while scrolling a busy stream: the message colour alone is easy to
+   miss between two hundred info lines. Untagged lines keep a transparent rail
+   so every line stays on the same left edge. */
+.con-line {
+  white-space: pre-wrap; word-break: break-all;
+  padding: 1px 0 1px 7px;
+  border-left: 2px solid transparent;
+}
 .con-time { color: var(--terminal-muted); }
 .con-arrow { color: var(--terminal-cmd); }
 .con-msg { color: var(--terminal-text); }
+.con-line.info .con-msg { color: var(--terminal-text); }
 .con-line.success .con-msg { color: var(--healthy); }
+.con-line.success { border-left-color: var(--healthy); }
 .con-line.warning .con-msg { color: var(--warning); }
+.con-line.warning .con-arrow { color: var(--warning); }
+.con-line.warning { border-left-color: var(--warning); }
+/* "critical" (STATUSTEXT severity <= 3) is mapped onto this class by
+   panel.js, so an emergency reads red like any other failure. */
 .con-line.error .con-msg { color: var(--critical); }
+.con-line.error .con-arrow { color: var(--critical); }
+.con-line.error { border-left-color: var(--critical); }
 .con-line.nav .con-msg { color: var(--nav); }
 .con-line.cmd .con-arrow { color: var(--terminal-cmd); }
 .con-line.cmd .con-msg { color: var(--terminal-cmd); }
+.con-line.cmd { border-left-color: var(--terminal-cmd); }
 .con-line.shell .con-msg { color: var(--nav-bright); }
+.con-line.shell { border-left-color: var(--nav-bright); }
 
 .console-input-row {
   display: flex; align-items: center; gap: 8px;
@@ -1318,6 +1358,24 @@ svg { display: block; }
 }
 .firmware-cancel { margin-left: auto; }
 
+/* ----- COMPANY LOGO (Settings > Appearance) ----- */
+.brand-logo-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+/* The preview sits on a neutral tile, not the card, because a company mark is
+   as often white-on-transparent as black-on-transparent and one background
+   would make half of them invisible. */
+.brand-logo-preview {
+  display: flex; align-items: center; justify-content: center;
+  width: 168px; height: 60px; flex: 0 0 auto;
+  padding: 6px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-btn);
+  background:
+    repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface-1) 0% 50%) 50% / 12px 12px;
+}
+.brand-logo-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.brand-logo-empty { font-size: 11px; color: var(--text-3); text-align: center; }
+.brand-logo-name { font-family: var(--mono); font-size: 11.5px; color: var(--text-2); word-break: break-all; }
+.brand-logo-input { display: none; }
+
 /* Reduced transparency: make translucent/animated surfaces frostier (apple-design §14). */
 @media (prefers-reduced-transparency: reduce) {
   .autotune-live-dot { animation: none; }
@@ -1340,6 +1398,7 @@ svg { display: block; }
 @media (max-width: 600px) {
   .top-bar { height: 52px; padding: 0 6px; }
   .tb-logo-sub { display: none; }
+  .tb-company-logo { height: 24px; max-width: 90px; padding-left: 8px; margin-left: 6px; }
   .tb-block[data-priority="mid"] { display: none; }
   .flight-overlay { --hud-w: 240px; }
   .flight-overlay .instruments { grid-template-columns: 1fr; }
@@ -1355,65 +1414,103 @@ svg { display: block; }
 .params-actions-status.ok { color: var(--healthy); }
 .params-actions-status.err { color: var(--critical); }
 
-/* ===== CONSOLE — filters, status bar, hints =====
-   The console is the operator's direct line to the airframe, so its chrome is
-   dense and quiet: everything here sits between the header and the output, and
-   none of it should compete with the stream for attention. */
-.console-filters {
-  display: flex; align-items: center; gap: 8px;
+/* ===== CONSOLE =====
+   One toolbar, then the stream, then the input. The panel used to carry a
+   title row (duplicating the tab above it) plus five icon buttons plus a
+   separate filter strip plus a status bar — more chrome than stream. Search,
+   severity and tools now share a single line, and the counts fold into the
+   footer beside the command hint. Everything here is deliberately quiet: the
+   messages are the content, the controls are not. */
+.console-toolbar {
+  display: flex; align-items: center; gap: 6px;
   padding: 0 0 8px;
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 8px;
 }
-.console-filter { flex: 1; min-width: 0; padding: 6px 9px; font-size: 11.5px; }
-.console-levels { display: flex; gap: 2px; flex: 0 0 auto; }
-.console-level {
-  padding: 5px 8px;
+
+/* Search: an icon inside the field rather than a label beside it, so the
+   filter costs one control's width instead of two. */
+.console-search {
+  position: relative;
+  flex: 1; min-width: 0;
+  display: flex; align-items: center;
+}
+.console-search-icon {
+  position: absolute; left: 7px;
+  width: 12px; height: 12px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+.console-filter {
+  width: 100%;
+  padding: 5px 8px 5px 25px;
   border-radius: var(--radius-btn);
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-3);
-  font-size: 9.5px; font-weight: 700; letter-spacing: 0.7px;
-  font-family: var(--sans);
-  cursor: pointer;
-  transition: background 130ms, color 130ms, border-color 130ms;
-}
-.console-level:hover { background: var(--panel-wash); color: var(--text-1); }
-.console-level.active {
   background: var(--panel-fill);
-  border-color: var(--panel-hairline);
+  border: 1px solid var(--panel-hairline);
   color: var(--text-1);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  outline: none;
+  transition: border-color 130ms, box-shadow 130ms;
 }
-/* The severity chips carry their own colour when active, so the filter in use
-   is readable at a glance rather than only by position. */
-.console-level[data-level="warning"].active { color: var(--warning); }
-.console-level[data-level="error"].active { color: var(--critical); }
-.console-level:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 1px; }
+.console-filter::placeholder { color: var(--text-3); }
+.console-filter:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
 
-.console-statusbar {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 5px 2px 0;
-  font-size: 10px; color: var(--text-3);
-  font-variant-numeric: tabular-nums;
+/* Tools sit at the end of the same line, muted until used. */
+.console-tools { display: flex; align-items: center; gap: 1px; flex: 0 0 auto; }
+.console-tools .icon-btn { width: 24px; height: 24px; border-radius: 5px; color: var(--text-3); }
+.console-tools .icon-btn:hover { color: var(--text-1); }
+.console-tools .icon-btn.active { color: var(--warning); background: var(--warning-dark); }
+.console-tools .icon-btn svg, .console-tools .icon-btn i { width: 13px; height: 13px; }
+
+/* ----- the stream ----- */
+.console-stream { position: relative; flex: 1; min-height: 0; display: flex; }
+
+/* Jump-to-live: appears only once the operator has scrolled away from the end,
+   and says how much arrived meanwhile — which the permanent auto-scroll toggle
+   it replaces could never do. */
+.console-jump {
+  position: absolute;
+  left: 50%; bottom: 10px;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--text-inverted);
+  border: none;
+  font-family: var(--sans);
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.3px;
+  cursor: pointer;
+  box-shadow: var(--shadow-soft);
+  animation: corvus-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.console-paused {
-  color: var(--warning); font-weight: 700; letter-spacing: 0.8px;
-  animation: livePulse 1.6s ease-in-out infinite;
-}
-.console-paused[hidden] { display: none; }
+.console-jump:hover { background: var(--accent-hover); }
+.console-jump:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+.console-jump[hidden] { display: none; }
+.console-jump svg, .console-jump i { width: 12px; height: 12px; }
 @media (prefers-reduced-motion: reduce) {
-  .console-paused { animation: none !important; }
+  .console-jump { animation: none; }
 }
 
-/* Completion / argument hint under the input. Monospace because it is echoing
-   command syntax, and it must not shift the layout when it appears. */
-.console-hint {
+/* ----- footer: counts and the command hint on one slim line ----- */
+.console-footer {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 5px 2px 0;
   min-height: 15px;
-  padding: 3px 2px 0;
-  font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--text-3);
+}
+.console-count { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.console-count.is-paused { color: var(--warning); font-weight: 600; }
+.console-hint {
+  flex: 1; min-width: 0;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 10px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.console-hint[hidden] { display: none; }
 
 /* ===== LINK — quality, disconnect, presets, recents ===== */
 .link-quality {

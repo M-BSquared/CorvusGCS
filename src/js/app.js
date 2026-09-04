@@ -292,8 +292,12 @@ Corvus.app = (function () {
     // it here also covers the case where that script could not read storage.
     Corvus.theme.applySaved();
     Corvus.telemetry.requestJson("/api/config").then((res) => {
-      const name = Corvus.theme.fromConfig(res && res.config);
+      const cfg = (res && res.config) || {};
+      const name = Corvus.theme.fromConfig(cfg);
       if (name) Corvus.theme.setTheme(name);
+      // Optional operator branding in the top bar; absent by default, and the
+      // top bar keeps the value until it builds itself on the first state.
+      Corvus.topbar.setCompanyLogo((cfg.branding && cfg.branding.logo) || "");
     }).catch(() => {});
 
     Corvus.topbar.init();

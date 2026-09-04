@@ -725,13 +725,45 @@ Corvus.map = (function () {
     }).catch(() => {});
   }
 
+  /** A [lng, lat] pair with a real fix behind it, or null. [0,0] is the state
+   *  store's "nothing yet" default, not a position off West Africa. */
+  function realFix(pos) {
+    if (!pos || pos.length < 2) return null;
+    const lng = Number(pos[0]), lat = Number(pos[1]);
+    if (!isFinite(lng) || !isFinite(lat)) return null;
+    if (lng === 0 && lat === 0) return null;
+    return [lng, lat];
+  }
+
+  /**
+   * Centre the map on the aircraft.
+   *
+   * Falls back to the home point when the vehicle has no fix — after a link
+   * drop, home is still the most useful place to be looking, and it is where
+   * the aircraft will come back to. When there is nothing to centre on at all
+   * the operator is told why: the button used to return silently on a dropped
+   * link, which is indistinguishable from a broken button. It also had no
+   * [0,0] guard, so a connected vehicle that had not yet acquired a fix flew
+   * the map to the Gulf of Guinea.
+   */
   function centerOnVehicle(animate) {
-    const s = Corvus.telemetry.getState();
-    if (!s || !s.connected) return;
-    // Center on the latest reported position (TARGET), not the displayed one —
-    // the operator asked to center on the vehicle's actual position.
-    if (animate) map.easeTo({ center: s.position, duration: 600 });
-    else map.setCenter(s.position);
+    if (!map) return false;
+    const s = Corvus.telemetry.getState() || {};
+    // The latest reported position (TARGET), not the displayed one — the
+    // operator asked for where the aircraft is, not where the marker has eased
+    // to.
+    const target = (s.connected && realFix(s.position)) || realFix(s.home);
+    if (!target) {
+      const why = !s.connected
+        ? "No vehicle connected — nothing to centre on."
+        : "Waiting for a GPS fix — no position to centre on yet.";
+      window.dispatchEvent(new CustomEvent("corvus:notification",
+        { detail: { level: "info", message: why } }));
+      return false;
+    }
+    if (animate) map.easeTo({ center: target, duration: 600 });
+    else map.setCenter(target);
+    return true;
   }
 
   /** Push the latest telemetry into the marker's TARGET and (re)start the loop. */
@@ -1102,6 +1134,7 @@ Corvus.map = (function () {
     // test hooks: the pure track rules — distance decimation and the reboot
     // edge — assertable without a map.
     _recordTrackPoint: (pos) => recordTrackPoint(pos),
+    _realFix: (pos) => realFix(pos),
     _checkForReboot: (ms) => checkForReboot(ms),
     _resetTrackState: () => { pathCoords = []; lastBootMs = null; },
     // test hook: pure coordinate computation for the plan route (vehicle

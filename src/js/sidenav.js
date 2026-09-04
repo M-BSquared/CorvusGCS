@@ -281,9 +281,133 @@ Corvus.sidenav = (function () {
   // is one more click.
   function renderAppearanceSection(container, cfg, gen) {
     const body = document.createDocumentFragment();
+    body.appendChild(companyLogoCard(cfg));
     body.appendChild(themeCard(cfg));
     body.appendChild(mapServiceCard(cfg, gen));
     container.appendChild(Corvus.ui.section({ title: "Appearance", body }));
+  }
+
+  // Optional company logo shown at the far top right, opposite the Corvus
+  // mark (which always keeps the left end of the bar). Deliberately empty by
+  // default: an operator adds their own PNG (a university or unit crest), and
+  // Corvus ships with none. The bytes live in the backend's branding folder,
+  // not in the config file — the config only records the display filename,
+  // which is also what tells the UI a logo is configured at all.
+  function companyLogoCard(cfg) {
+    const configured = (cfg.branding && cfg.branding.logo) || "";
+    const card = Corvus.ui.card({ title: "Company logo" });
+
+    const preview = document.createElement("div");
+    preview.className = "brand-logo-preview";
+    const name = document.createElement("span");
+    name.className = "brand-logo-name";
+
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = "image/png,.png";
+    fileInput.className = "brand-logo-input";
+    fileInput.setAttribute("aria-hidden", "true");
+    fileInput.tabIndex = -1;
+
+    const chooseBtn = Corvus.ui.button({
+      variant: "secondary",
+      icon: "image-plus",
+      label: "Choose PNG\u2026",
+      onClick: () => fileInput.click(),
+    });
+    const removeBtn = Corvus.ui.button({
+      variant: "secondary",
+      icon: "trash-2",
+      label: "Remove",
+      onClick: () => removeLogo(),
+    });
+    const status = Corvus.ui.message({});
+
+    // Single place that reflects "is a logo set" into the card AND the live
+    // top bar, so upload / remove / initial render can never disagree.
+    function showLogo(logoName) {
+      Corvus.ui.clear(preview);
+      if (logoName) {
+        const img = document.createElement("img");
+        img.alt = logoName;
+        img.src = `/api/branding/logo?v=${Date.now()}`;
+        preview.appendChild(img);
+        name.textContent = logoName;
+      } else {
+        const empty = document.createElement("span");
+        empty.className = "brand-logo-empty";
+        empty.textContent = "No company logo";
+        preview.appendChild(empty);
+        name.textContent = "Corvus mark only";
+      }
+      removeBtn.disabled = !logoName;
+      if (Corvus.topbar && typeof Corvus.topbar.setCompanyLogo === "function") {
+        Corvus.topbar.setCompanyLogo(logoName);
+      }
+    }
+
+    async function uploadLogo(file) {
+      // Reject non-PNGs before the round trip; the backend checks the magic
+      // bytes too, so a renamed JPEG never reaches the top bar either way.
+      if (!/\.png$/i.test(file.name) && file.type !== "image/png") {
+        status.show("Choose a PNG file.", "err");
+        return;
+      }
+      status.show("Uploading\u2026");
+      Corvus.ui.setBusy(chooseBtn, true);
+      try {
+        const res = await Corvus.telemetry.requestJson(
+          `/api/branding/logo?name=${encodeURIComponent(file.name)}`,
+          { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file },
+        );
+        showLogo((res && res.logo) || file.name);
+        status.show("Company logo updated.", "ok");
+      } catch (error) {
+        status.show(error.message || "Could not upload the logo.", "err");
+      } finally {
+        Corvus.ui.setBusy(chooseBtn, false);
+      }
+    }
+
+    async function removeLogo() {
+      status.show("Removing\u2026");
+      Corvus.ui.setBusy(removeBtn, true);
+      try {
+        await Corvus.telemetry.requestJson("/api/branding/logo/remove", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        showLogo("");
+        status.show("Company logo removed.", "ok");
+      } catch (error) {
+        status.show(error.message || "Could not remove the logo.", "err");
+      } finally {
+        Corvus.ui.setBusy(removeBtn, false);
+      }
+    }
+
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files && fileInput.files[0];
+      // Reset first: picking the same file twice must still fire a change.
+      fileInput.value = "";
+      if (file) uploadLogo(file);
+    });
+
+    const row = document.createElement("div");
+    row.className = "brand-logo-row";
+    row.append(preview, name, fileInput);
+    card.appendChild(Corvus.ui.field({
+      label: "Top-right logo",
+      control: row,
+      hint: "Optional PNG shown at the top right of the status bar. The Corvus " +
+            "mark stays on the left. Transparent artwork works best; max 4 MB. " +
+            "None is set by default.",
+    }));
+    card.appendChild(Corvus.ui.actions([chooseBtn, removeBtn]));
+    card.appendChild(status.el);
+    showLogo(configured);
+    return card;
   }
 
   // Color theme picker. The config is authoritative over the locally cached

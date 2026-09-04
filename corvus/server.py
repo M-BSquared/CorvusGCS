@@ -74,6 +74,10 @@ TILE_UPSTREAM_COOLDOWN_S = 30.0
 # can exhaust memory. General JSON API vs raw firmware binary (a few MB).
 MAX_JSON_BODY_BYTES = 8 * 1024 * 1024
 MAX_FIRMWARE_BODY_BYTES = 64 * 1024 * 1024
+# Operator-supplied company logo: a brand mark, not an image library, so a few
+# MB is already generous and keeps a mis-picked photo out of the config dir.
+MAX_LOGO_BODY_BYTES = 4 * 1024 * 1024
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 # Path-parameter tile route: /api/tiles/<source>/<z>/<x>/<y>.png
 # Checked in _handle_api_get only when the path ends in ".png", so it can
 # never shadow the exact /api/tiles/{sources,jobs,progress,download,cancel}
@@ -705,11 +709,13 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             merged["theme"] = cfg.theme
         if cfg.map is not None:
             merged["map"] = cfg.map
+        if cfg.branding is not None:
+            merged["branding"] = cfg.branding
 
         known = {
             "mavlink_connection", "http_port", "tile_cache_dir", "tlog_dir",
             "params_dir", "tile_sources", "stream_rates", "ssh_connections",
-            "theme", "map",
+            "theme", "map", "branding",
         }
         for key, value in partial.items():
             if key not in known:
@@ -729,6 +735,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 if not isinstance(value, dict):
                     return None, "map must be an object"
                 merged["map"] = value
+            elif key == "branding":
+                if not isinstance(value, dict):
+                    return None, "branding must be an object"
+                merged["branding"] = value
             elif key == "mavlink_connection":
                 if not isinstance(value, str) or not value:
                     return None, "mavlink_connection must be a non-empty string"
@@ -782,6 +792,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         cfg.ssh_connections = new_cfg.ssh_connections
         cfg.theme = new_cfg.theme
         cfg.map = new_cfg.map
+        cfg.branding = new_cfg.branding
         self._save_live_config()
         return to_public_dict(cfg), None
 
@@ -820,6 +831,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # before the JSON dispatcher so the binary payload is never json-parsed.
         if path == "/api/firmware/upload":
             self._api_firmware_upload_raw()
+            return
+        # Same reason: the company logo arrives as raw PNG bytes.
+        if path == "/api/branding/logo":
+            self._api_branding_logo_upload_raw()
             return
         if path.startswith("/api/"):
             self._handle_api_post(path)
@@ -1110,6 +1125,15 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         if self.mavlink is None:
             self._send_json({"ok": False, "error": "mavlink not ready"}, 503)
             return
+        # Validate BEFORE tearing anything down. This used to stop the bridge
+        # first, so a typo in the connection field killed a working link and
+        # handed back a 400 — the operator lost the aircraft to a spelling
+        # mistake, with no way back except retyping the old string from memory.
+        try:
+            self.mavlink.validate_connection(conn)
+        except ValueError as exc:
+            self._send_json({"ok": False, "error": str(exc)}, 400)
+            return
         try:
             self.mavlink.stop()
             self.mavlink.set_connection(conn)
@@ -1350,6 +1374,124 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         public, error = self._apply_config_partial(payload)
         if error is not None:
             self._send_json({"error": error}, 400)
+            return
+        self._send_json({"ok": True, "config": public})
+
+    # ---- Company logo (optional operator branding) ----
+    def _branding_dir(self) -> Path:
+        """Directory holding operator branding assets, beside the config file.
+
+        Derived from ``config_path`` rather than hardcoded to ``~/.corvus`` so
+        a test (or a second instance started with ``--config``) keeps its
+        assets next to the config it is actually using.
+        """
+        base = Path(self.config_path or default_config_path()).parent
+        return base / "branding"
+
+    def _logo_path(self) -> Path:
+        """Path of the stored company logo (always a PNG, one per install)."""
+        return self._branding_dir() / "logo.png"
+
+    @route("GET", "/api/branding/logo")
+    def _api_branding_logo(self) -> None:
+        """Serve the operator's company logo PNG, or 404 when none is set.
+
+        ``no-store`` because the operator replaces this file in place: a
+        cached copy would leave the old mark in the top bar until reload.
+        """
+        path = self._logo_path()
+        try:
+            blob = path.read_bytes()
+        except OSError:
+            self._send_json({"error": "no company logo"}, 404)
+            return
+        if not blob:
+            self._send_json({"error": "no company logo"}, 404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(blob)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(blob)
+
+    def _api_branding_logo_upload_raw(self) -> None:
+        """Store a raw PNG body as the company logo and record its name.
+
+        Bypasses the JSON dispatcher (the body is ``application/octet-stream``,
+        same shape as the firmware upload). The body must actually be a PNG —
+        the magic bytes are checked, so a renamed JPEG is refused here rather
+        than rendering as a broken image in the top bar. The display name
+        comes from the ``?name=`` query parameter and is stored in the config;
+        the bytes are written atomically to ``branding/logo.png``.
+        """
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            self._send_json({"ok": False, "error": "invalid content-length"}, 400)
+            return
+        if length <= 0:
+            self._send_json({"ok": False, "error": "empty logo body"}, 400)
+            return
+        if length > MAX_LOGO_BODY_BYTES:
+            self._send_json({"ok": False, "error": "logo too large (max 4 MB)"}, 413)
+            return
+        raw = self.rfile.read(length)
+        if not raw.startswith(PNG_MAGIC):
+            self._send_json({"ok": False, "error": "logo must be a PNG image"}, 400)
+            return
+
+        query = parse_qs(urlparse(self.path).query)
+        # Only the basename is kept: this string is display metadata, never a
+        # path the server opens, and stripping directories (both separators,
+        # so a Windows client's path is handled too) keeps it that way.
+        raw_name = (query.get("name") or [""])[0].replace("\\", "/")
+        name = os.path.basename(raw_name).strip()[:120] or "logo.png"
+
+        path = self._logo_path()
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp",
+                                            dir=str(path.parent))
+            try:
+                with os.fdopen(fd, "wb") as f:
+                    f.write(raw)
+                os.replace(tmp_name, path)
+            except OSError:
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
+                raise
+        except OSError as exc:
+            logger.error("company logo write to %s failed: %s", path, exc)
+            self._send_json({"ok": False, "error": "could not store logo"}, 500)
+            return
+
+        public, error = self._apply_config_partial({"branding": {"logo": name}})
+        if error is not None:
+            self._send_json({"ok": False, "error": error}, 400)
+            return
+        self._send_json({"ok": True, "logo": name, "config": public})
+
+    @route("POST", "/api/branding/logo/remove")
+    def _api_branding_logo_remove(self, payload: dict) -> None:
+        """Drop the company logo: delete the file and clear the config key.
+
+        Idempotent — removing when none is set is a success, so a stale UI
+        never reports an error for a state the operator already wanted.
+        """
+        try:
+            self._logo_path().unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logger.error("company logo delete failed: %s", exc)
+            self._send_json({"ok": False, "error": "could not remove logo"}, 500)
+            return
+        public, error = self._apply_config_partial({"branding": {}})
+        if error is not None:
+            self._send_json({"ok": False, "error": error}, 400)
             return
         self._send_json({"ok": True, "config": public})
 

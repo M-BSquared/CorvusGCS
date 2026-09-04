@@ -48,6 +48,7 @@ _EXPECTED_GET = {
     "/api/config",
     "/api/firmware/status",
     "/api/firmware/progress",
+    "/api/branding/logo",
 }
 
 _EXPECTED_POST = {
@@ -80,6 +81,10 @@ _EXPECTED_POST = {
     "/api/tiles/regions/remove",
     "/api/firmware/cancel",
     "/api/warnings/clear",
+    # The logo UPLOAD is not here on purpose: like /api/firmware/upload it
+    # carries a raw octet-stream body and is dispatched ahead of the JSON
+    # route table, so it never reaches _POST_ROUTES.
+    "/api/branding/logo/remove",
 }
 
 

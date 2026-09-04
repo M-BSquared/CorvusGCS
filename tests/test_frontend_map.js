@@ -190,6 +190,39 @@ function testSourceTextEnablesAttributionControl() {
 }
 
 // ---------------------------------------------------------------------------
+// Centre-on-vehicle: what counts as somewhere to centre.
+//
+// The crosshair button used to return silently when the link was down, which
+// is indistinguishable from a broken button — and it had no [0,0] guard, so a
+// connected vehicle that had not yet acquired a fix flew the map to the Gulf
+// of Guinea. realFix is the rule both of those now go through.
+// ---------------------------------------------------------------------------
+
+function testRealFixAcceptsAGenuinePosition() {
+  assert.deepEqual(map._realFix([11.640969, 48.080217]), [11.640969, 48.080217]);
+  // Legitimately near zero on one axis only — Greenwich is not null island.
+  assert.deepEqual(map._realFix([0, 48.08]), [0, 48.08]);
+  assert.deepEqual(map._realFix([11.64, 0]), [11.64, 0]);
+}
+
+function testRealFixRejectsTheNoFixDefault() {
+  // [0,0] is the state store's "nothing yet" default, not a place.
+  assert.equal(map._realFix([0, 0]), null);
+}
+
+function testRealFixRejectsMalformedPositions() {
+  [null, undefined, [], [11.64], [NaN, 48], [11.64, Infinity], ["a", "b"]]
+    .forEach((pos) => {
+      assert.equal(map._realFix(pos), null, `rejects ${JSON.stringify(pos)}`);
+    });
+}
+
+function testRealFixCoercesNumericStrings() {
+  // Positions arrive over JSON; a stringified pair must not be discarded.
+  assert.deepEqual(map._realFix(["11.64", "48.08"]), [11.64, 48.08]);
+}
+
+// ---------------------------------------------------------------------------
 // Flown track: distance decimation and reboot detection.
 //
 // Two rules the operator depends on and neither is visible until it is wrong:
@@ -400,6 +433,10 @@ const tests = [
   testSetBaseLayerRejectsUnknownSources,
   testSourceTextDoesNotMirrorTheRegistry,
   testSourceTextEnablesAttributionControl,
+  testRealFixAcceptsAGenuinePosition,
+  testRealFixRejectsTheNoFixDefault,
+  testRealFixRejectsMalformedPositions,
+  testRealFixCoercesNumericStrings,
   testTrackRecordsTheFirstFix,
   testTrackIgnoresNullIsland,
   testTrackIgnoresNonFiniteAndMalformedPositions,

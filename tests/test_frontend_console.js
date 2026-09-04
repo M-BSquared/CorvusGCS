@@ -4,10 +4,12 @@
  * Frontend tests for the MAVLink console's pure logic (Corvus.panel).
  *
  * The console is the operator's direct line to the airframe, and its filter is
- * the part that can quietly lie: a severity filter that hides errors while
- * claiming to show warnings, or a substring match that drops the line someone
- * was looking for, is worse than no filter at all. Those rules are pure
- * functions, so they are asserted here without a DOM.
+ * the part that can quietly lie: a substring match that drops the line someone
+ * was looking for is worse than no filter at all. There is no longer a
+ * severity filter — every line reaches the stream and colour carries the
+ * level — so the level->class mapping is asserted here too: it is now the only
+ * thing that tells an error from an info line. Both rules are pure functions,
+ * so they are checked without a DOM.
  *
  * Run:
  *   node tests/test_frontend_console.js
@@ -40,41 +42,57 @@ global.document = {
 require("./../src/js/ui.js");
 require("./../src/js/panel.js");
 
-const { matchesFilter, completionsFor, COMMANDS } = Corvus.panel;
+const { matchesFilter, levelClass, completionsFor, COMMANDS } = Corvus.panel;
 const rec = (level, text) => ({ ts: "00:00:00.000", level, text });
 
 // ---------------------------------------------------------------------------
-// Severity is a floor, not an equality test
+// No severity filter: every level reaches the stream
 // ---------------------------------------------------------------------------
 
-function testAllShowsEverything() {
-  ["", "info", "warning", "error", "cmd", "shell", "success"].forEach((lvl) => {
-    assert.ok(matchesFilter(rec(lvl, "anything"), "", "all"),
-      `level ${lvl || "(untagged)"} must survive the ALL filter`);
-  });
+function testEveryLevelSurvivesTheFilter() {
+  // The whole point of dropping the ALL/INFO/WARN/ERR chips: no level is ever
+  // withheld, so the context around an error is still on screen.
+  ["", "info", "warning", "error", "critical", "cmd", "shell", "success", "nav"]
+    .forEach((lvl) => {
+      assert.ok(matchesFilter(rec(lvl, "anything"), ""),
+        `level ${lvl || "(untagged)"} must reach the stream`);
+    });
 }
 
-function testErrorFilterHidesEverythingBelowIt() {
-  assert.ok(matchesFilter(rec("error", "boom"), "", "error"));
-  assert.ok(!matchesFilter(rec("warning", "hmm"), "", "error"));
-  assert.ok(!matchesFilter(rec("info", "fyi"), "", "error"));
-  assert.ok(!matchesFilter(rec("", "banner"), "", "error"));
+function testSeverityIsNotAFilterArgument() {
+  // A leftover third argument from the old severity filter must not resurrect
+  // level filtering by accident.
+  assert.ok(matchesFilter(rec("info", "fyi"), "", "error"));
+  assert.ok(matchesFilter(rec("", "banner"), "", "error"));
 }
 
-function testWarningFilterKeepsErrors() {
-  // The rule that matters: asking for warnings must not hide the errors that
-  // followed them, or the filter actively misleads.
-  assert.ok(matchesFilter(rec("warning", "hmm"), "", "warning"));
-  assert.ok(matchesFilter(rec("error", "boom"), "", "warning"),
-    "an error must survive the WARN filter");
-  assert.ok(!matchesFilter(rec("info", "fyi"), "", "warning"));
+// ---------------------------------------------------------------------------
+// Colour is the level: the mapping is the whole distinction now
+// ---------------------------------------------------------------------------
+
+function testCriticalSharesTheErrorColour() {
+  // The bridge sends "critical" for STATUSTEXT severity <= 3. Without this
+  // mapping an emergency renders in the default text colour — the one case
+  // that must never look ordinary.
+  assert.equal(levelClass("critical"), "error");
+  assert.equal(levelClass("error"), "error");
 }
 
-function testUntaggedLinesReadAsInfo() {
-  // The app's own banners and command echoes carry no level; they must not
-  // vanish at the INFO setting.
-  assert.ok(matchesFilter(rec("", "Corvus GCS — MAVLink console."), "", "info"));
-  assert.ok(matchesFilter(rec("cmd", "arm"), "", "info"));
+function testEveryBackendLevelHasAClass() {
+  // Levels the bridge actually publishes (see corvus/mavlink_bridge.py) plus
+  // the two the frontend tags itself.
+  ["critical", "error", "warning", "success", "info", "cmd", "shell"]
+    .forEach((lvl) => {
+      assert.ok(levelClass(lvl), `level "${lvl}" must map to a CSS class`);
+    });
+}
+
+function testUnknownAndUntaggedLevelsRenderPlain() {
+  // An unknown level from a future backend must not leak a raw class name
+  // into the DOM; untagged app banners stay plain.
+  assert.equal(levelClass(""), "");
+  assert.equal(levelClass(undefined), "");
+  assert.equal(levelClass("emergency-mk2"), "");
 }
 
 // ---------------------------------------------------------------------------
@@ -83,28 +101,28 @@ function testUntaggedLinesReadAsInfo() {
 
 function testSubstringIsCaseInsensitive() {
   // The caller lowercases the needle; the haystack is lowercased here.
-  assert.ok(matchesFilter(rec("info", "EKF2 lane switch"), "ekf2", "all"));
-  assert.ok(matchesFilter(rec("info", "ekf2 lane switch"), "lane", "all"));
-  assert.ok(!matchesFilter(rec("info", "EKF2 lane switch"), "baro", "all"));
+  assert.ok(matchesFilter(rec("info", "EKF2 lane switch"), "ekf2"));
+  assert.ok(matchesFilter(rec("info", "ekf2 lane switch"), "lane"));
+  assert.ok(!matchesFilter(rec("info", "EKF2 lane switch"), "baro"));
 }
 
 function testEmptyFilterMatchesEverything() {
-  assert.ok(matchesFilter(rec("info", "anything at all"), "", "all"));
+  assert.ok(matchesFilter(rec("info", "anything at all"), ""));
 }
 
-function testFilterAndSeverityCombine() {
-  const r = rec("error", "GPS fix lost");
-  assert.ok(matchesFilter(r, "gps", "error"), "both conditions met");
-  assert.ok(!matchesFilter(r, "baro", "error"), "text misses");
-  assert.ok(!matchesFilter(rec("info", "GPS fix acquired"), "gps", "error"), "level misses");
+function testTextFilterIgnoresLevel() {
+  // The substring is the only thing that hides a line, whatever its severity.
+  assert.ok(matchesFilter(rec("error", "GPS fix lost"), "gps"));
+  assert.ok(!matchesFilter(rec("error", "GPS fix lost"), "baro"));
+  assert.ok(matchesFilter(rec("info", "GPS fix acquired"), "gps"));
 }
 
 function testNonStringTextDoesNotThrow() {
   // Records come from a JSON stream; a numeric or null text must not take the
   // console down with it.
-  assert.doesNotThrow(() => matchesFilter({ level: "info", text: 42 }, "4", "all"));
-  assert.doesNotThrow(() => matchesFilter({ level: "info", text: null }, "x", "all"));
-  assert.ok(!matchesFilter({ level: "info", text: null }, "x", "all"));
+  assert.doesNotThrow(() => matchesFilter({ level: "info", text: 42 }, "4"));
+  assert.doesNotThrow(() => matchesFilter({ level: "info", text: null }, "x"));
+  assert.ok(!matchesFilter({ level: "info", text: null }, "x"));
 }
 
 // ---------------------------------------------------------------------------
@@ -167,13 +185,14 @@ function testCommandNamesAreUnique() {
 }
 
 const tests = [
-  testAllShowsEverything,
-  testErrorFilterHidesEverythingBelowIt,
-  testWarningFilterKeepsErrors,
-  testUntaggedLinesReadAsInfo,
+  testEveryLevelSurvivesTheFilter,
+  testSeverityIsNotAFilterArgument,
+  testCriticalSharesTheErrorColour,
+  testEveryBackendLevelHasAClass,
+  testUnknownAndUntaggedLevelsRenderPlain,
   testSubstringIsCaseInsensitive,
   testEmptyFilterMatchesEverything,
-  testFilterAndSeverityCombine,
+  testTextFilterIgnoresLevel,
   testNonStringTextDoesNotThrow,
   testCompletionMatchesPrefixes,
   testCompletionCanBeAmbiguous,

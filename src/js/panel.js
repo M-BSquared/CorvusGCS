@@ -10,7 +10,10 @@ window.Corvus = window.Corvus || {};
 
     filter       substring match over the live stream, applied to lines already
                  on screen as well as new ones
-    severity     show only errors, or errors+warnings, when STATUSTEXT is noisy
+    colour       severity is read off the line itself — critical/error red,
+                 warning amber, success green, commands accent — instead of
+                 through a set of ALL/INFO/WARN/ERR buttons that hid the
+                 context around the line the operator was looking for
     pause        freeze the view while still buffering, so reading a message
                  does not mean losing the next fifty
     copy / save  the visible lines, for a bug report or a flight log
@@ -52,15 +55,29 @@ Corvus.panel = (function () {
     { name: "help", args: "", help: "Ask the backend what it accepts" },
   ];
 
-  const LEVELS = [
-    { id: "all", label: "ALL" },
-    { id: "info", label: "INFO" },
-    { id: "warning", label: "WARN" },
-    { id: "error", label: "ERR" },
-  ];
+  /* Record level -> CSS class on the line. Colour is the ONLY thing that
+     distinguishes severity now, so the mapping is explicit and total: the
+     bridge's "critical" (STATUSTEXT severity <= 3) shares the red of "error"
+     rather than falling through to the default text colour, and an unknown
+     level from a future backend renders as a plain line instead of an
+     unstyled class name. */
+  const LEVEL_CLASS = {
+    critical: "error",
+    error: "error",
+    warning: "warning",
+    success: "success",
+    info: "info",
+    cmd: "cmd",
+    shell: "shell",
+    nav: "nav",
+  };
 
-  let panel, handle, tabs, output, input, sendBtn, clearBtn, autoBtn;
-  let pauseBtn, copyBtn, saveBtn, filterInput, levelHost, countEl, pausedNote, hintEl;
+  let panel, handle, tabs, output, input, sendBtn, clearBtn;
+  let pauseBtn, copyBtn, saveBtn, filterInput, countEl, hintEl;
+  let jumpBtn, jumpLabel;
+  // Missed lines since the operator scrolled away from the live end. Drives
+  // the jump chip's label, which is the only reason the count is kept.
+  let missed = 0;
   let autoscroll = true;
   let history = [];
   let histIdx = -1;
@@ -75,7 +92,6 @@ Corvus.panel = (function () {
   // whichever of them pass the current filter.
   let lines = [];
   let filterText = "";
-  let levelFilter = "all";
   let paused = false;
   // Records that arrived while paused, held back rather than dropped.
   let pendingLines = [];
@@ -111,30 +127,29 @@ Corvus.panel = (function () {
    * Does a record survive the given filter? Pure — the module state is passed
    * in, so the rule can be tested without a DOM.
    *
-   * Severity is a FLOOR, not an exact match: choosing WARN shows warnings and
-   * errors, because "show me warnings" while hiding the errors that followed
-   * them would be actively misleading. Untagged lines read as info, which is
-   * what the app's own banner lines and command echoes are.
+   * Text only. There is deliberately no severity filter: a level floor hid the
+   * INFO lines that explain the error above them, and the operator's question
+   * is almost always "what happened around this", not "show me only errors".
+   * Severity is carried by colour instead, so nothing ever leaves the stream.
    */
-  function matchesFilter(rec, text, level) {
-    if (level && level !== "all") {
-      const rank = { error: 3, warning: 2, info: 1 };
-      const want = rank[level] || 0;
-      const got = rank[rec.level] || 1;
-      if (got < want) return false;
-    }
+  function matchesFilter(rec, text) {
     if (text && String(rec.text).toLowerCase().indexOf(text) === -1) return false;
     return true;
   }
 
   /** matchesFilter bound to the module's current filter state. */
   function passesFilter(rec) {
-    return matchesFilter(rec, filterText, levelFilter);
+    return matchesFilter(rec, filterText);
+  }
+
+  /** CSS class for a record's level; "" for untagged or unknown levels. */
+  function levelClass(level) {
+    return LEVEL_CLASS[level] || "";
   }
 
   function lineEl(rec) {
     const line = document.createElement("div");
-    line.className = "con-line " + (rec.level || "");
+    line.className = "con-line " + levelClass(rec.level);
     const time = document.createElement("span");
     time.className = "con-time";
     time.textContent = rec.ts;
@@ -173,6 +188,7 @@ Corvus.panel = (function () {
       output.appendChild(lineEl(rec));
       while (output.children.length > MAX_LINES) output.removeChild(output.firstChild);
       if (autoscroll) output.scrollTop = output.scrollHeight;
+      else missed++;
     }
     updateCount();
   }
@@ -189,14 +205,43 @@ Corvus.panel = (function () {
   }
 
   function updateCount() {
-    if (!countEl) return;
-    const visible = lines.filter(passesFilter).length;
-    const held = pendingLines.length;
-    const parts = [];
-    if (filterText || levelFilter !== "all") parts.push(`${visible} of ${lines.length}`);
-    else parts.push(`${lines.length} line${lines.length === 1 ? "" : "s"}`);
-    if (held) parts.push(`${held} held`);
-    countEl.textContent = parts.join("  ·  ");
+    if (countEl) {
+      const visible = lines.filter(passesFilter).length;
+      const held = pendingLines.length;
+      const parts = [];
+      if (filterText) parts.push(`${visible} / ${lines.length}`);
+      else parts.push(`${lines.length}`);
+      if (held) parts.push(`${held} held`);
+      if (paused) parts.push("paused");
+      countEl.textContent = parts.join("  ·  ");
+      countEl.classList.toggle("is-paused", paused);
+    }
+    updateJump();
+  }
+
+  /**
+   * The jump-to-live chip. It replaces what used to be a permanent auto-scroll
+   * toggle: a control that had to be on screen at all times to express a state
+   * the scroll position already shows. The chip appears only once the operator
+   * has scrolled away from the live end, and says how much has arrived since —
+   * which the toggle never could.
+   */
+  function updateJump() {
+    if (!jumpBtn) return;
+    jumpBtn.hidden = autoscroll;
+    if (jumpLabel) {
+      jumpLabel.textContent = missed > 0
+        ? `${missed} new line${missed === 1 ? "" : "s"}`
+        : "Jump to live";
+    }
+  }
+
+  /** Scroll to the live end and resume following it. */
+  function jumpToLive() {
+    autoscroll = true;
+    missed = 0;
+    if (output) output.scrollTop = output.scrollHeight;
+    updateJump();
   }
 
   function setPaused(next) {
@@ -213,7 +258,6 @@ Corvus.panel = (function () {
       Corvus.ui.clear(pauseBtn).appendChild(Corvus.ui.icon(paused ? "play" : "pause", 15));
       Corvus.ui.refreshIcons();
     }
-    if (pausedNote) pausedNote.hidden = !paused;
     updateCount();
   }
 
@@ -350,33 +394,8 @@ Corvus.panel = (function () {
     }
   }
 
-  function buildLevelFilter() {
-    if (!levelHost) return;
-    Corvus.ui.clear(levelHost);
-    LEVELS.forEach((l) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "console-level" + (l.id === levelFilter ? " active" : "");
-      b.dataset.level = l.id;
-      b.textContent = l.label;
-      b.title = l.id === "all" ? "Show everything" : `Show ${l.label.toLowerCase()} and worse`;
-      b.setAttribute("aria-pressed", l.id === levelFilter ? "true" : "false");
-      b.addEventListener("click", () => {
-        levelFilter = l.id;
-        levelHost.querySelectorAll(".console-level").forEach((x) => {
-          const on = x.dataset.level === levelFilter;
-          x.classList.toggle("active", on);
-          x.setAttribute("aria-pressed", on ? "true" : "false");
-        });
-        renderLines();
-      });
-      levelHost.appendChild(b);
-    });
-  }
-
   function initConsole() {
     loadHistory();
-    buildLevelFilter();
     setPaused(false);
     addConsoleLine("", "Corvus GCS — MAVLink console.");
     addConsoleLine("", "Listening for live MAVLink messages …");
@@ -732,18 +751,16 @@ Corvus.panel = (function () {
     input = document.getElementById("consoleInput");
     sendBtn = document.getElementById("consoleSend");
     clearBtn = document.getElementById("clearConsole");
-    autoBtn = document.getElementById("consoleAutoscroll");
+    jumpBtn = document.getElementById("consoleJump");
+    jumpLabel = document.getElementById("consoleJumpLabel");
     pauseBtn = document.getElementById("consolePause");
     copyBtn = document.getElementById("consoleCopy");
     saveBtn = document.getElementById("consoleSave");
     filterInput = document.getElementById("consoleFilter");
-    levelHost = document.getElementById("consoleLevels");
     countEl = document.getElementById("consoleCount");
-    pausedNote = document.getElementById("consolePausedNote");
     hintEl = document.getElementById("consoleHint");
     sshContent = document.getElementById("sshContent");
     futureContent = document.getElementById("futureContent");
-    autoBtn.classList.add("active");
 
     handle.addEventListener("click", toggle);
 
@@ -798,14 +815,19 @@ Corvus.panel = (function () {
     if (saveBtn) saveBtn.addEventListener("click", saveLog);
 
     clearBtn.addEventListener("click", clearConsole);
-    autoBtn.addEventListener("click", () => {
-      autoscroll = !autoscroll;
-      autoBtn.classList.toggle("active", autoscroll);
-      if (autoscroll) output.scrollTop = output.scrollHeight;
-    });
+    if (jumpBtn) jumpBtn.addEventListener("click", jumpToLive);
     output.addEventListener("scroll", () => {
       const atBottom = output.scrollHeight - output.scrollTop - output.clientHeight < 30;
-      if (!atBottom && autoscroll) { autoscroll = false; autoBtn.classList.remove("active"); }
+      if (!atBottom && autoscroll) {
+        // Scrolling up IS the "stop following" gesture — no toggle needed.
+        autoscroll = false;
+        missed = 0;
+        updateJump();
+      } else if (atBottom && !autoscroll) {
+        // ...and scrolling back down resumes, so the chip is a shortcut, not
+        // the only way back.
+        jumpToLive();
+      }
     });
 
     initConsole();
@@ -818,6 +840,7 @@ Corvus.panel = (function () {
     init, toggle, addConsoleLine, addSSHConnection, showSSHTerminal,
     // Exposed for tests: the console's pure pieces, assertable without a DOM.
     matchesFilter,
+    levelClass,
     completionsFor,
     COMMANDS,
   };

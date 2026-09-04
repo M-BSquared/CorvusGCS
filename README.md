@@ -407,9 +407,15 @@ happening rather than only when the stream is quiet:
 
 - **Filter** — substring match over the live stream, applied to lines already on
   screen as well as new ones.
-- **Severity** — ALL / INFO / WARN / ERR. The severity is a *floor*, not an
-  equality test: asking for warnings still shows the errors that followed them,
-  because hiding those would actively mislead.
+- **Colour, not a severity filter** — there are no ALL / INFO / WARN / ERR
+  buttons. Every line reaches the stream and its severity is read off the line
+  itself: critical and error red, warning amber, success green, the operator's
+  own commands accent, shell replies blue — each with a matching colour rail
+  down the left edge so a warning is findable while scrolling a busy stream. A
+  severity floor hid the INFO lines that explain the error above them, and the
+  question is nearly always "what happened around this", not "show me only
+  errors". `critical` (STATUSTEXT severity ≤ 3) shares the red of `error`, so
+  an emergency never renders in the ordinary text colour.
 - **Pause** — freezes the view while still buffering, so reading a message does
   not mean losing the next fifty. The status bar reports how many are held.
 - **Copy / Save** — the visible lines, for a bug report or a flight log. Save
@@ -691,7 +697,22 @@ page is persisted in the single config store, `~/.corvus/config.json`, which is
 written **atomically** and chmod'd to **0o600** because it may hold SSH
 credentials. The same file backs the right-panel SSH tab.
 
-### Appearance (color theme + map service)
+### Appearance (company logo + color theme + map service)
+
+**Company logo.** An optional PNG shown at the **far top right** of the status
+bar — a university or unit crest beside the telemetry blocks. Nothing ships
+with the app and none is set by default: the Corvus mark keeps the left end of
+the bar either way, and the right end stays empty until an operator picks a
+file. Upload replaces the previous logo, **Remove** clears it, and both apply
+to the live bar without a reload.
+
+Unlike every other setting, the image is *not* stored in the config file: the
+bytes are written to `~/.corvus/branding/logo.png` (beside the config) and only
+the display filename is persisted, under `branding.logo`. That keeps
+`config.json` readable and diffable instead of carrying a base64 blob. The
+backend checks the PNG magic bytes and caps the upload at 4 MB, so a renamed
+JPEG is refused at `POST /api/branding/logo` rather than rendering as a broken
+image in the bar.
 
 **Color theme.** Five complete predefined themes, defined in
 [`src/css/themes.css`](src/css/themes.css): **Green** (default), **Blue**,
@@ -852,6 +873,9 @@ The frontend never polls.
 | GET | `/api/version` | GCS version + PX4 profile |
 | GET | `/api/config` | Live operator config (SSH passwords redacted) |
 | POST | `/api/config` | Apply a partial config update; persist atomically (chmod 0o600) |
+| GET | `/api/branding/logo` | The operator's company logo PNG (404 when none is set) |
+| POST | `/api/branding/logo` | Store a raw PNG body as the company logo (`?name=` = display name, max 4 MB) |
+| POST | `/api/branding/logo/remove` | Drop the company logo; idempotent |
 | GET | `/api/state` | Current vehicle state (JSON) |
 | GET | `/api/telemetry` | SSE stream of vehicle state |
 | GET | `/api/console/stream` | SSE stream of MAVLink messages |

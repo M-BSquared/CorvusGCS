@@ -47,6 +47,7 @@ _CONFIG_FIELD_ORDER: tuple[str, ...] = (
     "ssh_connections",
     "theme",
     "map",
+    "branding",
 )
 
 # Required keys on a saved ssh_connections entry; missing keys default to a
@@ -63,12 +64,14 @@ class CorvusConfig:
     / ``~/.corvus/params``); a non-empty value pins the location. ``None`` dict fields mean "use built-in
     defaults"; a dict overrides the whole registry.
 
-    ``ssh_connections``/``theme``/``map`` are persisted operator UI state:
+    ``ssh_connections``/``theme``/``map``/``branding`` are persisted operator UI state:
     the SSH connection list, the selected color theme (``{"name": ...}``, one
     of the predefined themes in ``src/css/themes.css``; the legacy
     ``{"accent": "#RRGGBB"}`` from the old accent picker is still parsed), and
     the map service + base layer (``{"provider": ..., "base_layer": ...}``,
-    see ``corvus/tile_sources.py``). They default to empty/None so an old
+    see ``corvus/tile_sources.py``), and the optional operator-supplied
+    company logo (``{"logo": "<original filename>"}``; the bytes live beside
+    the config file, never in it). They default to empty/None so an old
     config file with none of these keys still loads cleanly.
     """
 
@@ -82,6 +85,7 @@ class CorvusConfig:
     ssh_connections: list[dict[str, Any]] = dataclasses.field(default_factory=list)
     theme: dict[str, Any] | None = None
     map: dict[str, Any] | None = None
+    branding: dict[str, Any] | None = None
 
     def apply_overrides(self, **kwargs: Any) -> "CorvusConfig":
         """Return a copy with non-None kwargs overriding matching fields.
@@ -209,6 +213,19 @@ def _coerce_map(raw: Any) -> dict[str, Any] | None:
     return _coerce_str_keys(raw, ("base_layer", "provider"))
 
 
+def _coerce_branding(raw: Any) -> dict[str, Any] | None:
+    """Keep the string-valued ``logo`` branding key; else None.
+
+    ``logo`` is the *display* filename of the operator's company logo (e.g.
+    ``unibw.png``); its presence is what tells the UI a logo is configured.
+    The image itself is stored next to the config file as
+    ``branding/logo.png``, so a config with a stale key simply renders no
+    logo rather than failing to load. Absent by default — no company logo
+    ships with the app.
+    """
+    return _coerce_str_keys(raw, ("logo",))
+
+
 def _build_config(data: dict[str, Any]) -> CorvusConfig:
     """Build a CorvusConfig from a parsed JSON object, ignoring unknown keys.
 
@@ -251,6 +268,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
     ssh_connections = _coerce_ssh_connections(data.get("ssh_connections"))
     theme = _coerce_theme(data.get("theme"))
     map_cfg = _coerce_map(data.get("map"))
+    branding = _coerce_branding(data.get("branding"))
 
     return CorvusConfig(
         mavlink_connection=mavlink_connection,
@@ -263,6 +281,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         ssh_connections=ssh_connections,
         theme=theme,
         map=map_cfg,
+        branding=branding,
     )
 
 
@@ -293,7 +312,7 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
     """Serialize a CorvusConfig to a plain dict in stable key order.
 
     Omits ``None`` optional dict fields (``tile_sources``/``stream_rates``/
-    ``theme``/``map``) so the on-disk file stays lean when nothing overrides
+    ``theme``/``map``/``branding``) so the on-disk file stays lean when nothing overrides
     them; an empty ``ssh_connections`` list is kept (it is real operator
     state, the absence of which still round-trips through ``[]``).
     """
@@ -313,6 +332,8 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
         out["theme"] = dict(cfg.theme)
     if cfg.map is not None:
         out["map"] = dict(cfg.map)
+    if cfg.branding is not None:
+        out["branding"] = dict(cfg.branding)
     # Stable key order for a readable on-disk diff.
     return {k: out[k] for k in _CONFIG_FIELD_ORDER if k in out}
 

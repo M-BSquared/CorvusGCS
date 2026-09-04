@@ -265,14 +265,22 @@
           </section>
 
           <section class="tab-panel" data-panel="console">
-            <div class="panel-section-header">
-              <span class="panel-section-title">MAVLink Console</span>
-              <div class="header-actions">
+            <!-- One toolbar instead of a title row plus a filter row: the tab
+                 above already says CONSOLE, and five icon buttons over a
+                 separate filter strip was more chrome than stream. The
+                 ALL/INFO/WARN/ERR chips are gone with it — severity is read
+                 off each line's colour, and nothing is hidden from the
+                 stream. -->
+            <div class="console-toolbar">
+              <div class="console-search">
+                <i data-lucide="search" class="console-search-icon"></i>
+                <input type="text" id="consoleFilter" class="console-filter"
+                  placeholder="Filter" autocomplete="off" spellcheck="false"
+                  aria-label="Filter console lines" />
+              </div>
+              <div class="console-tools">
                 <button class="icon-btn" id="consolePause" title="Pause the stream">
                   <i data-lucide="pause"></i>
-                </button>
-                <button class="icon-btn" id="consoleAutoscroll" title="Toggle auto-scroll">
-                  <i data-lucide="arrow-down-to-line"></i>
                 </button>
                 <button class="icon-btn" id="consoleCopy" title="Copy visible lines">
                   <i data-lucide="copy"></i>
@@ -286,17 +294,14 @@
               </div>
             </div>
 
-            <div class="console-filters">
-              <input type="text" id="consoleFilter" class="field-input console-filter"
-                placeholder="Filter…" autocomplete="off" spellcheck="false"
-                aria-label="Filter console lines" />
-              <div class="console-levels" id="consoleLevels" role="group" aria-label="Severity filter"></div>
-            </div>
-
-            <div class="console-output" id="consoleOutput"></div>
-            <div class="console-statusbar">
-              <span class="console-count" id="consoleCount"></span>
-              <span class="console-paused" id="consolePausedNote" hidden>PAUSED</span>
+            <div class="console-stream">
+              <div class="console-output" id="consoleOutput"></div>
+              <!-- Replaces the permanent auto-scroll toggle: it only appears
+                   once the operator has scrolled away from the live end. -->
+              <button class="console-jump" id="consoleJump" type="button" hidden>
+                <i data-lucide="arrow-down"></i>
+                <span id="consoleJumpLabel">Jump to live</span>
+              </button>
             </div>
 
             <div class="console-input-row">
@@ -306,7 +311,13 @@
                 <i data-lucide="send"></i>
               </button>
             </div>
-            <div class="console-hint" id="consoleHint" hidden></div>
+
+            <!-- The old status bar and hint row folded into one slim line:
+                 counts on the left, command syntax on the right. -->
+            <div class="console-footer">
+              <span class="console-count" id="consoleCount"></span>
+              <span class="console-hint" id="consoleHint"></span>
+            </div>
           </section>
 
           <section class="tab-panel" data-panel="ssh">

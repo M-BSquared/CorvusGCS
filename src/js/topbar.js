@@ -12,6 +12,10 @@ Corvus.topbar = (function () {
   let remoteWarningsInitialized = false;
   let remoteWarningKeys = new Set();
   let localNotificationId = 0;
+  // Operator-supplied company logo: the display filename from the backend
+  // config, or "" for the default (no company logo at all). Held here because
+  // the config lands before the bar is built on the first telemetry state.
+  let companyLogo = "";
   const localNotifications = new Map();
   const dismissedNotifications = new Set();
   const commandDedupe = Corvus.notificationDedupe.createTracker({ windowMs: 3000 });
@@ -89,9 +93,44 @@ Corvus.topbar = (function () {
       { key: "altitude", label: "Altitude", value: state.connected ? `${Math.round(state.altitude_amsl)}` : "—", sub: "m AMSL", priority: "mid" },
       { key: "groundspeed", label: "Groundspeed", value: state.connected ? `${state.groundspeed.toFixed(1)}` : "—", sub: "m/s", priority: "mid" },
       { key: "vspeed", label: "Vertical speed", value: state.connected ? `${state.vspeed >= 0 ? "+" : ""}${state.vspeed.toFixed(1)}` : "—", sub: "m/s", priority: "mid" },
-      { key: "time", label: "Time", value: state.time || "—", priority: "mid" },
       { key: "warnings", type: "warnings", label: "Warnings", value: warnCount, level: warnLevel, priority: "high" },
     ];
+  }
+
+  // Point the company-logo <img> at the stored PNG, or hide it. Kept separate
+  // from renderLogo so a settings change re-skins the live bar without the
+  // rebuild that topBarBuilt deliberately prevents. The cache-buster is what
+  // makes a replaced logo appear immediately.
+  function applyCompanyLogo() {
+    const img = topBar && topBar.querySelector(".tb-company-logo");
+    if (!img) return;
+    if (companyLogo) {
+      img.alt = companyLogo;
+      img.src = `/api/branding/logo?v=${Date.now()}`;
+      img.hidden = false;
+    } else {
+      img.hidden = true;
+      img.removeAttribute("src");
+    }
+  }
+
+  function setCompanyLogo(name) {
+    companyLogo = name || "";
+    applyCompanyLogo();
+  }
+
+  // Optional operator branding at the far right of the bar. Always built (so
+  // applyCompanyLogo has something to point at) but hidden until a logo is
+  // configured — no company logo ships by default, and the Corvus mark keeps
+  // the left end of the bar either way. A file that fails to decode hides
+  // itself rather than leaving a broken-image box in the bar.
+  function renderCompanyLogo() {
+    const img = document.createElement("img");
+    img.className = "tb-company-logo";
+    img.hidden = true;
+    img.alt = "";
+    img.addEventListener("error", () => { img.hidden = true; });
+    return img;
   }
 
   function renderLogo() {
@@ -159,6 +198,9 @@ Corvus.topbar = (function () {
       const spacer = document.createElement("div");
       spacer.className = "tb-spacer";
       topBar.appendChild(spacer);
+      // After the flex:1 spacer, so operator branding sits hard against the
+      // right edge and never competes with the Corvus mark on the left.
+      topBar.appendChild(renderCompanyLogo());
       Corvus.ui.refreshIcons();
       // Cache each value block's sub-element refs once: the bar is built only
       // once per session (topBarBuilt), so these refs stay valid for every
@@ -178,6 +220,7 @@ Corvus.topbar = (function () {
         };
       });
       topBarBuilt = true;
+      applyCompanyLogo();
       updateTopBarValues(state);
     } else {
       updateTopBarValues(state);
@@ -471,6 +514,7 @@ Corvus.topbar = (function () {
 
   return {
     init,
+    setCompanyLogo,
     notifyError: showCmdError,
     beginCommand: (key) => commandDedupe.begin(key),
     succeedCommand: (attempt) => commandDedupe.succeeded(attempt),

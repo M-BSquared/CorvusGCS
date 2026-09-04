@@ -197,3 +197,99 @@ def test_safe_filename_respects_the_requested_suffix(raw, suffix, expected) -> N
 def test_safe_filename_defaults_to_json_for_existing_callers() -> None:
     """Parameter export calls it without a suffix; that must keep working."""
     assert _safe_filename("params", "FB.json") == "params.json"
+
+
+# ---------------------------------------------------------------------------
+# Connect must validate BEFORE it tears anything down
+# ---------------------------------------------------------------------------
+
+class _TrackingBridge:
+    """Records the order of stop/set_connection/start."""
+
+    _VALID_PREFIXES = ("udp:", "udpin:", "udpbcast:", "tcp:", "serial:")
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.conn = "udp:0.0.0.0:14540"
+
+    def validate_connection(self, conn_str):
+        from corvus.mavlink_bridge import MavlinkBridge
+        MavlinkBridge.validate_connection(self, conn_str)
+
+    def stop(self):
+        self.calls.append("stop")
+
+    def set_connection(self, conn):
+        self.validate_connection(conn)
+        self.calls.append("set")
+        self.conn = conn
+
+    def start(self):
+        self.calls.append("start")
+
+    @staticmethod
+    def _parse_serial(conn):
+        rest = conn.split(":", 1)[1]
+        device, _, baud = rest.rpartition(":")
+        try:
+            return device, int(baud)
+        except ValueError:
+            return device, 0
+
+
+@pytest.fixture
+def connect_handler(tmp_path):
+    h = object.__new__(CorvusHandler)
+    h.mavlink = _TrackingBridge()
+    h.config = CorvusConfig()
+    h.config_path = str(tmp_path / "config.json")
+    h._send_json = _Captured()
+    return h
+
+
+def test_a_bad_connection_string_does_not_touch_the_live_link(connect_handler) -> None:
+    """The bug this guards: connect() stopped the bridge and only THEN
+    validated, so a typo in the connection field killed a working radio link
+    and handed back a 400. The operator lost the aircraft to a spelling
+    mistake, with no way back except retyping the old string from memory."""
+    connect_handler._api_mavlink_connect({"connection": "udpout:127.0.0.1:14550"})
+    assert connect_handler._send_json.status == 400
+    assert connect_handler.mavlink.calls == [], (
+        "a rejected connection string must not stop, reconfigure or restart the bridge"
+    )
+    assert connect_handler.mavlink.conn == "udp:0.0.0.0:14540", "the live link is untouched"
+
+
+@pytest.mark.parametrize("bad", [
+    "",
+    None,
+    123,
+    "ftp://nope",
+    "serial:",
+    "serial:/dev/ttyUSB0:notanumber",
+])
+def test_every_rejected_form_leaves_the_link_alone(connect_handler, bad) -> None:
+    connect_handler._api_mavlink_connect({"connection": bad})
+    assert connect_handler._send_json.status == 400
+    assert connect_handler.mavlink.calls == []
+
+
+def test_a_good_connection_string_still_restarts_the_bridge(connect_handler) -> None:
+    connect_handler._api_mavlink_connect({"connection": "udp:0.0.0.0:14550"})
+    assert connect_handler._send_json.status == 200
+    assert connect_handler._send_json.payload["ok"] is True
+    # Order matters: the old link goes down before the new one is configured.
+    assert connect_handler.mavlink.calls == ["stop", "set", "start"]
+    assert connect_handler.mavlink.conn == "udp:0.0.0.0:14550"
+
+
+def test_validate_connection_accepts_what_set_connection_accepts() -> None:
+    """The two must not drift: validate is the pre-check for set."""
+    from corvus.mavlink_bridge import MavlinkBridge
+    bridge = _TrackingBridge()
+    for good in ("udp:0.0.0.0:14540", "udpin:0.0.0.0:14540", "tcp:127.0.0.1:5760",
+                 "serial:/dev/ttyUSB0:57600"):
+        MavlinkBridge.validate_connection(bridge, good)   # must not raise
+    for bad in ("", "udpout:1", "serial:/dev/ttyUSB0:0"):
+        with pytest.raises(ValueError):
+            MavlinkBridge.validate_connection(bridge, bad)
