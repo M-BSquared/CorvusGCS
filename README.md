@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="assets/CorvusGCS_logo.png" width="128" alt="Corvus GCS logo">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/CorvusGCS_logo.png">
+    <img src="assets/CorvusGCS_logo_inverted.png" width="128" alt="Corvus GCS logo">
+  </picture>
 </p>
 
 <h1 align="center">Corvus GCS (CGCS)</h1>
@@ -37,7 +40,10 @@ ever typed into this README.
 </details>
 
 <p align="center">
-  <img src="assets/CorvusGCS.png" alt="Corvus GCS — operator interface with map, floating HUD, and right-side engineering workspace">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/CorvusGCS.png">
+    <img src="assets/CorvusGCS_inverted.png" alt="Corvus GCS">
+  </picture>
 </p>
 
 ---
@@ -154,19 +160,35 @@ Corvus GCS is built around that:
 ## Screenshots & imagery
 
 <p align="center">
-  <img src="assets/CorvusGCS.png" alt="Corvus GCS operator interface">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/CorvusGCS.png">
+    <img src="assets/CorvusGCS_inverted.png" alt="Corvus GCS wordmark">
+  </picture>
 </p>
 
-<p align="center"><em>The operator interface: dark, map-centered, with the floating HUD and the collapsible right-side engineering workspace (MAVLink console, SSH, plugin slot).</em></p>
+<p align="center"><em>The operator interface is map-centered, with a floating HUD and a collapsible right-side engineering workspace (MAVLink console, SSH, plugin slot). It ships in five color themes, including a full light theme — see <a href="#appearance-color-theme--map-service">Appearance</a>. No interface screenshot is checked in yet; drop one into <code>assets/</code> and wire it in below.</em></p>
 
 <p align="center">
-  <img src="assets/CorvusGCS_logo.png" width="160" alt="Corvus GCS logo">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/CorvusGCS_logo.png">
+    <img src="assets/CorvusGCS_logo_inverted.png" width="160" alt="Corvus GCS logo">
+  </picture>
 </p>
 
 <p align="center"><em>Corvus GCS project logo.</em></p>
 
 Drop additional screenshots into `assets/` and wire them in here. Keep image
 paths relative (`assets/...`) so they render on both GitLab and GitHub.
+
+The logo ships in two cuts — white artwork (`*_logo.png`, `CorvusGCS.png`) for
+dark backgrounds and black (`*_inverted.png`) for light ones — because a
+transparent-background logo is invisible on the wrong surface. Every usage above
+is a `<picture>` whose `<source>` serves the white cut to dark-mode readers and
+whose `<img>` fallback is the black cut. The fallback is the black one on
+purpose: both GitLab and GitHub default to a light theme, and a renderer that
+strips `<source>` falls through to the `<img>`, so the safe degradation is
+black-on-white. The app itself swaps the same two files through the
+`--logo-mark` token in `src/css/themes.css`.
 
 ---
 
@@ -654,7 +676,7 @@ pyproject.toml                # tooling/pytest config (version comes from VERSIO
 │       ├── maplibre-gl.min.js   # vendored MapLibre GL JS (offline map)
 │       ├── maplibre-gl.css      # vendored MapLibre GL stylesheet
 │       └── plotly-basic.min.js  # vendored Plotly (offline graphs)
-├── assets/                   # logo + screenshots
+├── assets/                   # logo (white + inverted cuts) + screenshots
 └── VERSION                   # single-source version string
 ```
 
@@ -803,7 +825,10 @@ of the German Federal Armed Forces, Munich). It is an AI-assisted project —
 for demos.
 
 <p align="center">
-  <img src="assets/CorvusGCS_logo.png" width="96" alt="Corvus GCS logo">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/CorvusGCS_logo.png">
+    <img src="assets/CorvusGCS_logo_inverted.png" width="96" alt="Corvus GCS logo">
+  </picture>
 </p>
 
 **License:** no license file ships with the repository yet — the badge above

@@ -50,11 +50,20 @@ svg { display: block; }
   margin-right: 6px;
   border-right: 1px solid var(--border-soft);
 }
+/* The mark is painted from --logo-mark (themes.css), not an <img src>, so the
+   light theme gets the black cut of the artwork with no JS involved.
+   background-size: contain mirrors the object-fit the <img> used to have. */
 .tb-logo-mark {
   width: 34px; height: 34px;
-  display: grid; place-items: center;
+  /* The bar is a flex row: without this the mark is the item that gives way
+     when the bar gets cramped, and the brand shrinks before any telemetry
+     block does. */
+  flex: 0 0 auto;
+  background-image: var(--logo-mark);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
 }
-.tb-logo-mark img { width: 34px; height: 34px; object-fit: contain; }
 .tb-logo-text { display: flex; flex-direction: column; line-height: 1; }
 .tb-logo-name { font-size: 15px; font-weight: 700; letter-spacing: 1.4px; }
 .tb-logo-sub { font-size: 9px; color: var(--text-3); letter-spacing: 1.6px; font-weight: 600; margin-top: 3px; }

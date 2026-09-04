@@ -114,6 +114,15 @@
   --blur: blur(28px) saturate(180%);
   --blur-soft: blur(24px) saturate(180%);
 
+  /* --- Brand mark ---
+     The logo is artwork, not a tintable glyph, so it ships in two cuts: white
+     for dark surfaces and black for light ones. Making it a token means the
+     light theme swaps it with everything else instead of the top bar needing
+     its own theme listener — and it is the reason the mark is a background
+     image on a role="img" span rather than an <img src>, since CSS cannot
+     reach into an element's src. Paths are relative to this stylesheet. */
+  --logo-mark: url("../assets/CorvusGCS_logo.png");
+
   /* --- Elevation. Composite so a theme can retune spread AND alpha, which
      a light theme must (a 0.45-black drop shadow looks like dirt on white). */
   --shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
@@ -241,6 +250,9 @@
   --input-rgb: 255 255 255;
   --tint-rgb: 0 0 0;
   --scrim: rgba(22, 28, 38, 0.35);
+
+  /* The white mark is invisible on a white top bar; use the black cut. */
+  --logo-mark: url("../assets/CorvusGCS_logo_inverted.png");
 
   /* Shadows on white must be far lighter and tinted toward the surface, or
      they read as smudges rather than elevation. */

@@ -3,7 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<link rel="icon" type="image/png" href="assets/CorvusGCS_logo.png" />
+<!-- Two cuts of the mark: white artwork for a dark tab strip, black for a light
+     one. A favicon cannot see the app's own data-theme, so it follows the OS
+     colour scheme instead; the unmediated link last is the fallback for
+     browsers that ignore `media` here, and it names the black cut because a
+     light tab strip is the more common default. -->
+<link rel="icon" type="image/png" media="(prefers-color-scheme: dark)" href="assets/CorvusGCS_logo.png" />
+<link rel="icon" type="image/png" href="assets/CorvusGCS_logo_inverted.png" />
 <title>CORVUS GCS</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

@@ -97,12 +97,14 @@ Corvus.topbar = (function () {
   function renderLogo() {
     const w = document.createElement("div");
     w.className = "tb-logo";
+    // The mark is a background image driven by the --logo-mark token, not an
+    // <img src>: the logo ships as white artwork for dark surfaces and black
+    // for light ones, and CSS cannot swap an element's src. role="img" +
+    // aria-label keeps it announced exactly as the <img alt> was.
     const mark = document.createElement("div");
     mark.className = "tb-logo-mark";
-    const img = document.createElement("img");
-    img.src = "assets/CorvusGCS_logo.png";
-    img.alt = "CORVUS GCS";
-    mark.appendChild(img);
+    mark.setAttribute("role", "img");
+    mark.setAttribute("aria-label", "CORVUS GCS");
     const txt = document.createElement("div");
     txt.className = "tb-logo-text";
     txt.innerHTML = '<span class="tb-logo-name">CORVUS</span><span class="tb-logo-sub">GROUND CONTROL</span>';
