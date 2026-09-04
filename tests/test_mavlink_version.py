@@ -20,9 +20,13 @@ from corvus.state_store import VehicleStateStore
 class _FakeMav:
     def __init__(self) -> None:
         self.version_requests = 0
+        self.commands: list[tuple] = []
 
     def autopilot_version_request_send(self, target_system: int, target_component: int) -> None:
         self.version_requests += 1
+
+    def command_long_send(self, *args) -> None:
+        self.commands.append(args)
 
 
 class _FakeConn:
@@ -33,6 +37,79 @@ class _FakeConn:
 class _FakeMessage(SimpleNamespace):
     def get_type(self) -> str:
         return self.message_type
+
+
+def _commanded(mav) -> set[int]:
+    """The MAV_CMD ids sent as COMMAND_LONG (command is arg index 2)."""
+    return {int(call[2]) for call in mav.commands}
+
+
+# ---------------------------------------------------------------------------
+# _request_version — asking in a way PX4 actually answers
+# ---------------------------------------------------------------------------
+
+def test_request_version_uses_the_commands_px4_answers() -> None:
+    """The bare AUTOPILOT_VERSION_REQUEST message is not enough.
+
+    PX4 does not handle message 183 at all — it is an ArduPilot-era legacy — so
+    a GCS that only sends that never learns the firmware version. v1.16-v1.18
+    answer MAV_CMD_REQUEST_MESSAGE, and older builds the now-deprecated
+    MAV_CMD_REQUEST_AUTOPILOT_CAPABILITIES; both must go out.
+    """
+    from pymavlink import mavutil
+
+    bridge = MavlinkBridge(VehicleStateStore())
+    bridge._conn = _FakeConn()
+    with patch.object(MavlinkBridge, "_schedule_version_retry", lambda self: None):
+        bridge._request_version()
+
+    commanded = _commanded(bridge._conn.mav)
+    assert mavutil.mavlink.MAV_CMD_REQUEST_MESSAGE in commanded
+    assert mavutil.mavlink.MAV_CMD_REQUEST_AUTOPILOT_CAPABILITIES in commanded
+    # REQUEST_MESSAGE must name AUTOPILOT_VERSION (148) in param1, or PX4
+    # answers with some other message and the version stays blank.
+    request = next(
+        call for call in bridge._conn.mav.commands
+        if int(call[2]) == mavutil.mavlink.MAV_CMD_REQUEST_MESSAGE
+    )
+    assert int(request[4]) == 148
+    # The legacy message still goes out for anything that only speaks that.
+    assert bridge._conn.mav.version_requests == 1
+
+
+def test_request_version_does_not_need_a_parameter_download() -> None:
+    """The firmware version must not be coupled to the parameter set.
+
+    Parameters are downloaded lazily, only when the operator opens the
+    Parameters page — so anything that waits for them leaves the version blank
+    for the whole flight. _request_version touches no parameter state.
+    """
+    store = VehicleStateStore()
+    bridge = MavlinkBridge(store)
+    bridge._conn = _FakeConn()
+    with patch.object(MavlinkBridge, "_schedule_version_retry", lambda self: None):
+        bridge._request_version()
+
+    assert bridge._conn.mav.commands, "a version request went out"
+    assert store.get_snapshot().get("params_received", 0) in (0, None), (
+        "no parameter download was triggered"
+    )
+
+
+def test_one_failing_request_does_not_suppress_the_others() -> None:
+    """A firmware that rejects one form must still be asked the other ways."""
+    bridge = MavlinkBridge(VehicleStateStore())
+    conn = _FakeConn()
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("unsupported")
+
+    conn.mav.command_long_send = boom  # type: ignore[method-assign]
+    bridge._conn = conn
+    with patch.object(MavlinkBridge, "_schedule_version_retry", lambda self: None):
+        bridge._request_version()
+
+    assert conn.mav.version_requests == 1, "the legacy request still went out"
 
 
 # ---------------------------------------------------------------------------

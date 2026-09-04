@@ -23,6 +23,7 @@ import logging
 import threading
 from typing import Any, Callable, TYPE_CHECKING
 
+from .firmware_catalog import FirmwareCatalog
 from .firmware_uploader import FirmwareUploader, parse_firmware
 
 if TYPE_CHECKING:  # avoid an import cycle at runtime
@@ -39,6 +40,11 @@ NON_USB_GATE_MESSAGE = (
     "(current link: {transport}). SiK radio, UDP, and TCP are not permitted."
 )
 
+# States in which the service is busy and must refuse a second job. Downloading
+# counts: the operator has committed to a flash, and starting another one would
+# race the first onto the same serial device.
+BUSY_STATES = frozenset({"downloading", "flashing"})
+
 
 class FlashService:
     """Orchestrates firmware flashing over a direct USB link only.
@@ -48,9 +54,15 @@ class FlashService:
     spawned; the upload itself runs on a daemon worker thread.
     """
 
-    def __init__(self, mavlink: "MavlinkBridge", store: "VehicleStateStore") -> None:
+    def __init__(
+        self,
+        mavlink: "MavlinkBridge",
+        store: "VehicleStateStore",
+        catalog: "FirmwareCatalog | None" = None,
+    ) -> None:
         self.mavlink = mavlink
         self._store = store
+        self.catalog = catalog
         self._lock = threading.Lock()
         self._state = "idle"
         self._percent = 0
@@ -85,7 +97,7 @@ class FlashService:
             "device": device,
             # can_flash is the conjunction: USB link AND idle AND disarmed.
             "can_flash": bool(mavlink is not None and mavlink.is_direct_usb()
-                              and state == "idle" and not armed),
+                              and state not in BUSY_STATES and not armed),
             "armed": armed,
             "progress": percent,
             "message": message,
@@ -95,6 +107,24 @@ class FlashService:
     # Gate + start (HTTP POST /api/firmware/upload)
     # ------------------------------------------------------------------
 
+    def _gate(self) -> str | None:
+        """Refusal reason, or None when a flash may start.
+
+        Shared by every entry point so a download-then-flash is refused on
+        exactly the same terms as a direct upload — the gate is a safety
+        property, not a per-endpoint detail.
+        """
+        if self.mavlink is None:
+            return "no autopilot connection"
+        if not self.mavlink.is_direct_usb():
+            return NON_USB_GATE_MESSAGE.format(transport=self.mavlink.transport())
+        if self._store.get_snapshot().get("armed"):
+            return "cannot flash while armed"
+        with self._lock:
+            if self._state in BUSY_STATES:
+                return "flash already in progress"
+        return None
+
     def start(self, firmware_bytes: bytes) -> bool:
         """Synchronous gate check, then spawn the worker. Returns False on refusal.
 
@@ -102,20 +132,11 @@ class FlashService:
         exact reason. Firmware is parsed here (in the calling thread) so a bad
         archive yields a 409 immediately, not a mid-flash failure.
         """
-        if self.mavlink is None:
-            self.last_error = "no autopilot connection"
-            return False
-        transport = self.mavlink.transport()
-        if not self.mavlink.is_direct_usb():
-            self.last_error = NON_USB_GATE_MESSAGE.format(transport=transport)
-            return False
-        if self._store.get_snapshot().get("armed"):
-            self.last_error = "cannot flash while armed"
+        refusal = self._gate()
+        if refusal:
+            self.last_error = refusal
             return False
         with self._lock:
-            if self._state == "flashing":
-                self.last_error = "flash already in progress"
-                return False
             conn = self.mavlink.connection_string()
         # Parse now so an invalid archive is rejected before we reboot the FC.
         try:
@@ -137,6 +158,90 @@ class FlashService:
         )
         self._worker.start()
         return True
+
+    def start_release(self, release_tag: str, board_name: str) -> bool:
+        """Download one catalogue image, then flash it. False on refusal.
+
+        The client names a release and a board, never a URL: the download target
+        is resolved from the backend's own catalogue and re-derived from a fixed
+        template, so the browser cannot point the fetch anywhere.
+
+        Download and flash are one job on one worker with one progress stream
+        and one cancel, because to the operator they are one action — and
+        because a download that finished into a vehicle that has since armed
+        must not flash. The gate is therefore re-checked after the download.
+        """
+        if self.catalog is None:
+            self.last_error = "firmware catalogue unavailable"
+            return False
+        refusal = self._gate()
+        if refusal:
+            self.last_error = refusal
+            return False
+        entry = self.catalog.resolve(release_tag, board_name)
+        if entry is None:
+            self.last_error = "unknown firmware release or board"
+            return False
+        with self._lock:
+            conn = self.mavlink.connection_string()
+        self._cancel.clear()
+        self._set("downloading", 0, f"Downloading {entry.get('name', '')}…")
+        self._worker = threading.Thread(
+            target=self._run_release, args=(conn, entry),
+            name="firmware-download", daemon=True,
+        )
+        self._worker.start()
+        return True
+
+    def _run_release(self, conn: str, entry: dict[str, Any]) -> None:
+        """Download worker: fetch (or reuse the cache), then hand off to _run."""
+        name = str(entry.get("name", ""))
+        try:
+            cached = self.catalog.cached_path(name) is not None
+            if cached:
+                self._set("downloading", 100, f"Using cached {name}")
+
+            def on_progress(done: int, total: int) -> None:
+                percent = int(done * 100 / total) if total > 0 else 0
+                self._set("downloading", min(99, percent),
+                          f"Downloading {name} — {done // 1024} KB")
+
+            raw = self.catalog.download(
+                entry, on_progress=None if cached else on_progress, cancel=self._cancel,
+            )
+            if self._cancel.is_set():
+                self._set("cancelled", 0, "Download cancelled")
+                return
+            image = parse_firmware(raw)
+            if not image:
+                self._set("failed", 0, "empty firmware image")
+                return
+        except ValueError as exc:
+            self._set("failed", 0, str(exc))
+            return
+        except Exception:  # noqa: BLE001 - the worker must never propagate
+            logger.exception("firmware download worker crashed")
+            self._set("failed", 0, "firmware download failed unexpectedly")
+            return
+
+        # Re-check the gate: the download took time, and the vehicle may have
+        # armed or the cable may have been pulled since the operator pressed go.
+        refusal = self._gate_for_resume()
+        if refusal:
+            self._set("failed", 0, refusal)
+            return
+        self._set("flashing", 0, "Preparing to flash…")
+        self._run(conn, image)
+
+    def _gate_for_resume(self) -> str | None:
+        """The gate, minus the busy check — this job IS the busy one."""
+        if self.mavlink is None:
+            return "no autopilot connection"
+        if not self.mavlink.is_direct_usb():
+            return NON_USB_GATE_MESSAGE.format(transport=self.mavlink.transport())
+        if self._store.get_snapshot().get("armed"):
+            return "cannot flash while armed"
+        return None
 
     # ------------------------------------------------------------------
     # Worker
@@ -197,9 +302,9 @@ class FlashService:
     # ------------------------------------------------------------------
 
     def cancel(self) -> bool:
-        """Cancel a running flash. Returns False when no flash is in progress."""
+        """Cancel a running download or flash. False when nothing is running."""
         with self._lock:
-            if self._state != "flashing":
+            if self._state not in BUSY_STATES:
                 return False
         self._cancel.set()
         return True

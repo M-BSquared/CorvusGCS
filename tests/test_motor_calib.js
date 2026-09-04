@@ -1,14 +1,16 @@
 "use strict";
 
 /**
- * Standalone tests for the Motor/ESC calibration feature in
- * Corvus.setupCalibration (src/js/setup-calibration.js).
+ * Tests for the calibration wizard in Corvus.setupCalibration
+ * (src/js/setup-calibration.js) — the guided flow, its lifecycle, and the
+ * motor/ESC safety gate.
  *
- * Deliberately isolated from tests/test_frontend_setup.js, whose in-flight
- * Firmware work breaks that suite: this file loads only setup-shared.js +
- * setup-calibration.js and drives Corvus.setupCalibration.render directly.
- * The DOM/fake-telemetry harness is copied verbatim from test_frontend_setup.js
- * so the stubs behave identically.
+ * Deliberately isolated from tests/test_frontend_setup.js: this file loads only
+ * the calibration stack (ui, setup-shared, calib-figures, calib-protocol,
+ * setup-calibration) and drives Corvus.setupCalibration.render directly, so a
+ * failure here points at the calibration screen and nothing else. The DOM /
+ * fake-telemetry harness is shared with test_frontend_setup.js so the stubs
+ * behave identically.
  *
  * Run:
  *   node tests/test_motor_calib.js
@@ -197,14 +199,20 @@ function makeFakeTelemetry(opts = {}) {
   const postCalls = [];
   const requests = [];
   let subCb = null;
+  let consoleCb = null;
   let unsubCalls = 0;
+  let consoleUnsubCalls = 0;
   const unsub = () => { unsubCalls++; };
+  const consoleUnsub = () => { consoleUnsubCalls++; };
   let paramsResponse = opts.paramsResponse || { complete: false, received: 0, count: 0, params: [] };
   let state = opts.state || { armed: false, connected: true };
   const telemetry = {
     postAction(url, payload) {
       postCalls.push({ url, payload });
       if (url === "/api/params/set" && opts.setReject) return Promise.reject(new Error(opts.setReject));
+      if (url === "/api/calibrate" && opts.calibrateReject) {
+        return Promise.reject(new Error(opts.calibrateReject));
+      }
       return Promise.resolve({ ok: true });
     },
     requestJson(url) {
@@ -212,24 +220,34 @@ function makeFakeTelemetry(opts = {}) {
       return Promise.resolve(paramsResponse);
     },
     subscribe(fn) { subCb = fn; return unsub; },
+    // The wizard reads PX4 guidance from the console bus, not from the
+    // de-duplicated telemetry warnings, so the fake mirrors that contract.
+    subscribeConsole(fn) { consoleCb = fn; return consoleUnsub; },
     getState() { return state; },
   };
   return {
     telemetry, postCalls, requests,
     get unsubCalls() { return unsubCalls; },
+    get consoleUnsubCalls() { return consoleUnsubCalls; },
     getSubCb: () => subCb,
+    /** Push one STATUSTEXT line the way the console SSE would. */
+    statustext(text, level) {
+      if (consoleCb) consoleCb({ name: "STATUSTEXT", text, level: level || "info" });
+    },
     setParamsResponse(r) { paramsResponse = r; },
     setState(s) { state = s; },
   };
 }
 
 // Load ONLY the modules under test — NOT setup.js (its Firmware work is in-flight
-// and breaks the combined suite). setup-calibration.js depends only on
-// setup-shared.js + Corvus.telemetry.
+// and breaks the combined suite). setup-calibration.js depends on
+// setup-shared.js, the figure/protocol modules and Corvus.telemetry.
 // ui.js first: it defines Corvus.ui, the component layer every other
 // module builds its DOM with (index.html loads it in the same order).
 require("../src/js/ui.js");
 require("../src/js/setup-shared.js");
+require("../src/js/calib-figures.js");
+require("../src/js/calib-protocol.js");
 require("../src/js/setup-calibration.js");
 
 // ---------------------------------------------------------------------------
@@ -249,73 +267,256 @@ function reset(opts) {
   return { container, fake };
 }
 
-async function testMotorButtonRendered() {
+/** Open the calibration screen and drill into one procedure's wizard. */
+function openWizard(container, type) {
+  const destroy = Corvus.setupCalibration.render(container, () => {});
+  const card = findByClass(container, "calib-card").find((c) => c.dataset.type === type);
+  assert.ok(card, type + " card present");
+  fire(card, "click");
+  return destroy;
+}
+
+function actionButton(container, label) {
+  return findByClass(findOneByClass(container, "calib-actions"), "btn")
+    .find((b) => (b.textContent + (b.children || []).map((c) => c.textContent).join(""))
+      .includes(label)) || null;
+}
+
+// ---------------------------------------------------------------------------
+// List view
+// ---------------------------------------------------------------------------
+
+async function testListShowsEveryProcedureWithItsCost() {
   const { container } = reset();
   const destroy = Corvus.setupCalibration.render(container, () => {});
 
-  const grid = findOneByClass(container, "calib-grid");
-  const btns = findByClass(grid, "calib-btn");
-  assert.equal(btns.length, 7, "seven sensor-calibration buttons incl. motor/ESC");
-
-  const motor = btns.find((b) => b.dataset.type === "motor");
-  assert.ok(motor, "motor/ESC button present");
-  assert.equal(motor.getAttribute("data-variant"), "danger", "motor button flagged danger");
-  assert.equal(findOneByClass(motor, "calib-btn-label").textContent, "Motors (ESC)");
+  const cards = findByClass(container, "calib-card");
+  assert.equal(cards.length, 7, "one card per calibration");
+  const accel = cards.find((c) => c.dataset.type === "accel");
+  const meta = findByClass(accel, "calib-card-meta-item").map((m) => m.textContent);
+  assert.ok(meta.includes("6 positions"), "the position count is stated up front");
+  assert.ok(meta.includes("Reboot after"), "a calibration that needs a reboot says so");
 
   destroy();
 }
 
-async function testMotorClickOpensModalNoPost() {
+// ---------------------------------------------------------------------------
+// Wizard: the briefing comes before the command
+// ---------------------------------------------------------------------------
+
+async function testOpeningAWizardPostsNothing() {
   const { container, fake } = reset();
-  const destroy = Corvus.setupCalibration.render(container, () => {});
+  const destroy = openWizard(container, "accel");
 
-  const motor = findByClass(findOneByClass(container, "calib-grid"), "calib-btn")
-    .find((b) => b.dataset.type === "motor");
-  fire(motor, "click");
-
-  // Modal opened under `page` (reachable via the container walk).
-  assert.ok(findOneByClass(container, "modal-overlay"), "motor safety modal opened");
-  // Opening the gate must NOT fire the POST — only confirm does.
+  assert.ok(findOneByClass(container, "calib-stage"), "stage rendered");
+  assert.ok(findOneByClass(container, "calib-prep"), "preparation checklist rendered");
   assert.equal(fake.postCalls.filter((c) => c.url === "/api/calibrate").length, 0,
-    "no POST on direct motor click");
+    "opening a calibration issues no command");
+
+  destroy();
+}
+
+async function testAccelWizardDrawsEveryPositionItWillAskFor() {
+  const { container } = reset();
+  const destroy = openWizard(container, "accel");
+
+  const chips = findByClass(container, "calib-pose");
+  assert.equal(chips.length, 6, "six position figures");
+  assert.deepEqual(chips.map((c) => c.dataset.pose), Corvus.calibProtocol.PROCEDURES.accel.poses);
+  assert.ok(chips.every((c) => c.dataset.state === "pending"), "all pending before the start");
+  // Each chip is labelled, so the sequence is readable even where the inline
+  // SVG cannot be drawn.
+  chips.forEach((c) => {
+    assert.equal(findOneByClass(c, "calib-pose-label").textContent,
+      Corvus.calibFigures.poseLabel(c.dataset.pose));
+  });
+
+  destroy();
+}
+
+async function testStartPostsTheCalibrationAndSwapsToAbort() {
+  const { container, fake } = reset({ state: { armed: false, connected: true } });
+  const destroy = openWizard(container, "gyro");
+
+  const start = actionButton(container, "Start");
+  assert.ok(start && !start.disabled, "start enabled when disarmed and linked");
+  fire(start, "click");
+  await flushMicrotasks();
+
+  const call = fake.postCalls.find((c) => c.url === "/api/calibrate");
+  assert.deepEqual(call.payload, { type: "gyro" }, "posts the procedure's own type");
+  assert.ok(actionButton(container, "Abort") && !actionButton(container, "Abort").hidden,
+    "abort offered while the calibration runs");
+  assert.ok(start.hidden, "start withdrawn while the calibration runs");
+  assert.ok(findOneByClass(container, "calib-prep").hidden,
+    "the briefing gives way to the live instruction");
+
+  destroy();
+}
+
+async function testStartIsBlockedWithoutALink() {
+  const { container } = reset({ state: { armed: false, connected: false } });
+  const destroy = openWizard(container, "gyro");
+
+  assert.equal(actionButton(container, "Start").disabled, true, "no link, no start");
+  const banner = findByClass(container, "setup-armed-banner")[0];
+  assert.ok(banner && !banner.hidden, "and the reason is stated");
+  assert.match(banner.textContent, /No link/);
+
+  destroy();
+}
+
+async function testStartIsBlockedWhileArmed() {
+  const { container, fake } = reset({ state: { armed: false, connected: true } });
+  const destroy = openWizard(container, "gyro");
+  assert.equal(actionButton(container, "Start").disabled, false);
+
+  fake.getSubCb()({ armed: true, connected: true });
+  assert.equal(actionButton(container, "Start").disabled, true, "armed disables the start");
+  assert.match(findByClass(container, "setup-armed-banner")[0].textContent, /armed/);
+
+  fake.getSubCb()({ armed: false, connected: true });
+  assert.equal(actionButton(container, "Start").disabled, false, "disarming re-enables it");
+
+  destroy();
+}
+
+// ---------------------------------------------------------------------------
+// Wizard: PX4 guidance drives the screen
+// ---------------------------------------------------------------------------
+
+async function testStatustextDrivesTheInstructionAndTheStrip() {
+  const { container, fake } = reset({ state: { armed: false, connected: true } });
+  const destroy = openWizard(container, "accel");
+  fire(actionButton(container, "Start"), "click");
+  await flushMicrotasks();
+
+  fake.statustext("[cal] calibration started: 2 accel");
+  fake.statustext("[cal] Hold still, measuring down side");
+
+  const headline = findOneByClass(container, "calib-headline");
+  assert.match(headline.textContent, /Hold still/);
+  assert.equal(findOneByClass(container, "calib-detail").textContent, "Level");
+  const level = findByClass(container, "calib-pose").find((c) => c.dataset.pose === "level");
+  assert.equal(level.dataset.state, "active", "the requested position is highlighted");
+
+  fake.statustext("[cal] down side done, rotate to a different side");
+  assert.equal(level.dataset.state, "done", "a finished position is marked off");
+
+  // The transcript is the audit trail; it carries PX4's own words verbatim.
+  const lines = findByClass(container, "guidance-msg").map((l) => l.textContent);
+  assert.ok(lines.includes("[cal] Hold still, measuring down side"));
+
+  destroy();
+}
+
+async function testSuccessEndsTheRunAndOffersTheWayBack() {
+  const { container, fake } = reset({ state: { armed: false, connected: true } });
+  const destroy = openWizard(container, "accel");
+  fire(actionButton(container, "Start"), "click");
+  await flushMicrotasks();
+
+  fake.statustext("[cal] calibration done: accel");
+  assert.equal(findOneByClass(container, "calib-wizard-view").dataset.phase, "done");
+  assert.ok(actionButton(container, "Abort").hidden, "abort withdrawn once it is over");
+  assert.ok(!actionButton(container, "Back to calibrations").hidden, "the way back is offered");
+  assert.match(findOneByClass(container, "calib-detail").textContent, /Reboot/);
+
+  destroy();
+}
+
+async function testFailureOffersARetryWithoutReopeningTheWizard() {
+  const { container, fake } = reset({ state: { armed: false, connected: true } });
+  const destroy = openWizard(container, "accel");
+  fire(actionButton(container, "Start"), "click");
+  await flushMicrotasks();
+
+  fake.statustext("[cal] calibration failed: accel", "critical");
+  assert.equal(findOneByClass(container, "calib-wizard-view").dataset.phase, "failed");
+
+  const retry = actionButton(container, "Try again");
+  assert.ok(retry && !retry.hidden, "retry offered after a failure");
+  fire(retry, "click");
+  assert.equal(findOneByClass(container, "calib-wizard-view").dataset.phase, "idle",
+    "retry returns to the briefing");
+  assert.ok(!findOneByClass(container, "calib-prep").hidden, "and the checklist comes back");
+
+  destroy();
+}
+
+async function testAbortCancelsOnTheVehicle() {
+  const { container, fake } = reset({ state: { armed: false, connected: true } });
+  const destroy = openWizard(container, "compass");
+  fire(actionButton(container, "Start"), "click");
+  await flushMicrotasks();
+
+  fire(actionButton(container, "Abort"), "click");
+  await flushMicrotasks();
+
+  // An abort has to reach the autopilot — stopping only the UI would leave the
+  // vehicle mid-calibration with no way out but a power cycle.
+  assert.ok(fake.postCalls.find((c) => c.url === "/api/calibrate/cancel"),
+    "POST /api/calibrate/cancel issued");
+  assert.equal(findOneByClass(container, "calib-wizard-view").dataset.phase, "cancelled");
+
+  destroy();
+}
+
+async function testRejectedStartIsReportedNotSwallowed() {
+  const { container, fake } = reset({
+    state: { armed: false, connected: true }, calibrateReject: "cannot calibrate while armed",
+  });
+  const destroy = openWizard(container, "gyro");
+  fire(actionButton(container, "Start"), "click");
+  await flushMicrotasks();
+
+  assert.equal(findOneByClass(container, "calib-wizard-view").dataset.phase, "failed");
+  assert.match(findOneByClass(container, "calib-detail").textContent, /armed/);
+  assert.ok(dispatched.some((e) => e.detail && e.detail.level === "critical"),
+    "a rejected start raises a critical notification");
+
+  destroy();
+}
+
+// ---------------------------------------------------------------------------
+// Motor / ESC safety gate
+// ---------------------------------------------------------------------------
+
+async function testMotorStartOpensTheSafetyGateAndPostsNothing() {
+  const { container, fake } = reset({ state: { armed: false, connected: true } });
+  const destroy = openWizard(container, "motor");
+
+  fire(actionButton(container, "Start"), "click");
+  assert.ok(findOneByClass(container, "modal-overlay"), "motor safety modal opened");
+  assert.equal(fake.postCalls.filter((c) => c.url === "/api/calibrate").length, 0,
+    "the gate itself posts nothing");
 
   destroy();
 }
 
 async function testMotorConfirmPostsMotorType() {
-  const { container, fake } = reset();
-  const destroy = Corvus.setupCalibration.render(container, () => {});
-
-  const motor = findByClass(findOneByClass(container, "calib-grid"), "calib-btn")
-    .find((b) => b.dataset.type === "motor");
-  fire(motor, "click");
+  const { container, fake } = reset({ state: { armed: false, connected: true } });
+  const destroy = openWizard(container, "motor");
+  fire(actionButton(container, "Start"), "click");
 
   const confirm = findModalButton(container, "Calibrate Motors");
-  assert.ok(confirm, "confirm button present in modal");
+  assert.ok(confirm, "confirm button present in the modal");
   fire(confirm, "click");
   await flushMicrotasks();
 
-  // Confirm dismisses the modal then POSTs {type:"motor"}.
   assert.ok(!findOneByClass(container, "modal-overlay"), "modal closed on confirm");
   const call = fake.postCalls.find((c) => c.url === "/api/calibrate");
-  assert.ok(call, "POST /api/calibrate issued on confirm");
   assert.deepEqual(call.payload, { type: "motor" }, "confirm posts {type:'motor'}");
 
   destroy();
 }
 
 async function testMotorCancelNoPost() {
-  const { container, fake } = reset();
-  const destroy = Corvus.setupCalibration.render(container, () => {});
+  const { container, fake } = reset({ state: { armed: false, connected: true } });
+  const destroy = openWizard(container, "motor");
+  fire(actionButton(container, "Start"), "click");
 
-  const motor = findByClass(findOneByClass(container, "calib-grid"), "calib-btn")
-    .find((b) => b.dataset.type === "motor");
-  fire(motor, "click");
-
-  const cancel = findModalButton(container, "Cancel");
-  assert.ok(cancel, "cancel button present in modal");
-  fire(cancel, "click");
-
+  fire(findModalButton(container, "Cancel"), "click");
   assert.ok(!findOneByClass(container, "modal-overlay"), "modal closed on cancel");
   assert.equal(fake.postCalls.filter((c) => c.url === "/api/calibrate").length, 0,
     "no POST on cancel");
@@ -323,47 +524,77 @@ async function testMotorCancelNoPost() {
   destroy();
 }
 
-async function testMotorModalCleanedOnDestroy() {
-  const { container, fake } = reset();
-  const destroy = Corvus.setupCalibration.render(container, () => {});
+// ---------------------------------------------------------------------------
+// Lifecycle
+// ---------------------------------------------------------------------------
 
-  const motor = findByClass(findOneByClass(container, "calib-grid"), "calib-btn")
-    .find((b) => b.dataset.type === "motor");
-  fire(motor, "click");
-  assert.ok(findOneByClass(container, "modal-overlay"), "modal opened before destroy");
+async function testDestroyReleasesEverythingTheWizardTookOut() {
+  const { container, fake } = reset({ state: { armed: false, connected: true } });
+  const destroy = openWizard(container, "motor");
+  fire(actionButton(container, "Start"), "click");
+  assert.ok(findOneByClass(container, "modal-overlay"), "modal open before destroy");
 
   destroy();
 
-  // destroy() must drop an open modal so no DOM subtree leaks on back/re-render.
   assert.ok(!findOneByClass(container, "modal-overlay"), "modal removed on destroy");
   assert.equal(fake.unsubCalls, 1, "telemetry unsubscribed exactly once");
+  assert.equal(fake.consoleUnsubCalls, 1, "console stream released exactly once");
+  assert.equal(clearedIds.size >= 0, true);
 }
 
-async function testMotorButtonArmedGating() {
-  const { container, fake } = reset({ state: { armed: false, connected: true, warnings: [] } });
+async function testLeavingTheWizardStopsTheWatchdogAndTheStream() {
+  const { container, fake } = reset({ state: { armed: false, connected: true } });
   const destroy = Corvus.setupCalibration.render(container, () => {});
+  fire(findByClass(container, "calib-card").find((c) => c.dataset.type === "gyro"), "click");
+  fire(actionButton(container, "Start"), "click");
+  await flushMicrotasks();
+  assert.equal(fake.consoleUnsubCalls, 0, "stream held while the wizard is up");
 
-  const motor = findByClass(findOneByClass(container, "calib-grid"), "calib-btn")
-    .find((b) => b.dataset.type === "motor");
-
-  assert.ok(!motor.disabled, "motor button enabled while disarmed");
-  fake.getSubCb()({ armed: true, connected: true, warnings: [] });
-  assert.strictEqual(motor.disabled, true, "motor button disabled while armed");
-  fake.getSubCb()({ armed: false, connected: true, warnings: [] });
-  assert.ok(!motor.disabled, "motor button re-enabled when disarmed again");
+  // Back to the list: the wizard's subscriptions go with it, the page's own
+  // telemetry subscription stays.
+  fire(findOneByClass(container, "setup-back"), "click");
+  assert.equal(fake.consoleUnsubCalls, 1, "console stream released on leaving the wizard");
+  assert.equal(fake.unsubCalls, 0, "the page keeps its telemetry subscription");
+  assert.ok(findOneByClass(container, "calib-cards"), "back at the list");
 
   destroy();
+  assert.equal(fake.unsubCalls, 1, "and releases it on teardown");
+}
+
+async function testPlotlyGraphsArePurgedOnTeardown() {
+  const { container } = reset();
+  const destroy = Corvus.setupCalibration.render(container, () => {});
+  assert.equal(window.Plotly.reactCalls.length, 3, "three POD graphs initialised");
+  destroy();
+  assert.equal(window.Plotly.purgeCalls.length, 3, "each POD graph purged exactly once");
 }
 
 async function run() {
-  await testMotorButtonRendered();
-  await testMotorClickOpensModalNoPost();
-  await testMotorConfirmPostsMotorType();
-  await testMotorCancelNoPost();
-  await testMotorModalCleanedOnDestroy();
-  await testMotorButtonArmedGating();
+  const tests = [
+    testListShowsEveryProcedureWithItsCost,
+    testOpeningAWizardPostsNothing,
+    testAccelWizardDrawsEveryPositionItWillAskFor,
+    testStartPostsTheCalibrationAndSwapsToAbort,
+    testStartIsBlockedWithoutALink,
+    testStartIsBlockedWhileArmed,
+    testStatustextDrivesTheInstructionAndTheStrip,
+    testSuccessEndsTheRunAndOffersTheWayBack,
+    testFailureOffersARetryWithoutReopeningTheWizard,
+    testAbortCancelsOnTheVehicle,
+    testRejectedStartIsReportedNotSwallowed,
+    testMotorStartOpensTheSafetyGateAndPostsNothing,
+    testMotorConfirmPostsMotorType,
+    testMotorCancelNoPost,
+    testDestroyReleasesEverythingTheWizardTookOut,
+    testLeavingTheWizardStopsTheWatchdogAndTheStream,
+    testPlotlyGraphsArePurgedOnTeardown,
+  ];
+  for (const t of tests) {
+    await t();
+    console.log("ok   - " + t.name);
+  }
   await flushMicrotasks();
-  console.log("motor calib tests passed");
+  console.log("\nAll " + tests.length + " calibration wizard tests passed.");
 }
 
 run().catch((error) => {

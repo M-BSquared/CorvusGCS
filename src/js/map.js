@@ -1026,10 +1026,18 @@ Corvus.map = (function () {
       pitch: 0,
       bearing: 0,
       style: initialStyle("satellite"),
-      attributionControl: true,
+      // Added explicitly below so it can be placed bottom-LEFT; the default
+      // control lands bottom-right, under the control rail.
+      attributionControl: false,
       dragRotate: true,
       keyboard: false,
     });
+    // Attribution is a legal requirement, so it is always on — but it belongs in
+    // the corner nothing else competes for. Bottom-right is where the control
+    // rail and the HUD live, so it goes bottom-left, with the clear-track button
+    // stacked above it (see .track-clear in main.css).
+    map.addControl(new maplibregl.AttributionControl(), "bottom-left");
+
     // Controls are built NOW, not on "load". MapLibre fires "load" only once the
     // style AND its first tiles have resolved, so building the rail there left
     // the operator staring at a map with no zoom, layer or centre buttons for as

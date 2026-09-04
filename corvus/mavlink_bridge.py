@@ -210,6 +210,11 @@ class MavlinkBridge:
         self._pending_acks: dict[int, _PendingAck] = {}
         self._ack_lock = threading.Lock()
         self._operation_lock = threading.RLock()
+        # USB vendor/product ids as reported in AUTOPILOT_VERSION (0 = unknown).
+        self._board_vendor_id = 0
+        self._board_product_id = 0
+        # Set by LogService while a listing or download is running.
+        self._log_sink: Callable[[Any], None] | None = None
         self._send_lock = threading.Lock()
         self._statustext_chunks: dict[tuple[int, int, int], dict[str, Any]] = {}
         self._home_alt_amsl: float | None = None
@@ -335,6 +340,43 @@ class MavlinkBridge:
         ports = [p for p in ports if not _PHANTOM_TTY_RE.match(p["device"])]
         ports.sort(key=lambda p: p["device"])
         return ports
+
+    def is_connected(self) -> bool:
+        """Public read of the link gate the command paths use internally.
+
+        Exists so services (log download, flash) can ask without reaching into
+        a private, and so "connected" means the same thing to all of them: a
+        live link whose heartbeat is not stale.
+        """
+        return self._connection_ready()
+
+    def board_identity(self) -> dict[str, Any]:
+        """Whatever identifies the connected board, for the firmware picker.
+
+        The USB descriptor of the port we are actually connected on (PX4 builds
+        its product string from the board, so this is the most direct answer),
+        plus the vendor/product ids from AUTOPILOT_VERSION for the boards whose
+        descriptor says nothing useful. Read-only and never raises: an unknown
+        board just means the operator picks from the list themselves.
+        """
+        identity: dict[str, Any] = {
+            "device": "", "description": "", "hwid": "",
+            "vendor_id": self._board_vendor_id,
+            "product_id": self._board_product_id,
+        }
+        device = self.serial_device()
+        if not device:
+            return identity
+        identity["device"] = device
+        try:
+            for port in self.list_serial_ports():
+                if port.get("device") == device:
+                    identity["description"] = port.get("description", "")
+                    identity["hwid"] = port.get("hwid", "")
+                    break
+        except Exception:  # noqa: BLE001 - identification is best-effort
+            logger.debug("board identification failed", exc_info=True)
+        return identity
 
     def _is_serial(self) -> bool:
         """True when the configured connection is a serial (UART/USB) link."""
@@ -819,8 +861,43 @@ class MavlinkBridge:
             except Exception as exc:
                 logger.debug("SET_MESSAGE_INTERVAL msg %d failed: %s", msg_id, exc)
 
+    # MAVLINK_MSG_ID_AUTOPILOT_VERSION. Spelled out rather than taken from
+    # mavutil so the request cannot silently follow a dialect rename.
+    _MSG_ID_AUTOPILOT_VERSION = 148
+
     def _request_version(self) -> None:
+        """Ask the autopilot for AUTOPILOT_VERSION — the firmware version.
+
+        Three requests, because no single one covers the supported firmware
+        range. PX4 answers MAV_CMD_REQUEST_MESSAGE (v1.16-v1.18, and the only
+        one v1.18 accepts); older builds answer the now-deprecated
+        MAV_CMD_REQUEST_AUTOPILOT_CAPABILITIES; the bare
+        AUTOPILOT_VERSION_REQUEST message is an ArduPilot-era legacy that PX4
+        does not handle at all — which is why sending only that one left the
+        firmware version blank on every supported target.
+
+        Fire-and-forget: this runs inside _connect(), before the receive loop
+        is dispatching COMMAND_ACKs, so waiting for an ACK here would stall the
+        connect path. Whether it worked is judged by the answer arriving, and
+        _schedule_version_retry() covers the case where it did not.
+        """
         if self._conn:
+            nan = float("nan")
+            requests = (
+                (mavutil.mavlink.MAV_CMD_REQUEST_MESSAGE,
+                 [float(self._MSG_ID_AUTOPILOT_VERSION), nan, nan, nan, nan, nan, nan]),
+                (mavutil.mavlink.MAV_CMD_REQUEST_AUTOPILOT_CAPABILITIES,
+                 [1.0, nan, nan, nan, nan, nan, nan]),
+            )
+            for command, params in requests:
+                try:
+                    with self._send_lock:
+                        self._conn.mav.command_long_send(
+                            self._target_system, self._target_component,
+                            command, 0, *params,
+                        )
+                except Exception:
+                    pass
             try:
                 with self._send_lock:
                     self._conn.mav.autopilot_version_request_send(
@@ -852,6 +929,21 @@ class MavlinkBridge:
                 return
             if self._store.get_snapshot().get("px4_version"):
                 return
+            # Separate try blocks on purpose: one request failing must not
+            # skip the others, which is exactly what a shared try would do.
+            nan = float("nan")
+            try:
+                with self._send_lock:
+                    if not self._running.is_set() or not self._conn:
+                        return
+                    self._conn.mav.command_long_send(
+                        self._target_system, self._target_component,
+                        mavutil.mavlink.MAV_CMD_REQUEST_MESSAGE, 0,
+                        float(self._MSG_ID_AUTOPILOT_VERSION),
+                        nan, nan, nan, nan, nan, nan,
+                    )
+            except Exception:
+                pass
             try:
                 with self._send_lock:
                     if not self._running.is_set() or not self._conn:
@@ -1064,6 +1156,23 @@ class MavlinkBridge:
                     px4_version=f"v{major}.{minor}.{patch}",
                     px4_version_detail=detail,
                 )
+            # Kept on the bridge rather than in the telemetry state: these two
+            # identify the board for the firmware picker and are read once, not
+            # pushed to the browser on every frame.
+            try:
+                self._board_vendor_id = int(getattr(msg, "vendor_id", 0) or 0)
+                self._board_product_id = int(getattr(msg, "product_id", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+        elif name in ("LOG_ENTRY", "LOG_DATA"):
+            # Routed to the log service rather than handled here: the download
+            # is a stateful protocol, and the receive loop must not own it.
+            sink = self._log_sink
+            if sink is not None:
+                try:
+                    sink(msg)
+                except Exception:  # noqa: BLE001 - a sink must never kill the loop
+                    logger.debug("log sink raised", exc_info=True)
         elif name == "PARAM_VALUE":
             self._handle_param_value(msg)
         elif name == "VIBRATION":
@@ -2202,6 +2311,101 @@ class MavlinkBridge:
                     logger.debug("param retransmit idx=%d failed: %s", idx, exc)
 
     # ------------------------------------------------------------------
+    # On-board log download (MAVLink LOG_* protocol)
+    # ------------------------------------------------------------------
+
+    def set_log_sink(self, sink: Callable[[Any], None] | None) -> None:
+        """Route LOG_ENTRY / LOG_DATA to *sink* (None detaches)."""
+        self._log_sink = sink
+
+    def request_log_list(self, start: int = 0, end: int = 0xFFFF) -> bool:
+        """Ask the vehicle to enumerate its on-board logs.
+
+        Answered with a LOG_ENTRY per log, which the receive loop hands to the
+        registered sink. Fire-and-forget: the protocol has no ACK, so
+        completeness is judged from the entries themselves.
+        """
+        with self._operation_lock:
+            if not self._connection_ready():
+                self._set_command_error("not connected")
+                return False
+            try:
+                with self._send_lock:
+                    self._conn.mav.log_request_list_send(
+                        self._target_system, self._target_component,
+                        int(start), int(end),
+                    )
+            except Exception as exc:  # noqa: BLE001
+                self._set_command_error(f"log list request failed: {exc}")
+                return False
+            return True
+
+    def request_log_data(self, log_id: int, offset: int, count: int) -> bool:
+        """Ask for one chunk of a log. Answered with LOG_DATA messages."""
+        with self._operation_lock:
+            if not self._connection_ready():
+                self._set_command_error("not connected")
+                return False
+            try:
+                with self._send_lock:
+                    self._conn.mav.log_request_data_send(
+                        self._target_system, self._target_component,
+                        int(log_id), int(offset), int(count),
+                    )
+            except Exception as exc:  # noqa: BLE001
+                self._set_command_error(f"log data request failed: {exc}")
+                return False
+            return True
+
+    def erase_logs(self) -> bool:
+        """Erase EVERY on-board log via MAVLink LOG_ERASE (121).
+
+        There is no per-log delete in the MAVLink log protocol — LOG_ERASE
+        clears the whole log directory — so this method is named for what it
+        actually does rather than for what a caller might wish it did.
+
+        Refused while armed: it is destructive, irreversible, and has no
+        business happening with a vehicle that is live.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            if not self._connection_ready():
+                self._set_command_error("not connected")
+                return False
+            if self._store.get_snapshot().get("armed"):
+                self._set_command_error("cannot erase logs while armed")
+                return False
+            try:
+                with self._send_lock:
+                    self._conn.mav.log_erase_send(
+                        self._target_system, self._target_component,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                self._set_command_error(f"log erase failed: {exc}")
+                return False
+            self._console_publish("LOGS", "erasing all on-board logs", "warning")
+            return True
+
+    def log_request_end(self) -> bool:
+        """Tell the vehicle the GCS is done reading logs.
+
+        PX4 keeps the log session open until it hears this, which blocks
+        logging of the next flight — so it is sent on every exit path, success
+        or not.
+        """
+        with self._operation_lock:
+            if not self._connection_ready():
+                return False
+            try:
+                with self._send_lock:
+                    self._conn.mav.log_request_end_send(
+                        self._target_system, self._target_component,
+                    )
+            except Exception:  # noqa: BLE001 - best-effort teardown
+                return False
+            return True
+
+    # ------------------------------------------------------------------
     # Sensor calibration
     # ------------------------------------------------------------------
 
@@ -2248,6 +2452,32 @@ class MavlinkBridge:
             if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
                 return self._command_failure(f"Calibrate {sensor}", result)
             self._console_publish("CALIBRATE", f"{sensor} calibration started", "success")
+            return True
+
+    def cancel_calibration(self) -> bool:
+        """Abort a running calibration via MAV_CMD_PREFLIGHT_CALIBRATION (all 0).
+
+        PX4's Commander reads an all-zero PREFLIGHT_CALIBRATION as "cancel the
+        calibration currently in progress" — verified against v1.16, v1.17 and
+        v1.18. Without it, an operator who starts the wrong calibration, or one
+        that stalls waiting for a side it will never see, has no way out except
+        power-cycling the autopilot.
+
+        Deliberately not gated on the armed state: this only ever *stops* work
+        the vehicle is doing, so refusing it would be a safety regression rather
+        than defense in depth.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            if not self._connection_ready():
+                return self._command_failure("Cancel calibration", -2)
+            result = self._send_command_and_wait(
+                mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION,
+                [0.0] * 7, timeout=5.0, retries=0,
+            )
+            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                return self._command_failure("Cancel calibration", result)
+            self._console_publish("CALIBRATE", "calibration cancelled", "warning")
             return True
 
     # ------------------------------------------------------------------

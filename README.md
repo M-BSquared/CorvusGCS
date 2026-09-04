@@ -113,8 +113,10 @@ From one window you can:
   picker and sensible defaults for the Holybro SiK Radio V3.
 - **Tune parameters** — a lazy, armed-safe parameter editor; the full set is
   fetched only when you open it.
-- **Calibrate sensors** — one-tap compass, gyro, accelerometer, level-horizon,
-  airspeed, and baro calibration, with live PX4 step guidance.
+- **Calibrate sensors** — a guided wizard for compass, gyro, accelerometer,
+  level-horizon, airspeed and baro: the aircraft is drawn in the attitude PX4 is
+  asking for, every position is tracked as it completes, and a running
+  calibration can be aborted on the vehicle.
 - **Calibrate motors (ESC)** — PX4 motor/ESC calibration behind a safety-confirm
   modal (remove propellers first; motors spin at max PWM), with live STATUSTEXT
   guidance. Refused while armed.
@@ -530,29 +532,56 @@ to. *Import* reads the same file back and uploads it to the vehicle.
 
 ### Sensor calibration
 
-Setup → **Calibration** tile: one-tap sensor calibration for:
+Setup → **Calibration** tile: a guided wizard per sensor, not a row of buttons.
+The list names what each calibration is for, how many positions it needs, how
+long it takes, and whether the autopilot has to be rebooted afterwards:
 
-- Compass (magnetometer)
-- Gyroscope
-- Accelerometer
-- Level Horizon
-- Airspeed
-- Baro
+| Calibration | Positions | Typical time |
+| --- | --- | --- |
+| Accelerometer | 6 | 2–3 min (reboot after) |
+| Compass (magnetometer) | 6, each rotated | 3–5 min (reboot after) |
+| Level Horizon | stays still | < 30 s |
+| Gyroscope | stays still | < 30 s |
+| Barometer | stays still | < 30 s |
+| Airspeed | stays still | < 1 min |
+| Motors / ESC | stays still | 1–2 min |
 
-Calibration is **refused while armed**. PX4 also rejects calibration when armed,
-but Corvus refuses client-side first. During interactive calibrations (compass
-rotation, accelerometer positions) PX4 streams step-by-step guidance as
-`STATUSTEXT`, which appears in the MAVLink console and the warnings popover.
+**The aircraft is drawn, not described.** PX4 asks for a position in its own
+vocabulary — `[cal] Rotate to a pending side: back` — which is where field
+calibrations go wrong. Corvus renders a low-poly raven, wings spread, in the
+exact attitude the autopilot is asking for: a real 3-D model, rotated by the
+pose and shaded per face, standing on a ground plane so "down" is unambiguous.
+The compass figure rotates about the vertical axis, which is the motion PX4
+wants. Every position the calibration will ask for is shown as a strip beneath
+the figure and can be previewed before the aircraft is picked up; each one is
+marked active, done, or failed as the calibration runs.
+
+The wizard reads PX4's `STATUSTEXT` guidance off the console stream and turns it
+into the instruction on screen — progress, the position being measured, sides
+that completed, sides that were too shaky, operator prompts ("connect the
+battery now", "blow into the pitot"), and the final outcome. The raw autopilot
+transcript stays visible underneath as the audit trail. If the autopilot goes
+quiet after accepting the command, or stops talking mid-calibration, the wizard
+says so instead of leaving a spinner running.
+
+Calibration is **refused while armed** — PX4 rejects it too, but Corvus refuses
+client-side first — and the wizard states the missing precondition (no link, or
+armed) rather than failing at the moment the operator presses start.
+
+**Abort.** A running calibration can be stopped from the wizard: Corvus sends
+`MAV_CMD_PREFLIGHT_CALIBRATION` with all seven parameters at zero, which PX4
+reads as "cancel the calibration in progress". Without it, a calibration waiting
+for a position the operator cannot produce is only escapable by power-cycling
+the autopilot.
 
 ### Motors (ESC) calibration
 
-Setup → **Calibration** tile → **Motors (ESC)** button: PX4 motor/ESC
-calibration via `MAV_CMD_PREFLIGHT_CALIBRATION` (param7 = 1.0). A
-safety-confirm modal opens first — **remove all propellers** and follow the
-battery procedure (disconnect the flight battery, then re-plug it to power
-the ESCs when PX4 instructs). Motors spin at maximum PWM during calibration.
-Calibration is **refused while armed**, and PX4 streams step-by-step guidance
-as `STATUSTEXT` into the guidance list.
+Setup → **Calibration** → **Motors / ESC**: PX4 motor/ESC calibration via
+`MAV_CMD_PREFLIGHT_CALIBRATION` (param7 = 1.0). The card is flagged
+**Props off**, and starting it opens a safety-confirm modal — **remove all
+propellers** and follow the battery procedure (disconnect the flight battery,
+then re-plug it to power the ESCs when PX4 instructs). Motors spin at maximum
+PWM during calibration. Refused while armed, like every other calibration.
 
 ### Autotune
 
@@ -579,15 +608,210 @@ the telemetry state.
 ### Firmware
 
 Setup → **Firmware** tab (alongside **Calibration** and **Parameters**): flashes
-PX4 firmware onto the flight controller. The operator selects a PX4 firmware
-file (`.px4` / `.bin`); Corvus reboots the autopilot into its USB bootloader,
-uploads and verifies the image, then reboots into the new firmware.
+PX4 firmware onto the flight controller. Corvus reboots the autopilot into its
+USB bootloader, uploads and verifies the image, then reboots into the new
+firmware.
+
+**Two ways to choose an image.**
+
+*PX4 release (default).* Pick a release and your board; Corvus downloads the
+matching `.px4` for you. The release list comes from PX4's GitHub releases, the
+board list is that release's own build targets — around 150 per release, so
+there is a filter — and images already downloaded are marked, because those
+flash with no network at all. The newest **stable** release is preselected:
+PX4's newest tag is usually a beta, and a pre-release is a choice an operator
+should make deliberately rather than land on by not choosing.
+
+*Local file.* Select a `.px4` / `.bin` yourself — for custom builds, and for a
+laptop that has never been online.
+
+**Board detection.** Corvus tries to recognise what is plugged in and
+preselects it. PX4 builds its USB product string from the board, so the
+descriptor the OS already has ("PX4 FMU v6X.x", "CubeOrange") is the most direct
+answer; the token is then matched against *that release's own build targets*, so
+a board PX4 added after Corvus shipped is still found. For the few boards whose
+descriptor says nothing useful there is a short USB VID:PID table, and
+`AUTOPILOT_VERSION` supplies the same ids over a link with no serial device at
+all. A board sitting in its bootloader identifies itself too.
+
+It is a **suggestion**: the select stays free, and once the operator picks a
+board themselves detection stops moving the selection under them. An
+unrecognised device detects nothing rather than guessing — a wrong preselection
+is worse than none, because it is the one nobody re-reads.
+
+**What the app fetches, and when.** Nothing at startup, and nothing from the
+browser. The catalogue is fetched only when the Firmware page asks for it, by
+the *backend*, and is cached to `firmware_dir` (default `~/.corvus/firmware`)
+together with every image it downloads. Offline, the page serves that cache and
+says so; already-downloaded images still flash. This is the same deliberate
+exception the map tiles are (see the offline note at the top): operator-
+initiated, backend-side, and cached for the field.
+
+**What the browser cannot choose.** A flash request names a *release* and a
+*board*, never a URL. The backend resolves the download target from a fixed
+release-URL template and checks the host against an allow-list, so neither the
+frontend nor a tampered catalogue cache can point the fetch somewhere else.
+Bootloader and cannode images are filtered out of the board list entirely —
+they ship in the same release as the firmware and differ by one filename
+suffix, and flashing one through the firmware uploader bricks the board.
 
 **Direct-USB-only (hard constraint):** flashing is permitted **only** over a
 direct USB connection to the flight controller's CDC ACM device
 (`/dev/ttyACM*`). It is **refused** over a SiK telemetry radio
 (`/dev/ttyUSB*`) and over any UDP / TCP link — those transports cannot carry
 the bootloader protocol. Flashing is also **refused while the vehicle is armed**.
+The gate is re-checked *after* the download, too: the fetch takes time, and a
+vehicle that armed meanwhile must not be flashed. Download and flash are one
+job with one progress bar and one Cancel — including during the download, which
+is the longer half.
+
+### Firmware version
+
+The connected autopilot's firmware version is read from `AUTOPILOT_VERSION` and
+shown in the top bar and under Setup → **Vehicle Info → Firmware Version**. It
+arrives within a second or two of connecting and is **independent of the
+parameter download** — parameters are lazy, and a version that waited for them
+would stay blank for the whole flight.
+
+> Corvus asks for it three ways, because no single one covers the range: PX4
+> v1.16–v1.18 answer `MAV_CMD_REQUEST_MESSAGE` (message id 148), older builds
+> answer the deprecated `MAV_CMD_REQUEST_AUTOPILOT_CAPABILITIES`, and the bare
+> `AUTOPILOT_VERSION_REQUEST` message is an ArduPilot-era legacy that PX4 does
+> not handle at all. A single retry ~4 s after connect covers a slow or lossy
+> link.
+
+---
+
+## Analysis — flight-log download
+
+Left nav → **ANALYSIS**. Current Telemetry sits at the top (live, not a snapshot
+taken when the page opened), then a single slim row for the download folder,
+then one tile per log kind. Opening a tile **replaces** the page, the same way
+the Setup tiles do — a log list is a place you went to and Back is the way out,
+not a card that unfolds and pushes everything else off the screen. Each tile's subtitle carries its count, so "is there anything
+to fetch?" is answered before you open either one.
+
+Two kinds of log matter after a flight and they live in different places:
+
+| | Where it is | How it gets there |
+| --- | --- | --- |
+| **ULog** | the flight controller's SD card | pulled off the vehicle over the MAVLink `LOG_*` protocol |
+| **tlog** | this laptop, in `tlog_dir` | Corvus recorded it from the MAVLink stream as you flew |
+
+**One folder, chosen once.** The download folder is one slim row above the
+tiles — a setting, not a section — and is persisted to the config (`log_download_dir`, default
+`~/.corvus/flightlogs`), so it is already set the next time you connect. It is
+deliberately *not* `tlog_dir`: mixing what the app writes with what the operator
+pulled off the aircraft makes both harder to reason about. The folder is created
+and checked for writability when you set it — not after you have queued an hour
+of downloads into it.
+
+**It knows what it already has.** The download folder is scanned and every log
+the vehicle reports is matched against it: the ones already saved are tagged
+**in folder** with their path, and **Select missing** ticks only the rest — the
+common case after a flight. The match needs the id *and* the size to agree,
+because SD cards recycle log numbers and reporting last month's `log_003` as
+this flight's would send an operator home with the wrong evidence.
+
+**Select several, walk away.** Tick the logs you want and press Download; they
+are fetched **one after another**, with the current one marked, the rest queued,
+a progress bar, and a Cancel that works throughout. Sequential is a protocol
+constraint, not a simplification: MAVLink has a single log session per vehicle,
+so two concurrent downloads interleave their `LOG_DATA` and corrupt both files.
+
+Files land as `log_<id>_<UTC date>.ulg` — sortable, and still readable a month
+later.
+
+### Flight Review
+
+The third tile on the Analysis page. Pick a downloaded ULog and Corvus reads it
+**locally** — nothing is uploaded anywhere — and reduces it to the plots that
+answer "was that flight healthy?". Findings sit above the plots, the aircraft's
+own log messages below them, with a severity filter.
+
+**Flight modes are drawn behind everything.** The flight is shown as a coloured
+strip at the top — one band per mode, with a key — and the *same* bands sit
+behind every time-based plot. That is the difference between a graph and a
+story: an oscillation in Position and the same oscillation in Manual are
+different findings, and without the mode behind the trace you cannot tell them
+apart. Armed time is reported separately.
+
+> Two mode enums exist and they are not interchangeable: `vehicle_status`
+> carries `NAVIGATION_STATE_*`, the older `commander_state` carries
+> `MAIN_STATE_*`, and 6 means Position-slow in one and Acro in the other. Each
+> source is read with its own table. Where a firmware publishes a topic without
+> updating its timestamp — `commander_state` in the v1.4-era logs does exactly
+> that — no bands are drawn at all, because bands placed from a stopped clock
+> would relabel the whole flight.
+
+Up to 26 plots in six sections, with jump links across the top:
+
+| Section | Plots |
+| --- | --- |
+| **Flight** | ground track (north over east, equal axes), altitude, speed and climb rate, airspeed, estimated wind |
+| **Control** | attitude vs setpoint, angular rates vs rate setpoint, thrust demand |
+| **Airframe** | per-motor outputs |
+| **Estimator** | EKF innovation test ratios with the 1.0 rejection line drawn, **altitude sources compared** (estimator vs GPS vs barometer), **GPS vs estimated horizontal velocity**, estimated gyro bias |
+| **Sensors** | accelerometer clipping, vibration, magnetic field strength, IMU temperature, **barometer altitude and temperature**, GPS, **reported accuracy (eph/epv)**, GPS quality (fix type, jamming, noise), rangefinder |
+| **System** | battery voltage and current, pack state, processor and RAM, RC link |
+
+Only the plots the log can support are drawn — an airspeed plot on a multirotor
+log is absent, not empty, and the three-way altitude comparison appears only
+when at least two sources are present.
+
+Findings are limited to what the log actually shows: accel clipping, EKF
+rejection, motor imbalance (one output averaging far above the others — an
+airframe problem, not a tuning one), vibration graded against PX4's own
+thresholds, RC signal loss, pack sag, logging dropouts, truncation, and
+error-level messages. No score, no grade: a review that invents a verdict is
+worse than one that points at the plot.
+
+It is modelled on [PX4's flight_review](https://github.com/PX4/flight_review)
+and deliberately not a port of it: this is the pass an operator makes between
+flights, not a full analysis suite.
+
+Three things are load-bearing:
+
+- **The ULog reader is ours, not a dependency** (`corvus/ulog.py`, stdlib
+  `struct`). The format is small and stable, the app has to stay self-contained
+  for the offline build, and a parser we own cannot change its rules under a
+  field release. It is validated by diffing every decoded field against the
+  reference implementation (pyulog) on PX4's own sample log — **153 fields,
+  zero mismatches**, parameters and logged messages identical.
+- **Decimation keeps the spikes.** A ten-minute log is hundreds of thousands of
+  samples and the browser gets ~1200. Stride sampling would drop exactly the
+  frame where a motor saturated or an accel clipped, so each bucket contributes
+  its most extreme sample instead.
+- **Version tolerance.** PX4 renames topics and fields between releases, so
+  every plot names several candidates and takes the first the log actually
+  contains — a v1.14 log and a v1.18 log both produce something. PX4's own 2016
+  sample log still yields nine plots across all six sections.
+
+A truncated log — the aircraft lost power mid-write, which is when the log
+matters most — is read up to the cut and says so rather than being rejected.
+
+**Erasing the vehicle.** *Erase all on vehicle* clears the flight controller's
+log directory. It is deliberately not a bin icon per row: MAVLink's log
+protocol has **no per-log delete**, `LOG_ERASE` takes everything, and a control
+that looked like it removed one log would be lying. The confirm states how many
+logs are about to go and — the number that matters — how many of them are not
+yet in the download folder and therefore unrecoverable. Refused while armed and
+while another log job owns the vehicle's log session. Afterwards the list is
+re-read from the vehicle rather than assumed, so what you see is the result and
+not our optimism. Files already downloaded to the laptop are untouched; that is
+the whole point of downloading first.
+
+Three things the download does that the bare protocol does not:
+
+- **A lost packet is re-requested, not written as a hole.** The `LOG_*` protocol
+  has no ACK and no retransmit of its own. Corvus tracks which bytes actually
+  arrived and re-asks for the first real gap; a file that opens and lies is
+  worse than a download that fails.
+- **One bad log does not abandon the queue.** An operator who selects five logs
+  and walks away gets the other four.
+- **The log session is always ended.** PX4 keeps it open until it hears
+  `LOG_REQUEST_END`, and an open session blocks logging of the next flight, so
+  it is sent on every exit path — success, failure, or cancel.
 
 ---
 

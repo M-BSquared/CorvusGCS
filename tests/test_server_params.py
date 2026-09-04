@@ -36,6 +36,7 @@ class FakeParamBridge:
         self.requested_lists: int = 0
         self.set_calls: list[tuple[str, float]] = []
         self.calibrate_calls: list[str] = []
+        self.cancel_calls: int = 0
         self.autotune_calls: list[str] = []
         self.upload_calls: list[list[dict]] = []
         self.param_listeners: list[Any] = []
@@ -78,6 +79,10 @@ class FakeParamBridge:
 
     def calibrate(self, sensor: str) -> bool:
         self.calibrate_calls.append(sensor)
+        return self.result
+
+    def cancel_calibration(self) -> bool:
+        self.cancel_calls += 1
         return self.result
 
     def autotune(self, axis: str) -> bool:
@@ -527,6 +532,35 @@ def test_calibrate_without_bridge_returns_503() -> None:
 
 
 # ---- POST /api/autotune ----
+
+def test_calibrate_cancel_ok_calls_bridge() -> None:
+    """The abort path has to reach the vehicle.
+
+    A calibration that stalls waiting for a side the operator cannot produce is
+    otherwise only escapable by power-cycling the autopilot.
+    """
+    bridge = FakeParamBridge()
+    handler, responses = _handler_with_bridge(bridge)
+    handler._api_calibrate_cancel({})
+    assert bridge.cancel_calls == 1
+    assert responses == [({"ok": True}, 200)]
+
+
+def test_calibrate_cancel_rejected_returns_409() -> None:
+    bridge = FakeParamBridge(result=False, error="Cancel calibration failed: DENIED")
+    handler, responses = _handler_with_bridge(bridge)
+    handler._api_calibrate_cancel({})
+    body, status = responses[0]
+    assert status == 409
+    assert body["ok"] is False
+    assert "DENIED" in body["error"]
+
+
+def test_calibrate_cancel_without_bridge_returns_503() -> None:
+    handler, responses = _handler_without_bridge()
+    handler._api_calibrate_cancel({})
+    assert responses == [({"ok": False, "error": "not connected"}, 503)]
+
 
 def test_autotune_roll_ok_calls_bridge_lowercased() -> None:
     bridge = FakeParamBridge(result=True)

@@ -89,6 +89,9 @@ Corvus.theme = (function () {
 
 Corvus.sidenav = (function () {
   let leftNav, mapView, pageView;
+  // Teardown for the Analysis page's log downloader (poll timer + telemetry
+  // subscription). Paired 1:1 with every render of that page.
+  let analysisDestroy = null;
   let activeNav = "home";
 
   // Monotonic navigation generation. Bumped on every switchTo so async work
@@ -153,6 +156,11 @@ Corvus.sidenav = (function () {
     if (prev === "setup" && navId !== "setup" &&
         Corvus.setup && typeof Corvus.setup.teardown === "function") {
       Corvus.setup.teardown();
+    }
+    // Same for the Analysis page's log downloader, on every left-nav exit.
+    if (typeof analysisDestroy === "function") {
+      try { analysisDestroy(); } catch (err) { console.error("analysis teardown failed:", err); }
+      analysisDestroy = null;
     }
     leftNav.querySelectorAll(".nav-item").forEach((x) =>
       x.classList.toggle("active", x.dataset.nav === navId));
@@ -224,23 +232,15 @@ Corvus.sidenav = (function () {
   }
 
   function renderAnalysisPage(container) {
-    container.appendChild(pageHeader("Analysis", "Telemetry analysis and flight statistics"));
-    const state = Corvus.telemetry.getState() || {};
-    const card = Corvus.ui.card({});
-    if (state.connected) {
-      card.appendChild(row("Altitude AMSL", `${Math.round(state.altitude_amsl)} m`));
-      card.appendChild(row("Altitude AGL", `${Math.round(state.altitude_agl)} m`));
-      card.appendChild(row("Groundspeed", `${state.groundspeed.toFixed(1)} m/s`));
-      card.appendChild(row("Vertical speed", `${state.vspeed.toFixed(1)} m/s`));
-      card.appendChild(row("Heading", `${Math.round(state.heading)}°`));
-      card.appendChild(row("Pitch", `${state.pitch.toFixed(1)}°`));
-      card.appendChild(row("Roll", `${state.roll.toFixed(1)}°`));
-      card.appendChild(row("Battery", `${state.battery_voltage.toFixed(1)} V (${state.battery_percent}%)`));
-      card.appendChild(row("GPS Fix", `${state.gps_fix} (${state.gps_satellites} sats)`));
-    } else {
-      card.appendChild(Corvus.ui.empty("Vehicle not connected."));
+    container.appendChild(pageHeader("Analysis",
+      "Flight logs and telemetry analysis"));
+    // The whole page body (live telemetry, the download folder, the two log
+    // tiles and their sub-pages) is owned by Corvus.analysis, the same way
+    // Corvus.setup owns the Setup page. It holds a poll timer and two
+    // telemetry subscriptions, so it is torn down on every left-nav exit.
+    if (Corvus.analysis && typeof Corvus.analysis.render === "function") {
+      analysisDestroy = Corvus.analysis.render(container);
     }
-    container.appendChild(Corvus.ui.section({ title: "Current Telemetry", body: card }));
   }
 
   // --- Settings page data ---

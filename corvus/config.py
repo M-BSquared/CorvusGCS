@@ -42,6 +42,8 @@ _CONFIG_FIELD_ORDER: tuple[str, ...] = (
     "tile_cache_dir",
     "tlog_dir",
     "params_dir",
+    "firmware_dir",
+    "log_download_dir",
     "tile_sources",
     "stream_rates",
     "ssh_connections",
@@ -59,9 +61,10 @@ _SSH_CONN_KEYS: tuple[str, ...] = ("name", "host", "port", "username", "key_path
 class CorvusConfig:
     """Operator-tunable runtime defaults.
 
-    Empty-string dir fields (``tile_cache_dir``/``tlog_dir``/``params_dir``)
-    mean "use the built-in default" (``~/.corvus/tiles`` / ``~/.corvus/logs``
-    / ``~/.corvus/params``); a non-empty value pins the location. ``None`` dict fields mean "use built-in
+    Empty-string dir fields (``tile_cache_dir``/``tlog_dir``/``params_dir``/
+    ``firmware_dir``/``log_download_dir``) mean "use the built-in default"
+    (``~/.corvus/tiles`` / ``~/.corvus/logs`` / ``~/.corvus/params`` /
+    ``~/.corvus/firmware`` / ``~/.corvus/flightlogs``); a non-empty value pins the location. ``None`` dict fields mean "use built-in
     defaults"; a dict overrides the whole registry.
 
     ``ssh_connections``/``theme``/``map``/``branding`` are persisted operator UI state:
@@ -80,6 +83,8 @@ class CorvusConfig:
     tile_cache_dir: str = ""          # "" = ~/.corvus/tiles (default_cache_dir)
     tlog_dir: str = ""               # "" = ~/.corvus/logs
     params_dir: str = ""             # "" = ~/.corvus/params (exported param files)
+    firmware_dir: str = ""           # "" = ~/.corvus/firmware (downloaded PX4 images)
+    log_download_dir: str = ""       # "" = ~/.corvus/flightlogs (ULogs + exported tlogs)
     tile_sources: dict[str, dict] | None = None
     stream_rates: dict | None = None
     ssh_connections: list[dict[str, Any]] = dataclasses.field(default_factory=list)
@@ -257,6 +262,14 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
     if isinstance(data.get("params_dir"), str):
         params_dir = data["params_dir"]
 
+    firmware_dir = defaults.firmware_dir
+    if isinstance(data.get("firmware_dir"), str):
+        firmware_dir = data["firmware_dir"]
+
+    log_download_dir = defaults.log_download_dir
+    if isinstance(data.get("log_download_dir"), str):
+        log_download_dir = data["log_download_dir"]
+
     tile_sources = defaults.tile_sources
     if isinstance(data.get("tile_sources"), dict):
         tile_sources = data["tile_sources"]
@@ -276,6 +289,8 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         tile_cache_dir=tile_cache_dir,
         tlog_dir=tlog_dir,
         params_dir=params_dir,
+        firmware_dir=firmware_dir,
+        log_download_dir=log_download_dir,
         tile_sources=tile_sources,
         stream_rates=stream_rates,
         ssh_connections=ssh_connections,
@@ -322,6 +337,8 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
         "tile_cache_dir": cfg.tile_cache_dir,
         "tlog_dir": cfg.tlog_dir,
         "params_dir": cfg.params_dir,
+        "firmware_dir": cfg.firmware_dir,
+        "log_download_dir": cfg.log_download_dir,
         "ssh_connections": [dict(entry) for entry in cfg.ssh_connections],
     }
     if cfg.tile_sources is not None:

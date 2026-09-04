@@ -69,15 +69,20 @@ Corvus.setupShared = (function () {
   }
 
   /** Back button used at the top of each sub-page (apple-design: same path in
-   *  and out — back returns along the entry path). */
-  function backButton(onBack) {
+   *  and out — back returns along the entry path).
+   *
+   *  `label` names where back goes; it defaults to "Setup" because that is
+   *  where this helper started, but a sub-page on another screen has to say
+   *  its own parent or the button lies about the destination. */
+  function backButton(onBack, label) {
+    const target = label || "Setup";
     return Corvus.ui.button({
       variant: "ghost",
       size: "sm",
       className: "setup-back",
       icon: "chevron-left",
-      label: "Setup",
-      ariaLabel: "Back to Setup",
+      label: target,
+      ariaLabel: "Back to " + target,
       onClick: onBack,
     });
   }

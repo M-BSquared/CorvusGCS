@@ -239,16 +239,23 @@ Corvus.ui = (function () {
     if (!el) return;
     const prev = value != null ? value : el.value;
     el.innerHTML = "";
+    /* The selection is restored from the values we just appended rather than
+       from `el.options`, which exists only on a real <select> — reading it made
+       this helper throw anywhere the element was a stand-in for one. */
+    const values = [];
     (options || []).forEach((raw) => {
       const item = (raw && typeof raw === "object") ? raw : { value: raw, label: raw };
       const opt = document.createElement("option");
       opt.value = String(item.value == null ? "" : item.value);
       opt.textContent = String(item.label == null ? item.value : item.label);
       if (item.disabled) opt.disabled = true;
+      values.push(opt.value);
       el.appendChild(opt);
     });
-    if (prev != null && Array.prototype.some.call(el.options, (o) => o.value === String(prev))) {
+    if (prev != null && values.indexOf(String(prev)) >= 0) {
       el.value = String(prev);
+    } else if (values.length) {
+      el.value = values[0];
     }
   }
 

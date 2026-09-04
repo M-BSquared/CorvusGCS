@@ -95,6 +95,62 @@ Corvus.telemetry = (function () {
     };
   }
 
+  /* ---------------- console / STATUSTEXT bus ----------------
+     One EventSource for /api/console/stream, shared by every consumer and
+     reference-counted, because the browser caps concurrent HTTP/1.1 streams per
+     origin at six and this app already runs telemetry, params, tiles and
+     firmware streams alongside it. The MAVLink console panel and the
+     calibration wizard both need the same ordered STATUSTEXT feed; a second
+     connection for the second consumer is exactly the kind of thing that
+     silently stalls a stream in the field. */
+  const consoleSubs = new Set();
+  let consoleSource = null;
+
+  function openConsoleStream() {
+    if (consoleSource) return;
+    consoleSource = new EventSource("/api/console/stream");
+    consoleSource.addEventListener("message", (e) => {
+      let entry;
+      try {
+        entry = JSON.parse(e.data);
+      } catch (err) {
+        console.error("console SSE parse:", err);
+        return;
+      }
+      if (!entry || entry.name === "ping") return;
+      consoleSubs.forEach((fn) => {
+        try { fn(entry); } catch (err) { console.error("console subscriber failed:", err); }
+      });
+    });
+    consoleSource.onerror = () => {};
+  }
+
+  function closeConsoleStream() {
+    if (!consoleSource) return;
+    consoleSource.close();
+    consoleSource = null;
+  }
+
+  /**
+   * Subscribe to console entries `{ts, name, text, level}`. The stream opens on
+   * the first subscriber and closes when the last one unsubscribes, so a
+   * transient consumer (the calibration wizard) leaves no socket behind.
+   * @param {function(Object):void} fn
+   * @returns {function():void} unsubscribe — idempotent.
+   */
+  function subscribeConsole(fn) {
+    if (typeof fn !== "function") return function () {};
+    consoleSubs.add(fn);
+    openConsoleStream();
+    let released = false;
+    return function () {
+      if (released) return;
+      released = true;
+      consoleSubs.delete(fn);
+      if (consoleSubs.size === 0) closeConsoleStream();
+    };
+  }
+
   function getState() { return state; }
 
   function subscribe(fn) {
@@ -150,5 +206,8 @@ Corvus.telemetry = (function () {
     return postAction("/api/mavlink/connect", { connection: conn });
   }
 
-  return { connect, getState, subscribe, requestJson, postAction, sendCommand, arm, setMode, connectMavlink };
+  return {
+    connect, getState, subscribe, subscribeConsole, requestJson, postAction,
+    sendCommand, arm, setMode, connectMavlink,
+  };
 })();

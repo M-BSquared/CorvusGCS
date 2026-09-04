@@ -1,0 +1,1067 @@
+"""Flight Review — a ULog reduced to the handful of plots that answer
+"was that flight healthy?".
+
+Modelled on PX4's own flight_review, deliberately not a port of it: this is the
+quick pass an operator makes between flights, not a full analysis suite. It
+covers the things that actually ground an aircraft — motors saturating, accel
+clipping, EKF rejecting its own measurements, a battery sagging — plus whatever
+PX4 printed to the log while it flew.
+
+Two properties matter more than breadth here:
+
+* **Version tolerance.** PX4 renames topics and fields between releases. Every
+  plot names several candidates and takes the first the log actually contains,
+  so a v1.14 log and a v1.18 log both produce something rather than one of them
+  producing an empty page.
+* **Honest decimation.** A ten-minute log has hundreds of thousands of samples
+  and the browser gets a few thousand. Stride decimation would drop exactly the
+  spikes a review is looking for, so each bucket contributes its most extreme
+  sample instead.
+"""
+from __future__ import annotations
+
+import math
+from typing import Any, Callable, Iterable
+
+from .ulog import ULog
+
+# Points per series handed to the browser. Plotly draws this smoothly and it is
+# far more resolution than a between-flights check needs.
+MAX_POINTS = 1200
+
+
+def _decimate(times: list[float], values: list[float]) -> tuple[list[float], list[float]]:
+    """Reduce to MAX_POINTS, keeping the extreme sample of each bucket.
+
+    Stride decimation is the wrong filter for this job: a review is hunting for
+    the one frame where a motor saturated or an accel clipped, and taking every
+    n-th sample is precisely how that frame gets dropped.
+    """
+    count = len(values)
+    if count <= MAX_POINTS:
+        return times, values
+    step = count / MAX_POINTS
+    out_t: list[float] = []
+    out_v: list[float] = []
+    for bucket in range(MAX_POINTS):
+        start = int(bucket * step)
+        end = max(start + 1, int((bucket + 1) * step))
+        best = start
+        best_abs = -1.0
+        for index in range(start, min(end, count)):
+            value = values[index]
+            magnitude = abs(value) if value == value else -1.0
+            if magnitude > best_abs:
+                best_abs = magnitude
+                best = index
+        out_t.append(times[best])
+        out_v.append(values[best])
+    return out_t, out_v
+
+
+def _first_topic(log: ULog, names: Iterable[str]) -> str | None:
+    for name in names:
+        if log.has(name):
+            return name
+    return None
+
+
+def _first_field(log: ULog, topic: str, names: Iterable[str], multi_id: int = 0) -> str | None:
+    fields = log.data.get(topic, {}).get(multi_id, {})
+    for name in names:
+        if name in fields and fields[name]:
+            return name
+    return None
+
+
+def _time_axis(log: ULog, topic: str, multi_id: int = 0) -> list[float]:
+    """Seconds since the first sample of the log."""
+    stamps = log.series(topic, "timestamp", multi_id)
+    if not stamps:
+        return []
+    base = _log_start(log)
+    return [(t - base) / 1e6 for t in stamps]
+
+
+_START_CACHE = "_flight_review_start"
+
+
+def _advancing(stamps: list) -> bool:
+    """True when a topic's timestamps actually move.
+
+    Some PX4 versions publish a topic without updating its timestamp —
+    `commander_state` in the v1.4-era logs is one — leaving 678 records that all
+    claim the same microsecond. Such a topic is not a clock, and letting one
+    become the time base shifts every plot in the review by however far its
+    frozen value sits from the real start.
+    """
+    return len(stamps) > 1 and stamps[-1] > stamps[0]
+
+
+def _log_start(log: ULog) -> int:
+    """Earliest timestamp across the topics whose clocks run — the flight's t=0."""
+    cached = getattr(log, _START_CACHE, None)
+    if cached is not None:
+        return cached
+    best: int | None = None
+    fallback: int | None = None
+    for instances in log.data.values():
+        for fields in instances.values():
+            stamps = fields.get("timestamp")
+            if not stamps:
+                continue
+            if fallback is None or stamps[0] < fallback:
+                fallback = stamps[0]
+            if _advancing(stamps) and (best is None or stamps[0] < best):
+                best = stamps[0]
+    resolved = best if best is not None else (fallback or 0)
+    setattr(log, _START_CACHE, resolved)
+    return resolved
+
+
+def _series(
+    log: ULog, topic: str, field: str, name: str, multi_id: int = 0,
+    scale: float = 1.0, transform: Callable[[float], float] | None = None,
+) -> dict[str, Any] | None:
+    values = log.series(topic, field, multi_id)
+    if not values:
+        return None
+    times = _time_axis(log, topic, multi_id)
+    if len(times) != len(values):
+        span = min(len(times), len(values))
+        times, values = times[:span], values[:span]
+    numeric: list[float] = []
+    for value in values:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            number = float("nan")
+        if transform is not None and number == number:
+            number = transform(number)
+        numeric.append(number * scale)
+    times, numeric = _decimate(times, numeric)
+    return {"name": name, "x": [round(t, 3) for t in times],
+            "y": [None if v != v else round(v, 5) for v in numeric]}
+
+
+def _plot(plot_id: str, title: str, unit: str, series: list,
+          group: str = "Flight", **extra: Any) -> dict | None:
+    """A plot, or None when the log carries nothing to draw.
+
+    `group` sections the page: a review with two dozen plots is a scroll unless
+    the reader can tell "estimator" from "airframe" without reading titles.
+    """
+    kept = [s for s in series if s]
+    if not kept:
+        return None
+    plot = {"id": plot_id, "title": title, "unit": unit,
+            "group": group, "series": kept}
+    plot.update(extra)
+    return plot
+
+
+def _vector(log: ULog, topic: str, field: str, labels: tuple[str, ...],
+            multi_id: int = 0, scale: float = 1.0) -> list:
+    """Split an array field into one series per component."""
+    values = log.series(topic, field, multi_id)
+    if not values or not isinstance(values[0], list):
+        return []
+    out = []
+    for index, label in enumerate(labels):
+        if index >= len(values[0]):
+            break
+        column = [
+            float(row[index]) * scale if index < len(row) else float("nan")
+            for row in values
+        ]
+        out.append(_series_from_column(log, topic, column, label, multi_id))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Individual plots
+# ---------------------------------------------------------------------------
+
+def _plot_actuators(log: ULog) -> dict | None:
+    """Per-motor output. A motor pinned at its limit is the classic finding."""
+    topic = _first_topic(log, ("actuator_motors", "actuator_outputs"))
+    if topic is None:
+        return None
+    series = []
+    if topic == "actuator_motors":
+        values = log.series(topic, "control", 0)
+        if not values:
+            return None
+        width = min(8, len(values[0]) if values else 0)
+        for index in range(width):
+            column = [row[index] if index < len(row) else float("nan") for row in values]
+            if all(v != v or v <= 0 for v in column):
+                continue
+            series.append(_series_from_column(log, topic, column, f"Motor {index + 1}"))
+        unit = "normalised"
+    else:
+        values = log.series(topic, "output", 0)
+        if not values:
+            return None
+        # `noutputs` says how many channels the mixer actually drives; the rest
+        # of the fixed-width array is padding and plotting it buries the ones
+        # that matter under flat lines.
+        counts = log.series(topic, "noutputs", 0)
+        width = int(counts[0]) if counts else len(values[0])
+        width = max(0, min(8, width, len(values[0]) if values else 0))
+        for index in range(width):
+            column = [row[index] if index < len(row) else float("nan") for row in values]
+            finite = [v for v in column if v == v]
+            if not finite or all(v == 0 for v in finite):
+                continue
+            series.append(_series_from_column(log, topic, column, f"Output {index + 1}"))
+        unit = "µs"
+    note = ("A motor sitting at its limit while the others do not is an "
+            "imbalance — check the airframe, not the tuning.")
+    # A flat plot is still an answer, and a missing one is not: "the motors
+    # never ran" is exactly what you need to know about a log that has no
+    # flight in it.
+    flat = all(len({y for y in s["y"] if y is not None}) <= 1 for s in series if s)
+    if series and flat:
+        note = "The outputs never changed — the motors did not run in this log."
+    return _plot("actuators", "Motor outputs", unit, series, note=note,
+    group="Airframe")
+
+
+def _series_from_column(log: ULog, topic: str, column: list[float], name: str,
+                        multi_id: int = 0) -> dict:
+    times = _time_axis(log, topic, multi_id)
+    span = min(len(times), len(column))
+    t, v = _decimate(times[:span], [float(x) for x in column[:span]])
+    return {"name": name, "x": [round(x, 3) for x in t],
+            "y": [None if y != y else round(y, 5) for y in v]}
+
+
+def _plot_clipping(log: ULog) -> dict | None:
+    """Accelerometer clipping counters — a saturated IMU lies to the EKF."""
+    topic = _first_topic(log, ("vehicle_imu_status", "sensor_accel_status"))
+    if topic is None:
+        return None
+    series = []
+    for multi_id in log.instances(topic)[:3]:
+        values = log.series(topic, "accel_clipping", multi_id)
+        if values and isinstance(values[0], list):
+            total = [float(sum(row)) for row in values]
+        else:
+            counter = _first_field(log, topic, ("accel_clipping_count",), multi_id)
+            if counter is None:
+                continue
+            total = [float(v) for v in log.series(topic, counter, multi_id)]
+        if not total or max(total) <= 0:
+            continue
+        times = _time_axis(log, topic, multi_id)
+        span = min(len(times), len(total))
+        t, v = _decimate(times[:span], total[:span])
+        series.append({"name": f"IMU {multi_id}", "x": [round(x, 3) for x in t],
+                       "y": [round(y, 1) for y in v]})
+    return _plot("clipping", "Accelerometer clipping", "clipped samples (cumulative)",
+                 series,
+                 note="Any rise at all means the accelerometer saturated — "
+                      "soften the flight-controller mounting before trusting "
+                      "the rest of this log.",
+                      group="Sensors")
+
+
+def _plot_vibration(log: ULog) -> dict | None:
+    topic = _first_topic(log, ("vehicle_imu_status", "estimator_status"))
+    if topic is None:
+        return None
+    series = []
+    if topic == "vehicle_imu_status":
+        for multi_id in log.instances(topic)[:3]:
+            field = _first_field(log, topic, ("accel_vibration_metric",), multi_id)
+            if field is None:
+                continue
+            series.append(_series(log, topic, field, f"IMU {multi_id}", multi_id))
+    else:
+        values = log.series(topic, "vibe", 0)
+        if values and isinstance(values[0], list):
+            labels = ["Delta angle", "Delta velocity", "Peak accel"]
+            for index in range(min(3, len(values[0]))):
+                column = [row[index] for row in values]
+                series.append(_series_from_column(log, topic, column, labels[index]))
+    return _plot("vibration", "Vibration", "m/s²", series,
+                 note="Look for a level that climbs with throttle — that is a "
+                      "propeller or motor problem, not a tuning one.",
+                      group="Sensors")
+
+
+def _plot_ekf(log: ULog) -> dict | None:
+    """EKF innovation test ratios. Above 1.0 the filter is rejecting a sensor."""
+    if not log.has("estimator_status"):
+        return None
+    names = (("mag_test_ratio", "Magnetometer"), ("vel_test_ratio", "Velocity"),
+             ("pos_test_ratio", "Position"), ("hgt_test_ratio", "Height"),
+             ("tas_test_ratio", "Airspeed"))
+    series = []
+    for field, label in names:
+        found = _first_field(log, "estimator_status", (field,))
+        if found:
+            series.append(_series(log, "estimator_status", found, label))
+    return _plot("ekf", "EKF innovation test ratios", "ratio", series,
+                 threshold=1.0,
+                 note="1.0 is the rejection threshold: above it the estimator "
+                      "is discarding that sensor. Brief spikes are normal, a "
+                      "sustained excursion is not.",
+                      group="Estimator")
+
+
+def _plot_attitude(log: ULog) -> dict | None:
+    """Roll and pitch, estimate against setpoint — the tracking question."""
+    topic = _first_topic(log, ("vehicle_attitude", "control_state"))
+    if topic is None:
+        return None
+    quats = log.series(topic, "q", 0)
+    if not quats or not isinstance(quats[0], list):
+        return None
+    times = _time_axis(log, topic, 0)
+    roll: list[float] = []
+    pitch: list[float] = []
+    for q in quats:
+        if len(q) < 4:
+            roll.append(float("nan"))
+            pitch.append(float("nan"))
+            continue
+        w, x, y, z = float(q[0]), float(q[1]), float(q[2]), float(q[3])
+        roll.append(math.degrees(math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))))
+        sin_pitch = max(-1.0, min(1.0, 2 * (w * y - z * x)))
+        pitch.append(math.degrees(math.asin(sin_pitch)))
+    span = min(len(times), len(roll))
+    series = []
+    for values, label in ((roll, "Roll"), (pitch, "Pitch")):
+        t, v = _decimate(times[:span], values[:span])
+        series.append({"name": label, "x": [round(x, 3) for x in t],
+                       "y": [None if y != y else round(y, 3) for y in v]})
+    setpoint = _first_topic(log, ("vehicle_attitude_setpoint",))
+    if setpoint:
+        for field, label in (("roll_body", "Roll setpoint"), ("pitch_body", "Pitch setpoint")):
+            found = _first_field(log, setpoint, (field,))
+            if found:
+                series.append(_series(log, setpoint, found, label,
+                                      transform=math.degrees))
+    return _plot("attitude", "Attitude", "degrees", series,
+                 note="The estimate should follow the setpoint closely. A "
+                      "persistent gap is a tuning problem; a sudden divergence "
+                      "is not.",
+                      group="Control")
+
+
+def _plot_altitude(log: ULog) -> dict | None:
+    topic = _first_topic(log, ("vehicle_local_position", "vehicle_global_position"))
+    if topic is None:
+        return None
+    series = []
+    if topic == "vehicle_local_position":
+        field = _first_field(log, topic, ("z",))
+        if field:
+            # NED: down is positive, and nobody reads altitude that way.
+            series.append(_series(log, topic, field, "Altitude (local)", scale=-1.0))
+    else:
+        field = _first_field(log, topic, ("alt",))
+        if field:
+            series.append(_series(log, topic, field, "Altitude (AMSL)"))
+    return _plot("altitude", "Altitude", "m", series,
+    group="Flight")
+
+
+def _plot_battery(log: ULog) -> dict | None:
+    if not log.has("battery_status"):
+        return None
+    voltage = _first_field(log, "battery_status", ("voltage_filtered_v", "voltage_v"))
+    current = _first_field(log, "battery_status", ("current_filtered_a", "current_a"))
+    series = []
+    if voltage:
+        series.append(_series(log, "battery_status", voltage, "Voltage"))
+    if current:
+        series.append(_series(log, "battery_status", current, "Current"))
+    return _plot("battery", "Battery", "V / A", series,
+                 note="A voltage that dives under throttle and recovers is a "
+                      "tired pack, and it is the reading that decides whether "
+                      "the next flight is a good idea.",
+                      group="System")
+
+
+def _plot_cpu(log: ULog) -> dict | None:
+    if not log.has("cpuload"):
+        return None
+    series = [
+        _series(log, "cpuload", "load", "CPU load", scale=100.0),
+        _series(log, "cpuload", "ram_usage", "RAM used", scale=100.0),
+    ]
+    return _plot("cpu", "Processor", "%", series,
+    group="System")
+
+
+def _plot_gps(log: ULog) -> dict | None:
+    topic = _first_topic(log, ("vehicle_gps_position", "sensor_gps"))
+    if topic is None:
+        return None
+    series = []
+    sats = _first_field(log, topic, ("satellites_used",))
+    if sats:
+        series.append(_series(log, topic, sats, "Satellites"))
+    eph = _first_field(log, topic, ("eph",))
+    if eph:
+        series.append(_series(log, topic, eph, "Horizontal accuracy (m)"))
+    return _plot("gps", "GPS", "count / m", series,
+    group="Sensors")
+
+
+def _plot_rates(log: ULog) -> dict | None:
+    """Angular rates against their setpoints — the tuning plot.
+
+    Everything else says whether the aircraft was healthy; this one says
+    whether it was *tuned*.
+    """
+    topic = _first_topic(log, ("vehicle_angular_velocity", "sensor_combined"))
+    if topic is None:
+        return None
+    if topic == "vehicle_angular_velocity":
+        series = _vector(log, topic, "xyz", ("Roll rate", "Pitch rate", "Yaw rate"),
+                         scale=180.0 / math.pi)
+    else:
+        series = _vector(log, topic, "gyro_rad", ("Roll rate", "Pitch rate", "Yaw rate"),
+                         scale=180.0 / math.pi)
+    setpoint = _first_topic(log, ("vehicle_rates_setpoint",))
+    if setpoint:
+        for field, label in (("roll", "Roll setpoint"), ("pitch", "Pitch setpoint"),
+                             ("yaw", "Yaw setpoint")):
+            found = _first_field(log, setpoint, (field,))
+            if found:
+                series.append(_series(log, setpoint, found, label,
+                                      scale=180.0 / math.pi))
+    return _plot("rates", "Angular rates", "deg/s", series, group="Control",
+                 note="The rate should sit on its setpoint. Lag means the gains "
+                      "are low; overshoot and ringing mean they are high.")
+
+
+def _plot_track(log: ULog) -> dict | None:
+    """The flight path from above — the one plot that is not against time."""
+    if not log.has("vehicle_local_position"):
+        return None
+    north = log.series("vehicle_local_position", "x", 0)
+    east = log.series("vehicle_local_position", "y", 0)
+    if not north or not east:
+        return None
+    span = min(len(north), len(east))
+    if span < 2:
+        return None
+    step = max(1, span // MAX_POINTS)
+    xs = [round(float(east[i]), 2) for i in range(0, span, step)]
+    ys = [round(float(north[i]), 2) for i in range(0, span, step)]
+    if max(xs) - min(xs) < 0.5 and max(ys) - min(ys) < 0.5:
+        return None            # never moved; a dot is not a track
+    return _plot("track", "Ground track", "m", [{"name": "Path", "x": xs, "y": ys}],
+                 group="Flight", xlabel="East (m)", equal=True, mode="lines",
+                 note="Local position, north up. Origin is where the estimator "
+                      "started, not a survey point.")
+
+
+def _plot_velocity(log: ULog) -> dict | None:
+    if not log.has("vehicle_local_position"):
+        return None
+    series = []
+    vx = log.series("vehicle_local_position", "vx", 0)
+    vy = log.series("vehicle_local_position", "vy", 0)
+    if vx and vy:
+        span = min(len(vx), len(vy))
+        ground = [math.hypot(float(vx[i]), float(vy[i])) for i in range(span)]
+        series.append(_series_from_column(log, "vehicle_local_position",
+                                          ground, "Ground speed"))
+    vz = _first_field(log, "vehicle_local_position", ("vz",))
+    if vz:
+        # NED again: down is positive, and a climb should read as a climb.
+        series.append(_series(log, "vehicle_local_position", vz, "Climb rate",
+                              scale=-1.0))
+    return _plot("velocity", "Speed", "m/s", series, group="Flight")
+
+
+def _plot_thrust(log: ULog) -> dict | None:
+    """Collective thrust demand — the context every other plot is read against."""
+    topic = _first_topic(log, ("vehicle_thrust_setpoint", "actuator_controls_0"))
+    if topic is None:
+        return None
+    series = []
+    if topic == "vehicle_thrust_setpoint":
+        values = log.series(topic, "xyz", 0)
+        if values and isinstance(values[0], list) and len(values[0]) >= 3:
+            column = [abs(float(row[2])) for row in values]
+            series.append(_series_from_column(log, topic, column, "Thrust"))
+    else:
+        values = log.series(topic, "control", 0)
+        if values and isinstance(values[0], list) and len(values[0]) >= 4:
+            column = [float(row[3]) for row in values]
+            series.append(_series_from_column(log, topic, column, "Throttle"))
+    return _plot("thrust", "Thrust demand", "normalised", series, group="Control",
+                 note="Read the vibration and current plots against this: both "
+                      "are expected to rise with thrust.")
+
+
+def _plot_mag(log: ULog) -> dict | None:
+    """Magnetic field strength. A norm that moves with throttle is current
+    from the power wiring reaching the magnetometer."""
+    topic = _first_topic(log, ("vehicle_magnetometer", "sensor_mag"))
+    if topic is None:
+        return None
+    series = []
+    for multi_id in log.instances(topic)[:3]:
+        values = log.series(topic, "magnetometer_ga", multi_id)
+        if values and isinstance(values[0], list) and len(values[0]) >= 3:
+            norm = [math.sqrt(sum(float(c) ** 2 for c in row[:3])) for row in values]
+        else:
+            x = log.series(topic, "x", multi_id)
+            y = log.series(topic, "y", multi_id)
+            z = log.series(topic, "z", multi_id)
+            if not (x and y and z):
+                continue
+            span = min(len(x), len(y), len(z))
+            norm = [math.sqrt(float(x[i]) ** 2 + float(y[i]) ** 2 + float(z[i]) ** 2)
+                    for i in range(span)]
+        series.append(_series_from_column(log, topic, norm, f"Mag {multi_id}", multi_id))
+    return _plot("mag", "Magnetic field strength", "gauss", series, group="Sensors",
+                 note="A flat line is what you want. Movement that tracks "
+                      "throttle is interference from the power wiring, and it "
+                      "is what makes a compass calibration not stick.")
+
+
+def _plot_imu_temp(log: ULog) -> dict | None:
+    if not log.has("vehicle_imu_status"):
+        return None
+    series = []
+    for multi_id in log.instances("vehicle_imu_status")[:3]:
+        field = _first_field(log, "vehicle_imu_status",
+                             ("temperature_accel", "temperature_gyro"), multi_id)
+        if field:
+            series.append(_series(log, "vehicle_imu_status", field,
+                                  f"IMU {multi_id}", multi_id))
+    return _plot("imu_temp", "IMU temperature", "°C", series, group="Sensors",
+                 note="A sensor still warming up drifts. A cold first flight of "
+                      "the day is where that shows.")
+
+
+def _plot_bias(log: ULog) -> dict | None:
+    """Estimator sensor bias. Large or moving bias is a sensor, not a filter."""
+    topic = _first_topic(log, ("estimator_sensor_bias", "estimator_states"))
+    if topic != "estimator_sensor_bias":
+        return None
+    series = _vector(log, topic, "gyro_bias", ("Gyro X", "Gyro Y", "Gyro Z"),
+                     scale=180.0 / math.pi)
+    return _plot("bias", "Estimated gyro bias", "deg/s", series, group="Estimator",
+                 note="Bias should settle and stay put. One that keeps walking "
+                      "is a gyro worth replacing.")
+
+
+def _plot_rc(log: ULog) -> dict | None:
+    topic = _first_topic(log, ("input_rc", "rc_channels"))
+    if topic is None:
+        return None
+    series = []
+    rssi = _first_field(log, topic, ("rssi", "rssi_dbm"))
+    if rssi:
+        series.append(_series(log, topic, rssi, "RC signal"))
+    lost = _first_field(log, topic, ("rc_lost", "signal_lost"))
+    if lost:
+        series.append(_series(log, topic, lost, "Signal lost (1 = yes)"))
+    return _plot("rc", "RC link", "rssi / flag", series, group="System",
+                 note="A signal-lost flag that goes high in flight is a "
+                      "failsafe waiting to happen.")
+
+
+def _plot_airspeed(log: ULog) -> dict | None:
+    """Fixed-wing only; absent on a multirotor and correctly skipped there."""
+    if not log.has("airspeed"):
+        return None
+    series = []
+    for field, label in (("indicated_airspeed_m_s", "Indicated"),
+                         ("true_airspeed_m_s", "True")):
+        found = _first_field(log, "airspeed", (field,))
+        if found:
+            series.append(_series(log, "airspeed", found, label))
+    return _plot("airspeed", "Airspeed", "m/s", series, group="Flight")
+
+
+def _plot_distance(log: ULog) -> dict | None:
+    if not log.has("distance_sensor"):
+        return None
+    series = []
+    for multi_id in log.instances("distance_sensor")[:2]:
+        field = _first_field(log, "distance_sensor", ("current_distance",), multi_id)
+        if field:
+            series.append(_series(log, "distance_sensor", field,
+                                  f"Rangefinder {multi_id}", multi_id))
+    return _plot("distance", "Rangefinder", "m", series, group="Sensors")
+
+
+def _plot_wind(log: ULog) -> dict | None:
+    topic = _first_topic(log, ("wind", "wind_estimate"))
+    if topic is None:
+        return None
+    north = log.series(topic, "windspeed_north", 0)
+    east = log.series(topic, "windspeed_east", 0)
+    if not north or not east:
+        return None
+    span = min(len(north), len(east))
+    speed = [math.hypot(float(north[i]), float(east[i])) for i in range(span)]
+    return _plot("wind", "Estimated wind", "m/s",
+                 [_series_from_column(log, topic, speed, "Wind speed")],
+                 group="Flight",
+                 note="Estimated, not measured — but a climbing estimate "
+                      "explains a lot of otherwise puzzling tracking error.")
+
+
+def _plot_power(log: ULog) -> dict | None:
+    """What the pack had left. The number that decides the next flight."""
+    if not log.has("battery_status"):
+        return None
+    series = []
+    remaining = _first_field(log, "battery_status", ("remaining",))
+    if remaining:
+        series.append(_series(log, "battery_status", remaining, "Remaining",
+                              scale=100.0))
+    used = _first_field(log, "battery_status", ("discharged_mah",))
+    if used:
+        series.append(_series(log, "battery_status", used, "Discharged (mAh)"))
+    return _plot("power", "Battery state", "% / mAh", series, group="System")
+
+
+def _plot_gps_quality(log: ULog) -> dict | None:
+    topic = _first_topic(log, ("vehicle_gps_position", "sensor_gps"))
+    if topic is None:
+        return None
+    series = []
+    for field, label in (("fix_type", "Fix type"),
+                         ("jamming_indicator", "Jamming"),
+                         ("noise_per_ms", "Noise")):
+        found = _first_field(log, topic, (field,))
+        if found:
+            series.append(_series(log, topic, found, label))
+    return _plot("gps_quality", "GPS quality", "fix / indicator", series,
+                 group="Sensors",
+                 note="Fix type dropping below 3 means no 3-D fix. A jamming "
+                      "indicator that climbs is usually the aircraft's own "
+                      "electronics, not somebody else's.")
+
+
+def _plot_altitude_sources(log: ULog) -> dict | None:
+    """The three altitudes on one axis: estimator, GPS and barometer.
+
+    The single most informative estimation plot there is. Each source fails in
+    its own way — GPS jumps, the barometer drifts with weather and prop wash,
+    the estimator blends them — and the only way to see which one is lying is
+    to put them side by side.
+    """
+    series = []
+
+    if log.has("vehicle_global_position"):
+        field = _first_field(log, "vehicle_global_position", ("alt",))
+        if field:
+            series.append(_series(log, "vehicle_global_position", field, "Estimator"))
+    elif log.has("vehicle_local_position"):
+        z = log.series("vehicle_local_position", "z", 0)
+        ref = log.series("vehicle_local_position", "ref_alt", 0)
+        if z and ref:
+            span = min(len(z), len(ref))
+            amsl = [float(ref[i]) - float(z[i]) for i in range(span)]
+            series.append(_series_from_column(log, "vehicle_local_position",
+                                              amsl, "Estimator"))
+
+    gps_topic = _first_topic(log, ("vehicle_gps_position", "sensor_gps"))
+    if gps_topic:
+        field = _first_field(log, gps_topic, ("alt",))
+        if field:
+            values = log.series(gps_topic, field, 0)
+            # PX4 logs GPS altitude as int32 millimetres; a float field is
+            # already metres. Guessing wrong puts one trace 1000x off.
+            scale = 1e-3 if values and isinstance(values[0], int) else 1.0
+            series.append(_series(log, gps_topic, field, "GPS", scale=scale))
+
+    baro_topic = _first_topic(log, ("vehicle_air_data", "sensor_baro"))
+    if baro_topic:
+        field = _first_field(log, baro_topic, ("baro_alt_meter", "altitude"))
+        if field:
+            series.append(_series(log, baro_topic, field, "Barometer"))
+
+    if len(series) < 2:
+        return None            # one line is the altitude plot, not a comparison
+    return _plot("alt_sources", "Altitude sources", "m AMSL", series,
+                 group="Estimator",
+                 note="The three should track each other. GPS stepping away is "
+                      "a fix problem; the barometer drifting away is weather or "
+                      "prop wash reaching the sensor.")
+
+
+def _plot_gps_accuracy(log: ULog) -> dict | None:
+    """Reported position accuracy — the number the EKF weights GPS by."""
+    topic = _first_topic(log, ("vehicle_gps_position", "sensor_gps"))
+    if topic is None:
+        return None
+    series = []
+    for field, label in (("eph", "Horizontal (eph)"), ("epv", "Vertical (epv)")):
+        found = _first_field(log, topic, (field,))
+        if found:
+            series.append(_series(log, topic, found, label))
+    return _plot("gps_accuracy", "GPS reported accuracy", "m", series,
+                 group="Sensors",
+                 note="This is what the receiver claims, not what it achieved. "
+                      "A value that climbs while the satellite count holds is "
+                      "usually multipath.")
+
+
+def _plot_baro(log: ULog) -> dict | None:
+    """Barometer altitude and its temperature — drift has a cause."""
+    topic = _first_topic(log, ("vehicle_air_data", "sensor_baro"))
+    if topic is None:
+        return None
+    series = []
+    altitude = _first_field(log, topic, ("baro_alt_meter", "altitude"))
+    if altitude:
+        series.append(_series(log, topic, altitude, "Baro altitude"))
+    temperature = _first_field(log, topic, ("baro_temp_celcius", "temperature"))
+    if temperature:
+        series.append(_series(log, topic, temperature, "Sensor temperature"))
+    return _plot("baro", "Barometer", "m / °C", series, group="Sensors",
+                 note="Barometric altitude drifts with temperature and with air "
+                      "moving over the sensor — a reading that walks while the "
+                      "aircraft sits still is the sensor, not the aircraft.")
+
+
+def _plot_gps_velocity(log: ULog) -> dict | None:
+    """GPS velocity against the estimate — the horizontal-velocity check."""
+    gps_topic = _first_topic(log, ("vehicle_gps_position", "sensor_gps"))
+    if gps_topic is None or not log.has("vehicle_local_position"):
+        return None
+    series = []
+    north = log.series(gps_topic, "vel_n_m_s", 0)
+    east = log.series(gps_topic, "vel_e_m_s", 0)
+    if north and east:
+        span = min(len(north), len(east))
+        speed = [math.hypot(float(north[i]), float(east[i])) for i in range(span)]
+        series.append(_series_from_column(log, gps_topic, speed, "GPS"))
+    vx = log.series("vehicle_local_position", "vx", 0)
+    vy = log.series("vehicle_local_position", "vy", 0)
+    if vx and vy:
+        span = min(len(vx), len(vy))
+        speed = [math.hypot(float(vx[i]), float(vy[i])) for i in range(span)]
+        series.append(_series_from_column(log, "vehicle_local_position",
+                                          speed, "Estimator"))
+    if len(series) < 2:
+        return None
+    return _plot("gps_velocity", "Horizontal velocity: GPS vs estimate", "m/s",
+                 series, group="Estimator",
+                 note="A persistent gap between the two is the estimator "
+                      "distrusting GPS — cross-read it against the innovation "
+                      "test ratios.")
+
+
+# ---------------------------------------------------------------------------
+# Flight modes
+# ---------------------------------------------------------------------------
+# Two different enums, and they are NOT interchangeable. `vehicle_status`
+# carries NAVIGATION_STATE_*; the older `commander_state` carries MAIN_STATE_*,
+# where 6 is Acro rather than Position Slow. Reading one table for the other
+# would mislabel most of a flight, so each source gets its own.
+_NAV_STATE = {
+    0: "Manual", 1: "Altitude", 2: "Position", 3: "Mission", 4: "Loiter",
+    5: "Return", 6: "Position slow", 10: "Acro", 12: "Descend",
+    13: "Termination", 14: "Offboard", 15: "Stabilized", 17: "Takeoff",
+    18: "Land", 19: "Follow target", 20: "Precision land", 21: "Orbit",
+    22: "VTOL takeoff",
+}
+_MAIN_STATE = {
+    0: "Manual", 1: "Altitude", 2: "Position", 3: "Mission", 4: "Loiter",
+    5: "Return", 6: "Acro", 7: "Offboard", 8: "Stabilized", 9: "Rattitude",
+    10: "Takeoff", 11: "Land", 12: "Follow target", 13: "Precision land",
+    14: "Orbit",
+}
+# Shortest band worth drawing. A mode held for a few milliseconds during a
+# transition is a sliver of colour that says nothing.
+MIN_MODE_S = 0.4
+
+
+def _flight_modes(log: ULog) -> list[dict[str, Any]]:
+    """The flight as a list of mode intervals.
+
+    This is what turns every other plot from a graph into a story: an
+    oscillation in Position and the same oscillation in Manual are different
+    findings, and without the mode behind the trace you cannot tell them apart.
+    """
+    topic = _first_topic(log, ("vehicle_status", "commander_state"))
+    if topic is None:
+        return []
+    if topic == "vehicle_status":
+        field = _first_field(log, topic, ("nav_state",))
+        table = _NAV_STATE
+    else:
+        field = _first_field(log, topic, ("main_state",))
+        table = _MAIN_STATE
+    if field is None:
+        return []
+
+    states = log.series(topic, field, 0)
+    stamps = log.series(topic, "timestamp", 0)
+    if not _advancing(stamps):
+        # A frozen clock cannot place the bands. Wrong shading is worse than
+        # none: it would relabel the whole flight.
+        return []
+    times = _time_axis(log, topic, 0)
+    span = min(len(states), len(times))
+    if span == 0:
+        return []
+
+    spans: list[dict[str, Any]] = []
+    current = None
+    start = times[0]
+    for index in range(span):
+        state = int(states[index])
+        if state != current:
+            if current is not None:
+                spans.append({"mode": table.get(current, f"Mode {current}"),
+                              "state": current, "start": start, "end": times[index]})
+            current = state
+            start = times[index]
+    spans.append({"mode": table.get(current, f"Mode {current}"), "state": current,
+                  "start": start, "end": times[span - 1]})
+
+    out = []
+    for entry in spans:
+        entry["start"] = round(entry["start"], 2)
+        entry["end"] = round(entry["end"], 2)
+        if entry["end"] - entry["start"] >= MIN_MODE_S:
+            out.append(entry)
+    return out
+
+
+def _armed_spans(log: ULog) -> list[dict[str, float]]:
+    """When the vehicle was armed — the part of the log that flew."""
+    topic = _first_topic(log, ("vehicle_status",))
+    if topic is None:
+        return []
+    field = _first_field(log, topic, ("arming_state",))
+    if field is None:
+        return []
+    states = log.series(topic, field, 0)
+    if not _advancing(log.series(topic, "timestamp", 0)):
+        return []
+    times = _time_axis(log, topic, 0)
+    span = min(len(states), len(times))
+    out: list[dict[str, float]] = []
+    start: float | None = None
+    for index in range(span):
+        # PX4 arming_state: 2 is ARMED in every version that logs this field.
+        armed = int(states[index]) == 2
+        if armed and start is None:
+            start = times[index]
+        elif not armed and start is not None:
+            out.append({"start": round(start, 2), "end": round(times[index], 2)})
+            start = None
+    if start is not None and span:
+        out.append({"start": round(start, 2), "end": round(times[span - 1], 2)})
+    return [s for s in out if s["end"] - s["start"] >= MIN_MODE_S]
+
+
+# ---------------------------------------------------------------------------
+# Findings
+# ---------------------------------------------------------------------------
+
+def _findings(log: ULog, plots: list[dict]) -> list[dict[str, str]]:
+    """The few sentences worth reading before the plots.
+
+    Only things that are actually derivable from this log — no scoring, no
+    grades. A review that invents a verdict is worse than one that points at
+    the plot and lets the operator look.
+    """
+    out: list[dict[str, str]] = []
+    by_id = {p["id"]: p for p in plots}
+
+    clipping = by_id.get("clipping")
+    if clipping:
+        total = 0.0
+        for s in clipping["series"]:
+            finite = [v for v in s["y"] if v is not None]
+            if finite:
+                total = max(total, max(finite))
+        if total > 0:
+            out.append({"level": "critical", "text":
+                        f"Accelerometer clipping occurred ({int(total)} samples). "
+                        "The IMU saturated — treat the attitude and position "
+                        "estimates in this log with suspicion."})
+
+    ekf = by_id.get("ekf")
+    if ekf:
+        worst_name, worst = "", 0.0
+        for s in ekf["series"]:
+            finite = [v for v in s["y"] if v is not None]
+            if finite and max(finite) > worst:
+                worst, worst_name = max(finite), s["name"]
+        if worst >= 1.0:
+            out.append({"level": "warning", "text":
+                        f"{worst_name} innovations reached {worst:.2f} — above "
+                        "1.0 the estimator was rejecting that sensor."})
+
+    actuators = by_id.get("actuators")
+    if actuators and actuators.get("unit") != "normalised":
+        # A motor pinned near the top while its neighbours are not is an
+        # airframe problem — a bent arm, a heavy corner, a mistrimmed prop.
+        peaks = []
+        for s in actuators["series"]:
+            finite = [v for v in s["y"] if v is not None]
+            if finite:
+                peaks.append((s["name"], max(finite), sum(finite) / len(finite)))
+        if len(peaks) >= 3:
+            averages = [p[2] for p in peaks]
+            spread = max(averages) - min(averages)
+            if spread > 80.0:      # µs, on a ~1000 µs band
+                worst = max(peaks, key=lambda p: p[2])[0]
+                out.append({"level": "warning", "text":
+                            f"Motor outputs are uneven — {worst} ran "
+                            f"{spread:.0f} µs above the lowest one on average. "
+                            "That is an airframe imbalance, not a tuning one."})
+
+    vibration = by_id.get("vibration")
+    if vibration and vibration.get("unit") == "m/s²":
+        worst = 0.0
+        for s in vibration["series"]:
+            finite = [v for v in s["y"] if v is not None]
+            if finite:
+                worst = max(worst, max(finite))
+        if worst >= 60.0:
+            out.append({"level": "critical", "text":
+                        f"Vibration peaked at {worst:.0f} m/s². Above about 60 "
+                        "the estimator starts to suffer — check props, motors "
+                        "and the flight-controller mounting."})
+        elif worst >= 30.0:
+            out.append({"level": "warning", "text":
+                        f"Vibration peaked at {worst:.0f} m/s² — usable, but "
+                        "worth watching."})
+
+    rc = by_id.get("rc")
+    if rc:
+        lost = next((s for s in rc["series"] if "lost" in s["name"].lower()), None)
+        if lost:
+            finite = [v for v in lost["y"] if v is not None]
+            if finite and max(finite) >= 1:
+                out.append({"level": "warning", "text":
+                            "The RC link reported a signal loss during this "
+                            "flight — the next one may hit the failsafe."})
+
+    battery = by_id.get("battery")
+    if battery:
+        voltage = next((s for s in battery["series"] if s["name"] == "Voltage"), None)
+        if voltage:
+            finite = [v for v in voltage["y"] if v is not None and v > 1.0]
+            if finite:
+                sag = max(finite) - min(finite)
+                if sag > 3.0:
+                    out.append({"level": "warning", "text":
+                                f"Pack voltage sagged {sag:.1f} V between rest "
+                                "and load. A pack that dives like that is near "
+                                "the end of its useful life."})
+
+    if log.dropouts:
+        total_ms = sum(d.get("duration_ms", 0) for d in log.dropouts)
+        out.append({"level": "warning", "text":
+                    f"{len(log.dropouts)} logging dropout(s), {total_ms} ms total. "
+                    "The gaps are missing data, not quiet flight."})
+
+    if log.truncated:
+        out.append({"level": "warning", "text":
+                    "The log ends mid-record — the aircraft lost power before "
+                    "the file was closed. Everything up to the cut is shown."})
+
+    errors = [m for m in log.messages if m["level"] in ("emergency", "alert", "critical", "error")]
+    if errors:
+        out.append({"level": "warning", "text":
+                    f"{len(errors)} error-level message(s) in the flight log — "
+                    "see the messages below."})
+
+    if not out:
+        out.append({"level": "ok", "text":
+                    "Nothing flagged: no clipping, no EKF rejection, no "
+                    "logging dropouts, no RC loss and no motor imbalance in "
+                    "this log."})
+    return out
+
+
+# ---------------------------------------------------------------------------
+
+# Order is the reading order of the page, grouped by section.
+_PLOTTERS = (
+    # Flight
+    _plot_track, _plot_altitude, _plot_velocity, _plot_airspeed, _plot_wind,
+    # Control
+    _plot_attitude, _plot_rates, _plot_thrust,
+    # Airframe
+    _plot_actuators,
+    # Estimator
+    _plot_ekf, _plot_altitude_sources, _plot_gps_velocity, _plot_bias,
+    # Sensors
+    _plot_clipping, _plot_vibration, _plot_mag, _plot_imu_temp, _plot_baro,
+    _plot_gps, _plot_gps_accuracy, _plot_gps_quality, _plot_distance,
+    # System
+    _plot_battery, _plot_power, _plot_cpu, _plot_rc,
+)
+# The order sections appear in; anything else falls to the end.
+GROUP_ORDER = ("Flight", "Control", "Airframe", "Estimator", "Sensors", "System")
+
+# Only these topics are decoded. A log holds a hundred; a review reads a dozen.
+REVIEW_TOPICS = (
+    "actuator_motors", "actuator_outputs", "actuator_controls_0",
+    "vehicle_imu_status", "sensor_accel_status", "sensor_combined",
+    "estimator_status", "estimator_sensor_bias",
+    "vehicle_attitude", "control_state", "vehicle_attitude_setpoint",
+    "vehicle_angular_velocity", "vehicle_rates_setpoint",
+    "vehicle_thrust_setpoint",
+    "vehicle_local_position", "vehicle_global_position",
+    "vehicle_magnetometer", "sensor_mag",
+    "battery_status", "cpuload", "vehicle_gps_position", "sensor_gps",
+    "vehicle_status", "commander_state",
+    "input_rc", "rc_channels", "airspeed", "distance_sensor",
+    "wind", "wind_estimate", "vehicle_air_data", "sensor_baro",
+)
+
+
+def review(log: ULog, name: str = "") -> dict[str, Any]:
+    """Reduce a parsed ULog to the Flight Review payload the UI renders."""
+    plots = [plot for plot in (make(log) for make in _PLOTTERS) if plot]
+    modes = _flight_modes(log)
+    armed = _armed_spans(log)
+
+    duration = 0.0
+    for plot in plots:
+        for s in plot["series"]:
+            if s["x"]:
+                duration = max(duration, s["x"][-1])
+
+    summary = {
+        "name": name,
+        "duration_s": round(duration, 1),
+        "start_utc": log.start_timestamp,
+        "sw": str(log.info.get("ver_sw", "") or ""),
+        "hw": str(log.info.get("ver_hw", "") or ""),
+        "sys_name": str(log.info.get("sys_name", "") or ""),
+        "airframe": log.params.get("SYS_AUTOSTART", ""),
+        "dropouts": len(log.dropouts),
+        "dropout_ms": sum(d.get("duration_ms", 0) for d in log.dropouts),
+        "truncated": log.truncated,
+        "topics": sorted(t for t in log.data if log.has(t)),
+        "armed_s": round(sum(s["end"] - s["start"] for s in armed), 1),
+        "modes_flown": sorted({m["mode"] for m in modes}),
+    }
+    return {
+        "summary": summary,
+        "groups": [g for g in GROUP_ORDER if any(p["group"] == g for p in plots)],
+        # Drawn as bands behind every time plot: the same oscillation means
+        # different things in Position and in Manual.
+        "modes": modes,
+        "armed": armed,
+        "findings": _findings(log, plots),
+        "plots": plots,
+        # The tail of the flight's own commentary. Capped: an aircraft that
+        # spent a flight complaining can produce thousands.
+        "messages": log.messages[-300:],
+    }

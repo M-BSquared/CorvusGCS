@@ -30,7 +30,7 @@ Corvus.setup = (function () {
   let activeDestroy = null;
 
   // Teardown handle for the tile grid's own telemetry subscription (the Vehicle
-  // Info card updates live — PX4 version arrives a few seconds after connect via
+  // Info card updates live — the firmware version arrives a few seconds after connect via
   // AUTOPILOT_VERSION, so the initial getState() snapshot would otherwise show
   // "—" forever). Paired 1:1 with `teardown()`: every subscribe has a matching
   // unsub, so the grid never leaks a listener across re-render / sub-page swaps.
@@ -80,7 +80,7 @@ Corvus.setup = (function () {
     const rowDefs = [
       { key: "autopilot",    label: "Autopilot",    value: state.autopilot    || "—" },
       { key: "vehicle_type", label: "Vehicle Type", value: state.vehicle_type || "—" },
-      { key: "px4_version",  label: "PX4 Version",  value: state.px4_version  || "—" },
+      { key: "px4_version",  label: "Firmware Version", value: state.px4_version || "—" },
       { key: "connected",    label: "Connected",    value: state.connected ? "Yes" : "No" },
       { key: "armed",        label: "Armed",        value: state.armed ? "Yes" : "No" },
     ];
@@ -103,7 +103,7 @@ Corvus.setup = (function () {
       "Flash PX4 firmware over a direct USB connection only."));
     container.appendChild(grid);
 
-    // Subscribe to telemetry so the Vehicle Info rows update live. PX4 version
+    // Subscribe to telemetry so the Vehicle Info rows update live. The firmware version
     // only arrives a few seconds after connect via AUTOPILOT_VERSION, so the
     // initial getState() snapshot above would otherwise stay "—" forever. The
     // subscription updates only the five row values per push; the tiles and

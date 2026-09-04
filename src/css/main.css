@@ -367,18 +367,95 @@ svg { display: block; }
 .map { position: absolute; inset: 0; }
 .page-view { position: absolute; inset: 0; overflow-y: auto; padding: 32px 40px; }
 .page-view[hidden] { display: none; }
-/* OSM/Esri attribution must stay visible (legal requirement); tint the control
-   into the dark glass family instead of the MapLibre default. */
-.maplibregl-ctrl-attrib {
-  background: rgb(var(--glass-rgb) / 0.55);
-  backdrop-filter: var(--blur-soft);
-  -webkit-backdrop-filter: var(--blur-soft);
-  border-radius: var(--radius);
-  font-size: 10px;
-  color: var(--text-3);
+/* Tile attribution. The credit is a legal requirement, so it is always on and
+   always legible — but it is the least important thing on the map, so it reads
+   as a caption on the imagery rather than as a control.
+
+   Unlike the rest of the map chrome this does NOT follow the app theme. It sits
+   on photographic tiles in every theme, and the light theme's white glass turned
+   it into exactly what it must not be: a bright white block over the picture. A
+   dark, low-alpha film with light type is the one treatment that stays quiet on
+   both bright and dark imagery, which is why the values here are literals rather
+   than palette tokens.
+
+   Specificity note: the geometry below is deliberately written as
+   `.maplibregl-ctrl-bottom-left > .maplibregl-ctrl.maplibregl-ctrl-attrib`.
+   MapLibre's own `.maplibregl-ctrl-bottom-left > .maplibregl-ctrl-attrib
+   .maplibregl-compact-show` rule is three classes deep and was silently winning
+   on padding and radius — which is where the oversized pill with a 28px gap
+   before the text came from. Matching that depth (and landing later in the
+   cascade, since main.css loads after the vendor sheet) is what makes these
+   values stick, without reaching for !important. */
+.maplibregl-ctrl-bottom-left .maplibregl-ctrl {
+  margin: 0 0 var(--map-rail-inset, 14px) var(--map-rail-inset, 14px);
 }
-.maplibregl-ctrl-attrib a { color: var(--text-3); }
+.maplibregl-ctrl-bottom-left > .maplibregl-ctrl.maplibregl-ctrl-attrib {
+  /* A flex row, so the toggle and the credit are laid out by this rule rather
+     than by MapLibre's absolute corner placement plus a padding reservation. */
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 0;
+  padding: 2px 8px;
+  background: rgb(8 11 15 / 0.42);
+  backdrop-filter: var(--blur-fine);
+  -webkit-backdrop-filter: var(--blur-fine);
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 6px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: rgb(255 255 255 / 0.58);
+  transition: background 160ms ease, color 160ms ease;
+}
+.maplibregl-ctrl-bottom-left > .maplibregl-ctrl.maplibregl-ctrl-attrib:hover,
+.maplibregl-ctrl-bottom-left > .maplibregl-ctrl.maplibregl-ctrl-attrib:focus-within {
+  background: rgb(8 11 15 / 0.72);
+  color: rgb(255 255 255 / 0.92);
+}
+/* Collapsed — MapLibre folds the credit into a bare toggle on a narrow map, so
+   the row holds nothing but the button and the pill becomes its disc. */
+.maplibregl-ctrl-bottom-left
+  > .maplibregl-ctrl.maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show) {
+  padding: 3px;
+  border-radius: 50%;
+}
+.maplibregl-ctrl-attrib a { color: inherit; }
+.maplibregl-ctrl-attrib a:hover { color: rgb(255 255 255 / 0.95); }
+
+/* The compact toggle. MapLibre ships it as a 24px white disc with a baked-in
+   dark glyph, absolutely positioned in the corner — both the brightest thing
+   there and invisible on a dark surface. Pulled back into the flow and redrawn
+   as a hairline circle with a typographic "i". */
+.maplibregl-ctrl-bottom-left .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button {
+  position: static;
+  flex: 0 0 auto;
+  width: 14px; height: 14px;
+  margin: 0;
+  background: none;
+  border: 1px solid rgb(255 255 255 / 0.3);
+  border-radius: 50%;
+  list-style: none;
+  display: grid; place-items: center;
+  color: inherit;
+  cursor: pointer;
+}
+.maplibregl-ctrl-attrib-button::-webkit-details-marker { display: none; }
+.maplibregl-ctrl-attrib-button::after {
+  content: "i";
+  font-family: var(--sans);
+  font-size: 8.5px; font-weight: 700; font-style: italic;
+  line-height: 1;
+}
+.maplibregl-ctrl-attrib-button:focus,
+.maplibregl-ctrl-attrib-button:focus-visible { outline: none; box-shadow: none; }
+.maplibregl-ctrl-attrib:focus-within .maplibregl-ctrl-attrib-button {
+  border-color: var(--accent-bright);
+}
 .maplibregl-ctrl-logo { opacity: 0.35 !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .maplibregl-ctrl-attrib { transition: none; }
+}
 
 /* Geometry shared by the map chrome. The right-hand control rail is the
    anchor; everything else that floats beside it is positioned off these two
@@ -570,10 +647,12 @@ svg { display: block; }
    a track, sits in the one free corner, and stays at a low opacity until
    reached for — an action taken once per flight should not out-shout the
    track it clears. */
+/* Sits directly above the attribution control, which owns the bottom-left
+   corner itself and must never be covered. */
 .track-clear {
   position: absolute;
   left: var(--map-rail-inset, 14px);
-  bottom: var(--map-rail-inset, 14px);
+  bottom: calc(var(--map-rail-inset, 14px) + 30px);
   z-index: var(--z-map-chrome);
   width: 22px; height: 22px;
   display: grid; place-items: center;
@@ -844,7 +923,7 @@ svg { display: block; }
   transition: opacity 200ms ease; opacity: 1;
 }
 
-.panel-tabs { display: flex; padding: 8px 8px 0; gap: 2px; border-bottom: 1px solid var(--border); }
+.panel-tabs { display: flex; padding: 8px 12px 0; gap: 2px; border-bottom: 1px solid var(--border); }
 .tab {
   flex: 1; padding: 9px 0; font-size: 11px; font-weight: 600; letter-spacing: 0.9px;
   color: var(--text-3); border-radius: var(--radius-btn) var(--radius-btn) 0 0;
@@ -858,7 +937,9 @@ svg { display: block; }
 .tab-panel.active { display: flex; }
 .panel-section-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 11px 13px; border-bottom: 1px solid var(--border-soft);
+  /* 12px, not 13: the section title has to sit on the same left edge as the
+     cards under it and the tab strip above it. */
+  padding: 11px 12px; border-bottom: 1px solid var(--border-soft);
 }
 .panel-section-title { font-size: 12px; font-weight: 600; letter-spacing: 0.4px; color: var(--text-1); }
 .header-actions { display: flex; gap: 4px; }
@@ -913,7 +994,7 @@ svg { display: block; }
 
 .console-input-row {
   display: flex; align-items: center; gap: 8px;
-  padding: 9px 11px; border-top: 1px solid var(--border-soft);
+  padding: 9px var(--panel-gutter, 12px); border-top: 1px solid var(--border-soft);
   background: var(--surface-1);
 }
 .console-prompt { font-family: var(--mono); color: var(--terminal-cmd); font-size: 13px; font-weight: 600; }
@@ -1052,6 +1133,11 @@ svg { display: block; }
   .plugin-back,
   .setup-back,
   .calib-btn,
+  .calib-card,
+  .calib-pose,
+  .calib-progress-fill,
+  .calib-figure-marker circle,
+  .calib-pose[data-state="active"] .calib-pose-mark,
   .autotune-btn,
   .autotune-live-dot,
   .params-download-btn,
@@ -1156,13 +1242,205 @@ svg { display: block; }
 .setup-tile .tile-icon svg, .setup-tile .tile-icon i { width: 20px; height: 20px; }
 .setup-tile .tile-body { flex: 1; }
 
-/* ----- CALIBRATION ----- */
-.setup-sensor-card { display: flex; flex-direction: column; gap: 12px; }
-.calib-grid {
+/* ----- CALIBRATION: readiness strip ----- */
+.calib-ready { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.calib-ready[hidden] { display: none; }
+.calib-ready-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 11px 5px 9px;
+  background: var(--surface-1); border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.2px; color: var(--text-2);
+}
+.calib-ready-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-3); flex: 0 0 auto;
+}
+.calib-ready-chip[data-state="ok"] .calib-ready-dot { background: var(--healthy); }
+.calib-ready-chip[data-state="ok"] { color: var(--text-1); }
+.calib-ready-chip[data-state="bad"] .calib-ready-dot { background: var(--critical); }
+.calib-ready-chip[data-state="bad"] {
+  color: var(--critical-bright); border-color: var(--critical);
+  background: var(--critical-dark);
+}
+
+/* ----- CALIBRATION: the card list -----
+   A row per calibration rather than a button grid: the operator's first
+   question is which one they need, and a grid of seven icons answers it with a
+   guess. Title, purpose, position count and duration answer it outright. */
+.calib-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 10px;
 }
+.calib-card {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px; text-align: left;
+  background: var(--surface-1); border: 1px solid var(--border-soft);
+  border-radius: var(--radius); color: var(--text-1);
+  font-family: inherit; cursor: pointer;
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              border-color 160ms ease, background 160ms ease;
+}
+.calib-card:hover:not(:disabled) {
+  background: var(--surface-2); border-color: var(--border-strong); transform: translateY(-1px);
+}
+.calib-card:active:not(:disabled) { transform: scale(0.995); }
+.calib-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.calib-card:disabled { opacity: 0.45; cursor: not-allowed; }
+.calib-card-icon {
+  width: 38px; height: 38px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent-dim); border-radius: var(--radius-btn);
+}
+.calib-card-icon svg, .calib-card-icon i { width: 18px; height: 18px; color: var(--accent-bright); }
+.calib-card-danger .calib-card-icon { background: var(--critical-dark); }
+.calib-card-danger .calib-card-icon svg,
+.calib-card-danger .calib-card-icon i { color: var(--critical-bright); }
+.calib-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.calib-card-head { display: flex; align-items: center; gap: 8px; }
+.calib-card-title { font-size: 13.5px; font-weight: 650; }
+.calib-card-flag {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase;
+  color: var(--critical-bright); background: var(--critical-dark);
+  border: 1px solid var(--critical); border-radius: 4px; padding: 1px 5px;
+}
+.calib-card-desc { font-size: 11.5px; color: var(--text-2); line-height: 1.4; }
+.calib-card-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 2px; }
+.calib-card-meta-item {
+  font-family: var(--mono); font-size: 10px; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.4px;
+}
+.calib-card > svg:last-child, .calib-card > i:last-child {
+  width: 15px; height: 15px; color: var(--text-3); flex: 0 0 auto;
+}
+
+/* ----- CALIBRATION: the wizard stage -----
+   The figure carries the instruction, so it gets the space: a fixed-ratio panel
+   beside the text rather than an illustration tucked under it. */
+.calib-stage {
+  display: grid; grid-template-columns: minmax(200px, 260px) 1fr;
+  gap: 20px; align-items: center; padding: 18px 20px; margin-bottom: 12px;
+}
+.calib-stage-figure {
+  background: var(--surface-2); border: 1px solid var(--border-soft);
+  border-radius: var(--radius); padding: 6px;
+  display: flex; align-items: center; justify-content: center;
+}
+.calib-stage-text { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.calib-phase {
+  align-self: flex-start;
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.7px; text-transform: uppercase;
+  color: var(--text-3); background: var(--surface-2);
+  border: 1px solid var(--border-soft); border-radius: 999px; padding: 3px 9px;
+}
+.calib-phase[data-phase="running"], .calib-phase[data-phase="starting"] {
+  color: var(--nav); border-color: var(--nav); background: var(--nav-dark);
+}
+.calib-phase[data-phase="done"] {
+  color: var(--healthy); border-color: var(--healthy); background: var(--healthy-dark);
+}
+.calib-phase[data-phase="failed"] {
+  color: var(--critical-bright); border-color: var(--critical); background: var(--critical-dark);
+}
+.calib-phase[data-phase="cancelled"] {
+  color: var(--warning); border-color: var(--warning); background: var(--warning-dark);
+}
+.calib-headline { font-size: 19px; font-weight: 650; line-height: 1.25; color: var(--text-1); }
+.calib-detail { font-size: 12.5px; color: var(--text-2); line-height: 1.5; }
+.calib-progress {
+  height: 5px; border-radius: 3px; background: var(--surface-3);
+  overflow: hidden; margin-top: 4px;
+}
+.calib-progress-fill {
+  height: 100%; width: 0%; background: var(--nav);
+  transition: width 260ms ease;
+}
+.calib-progress[data-phase="done"] .calib-progress-fill { background: var(--healthy); }
+.calib-watchdog {
+  font-size: 11.5px; line-height: 1.5; color: var(--warning);
+  background: var(--warning-dark); border: 1px solid var(--warning);
+  border-radius: var(--radius-btn); padding: 8px 10px;
+}
+
+/* The figure itself. Colours that belong to the drawing (the bird's own
+   shading) are computed in JS from the face normals; only the scene furniture
+   — ground grid, shadow, rotation guide — is themed here. */
+.calib-figure { width: 100%; height: auto; display: block; }
+.calib-figure-ground line { stroke: var(--border); stroke-width: 0.6; opacity: 0.7; }
+.calib-figure-shadow { fill: rgb(0 0 0 / 0.16); }
+.calib-figure-arrow polyline {
+  stroke: var(--nav); stroke-width: 1.8; fill: none;
+  stroke-linecap: round; opacity: 0.92;
+}
+.calib-figure-arrowhead { fill: var(--nav); }
+/* Nav blue, not warning amber: the raven's beak is orange, and an amber ring
+   around an orange beak is not a callout — it is camouflage. */
+.calib-figure-marker circle {
+  fill: none; stroke: var(--nav); stroke-width: 1.6;
+  animation: calibMarkerPulse 1.8s ease-in-out infinite;
+}
+@keyframes calibMarkerPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+/* Text stand-in where inline SVG is unavailable; keeps the instruction whole. */
+.calib-figure-fallback {
+  font-size: 12px; color: var(--text-2); text-align: center; padding: 20px 8px;
+}
+
+/* ----- CALIBRATION: the position strip -----
+   Every attitude PX4 will ask for, drawn, with its state. Before the start it
+   is also a preview — clicking one puts it on the big figure. */
+.calib-poses {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px; margin-bottom: 12px;
+}
+/* Six positions is the whole sequence for both the accelerometer and the
+   compass; one row of six keeps it readable as a sequence rather than a grid. */
+.calib-poses[hidden] { display: none; }
+@media (min-width: 760px) { .calib-poses { grid-template-columns: repeat(6, 1fr); } }
+.calib-pose {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 6px 10px; position: relative; cursor: pointer;
+  background: var(--surface-1); border: 1px solid var(--border-soft);
+  border-radius: var(--radius); color: var(--text-2); font-family: inherit;
+  transition: border-color 160ms ease, background 160ms ease, opacity 160ms ease;
+}
+.calib-pose:hover:not(:disabled) { border-color: var(--border-strong); }
+.calib-pose:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.calib-pose-figure { width: 100%; }
+.calib-pose-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.2px; text-align: center; }
+.calib-pose-mark {
+  position: absolute; top: 6px; right: 7px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--border-strong);
+}
+.calib-pose[data-state="active"] {
+  border-color: var(--nav); background: var(--nav-dark); color: var(--text-1);
+}
+.calib-pose[data-state="active"] .calib-pose-mark {
+  background: var(--nav);
+  animation: calibMarkerPulse 1.4s ease-in-out infinite;
+}
+.calib-pose[data-state="done"] { opacity: 0.55; }
+.calib-pose[data-state="done"] .calib-pose-mark { background: var(--healthy); }
+.calib-pose[data-state="failed"] { border-color: var(--critical); }
+.calib-pose[data-state="failed"] .calib-pose-mark { background: var(--critical); }
+
+/* ----- CALIBRATION: preparation + transcript + actions ----- */
+.calib-prep { margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
+.calib-prep-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
+.calib-prep-item { font-size: 12px; line-height: 1.5; color: var(--text-2); }
+.calib-prep[hidden] { display: none; }
+.calib-prep-danger { border-color: var(--critical); }
+.calib-prep-danger .calib-prep-item { color: var(--text-1); }
+.calib-prep-danger .guidance-title svg,
+.calib-prep-danger .guidance-title i { color: var(--critical); }
+.calib-log-card { display: flex; flex-direction: column; gap: 8px; }
+.calib-actions { margin-top: 12px; }
+
+/* ----- CALIBRATION: the autotune tile buttons -----
+   .calib-btn is what the POD Tuning axis buttons are built from, and it is the
+   class Corvus.setupShared.runConfigAction writes its busy/ok/err status into.
+   The sensor calibrations no longer use it — they are .calib-card rows now. */
 /* .calib-btn is .btn secondary; keep the column layout (icon over label over
    status), the accent icon, and the busy/ok/err status text. The hover border
    bump and the .busy nav border need .btn.calib-btn specificity to override the
@@ -1176,17 +1454,6 @@ svg { display: block; }
 .calib-btn-status.ok { color: var(--healthy); }
 .calib-btn-status.err { color: var(--critical); }
 .btn.calib-btn.busy { border-color: var(--nav); }
-
-/* Motor/ESC button wears data-variant="danger" (red tile in the grid). The
-   default .calib-btn icon is accent-bright green, which would clash with the
-   red surface — override the icon + status to white so the danger tile reads
-   coherently. Other calib buttons keep the default accent-bright icon. */
-.btn.calib-btn[data-variant="danger"] > svg,
-.btn.calib-btn[data-variant="danger"] > i[data-lucide] { color: #fff; }
-.btn.calib-btn[data-variant="danger"] .calib-btn-status { color: rgba(255, 255, 255, 0.8); } /* danger fill is red in every theme */
-.btn.calib-btn[data-variant="danger"] .calib-btn-status.busy,
-.btn.calib-btn[data-variant="danger"] .calib-btn-status.ok,
-.btn.calib-btn[data-variant="danger"] .calib-btn-status.err { color: #fff; }
 
 /* ----- MOTOR / ESC SAFETY WARNING -----
    The dialog shell (scrim, glass panel, entrance, reduced-motion and
@@ -1228,13 +1495,18 @@ svg { display: block; }
   color: var(--text-3); flex: 0 0 auto; min-width: 44px;
 }
 .guidance-msg { color: var(--terminal-text); flex: 1; min-width: 0; word-break: break-word; }
-.guidance-meta { color: var(--terminal-muted); font-size: 10px; }
 .guidance-line.warning .guidance-level { color: var(--warning); }
 .guidance-line.critical .guidance-level { color: var(--critical); }
 .guidance-line.error .guidance-level { color: var(--critical); }
 .guidance-line.emergency .guidance-level { color: var(--critical); }
 .guidance-line.info .guidance-level { color: var(--nav); }
 .guidance-line.notice .guidance-level { color: var(--healthy); }
+.guidance-line.success .guidance-level { color: var(--healthy); }
+
+@media (max-width: 720px) {
+  .calib-stage { grid-template-columns: 1fr; }
+  .calib-stage-figure { max-width: 280px; margin: 0 auto; }
+}
 
 /* ----- POD TUNING ----- */
 .pod-section { margin-top: 8px; }
@@ -1358,6 +1630,45 @@ svg { display: block; }
 }
 .firmware-cancel { margin-left: auto; }
 
+/* ----- FIRMWARE: source switch + release/board picker -----
+   Two ways in: download the image from a PX4 release (the default, because it
+   needs nothing prepared in advance) or pick a local file (custom builds, and
+   a laptop that has never been online). */
+.firmware-source { display: flex; gap: 6px; }
+.btn.firmware-source-btn { flex: 1; justify-content: center; }
+.btn.firmware-source-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--text-1);
+}
+.btn.firmware-source-btn.active > svg,
+.btn.firmware-source-btn.active > i[data-lucide] { color: var(--accent-bright); }
+
+.firmware-catalog { display: flex; flex-direction: column; gap: 12px; }
+.firmware-catalog[hidden] { display: none; }
+.firmware-file-row[hidden] { display: none; }
+/* Filter above the list: PX4 ships ~150 build targets per release, so typing
+   three letters of the board name is the only practical way through it. */
+.firmware-board { display: flex; flex-direction: column; gap: 6px; }
+/* What the backend recognised on the USB port. A suggestion, styled as one —
+   the board select underneath stays free, because flashing the wrong image is
+   worse than picking from a list. */
+.firmware-detected {
+  display: flex; align-items: flex-start; gap: 7px;
+  font-size: 11.5px; line-height: 1.5; color: var(--healthy);
+  background: var(--healthy-dark); border: 1px solid var(--healthy);
+  border-radius: var(--radius-btn); padding: 8px 10px;
+}
+.firmware-detected[hidden] { display: none; }
+.firmware-detected svg, .firmware-detected i {
+  width: 13px; height: 13px; flex: 0 0 auto; margin-top: 1px;
+}
+
+.firmware-catalog-note {
+  font-size: 11px; line-height: 1.5; color: var(--text-3);
+}
+.firmware-catalog-note.err { color: var(--warning); }
+
 /* ----- COMPANY LOGO (Settings > Appearance) ----- */
 .brand-logo-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 /* The preview sits on a neutral tile, not the card, because a company mark is
@@ -1421,9 +1732,15 @@ svg { display: block; }
    severity and tools now share a single line, and the counts fold into the
    footer beside the command hint. Everything here is deliberately quiet: the
    messages are the content, the controls are not. */
+/* --panel-gutter is the console pane's single horizontal inset. Its children
+   used to each invent their own (toolbar 0, stream 0, input row 11px, footer
+   2px), so nothing in the column lined up and the send button ran off the
+   panel edge. Padding rather than a pane-level inset, so the toolbar's rule,
+   the input bar's border and its fill still span the full width. */
+.tab-panel[data-panel="console"] { --panel-gutter: 12px; }
 .console-toolbar {
-  display: flex; align-items: center; gap: 6px;
-  padding: 0 0 8px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px var(--panel-gutter, 12px);
   border-bottom: 1px solid var(--border-soft);
   margin-bottom: 8px;
 }
@@ -1457,14 +1774,16 @@ svg { display: block; }
 .console-filter:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
 
 /* Tools sit at the end of the same line, muted until used. */
-.console-tools { display: flex; align-items: center; gap: 1px; flex: 0 0 auto; }
-.console-tools .icon-btn { width: 24px; height: 24px; border-radius: 5px; color: var(--text-3); }
+.console-tools { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+/* Same 26px as the filter beside them, so the toolbar reads as one row rather
+   than a field with a shorter button cluster parked next to it. */
+.console-tools .icon-btn { width: 26px; height: 26px; border-radius: 5px; color: var(--text-3); }
 .console-tools .icon-btn:hover { color: var(--text-1); }
 .console-tools .icon-btn.active { color: var(--warning); background: var(--warning-dark); }
 .console-tools .icon-btn svg, .console-tools .icon-btn i { width: 13px; height: 13px; }
 
 /* ----- the stream ----- */
-.console-stream { position: relative; flex: 1; min-height: 0; display: flex; }
+.console-stream { position: relative; flex: 1; min-height: 0; display: flex; padding: 0 var(--panel-gutter, 12px); }
 
 /* Jump-to-live: appears only once the operator has scrolled away from the end,
    and says how much arrived meanwhile — which the permanent auto-scroll toggle
@@ -1497,7 +1816,7 @@ svg { display: block; }
 /* ----- footer: counts and the command hint on one slim line ----- */
 .console-footer {
   display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
-  padding: 5px 2px 0;
+  padding: 5px var(--panel-gutter, 12px) 0;
   min-height: 15px;
   font-size: 10px;
   color: var(--text-3);
@@ -1560,3 +1879,200 @@ svg { display: block; }
   color: var(--text-1);
 }
 .link-recent-conn:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 1px; }
+
+/* ===================================================================
+   ANALYSIS — flight-log download
+   The folder is chosen once at the top and persisted, because the point of
+   this page is that after a flight you press one button rather than
+   re-answering "where to?" every time.
+   =================================================================== */
+.logs-view { display: flex; flex-direction: column; gap: 12px; }
+
+/* The download folder is a setting, not a section: one slim row, no card, no
+   heading, no paragraph. Given all three it out-shouted the logs, which are
+   what the page is actually for. */
+.logs-dir-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface-1); border: 1px solid var(--border-soft);
+  border-radius: var(--radius-btn);
+}
+.logs-dir-icon { display: flex; flex: 0 0 auto; color: var(--text-3); }
+.logs-dir-icon svg, .logs-dir-icon i { width: 14px; height: 14px; }
+.logs-dir-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.3px;
+  color: var(--text-3); text-transform: uppercase; flex: 0 0 auto;
+}
+.logs-dir-row .logs-dir-input {
+  flex: 1; min-width: 0;
+  padding: 4px 8px; font-size: 11.5px;
+  background: transparent; border-color: transparent;
+}
+.logs-dir-row .logs-dir-input:focus {
+  background: rgb(var(--input-rgb) / 0.6); border-color: var(--accent);
+}
+.logs-dir-note {
+  font-size: 11px; line-height: 1.4; color: var(--text-3);
+  padding: 0 2px; min-height: 0;
+}
+.logs-dir-note:empty { display: none; }
+.logs-dir-note.err { color: var(--critical); }
+
+/* The two log kinds as Setup-style tiles: the landing view is a choice, not
+   two long lists competing for the same screen. */
+.logs-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+.logs-tile { align-items: center; gap: 14px; padding: 18px 20px; }
+.logs-tile .tile-icon { width: 40px; height: 40px; }
+.logs-tile .tile-icon svg, .logs-tile .tile-icon i { width: 20px; height: 20px; }
+.logs-tile .tile-body { flex: 1; }
+
+.logs-landing { display: flex; flex-direction: column; gap: 12px; }
+/* Rule under the "Flight logs" heading: the page has two halves — live
+   telemetry above, log tooling below — and they read as one list without it. */
+.logs-divider {
+  height: 1px; background: var(--border-soft);
+  margin: -6px 0 2px;
+}
+.logs-landing > .page-section-title { margin-bottom: 0; }
+.logs-landing[hidden] { display: none; }
+.logs-body { display: flex; flex-direction: column; gap: 12px; }
+.logs-body[hidden] { display: none; }
+.logs-card { display: flex; flex-direction: column; gap: 10px; }
+.logs-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.logs-head .page-section-title { margin: 0; }
+.logs-select-row { display: flex; align-items: center; gap: 6px; }
+.logs-selection { font-size: 11px; color: var(--text-3); margin-left: 4px; }
+
+.logs-list {
+  display: flex; flex-direction: column; gap: 2px;
+  max-height: 320px; overflow-y: auto;
+  background: var(--surface-1); border: 1px solid var(--border-soft);
+  border-radius: var(--radius-btn); padding: 4px;
+}
+.logs-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 9px; border-radius: var(--radius-btn);
+  cursor: pointer; position: relative;
+}
+.logs-row:hover { background: var(--surface-hover); }
+.logs-row-static { cursor: default; }
+.logs-row-static:hover { background: transparent; }
+.logs-check { width: 14px; height: 14px; flex: 0 0 auto; accent-color: var(--accent); }
+.logs-row-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.logs-row-title-row { display: flex; align-items: center; gap: 7px; }
+.logs-row-title { font-size: 12.5px; font-weight: 600; color: var(--text-1); }
+/* "already in the folder" — the difference between a no-op and pulling
+   megabytes back over a telemetry link. */
+.logs-row-tag {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+  color: var(--healthy); background: var(--healthy-dark);
+  border: 1px solid var(--healthy); border-radius: 4px; padding: 1px 5px;
+}
+.logs-row-meta {
+  font-family: var(--mono); font-size: 10.5px; color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Per-row state, so a long queue is readable at a glance rather than only
+   through the status line. */
+.logs-row-mark {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: transparent; flex: 0 0 auto;
+}
+.logs-row[data-state="active"] { background: var(--nav-dark); }
+.logs-row[data-state="active"] .logs-row-mark {
+  background: var(--nav);
+  animation: calibMarkerPulse 1.4s ease-in-out infinite;
+}
+.logs-row[data-state="done"] .logs-row-mark { background: var(--healthy); }
+.logs-row[data-state="failed"] .logs-row-mark { background: var(--critical); }
+
+.logs-actions { display: flex; align-items: center; gap: 8px; }
+/* Pushed to the far end, away from Download: the destructive action should not
+   sit where the hand goes for the routine one. */
+.btn.logs-erase { margin-left: auto; }
+.logs-status { font-size: 11.5px; line-height: 1.5; color: var(--text-2); min-height: 16px; }
+.logs-status.err { color: var(--critical); }
+
+@media (prefers-reduced-motion: reduce) {
+  .logs-row[data-state="active"] .logs-row-mark { animation: none; }
+}
+
+/* ----- ANALYSIS: Flight Review ----- */
+.review-pick { display: flex; gap: 8px; align-items: center; }
+.review-pick .field-select { flex: 1; min-width: 0; }
+.review-out { display: flex; flex-direction: column; gap: 12px; }
+.review-summary { display: flex; flex-direction: column; gap: 10px; }
+.review-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px;
+}
+.review-fact { display: flex; flex-direction: column; gap: 2px; }
+.review-fact-label {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.6px;
+  text-transform: uppercase; color: var(--text-3);
+}
+.review-fact-value { font-family: var(--mono); font-size: 12px; color: var(--text-1); }
+
+/* Findings sit above the plots: the plots are the evidence, these are the two
+   sentences worth reading if you read nothing else. */
+.review-finding {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 12px; line-height: 1.5;
+  border-radius: var(--radius-btn); padding: 8px 10px;
+  border: 1px solid var(--border-soft); background: var(--surface-2);
+  color: var(--text-2);
+}
+.review-finding svg, .review-finding i {
+  width: 14px; height: 14px; flex: 0 0 auto; margin-top: 1px;
+}
+.review-finding[data-level="ok"] {
+  color: var(--healthy); background: var(--healthy-dark); border-color: var(--healthy);
+}
+.review-finding[data-level="warning"] {
+  color: var(--warning); background: var(--warning-dark); border-color: var(--warning);
+}
+.review-finding[data-level="critical"] {
+  color: var(--critical-bright); background: var(--critical-dark); border-color: var(--critical);
+}
+
+/* The flight as a strip of modes. Every plot below carries the same bands, so
+   this is the key as much as it is a timeline. */
+.review-modes {
+  display: flex; height: 10px; border-radius: 3px; overflow: hidden;
+  border: 1px solid var(--border-soft);
+}
+.review-mode-seg { min-width: 2px; }
+.review-mode-key { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.review-mode-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--text-2);
+}
+.review-mode-dot { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; }
+.review-mode-span { font-size: 10.5px; color: var(--text-3); margin-left: auto; }
+
+/* Jump chips: two dozen plots is a scroll, and this is the difference between
+   a report you skim and one you give up on. */
+.review-nav { display: flex; flex-wrap: wrap; gap: 6px; }
+.btn.review-nav-chip { border-radius: 999px; }
+
+/* Section rule between plot groups, so "estimator" is distinguishable from
+   "airframe" without reading every title. */
+.review-group {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; padding-bottom: 5px; margin-top: 6px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.review-group-title {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.8px;
+  text-transform: uppercase; color: var(--text-1);
+}
+.review-group-count { font-size: 10.5px; color: var(--text-3); }
+
+.review-plot-card { display: flex; flex-direction: column; gap: 8px; }
+.review-plot { width: 100%; height: 240px; }
+.review-note { font-size: 11px; line-height: 1.5; color: var(--text-3); }
+.review-messages { max-height: 320px; }
+.logs-head .field-select { max-width: 190px; }

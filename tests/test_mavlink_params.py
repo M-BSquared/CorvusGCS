@@ -387,6 +387,66 @@ def test_calibrate_deny_ack_returns_false() -> None:
     assert "DENIED" in bridge.get_last_command_error()
 
 
+def test_cancel_calibration_sends_all_zero_params() -> None:
+    """PX4 reads an all-zero PREFLIGHT_CALIBRATION as "cancel what is running".
+
+    Verified against v1.16 / v1.17 / v1.18 Commander.cpp. Any non-zero param
+    would start a calibration instead of stopping one, so the payload is pinned.
+    """
+    bridge = ready_bridge()
+
+    def on_send(args: tuple) -> None:
+        bridge._dispatch(ack(int(args[2]), mavutil.mavlink.MAV_RESULT_ACCEPTED))
+
+    bridge._conn = FakeConnection(on_send)
+    assert bridge.cancel_calibration() is True
+    cmd = bridge._conn.mav.commands[0]
+    assert cmd[2] == mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION
+    assert list(cmd[4:11]) == [0.0] * 7
+
+
+def test_cancel_calibration_allowed_while_armed() -> None:
+    """Cancel only ever stops work, so the armed gate must not block it.
+
+    Refusing it while armed would leave the one escape hatch unreachable in the
+    exact state an operator is most likely to want it.
+    """
+    bridge = ready_bridge()
+    bridge._store.update(armed=True)
+
+    def on_send(args: tuple) -> None:
+        bridge._dispatch(ack(int(args[2]), mavutil.mavlink.MAV_RESULT_ACCEPTED))
+
+    bridge._conn = FakeConnection(on_send)
+    assert bridge.cancel_calibration() is True
+    assert bridge._conn.mav.commands
+
+
+def test_cancel_calibration_deny_ack_returns_false() -> None:
+    bridge = ready_bridge()
+
+    def on_send(args: tuple) -> None:
+        bridge._dispatch(ack(int(args[2]), mavutil.mavlink.MAV_RESULT_DENIED))
+
+    bridge._conn = FakeConnection(on_send)
+    assert bridge.cancel_calibration() is False
+    assert "DENIED" in bridge.get_last_command_error()
+
+
+def test_erase_logs_refused_while_armed() -> None:
+    """Destructive, irreversible, and no business happening on a live vehicle."""
+    bridge = ready_bridge()
+    bridge._store.update(armed=True)
+    assert bridge.erase_logs() is False
+    assert "armed" in bridge.get_last_command_error()
+
+
+def test_erase_logs_refused_without_a_link() -> None:
+    bridge = MavlinkBridge(VehicleStateStore())
+    assert bridge.erase_logs() is False
+    assert "not connected" in bridge.get_last_command_error()
+
+
 # ---------------------------------------------------------------------------
 # autotune
 # ---------------------------------------------------------------------------

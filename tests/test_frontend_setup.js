@@ -188,6 +188,7 @@ function flushMicrotasks() { return new Promise((r) => setTimeout(r, 0)); }
 
 function findByClass(root, cls) { return root.querySelectorAll("." + cls); }
 function findOneByClass(root, cls) { return root.querySelector("." + cls); }
+function findByTag(root, tag) { return root.querySelectorAll(tag); }
 // Walk every descendant of `root` and return those whose `dataset[key]`
 // matches `value`. (Cannot use findByClass(root, "*") — the stub's querySel
 // only supports class/tag selectors, and ".*" matches nothing.)
@@ -234,6 +235,7 @@ function makeFakeTelemetry(opts = {}) {
   let unsubCalls = 0;
   const unsub = () => { unsubCalls++; };
   let paramsResponse = opts.paramsResponse || { complete: false, received: 0, count: 0, params: [] };
+  const urlResponses = Object.assign({}, opts.urlResponses);
   let state = opts.state || { armed: false, connected: true };
   const telemetry = {
     postAction(url, payload) {
@@ -245,6 +247,14 @@ function makeFakeTelemetry(opts = {}) {
     },
     requestJson(url) {
       requests.push(url);
+      // Per-URL overrides: the firmware page fetches both a status and a
+      // catalogue, and one canned response for every URL cannot express that.
+      for (const prefix of Object.keys(urlResponses)) {
+        if (String(url).startsWith(prefix)) {
+          const r = urlResponses[prefix];
+          return r instanceof Error ? Promise.reject(r) : Promise.resolve(r);
+        }
+      }
       return Promise.resolve(paramsResponse);
     },
     subscribe(fn) { subCb = fn; return unsub; },
@@ -255,6 +265,7 @@ function makeFakeTelemetry(opts = {}) {
     get unsubCalls() { return unsubCalls; },
     getSubCb: () => subCb,
     setParamsResponse(r) { paramsResponse = r; },
+    setResponse(prefix, r) { urlResponses[prefix] = r; },
     setState(s) { state = s; },
   };
 }
@@ -269,6 +280,8 @@ function makeFakeTelemetry(opts = {}) {
 // module builds its DOM with (index.html loads it in the same order).
 require("../src/js/ui.js");
 require("../src/js/setup-shared.js");
+require("../src/js/calib-figures.js");
+require("../src/js/calib-protocol.js");
 require("../src/js/setup-calibration.js");
 require("../src/js/setup-parameters.js");
 require("../src/js/setup-firmware.js");
@@ -313,13 +326,13 @@ async function testClickTileSwapsToSubPageAndBackReturns() {
   // Click Calibration → sub-page rendered (back button + calib grid present).
   fire(tiles[0], "click");
   assert.ok(findOneByClass(container, "setup-back"), "back button present on calibration sub-page");
-  assert.ok(findOneByClass(container, "calib-grid"), "calibration grid present");
+  assert.ok(findOneByClass(container, "calib-cards"), "calibration card list present");
 
   // Click back → tiles grid restored.
   const back = findOneByClass(container, "setup-back");
   fire(back, "click");
   assert.ok(findOneByClass(container, "setup-tiles"), "tile grid restored after back");
-  assert.equal(findByClass(container, "calib-grid").length, 0, "calibration grid gone after back");
+  assert.equal(findByClass(container, "calib-cards").length, 0, "calibration list gone after back");
   delete window.Plotly;
 }
 
@@ -416,7 +429,7 @@ async function testVehicleInfoUpdatesLive() {
 // PART B — Calibration
 // ===========================================================================
 
-async function testCalibrationButtonsMapToTypes() {
+async function testCalibrationCardsCoverEveryProcedure() {
   const fake = makeFakeTelemetry();
   Corvus.telemetry = fake.telemetry;
   const container = makeEl("div");
@@ -426,51 +439,27 @@ async function testCalibrationButtonsMapToTypes() {
   Corvus.setup.render(container);
   fire(findByClass(container, "setup-tile")[0], "click");   // Calibration
 
-  const grid = findOneByClass(container, "calib-grid");
-  const btns = findByClass(grid, "calib-btn");
-  assert.equal(btns.length, 7, "seven sensor-calibration buttons (incl. motor/ESC)");
+  const cards = findByClass(findOneByClass(container, "calib-cards"), "calib-card");
+  assert.equal(cards.length, 7, "one card per calibration procedure");
+  assert.deepEqual(cards.map((c) => c.dataset.type), Corvus.calibProtocol.ORDER,
+    "cards follow the documented procedure order");
 
-  const expected = {
-    compass: "Compass", gyro: "Gyroscope", accel: "Accelerometer",
-    level: "Level Horizon", airspeed: "Airspeed", baro: "Baro",
-    motor: "Motors (ESC)",
-  };
-  for (const btn of btns) {
-    const type = btn.dataset.type;
-    assert.ok(expected[type], `button type ${type} is one of the known types`);
-    assert.equal(findOneByClass(btn, "calib-btn-label").textContent, expected[type]);
+  // Every card names its procedure and its position count, because "which one
+  // do I need" is the question the list has to answer.
+  for (const card of cards) {
+    const proc = Corvus.calibProtocol.PROCEDURES[card.dataset.type];
+    assert.equal(findOneByClass(card, "calib-card-title").textContent, proc.label);
+    assert.equal(findOneByClass(card, "calib-card-desc").textContent, proc.summary);
   }
+  const motor = cards.find((c) => c.dataset.type === "motor");
+  assert.ok(findOneByClass(motor, "calib-card-flag"), "motor card flags the props-off hazard");
 
-  // Clicking "Compass" → POST /api/calibrate {type:"compass"}.
-  const compassBtn = btns.find((b) => b.dataset.type === "compass");
-  fire(compassBtn, "click");
+  // Opening a card must NOT start anything — the wizard's brief comes first.
+  fire(cards[0], "click");
   await flushMicrotasks();
-  const cal = fake.postCalls.find((c) => c.url === "/api/calibrate");
-  assert.ok(cal, "POST /api/calibrate was issued");
-  assert.deepEqual(cal.payload, { type: "compass" }, "compass maps to {type:'compass'}");
-
-  // Each button maps to its own type. The motor/ESC button opens a safety-
-  // confirm modal first; the POST only fires after the operator confirms.
-  for (const type of Object.keys(expected)) {
-    const btn = btns.find((b) => b.dataset.type === type);
-    fake.postCalls.length = 0;
-    fire(btn, "click");
-    await flushMicrotasks();
-    if (type === "motor") {
-      // The safety dialog is a Corvus.ui.modal: its buttons carry the shared
-      // .btn classes, so the destructive one is identified by living in the
-      // dialog's action row with the danger variant.
-      const actionRow = findByClass(container, "modal-actions")[0];
-      assert.ok(actionRow, "motor calibration modal opened");
-      const confirmBtn = findByClass(actionRow, "btn")
-        .find((b) => b.getAttribute("data-variant") === "danger");
-      assert.ok(confirmBtn, "motor calibration modal confirm button present");
-      fire(confirmBtn, "click");
-      await flushMicrotasks();
-    }
-    const call = fake.postCalls.find((c) => c.url === "/api/calibrate");
-    assert.deepEqual(call.payload, { type }, `button ${type} posts {type:'${type}'}`);
-  }
+  assert.equal(fake.postCalls.filter((c) => c.url === "/api/calibrate").length, 0,
+    "opening a calibration posts nothing");
+  assert.ok(findOneByClass(container, "calib-stage"), "wizard stage rendered");
 }
 
 async function testCalibrationArmedGating() {
@@ -482,26 +471,25 @@ async function testCalibrationArmedGating() {
 
   Corvus.setup.render(container);
   fire(findByClass(container, "setup-tile")[0], "click");   // Calibration
-  const grid = findOneByClass(container, "calib-grid");
-  const btns = findByClass(grid, "calib-btn");
+  const cards = findByClass(findOneByClass(container, "calib-cards"), "calib-card");
 
-  // Initial state disarmed → buttons enabled.
-  assert.ok(btns.every((b) => !b.disabled), "buttons enabled while disarmed");
+  // Initial state disarmed → cards enabled.
+  assert.ok(cards.every((c) => !c.disabled), "cards enabled while disarmed");
 
   // Emit armed → all disabled + banner visible.
   fake.getSubCb()({ armed: true, connected: true, warnings: [] });
-  assert.ok(btns.every((b) => b.disabled), "buttons disabled while armed");
+  assert.ok(cards.every((c) => c.disabled), "cards disabled while armed");
   const banner = findByClass(container, "setup-armed-banner")[0];
   assert.ok(banner && !banner.hidden, "armed banner shown while armed");
 
   // Emit disarmed → re-enabled + banner hidden.
   fake.getSubCb()({ armed: false, connected: true, warnings: [] });
-  assert.ok(btns.every((b) => !b.disabled), "buttons re-enabled when disarmed");
+  assert.ok(cards.every((c) => !c.disabled), "cards re-enabled when disarmed");
   assert.ok(banner.hidden, "armed banner hidden when disarmed");
 }
 
-async function testCalibrationGuidanceRendersStatustext() {
-  const fake = makeFakeTelemetry({ state: { armed: false, warnings: [] } });
+async function testReadinessStripReflectsLinkAndArmedState() {
+  const fake = makeFakeTelemetry({ state: { armed: false, connected: false, warnings: [] } });
   Corvus.telemetry = fake.telemetry;
   const container = makeEl("div");
   pageViewEl = container;
@@ -510,21 +498,15 @@ async function testCalibrationGuidanceRendersStatustext() {
   Corvus.setup.render(container);
   fire(findByClass(container, "setup-tile")[0], "click");
 
-  const guidance = findOneByClass(container, "guidance-list");
-  // Initially empty prompt.
-  assert.ok(findOneByClass(guidance, "guidance-empty"), "empty guidance prompt before STATUSTEXT");
+  const chips = findByClass(container, "calib-ready-chip");
+  assert.equal(chips.length, 2, "link + armed readiness chips");
+  const link = chips.find((c) => c.dataset.key === "link");
+  assert.equal(link.dataset.state, "bad", "no link reads as not ready");
+  assert.equal(findOneByClass(link, "calib-ready-label").textContent, "No link");
 
-  // Emit warnings (STATUSTEXT) → rendered as guidance lines.
-  fake.getSubCb()({
-    armed: false, connected: true,
-    warnings: [
-      { level: "notice", msg: "Rotate around all axes", meta: "step 1" },
-      { level: "info", msg: "Compass calibrated", meta: "" },
-    ],
-  });
-  const lines = findByClass(guidance, "guidance-line");
-  assert.equal(lines.length, 2, "two guidance lines rendered from warnings");
-  assert.equal(findOneByClass(lines[0], "guidance-msg").textContent, "Rotate around all axes");
+  fake.getSubCb()({ armed: false, connected: true, warnings: [] });
+  assert.equal(link.dataset.state, "ok", "link up reads as ready");
+  assert.equal(findOneByClass(link, "calib-ready-label").textContent, "Link up");
 }
 
 // ===========================================================================
@@ -972,6 +954,7 @@ async function renderFirmware(opts = {}) {
   };
   const fake = makeFakeTelemetry({ state: opts.telemetryState || { armed: false, connected: true } });
   fake.setParamsResponse(status);
+  if (opts.catalog !== undefined) fake.setResponse("/api/firmware/catalog", opts.catalog);
   Corvus.telemetry = fake.telemetry;
   const container = makeEl("div");
   pageViewEl = container;
@@ -983,8 +966,18 @@ async function renderFirmware(opts = {}) {
   return { container, destroy, fake, navigateBack };
 }
 
+/** Switch the firmware page between the catalogue and the local-file source. */
+function selectFirmwareSource(container, id) {
+  const btn = findByClass(container, "firmware-source-btn")
+    .find((b) => b.dataset.source === id);
+  assert.ok(btn, "firmware source button " + id + " present");
+  fire(btn, "click");
+  return btn;
+}
+
 /** Select a file in the firmware file input and return the chosen file name. */
 function selectFirmwareFile(container, name) {
+  selectFirmwareSource(container, "file");
   const fileInput = findOneByClass(container, "firmware-file-input");
   fileInput.files = [{ name: name || "px4_fmu-v5.px4", size: 1024 }];
   fire(fileInput, "change");
@@ -1009,7 +1002,7 @@ async function testFirmwareSubPageRendersCardsAndControls() {
   // Connection + Firmware File section titles.
   const titleTexts = findByClass(container, "page-section-title").map((t) => t.textContent);
   assert.ok(titleTexts.includes("Connection"), "Connection card present");
-  assert.ok(titleTexts.includes("Firmware File"), "Firmware File card present");
+  assert.ok(titleTexts.includes("Firmware"), "Firmware card present");
   // File input + Upload button.
   assert.ok(findOneByClass(container, "firmware-file-input"), "file input rendered");
   const uploadBtn = findByClass(container, "params-download-btn")[0];
@@ -1043,6 +1036,109 @@ async function testFirmwareUsbAllowedHidesBannerAndEnablesUploadAfterFile() {
   assert.equal(uploadBtn.disabled, true, "Upload disabled before a file is selected");
   selectFirmwareFile(container);
   assert.equal(uploadBtn.disabled, false, "Upload enabled after selecting a file over USB");
+}
+
+const FAKE_CATALOG = {
+  dir: "/home/pilot/.corvus/firmware",
+  error: "",
+  cached: [{ name: "px4_fmu-v6x_default.px4", size: 2048, label: "Pixhawk 6X (FMUv6X)" }],
+  releases: [
+    {
+      tag: "v1.18.0-beta1", name: "v1.18.0-beta1", prerelease: true, boards: [
+        { name: "px4_fmu-v6x_default.px4", label: "Pixhawk 6X (FMUv6X)", size: 2048, cached: false },
+      ],
+    },
+    {
+      tag: "v1.17.0", name: "v1.17.0", prerelease: false, boards: [
+        { name: "px4_fmu-v6x_default.px4", label: "Pixhawk 6X (FMUv6X)", size: 2048, cached: true },
+        { name: "cubepilot_cubeorange_default.px4", label: "Cube Orange", size: 2048, cached: false },
+      ],
+    },
+  ],
+};
+
+function firmwareSelects(container) {
+  const selects = findByTag(container, "select");
+  return { release: selects[0], board: selects[1] };
+}
+
+async function testFirmwareCatalogDefaultsToTheNewestStableRelease() {
+  const { container } = await renderFirmware({ catalog: FAKE_CATALOG });
+  await flushMicrotasks();
+
+  const { release, board } = firmwareSelects(container);
+  // A pre-release is a deliberate choice. Landing on one by not choosing is
+  // how an operator flashes beta firmware onto an aircraft by accident.
+  assert.equal(release.value, "v1.17.0", "newest stable release preselected");
+  assert.ok(board.children.length >= 2, "the release's boards are listed");
+  // Cached images flash with no network; the list has to say which ones those are.
+  const cached = board.children.find((o) => o.value === "px4_fmu-v6x_default.px4");
+  assert.match(cached.textContent, /downloaded/, "a cached image is marked");
+}
+
+async function testFirmwareBoardFilterNarrowsTheList() {
+  const { container } = await renderFirmware({ catalog: FAKE_CATALOG });
+  await flushMicrotasks();
+
+  const { board } = firmwareSelects(container);
+  assert.equal(board.children.length, 2, "both boards before filtering");
+  // PX4 ships ~150 targets per release, so the filter is the only way the
+  // list is usable at all.
+  const filter = findByClass(container, "field-input")
+    .find((i) => i.placeholder === "Filter boards…");
+  filter.value = "cube";
+  fire(filter, "input");
+  assert.equal(board.children.length, 1, "filter narrows the board list");
+  assert.equal(board.children[0].value, "cubepilot_cubeorange_default.px4");
+}
+
+async function testFirmwareFlashPostsReleaseAndBoardNotAUrl() {
+  const { container, fake } = await renderFirmware({ catalog: FAKE_CATALOG });
+  await flushMicrotasks();
+
+  const uploadBtn = findByClass(container, "params-download-btn")[0];
+  assert.equal(uploadBtn.disabled, false, "flash enabled once a board is selected");
+  fire(uploadBtn, "click");
+  await flushMicrotasks();
+
+  const call = fake.postCalls.find((c) => c.url === "/api/firmware/flash");
+  assert.ok(call, "POST /api/firmware/flash issued");
+  assert.deepEqual(call.payload, {
+    release: "v1.17.0", board: "px4_fmu-v6x_default.px4",
+  }, "the request names a release and a board");
+  // The browser must never choose what gets fetched — resolving the download
+  // target is the backend's job.
+  assert.ok(!("url" in call.payload), "no download URL comes from the frontend");
+}
+
+async function testFirmwareCatalogOfflineKeepsThePageUsable() {
+  const { container } = await renderFirmware({
+    catalog: { releases: [], cached: [], error: "could not reach the PX4 release server", dir: "" },
+  });
+  await flushMicrotasks();
+
+  const note = findOneByClass(container, "firmware-catalog-note");
+  assert.ok(note && /release/i.test(note.textContent), "the reason is stated");
+  // With no catalogue the local-file path must still be reachable — that is
+  // the whole offline story for this page.
+  selectFirmwareSource(container, "file");
+  assert.ok(!findOneByClass(container, "firmware-file-row").hidden,
+    "the local file picker is still available offline");
+}
+
+async function testDownloadingCountsAsBusy() {
+  const { container } = await renderFirmware({
+    catalog: FAKE_CATALOG,
+    status: { can_flash: false, transport: "usb", state: "downloading",
+      device: "/dev/ttyACM0", armed: false, progress: 42, message: "Downloading…" },
+  });
+  await flushMicrotasks();
+
+  const uploadBtn = findByClass(container, "params-download-btn")[0];
+  assert.equal(uploadBtn.disabled, true, "no second job while a download runs");
+  // A download is the longer half of the job and must be cancellable.
+  assert.ok(!findOneByClass(container, "firmware-cancel").hidden,
+    "cancel offered while downloading");
 }
 
 async function testFirmwareArmedGateDisablesUploadAndShowsBanner() {
@@ -1187,9 +1283,9 @@ async function run() {
   await withReset(testReRenderTearsDownActiveSubPage);
   await withReset(testVehicleInfoUpdatesLive);
 
-  await withReset(testCalibrationButtonsMapToTypes);
+  await withReset(testCalibrationCardsCoverEveryProcedure);
   await withReset(testCalibrationArmedGating);
-  await withReset(testCalibrationGuidanceRendersStatustext);
+  await withReset(testReadinessStripReflectsLinkAndArmedState);
 
   await withReset(testAutotuneButtonsMapToAxes);
   await withReset(testAutotuneArmedGating);
@@ -1211,6 +1307,11 @@ async function run() {
   await withReset(testFirmwareSubPageRendersCardsAndControls);
   await withReset(testFirmwareUsbGateDisablesUploadAndShowsBanner);
   await withReset(testFirmwareUsbAllowedHidesBannerAndEnablesUploadAfterFile);
+  await withReset(testFirmwareCatalogDefaultsToTheNewestStableRelease);
+  await withReset(testFirmwareBoardFilterNarrowsTheList);
+  await withReset(testFirmwareFlashPostsReleaseAndBoardNotAUrl);
+  await withReset(testFirmwareCatalogOfflineKeepsThePageUsable);
+  await withReset(testDownloadingCountsAsBusy);
   await withReset(testFirmwareArmedGateDisablesUploadAndShowsBanner);
   await withReset(testFirmwareUploadCallsFetchAndOpensSse);
   await withReset(testFirmwareProgressSseUpdatesBar);

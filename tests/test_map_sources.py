@@ -22,6 +22,7 @@ silently breaking the other source's path order.
 """
 from __future__ import annotations
 
+import re
 import threading
 import urllib.request
 
@@ -305,7 +306,15 @@ def test_frontend_map_js_does_not_mirror_the_registry() -> None:
         )
 
     assert "/api/tiles/sources" in text, "map.js must fetch the source catalogue"
-    assert "attributionControl: true" in text, "frontend map.js must enable attributionControl"
+    # The tile credit is a legal requirement, so it must be on the map one way or
+    # the other. The constructor flag is off on purpose — the control is added
+    # explicitly so it can be placed bottom-left, out of the control rail's
+    # corner — which is exactly the substitution this check has to allow without
+    # letting the credit be dropped altogether.
+    assert (
+        "attributionControl: true" in text
+        or re.search(r"addControl\(\s*new maplibregl\.AttributionControl\(", text)
+    ), "frontend map.js must render the attribution control"
     # No CDN / no remote glyphs remain in the map module.
     assert "unpkg.com/maplibre" not in text, "frontend map.js still references the maplibre CDN"
     assert "demotiles.maplibre.org" not in text, "frontend map.js still references remote glyphs"

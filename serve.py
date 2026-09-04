@@ -49,6 +49,16 @@ def _stop_all(server) -> None:
             logger.info("flash stopped")
         except Exception:
             logger.exception("flash shutdown failed")
+    # Log downloads hold a sink on the MAVLink bridge and a worker thread, so
+    # they are stopped alongside flash — before the bridge itself goes away.
+    logs = getattr(server, "logs", None)
+    if logs is not None:
+        try:
+            logger.info("stopping log service …")
+            logs.shutdown()
+            logger.info("log service stopped")
+        except Exception:
+            logger.exception("log service shutdown failed")
     mavlink = getattr(server, "mavlink", None)
     if mavlink is not None:
         try:

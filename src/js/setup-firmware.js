@@ -15,6 +15,10 @@ window.Corvus = window.Corvus || {};
  * Backend contract (drives the UI; do not flash from the frontend's own logic):
  *   GET  /api/firmware/status     {state,transport,device,can_flash,armed,
  *                                  progress,message}
+ *   GET  /api/firmware/catalog[?refresh=1]
+ *                                  {releases:[{tag,name,prerelease,boards:[
+ *                                   {name,label,size,cached}]}],cached,error,dir}
+ *   POST /api/firmware/flash       {release,board} -> downloads then flashes
  *   POST /api/firmware/upload     raw .px4/.bin body
  *                                  (Content-Type: application/octet-stream),
  *                                  ?name=<filename> -> {ok,state} | {ok:false,error}
@@ -25,6 +29,12 @@ window.Corvus = window.Corvus || {};
  * /api/firmware/* calls. The page re-fetches /api/firmware/status only when the
  * telemetry `connected`/`armed` signature changes (no refetch spam) and after
  * every terminal SSE event (authoritative state).
+ *
+ * Firmware selection: the operator picks a PX4 release and their board and the
+ * backend downloads the matching image, caching it under `firmware_dir` so the
+ * same flash works offline next time. The request names a release and a board,
+ * never a URL — resolving the download target is the backend's job. The manual
+ * file picker stays as the offline path and for custom builds.
  *
  * Exposes render(container, navigateBack) -> destroy(). The caller (setup.js)
  * owns the view lifecycle: it calls destroy() on back / left-nav re-entry so
@@ -83,13 +93,69 @@ Corvus.setupFirmware = (function () {
     // --- Firmware card ----------------------------------------------------
     const fwSection = S.el("div", "page-section");
     const fwCard = S.el("div", "page-card firmware-card");
-    fwCard.appendChild(S.sectionTitle("Firmware File"));
+    fwCard.appendChild(S.sectionTitle("Firmware"));
 
     const note = S.el("div", "params-desc");
     note.textContent =
-      "Select a PX4 firmware file (.px4 / .bin). Flashing reboots the autopilot " +
-      "into its bootloader and uploads over USB. Keep the USB cable connected.";
+      "Pick a PX4 release and your board and Corvus downloads the image for you, " +
+      "or select a local file. Flashing reboots the autopilot into its bootloader " +
+      "and uploads over USB. Keep the USB cable connected.";
     fwCard.appendChild(note);
+
+    // Source switch. Download is the default because it is the path that needs
+    // no prior preparation; the file picker is what a custom build or a laptop
+    // that has never been online needs.
+    const sourceRow = S.el("div", "firmware-source");
+    const sourceBtns = [
+      { id: "catalog", label: "PX4 release", icon: "cloud-download" },
+      { id: "file", label: "Local file", icon: "folder-open" },
+    ].map((opt) => {
+      const b = Corvus.ui.button({
+        variant: "secondary", size: "sm", icon: opt.icon, label: opt.label,
+        className: "firmware-source-btn",
+        onClick: () => setSource(opt.id),
+      });
+      b.dataset.source = opt.id;
+      sourceRow.appendChild(b);
+      return b;
+    });
+    fwCard.appendChild(sourceRow);
+
+    // --- Catalogue picker -------------------------------------------------
+    const catalogBox = S.el("div", "firmware-catalog");
+
+    const releaseField = Corvus.ui.select({
+      ariaLabel: "PX4 release",
+      options: [{ value: "", label: "Loading releases…" }],
+      disabled: true,
+    });
+    catalogBox.appendChild(Corvus.ui.field({
+      label: "Release", control: releaseField,
+    }));
+
+    const boardFilter = Corvus.ui.input({
+      placeholder: "Filter boards…", ariaLabel: "Filter the board list",
+    });
+    const boardField = Corvus.ui.select({
+      ariaLabel: "Flight controller board",
+      options: [{ value: "", label: "Select a release first" }],
+      disabled: true,
+    });
+    const boardBox = S.el("div", "firmware-board");
+    boardBox.appendChild(boardFilter);
+    boardBox.appendChild(boardField);
+    catalogBox.appendChild(Corvus.ui.field({
+      label: "Board", control: boardBox,
+      hint: "PX4 ships one image per flight-controller target — pick the one your board is.",
+    }));
+
+    const detectedNote = S.el("div", "firmware-detected");
+    detectedNote.hidden = true;
+    catalogBox.appendChild(detectedNote);
+
+    const catalogNote = S.el("div", "firmware-catalog-note");
+    catalogBox.appendChild(catalogNote);
+    fwCard.appendChild(catalogBox);
 
     // File row: native file input + filename display.
     const fileRow = S.el("div", "firmware-file-row");
@@ -112,6 +178,11 @@ Corvus.setupFirmware = (function () {
       label: "Flash Firmware",
       disabled: true,
     });
+
+    // Corvus.ui.button wraps the label in an unclassed <span> (the icon is an
+    // <i>/<svg>), so this is the label node — captured once rather than
+    // re-queried on every gate recompute.
+    const uploadLabel = uploadBtn.querySelector("span");
 
     const cancelBtn = Corvus.ui.button({
       variant: "secondary",
@@ -162,6 +233,12 @@ Corvus.setupFirmware = (function () {
       unsub: null,          // telemetry subscription
       abort: null,          // AbortController for the in-flight upload
       file: null,           // the selected File
+      source: "catalog",    // "catalog" (download) | "file" (local .px4/.bin)
+      catalog: null,        // last /api/firmware/catalog payload
+      releases: [],         // releases from the catalogue
+      boards: [],           // boards of the selected release (unfiltered)
+      detected: null,       // {name,label,source} board the backend recognised
+      boardTouched: false,  // true once the operator picked a board themselves
       // Telemetry signature for refetch gating (avoid /api/firmware/status spam).
       lastConnected: null,
       lastArmed: null,
@@ -198,9 +275,152 @@ Corvus.setupFirmware = (function () {
     function recomputeUploadGate() {
       const s = state.status || {};
       const armed = !!s.armed || isArmedFromTelemetry();
-      const canFlash = !!s.can_flash && s.state === "idle" && !armed;
-      uploadBtn.disabled = !(canFlash && state.file);
+      const busy = s.state === "downloading" || s.state === "flashing";
+      const canFlash = !!s.can_flash && !busy && !armed;
+      const haveSource = state.source === "file"
+        ? !!state.file
+        : !!(releaseField.value && boardField.value);
+      uploadBtn.disabled = !(canFlash && haveSource);
+      // The button says what it will actually do — a catalogue flash downloads
+      // first, and a button labelled "Flash" that spends two minutes fetching
+      // reads as a hang.
+      if (uploadLabel) {
+        uploadLabel.textContent =
+          state.source === "file" ? "Flash Firmware" : "Download & Flash";
+      }
     }
+
+    /** Switch between the catalogue picker and the local file picker. */
+    function setSource(id) {
+      state.source = id === "file" ? "file" : "catalog";
+      sourceBtns.forEach((b) => {
+        b.classList.toggle("active", b.dataset.source === state.source);
+        b.setAttribute("aria-pressed", b.dataset.source === state.source ? "true" : "false");
+      });
+      catalogBox.hidden = state.source !== "catalog";
+      fileRow.hidden = state.source !== "file";
+      if (state.source === "catalog" && !state.catalog) loadCatalog(false);
+      recomputeUploadGate();
+    }
+
+    function formatSize(bytes) {
+      const kb = Number(bytes) / 1024;
+      if (!isFinite(kb) || kb <= 0) return "";
+      return kb >= 1024 ? (kb / 1024).toFixed(1) + " MB" : Math.round(kb) + " KB";
+    }
+
+    /** Fill the board <select> from the selected release, honouring the filter. */
+    function renderBoards() {
+      const needle = String(boardFilter.value || "").trim().toLowerCase();
+      const matches = state.boards.filter((b) =>
+        !needle || b.label.toLowerCase().includes(needle)
+          || b.name.toLowerCase().includes(needle));
+      Corvus.ui.setOptions(boardField, matches.map((b) => ({
+        value: b.name,
+        // Cached images flash with no network at all, so say which ones those
+        // are — that is the difference between a 3-minute wait and none.
+        label: b.label + (b.cached ? "  ·  downloaded" : "") ,
+      })), preferredBoard());
+      boardField.disabled = matches.length === 0;
+      if (!matches.length) {
+        Corvus.ui.setOptions(boardField, [{ value: "", label: "No board matches the filter" }]);
+      }
+      recomputeUploadGate();
+    }
+
+    /** Apply a release selection: swap the board list to that release's.
+     *
+     *  A build target keeps its name across releases, so a board the operator
+     *  chose (or that was detected) survives a release change. */
+    function selectRelease(tag) {
+      const release = state.releases.find((r) => r.tag === tag) || state.releases[0];
+      state.boards = (release && release.boards) || [];
+      renderBoards();
+    }
+
+    /** Board the picker should land on: the operator's, else the detected one. */
+    function preferredBoard() {
+      if (state.boardTouched && boardField.value) return boardField.value;
+      if (state.detected && state.detected.name) return state.detected.name;
+      return boardField.value;
+    }
+
+    /** Show what the backend recognised on the USB port, and say how. */
+    function renderDetected() {
+      const d = state.detected;
+      if (!d || !d.name) {
+        detectedNote.hidden = true;
+        detectedNote.textContent = "";
+        return;
+      }
+      detectedNote.hidden = false;
+      Corvus.ui.clear(detectedNote);
+      const icon = S.icon("circle-check");
+      detectedNote.appendChild(icon);
+      detectedNote.appendChild(S.el("span", null,
+        "Detected " + (d.label || d.name) + " on the USB port"
+        + (d.source ? " (" + d.source + ")" : "")
+        + ". Change it below if that is not your board."));
+      S.refreshIcons();
+    }
+
+    /**
+     * Load the firmware catalogue. `refresh` forces the backend to go to the
+     * network; without it the backend answers from its own cache, so opening
+     * this page offline is instant and silent.
+     */
+    function loadCatalog(refresh) {
+      catalogNote.textContent = refresh ? "Checking for PX4 releases…" : "Loading releases…";
+      catalogNote.classList.remove("err");
+      const url = "/api/firmware/catalog" + (refresh ? "?refresh=1" : "");
+      return Corvus.telemetry.requestJson(url).then((data) => {
+        state.catalog = data || {};
+        state.releases = (data && data.releases) || [];
+        state.detected = (data && data.detected) || null;
+        renderDetected();
+        if (!state.releases.length) {
+          Corvus.ui.setOptions(releaseField, [{ value: "", label: "No releases available" }]);
+          releaseField.disabled = true;
+          state.boards = [];
+          renderBoards();
+          catalogNote.textContent = (data && data.error)
+            || "No PX4 releases cached yet — connect once to download the list, "
+               + "or use a local file.";
+          catalogNote.classList.add("err");
+          return;
+        }
+        releaseField.disabled = false;
+        // Default to the newest STABLE release, decided BEFORE the options are
+        // written: a select adopts its first option the moment it is filled, and
+        // PX4's newest tag is usually a beta. A pre-release is a deliberate
+        // choice, never the one an operator lands on by not choosing.
+        const known = state.releases.some((r) => r.tag === releaseField.value);
+        const stable = state.releases.find((r) => !r.prerelease) || state.releases[0];
+        const wanted = known ? releaseField.value : stable.tag;
+        Corvus.ui.setOptions(releaseField, state.releases.map((r) => ({
+          value: r.tag,
+          label: r.tag + (r.prerelease ? "  ·  pre-release" : ""),
+        })), wanted);
+        selectRelease(releaseField.value);
+        catalogNote.textContent = data.error
+          ? data.error + " — showing the cached release list."
+          : "Images are cached in " + (data.dir || "the firmware folder")
+            + ", so a repeat flash needs no network.";
+        catalogNote.classList.toggle("err", !!data.error);
+      }).catch((err) => {
+        catalogNote.textContent = (err && err.message) || "Could not load the release list";
+        catalogNote.classList.add("err");
+        recomputeUploadGate();
+      });
+    }
+
+    releaseField.addEventListener("change", () => selectRelease(releaseField.value));
+    boardField.addEventListener("change", () => {
+      // Once the operator picks, detection stops moving the selection under them.
+      state.boardTouched = true;
+      recomputeUploadGate();
+    });
+    boardFilter.addEventListener("input", renderBoards);
 
     /** Replace the .page-row-value child of an infoRow element with new text. */
     function setRowValue(row, text) {
@@ -244,8 +464,9 @@ Corvus.setupFirmware = (function () {
       // Progress + label from the status snapshot.
       const pct = Math.max(0, Math.min(100, Math.round(st.progress || 0)));
       fill.style.width = pct + "%";
-      if (st.state === "flashing") {
-        label.textContent = pct + "% · " + (st.message || "Flashing…");
+      if (st.state === "flashing" || st.state === "downloading") {
+        label.textContent = pct + "% · " + (st.message
+          || (st.state === "downloading" ? "Downloading…" : "Flashing…"));
       } else if (st.message) {
         label.textContent = st.message;
       } else {
@@ -263,8 +484,9 @@ Corvus.setupFirmware = (function () {
         status.classList.remove("err");
       }
 
-      // Cancel button only while flashing.
-      cancelBtn.hidden = st.state !== "flashing";
+      // Cancel while the service is busy — a download is just as cancellable
+      // as the flash it precedes, and it is the longer of the two.
+      cancelBtn.hidden = st.state !== "flashing" && st.state !== "downloading";
 
       // Terminal states fire a notification (one per applyStatus call; the
       // notification dedupe layer collapses near-duplicate repeats).
@@ -321,6 +543,9 @@ Corvus.setupFirmware = (function () {
     // Initial status fetch — the gate is driven by the backend (the only place
     // that knows the transport). Telemetry's armed flag is overlaid live above.
     refreshStatus();
+    // Catalogue from the backend's cache (no network unless the operator asks
+    // for a refresh), then show the download picker.
+    setSource("catalog");
 
     // --- File picker ------------------------------------------------------
     fileInput.addEventListener("change", () => {
@@ -359,6 +584,11 @@ Corvus.setupFirmware = (function () {
     }
 
     async function onUpload() {
+      if (state.source === "file") return onUploadFile();
+      return onFlashRelease();
+    }
+
+    async function onUploadFile() {
       if (!state.file) return;
       uploadBtn.disabled = true;
       status.hidden = false;
@@ -383,6 +613,35 @@ Corvus.setupFirmware = (function () {
       }
     }
 
+    /**
+     * Download the selected release image and flash it. The request carries the
+     * release tag and board name only; the backend resolves the download URL,
+     * reuses a cached image when it has one, and re-checks the flash gate after
+     * the download before touching the autopilot.
+     */
+    async function onFlashRelease() {
+      const release = releaseField.value;
+      const board = boardField.value;
+      if (!release || !board) return;
+      uploadBtn.disabled = true;
+      status.hidden = false;
+      status.classList.remove("err");
+      status.textContent = "Downloading firmware…";
+      appendLog("Downloading " + board + " (" + release + ")…", "info");
+      try {
+        await Corvus.telemetry.postAction("/api/firmware/flash", { release, board });
+        cancelBtn.hidden = false;
+        openProgressSse();
+      } catch (err) {
+        const msg = (err && err.message) || "Firmware download failed";
+        status.textContent = msg;
+        status.classList.add("err");
+        appendLog(msg, "error");
+        notify("critical", msg);
+        recomputeUploadGate();
+      }
+    }
+
     function openProgressSse() {
       if (state.eventSource) {
         try { state.eventSource.close(); } catch (_e) {}
@@ -398,10 +657,13 @@ Corvus.setupFirmware = (function () {
             if (d.message) appendLog(d.message, d.state);
             // Drive Cancel visibility from the SSE state (the live source
             // during flashing) so the button tracks the backend precisely.
-            cancelBtn.hidden = d.state !== "flashing";
+            cancelBtn.hidden = d.state !== "flashing" && d.state !== "downloading";
             // Terminal event: refetch the authoritative status so the gate +
             // banners reflect the result, and applyStatus fires the notification.
             if (d.state === "done" || d.state === "failed" || d.state === "cancelled") {
+              // A finished download leaves a new cached image; re-read the
+              // catalogue so the board list says so.
+              if (d.state === "done" && state.source === "catalog") loadCatalog(false);
               refreshStatus();
             }
           } catch (_err) { /* keep the SSE open on a malformed event */ }

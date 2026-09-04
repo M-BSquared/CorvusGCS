@@ -11,6 +11,7 @@ import json
 import logging
 import math
 import mimetypes
+import errno
 import os
 import queue
 import re
@@ -394,6 +395,41 @@ def _params_export_dir(cfg: Any) -> str:
     return os.path.expanduser("~/.corvus/params")
 
 
+def _firmware_dir(cfg: Any) -> str:
+    """Directory downloaded PX4 images and the cached catalogue live in.
+
+    Same "empty string means the built-in default" convention as the tile
+    cache, tlog and params directories.
+    """
+    configured = getattr(cfg, "firmware_dir", "") or ""
+    if configured.strip():
+        return os.path.expanduser(configured.strip())
+    from .firmware_catalog import default_firmware_dir
+    return default_firmware_dir()
+
+
+def _log_download_dir(cfg: Any) -> str:
+    """Where downloaded ULogs and exported tlogs are written.
+
+    Same "empty string means the built-in default" convention as every other
+    directory. Deliberately NOT ``tlog_dir``: that one is Corvus's own
+    recording folder, and mixing what the app writes with what the operator
+    pulled off the aircraft makes both harder to reason about.
+    """
+    configured = getattr(cfg, "log_download_dir", "") or ""
+    if configured.strip():
+        return os.path.expanduser(configured.strip())
+    return os.path.expanduser("~/.corvus/flightlogs")
+
+
+def _tlog_dir(cfg: Any) -> str:
+    """Where Corvus records its own tlogs."""
+    configured = getattr(cfg, "tlog_dir", "") or ""
+    if configured.strip():
+        return os.path.expanduser(configured.strip())
+    return os.path.expanduser("~/.corvus/logs")
+
+
 def _slugify(value: Any) -> str:
     """Lowercase, filename-safe slug of *value* ("" when there is nothing)."""
     text = re.sub(r"[^A-Za-z0-9]+", "-", str(value or "")).strip("-").lower()
@@ -614,6 +650,9 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     # parallel-built flash_service module is mid-edit or the handler is used in
     # a unit test that only sets mavlink/store).
     flash: Any = None
+    # Flight-log service (on-board ULog download + local tlog listing). None
+    # when not wired, same as `flash`.
+    logs: Any = None
     # Tile resources: per-source caches + a single downloader facade + the
     # progress pub-sub bus. None when tiles are not configured (e.g. the
     # parallel-built tile_downloader module is mid-edit).
@@ -699,6 +738,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             "tile_cache_dir": cfg.tile_cache_dir,
             "tlog_dir": cfg.tlog_dir,
             "params_dir": cfg.params_dir,
+            "firmware_dir": cfg.firmware_dir,
+            "log_download_dir": cfg.log_download_dir,
             "ssh_connections": [dict(e) for e in cfg.ssh_connections],
         }
         if cfg.tile_sources is not None:
@@ -714,7 +755,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
         known = {
             "mavlink_connection", "http_port", "tile_cache_dir", "tlog_dir",
-            "params_dir", "tile_sources", "stream_rates", "ssh_connections",
+            "params_dir", "firmware_dir", "log_download_dir",
+            "tile_sources", "stream_rates", "ssh_connections",
             "theme", "map", "branding",
         }
         for key, value in partial.items():
@@ -765,6 +807,14 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 if not isinstance(value, str):
                     return None, "params_dir must be a string"
                 merged["params_dir"] = value
+            elif key == "firmware_dir":
+                if not isinstance(value, str):
+                    return None, "firmware_dir must be a string"
+                merged["firmware_dir"] = value
+            elif key == "log_download_dir":
+                if not isinstance(value, str):
+                    return None, "log_download_dir must be a string"
+                merged["log_download_dir"] = value
             elif key == "tile_sources":
                 if not isinstance(value, dict):
                     return None, "tile_sources must be an object"
@@ -787,6 +837,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         cfg.tile_cache_dir = new_cfg.tile_cache_dir
         cfg.tlog_dir = new_cfg.tlog_dir
         cfg.params_dir = new_cfg.params_dir
+        cfg.firmware_dir = new_cfg.firmware_dir
+        cfg.log_download_dir = new_cfg.log_download_dir
         cfg.tile_sources = new_cfg.tile_sources
         cfg.stream_rates = new_cfg.stream_rates
         cfg.ssh_connections = new_cfg.ssh_connections
@@ -1823,6 +1875,20 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             status = 503 if "not connected" in error else 409
             self._send_json({"ok": False, "error": error}, status)
 
+    @route("POST", "/api/calibrate/cancel")
+    def _api_calibrate_cancel(self, payload: dict) -> None:
+        """Abort the calibration currently running on the vehicle."""
+        del payload
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        if self.mavlink.cancel_calibration():
+            self._send_json({"ok": True})
+            return
+        error = self.mavlink.get_last_command_error() or "cancel failed"
+        status = 503 if "not connected" in error else 409
+        self._send_json({"ok": False, "error": error}, status)
+
     @route("POST", "/api/autotune")
     def _api_autotune(self, payload: dict) -> None:
         """Start an autotune on the given axis."""
@@ -1914,6 +1980,73 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             return
         self._send_json(self.flash.status())
 
+    @route("GET", "/api/firmware/catalog")
+    def _api_firmware_catalog(self) -> None:
+        """PX4 releases and their flashable boards, plus what is already cached.
+
+        Served from the on-disk cache unless ``?refresh=1``, so opening the page
+        in the field is instant and needs no network. A failed refresh returns
+        200 with the cached list and a non-empty ``error`` — going blank because
+        there is no internet is exactly the wrong answer for this app.
+        """
+        if self.flash is None or getattr(self.flash, "catalog", None) is None:
+            self._send_json({"releases": [], "cached": [], "error":
+                             "firmware catalogue unavailable", "dir": ""})
+            return
+        params = parse_qs(urlparse(self.path).query)
+        refresh = (params.get("refresh", ["0"])[0] or "0").lower() in ("1", "true", "yes")
+        try:
+            data = self.flash.catalog.catalog(refresh=refresh)
+            data["detected"] = self._detect_connected_board(data.get("releases") or [])
+            self._send_json(data)
+        except Exception:  # noqa: BLE001 - a catalogue failure must not 500
+            logger.exception("firmware catalogue failed")
+            self._send_json({"releases": [], "cached": [],
+                             "error": "firmware catalogue failed", "dir": "",
+                             "detected": None})
+
+    def _detect_connected_board(self, releases: list) -> dict | None:
+        """Which board is plugged in, matched against the release build targets.
+
+        Matched against the newest stable release's target list because a build
+        target keeps its name across releases, so the answer is valid whichever
+        release the operator then picks. A suggestion only — it preselects, it
+        does not decide.
+        """
+        if self.mavlink is None or not releases:
+            return None
+        try:
+            from .firmware_catalog import detect_board
+            stable = next((r for r in releases if not r.get("prerelease")), releases[0])
+            return detect_board(self.mavlink.board_identity(), stable.get("boards") or [])
+        except Exception:  # noqa: BLE001 - detection is a convenience, never a gate
+            logger.debug("board detection failed", exc_info=True)
+            return None
+
+    @route("POST", "/api/firmware/flash")
+    def _api_firmware_flash(self, payload: dict) -> None:
+        """Download one catalogue image and flash it.
+
+        The body names a release and a board; the download URL is resolved
+        server-side, so the browser never chooses what gets fetched.
+        """
+        release = payload.get("release", "")
+        board = payload.get("board", "")
+        if not isinstance(release, str) or not isinstance(board, str):
+            self._send_json({"ok": False, "error": "release and board must be strings"}, 400)
+            return
+        if not release.strip() or not board.strip():
+            self._send_json({"ok": False, "error": "release and board are required"}, 400)
+            return
+        if self.flash is None:
+            self._send_json({"ok": False, "error": "flash service unavailable"}, 503)
+            return
+        if self.flash.start_release(release.strip(), board.strip()):
+            self._send_json({"ok": True, "state": "downloading"})
+            return
+        err = getattr(self.flash, "last_error", "") or "flash refused"
+        self._send_json({"ok": False, "error": err}, 409)
+
     def _api_firmware_upload_raw(self) -> None:
         """Receive a raw firmware binary and start a flash.
 
@@ -1961,6 +2094,161 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"ok": True})
         else:
             self._send_json({"ok": False, "error": "no flash in progress"})
+
+    # ---- Flight logs (on-board ULogs + local tlogs) ----
+    @route("GET", "/api/logs/status")
+    def _api_logs_status(self) -> None:
+        """Everything the Analysis page renders: logs, queue, progress, folder."""
+        if self.logs is None:
+            self._send_json({
+                "state": "idle", "message": "", "percent": 0, "current": None,
+                "queued": [], "completed": [], "logs": [], "tlogs": [],
+                "dir": "", "connected": False,
+            })
+            return
+        self._send_json(self.logs.status())
+
+    @route("POST", "/api/logs/refresh")
+    def _api_logs_refresh(self, payload: dict) -> None:
+        """Ask the vehicle to enumerate its on-board logs."""
+        del payload
+        if self.logs is None:
+            self._send_json({"ok": False, "error": "log service unavailable"}, 503)
+            return
+        if self.logs.refresh():
+            self._send_json({"ok": True, "state": "listing"})
+            return
+        error = getattr(self.logs, "last_error", "") or "could not list logs"
+        self._send_json({"ok": False, "error": error},
+                        503 if "not connected" in error else 409)
+
+    @route("POST", "/api/logs/download")
+    def _api_logs_download(self, payload: dict) -> None:
+        """Queue one or more on-board logs for sequential download."""
+        raw = payload.get("ids")
+        if not isinstance(raw, list) or not raw:
+            self._send_json({"ok": False, "error": "ids must be a non-empty list"}, 400)
+            return
+        ids: list[int] = []
+        for item in raw:
+            if isinstance(item, bool) or not isinstance(item, (int, float)):
+                self._send_json({"ok": False, "error": "ids must be numbers"}, 400)
+                return
+            ids.append(int(item))
+        if self.logs is None:
+            self._send_json({"ok": False, "error": "log service unavailable"}, 503)
+            return
+        if self.logs.start_download(ids):
+            self._send_json({"ok": True, "state": "downloading", "queued": len(ids)})
+            return
+        error = getattr(self.logs, "last_error", "") or "download refused"
+        self._send_json({"ok": False, "error": error},
+                        503 if "not connected" in error else 409)
+
+    @route("GET", "/api/logs/review")
+    def _api_logs_review(self) -> None:
+        """Flight Review for one ULog in the download folder.
+
+        The file is named, never pathed: the name is resolved inside the
+        download folder and the result checked with realpath, so no query can
+        walk out of it.
+        """
+        params = parse_qs(urlparse(self.path).query)
+        name = (params.get("file", [""])[0] or "").strip()
+        if not name:
+            self._send_json({"ok": False, "error": "file is required"}, 400)
+            return
+        if self.logs is None:
+            self._send_json({"ok": False, "error": "log service unavailable"}, 503)
+            return
+        directory = os.path.realpath(self.logs.status().get("dir") or "")
+        target = os.path.realpath(os.path.join(directory, os.path.basename(name)))
+        if not directory or os.path.commonpath([directory, target]) != directory:
+            self._send_json({"ok": False, "error": "unknown log file"}, 400)
+            return
+        if not target.endswith(".ulg") or not os.path.isfile(target):
+            self._send_json({"ok": False, "error": "unknown log file"}, 404)
+            return
+        try:
+            from .flight_review import REVIEW_TOPICS, review
+            from .ulog import UlogError, read
+            with open(target, "rb") as handle:
+                parsed = read(handle, topics=REVIEW_TOPICS)
+            data = review(parsed, os.path.basename(target))
+        except UlogError as exc:
+            self._send_json({"ok": False, "error": str(exc)}, 400)
+            return
+        except (OSError, MemoryError) as exc:
+            self._send_json({"ok": False, "error": f"could not read the log ({exc})"}, 400)
+            return
+        except Exception:  # noqa: BLE001 - a bad log must not 500 the app
+            logger.exception("flight review failed for %s", target)
+            self._send_json({"ok": False, "error": "could not analyse this log"}, 400)
+            return
+        data["ok"] = True
+        self._send_json(data)
+
+    @route("POST", "/api/logs/erase")
+    def _api_logs_erase(self, payload: dict) -> None:
+        """Erase every on-board log.
+
+        MAVLink has no per-log delete, so this is all-or-nothing by protocol.
+        The confirm lives in the UI; the backend refuses while armed and while
+        another log job owns the vehicle's single log session.
+        """
+        del payload
+        if self.logs is None:
+            self._send_json({"ok": False, "error": "log service unavailable"}, 503)
+            return
+        if self.logs.erase():
+            self._send_json({"ok": True, "state": "erasing"})
+            return
+        error = getattr(self.logs, "last_error", "") or "erase refused"
+        self._send_json({"ok": False, "error": error},
+                        503 if "not connected" in error else 409)
+
+    @route("POST", "/api/logs/cancel")
+    def _api_logs_cancel(self, payload: dict) -> None:
+        del payload
+        if self.logs is None:
+            self._send_json({"ok": False, "error": "log service unavailable"}, 503)
+            return
+        if self.logs.cancel():
+            self._send_json({"ok": True})
+        else:
+            self._send_json({"ok": False, "error": "no log operation in progress"})
+
+    @route("POST", "/api/logs/dir")
+    def _api_logs_dir(self, payload: dict) -> None:
+        """Set the download folder and persist it for future connections.
+
+        Its own endpoint rather than a general config write because this is the
+        one setting the Analysis page owns, and it has to be verified as
+        writable before the operator queues an hour of downloads into it.
+        """
+        value = payload.get("dir")
+        if not isinstance(value, str) or not value.strip():
+            self._send_json({"ok": False, "error": "dir must be a non-empty string"}, 400)
+            return
+        path = os.path.expanduser(value.strip())
+        try:
+            os.makedirs(path, exist_ok=True)
+            if not os.access(path, os.W_OK):
+                raise OSError(errno.EACCES, "not writable")
+        except OSError as exc:
+            self._send_json({"ok": False,
+                             "error": f"cannot use {path} ({exc.strerror or exc})"}, 400)
+            return
+        if self.config is not None:
+            self.config.log_download_dir = path
+            try:
+                save_config(self.config, self.config_path or default_config_path())
+            except Exception:  # noqa: BLE001 - the folder still works this session
+                logger.exception("could not persist log_download_dir")
+                self._send_json({"ok": True, "dir": path,
+                                 "warning": "folder set for this session but not saved"})
+                return
+        self._send_json({"ok": True, "dir": path})
 
     # ---- SSE endpoints ----
     @route("GET", "/api/telemetry")
@@ -2631,11 +2919,26 @@ def create_server(
     # still builds if a parallel edit to flash_service is mid-flight.
     flash: Any = None
     try:
+        from .firmware_catalog import FirmwareCatalog
         from .flash_service import FlashService
-        flash = FlashService(mavlink, store)
+        flash = FlashService(mavlink, store, catalog=FirmwareCatalog(_firmware_dir(config)))
     except Exception:  # noqa: BLE001 - never block server creation
         logger.exception("flash service unavailable; firmware endpoints disabled")
     CorvusHandler.flash = flash
+
+    # Flight-log service: on-board ULog download over MAVLink plus the local
+    # tlog listing. Lazily imported for the same reason as the flash service.
+    logs: Any = None
+    try:
+        from .log_service import LogService
+        logs = LogService(
+            mavlink,
+            log_dir=lambda: _log_download_dir(config),
+            tlog_dir=lambda: _tlog_dir(config),
+        )
+    except Exception:  # noqa: BLE001 - never block server creation
+        logger.exception("log service unavailable; log endpoints disabled")
+    CorvusHandler.logs = logs
 
     server = CorvusServer(("", port), CorvusHandler)
     server.mavlink = mavlink
@@ -2644,6 +2947,7 @@ def create_server(
     server.config = config
     server.config_path = cfg_path
     server.flash = flash
+    server.logs = logs
     server.tile_caches = tile_caches
     server.tile_downloader = tile_downloader
     mavlink.start()

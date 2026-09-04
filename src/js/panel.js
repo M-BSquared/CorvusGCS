@@ -82,7 +82,7 @@ Corvus.panel = (function () {
   let history = [];
   let histIdx = -1;
   let sshContent, futureContent;
-  let consoleSource = null;
+  let consoleUnsub = null;
   let sshOutputEl = null;
   let sshInputEl = null;
   let sshConnectedName = null;
@@ -344,19 +344,16 @@ Corvus.panel = (function () {
     updateCount();
   }
 
+  /* The console feed comes from the shared, reference-counted bus in
+     telemetry.js rather than a private EventSource: the calibration wizard
+     needs the same STATUSTEXT stream, and two connections to one endpoint is a
+     stream this app cannot spare (six per origin, and telemetry, params, tiles
+     and firmware already want theirs). */
   function connectConsoleSSE() {
-    if (consoleSource) consoleSource.close();
-    consoleSource = new EventSource("/api/console/stream");
-    consoleSource.addEventListener("message", (e) => {
-      try {
-        const entry = JSON.parse(e.data);
-        if (entry.name === "ping") return;
-        addConsoleLine(entry.name === "SHELL" ? "shell" : entry.level, entry.text || entry.name);
-      } catch (err) {
-        console.error("console SSE parse:", err);
-      }
+    if (consoleUnsub) consoleUnsub();
+    consoleUnsub = Corvus.telemetry.subscribeConsole((entry) => {
+      addConsoleLine(entry.name === "SHELL" ? "shell" : entry.level, entry.text || entry.name);
     });
-    consoleSource.onerror = () => {};
   }
 
   async function sendCommand() {

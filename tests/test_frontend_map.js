@@ -173,11 +173,16 @@ function testSourceTextDoesNotMirrorTheRegistry() {
 }
 
 function testSourceTextEnablesAttributionControl() {
-  // The map must turn MapLibre's attribution control ON so the credit renders.
+  // The tile credit is a legal requirement, so it must be on the map one way or
+  // the other. The constructor flag is off on purpose — the control is added
+  // explicitly so it can be placed bottom-left, out of the control rail's
+  // corner — which is exactly the substitution this check has to allow without
+  // letting the credit be dropped altogether.
   const src = fs.readFileSync(path.join(__dirname, "..", "src", "js", "map.js"), "utf-8");
   assert.ok(
-    src.includes("attributionControl: true"),
-    "map.js must set attributionControl: true on the MapLibre constructor",
+    src.includes("attributionControl: true")
+      || /addControl\(\s*new maplibregl\.AttributionControl\(/.test(src),
+    "map.js must render the attribution, via the constructor flag or an explicit control",
   );
   assert.ok(
     !src.includes("unpkg.com/maplibre"),
