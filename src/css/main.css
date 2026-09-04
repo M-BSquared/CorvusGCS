@@ -593,7 +593,13 @@ svg { display: block; }
    map for something the compass and horizon under it already say. */
 .hud-actions {
   position: absolute;
-  top: 6px; right: 8px;
+  /* Top centre, in the gap between the compass and the attitude indicator.
+     Both dials are circles, so the space above and between them is dead area
+     the cluster can occupy without covering a reading — unlike the top-right
+     corner, where it sat over the attitude indicator's scale. */
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 1;
   display: flex; align-items: center; gap: 1px;
   padding: 2px;
@@ -613,6 +619,7 @@ svg { display: block; }
 .flight-overlay.is-collapsed .hud-actions {
   opacity: 1;
   position: static;
+  transform: none;
   background: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
