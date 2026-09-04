@@ -142,7 +142,8 @@ function fire(el, type, ev) {
     preventDefault() {}, stopPropagation() {}, target: el, button: 0, pointerId: 1,
   }, ev)));
 }
-function head(panel) { return panel.querySelector(".hud-head"); }
+// The panel IS the drag surface — there is no title bar to grab.
+function dragSurface(panel) { return panel; }
 function actionBtn(panel, label) {
   return panel.querySelectorAll(".icon-btn").find((b) => b.getAttribute("aria-label") === label);
 }
@@ -160,15 +161,19 @@ function testInitReparentsInstrumentsInsteadOfRebuilding() {
   // rendering into them after this module runs.
   assert.equal(body.children[0], instruments, "instruments node re-parented, not recreated");
   assert.equal(body.children[1], telemetry, "telemetry node re-parented, not recreated");
-  assert.ok(head(panel), "title bar created");
-  assert.equal(panel.querySelector(".hud-title").textContent, "FLIGHT");
+  // No title bar: the controls float over the panel, and the panel names
+  // itself for assistive tech in place of a visible heading.
+  assert.equal(panel.querySelector(".hud-head"), null, "no title bar");
+  assert.ok(panel.querySelector(".hud-actions"), "floating control cluster created");
+  assert.equal(panel.getAttribute("role"), "group");
+  assert.equal(panel.getAttribute("aria-label"), "Flight instruments");
 }
 
-function testHeaderExposesThreeControls() {
+function testPanelExposesThreeControls() {
   const { panel } = mount();
   Corvus.hudPanel.init(panel);
   ["Lock position", "Compact size", "Collapse"].forEach((label) => {
-    assert.ok(actionBtn(panel, label), `header has a "${label}" control`);
+    assert.ok(actionBtn(panel, label), `panel has a "${label}" control`);
   });
 }
 
@@ -201,7 +206,7 @@ function testCompactRoundTrips() {
 function testDragMovesThePanelAndPersistsThePosition() {
   const { panel } = mount();
   Corvus.hudPanel.init(panel);
-  const h = head(panel);
+  const h = dragSurface(panel);
 
   // Grab at (740, 390) — 40px into a panel whose top-left is (700, 380).
   fire(h, "pointerdown", { clientX: 740, clientY: 390 });
@@ -223,7 +228,7 @@ function testPinnedPanelRefusesToMove() {
   assert.ok(panel.classList.contains("is-pinned"));
   assert.equal(persisted().pinned, true);
 
-  const h = head(panel);
+  const h = dragSurface(panel);
   fire(h, "pointerdown", { clientX: 740, clientY: 390 });
   fire(h, "pointermove", { clientX: 200, clientY: 200 });
   fire(h, "pointerup", { clientX: 200, clientY: 200 });
@@ -231,21 +236,22 @@ function testPinnedPanelRefusesToMove() {
   assert.ok(!panel.classList.contains("is-placed"));
 }
 
-function testHeaderButtonsDoNotStartADrag() {
+function testControlButtonsDoNotStartADrag() {
   const { panel } = mount();
   Corvus.hudPanel.init(panel);
-  const h = head(panel);
-  // A pointerdown that originates on a control must not begin dragging, or
-  // every click on pin/compact/collapse would nudge the panel.
+  const h = dragSurface(panel);
+  // A pointerdown that originates on a control must not begin dragging. With
+  // the whole panel as the drag surface this is the only thing keeping a click
+  // on pin/compact/collapse from also nudging the panel.
   fire(h, "pointerdown", { clientX: 740, clientY: 390, target: actionBtn(panel, "Collapse") });
   fire(h, "pointermove", { clientX: 500, clientY: 200 });
-  assert.equal(panel.style.left, "", "no drag started from a header button");
+  assert.equal(panel.style.left, "", "no drag started from a control button");
 }
 
 function testDragIsClampedSoThePanelStaysReachable() {
   const { panel } = mount();
   Corvus.hudPanel.init(panel);
-  const h = head(panel);
+  const h = dragSurface(panel);
 
   // Drag far past the top-left corner of the map.
   fire(h, "pointerdown", { clientX: 740, clientY: 390 });
@@ -269,7 +275,7 @@ function testDragIsClampedSoThePanelStaysReachable() {
 function testDoubleClickReturnsThePanelToItsDefaultCorner() {
   const { panel } = mount();
   Corvus.hudPanel.init(panel);
-  const h = head(panel);
+  const h = dragSurface(panel);
   fire(h, "pointerdown", { clientX: 740, clientY: 390 });
   fire(h, "pointermove", { clientX: 400, clientY: 200 });
   fire(h, "pointerup", { clientX: 400, clientY: 200 });
@@ -320,7 +326,7 @@ function testCorruptStoredStateFallsBackToDefaults() {
 function testShrinkingTheWindowPullsThePanelBackIntoView() {
   const { host, panel } = mount();
   Corvus.hudPanel.init(panel);
-  const h = head(panel);
+  const h = dragSurface(panel);
   fire(h, "pointerdown", { clientX: 740, clientY: 390 });
   fire(h, "pointermove", { clientX: 1000, clientY: 700 });
   fire(h, "pointerup", { clientX: 1000, clientY: 700 });
@@ -338,12 +344,12 @@ function testShrinkingTheWindowPullsThePanelBackIntoView() {
 
 const tests = [
   testInitReparentsInstrumentsInsteadOfRebuilding,
-  testHeaderExposesThreeControls,
+  testPanelExposesThreeControls,
   testCollapseHidesTheBodyAndRoundTrips,
   testCompactRoundTrips,
   testDragMovesThePanelAndPersistsThePosition,
   testPinnedPanelRefusesToMove,
-  testHeaderButtonsDoNotStartADrag,
+  testControlButtonsDoNotStartADrag,
   testDragIsClampedSoThePanelStaysReachable,
   testDoubleClickReturnsThePanelToItsDefaultCorner,
   testStateIsRestoredOnTheNextLaunch,

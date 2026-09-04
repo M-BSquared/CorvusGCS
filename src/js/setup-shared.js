@@ -18,9 +18,13 @@ Corvus.setupShared = (function () {
   // Semantic palette reused from the app CSS variables (kept in sync here so
   // the Plotly dark theme matches the HUD). Roll rate + horizontal velocity use
   // nav blue (#4CC9FF); roll attitude uses healthy green (#45D483).
-  const COLOR_RATE = "#4CC9FF";
-  const COLOR_ATT = "#45D483";
-  const COLOR_VEL = "#4CC9FF";
+  // Trace colors are read from the theme at draw time rather than frozen as
+  // constants, so the light theme gets its darker, saturated variants instead
+  // of the dark theme's glowing ones. Kept as getters because the old constant
+  // names are part of this module's surface.
+  const chartColor = (k, fallback) => {
+    try { return Corvus.ui.chartColors()[k] || fallback; } catch (_e) { return fallback; }
+  };
 
   /** True when the OS asks for less motion (read per sub-page build). */
   function reducedMotion() {
@@ -111,16 +115,18 @@ Corvus.setupShared = (function () {
   }
 
   /** A dark Plotly layout for a single-trace live graph (shared by all graphs). */
+  /** Graph layout, themed. The surfaces, type and grid come from the active
+   *  theme via Corvus.ui.plotlyTheme(); only what is specific to these graphs
+   *  — margins, axis titles — is set here. Called on every redraw, so a theme
+   *  switch takes effect on the next frame. */
   function plotlyLayout(unit) {
-    return {
-      paper_bgcolor: "#0d1117",
-      plot_bgcolor: "#0d1117",
-      font: { color: "#A5ADB8", family: "JetBrains Mono, monospace", size: 10 },
+    const theme = Corvus.ui.plotlyTheme();
+    return Object.assign({}, theme, {
       margin: { l: 44, r: 8, t: 6, b: 26 },
       showlegend: false,
-      xaxis: { title: "Time (s)", gridcolor: "rgba(255,255,255,0.06)", zerolinecolor: "rgba(255,255,255,0.08)", tickfont: { size: 9 } },
-      yaxis: { title: unit, gridcolor: "rgba(255,255,255,0.06)", zerolinecolor: "rgba(255,255,255,0.08)", tickfont: { size: 9 } },
-    };
+      xaxis: Object.assign({}, theme.xaxis, { title: "Time (s)" }),
+      yaxis: Object.assign({}, theme.yaxis, { title: unit }),
+    });
   }
 
   /** Plotly config with reduced-motion zero-duration transitions when requested. */
@@ -131,7 +137,10 @@ Corvus.setupShared = (function () {
   }
 
   return {
-    MAX_POINTS, REDRAW_MIN_MS, COLOR_RATE, COLOR_ATT, COLOR_VEL,
+    MAX_POINTS, REDRAW_MIN_MS,
+    get COLOR_RATE() { return chartColor("nav", "#4CC9FF"); },
+    get COLOR_ATT() { return chartColor("healthy", "#45D483"); },
+    get COLOR_VEL() { return chartColor("nav", "#4CC9FF"); },
     reducedMotion, el, icon, refreshIcons, pageHeader, sectionTitle, infoRow,
     backButton, runConfigAction, plotlyLayout, plotlyConfig,
   };

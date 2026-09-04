@@ -23,6 +23,17 @@ const assert = require("node:assert/strict");
 global.window = global;
 global.Corvus = {};
 
+// The chart modules subscribe to corvus:themechange on window, so the listener
+// pair has to exist for the theme-reactive redraw path to be exercised at all.
+const windowListeners = {};
+window.addEventListener = (t, cb) => { (windowListeners[t] = windowListeners[t] || []).push(cb); };
+window.removeEventListener = (t, cb) => {
+  const list = windowListeners[t] || [];
+  const i = list.indexOf(cb);
+  if (i >= 0) list.splice(i, 1);
+};
+
+
 global.CustomEvent = class CustomEvent {
   constructor(type, options = {}) { this.type = type; this.detail = options.detail; }
 };

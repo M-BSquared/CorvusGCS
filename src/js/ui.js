@@ -719,6 +719,90 @@ Corvus.ui = (function () {
     return { el, show, hide };
   }
 
+  /* ===================== charts ===================== */
+
+  /**
+   * Read a design token off the document root.
+   *
+   * Plotly draws into a canvas/SVG it owns and takes colors as literal
+   * strings, so it is the one place in the app that cannot simply reference
+   * var(--token) — the values have to be resolved and handed over. That makes
+   * this the bridge between themes.css and every chart.
+   */
+  function token(name, fallback) {
+    try {
+      const v = getComputedStyle(document.documentElement).getPropertyValue(name);
+      return (v && v.trim()) || fallback;
+    } catch (_e) {
+      return fallback;
+    }
+  }
+
+  /**
+   * The themed half of a Plotly layout: surfaces, type, grid and axis colors,
+   * all resolved from the active theme. Callers merge their own margins,
+   * titles and axis ranges on top.
+   *
+   * Fallbacks are the dark-theme values, so a chart drawn before the
+   * stylesheet has applied still looks deliberate rather than Plotly-default
+   * white-on-white.
+   */
+  function plotlyTheme() {
+    const surface = token("--surface-1", "#11161D");
+    const text = token("--text-2", "#A5ADB8");
+    const muted = token("--text-3", "#69737F");
+    const grid = token("--border-soft", "#20262E");
+    const axis = token("--border", "#2A3038");
+    return {
+      paper_bgcolor: surface,
+      plot_bgcolor: surface,
+      font: { color: text, family: "JetBrains Mono, monospace", size: 10 },
+      xaxis: {
+        gridcolor: grid, zerolinecolor: axis, linecolor: axis,
+        tickfont: { size: 9, color: muted },
+      },
+      yaxis: {
+        gridcolor: grid, zerolinecolor: axis, linecolor: axis,
+        tickfont: { size: 9, color: muted },
+      },
+    };
+  }
+
+  /** Series colors for charts, from the semantic palette. Each theme retunes
+   *  these, so a chart drawn in the light theme uses its darker, saturated
+   *  variants rather than the dark theme's glowing ones. */
+  function chartColors() {
+    return {
+      nav: token("--nav", "#4CC9FF"),
+      healthy: token("--healthy", "#45D483"),
+      warning: token("--warning", "#F5C842"),
+      critical: token("--critical", "#FF514D"),
+      accent: token("--accent", "#3DA876"),
+    };
+  }
+
+  /**
+   * Subscribe to theme changes. Charts hold resolved color strings, so unlike
+   * everything else in the app they do not restyle themselves when the theme
+   * attribute flips — they have to be told to redraw. Returns an unsubscribe.
+   */
+  function onThemeChange(fn) {
+    if (typeof fn !== "function") return function () {};
+    // Guarded like every other helper here: a plugin (the documented extension
+    // point) may run somewhere without a full window, and a missing theme
+    // listener must degrade to "charts keep their current colors", never throw.
+    if (typeof window === "undefined" || typeof window.addEventListener !== "function") {
+      return function () {};
+    }
+    const handler = () => fn();
+    window.addEventListener("corvus:themechange", handler);
+    return function () {
+      if (typeof window.removeEventListener === "function") {
+        window.removeEventListener("corvus:themechange", handler);
+      }
+    };
+  }
+
   /* ===================== helpers ===================== */
 
   /* Empty a container. Faster than innerHTML="" for large lists and, unlike
@@ -788,6 +872,11 @@ Corvus.ui = (function () {
     message,
     setBusy,
     setActive,
+    // charts
+    token,
+    plotlyTheme,
+    chartColors,
+    onThemeChange,
     // helpers
     clear,
     refreshIcons,

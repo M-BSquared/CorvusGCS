@@ -36,7 +36,22 @@ Corvus.pluginVibration = (function () {
 
   // Trace colours reuse the app's semantic palette: nav blue (info), warning
   // yellow, critical red. The accel-HF trace (red) is the health indicator.
-  const COLORS = { x: "#4CC9FF", y: "#F5C842", z: "#FF514D" };
+  // Palette KEYS, resolved from the active theme at draw time. The legend
+  // swatches in the DOM use var(--token) directly and restyle themselves; the
+  // Plotly traces cannot, so both read the same three semantic colors.
+  const COLOR_KEYS = { x: "nav", y: "warning", z: "critical" };
+  const COLOR_FALLBACK = { x: "#4CC9FF", y: "#F5C842", z: "#FF514D" };
+
+  /** Current trace colors for the three vibration axes. */
+  function traceColors() {
+    let palette = {};
+    try { palette = Corvus.ui.chartColors(); } catch (_e) {}
+    return {
+      x: palette[COLOR_KEYS.x] || COLOR_FALLBACK.x,
+      y: palette[COLOR_KEYS.y] || COLOR_FALLBACK.y,
+      z: palette[COLOR_KEYS.z] || COLOR_FALLBACK.z,
+    };
+  }
 
   /**
    * Pure buffer-update: append only when a vibration value changed since the
@@ -111,16 +126,18 @@ Corvus.pluginVibration = (function () {
     const legend = document.createElement("div");
     legend.className = "vib-legend";
     const legItems = [
-      { cls: "vib-leg-x", color: COLORS.x, label: "Gyro coning (x)" },
-      { cls: "vib-leg-y", color: COLORS.y, label: "Gyro HF vibration (y)" },
-      { cls: "vib-leg-z", color: COLORS.z, label: "Accel HF vibration (z)" },
+      { cls: "vib-leg-x", axis: "x", label: "Gyro coning (x)" },
+      { cls: "vib-leg-y", axis: "y", label: "Gyro HF vibration (y)" },
+      { cls: "vib-leg-z", axis: "z", label: "Accel HF vibration (z)" },
     ];
+    const legendDots = [];
     legItems.forEach((li) => {
       const leg = document.createElement("span");
       leg.className = "vib-leg " + li.cls;
       const dot = document.createElement("span");
       dot.className = "vib-dot";
-      dot.style.background = li.color;
+      dot.dataset.axis = li.axis;
+      legendDots.push(dot);
       leg.appendChild(dot);
       leg.appendChild(document.createTextNode(li.label));
       legend.appendChild(leg);
@@ -153,24 +170,27 @@ Corvus.pluginVibration = (function () {
     let notifiedHigh = false;
 
     function buildTraces() {
+      const c = traceColors();
       return [
-        { x: buf.t, y: buf.vx, mode: "lines", name: "Gyro coning", line: { color: COLORS.x, width: 1.5 } },
-        { x: buf.t, y: buf.vy, mode: "lines", name: "Gyro HF", line: { color: COLORS.y, width: 1.5 } },
-        { x: buf.t, y: buf.vz, mode: "lines", name: "Accel HF", line: { color: COLORS.z, width: 1.5 } },
+        { x: buf.t, y: buf.vx, mode: "lines", name: "Gyro coning", line: { color: c.x, width: 1.5 } },
+        { x: buf.t, y: buf.vy, mode: "lines", name: "Gyro HF", line: { color: c.y, width: 1.5 } },
+        { x: buf.t, y: buf.vz, mode: "lines", name: "Accel HF", line: { color: c.z, width: 1.5 } },
       ];
     }
 
+    /** Surfaces, type and grid from the active theme; only the margins, the
+     *  legend and the axis titles are specific to this graph. */
     function buildLayout() {
-      return {
-        paper_bgcolor: "#0d1117",
-        plot_bgcolor: "#0d1117",
-        font: { color: "#A5ADB8", family: "JetBrains Mono, monospace", size: 10 },
+      const theme = Corvus.ui.plotlyTheme();
+      return Object.assign({}, theme, {
         margin: { l: 44, r: 8, t: 6, b: 26 },
         showlegend: true,
-        legend: { x: 1, y: 1, xanchor: "right", yanchor: "top", bgcolor: "rgba(13,17,23,0)" },
-        xaxis: { title: "Time (s)", gridcolor: "rgba(255,255,255,0.06)", zerolinecolor: "rgba(255,255,255,0.08)", tickfont: { size: 9 } },
-        yaxis: { title: "Vibration metric (unitless)", gridcolor: "rgba(255,255,255,0.06)", zerolinecolor: "rgba(255,255,255,0.08)", tickfont: { size: 9 } },
-      };
+        // Transparent legend plate: the paper color behind it is already the
+        // themed surface, and a second opaque box would band against it.
+        legend: { x: 1, y: 1, xanchor: "right", yanchor: "top", bgcolor: "rgba(0,0,0,0)" },
+        xaxis: Object.assign({}, theme.xaxis, { title: "Time (s)" }),
+        yaxis: Object.assign({}, theme.yaxis, { title: "Vibration metric (unitless)" }),
+      });
     }
 
     // Reduced motion → zero-duration Plotly transitions (static react updates),
@@ -180,6 +200,18 @@ Corvus.pluginVibration = (function () {
       config.transition = { duration: 0 };
       config.frame = { duration: 0 };
     }
+
+    /** Paint the legend swatches from the active theme, matching the traces. */
+    function paintLegend() {
+      const c = traceColors();
+      legendDots.forEach((d) => { d.style.background = c[d.dataset.axis]; });
+    }
+    paintLegend();
+
+    // Plotly keeps the colors it was handed, so a theme switch has to force a
+    // redraw; the DOM legend is repainted in the same breath so the swatches
+    // never disagree with the lines. Released in destroy().
+    const unsubTheme = Corvus.ui.onThemeChange(() => { paintLegend(); redraw(); });
 
     function redraw() {
       lastRedraw = Date.now();
@@ -239,6 +271,9 @@ Corvus.pluginVibration = (function () {
     // teardown with no external references.
     containerEl._vibDestroy = function () {
       if (unsub) { try { unsub(); } catch (_e) {} unsub = null; }
+      // The theme listener lives on window, so it outlives the container
+      // unless it is released here — a closed plugin must leave nothing behind.
+      try { unsubTheme(); } catch (_e) {}
       try { window.Plotly.purge(chartDiv); } catch (_e) {}
       // Best-effort restore of PX4 default rate (lean). Never blocks destroy.
       if (api && typeof api.postAction === "function") {

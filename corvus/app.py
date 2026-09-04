@@ -91,10 +91,12 @@ def start_backend(port: int, mavlink_conn: str) -> tuple:
     # the desktop app's tile endpoints 503 and tiles never cache locally.
     # Honor the operator config override for the cache dir.
     cache_dir = cfg.tile_cache_dir or default_cache_dir()
-    tile_caches, tile_progress_bus, tile_downloader = _build_tile_resources(cache_dir)
+    tile_caches, tile_progress_bus, tile_downloader, tile_breaker = \
+        _build_tile_resources(cache_dir)
     CorvusHandler.tile_caches = tile_caches
     CorvusHandler.tile_downloader = tile_downloader
     CorvusHandler.tile_progress_bus = tile_progress_bus
+    CorvusHandler.tile_breaker = tile_breaker
 
     # Firmware-flash service (direct USB only). Wired on the independently-
     # built server so the desktop app supports flashing too.

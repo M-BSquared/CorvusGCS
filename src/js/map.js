@@ -118,7 +118,10 @@ Corvus.map = (function () {
   const POS_EPS = 1e-7;     // ~1 cm; below this we consider the marker settled
   const HDG_EPS = 0.05;     // degrees
 
-  const DEFAULT_CENTER = [8.539, 47.378];
+  // Where the map opens before a GPS fix arrives: the operating site at
+  // Neubiberg. [lng, lat] — MapLibre's order, the reverse of how coordinates
+  // are usually written down.
+  const DEFAULT_CENTER = [11.640969, 48.080217];
   // All tile traffic routes through the backend serve endpoint so the map works
   // fully offline once tiles are cached. Online, the backend fetches+caches
   // transparently, so the online experience is unchanged. The browser never
@@ -807,6 +810,15 @@ Corvus.map = (function () {
       dragRotate: true,
       keyboard: false,
     });
+    // Controls are built NOW, not on "load". MapLibre fires "load" only once the
+    // style AND its first tiles have resolved, so building the rail there left
+    // the operator staring at a map with no zoom, layer or centre buttons for as
+    // long as the first tile fetch took — seconds on a cold cache, and much
+    // worse offline. Nothing in the rail needs a loaded style: the handlers act
+    // on the map object (which exists from the constructor), and setBaseLayer
+    // already defers its own work until `started`.
+    buildControls(controlsEl, layersPopover);
+
     map.on("load", () => {
       // Regions first: their layers must sit UNDER the track and plan route,
       // and MapLibre stacks in insertion order.
@@ -841,7 +853,6 @@ Corvus.map = (function () {
       };
       Corvus.anim.add(vehAnimator);
 
-      buildControls(controlsEl, layersPopover);
       Corvus.telemetry.subscribe(updateVehicle);
       started = true;
       // Draw whatever regions arrived while the style was still loading, then

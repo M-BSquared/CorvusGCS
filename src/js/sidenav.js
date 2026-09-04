@@ -47,6 +47,13 @@ Corvus.theme = (function () {
     const v = isKnown(id) ? id : DEFAULT;
     try { document.documentElement.setAttribute("data-theme", v); } catch (_e) {}
     try { localStorage.setItem(KEY, v); } catch (_e) {}
+    // Everything styled in CSS restyles itself the moment the attribute
+    // changes. Plotly does not: it draws into its own surface from color
+    // strings resolved at build time, so the charts have to be told. This is
+    // the only reason a theme change is an event at all.
+    try {
+      window.dispatchEvent(new CustomEvent("corvus:themechange", { detail: { theme: v } }));
+    } catch (_e) {}
     return v;
   }
 

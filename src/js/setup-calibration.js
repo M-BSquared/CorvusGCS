@@ -129,9 +129,11 @@ Corvus.setupCalibration = (function () {
     // Three live Plotly graphs: roll rate, roll attitude, horizontal velocity.
     const graphsHost = S.el("div", "autotune-graphs");
     const graphSpecs = [
-      { id: "rollrate", title: "Roll Rate", field: "rollspeed", unit: "deg/s", color: S.COLOR_RATE },
-      { id: "rollatt", title: "Roll Attitude", field: "roll", unit: "deg", color: S.COLOR_ATT },
-      { id: "hvel", title: "Horizontal Velocity", field: "groundspeed", unit: "m/s", color: S.COLOR_VEL },
+      // `color` is a palette KEY, not a literal: it is resolved from the active
+      // theme on every draw, so switching themes recolors the traces too.
+      { id: "rollrate", title: "Roll Rate", field: "rollspeed", unit: "deg/s", color: "nav" },
+      { id: "rollatt", title: "Roll Attitude", field: "roll", unit: "deg", color: "healthy" },
+      { id: "hvel", title: "Horizontal Velocity", field: "groundspeed", unit: "m/s", color: "nav" },
     ];
     const graphs = graphSpecs.map((g) => {
       const host = S.el("div", "autotune-graph-host");
@@ -160,7 +162,11 @@ Corvus.setupCalibration = (function () {
     let lastRedraw = 0;
 
     function buildTrace(g, buf) {
-      return [{ x: buf.t, y: buf.y, mode: "lines", line: { color: g.spec.color, width: 1.5 } }];
+      const palette = Corvus.ui.chartColors();
+      return [{
+        x: buf.t, y: buf.y, mode: "lines",
+        line: { color: palette[g.spec.color], width: 1.5 },
+      }];
     }
     const config = S.plotlyConfig(reduced);
 
@@ -170,6 +176,12 @@ Corvus.setupCalibration = (function () {
       try { window.Plotly.react(g.chart, buildTrace(g, bufs[idx]), S.plotlyLayout(g.spec.unit), config); }
       catch (err) { console.error("setup Plotly.react failed:", err); }
     }
+
+    // Plotly holds the colors it was handed, so a theme switch has to force a
+    // redraw. Unsubscribed in destroy() along with everything else.
+    const unsubTheme = Corvus.ui.onThemeChange(() => {
+      graphs.forEach((_g, i) => redrawGraph(i));
+    });
 
     function appendPoint(idx, value, tSec) {
       const buf = bufs[idx];
@@ -318,6 +330,7 @@ Corvus.setupCalibration = (function () {
       // opened, and safe to call again after it already ran (motorModal null).
       closeMotorModal();
       if (unsub) { try { unsub(); } catch (_e) {} unsub = null; }
+      try { unsubTheme(); } catch (_e) {}
       if (typeof window !== "undefined" && typeof window.Plotly !== "undefined" && window.Plotly) {
         graphs.forEach((g) => {
           try { window.Plotly.purge(g.chart); } catch (_e) {}

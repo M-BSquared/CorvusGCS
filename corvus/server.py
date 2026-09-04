@@ -50,7 +50,25 @@ CONSOLE_SSE_CAPACITY = 100
 PARAMS_SSE_CAPACITY = 16
 TILES_PROGRESS_SSE_CAPACITY = 16
 FIRMWARE_SSE_CAPACITY = 16
-TILE_UPSTREAM_TIMEOUT_S = 10
+# Interactive cache-fill timeout. Short on purpose: this is the browser waiting
+# for a map tile, and a tile that takes longer than this has already missed the
+# frame it was wanted for. The offline DOWNLOADER uses its own, longer timeout
+# (corvus/tile_downloader._FETCH_TIMEOUT) because there nobody is watching.
+TILE_UPSTREAM_TIMEOUT_S = 4
+
+# Offline circuit breaker for the interactive fill path.
+#
+# In the field there is no internet, so every tile the operator pans onto that
+# was not pre-downloaded is a cache miss, and every miss used to spend the full
+# timeout failing to reach the upstream. A viewport is dozens of tiles, so the
+# map became treacle exactly when it needed to be quick. After this many
+# consecutive failures the fill path stops trying and misses 404 instantly,
+# which is what the map wants anyway; one success re-arms it.
+TILE_UPSTREAM_FAIL_THRESHOLD = 3
+# How long to stay tripped before probing the network again. Long enough that a
+# genuinely offline session is not re-testing constantly, short enough that
+# walking back into coverage recovers on its own without a restart.
+TILE_UPSTREAM_COOLDOWN_S = 30.0
 # Body-size caps defend against a malformed/huge Content-Length: an unguarded
 # int() crashes the handler on a non-numeric header, and an unbounded read
 # can exhaust memory. General JSON API vs raw firmware binary (a few MB).
@@ -144,6 +162,69 @@ class _BoundedSseBuffer:
     def qsize(self) -> int:
         with self._condition:
             return len(self._items)
+
+
+class _UpstreamBreaker:
+    """Circuit breaker around the interactive tile cache-fill.
+
+    Field use is offline, so a pan onto un-downloaded ground produces a whole
+    viewport of cache misses at once. Each miss that tries the network costs
+    the full timeout, and the map stops responding precisely when the operator
+    is looking for something. After ``threshold`` consecutive failures the
+    breaker trips and misses fail instantly for ``cooldown`` seconds; the first
+    request after that is allowed through as a probe, and any success closes
+    the breaker again — so walking back into coverage recovers by itself.
+
+    Thread-safe: tiles are served from many handler threads at once, which is
+    the whole reason the failures arrive in a burst.
+    """
+
+    def __init__(self, threshold: int = TILE_UPSTREAM_FAIL_THRESHOLD,
+                 cooldown: float = TILE_UPSTREAM_COOLDOWN_S) -> None:
+        self._threshold = max(1, int(threshold))
+        self._cooldown = float(cooldown)
+        self._lock = threading.Lock()
+        self._failures = 0
+        self._open_until = 0.0
+
+    def allow(self) -> bool:
+        """True if a network attempt should be made now.
+
+        When the cooldown has elapsed this returns True exactly once per
+        cooldown window (a probe) unless the attempt succeeds — that way a
+        still-offline session does not go back to paying the timeout on every
+        tile the moment the window expires.
+        """
+        with self._lock:
+            if self._failures < self._threshold:
+                return True
+            if time.monotonic() >= self._open_until:
+                # Probe: re-arm the window now so only this one request gets
+                # through until it reports back.
+                self._open_until = time.monotonic() + self._cooldown
+                return True
+            return False
+
+    def record_success(self) -> None:
+        with self._lock:
+            self._failures = 0
+            self._open_until = 0.0
+
+    def record_failure(self) -> None:
+        with self._lock:
+            self._failures += 1
+            if self._failures >= self._threshold:
+                self._open_until = time.monotonic() + self._cooldown
+
+    def is_open(self) -> bool:
+        """True while the breaker is suppressing network attempts."""
+        with self._lock:
+            return self._failures >= self._threshold and time.monotonic() < self._open_until
+
+    def reset(self) -> None:
+        with self._lock:
+            self._failures = 0
+            self._open_until = 0.0
 
 
 class _TileProgressBus:
@@ -275,15 +356,16 @@ def _build_tile_downloader(
 
 def _build_tile_resources(
     cache_dir: str,
-) -> tuple[dict[str, TileCache], "_TileProgressBus", Any]:
-    """Build the per-source tile caches, progress bus, and downloader pool.
+) -> tuple[dict[str, TileCache], "_TileProgressBus", Any, "_UpstreamBreaker"]:
+    """Build the tile caches, progress bus, downloader pool, and fill breaker.
 
     Shared by ``create_server`` (browser mode) and ``corvus.app.start_backend``
     (desktop mode) so the two entry points never diverge on how tile resources
     are wired — the desktop app's offline maps depend on the exact same
-    per-source caches + downloader the browser mode uses. The caller picks the
-    cache dir (operator-config override or the default); this helper only
-    constructs the objects rooted at that dir.
+    per-source caches + downloader the browser mode uses, and on the same
+    breaker, without which the packaged app is the one that feels broken in the
+    field. The caller picks the cache dir (operator-config override or the
+    default); this helper only constructs the objects rooted at that dir.
     """
     tile_caches: dict[str, TileCache] = {
         sid: TileCache(os.path.join(cache_dir, f"{sid}.mbtiles"))
@@ -291,7 +373,8 @@ def _build_tile_resources(
     }
     tile_progress_bus = _TileProgressBus()
     tile_downloader = _build_tile_downloader(tile_caches)
-    return tile_caches, tile_progress_bus, tile_downloader
+    tile_breaker = _UpstreamBreaker()
+    return tile_caches, tile_progress_bus, tile_downloader, tile_breaker
 
 
 def _params_export_dir(cfg: Any) -> str:
@@ -531,6 +614,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     # progress pub-sub bus. None when tiles are not configured (e.g. the
     # parallel-built tile_downloader module is mid-edit).
     tile_caches: dict[str, TileCache] | None = None
+    # Shared across handler threads: one breaker per process, not per request.
+    tile_breaker: "_UpstreamBreaker | None" = None
     tile_downloader: Any = None
     tile_progress_bus: _TileProgressBus | None = None
 
@@ -2173,9 +2258,20 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(blob)
 
     def _fetch_upstream_tile(self, source: str, z: int, x: int, y: int) -> bytes | None:
-        """Best-effort online cache-fill for a single tile; None on any failure."""
+        """Best-effort online cache-fill for a single tile; None on any failure.
+
+        Guarded by the upstream breaker: once the network has failed a few
+        times in a row this returns None immediately instead of spending the
+        timeout, so an offline pan renders its cached tiles at full speed and
+        simply leaves the rest blank.
+        """
         src = tile_sources.get(source)
         if src is None:
+            return None
+        breaker = self.tile_breaker
+        if breaker is not None and not breaker.allow():
+            logger.debug("upstream breaker open; skipping fetch for %s/%d/%d/%d",
+                         source, z, x, y)
             return None
         url = tile_sources.build_tile_url(src["upstream"], z, x, y)
         try:
@@ -2186,8 +2282,19 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 data = resp.read()
         except Exception:  # noqa: BLE001 - offline field use must never 500
             logger.debug("upstream tile fetch failed: %s", url, exc_info=True)
+            if breaker is not None:
+                breaker.record_failure()
             return None
-        return data or None
+        if not data:
+            # A 200 with an empty body is as useless as a failure, and counting
+            # it keeps a broken-but-reachable upstream from holding the breaker
+            # closed forever.
+            if breaker is not None:
+                breaker.record_failure()
+            return None
+        if breaker is not None:
+            breaker.record_success()
+        return data
 
     # ---- Static files ----
     def _serve_static(self, path: str) -> None:
@@ -2285,7 +2392,8 @@ def create_server(
     # imply per-source downloaders; _TileDownloaderPool presents them as one.
     # Built through the shared _build_tile_resources helper so the desktop app
     # (app.start_backend) and browser mode (create_server) never diverge.
-    tile_caches, tile_progress_bus, tile_downloader = _build_tile_resources(default_cache_dir())
+    tile_caches, tile_progress_bus, tile_downloader, tile_breaker = \
+        _build_tile_resources(default_cache_dir())
 
     CorvusHandler.store = store
     CorvusHandler.mavlink = mavlink
@@ -2295,6 +2403,7 @@ def create_server(
     CorvusHandler.tile_caches = tile_caches
     CorvusHandler.tile_downloader = tile_downloader
     CorvusHandler.tile_progress_bus = tile_progress_bus
+    CorvusHandler.tile_breaker = tile_breaker
 
     # Firmware-flash service (direct USB only). Imported lazily so the server
     # still builds if a parallel edit to flash_service is mid-flight.

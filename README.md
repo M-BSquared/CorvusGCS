@@ -160,6 +160,15 @@ Corvus GCS is built around that:
 >
 > Every vendored dependency and its license is listed in **Settings → About →
 > Credits**.
+>
+> Offline is also a *speed* property, not just an availability one. Panning
+> onto ground that was not pre-downloaded is a whole viewport of cache misses,
+> and each one used to spend the full upstream timeout failing to reach a
+> network that is not there. A circuit breaker now trips after a few
+> consecutive failures and fails subsequent misses instantly for 30 s, then
+> lets a single probe through — so an offline pan renders its cached tiles at
+> full speed and simply leaves the rest blank, and walking back into coverage
+> recovers on its own without a restart.
 
 ---
 
@@ -526,15 +535,22 @@ The HUD (compass, attitude indicator, and the live telemetry grid) used to be
 nailed to the bottom-right corner of the map, which is as often as not exactly
 the ground being flown over. It is now a small window with a title bar:
 
-- **Drag** it anywhere over the map by the title bar. It is clamped so a strip
-  always stays reachable — it cannot be thrown off screen, and it is pulled
-  back in if the window or the right panel shrinks the map underneath it.
+- **Drag** it anywhere over the map by grabbing the panel itself. It is clamped
+  so a strip always stays reachable — it cannot be thrown off screen, and it is
+  pulled back in if the window or the right panel shrinks the map underneath it.
 - **Pin** locks the position. This is the one that matters in the field, where
   the panel sits under a thumb on a trackpad while the aircraft is airborne.
 - **Compact** keeps every readout but shrinks the instruments and tightens the
   grid, for when the map matters more than the numbers.
 - **Collapse** reduces it to the title bar.
-- **Double-click the title bar** returns it to its default corner.
+- **Double-click the panel** returns it to its default corner.
+
+There is deliberately no title bar. A permanent strip saying "FLIGHT" would
+cost map for something the compass and horizon under it already say, so the
+three controls sit over the panel's top-right corner and stay invisible until
+a pointer is over the panel or a control takes keyboard focus. Collapsed is the
+exception: with the readouts folded away the controls are all that is left, so
+the panel becomes a small control pill.
 
 Position and state persist in `localStorage`, so the panel stays where it was
 put. The behaviour lives in `src/js/hud-panel.js`, deliberately separate from
@@ -812,7 +828,14 @@ the same token names:
 
 The operator picks a whole **theme**, not a single color, via
 **Settings → Appearance** — Green, Blue, Pink, Orange, or Light — applied live
-and persisted. See [Settings](#settings--appearance-ssh-map).
+and persisted.
+
+The Plotly graphs (autotune, vibration) follow it too. They are the one place
+in the app that cannot reference `var(--token)`: Plotly draws into a surface it
+owns and takes colors as literal strings, so `Corvus.ui.plotlyTheme()` resolves
+the tokens and hands them over, and `Corvus.ui.onThemeChange()` forces a redraw
+when the theme flips — everything else restyles itself the moment the attribute
+changes, which is why a theme switch is an event at all. See [Settings](#settings--appearance-ssh-map).
 
 ### Component layer
 

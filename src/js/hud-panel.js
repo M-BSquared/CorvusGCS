@@ -5,16 +5,24 @@ window.Corvus = window.Corvus || {};
   Corvus.hudPanel — window behaviour for the flight HUD on the Home map.
 
   The HUD used to be nailed to the map's bottom-right corner, where it covers
-  exactly the ground the operator is flying over as often as not. This module
-  gives it a title bar and four affordances:
+  exactly the ground the operator is flying over as often as not. It is a small
+  window now, with four affordances and deliberately no title bar:
 
-    drag      grab the title bar and put it anywhere over the map
-    pin       lock the position so a stray drag over the map cannot move it —
+    drag      grab the panel anywhere that is not a button and move it
+    pin       lock the position so a stray drag over the map cannot shift it —
               the one that matters in the field, where the panel sits under a
               thumb on a trackpad while the aircraft is airborne
     compact   same readouts, smaller: instruments shrink and the telemetry grid
               tightens, for when the map matters more than the numbers
-    collapse  title bar only
+    collapse  the readouts fold away and the panel becomes a small control pill
+
+  No chrome by default. A title bar would cost a permanent strip of the map to
+  say "FLIGHT", which the compass and horizon underneath it already say. The
+  three controls sit over the panel's top-right corner and stay invisible until
+  a pointer is over the panel or a control has keyboard focus — so the resting
+  state is instruments on a map, and the controls appear when reached for.
+  Collapsed is the exception: with the readouts hidden the controls are all
+  that is left, so there they stay visible.
 
   Kept separate from instruments.js on purpose: that module renders the compass,
   the attitude indicator and the telemetry cells, and knows nothing about where
@@ -33,7 +41,7 @@ Corvus.hudPanel = (function () {
 
   let panelEl = null;
   let bodyEl = null;
-  let headEl = null;
+  let actionsEl = null;
   let pinBtn = null;
   let sizeBtn = null;
   let collapseBtn = null;
@@ -160,7 +168,7 @@ Corvus.hudPanel = (function () {
     };
     // Capture so the drag survives the pointer leaving the header — including
     // over the map canvas, which would otherwise swallow the move events.
-    try { headEl.setPointerCapture(e.pointerId); } catch (_e) {}
+    try { panelEl.setPointerCapture(e.pointerId); } catch (_e) {}
     panelEl.classList.add("is-dragging");
     e.preventDefault();
   }
@@ -174,7 +182,7 @@ Corvus.hudPanel = (function () {
 
   function onPointerUp(e) {
     if (!drag || e.pointerId !== drag.pointerId) return;
-    try { headEl.releasePointerCapture(drag.pointerId); } catch (_e) {}
+    try { panelEl.releasePointerCapture(drag.pointerId); } catch (_e) {}
     drag = null;
     panelEl.classList.remove("is-dragging");
     save();
@@ -191,19 +199,12 @@ Corvus.hudPanel = (function () {
 
   // ---- header ------------------------------------------------------------
 
-  function buildHeader() {
-    const head = document.createElement("div");
-    head.className = "hud-head";
-
-    const grip = Corvus.ui.icon("grip-horizontal", 13);
-    grip.classList.add("hud-grip");
-    head.appendChild(grip);
-
-    const title = document.createElement("span");
-    title.className = "hud-title";
-    title.textContent = "FLIGHT";
-    head.appendChild(title);
-
+  /**
+   * The three controls, as a cluster that floats over the panel's top-right
+   * corner. No title bar: CSS keeps it invisible until the pointer is over the
+   * panel or a control takes keyboard focus.
+   */
+  function buildActions() {
     const actions = document.createElement("div");
     actions.className = "hud-actions";
     pinBtn = Corvus.ui.iconButton("pin", { size: 13, onClick: togglePin });
@@ -212,17 +213,21 @@ Corvus.hudPanel = (function () {
     actions.appendChild(pinBtn);
     actions.appendChild(sizeBtn);
     actions.appendChild(collapseBtn);
-    head.appendChild(actions);
+    return actions;
+  }
 
-    head.addEventListener("pointerdown", onPointerDown);
-    head.addEventListener("pointermove", onPointerMove);
-    head.addEventListener("pointerup", onPointerUp);
-    head.addEventListener("pointercancel", onPointerUp);
-    head.addEventListener("dblclick", (e) => {
+  /** Make the whole panel the drag surface. With no title bar there is no
+   *  dedicated handle, and the panel has no interactive content of its own —
+   *  only the control buttons, which onPointerDown excludes. */
+  function wireDragSurface() {
+    panelEl.addEventListener("pointerdown", onPointerDown);
+    panelEl.addEventListener("pointermove", onPointerMove);
+    panelEl.addEventListener("pointerup", onPointerUp);
+    panelEl.addEventListener("pointercancel", onPointerUp);
+    panelEl.addEventListener("dblclick", (e) => {
       if (e.target.closest(".icon-btn")) return;
       resetPosition();
     });
-    return head;
   }
 
   function togglePin() { state.pinned = !state.pinned; applyState(); save(); }
@@ -248,9 +253,14 @@ Corvus.hudPanel = (function () {
     // nodes are moved, not recreated, so instruments.js keeps its references.
     while (panelEl.firstChild) bodyEl.appendChild(panelEl.firstChild);
 
-    headEl = buildHeader();
-    panelEl.appendChild(headEl);
+    actionsEl = buildActions();
+    panelEl.appendChild(actionsEl);
     panelEl.appendChild(bodyEl);
+    // The panel names itself for assistive tech now that no visible title
+    // bar does. It is a supplementary readout, not a landmark.
+    panelEl.setAttribute("role", "group");
+    panelEl.setAttribute("aria-label", "Flight instruments");
+    wireDragSurface();
 
     applyState();
 

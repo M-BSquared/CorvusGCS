@@ -567,41 +567,68 @@ svg { display: block; }
   position: absolute; right: 16px; bottom: 16px; z-index: 12;
   width: var(--hud-w);
   border-radius: 14px;
-  padding: 10px 14px 14px;
-  display: flex; flex-direction: column; gap: 8px;
+  padding: 14px;
+  display: flex; flex-direction: column;
+  /* The whole panel is the drag handle — there is no title bar to grab. */
+  cursor: grab;
+  touch-action: none;
   transition: width 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.flight-overlay.is-dragging { transition: none; cursor: grabbing; user-select: none; }
+.flight-overlay.is-pinned { cursor: default; }
+/* Collapsed: the readouts fold away and what is left is a control pill. */
+.flight-overlay.is-collapsed {
+  width: auto;
+  padding: 5px;
+  border-radius: 9px;
 }
 /* Dragged at least once: positioned from the top-left corner instead. */
 .flight-overlay.is-placed { right: auto; bottom: auto; }
-/* No transition mid-drag — the width animation would lag the pointer. */
-.flight-overlay.is-dragging { transition: none; user-select: none; }
-/* A ratio, not a fixed width: the base --hud-w changes per
-   breakpoint, and compact has to stay smaller than all of them. */
+/* A ratio, not a fixed width: the base --hud-w changes per breakpoint, and
+   compact has to stay smaller than all of them. */
 .flight-overlay.is-compact { width: calc(var(--hud-w) * 0.72); }
-.flight-overlay.is-collapsed { padding-bottom: 10px; }
 
-.hud-head {
-  display: flex; align-items: center; gap: 7px;
-  /* The title bar IS the drag handle, so it advertises that with its cursor —
-     except when pinned, where the whole point is that it will not move. */
-  cursor: grab;
-  margin: -2px -4px 0;
-  padding: 2px 4px 6px;
-  border-bottom: 1px solid var(--border-soft);
-  touch-action: none;   /* let the pointer handlers own the gesture */
+/* The controls float over the panel's top-right corner and stay out of the way
+   until reached for. No title bar: a permanent strip saying "FLIGHT" would cost
+   map for something the compass and horizon under it already say. */
+.hud-actions {
+  position: absolute;
+  top: 6px; right: 8px;
+  z-index: 1;
+  display: flex; align-items: center; gap: 1px;
+  padding: 2px;
+  border-radius: 7px;
+  background: rgb(var(--glass-rgb) / 0.55);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
+  border: 1px solid rgb(var(--tint-rgb) / 0.06);
+  opacity: 0;
+  transition: opacity 140ms;
 }
-.flight-overlay.is-dragging .hud-head { cursor: grabbing; }
-.flight-overlay.is-pinned .hud-head { cursor: default; }
-.hud-grip { color: var(--text-3); flex: 0 0 auto; }
-.flight-overlay.is-pinned .hud-grip { opacity: 0.35; }
-.hud-title {
-  flex: 1; min-width: 0;
-  font-size: 9.5px; font-weight: 700; letter-spacing: 1.2px;
-  color: var(--text-3); text-transform: uppercase;
+/* Revealed on hover, and on keyboard focus so the controls are reachable
+   without a pointer at all. */
+.flight-overlay:hover .hud-actions,
+.flight-overlay:focus-within .hud-actions { opacity: 1; }
+/* Collapsed, the controls are the only thing left — so they stay put. */
+.flight-overlay.is-collapsed .hud-actions {
+  opacity: 1;
+  position: static;
+  background: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: none;
+  padding: 0;
 }
-.hud-actions { display: flex; align-items: center; gap: 1px; flex: 0 0 auto; }
-/* Tighter than the default .icon-btn: three of them share a 320px title bar. */
-.hud-actions .icon-btn { width: 22px; height: 22px; border-radius: 5px; }
+@media (prefers-reduced-motion: reduce) {
+  .hud-actions { transition: none; }
+}
+/* Small and quiet: these sit on top of the instruments, not beside them. */
+.hud-actions .icon-btn {
+  width: 20px; height: 20px; border-radius: 5px;
+  color: var(--text-3);
+}
+.hud-actions .icon-btn:hover { color: var(--text-1); }
+.hud-actions .icon-btn.active { color: var(--accent-bright); background: var(--accent-dark); }
 .hud-actions .icon-btn svg, .hud-actions .icon-btn i { width: 13px; height: 13px; }
 
 .hud-body { display: flex; flex-direction: column; gap: 10px; }
