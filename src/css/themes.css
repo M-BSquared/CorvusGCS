@@ -42,6 +42,31 @@
   --panel-w-collapsed: 24px;
   --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* --- Stacking order ---
+     One ladder, stated once, because the alternative is what this replaced: a
+     scatter of 10/11/12/15/20/30 across the stylesheet where the only way to
+     know whether a popover would be covered was to open it and look. Note that
+     .main creates no stacking context, so the map's children compete directly
+     with the app chrome — which is why the map bands sit BELOW the right panel
+     and the top bar. A layers popover covering the telemetry bar would be a
+     different bug, not a fix.
+
+     Within the map:
+       chrome   the persistent controls — rail, triggers, clear-track
+       panel    things that live on the map — flight bar, HUD, and the like
+       popover  transient surfaces opened FROM the chrome; these must win
+                against every panel, since a panel covering the menu that
+                opened it is never what anyone wanted
+     Above the map: the app chrome, then dialogs, then notifications. */
+  --z-map-chrome: 10;
+  --z-map-panel: 12;
+  --z-map-popover: 14;
+  --z-right-panel: 15;
+  --z-left-nav: 20;
+  --z-top-bar: 30;
+  --z-modal: 100;
+  --z-toast: 200;
 }
 
 /* ===================================================================

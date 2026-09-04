@@ -952,6 +952,18 @@ the call site:
 A screen-specific class layers a *modifier* on top (`.calib-btn`,
 `.link-select`, `.setup-tile`) rather than re-implementing the control.
 
+### Stacking order
+
+Every `z-index` in the app comes from one ladder in `themes.css`
+(`--z-map-chrome` → `--z-toast`), because the alternative is what it replaced:
+a scatter of 10/11/12/15/20/30 where the only way to know whether a popover
+would be covered was to open it and look. Within the map, transient surfaces
+opened *from* the chrome (the layer menu, the takeoff and planning panels) sit
+above everything that merely lives on the map (the flight bar, the HUD) — a
+panel covering the menu that opened it is never what anyone wanted. The map
+bands all sit below the app chrome, since `.main` creates no stacking context
+and a layer menu covering the telemetry bar would be a different bug, not a fix.
+
 ### Surface material
 
 Buttons, cards, tiles and option cards share one subtle glass material, defined
