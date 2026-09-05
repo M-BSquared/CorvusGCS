@@ -282,6 +282,69 @@ def test_load_config_map_non_dict_returns_none(tmp_path) -> None:
     assert cfg.map is None
 
 
+# ---------------------------------------------------------------------------
+# ui — the interface scale written by Settings -> Appearance
+# ---------------------------------------------------------------------------
+def test_load_config_parses_ui_scale(tmp_path) -> None:
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"ui": {"scale": 1.25}}), encoding="utf-8")
+    cfg = load_config(str(p))
+    assert cfg.ui == {"scale": 1.25}
+
+
+def test_load_config_ui_scale_int_becomes_float(tmp_path) -> None:
+    """An integer scale is a valid one; it is stored as the float it means."""
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"ui": {"scale": 1}}), encoding="utf-8")
+    cfg = load_config(str(p))
+    assert cfg.ui == {"scale": 1.0}
+
+
+def test_load_config_ui_scale_clamped_not_rejected(tmp_path) -> None:
+    """A hand-edited absurd scale is pulled into range, never honoured.
+
+    Rejecting it would be worse than clamping: an interface painted at 4000%
+    cannot reach the settings page that would fix it.
+    """
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"ui": {"scale": 40}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"scale": 3.0}
+    p.write_text(json.dumps({"ui": {"scale": 0.01}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"scale": 0.5}
+
+
+def test_load_config_ui_scale_bool_dropped(tmp_path) -> None:
+    """True is a float in Python and would silently read as 100%."""
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"ui": {"scale": True}}), encoding="utf-8")
+    assert load_config(str(p)).ui is None
+
+
+def test_load_config_ui_scale_string_dropped(tmp_path) -> None:
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"ui": {"scale": "1.25"}}), encoding="utf-8")
+    assert load_config(str(p)).ui is None
+
+
+def test_load_config_ui_non_dict_returns_none(tmp_path) -> None:
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"ui": 1.25}), encoding="utf-8")
+    assert load_config(str(p)).ui is None
+
+
+def test_ui_scale_round_trips_through_save(tmp_path) -> None:
+    p = tmp_path / "config.json"
+    save_config(CorvusConfig(ui={"scale": 1.1}), str(p))
+    assert load_config(str(p)).ui == {"scale": 1.1}
+
+
+def test_save_config_omits_none_ui(tmp_path) -> None:
+    """No interface-size choice means no ``ui`` key; the file stays lean."""
+    p = tmp_path / "config.json"
+    save_config(CorvusConfig(), str(p))
+    assert "ui" not in json.loads(p.read_text(encoding="utf-8"))
+
+
 def test_load_config_parses_branding(tmp_path) -> None:
     p = tmp_path / "config.json"
     p.write_text(json.dumps({"branding": {"logo": "unibw.png"}}), encoding="utf-8")

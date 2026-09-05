@@ -65,6 +65,7 @@ _EXPECTED_POST = {
     "/api/mavlink/land",
     "/api/mavlink/rtl",
     "/api/mavlink/gotopoints",
+    "/api/mavlink/manual",
     "/api/ssh/connect",
     "/api/ssh/send",
     "/api/ssh/disconnect",

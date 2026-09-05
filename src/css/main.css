@@ -740,6 +740,164 @@ svg { display: block; }
   font-variant-numeric: tabular-nums;
 }
 
+/* ===== VIRTUAL JOYSTICK / MANUAL CONTROL PAD =====
+   A movable window over the map holding whichever manual-control surfaces are
+   switched on: the stick pair, the arrow-key cluster, or both. Hidden unless
+   Settings > Appearance > Controls turns one on, so the default map is exactly
+   what it was. It sits at the bottom left (the HUD owns the bottom right)
+   until it is dragged; .is-placed then drops that anchoring so the dragged
+   left/top wins — the same contract as .flight-overlay.
+
+   --js-size is the one number the whole pad scales from, and --js-travel is
+   derived from it rather than typed twice: the knob may travel to the base's
+   edge minus its own radius, and Corvus.joystick moves it by that variable so
+   the JS geometry and this stylesheet cannot drift apart. */
+.joystick-pad {
+  --js-size: 116px;
+  --js-knob: 42px;
+  --js-travel: calc((var(--js-size) - var(--js-knob)) / 2);
+  --js-key: 34px;
+  position: absolute; left: 16px; bottom: 16px;
+  /* One step above the HUD, which shares --z-map-panel. Both are movable
+     windows and they can be dragged over each other; when they overlap, the
+     control the operator is flying with wins over a readout. */
+  z-index: calc(var(--z-map-panel) + 1);
+  display: flex; flex-direction: column; gap: 8px;
+  border-radius: 14px;
+  padding: 8px 12px 12px;
+  /* The pad is a control surface, not a map surface: a drag that starts here
+     must move a stick or the pad, never pan the map underneath it. */
+  touch-action: none;
+}
+.joystick-pad.is-placed { bottom: auto; }
+.joystick-pad.is-dragging { cursor: grabbing; user-select: none; }
+/* Everything here lays out with `display: flex`, and a class rule's display
+   beats the UA's `[hidden] { display: none }` — so each surface has to restate
+   it or switching one off leaves it on screen. Same fix as .plan-panel and
+   .hud-body above. */
+.joystick-pad[hidden] { display: none; }
+
+/* Grip bar: the drag handle, and the only place the live axis values show.
+   One row, so the pad reads as a window with a title bar rather than as loose
+   controls scattered over the map. */
+.js-grip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 2px 2px 6px;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text-3);
+  cursor: grab;
+  touch-action: none;
+}
+.joystick-pad.is-dragging .js-grip { cursor: grabbing; }
+.js-grip i, .js-grip svg { width: 13px; height: 13px; flex: none; }
+.js-axes {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  letter-spacing: 0.2px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.js-axes.offline { color: var(--warning); }
+
+.js-surfaces { display: flex; align-items: flex-start; gap: 14px; }
+.js-sticks { display: flex; gap: 14px; }
+.js-sticks[hidden] { display: none; }
+
+.js-stick { display: flex; flex-direction: column; align-items: center; gap: 7px; }
+.js-base {
+  position: relative;
+  width: var(--js-size); height: var(--js-size);
+  border-radius: 50%;
+  background: rgb(var(--input-rgb) / 0.5);
+  border: 1px solid var(--border);
+  cursor: grab;
+  touch-action: none;
+  transition: border-color 140ms, box-shadow 140ms;
+}
+.js-stick.active .js-base {
+  cursor: grabbing;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+/* Centre crosshair: the detent marker. Two hairlines drawn as one element so
+   the base keeps a single child besides the knob. */
+.js-cross {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  background:
+    linear-gradient(to right, transparent calc(50% - 0.5px), var(--border-soft) calc(50% - 0.5px), var(--border-soft) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(50% - 0.5px), var(--border-soft) calc(50% - 0.5px), var(--border-soft) calc(50% + 0.5px), transparent calc(50% + 0.5px));
+  pointer-events: none;
+}
+.js-knob {
+  position: absolute;
+  top: calc(50% - var(--js-knob) / 2);
+  left: calc(50% - var(--js-knob) / 2);
+  width: var(--js-knob); height: var(--js-knob);
+  border-radius: 50%;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-pop);
+  pointer-events: none;
+  /* No transition while a stick is held — the knob must sit under the finger,
+     not chase it. The spring-back on release is the only animated move. */
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), background 140ms;
+}
+.js-stick.active .js-knob { transition: background 140ms; background: var(--accent); border-color: var(--accent); }
+.js-caption {
+  font-size: 9px; font-weight: 600; letter-spacing: 0.9px;
+  color: var(--text-3); text-transform: uppercase;
+}
+
+/* Arrow keys, laid out as a keyboard's own inverted T so the cluster reads as
+   "these keys" — the physical arrow keys drive the same four buttons and light
+   them up, which is what makes the mapping self-evident without a legend. */
+.js-keys {
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  /* Bottom-aligned with the sticks: both surfaces end on their caption. */
+  align-self: stretch; justify-content: flex-end;
+}
+.js-keys[hidden] { display: none; }
+.js-keys-grid {
+  display: grid;
+  grid-template-columns: repeat(3, var(--js-key));
+  grid-template-rows: repeat(2, var(--js-key));
+  gap: 5px;
+}
+.js-key {
+  display: grid; place-items: center;
+  border-radius: var(--radius-btn);
+  background: rgb(var(--input-rgb) / 0.5);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 120ms, color 120ms, border-color 120ms, transform 90ms;
+}
+.js-key-up    { grid-column: 2; grid-row: 1; }
+.js-key-left  { grid-column: 1; grid-row: 2; }
+.js-key-down  { grid-column: 2; grid-row: 2; }
+.js-key-right { grid-column: 3; grid-row: 2; }
+.js-key i, .js-key svg { width: 15px; height: 15px; }
+.js-key:hover { color: var(--text-1); border-color: var(--border-strong); }
+.js-key:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+/* Held — by finger or by the keyboard's own arrow key. */
+.js-key.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-inverted);
+  transform: translateY(1px);
+}
+
+/* The spring-back and the key press are the only motion here, and both are
+   decorative: the axis values are already updated by the time they play. */
+@media (prefers-reduced-motion: reduce) {
+  .js-knob, .js-base, .js-key { transition: none !important; }
+  .js-key.active { transform: none; }
+}
+
 /* ===== FLIGHT OVERLAY ===== */
 /* ===== FLIGHT HUD PANEL =====
    A movable window over the map (Corvus.hudPanel): drag by the title bar, pin
@@ -1719,6 +1877,7 @@ svg { display: block; }
   .right-panel:not(.collapsed) { width: var(--panel-w); }
   .flight-overlay { --hud-w: 270px; bottom: 12px; right: 12px; }
   .tb-block[data-priority="low"] { display: none; }
+  .joystick-pad { --js-size: 96px; --js-knob: 36px; --js-key: 30px; left: 12px; bottom: 12px; }
 }
 @media (max-width: 600px) {
   .top-bar { height: 52px; padding: 0 6px; }
@@ -1728,6 +1887,9 @@ svg { display: block; }
   .flight-overlay { --hud-w: 240px; }
   .flight-overlay .instruments { grid-template-columns: 1fr; }
   .nav-item .nav-label { display: none; }
+  .joystick-pad { --js-size: 84px; --js-knob: 32px; --js-key: 28px; padding: 6px 9px 9px; }
+  .js-surfaces { gap: 10px; }
+  .js-sticks { gap: 10px; }
 }
 
 /* ===== Parameter Export/Import actions (setup-parameters) ===== */

@@ -83,6 +83,23 @@ Corvus.hudPanel = (function () {
   }
 
   /**
+   * The factor between the pixels the pointer reports and the pixels this
+   * panel is positioned in.
+   *
+   * The interface-scale control puts a CSS `zoom` on <body>, so
+   * getBoundingClientRect and pointer clientX/Y come back in SCALED pixels
+   * while style.left/top are written in UNSCALED ones. Everything below that
+   * mixes the two has to divide by this; offsetWidth/clientWidth are already
+   * unscaled and need no correction, which is why clamp() uses them. Returns
+   * 1 at 100%, and on any element the browser reports no box for.
+   */
+  function pointerScale(el) {
+    if (!el) return 1;
+    const rect = el.getBoundingClientRect();
+    return (rect.width && el.offsetWidth) ? (rect.width / el.offsetWidth) : 1;
+  }
+
+  /**
    * Constrain (x, y) so at least MIN_VISIBLE px of the panel stays inside the
    * map on every edge. Applied on drag, on window resize, and when a stored
    * position is restored into a smaller window than it was saved from.
@@ -90,12 +107,10 @@ Corvus.hudPanel = (function () {
   function clamp(x, y) {
     const host = boundsEl();
     if (!host) return { x, y };
-    const hb = host.getBoundingClientRect();
-    const pb = panelEl.getBoundingClientRect();
-    const maxX = Math.max(0, hb.width - MIN_VISIBLE);
-    const maxY = Math.max(0, hb.height - MIN_VISIBLE);
+    const maxX = Math.max(0, host.clientWidth - MIN_VISIBLE);
+    const maxY = Math.max(0, host.clientHeight - MIN_VISIBLE);
     return {
-      x: Math.min(Math.max(x, MIN_VISIBLE - pb.width), maxX),
+      x: Math.min(Math.max(x, MIN_VISIBLE - panelEl.offsetWidth), maxX),
       y: Math.min(Math.max(y, 0), maxY),   // never above the top edge
     };
   }
@@ -159,12 +174,16 @@ Corvus.hudPanel = (function () {
 
     const hb = host.getBoundingClientRect();
     const pb = panelEl.getBoundingClientRect();
+    const k = pointerScale(host);
     drag = {
       pointerId: e.pointerId,
-      dx: e.clientX - pb.left,
-      dy: e.clientY - pb.top,
+      // Grab offset in the panel's own (unscaled) pixels, so the point under
+      // the cursor stays under the cursor at any interface size.
+      dx: (e.clientX - pb.left) / k,
+      dy: (e.clientY - pb.top) / k,
       hostLeft: hb.left,
       hostTop: hb.top,
+      scale: k,
     };
     // Capture so the drag survives the pointer leaving the header — including
     // over the map canvas, which would otherwise swallow the move events.
@@ -175,8 +194,8 @@ Corvus.hudPanel = (function () {
 
   function onPointerMove(e) {
     if (!drag || e.pointerId !== drag.pointerId) return;
-    state.x = e.clientX - drag.hostLeft - drag.dx;
-    state.y = e.clientY - drag.hostTop - drag.dy;
+    state.x = (e.clientX - drag.hostLeft) / drag.scale - drag.dx;
+    state.y = (e.clientY - drag.hostTop) / drag.scale - drag.dy;
     applyPosition();
   }
 

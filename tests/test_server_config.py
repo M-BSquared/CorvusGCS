@@ -232,6 +232,60 @@ def test_post_config_non_dict_theme_returns_400(tmp_path) -> None:
     assert "theme" in payload["error"]
 
 
+def test_post_config_persists_ui_scale(tmp_path) -> None:
+    """Settings -> Appearance writes the interface size through this route."""
+    cfg_path = tmp_path / "config.json"
+    handler, responses = _handler(
+        config=CorvusConfig(),
+        config_path=str(cfg_path),
+    )
+    handler._api_config_update({"ui": {"scale": 1.25}})
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["config"]["ui"] == {"scale": 1.25}
+    on_disk = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert on_disk["ui"] == {"scale": 1.25}
+
+
+def test_post_config_ui_scale_out_of_range_is_clamped(tmp_path) -> None:
+    """An absurd scale is stored in range rather than rejected, so the next
+    launch can still paint an interface the operator can navigate."""
+    cfg_path = tmp_path / "config.json"
+    handler, responses = _handler(
+        config=CorvusConfig(),
+        config_path=str(cfg_path),
+    )
+    handler._api_config_update({"ui": {"scale": 99}})
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["config"]["ui"] == {"scale": 3.0}
+
+
+def test_post_config_non_dict_ui_returns_400(tmp_path) -> None:
+    handler, responses = _handler(
+        config=CorvusConfig(),
+        config_path=str(tmp_path / "c.json"),
+    )
+    handler._api_config_update({"ui": 1.25})
+    payload, status = responses[0]
+    assert status == 400
+    assert "ui" in payload["error"]
+
+
+def test_post_config_ui_update_keeps_theme(tmp_path) -> None:
+    """Changing the interface size must not drop the operator's theme."""
+    cfg_path = tmp_path / "config.json"
+    handler, responses = _handler(
+        config=CorvusConfig(theme={"name": "green"}),
+        config_path=str(cfg_path),
+    )
+    handler._api_config_update({"ui": {"scale": 0.9}})
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["config"]["theme"] == {"name": "green"}
+    assert payload["config"]["ui"] == {"scale": 0.9}
+
+
 def test_post_config_merges_with_existing_keeps_other_fields(tmp_path) -> None:
     """A partial update does not wipe fields the caller did not send."""
     existing = CorvusConfig(

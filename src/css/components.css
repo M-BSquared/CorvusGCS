@@ -8,7 +8,8 @@
 
   This is the CSS half of src/js/ui.js — one class system per factory there:
   .btn / .icon-btn (button, iconButton), .field-* (label, field, select,
-  input), .option-cards / .option-list (optionCards, optionList),
+  input), .ui-slider (slider), .option-cards / .option-list (optionCards,
+  optionList),
   .ui-progress / .ui-msg / .ui-actions (progress, message, actions), .glass
   (every floating surface), .status-dot (statusDot). New UI is composed from
   these; a screen-specific class layers a modifier on top rather than
@@ -270,9 +271,16 @@
   .btn,
   .btn:hover,
   .btn:active,
-  .btn.is-busy::after {
+  .btn.is-busy::after,
+  .ui-toggle-track,
+  .ui-toggle-knob {
     transition: none !important;
     animation: none !important;
+  }
+  .btn,
+  .btn:hover,
+  .btn:active,
+  .btn.is-busy::after {
     transform: none !important;
   }
 }
@@ -337,7 +345,7 @@
   /* Inline chevron so the control needs no extra DOM. currentColor is not
      available inside a data: URI, so the stroke is the muted text color and
      is restated for the light theme below. */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2369737F' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2379828D' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 8px center;
 }
@@ -360,6 +368,200 @@
   border-color: var(--critical);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--critical) 20%, transparent);
 }
+
+/* ===== .ui-slider — stepped slider with step indicators =====
+   A range input restricted to a handful of named steps, with a tick and a
+   clickable label under each one. Used for the interface-scale control, whose
+   values are not a continuum: an operator picks 100% or 125%, never 113%.
+
+   The native track and thumb are replaced entirely (the rail, the fill and
+   the ticks are our own elements underneath a transparent input) so the
+   control themes from tokens like everything else. --slider-steps and
+   --slider-pos are written by ui.slider(): `pos` is the 0..1 position of the
+   current step, and every tick/label is placed with the same expression the
+   thumb travels along — thumb-width/2 at each end, so a dot sits exactly
+   under the thumb rather than half a thumb off at the extremes. */
+.ui-slider { display: flex; flex-direction: column; gap: 4px; }
+
+.ui-slider-row {
+  position: relative;
+  height: var(--slider-thumb, 16px);
+  /* Reserve the thumb's own width so the first and last positions are inside
+     the row and the labels below can align to them. */
+  margin: 4px 0 0;
+}
+
+.ui-slider-rail,
+.ui-slider-fill {
+  position: absolute;
+  top: 50%;
+  height: 4px;
+  border-radius: 2px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.ui-slider-rail { left: 0; right: 0; background: var(--surface-3); }
+.ui-slider-fill {
+  left: 0;
+  width: calc(var(--slider-thumb, 16px) / 2 +
+              var(--slider-pos, 0) * (100% - var(--slider-thumb, 16px)));
+  background: var(--accent);
+  transition: width 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.ui-slider-ticks { position: absolute; inset: 0; pointer-events: none; }
+/* Marks, not dots: a 3px dot centred on a 4px rail is the rail. These stand
+   a little proud of it on both sides, which is what makes the steps readable
+   as steps at a glance rather than only from the labels. */
+.ui-slider-tick {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 9px;
+  border-radius: 1px;
+  background: var(--border-strong);
+  transform: translate(-50%, -50%);
+  left: calc(var(--slider-thumb, 16px) / 2 +
+             var(--tick-pos) * (100% - var(--slider-thumb, 16px)));
+}
+/* A tick the fill has already passed sits on the accent, where the rail
+   colour would disappear; --text-inverted is the accent's own contrast
+   colour, so this holds on the light and the dark themes alike. */
+.ui-slider-tick.is-passed { background: var(--text-inverted); opacity: 0.6; }
+
+.ui-slider-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  margin: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  background: none;
+  outline: none;
+  cursor: pointer;
+}
+.ui-slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--slider-thumb, 16px);
+  height: var(--slider-thumb, 16px);
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface-1);
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+}
+.ui-slider-input::-moz-range-thumb {
+  width: var(--slider-thumb, 16px);
+  height: var(--slider-thumb, 16px);
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface-1);
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+}
+.ui-slider-input:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.ui-slider-input:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.ui-slider-input:disabled { cursor: not-allowed; opacity: 0.5; }
+
+/* The step indicators' labels. Buttons, not text: clicking "100%" is the
+   fastest way back to the default, and it keeps the steps reachable without
+   dragging a thumb on a trackpad in the field. */
+.ui-slider-scale {
+  position: relative;
+  height: 15px;
+  margin-top: 2px;
+}
+.ui-slider-step {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  left: calc(var(--slider-thumb, 16px) / 2 +
+             var(--tick-pos) * (100% - var(--slider-thumb, 16px)));
+  padding: 0 2px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  line-height: 15px;
+  color: var(--text-3);
+  white-space: nowrap;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color 130ms;
+}
+.ui-slider-step:hover { color: var(--text-2); }
+.ui-slider-step.is-current { color: var(--accent); }
+.ui-slider-step:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-slider-fill { transition: none; }
+}
+
+/* ===== .ui-toggle — on/off switch =====
+   The one binary control in the app. It is a <button role="switch">, so the
+   whole thing is the hit target and the accent fill IS the state: off reads as
+   an empty well like any other field, on as a filled accent track. Sized off
+   the same 6px radius family as the rest of the form system, but the track is
+   a pill because a switch that looks like a checkbox invites a click that
+   toggles nothing. */
+.ui-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.ui-toggle-track {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgb(var(--input-rgb) / 0.6);
+  border: 1px solid var(--border);
+  transition: background 150ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              border-color 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ui-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-3);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  transition: transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              background 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ui-toggle:hover:not(:disabled) .ui-toggle-track { border-color: var(--border-strong); }
+.ui-toggle.on .ui-toggle-track { background: var(--accent); border-color: var(--accent); }
+.ui-toggle.on .ui-toggle-knob { transform: translateX(16px); background: var(--text-inverted); }
+.ui-toggle:focus-visible { outline: none; }
+.ui-toggle:focus-visible .ui-toggle-track {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+.ui-toggle:disabled { cursor: not-allowed; opacity: 0.5; }
+
+/* A field whose control is a switch puts the two on one line: the caption
+   carries the meaning, so stacking them would leave a labelled switch floating
+   under a heading with nothing beside it. */
+.field-switch { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.field-switch > .field-label { text-transform: none; font-size: 12px; color: var(--text-1); letter-spacing: 0; }
+/* The hint is the third child of a row-direction field, so it has to be
+   pulled onto its own line under both of them. */
+.field-switch > .field-hint { flex-basis: 100%; order: 3; margin-top: -4px; }
 
 /* ===== .ui-actions — horizontal button group ===== */
 .ui-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -547,12 +749,16 @@
 .ui-msg.err  { color: var(--critical); background: var(--critical-dark); border: 1px solid var(--critical); }
 .ui-msg.warn { color: var(--warning);  background: var(--warning-dark);  border: 1px solid var(--warning); }
 
-/* ===== Light-theme corrections =====
+/* ===== Dark-theme corrections =====
    Two places cannot read a token: the chevron baked into the select's data:
    URI, and Lucide's stroke inside an <img>-like context. Only the chevron
-   needs a fix — restate it with the light theme's muted text color. */
-:root[data-theme="light"] .field-select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2379828D' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+   needs a fix — the rule above carries the light themes' muted text color
+   (the default theme is light), so restate it for the dark ones. */
+:root[data-theme="green"] .field-select,
+:root[data-theme="blue"] .field-select,
+:root[data-theme="pink"] .field-select,
+:root[data-theme="orange"] .field-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2369737F' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
 }
 
 /* ===== .modal — one dialog for the whole app =====

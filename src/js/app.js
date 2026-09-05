@@ -8,7 +8,7 @@ window.Corvus = window.Corvus || {};
     maplibre-gl, lucide, plotly-basic, ui, telemetry, notification_dedupe,
     topbar, map, instruments, panel, link, plugins, plugin-vibration,
     setup-shared, setup-calibration, setup-parameters, setup, sidenav,
-    tiles, app (this file).
+    joystick, tiles, app (this file).
 
   Contract: every Corvus.<module> exposes a no-arg init() (some take a few
   DOM roots) and owns a narrow public API; nothing imports another module's
@@ -286,15 +286,24 @@ Corvus.app = (function () {
   }
 
   function init() {
-    // Apply the cached theme synchronously (no FOUC) before the map/UI paint,
-    // then let the backend config override it as the authoritative source.
-    // The inline script in index.html has usually done this already; repeating
-    // it here also covers the case where that script could not read storage.
+    // Apply the cached theme and interface size synchronously (no FOUC, and no
+    // relayout in front of the operator) before the map/UI paint, then let the
+    // backend config override both as the authoritative source. The inline
+    // script in index.html has usually done this already; repeating it here
+    // also covers the case where that script could not read storage.
     Corvus.theme.applySaved();
+    Corvus.scale.applySaved();
     Corvus.telemetry.requestJson("/api/config").then((res) => {
       const cfg = (res && res.config) || {};
       const name = Corvus.theme.fromConfig(cfg);
       if (name) Corvus.theme.setTheme(name);
+      const scale = Corvus.scale.fromConfig(cfg);
+      if (scale) Corvus.scale.setScale(scale);
+      // Off unless the config says otherwise: a control that can move the
+      // aircraft is opt-in, and an unreachable backend must leave both off
+      // rather than guess from a cached value.
+      Corvus.joystick.setEnabled(!!(cfg.controls && cfg.controls.virtual_joystick));
+      Corvus.joystick.setKeysEnabled(!!(cfg.controls && cfg.controls.arrow_keys));
       // Optional operator branding in the top bar; absent by default, and the
       // top bar keeps the value until it builds itself on the first state.
       Corvus.topbar.setCompanyLogo((cfg.branding && cfg.branding.logo) || "");
@@ -314,6 +323,9 @@ Corvus.app = (function () {
     // The offline-map panel is a modal now (it mounts itself to <body>), so
     // only the trigger is wired here — there is no anchored popover element.
     Corvus.tiles.init(document.getElementById("tilesTrigger"));
+    // Builds the pad hidden; the /api/config read above decides which of its
+    // surfaces are shown, and Settings toggles them live from there on.
+    Corvus.joystick.init(document.getElementById("joystickPad"));
 
     Corvus.telemetry.connect();
     Corvus.ui.refreshIcons();
@@ -328,8 +340,13 @@ Corvus.app = (function () {
       if (userToggled) return;
       const panel = document.getElementById("rightPanel");
       const collapsed = panel.classList.contains("collapsed");
-      if (window.innerWidth < 960 && !collapsed) Corvus.panel.toggle();
-      else if (window.innerWidth >= 1280 && collapsed) Corvus.panel.toggle();
+      // body.clientWidth, not innerWidth: the thresholds are in the same
+      // (scaled) pixels the panel and the nav rail are sized in, so raising
+      // the interface size collapses the panel at the point the layout
+      // actually gets cramped rather than at a fixed window width.
+      const width = document.body.clientWidth || window.innerWidth;
+      if (width < 960 && !collapsed) Corvus.panel.toggle();
+      else if (width >= 1280 && collapsed) Corvus.panel.toggle();
     });
     window.dispatchEvent(new Event("resize"));
   }

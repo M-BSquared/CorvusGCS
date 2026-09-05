@@ -16,6 +16,12 @@ window.Corvus = window.Corvus || {};
   accent, panel surface, page background — the three colors that actually tell
   the themes apart at a glance.
 
+  "light-orange" is the default and the one theme with no block of its own —
+  it is what bare `:root` carries in css/themes.css, so it is also what an
+  unknown id degrades to. Changing DEFAULT changes only what a fresh install
+  gets: an operator who has already picked a theme has it in localStorage and
+  in the backend config, and both outrank this.
+
   Persistence is two-layered on purpose: localStorage so the choice can be
   applied before first paint (see the inline script in index.html) and the
   backend config so it survives a cache clear and follows the operator's
@@ -23,14 +29,15 @@ window.Corvus = window.Corvus || {};
 */
 Corvus.theme = (function () {
   const KEY = "corvus.theme";
-  const DEFAULT = "green";
+  const DEFAULT = "light-orange";
 
   const THEMES = [
-    { id: "green",  label: "Green",  desc: "Default",       swatch: ["#3DA876", "#171D25", "#0B0E12"] },
-    { id: "blue",   label: "Blue",   desc: "Cool",          swatch: ["#3B9EFF", "#171D25", "#0B0E12"] },
-    { id: "pink",   label: "Pink",   desc: "Magenta",       swatch: ["#F0509B", "#171D25", "#0B0E12"] },
-    { id: "orange", label: "Orange", desc: "Amber",         swatch: ["#F58A2B", "#171D25", "#0B0E12"] },
-    { id: "light",  label: "Light",  desc: "White & black", swatch: ["#1B1F26", "#F1F3F6", "#FFFFFF"] },
+    { id: "light-orange", label: "Light Orange", desc: "Default",       swatch: ["#C2540A", "#FFFFFF", "#F4F6F8"] },
+    { id: "light",        label: "Light",        desc: "White & black", swatch: ["#1B1F26", "#F1F3F6", "#FFFFFF"] },
+    { id: "green",        label: "Green",        desc: "Dark",          swatch: ["#3DA876", "#171D25", "#0B0E12"] },
+    { id: "blue",         label: "Blue",         desc: "Cool",          swatch: ["#3B9EFF", "#171D25", "#0B0E12"] },
+    { id: "pink",         label: "Pink",         desc: "Magenta",       swatch: ["#F0509B", "#171D25", "#0B0E12"] },
+    { id: "orange",       label: "Orange",       desc: "Amber",         swatch: ["#F58A2B", "#171D25", "#0B0E12"] },
   ];
 
   const IDS = THEMES.map((t) => t.id);
@@ -85,6 +92,105 @@ Corvus.theme = (function () {
   }
 
   return { setTheme, applySaved, isKnown, fromConfig, THEMES, IDS, DEFAULT };
+})();
+
+/*
+  Corvus.scale — the interface size.
+
+  One number multiplied over every used length below <body> via the --ui-scale
+  token and the `zoom` rule in css/main.css. It is a token write and nothing
+  else: no component knows about it, exactly as no component knows which theme
+  is active, which is why it reaches text, icons (whose px sizes JS writes
+  inline, out of reach of any font-size lever), bar heights and hairlines
+  alike.
+
+  STEPS is a short ordered list rather than a continuous range because the
+  choice is coarse — an operator picks "a bit bigger", not 113%. The values are
+  the contract with the settings slider and with the backend config
+  (`ui.scale`); the labels are only what the step indicators read.
+
+  Persistence mirrors Corvus.theme: localStorage first, so the size is applied
+  before first paint and the app never resizes itself in front of the operator,
+  and the backend config second, so it survives a cache clear.
+
+  Two things do have to be told when it changes, and they are why this is an
+  event: geometry read back out of the DOM in JS is in scaled pixels while
+  style writes are in unscaled ones (hud-panel.js), and MapLibre sizes its
+  drawing buffer from the container's unscaled size, which would leave the map
+  soft when the UI grows and needlessly oversampled when it shrinks
+  (map.js). A plain `resize` is dispatched alongside so anything that already
+  reacts to a viewport change — the right panel's auto-collapse, MapLibre's
+  own observer, Plotly — needs no new listener.
+*/
+Corvus.scale = (function () {
+  const KEY = "corvus.scale";
+  const DEFAULT = 1;
+
+  const STEPS = [
+    { value: 0.8,  label: "80%" },
+    { value: 0.9,  label: "90%" },
+    { value: 1,    label: "100%" },
+    { value: 1.1,  label: "110%" },
+    { value: 1.25, label: "125%" },
+    { value: 1.5,  label: "150%" },
+  ];
+
+  const MIN = STEPS[0].value;
+  const MAX = STEPS[STEPS.length - 1].value;
+
+  /** Clamp *v* into the offered range, or the default when it is not a
+   *  number at all. Never snaps to a step: a config written by a build with
+   *  a different STEPS list stays honoured, and the slider shows the nearest
+   *  step for it. */
+  function normalize(v) {
+    const n = Number(v);
+    if (!isFinite(n) || n <= 0) return DEFAULT;
+    return Math.min(Math.max(n, MIN), MAX);
+  }
+
+  /** Apply *v* to the document and cache it. Returns the value applied. */
+  function setScale(v) {
+    const n = normalize(v);
+    try { document.documentElement.style.setProperty("--ui-scale", String(n)); } catch (_e) {}
+    try { localStorage.setItem(KEY, String(n)); } catch (_e) {}
+    try {
+      window.dispatchEvent(new CustomEvent("corvus:scalechange", { detail: { scale: n } }));
+      window.dispatchEvent(new Event("resize"));
+    } catch (_e) {}
+    return n;
+  }
+
+  /** Apply the locally cached scale (called before the config fetch lands). */
+  function applySaved() {
+    let v = DEFAULT;
+    try { v = localStorage.getItem(KEY) || DEFAULT; } catch (_e) {}
+    return setScale(v);
+  }
+
+  /** The scale the current document is at, whatever set it. */
+  function get() {
+    try {
+      return normalize(getComputedStyle(document.documentElement).getPropertyValue("--ui-scale"));
+    } catch (_e) {
+      return DEFAULT;
+    }
+  }
+
+  /**
+   * Resolve the scale a backend config asks for, or null when it names none
+   * (so the caller leaves the cached value alone). A non-numeric or
+   * out-of-range value is clamped rather than rejected — a config must never
+   * be able to leave the UI at an unusable size, and must never fail to load.
+   */
+  function fromConfig(cfg) {
+    const ui = cfg && cfg.ui;
+    if (!ui || ui.scale == null) return null;
+    const n = Number(ui.scale);
+    if (!isFinite(n) || n <= 0) return null;
+    return normalize(n);
+  }
+
+  return { setScale, applySaved, get, normalize, fromConfig, STEPS, DEFAULT, MIN, MAX };
 })();
 
 Corvus.sidenav = (function () {
@@ -245,16 +351,19 @@ Corvus.sidenav = (function () {
 
   // --- Settings page data ---
 
-  // POST a partial config update; best-effort (the change is already applied
-  // live, a persist failure is non-fatal for this session). Reuses the
-  // telemetry transport so HTTP errors reject instead of resolving with a
-  // bogus body.
-  function postConfig(body) {
-    return Corvus.telemetry.requestJson("/api/config", {
+  // POST a partial config update. Best-effort by default: the change is
+  // already applied live, so a persist failure is non-fatal for this session
+  // and the settings page has nothing useful to say about it. Pass
+  // `{strict: true}` where the caller needs to know — a control that must undo
+  // itself when the backend refuses. Reuses the telemetry transport so HTTP
+  // errors reject instead of resolving with a bogus body.
+  function postConfig(body, opts) {
+    const request = Corvus.telemetry.requestJson("/api/config", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    }).catch(() => {});
+    });
+    return (opts && opts.strict) ? request : request.catch(() => {});
   }
 
   // Activate the SSH tab in the right panel (used after a settings-page CONNECT
@@ -273,18 +382,91 @@ Corvus.sidenav = (function () {
     }
   }
 
-  // --- Section A: Appearance (color theme + map service) ---
-  // Two operator choices that both change how the app looks, so they share one
-  // section. Each is a Corvus.ui.optionCards group: same control, different
-  // content. Both apply immediately and persist in the background — nothing
-  // here has a Save button, because there is nothing to get wrong and undoing
-  // is one more click.
+  // --- Section A: Appearance (color theme, map service, on-screen controls) ---
+  // Operator choices that all change what the app looks like and what it puts
+  // on screen, so they share one section. Everything here applies immediately
+  // and persists in the background — nothing has a Save button, because there
+  // is nothing to get wrong and undoing is one more click.
   function renderAppearanceSection(container, cfg, gen) {
     const body = document.createDocumentFragment();
     body.appendChild(companyLogoCard(cfg));
     body.appendChild(themeCard(cfg));
+    body.appendChild(scaleCard(cfg));
     body.appendChild(mapServiceCard(cfg, gen));
+    body.appendChild(controlsCard(cfg));
     container.appendChild(Corvus.ui.section({ title: "Appearance", body }));
+  }
+
+  // Which optional input controls the map carries: the stick pair and the
+  // arrow keys, each its own switch. The card exists as its own group because
+  // controls that can move the aircraft do not belong under "Color theme".
+  //
+  // Both switches drive the live map immediately and persist in the
+  // background, and the persist is what the toggle awaits: a rejected POST
+  // snaps the switch back rather than leaving it claiming a state the config
+  // does not have. The joystick module is the single owner of what is on
+  // screen — this only tells it.
+  function controlsCard(cfg) {
+    const card = Corvus.ui.card({ title: "Controls" });
+    card.appendChild(controlSwitch({
+      id: "settingsVirtualJoystick",
+      key: "virtual_joystick",
+      label: "Virtual joystick",
+      apply: "setEnabled",
+      value: !!(cfg.controls && cfg.controls.virtual_joystick),
+      hint: "Shows a two-stick pad over the map on the Home tab: left stick " +
+            "throttle and yaw, right stick pitch and roll. Drag the pad by " +
+            "its grip bar to move it; double-click the bar to send it back.",
+    }));
+    card.appendChild(controlSwitch({
+      id: "settingsArrowKeys",
+      key: "arrow_keys",
+      label: "Arrow keys",
+      apply: "setKeysEnabled",
+      value: !!(cfg.controls && cfg.controls.arrow_keys),
+      hint: "Adds a four-key pad to the same window and lets the keyboard's " +
+            "arrow keys fly the aircraft forward, back, left and right — " +
+            "pitch and roll only, at half stick. The autopilot acts on " +
+            "either control only when the vehicle accepts joystick input " +
+            "(COM_RC_IN_MODE 1 or 3) and is in a mode that flies from the " +
+            "sticks. Both are off by default.",
+    }));
+    return card;
+  }
+
+  // One row of the Controls card. Every switch here does the same three
+  // things — tell the joystick module, persist the one key it owns, and undo
+  // both if the backend refuses — so they are built rather than repeated.
+  function controlSwitch(spec) {
+    function live(on) {
+      if (Corvus.joystick && typeof Corvus.joystick[spec.apply] === "function") {
+        Corvus.joystick[spec.apply](on);
+      }
+    }
+    const sw = Corvus.ui.toggle({
+      id: spec.id,
+      value: spec.value,
+      ariaLabel: spec.label,
+      onChange: (on) => {
+        live(on);
+        // Only this switch's key is sent: the backend merges `controls`
+        // wholesale, and posting both would let a stale render of one switch
+        // overwrite the other.
+        const patch = {};
+        patch[spec.key] = on;
+        return postConfig({ controls: patch }, { strict: true })
+          .catch((error) => {
+            live(!on);   // put the map back where the persisted config still says it is
+            throw error;
+          });
+      },
+    });
+    return Corvus.ui.field({
+      label: spec.label,
+      control: sw.el,
+      className: "field-switch",
+      hint: spec.hint,
+    });
   }
 
   // Optional company logo shown at the far top right, opposite the Corvus
@@ -432,6 +614,37 @@ Corvus.sidenav = (function () {
       title: "Color theme",
       body: picker.el,
     });
+  }
+
+  // Interface size. Same shape as the theme card — the config is authoritative
+  // over the locally cached value, so rendering the page also corrects a stale
+  // localStorage scale the pre-paint script in index.html may have used.
+  //
+  // The slider previews on every step the thumb crosses and only persists on
+  // release: the operator is judging the result by looking at it, so waiting
+  // for a commit to redraw would make the control unusable, and writing the
+  // config on each crossed step would POST five times per drag.
+  function scaleCard(cfg) {
+    const current = Corvus.scale.fromConfig(cfg) || Corvus.scale.applySaved();
+    Corvus.scale.setScale(current);
+
+    const control = Corvus.ui.slider({
+      id: "settingsUiScale",
+      ariaLabel: "Interface size",
+      value: current,
+      steps: Corvus.scale.STEPS,
+      onInput: (v) => Corvus.scale.setScale(v),
+      onChange: (v) => postConfig({ ui: { scale: Corvus.scale.setScale(v) } }),
+    });
+
+    const card = Corvus.ui.card({ title: "Interface size" });
+    card.appendChild(Corvus.ui.field({
+      control: control.el,
+      hint: "Scales the whole interface — text, icons, bars and panels — on this " +
+            "machine. Larger reads better on a bright field laptop; smaller fits " +
+            "more of the map and the engineering panel on screen. 100% is the default.",
+    }));
+    return card;
   }
 
   // Map service picker. The source list is fetched rather than mirrored here:

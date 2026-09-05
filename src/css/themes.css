@@ -3,29 +3,31 @@
 
   Loaded FIRST (before main.css and components.css) because it owns every
   design token in the app: the palette, the translucency/shadow recipes, and
-  the structural constants (radii, bar sizes, fonts). Nothing else defines a
-  token — main.css and components.css only consume them. That is what makes a
-  whole-app theme switch a single attribute write.
+  the structural constants (radii, bar sizes, fonts, interface scale). Nothing
+  else defines a token — main.css and components.css only consume them. That
+  is what makes a whole-app theme switch a single attribute write.
 
   How a theme is selected
   -----------------------
   Corvus.theme writes `data-theme="<id>"` on <html>. Bare `:root` carries the
-  DEFAULT theme (green) in full, so the app is completely styled before any
-  script runs and an unknown/missing id degrades to green rather than to an
-  unpainted page. Each `[data-theme]` block then overrides only what differs.
+  DEFAULT theme (light-orange) in full, so the app is completely styled before
+  any script runs and an unknown/missing id degrades to the default rather
+  than to an unpainted page.
 
-  The four dark themes differ solely in their accent family, so their blocks
-  are short. "light" is the white/black theme: it inverts the whole surface,
-  text, border, translucency, and shadow stack, and takes near-black as its
-  accent — so on it every dark surface reads light, which is exactly the point
-  of that theme. Because every dark value in the app is a token, the inversion
-  needs no per-component overrides.
+  There are two bases, not one. The default is light, so the four dark themes
+  cannot be accent-only overrides of it — they share one grouped block that
+  restates the whole dark surface/text/shadow stack (and carries green's
+  accent, since green is the reference dark theme), and blue/pink/orange then
+  override only their accent family. On the light side it is the other way
+  round: "light" is the white/black theme and differs from the default only in
+  its accent family, so its block is four lines. Because every value in the
+  app is a token, neither base needs a single per-component override.
 
   Channel tokens (--glass-rgb, --tint-rgb, --input-rgb) hold bare `R G B`
   triples so a component can pick its own alpha with
   `rgb(var(--glass-rgb) / 0.6)` without the theme having to enumerate every
-  alpha it might want. --tint-rgb is the "contrast overlay" channel: white on
-  the dark themes, black on light, so hover washes and hairline borders flip
+  alpha it might want. --tint-rgb is the "contrast overlay" channel: black on
+  the light themes, white on dark, so hover washes and hairline borders flip
   direction automatically.
 */
 
@@ -42,6 +44,17 @@
   --panel-w-collapsed: 24px;
   --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* --- Interface scale ---
+     Every size in this app is an absolute px value, including the ones JS
+     writes inline on Lucide icons — so there is no font-size or rem lever
+     that would reach all of them. `zoom` does: main.css puts it on <body>,
+     and Chromium (the only engine this ships on — QtWebEngine) multiplies
+     every used length below that point, icons and hairlines included. That
+     makes the whole interface one number, which is exactly what the operator
+     is choosing. Corvus.scale writes this token on <html>; the discrete steps
+     the settings slider offers live there, not here. */
+  --ui-scale: 1;
 
   /* --- Stacking order ---
      One ladder, stated once, because the alternative is what this replaced: a
@@ -70,10 +83,163 @@
 }
 
 /* ===================================================================
-   DEFAULT THEME — green. Also the complete dark base every other dark
-   theme builds on, so those blocks only restate the accent family.
+   DEFAULT THEME — light with orange accents. Also the complete light
+   base the white/black theme builds on, so that block only restates
+   the accent family.
+
+   The surfaces are deliberately neutral grey-white rather than warmed
+   toward the accent: they are shared with the "light" theme, whose
+   accent is near-black, and a warm cast under a black accent reads as
+   a colour mistake rather than a choice.
+
+   Status colours are picked at darker, more saturated values than the
+   dark themes use, so they keep AA contrast against white instead of
+   glowing off it.
    =================================================================== */
 :root {
+  color-scheme: light;
+
+  --bg: #F4F6F8;
+  --surface-1: #FFFFFF;
+  --surface-2: #F1F3F6;
+  --surface-3: #E8EBF0;
+  --surface-hover: #E2E6EC;
+  --surface-active: #D6DBE3;
+
+  /* A burnt orange, not the dark themes' amber: #F58A2B carries 2.5:1 on
+     white and fails as both text and a fill behind white button labels.
+     This one is 4.6:1 in both directions, and hover/pressed only deepen it
+     so a pressed control never loses contrast under the cursor. */
+  --accent: #C2540A;
+  --accent-dim: rgba(194, 84, 10, 0.12);
+  --accent-bright: #A64500;
+  --accent-dark: #FBE7D6;
+  --accent-hover: #AE4A08;
+  --accent-pressed: #933E05;
+
+  --healthy: #0F8B50;
+  --healthy-dark: #D8F1E3;
+  --healthy-bright: #0B7343;
+  --warning: #B07600;
+  --warning-dark: #FAEDCC;
+  --critical: #D62B26;
+  --critical-dark: #FBDCDB;
+  --critical-bright: #B32020;
+
+  --nav: #0B6FC0;
+  --nav-dark: #D8E9F8;
+  --nav-bright: #085A9C;
+  --nav-dim: rgba(11, 111, 192, 0.14);
+  --waypoint: #0B6FC0;
+  --vehicle: #D62B26;
+  --vehicle-rgb: 214 43 38;
+  /* The flown track. Deeper and more saturated than the vehicle marker so the
+     two read as related but distinct — the marker is where the aircraft IS,
+     the track is where it has been, and a trail in the marker's exact colour
+     makes the live position hard to pick out of its own history. Deeper still
+     than the dark themes use, because a bright red loses definition over
+     light imagery. */
+  --track: #B81E1B;
+  --track-rgb: 184 30 27;
+
+  --text-1: #12151A;
+  --text-2: #4C555F;
+  --text-3: #79828D;
+  --text-disabled: #A9B1BA;
+  --text-inverted: #FFFFFF;
+
+  --border: #D3D8DF;
+  --border-soft: #E4E8ED;
+  --border-strong: #B6BEC8;
+
+  --terminal-bg: #FFFFFF;
+  --terminal-text: #1B1F26;
+  --terminal-muted: #79828D;
+  --terminal-cmd: #C2540A;
+  --ssh-bg: #F7F8FA;
+
+  --horizon-sky: #58ADE4;
+  --horizon-ground: #B08050;
+  --graph-tertiary: #6B7480;
+
+  /* --- Translucency channels ---
+     --glass-rgb  : the floating-surface material (popovers, HUD, map chrome)
+     --input-rgb  : recessed field wells
+     --tint-rgb   : the contrast overlay — black on light themes, white on dark
+     Consumers pick their own alpha: rgb(var(--glass-rgb) / 0.55). */
+  --glass-rgb: 255 255 255;
+  --input-rgb: 255 255 255;
+  --tint-rgb: 0 0 0;
+  --scrim: rgba(22, 28, 38, 0.35);
+  --blur: blur(28px) saturate(180%);
+  --blur-soft: blur(24px) saturate(180%);
+  /* A lighter blur for the small surfaces — buttons and cards. The heavy
+     28px blur is for full panels floating over the map; on a 34px button it
+     costs compositing for an effect nobody can see. */
+  --blur-fine: blur(12px) saturate(140%);
+
+  /* --- Subtle glass, the material shared by buttons and cards ---
+     The flight-action bar is the reference: a translucent fill over whatever
+     is behind, a hairline of the contrast overlay, and a wash on hover. These
+     are the same three values everywhere so a button and a card read as the
+     same substance at different sizes. White at 55% over a near-white page
+     reads as nothing, so the light themes carry more fill; the hairline is
+     black here (--tint-rgb) and a little of it goes a long way. */
+  --panel-fill: rgb(var(--glass-rgb) / 0.82);
+  --panel-fill-hover: rgb(var(--glass-rgb) / 0.95);
+  --panel-hairline: rgb(var(--tint-rgb) / 0.09);
+  --panel-hairline-hover: rgb(var(--tint-rgb) / 0.15);
+  /* The wash a bare (transparent) control gets on hover — .fa-btn's move. */
+  --panel-wash: rgb(var(--tint-rgb) / 0.04);
+
+  /* --- Brand mark ---
+     The logo is artwork, not a tintable glyph, so it ships in two cuts: white
+     for dark surfaces and black for light ones. Making it a token means a
+     theme swaps it with everything else instead of the top bar needing its
+     own theme listener — and it is the reason the mark is a background image
+     on a role="img" span rather than an <img src>, since CSS cannot reach
+     into an element's src. Paths are relative to this stylesheet. */
+  --logo-mark: url("../assets/CorvusGCS_logo_inverted.png");
+  /* Plate behind a third-party logo that must keep its own colours. Already
+     on white here — a plate would just draw a box around the logo. */
+  --orgmark-plate: transparent;
+
+  /* --- Elevation. Composite so a theme can retune spread AND alpha, which a
+     light theme must: shadows on white have to be far lighter and tinted
+     toward the surface, or they read as smudges rather than elevation. */
+  --shadow: 0 6px 20px rgba(22, 28, 38, 0.12);
+  --shadow-soft: 0 2px 10px rgba(22, 28, 38, 0.08);
+  --shadow-pop: 0 4px 16px rgba(22, 28, 38, 0.10);
+  --shadow-glass: 0 8px 32px rgba(22, 28, 38, 0.14);
+  --shadow-modal: 0 16px 48px rgba(22, 28, 38, 0.18);
+}
+
+/* ===================================================================
+   LIGHT — the white/black theme. Same light base as the default; the
+   accent is near-black, which is what makes this the "white & black"
+   theme rather than a light tint of a coloured one.
+   =================================================================== */
+:root[data-theme="light"] {
+  --accent: #1B1F26;
+  --accent-dim: rgba(27, 31, 38, 0.10);
+  --accent-bright: #343B45;
+  --accent-dark: #E2E6EC;
+  --accent-hover: #2C323B;
+  --accent-pressed: #0E1116;
+  /* A black "you typed this" marker is indistinguishable from output. */
+  --terminal-cmd: #0F8B50;
+}
+
+/* ===================================================================
+   DARK BASE — shared by all four dark themes: the complete inversion of
+   the light default (surfaces, text, borders, translucency, shadows),
+   plus green's accent family, green being the reference dark theme.
+   Blue/pink/orange restate only what differs, below.
+   =================================================================== */
+:root[data-theme="green"],
+:root[data-theme="blue"],
+:root[data-theme="pink"],
+:root[data-theme="orange"] {
   color-scheme: dark;
 
   --bg: #0B0E12;
@@ -106,11 +272,7 @@
   --waypoint: #62D6FF;
   --vehicle: #FF514D;
   --vehicle-rgb: 255 81 77;
-  /* The flown track. A deeper, more saturated red than the vehicle marker so
-     the two read as related but distinct — the marker is where the aircraft
-     IS, the track is where it has been, and a trail in the marker's exact
-     colour makes the live position hard to pick out of its own history. Holds
-     up over both bright and dark satellite imagery. */
+  /* Holds up over both bright and dark satellite imagery. */
   --track: #E4322F;
   --track-rgb: 228 50 47;
 
@@ -134,50 +296,23 @@
   --horizon-ground: #8A5A32;
   --graph-tertiary: #7C7F87;
 
-  /* --- Translucency channels ---
-     --glass-rgb  : the floating-surface material (popovers, HUD, map chrome)
-     --input-rgb  : recessed field wells, darker than the surface they sit on
-     --tint-rgb   : the contrast overlay — white on dark themes, black on light
-     Consumers pick their own alpha: rgb(var(--glass-rgb) / 0.55). */
+  /* The contrast overlay flips to white, so every hover wash and hairline
+     border in the app lightens instead of darkening. */
   --glass-rgb: 17 22 29;
   --input-rgb: 11 14 18;
   --tint-rgb: 255 255 255;
   --scrim: rgba(0, 0, 0, 0.5);
-  --blur: blur(28px) saturate(180%);
-  --blur-soft: blur(24px) saturate(180%);
-  /* A lighter blur for the small surfaces — buttons and cards. The heavy
-     28px blur is for full panels floating over the map; on a 34px button it
-     costs compositing for an effect nobody can see. */
-  --blur-fine: blur(12px) saturate(140%);
 
-  /* --- Subtle glass, the material shared by buttons and cards ---
-     The flight-action bar is the reference: a translucent fill over whatever
-     is behind, a hairline of the contrast overlay, and a wash on hover. These
-     are the same three values everywhere so a button and a card read as the
-     same substance at different sizes. Deliberately restrained — over an
-     opaque page there is nothing to blur, and the honest effect there is a
-     slightly lifted tint, not a frosted slab. */
   --panel-fill: rgb(var(--glass-rgb) / 0.55);
   --panel-fill-hover: rgb(var(--glass-rgb) / 0.78);
   --panel-hairline: rgb(var(--tint-rgb) / 0.10);
   --panel-hairline-hover: rgb(var(--tint-rgb) / 0.18);
-  /* The wash a bare (transparent) control gets on hover — .fa-btn's move. */
   --panel-wash: rgb(var(--tint-rgb) / 0.06);
 
-  /* --- Brand mark ---
-     The logo is artwork, not a tintable glyph, so it ships in two cuts: white
-     for dark surfaces and black for light ones. Making it a token means the
-     light theme swaps it with everything else instead of the top bar needing
-     its own theme listener — and it is the reason the mark is a background
-     image on a role="img" span rather than an <img src>, since CSS cannot
-     reach into an element's src. Paths are relative to this stylesheet. */
+  /* The black mark is invisible on a dark top bar; use the white cut. */
   --logo-mark: url("../assets/CorvusGCS_logo.png");
-  /* Plate behind a third-party logo that must keep its own colours. The dark
-     themes need one; the light theme sets it to transparent. */
   --orgmark-plate: rgba(255, 255, 255, 0.9);
 
-  /* --- Elevation. Composite so a theme can retune spread AND alpha, which
-     a light theme must (a 0.45-black drop shadow looks like dirt on white). */
   --shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
   --shadow-soft: 0 2px 10px rgba(0, 0, 0, 0.35);
   --shadow-pop: 0 4px 16px rgba(0, 0, 0, 0.3);
@@ -233,99 +368,4 @@
   --warning: #FFD966;
   --warning-dark: #46400F;
   --terminal-cmd: #FFAA5C;
-}
-
-/* ===================================================================
-   LIGHT — the white/black theme. Everything dark becomes light: surfaces
-   invert, text inverts, the contrast overlay flips from white to black,
-   and the status colors are re-picked at darker, more saturated values so
-   they keep AA contrast against white instead of glowing off it.
-   The accent is near-black, which is what makes this the "white & black"
-   theme rather than a light tint of one of the colored ones.
-   =================================================================== */
-:root[data-theme="light"] {
-  color-scheme: light;
-
-  --bg: #F4F6F8;
-  --surface-1: #FFFFFF;
-  --surface-2: #F1F3F6;
-  --surface-3: #E8EBF0;
-  --surface-hover: #E2E6EC;
-  --surface-active: #D6DBE3;
-
-  --accent: #1B1F26;
-  --accent-dim: rgba(27, 31, 38, 0.10);
-  --accent-bright: #343B45;
-  --accent-dark: #E2E6EC;
-  --accent-hover: #2C323B;
-  --accent-pressed: #0E1116;
-
-  --healthy: #0F8B50;
-  --healthy-dark: #D8F1E3;
-  --healthy-bright: #0B7343;
-  --warning: #B07600;
-  --warning-dark: #FAEDCC;
-  --critical: #D62B26;
-  --critical-dark: #FBDCDB;
-  --critical-bright: #B32020;
-
-  --nav: #0B6FC0;
-  --nav-dark: #D8E9F8;
-  --nav-bright: #085A9C;
-  --nav-dim: rgba(11, 111, 192, 0.14);
-  --waypoint: #0B6FC0;
-  --vehicle: #D62B26;
-  --vehicle-rgb: 214 43 38;
-  /* Deeper still on light imagery, where a bright red loses definition. */
-  --track: #B81E1B;
-  --track-rgb: 184 30 27;
-
-  --text-1: #12151A;
-  --text-2: #4C555F;
-  --text-3: #79828D;
-  --text-disabled: #A9B1BA;
-  --text-inverted: #FFFFFF;
-
-  --border: #D3D8DF;
-  --border-soft: #E4E8ED;
-  --border-strong: #B6BEC8;
-
-  --terminal-bg: #FFFFFF;
-  --terminal-text: #1B1F26;
-  --terminal-muted: #79828D;
-  --terminal-cmd: #0F8B50;
-  --ssh-bg: #F7F8FA;
-
-  --horizon-sky: #58ADE4;
-  --horizon-ground: #B08050;
-  --graph-tertiary: #6B7480;
-
-  /* Glass frosts white; the contrast overlay flips to black so every hover
-     wash and hairline border in the app darkens instead of lightening. */
-  --glass-rgb: 255 255 255;
-  --input-rgb: 255 255 255;
-  --tint-rgb: 0 0 0;
-  --scrim: rgba(22, 28, 38, 0.35);
-
-  /* White at 55% over a near-white page reads as nothing, so the light theme
-     carries more fill; the hairline is black here (--tint-rgb flipped) and a
-     little of it goes a long way. */
-  --panel-fill: rgb(var(--glass-rgb) / 0.82);
-  --panel-fill-hover: rgb(var(--glass-rgb) / 0.95);
-  --panel-hairline: rgb(var(--tint-rgb) / 0.09);
-  --panel-hairline-hover: rgb(var(--tint-rgb) / 0.15);
-  --panel-wash: rgb(var(--tint-rgb) / 0.04);
-
-  /* The white mark is invisible on a white top bar; use the black cut. */
-  --logo-mark: url("../assets/CorvusGCS_logo_inverted.png");
-  /* Already on white — a plate would just draw a box around the logo. */
-  --orgmark-plate: transparent;
-
-  /* Shadows on white must be far lighter and tinted toward the surface, or
-     they read as smudges rather than elevation. */
-  --shadow: 0 6px 20px rgba(22, 28, 38, 0.12);
-  --shadow-soft: 0 2px 10px rgba(22, 28, 38, 0.08);
-  --shadow-pop: 0 4px 16px rgba(22, 28, 38, 0.10);
-  --shadow-glass: 0 8px 32px rgba(22, 28, 38, 0.14);
-  --shadow-modal: 0 16px 48px rgba(22, 28, 38, 0.18);
 }

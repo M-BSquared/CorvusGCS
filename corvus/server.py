@@ -757,12 +757,16 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             merged["map"] = cfg.map
         if cfg.branding is not None:
             merged["branding"] = cfg.branding
+        if cfg.controls is not None:
+            merged["controls"] = cfg.controls
+        if cfg.ui is not None:
+            merged["ui"] = cfg.ui
 
         known = {
             "mavlink_connection", "http_port", "tile_cache_dir", "tlog_dir",
             "params_dir", "firmware_dir", "log_download_dir",
             "tile_sources", "stream_rates", "ssh_connections",
-            "theme", "map", "branding",
+            "theme", "map", "branding", "controls", "ui",
         }
         for key, value in partial.items():
             if key not in known:
@@ -786,6 +790,19 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 if not isinstance(value, dict):
                     return None, "branding must be an object"
                 merged["branding"] = value
+            elif key == "controls":
+                if not isinstance(value, dict):
+                    return None, "controls must be an object"
+                # Merged per key, unlike theme/map which replace wholesale.
+                # Each control is an independent switch and the UI toggles one
+                # at a time, so a POST naming only "arrow_keys" must not turn
+                # the joystick off as a side effect.
+                base = merged.get("controls")
+                merged["controls"] = {**base, **value} if isinstance(base, dict) else dict(value)
+            elif key == "ui":
+                if not isinstance(value, dict):
+                    return None, "ui must be an object"
+                merged["ui"] = value
             elif key == "mavlink_connection":
                 if not isinstance(value, str) or not value:
                     return None, "mavlink_connection must be a non-empty string"
@@ -850,6 +867,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         cfg.theme = new_cfg.theme
         cfg.map = new_cfg.map
         cfg.branding = new_cfg.branding
+        cfg.controls = new_cfg.controls
+        cfg.ui = new_cfg.ui
         self._save_live_config()
         return to_public_dict(cfg), None
 
@@ -1307,6 +1326,45 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"ok": False, "error": error}, status)
         else:
             self._send_json({"error": "not connected"}, 400)
+
+    @route("POST", "/api/mavlink/manual")
+    def _api_mavlink_manual(self, payload: dict) -> None:
+        """Forward one virtual-joystick frame to the vehicle as MANUAL_CONTROL.
+
+        The stream endpoint for ``src/js/joystick.js``: normalized axes in,
+        one MAVLink frame out, no ACK. Each frame is independent — the browser
+        re-sends at a fixed rate and a dropped one is simply superseded — so
+        this validates and dispatches, and never blocks on the vehicle.
+        """
+        axes: dict[str, float] = {}
+        for name, low, high in (("x", -1.0, 1.0), ("y", -1.0, 1.0),
+                                ("z", 0.0, 1.0), ("r", -1.0, 1.0)):
+            raw = payload.get(name, 0.0 if name != "z" else 0.5)
+            # bool is a subclass of int — reject it so True never flies as 1.0.
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(float(raw)):
+                self._send_json({"ok": False, "error": f"{name} must be a finite number"}, 400)
+                return
+            value = float(raw)
+            if not low <= value <= high:
+                self._send_json(
+                    {"ok": False, "error": f"{name} must be between {low:g} and {high:g}"}, 400)
+                return
+            axes[name] = value
+
+        buttons = payload.get("buttons", 0)
+        if isinstance(buttons, bool) or not isinstance(buttons, int) or not 0 <= buttons <= 0xFFFF:
+            self._send_json({"ok": False, "error": "buttons must be an integer between 0 and 65535"}, 400)
+            return
+
+        if not self.mavlink:
+            self._send_json({"error": "not connected"}, 400)
+            return
+        if self.mavlink.manual_control(buttons=buttons, **axes):
+            self._send_json({"ok": True})
+            return
+        error = self.mavlink.get_last_command_error() or "manual control send failed"
+        status = 503 if "DISCONNECTED" in error else 409
+        self._send_json({"ok": False, "error": error}, status)
 
     @route("POST", "/api/mavlink/gotopoints")
     def _api_mavlink_gotopoints(self, payload: dict) -> None:

@@ -14,7 +14,7 @@ window.Corvus = window.Corvus || {};
 
   Grouping:
     primitives  icon, iconButton, button, statusDot, badge
-    forms       label, field, select, input, checkbox
+    forms       label, field, select, input, toggle
     layout      card, section, sectionTitle, pageHeader, row, empty, actions
     pickers     optionCards, optionList, navItem
     feedback    progress, message, setBusy, setActive
@@ -193,14 +193,17 @@ Corvus.ui = (function () {
   }
 
   /* Caption + control + optional hint, stacked. `inline` makes the field a
-     flex child that shares a row with its siblings (the zoom min/max pair).
-     The caption becomes a real <label for> when the control carries an id, so
-     clicking it focuses the control; without an id it degrades to a plain
-     <span> and the control's own aria-label does the labelling. */
+     flex child that shares a row with its siblings (the zoom min/max pair);
+     `className` adds a layout modifier (.field-switch puts caption and control
+     on one line). The caption becomes a real <label for> when the control
+     carries an id, so clicking it focuses the control; without an id it
+     degrades to a plain <span> and the control's own aria-label does the
+     labelling. */
   function field(opts) {
     const o = opts || {};
     const el = document.createElement("div");
-    el.className = "field" + (o.inline ? " field-inline" : "");
+    el.className = "field" + (o.inline ? " field-inline" : "") +
+                   (o.className ? " " + o.className : "");
     if (o.label) el.appendChild(label(o.label, { htmlFor: o.control && o.control.id }));
     if (o.control) el.appendChild(o.control);
     if (o.hint) {
@@ -281,6 +284,202 @@ Corvus.ui = (function () {
     if (typeof o.onInput === "function") el.addEventListener("input", () => o.onInput(el.value, el));
     if (typeof o.onChange === "function") el.addEventListener("change", () => o.onChange(el.value, el));
     return el;
+  }
+
+  /* On/off switch: a real <button role="switch"> rather than a styled
+     checkbox, so it keeps keyboard and screen-reader semantics without a
+     hidden input to keep in sync. `onChange` receives the NEW state and may
+     return a promise; while that promise is pending the switch is disabled
+     and shows the state it is moving to, and a rejection snaps it back — an
+     operator must never be left looking at an "on" switch that the backend
+     refused. Returns {el, setValue, getValue}. */
+  function toggle(opts) {
+    const o = opts || {};
+    let value = !!o.value;
+    let busy = false;
+
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "ui-toggle" + (o.className ? " " + o.className : "");
+    el.setAttribute("role", "switch");
+    if (o.id) el.id = o.id;
+    if (o.ariaLabel) el.setAttribute("aria-label", o.ariaLabel);
+    if (o.title) el.title = o.title;
+
+    const track = document.createElement("span");
+    track.className = "ui-toggle-track";
+    const knob = document.createElement("span");
+    knob.className = "ui-toggle-knob";
+    track.appendChild(knob);
+    el.appendChild(track);
+
+    function paint() {
+      el.classList.toggle("on", value);
+      el.setAttribute("aria-checked", value ? "true" : "false");
+      el.disabled = !!o.disabled || busy;
+    }
+
+    function setValue(next) {
+      value = !!next;
+      paint();
+    }
+
+    el.addEventListener("click", () => {
+      if (el.disabled) return;
+      const next = !value;
+      const previous = value;
+      setValue(next);
+      if (typeof o.onChange !== "function") return;
+      const result = o.onChange(next);
+      if (!result || typeof result.then !== "function") return;
+      busy = true;
+      paint();
+      result.then(
+        () => { busy = false; paint(); },
+        () => { busy = false; setValue(previous); },
+      );
+    });
+
+    paint();
+    return { el, setValue, getValue: () => value };
+  }
+
+  /* Stepped slider with step indicators: a rail, a dot at every step, and a
+     clickable label under each dot. `steps` is an ordered array of
+     {value, label} — the control is an index into it, never a free number, so
+     a caller gets back one of the values it supplied and nothing between them.
+
+     Two callbacks because dragging and committing are different events:
+     `onInput` fires on every step the thumb crosses (live preview) and
+     `onChange` only when the operator lets go (persist). A label click fires
+     both, in that order.
+
+     Returns {el, setValue, getValue}. */
+  function slider(opts) {
+    const o = opts || {};
+    const steps = (o.steps || []).map((raw) =>
+      (raw && typeof raw === "object") ? raw : { value: raw, label: String(raw) });
+    const last = Math.max(0, steps.length - 1);
+
+    /* Nearest step to *v*, so a persisted value from another build (or a
+       hand-edited config) lands on a real step instead of nowhere. */
+    function indexOf(v) {
+      const n = Number(v);
+      if (!steps.length) return 0;
+      if (!isFinite(n)) return 0;
+      let best = 0;
+      let bestGap = Infinity;
+      steps.forEach((st, i) => {
+        const gap = Math.abs(Number(st.value) - n);
+        if (gap < bestGap) { bestGap = gap; best = i; }
+      });
+      return best;
+    }
+
+    let index = indexOf(o.value);
+
+    const el = document.createElement("div");
+    el.className = "ui-slider" + (o.className ? " " + o.className : "");
+
+    const row = document.createElement("div");
+    row.className = "ui-slider-row";
+
+    const rail = document.createElement("div");
+    rail.className = "ui-slider-rail";
+    const fill = document.createElement("div");
+    fill.className = "ui-slider-fill";
+    const ticks = document.createElement("div");
+    ticks.className = "ui-slider-ticks";
+    ticks.setAttribute("aria-hidden", "true");
+
+    const range = document.createElement("input");
+    range.type = "range";
+    range.className = "ui-slider-input";
+    range.min = "0";
+    range.max = String(last);
+    range.step = "1";
+    if (o.id) range.id = o.id;
+    if (o.ariaLabel) range.setAttribute("aria-label", o.ariaLabel);
+    if (o.disabled) range.disabled = true;
+
+    const scale = document.createElement("div");
+    scale.className = "ui-slider-scale";
+
+    const tickEls = [];
+    const stepEls = [];
+    steps.forEach((st, i) => {
+      const pos = last ? i / last : 0;
+
+      const dot = document.createElement("span");
+      dot.className = "ui-slider-tick";
+      dot.style.setProperty("--tick-pos", String(pos));
+      ticks.appendChild(dot);
+      tickEls.push(dot);
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ui-slider-step";
+      btn.style.setProperty("--tick-pos", String(pos));
+      btn.textContent = String(st.label == null ? st.value : st.label);
+      /* The range input already announces the step; a second tab stop per
+         step would make the control N+1 stops for no added reach. */
+      btn.tabIndex = -1;
+      btn.addEventListener("click", () => {
+        if (range.disabled || i === index) return;
+        apply(i);
+        emit("onInput");
+        emit("onChange");
+      });
+      scale.appendChild(btn);
+      stepEls.push(btn);
+    });
+
+    row.append(rail, fill, ticks, range);
+    el.append(row, scale);
+
+    function current() { return steps[index] || { value: o.value, label: "" }; }
+
+    function emit(name) {
+      const fn = o[name];
+      if (typeof fn === "function") fn(current().value, current());
+    }
+
+    /* Paint index *i* onto every part of the control. Separated from the
+       event handlers so setValue() and a drag go through the same path. */
+    function apply(i) {
+      index = Math.min(Math.max(i, 0), last);
+      const pos = last ? index / last : 0;
+      range.value = String(index);
+      el.style.setProperty("--slider-pos", String(pos));
+      range.setAttribute("aria-valuetext", String(current().label || current().value));
+      tickEls.forEach((d, n) => d.classList.toggle("is-passed", n <= index));
+      stepEls.forEach((b, n) => {
+        const on = n === index;
+        b.classList.toggle("is-current", on);
+        b.setAttribute("aria-current", on ? "true" : "false");
+      });
+    }
+
+    range.addEventListener("input", () => {
+      const next = Number(range.value);
+      if (next === index) return;
+      apply(next);
+      emit("onInput");
+    });
+    /* Commit on release. Keyboard arrows fire input+change together, so a
+       key press persists immediately; a drag persists once, at the end. */
+    range.addEventListener("change", () => {
+      apply(Number(range.value));
+      emit("onChange");
+    });
+
+    apply(index);
+
+    return {
+      el,
+      setValue: (v) => apply(indexOf(v)),
+      getValue: () => current().value,
+    };
   }
 
   /* ===================== layout ===================== */
@@ -859,6 +1058,8 @@ Corvus.ui = (function () {
     select,
     setOptions,
     input,
+    slider,
+    toggle,
     // layout
     card,
     section,

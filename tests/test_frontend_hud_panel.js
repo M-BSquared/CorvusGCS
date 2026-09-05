@@ -44,7 +44,15 @@ global.localStorage = {
 // ---------------------------------------------------------------------------
 // DOM stub. Elements carry a settable rect so the clamp maths — the only part
 // of this module that reads layout — can be exercised without a layout engine.
+//
+// The interface-scale control (Settings -> Appearance) puts a CSS `zoom` on
+// <body>, which makes getBoundingClientRect and pointer coordinates report
+// SCALED pixels while offsetWidth/clientWidth and style.left stay UNSCALED.
+// uiScale models exactly that split for every element, so the drag maths can
+// be tested at a size other than 100%.
 // ---------------------------------------------------------------------------
+let uiScale = 1;
+
 function makeEl(tag) {
   const e = {
     tagName: String(tag || "div").toUpperCase(),
@@ -82,6 +90,10 @@ function makeEl(tag) {
   e.setPointerCapture = () => {};
   e.releasePointerCapture = () => {};
   e.getBoundingClientRect = () => e._rect;
+  Object.defineProperty(e, "offsetWidth", { get: () => e._rect.width / uiScale });
+  Object.defineProperty(e, "offsetHeight", { get: () => e._rect.height / uiScale });
+  Object.defineProperty(e, "clientWidth", { get: () => e._rect.width / uiScale });
+  Object.defineProperty(e, "clientHeight", { get: () => e._rect.height / uiScale });
   e.querySelector = (sel) => querySel(e.children, sel)[0] || null;
   e.querySelectorAll = (sel) => querySel(e.children, sel);
   e.closest = (sel) => {
@@ -123,6 +135,7 @@ const KEY = "corvus.hud";
 /** Build a fresh map host + overlay carrying two stand-in instrument nodes. */
 function mount() {
   store.clear();
+  uiScale = 1;
   const host = makeEl("div");
   host.className = "map-view";
   host._rect = { left: 70, top: 60, width: 1000, height: 700 };
@@ -323,6 +336,46 @@ function testCorruptStoredStateFallsBackToDefaults() {
   );
 }
 
+function testDragTracksThePointerAtANonDefaultInterfaceSize() {
+  const { host, panel } = mount();
+  Corvus.hudPanel.init(panel);
+  // 125%: the map host still fills the same screen area, so its rect is
+  // unchanged while its own pixels shrink to 800x560.
+  uiScale = 1.25;
+  const h = dragSurface(panel);
+
+  // Grab the panel 40 screen px in from its left edge and move the pointer
+  // 250 screen px right, 125 down.
+  fire(h, "pointerdown", { clientX: 740, clientY: 390 });
+  fire(h, "pointermove", { clientX: 990, clientY: 515 });
+  fire(h, "pointerup", { clientX: 990, clientY: 515 });
+
+  // style.left is written in the panel's own pixels, so the screen delta has
+  // to arrive divided by the scale: (990-70)/1.25 - (740-700)/1.25 = 736 - 32.
+  assert.equal(panel.style.left, "704px", "pointer delta converted to panel pixels");
+  // Same conversion vertically: (515-60)/1.25 - (390-380)/1.25 = 364 - 8.
+  assert.equal(panel.style.top, "356px");
+  // Uncorrected, this drag would have written 920 - 40 = 880px and the panel
+  // would have run away from the cursor at ~1.25x its speed.
+  assert.notEqual(panel.style.left, "880px");
+}
+
+function testClampUsesTheMapsOwnPixelsNotItsScreenSize() {
+  const { host, panel } = mount();
+  Corvus.hudPanel.init(panel);
+  uiScale = 1.25;   // a 1000x700 screen area is 800x560 of the map's own pixels
+
+  const h = dragSurface(panel);
+  fire(h, "pointerdown", { clientX: 740, clientY: 390 });
+  fire(h, "pointermove", { clientX: 5000, clientY: 5000 });
+  fire(h, "pointerup", { clientX: 5000, clientY: 5000 });
+
+  // MIN_VISIBLE (64) of the panel stays inside the map's 800x560, not inside
+  // the 1000x700 it covers on screen.
+  assert.equal(parseInt(panel.style.left, 10), 800 - 64, "clamped to the scaled map width");
+  assert.equal(parseInt(panel.style.top, 10), 560 - 64, "clamped to the scaled map height");
+}
+
 function testShrinkingTheWindowPullsThePanelBackIntoView() {
   const { host, panel } = mount();
   Corvus.hudPanel.init(panel);
@@ -351,6 +404,8 @@ const tests = [
   testPinnedPanelRefusesToMove,
   testControlButtonsDoNotStartADrag,
   testDragIsClampedSoThePanelStaysReachable,
+  testDragTracksThePointerAtANonDefaultInterfaceSize,
+  testClampUsesTheMapsOwnPixelsNotItsScreenSize,
   testDoubleClickReturnsThePanelToItsDefaultCorner,
   testStateIsRestoredOnTheNextLaunch,
   testCorruptStoredStateFallsBackToDefaults,

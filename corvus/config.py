@@ -50,6 +50,8 @@ _CONFIG_FIELD_ORDER: tuple[str, ...] = (
     "theme",
     "map",
     "branding",
+    "controls",
+    "ui",
 )
 
 # Required keys on a saved ssh_connections entry; missing keys default to a
@@ -67,15 +69,19 @@ class CorvusConfig:
     ``~/.corvus/firmware`` / ``~/.corvus/flightlogs``); a non-empty value pins the location. ``None`` dict fields mean "use built-in
     defaults"; a dict overrides the whole registry.
 
-    ``ssh_connections``/``theme``/``map``/``branding`` are persisted operator UI state:
+    ``ssh_connections``/``theme``/``map``/``branding``/``controls``/``ui`` are persisted operator UI state:
     the SSH connection list, the selected color theme (``{"name": ...}``, one
     of the predefined themes in ``src/css/themes.css``; the legacy
     ``{"accent": "#RRGGBB"}`` from the old accent picker is still parsed), and
     the map service + base layer (``{"provider": ..., "base_layer": ...}``,
     see ``corvus/tile_sources.py``), and the optional operator-supplied
     company logo (``{"logo": "<original filename>"}``; the bytes live beside
-    the config file, never in it). They default to empty/None so an old
-    config file with none of these keys still loads cleanly.
+    the config file, never in it), and the optional input controls
+    (``{"virtual_joystick": true}``, the on-screen stick over the map), and
+    the interface size (``{"scale": 1.25}``, the multiplier the frontend puts
+    on every length in the UI).
+    They default to empty/None so an old config file with none of these keys
+    still loads cleanly.
     """
 
     mavlink_connection: str = "udp:0.0.0.0:14540"
@@ -91,6 +97,8 @@ class CorvusConfig:
     theme: dict[str, Any] | None = None
     map: dict[str, Any] | None = None
     branding: dict[str, Any] | None = None
+    controls: dict[str, Any] | None = None
+    ui: dict[str, Any] | None = None
 
     def apply_overrides(self, **kwargs: Any) -> "CorvusConfig":
         """Return a copy with non-None kwargs overriding matching fields.
@@ -231,6 +239,54 @@ def _coerce_branding(raw: Any) -> dict[str, Any] | None:
     return _coerce_str_keys(raw, ("logo",))
 
 
+# The on-screen manual-control surfaces, each its own switch: the stick pair
+# and the four arrow keys. Both feed the same MANUAL_CONTROL stream.
+_CONTROL_KEYS: tuple[str, ...] = ("virtual_joystick", "arrow_keys")
+
+
+def _coerce_controls(raw: Any) -> dict[str, Any] | None:
+    """Keep the boolean ``virtual_joystick``/``arrow_keys`` controls keys; else None.
+
+    These are real safety-relevant switches, so only genuine booleans count: a
+    config carrying a string ``"true"`` reads as "not set", i.e. off, rather
+    than as an accidental enable. Keys that are absent stay absent, so turning
+    one surface on never writes a decision about the other.
+    """
+    if not isinstance(raw, dict):
+        return None
+    out = {k: raw[k] for k in _CONTROL_KEYS if isinstance(raw.get(k), bool)}
+    return out or None
+
+
+# The interface-scale range the frontend offers (Corvus.scale in
+# src/js/sidenav.js). Mirrored here only as bounds, not as the step list: the
+# backend stores whatever the operator picked and has no opinion about which
+# steps a given build offers, but it must never persist a value that would
+# paint an unusable interface on the next launch.
+_UI_SCALE_MIN = 0.5
+_UI_SCALE_MAX = 3.0
+
+
+def _coerce_ui(raw: Any) -> dict[str, Any] | None:
+    """Keep the numeric ``scale`` UI key, clamped to a usable range; else None.
+
+    ``scale`` multiplies every length in the frontend (see ``--ui-scale`` in
+    ``src/css/themes.css``). Clamped rather than rejected: a hand-edited 40
+    would otherwise leave the operator with an interface too large to reach
+    the settings page that set it. Booleans are excluded explicitly — ``True``
+    is a valid ``float`` in Python and would silently mean 100%.
+    """
+    if not isinstance(raw, dict):
+        return None
+    value = raw.get("scale")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    scale = float(value)
+    if scale != scale or scale in (float("inf"), float("-inf")):   # NaN / inf
+        return None
+    return {"scale": min(max(scale, _UI_SCALE_MIN), _UI_SCALE_MAX)}
+
+
 def _build_config(data: dict[str, Any]) -> CorvusConfig:
     """Build a CorvusConfig from a parsed JSON object, ignoring unknown keys.
 
@@ -282,6 +338,8 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
     theme = _coerce_theme(data.get("theme"))
     map_cfg = _coerce_map(data.get("map"))
     branding = _coerce_branding(data.get("branding"))
+    controls = _coerce_controls(data.get("controls"))
+    ui = _coerce_ui(data.get("ui"))
 
     return CorvusConfig(
         mavlink_connection=mavlink_connection,
@@ -297,6 +355,8 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         theme=theme,
         map=map_cfg,
         branding=branding,
+        controls=controls,
+        ui=ui,
     )
 
 
@@ -327,7 +387,7 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
     """Serialize a CorvusConfig to a plain dict in stable key order.
 
     Omits ``None`` optional dict fields (``tile_sources``/``stream_rates``/
-    ``theme``/``map``/``branding``) so the on-disk file stays lean when nothing overrides
+    ``theme``/``map``/``branding``/``controls``/``ui``) so the on-disk file stays lean when nothing overrides
     them; an empty ``ssh_connections`` list is kept (it is real operator
     state, the absence of which still round-trips through ``[]``).
     """
@@ -351,6 +411,10 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
         out["map"] = dict(cfg.map)
     if cfg.branding is not None:
         out["branding"] = dict(cfg.branding)
+    if cfg.controls is not None:
+        out["controls"] = dict(cfg.controls)
+    if cfg.ui is not None:
+        out["ui"] = dict(cfg.ui)
     # Stable key order for a readable on-disk diff.
     return {k: out[k] for k in _CONFIG_FIELD_ORDER if k in out}
 

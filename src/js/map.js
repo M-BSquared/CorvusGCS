@@ -376,6 +376,27 @@ Corvus.map = (function () {
   }
 
   /** Push the current theme's track colours onto the three track layers. */
+  /* Keep the map's drawing buffer at the screen's real resolution whatever
+     the interface scale is. MapLibre sizes it from the container's UNSCALED
+     size, so `zoom` alone would leave the map soft at 150% (the same buffer
+     stretched over more screen) and oversampled at 80% (a bigger buffer than
+     the screen can show — the frame cost of a scale nobody chose for
+     performance). Multiplying the pixel ratio by the scale cancels both
+     exactly: buffer = container/scale x ratio*scale = the native size.
+
+     Guarded on setPixelRatio because the offline vendored MapLibre is pinned
+     and a future bump must not be able to break the map over a sharpness
+     detail. */
+  function applyScale() {
+    if (!map) return;
+    const scale = Corvus.scale ? Corvus.scale.get() : 1;
+    if (typeof map.setPixelRatio === "function") {
+      map.setPixelRatio((window.devicePixelRatio || 1) * scale);
+    } else if (typeof map.resize === "function") {
+      map.resize();
+    }
+  }
+
   function repaintTrack() {
     if (!map) return;
     const track = Corvus.ui.token("--track", "#E4322F");
@@ -1087,6 +1108,8 @@ Corvus.map = (function () {
       // MapLibre paint properties are literal colours, so a theme switch has
       // to push new ones — the same reason the Plotly charts subscribe.
       Corvus.ui.onThemeChange(repaintTrack);
+      applyScale();
+      window.addEventListener("corvus:scalechange", applyScale);
       // Draw whatever regions arrived while the style was still loading, then
       // refresh from the backend.
       setRegions(regions);

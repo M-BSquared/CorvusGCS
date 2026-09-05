@@ -2603,6 +2603,82 @@ class MavlinkBridge:
             )
             return True
 
+    # ------------------------------------------------------------------
+    # MANUAL_CONTROL — the on-screen virtual joystick
+    # ------------------------------------------------------------------
+    #
+    # PX4 treats MANUAL_CONTROL exactly like a physical transmitter's stick
+    # frame, so nothing here is a special GCS path: the axes are the RC axes
+    # and the flight mode decides what they mean (Position holds a velocity
+    # setpoint, Altitude an attitude one, Manual raw actuator). The joystick
+    # is only ever an input source; it never changes mode, never arms, and
+    # never overrides a failsafe. Whether the autopilot listens at all is the
+    # vehicle's decision via ``COM_RC_IN_MODE`` — 1 (joystick only) or 3 (both
+    # stick sources) — which the GCS deliberately does not set on the
+    # operator's behalf.
+    #
+    # No ACK exists for MANUAL_CONTROL and none is waited for: it is a
+    # continuous stream whose next packet supersedes the last, so the sender
+    # takes ``_send_lock`` alone rather than ``_operation_lock``. A 20 Hz
+    # stick stream must never sit behind a parameter download.
+
+    # Stick extents on the wire: MANUAL_CONTROL carries int16 axes scaled to
+    # +/-1000, and z runs 0..1000 on PX4 (no negative thrust on a multicopter).
+    MANUAL_AXIS_RANGE = 1000
+
+    def manual_control(
+        self,
+        x: float = 0.0,
+        y: float = 0.0,
+        z: float = 0.0,
+        r: float = 0.0,
+        buttons: int = 0,
+    ) -> bool:
+        """Send one MANUAL_CONTROL frame; axes are normalized, not raw ticks.
+
+        *x* is pitch (forward positive), *y* roll (right positive) and *r* yaw
+        (clockwise positive), each in ``[-1, 1]``. *z* is thrust in ``[0, 1]``
+        where 0.5 is the neutral hover detent PX4 expects from a spring-return
+        stick. Values outside those ranges are clamped rather than rejected —
+        a stick that overshoots by a rounding error must still fly.
+
+        Returns ``True`` when the frame reached the wire. ``False`` means
+        disconnected or a send failure; the caller decides whether one lost
+        frame in a stream is worth surfacing.
+        """
+        self._set_command_error("")
+        if not self._connection_ready():
+            # Same wording as every other command failure so the HTTP layer's
+            # "DISCONNECTED" -> 503 mapping holds for this path too.
+            self._set_command_error(f"Manual control failed: {MAV_RESULT_TEXT[-2]}")
+            return False
+
+        def axis(value: Any, lo: float, hi: float) -> int:
+            try:
+                v = float(value)
+            except (TypeError, ValueError):
+                v = 0.0
+            if v != v:      # NaN would become an arbitrary int16 on the wire
+                v = 0.0
+            return int(round(min(hi, max(lo, v)) * self.MANUAL_AXIS_RANGE))
+
+        try:
+            mask = int(buttons) & 0xFFFF if isinstance(buttons, int) and not isinstance(buttons, bool) else 0
+            with self._send_lock:
+                self._conn.mav.manual_control_send(
+                    self._target_system,
+                    axis(x, -1.0, 1.0),
+                    axis(y, -1.0, 1.0),
+                    axis(z, 0.0, 1.0),
+                    axis(r, -1.0, 1.0),
+                    mask,
+                )
+            return True
+        except Exception as exc:
+            logger.error("manual control send failed: %s", exc)
+            self._set_command_error(f"Manual control send failed: {exc}")
+            return False
+
     def set_vibration_stream(self, enabled: bool, rate_hz: int = 10) -> bool:
         """Enable/disable high-rate VIBRATION streaming from the vehicle.
 

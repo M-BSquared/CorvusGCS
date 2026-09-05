@@ -96,6 +96,12 @@ From one window you can:
   movable window: drag it by its title bar, pin it so a stray gesture cannot
   shift it, shrink it to compact, or collapse it to the bar alone — its
   position and state survive a restart.
+- **Fly from the screen** — two optional on-screen controls in one movable
+  window over the map: a **virtual joystick** (two spring-return sticks —
+  throttle and yaw left, pitch and roll right) and an **arrow-key pad** that
+  the keyboard's own arrow keys also drive, for forward / back / left / right.
+  Both stream to the autopilot as `MANUAL_CONTROL`. Off by default; they are
+  input sources only and never arm, change mode, or override a failsafe.
 - **Read the aircraft** — the vehicle marker carries a heading cone and a white
   separating ring so it stays visible over any imagery; the home point is a
   landing-pad mark with crosshair ticks on the exact coordinate. The flown
@@ -132,11 +138,13 @@ From one window you can:
   remove from the SSH tab or Settings), with password **or** key-file auth.
 - **Extend** — a plugin system (the **TOOLS** tab, "Tools & Plugins") where new
   specialist views plug in without touching the core.
-- **Configure** — an editable **Settings** page (left nav → SET): five
-  predefined color themes (including a full light theme), the map service to
-  use (Esri, OpenStreetMap, Google, Bing) and which of its layers, saved SSH
-  connections, and the live MAVLink/HTTP connection summary. Everything applies
-  instantly and is persisted. See [Settings](#settings--appearance-ssh-map).
+- **Configure** — an editable **Settings** page (left nav → SET): six
+  predefined color themes (two light, four dark), the interface size, the map
+  service to use (Esri, OpenStreetMap, Google, Bing) and which of its layers,
+  the on-screen flight controls, saved SSH connections, and the live
+  MAVLink/HTTP connection summary.
+  Everything applies instantly and is persisted. See
+  [Settings](#settings--appearance-ssh-map).
 
 ### The field-use case
 
@@ -192,7 +200,7 @@ Corvus GCS is built around that:
   </picture>
 </p>
 
-<p align="center"><em>The operator interface is map-centered, with a floating HUD and a collapsible right-side engineering workspace (MAVLink console, SSH, plugin slot). It ships in five color themes, including a full light theme — see <a href="#appearance-color-theme--map-service">Appearance</a>. No interface screenshot is checked in yet; drop one into <code>assets/</code> and wire it in below.</em></p>
+<p align="center"><em>The operator interface is map-centered, with a floating HUD and a collapsible right-side engineering workspace (MAVLink console, SSH, plugin slot). It ships in six color themes — white with orange accents by default, plus a white/black one and four dark ones — and its whole size is one slider, from 80% to 150% — see <a href="#appearance-color-theme--map-service">Appearance</a>. No interface screenshot is checked in yet; drop one into <code>assets/</code> and wire it in below.</em></p>
 
 <p align="center">
   <picture>
@@ -983,7 +991,7 @@ page is persisted in the single config store, `~/.corvus/config.json`, which is
 written **atomically** and chmod'd to **0o600** because it may hold SSH
 credentials. The same file backs the right-panel SSH tab.
 
-### Appearance (company logo + color theme + map service)
+### Appearance (company logo + color theme + interface size + map service + controls)
 
 **Company logo.** An optional PNG shown at the **far top right** of the status
 bar — a university or unit crest beside the telemetry blocks. Nothing ships
@@ -1000,21 +1008,70 @@ backend checks the PNG magic bytes and caps the upload at 4 MB, so a renamed
 JPEG is refused at `POST /api/branding/logo` rather than rendering as a broken
 image in the bar.
 
-**Color theme.** Five complete predefined themes, defined in
-[`src/css/themes.css`](src/css/themes.css): **Green** (default), **Blue**,
-**Pink**, **Orange**, and **Light** — the white/black theme, where every dark
-surface in the app becomes light and the accent is near-black. Selecting one
-writes `data-theme="<id>"` on `<html>`; because every color, shadow, and
-translucency in the app is a token defined in that one file, the whole UI —
-map chrome, HUD, popovers, terminal — restyles at once, with no per-component
-overrides. This replaces the v1 accent picker, where `--accent` was the only
-themeable value and everything else stayed dark.
+**Color theme.** Six complete predefined themes, defined in
+[`src/css/themes.css`](src/css/themes.css): **Light Orange** (default) — white
+surfaces with a burnt-orange accent; **Light** — the same white surfaces with a
+near-black accent; and the four dark ones, **Green**, **Blue**, **Pink** and
+**Orange**. Selecting one writes `data-theme="<id>"` on `<html>`; because every
+color, shadow, and translucency in the app is a token defined in that one file,
+the whole UI — map chrome, HUD, popovers, terminal — restyles at once, with no
+per-component overrides. This replaces the v1 accent picker, where `--accent`
+was the only themeable value and everything else stayed dark.
+
+There are two bases rather than one. Bare `:root` carries the default light
+theme in full, so the app is completely styled before any script runs; the four
+dark themes share one grouped block that restates the whole dark surface/text/
+shadow stack and then override only their accent family, and **Light** differs
+from the default in nothing but its accent. The light accent is not the dark
+themes' amber — `#F58A2B` carries 2.5:1 on white and fails as both text and a
+fill behind white button labels — but a deeper `#C2540A` at 4.6:1 in both
+directions.
 
 The choice is stored twice on purpose: in `localStorage`, so a small inline
 script in `index.html` can apply it **before first paint** (no flash of the
 default theme), and in `~/.corvus/config.json` under `theme.name`, so it
 survives a cache clear. A config carrying the legacy `theme.accent` hex still
-loads — it maps to the nearest predefined theme.
+loads — it maps to the nearest predefined theme. Changing the shipped default
+only affects a fresh install: an operator who has already picked a theme has it
+in both stores, and both outrank the default.
+
+**Interface size.** One slider with step indicators — **80 / 90 / 100 / 110 /
+125 / 150 %** — that scales the *whole* interface: text, icons, the top bar,
+the nav rail, the engineering panel, the map chrome and the 1px hairlines
+between them. Larger reads better on a bright field laptop at arm's length;
+smaller fits more map and more of the engineering panel on a small screen. The
+slider previews on every step the thumb crosses and persists once, on release,
+so dragging it is a live preview rather than six writes to the config file.
+Clicking a step indicator jumps straight to it — the fastest way back to 100%.
+
+It is a single token, `--ui-scale`, and a single CSS rule: `zoom` on `<body>`.
+That is the only lever that reaches everything, because this app sizes in
+absolute pixels — including the icon dimensions JS writes inline, which no
+`font-size` or `rem` scheme can touch. `zoom` sits on `<body>` and not `<html>`
+so the viewport stays the unscaled reference: `position: fixed` chrome still
+anchors to the real window edges and `height: 100%` still resolves to exactly
+one screen.
+
+Three places have to be told, and they are why the change is an event
+(`corvus:scalechange`, with a plain `resize` dispatched alongside):
+
+- **The map.** MapLibre sizes its drawing buffer from the container's
+  *unscaled* size, so `zoom` alone would leave the map soft at 150% and
+  oversampled at 80%. Multiplying the pixel ratio by the scale cancels both
+  exactly, pinning the buffer to the screen's native resolution at every size.
+  Pointer accuracy needs no help: MapLibre divides by `rect.width /
+  offsetWidth` itself, which *is* the scale.
+- **The HUD panel.** `getBoundingClientRect` and pointer coordinates come back
+  in scaled pixels while `style.left` is written in unscaled ones, so the drag
+  maths divides by the ratio — otherwise the panel runs away from the cursor.
+- **The right panel's auto-collapse.** Its thresholds now read
+  `document.body.clientWidth`, so the panel collapses when the layout actually
+  gets cramped rather than at a fixed window width.
+
+Persisted like the theme: `localStorage` for a pre-paint apply (the interface
+never visibly resizes itself on load) and `~/.corvus/config.json` under
+`ui.scale`. A hand-edited absurd value is **clamped, never rejected** — an
+interface painted at 4000% cannot reach the settings page that would fix it.
 
 **Map service.** Which tile service to use — **Esri**, **OpenStreetMap**,
 **Google**, or **Bing** — and which of its layers (Satellite / Streets /
@@ -1031,6 +1088,55 @@ opens on. Each row shows how many tiles that layer already has cached.
 > not permit outside their own SDKs/APIs. Shipping them needs a licensed key
 > (Google Maps Tile API / Bing Maps Key) swapped into the template in
 > `corvus/tile_sources.py` first.
+
+**Controls.** Two switches, **both off by default**, that put a manual-control
+pad over the bottom-left of the map on the Home tab. Each adds its own surface
+to the same window, and either one alone is enough to show it:
+
+- **Virtual joystick** — two spring-return sticks: **throttle and yaw** on the
+  left, **pitch and roll** on the right. Centre for throttle is the **hover
+  detent** (0.5 of the range), not zero, so releasing the sticks in Position or
+  Altitude mode parks the aircraft rather than dropping it. A diagonal is
+  clamped to the circle, because a stick has no corners.
+- **Arrow keys** — a four-key cluster laid out as a keyboard's own inverted T,
+  and the keyboard's real arrow keys drive it, lighting up the on-screen key as
+  they go. **Pitch and roll only** — forward, back, left, right — at **half
+  stick**: a key has no travel to meter, so full authority on a keypress would
+  make the mildest correction the largest one available. A keypress is ignored
+  while the caret is in a field, so typing a connection string cannot fly the
+  aircraft. Keys and sticks **sum into one virtual stick** and the result is
+  clamped, so pushing both at once cannot exceed full travel.
+
+The pad is a **movable window**, like the flight HUD: drag it by its grip bar
+(the sticks and keys are not drag handles — a drag that started on them would
+fly the aircraft while moving the window), double-click that bar to send it
+back to its corner, and the position persists in `localStorage`. It sits one
+step above the HUD in the stacking order: both are movable and can be dragged
+over each other, and when they overlap the control the operator is flying with
+wins over a readout. Persisted as `controls.virtual_joystick` and
+`controls.arrow_keys`; only real JSON booleans count, so a hand-edited `"true"`
+reads as off rather than arming a flight control by typo, and the two keys are
+merged **per key** by `POST /api/config` (unlike `theme`/`map`, which replace
+wholesale) so turning one on never switches the other off.
+
+Both are **input sources and nothing else**. They never arm, never change mode,
+and never override a failsafe. Whether the autopilot listens at all is the
+*vehicle's* decision — `COM_RC_IN_MODE` must be **1** (joystick only) or **3**
+(both stick sources), and the aircraft has to be in a mode that flies from the
+sticks — and the GCS deliberately does not set that parameter on the operator's
+behalf.
+
+Each frame goes out as one `POST /api/mavlink/manual` and reaches PX4 as a
+`MANUAL_CONTROL` message, with the four axes scaled to the ±1000 ticks the
+wire format carries (thrust runs 0…1000). There is no ACK for `MANUAL_CONTROL`
+and none is waited for: it is a stream whose next frame supersedes the last, so
+the bridge takes only the send lock and a 20 Hz stick stream never queues
+behind a parameter download. The browser sends at **20 Hz while an axis is off
+centre and 5 Hz at neutral** — neutral frames are still sent, because a *gap*
+is what PX4 reads as RC loss, and 5 Hz stays well inside the default
+`COM_RC_LOSS_T` of 0.5 s. Only one frame is ever in flight; a tick that finds
+the previous POST unfinished skips rather than queues, so a slow link costs
+rate, not latency.
 
 ### SSH Connections
 
@@ -1106,7 +1212,7 @@ pyproject.toml                # tooling/pytest config (version comes from VERSIO
 ├── src/                      # web frontend
 │   ├── index.html
 │   ├── css/
-│   │   ├── themes.css        # ALL design tokens + the 5 color themes
+│   │   ├── themes.css        # ALL design tokens + the 6 color themes
 │   │   ├── main.css          # layout + screen-specific styling (no tokens)
 │   │   └── components.css    # reusable component styles (.btn/.field/.tile/.modal/…)
 │   ├── js/
@@ -1123,7 +1229,7 @@ pyproject.toml                # tooling/pytest config (version comes from VERSIO
 │   │   ├── setup-calibration.js # calibration + autotune sub-page
 │   │   ├── setup-parameters.js  # parameter editor sub-page
 │   │   ├── setup-shared.js   # shared Setup-page helpers
-│   │   ├── sidenav.js        # left navigation + Settings page
+│   │   ├── sidenav.js        # left navigation, Settings page, theme + interface scale
 │   │   ├── ui.js             # reusable UI component helpers
 │   │   ├── credits.js        # third-party attribution dialog
 │   │   ├── hud-panel.js      # movable/collapsible flight HUD window
@@ -1172,6 +1278,7 @@ The frontend never polls.
 | GET | `/api/mavlink/serial-ports` | List available serial ports → `{"ports": [{"device", "description", "hwid"}, ...]}` |
 | POST | `/api/mavlink/arm` | Arm/disarm vehicle |
 | POST | `/api/mavlink/mode` | Set flight mode |
+| POST | `/api/mavlink/manual` | One virtual-joystick frame as MANUAL_CONTROL `{x, y, z, r, buttons}` (normalized axes, no ACK) |
 | POST | `/api/params/download` | Start a full parameter download (lazy) |
 | GET | `/api/params` | Parameter cache + download status (params only sent when complete — lean) |
 | GET | `/api/params/progress` | SSE stream of parameter download progress |
@@ -1219,20 +1326,22 @@ rtl         — return to launch
 
 The UI follows a strict semantic palette. Every design token lives in
 `src/css/themes.css`; `main.css` and `components.css` only consume them. The
-table below shows the **Green** (default) theme — each other theme redefines
-the same token names:
+table below shows the **Light Orange** (default) theme — each other theme
+redefines the same token names, and the dark ones re-pick the status colors at
+lighter, glowing values (`#45D483` / `#F5C842` / `#FF514D`) that would wash out
+on white:
 
 | Color | Hex | Meaning |
 |-------|-----|---------|
-| Green | `#45D483` | healthy / connected / armed |
-| Blue | `#4CC9FF` | flight / navigation / mission |
-| Forest Green | `#3DA876` | UI interaction accent (not status) |
-| Yellow | `#F5C842` | warning |
-| Red | `#FF514D` | critical / error |
+| Green | `#0F8B50` | healthy / connected / armed |
+| Blue | `#0B6FC0` | flight / navigation / mission |
+| Burnt Orange | `#C2540A` | UI interaction accent (not status) |
+| Amber | `#B07600` | warning |
+| Red | `#D62B26` | critical / error |
 
 The operator picks a whole **theme**, not a single color, via
-**Settings → Appearance** — Green, Blue, Pink, Orange, or Light — applied live
-and persisted.
+**Settings → Appearance** — Light Orange, Light, Green, Blue, Pink or Orange —
+applied live and persisted.
 
 The Plotly graphs (autotune, vibration) follow it too. They are the one place
 in the app that cannot reference `var(--token)`: Plotly draws into a surface it
@@ -1253,6 +1362,7 @@ the call site:
 | `label` / `field` / `select` / `input` | `.field-*` | every form control |
 | `card` / `section` / `pageHeader` / `row` / `empty` / `actions` | `.page-*` / `.ui-actions` | page structure |
 | `optionCards` / `optionList` | `.option-cards` / `.option-list` | theme + map-service pickers, layer switcher |
+| `slider` | `.ui-slider` | stepped slider with step indicators (interface size) |
 | `tile` | `.tile` | Setup grid, Plugins grid |
 | `navItem` | `.nav-item` | left rail |
 | `progress` / `message` | `.ui-progress` / `.ui-msg` | download progress, inline status |
