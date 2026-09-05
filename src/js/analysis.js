@@ -510,9 +510,9 @@ Corvus.analysis = (function () {
       pickCard.appendChild(S.sectionTitle("Flight Review"));
       const desc = S.el("div", "params-desc");
       desc.textContent =
-        "Pick a downloaded ULog. Corvus reads it locally — nothing is uploaded "
-        + "anywhere — and plots the handful of things that decide whether a "
-        + "flight was healthy.";
+        "Pick a downloaded ULog, or open one from anywhere on this computer. "
+        + "Corvus reads it locally — nothing leaves this machine — and plots "
+        + "the handful of things that decide whether a flight was healthy.";
       pickCard.appendChild(desc);
 
       const pickRow = S.el("div", "review-pick");
@@ -528,6 +528,36 @@ Corvus.analysis = (function () {
       pickRow.appendChild(fileField);
       pickRow.appendChild(openBtn);
       pickCard.appendChild(pickRow);
+
+      // The second way in: a log that was never downloaded through Corvus —
+      // pulled off the card by hand, or sent over by whoever flew it. Quiet and
+      // small on purpose: it is the exception, and the folder is the norm.
+      //
+      // Not a path field: the operator picks in their own file dialog and the
+      // bytes are posted, so Corvus never gains the ability to read an
+      // arbitrary path off this machine on request.
+      const browseInput = document.createElement("input");
+      browseInput.type = "file";
+      browseInput.accept = ".ulg";
+      browseInput.className = "review-file-input";
+      browseInput.setAttribute("aria-label", "ULog file on this computer");
+      const browseBtn = Corvus.ui.button({
+        variant: "ghost", size: "sm", icon: "folder-open",
+        className: "review-browse", label: "Open a .ulg from this computer",
+        onClick: () => browseInput.click(),
+      });
+      browseInput.addEventListener("change", () => {
+        const file = browseInput.files && browseInput.files[0];
+        // Cleared so picking the same file twice fires a change event again —
+        // after an error, retrying the same log is the obvious thing to try.
+        browseInput.value = "";
+        if (file) loadUploadedReview(file);
+      });
+      const browseRow = S.el("div", "review-browse-row");
+      browseRow.appendChild(browseBtn);
+      browseRow.appendChild(browseInput);
+      pickCard.appendChild(browseRow);
+
       const pickNote = S.el("div", "logs-status");
       pickCard.appendChild(pickNote);
       body.appendChild(pickCard);
@@ -535,8 +565,8 @@ Corvus.analysis = (function () {
       const out = S.el("div", "review-out");
       body.appendChild(out);
 
-      ui = { kind: "review", fileField, openBtn, pickNote, out, drawn: [],
-             modes: [] };
+      ui = { kind: "review", fileField, openBtn, browseBtn, pickNote, out,
+             drawn: [], modes: [] };
       fillReviewFiles();
       S.refreshIcons();
       // Arrived from a log row: that log is the whole reason the view opened,
@@ -572,6 +602,16 @@ Corvus.analysis = (function () {
       ui.openBtn.disabled = false;
     }
 
+    /** The downloaded-log picker is only usable when there is something in the
+     *  folder. Opening a file from disk never is gated: it is the way in when
+     *  the folder is empty. */
+    function gateReviewPick() {
+      if (!ui || ui.kind !== "review") return;
+      const none = !saved().length;
+      ui.fileField.disabled = none;
+      ui.openBtn.disabled = none;
+    }
+
     /** Release every Plotly graph this view drew. Plotly holds canvases and
      *  listeners per graph div; dropping the DOM alone leaks both. */
     function purgeReview() {
@@ -593,11 +633,16 @@ Corvus.analysis = (function () {
       ui.drawn = [];
     }
 
-    async function loadReview(name) {
-      if (!ui || ui.kind !== "review" || !name) return;
+    /** One read, whichever way the log got here. `fetcher` is the only
+     *  difference between a name in the download folder and a file the
+     *  operator picked; everything around it — the busy state, the abandoned-
+     *  read guard, the wait shown on the page — is the same job. */
+    async function runReview(label, fetcher) {
+      if (!ui || ui.kind !== "review") return;
       Corvus.ui.setBusy(ui.openBtn, true);   // also disables it
+      Corvus.ui.setBusy(ui.browseBtn, true);
       ui.pickNote.classList.remove("err");
-      ui.pickNote.textContent = "Reading " + name + "…";
+      ui.pickNote.textContent = "Reading " + label + "…";
       purgeReview();
       // Claimed after the purge, because the purge is what invalidates the
       // read this one replaces.
@@ -607,10 +652,9 @@ Corvus.analysis = (function () {
       // leaving an empty one — arriving from a log row, the empty page is the
       // first thing the shortcut shows.
       ui.out.appendChild(S.el("div", "page-card review-loading",
-        "Reading " + name + " — this takes a moment for a long flight."));
+        "Reading " + label + " — this takes a moment for a long flight."));
       try {
-        const data = await Corvus.telemetry.requestJson(
-          "/api/logs/review?file=" + encodeURIComponent(name));
+        const data = await fetcher();
         // A second pick while the first was still parsing: the answer that
         // arrives late is not the one the operator is now looking at.
         if (!ui || ui.kind !== "review" || mine !== reviewToken) return;
@@ -625,8 +669,45 @@ Corvus.analysis = (function () {
       } finally {
         if (ui && ui.kind === "review" && mine === reviewToken) {
           Corvus.ui.setBusy(ui.openBtn, false);
+          Corvus.ui.setBusy(ui.browseBtn, false);
+          // setBusy clears `disabled`, and the picker has nothing to pick from
+          // when the folder is empty.
+          gateReviewPick();
         }
       }
+    }
+
+    function loadReview(name) {
+      if (!name) return Promise.resolve();
+      return runReview(name, () => Corvus.telemetry.requestJson(
+        "/api/logs/review?file=" + encodeURIComponent(name)));
+    }
+
+    /** A ULog from outside the download folder. The bytes are posted rather
+     *  than the path, so the operator's own file dialog is the only thing that
+     *  ever names a file on this machine. */
+    function loadUploadedReview(file) {
+      return runReview(file.name || "the selected log", async () => {
+        const url = "/api/logs/review/upload"
+          + (file.name ? "?name=" + encodeURIComponent(file.name) : "");
+        let res;
+        try {
+          res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/octet-stream" },
+            body: file,
+          });
+        } catch (err) {
+          throw new Error((err && err.message) || "Could not send that file");
+        }
+        let data;
+        try { data = await res.json(); }
+        catch (_e) { throw new Error("Invalid response from " + url); }
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || ("Rejected (" + res.status + ")"));
+        }
+        return data;
+      });
     }
 
     function renderReview(data) {

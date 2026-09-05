@@ -20,6 +20,7 @@ Two properties matter more than breadth here:
 """
 from __future__ import annotations
 
+import hashlib
 import math
 import os
 import threading
@@ -1498,8 +1499,35 @@ def review(log: ULog, name: str = "") -> dict[str, Any]:
 # used is to open one log, go back, and open it (or the one next to it) again.
 # Two entries cover that without holding a folder's worth of flights in memory.
 _CACHE_ENTRIES = 2
-_cache: "OrderedDict[tuple[str, int, int], dict[str, Any]]" = OrderedDict()
+_cache: "OrderedDict[tuple, dict[str, Any]]" = OrderedDict()
 _cache_lock = threading.Lock()
+
+
+def review_bytes(blob: bytes, name: str) -> dict[str, Any]:
+    """Review a ULog handed over as its own bytes.
+
+    For a file the operator picked from outside the download folder: it arrives
+    as an upload rather than as a path, so there is no stat to key a cache on.
+    A digest of the content is the honest substitute — the same file picked
+    twice is the same review, and an edited one is not.
+    """
+    key = ("sha256", hashlib.sha256(blob).hexdigest(), len(blob))
+    with _cache_lock:
+        hit = _cache.get(key)
+        if hit is not None:
+            _cache.move_to_end(key)
+            return hit
+    data = review(read(blob, topics=REVIEW_TOPICS), name)
+    _remember(key, data)
+    return data
+
+
+def _remember(key: tuple, data: dict[str, Any]) -> None:
+    with _cache_lock:
+        _cache[key] = data
+        _cache.move_to_end(key)
+        while len(_cache) > _CACHE_ENTRIES:
+            _cache.popitem(last=False)
 
 
 def review_file(path: str, name: str = "") -> dict[str, Any]:
@@ -1525,11 +1553,7 @@ def review_file(path: str, name: str = "") -> dict[str, Any]:
         parsed = read(handle, topics=REVIEW_TOPICS)
     data = review(parsed, label)
     if key is not None:
-        with _cache_lock:
-            _cache[key] = data
-            _cache.move_to_end(key)
-            while len(_cache) > _CACHE_ENTRIES:
-                _cache.popitem(last=False)
+        _remember(key, data)
     return data
 
 

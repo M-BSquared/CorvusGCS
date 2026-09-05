@@ -2037,6 +2037,22 @@ svg { display: block; }
 /* ----- ANALYSIS: Flight Review ----- */
 .review-pick { display: flex; gap: 8px; align-items: center; }
 .review-pick .field-select { flex: 1; min-width: 0; }
+/* The exception, not the norm: one quiet line under the picker rather than a
+   second full-width button competing with Review for the eye. */
+.review-browse-row { display: flex; margin-top: 6px; }
+.review-browse-row .btn.review-browse {
+  padding: 2px 4px; height: auto; font-size: 11px; color: var(--text-3);
+}
+.review-browse-row .btn.review-browse:hover {
+  background: transparent; color: var(--nav);
+}
+/* The input exists only to open the OS file dialog; the button is the control.
+   Hidden with clip rather than display:none so a click still reaches it and it
+   stays reachable to a screen reader. */
+.review-file-input {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
 .review-out { display: flex; flex-direction: column; gap: 12px; }
 /* Shown while the backend parses. A long flight is a real wait, and the page
    arrived at by the shortcut would otherwise be blank for all of it. */

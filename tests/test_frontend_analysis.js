@@ -164,6 +164,21 @@ const REVIEW = {
   armed: [{ start: 1, end: 10 }],
 };
 
+// Stub fetch for the "open a .ulg from this computer" path: the review page
+// POSTs the file body raw, not through postAction, and reads res.json().
+let fetchCalls = [];
+let fetchResponse = null;
+global.fetch = (url, opts) => {
+  fetchCalls.push({ url, opts });
+  return Promise.resolve(fetchResponse
+    || { ok: true, json: async () => JSON.parse(JSON.stringify(REVIEW)) });
+};
+function resetFetch() { fetchCalls = []; fetchResponse = null; }
+
+/** What a browser hands the change listener. Only `name` is read; the object
+ *  itself is passed straight to fetch as the body. */
+function fakeFile(name) { return { name, size: 4096 }; }
+
 function makeFakeTelemetry(status) {
   const postCalls = [];
   const requests = [];
@@ -222,6 +237,7 @@ require("../src/js/analysis.js");
 function reset(status) {
   dispatched.length = 0;
   timeouts.length = 0;
+  resetFetch();
   const fake = makeFakeTelemetry(status || JSON.parse(JSON.stringify(STATUS)));
   Corvus.telemetry = fake.telemetry;
   const container = makeEl("div");
@@ -684,6 +700,81 @@ async function testLeavingMidReadDoesNotPaintTheAnswerLater() {
   destroy();
 }
 
+async function testALogFromAnywhereOnDiskCanBeReviewed() {
+  /* Not every log arrives through Corvus: one pulled off the card by hand, or
+     sent over by whoever flew it, has to be openable too. */
+  const { container, fake } = reset();
+  window.Plotly.reactCalls.length = 0;
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "review");
+
+  const input = findOneByClass(container, "review-file-input");
+  input.files = [fakeFile("2026-09-05_field.ulg")];
+  fire(input, "change");
+  await flush();
+  await flush();
+
+  assert.equal(fetchCalls.length, 1, "the bytes are posted, not a path");
+  assert.equal(fetchCalls[0].url,
+    "/api/logs/review/upload?name=2026-09-05_field.ulg");
+  assert.equal(fetchCalls[0].opts.method, "POST");
+  assert.equal(fetchCalls[0].opts.headers["Content-Type"], "application/octet-stream");
+  assert.equal(fetchCalls[0].opts.body.name, "2026-09-05_field.ulg",
+    "the file object itself is the body");
+  // No path ever leaves the browser, so nothing asks the backend to open one.
+  assert.equal(fake.requests.filter(
+    (r) => String(r.url).indexOf("/api/logs/review?") === 0).length, 0);
+  assert.equal(findByClass(container, "review-plot").length, 2, "the review is drawn");
+  destroy();
+}
+
+async function testTheSameFileCanBePickedAgainAfterAFailure() {
+  /* A file input fires no change event when the same file is chosen twice, and
+     retrying the log that just failed is the obvious next thing to try. */
+  const { container } = reset();
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "review");
+
+  fetchResponse = { ok: false, status: 400,
+                    json: async () => ({ ok: false, error: "not a ULog file" }) };
+  const input = findOneByClass(container, "review-file-input");
+  input.files = [fakeFile("notes.txt")];
+  fire(input, "change");
+  await flush();
+  await flush();
+
+  assert.match(findOneByClass(container, "logs-status").textContent, /not a ULog/);
+  assert.equal(findByClass(container, "review-plot").length, 0, "nothing drawn");
+  assert.equal(input.value, "", "cleared so the same pick fires again");
+  destroy();
+}
+
+async function testOpeningFromDiskWorksWithAnEmptyDownloadFolder() {
+  /* The folder being empty is exactly when this route matters, so it must not
+     be gated behind the picker that has nothing to pick. */
+  const { container } = reset(Object.assign({}, STATUS, { saved: [] }));
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "review");
+
+  assert.equal(container.querySelectorAll("select")[0].disabled, true,
+    "nothing downloaded to choose from");
+  const browse = findOneByClass(container, "review-browse");
+  assert.equal(browse.disabled, false, "but a file can still be opened");
+
+  const input = findOneByClass(container, "review-file-input");
+  input.files = [fakeFile("from_a_colleague.ulg")];
+  fire(input, "change");
+  await flush();
+  await flush();
+  assert.equal(findByClass(container, "review-plot").length, 2);
+  // And the picker is still correctly disabled afterwards.
+  assert.equal(container.querySelectorAll("select")[0].disabled, true);
+  destroy();
+}
+
 async function testFlightReviewWithNoDownloadedLogsSaysSo() {
   const { container } = reset(Object.assign({}, STATUS, { saved: [] }));
   const destroy = Corvus.analysis.render(container);
@@ -931,6 +1022,9 @@ async function run() {
     testTheShortcutDoesNotAlsoTickTheRow,
     testAVanishedFileSaysSoInsteadOfPlottingNothing,
     testLeavingMidReadDoesNotPaintTheAnswerLater,
+    testALogFromAnywhereOnDiskCanBeReviewed,
+    testTheSameFileCanBePickedAgainAfterAFailure,
+    testOpeningFromDiskWorksWithAnEmptyDownloadFolder,
     testFlightReviewWithNoDownloadedLogsSaysSo,
     testAnUnreadableLogReportsTheReasonAndKeepsThePage,
     testPlotlyGraphsArePurgedOnLeavingTheReview,

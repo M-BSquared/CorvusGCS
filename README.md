@@ -731,9 +731,20 @@ later.
 ### Flight Review
 
 The third tile on the Analysis page. Pick a downloaded ULog and Corvus reads it
-**locally** — nothing is uploaded anywhere — and reduces it to the plots that
+**locally** — nothing leaves the machine — and reduces it to the plots that
 answer "was that flight healthy?". Findings sit above the plots, the aircraft's
 own log messages below them, with a severity filter.
+
+**A log that never came through Corvus** can be opened too: pulled off the card
+by hand, or sent over by whoever flew it. That one is a file dialog, not a path
+field, and the bytes are posted rather than the path — so the operator's own
+dialog stays the only thing that ever names a file on this machine, and the
+backend never gains an endpoint that reads an arbitrary path on request. The
+route into the download folder stays confined to it, checked with realpath. An
+upload is capped at 128 MB, well under the parser's own ceiling, because this
+one is held in memory as a request body before anything has looked at it. It is
+cached like any other review, keyed on a digest of the content since there is no
+file to stat.
 
 **Flight modes, twice.** A labelled strip with a time ruler at the top (which
 mode, when, and how long each was flown), and the *same* colours as bands behind

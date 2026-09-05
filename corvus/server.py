@@ -78,6 +78,11 @@ MAX_FIRMWARE_BODY_BYTES = 64 * 1024 * 1024
 # Operator-supplied company logo: a brand mark, not an image library, so a few
 # MB is already generous and keeps a mis-picked photo out of the config dir.
 MAX_LOGO_BODY_BYTES = 4 * 1024 * 1024
+# A ULog opened from anywhere on the operator's machine. Generous — a long
+# multirotor flight at full logging rate is tens of MB — but far below the
+# parser's own ceiling, because this one is held in memory as a request body
+# before anything has looked at it.
+MAX_ULOG_BODY_BYTES = 128 * 1024 * 1024
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 # Path-parameter tile route: /api/tiles/<source>/<z>/<x>/<y>.png
 # Checked in _handle_api_get only when the path ends in ".png", so it can
@@ -887,6 +892,11 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # Same reason: the company logo arrives as raw PNG bytes.
         if path == "/api/branding/logo":
             self._api_branding_logo_upload_raw()
+            return
+        # Same reason: a ULog opened from outside the download folder arrives
+        # as its own bytes.
+        if path == "/api/logs/review/upload":
+            self._api_logs_review_upload_raw()
             return
         if path.startswith("/api/"):
             self._handle_api_post(path)
@@ -2185,6 +2195,55 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             return
         # Spread, not mutated: the result may be a cached one that another
         # request is about to send.
+        self._send_json({**data, "ok": True})
+
+    def _api_logs_review_upload_raw(self) -> None:
+        """Flight Review for a ULog the operator picked from anywhere on disk.
+
+        The bytes arrive as the request body rather than the path arriving as a
+        string, and that is the point: the operator chose the file in their own
+        file dialog, and the backend never gains the ability to read an
+        arbitrary path off this machine on request. The sibling GET route stays
+        confined to the download folder for the same reason.
+
+        Bypasses the JSON dispatcher (the body is ``application/octet-stream``).
+        """
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            self._send_json({"ok": False, "error": "invalid content-length"}, 400)
+            return
+        if length < 0:
+            self._send_json({"ok": False, "error": "invalid content-length"}, 400)
+            return
+        if length > MAX_ULOG_BODY_BYTES:
+            self._send_json({"ok": False, "error": "that log is too large to review"}, 413)
+            return
+        if length <= 0:
+            self._send_json({"ok": False, "error": "empty log body"}, 400)
+            return
+        params = parse_qs(urlparse(self.path).query)
+        # Label only — it names the review on screen and is never used to open
+        # anything, so the basename is taken and the rest discarded.
+        name = os.path.basename((params.get("name", [""])[0] or "").strip()) or "log.ulg"
+        raw = self.rfile.read(length)
+        if len(raw) != length:
+            self._send_json({"ok": False, "error": "the upload was cut short"}, 400)
+            return
+        try:
+            from .flight_review import review_bytes
+            from .ulog import UlogError
+            data = review_bytes(raw, name)
+        except UlogError as exc:
+            self._send_json({"ok": False, "error": str(exc)}, 400)
+            return
+        except MemoryError:
+            self._send_json({"ok": False, "error": "not enough memory for that log"}, 400)
+            return
+        except Exception:  # noqa: BLE001 - a bad log must not 500 the app
+            logger.exception("flight review failed for uploaded %s", name)
+            self._send_json({"ok": False, "error": "could not analyse this log"}, 400)
+            return
         self._send_json({**data, "ok": True})
 
     @route("POST", "/api/logs/erase")
