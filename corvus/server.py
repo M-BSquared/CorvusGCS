@@ -2170,11 +2170,9 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": "unknown log file"}, 404)
             return
         try:
-            from .flight_review import REVIEW_TOPICS, review
-            from .ulog import UlogError, read
-            with open(target, "rb") as handle:
-                parsed = read(handle, topics=REVIEW_TOPICS)
-            data = review(parsed, os.path.basename(target))
+            from .flight_review import review_file
+            from .ulog import UlogError
+            data = review_file(target, os.path.basename(target))
         except UlogError as exc:
             self._send_json({"ok": False, "error": str(exc)}, 400)
             return
@@ -2185,8 +2183,9 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             logger.exception("flight review failed for %s", target)
             self._send_json({"ok": False, "error": "could not analyse this log"}, 400)
             return
-        data["ok"] = True
-        self._send_json(data)
+        # Spread, not mutated: the result may be a cached one that another
+        # request is about to send.
+        self._send_json({**data, "ok": True})
 
     @route("POST", "/api/logs/erase")
     def _api_logs_erase(self, payload: dict) -> None:
@@ -2871,6 +2870,11 @@ class CorvusServer(socketserver.ThreadingTCPServer):
             super().shutdown()
         except Exception:  # noqa: BLE001 - shutdown must not raise
             logger.exception("http server shutdown failed")
+        try:
+            from .flight_review import clear_cache
+            clear_cache()
+        except Exception:  # noqa: BLE001 - shutdown must not raise
+            logger.exception("flight review cache clear failed")
         caches = getattr(self, "tile_caches", None) or {}
         for cache in caches.values():
             try:

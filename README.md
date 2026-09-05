@@ -713,6 +713,12 @@ common case after a flight. The match needs the id *and* the size to agree,
 because SD cards recycle log numbers and reporting last month's `log_003` as
 this flight's would send an operator home with the wrong evidence.
 
+**Straight from a log to its review.** A row tagged **in folder** carries a
+`Review →` shortcut that opens Flight Review on that exact file. Without it the
+only route is Back, the Flight Review tile, and finding the same flight again in
+a list that names files by filename while the row you were looking at names them
+by log number.
+
 **Select several, walk away.** Tick the logs you want and press Download; they
 are fetched **one after another**, with the current one marked, the rest queued,
 a progress bar, and a Cancel that works throughout. Sequential is a protocol
@@ -768,6 +774,13 @@ graphs, and building them all up front stalls the page before anything is
 readable — including the summary at the top, which is the part most reviews
 never scroll past.
 
+Reading the log is the expensive half, and it is paid once: the last two reviews
+are kept, keyed by the file's path, size and modification time, so going back
+and opening the same flight again is instant while a log re-downloaded over its
+own name is re-read rather than answered from a stale review. While a read is in
+flight the page says so; if you leave before it lands, the answer is dropped
+rather than painted into the page you moved on to.
+
 Only the plots the log can support are drawn — an airspeed plot on a multirotor
 log is absent, not empty, and the three-way altitude comparison appears only
 when at least two sources are present.
@@ -790,7 +803,12 @@ Three things are load-bearing:
   for the offline build, and a parser we own cannot change its rules under a
   field release. It is validated by diffing every decoded field against the
   reference implementation (pyulog) on PX4's own sample log — **153 fields,
-  zero mismatches**, parameters and logged messages identical.
+  zero mismatches**, parameters and logged messages identical. Each message
+  format is compiled once into a single `struct.Struct` over the whole record,
+  padding included as pad bytes, so a record costs one `unpack` rather than one
+  per field — the loop that dominates the read, at 2.4× on PX4's sample. A
+  record shorter than its format still falls back to the field-by-field reader,
+  because a log cut off by a power loss is exactly the log worth reading.
 - **Decimation keeps the spikes.** A ten-minute log is hundreds of thousands of
   samples and the browser gets ~1200. Stride sampling would drop exactly the
   frame where a motor saturated or an accel clipped, so each bucket contributes

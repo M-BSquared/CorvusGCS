@@ -194,6 +194,7 @@ Corvus.analysis = (function () {
     let destroyed = false;
     let inFlight = false;
     let view = "tiles";        // "tiles" | "ulog" | "tlog" | "review"
+    let reviewToken = 0;       // so a slow read cannot paint over a newer one
     let eraseModal = null;     // open confirm dialog, so destroy() can drop it
 
     // Elements of whichever view is mounted; rebuilt on every view swap and
@@ -403,9 +404,29 @@ Corvus.analysis = (function () {
           formatUtc(log.utc) + "  ·  " + formatSize(log.size)
           + (log.downloaded && log.file ? "  ·  " + log.file : "")));
         rowEl.appendChild(rowBody);
+        // A downloaded log is one click from being read. Without this the
+        // operator has to go back, open Flight Review and find the same file
+        // again in a list that names it by filename, not by log number.
+        if (log.downloaded && log.file_name) {
+          const open = Corvus.ui.button({
+            variant: "ghost", size: "sm", icon: "arrow-right",
+            className: "logs-row-review", label: "Review",
+            onClick: (event) => {
+              // The row is a <label> around the checkbox: without this the
+              // shortcut would also toggle the selection it is leaving.
+              if (event) { event.preventDefault(); event.stopPropagation(); }
+              setView("review", log.file_name);
+            },
+          });
+          open.title = "Open " + log.file_name + " in Flight Review";
+          rowEl.appendChild(open);
+        }
         rowEl.appendChild(S.el("span", "logs-row-mark"));
         list.appendChild(rowEl);
       });
+      // The rows carry icons and are rebuilt on their own whenever the poll
+      // changes the log list, not only from buildUlog.
+      S.refreshIcons();
       paintSelection();
     }
 
@@ -481,7 +502,7 @@ Corvus.analysis = (function () {
 
     /* ---------------- Flight Review ---------------- */
 
-    function buildReview() {
+    function buildReview(want) {
       Corvus.ui.clear(body);
       body.appendChild(S.backButton(() => setView("tiles"), "Analysis"));
 
@@ -518,6 +539,20 @@ Corvus.analysis = (function () {
              modes: [] };
       fillReviewFiles();
       S.refreshIcons();
+      // Arrived from a log row: that log is the whole reason the view opened,
+      // so read it rather than asking for it a second time. Checked against the
+      // folder listing rather than against the <select>, because a file deleted
+      // between the poll that drew the row and the click is a real case and the
+      // honest answer is to say so, not to ask the backend about a missing file.
+      if (want) {
+        if (saved().some((f) => f.name === want)) {
+          ui.fileField.value = want;
+          loadReview(want);
+        } else {
+          ui.pickNote.classList.add("err");
+          ui.pickNote.textContent = want + " is no longer in the folder.";
+        }
+      }
     }
 
     function fillReviewFiles() {
@@ -540,6 +575,9 @@ Corvus.analysis = (function () {
     /** Release every Plotly graph this view drew. Plotly holds canvases and
      *  listeners per graph div; dropping the DOM alone leaks both. */
     function purgeReview() {
+      // Every caller is abandoning what is on screen, so any read still in
+      // flight is answering a question nobody is asking any more.
+      reviewToken++;
       if (!ui || ui.kind !== "review") return;
       if (ui.observer) {
         try { ui.observer.disconnect(); } catch (_e) {}
@@ -557,21 +595,37 @@ Corvus.analysis = (function () {
 
     async function loadReview(name) {
       if (!ui || ui.kind !== "review" || !name) return;
-      ui.openBtn.disabled = true;
+      Corvus.ui.setBusy(ui.openBtn, true);   // also disables it
       ui.pickNote.classList.remove("err");
       ui.pickNote.textContent = "Reading " + name + "…";
       purgeReview();
+      // Claimed after the purge, because the purge is what invalidates the
+      // read this one replaces.
+      const mine = ++reviewToken;
       Corvus.ui.clear(ui.out);
+      // A large flight takes a moment to parse. Say so on the page rather than
+      // leaving an empty one — arriving from a log row, the empty page is the
+      // first thing the shortcut shows.
+      ui.out.appendChild(S.el("div", "page-card review-loading",
+        "Reading " + name + " — this takes a moment for a long flight."));
       try {
         const data = await Corvus.telemetry.requestJson(
           "/api/logs/review?file=" + encodeURIComponent(name));
+        // A second pick while the first was still parsing: the answer that
+        // arrives late is not the one the operator is now looking at.
+        if (!ui || ui.kind !== "review" || mine !== reviewToken) return;
         ui.pickNote.textContent = "";
+        Corvus.ui.clear(ui.out);
         renderReview(data);
       } catch (err) {
+        if (!ui || ui.kind !== "review" || mine !== reviewToken) return;
+        Corvus.ui.clear(ui.out);
         ui.pickNote.classList.add("err");
         ui.pickNote.textContent = (err && err.message) || "Could not read that log";
       } finally {
-        ui.openBtn.disabled = false;
+        if (ui && ui.kind === "review" && mine === reviewToken) {
+          Corvus.ui.setBusy(ui.openBtn, false);
+        }
       }
     }
 
@@ -893,7 +947,7 @@ Corvus.analysis = (function () {
 
     /* ---------------- shared ---------------- */
 
-    function setView(next) {
+    function setView(next, file) {
       view = next;
       const sub = next === "ulog" || next === "tlog" || next === "review";
       // The swap, not a fold-out: the landing view goes away entirely so the
@@ -903,7 +957,7 @@ Corvus.analysis = (function () {
       purgeReview();
       if (next === "ulog") buildUlog();
       else if (next === "tlog") buildTlog();
-      else if (next === "review") buildReview();
+      else if (next === "review") buildReview(file);
       else { Corvus.ui.clear(body); buildTiles(); }
       if (container && typeof container.scrollTop === "number") container.scrollTop = 0;
       apply(status);

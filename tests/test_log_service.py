@@ -8,6 +8,7 @@ open log session cannot start logging the next flight.
 """
 from __future__ import annotations
 
+import os
 import pathlib
 import threading
 import time
@@ -383,8 +384,12 @@ def test_a_log_already_in_the_folder_is_marked_downloaded(
     logs = {log["id"]: log for log in service.status()["logs"]}
     assert logs[1]["downloaded"] is True
     assert logs[1]["file"].endswith(".ulg")
+    # The bare name as well as the path: it is what the review endpoint takes,
+    # and the row's "open this in Flight Review" shortcut is built from it.
+    assert logs[1]["file_name"] == os.path.basename(logs[1]["file"])
     assert logs[2]["downloaded"] is False
     assert logs[2]["file"] == ""
+    assert logs[2]["file_name"] == ""
     service.shutdown()
 
 

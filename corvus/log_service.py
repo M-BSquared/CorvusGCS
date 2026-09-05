@@ -113,6 +113,10 @@ class LogService:
             # operator home with the wrong evidence.
             entry["downloaded"] = bool(match and match["size"] == entry.get("size"))
             entry["file"] = match["path"] if entry["downloaded"] else ""
+            # The bare name as well as the path: it is what the review endpoint
+            # takes, and deriving it in the browser would mean guessing at this
+            # machine's path separator.
+            entry["file_name"] = match["name"] if entry["downloaded"] else ""
         return {
             "state": state,
             "message": message,

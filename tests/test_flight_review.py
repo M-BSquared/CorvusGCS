@@ -7,6 +7,7 @@ decimation that drops the one spike the review exists to catch.
 """
 from __future__ import annotations
 
+import os
 import struct
 
 import pytest
@@ -635,3 +636,65 @@ def test_the_message_list_is_capped() -> None:
     result = review(read(_build(*parts)), "x.ulg")
     assert len(result["messages"]) == 300
     assert result["messages"][-1]["text"] == "msg 399", "the tail is what is kept"
+
+
+# ---------------------------------------------------------------------------
+# review_file: reading the same log twice must not re-read it, and must not
+# hand back a stale answer for a file that changed underneath.
+# ---------------------------------------------------------------------------
+
+def _log() -> bytes:
+    """A minimal but reviewable flight: one attitude topic with two samples."""
+    return _build(
+        _fmt("vehicle_attitude:uint64_t timestamp;float[4] q;"),
+        _add(1, "vehicle_attitude"),
+        _row(1, struct.pack("<Q4f", 0, 1.0, 0.0, 0.0, 0.0)),
+        _row(1, struct.pack("<Q4f", 1_000_000, 1.0, 0.0, 0.0, 0.0)),
+    )
+
+
+def test_the_same_file_is_only_read_once(tmp_path, monkeypatch) -> None:
+    from corvus import flight_review
+
+    flight_review.clear_cache()
+    path = tmp_path / "log_1_flight.ulg"
+    path.write_bytes(_log())
+    reads = []
+    real_read = flight_review.read
+    monkeypatch.setattr(flight_review, "read", lambda *a, **k: (
+        reads.append(1), real_read(*a, **k))[1])
+
+    first = flight_review.review_file(str(path))
+    second = flight_review.review_file(str(path))
+    assert len(reads) == 1
+    assert first is second
+    assert first["summary"]["name"] == "log_1_flight.ulg"
+    flight_review.clear_cache()
+
+
+def test_a_rewritten_log_is_re_read_not_answered_from_the_cache(tmp_path) -> None:
+    """The download folder reuses names: log_3 can be replaced by a different
+    flight with the same id. Handing back the previous review would send an
+    operator home with the wrong evidence."""
+    from corvus import flight_review
+
+    flight_review.clear_cache()
+    path = tmp_path / "log_3_flight.ulg"
+    path.write_bytes(_log())
+    first = flight_review.review_file(str(path))
+    os.utime(path, (0, 0))
+    second = flight_review.review_file(str(path))
+    assert first is not second
+    flight_review.clear_cache()
+
+
+def test_the_cache_does_not_grow_without_bound(tmp_path) -> None:
+    from corvus import flight_review
+
+    flight_review.clear_cache()
+    for index in range(5):
+        path = tmp_path / f"log_{index}_flight.ulg"
+        path.write_bytes(_log())
+        flight_review.review_file(str(path))
+    assert len(flight_review._cache) <= flight_review._CACHE_ENTRIES
+    flight_review.clear_cache()

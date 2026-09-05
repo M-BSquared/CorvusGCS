@@ -1989,6 +1989,25 @@ svg { display: block; }
 }
 .logs-row[data-state="done"] .logs-row-mark { background: var(--healthy); }
 .logs-row[data-state="failed"] .logs-row-mark { background: var(--critical); }
+/* Straight from a downloaded log into its review. Row-reverse so the arrow
+   trails the word — it points at where the click goes, not back at the row.
+   Always drawn, never hover-revealed: a shortcut nobody can see is a shortcut
+   nobody uses, and only downloaded rows carry one at all. */
+/* Depth-qualified: components.css is loaded after this file and its
+   .btn[data-variant="ghost"] rule matches at the same specificity, so a
+   two-class selector here would lose the colour on source order alone. */
+.logs-row .btn.logs-row-review {
+  flex-direction: row-reverse; flex: 0 0 auto; gap: 5px;
+  color: var(--nav); padding-inline: 8px;
+}
+.logs-row .btn.logs-row-review:hover { color: var(--nav); background: var(--nav-dark); }
+.logs-row-review .btn-icon { transition: transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.logs-row-review:hover .btn-icon { transform: translateX(2px); }
+@media (prefers-reduced-motion: reduce) {
+  .logs-row-review .btn-icon, .logs-row-review:hover .btn-icon {
+    transition: none; transform: none;
+  }
+}
 
 .logs-actions { display: flex; align-items: center; gap: 8px; }
 /* Pushed to the far end, away from Download: the destructive action should not
@@ -2005,6 +2024,25 @@ svg { display: block; }
 .review-pick { display: flex; gap: 8px; align-items: center; }
 .review-pick .field-select { flex: 1; min-width: 0; }
 .review-out { display: flex; flex-direction: column; gap: 12px; }
+/* Shown while the backend parses. A long flight is a real wait, and the page
+   arrived at by the shortcut would otherwise be blank for all of it. */
+.review-loading {
+  font-size: 12px; color: var(--text-3); text-align: center; padding: 26px 14px;
+}
+.review-loading::after {
+  content: ""; display: block; height: 2px; margin: 14px auto 0; max-width: 200px;
+  border-radius: 2px; background: var(--nav-dark);
+  background-image: linear-gradient(90deg, transparent, var(--nav), transparent);
+  background-size: 45% 100%; background-repeat: no-repeat;
+  animation: reviewLoadingSweep 1.3s ease-in-out infinite;
+}
+@keyframes reviewLoadingSweep {
+  from { background-position: -45% 0; }
+  to { background-position: 145% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .review-loading::after { animation: none; background-position: 50% 0; }
+}
 .review-summary { display: flex; flex-direction: column; gap: 10px; }
 .review-facts {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px;

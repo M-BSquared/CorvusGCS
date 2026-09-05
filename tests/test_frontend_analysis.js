@@ -103,8 +103,16 @@ global.document = {
 function flush() { return new Promise((r) => realSetTimeout(r, 0)); }
 function findByClass(root, cls) { return root.querySelectorAll("." + cls); }
 function findOneByClass(root, cls) { return root.querySelector("." + cls); }
+/** Dispatch, with an event real enough for a handler that stops it: the row
+ *  shortcuts live inside a <label> and have to suppress its default toggle. */
 function fire(el, type) {
-  ((el && el._listeners && el._listeners[type]) || []).forEach((cb) => cb({}));
+  const event = {
+    defaultPrevented: false, propagationStopped: false,
+    preventDefault() { event.defaultPrevented = true; },
+    stopPropagation() { event.propagationStopped = true; },
+  };
+  ((el && el._listeners && el._listeners[type]) || []).forEach((cb) => cb(event));
+  return event;
 }
 /** Open one of the two log tiles, the way the Setup page's tiles work. */
 function openTile(container, view) {
@@ -197,7 +205,8 @@ const STATUS = {
   logs: [
     { id: 2, size: 2048, utc: 1700000000, downloaded: false, file: "" },
     { id: 1, size: 30720, utc: 1699996400, downloaded: true,
-      file: "/home/pilot/.corvus/flightlogs/log_001.ulg" },
+      file: "/home/pilot/.corvus/flightlogs/log_001.ulg",
+      file_name: "log_001.ulg" },
     { id: 0, size: 10240, utc: 1699992800, downloaded: false, file: "" },
   ],
   saved: [{ name: "log_001.ulg", id: 1, size: 30720, path: "/home/pilot/x.ulg" }],
@@ -577,6 +586,104 @@ async function testFlightReviewListsDownloadedLogsAndPlotsOne() {
   destroy();
 }
 
+async function testADownloadedRowLinksStraightIntoItsReview() {
+  const { container, fake } = reset();
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "ulog");
+
+  const shortcuts = findByClass(container, "logs-row-review");
+  assert.equal(shortcuts.length, 1,
+    "only the row that is actually in the folder can be reviewed");
+
+  fire(shortcuts[0], "click");
+  await flush();
+  await flush();
+
+  // Straight to the plots: the point of the shortcut is not having to pick the
+  // file out of a list a second time.
+  const asked = fake.requests.filter((r) => String(r.url).indexOf("/api/logs/review") === 0);
+  assert.equal(asked.length, 1);
+  assert.match(asked[0].url, /file=log_001\.ulg/);
+  assert.equal(findByClass(container, "review-plot").length, 2, "the review is drawn");
+  destroy();
+}
+
+async function testTheShortcutDoesNotAlsoTickTheRow() {
+  /* The row is a <label> wrapping its checkbox: a click that is not stopped
+     would queue the log for download on the way to reading it. */
+  const { container } = reset();
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "ulog");
+  const event = fire(findByClass(container, "logs-row-review")[0], "click");
+  assert.ok(event.defaultPrevented, "the label's default toggle is suppressed");
+  assert.ok(event.propagationStopped, "the row does not also see the click");
+  await flush();
+  destroy();
+}
+
+async function testAVanishedFileSaysSoInsteadOfPlottingNothing() {
+  const status = JSON.parse(JSON.stringify(STATUS));
+  const { container, fake } = reset(status);
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "ulog");
+  // Deleted from the folder after the row was drawn; the next poll sees it.
+  status.saved = [];
+  fake.setStatus(status);
+  timeouts.splice(0).forEach((t) => t.cb());
+  await flush();
+  fire(findByClass(container, "logs-row-review")[0], "click");
+  await flush();
+  await flush();
+  assert.equal(fake.requests.filter(
+    (r) => String(r.url).indexOf("/api/logs/review") === 0).length, 0,
+    "no review is requested for a file that is gone");
+  assert.match(findOneByClass(container, "logs-status").textContent,
+    /no longer in the folder/);
+  destroy();
+}
+
+async function testLeavingMidReadDoesNotPaintTheAnswerLater() {
+  /* A long flight takes a moment to parse. Leaving before it lands is normal;
+     the answer arriving into a page the operator already walked away from is
+     not, and it would draw Plotly graphs nothing ever purges. */
+  const { container, fake } = reset();
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "ulog");
+
+  let release = null;
+  const slow = new Promise((r) => { release = r; });
+  const original = fake.telemetry.requestJson;
+  fake.telemetry.requestJson = (url, opts) => (
+    String(url).indexOf("/api/logs/review") === 0
+      ? slow.then(() => JSON.parse(JSON.stringify(REVIEW)))
+      : original(url, opts));
+
+  window.Plotly.reactCalls.length = 0;
+  fire(findByClass(container, "logs-row-review")[0], "click");
+  await flush();
+  assert.equal(findByClass(container, "review-loading").length, 1,
+    "the wait is shown, not a blank page");
+
+  // Back, then into Flight Review by hand — a fresh view of the same kind, so
+  // "am I still on a review page?" is not enough to tell the answers apart.
+  fire(buttonByLabel(container, "Analysis"), "click");
+  await flush();
+  openTile(container, "review");
+  await flush();
+  release();
+  await flush();
+  await flush();
+
+  assert.equal(findByClass(container, "review-plot").length, 0,
+    "nothing is drawn into the page that was left");
+  assert.equal(window.Plotly.reactCalls.length, 0, "and no graph is created");
+  destroy();
+}
+
 async function testFlightReviewWithNoDownloadedLogsSaysSo() {
   const { container } = reset(Object.assign({}, STATUS, { saved: [] }));
   const destroy = Corvus.analysis.render(container);
@@ -809,6 +916,10 @@ async function run() {
     testEraseIsBlockedWithNoLogsOrNoLink,
     testAnOpenEraseDialogIsDroppedOnTeardown,
     testFlightReviewListsDownloadedLogsAndPlotsOne,
+    testADownloadedRowLinksStraightIntoItsReview,
+    testTheShortcutDoesNotAlsoTickTheRow,
+    testAVanishedFileSaysSoInsteadOfPlottingNothing,
+    testLeavingMidReadDoesNotPaintTheAnswerLater,
     testFlightReviewWithNoDownloadedLogsSaysSo,
     testAnUnreadableLogReportsTheReasonAndKeepsThePage,
     testPlotlyGraphsArePurgedOnLeavingTheReview,

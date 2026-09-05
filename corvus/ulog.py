@@ -101,10 +101,111 @@ def _parse_format(definition: str) -> tuple[str, list[tuple[str, int, str]]]:
 class _Layout:
     """A message format flattened into fixed offsets into the record bytes."""
 
+    __slots__ = ("fields", "size", "by_name", "struct", "plan")
+
     def __init__(self, fields: list[_Field], size: int) -> None:
         self.fields = fields
         self.size = size
         self.by_name = {f.name: f for f in fields}
+        self.struct, self.plan = _compile(fields)
+
+
+# What one entry of a compiled plan does with its slice of the tuple.
+_SCALAR, _ARRAY, _CHAR = 0, 1, 2
+
+
+def _compile(
+    fields: list[_Field],
+) -> tuple[struct.Struct | None, list[tuple[str, int, int, int]]]:
+    """Turn a layout into one :class:`struct.Struct` over the whole record.
+
+    Decoding a record field by field costs one ``unpack_from`` per field, and a
+    real flight is hundreds of thousands of records: that loop, not the file
+    read, is where the seconds of a review go. Padding and fields we drop
+    become ``x`` pad bytes so a single ``unpack_from`` yields exactly the values
+    we keep, in order.
+
+    The struct ends at the last field we keep, so ``struct.size`` is the
+    shortest record it can read. PX4's logger drops trailing padding before it
+    writes, and a struct that insisted on it would reject the majority of a
+    real log — ``vehicle_attitude`` arrives four bytes shorter than its own
+    format declares.
+
+    Returns ``(None, [])`` for a layout that cannot be expressed that way — an
+    overlapping or out-of-order field — and the caller falls back to
+    :func:`_decode`.
+    """
+    parts = ["<"]
+    plan: list[tuple[str, int, int, int]] = []
+    cursor = 0
+    pending = 0          # bytes to skip, flushed only when a kept field follows
+    index = 0
+    for field in sorted(fields, key=lambda f: f.offset):
+        if field.offset < cursor:
+            return None, []
+        primitive = _PRIMITIVES.get(field.type)
+        if primitive is None:
+            return None, []
+        code, _ = primitive
+        span = field.size * field.count
+        pending += field.offset - cursor
+        cursor = field.offset + span
+        if field.name.startswith("_padding") or ".._padding" in field.name:
+            pending += span
+            continue
+        if pending:
+            parts.append(f"{pending}x")
+            pending = 0
+        if field.type == "char":
+            parts.append(f"{field.count}s")
+            plan.append((field.name, index, field.count, _CHAR))
+            index += 1
+        elif field.count == 1:
+            parts.append(code)
+            plan.append((field.name, index, 1, _SCALAR))
+            index += 1
+        else:
+            parts.append(f"{field.count}{code}")
+            plan.append((field.name, index, field.count, _ARRAY))
+            index += field.count
+    try:
+        compiled = struct.Struct("".join(parts))
+    except struct.error:
+        return None, []
+    return compiled, plan
+
+
+class _Sink:
+    """Where one subscription's records land: a column per kept field.
+
+    The columns are the very lists :class:`ULog` hands out, resolved once when
+    the subscription is announced. Appending straight to them keeps the hot
+    loop free of the per-field dictionary lookup it would otherwise repeat for
+    every record in the flight.
+    """
+
+    __slots__ = ("layout", "bucket", "scalars", "others")
+
+    def __init__(self, layout: _Layout, bucket: dict[str, list]) -> None:
+        self.layout = layout
+        self.bucket = bucket
+        # Bound on the first record, not here: a topic can be subscribed and
+        # never logged, and binding early would fill it with empty columns that
+        # claim the topic carries fields it never carried.
+        self.scalars: list[tuple[list, int]] | None = None
+        self.others: list[tuple[list, int, int, int]] = []
+
+    def bind(self) -> None:
+        scalars: list[tuple[list, int]] = []
+        others: list[tuple[list, int, int, int]] = []
+        for name, index, count, kind in self.layout.plan:
+            column = self.bucket.setdefault(name, [])
+            if kind == _SCALAR:
+                scalars.append((column, index))
+            else:
+                others.append((column, index, count, kind))
+        self.scalars = scalars
+        self.others = others
 
 
 class ULog:
@@ -227,7 +328,7 @@ def read(source: BinaryIO | bytes, topics: Iterable[str] | None = None) -> ULog:
     wanted = set(topics) if topics is not None else None
 
     layouts: dict[str, _Layout] = {}          # topic -> layout
-    subscriptions: dict[int, tuple[str, int]] = {}   # msg_id -> (topic, multi_id)
+    subscriptions: dict[int, _Sink] = {}      # msg_id -> where its records land
     offset = HEADER_BYTES
     total = len(blob)
 
@@ -261,22 +362,36 @@ def read(source: BinaryIO | bytes, topics: Iterable[str] | None = None) -> ULog:
                         continue
                     flat, layout_size = _build_layout(fields, log.formats)
                     layouts[topic] = _Layout(flat, layout_size)
-                subscriptions[msg_id] = (topic, multi_id)
-                log.data.setdefault(topic, {}).setdefault(multi_id, {})
+                bucket = log.data.setdefault(topic, {}).setdefault(multi_id, {})
+                subscriptions[msg_id] = _Sink(layouts[topic], bucket)
 
             elif msg_type == _REMOVE_LOGGED:
                 subscriptions.pop(struct.unpack_from("<H", body, 0)[0], None)
 
             elif msg_type == _DATA:
                 msg_id = struct.unpack_from("<H", body, 0)[0]
-                subscription = subscriptions.get(msg_id)
-                if subscription is None:
+                sink = subscriptions.get(msg_id)
+                if sink is None:
                     continue
-                topic, multi_id = subscription
-                values = _decode(layouts[topic], body[2:])
-                bucket = log.data[topic][multi_id]
-                for key, value in values.items():
-                    bucket.setdefault(key, []).append(value)
+                layout = sink.layout
+                compiled = layout.struct
+                if compiled is None or size - 2 < compiled.size:
+                    # A short record (a truncated write) or a layout that could
+                    # not be compiled: correctness over speed, field by field.
+                    for key, value in _decode(layout, body[2:]).items():
+                        sink.bucket.setdefault(key, []).append(value)
+                    continue
+                row = compiled.unpack_from(body, 2)
+                if sink.scalars is None:
+                    sink.bind()
+                for column, index in sink.scalars:
+                    column.append(row[index])
+                for column, index, count, kind in sink.others:
+                    if kind == _CHAR:
+                        column.append(row[index].split(b"\x00", 1)[0].decode(
+                            "utf-8", errors="replace"))
+                    else:
+                        column.append(list(row[index:index + count]))
 
             elif msg_type in (_INFO, _PARAMETER, _PARAMETER_DEFAULT):
                 start = 1

@@ -236,3 +236,68 @@ def test_an_oversized_file_is_refused() -> None:
             read(_header() + b"\x00" * 64)
     finally:
         ulog_module.MAX_FILE_BYTES = original
+
+
+# ---------------------------------------------------------------------------
+# The compiled decoder
+#
+# Records are decoded through one struct.Struct per format rather than one
+# unpack per field. These are the cases where that shortcut could quietly
+# disagree with the field-by-field reader it replaced.
+# ---------------------------------------------------------------------------
+
+def test_trailing_padding_is_not_required_on_the_wire() -> None:
+    """PX4's logger drops padding at the end of a message before it writes.
+
+    ``vehicle_attitude`` declares 40 bytes and arrives as 36. Insisting on the
+    declared size would reject most records of a real log.
+    """
+    blob = (
+        _header()
+        + _format("clipped:uint64_t timestamp;float value;uint8_t[4] _padding0;")
+        + _add(1, "clipped")
+        + _data(1, struct.pack("<Qf", 1000, 2.5))     # no padding written
+    )
+    log = read(blob)
+    assert log.series("clipped", "timestamp") == [1000]
+    assert log.series("clipped", "value") == [2.5]
+
+
+def test_a_record_cut_short_keeps_the_fields_that_did_arrive() -> None:
+    """A power loss can cut the final record mid-field. What was written is
+    still evidence; the missing tail is simply absent."""
+    blob = (
+        _header()
+        + _format("wide:uint64_t timestamp;float a;float b;")
+        + _add(1, "wide")
+        + _data(1, struct.pack("<Qff", 1000, 1.0, 2.0))
+        + _data(1, struct.pack("<Qf", 2000, 3.0))     # `b` never made it
+    )
+    log = read(blob)
+    assert log.series("wide", "timestamp") == [1000, 2000]
+    assert log.series("wide", "a") == [1.0, 3.0]
+    assert log.series("wide", "b") == [2.0]
+
+
+def test_char_arrays_stop_at_the_first_nul() -> None:
+    blob = (
+        _header()
+        + _format("named:uint64_t timestamp;char[8] label;")
+        + _add(1, "named")
+        + _data(1, struct.pack("<Q", 1000) + b"nav\x00\x00\x00\x00\x00")
+    )
+    log = read(blob)
+    assert log.series("named", "label") == ["nav"]
+
+
+def test_a_subscribed_but_never_logged_topic_reports_no_fields() -> None:
+    """Columns are bound on the first record. A topic that was announced and
+    never written must not look like it carried empty series."""
+    blob = (
+        _header()
+        + _format("quiet:uint64_t timestamp;float value;")
+        + _add(1, "quiet")
+    )
+    log = read(blob)
+    assert log.data["quiet"][0] == {}
+    assert log.series("quiet", "value") == []

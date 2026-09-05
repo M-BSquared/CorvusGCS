@@ -21,9 +21,12 @@ Two properties matter more than breadth here:
 from __future__ import annotations
 
 import math
+import os
+import threading
+from collections import OrderedDict
 from typing import Any, Callable, Iterable
 
-from .ulog import ULog
+from .ulog import ULog, read
 
 # Points per series handed to the browser. Plotly draws this smoothly and it is
 # far more resolution than a between-flights check needs.
@@ -1296,3 +1299,54 @@ def review(log: ULog, name: str = "") -> dict[str, Any]:
         # spent a flight complaining can produce thousands.
         "messages": log.messages[-300:],
     }
+
+
+# --------------------------------------------------------------------------
+# Reviewing a file
+# --------------------------------------------------------------------------
+
+# Reviews already produced, newest last. Reading a log is the expensive half of
+# this module — a 40 MB flight is most of a second — and the way the page is
+# used is to open one log, go back, and open it (or the one next to it) again.
+# Two entries cover that without holding a folder's worth of flights in memory.
+_CACHE_ENTRIES = 2
+_cache: "OrderedDict[tuple[str, int, int], dict[str, Any]]" = OrderedDict()
+_cache_lock = threading.Lock()
+
+
+def review_file(path: str, name: str = "") -> dict[str, Any]:
+    """Review the ULog at *path*, reusing a recent result for the same file.
+
+    The cache key carries the file's size and modification time, so a log that
+    was re-downloaded over its own name is re-read rather than answered from a
+    stale review — the one mistake a cache here could make that matters.
+    """
+    label = name or os.path.basename(path)
+    try:
+        stat = os.stat(path)
+        key = (os.path.realpath(path), stat.st_size, stat.st_mtime_ns)
+    except OSError:
+        key = None
+    if key is not None:
+        with _cache_lock:
+            hit = _cache.get(key)
+            if hit is not None:
+                _cache.move_to_end(key)
+                return hit
+    with open(path, "rb") as handle:
+        parsed = read(handle, topics=REVIEW_TOPICS)
+    data = review(parsed, label)
+    if key is not None:
+        with _cache_lock:
+            _cache[key] = data
+            _cache.move_to_end(key)
+            while len(_cache) > _CACHE_ENTRIES:
+                _cache.popitem(last=False)
+    return data
+
+
+def clear_cache() -> None:
+    """Drop every cached review. For tests, and for a shutdown that wants the
+    memory back."""
+    with _cache_lock:
+        _cache.clear()
