@@ -782,6 +782,9 @@ Corvus.analysis = (function () {
       const card = S.el("div", "page-card review-plot-card");
       card.appendChild(S.sectionTitle(plot.title));
       const host = S.el("div", "review-plot");
+      // Equal-axis plots are given more height: the aspect ratio is fixed, so
+      // height is the only way to make the track larger without distorting it.
+      if (plot.equal) host.dataset.equal = "1";
       card.appendChild(host);
       if (plot.note) card.appendChild(S.el("div", "review-note", plot.note));
       out.appendChild(card);
@@ -906,6 +909,11 @@ Corvus.analysis = (function () {
       // Not every plot is against time: the ground track is north over east.
       if (plot.xlabel) {
         layout.xaxis = Object.assign({}, layout.xaxis, { title: plot.xlabel });
+      }
+      // And where both axes are a distance, "m" on the y axis says nothing the
+      // x axis has not already said.
+      if (plot.ylabel) {
+        layout.yaxis = Object.assign({}, layout.yaxis, { title: plot.ylabel });
       }
       // A track drawn on unequal axes is a track of a different shape.
       if (plot.equal) {

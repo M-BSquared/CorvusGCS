@@ -18,6 +18,16 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   font-feature-settings: "tnum" 1, "cv11" 1;
+  /* Interface scale (Settings -> Appearance). One multiplier over every used
+     length below <body> — text, icons, bar heights, the 1px hairlines — which
+     no font-size lever could reach, because this app sizes in absolute px and
+     JS writes icon dimensions inline. It sits on <body>, not <html>, so the
+     viewport stays the unscaled reference: `position: fixed` chrome still
+     anchors to the real window edges, and `height: 100%` below still resolves
+     to exactly one screen. Anything reading geometry back out in JS has to
+     divide by it (see hud-panel.js) — getBoundingClientRect reports scaled
+     pixels while style.left writes unscaled ones. */
+  zoom: var(--ui-scale, 1);
 }
 button { font-family: inherit; color: inherit; cursor: pointer; background: none; border: none; }
 input { font-family: inherit; }
@@ -29,7 +39,9 @@ svg { display: block; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background: var(--border-strong); background-clip: padding-box; }
 
-.app { display: flex; flex-direction: column; height: 100vh; width: 100vw; }
+/* 100% of the (zoomed) <body>, not 100vh/100vw: viewport units ignore zoom,
+   so at any scale but 1 they would overflow or leave a gap. */
+.app { display: flex; flex-direction: column; height: 100%; width: 100%; }
 .body { flex: 1; display: flex; min-height: 0; }
 
 /* ===== TOP TELEMETRY BAR ===== */
@@ -865,7 +877,9 @@ svg { display: block; }
 /* ===== WARNINGS POPOVER ===== */
 .warnings-popover {
   position: fixed; top: var(--top-h); right: 12px; z-index: var(--z-toast);
-  width: min(320px, calc(100vw - 24px));
+  /* vw is unscaled, so it is divided back into the scaled coordinate space
+     the rest of this rule is written in. */
+  width: min(320px, calc(100vw / var(--ui-scale, 1) - 24px));
   border-radius: var(--radius);
   overflow: hidden;
   animation: corvus-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -2129,6 +2143,10 @@ svg { display: block; }
 
 .review-plot-card { display: flex; flex-direction: column; gap: 8px; }
 .review-plot { width: 100%; height: 240px; }
+/* Equal axes on a wide card leave a square track using a fraction of the
+   width. Taller is the only lever that makes it bigger without distorting it,
+   and the track is the plot people actually look at. */
+.review-plot[data-equal="1"] { height: min(460px, 70vh); }
 .review-note { font-size: 11px; line-height: 1.5; color: var(--text-3); }
 .review-messages { max-height: 320px; }
 .logs-head .field-select { max-width: 190px; }

@@ -586,26 +586,244 @@ def _plot_rates(log: ULog) -> dict | None:
                       "are low; overshoot and ringing mean they are high.")
 
 
-def _plot_track(log: ULog) -> dict | None:
-    """The flight path from above — the one plot that is not against time."""
+# WGS-84 mean radius, the value PX4's own map projection uses.
+_EARTH_RADIUS_M = 6371000.0
+
+
+class _Projection:
+    """PX4's azimuthal equidistant projection about the estimator's origin.
+
+    Not an approximation of it: this is the same transform the estimator ran to
+    turn GPS into ``vehicle_local_position``, so a projected fix and the
+    estimate it is being compared against are genuinely in one frame. A
+    flat-earth shortcut would put the two tracks a few metres apart at range and
+    that gap would read as estimator error, which is precisely the thing this
+    plot exists to show.
+    """
+
+    __slots__ = ("_sin_lat", "_cos_lat", "_lon")
+
+    def __init__(self, ref_lat_deg: float, ref_lon_deg: float) -> None:
+        lat = math.radians(ref_lat_deg)
+        self._sin_lat = math.sin(lat)
+        self._cos_lat = math.cos(lat)
+        self._lon = math.radians(ref_lon_deg)
+
+    def project(self, lat_deg: float, lon_deg: float) -> tuple[float, float]:
+        """(north, east) in metres from the origin."""
+        lat = math.radians(lat_deg)
+        d_lon = math.radians(lon_deg) - self._lon
+        sin_lat = math.sin(lat)
+        cos_lat = math.cos(lat)
+        cos_d_lon = math.cos(d_lon)
+        arg = max(-1.0, min(1.0, self._sin_lat * sin_lat
+                            + self._cos_lat * cos_lat * cos_d_lon))
+        angle = math.acos(arg)
+        # The limit of c/sin(c) at the origin, where the fix is the reference.
+        scale = angle / math.sin(angle) if abs(angle) > 1e-12 else 1.0
+        north = scale * (self._cos_lat * sin_lat
+                         - self._sin_lat * cos_lat * cos_d_lon) * _EARTH_RADIUS_M
+        east = scale * cos_lat * math.sin(d_lon) * _EARTH_RADIUS_M
+        return north, east
+
+
+def _local_origin(log: ULog) -> _Projection | None:
+    """The estimator's own local-frame origin, or None when it never had one.
+
+    A log flown without a global reference (indoors, no GPS) reports zeros here.
+    Projecting against those would draw a GPS track off the coast of Africa and
+    overlay it on the estimate as if the two disagreed.
+    """
     if not log.has("vehicle_local_position"):
         return None
-    north = log.series("vehicle_local_position", "x", 0)
-    east = log.series("vehicle_local_position", "y", 0)
-    if not north or not east:
+    fields = log.data.get("vehicle_local_position", {}).get(0, {})
+    lats = fields.get("ref_lat") or []
+    lons = fields.get("ref_lon") or []
+    valid = fields.get("xy_global") or []
+    for index in range(min(len(lats), len(lons))):
+        if valid and index < len(valid) and not valid[index]:
+            continue
+        try:
+            lat = float(lats[index])
+            lon = float(lons[index])
+        except (TypeError, ValueError):
+            continue
+        if lat == 0.0 and lon == 0.0:
+            continue
+        if -90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0:
+            return _Projection(lat, lon)
+    return None
+
+
+def _degrees(value: Any) -> float | None:
+    """Latitude or longitude as degrees.
+
+    PX4 logs these as int32 in 1e-7 degrees on some topics and as doubles on
+    others, and the two are told apart by magnitude: no coordinate in degrees
+    exceeds 180, and no coordinate in 1e-7 degrees that is not zero is that
+    small.
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
         return None
+    if number != number:
+        return None
+    if abs(number) > 180.0:
+        number /= 1e7
+    return number if abs(number) <= 180.0 else None
+
+
+def _xy_path(log: ULog, topic: str, north_field: str, east_field: str,
+             name: str, **extra: Any) -> dict | None:
+    """A local-frame track, decimated as a pair so the shape survives."""
+    north = log.series(topic, north_field, 0)
+    east = log.series(topic, east_field, 0)
     span = min(len(north), len(east))
     if span < 2:
         return None
     step = max(1, span // MAX_POINTS)
-    xs = [round(float(east[i]), 2) for i in range(0, span, step)]
-    ys = [round(float(north[i]), 2) for i in range(0, span, step)]
-    if max(xs) - min(xs) < 0.5 and max(ys) - min(ys) < 0.5:
+    xs: list[float] = []
+    ys: list[float] = []
+    for index in range(0, span, step):
+        try:
+            x = float(east[index])
+            y = float(north[index])
+        except (TypeError, ValueError):
+            continue
+        if x != x or y != y:
+            continue
+        xs.append(round(x, 2))
+        ys.append(round(y, 2))
+    if len(xs) < 2:
+        return None
+    series = {"name": name, "x": xs, "y": ys}
+    series.update(extra)
+    return series
+
+
+def _gps_path(log: ULog, projection: _Projection) -> dict | None:
+    """Raw GPS fixes projected into the estimator's frame."""
+    topic = _first_topic(log, ("vehicle_gps_position", "sensor_gps"))
+    if topic is None:
+        return None
+    lats = log.series(topic, "lat", 0)
+    lons = log.series(topic, "lon", 0)
+    fixes = log.series(topic, "fix_type", 0)
+    span = min(len(lats), len(lons))
+    if span < 2:
+        return None
+    step = max(1, span // MAX_POINTS)
+    xs: list[float] = []
+    ys: list[float] = []
+    for index in range(0, span, step):
+        # A 2D fix has no business anchoring a track, and a "no fix" row is
+        # usually 0/0 — drawn, it is a line to the Gulf of Guinea.
+        if fixes and index < len(fixes) and float(fixes[index] or 0) < 3:
+            continue
+        lat = _degrees(lats[index])
+        lon = _degrees(lons[index])
+        if lat is None or lon is None or (lat == 0.0 and lon == 0.0):
+            continue
+        north, east = projection.project(lat, lon)
+        xs.append(round(east, 2))
+        ys.append(round(north, 2))
+    if len(xs) < 2:
+        return None
+    return {"name": "GPS (projected)", "x": xs, "y": ys}
+
+
+def _waypoints(log: ULog, projection: _Projection | None) -> dict | None:
+    """The commanded positions, as points rather than a path.
+
+    Joining them would draw legs the aircraft was never asked to fly: the
+    triplet is republished continuously, and consecutive entries are the same
+    waypoint until the mission advances.
+    """
+    if not log.has("position_setpoint_triplet"):
+        return None
+    fields = log.data.get("position_setpoint_triplet", {}).get(0, {})
+    valid = fields.get("current.valid") or []
+    xs: list[float] = []
+    ys: list[float] = []
+    last: tuple[float, float] | None = None
+
+    def add(east: float, north: float) -> None:
+        nonlocal last
+        point = (round(east, 2), round(north, 2))
+        if point == last:
+            return
+        last = point
+        xs.append(point[0])
+        ys.append(point[1])
+
+    lats = fields.get("current.lat") or []
+    lons = fields.get("current.lon") or []
+    if projection is not None and lats and lons:
+        for index in range(min(len(lats), len(lons))):
+            if valid and index < len(valid) and not valid[index]:
+                continue
+            lat = _degrees(lats[index])
+            lon = _degrees(lons[index])
+            if lat is None or lon is None or (lat == 0.0 and lon == 0.0):
+                continue
+            north, east = projection.project(lat, lon)
+            add(east, north)
+    else:
+        # Firmware that publishes the triplet in the local frame only.
+        norths = fields.get("current.x") or []
+        easts = fields.get("current.y") or []
+        for index in range(min(len(norths), len(easts))):
+            if valid and index < len(valid) and not valid[index]:
+                continue
+            try:
+                add(float(easts[index]), float(norths[index]))
+            except (TypeError, ValueError):
+                continue
+    if not xs:
+        return None
+    return {"name": "Commanded position", "x": xs, "y": ys, "draw": "markers"}
+
+
+def _plot_track(log: ULog) -> dict | None:
+    """The flight path from above — the one plot that is not against time.
+
+    Four things share the axes because the question is what disagrees: where the
+    estimator thought it was, where it was told to go, where GPS said it was,
+    and which points were actually commanded. Read apart, none of them answers
+    it; the gap between the estimate and the projected GPS *is* the finding.
+    """
+    if not log.has("vehicle_local_position"):
+        return None
+    estimate = _xy_path(log, "vehicle_local_position", "x", "y", "Estimated")
+    if estimate is None:
+        return None
+    if (max(estimate["x"]) - min(estimate["x"]) < 0.5
+            and max(estimate["y"]) - min(estimate["y"]) < 0.5):
         return None            # never moved; a dot is not a track
-    return _plot("track", "Ground track", "m", [{"name": "Path", "x": xs, "y": ys}],
-                 group="Flight", xlabel="East (m)", equal=True, mode="lines",
-                 note="Local position, north up. Origin is where the estimator "
-                      "started, not a survey point.")
+    projection = _local_origin(log)
+    # Bottom to top, deliberately. Plotly draws later traces over earlier ones,
+    # and a noisy GPS trace laid over the estimate hides the very line the plot
+    # is about. References first, the estimate on top of them, the commanded
+    # points on top of everything because they are the fewest.
+    series = [
+        _gps_path(log, projection) if projection is not None else None,
+        _xy_path(log, "vehicle_local_position_setpoint", "x", "y", "Setpoint"),
+        estimate,
+        _waypoints(log, projection),
+    ]
+    note = ("Local position, north up, equal axes. Origin is where the "
+            "estimator started, not a survey point.")
+    if projection is not None:
+        note += (" GPS is projected through the estimator's own origin, so a "
+                 "gap between the two tracks is estimator error and not a "
+                 "difference of frames.")
+    else:
+        note += (" This flight had no global reference, so there is no GPS "
+                 "track to compare against.")
+    return _plot("track", "Ground track", "m", series,
+                 group="Flight", xlabel="East (m)", ylabel="North (m)",
+                 equal=True, note=note)
 
 
 def _plot_velocity(log: ULog) -> dict | None:
@@ -1217,7 +1435,7 @@ REVIEW_TOPICS = (
     "vehicle_thrust_setpoint", "manual_control_setpoint",
     "manual_control_input",
     "vehicle_local_position", "vehicle_local_position_setpoint",
-    "vehicle_global_position",
+    "vehicle_global_position", "position_setpoint_triplet",
     "vehicle_magnetometer", "sensor_mag",
     "battery_status", "cpuload", "vehicle_gps_position", "sensor_gps",
     "vehicle_status", "commander_state",

@@ -763,7 +763,7 @@ Up to 37 plots in six sections, with jump links across the top:
 
 | Section | Plots |
 | --- | --- |
-| **Flight** | flight-mode timeline, ground track (north over east, equal axes), altitude, local position X / Y / Z each against its setpoint, ground speed, velocity X / Y / Z each against its setpoint, airspeed, estimated wind |
+| **Flight** | flight-mode timeline, ground track (estimate, setpoint, projected GPS and the commanded waypoints on equal axes), altitude, local position X / Y / Z each against its setpoint, ground speed, velocity X / Y / Z each against its setpoint, airspeed, estimated wind |
 | **Control** | manual control input (the pilot's sticks), roll / pitch / yaw **angle** each against its setpoint, roll / pitch / yaw **angular rate** each against its rate setpoint, thrust demand |
 | **Airframe** | per-motor outputs |
 | **Estimator** | EKF innovation test ratios with the 1.0 rejection line drawn, altitude estimate (GPS MSL vs barometer vs fused, with the altitude setpoint as markers), GPS vs estimated horizontal velocity, estimated gyro bias |
@@ -787,6 +787,20 @@ and opening the same flight again is instant while a log re-downloaded over its
 own name is re-read rather than answered from a stale review. While a read is in
 flight the page says so; if you leave before it lands, the answer is dropped
 rather than painted into the page you moved on to.
+
+**The ground track is a comparison, not a picture.** Four things share the
+axes because the question is what disagrees: where the estimator thought it was,
+where it was told to go, where GPS said it was, and which points were actually
+commanded. Raw fixes are projected through the estimator's *own* origin with
+PX4's azimuthal-equidistant transform — the same one that produced
+`vehicle_local_position` in the first place — so the gap between the two tracks
+is estimator error rather than a difference of frames; a flat-earth shortcut
+would open a few metres of fake disagreement at range. A flight without a global
+reference (indoors, no GPS) gets no GPS track rather than one projected against
+zeros, fixes below a 3D lock are left out, and the commanded positions are drawn
+as points rather than joined: the triplet is republished every cycle, so a line
+through it would show legs the aircraft was never asked to fly. The estimate is
+drawn last so a noisy GPS trace cannot hide it.
 
 Only the plots the log can support are drawn — an airspeed plot on a multirotor
 log is absent, not empty, and the three-way altitude comparison appears only

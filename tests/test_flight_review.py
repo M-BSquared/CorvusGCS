@@ -7,6 +7,7 @@ decimation that drops the one spike the review exists to catch.
 """
 from __future__ import annotations
 
+import math
 import os
 import struct
 
@@ -199,8 +200,9 @@ def test_the_ground_track_is_north_over_east_with_equal_axes() -> None:
     assert plot is not None
     assert plot["equal"] is True
     assert plot["xlabel"] == "East (m)"
-    assert plot["series"][0]["x"] == [0.0, 5.0], "east on x"
-    assert plot["series"][0]["y"] == [0.0, 10.0], "north on y"
+    path = next(s for s in plot["series"] if s["name"] == "Estimated")
+    assert path["x"] == [0.0, 5.0], "east on x"
+    assert path["y"] == [0.0, 10.0], "north on y"
 
 
 def test_a_stationary_log_gets_no_ground_track() -> None:
@@ -212,6 +214,117 @@ def test_a_stationary_log_gets_no_ground_track() -> None:
         _row(1, struct.pack("<Qff", 1_000_000, 0.05, 0.02)),
     )
     assert _plot(review(read(blob), "x.ulg"), "track") is None
+
+
+REF_LAT, REF_LON = 47.397742, 8.545594
+
+
+def _flown(gps: bool = True, waypoints: bool = True, global_ref: bool = True,
+           fix_type: int = 3) -> bytes:
+    """A short flight: estimate, its setpoint, GPS fixes and one waypoint."""
+    from corvus.flight_review import _Projection
+
+    projection = _Projection(REF_LAT, REF_LON)
+    parts = [
+        _fmt("vehicle_local_position:uint64_t timestamp;float x;float y;"
+             "double ref_lat;double ref_lon;bool xy_global;"),
+        _add(1, "vehicle_local_position"),
+        _fmt("vehicle_local_position_setpoint:uint64_t timestamp;float x;float y;"),
+        _add(2, "vehicle_local_position_setpoint"),
+    ]
+    if gps:
+        parts += [_fmt("vehicle_gps_position:uint64_t timestamp;int32_t lat;"
+                       "int32_t lon;uint8_t fix_type;"),
+                  _add(3, "vehicle_gps_position")]
+    if waypoints:
+        parts += [_fmt("position_setpoint_triplet:uint64_t timestamp;"
+                       "double current.lat;double current.lon;bool current.valid;"),
+                  _add(4, "position_setpoint_triplet")]
+    for step in range(8):
+        stamp = step * 500_000
+        lat = REF_LAT + step * 0.0001
+        lon = REF_LON + step * 0.0001
+        north, east = projection.project(lat, lon)
+        parts.append(_row(1, struct.pack(
+            "<QffddB", stamp, north, east,
+            REF_LAT if global_ref else 0.0, REF_LON if global_ref else 0.0,
+            global_ref)))
+        parts.append(_row(2, struct.pack("<Qff", stamp, north + 1.0, east + 1.0)))
+        if gps:
+            parts.append(_row(3, struct.pack(
+                "<QiiB", stamp, int(lat * 1e7), int(lon * 1e7), fix_type)))
+        if waypoints:
+            # Republished every cycle, as PX4 does: the same waypoint over and
+            # over until the mission advances.
+            parts.append(_row(4, struct.pack(
+                "<QddB", stamp, REF_LAT + 0.001, REF_LON + 0.001, True)))
+    return _build(*parts)
+
+
+def _track_series(blob: bytes) -> dict[str, dict]:
+    plot = _plot(review(read(blob), "x.ulg"), "track")
+    assert plot is not None
+    return {s["name"]: s for s in plot["series"]}
+
+
+def test_the_projection_is_px4s_own_not_a_flat_earth_stand_in() -> None:
+    """The estimator produced ``vehicle_local_position`` with this transform.
+    Any other one puts the projected fixes metres away from the estimate at
+    range, and that gap would be read as estimator error."""
+    from corvus.flight_review import _Projection
+
+    projection = _Projection(REF_LAT, REF_LON)
+    assert projection.project(REF_LAT, REF_LON) == (0.0, 0.0)
+    north, east = projection.project(REF_LAT + 0.001, REF_LON)
+    assert north == pytest.approx(111.19, abs=0.05)
+    assert east == pytest.approx(0.0, abs=1e-6)
+    # East shrinks with the cosine of the latitude; at 47° it is about 0.68.
+    _, east = projection.project(REF_LAT, REF_LON + 0.001)
+    assert east == pytest.approx(111.19 * math.cos(math.radians(REF_LAT)), abs=0.1)
+
+
+def test_the_track_overlays_estimate_setpoint_gps_and_waypoints() -> None:
+    series = _track_series(_flown())
+    assert set(series) == {"Estimated", "Setpoint", "GPS (projected)",
+                           "Commanded position"}
+    # Projected through the estimator's own origin, so the fixes land on the
+    # estimate rather than beside it.
+    assert series["GPS (projected)"]["x"] == pytest.approx(
+        series["Estimated"]["x"], abs=0.02)
+    assert series["GPS (projected)"]["y"] == pytest.approx(
+        series["Estimated"]["y"], abs=0.02)
+
+
+def test_the_estimate_is_drawn_over_its_references_not_under_them() -> None:
+    """Plotly draws later traces on top. A noisy GPS trace laid over the
+    estimate hides the one line the plot is about."""
+    plot = _plot(review(read(_flown()), "x.ulg"), "track")
+    assert [s["name"] for s in plot["series"]] == [
+        "GPS (projected)", "Setpoint", "Estimated", "Commanded position"]
+
+
+def test_repeated_waypoints_collapse_to_the_points_actually_commanded() -> None:
+    """The triplet is republished every cycle. Drawn as a path, it would show
+    legs the aircraft was never asked to fly."""
+    series = _track_series(_flown())
+    commanded = series["Commanded position"]
+    assert commanded["draw"] == "markers", "points, not a route"
+    assert len(commanded["x"]) == 1, "eight republished rows, one waypoint"
+
+
+def test_a_flight_without_a_global_reference_gets_no_gps_track() -> None:
+    """Indoors, ref_lat/ref_lon are zero. Projecting against them would draw a
+    track in the Gulf of Guinea and overlay it as if it disagreed."""
+    series = _track_series(_flown(global_ref=False))
+    assert "GPS (projected)" not in series
+    assert "Estimated" in series
+    plot = _plot(review(read(_flown(global_ref=False)), "x.ulg"), "track")
+    assert "no global reference" in plot["note"]
+
+
+def test_fixes_without_a_3d_lock_are_left_out() -> None:
+    """A 2D or dead-reckoned fix has no business anchoring a track."""
+    assert "GPS (projected)" not in _track_series(_flown(fix_type=2))
 
 
 def test_magnetometer_norm_is_computed_from_the_vector() -> None:
