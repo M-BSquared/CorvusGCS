@@ -809,39 +809,6 @@ async function testEveryBandNamesItsModeInThePlot() {
   destroy();
 }
 
-async function testTheModeTimelineIsNotLabelledTwice() {
-  /* The timeline plot already names every level on its y axis. */
-  const { container } = reset();
-  window.Plotly.reactCalls.length = 0;
-  const destroy = Corvus.analysis.render(container);
-  await flush();
-  openTile(container, "review");
-  fire(buttonByLabel(container, "Review"), "click");
-  await flush();
-  await flush();
-  destroy();
-
-  const { container: c2, fake } = reset();
-  fake.setReview(Object.assign({}, REVIEW, {
-    plots: [{ id: "modes", title: "Flight mode", unit: "", group: "Flight",
-              ytick: { vals: [0, 1], labels: ["Manual", "Position"] },
-              series: [{ name: "Mode", x: [0, 10], y: [0, 1], shape: "hv" }] }],
-    groups: ["Flight"],
-  }));
-  window.Plotly.reactCalls.length = 0;
-  const d2 = Corvus.analysis.render(c2);
-  await flush();
-  openTile(c2, "review");
-  fire(buttonByLabel(c2, "Review"), "click");
-  await flush();
-  await flush();
-  const call = window.Plotly.reactCalls[0];
-  assert.equal((call.layout.annotations || []).length, 0, "no duplicate naming");
-  assert.equal((call.layout.shapes || []).filter((sh) => sh.type === "rect").length, 2,
-    "the bands themselves are still drawn");
-  d2();
-}
-
 async function testTheGroundTrackGetsNoTimeBands() {
   const { container, fake } = reset();
   fake.setReview(Object.assign({}, REVIEW, {
@@ -919,31 +886,6 @@ async function testSetpointSeriesAreDrawnAsMarkersNotLines() {
   destroy();
 }
 
-async function testTheModeTimelineGetsNamedAxisLevels() {
-  const { container, fake } = reset();
-  fake.setReview(Object.assign({}, REVIEW, {
-    groups: ["Flight"],
-    plots: [{ id: "modes", title: "Flight mode", unit: "", group: "Flight",
-              ytick: { vals: [0, 1], labels: ["Manual", "Position"] },
-              series: [{ name: "Flight mode", x: [0, 4, 4, 10], y: [0, 0, 1, 1],
-                         draw: "lines", shape: "hv" }] }],
-  }));
-  window.Plotly.reactCalls.length = 0;
-  const destroy = Corvus.analysis.render(container);
-  await flush();
-  openTile(container, "review");
-  fire(buttonByLabel(container, "Review"), "click");
-  await flush();
-  await flush();
-
-  const call = window.Plotly.reactCalls[0];
-  assert.deepEqual(call.layout.yaxis.ticktext, ["Manual", "Position"],
-    "levels are named, not numbered");
-  // A step, not a ramp: a mode change is instantaneous.
-  assert.equal(call.data[0].line.shape, "hv");
-  destroy();
-}
-
 async function testDestroyStopsPollingAndUnsubscribes() {
   const { container, fake } = reset();
   const destroy = Corvus.analysis.render(container);
@@ -995,11 +937,9 @@ async function run() {
     testPlotsAreSectionedWithJumpChips,
     testFlightModesAreShownAsAStripAndDrawnBehindEveryTimePlot,
     testEveryBandNamesItsModeInThePlot,
-    testTheModeTimelineIsNotLabelledTwice,
     testTheGroundTrackGetsNoTimeBands,
     testTheModeStripNamesSpansAndTotalsTheTime,
     testSetpointSeriesAreDrawnAsMarkersNotLines,
-    testTheModeTimelineGetsNamedAxisLevels,
     testDestroyStopsPollingAndUnsubscribes,
   ];
   for (const t of tests) {

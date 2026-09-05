@@ -602,9 +602,9 @@ def test_the_altitude_setpoint_is_drawn_as_markers_in_absolute_altitude() -> Non
     assert setpoint["y"][0] == pytest.approx(525.0), "ref_alt + 25 m up"
 
 
-def test_the_mode_timeline_is_a_step_with_named_levels() -> None:
-    """The bands say which mode a trace was flown in; this says when each one
-    started and ended, which the bands cannot — they have no axis."""
+def test_the_modes_get_no_plot_of_their_own() -> None:
+    """The bands behind every plot name their mode in place, so a separate
+    timeline said the same thing a third time and cost a screen doing it."""
     blob = _build(
         _fmt("vehicle_status:uint64_t timestamp;uint8_t nav_state;uint8_t arming_state;"),
         _add(1, "vehicle_status"),
@@ -613,15 +613,11 @@ def test_the_mode_timeline_is_a_step_with_named_levels() -> None:
         _row(1, struct.pack("<QBB", 9_000_000, 2, 2)),
     )
     result = review(read(blob), "x.ulg")
-    plot = _plot(result, "modes")
-    assert plot is not None and plot["group"] == "Flight"
-    assert result["plots"][0]["id"] == "modes", "it leads the review"
-    assert plot["ytick"]["labels"] == ["Manual", "Position"]
-    trace = plot["series"][0]
-    # A step: the transition is vertical, which is what actually happened.
-    assert trace["shape"] == "hv"
-    assert trace["x"] == [0.0, 4.0, 4.0, 9.0]
-    assert trace["y"] == [0, 0, 1, 1]
+    assert _plot(result, "modes") is None
+    # Still reported: the strip and the bands are built from this.
+    assert [span["mode"] for span in result["modes"]] == ["Manual", "Position"]
+    # And still counted, though no plot draws the topic it came from.
+    assert result["summary"]["duration_s"] == 9.0
 
 
 def test_gps_uncertainty_and_noise_are_separate_plots() -> None:

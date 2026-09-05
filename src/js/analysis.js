@@ -896,16 +896,6 @@ Corvus.analysis = (function () {
         showlegend: true,
         legend: { orientation: "h", y: -0.25, font: { size: 9 } },
       });
-      // Categorical y axis: the mode timeline names its levels instead of
-      // numbering them.
-      if (plot.ytick) {
-        layout.yaxis = Object.assign({}, layout.yaxis, {
-          tickvals: plot.ytick.vals, ticktext: plot.ytick.labels,
-          title: "", zeroline: false,
-          range: [-0.5, Math.max(0.5, plot.ytick.vals.length - 0.5)],
-        });
-        layout.showlegend = false;
-      }
       // Not every plot is against time: the ground track is north over east.
       if (plot.xlabel) {
         layout.xaxis = Object.assign({}, layout.xaxis, { title: plot.xlabel });
@@ -949,9 +939,8 @@ Corvus.analysis = (function () {
           });
           // Named in place, turned on its side, because a colour is only a
           // legend lookup: the reader should not have to scroll back to the
-          // strip to find out what the band behind a spike was. The timeline
-          // plot is the exception — its y axis already names every level.
-          if (plot.id === "modes" || !(span > 0)) return;
+          // strip to find out what the band behind a spike was.
+          if (!(span > 0)) return;
           const from = Math.max(m.start, xMin);
           const to = Math.min(m.end, xMax);
           // Too narrow to read: a rotated label in a sliver of a band lands on

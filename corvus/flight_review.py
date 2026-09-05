@@ -1444,46 +1444,16 @@ REVIEW_TOPICS = (
 )
 
 
-def _modes_plot(modes: list[dict[str, Any]]) -> dict | None:
-    """The modes as a stepped timeline against the same time axis as everything
-    else.
-
-    The coloured bands behind the other plots say *which* mode a trace was
-    flown in; this says *when* each one started and ended, to the second, which
-    the bands cannot because they have no axis of their own.
-    """
-    if not modes:
-        return None
-    names: list[str] = []
-    for span in modes:
-        if span["mode"] not in names:
-            names.append(span["mode"])
-    xs: list[float] = []
-    ys: list[float] = []
-    for span in modes:
-        level = names.index(span["mode"])
-        # Two points per span and a step shape: the transition is vertical,
-        # which is what actually happened.
-        xs.extend([span["start"], span["end"]])
-        ys.extend([level, level])
-    series = [{"name": "Flight mode", "x": xs, "y": ys,
-               "draw": "lines", "shape": "hv"}]
-    return _plot("modes", "Flight mode", "", series, group="Flight",
-                 ytick={"vals": list(range(len(names))), "labels": names},
-                 note="The same colours shade every plot below, so a trace can "
-                      "be read against the mode it was flown in.")
-
-
 def review(log: ULog, name: str = "") -> dict[str, Any]:
     """Reduce a parsed ULog to the Flight Review payload the UI renders."""
     modes = _flight_modes(log)
     armed = _armed_spans(log)
     plots = [plot for plot in (make(log) for make in _PLOTTERS) if plot]
-    timeline = _modes_plot(modes)
-    if timeline:
-        plots.insert(0, timeline)
 
-    duration = 0.0
+    # The modes count towards the duration in their own right: they are read
+    # from topics no plot draws, so a flight whose last mode outlasts every
+    # plotted signal would otherwise be reported as shorter than it was.
+    duration = max((span["end"] for span in modes), default=0.0)
     for plot in plots:
         for s in plot["series"]:
             if s["x"]:

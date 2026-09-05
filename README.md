@@ -735,21 +735,20 @@ The third tile on the Analysis page. Pick a downloaded ULog and Corvus reads it
 answer "was that flight healthy?". Findings sit above the plots, the aircraft's
 own log messages below them, with a severity filter.
 
-**Flight modes, three ways.** A labelled strip with a time ruler at the top
-(which mode, when, and how long each was flown), a stepped **Flight mode**
-timeline plot on the same time axis as everything else (exact transitions, read
-off the axis), and the *same* colours as bands behind every time-based plot.
-That last one is the difference between a graph and a story: an oscillation in
-Position and the same oscillation in Manual are different findings, and without
-the mode behind the trace you cannot tell them apart. Armed time is reported
-separately.
+**Flight modes, twice.** A labelled strip with a time ruler at the top (which
+mode, when, and how long each was flown), and the *same* colours as bands behind
+every time-based plot. The bands are the difference between a graph and a story:
+an oscillation in Position and the same oscillation in Manual are different
+findings, and without the mode behind the trace you cannot tell them apart.
+Armed time is reported separately.
 
 Every band **names its mode inside the plot**, written down the band rather than
 across the trace. A colour on its own is a legend lookup, and reading a spike
 should not mean scrolling back to the strip to find out what was flying. A span
 too narrow to hold a readable label is left unnamed rather than printed over its
-neighbours, and the timeline plot is not labelled at all — its y axis already
-names every level.
+neighbours. There is deliberately no separate mode timeline plot: with the bands
+named in place it said the same thing a third time and cost a screen of scroll
+doing it.
 
 > Two mode enums exist and they are not interchangeable: `vehicle_status`
 > carries `NAVIGATION_STATE_*`, the older `commander_state` carries
@@ -759,11 +758,11 @@ names every level.
 > that — no bands are drawn at all, because bands placed from a stopped clock
 > would relabel the whole flight.
 
-Up to 37 plots in six sections, with jump links across the top:
+Up to 38 plots in six sections, with jump links across the top:
 
 | Section | Plots |
 | --- | --- |
-| **Flight** | flight-mode timeline, ground track (estimate, setpoint, projected GPS and the commanded waypoints on equal axes), altitude, local position X / Y / Z each against its setpoint, ground speed, velocity X / Y / Z each against its setpoint, airspeed, estimated wind |
+| **Flight** | ground track (estimate, setpoint, projected GPS and the commanded waypoints on equal axes), altitude, local position X / Y / Z each against its setpoint, ground speed, velocity X / Y / Z each against its setpoint, airspeed, estimated wind |
 | **Control** | manual control input (the pilot's sticks), roll / pitch / yaw **angle** each against its setpoint, roll / pitch / yaw **angular rate** each against its rate setpoint, thrust demand |
 | **Airframe** | per-motor outputs |
 | **Estimator** | EKF innovation test ratios with the 1.0 rejection line drawn, altitude estimate (GPS MSL vs barometer vs fused, with the altitude setpoint as markers), GPS vs estimated horizontal velocity, estimated gyro bias |
