@@ -773,6 +773,75 @@ async function testFlightModesAreShownAsAStripAndDrawnBehindEveryTimePlot() {
   destroy();
 }
 
+async function testEveryBandNamesItsModeInThePlot() {
+  /* A colour alone is a legend lookup: without the name in the band, reading a
+     spike means scrolling back to the strip to find out what was flying. */
+  const { container, fake } = reset();
+  fake.setReview(Object.assign({}, REVIEW, {
+    plots: [{ id: "att_roll", title: "Roll angle", unit: "deg", group: "Control",
+              series: [{ name: "Estimate", x: [0, 5, 10], y: [0, 1, 0] }] }],
+    groups: ["Control"],
+    modes: [
+      { mode: "Manual", state: 0, start: 0, end: 4 },
+      { mode: "Position", state: 2, start: 4, end: 9.9 },
+      // A blink of a mode: labelling it would land the text on its neighbours.
+      { mode: "Return", state: 5, start: 9.9, end: 10 },
+    ],
+  }));
+  window.Plotly.reactCalls.length = 0;
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "review");
+  fire(buttonByLabel(container, "Review"), "click");
+  await flush();
+  await flush();
+
+  const notes = window.Plotly.reactCalls[0].layout.annotations || [];
+  assert.deepEqual(notes.map((a) => a.text), ["Manual", "Position"],
+    "each band wide enough to read is named; the sliver is not");
+  assert.deepEqual(notes.map((a) => a.x), [2, 6.95], "centred on its own span");
+  notes.forEach((a) => {
+    assert.equal(a.textangle, -90, "written down the band, not across the trace");
+    assert.equal(a.showarrow, false);
+  });
+  // Tied to the band it labels rather than to the trace colours.
+  assert.notEqual(notes[0].font.color, notes[1].font.color);
+  destroy();
+}
+
+async function testTheModeTimelineIsNotLabelledTwice() {
+  /* The timeline plot already names every level on its y axis. */
+  const { container } = reset();
+  window.Plotly.reactCalls.length = 0;
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "review");
+  fire(buttonByLabel(container, "Review"), "click");
+  await flush();
+  await flush();
+  destroy();
+
+  const { container: c2, fake } = reset();
+  fake.setReview(Object.assign({}, REVIEW, {
+    plots: [{ id: "modes", title: "Flight mode", unit: "", group: "Flight",
+              ytick: { vals: [0, 1], labels: ["Manual", "Position"] },
+              series: [{ name: "Mode", x: [0, 10], y: [0, 1], shape: "hv" }] }],
+    groups: ["Flight"],
+  }));
+  window.Plotly.reactCalls.length = 0;
+  const d2 = Corvus.analysis.render(c2);
+  await flush();
+  openTile(c2, "review");
+  fire(buttonByLabel(c2, "Review"), "click");
+  await flush();
+  await flush();
+  const call = window.Plotly.reactCalls[0];
+  assert.equal((call.layout.annotations || []).length, 0, "no duplicate naming");
+  assert.equal((call.layout.shapes || []).filter((sh) => sh.type === "rect").length, 2,
+    "the bands themselves are still drawn");
+  d2();
+}
+
 async function testTheGroundTrackGetsNoTimeBands() {
   const { container, fake } = reset();
   fake.setReview(Object.assign({}, REVIEW, {
@@ -925,6 +994,8 @@ async function run() {
     testPlotlyGraphsArePurgedOnLeavingTheReview,
     testPlotsAreSectionedWithJumpChips,
     testFlightModesAreShownAsAStripAndDrawnBehindEveryTimePlot,
+    testEveryBandNamesItsModeInThePlot,
+    testTheModeTimelineIsNotLabelledTwice,
     testTheGroundTrackGetsNoTimeBands,
     testTheModeStripNamesSpansAndTotalsTheTime,
     testSetpointSeriesAreDrawnAsMarkersNotLines,

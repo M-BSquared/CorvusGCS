@@ -744,6 +744,13 @@ Position and the same oscillation in Manual are different findings, and without
 the mode behind the trace you cannot tell them apart. Armed time is reported
 separately.
 
+Every band **names its mode inside the plot**, written down the band rather than
+across the trace. A colour on its own is a legend lookup, and reading a spike
+should not mean scrolling back to the strip to find out what was flying. A span
+too narrow to hold a readable label is left unnamed rather than printed over its
+neighbours, and the timeline plot is not labelled at all — its y axis already
+names every level.
+
 > Two mode enums exist and they are not interchangeable: `vehicle_status`
 > carries `NAVIGATION_STATE_*`, the older `commander_state` carries
 > `MAIN_STATE_*`, and 6 means Position-slow in one and Acro in the other. Each

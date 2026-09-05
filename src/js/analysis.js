@@ -920,13 +920,42 @@ Corvus.analysis = (function () {
       // not time, where a time span would be meaningless. The same oscillation
       // means different things in Position and in Manual, and this is what
       // lets the reader tell them apart without cross-referencing.
+      const annotations = [];
       if (!plot.xlabel && ui.modes && ui.modes.length) {
-        ui.modes.forEach((m) => shapes.push({
-          type: "rect", xref: "x", yref: "paper",
-          x0: m.start, x1: m.end, y0: 0, y1: 1,
-          fillcolor: modeColor(m.mode), opacity: 0.16,
-          line: { width: 0 }, layer: "below",
-        }));
+        // The plotted extent, not the flight's: a plot whose topic started
+        // late would otherwise place its labels off the drawn axis.
+        let xMin = Infinity;
+        let xMax = -Infinity;
+        traces.forEach((t) => {
+          if (!t.x || !t.x.length) return;
+          if (t.x[0] < xMin) xMin = t.x[0];
+          if (t.x[t.x.length - 1] > xMax) xMax = t.x[t.x.length - 1];
+        });
+        const span = xMax - xMin;
+        ui.modes.forEach((m) => {
+          shapes.push({
+            type: "rect", xref: "x", yref: "paper",
+            x0: m.start, x1: m.end, y0: 0, y1: 1,
+            fillcolor: modeColor(m.mode), opacity: 0.16,
+            line: { width: 0 }, layer: "below",
+          });
+          // Named in place, turned on its side, because a colour is only a
+          // legend lookup: the reader should not have to scroll back to the
+          // strip to find out what the band behind a spike was. The timeline
+          // plot is the exception — its y axis already names every level.
+          if (plot.id === "modes" || !(span > 0)) return;
+          const from = Math.max(m.start, xMin);
+          const to = Math.min(m.end, xMax);
+          // Too narrow to read: a rotated label in a sliver of a band lands on
+          // its neighbours and makes both unreadable.
+          if (to - from < span * 0.025) return;
+          annotations.push({
+            xref: "x", yref: "paper", x: (from + to) / 2, y: 0.985,
+            text: m.mode, textangle: -90, showarrow: false,
+            xanchor: "center", yanchor: "top",
+            font: { size: 9, color: modeColor(m.mode) }, opacity: 0.85,
+          });
+        });
       }
       // The rejection line on the EKF plot is the whole point of that plot.
       if (plot.threshold != null) {
@@ -937,6 +966,7 @@ Corvus.analysis = (function () {
         });
       }
       if (shapes.length) layout.shapes = shapes;
+      if (annotations.length) layout.annotations = annotations;
       try {
         window.Plotly.react(host, traces, layout, S.plotlyConfig(S.reducedMotion()));
         ui.drawn.push(host);
