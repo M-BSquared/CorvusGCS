@@ -540,7 +540,13 @@ Corvus.analysis = (function () {
     /** Release every Plotly graph this view drew. Plotly holds canvases and
      *  listeners per graph div; dropping the DOM alone leaks both. */
     function purgeReview() {
-      if (!ui || ui.kind !== "review" || !ui.drawn) return;
+      if (!ui || ui.kind !== "review") return;
+      if (ui.observer) {
+        try { ui.observer.disconnect(); } catch (_e) {}
+        ui.observer = null;
+        ui.pending = null;
+      }
+      if (!ui.drawn) return;
       if (typeof window !== "undefined" && window.Plotly) {
         ui.drawn.forEach((node) => {
           try { window.Plotly.purge(node); } catch (_e) {}
@@ -596,35 +602,59 @@ Corvus.analysis = (function () {
       // The flight as a strip of modes. Every plot below carries the same
       // bands, so this is the key as much as it is a timeline.
       if (ui.modes.length) {
-        const span = ui.modes[ui.modes.length - 1].end - ui.modes[0].start;
+        const first = ui.modes[0].start;
+        const last = ui.modes[ui.modes.length - 1].end;
+        const span = Math.max(0.001, last - first);
+
         const strip = S.el("div", "review-modes");
         strip.setAttribute("role", "img");
         strip.setAttribute("aria-label",
-          "Flight modes: " + ui.modes.map((m) => m.mode).join(", "));
+          "Flight modes: " + ui.modes.map((m) =>
+            m.mode + " from " + clock(m.start) + " to " + clock(m.end)).join(", "));
         ui.modes.forEach((m) => {
+          const width = Math.max(0.001, m.end - m.start);
           const seg = S.el("div", "review-mode-seg");
-          seg.style.flexGrow = String(Math.max(0.001, m.end - m.start));
+          seg.style.flexGrow = String(width);
           seg.style.background = modeColor(m.mode);
-          seg.title = m.mode + "  " + m.start.toFixed(1) + "–" + m.end.toFixed(1) + " s";
+          seg.title = m.mode + "  " + clock(m.start) + " – " + clock(m.end)
+            + "  (" + width.toFixed(0) + " s)";
+          // Name the span in place when it is wide enough to read; the key
+          // below covers the slivers.
+          if (width / span > 0.12) {
+            seg.appendChild(S.el("span", "review-mode-seg-label", m.mode));
+          }
           strip.appendChild(seg);
         });
         head.appendChild(strip);
 
+        // A time ruler under the strip, so "which mode when" is answerable
+        // from the overview rather than only from the timeline plot.
+        const ruler = S.el("div", "review-mode-ruler");
+        for (let i = 0; i <= 4; i++) {
+          const tick = S.el("span", "review-mode-tick", clock(first + (span * i) / 4));
+          ruler.appendChild(tick);
+        }
+        head.appendChild(ruler);
+
         const key = S.el("div", "review-mode-key");
+        const totals = {};
         const seen = [];
-        ui.modes.forEach((m) => { if (seen.indexOf(m.mode) < 0) seen.push(m.mode); });
+        ui.modes.forEach((m) => {
+          if (seen.indexOf(m.mode) < 0) seen.push(m.mode);
+          totals[m.mode] = (totals[m.mode] || 0) + (m.end - m.start);
+        });
         seen.forEach((name) => {
           const chip = S.el("span", "review-mode-chip");
           const dot = S.el("span", "review-mode-dot");
           dot.style.background = modeColor(name);
           chip.appendChild(dot);
           chip.appendChild(S.el("span", null, name));
+          // How long each mode was actually flown — the summary the strip
+          // alone cannot give when a mode appears more than once.
+          chip.appendChild(S.el("span", "review-mode-time",
+            totals[name].toFixed(0) + " s"));
           key.appendChild(chip);
         });
-        if (span > 0) {
-          key.appendChild(S.el("span", "review-mode-span",
-            span.toFixed(0) + " s of flight"));
-        }
         head.appendChild(key);
       }
 
@@ -682,6 +712,14 @@ Corvus.analysis = (function () {
       S.refreshIcons();
     }
 
+    /** Seconds as m:ss — a 7-minute flight is unreadable in raw seconds. */
+    function clock(seconds) {
+      const total = Math.max(0, Math.round(Number(seconds) || 0));
+      const minutes = Math.floor(total / 60);
+      const rest = total % 60;
+      return minutes + ":" + (rest < 10 ? "0" : "") + rest;
+    }
+
     function slug(text) {
       return String(text).toLowerCase().replace(/[^a-z0-9]+/g, "-");
     }
@@ -693,7 +731,36 @@ Corvus.analysis = (function () {
       card.appendChild(host);
       if (plot.note) card.appendChild(S.el("div", "review-note", plot.note));
       out.appendChild(card);
-      drawPlot(host, plot);
+      // Drawn when it comes into view. A full review is three dozen Plotly
+      // graphs, and building them all up front stalls the page for seconds
+      // before anything is readable — including the summary at the top, which
+      // is the part most reviews never scroll past.
+      if (!observe(host, plot)) drawPlot(host, plot);
+    }
+
+    /** Queue a plot for drawing on first scroll into view.
+     *  Returns false where IntersectionObserver is unavailable, so the caller
+     *  falls back to drawing immediately. */
+    function observe(host, plot) {
+      if (typeof window === "undefined" || typeof window.IntersectionObserver !== "function") {
+        return false;
+      }
+      if (!ui.observer) {
+        ui.pending = new Map();
+        ui.observer = new window.IntersectionObserver((entries) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            const queued = ui.pending && ui.pending.get(entry.target);
+            if (!queued) return;
+            ui.pending.delete(entry.target);
+            ui.observer.unobserve(entry.target);
+            drawPlot(entry.target, queued);
+          });
+        }, { rootMargin: "300px 0px" });
+      }
+      ui.pending.set(host, plot);
+      ui.observer.observe(host);
+      return true;
     }
 
     /** The aircraft's own commentary, with a severity filter. A log full of
@@ -749,15 +816,39 @@ Corvus.analysis = (function () {
       }
       const palette = Corvus.ui.chartColors();
       const order = ["nav", "healthy", "warning", "critical", "accent"];
-      const traces = plot.series.map((s, i) => ({
-        x: s.x, y: s.y, name: s.name, mode: "lines", type: "scatter",
-        line: { width: 1.4, color: palette[order[i % order.length]] },
-      }));
+      const traces = plot.series.map((s, i) => {
+        const color = palette[order[i % order.length]];
+        const trace = {
+          x: s.x, y: s.y, name: s.name, type: "scatter",
+          mode: s.draw === "markers" ? "markers" : "lines",
+        };
+        if (s.draw === "markers") {
+          // Setpoints are sparse and stepped; drawing them as a line implies
+          // values between the points that were never commanded.
+          trace.marker = { size: 5, color: color, symbol: "circle-open" };
+        } else {
+          trace.line = { width: 1.4, color: color };
+          // A step, not a ramp: a mode change or a setpoint change is
+          // instantaneous, and a slope across it is a drawing artefact.
+          if (s.shape) trace.line.shape = s.shape;
+        }
+        return trace;
+      });
       const layout = Object.assign({}, S.plotlyLayout(plot.unit || ""), {
         margin: { l: 52, r: 12, t: 6, b: 34 },
         showlegend: true,
         legend: { orientation: "h", y: -0.25, font: { size: 9 } },
       });
+      // Categorical y axis: the mode timeline names its levels instead of
+      // numbering them.
+      if (plot.ytick) {
+        layout.yaxis = Object.assign({}, layout.yaxis, {
+          tickvals: plot.ytick.vals, ticktext: plot.ytick.labels,
+          title: "", zeroline: false,
+          range: [-0.5, Math.max(0.5, plot.ytick.vals.length - 0.5)],
+        });
+        layout.showlegend = false;
+      }
       // Not every plot is against time: the ground track is north over east.
       if (plot.xlabel) {
         layout.xaxis = Object.assign({}, layout.xaxis, { title: plot.xlabel });
@@ -779,7 +870,7 @@ Corvus.analysis = (function () {
         ui.modes.forEach((m) => shapes.push({
           type: "rect", xref: "x", yref: "paper",
           x0: m.start, x1: m.end, y0: 0, y1: 1,
-          fillcolor: modeColor(m.mode), opacity: 0.10,
+          fillcolor: modeColor(m.mode), opacity: 0.16,
           line: { width: 0 }, layer: "below",
         }));
       }

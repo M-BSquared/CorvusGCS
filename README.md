@@ -729,12 +729,14 @@ The third tile on the Analysis page. Pick a downloaded ULog and Corvus reads it
 answer "was that flight healthy?". Findings sit above the plots, the aircraft's
 own log messages below them, with a severity filter.
 
-**Flight modes are drawn behind everything.** The flight is shown as a coloured
-strip at the top — one band per mode, with a key — and the *same* bands sit
-behind every time-based plot. That is the difference between a graph and a
-story: an oscillation in Position and the same oscillation in Manual are
-different findings, and without the mode behind the trace you cannot tell them
-apart. Armed time is reported separately.
+**Flight modes, three ways.** A labelled strip with a time ruler at the top
+(which mode, when, and how long each was flown), a stepped **Flight mode**
+timeline plot on the same time axis as everything else (exact transitions, read
+off the axis), and the *same* colours as bands behind every time-based plot.
+That last one is the difference between a graph and a story: an oscillation in
+Position and the same oscillation in Manual are different findings, and without
+the mode behind the trace you cannot tell them apart. Armed time is reported
+separately.
 
 > Two mode enums exist and they are not interchangeable: `vehicle_status`
 > carries `NAVIGATION_STATE_*`, the older `commander_state` carries
@@ -744,16 +746,27 @@ apart. Armed time is reported separately.
 > that — no bands are drawn at all, because bands placed from a stopped clock
 > would relabel the whole flight.
 
-Up to 26 plots in six sections, with jump links across the top:
+Up to 37 plots in six sections, with jump links across the top:
 
 | Section | Plots |
 | --- | --- |
-| **Flight** | ground track (north over east, equal axes), altitude, speed and climb rate, airspeed, estimated wind |
-| **Control** | attitude vs setpoint, angular rates vs rate setpoint, thrust demand |
+| **Flight** | flight-mode timeline, ground track (north over east, equal axes), altitude, local position X / Y / Z each against its setpoint, ground speed, velocity X / Y / Z each against its setpoint, airspeed, estimated wind |
+| **Control** | manual control input (the pilot's sticks), roll / pitch / yaw **angle** each against its setpoint, roll / pitch / yaw **angular rate** each against its rate setpoint, thrust demand |
 | **Airframe** | per-motor outputs |
-| **Estimator** | EKF innovation test ratios with the 1.0 rejection line drawn, **altitude sources compared** (estimator vs GPS vs barometer), **GPS vs estimated horizontal velocity**, estimated gyro bias |
-| **Sensors** | accelerometer clipping, vibration, magnetic field strength, IMU temperature, **barometer altitude and temperature**, GPS, **reported accuracy (eph/epv)**, GPS quality (fix type, jamming, noise), rangefinder |
+| **Estimator** | EKF innovation test ratios with the 1.0 rejection line drawn, altitude estimate (GPS MSL vs barometer vs fused, with the altitude setpoint as markers), GPS vs estimated horizontal velocity, estimated gyro bias |
+| **Sensors** | accelerometer clipping, vibration metrics (accel and gyro, per IMU), magnetic field strength, IMU temperature, barometer altitude and temperature, GPS satellites, GPS uncertainty (eph/epv/speed variance), GPS noise and jamming, GPS fix type, rangefinder |
 | **System** | battery voltage and current, pack state, processor and RAM, RC link |
+
+One plot per axis rather than three axes on one, because that is how the
+question is actually asked — "is roll tracking?" — and three estimates plus
+three setpoints on a single pair of axes is six lines nobody can read.
+Setpoints are drawn as markers where they are sparse and stepped: a line
+through them would imply values that were never commanded.
+
+Plots are drawn as they scroll into view. A full review is three dozen Plotly
+graphs, and building them all up front stalls the page before anything is
+readable — including the summary at the top, which is the part most reviews
+never scroll past.
 
 Only the plots the log can support are drawn — an airspeed plot on a multirotor
 log is absent, not empty, and the three-way altitude comparison appears only

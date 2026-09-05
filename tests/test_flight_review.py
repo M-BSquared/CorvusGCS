@@ -120,9 +120,9 @@ def test_attitude_is_converted_from_the_logged_quaternion() -> None:
         _add(1, "vehicle_attitude"),
         _row(1, struct.pack("<Q4f", 0, half, half, 0.0, 0.0)),
     )
-    plot = _plot(review(read(blob), "x.ulg"), "attitude")
+    plot = _plot(review(read(blob), "x.ulg"), "att_roll")
     assert plot is not None
-    roll = next(s for s in plot["series"] if s["name"] == "Roll")
+    roll = next(s for s in plot["series"] if s["name"] == "Roll estimate")
     assert roll["y"][0] == pytest.approx(90.0, abs=0.01)
 
 
@@ -175,11 +175,13 @@ def test_angular_rates_are_converted_to_degrees_and_paired_with_setpoints() -> N
         _row(1, struct.pack("<Q3f", 0, math.pi, 0.0, 0.0)),
         _row(2, struct.pack("<Q3f", 0, math.pi / 2, 0.0, 0.0)),
     )
-    plot = _plot(review(read(blob), "x.ulg"), "rates")
+    # One plot per axis, not three axes on one: the question is asked per
+    # axis, and six lines on one pair of axes is unreadable.
+    plot = _plot(review(read(blob), "x.ulg"), "rate_roll")
     assert plot["group"] == "Control"
     roll = next(s for s in plot["series"] if s["name"] == "Roll rate")
     assert roll["y"][0] == pytest.approx(180.0, abs=0.01)
-    setpoint = next(s for s in plot["series"] if s["name"] == "Roll setpoint")
+    setpoint = next(s for s in plot["series"] if s["name"] == "Roll rate setpoint")
     assert setpoint["y"][0] == pytest.approx(90.0, abs=0.01)
 
 
@@ -374,11 +376,11 @@ def test_altitude_sources_are_compared_on_one_axis() -> None:
     plot = _plot(review(read(blob), "x.ulg"), "alt_sources")
     assert plot["group"] == "Estimator"
     by_name = {s["name"]: s["y"][0] for s in plot["series"]}
-    assert by_name["Estimator"] == pytest.approx(512.0)
+    assert by_name["Fused estimate"] == pytest.approx(512.0)
     # GPS altitude is logged in millimetres; getting that wrong puts one trace
     # a thousand times off and makes the comparison meaningless.
-    assert by_name["GPS"] == pytest.approx(513.0)
-    assert by_name["Barometer"] == pytest.approx(510.5)
+    assert by_name["GPS altitude (MSL)"] == pytest.approx(513.0)
+    assert by_name["Barometer altitude"] == pytest.approx(510.5)
 
 
 def test_a_single_altitude_source_is_not_called_a_comparison() -> None:
@@ -404,6 +406,123 @@ def test_gps_and_estimator_velocity_are_compared() -> None:
     by_name = {s["name"]: s["y"][0] for s in plot["series"]}
     assert by_name["GPS"] == pytest.approx(5.0)
     assert by_name["Estimator"] == pytest.approx(10.0)
+
+
+def test_each_axis_gets_its_own_angle_and_rate_plot() -> None:
+    """Six plots, not two. "Is roll tracking?" is asked per axis, and three
+    estimates plus three setpoints on one pair of axes is unreadable."""
+    import math
+    half = 0.7071067811865476
+    blob = _build(
+        _fmt("vehicle_attitude:uint64_t timestamp;float[4] q;"),
+        _fmt("vehicle_angular_velocity:uint64_t timestamp;float[3] xyz;"),
+        _add(1, "vehicle_attitude"), _add(2, "vehicle_angular_velocity"),
+        _row(1, struct.pack("<Q4f", 0, half, half, 0.0, 0.0)),
+        _row(2, struct.pack("<Q3f", 0, 0.0, 0.0, math.pi)),
+    )
+    result = review(read(blob), "x.ulg")
+    ids = {p["id"] for p in result["plots"]}
+    assert {"att_roll", "att_pitch", "att_yaw",
+            "rate_roll", "rate_pitch", "rate_yaw"} <= ids
+    yaw_rate = _plot(result, "rate_yaw")["series"][0]
+    assert yaw_rate["y"][0] == pytest.approx(180.0, abs=0.01)
+
+
+def test_local_position_and_velocity_carry_their_setpoints() -> None:
+    blob = _build(
+        _fmt("vehicle_local_position:uint64_t timestamp;float x;float y;float z;"
+             "float vx;float vy;float vz;"),
+        _fmt("vehicle_local_position_setpoint:uint64_t timestamp;float x;float y;"
+             "float z;float vx;float vy;float vz;"),
+        _add(1, "vehicle_local_position"), _add(2, "vehicle_local_position_setpoint"),
+        _row(1, struct.pack("<Q6f", 0, 10.0, 20.0, -30.0, 1.0, 2.0, -3.0)),
+        _row(2, struct.pack("<Q6f", 0, 11.0, 21.0, -31.0, 1.5, 2.5, -3.5)),
+    )
+    result = review(read(blob), "x.ulg")
+    x = _plot(result, "pos_x")
+    assert [s["name"] for s in x["series"]] == ["Estimate", "Setpoint"]
+    assert x["series"][0]["y"][0] == pytest.approx(10.0)
+    # Z and vertical velocity are flipped out of NED so up reads as up.
+    assert _plot(result, "pos_z")["series"][0]["y"][0] == pytest.approx(30.0)
+    assert _plot(result, "vel_z")["series"][0]["y"][0] == pytest.approx(3.0)
+
+
+def test_manual_control_reads_both_field_spellings() -> None:
+    """PX4 renamed the stick axes from x/y/z/r to pitch/roll/throttle/yaw, and
+    both spellings appear across the supported firmware range."""
+    def _sticks(fields: str, values: tuple) -> dict:
+        blob = _build(
+            _fmt("manual_control_setpoint:uint64_t timestamp;" + fields),
+            _add(1, "manual_control_setpoint"),
+            _row(1, struct.pack("<Q4f", 0, *values)),
+        )
+        plot = _plot(review(read(blob), "x.ulg"), "manual")
+        return {s["name"]: s["y"][0] for s in plot["series"]}
+
+    modern = _sticks("float roll;float pitch;float yaw;float throttle;",
+                     (0.1, 0.2, 0.3, 0.4))
+    legacy = _sticks("float y;float x;float r;float z;", (0.1, 0.2, 0.3, 0.4))
+    assert modern["Roll stick"] == pytest.approx(0.1)
+    assert legacy["Roll stick"] == pytest.approx(0.1)
+    assert modern["Throttle"] == pytest.approx(0.4)
+    assert legacy["Throttle"] == pytest.approx(0.4)
+
+
+def test_the_altitude_setpoint_is_drawn_as_markers_in_absolute_altitude() -> None:
+    """Sparse and stepped: a line through it would imply values that were
+    never commanded. And it has to share the axis with the other three, which
+    means lifting the NED setpoint onto the local frame's AMSL origin."""
+    blob = _build(
+        _fmt("vehicle_local_position:uint64_t timestamp;float z;float ref_alt;"),
+        _fmt("vehicle_local_position_setpoint:uint64_t timestamp;float z;"),
+        _fmt("vehicle_air_data:uint64_t timestamp;float baro_alt_meter;"),
+        _add(1, "vehicle_local_position"), _add(2, "vehicle_local_position_setpoint"),
+        _add(3, "vehicle_air_data"),
+        _row(1, struct.pack("<Qff", 0, -20.0, 500.0)),
+        _row(2, struct.pack("<Qf", 0, -25.0)),
+        _row(3, struct.pack("<Qf", 0, 519.0)),
+    )
+    plot = _plot(review(read(blob), "x.ulg"), "alt_sources")
+    setpoint = next(s for s in plot["series"] if s["name"] == "Altitude setpoint")
+    assert setpoint["draw"] == "markers"
+    assert setpoint["y"][0] == pytest.approx(525.0), "ref_alt + 25 m up"
+
+
+def test_the_mode_timeline_is_a_step_with_named_levels() -> None:
+    """The bands say which mode a trace was flown in; this says when each one
+    started and ended, which the bands cannot — they have no axis."""
+    blob = _build(
+        _fmt("vehicle_status:uint64_t timestamp;uint8_t nav_state;uint8_t arming_state;"),
+        _add(1, "vehicle_status"),
+        _row(1, struct.pack("<QBB", 0, 0, 1)),
+        _row(1, struct.pack("<QBB", 4_000_000, 2, 2)),
+        _row(1, struct.pack("<QBB", 9_000_000, 2, 2)),
+    )
+    result = review(read(blob), "x.ulg")
+    plot = _plot(result, "modes")
+    assert plot is not None and plot["group"] == "Flight"
+    assert result["plots"][0]["id"] == "modes", "it leads the review"
+    assert plot["ytick"]["labels"] == ["Manual", "Position"]
+    trace = plot["series"][0]
+    # A step: the transition is vertical, which is what actually happened.
+    assert trace["shape"] == "hv"
+    assert trace["x"] == [0.0, 4.0, 4.0, 9.0]
+    assert trace["y"] == [0, 0, 1, 1]
+
+
+def test_gps_uncertainty_and_noise_are_separate_plots() -> None:
+    blob = _build(
+        _fmt("vehicle_gps_position:uint64_t timestamp;float eph;float epv;"
+             "uint16_t noise_per_ms;uint16_t jamming_indicator;uint8_t fix_type;"),
+        _add(1, "vehicle_gps_position"),
+        _row(1, struct.pack("<QffHHB", 0, 0.8, 1.2, 90, 40, 3)),
+    )
+    result = review(read(blob), "x.ulg")
+    assert [s["name"] for s in _plot(result, "gps_accuracy")["series"]][:2] == [
+        "Horizontal (eph)", "Vertical (epv)"]
+    assert [s["name"] for s in _plot(result, "gps_noise")["series"]] == [
+        "Noise per ms", "Jamming indicator"]
+    assert [s["name"] for s in _plot(result, "gps_quality")["series"]] == ["Fix type"]
 
 
 # ---------------------------------------------------------------------------

@@ -2041,17 +2041,35 @@ svg { display: block; }
 /* The flight as a strip of modes. Every plot below carries the same bands, so
    this is the key as much as it is a timeline. */
 .review-modes {
-  display: flex; height: 10px; border-radius: 3px; overflow: hidden;
+  display: flex; height: 22px; border-radius: 4px; overflow: hidden;
   border: 1px solid var(--border-soft);
 }
-.review-mode-seg { min-width: 2px; }
-.review-mode-key { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.review-mode-seg {
+  min-width: 2px; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+/* Named in place where the span is wide enough to read; the key below covers
+   the slivers, so no mode goes unlabelled either way. */
+.review-mode-seg-label {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.4px;
+  text-transform: uppercase; color: #10141C;
+  white-space: nowrap; padding: 0 4px;
+}
+/* A time ruler under the strip: "which mode when" should be answerable from
+   the overview, not only from the timeline plot. */
+.review-mode-ruler {
+  display: flex; justify-content: space-between;
+  font-family: var(--mono); font-size: 9.5px; color: var(--text-3);
+  margin-top: -4px;
+}
+.review-mode-key { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
 .review-mode-chip {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: 11px; color: var(--text-2);
 }
 .review-mode-dot { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; }
-.review-mode-span { font-size: 10.5px; color: var(--text-3); margin-left: auto; }
+.review-mode-time { font-family: var(--mono); font-size: 10px; color: var(--text-3); }
 
 /* Jump chips: two dozen plots is a scroll, and this is the difference between
    a report you skim and one you give up on. */

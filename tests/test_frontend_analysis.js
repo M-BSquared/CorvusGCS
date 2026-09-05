@@ -691,6 +691,83 @@ async function testTheGroundTrackGetsNoTimeBands() {
   destroy();
 }
 
+async function testTheModeStripNamesSpansAndTotalsTheTime() {
+  const { container } = reset();
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "review");
+  fire(buttonByLabel(container, "Review"), "click");
+  await flush();
+  await flush();
+
+  // Wide spans are named in place; the key covers the slivers either way.
+  const labels = findByClass(container, "review-mode-seg-label").map((e) => e.textContent);
+  assert.deepEqual(labels, ["Manual", "Position"]);
+  // How long each mode was actually flown — the strip alone cannot say that
+  // when a mode appears more than once.
+  const times = findByClass(container, "review-mode-time").map((e) => e.textContent);
+  assert.deepEqual(times, ["4 s", "6 s"]);
+  // And a time ruler, so "which mode when" is answerable from the overview.
+  const ticks = findByClass(container, "review-mode-tick").map((e) => e.textContent);
+  assert.equal(ticks.length, 5);
+  assert.equal(ticks[0], "0:00");
+  assert.equal(ticks[4], "0:10");
+  destroy();
+}
+
+async function testSetpointSeriesAreDrawnAsMarkersNotLines() {
+  const { container, fake } = reset();
+  fake.setReview(Object.assign({}, REVIEW, {
+    groups: ["Estimator"],
+    plots: [{ id: "alt_sources", title: "Altitude estimate", unit: "m AMSL",
+              group: "Estimator",
+              series: [
+                { name: "Fused estimate", x: [0, 1], y: [10, 11] },
+                { name: "Altitude setpoint", x: [0, 1], y: [10, 12], draw: "markers" },
+              ] }],
+  }));
+  window.Plotly.reactCalls.length = 0;
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "review");
+  fire(buttonByLabel(container, "Review"), "click");
+  await flush();
+  await flush();
+
+  const traces = window.Plotly.reactCalls[0].data;
+  assert.equal(traces[0].mode, "lines");
+  // Setpoints are sparse and stepped; a line through them implies values that
+  // were never commanded.
+  assert.equal(traces[1].mode, "markers");
+  assert.ok(traces[1].marker, "drawn as points");
+  destroy();
+}
+
+async function testTheModeTimelineGetsNamedAxisLevels() {
+  const { container, fake } = reset();
+  fake.setReview(Object.assign({}, REVIEW, {
+    groups: ["Flight"],
+    plots: [{ id: "modes", title: "Flight mode", unit: "", group: "Flight",
+              ytick: { vals: [0, 1], labels: ["Manual", "Position"] },
+              series: [{ name: "Flight mode", x: [0, 4, 4, 10], y: [0, 0, 1, 1],
+                         draw: "lines", shape: "hv" }] }],
+  }));
+  window.Plotly.reactCalls.length = 0;
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "review");
+  fire(buttonByLabel(container, "Review"), "click");
+  await flush();
+  await flush();
+
+  const call = window.Plotly.reactCalls[0];
+  assert.deepEqual(call.layout.yaxis.ticktext, ["Manual", "Position"],
+    "levels are named, not numbered");
+  // A step, not a ramp: a mode change is instantaneous.
+  assert.equal(call.data[0].line.shape, "hv");
+  destroy();
+}
+
 async function testDestroyStopsPollingAndUnsubscribes() {
   const { container, fake } = reset();
   const destroy = Corvus.analysis.render(container);
@@ -738,6 +815,9 @@ async function run() {
     testPlotsAreSectionedWithJumpChips,
     testFlightModesAreShownAsAStripAndDrawnBehindEveryTimePlot,
     testTheGroundTrackGetsNoTimeBands,
+    testTheModeStripNamesSpansAndTotalsTheTime,
+    testSetpointSeriesAreDrawnAsMarkersNotLines,
+    testTheModeTimelineGetsNamedAxisLevels,
     testDestroyStopsPollingAndUnsubscribes,
   ];
   for (const t of tests) {

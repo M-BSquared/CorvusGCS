@@ -268,27 +268,29 @@ def _plot_clipping(log: ULog) -> dict | None:
 
 
 def _plot_vibration(log: ULog) -> dict | None:
+    """Vibration metrics per IMU — accel and gyro, which fail differently."""
     topic = _first_topic(log, ("vehicle_imu_status", "estimator_status"))
     if topic is None:
         return None
     series = []
     if topic == "vehicle_imu_status":
         for multi_id in log.instances(topic)[:3]:
-            field = _first_field(log, topic, ("accel_vibration_metric",), multi_id)
-            if field is None:
-                continue
-            series.append(_series(log, topic, field, f"IMU {multi_id}", multi_id))
+            for field, label in (("accel_vibration_metric", "Accel"),
+                                 ("gyro_vibration_metric", "Gyro")):
+                found = _first_field(log, topic, (field,), multi_id)
+                if found:
+                    series.append(_series(log, topic, found,
+                                          f"{label} IMU {multi_id}", multi_id))
     else:
-        values = log.series(topic, "vibe", 0)
-        if values and isinstance(values[0], list):
-            labels = ["Delta angle", "Delta velocity", "Peak accel"]
-            for index in range(min(3, len(values[0]))):
-                column = [row[index] for row in values]
-                series.append(_series_from_column(log, topic, column, labels[index]))
-    return _plot("vibration", "Vibration", "m/s²", series,
-                 note="Look for a level that climbs with throttle — that is a "
-                      "propeller or motor problem, not a tuning one.",
-                      group="Sensors")
+        # estimator_status.vibe: [delta-angle coning, delta-angle, delta-velocity]
+        series = _vector(log, topic, "vibe",
+                         ("Delta angle coning", "Delta angle", "Delta velocity"))
+    return _plot("vibration", "Vibration metrics", "m/s² · rad/s", series,
+                 group="Sensors",
+                 note="Read against the thrust plot: a level that climbs with "
+                      "throttle is a propeller or motor problem, not a tuning "
+                      "one. PX4 treats roughly 30 as the point to act on and "
+                      "60 as the point the estimator suffers.")
 
 
 def _plot_ekf(log: ULog) -> dict | None:
@@ -311,47 +313,188 @@ def _plot_ekf(log: ULog) -> dict | None:
                       group="Estimator")
 
 
-def _plot_attitude(log: ULog) -> dict | None:
-    """Roll and pitch, estimate against setpoint — the tracking question."""
+def _euler(log: ULog) -> tuple[str, list[float], list[float], list[float]] | None:
+    """Roll, pitch and yaw in degrees, from the logged attitude quaternion."""
     topic = _first_topic(log, ("vehicle_attitude", "control_state"))
     if topic is None:
         return None
     quats = log.series(topic, "q", 0)
     if not quats or not isinstance(quats[0], list):
         return None
-    times = _time_axis(log, topic, 0)
     roll: list[float] = []
     pitch: list[float] = []
+    yaw: list[float] = []
     for q in quats:
         if len(q) < 4:
             roll.append(float("nan"))
             pitch.append(float("nan"))
+            yaw.append(float("nan"))
             continue
         w, x, y, z = float(q[0]), float(q[1]), float(q[2]), float(q[3])
         roll.append(math.degrees(math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))))
-        sin_pitch = max(-1.0, min(1.0, 2 * (w * y - z * x)))
-        pitch.append(math.degrees(math.asin(sin_pitch)))
-    span = min(len(times), len(roll))
-    series = []
-    for values, label in ((roll, "Roll"), (pitch, "Pitch")):
-        t, v = _decimate(times[:span], values[:span])
-        series.append({"name": label, "x": [round(x, 3) for x in t],
-                       "y": [None if y != y else round(y, 3) for y in v]})
+        pitch.append(math.degrees(math.asin(max(-1.0, min(1.0, 2 * (w * y - z * x))))))
+        yaw.append(math.degrees(math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))))
+    return topic, roll, pitch, yaw
+
+
+def _attitude_plot(log: ULog, axis: str) -> dict | None:
+    """One axis of attitude: estimate against setpoint.
+
+    One plot per axis rather than all three on one, because that is how the
+    question is actually asked — "is roll tracking?" — and three estimates plus
+    three setpoints on a single axis is six lines nobody can read.
+    """
+    euler = _euler(log)
+    if euler is None:
+        return None
+    topic, roll, pitch, yaw = euler
+    values = {"roll": roll, "pitch": pitch, "yaw": yaw}[axis]
+    label = axis.capitalize()
+    series = [_series_from_column(log, topic, values, f"{label} estimate")]
+
     setpoint = _first_topic(log, ("vehicle_attitude_setpoint",))
     if setpoint:
-        for field, label in (("roll_body", "Roll setpoint"), ("pitch_body", "Pitch setpoint")):
-            found = _first_field(log, setpoint, (field,))
-            if found:
-                series.append(_series(log, setpoint, found, label,
-                                      transform=math.degrees))
-    return _plot("attitude", "Attitude", "degrees", series,
-                 note="The estimate should follow the setpoint closely. A "
-                      "persistent gap is a tuning problem; a sudden divergence "
-                      "is not.",
-                      group="Control")
+        found = _first_field(log, setpoint, (f"{axis}_body", axis))
+        if found:
+            series.append(_series(log, setpoint, found, f"{label} setpoint",
+                                  transform=math.degrees))
+    note = ("The estimate should sit on the setpoint. A steady offset is trim "
+            "or tuning; a sudden divergence is not.")
+    if axis == "yaw":
+        note = ("Yaw wraps at ±180°, so a jump between the two is the wrap, not "
+                "the aircraft. Watch the gap between the pair instead.")
+    return _plot(f"att_{axis}", f"{label} angle", "degrees", series,
+                 group="Control", note=note)
+
+
+def _rate_plot(log: ULog, axis: str) -> dict | None:
+    """One axis of angular rate: measured against demanded — the tuning plot."""
+    index = {"roll": 0, "pitch": 1, "yaw": 2}[axis]
+    label = axis.capitalize()
+    topic = _first_topic(log, ("vehicle_angular_velocity", "sensor_combined"))
+    if topic is None:
+        return None
+    field = "xyz" if topic == "vehicle_angular_velocity" else "gyro_rad"
+    values = log.series(topic, field, 0)
+    if not values or not isinstance(values[0], list) or len(values[0]) <= index:
+        return None
+    column = [
+        float(row[index]) * 180.0 / math.pi if index < len(row) else float("nan")
+        for row in values
+    ]
+    series = [_series_from_column(log, topic, column, f"{label} rate")]
+
+    setpoint = _first_topic(log, ("vehicle_rates_setpoint",))
+    if setpoint:
+        found = _first_field(log, setpoint, (axis,))
+        if found:
+            series.append(_series(log, setpoint, found, f"{label} rate setpoint",
+                                  scale=180.0 / math.pi))
+    return _plot(f"rate_{axis}", f"{label} angular rate", "deg/s", series,
+                 group="Control",
+                 note="Lag behind the setpoint means the gains are low; "
+                      "overshoot and ringing mean they are high.")
+
+
+def _plot_att_roll(log: ULog) -> dict | None:
+    return _attitude_plot(log, "roll")
+
+
+def _plot_rate_roll(log: ULog) -> dict | None:
+    return _rate_plot(log, "roll")
+
+
+def _plot_att_pitch(log: ULog) -> dict | None:
+    return _attitude_plot(log, "pitch")
+
+
+def _plot_rate_pitch(log: ULog) -> dict | None:
+    return _rate_plot(log, "pitch")
+
+
+def _plot_att_yaw(log: ULog) -> dict | None:
+    return _attitude_plot(log, "yaw")
+
+
+def _plot_rate_yaw(log: ULog) -> dict | None:
+    return _rate_plot(log, "yaw")
+
+
+def _local_pair(log: ULog, plot_id: str, title: str, field: str,
+                unit: str, scale: float = 1.0, note: str = "") -> dict | None:
+    """One local-frame channel: estimate and, where logged, its setpoint."""
+    if not log.has("vehicle_local_position"):
+        return None
+    found = _first_field(log, "vehicle_local_position", (field,))
+    if found is None:
+        return None
+    series = [_series(log, "vehicle_local_position", found, "Estimate",
+                      scale=scale)]
+    setpoint = _first_topic(log, ("vehicle_local_position_setpoint",))
+    if setpoint:
+        target = _first_field(log, setpoint, (field,))
+        if target:
+            series.append(_series(log, setpoint, target, "Setpoint", scale=scale))
+    return _plot(plot_id, title, unit, series, group="Flight", note=note)
+
+
+def _plot_pos_x(log: ULog) -> dict | None:
+    return _local_pair(log, "pos_x", "Local position X (north)", "x", "m")
+
+
+def _plot_pos_y(log: ULog) -> dict | None:
+    return _local_pair(log, "pos_y", "Local position Y (east)", "y", "m")
+
+
+def _plot_pos_z(log: ULog) -> dict | None:
+    # NED: down is positive, and nobody reads height that way.
+    return _local_pair(log, "pos_z", "Local position Z (height)", "z", "m",
+                       scale=-1.0,
+                       note="Flipped out of NED so up is up. Zero is where the "
+                            "estimator started, not the ground.")
+
+
+def _plot_vel_x(log: ULog) -> dict | None:
+    return _local_pair(log, "vel_x", "Velocity X (north)", "vx", "m/s")
+
+
+def _plot_vel_y(log: ULog) -> dict | None:
+    return _local_pair(log, "vel_y", "Velocity Y (east)", "vy", "m/s")
+
+
+def _plot_vel_z(log: ULog) -> dict | None:
+    return _local_pair(log, "vel_z", "Velocity Z (climb)", "vz", "m/s",
+                       scale=-1.0,
+                       note="Flipped out of NED, so a climb reads as a climb.")
+
+
+def _plot_manual_control(log: ULog) -> dict | None:
+    """What the pilot asked for. Without it, every control plot is missing its
+    input and an aggressive stick looks like an unstable aircraft."""
+    topic = _first_topic(log, ("manual_control_setpoint", "manual_control_input"))
+    if topic is None:
+        return None
+    series = []
+    # PX4 renamed these from x/y/z/r to pitch/roll/throttle/yaw; both spellings
+    # appear in the supported firmware range.
+    for names, label in (
+        (("roll", "y"), "Roll stick"),
+        (("pitch", "x"), "Pitch stick"),
+        (("yaw", "r"), "Yaw stick"),
+        (("throttle", "z"), "Throttle"),
+    ):
+        found = _first_field(log, topic, names)
+        if found:
+            series.append(_series(log, topic, found, label))
+    return _plot("manual", "Manual control input", "normalised", series,
+                 group="Control",
+                 note="The pilot's side of every control plot above. A rate "
+                      "that only misbehaves while a stick is moving is a "
+                      "different problem from one that misbehaves on its own.")
 
 
 def _plot_altitude(log: ULog) -> dict | None:
+
     topic = _first_topic(log, ("vehicle_local_position", "vehicle_global_position"))
     if topic is None:
         return None
@@ -634,17 +777,12 @@ def _plot_gps_quality(log: ULog) -> dict | None:
     if topic is None:
         return None
     series = []
-    for field, label in (("fix_type", "Fix type"),
-                         ("jamming_indicator", "Jamming"),
-                         ("noise_per_ms", "Noise")):
-        found = _first_field(log, topic, (field,))
-        if found:
-            series.append(_series(log, topic, found, label))
-    return _plot("gps_quality", "GPS quality", "fix / indicator", series,
-                 group="Sensors",
-                 note="Fix type dropping below 3 means no 3-D fix. A jamming "
-                      "indicator that climbs is usually the aircraft's own "
-                      "electronics, not somebody else's.")
+    found = _first_field(log, topic, ("fix_type",))
+    if found:
+        series.append(_series(log, topic, found, "Fix type"))
+    return _plot("gps_quality", "GPS fix type", "fix", series, group="Sensors",
+                 note="Below 3 there is no 3-D fix, and every position plot "
+                      "above is running on dead reckoning.")
 
 
 def _plot_altitude_sources(log: ULog) -> dict | None:
@@ -656,19 +794,7 @@ def _plot_altitude_sources(log: ULog) -> dict | None:
     to put them side by side.
     """
     series = []
-
-    if log.has("vehicle_global_position"):
-        field = _first_field(log, "vehicle_global_position", ("alt",))
-        if field:
-            series.append(_series(log, "vehicle_global_position", field, "Estimator"))
-    elif log.has("vehicle_local_position"):
-        z = log.series("vehicle_local_position", "z", 0)
-        ref = log.series("vehicle_local_position", "ref_alt", 0)
-        if z and ref:
-            span = min(len(z), len(ref))
-            amsl = [float(ref[i]) - float(z[i]) for i in range(span)]
-            series.append(_series_from_column(log, "vehicle_local_position",
-                                              amsl, "Estimator"))
+    reference = _reference_altitude(log)
 
     gps_topic = _first_topic(log, ("vehicle_gps_position", "sensor_gps"))
     if gps_topic:
@@ -678,38 +804,103 @@ def _plot_altitude_sources(log: ULog) -> dict | None:
             # PX4 logs GPS altitude as int32 millimetres; a float field is
             # already metres. Guessing wrong puts one trace 1000x off.
             scale = 1e-3 if values and isinstance(values[0], int) else 1.0
-            series.append(_series(log, gps_topic, field, "GPS", scale=scale))
+            series.append(_series(log, gps_topic, field, "GPS altitude (MSL)",
+                                  scale=scale))
 
     baro_topic = _first_topic(log, ("vehicle_air_data", "sensor_baro"))
     if baro_topic:
         field = _first_field(log, baro_topic, ("baro_alt_meter", "altitude"))
         if field:
-            series.append(_series(log, baro_topic, field, "Barometer"))
+            series.append(_series(log, baro_topic, field, "Barometer altitude"))
 
-    if len(series) < 2:
+    if log.has("vehicle_global_position"):
+        field = _first_field(log, "vehicle_global_position", ("alt",))
+        if field:
+            series.append(_series(log, "vehicle_global_position", field,
+                                  "Fused estimate"))
+    elif log.has("vehicle_local_position"):
+        z = log.series("vehicle_local_position", "z", 0)
+        ref = log.series("vehicle_local_position", "ref_alt", 0)
+        if z and ref:
+            span = min(len(z), len(ref))
+            amsl = [float(ref[i]) - float(z[i]) for i in range(span)]
+            series.append(_series_from_column(log, "vehicle_local_position",
+                                              amsl, "Fused estimate"))
+
+    # What the controller was AIMING at, drawn as markers because it is sparse
+    # and stepped. A fused estimate that sits away from its setpoint is the
+    # difference between a sensor problem and a control problem.
+    setpoint_topic = _first_topic(log, ("vehicle_local_position_setpoint",))
+    if setpoint_topic and reference is not None:
+        z = log.series(setpoint_topic, "z", 0)
+        if z:
+            amsl = [
+                reference - float(v) if -1e5 < float(v) < 1e5 else float("nan")
+                for v in z
+            ]
+            point = _series_from_column(log, setpoint_topic, amsl,
+                                        "Altitude setpoint")
+            point["draw"] = "markers"
+            series.append(point)
+
+    if len([s for s in series if s and s.get("draw") != "markers"]) < 2:
         return None            # one line is the altitude plot, not a comparison
-    return _plot("alt_sources", "Altitude sources", "m AMSL", series,
+    return _plot("alt_sources", "Altitude estimate", "m AMSL", series,
                  group="Estimator",
-                 note="The three should track each other. GPS stepping away is "
-                      "a fix problem; the barometer drifting away is weather or "
-                      "prop wash reaching the sensor.")
+                 note="The three sources should track each other. GPS stepping "
+                      "away is a fix problem; the barometer drifting away is "
+                      "weather or prop wash reaching the sensor. The fused "
+                      "estimate sitting away from its setpoint is neither — "
+                      "that is the controller.")
+
+
+def _reference_altitude(log: ULog) -> float | None:
+    """The local frame's AMSL origin, so a NED setpoint can be plotted with
+    the absolute altitudes rather than on its own axis."""
+    for value in log.series("vehicle_local_position", "ref_alt", 0):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if -2000.0 < number < 20000.0:
+            return number
+    return None
 
 
 def _plot_gps_accuracy(log: ULog) -> dict | None:
-    """Reported position accuracy — the number the EKF weights GPS by."""
+    """Reported position uncertainty — the number the EKF weights GPS by."""
     topic = _first_topic(log, ("vehicle_gps_position", "sensor_gps"))
     if topic is None:
         return None
     series = []
-    for field, label in (("eph", "Horizontal (eph)"), ("epv", "Vertical (epv)")):
+    for field, label in (("eph", "Horizontal (eph)"), ("epv", "Vertical (epv)"),
+                         ("s_variance_m_s", "Speed variance")):
         found = _first_field(log, topic, (field,))
         if found:
             series.append(_series(log, topic, found, label))
-    return _plot("gps_accuracy", "GPS reported accuracy", "m", series,
+    return _plot("gps_accuracy", "GPS uncertainty", "m", series,
                  group="Sensors",
                  note="This is what the receiver claims, not what it achieved. "
                       "A value that climbs while the satellite count holds is "
-                      "usually multipath.")
+                      "usually multipath — read it with the noise plot below.")
+
+
+def _plot_gps_noise(log: ULog) -> dict | None:
+    """Receiver noise and jamming. Usually the aircraft's own electronics."""
+    topic = _first_topic(log, ("vehicle_gps_position", "sensor_gps"))
+    if topic is None:
+        return None
+    series = []
+    for field, label in (("noise_per_ms", "Noise per ms"),
+                         ("jamming_indicator", "Jamming indicator")):
+        found = _first_field(log, topic, (field,))
+        if found:
+            series.append(_series(log, topic, found, label))
+    return _plot("gps_noise", "GPS noise and jamming", "indicator", series,
+                 group="Sensors",
+                 note="A jamming indicator that rises with throttle is almost "
+                      "always the aircraft's own power wiring or video "
+                      "transmitter, not somebody else's jammer.")
 
 
 def _plot_baro(log: ULog) -> dict | None:
@@ -923,7 +1114,7 @@ def _findings(log: ULog, plots: list[dict]) -> list[dict[str, str]]:
                             "That is an airframe imbalance, not a tuning one."})
 
     vibration = by_id.get("vibration")
-    if vibration and vibration.get("unit") == "m/s²":
+    if vibration:
         worst = 0.0
         for s in vibration["series"]:
             finite = [v for v in s["y"] if v is not None]
@@ -991,17 +1182,22 @@ def _findings(log: ULog, plots: list[dict]) -> list[dict[str, str]]:
 
 # Order is the reading order of the page, grouped by section.
 _PLOTTERS = (
-    # Flight
-    _plot_track, _plot_altitude, _plot_velocity, _plot_airspeed, _plot_wind,
-    # Control
-    _plot_attitude, _plot_rates, _plot_thrust,
+    # Flight — where it went
+    _plot_track, _plot_altitude, _plot_pos_x, _plot_pos_y, _plot_pos_z,
+    _plot_velocity, _plot_vel_x, _plot_vel_y, _plot_vel_z,
+    _plot_airspeed, _plot_wind,
+    # Control — what was asked of it, per axis
+    _plot_manual_control, _plot_att_roll, _plot_rate_roll,
+    _plot_att_pitch, _plot_rate_pitch, _plot_att_yaw, _plot_rate_yaw,
+    _plot_thrust,
     # Airframe
     _plot_actuators,
     # Estimator
     _plot_ekf, _plot_altitude_sources, _plot_gps_velocity, _plot_bias,
     # Sensors
     _plot_clipping, _plot_vibration, _plot_mag, _plot_imu_temp, _plot_baro,
-    _plot_gps, _plot_gps_accuracy, _plot_gps_quality, _plot_distance,
+    _plot_gps, _plot_gps_accuracy, _plot_gps_noise, _plot_gps_quality,
+    _plot_distance,
     # System
     _plot_battery, _plot_power, _plot_cpu, _plot_rc,
 )
@@ -1015,8 +1211,10 @@ REVIEW_TOPICS = (
     "estimator_status", "estimator_sensor_bias",
     "vehicle_attitude", "control_state", "vehicle_attitude_setpoint",
     "vehicle_angular_velocity", "vehicle_rates_setpoint",
-    "vehicle_thrust_setpoint",
-    "vehicle_local_position", "vehicle_global_position",
+    "vehicle_thrust_setpoint", "manual_control_setpoint",
+    "manual_control_input",
+    "vehicle_local_position", "vehicle_local_position_setpoint",
+    "vehicle_global_position",
     "vehicle_magnetometer", "sensor_mag",
     "battery_status", "cpuload", "vehicle_gps_position", "sensor_gps",
     "vehicle_status", "commander_state",
@@ -1025,11 +1223,44 @@ REVIEW_TOPICS = (
 )
 
 
+def _modes_plot(modes: list[dict[str, Any]]) -> dict | None:
+    """The modes as a stepped timeline against the same time axis as everything
+    else.
+
+    The coloured bands behind the other plots say *which* mode a trace was
+    flown in; this says *when* each one started and ended, to the second, which
+    the bands cannot because they have no axis of their own.
+    """
+    if not modes:
+        return None
+    names: list[str] = []
+    for span in modes:
+        if span["mode"] not in names:
+            names.append(span["mode"])
+    xs: list[float] = []
+    ys: list[float] = []
+    for span in modes:
+        level = names.index(span["mode"])
+        # Two points per span and a step shape: the transition is vertical,
+        # which is what actually happened.
+        xs.extend([span["start"], span["end"]])
+        ys.extend([level, level])
+    series = [{"name": "Flight mode", "x": xs, "y": ys,
+               "draw": "lines", "shape": "hv"}]
+    return _plot("modes", "Flight mode", "", series, group="Flight",
+                 ytick={"vals": list(range(len(names))), "labels": names},
+                 note="The same colours shade every plot below, so a trace can "
+                      "be read against the mode it was flown in.")
+
+
 def review(log: ULog, name: str = "") -> dict[str, Any]:
     """Reduce a parsed ULog to the Flight Review payload the UI renders."""
-    plots = [plot for plot in (make(log) for make in _PLOTTERS) if plot]
     modes = _flight_modes(log)
     armed = _armed_spans(log)
+    plots = [plot for plot in (make(log) for make in _PLOTTERS) if plot]
+    timeline = _modes_plot(modes)
+    if timeline:
+        plots.insert(0, timeline)
 
     duration = 0.0
     for plot in plots:
