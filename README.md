@@ -919,6 +919,50 @@ A very small trash button appears in the map's bottom-left corner while a track
 exists, at low opacity until reached for. An action taken once a flight should
 not out-shout the thing it acts on.
 
+### Click a position — the map context menu
+
+Clicking (or right-clicking) anywhere on the map opens a small glass menu on
+that point, offering the two things an operator wants from a coordinate:
+
+| Row | What it does | Available when |
+| --- | --- | --- |
+| **Fly to this point** | `POST /api/mavlink/gotopoints` with that single point, at the PLAN panel's altitude | connected **and armed** |
+| **Set home here** | `POST /api/mavlink/sethome` — moves the RTL target | connected |
+
+The menu is anchored to a *ground point*, not to a pixel: it carries a pin at
+the coordinate it acts on, shows that coordinate in the same tabular mono the
+telemetry readouts use, and re-projects on every map move so panning slides it
+along with the ground underneath. It flips back inside the map near an edge,
+closes on Escape, on a click outside, and on choosing a row, and stands down
+entirely while **PLAN** is active — there a click places a waypoint, and a menu
+competing for the same gesture would be a bug.
+
+Both rows say why when they are unavailable ("Not connected", "Arm the vehicle
+first") rather than going quietly inert, and "Fly to this point" shows the
+altitude it will use so that is never a hidden parameter. The gates match the
+buttons they duplicate: flying uses the same connected-and-armed rule as the
+PLAN panel's FLY, because the bridge arms and starts a mission and dispatching
+that against a parked aircraft earns a rejection the operator then has to clear.
+
+**Set home** is deliberately *not* gated on being disarmed: relocating home is
+how an operator redirects RTL mid-flight, so refusing it in the air would
+remove the case it is most needed for. It moves home **laterally only** — a map
+click carries no terrain height, and PX4 reads the command's altitude as AMSL,
+so the existing home altitude is reused rather than guessed. Without any
+altitude reference at all the command is refused rather than sent with a made-up
+one.
+
+The command goes out as a **COMMAND_INT**, not a COMMAND_LONG. COMMAND_LONG's
+parameters are float32 — about seven significant digits — so a latitude like
+`48.0812345` sent that way lands tens of metres from where the operator
+pointed. COMMAND_INT carries the coordinate as int32 degrees × 1e7, which is
+exact.
+
+The map owns *where and when* the menu appears; `app.js` registers *what the
+rows do*, the same split as the waypoint API. Flight commands carry the top
+bar's attempt tracking, the notification path and the live armed gating, all of
+which live there — see `Corvus.map.setContextActions()`.
+
 ---
 
 ## Flight HUD — a movable window
@@ -1278,6 +1322,7 @@ The frontend never polls.
 | GET | `/api/mavlink/serial-ports` | List available serial ports → `{"ports": [{"device", "description", "hwid"}, ...]}` |
 | POST | `/api/mavlink/arm` | Arm/disarm vehicle |
 | POST | `/api/mavlink/mode` | Set flight mode |
+| POST | `/api/mavlink/sethome` | Move home to `{lat, lon}` (COMMAND_INT, lateral only — keeps the existing home altitude) |
 | POST | `/api/mavlink/manual` | One virtual-joystick frame as MANUAL_CONTROL `{x, y, z, r, buttons}` (normalized axes, no ACK) |
 | POST | `/api/params/download` | Start a full parameter download (lazy) |
 | GET | `/api/params` | Parameter cache + download status (params only sent when complete — lean) |

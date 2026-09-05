@@ -1366,6 +1366,37 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         status = 503 if "DISCONNECTED" in error else 409
         self._send_json({"ok": False, "error": error}, status)
 
+    @route("POST", "/api/mavlink/sethome")
+    def _api_mavlink_sethome(self, payload: dict) -> None:
+        """Move the home position to a clicked map coordinate.
+
+        Lateral only: the bridge keeps the existing home altitude, because a
+        map click carries no terrain height. Allowed while armed — relocating
+        home is how an operator redirects RTL mid-flight.
+        """
+        lat = payload.get("lat")
+        lon = payload.get("lon")
+        # bool is a subclass of int — reject it so True never flies as 1.0.
+        for name, value, limit in (("lat", lat, 90.0), ("lon", lon, 180.0)):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) \
+                    or not math.isfinite(float(value)):
+                self._send_json({"ok": False, "error": f"{name} must be a finite number"}, 400)
+                return
+            if not -limit <= float(value) <= limit:
+                self._send_json(
+                    {"ok": False, "error": f"{name} must be between {-limit:g} and {limit:g}"}, 400)
+                return
+
+        if self.mavlink is None:
+            self._send_json({"error": "not connected"}, 400)
+            return
+        if self.mavlink.set_home(float(lat), float(lon)):
+            self._send_json({"ok": True})
+            return
+        error = self.mavlink.get_last_command_error() or "set home failed"
+        status = 503 if "DISCONNECTED" in error else 409
+        self._send_json({"ok": False, "error": error}, status)
+
     @route("POST", "/api/mavlink/gotopoints")
     def _api_mavlink_gotopoints(self, payload: dict) -> None:
         """Dispatch a multi-waypoint fly-to command to the vehicle."""

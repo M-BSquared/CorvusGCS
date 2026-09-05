@@ -1547,6 +1547,61 @@ class MavlinkBridge:
                     if self._pending_acks.get(command) is pending:
                         self._pending_acks.pop(command, None)
 
+    def _send_command_int_and_wait(
+        self, command: int, frame: int,
+        params: list[float] | None = None,
+        x: int = 0, y: int = 0, z: float = 0.0,
+        timeout: float = 3.0, retries: int = 2,
+    ) -> int:
+        """Send COMMAND_INT and wait for COMMAND_ACK. Returns result int (-1 = no ack).
+
+        The COMMAND_LONG twin above cannot carry a position: its params are
+        float32, which holds about seven significant digits — enough for
+        48.081 but not for 48.0812345, so a latitude sent that way lands tens
+        of metres from where the operator pointed. COMMAND_INT carries x/y as
+        int32 degrees x 1e7, which is exact. Everything else — the ACK
+        plumbing, the connection-swap guards, the retry loop — is identical,
+        because COMMAND_ACK is keyed by command id and does not care which
+        wrapper carried it.
+        """
+        with self._operation_lock:
+            if not self._connection_ready():
+                return -2
+            conn = self._conn
+            p = list(params or [])[:4]
+            p.extend([float("nan")] * (4 - len(p)))
+            pending = _PendingAck()
+            with self._ack_lock:
+                self._pending_acks[command] = pending
+
+            try:
+                for attempt in range(retries + 1):
+                    if conn is not self._conn or not self._connection_ready():
+                        return -2
+                    try:
+                        with self._send_lock:
+                            if conn is not self._conn:
+                                return -2
+                            conn.mav.command_int_send(
+                                self._target_system, self._target_component,
+                                frame, command, 0, 0,
+                                p[0], p[1], p[2], p[3],
+                                int(x), int(y), float(z),
+                            )
+                    except Exception as exc:
+                        logger.error("send command_int %d failed: %s", command, exc)
+                        return -2
+                    if conn is not self._conn:
+                        return -2
+                    if pending.event.wait(timeout=timeout):
+                        return pending.result if pending.result is not None else -1
+                    logger.warning("Command %d ACK timeout (attempt %d)", command, attempt + 1)
+                return -1
+            finally:
+                with self._ack_lock:
+                    if self._pending_acks.get(command) is pending:
+                        self._pending_acks.pop(command, None)
+
     def send_command_long(self, command: int, params: list[float] | None = None, confirmation: int = 0) -> bool:
         """Send command without waiting for ACK (legacy compatibility)."""
         with self._operation_lock:
@@ -1712,6 +1767,75 @@ class MavlinkBridge:
             if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
                 return self._command_failure("RTL", result)
             self._console_publish("RTL", "RTL accepted", "success")
+            return True
+
+    def _validate_lat_lon(
+        self, lat: Any, lon: Any, action: str,
+    ) -> tuple[float, float] | None:
+        """Coerce and range-check one coordinate pair, or None with the error set.
+
+        Shares :meth:`_fly_to_point_number`'s bool rejection — ``True`` is an
+        ``int`` in Python and would otherwise fly as latitude 1.0.
+        """
+        lat_f = self._fly_to_point_number(lat)
+        lon_f = self._fly_to_point_number(lon)
+        if lat_f is None or not math.isfinite(lat_f) or not -90.0 <= lat_f <= 90.0:
+            self._set_command_error(f"{action} failed: lat out of range")
+            return None
+        if lon_f is None or not math.isfinite(lon_f) or not -180.0 <= lon_f <= 180.0:
+            self._set_command_error(f"{action} failed: lon out of range")
+            return None
+        return lat_f, lon_f
+
+    def set_home(self, lat: float, lon: float) -> bool:
+        """Move the home position to (*lat*, *lon*), keeping its altitude.
+
+        MAV_CMD_DO_SET_HOME with param1=0 ("use the specified location"), sent
+        as COMMAND_INT so the coordinates survive the wire intact. Works on
+        PX4 v1.16, v1.17 and v1.18.
+
+        The altitude is NOT taken from the click: a map gives no terrain, and
+        PX4 treats the z of this command as AMSL, so guessing would move home
+        vertically as a side effect of moving it laterally. The current home
+        altitude is reused instead (falling back to the reference derived from
+        AMSL minus AGL, exactly as takeoff does), which makes this a purely
+        horizontal move. Without either reference the command is refused
+        rather than sent with a made-up altitude.
+
+        Deliberately allowed while armed, like takeoff/land/rtl/arm: relocating
+        home is how an operator redirects RTL mid-flight, so refusing it in the
+        air would remove the case it is most needed for.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            coords = self._validate_lat_lon(lat, lon, "Set home")
+            if coords is None:
+                return False
+            lat_f, lon_f = coords
+
+            alt_amsl = self._takeoff_altitude_amsl(0.0)
+            if alt_amsl is None:
+                text = "Set home failed: no home or global altitude reference"
+                self._set_command_error("no home or global altitude reference")
+                self._console_publish("SETHOME", text, "error")
+                self._store_update_warning(text, "critical")
+                return False
+
+            nan = float("nan")
+            result = self._send_command_int_and_wait(
+                mavutil.mavlink.MAV_CMD_DO_SET_HOME,
+                mavutil.mavlink.MAV_FRAME_GLOBAL,
+                [0.0, nan, nan, nan],
+                x=int(round(lat_f * 1e7)),
+                y=int(round(lon_f * 1e7)),
+                z=alt_amsl,
+                timeout=5.0, retries=1,
+            )
+            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                return self._command_failure("Set home", result)
+            self._console_publish(
+                "SETHOME", f"Home set to {lat_f:.7f}, {lon_f:.7f}", "success",
+            )
             return True
 
     # ------------------------------------------------------------------

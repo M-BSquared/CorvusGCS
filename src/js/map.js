@@ -181,6 +181,23 @@ Corvus.map = (function () {
   // The little clear-track control. Only in the DOM while a track exists.
   let trackClearEl = null;
 
+  // --- Map context menu (click a position, act on it) ---
+  // The menu is anchored to a POINT, not to a corner, so it holds the lngLat
+  // and re-projects on every map move rather than caching a pixel position:
+  // panning under an open menu must slide it along with the ground it points
+  // at, and a cached position would leave it pointing at a different place.
+  //
+  // The actions are injected by app.js (setContextActions) instead of being
+  // written here, for the same reason the waypoint API is a contract: flight
+  // commands carry the topbar's attempt tracking, the notification path and
+  // the armed gating, all of which live in app.js. The map owns where and when
+  // the menu appears; it does not own what the vehicle is asked to do.
+  let contextActions = [];
+  let contextMenuEl = null;
+  let contextPinEl = null;
+  let contextPoint = null;      // {lng, lat} the open menu refers to, or null
+  let contextHostEl = null;     // the map container the menu is positioned in
+
   // Downloaded-area overlay: the named regions from GET /api/tiles/regions,
   // drawn as outlined rectangles with a DOM label at each centre. Labels are
   // markers rather than a MapLibre symbol layer on purpose — a text layer
@@ -1016,6 +1033,186 @@ Corvus.map = (function () {
     }
   }
 
+  // ---- map context menu ---------------------------------------------------
+
+  /**
+   * Register the actions the context menu offers. Each is
+   * `{id, label, icon, note?, enabled?(point), run(point)}` where `point` is
+   * `{lng, lat}`; `enabled` is re-evaluated every time the menu opens, so a
+   * row can reflect live vehicle state without the map subscribing to it.
+   * Passing an empty list disables the menu entirely.
+   */
+  function setContextActions(actions) {
+    contextActions = Array.isArray(actions) ? actions.slice() : [];
+    if (!contextActions.length) closeContextMenu();
+  }
+
+  /** Degrees as the app writes coordinates everywhere else: 6 decimals is
+   *  ~0.1 m, which is finer than anything a click can express. */
+  function formatLngLat(point) {
+    return `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}`;
+  }
+
+  /** Tear the menu and its pin out of the DOM. Idempotent — every close path
+   *  (Escape, outside click, an action, a new click, teardown) lands here. */
+  function closeContextMenu() {
+    if (contextMenuEl && contextMenuEl.parentNode) {
+      contextMenuEl.parentNode.removeChild(contextMenuEl);
+    }
+    if (contextPinEl && contextPinEl.parentNode) {
+      contextPinEl.parentNode.removeChild(contextPinEl);
+    }
+    contextMenuEl = null;
+    contextPinEl = null;
+    contextPoint = null;
+    document.removeEventListener("keydown", onContextKey);
+    document.removeEventListener("pointerdown", onContextOutside, true);
+  }
+
+  function onContextKey(e) {
+    if (e.key === "Escape" || e.key === "Esc") {
+      if (e.preventDefault) e.preventDefault();
+      closeContextMenu();
+    }
+  }
+
+  /* Capture phase: a click on the map canvas must close the menu BEFORE
+     MapLibre's own click handler reopens it at the new point, or the menu
+     would flicker shut and straight back open on its own dismissal click. */
+  function onContextOutside(e) {
+    if (contextMenuEl && e.target && e.target.closest &&
+        e.target.closest(".map-context-menu")) return;
+    closeContextMenu();
+  }
+
+  /**
+   * Place the menu next to the pin, flipping it back inside the map when the
+   * click was near an edge. Both are positioned in the container's own pixels
+   * (`map.project`), which is also what `style.left` writes — so this needs no
+   * correction under the interface scale, unlike anything reading a client
+   * rect. Called on open and on every map move.
+   */
+  function positionContextMenu() {
+    if (!contextMenuEl || !contextPoint || !map || !contextHostEl) return;
+    const at = map.project([contextPoint.lng, contextPoint.lat]);
+    const hostW = contextHostEl.clientWidth;
+    const hostH = contextHostEl.clientHeight;
+    const menuW = contextMenuEl.offsetWidth;
+    const menuH = contextMenuEl.offsetHeight;
+    const GAP = 12;   // clear of the pin, which is 14px across
+
+    contextPinEl.style.left = `${at.x}px`;
+    contextPinEl.style.top = `${at.y}px`;
+
+    // Prefer down-right of the pin; flip on whichever axis would overflow.
+    const flipX = at.x + GAP + menuW > hostW && at.x - GAP - menuW >= 0;
+    const flipY = at.y + GAP + menuH > hostH && at.y - GAP - menuH >= 0;
+    let left = flipX ? at.x - GAP - menuW : at.x + GAP;
+    let top = flipY ? at.y - GAP - menuH : at.y + GAP;
+    // A menu taller/wider than the space on either side (a small window, a
+    // large interface scale) is clamped rather than flipped, so it stays
+    // fully readable even when it has to cover the pin.
+    left = Math.max(4, Math.min(left, hostW - menuW - 4));
+    top = Math.max(4, Math.min(top, hostH - menuH - 4));
+    contextMenuEl.style.left = `${left}px`;
+    contextMenuEl.style.top = `${top}px`;
+    // Grow out of the corner nearest the pin.
+    contextMenuEl.style.transformOrigin =
+      `${flipX ? "right" : "left"} ${flipY ? "bottom" : "top"}`;
+  }
+
+  /** Build and show the menu for *lngLat*. Replaces any menu already open. */
+  function openContextMenu(lngLat) {
+    closeContextMenu();
+    if (!map || !contextHostEl || !contextActions.length) return;
+    contextPoint = { lng: lngLat.lng, lat: lngLat.lat };
+    const point = { lng: contextPoint.lng, lat: contextPoint.lat };
+
+    contextPinEl = document.createElement("div");
+    contextPinEl.className = "map-context-pin";
+    contextHostEl.appendChild(contextPinEl);
+
+    contextMenuEl = document.createElement("div");
+    contextMenuEl.className = "map-context-menu glass";
+    contextMenuEl.setAttribute("role", "menu");
+    contextMenuEl.setAttribute("aria-label", "Map position actions");
+
+    const coords = document.createElement("span");
+    coords.className = "map-context-coords";
+    coords.textContent = formatLngLat(point);
+    contextMenuEl.appendChild(coords);
+
+    contextActions.forEach((action) => {
+      const enabled = typeof action.enabled === "function"
+        ? !!action.enabled(point) : true;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "map-context-item";
+      btn.dataset.action = action.id || "";
+      btn.setAttribute("role", "menuitem");
+      btn.disabled = !enabled;
+      if (action.icon) btn.appendChild(Corvus.ui.icon(action.icon, "auto"));
+
+      const text = document.createElement("span");
+      text.className = "map-context-text";
+      const label = document.createElement("span");
+      label.className = "map-context-label";
+      label.textContent = String(action.label == null ? action.id : action.label);
+      text.appendChild(label);
+      // The note explains the row: why it cannot be used, or what it will do.
+      // `note` may be a function so it can read live state at open time.
+      const note = typeof action.note === "function" ? action.note(point, enabled) : action.note;
+      if (note) {
+        const n = document.createElement("span");
+        n.className = "map-context-note";
+        n.textContent = String(note);
+        text.appendChild(n);
+      }
+      btn.appendChild(text);
+
+      btn.addEventListener("click", () => {
+        if (btn.disabled) return;
+        // Close first: the action is async and the operator has already made
+        // the choice — leaving the menu up while a command flies would invite
+        // a second click on a row that is now acting on a stale point.
+        closeContextMenu();
+        try { action.run(point); } catch (err) { console.error("map action failed:", err); }
+      });
+      contextMenuEl.appendChild(btn);
+    });
+
+    contextHostEl.appendChild(contextMenuEl);
+    // Lucide swaps the <i> placeholders for <svg> in place, so this has to run
+    // BEFORE the first measurement — an unswapped placeholder has no width and
+    // the menu would be positioned from the wrong size.
+    Corvus.ui.refreshIcons();
+    positionContextMenu();
+    document.addEventListener("keydown", onContextKey);
+    document.addEventListener("pointerdown", onContextOutside, true);
+    // Focus the first usable row so the menu is operable from the keyboard the
+    // moment it opens (and Escape has something to return from).
+    const first = contextMenuEl.querySelector(".map-context-item:not([disabled])");
+    if (first && typeof first.focus === "function") first.focus();
+  }
+
+  /* A left-click on the map opens the menu — MapLibre fires "click" only for a
+     genuine click, never at the end of a pan, so dragging the map stays
+     drag-only. Planning mode owns the click while it is on (a click there
+     places a waypoint), so the menu stands down rather than competing. */
+  function onMapClick(e) {
+    if (waypointMode || !e || !e.lngLat) return;
+    openContextMenu(e.lngLat);
+  }
+
+  /* Right-click opens the same menu, because that is the gesture most
+     operators will try first. Outside planning mode there is no browser menu
+     worth keeping over the canvas. */
+  function onMapRightClick(e) {
+    if (waypointMode || !e || !e.lngLat) return;
+    if (e.preventDefault) e.preventDefault();
+    openContextMenu(e.lngLat);
+  }
+
   /**
    * Toggle planning mode. On: cursor → crosshair, left-click appends a
    * waypoint, right-click removes the last, Esc exits. Off: handlers detach
@@ -1027,6 +1224,9 @@ Corvus.map = (function () {
     if (!map || !started) return;   // planning needs a loaded map
     waypointMode = enabled;
     if (enabled) {
+      // Planning takes the click over; a menu left open would be acting on a
+      // point the operator can no longer see themselves choosing.
+      closeContextMenu();
       map.getCanvas().style.cursor = "crosshair";
       map.on("click", onPlanningClick);
       map.on("contextmenu", onPlanningRightClick);
@@ -1068,6 +1268,18 @@ Corvus.map = (function () {
     // already defers its own work until `started`.
     buildControls(controlsEl, layersPopover);
     buildTrackControl(mapEl);
+
+    // The context menu lives in the map container so it scrolls, resizes and
+    // stacks with everything else on the map. Wired here rather than on "load"
+    // for the same reason the rail is: nothing about it needs a loaded style,
+    // and an operator who clicks during the first tile fetch should still get
+    // a menu.
+    contextHostEl = mapEl;
+    map.on("click", onMapClick);
+    map.on("contextmenu", onMapRightClick);
+    // Re-project on every move so an open menu stays on its ground point while
+    // the map pans, zooms, rotates or follows the vehicle.
+    map.on("move", positionContextMenu);
 
     map.on("load", () => {
       // Regions first: their layers must sit UNDER the track and plan route,
@@ -1141,6 +1353,11 @@ Corvus.map = (function () {
     getWaypoints,
     clearWaypoints,
     onWaypointsUpdate,
+    // Context menu: the map owns where and when it opens, app.js owns what the
+    // rows do (they are flight commands, and those carry the topbar's attempt
+    // tracking and the armed gating that live there).
+    setContextActions,
+    closeContextMenu,
     getSources,
     getCacheStats,
     // Settings' map-service picker drives the live map through this, so the
@@ -1167,6 +1384,10 @@ Corvus.map = (function () {
     _recordTrackPoint: (pos) => recordTrackPoint(pos),
     _realFix: (pos) => realFix(pos),
     _checkForReboot: (ms) => checkForReboot(ms),
+    // test hook: the open menu's point, so the click -> menu path is assertable
+    // without a layout engine.
+    _contextPoint: () => (contextPoint ? { lng: contextPoint.lng, lat: contextPoint.lat } : null),
+    _openContextMenu: (lngLat) => openContextMenu(lngLat),
     _resetTrackState: () => { pathCoords = []; lastBootMs = null; },
     // test hook: pure coordinate computation for the plan route (vehicle
     // position prefix + operator waypoints, or []). Accepts an optional

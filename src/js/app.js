@@ -230,6 +230,84 @@ Corvus.app = (function () {
       });
     }
 
+    // --- Map context menu: act on a clicked position ---
+    // Corvus.map owns the menu surface (where it opens, how it tracks the
+    // ground point, when it closes); the rows are registered here because they
+    // are flight commands and everything a flight command needs — the topbar's
+    // attempt tracking, the notification path, the live armed/connected gate —
+    // already lives in this module.
+    //
+    // Both rows are gated the same way the buttons above them are, and both say
+    // why when they are unavailable. A disabled row that explains itself is the
+    // point: an operator who clicks the map on a parked aircraft learns what is
+    // missing instead of finding the menu mysteriously inert.
+    if (Corvus.map && typeof Corvus.map.setContextActions === "function") {
+      const state = () => Corvus.telemetry.getState() || {};
+
+      // Altitude comes from the PLAN panel's slider rather than a constant of
+      // its own: it is the app's one "how high should it fly" control, the
+      // operator can change it, and the menu shows the value it will use so it
+      // is never a hidden parameter.
+      function planAltAgl() {
+        const alt = parseFloat(planAlt.value);
+        return Math.min(50, Math.max(1, isFinite(alt) ? alt : 10));
+      }
+
+      async function runMapCommand(name, url, body, failText) {
+        const attempt = Corvus.topbar.beginCommand(name);
+        try {
+          await Corvus.telemetry.postAction(url, body);
+          Corvus.topbar.succeedCommand(attempt);
+        } catch (error) {
+          Corvus.topbar.failCommand(attempt);
+          Corvus.topbar.notifyError(error.message || failText, attempt);
+        }
+      }
+
+      Corvus.map.setContextActions([
+        {
+          id: "goto",
+          label: "Fly to this point",
+          icon: "navigation",
+          // The same gate as the PLAN panel's FLY, for the same reason: the
+          // bridge arms and starts a mission, and dispatching that against a
+          // parked aircraft earns an autopilot rejection the operator then has
+          // to clear.
+          enabled: () => {
+            const s = state();
+            return !!(s.connected && s.armed);
+          },
+          note: (_point, enabled) => {
+            if (!enabled) {
+              return state().connected ? "Arm the vehicle first" : "Not connected";
+            }
+            return `${planAltAgl()} m AGL`;
+          },
+          run: (point) => runMapCommand(
+            "gotopoints", "/api/mavlink/gotopoints",
+            { points: [{ lat: point.lat, lon: point.lng, alt_agl: planAltAgl() }] },
+            "Fly to point rejected",
+          ),
+        },
+        {
+          id: "sethome",
+          label: "Set home here",
+          icon: "house",
+          // No armed gate: relocating home is how RTL gets redirected in
+          // flight, so refusing it in the air would remove the case it is most
+          // needed for. It only needs a vehicle to talk to.
+          enabled: () => !!state().connected,
+          note: (_point, enabled) =>
+            (enabled ? "Moves the RTL target" : "Not connected"),
+          run: (point) => runMapCommand(
+            "sethome", "/api/mavlink/sethome",
+            { lat: point.lat, lon: point.lng },
+            "Set home rejected",
+          ),
+        },
+      ]);
+    }
+
     Corvus.telemetry.requestJson("/api/mavlink/modes").then((data) => {
       refreshModesFromData(data);
     }).catch((error) => Corvus.topbar.notifyError(error.message || "Could not load flight modes"));

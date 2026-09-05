@@ -522,6 +522,111 @@ svg { display: block; }
 }
 .layer-group:first-of-type { margin-top: 2px; padding-top: 0; border-top: none; }
 
+/* ===== MAP CONTEXT MENU (click a position on the map) =====
+   The one surface in the app anchored to a geographic point rather than to a
+   corner of the screen, so it carries a pin at the point it acts on: the menu
+   itself is offset from the click (a menu under the cursor hides the thing it
+   is about), and without the pin "this point" would be a guess.
+
+   Same .glass material as the flight bar and the layer popover — this is a
+   transient surface opened FROM the map, so it sits at --z-map-popover and
+   wins against every panel that lives on the map. It grows out of the pin:
+   transform-origin is set inline to the corner the menu was flipped to, so a
+   menu opened near the right edge still appears to come from the click. */
+.map-context-pin {
+  position: absolute;
+  z-index: var(--z-map-popover);
+  width: 16px; height: 16px;
+  margin: -8px 0 0 -8px;          /* centre on the point, not corner-align */
+  border-radius: 50%;
+  /* A literal white ring, like .vehicle-marker and .home-marker: it separates
+     the pin from IMAGERY, not from the UI, so it must not flip with the theme
+     the way a --tint-rgb hairline would — that turns black on the light themes
+     and vanishes over dark ground. */
+  background: #fff;
+  box-shadow: var(--shadow-soft);
+  pointer-events: none;
+  animation: corvus-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.map-context-pin::after {
+  content: "";
+  position: absolute; inset: 3px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.map-context-menu {
+  position: absolute;
+  z-index: var(--z-map-popover);
+  border-radius: var(--radius);
+  padding: 6px;
+  min-width: 186px;
+  animation: corvus-enter 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.map-context-menu[hidden] { display: none; }
+
+/* The coordinates of the clicked point, in the same tabular mono the telemetry
+   readouts use. A caption, not a control: the menu should say what it is about
+   before it says what it can do. */
+.map-context-coords {
+  display: block;
+  padding: 4px 8px 7px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgb(var(--tint-rgb) / 0.08);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.map-context-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: var(--radius-btn);
+  color: var(--text-1);
+  text-align: left;
+  transition: background 130ms, color 130ms;
+}
+.map-context-item i, .map-context-item svg {
+  width: 15px; height: 15px; flex: 0 0 auto; color: var(--text-2);
+}
+.map-context-item:hover:not(:disabled) { background: var(--panel-wash); }
+.map-context-item:hover:not(:disabled) i,
+.map-context-item:hover:not(:disabled) svg { color: var(--accent); }
+.map-context-item:active:not(:disabled) { background: var(--accent-dim); }
+.map-context-item:focus-visible {
+  outline: 2px solid var(--accent-bright); outline-offset: -2px;
+}
+/* Disabled is a normal state here — both actions need a connected (and, to
+   fly, an armed) vehicle — so it has to read as "not yet", not as broken: the
+   row stays legible and says why in .map-context-note.
+   --text-3, not --text-disabled: the note below is already --text-3, and the
+   palest token on the label put the two the wrong way round, with the reason
+   shouting over the thing it was explaining. The label keeps the lead; only
+   the note recedes. */
+.map-context-item:disabled { color: var(--text-3); cursor: not-allowed; }
+.map-context-item:disabled i, .map-context-item:disabled svg { color: var(--text-disabled); }
+.map-context-item:disabled .map-context-note { color: var(--text-disabled); }
+
+.map-context-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.map-context-label {
+  font-size: 12px; font-weight: 600; letter-spacing: 0.1px;
+  white-space: nowrap;
+}
+/* Why the row is unavailable, or what it will do — never both, and only when
+   there is something to say. */
+.map-context-note {
+  font-size: 10px; color: var(--text-3); white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-context-menu, .map-context-pin { animation: none !important; }
+}
+
 /* ===== OFFLINE MAP (tile download) =====
    Only the floating trigger lives on the map; the panel itself is a
    Corvus.ui.modal (see components.css) because as an anchored popover it was
