@@ -204,6 +204,23 @@ cp -L "$OLD_REF" "$FW_DST/Python"
 chmod u+w "$FW_DST/Python"
 rsync -a "$PY_FW_DIR/Resources/" "$FW_DST/Resources/"   # Python.app GUI stub
 
+# Load-command paths in <binary> that genuinely live under the host framework.
+#
+# Matching had been a bare substring search for $PY_FW_PREFIX anywhere in the
+# otool line. With a python.org interpreter that prefix is /Library/Frameworks,
+# which is a substring of /System/Library/Frameworks — so every binary linking
+# the OS's own CoreFoundation looked like it referenced the build host, and the
+# macOS build was rejected for a bundle that was actually fine. A Homebrew
+# interpreter has a prefix that cannot collide, which is why this only ever
+# failed in CI. Compare the path field against the prefix as a path, not as
+# text anywhere in the line.
+host_fw_refs() {  # <binary>
+    local ref
+    otool -L "$1" 2>/dev/null | awk 'NR>1 {print $1}' | while IFS= read -r ref; do
+        case "$ref" in "$PY_FW_PREFIX"/*) printf '%s\n' "$ref" ;; esac
+    done
+}
+
 sign() {  # <path> — re-sign after an install_name_tool rewrite
     codesign --force --sign "$CODESIGN_IDENTITY" --timestamp=none "$1" >/dev/null 2>&1 \
         || { echo "ERROR: codesign failed for $1" >&2; return 1; }
@@ -215,18 +232,23 @@ sign() {  # <path> — re-sign after an install_name_tool rewrite
 # most likely error is worth naming: a Mach-O header has a fixed amount of room
 # for its load commands, and a replacement path longer than the original does
 # not always fit.
-retarget() {  # <binary> <old_ref> <new_ref>
-    local bin="$1" from="$2" to="$3" out
-    if ! out="$(install_name_tool -change "$from" "$to" "$bin" 2>&1)"; then
-        echo "ERROR: install_name_tool failed on $bin" >&2
-        echo "         from: $from (${#from} bytes)" >&2
-        echo "         to:   $to (${#to} bytes)" >&2
-        [ -n "$out" ] && echo "         $out" >&2
-        return 1
-    fi
-    # A silent no-op is the failure mode that actually bit us, so verify.
-    if otool -L "$bin" | grep -q -F "$from"; then
-        echo "ERROR: $bin still references $from after the rewrite" >&2
+retarget() {  # <binary> <new_ref> — repoint every host-framework reference
+    local bin="$1" to="$2" ref out
+    while IFS= read -r ref; do
+        [ -n "$ref" ] || continue
+        if ! out="$(install_name_tool -change "$ref" "$to" "$bin" 2>&1)"; then
+            echo "ERROR: install_name_tool failed on $bin" >&2
+            echo "         from: $ref (${#ref} bytes)" >&2
+            echo "         to:   $to (${#to} bytes)" >&2
+            [ -n "$out" ] && echo "         $out" >&2
+            return 1
+        fi
+        echo "    $(basename "$bin"): $ref -> $to"
+    done <<< "$(host_fw_refs "$bin")"
+    # A silent no-op is a real failure mode, so verify rather than assume.
+    if [ -n "$(host_fw_refs "$bin")" ]; then
+        echo "ERROR: $bin still references $PY_FW_PREFIX after the rewrite" >&2
+        host_fw_refs "$bin" | sed 's/^/         /' >&2
         return 1
     fi
     return 0
@@ -237,14 +259,14 @@ NEW_REF="@executable_path/../../../Frameworks/Python.framework/Versions/$PY_MM/P
 echo "    install name: $OLD_REF (${#OLD_REF} bytes) -> $NEW_REF (${#NEW_REF} bytes)"
 for b in "$PYROOT"/bin/python "$PYROOT"/bin/python3 "$PYROOT"/bin/python"$PY_MM"; do
     [ -f "$b" ] || continue
-    retarget "$b" "$OLD_REF" "$NEW_REF"
+    retarget "$b" "$NEW_REF"
     sign "$b"
 done
 
 STUB="$FW_DST/Resources/Python.app/Contents/MacOS/Python"
 if [ -f "$STUB" ]; then
     chmod u+w "$STUB"
-    retarget "$STUB" "$OLD_REF" "@executable_path/../../../../Python"
+    retarget "$STUB" "@executable_path/../../../../Python"
     sign "$STUB"
     # The stub is what actually runs, so [NSBundle mainBundle] resolves to this
     # nested Python.app — give it the product's identity or the menu bar and
@@ -279,7 +301,7 @@ fi
 host_refs=""
 for b in "$PYROOT/bin/python3" "$STUB"; do
     [ -f "$b" ] || continue
-    hits="$(otool -L "$b" 2>/dev/null | grep -F "$PY_FW_PREFIX" || true)"
+    hits="$(host_fw_refs "$b")"
     if [ -n "$hits" ]; then
         host_refs="${host_refs}
   $b:
