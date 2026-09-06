@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.27-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.27" />
+  <img src="https://img.shields.io/badge/Version-2026.09.28-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.28" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.10%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.10+" /></a>
   <img width="8" />
@@ -48,10 +48,10 @@
 -->
 
 <p align="center">
-  <img src="assets/screenshot_flight.png" alt="Corvus GCS in flight: live map, flight HUD and connection workspace">
+  <img src="assets/screenshot_flight.jpg" alt="Corvus GCS in flight: live map, flight HUD and connection workspace">
 </p>
 
-<p align="center"><em>A PX4 fixed-wing flying a circuit — live map, the floating flight HUD, and the engineering workspace on the right.</em></p>
+<p align="center"><em>Live map, the floating instrument panel, and the engineering workspace on the right.</em></p>
 
 ---
 
@@ -190,45 +190,66 @@ applied — the control snaps back to the value the aircraft still holds.
 ## Screenshots
 
 <p align="center">
-  <img src="assets/screenshot_map.png" alt="Full-width map with the workspace collapsed">
+  <img src="assets/screenshot_map.jpg" alt="Full-width map with the workspace collapsed">
 </p>
 
 <p align="center"><em><strong>The map is the interface.</strong> Collapse the side panel and the whole
 window becomes the operational picture — vehicle, heading, home point and the flown track, with the
-HUD floating wherever you put it.</em></p>
+instrument panel wherever you put it. It stays there across restarts and page changes.</em></p>
 
 <p align="center">
-  <img src="assets/screenshot_dark.png" alt="Corvus GCS in a dark theme">
+  <img src="assets/screenshot_motors.png" alt="Setup: the airframe drawn to scale with every motor">
 </p>
 
-<p align="center"><em><strong>Six themes, two light and four dark.</strong> Switching is instant — no
-reload, no flash.</em></p>
+<p align="center"><em><strong>Your airframe, drawn.</strong> Every motor at its real distance from the
+centre of gravity, with its number, its output pin and a spin-direction arrow — so "the front-left one"
+is something you point at instead of work out. Click a motor to wire, position or bench-test it.</em></p>
 
 <p align="center">
-  <img src="assets/screenshot_console.png" alt="MAVLink console in the right-hand workspace">
+  <img src="assets/screenshot_safety.png" alt="Setup: safety limits, failsafe actions and sensors">
+</p>
+
+<p align="center"><em><strong>Limits and failsafes.</strong> Maximum distance and height, the
+return-to-launch profile, and an action for every loss PX4 can detect. A distance sensor or
+optical-flow camera comes up with one switch — driver and estimator together.</em></p>
+
+<p align="center">
+  <img src="assets/screenshot_calibration.png" alt="Setup: guided sensor calibration and autotune">
+</p>
+
+<p align="center"><em><strong>Guided calibration.</strong> Compass, gyro, accelerometer, level horizon,
+barometer and airspeed, each with what it does and how long it takes. The aircraft is drawn in the
+position PX4 is asking for, and a running calibration can be cancelled on the vehicle.</em></p>
+
+<p align="center">
+  <img src="assets/screenshot_analysis.png" alt="Analysis: vehicle logs and Flight Review">
+</p>
+
+<p align="center"><em><strong>Review the flight.</strong> Download the vehicle's logs, record the live
+stream, and open either in the built-in Flight Review — on your own machine, with nothing uploaded
+anywhere.</em></p>
+
+<p align="center">
+  <img src="assets/screenshot_console.jpg" alt="MAVLink console in the right-hand workspace">
 </p>
 
 <p align="center"><em><strong>The side workspace.</strong> A MAVLink console, an SSH terminal for the
 companion computer, and a plugin slot — beside the map rather than instead of it.</em></p>
 
 <p align="center">
-  <img src="assets/screenshot_setup.png" alt="Setup page: calibration, parameters and firmware">
+  <img src="assets/screenshot_dark.jpg" alt="Corvus GCS in a dark theme">
 </p>
-
-<p align="center"><em><strong>Setup.</strong> Motors, safety limits and failsafes, parameters, sensor and
-ESC calibration, autotune and firmware — the things you do between flights, in one place.</em></p>
 
 <p align="center">
-  <img src="assets/screenshot_analysis.png" alt="Analysis page: telemetry and flight logs">
+  <img src="assets/screenshot_parameters.png" alt="The parameter editor in another theme">
 </p>
 
-<p align="center"><em><strong>Analysis.</strong> Live values, log download from the aircraft, and the
-built-in Flight Review. Logs are read locally and never leave your machine.</em></p>
+<p align="center"><em><strong>Six themes, two light and four dark.</strong> Switching is instant — no
+reload, no flash — and the map, the plots and the instruments all follow.</em></p>
 
-<sub>Every image path above is relative (`assets/...`) so it renders on any Git host.
-The logo ships in two cuts — white artwork for dark backgrounds, black for light ones — because a
-transparent-background logo is invisible on the wrong surface. Each usage is a `<picture>` that
-serves the right cut per theme.</sub>
+<p align="center"><sub>Every screenshot is the real interface driven by real MAVLink: telemetry,
+parameters and the flown track all arrive over the wire and are parsed by the same code a flight uses.
+The aircraft producing them is simulated, not airborne — the imagery is the Neubiberg test site.</sub></p>
 
 ---
 
