@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.28-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.28" />
+  <img src="https://img.shields.io/badge/Version-2026.09.29-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.29" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.10%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.10+" /></a>
   <img width="8" />
@@ -214,12 +214,15 @@ return-to-launch profile, and an action for every loss PX4 can detect. A distanc
 optical-flow camera comes up with one switch — driver and estimator together.</em></p>
 
 <p align="center">
-  <img src="assets/screenshot_calibration.png" alt="Setup: guided sensor calibration and autotune">
+  <img src="assets/screenshot_calibration.png" alt="Accelerometer calibration: the aircraft drawn in each position PX4 asks for">
 </p>
 
-<p align="center"><em><strong>Guided calibration.</strong> Compass, gyro, accelerometer, level horizon,
-barometer and airspeed, each with what it does and how long it takes. The aircraft is drawn in the
-position PX4 is asking for, and a running calibration can be cancelled on the vehicle.</em></p>
+<p align="center"><em><strong>Guided calibration.</strong> PX4 names the six accelerometer positions in
+its own order and in its own vocabulary — it names the side facing <strong>down</strong>, so "up" means
+upside down. So each one is drawn instead of named: hold the aircraft the way the bird is held. Every position
+is ticked off as PX4 accepts it, the autopilot's own messages run underneath, and a calibration in
+progress can be cancelled on the vehicle. Compass, gyro, level horizon, barometer and airspeed work the
+same way.</em></p>
 
 <p align="center">
   <img src="assets/screenshot_analysis.png" alt="Analysis: vehicle logs and Flight Review">
