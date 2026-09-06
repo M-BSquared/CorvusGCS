@@ -22,9 +22,9 @@
   <br>
   <img src="https://img.shields.io/badge/%F0%9F%A4%96%20Vibe%20Coded-100%25-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded: 100%" />
   <img width="8" />
-  <img src="https://img.shields.io/badge/Lines%20of%20Code-56%2C441-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 56,441" />
-  <!-- <img width="8" />
-  <img src="https://img.shields.io/badge/Tests-24k%20lines%20%C2%B7%2063%20files-2EA043?style=for-the-badge" height="28" alt="Tests: 24k lines across 63 files" /> -->
+  <img src="https://img.shields.io/badge/Lines%20of%20Code-60k%2B-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 60k+" />
+  <img width="8" />
+  <img src="https://img.shields.io/badge/Tests-27k%20lines%20%C2%B7%2069%20files-2EA043?style=for-the-badge" height="28" alt="Tests: 27k lines across 69 files" />
   <br>
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-6E7681?style=for-the-badge" height="28" alt="Platform: macOS | Linux" />
   <img width="8" />
@@ -32,7 +32,7 @@
   <img width="8" />
   <img src="https://img.shields.io/badge/Ready%20to%20Fly-in%20seconds-0E8A6B?style=for-the-badge" height="28" alt="Ready to fly in seconds" />
   <img width="8" />
-  <img src="https://img.shields.io/badge/License-TBD-lightgrey?style=for-the-badge" height="28" alt="License: TBD" />
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/License-Sustainable%20Use%201.0-8A5A0E?style=for-the-badge" height="28" alt="License: Sustainable Use License 1.0" /></a>
 </div>
 
 <!--
@@ -52,8 +52,9 @@
 -->
 
 <p align="center">
-  <sub>Current version: <a href="VERSION"><code>VERSION</code></a> at the repo root —
-  read by the app and served live at <code>GET /api/version</code>.</sub>
+  <sub>The version lives in exactly one place — the <a href="VERSION"><code>VERSION</code></a>
+  file at the repo root — and is read from there by the app, served at
+  <code>GET /api/version</code>, and used as the release tag.</sub>
 </p>
 
 <p align="center">
@@ -78,6 +79,7 @@
 - [PX4 compatibility](#px4-compatibility)
 - [Get involved](#get-involved)
 - [About / Origins](#about--origins)
+- [License](#license)
 
 ---
 
@@ -598,9 +600,29 @@ practice and why the project is set up this way.
   </picture>
 </p>
 
-**License:** no license file ships with the repository yet — the badge above
-reads *TBD*. Add a `LICENSE` file at the repo root and update this section when
-licensing is finalized.
+## License
+
+Corvus GCS is released under the **[Sustainable Use License, Version 1.0](LICENSE.md)** —
+a *fair-code* license: the source is open to read, modify and build on, but not
+to resell.
+
+In short, and without replacing the terms in [`LICENSE.md`](LICENSE.md):
+
+- **You may** use and modify it for your own internal business purposes, and
+  for non-commercial or personal use — flying your own aircraft, research,
+  teaching, and building on it are all covered.
+- **You may** pass it on, provided you do so free of charge and for
+  non-commercial purposes, and that whoever receives it also receives these
+  terms. If you modified it, say so prominently.
+- **You may not** sell it, or offer it to third parties as a paid product or
+  service.
+
+Third-party components — pymavlink, paramiko, pyserial, PyQt6/Qt, MapLibre GL
+JS, Plotly, Lucide — keep the licenses of their own authors. The full list, with
+each component's license, is in the app under **[Settings > About >
+Credits](#settings)**. The license file ships inside the AppImage and the macOS
+app as well as in the repository, because the terms have to travel with the
+software.
 
 ---
 

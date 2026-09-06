@@ -856,6 +856,9 @@
 .credits-author { font-size: 13px; font-weight: 600; color: var(--accent-bright); }
 .credits-org { font-size: 11.5px; color: var(--text-3); }
 .credits-note { font-size: 11.5px; color: var(--text-2); line-height: 1.5; margin-top: 8px; }
+/* The licence line is a legal notice, not prose: set apart from the note above
+   it and dimmer, so it reads as the fine print it is. */
+.credits-license { color: var(--text-3); border-top: 1px solid var(--border-soft); padding-top: 8px; }
 
 .credits-group { display: flex; flex-direction: column; gap: 8px; }
 .credits-entry {

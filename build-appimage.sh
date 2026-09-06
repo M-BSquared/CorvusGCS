@@ -121,6 +121,10 @@ rsync -a --exclude '__pycache__' "$REPO_DIR/corvus/" "$APPDIR/corvus/"
 rsync -a --exclude '__pycache__' "$REPO_DIR/src/" "$APPDIR/src/"
 rsync -a "$REPO_DIR/assets/" "$APPDIR/assets/"
 cp -a "$REPO_DIR/VERSION" "$APPDIR/VERSION"
+# The Sustainable Use License requires that anyone who receives a copy of
+# the software also receives a copy of its terms, so the licence ships in
+# the bundle rather than only in the repository.
+cp -a "$REPO_DIR/LICENSE.md" "$APPDIR/LICENSE.md"
 if [ -f "$REPO_DIR/serve.py" ]; then
     cp -a "$REPO_DIR/serve.py" "$APPDIR/serve.py"
 fi

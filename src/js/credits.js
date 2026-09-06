@@ -108,6 +108,12 @@ Corvus.credits = (function () {
     org: "Universität der Bundeswehr München",
     note: "Corvus GCS is designed, built and maintained by Maximilian Böck. " +
           "Built for real field use with PX4 autonomous aircraft.",
+    // This panel names the licence of every component it lists, so leaving the
+    // product's own licence off it was the one gap. The file it points at ships
+    // inside the bundle, so this is a claim the operator can actually check.
+    license: "Sustainable Use License 1.0 — see LICENSE.md in the application "
+             + "folder: internal business, non-commercial and personal use; "
+             + "not for resale.",
   };
 
   /** One credit row: name + version, the license, and what it is used for. */
@@ -223,6 +229,10 @@ Corvus.credits = (function () {
     note.className = "credits-note";
     note.textContent = PROJECT.note;
     intro.appendChild(note);
+    const lic = document.createElement("div");
+    lic.className = "credits-note credits-license";
+    lic.textContent = PROJECT.license;
+    intro.appendChild(lic);
     frag.appendChild(intro);
 
     frag.appendChild(group("Libraries", LIBRARIES));

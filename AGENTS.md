@@ -100,6 +100,11 @@ Shared packaging invariants — a violation of any of these is a build bug:
 - **Layout contract.** `VERSION`, `corvus/`, `src/`, and `assets/` stay
   siblings inside the bundle, because `corvus/version.py` and `corvus/server.py`
   resolve them as `Path(__file__).parent.parent / …`.
+- **Licence travels with the software.** `LICENSE.md` ships inside every
+  artifact next to `VERSION`. This is not housekeeping: the Sustainable Use
+  License requires that anyone who receives a copy of the software also receives
+  a copy of its terms, so a bundle without it is a licence violation, not a
+  cosmetic omission. Both platform scripts copy it; neither may stop.
 - **Signal-transparent launcher.** The platform launcher (`AppRun`,
   `Contents/MacOS/corvus-gcs`) `exec`s the bundled interpreter so `SIGINT` /
   `SIGTERM` reach `corvus/app.py` directly and its handlers tear down cleanly.
