@@ -1,6 +1,40 @@
 "use strict";
 window.Corvus = window.Corvus || {};
 
+/*
+  Corvus.topbar — the vehicle status bar and the notification centre behind it.
+
+  Notifications come from two places and are treated as one list:
+
+    remote   PX4 STATUSTEXT, merged into the backend warning store and pushed
+             down with every telemetry snapshot. The store is the owner; the
+             UI can only hide them locally or ask the backend to drop the lot.
+    local    a command this GCS dispatched and the vehicle refused. Created
+             here, deduplicated against the remote failure that usually
+             follows (see Corvus.notificationDedupe).
+
+  Each notification is in one of three states, and the distinction is what
+  keeps the badge honest:
+
+    unread     never been looked at — this is what the badge counts
+    read       still on the board, dimmed; the operator has seen it
+    dismissed  gone from the list (per item, or via "clear all")
+
+  Nothing warning-level or worse is ever deleted by a timer. Acknowledging a
+  warning is the operator's call; a notification centre that quietly drops the
+  one thing that mattered is worse than one that shows too much. What DOES age
+  out is info — PX4's routine chatter, which is already in the CONSOLE tab
+  verbatim and only inflates the badge here.
+
+  Read is set at two moments, both of them "you have had your chance to look":
+  closing the popover, and any change of the armed state — arming means every
+  preflight complaint on the board is moot, disarming means the flight's
+  messages are history.
+
+  Two events go further and clear the board outright, because everything on it
+  belongs to a session that has ended: a fresh link, and an autopilot reboot.
+  See applyLifecycleMilestones for why a disconnect is neither.
+*/
 Corvus.topbar = (function () {
   let topBar, warningsPopover, warningsList, notificationLive;
   // block key -> {root, vMain, sub, dot, value}, cached once at first build so
@@ -18,6 +52,20 @@ Corvus.topbar = (function () {
   let companyLogo = "";
   const localNotifications = new Map();
   const dismissedNotifications = new Set();
+  const readNotifications = new Set();
+  // key -> ms first observed, so info can age out. Pruned with the sets above.
+  const notificationFirstSeen = new Map();
+  // How long a routine info line stays on the board. Warning and critical have
+  // no equivalent — see the module comment.
+  const INFO_TTL_MS = 60000;
+  // Vehicle state at the previous telemetry push, for the transitions that
+  // drive the read/clear milestones. null until the first snapshot arrives, so
+  // a page opened against an already-flying vehicle triggers nothing.
+  let prevConnected = null;
+  let prevArmed = null;
+  // Autopilot uptime at the previous push; a value that goes backwards is a
+  // reboot. 0 until the vehicle reports one.
+  let prevBootMs = 0;
   const commandDedupe = Corvus.notificationDedupe.createTracker({ windowMs: 3000 });
 
   /* Top-bar icons are sized by main.css, so they are built without an inline
@@ -58,14 +106,80 @@ Corvus.topbar = (function () {
     return `remote:${notification.level || "info"}:${notification.msg || ""}:${notification.meta || ""}`;
   }
 
+  /** PX4 calls it "error", the popover draws it as "critical" — one spelling. */
+  function notificationLevel(notification) {
+    const level = notification?.level || "info";
+    return level === "error" ? "critical" : level;
+  }
+
+  /**
+   * Every notification currently on the board, remote and local, minus the
+   * dismissed and the aged-out.
+   *
+   * Also where the three per-key stores are pruned. A remote warning that has
+   * left the backend store can never come back under the same key (its `meta`
+   * timestamp is part of the key), so holding "dismissed" or "read" for it
+   * forever would be a slow leak — and, worse, would silently suppress a
+   * genuinely new warning that happened to reuse the key.
+   */
   function visibleNotifications(state) {
     const remote = (state?.warnings || []).map((warning) => ({ ...warning, source: "remote" }));
-    const activeRemoteKeys = new Set(remote.map(notificationKey));
-    dismissedNotifications.forEach((key) => {
-      if (key.startsWith("remote:") && !activeRemoteKeys.has(key)) dismissedNotifications.delete(key);
+    const all = remote.concat(Array.from(localNotifications.values()));
+    const activeKeys = new Set(all.map(notificationKey));
+
+    [dismissedNotifications, readNotifications].forEach((set) => {
+      Array.from(set).forEach((key) => { if (!activeKeys.has(key)) set.delete(key); });
     });
-    return remote.concat(Array.from(localNotifications.values()))
-      .filter((notification) => !dismissedNotifications.has(notificationKey(notification)));
+    Array.from(notificationFirstSeen.keys()).forEach((key) => {
+      if (!activeKeys.has(key)) notificationFirstSeen.delete(key);
+    });
+
+    const now = Date.now();
+    return all.filter((notification) => {
+      const key = notificationKey(notification);
+      if (dismissedNotifications.has(key)) return false;
+      if (!notificationFirstSeen.has(key)) notificationFirstSeen.set(key, now);
+      // Info only. A warning or a critical stays until somebody acts on it.
+      if (notificationLevel(notification) !== "info") return true;
+      return now - notificationFirstSeen.get(key) < INFO_TTL_MS;
+    });
+  }
+
+  /**
+   * What the badge has to say, in one place, because the bar and the popover
+   * were computing it twice and could disagree.
+   *
+   * The count is UNREAD while anything is unread, and the total once it has
+   * all been seen — so a board of acknowledged warnings still says it is not
+   * empty, without pretending they are new. `level` follows the same split:
+   * the worst unread level, or "read" for a board that has been looked at.
+   */
+  function notificationSummary(state) {
+    const items = visibleNotifications(state);
+    const unread = items.filter((item) => !readNotifications.has(notificationKey(item)));
+    let level = "healthy";
+    if (unread.length) {
+      level = unread.some((item) => notificationLevel(item) === "critical") ? "critical" : "warning";
+    } else if (items.length) {
+      level = "read";
+    }
+    return { items, unread, count: unread.length || items.length, level };
+  }
+
+  /** Everything on the board has been seen. Never deletes — see the module
+   *  comment; this is the "hide as read" half of the contract. */
+  function markAllNotificationsRead(state) {
+    const items = visibleNotifications(state || lastState || {});
+    let changed = false;
+    items.forEach((item) => {
+      const key = notificationKey(item);
+      if (!readNotifications.has(key)) { readNotifications.add(key); changed = true; }
+    });
+    if (changed) {
+      renderedWarningSignature = "";
+      refreshNotifications();
+    }
+    return changed;
   }
 
   function blocks(state) {
@@ -76,10 +190,7 @@ Corvus.topbar = (function () {
       ? "healthy" : "off";
     const battPct = state.battery_percent || 0;
     const battCls = !state.connected ? "off" : battPct > 25 ? "healthy" : (battPct > 12 ? "warning" : "critical");
-    const notifications = visibleNotifications(state);
-    const warnCount = notifications.length;
-    const hasCritical = notifications.some((w) => w.level === "critical" || w.level === "error");
-    const warnLevel = hasCritical ? "critical" : (warnCount > 0 ? "warning" : "healthy");
+    const notifications = notificationSummary(state);
     const gpsSub = state.connected ? `(${state.gps_hdop > 0 && state.gps_hdop < 99 ? state.gps_hdop.toFixed(1) : "—"})` : "";
     const fw = vehicleFirmware(state);
 
@@ -93,7 +204,7 @@ Corvus.topbar = (function () {
       { key: "altitude", label: "Altitude", value: state.connected ? `${Math.round(state.altitude_amsl)}` : "—", sub: "m AMSL", priority: "mid" },
       { key: "groundspeed", label: "Groundspeed", value: state.connected ? `${state.groundspeed.toFixed(1)}` : "—", sub: "m/s", priority: "mid" },
       { key: "vspeed", label: "Vertical speed", value: state.connected ? `${state.vspeed >= 0 ? "+" : ""}${state.vspeed.toFixed(1)}` : "—", sub: "m/s", priority: "mid" },
-      { key: "warnings", type: "warnings", label: "Warnings", value: warnCount, level: warnLevel, priority: "high" },
+      { key: "warnings", type: "warnings", label: "Warnings", value: notifications.count, level: notifications.level, priority: "high" },
     ];
   }
 
@@ -251,24 +362,32 @@ Corvus.topbar = (function () {
     // its single per-update query as-is rather than over-caching it.
     const warnEl = topBar.querySelector(".tb-block.warnings .tb-warn-badge");
     if (warnEl) {
-      const notifications = visibleNotifications(state);
-      const warnCount = notifications.length;
-      const hasCritical = notifications.some((w) => w.level === "critical" || w.level === "error");
-      const level = hasCritical ? "critical" : (warnCount > 0 ? "warning" : "healthy");
-      warnEl.textContent = String(warnCount);
-      warnEl.style.background = level === "critical" ? "#FF514D" : level === "warning" ? "#F5C842" : "#45D483";
+      const { items, unread, count, level } = notificationSummary(state);
+      warnEl.textContent = String(count);
+      // The badge colour is a token, set from CSS off this attribute. It used
+      // to be three hex literals written straight onto style.background, which
+      // meant the one element in the bar that never changed with the theme was
+      // the one shouting loudest.
+      warnEl.dataset.level = level;
       const valSpan = warnEl.parentElement;
       if (valSpan) valSpan.className = `tb-value ${level}`;
       const warningButton = warnEl.closest(".tb-block.warnings");
-      if (warningButton) warningButton.setAttribute("aria-label", `${warnCount} notification${warnCount === 1 ? "" : "s"}`);
+      if (warningButton) {
+        const plural = (n) => `${n} notification${n === 1 ? "" : "s"}`;
+        warningButton.setAttribute("aria-label", unread.length
+          ? `${unread.length} unread of ${plural(items.length)}`
+          : plural(items.length));
+      }
     }
     if (warningsOpen) renderWarningsPopover(state);
   }
 
   function renderWarningsPopover(state, force = false) {
-    const notifications = visibleNotifications(state);
+    const { items: notifications, unread } = notificationSummary(state);
+    const unreadKeys = new Set(unread.map(notificationKey));
     const signature = JSON.stringify(notifications.map((item) => [
       notificationKey(item), item.level, item.msg, item.meta,
+      unreadKeys.has(notificationKey(item)),
     ]));
     if (!force && signature === renderedWarningSignature) return;
 
@@ -276,8 +395,11 @@ Corvus.topbar = (function () {
     const focusedKey = document.activeElement?.closest?.(".wp-item")?.dataset.notificationKey || "";
     renderedWarningSignature = signature;
     warningsList.replaceChildren();
+    // "5 Notifications · 2 new" rather than a separate pill, so the popover's
+    // accessible name carries the unread count too.
+    const total = `${notifications.length} Notification${notifications.length === 1 ? "" : "s"}`;
     document.getElementById("warningsTitle").textContent =
-      `${notifications.length} Notification${notifications.length === 1 ? "" : "s"}`;
+      unread.length ? `${total} \u00b7 ${unread.length} new` : total;
 
     // Toggle the "clear all" button: disabled when empty, enabled when there
     // are notifications to clear. Guarded so a missing button never breaks the
@@ -296,11 +418,17 @@ Corvus.topbar = (function () {
       warningsList.appendChild(empty);
     } else {
       notifications.forEach((notification) => {
-        const level = notification.level === "error" ? "critical" : (notification.level || "info");
+        const level = notificationLevel(notification);
+        const key = notificationKey(notification);
+        const isRead = !unreadKeys.has(key);
         const item = document.createElement("div");
-        item.className = "wp-item";
+        // Read is a dimming, not a removal: the line stays exactly where it
+        // was so the board reads as a log rather than a queue that empties
+        // itself while the operator is looking at it.
+        item.className = isRead ? "wp-item is-read" : "wp-item";
+        item.dataset.level = level;
         item.setAttribute("role", "listitem");
-        item.dataset.notificationKey = notificationKey(notification);
+        item.dataset.notificationKey = key;
 
         const itemIcon = document.createElement("div");
         itemIcon.className = `wp-icon ${level}`;
@@ -338,7 +466,12 @@ Corvus.topbar = (function () {
     }
   }
 
+  /* Closing the popover is what marks the board read — not opening it. An
+     operator who opens the centre because something just arrived should see
+     that thing arrive as new, and anything that lands WHILE they are reading
+     stays new too; the badge settles the moment they look away. */
   function setWarningsOpen(open, focusClose = false) {
+    const wasOpen = warningsOpen;
     warningsOpen = open;
     warningsPopover.hidden = !open;
     const trigger = topBar.querySelector(".tb-block.warnings");
@@ -346,6 +479,8 @@ Corvus.topbar = (function () {
     if (open) {
       renderWarningsPopover(lastState || Corvus.telemetry.getState() || {}, true);
       if (focusClose) document.getElementById("wpClose").focus();
+    } else if (wasOpen) {
+      markAllNotificationsRead(lastState);
     }
   }
 
@@ -372,10 +507,7 @@ Corvus.topbar = (function () {
     const dismissButtons = Array.from(warningsList.querySelectorAll(".wp-dismiss"));
     const focusedIndex = dismissButtons.indexOf(document.activeElement);
     if (key.startsWith("local:")) {
-      const id = Number(key.slice("local:".length));
-      const notification = localNotifications.get(id);
-      if (notification?.timer) window.clearTimeout(notification.timer);
-      localNotifications.delete(id);
+      localNotifications.delete(Number(key.slice("local:".length)));
     } else {
       dismissedNotifications.add(key);
     }
@@ -388,35 +520,46 @@ Corvus.topbar = (function () {
     }
   }
 
-  // Best-effort "clear all": ask the backend to drop its warnings store (the
-  // next telemetry push then sends an empty `warnings` array) and clear every
-  // local notification + the dismissed-key set. Remote warnings are NOT
-  // mutated client-side — they disappear via the next SSE push.
+  /**
+   * Empty the board: drop every local notification and ask the backend to drop
+   * its warning store.
+   *
+   * The remote half is hidden here as well as at the source. The store is the
+   * owner and its next push is what really removes them, but waiting a round
+   * trip for a button press to do anything is what made "clear all" feel
+   * broken; the dismissed keys prune themselves the moment that push lands
+   * (see visibleNotifications), so this is a bridge rather than a second
+   * source of truth. A failed POST leaves them hidden — the same outcome as
+   * dismissing each by hand, which is what the operator asked for.
+   */
   async function clearAllNotifications() {
+    (lastState?.warnings || []).forEach((warning) =>
+      dismissedNotifications.add(notificationKey(warning)));
+    localNotifications.clear();
+    readNotifications.clear();
+    notificationFirstSeen.clear();
+    renderedWarningSignature = "";
+    refreshNotifications();
     try {
       await Corvus.telemetry.postAction("/api/warnings/clear", {});
     } catch (err) {
       console.error("clear warnings failed:", err);
     }
-    localNotifications.forEach((notification) => {
-      if (notification.timer) window.clearTimeout(notification.timer);
-    });
-    localNotifications.clear();
-    dismissedNotifications.clear();
-    renderedWarningSignature = "";
-    refreshNotifications();
   }
 
   function removeLocalNotification(id) {
-    const notification = localNotifications.get(id);
-    if (!notification) return false;
-    if (notification.timer) window.clearTimeout(notification.timer);
-    localNotifications.delete(id);
+    if (!localNotifications.delete(id)) return false;
     renderedWarningSignature = "";
     return true;
   }
 
-  function addLocalNotification(level, message, lifetimeMs = 8000) {
+  /* A local notification is a command this GCS sent and the vehicle refused.
+     It used to delete itself after eight seconds, which is the one thing a
+     rejected command must not do — an operator who looked away missed it, and
+     the board then claimed nothing had gone wrong. It now lives by the same
+     rule as everything else: info ages out, warning and critical stay until
+     acknowledged (see visibleNotifications). */
+  function addLocalNotification(level, message) {
     const id = ++localNotificationId;
     const notification = {
       localId: id,
@@ -424,19 +567,12 @@ Corvus.topbar = (function () {
       level,
       msg: String(message || "Command failed"),
       meta: new Date().toLocaleTimeString(),
-      timer: null,
     };
-    notification.timer = window.setTimeout(() => {
-      const focusedItem = document.activeElement?.closest?.(".wp-item");
-      const restoreFocus = focusedItem?.dataset.notificationKey === `local:${id}`;
-      if (!localNotifications.delete(id)) return;
-      renderedWarningSignature = "";
-      refreshNotifications();
-      if (restoreFocus) document.getElementById("wpClose").focus();
-    }, lifetimeMs);
     localNotifications.set(id, notification);
     announceNotification(`${level === "critical" ? "Error" : "Warning"}: ${notification.msg}`);
-    setWarningsOpen(true);
+    // Only a critical takes the screen. A rejected command is one the operator
+    // just issued and is waiting on, so it earns the interruption.
+    if (notificationLevel(notification) === "critical") setWarningsOpen(true);
     refreshNotifications();
     return id;
   }
@@ -470,16 +606,63 @@ Corvus.topbar = (function () {
     });
     const actionable = added.filter((warning) =>
       !duplicateRemoteKeys.has(notificationKey(warning)) &&
-      (warning.level === "critical" || warning.level === "error" || warning.level === "warning"));
+      notificationLevel(warning) !== "info");
     if (!actionable.length) return;
     const newest = actionable[actionable.length - 1];
-    announceNotification(`${newest.level === "warning" ? "Warning" : "Error"}: ${newest.msg}`);
-    setWarningsOpen(true);
+    announceNotification(`${notificationLevel(newest) === "warning" ? "Warning" : "Error"}: ${newest.msg}`);
+    // Only a critical takes the screen. PX4 emits NOTICE-level lines through
+    // the whole of a normal flight ("Takeoff detected", "RTL: land at home"),
+    // and a popover unfolding over the map for each of them trained operators
+    // to dismiss the centre without reading it. Everything else raises the
+    // badge and is announced to assistive tech, which is what a warning is for.
+    if (actionable.some((warning) => notificationLevel(warning) === "critical")) {
+      setWarningsOpen(true);
+    }
+  }
+
+  /**
+   * The vehicle-state transitions the notification board reacts to.
+   *
+   * A fresh link, or an autopilot reboot, CLEARS. Whatever is on the board
+   * predates it, so it describes a previous session — possibly a different
+   * aircraft, certainly a different power cycle. Nothing is lost: the console
+   * holds every line verbatim, which is what makes clearing here safe at all.
+   * (A reboot is read the way the map reads it: boot_ms running backwards.)
+   *
+   * A change of the armed state MARKS READ. Arming means every preflight
+   * complaint on the board has been answered — the vehicle would not have
+   * armed otherwise — and disarming means the flight's messages are history.
+   * Read, not cleared: "it armed anyway" is not proof a warning was
+   * unimportant, so it stays on the board, just no longer shouting.
+   *
+   * The arm milestone needs the link up on BOTH sides of the change, because
+   * a disconnect synthesises armed=false (state_store.set_disconnected) — and
+   * a dropped link is the last moment at which warnings should go quiet.
+   *
+   * Every milestone is skipped on the first snapshot. A page opened against a
+   * vehicle that is already connected and armed has observed no transition,
+   * and must not silently wipe a board the operator has not seen yet.
+   */
+  function applyLifecycleMilestones(state) {
+    const connected = !!state?.connected;
+    const armed = !!state?.armed;
+    const bootMs = Number(state?.boot_ms) || 0;
+    const rebooted = prevBootMs > 0 && bootMs > 0 && bootMs < prevBootMs;
+
+    if ((prevConnected === false && connected) || rebooted) {
+      clearAllNotifications();
+    } else if (prevArmed !== null && prevArmed !== armed && connected && prevConnected) {
+      markAllNotificationsRead(state);
+    }
+    prevConnected = connected;
+    prevArmed = armed;
+    if (bootMs > 0) prevBootMs = bootMs;
   }
 
   function handleTelemetryState(state) {
     lastState = state;
     syncRemoteWarnings(state);
+    applyLifecycleMilestones(state);
     renderTopBar(state);
   }
 

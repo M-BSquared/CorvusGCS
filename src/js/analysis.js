@@ -151,11 +151,10 @@ Corvus.analysis = (function () {
     landing.appendChild(telemetry.el);
 
     // --- Flight logs -------------------------------------------------------
-    // A heading and a rule separate the log tools from the telemetry card
-    // above them; the folder row itself stays a slim setting rather than a
-    // section, so it does not out-shout the logs it configures.
+    // The heading and its own underline separate the log tools from the
+    // telemetry card above them; the folder row itself stays a slim setting
+    // rather than a section, so it does not out-shout the logs it configures.
     landing.appendChild(S.sectionTitle("Flight logs"));
-    landing.appendChild(S.el("div", "logs-divider"));
 
     const dirRow = S.el("div", "logs-dir-row");
     const dirIcon = S.el("span", "logs-dir-icon");

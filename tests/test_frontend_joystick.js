@@ -188,6 +188,8 @@ async function mount({ connected = true, sticks = true, keys = false } = {}) {
     left: bases[0], right: bases[1],
     axes: pad.querySelector("js-axes"),
     grip: pad.querySelector("js-grip"),
+    collapse: pad.querySelector("js-collapse"),
+    surfaces: pad.querySelector("js-surfaces"),
     key: (dir) => pad.querySelector("js-key-" + dir),
   };
 }
@@ -551,7 +553,7 @@ async function testTheGripDragsThePadAndPersistsThePosition() {
   assert.ok(pad.className.includes("is-placed"), "anchoring handed over to left/top");
   assert.equal(pad.style.left, "330px");   // 400 - 70 (host left) - 0 (grab offset)
   assert.equal(pad.style.top, "240px");
-  assert.deepEqual(JSON.parse(store.get(POS_KEY)), { x: 330, y: 240 });
+  assert.deepEqual(JSON.parse(store.get(POS_KEY)), { x: 330, y: 240, collapsed: false });
 }
 
 async function testADragIsClampedSoThePadStaysReachable() {
@@ -588,7 +590,7 @@ async function testDoubleClickingTheGripSendsThePadHome() {
 
   assert.ok(!pad.className.includes("is-placed"));
   assert.equal(pad.style.left, "");
-  assert.deepEqual(JSON.parse(store.get(POS_KEY)), { x: null, y: null });
+  assert.deepEqual(JSON.parse(store.get(POS_KEY)), { x: null, y: null, collapsed: false });
 }
 
 async function testAStoredPositionIsRestoredOnTheNextLaunch() {
@@ -634,6 +636,149 @@ async function testDragTracksTheCursorAtAScaledInterfaceSize() {
   // (800 - 140) / 2 = 330 unscaled px from the host's left edge.
   assert.equal(pad.style.left, "330px");
   assert.equal(pad.style.top, "240px");
+}
+
+// --- collapsing ------------------------------------------------------------
+
+async function testCollapsingFoldsTheSurfacesAndRoundTrips() {
+  const m = await mount({ sticks: false, keys: true });
+  assert.equal(m.surfaces.hidden, false, "surfaces up to begin with");
+
+  fire(m.collapse, "click");
+  assert.equal(m.surfaces.hidden, true, "surfaces folded away");
+  assert.ok(m.pad.className.includes("is-collapsed"));
+  assert.equal(m.pad.hidden, false, "the grip bar stays — this is not 'off'");
+  assert.equal(JSON.parse(store.get(POS_KEY)).collapsed, true, "collapsed persisted");
+
+  fire(m.collapse, "click");
+  assert.equal(m.surfaces.hidden, false, "surfaces back");
+  assert.ok(!m.pad.className.includes("is-collapsed"));
+  assert.equal(JSON.parse(store.get(POS_KEY)).collapsed, false);
+}
+
+async function testACollapsedPadStopsFlyingButKeepsTheStreamAlive() {
+  const m = await mount({ sticks: false, keys: true });
+  posts.length = 0;
+
+  fire(m.collapse, "click");
+  // A control the operator cannot see is one they cannot centre, so a
+  // collapsed pad is not an input source — the same rule that keeps a hidden
+  // pad silent.
+  const swallowed = fireKey("keydown", "ArrowUp");
+  assert.equal(swallowed.defaultPrevented, false, "the key is not even claimed");
+  assert.equal(m.key("up").className.includes("active"), false, "no key held");
+
+  await settle();
+  flushTimers();
+  const last = posts[posts.length - 1];
+  assert.ok(last, "frames keep going out while collapsed");
+  // Neutral, not silence: a gap in MANUAL_CONTROL is what PX4 reads as RC loss.
+  assert.deepEqual(
+    [last.body.x, last.body.y, last.body.z, last.body.r], [0, 0, 0.5, 0],
+    "a collapsed pad streams a released transmitter, not nothing",
+  );
+
+  fire(m.collapse, "click");
+  fireKey("keydown", "ArrowUp");
+  assert.ok(m.key("up").className.includes("active"), "keys fly again once expanded");
+  fireKey("keyup", "ArrowUp");
+}
+
+async function testACollapsedPadIsRestoredOnTheNextLaunch() {
+  await reset();
+  store.set(POS_KEY, JSON.stringify({ x: null, y: null, collapsed: true }));
+  const host = makeEl("div");
+  host.clientWidth = 1000; host.clientHeight = 700;
+  host._rect = { left: 70, top: 60, width: 1000, height: 700 };
+  const pad = makeEl("div");
+  pad.offsetWidth = PAD_W; pad.offsetHeight = PAD_H;
+  host.appendChild(pad);
+  Corvus.joystick.init(pad);
+  Corvus.joystick.setKeysEnabled(true);
+
+  assert.ok(pad.className.includes("is-collapsed"), "collapsed restored");
+  assert.equal(pad.querySelector("js-surfaces").hidden, true);
+  Corvus.joystick.setKeysEnabled(false);
+}
+
+async function testTheCollapseControlIsNotADragHandle() {
+  const m = await mount();
+  // The control sits ON the grip, which is the drag surface; a click on it
+  // must not also shove the pad across the map.
+  fire(m.grip, "pointerdown", {
+    clientX: PAD_X, clientY: PAD_Y, button: 0,
+    target: { closest: (sel) => (sel === ".icon-btn" ? m.collapse : null) },
+  });
+  fire(m.pad, "pointermove", { clientX: 600, clientY: 400 });
+  fire(m.pad, "pointerup", {});
+  assert.equal(m.pad.style.left, "", "no drag started from the collapse control");
+}
+
+// --- the axis readout ------------------------------------------------------
+
+async function testTheAxisReadoutOnlyNamesTheAxesTheSurfacesCanMove() {
+  // Keys drive pitch and roll and nothing else. Naming thrust and yaw as well
+  // made the grip bar twice the width of the key cluster under it.
+  const keysOnly = await mount({ sticks: false, keys: true });
+  assert.equal(keysOnly.axes.textContent, "P +0.00  R +0.00");
+
+  const withSticks = await mount({ sticks: true, keys: true });
+  assert.equal(withSticks.axes.textContent, "P +0.00  R +0.00  T 0.50  Y +0.00",
+    "all four axes once a stick can move them");
+}
+
+// Leaving Home hides the map view, so it reports 0x0. Reflowing against a box
+// with no size collapsed every coordinate to the origin, which is how a pad the
+// operator had carefully placed came back sitting in the top-left corner after
+// a round trip through Setup or Options. A control surface is worse to lose
+// than a readout: the operator reaches for a stick that is no longer there.
+async function testAHiddenMapLeavesThePadWhereItWas() {
+  const { host, pad, grip } = await mount();
+  fire(grip, "pointerdown", { clientX: PAD_X, clientY: PAD_Y, button: 0 });
+  fire(pad, "pointermove", { clientX: 400, clientY: 300 });
+  fire(pad, "pointerup", {});
+  const placed = { left: pad.style.left, top: pad.style.top };
+  assert.ok(parseInt(placed.left, 10) > 0 && parseInt(placed.top, 10) > 0,
+    "the pad starts away from the corner");
+
+  // Navigate to Setup: display:none makes every box zero.
+  host.clientWidth = 0; host.clientHeight = 0;
+  (windowListeners.resize || []).forEach((cb) => cb());
+  assert.deepEqual({ left: pad.style.left, top: pad.style.top }, placed,
+    "a hidden map moves nothing");
+
+  // ...and back to Home.
+  host.clientWidth = 1000; host.clientHeight = 700;
+  (windowListeners.resize || []).forEach((cb) => cb());
+  assert.deepEqual({ left: pad.style.left, top: pad.style.top }, placed,
+    "the pad is still where the operator left it");
+}
+
+// The hidden interlude must not poison the remembered map size either, or the
+// pad would stop travelling with the right edge after the first page visit.
+async function testEdgeTrackingSurvivesAHiddenMap() {
+  const { host, pad, grip } = await mount();
+  // Park the pad against the map's right edge.
+  fire(grip, "pointerdown", { clientX: PAD_X, clientY: PAD_Y, button: 0 });
+  fire(pad, "pointermove", { clientX: 70 + 1000 - PAD_W, clientY: 200 });
+  fire(pad, "pointerup", {});
+  const parked = parseInt(pad.style.left, 10);
+
+  // Setup and back, at the same size.
+  host.clientWidth = 0; host.clientHeight = 0;
+  (windowListeners.resize || []).forEach((cb) => cb());
+  host.clientWidth = 1000; host.clientHeight = 700;
+  (windowListeners.resize || []).forEach((cb) => cb());
+  assert.equal(parseInt(pad.style.left, 10), parked,
+    "the round trip is a true no-op — not even a containing nudge");
+
+  // Now narrow the map: the pad must still ride the edge in.
+  host.clientWidth = 620;
+  (windowListeners.resize || []).forEach((cb) => cb());
+  assert.ok(parseInt(pad.style.left, 10) < parked,
+    "still tracks the right edge after a page visit");
+  assert.ok(parseInt(pad.style.left, 10) + PAD_W <= 620,
+    "the whole pad is on the narrowed map");
 }
 
 async function testShrinkingTheMapPullsThePadBackIntoView() {
@@ -684,6 +829,13 @@ const tests = [
   testAStoredPositionIsRestoredOnTheNextLaunch,
   testACorruptStoredPositionFallsBackToTheDefaultCorner,
   testShrinkingTheMapPullsThePadBackIntoView,
+  testCollapsingFoldsTheSurfacesAndRoundTrips,
+  testACollapsedPadStopsFlyingButKeepsTheStreamAlive,
+  testACollapsedPadIsRestoredOnTheNextLaunch,
+  testTheCollapseControlIsNotADragHandle,
+  testTheAxisReadoutOnlyNamesTheAxesTheSurfacesCanMove,
+  testAHiddenMapLeavesThePadWhereItWas,
+  testEdgeTrackingSurvivesAHiddenMap,
 ];
 
 (async () => {

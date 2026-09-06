@@ -4,10 +4,12 @@ window.Corvus = window.Corvus || {};
 /**
  * Corvus.setup — the Setup page (left-nav "SETUP").
  *
- * Thin orchestrator: renders the tile grid (Calibration, Parameters, Firmware)
- * plus a compact Vehicle Info card, and routes to the sub-pages. The actual
- * page content lives in its own file:
+ * Thin orchestrator: renders the tile grid (Calibration, Motors, Safety &
+ * Sensors, Parameters, Firmware) plus a compact Vehicle Info card, and routes to the sub-pages. The
+ * actual page content lives in its own file:
  *   - setup-calibration.js  (Corvus.setupCalibration)
+ *   - setup-motors.js       (Corvus.setupMotors)
+ *   - setup-safety.js       (Corvus.setupSafety)
  *   - setup-parameters.js   (Corvus.setupParameters)
  *   - setup-firmware.js     (Corvus.setupFirmware)
  * Shared helpers live in setup-shared.js (Corvus.setupShared).
@@ -22,7 +24,8 @@ window.Corvus = window.Corvus || {};
 Corvus.setup = (function () {
   const S = Corvus.setupShared;
 
-  // Active view of the Setup page: "tiles" (the grid) | "calibration" | "parameters" | "firmware".
+  // Active view of the Setup page: "tiles" (the grid) | "calibration" |
+  // "motors" | "safety" | "parameters" | "firmware".
   let activeView = "tiles";
 
   // Teardown handle for the currently-rendered view. `render` calls this before
@@ -67,22 +70,24 @@ Corvus.setup = (function () {
     container.appendChild(S.pageHeader("Setup", "Vehicle configuration and calibration"));
 
     // Compact Vehicle Info card stays at the top of the grid so the operator
-    // still sees autopilot / version / connection at a glance (kept lean).
+    // still sees which autopilot and firmware they are configuring (kept lean).
     const state = (Corvus.telemetry && Corvus.telemetry.getState()) || {};
     const infoCard = S.el("div", "page-card setup-vehicle-info");
     infoCard.appendChild(S.sectionTitle("Vehicle Info"));
 
-    // Build the five Vehicle Info rows. `dataKey` is written to each value
-    // span's `dataset.infoKey` so tests (and any future caller) can locate a
-    // row by key. Capture direct refs to the value spans here so the live
-    // telemetry subscription below can update each row in place without a
-    // per-tick DOM query.
+    // Build the Vehicle Info rows. `dataKey` is written to each value span's
+    // `dataset.infoKey` so tests (and any future caller) can locate a row by
+    // key. Capture direct refs to the value spans here so the live telemetry
+    // subscription below can update each row in place without a per-tick DOM
+    // query.
+    //
+    // Connection and armed state are deliberately absent: the top bar carries
+    // both permanently, on every page. Repeating them here bought nothing and
+    // pushed the identity rows the card exists for further down.
     const rowDefs = [
       { key: "autopilot",    label: "Autopilot",    value: state.autopilot    || "—" },
       { key: "vehicle_type", label: "Vehicle Type", value: state.vehicle_type || "—" },
       { key: "px4_version",  label: "Firmware Version", value: state.px4_version || "—" },
-      { key: "connected",    label: "Connected",    value: state.connected ? "Yes" : "No" },
-      { key: "armed",        label: "Armed",        value: state.armed ? "Yes" : "No" },
     ];
     const rowValues = {};
     for (const def of rowDefs) {
@@ -92,11 +97,16 @@ Corvus.setup = (function () {
     }
     container.appendChild(infoCard);
 
-    // Tile grid: Calibration + Parameters + Firmware. Keyboard-focusable buttons
-    // so the whole tile is reachable and announces as a control.
+    // Tile grid: Calibration + Motors + Safety & Sensors + Parameters +
+    // Firmware. Keyboard-focusable buttons so the whole tile is reachable and
+    // announces as a control.
     const grid = S.el("div", "setup-tiles");
     grid.appendChild(makeTile("calibration", "sliders-horizontal", "Calibration",
       "Sensor calibration, level/airspeed, and POD autotune with live graphs."));
+    grid.appendChild(makeTile("motors", "fan", "Motors",
+      "Airframe geometry, motor assignment and spacing, and the output protocol."));
+    grid.appendChild(makeTile("safety", "shield", "Safety & Sensors",
+      "Distance and height limits, failsafe actions, rangefinder and optical flow."));
     grid.appendChild(makeTile("parameters", "list", "Parameters",
       "Download all PX4 parameters on demand, then edit any value."));
     grid.appendChild(makeTile("firmware", "cpu", "Firmware",
@@ -106,8 +116,8 @@ Corvus.setup = (function () {
     // Subscribe to telemetry so the Vehicle Info rows update live. The firmware version
     // only arrives a few seconds after connect via AUTOPILOT_VERSION, so the
     // initial getState() snapshot above would otherwise stay "—" forever. The
-    // subscription updates only the five row values per push; the tiles and
-    // header are static. Stored in `gridUnsub` so `teardown()` can release it.
+    // subscription updates only the row values per push; the tiles and header
+    // are static. Stored in `gridUnsub` so `teardown()` can release it.
     if (Corvus.telemetry && typeof Corvus.telemetry.subscribe === "function") {
       gridUnsub = Corvus.telemetry.subscribe((s) => {
         if (!s) return;
@@ -115,8 +125,6 @@ Corvus.setup = (function () {
           autopilot:    s.autopilot    || "—",
           vehicle_type: s.vehicle_type || "—",
           px4_version:  s.px4_version  || "—",
-          connected:    s.connected ? "Yes" : "No",
-          armed:        s.armed ? "Yes" : "No",
         };
         for (const key of Object.keys(next)) {
           const span = rowValues[key];
@@ -147,7 +155,7 @@ Corvus.setup = (function () {
 
   /** Swap the container to a sub-page. Tears the grid down first. */
   function openView(viewId) {
-    if (viewId !== "calibration" && viewId !== "parameters" && viewId !== "firmware") return;
+    if (["calibration", "motors", "safety", "parameters", "firmware"].indexOf(viewId) < 0) return;
     teardown();
     activeView = viewId;
     const container = document.getElementById("pageView");
@@ -164,6 +172,10 @@ Corvus.setup = (function () {
     };
     if (viewId === "calibration") {
       activeDestroy = Corvus.setupCalibration.render(container, navigateBack);
+    } else if (viewId === "motors") {
+      activeDestroy = Corvus.setupMotors.render(container, navigateBack);
+    } else if (viewId === "safety") {
+      activeDestroy = Corvus.setupSafety.render(container, navigateBack);
     } else if (viewId === "parameters") {
       activeDestroy = Corvus.setupParameters.render(container, navigateBack);
     } else { // firmware

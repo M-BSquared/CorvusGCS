@@ -11,7 +11,7 @@
  * and never becomes unreachable:
  *  - init() RE-PARENTS the existing instrument nodes rather than rebuilding
  *    them, which is what lets it be layered on top of instruments.js;
- *  - drag/pin/compact/collapse round-trip through localStorage;
+ *  - drag/pin/compact/readouts/collapse round-trip through localStorage;
  *  - a pinned panel refuses to move;
  *  - a drag toward infinity is clamped so part of the panel stays on screen.
  *
@@ -182,12 +182,38 @@ function testInitReparentsInstrumentsInsteadOfRebuilding() {
   assert.equal(panel.getAttribute("aria-label"), "Flight instruments");
 }
 
-function testPanelExposesThreeControls() {
+function testPanelExposesItsFourControls() {
   const { panel } = mount();
   Corvus.hudPanel.init(panel);
-  ["Lock position", "Compact size", "Collapse"].forEach((label) => {
+  ["Lock position", "Compact size", "Hide the readouts", "Collapse"].forEach((label) => {
     assert.ok(actionBtn(panel, label), `panel has a "${label}" control`);
   });
+}
+
+function testReadoutsFoldWithoutTakingTheDialsWithThem() {
+  const { panel, instruments, telemetry } = mount();
+  Corvus.hudPanel.init(panel);
+  const body = panel.querySelector(".hud-body");
+
+  fire(actionBtn(panel, "Hide the readouts"), "click");
+  assert.equal(telemetry.hidden, true, "the ALT AMSL / AGL / ... grid folds");
+  assert.equal(instruments.hidden, false, "the compass and horizon stay");
+  assert.equal(body.hidden, false, "this is not the whole-panel collapse");
+  assert.ok(panel.classList.contains("is-readouts-off"));
+  assert.equal(persisted().readouts, false, "fold persisted");
+
+  fire(actionBtn(panel, "Show the readouts"), "click");
+  assert.equal(telemetry.hidden, false, "grid back");
+  assert.equal(persisted().readouts, true);
+}
+
+function testAPanelSavedBeforeTheFoldExistedComesBackWithItsReadoutsUp() {
+  const { panel, telemetry } = mount();
+  // The stored shape from the previous release: no `readouts` key at all.
+  store.set(KEY, JSON.stringify({ x: null, y: null, pinned: false, compact: false, collapsed: false }));
+  Corvus.hudPanel.init(panel);
+  assert.equal(telemetry.hidden, false, "absent means shown, not folded");
+  assert.equal(Corvus.hudPanel._state().readouts, true);
 }
 
 function testCollapseHidesTheBodyAndRoundTrips() {
@@ -376,6 +402,101 @@ function testClampUsesTheMapsOwnPixelsNotItsScreenSize() {
   assert.equal(parseInt(panel.style.top, 10), 560 - 64, "clamped to the scaled map height");
 }
 
+function testThePanelTravelsWithTheSidebarInsteadOfHidingBehindIt() {
+  const { host, panel } = mount();
+  Corvus.hudPanel.init(panel);
+  const h = dragSurface(panel);
+
+  // Park the panel against the map's right edge, then open the right utility
+  // panel — the map narrows by 380px from that side. Left/top anchoring alone
+  // would leave the panel exactly where it is, which is behind a sidebar that
+  // outranks it in the stacking order.
+  fire(h, "pointerdown", { clientX: 740, clientY: 390 });
+  fire(h, "pointermove", { clientX: 810, clientY: 400 });
+  fire(h, "pointerup", {});
+  assert.equal(panel.style.left, "700px");
+
+  host._rect = { left: 70, top: 60, width: 620, height: 700 };
+  (windowListeners.resize || []).forEach((cb) => cb());
+
+  const x = parseInt(panel.style.left, 10);
+  assert.ok(x + 320 <= 620, "the whole panel is still on the map, not under the sidebar");
+  assert.equal(x, 620 - 320 - 8, "it kept its place against the right edge");
+
+  // ...and rides back out when the sidebar closes again.
+  host._rect = { left: 70, top: 60, width: 1000, height: 700 };
+  (windowListeners.resize || []).forEach((cb) => cb());
+  assert.equal(parseInt(panel.style.left, 10), 1000 - 320 - 8, "back out with the edge");
+}
+
+function testAPanelOnTheLeftDoesNotChaseTheSidebar() {
+  const { host, panel } = mount();
+  Corvus.hudPanel.init(panel);
+  const h = dragSurface(panel);
+  // Dragged to the left half: the operator put it there, and the right edge
+  // moving is no reason for it to shuffle sideways.
+  fire(h, "pointerdown", { clientX: 740, clientY: 390 });
+  fire(h, "pointermove", { clientX: 190, clientY: 200 });
+  fire(h, "pointerup", {});
+  assert.equal(panel.style.left, "80px");
+
+  host._rect = { left: 70, top: 60, width: 620, height: 700 };
+  (windowListeners.resize || []).forEach((cb) => cb());
+  assert.equal(panel.style.left, "80px", "left-anchored panel stays put");
+}
+
+// Leaving Home hides the map view, so it reports 0x0. Reflowing against a box
+// with no size collapsed every coordinate to the origin, which is how a panel
+// the operator had carefully placed came back sitting in the top-left corner
+// after a round trip through Setup or Options.
+function testAHiddenMapLeavesThePanelWhereItWas() {
+  const { host, panel } = mount();
+  Corvus.hudPanel.init(panel);
+  const h = dragSurface(panel);
+  fire(h, "pointerdown", { clientX: 740, clientY: 390 });
+  fire(h, "pointermove", { clientX: 400, clientY: 300 });
+  fire(h, "pointerup", {});
+  const placed = { left: panel.style.left, top: panel.style.top };
+  assert.ok(parseInt(placed.left, 10) > 0 && parseInt(placed.top, 10) > 0,
+    "the panel starts away from the corner");
+
+  // Navigate to Setup: display:none makes every box zero.
+  host._rect = { left: 0, top: 0, width: 0, height: 0 };
+  (windowListeners.resize || []).forEach((cb) => cb());
+  assert.deepEqual({ left: panel.style.left, top: panel.style.top }, placed,
+    "a hidden map moves nothing");
+
+  // ...and back to Home.
+  host._rect = { left: 70, top: 60, width: 1000, height: 700 };
+  (windowListeners.resize || []).forEach((cb) => cb());
+  assert.deepEqual({ left: panel.style.left, top: panel.style.top }, placed,
+    "the panel is still where the operator left it");
+}
+
+// The hidden interlude must not poison the remembered map size either, or the
+// panel would stop travelling with the right edge after the first page visit.
+function testSidebarTrackingSurvivesAHiddenMap() {
+  const { host, panel } = mount();
+  Corvus.hudPanel.init(panel);
+  const h = dragSurface(panel);
+  fire(h, "pointerdown", { clientX: 740, clientY: 390 });
+  fire(h, "pointermove", { clientX: 810, clientY: 400 });
+  fire(h, "pointerup", {});
+  assert.equal(panel.style.left, "700px");
+
+  // Setup and back, at the same size.
+  host._rect = { left: 0, top: 0, width: 0, height: 0 };
+  (windowListeners.resize || []).forEach((cb) => cb());
+  host._rect = { left: 70, top: 60, width: 1000, height: 700 };
+  (windowListeners.resize || []).forEach((cb) => cb());
+
+  // Now open the sidebar: the panel must still ride the edge in.
+  host._rect = { left: 70, top: 60, width: 620, height: 700 };
+  (windowListeners.resize || []).forEach((cb) => cb());
+  assert.equal(parseInt(panel.style.left, 10), 620 - 320 - 8,
+    "still tracks the right edge after a page visit");
+}
+
 function testShrinkingTheWindowPullsThePanelBackIntoView() {
   const { host, panel } = mount();
   Corvus.hudPanel.init(panel);
@@ -397,7 +518,11 @@ function testShrinkingTheWindowPullsThePanelBackIntoView() {
 
 const tests = [
   testInitReparentsInstrumentsInsteadOfRebuilding,
-  testPanelExposesThreeControls,
+  testPanelExposesItsFourControls,
+  testReadoutsFoldWithoutTakingTheDialsWithThem,
+  testAPanelSavedBeforeTheFoldExistedComesBackWithItsReadoutsUp,
+  testThePanelTravelsWithTheSidebarInsteadOfHidingBehindIt,
+  testAPanelOnTheLeftDoesNotChaseTheSidebar,
   testCollapseHidesTheBodyAndRoundTrips,
   testCompactRoundTrips,
   testDragMovesThePanelAndPersistsThePosition,
@@ -410,6 +535,8 @@ const tests = [
   testStateIsRestoredOnTheNextLaunch,
   testCorruptStoredStateFallsBackToDefaults,
   testShrinkingTheWindowPullsThePanelBackIntoView,
+  testAHiddenMapLeavesThePanelWhereItWas,
+  testSidebarTrackingSurvivesAHiddenMap,
 ];
 
 let failed = 0;

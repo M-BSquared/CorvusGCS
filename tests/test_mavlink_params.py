@@ -159,6 +159,202 @@ def test_request_param_returns_false_when_disconnected() -> None:
 
 
 # ---------------------------------------------------------------------------
+# fetch_params — the named batch read behind Setup -> Motors
+# ---------------------------------------------------------------------------
+
+def _answer_on_read(bridge: MavlinkBridge, values: dict[str, float]) -> None:
+    """Make the fake link answer PARAM_REQUEST_READ for the names in *values*.
+
+    Wraps the fake mav's param_request_read_send so a request that the vehicle
+    "has" is echoed straight back as a PARAM_VALUE, exactly as the real link
+    would. Names absent from *values* stay unanswered — the version-tolerance
+    case fetch_params exists to survive.
+    """
+    mav = bridge._conn.mav
+    original = mav.param_request_read_send
+
+    def answering(target_system, target_component, name, index):
+        original(target_system, target_component, name, index)
+        pname = name.decode()
+        if pname in values:
+            bridge._dispatch(param_value(pname, values[pname]))
+
+    mav.param_request_read_send = answering
+
+
+def test_fetch_params_reads_only_the_names_asked_for() -> None:
+    bridge = ready_bridge()
+    _answer_on_read(bridge, {"CA_AIRFRAME": 0.0, "CA_ROTOR_COUNT": 4.0, "MC_ROLL_P": 6.0})
+
+    result = bridge.fetch_params(["CA_AIRFRAME", "CA_ROTOR_COUNT"])
+
+    assert result == {"CA_AIRFRAME": 0.0, "CA_ROTOR_COUNT": 4.0}
+    assert [r[2] for r in bridge._conn.mav.param_reads] == [b"CA_AIRFRAME", b"CA_ROTOR_COUNT"]
+    assert bridge._conn.mav.param_requests == [], "no full download is triggered"
+
+
+def test_fetch_params_serves_already_cached_values_without_asking_again() -> None:
+    bridge = ready_bridge()
+    bridge._dispatch(param_value("CA_AIRFRAME", 2.0))
+
+    assert bridge.fetch_params(["CA_AIRFRAME"]) == {"CA_AIRFRAME": 2.0}
+    assert bridge._conn.mav.param_reads == [], "a cached parameter is not re-requested"
+
+
+def test_fetch_params_omits_what_the_firmware_does_not_have() -> None:
+    """A parameter absent on this PX4 version is a missing key, never an error."""
+    bridge = ready_bridge()
+    _answer_on_read(bridge, {"CA_AIRFRAME": 0.0})
+
+    result = bridge.fetch_params(["CA_AIRFRAME", "PWM_MAIN_TIM3"], timeout=0.5)
+
+    assert result == {"CA_AIRFRAME": 0.0}
+
+
+def test_fetch_params_retransmits_the_stragglers_once() -> None:
+    """A lossy link drops individual replies; one retry covers that."""
+    bridge = ready_bridge()
+    _answer_on_read(bridge, {})   # nothing ever answers
+    bridge.fetch_params(["CA_AIRFRAME"], timeout=0.5)
+
+    assert [r[2] for r in bridge._conn.mav.param_reads] == [b"CA_AIRFRAME", b"CA_AIRFRAME"]
+
+
+def test_fetch_params_returns_empty_when_disconnected() -> None:
+    bridge = MavlinkBridge(VehicleStateStore())
+    assert bridge.fetch_params(["CA_AIRFRAME"]) == {}
+    assert bridge.get_last_command_error() == "not connected"
+
+
+def test_fetch_params_with_no_names_never_touches_the_link() -> None:
+    bridge = ready_bridge()
+    assert bridge.fetch_params([]) == {}
+    assert bridge._conn.mav.param_reads == []
+
+
+def test_fetch_params_bails_out_when_the_bridge_is_stopping() -> None:
+    """Shutdown must not wait out the read budget (AGENTS.md lifecycle)."""
+    bridge = ready_bridge()
+    _answer_on_read(bridge, {})
+    bridge._stop_event.set()
+
+    start = time.monotonic()
+    assert bridge.fetch_params(["CA_AIRFRAME"], timeout=5.0) == {}
+    assert time.monotonic() - start < 1.0
+    assert bridge._conn.mav.param_reads == [], "no request is sent while stopping"
+
+
+def test_fetch_params_does_not_disturb_the_download_state_machine() -> None:
+    bridge = ready_bridge()
+    _answer_on_read(bridge, {"CA_AIRFRAME": 0.0})
+    before = bridge._param_download_state
+
+    bridge.fetch_params(["CA_AIRFRAME"])
+
+    assert bridge._param_download_state == before == "idle"
+
+
+# ---------------------------------------------------------------------------
+# motor_test — the bench identification spin behind Setup -> Motors
+# ---------------------------------------------------------------------------
+
+def _accepting_bridge() -> MavlinkBridge:
+    """A ready bridge whose fake link ACKs every command it is sent."""
+    store = VehicleStateStore()
+    store.heartbeat()
+    bridge = MavlinkBridge(store)
+    bridge._target_system = 1
+    bridge._target_component = 1
+
+    def on_send(args):
+        # command_long_send(target_sys, target_comp, command, confirmation, p1..p7)
+        if isinstance(args, tuple) and args and not isinstance(args[0], str):
+            bridge._dispatch(ack(int(args[2]), mavutil.mavlink.MAV_RESULT_ACCEPTED))
+
+    bridge._conn = FakeConnection(on_send)
+    return bridge
+
+
+def _motor_test_commands(bridge: MavlinkBridge) -> list[tuple]:
+    return [c for c in bridge._conn.mav.commands
+            if int(c[2]) == mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST]
+
+
+def test_motor_test_sends_do_motor_test_with_percent_throttle_and_a_timeout() -> None:
+    bridge = _accepting_bridge()
+
+    assert bridge.motor_test(3, 20.0, 2.0) is True
+
+    commands = _motor_test_commands(bridge)
+    assert len(commands) == 1
+    # command_long_send(target_sys, target_comp, command, confirmation, p1..p7)
+    p1, p2, p3, p4, p5, p6 = commands[0][4:10]
+    assert p1 == 3.0, "1-based motor number"
+    assert p2 == 0.0, "MOTOR_TEST_THROTTLE_PERCENT"
+    assert p3 == 20.0
+    assert p4 == 2.0, "the vehicle counts the timeout down itself"
+    assert p5 == 0.0 and p6 == 0.0, "this motor only, default order"
+
+
+def test_a_motor_test_timeout_is_always_bounded() -> None:
+    """A spinning motor with no timeout keeps spinning when the link drops."""
+    bridge = _accepting_bridge()
+
+    bridge.motor_test(1, 10.0, 3600.0)
+
+    timeout = _motor_test_commands(bridge)[0][7]
+    assert timeout == bridge.MOTOR_TEST_MAX_DURATION_S
+
+
+def test_motor_test_is_refused_while_armed() -> None:
+    bridge = _accepting_bridge()
+    bridge._dispatch(heartbeat(armed=True))
+
+    assert bridge.motor_test(1, 10.0, 2.0) is False
+    assert bridge.get_last_command_error() == "cannot test motors while armed"
+    assert _motor_test_commands(bridge) == [], "nothing reaches the link"
+
+
+@pytest.mark.parametrize("motor", [0, 17, -1, 1.5, "1", True])
+def test_motor_test_rejects_an_impossible_motor_number(motor) -> None:
+    bridge = _accepting_bridge()
+    assert bridge.motor_test(motor, 10.0, 2.0) is False
+    assert _motor_test_commands(bridge) == []
+
+
+@pytest.mark.parametrize("throttle", [-0.1, 100.1, 500.0])
+def test_motor_test_rejects_a_throttle_outside_the_protocol_range(throttle) -> None:
+    bridge = _accepting_bridge()
+    assert bridge.motor_test(1, throttle, 2.0) is False
+    assert _motor_test_commands(bridge) == []
+
+
+def test_motor_test_returns_false_when_disconnected() -> None:
+    bridge = MavlinkBridge(VehicleStateStore())
+    assert bridge.motor_test(1, 10.0, 2.0) is False
+
+
+def test_stopping_a_motor_test_zeroes_every_motor() -> None:
+    """Stop must silence motors this session never started, too."""
+    bridge = _accepting_bridge()
+
+    assert bridge.stop_motor_test() is True
+
+    commands = _motor_test_commands(bridge)
+    assert [c[4] for c in commands] == [float(n) for n in range(1, 9)]
+    assert all(c[6] == 0.0 and c[7] == 0.0 for c in commands), "throttle 0, timeout 0"
+
+
+def test_stopping_a_motor_test_is_not_refused_while_armed() -> None:
+    """Refusing to STOP a motor would be a safety regression, not defense in depth."""
+    bridge = _accepting_bridge()
+    bridge._dispatch(heartbeat(armed=True))
+
+    assert bridge.stop_motor_test() is True
+    assert _motor_test_commands(bridge), "the stop still reaches the link"
+
+
+# ---------------------------------------------------------------------------
 # PARAM_VALUE dispatch
 # ---------------------------------------------------------------------------
 

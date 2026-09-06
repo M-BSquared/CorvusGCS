@@ -2057,6 +2057,62 @@ class MavlinkBridge:
                 )
             return True
 
+    def fetch_params(
+        self, names: list[str], timeout: float = 4.0,
+    ) -> dict[str, float]:
+        """Read a named set of parameters without a full parameter download.
+
+        The Motors page needs ~100 specific parameters, not the ~1300 a full
+        download pulls. This asks for the missing ones in one burst of
+        ``PARAM_REQUEST_READ`` (one retransmit round for the stragglers, since a
+        lossy link drops individual replies) and returns ``{name: value}`` for
+        whatever arrived before *timeout*.
+
+        Names the vehicle never answers for are simply absent from the result —
+        that is the version-tolerance contract: a parameter this firmware does
+        not have is a missing key, never an error. Nothing here mutates the
+        download state machine, so it is safe to call while the parameter
+        editor's full download is idle *or* running.
+        """
+        wanted = [n for n in names if isinstance(n, str) and n]
+        if not wanted:
+            return {}
+        if not self._connection_ready():
+            self._set_command_error("not connected")
+            return {}
+
+        def snapshot() -> dict[str, float]:
+            with self._param_lock:
+                return {n: self._params[n].value for n in wanted if n in self._params}
+
+        deadline = time.monotonic() + max(0.5, timeout)
+        have = snapshot()
+        missing = [n for n in wanted if n not in have]
+        # Two rounds: the initial burst, then one retransmit of whatever is
+        # still outstanding halfway through the budget.
+        for round_index in range(2):
+            if not missing:
+                break
+            for name in missing:
+                # stop() marks the vehicle disconnected before it tears the
+                # socket down, so this is also the shutdown bail-out.
+                if self._stop_event.is_set() or not self._connection_ready():
+                    return snapshot()
+                self.request_param(name)
+            round_deadline = deadline if round_index else (
+                time.monotonic() + max(0.25, (deadline - time.monotonic()) / 2))
+            while time.monotonic() < min(round_deadline, deadline):
+                have = snapshot()
+                missing = [n for n in wanted if n not in have]
+                if not missing:
+                    break
+                if self._stop_event.is_set():
+                    return have
+                time.sleep(0.05)
+            have = snapshot()
+            missing = [n for n in wanted if n not in have]
+        return have
+
     def _wait_for_param(self, name: str, timeout: float = 2.0) -> ParamEntry | None:
         """Poll the param cache until *name* appears or *timeout* expires."""
         deadline = time.monotonic() + timeout
@@ -2603,6 +2659,92 @@ class MavlinkBridge:
                 return self._command_failure("Cancel calibration", result)
             self._console_publish("CALIBRATE", "calibration cancelled", "warning")
             return True
+
+    # ------------------------------------------------------------------
+    # Motor test
+    # ------------------------------------------------------------------
+
+    # MAV_CMD_DO_MOTOR_TEST (209) — verified against PX4 v1.16, v1.17 and v1.18
+    # (mavlink_receiver.cpp -> actuator_test). param1 is the 1-based motor,
+    # param2 the throttle type (0 = percent), param3 the throttle value,
+    # param4 the timeout in seconds, param5 the motor count (0 = this motor
+    # only) and param6 the test order (0 = default).
+    MOTOR_TEST_THROTTLE_PERCENT = 0.0
+
+    # A spinning motor with no timeout is a hazard: if the link drops mid-test
+    # nothing stops it. Every test therefore carries a bounded timeout that PX4
+    # enforces on the vehicle itself, so the motor stops even if the GCS dies.
+    MOTOR_TEST_MAX_DURATION_S = 10.0
+
+    def motor_test(self, motor: int, throttle_pct: float, duration_s: float) -> bool:
+        """Spin one motor on the bench so the operator can identify it.
+
+        PROPELLERS MUST BE OFF. This is the identification tool behind Setup ->
+        Motors: it answers "which physical motor is Motor 3?" without arming.
+        The UI gates it behind an explicit propellers-removed acknowledgement;
+        this layer enforces what it can — disarmed only, a valid motor number, a
+        throttle inside the protocol range, and a bounded duration that the
+        *vehicle* counts down, so a dropped link cannot leave a motor running.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            # bool is a subclass of int — reject it so True never becomes motor 1.
+            if isinstance(motor, bool) or not isinstance(motor, int) or not 1 <= motor <= 16:
+                self._set_command_error("motor must be between 1 and 16")
+                return False
+            if not 0.0 <= float(throttle_pct) <= 100.0:
+                self._set_command_error("throttle must be between 0 and 100 percent")
+                return False
+            duration = max(0.0, min(self.MOTOR_TEST_MAX_DURATION_S, float(duration_s)))
+            # Defense-in-depth: refuse while armed (PX4 also rejects an actuator
+            # test on an armed vehicle).
+            if self._store.get_snapshot().get("armed"):
+                self._set_command_error("cannot test motors while armed")
+                return False
+            if not self._connection_ready():
+                return self._command_failure(f"Motor test {motor}", -2)
+            result = self._send_command_and_wait(
+                mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST,
+                [float(motor), self.MOTOR_TEST_THROTTLE_PERCENT, float(throttle_pct),
+                 duration, 0.0, 0.0, 0.0],
+                timeout=5.0, retries=0,
+            )
+            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                return self._command_failure(f"Motor test {motor}", result)
+            self._console_publish(
+                "MOTOR", f"motor {motor} test at {throttle_pct:g}% for {duration:g}s",
+                "warning")
+            return True
+
+    def stop_motor_test(self) -> bool:
+        """Stop a running motor test (throttle 0, timeout 0).
+
+        Deliberately not gated on the armed state, and not gated on a valid
+        preceding test: this only ever *stops* a motor, so refusing it would be
+        a safety regression rather than defense in depth. Mirrors
+        :meth:`cancel_calibration`.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            if not self._connection_ready():
+                return self._command_failure("Stop motor test", -2)
+            ok = True
+            # Every motor, not just the last one tested: the operator pressing
+            # Stop wants silence, and a test that was started by something else
+            # (or before a reload) is exactly when that matters most.
+            for motor in range(1, 9):
+                result = self._send_command_and_wait(
+                    mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST,
+                    [float(motor), self.MOTOR_TEST_THROTTLE_PERCENT, 0.0,
+                     0.0, 0.0, 0.0, 0.0],
+                    timeout=2.0, retries=0,
+                )
+                if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                    ok = False
+            if not ok:
+                self._set_command_error("motor stop not confirmed for every motor")
+            self._console_publish("MOTOR", "motor test stopped", "warning")
+            return ok
 
     # ------------------------------------------------------------------
     # Autotune

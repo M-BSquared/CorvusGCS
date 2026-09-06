@@ -208,8 +208,8 @@ Corvus.sidenav = (function () {
 
   const NAV = [
     { id: "setup", label: "SETUP", icon: "sliders-horizontal" },
-    { id: "logs", label: "LOGS", icon: "file-text" },
     { id: "analysis", label: "ANALYSIS", icon: "chart-column" },
+    { id: "logs", label: "LOGS", icon: "file-text" },
   ];
 
   function renderLeftNav() {

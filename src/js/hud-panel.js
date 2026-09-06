@@ -14,7 +14,10 @@ window.Corvus = window.Corvus || {};
               thumb on a trackpad while the aircraft is airborne
     compact   same readouts, smaller: instruments shrink and the telemetry grid
               tightens, for when the map matters more than the numbers
-    collapse  the readouts fold away and the panel becomes a small control pill
+    readouts  fold away ONLY the ALT AMSL / AGL / GS / V/S / HDG / SAT grid and
+              keep the two dials, for the operator flying off the compass and
+              horizon with the numbers already on the top bar
+    collapse  everything folds away and the panel becomes a small control pill
 
   No chrome by default. A title bar would cost a permanent strip of the map to
   say "FLIGHT", which the compass and horizon underneath it already say. The
@@ -38,17 +41,29 @@ Corvus.hudPanel = (function () {
   // Keep at least this much of the panel on screen when clamping, so it can
   // never be dragged (or resized) entirely out of reach.
   const MIN_VISIBLE = 64;
+  // Margin kept between the panel and the map edge when the MAP moves under
+  // it, rather than the panel over the map. See contain().
+  const EDGE = 8;
 
   let panelEl = null;
   let bodyEl = null;
+  let telemetryEl = null;
   let actionsEl = null;
   let pinBtn = null;
   let sizeBtn = null;
+  let readoutsBtn = null;
   let collapseBtn = null;
 
-  const DEFAULTS = { x: null, y: null, pinned: false, compact: false, collapsed: false };
+  const DEFAULTS = {
+    x: null, y: null, pinned: false, compact: false, collapsed: false,
+    readouts: true,
+  };
   let state = Object.assign({}, DEFAULTS);
   let drag = null;   // {pointerId, dx, dy} while a drag is in flight
+  // The map's size at the last reflow, so a change in it can be told from a
+  // re-render. See onHostResize.
+  let lastHost = { w: 0, h: 0 };
+  let hostObserver = null;
 
   // ---- persistence -------------------------------------------------------
 
@@ -68,6 +83,9 @@ Corvus.hudPanel = (function () {
       state.pinned = !!saved.pinned;
       state.compact = !!saved.compact;
       state.collapsed = !!saved.collapsed;
+      // Absent means "shown": a panel saved before this control existed had
+      // its readouts up, and must not come back with them folded away.
+      state.readouts = saved.readouts !== false;
     } catch (_e) { /* unreadable storage -> the defaults set above */ }
   }
 
@@ -115,6 +133,79 @@ Corvus.hudPanel = (function () {
     };
   }
 
+  /** The map's size in its own (unscaled) pixels. */
+  function hostSize() {
+    const host = boundsEl();
+    return host ? { w: host.clientWidth, h: host.clientHeight } : { w: 0, h: 0 };
+  }
+
+  /**
+   * Keep the WHOLE panel on the map, with a small margin — stricter than
+   * clamp(), which deliberately lets a deliberate drag leave only a strip
+   * showing. Used when the map resizes under a panel the operator is not
+   * touching: they did not ask for it to be half off screen, so it is not.
+   * An axis the panel is simply too large for falls back to clamp().
+   */
+  function contain(x, y) {
+    const host = boundsEl();
+    if (!host) return { x, y };
+    const loose = clamp(x, y);
+    const maxX = host.clientWidth - panelEl.offsetWidth - EDGE;
+    const maxY = host.clientHeight - panelEl.offsetHeight - EDGE;
+    return {
+      x: maxX >= EDGE ? Math.min(Math.max(x, EDGE), maxX) : loose.x,
+      y: maxY >= EDGE ? Math.min(Math.max(y, EDGE), maxY) : loose.y,
+    };
+  }
+
+  /**
+   * The map changed size — nearly always because the right utility panel was
+   * slid open or shut, and otherwise because the window was resized.
+   *
+   * A panel that has been dragged is positioned from the map's TOP-LEFT, so a
+   * map that narrows from the right leaves it exactly where it was: behind the
+   * utility panel, which outranks it in the stacking order and simply covers
+   * it. So a panel sitting nearer the right edge travels with that edge, and
+   * one sitting nearer the left stays put — which is what "the window kept its
+   * place" means for either half of the map. The whole panel is then contained
+   * rather than merely clamped, because this move is not the operator's doing.
+   */
+  function onHostResize() {
+    if (!panelEl) return;
+    const size = hostSize();
+    // A hidden map — the operator is on Setup, Options or any other page —
+    // reports 0x0, and a box with no size says nothing about where a panel
+    // belongs. Containing against it collapses every coordinate to the origin,
+    // which is how a carefully arranged panel used to come back to the
+    // top-left corner after a round trip through another page. So there is
+    // nothing to reflow against and nothing is touched — `lastHost` least of
+    // all, because the next real resize still needs the last real size to tell
+    // which edge the panel was travelling with.
+    if (!size.w || !size.h) return;
+    // Showing the map again after a page visit is not a resize: the box came
+    // back the size it left. Reflowing anyway would re-`contain()` a panel the
+    // operator had deliberately parked overhanging the edge, nudging it a few
+    // pixels on every single visit to Setup and back.
+    if (size.w === lastHost.w && size.h === lastHost.h) {
+      applyPosition();
+      return;
+    }
+    if (state.x !== null && lastHost.w && size.w && size.w !== lastHost.w) {
+      const nearRight = (lastHost.w - (state.x + panelEl.offsetWidth)) < state.x;
+      if (nearRight) state.x += size.w - lastHost.w;
+    }
+    if (state.y !== null && lastHost.h && size.h && size.h !== lastHost.h) {
+      const nearBottom = (lastHost.h - (state.y + panelEl.offsetHeight)) < state.y;
+      if (nearBottom) state.y += size.h - lastHost.h;
+    }
+    lastHost = size;
+    if (state.x !== null && state.y !== null) {
+      const c = contain(state.x, state.y);
+      state.x = c.x; state.y = c.y;
+    }
+    applyPosition();
+  }
+
   /** Write the current position to the element. A null position means "leave
    *  it at the CSS default corner" — the panel has never been moved. */
   function applyPosition() {
@@ -138,12 +229,22 @@ Corvus.hudPanel = (function () {
     panelEl.classList.toggle("is-pinned", state.pinned);
     panelEl.classList.toggle("is-compact", state.compact);
     panelEl.classList.toggle("is-collapsed", state.collapsed);
+    panelEl.classList.toggle("is-readouts-off", !state.readouts);
     if (bodyEl) bodyEl.hidden = state.collapsed;
+    // `hidden` as well as the class, because .flight-telemetry sets its own
+    // `display: grid` and a class rule would beat the UA's [hidden] on its
+    // own — the same trap .hud-body and the joystick surfaces sit in.
+    if (telemetryEl) telemetryEl.hidden = !state.readouts;
 
     syncButton(pinBtn, state.pinned, state.pinned ? "pin-off" : "pin",
       state.pinned ? "Unlock position" : "Lock position");
     syncButton(sizeBtn, state.compact, state.compact ? "maximize-2" : "minimize-2",
       state.compact ? "Full size" : "Compact size");
+    // A double chevron, so it does not read as a second copy of the panel's
+    // own collapse: this one folds a section, that one folds the window.
+    syncButton(readoutsBtn, !state.readouts,
+      state.readouts ? "chevrons-down-up" : "chevrons-up-down",
+      state.readouts ? "Hide the readouts" : "Show the readouts");
     syncButton(collapseBtn, false, state.collapsed ? "chevron-up" : "chevron-down",
       state.collapsed ? "Expand" : "Collapse");
     Corvus.ui.refreshIcons();
@@ -228,9 +329,13 @@ Corvus.hudPanel = (function () {
     actions.className = "hud-actions";
     pinBtn = Corvus.ui.iconButton("pin", { size: 13, onClick: togglePin });
     sizeBtn = Corvus.ui.iconButton("minimize-2", { size: 13, onClick: toggleCompact });
+    readoutsBtn = Corvus.ui.iconButton("chevrons-down-up", {
+      size: 13, className: "icon-btn hud-readouts", onClick: toggleReadouts,
+    });
     collapseBtn = Corvus.ui.iconButton("chevron-down", { size: 13, onClick: toggleCollapsed });
     actions.appendChild(pinBtn);
     actions.appendChild(sizeBtn);
+    actions.appendChild(readoutsBtn);
     actions.appendChild(collapseBtn);
     return actions;
   }
@@ -251,6 +356,7 @@ Corvus.hudPanel = (function () {
 
   function togglePin() { state.pinned = !state.pinned; applyState(); save(); }
   function toggleCompact() { state.compact = !state.compact; applyState(); save(); }
+  function toggleReadouts() { state.readouts = !state.readouts; applyState(); save(); }
   function toggleCollapsed() { state.collapsed = !state.collapsed; applyState(); save(); }
 
   // ---- lifecycle ---------------------------------------------------------
@@ -271,6 +377,9 @@ Corvus.hudPanel = (function () {
     // Move the instruments + telemetry grid into the collapsible body. The
     // nodes are moved, not recreated, so instruments.js keeps its references.
     while (panelEl.firstChild) bodyEl.appendChild(panelEl.firstChild);
+    // The numeric grid, so the readouts control can fold it on its own. Null
+    // is a normal outcome — instruments.js may not have built it yet.
+    telemetryEl = bodyEl.querySelector(".flight-telemetry");
 
     actionsEl = buildActions();
     panelEl.appendChild(actionsEl);
@@ -281,12 +390,23 @@ Corvus.hudPanel = (function () {
     panelEl.setAttribute("aria-label", "Flight instruments");
     wireDragSurface();
 
+    lastHost = hostSize();
     applyState();
 
-    // A window that shrinks must not strand the panel outside the map. The
-    // previous handler is dropped first so a re-init cannot stack listeners.
-    window.removeEventListener("resize", applyPosition);
-    window.addEventListener("resize", applyPosition);
+    // A map that shrinks must not strand the panel outside it — or, when the
+    // right utility panel slides open, behind it. The previous handler is
+    // dropped first so a re-init cannot stack listeners.
+    window.removeEventListener("resize", onHostResize);
+    window.addEventListener("resize", onHostResize);
+    // The utility panel animates its width over 280ms and fires no event of
+    // its own, so watch the map box directly: the panel then travels WITH the
+    // sidebar instead of jumping once the transition has finished. The window
+    // listener above stays as the fallback where ResizeObserver is missing.
+    if (hostObserver) { hostObserver.disconnect(); hostObserver = null; }
+    if (typeof ResizeObserver === "function" && boundsEl()) {
+      hostObserver = new ResizeObserver(onHostResize);
+      hostObserver.observe(boundsEl());
+    }
   }
 
   return {

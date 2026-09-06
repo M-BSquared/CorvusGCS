@@ -111,7 +111,15 @@ function makeEl(tag) {
     textContent: "",
     children: [],
     dataset: {},
-    style: {},
+    // Real CSSStyleDeclaration, minus everything nothing here reads: the
+    // component layer sets custom properties (the slider's --slider-pos)
+    // through setProperty, which a bare object does not have.
+    style: {
+      _props: {},
+      setProperty(k, v) { this._props[k] = String(v); },
+      getPropertyValue(k) { return this._props[k] || ""; },
+      removeProperty(k) { delete this._props[k]; },
+    },
     type: "",
     hidden: false,
     disabled: false,
@@ -140,9 +148,13 @@ function makeEl(tag) {
   // `node.parentNode.removeChild(node)` removal idiom works under the stub —
   // Corvus.ui.modal.close() uses it to unmount a dialog.
   e.appendChild = (c) => { c.parentNode = e; e.children.push(c); return c; };
+  e.append = (...cs) => cs.forEach((c) => e.appendChild(c));
   e.removeChild = (c) => { const i = e.children.indexOf(c); if (i >= 0) e.children.splice(i, 1); c.parentNode = null; return c; };
   e.insertBefore = (n, ref) => { const i = ref ? e.children.indexOf(ref) : e.children.length; if (i < 0) e.children.push(n); else e.children.splice(i, 0, n); return n; };
   Object.defineProperty(e, "firstChild", { get() { return e.children[0] || null; } });
+  // The stub only ever holds element children, so childNodes and children are
+  // the same list; calib-figures indexes childNodes when it reorders polygons.
+  Object.defineProperty(e, "childNodes", { get() { return e.children; } });
   e.setAttribute = (k, v) => { e._attrs[k] = String(v); if (k === "class") e.className = String(v); };
   e.getAttribute = (k) => (k in e._attrs ? e._attrs[k] : null);
   e.addEventListener = (type, cb) => { (e._listeners[type] = e._listeners[type] || []).push(cb); };
@@ -173,6 +185,10 @@ function querySel(children, sel) {
 let pageViewEl = null;
 global.document = {
   createElement: makeEl,
+  // The Motors page draws the airframe in SVG. Namespaced elements behave the
+  // same as any other under this stub, so the real drawing path is what the
+  // tests exercise — the module's no-SVG fallback stays for browsers without it.
+  createElementNS: (_ns, tag) => makeEl(tag),
   createTextNode: (t) => ({ nodeType: 3, textContent: String(t), _isText: true }),
   getElementById: (id) => (id === "pageView" ? pageViewEl : null),
   querySelectorAll: () => [],
@@ -205,10 +221,37 @@ function findByDataset(root, key, value) {
   return out;
 }
 
-/** Fire all listeners of a given type on an element (simulate a click/input). */
-function fire(el, type) {
+/**
+ * Click the Setup tile that opens `viewId`. Addressing tiles by the view they
+ * route to rather than by grid position keeps every sub-page test working when
+ * a tile is added to (or reordered in) the grid.
+ */
+function openTile(container, viewId) {
+  const tile = findByClass(container, "setup-tile").filter((t) => t.dataset.view === viewId)[0];
+  assert.ok(tile, `Setup tile for "${viewId}" present`);
+  fire(tile, "click");
+}
+
+/** The visible text of an element, including its children — the stub's
+ *  textContent is per-node, and Corvus.ui.button puts its label in a span. */
+function textOf(el) {
+  if (!el) return "";
+  let out = String(el.textContent || "");
+  (el.children || []).forEach((c) => { out += textOf(c); });
+  return out;
+}
+
+/** The button under `root` whose label contains `text`. */
+function buttonByLabel(root, text) {
+  return findByClass(root, "btn").filter((b) => textOf(b).includes(text))[0];
+}
+
+/** Fire all listeners of a given type on an element (simulate a click/input).
+ *  `detail` is merged into the event object, so a keydown test can pass a key. */
+function fire(el, type, detail) {
   const listeners = (el && el._listeners && el._listeners[type]) || [];
-  listeners.forEach((cb) => cb({}));
+  const event = Object.assign({ preventDefault() {}, stopPropagation() {} }, detail || {});
+  listeners.forEach((cb) => cb(event));
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +286,11 @@ function makeFakeTelemetry(opts = {}) {
       // /api/params/set may be rejected (e.g. "cannot set while armed") without
       // affecting the download/autotune/calibrate actions.
       if (url === "/api/params/set" && opts.setReject) return Promise.reject(new Error(opts.setReject));
+      // postReject rejects any named endpoint, so a test can refuse one action
+      // (a motor assignment that hits a servo) while the rest still succeed.
+      if (opts.postReject && Object.prototype.hasOwnProperty.call(opts.postReject, url)) {
+        return Promise.reject(new Error(opts.postReject[url]));
+      }
       return Promise.resolve({ ok: true });
     },
     requestJson(url) {
@@ -272,9 +320,9 @@ function makeFakeTelemetry(opts = {}) {
 
 // ---------------------------------------------------------------------------
 // Load the module under test (defines window.Corvus.setup). The setup page is
-// split across four files: shared helpers, the calibration page, the
-// parameters page, and the thin orchestrator. Load them in the same order as
-// index.html so dependencies resolve.
+// split across several files: shared helpers, the calibration page, the motors
+// page, the parameters page, the firmware page, and the thin orchestrator.
+// Load them in the same order as index.html so dependencies resolve.
 // ---------------------------------------------------------------------------
 // ui.js first: it defines Corvus.ui, the component layer every other
 // module builds its DOM with (index.html loads it in the same order).
@@ -283,6 +331,8 @@ require("../src/js/setup-shared.js");
 require("../src/js/calib-figures.js");
 require("../src/js/calib-protocol.js");
 require("../src/js/setup-calibration.js");
+require("../src/js/setup-motors.js");
+require("../src/js/setup-safety.js");
 require("../src/js/setup-parameters.js");
 require("../src/js/setup-firmware.js");
 require("../src/js/setup.js");
@@ -291,7 +341,7 @@ require("../src/js/setup.js");
 // PART A — Tile grid
 // ===========================================================================
 
-async function testTileGridRendersTwoTiles() {
+async function testTileGridRendersEveryTile() {
   const fake = makeFakeTelemetry();
   Corvus.telemetry = fake.telemetry;
   const container = makeEl("div");
@@ -301,16 +351,16 @@ async function testTileGridRendersTwoTiles() {
   Corvus.setup.render(container);
 
   const tiles = findByClass(container, "setup-tile");
-  assert.equal(tiles.length, 3, "three tiles rendered");
-  assert.equal(tiles[0].dataset.view, "calibration", "first tile is Calibration");
-  assert.equal(tiles[1].dataset.view, "parameters", "second tile is Parameters");
-  assert.equal(tiles[2].dataset.view, "firmware", "third tile is Firmware");
+  assert.deepEqual(tiles.map((t) => t.dataset.view),
+    ["calibration", "motors", "safety", "parameters", "firmware"],
+    "every Setup tile, in order");
 
   // Tile titles are real text nodes. Setup tiles are Corvus.ui.tile instances
   // (shared with the Plugins grid), so the title carries the component's
   // .tile-title class; .setup-tile is now only the layout modifier.
   const titles = tiles.map((t) => findOneByClass(t, "tile-title").textContent);
-  assert.deepEqual(titles, ["Calibration", "Parameters", "Firmware"]);
+  assert.deepEqual(titles,
+    ["Calibration", "Motors", "Safety & Sensors", "Parameters", "Firmware"]);
 }
 
 async function testClickTileSwapsToSubPageAndBackReturns() {
@@ -336,6 +386,25 @@ async function testClickTileSwapsToSubPageAndBackReturns() {
   delete window.Plotly;
 }
 
+async function testSafetyTileOpensTheSafetyPage() {
+  const fake = makeFakeTelemetry({
+    urlResponses: { "/api/safety": { connected: true, received: 0, sections: [] } },
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  pageViewEl = container;
+
+  Corvus.setup.render(container);
+  openTile(container, "safety");
+  await flushMicrotasks();
+
+  assert.ok(fake.requests.includes("/api/safety"), "the Safety tile opens the Safety page");
+  assert.ok(findOneByClass(container, "safety-sections"), "the safety section host is rendered");
+
+  fire(findOneByClass(container, "setup-back"), "click");
+  assert.ok(findOneByClass(container, "setup-tiles"), "tile grid restored after back");
+}
+
 async function testTeardownRunsOnSwap() {
   const plot = fakePlotly();
   window.Plotly = plot;
@@ -346,7 +415,7 @@ async function testTeardownRunsOnSwap() {
   clock = 1000;
 
   Corvus.setup.render(container);
-  fire(findByClass(container, "setup-tile")[0], "click");   // open calibration
+  openTile(container, "calibration");
   assert.equal(plot.reactCalls.length, 3, "three graphs initialised");
   assert.equal(fake.unsubCalls, 1, "grid unsub fired on openView");
 
@@ -369,7 +438,7 @@ async function testReRenderTearsDownActiveSubPage() {
   clock = 1000;
 
   Corvus.setup.render(container);
-  fire(findByClass(container, "setup-tile")[0], "click");   // open calibration
+  openTile(container, "calibration");
   assert.equal(plot.reactCalls.length, 3);
 
   // Re-render (left-nav re-entry) → teardown of the calibration sub-page.
@@ -383,7 +452,10 @@ async function testReRenderTearsDownActiveSubPage() {
 // The Vehicle Info card must update live: PX4 version only arrives a few
 // seconds after connect via AUTOPILOT_VERSION, so the initial getState()
 // snapshot would otherwise show "—" forever. The grid subscribes once on
-// render and updates only the five row values per telemetry push.
+// render and updates the row values per telemetry push.
+//
+// Connected/Armed are NOT rows here: the top bar carries both on every page,
+// so the card is only the vehicle's identity.
 async function testVehicleInfoUpdatesLive() {
   const fake = makeFakeTelemetry({
     state: { connected: false, armed: false, autopilot: "", vehicle_type: "", px4_version: "" },
@@ -401,8 +473,10 @@ async function testVehicleInfoUpdatesLive() {
     "PX4 Version row initially shows —");
   assert.equal(findByDataset(container, "infoKey", "autopilot")[0].textContent, "—",
     "Autopilot row initially shows —");
-  assert.equal(findByDataset(container, "infoKey", "connected")[0].textContent, "No",
-    "Connected row initially shows No");
+  assert.equal(findByDataset(container, "infoKey", "connected").length, 0,
+    "no Connected row — the top bar already carries the link state");
+  assert.equal(findByDataset(container, "infoKey", "armed").length, 0,
+    "no Armed row — the top bar already carries the armed state");
 
   // Emit a telemetry push with a real PX4 version → rows update live.
   fake.getSubCb()({
@@ -415,14 +489,720 @@ async function testVehicleInfoUpdatesLive() {
     "Autopilot row updated to PX4");
   assert.equal(findByDataset(container, "infoKey", "vehicle_type")[0].textContent, "Standard",
     "Vehicle Type row updated to Standard");
-  assert.equal(findByDataset(container, "infoKey", "connected")[0].textContent, "Yes",
-    "Connected row updated to Yes");
+  assert.equal(findByDataset(container, "infoKey", "connected").length, 0,
+    "Connected row still absent after a telemetry push");
 
   // Re-render: the grid's teardown fires its unsub (no leak), then the grid
   // re-subscribes. fake.unsubCalls increments by exactly 1 for the grid unsub.
   const before = fake.unsubCalls;
   Corvus.setup.render(container);
   assert.equal(fake.unsubCalls, before + 1, "grid unsub called on re-render (no leak)");
+}
+
+// ===========================================================================
+// PART A2 — Motors (airframe diagram, assignment, motor test, armed gating)
+// ===========================================================================
+
+// A representative /api/motors payload: a quad-X whose motors sit at real
+// distances, wired MAIN 1..4, plus one generic field section. The positions are
+// the interesting part — the diagram is only worth having if it is drawn from
+// them.
+function motorsDoc(overrides) {
+  const motors = [
+    { number: 1, index: 0, label: "Motor 1", x: 0.15, y: 0.15, z: 0, spin: "CCW",
+      output: { bank: "MAIN", pin: 1, param: "PWM_MAIN_FUNC1", label: "MAIN 1" },
+      fields: [
+        { param: "CA_ROTOR0_PX", label: "X", kind: "number", value: 0.15, unit: "m" },
+        { param: "CA_ROTOR0_KM", label: "Spin", kind: "sign", value: 0.05,
+          options: [{ value: 1, label: "CCW" }, { value: -1, label: "CW" }] },
+      ] },
+    { number: 2, index: 1, label: "Motor 2", x: -0.15, y: -0.15, z: 0, spin: "CCW",
+      output: { bank: "MAIN", pin: 2, param: "PWM_MAIN_FUNC2", label: "MAIN 2" },
+      fields: [{ param: "CA_ROTOR1_PX", label: "X", kind: "number", value: -0.15, unit: "m" }] },
+    { number: 3, index: 2, label: "Motor 3", x: 0.15, y: -0.15, z: 0, spin: "CW",
+      output: { bank: "MAIN", pin: 3, param: "PWM_MAIN_FUNC3", label: "MAIN 3" },
+      fields: [{ param: "CA_ROTOR2_PX", label: "X", kind: "number", value: 0.15, unit: "m" }] },
+    { number: 4, index: 3, label: "Motor 4", x: -0.15, y: 0.15, z: 0, spin: "CW",
+      output: { bank: "MAIN", pin: 4, param: "PWM_MAIN_FUNC4", label: "MAIN 4" },
+      fields: [{ param: "CA_ROTOR3_PX", label: "X", kind: "number", value: -0.15, unit: "m" }] },
+  ];
+  const outputs = [];
+  for (let pin = 1; pin <= 6; pin += 1) {
+    outputs.push({
+      bank: "MAIN", pin, param: `PWM_MAIN_FUNC${pin}`, label: `MAIN ${pin}`,
+      value: pin <= 4 ? 100 + pin : 0,
+      function: pin <= 4 ? `Motor ${pin}` : "Disabled",
+      motor: pin <= 4 ? pin : null,
+    });
+  }
+  outputs.push({ bank: "AUX", pin: 1, param: "PWM_AUX_FUNC1", label: "AUX 1",
+    value: 0, function: "Disabled", motor: null });
+  return Object.assign({
+    connected: true, airframe_preset: 4001, rotor_count: 4, max_motors: 12, received: 36,
+    motors, outputs,
+    airframe_family: "multirotor", airframe_label: "Multirotor",
+    banks: [{ id: "MAIN", label: "MAIN" }, { id: "AUX", label: "AUX" }],
+    geometry: [
+      { param: "CA_AIRFRAME", label: "Airframe type", kind: "enum", value: 0, reload: true,
+        options: [{ value: 0, label: "Multirotor" }, { value: 1, label: "Fixed wing" }] },
+      { param: "CA_ROTOR_COUNT", label: "Motor count", kind: "number", value: 4, reload: true,
+        min: 0, max: 12, hint: "Number of rotors in the geometry." },
+    ],
+    sections: [{
+      id: "protocol_main", title: "Output protocol — MAIN",
+      fields: [{ param: "PWM_MAIN_TIM0", label: "Timer group 0", kind: "enum", value: 400,
+        options: [{ value: -4, label: "DShot600" }, { value: 400, label: "PWM 400 Hz" }] }],
+    }],
+  }, overrides || {});
+}
+
+/** Open the Motors sub-page with a canned /api/motors payload. */
+async function openMotors(fake, doc) {
+  fake.setResponse("/api/motors", doc === undefined ? motorsDoc() : doc);
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  pageViewEl = container;
+  Corvus.setup.render(container);
+  openTile(container, "motors");
+  await flushMicrotasks();
+  return container;
+}
+
+/** The diagram node for one motor number. */
+function motorNode(container, number) {
+  return findByDataset(container, "motor", String(number))[0];
+}
+
+/** The centre of a motor's disc, in viewBox units. */
+function motorCentre(container, number) {
+  const disc = findOneByClass(motorNode(container, number), "motors-node-disc");
+  return { x: Number(disc.getAttribute("cx")), y: Number(disc.getAttribute("cy")) };
+}
+
+// The form layout lives in one CSS block, .pform-*, shared with the Safety &
+// Sensors page; each element carries that base class plus this page's modifier.
+// Losing the base class would strip the layout while every other assertion here
+// still passed, so the pairing is pinned.
+async function testEveryFormPartCarriesTheSharedBaseClass() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+
+  const pairs = [
+    ["pform-grid", "motors-grid"],
+    ["pform-field", "motors-field"],
+    ["pform-field-label", "motors-field-label"],
+    ["pform-field-control", "motors-field-control"],
+    ["pform-unit", "motors-unit"],
+    ["pform-select", "motors-select"],
+    ["pform-input", "motors-input"],
+    ["pform-field-hint", "motors-field-hint"],
+  ];
+  for (const [base, modifier] of pairs) {
+    const found = findByClass(container, base);
+    assert.ok(found.length, `${base} is rendered`);
+    assert.ok(found.every((e) => e.className.split(/\s+/).includes(modifier)),
+      `every .${base} also carries .${modifier}`);
+  }
+}
+
+// The schema's own bounds are enforced before the write leaves the browser.
+// CA_ROTOR_COUNT is capped at what control allocation supports, and a typed 20
+// used to reach the aircraft only to be refused there.
+async function testATypedValueOutsideTheSchemaBoundsIsRefused() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+
+  const input = findByDataset(container, "param", "CA_ROTOR_COUNT")
+    .filter((e) => e.tagName === "INPUT")[0];
+  input.value = "20";
+  fire(input, "change");
+  await flushMicrotasks();
+  assert.equal(fake.postCalls.filter((c) => c.url === "/api/params/set").length, 0,
+    "a motor count above the cap never reaches the aircraft");
+  assert.ok(input.className.includes("invalid"), "the field is marked invalid");
+
+  input.value = "6";
+  fire(input, "change");
+  await flushMicrotasks();
+  assert.deepEqual(
+    fake.postCalls.filter((c) => c.url === "/api/params/set")[0].payload,
+    { name: "CA_ROTOR_COUNT", value: 6 }, "a value inside the bounds is written");
+}
+
+async function testMotorsDrawsTheAirframeFromTheRealPositions() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+
+  assert.ok(fake.requests.includes("/api/motors"), "the page reads /api/motors on open");
+  assert.ok(findOneByClass(container, "motors-svg"), "the airframe is drawn as SVG");
+  assert.equal(findByClass(container, "motors-node").length, 4, "one node per motor");
+
+  // A quad X: motor 1 front-right, 2 rear-left, 3 front-left, 4 rear-right.
+  // PX4 body frame is X forward / Y right and the view is from above, so X maps
+  // UP the screen (smaller y) and Y maps right.
+  const centre = 340 / 2;
+  const m1 = motorCentre(container, 1);
+  const m2 = motorCentre(container, 2);
+  const m3 = motorCentre(container, 3);
+
+  assert.ok(m1.y < centre, "motor 1 (+X, forward) is drawn above the hub");
+  assert.ok(m1.x > centre, "motor 1 (+Y, right) is drawn right of the hub");
+  assert.ok(m2.y > centre && m2.x < centre, "motor 2 (-X, -Y) is drawn rear-left");
+  assert.ok(m3.y < centre && m3.x < centre, "motor 3 (+X, -Y) is drawn front-left");
+
+  // Equidistant motors must be drawn equidistant.
+  const r1 = Math.hypot(m1.x - centre, m1.y - centre);
+  const r2 = Math.hypot(m2.x - centre, m2.y - centre);
+  assert.ok(Math.abs(r1 - r2) < 0.5, "equidistant motors are drawn equidistant");
+}
+
+// The drawing has to be to scale, or "how far out is that motor" cannot be read
+// off it — which is the whole reason for drawing it.
+async function testTheDiagramIsDrawnToScale() {
+  const fake = makeFakeTelemetry();
+  const doc = motorsDoc();
+  doc.motors[0].x = 0.4;    // motor 1 pushed twice as far out as the others
+  doc.motors[0].y = 0.0;
+  const container = await openMotors(fake, doc);
+
+  const centre = 340 / 2;
+  const far = motorCentre(container, 1);
+  const near = motorCentre(container, 2);
+  const rFar = Math.hypot(far.x - centre, far.y - centre);
+  const rNear = Math.hypot(near.x - centre, near.y - centre);
+
+  // 0.4 m vs hypot(0.15, 0.15) = 0.2121 m -> the ratio must survive the drawing.
+  assert.ok(Math.abs(rFar / rNear - 0.4 / Math.hypot(0.15, 0.15)) < 0.02,
+    "the radius ratio on screen matches the ratio in metres");
+  const legend = findByClass(container, "motors-legend-item").map((e) => e.textContent);
+  assert.ok(legend.some((t) => t.includes("0.4 m")),
+    "the legend names the real outer radius in metres, rounded to millimetres");
+}
+
+async function testAGeometryWithNoPositionsIsSpreadOutAndSaysSo() {
+  const fake = makeFakeTelemetry();
+  const doc = motorsDoc();
+  doc.motors.forEach((m) => { m.x = 0; m.y = 0; });
+  const container = await openMotors(fake, doc);
+
+  const centre = 340 / 2;
+  const points = [1, 2, 3, 4].map((n) => motorCentre(container, n));
+  const unique = new Set(points.map((p) => `${p.x},${p.y}`));
+  assert.equal(unique.size, 4, "motors are spread out rather than stacked on the hub");
+  assert.ok(points.every((p) => Math.hypot(p.x - centre, p.y - centre) > 1),
+    "no motor is drawn on the hub");
+
+  const legend = findByClass(container, "motors-legend-item").map((e) => e.textContent);
+  assert.ok(legend.some((t) => t.includes("No motor positions set")),
+    "the legend says the layout is not the real geometry");
+  const ring = findOneByClass(container, "motors-ring");
+  assert.notEqual(ring.getAttribute("stroke-dasharray"), "none",
+    "the reference ring is dashed when it means nothing");
+}
+
+async function testEachMotorShowsItsOutputAndSpinOnTheDrawing() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+
+  const labels = findByClass(container, "motors-node-output").map((e) => e.textContent);
+  assert.deepEqual(labels, ["MAIN 1", "MAIN 2", "MAIN 3", "MAIN 4"]);
+  assert.equal(findByClass(container, "motors-node-spin").length, 4,
+    "every motor with a known spin gets a direction arrow");
+
+  // The arrow's sweep flag is what makes CW read as CW on a Y-down screen.
+  const paths = findByClass(container, "motors-node-spin").map((e) => e.getAttribute("d"));
+  assert.ok(/A [\d.]+ [\d.]+ 0 1 0 /.test(paths[0]), "CCW motor 1 sweeps anticlockwise");
+  assert.ok(/A [\d.]+ [\d.]+ 0 1 1 /.test(paths[2]), "CW motor 3 sweeps clockwise");
+}
+
+async function testAnUnassignedMotorIsMarkedOnTheDrawing() {
+  const fake = makeFakeTelemetry();
+  const doc = motorsDoc();
+  doc.motors[1].output = null;
+  const container = await openMotors(fake, doc);
+
+  assert.ok(motorNode(container, 2).className.includes("unassigned"),
+    "a motor on no output pin is flagged — it will not spin");
+  assert.ok(!motorNode(container, 1).className.includes("unassigned"));
+  assert.equal(findByClass(container, "motors-node-output")[1].textContent, "unassigned");
+}
+
+async function testClickingAMotorSelectsItAndOpensItsPanel() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+
+  assert.ok(motorNode(container, 1).className.includes("selected"),
+    "the first motor is selected on open");
+  assert.equal(findOneByClass(container, "motors-panel-title").textContent, "Motor 1");
+
+  fire(motorNode(container, 3), "click");
+  assert.ok(motorNode(container, 3).className.includes("selected"), "motor 3 selected");
+  assert.ok(!motorNode(container, 1).className.includes("selected"), "motor 1 deselected");
+  assert.equal(findOneByClass(container, "motors-panel-title").textContent, "Motor 3");
+  assert.equal(findOneByClass(container, "motors-panel-sub").textContent, "wired to MAIN 3");
+  // The panel shows THAT motor's parameters, not the previous one's.
+  assert.ok(findByDataset(container, "param", "CA_ROTOR2_PX").length,
+    "the panel shows motor 3's position parameter");
+  assert.equal(findByDataset(container, "param", "CA_ROTOR0_PX").length, 0,
+    "motor 1's parameter is gone from the panel");
+}
+
+async function testAMotorCanBeSelectedFromTheKeyboard() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+
+  const node = motorNode(container, 4);
+  assert.equal(node.getAttribute("role"), "button", "a motor announces as a control");
+  assert.equal(node.getAttribute("tabindex"), "0", "a motor is reachable by tab");
+  assert.ok(node.getAttribute("aria-label").includes("Motor 4"),
+    "the label names the motor, its output and its position");
+
+  fire(node, "keydown", { key: "Enter" });
+  assert.ok(motorNode(container, 4).className.includes("selected"),
+    "Enter selects the focused motor");
+}
+
+// Assignment is the point of clicking a motor: pick the pin it is plugged into.
+async function testAssigningTheSelectedMotorPostsBankAndPin() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+
+  const assign = findOneByClass(container, "motors-assign");
+  const [bank, pin] = findByTag(assign, "select");
+  assert.equal(bank.value, "MAIN", "the bank shows where motor 1 is wired");
+  assert.equal(pin.value, "1", "the pin shows where motor 1 is wired");
+
+  pin.value = "5";
+  fire(pin, "change");
+  await flushMicrotasks();
+
+  const posts = fake.postCalls.filter((c) => c.url === "/api/motors/assign");
+  assert.equal(posts.length, 1);
+  assert.deepEqual(posts[0].payload, { motor: 1, bank: "MAIN", pin: 5 });
+}
+
+async function testTheOutputBankCanBeChangedToAux() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+
+  const [bank, pin] = findByTag(findOneByClass(container, "motors-assign"), "select");
+  bank.value = "AUX";
+  fire(bank, "change");
+  // Switching bank alone assigns nothing — it re-filters the pin list.
+  assert.equal(fake.postCalls.filter((c) => c.url === "/api/motors/assign").length, 0,
+    "changing the bank does not move the motor on its own");
+  const labels = findByTag(pin, "option").map((o) => o.textContent);
+  assert.deepEqual(labels, ["Choose a pin…", "AUX 1"], "the pin list follows the bank");
+
+  pin.value = "1";
+  fire(pin, "change");
+  await flushMicrotasks();
+  assert.deepEqual(
+    fake.postCalls.filter((c) => c.url === "/api/motors/assign")[0].payload,
+    { motor: 1, bank: "AUX", pin: 1 });
+}
+
+async function testAPinAlreadyDrivingSomethingSaysSoInTheList() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+
+  const [, pin] = findByTag(findOneByClass(container, "motors-assign"), "select");
+  const labels = findByTag(pin, "option").map((o) => o.textContent);
+  assert.ok(labels.includes("MAIN 2 — Motor 2"),
+    "a taken pin names what is on it, so a swap is a decision not a surprise");
+  assert.ok(labels.includes("MAIN 1"), "the motor's own pin is not marked as taken");
+  assert.ok(labels.includes("MAIN 5"), "a free pin is offered plainly");
+}
+
+async function testUnassigningAMotorPostsANullOutput() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+
+  const [bank] = findByTag(findOneByClass(container, "motors-assign"), "select");
+  bank.value = "";
+  fire(bank, "change");
+  await flushMicrotasks();
+
+  assert.deepEqual(
+    fake.postCalls.filter((c) => c.url === "/api/motors/assign")[0].payload,
+    { motor: 1, output: null });
+}
+
+async function testARefusedAssignmentIsReportedAndNotShownAsApplied() {
+  const fake = makeFakeTelemetry({ postReject: { "/api/motors/assign": "MAIN 5 drives Servo 1" } });
+  const container = await openMotors(fake);
+
+  const [, pin] = findByTag(findOneByClass(container, "motors-assign"), "select");
+  pin.value = "5";
+  fire(pin, "change");
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  const note = dispatched.filter((e) => e.type === "corvus:notification").pop();
+  assert.equal(note.detail.level, "critical");
+  assert.ok(note.detail.message.includes("Servo 1"), "the reason reaches the operator");
+  assert.equal(findOneByClass(container, "motors-panel-sub").textContent, "wired to MAIN 1",
+    "the panel still shows where the motor actually is");
+}
+
+// --- motor test: the only control on this page that moves hardware ---
+
+async function testTheMotorTestRefusesToArmWithoutThePropellerAcknowledgement() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+
+  const danger = findOneByClass(container, "motors-danger");
+  assert.ok(danger, "the propeller warning is always on the card");
+  assert.ok(findOneByClass(danger, "motors-danger-title").textContent
+    .includes("Remove all propellers"), "the warning leads with the hazard");
+
+  const spin = buttonByLabel(container, "Spin");
+  assert.ok(spin.disabled, "Spin is disabled until the propellers are confirmed off");
+
+  fire(spin, "click");
+  await flushMicrotasks();
+  assert.equal(fake.postCalls.filter((c) => c.url === "/api/motors/test").length, 0,
+    "and clicking it anyway sends nothing");
+}
+
+async function testConfirmingPropellersOffEnablesTheSpinForTheSelectedMotor() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+  fire(motorNode(container, 3), "click");
+
+  const ack = findOneByClass(container, "ui-toggle");
+  fire(ack, "click");
+  const spin = buttonByLabel(container, "Spin");
+  assert.ok(!spin.disabled, "Spin is enabled once the propellers are confirmed off");
+  assert.ok(textOf(spin).includes("Motor 3"),
+    "the button names the motor it will spin");
+
+  fire(spin, "click");
+  await flushMicrotasks();
+
+  const posts = fake.postCalls.filter((c) => c.url === "/api/motors/test");
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].payload.motor, 3);
+  assert.ok(posts[0].payload.throttle > 0 && posts[0].payload.throttle <= 50,
+    "a bench identification throttle, not full power");
+  assert.ok(posts[0].payload.duration > 0 && posts[0].payload.duration <= 10,
+    "always bounded, so the vehicle stops the motor on its own");
+  assert.ok(motorNode(container, 3).className.includes("testing"),
+    "the spinning motor is marked on the drawing");
+}
+
+async function testTheAcknowledgementIsNotRememberedAcrossOpens() {
+  // The one time a remembered "props are off" is stale is the time someone put
+  // them back on.
+  const fake = makeFakeTelemetry();
+  let container = await openMotors(fake);
+  fire(findOneByClass(container, "ui-toggle"), "click");
+  assert.ok(!buttonByLabel(container, "Spin").disabled);
+
+  fire(findOneByClass(container, "setup-back"), "click");
+  container = await openMotors(fake);
+
+  const spin = buttonByLabel(container, "Spin");
+  assert.ok(spin.disabled, "re-opening the page asks again");
+}
+
+async function testStopIsAlwaysAvailableAndClearsTheTestingMark() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+  fire(findOneByClass(container, "ui-toggle"), "click");
+  fire(buttonByLabel(container, "Spin"), "click");
+  await flushMicrotasks();
+  assert.ok(motorNode(container, 1).className.includes("testing"));
+
+  const stop = buttonByLabel(container, "Stop all");
+  assert.ok(!stop.disabled, "Stop is never gated — refusing to stop a motor is not safety");
+  fire(stop, "click");
+  await flushMicrotasks();
+
+  assert.equal(fake.postCalls.filter((c) => c.url === "/api/motors/test/stop").length, 1);
+  assert.ok(!motorNode(container, 1).className.includes("testing"),
+    "the drawing stops claiming a motor is spinning");
+}
+
+async function testLeavingThePageStopsARunningMotor() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+  fire(findOneByClass(container, "ui-toggle"), "click");
+  fire(buttonByLabel(container, "Spin"), "click");
+  await flushMicrotasks();
+
+  fire(findOneByClass(container, "setup-back"), "click");
+  assert.equal(fake.postCalls.filter((c) => c.url === "/api/motors/test/stop").length, 1,
+    "navigating away must not leave a motor turning");
+}
+
+// --- motor count ---
+
+async function testAddingAMotorWritesTheRotorCountAndRedraws() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+  assert.equal(findByClass(container, "motors-node").length, 4, "a quad shows four motors");
+
+  const add = buttonByLabel(container, "Add motor");
+  const before = fake.requests.filter((u) => u === "/api/motors").length;
+
+  // The reload after the write returns a five-motor geometry.
+  const six = motorsDoc();
+  six.motors.push({ number: 5, index: 4, label: "Motor 5", x: 0, y: 0.2, z: 0, spin: "CCW",
+    output: null, fields: [] });
+  six.rotor_count = 5;
+  fake.setResponse("/api/motors", six);
+
+  fire(add, "click");
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  assert.deepEqual(
+    fake.postCalls.filter((c) => c.url === "/api/params/set")[0].payload,
+    { name: "CA_ROTOR_COUNT", value: 5 });
+  assert.equal(fake.requests.filter((u) => u === "/api/motors").length, before + 1,
+    "the page re-reads itself");
+  assert.equal(findByClass(container, "motors-node").length, 5,
+    "the new motor appears on the drawing");
+}
+
+async function testTheMotorCountCannotBeDrivenOutOfRange() {
+  const fake = makeFakeTelemetry();
+  const doc = motorsDoc({ max_motors: 4 });
+  const container = await openMotors(fake, doc);
+
+  const add = buttonByLabel(container, "Add motor");
+  assert.ok(add.disabled, "Add is disabled at the geometry's maximum");
+
+  const single = motorsDoc({ max_motors: 12 });
+  single.motors = [single.motors[0]];
+  const c2 = await openMotors(fake, single);
+  const remove = buttonByLabel(c2, "Remove last");
+  assert.ok(remove.disabled, "the last motor cannot be removed");
+}
+
+// --- generic fields, still ---
+
+// The generic section path (output protocol), as opposed to the airframe card's
+// own fields — both go through the same parameter endpoint.
+async function testAProtocolFieldWriteGoesThroughTheParameterEndpoint() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+
+  const select = findByDataset(container, "param", "PWM_MAIN_TIM0")
+    .filter((e) => e.tagName === "SELECT")[0];
+  select.value = "-4";
+  fire(select, "change");
+  await flushMicrotasks();
+
+  const writes = fake.postCalls.filter((c) => c.url === "/api/params/set");
+  assert.equal(writes.length, 1);
+  assert.deepEqual(writes[0].payload, { name: "PWM_MAIN_TIM0", value: -4 },
+    "the field writes the parameter it names, as a number");
+  assert.equal(fake.requests.filter((u) => u === "/api/motors").length, 1,
+    "a protocol change does not redraw the airframe");
+}
+
+async function testMotorsNumberFieldAppliesOnChangeAndRejectsGarbage() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+
+  const input = findByDataset(container, "param", "CA_ROTOR0_PX")
+    .filter((e) => e.tagName === "INPUT")[0];
+  assert.equal(input.value, "0.15", "the motor distance is prefilled from the vehicle");
+
+  input.value = "not a number";
+  fire(input, "change");
+  await flushMicrotasks();
+  assert.equal(fake.postCalls.filter((c) => c.url === "/api/params/set").length, 0,
+    "a non-numeric distance is never written to the aircraft");
+  assert.ok(input.className.includes("invalid"), "the field is marked invalid");
+
+  input.value = "0.31";
+  fire(input, "change");
+  await flushMicrotasks();
+  assert.deepEqual(
+    fake.postCalls.filter((c) => c.url === "/api/params/set")[0].payload,
+    { name: "CA_ROTOR0_PX", value: 0.31 }, "a valid distance is written");
+}
+
+// Flipping a propeller's direction must keep the tuned moment magnitude — a
+// CW/CCW control that wrote ±1 would silently retune the airframe.
+async function testMotorsSpinFlipKeepsTheMomentMagnitude() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+
+  const spin = findByDataset(container, "param", "CA_ROTOR0_KM")
+    .filter((e) => e.tagName === "SELECT")[0];
+  spin.value = "-1";
+  fire(spin, "change");
+  await flushMicrotasks();
+
+  assert.deepEqual(fake.postCalls.filter((c) => c.url === "/api/params/set")[0].payload,
+    { name: "CA_ROTOR0_KM", value: -0.05 }, "sign flipped, magnitude kept");
+}
+
+// The airframe class and motor count change the picture, so they belong on the
+// card that holds it — not in a form further down the page.
+async function testTheAirframeCardOwnsTheClassAndTheMotorCount() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+
+  const card = findOneByClass(container, "motors-airframe-card");
+  assert.ok(card, "the airframe card exists");
+  assert.ok(findByDataset(card, "param", "CA_AIRFRAME").length,
+    "the airframe type is chosen on the airframe card");
+  assert.ok(findByDataset(card, "param", "CA_ROTOR_COUNT").length,
+    "so is the motor count");
+
+  // And nowhere else on the page.
+  assert.equal(findByDataset(container, "param", "CA_AIRFRAME")
+    .filter((e) => e.tagName === "SELECT").length, 1, "exactly one airframe control");
+  const titles = findByClass(container, "page-section-title").map((t) => t.textContent);
+  assert.ok(!titles.includes("Geometry"), "the separate Geometry card is gone");
+}
+
+async function testChangingTheAirframeTypeWritesAndRedraws() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+  const before = fake.requests.filter((u) => u === "/api/motors").length;
+
+  const wing = motorsDoc({ airframe_family: "wing", airframe_label: "Fixed wing" });
+  fake.setResponse("/api/motors", wing);
+
+  const select = findByDataset(container, "param", "CA_AIRFRAME")
+    .filter((e) => e.tagName === "SELECT")[0];
+  select.value = "1";
+  fire(select, "change");
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  assert.deepEqual(fake.postCalls.filter((c) => c.url === "/api/params/set")[0].payload,
+    { name: "CA_AIRFRAME", value: 1 });
+  assert.equal(fake.requests.filter((u) => u === "/api/motors").length, before + 1,
+    "the page re-reads itself, so the drawing follows the new class");
+  assert.equal(findOneByClass(container, "motors-svg").dataset.family, "wing");
+}
+
+// A quad, a plane, a rover and a helicopter are not the same picture.
+async function testEachAirframeFamilyDrawsItsOwnBody() {
+  const families = ["multirotor", "wing", "vtol", "rover", "helicopter"];
+  for (const family of families) {
+    const fake = makeFakeTelemetry();
+    const container = await openMotors(fake,
+      motorsDoc({ airframe_family: family, airframe_label: family }));
+    const body = findOneByClass(container, "motors-body");
+    assert.ok(body, `${family}: a body is drawn`);
+    assert.equal(body.dataset.family, family, `${family}: the body knows its family`);
+    assert.equal(findByClass(container, "motors-node").length, 4,
+      `${family}: the motors are still drawn on top`);
+    if (family === "multirotor") {
+      assert.equal(findByClass(body, "motors-arm").length, 4,
+        "a multirotor's arms are derived from its real motor positions");
+      assert.equal(findByClass(body, "motors-shape").length, 0,
+        "and it needs no schematic body at all");
+    } else {
+      assert.ok(findByClass(body, "motors-shape").length > 0,
+        `${family}: a schematic body is drawn`);
+    }
+  }
+}
+
+// PX4 stores no wingspan, so the outline is a schematic and the page says so.
+async function testANonMultirotorSaysItsOutlineIsSchematic() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake,
+    motorsDoc({ airframe_family: "wing", airframe_label: "Fixed wing" }));
+
+  const legend = findByClass(container, "motors-legend-item").map((e) => e.textContent);
+  assert.ok(legend.some((t) => t.includes("schematic") && t.includes("to scale")),
+    "the legend separates the schematic body from the measured motor positions");
+
+  const quad = await openMotors(makeFakeTelemetry());
+  assert.ok(!findByClass(quad, "motors-legend-item")
+    .map((e) => e.textContent).some((t) => t.includes("schematic")),
+    "a multirotor's arms are real, so nothing is disclaimed");
+}
+
+// A quadplane's pusher must not be drawn as a fifth lift rotor.
+async function testAPusherIsDrawnWithAThrustArrowAndNoBoom() {
+  const fake = makeFakeTelemetry();
+  const doc = motorsDoc({ airframe_family: "vtol", airframe_label: "Standard VTOL" });
+  doc.motors.forEach((m) => {
+    m.axis = { x: 0, y: 0, z: -1, kind: "lift" };
+    m.thrust = "lift";
+  });
+  doc.motors.push({
+    number: 5, index: 4, label: "Motor 5", x: -0.3, y: 0, z: 0, spin: "CCW",
+    axis: { x: 1, y: 0, z: 0, kind: "horizontal" }, thrust: "horizontal",
+    output: { bank: "MAIN", pin: 5, param: "PWM_MAIN_FUNC5", label: "MAIN 5" },
+    fields: [],
+  });
+  const container = await openMotors(fake, doc);
+
+  assert.equal(findByClass(container, "motors-node-thrust").length, 1,
+    "only the pusher gets a thrust arrow");
+  assert.ok(findByDataset(container, "motor", "5")[0].getAttribute("aria-label")
+    .includes("thrusts forward"), "and it is announced, not only drawn");
+  assert.equal(findByClass(findOneByClass(container, "motors-body"), "motors-arm").length, 4,
+    "booms run to the four lift rotors, never to the pusher");
+}
+
+async function testAFirmwareWithoutRotorAxesDrawsPlainDiscs() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);   // the fixture reports no axes
+  assert.equal(findByClass(container, "motors-node-thrust").length, 0,
+    "no axis means no invented thrust direction");
+}
+
+async function testMotorsDisconnectedRendersAnExplanationNotAnError() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake, {
+    connected: false, sections: [], geometry: [], motors: [], outputs: [], banks: [],
+    airframe_family: "multirotor", airframe_preset: null, rotor_count: 0, received: 0,
+  });
+
+  assert.equal(findByClass(container, "motors-node").length, 0, "nothing is drawn");
+  assert.ok(findOneByClass(container, "params-desc"), "an explanation is shown instead");
+  assert.ok(findOneByClass(container, "params-actions-status").className.includes("err"),
+    "the status line reports the failure");
+}
+
+async function testMotorsArmedGatingDisablesEveryControl() {
+  const fake = makeFakeTelemetry({ state: { connected: true, armed: false } });
+  const container = await openMotors(fake);
+  fire(findOneByClass(container, "ui-toggle"), "click");   // props acknowledged
+
+  const banner = findOneByClass(container, "params-banner");
+  const editable = () => findByClass(container, "motors-select")
+    .concat(findByClass(container, "motors-input"));
+  const spin = () => buttonByLabel(container, "Spin");
+  const stop = () => buttonByLabel(container, "Stop all");
+
+  assert.ok(banner.hidden, "no banner while disarmed");
+  assert.ok(editable().every((c) => !c.disabled), "controls editable while disarmed");
+  assert.ok(!spin().disabled);
+
+  fake.getSubCb()({ connected: true, armed: true });
+  assert.ok(!banner.hidden, "armed banner shown");
+  assert.ok(editable().every((c) => c.disabled), "every field disabled while armed");
+  assert.ok(spin().disabled, "a motor cannot be spun while armed");
+  assert.ok(!stop().disabled, "but stopping one is never blocked");
+
+  fake.getSubCb()({ connected: true, armed: false });
+  assert.ok(banner.hidden, "banner hidden again on disarm");
+  assert.ok(editable().every((c) => !c.disabled), "controls editable again on disarm");
+}
+
+async function testMotorsTeardownReleasesTheSubscription() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+  const before = fake.unsubCalls;
+
+  fire(findOneByClass(container, "setup-back"), "click");
+  assert.equal(fake.unsubCalls, before + 1, "the motors telemetry subscription is released");
+  assert.ok(findOneByClass(container, "setup-tiles"), "tile grid restored after back");
+  assert.equal(findByClass(container, "motors-card").length, 0, "motors cards gone after back");
 }
 
 // ===========================================================================
@@ -437,7 +1217,7 @@ async function testCalibrationCardsCoverEveryProcedure() {
   clock = 1000;
 
   Corvus.setup.render(container);
-  fire(findByClass(container, "setup-tile")[0], "click");   // Calibration
+  openTile(container, "calibration");
 
   const cards = findByClass(findOneByClass(container, "calib-cards"), "calib-card");
   assert.equal(cards.length, 7, "one card per calibration procedure");
@@ -470,7 +1250,7 @@ async function testCalibrationArmedGating() {
   clock = 1000;
 
   Corvus.setup.render(container);
-  fire(findByClass(container, "setup-tile")[0], "click");   // Calibration
+  openTile(container, "calibration");
   const cards = findByClass(findOneByClass(container, "calib-cards"), "calib-card");
 
   // Initial state disarmed → cards enabled.
@@ -496,7 +1276,7 @@ async function testReadinessStripReflectsLinkAndArmedState() {
   clock = 1000;
 
   Corvus.setup.render(container);
-  fire(findByClass(container, "setup-tile")[0], "click");
+  openTile(container, "calibration");
 
   const chips = findByClass(container, "calib-ready-chip");
   assert.equal(chips.length, 2, "link + armed readiness chips");
@@ -521,7 +1301,7 @@ async function testAutotuneButtonsMapToAxes() {
   clock = 1000;
 
   Corvus.setup.render(container);
-  fire(findByClass(container, "setup-tile")[0], "click");   // Calibration
+  openTile(container, "calibration");
 
   const controls = findOneByClass(container, "autotune-controls");
   const btns = findByClass(controls, "autotune-btn");
@@ -553,7 +1333,7 @@ async function testAutotuneArmedGating() {
   clock = 1000;
 
   Corvus.setup.render(container);
-  fire(findByClass(container, "setup-tile")[0], "click");
+  openTile(container, "calibration");
   const btns = findByClass(findOneByClass(container, "autotune-controls"), "autotune-btn");
 
   assert.ok(btns.every((b) => !b.disabled), "autotune enabled while disarmed");
@@ -577,7 +1357,7 @@ async function testAutotuneGraphsReactAndBuffer() {
   clock = 1000;
 
   Corvus.setup.render(container);
-  fire(findByClass(container, "setup-tile")[0], "click");   // Calibration
+  openTile(container, "calibration");
 
   // Three graphs → three initial Plotly.react calls (empty figures).
   assert.equal(plot.reactCalls.length, 3, "three initial react calls");
@@ -622,7 +1402,7 @@ async function testReducedMotionZeroDurationTransition() {
   clock = 1000;
 
   Corvus.setup.render(container);
-  fire(findByClass(container, "setup-tile")[0], "click");
+  openTile(container, "calibration");
 
   assert.ok(plot.reactCalls.length >= 3, "graphs initialised under reduced motion");
   for (const call of plot.reactCalls) {
@@ -646,7 +1426,7 @@ async function testParametersDoesNotAutoDownload() {
   clock = 1000;
 
   Corvus.setup.render(container);
-  fire(findByClass(container, "setup-tile")[1], "click");   // Parameters
+  openTile(container, "parameters");
 
   // Download button present, no editor yet, no download POST issued.
   assert.ok(findOneByClass(container, "params-download-btn"), "Download button present");
@@ -666,7 +1446,7 @@ async function testParametersDownloadFlowGating() {
   clearedIds.clear();
 
   Corvus.setup.render(container);
-  fire(findByClass(container, "setup-tile")[1], "click");   // Parameters
+  openTile(container, "parameters");
   fire(findOneByClass(container, "params-download-btn"), "click");
   await flushMicrotasks();   // postAction → openProgressView
 
@@ -719,7 +1499,7 @@ async function testParametersArmedGatingReadOnly() {
   intervalCbs.length = 0;
 
   Corvus.setup.render(container);
-  fire(findByClass(container, "setup-tile")[1], "click");
+  openTile(container, "parameters");
   fire(findOneByClass(container, "params-download-btn"), "click");
   await flushMicrotasks();
 
@@ -767,7 +1547,7 @@ async function testParamSetAppliesValidValue() {
   intervalCbs.length = 0;
 
   Corvus.setup.render(container);
-  fire(findByClass(container, "setup-tile")[1], "click");
+  openTile(container, "parameters");
   fire(findOneByClass(container, "params-download-btn"), "click");
   await flushMicrotasks();
 
@@ -813,7 +1593,7 @@ async function testParamSetRejectsNonNumeric() {
   intervalCbs.length = 0;
 
   Corvus.setup.render(container);
-  fire(findByClass(container, "setup-tile")[1], "click");
+  openTile(container, "parameters");
   fire(findOneByClass(container, "params-download-btn"), "click");
   await flushMicrotasks();
 
@@ -853,7 +1633,7 @@ async function testParamSetFailureShowsError() {
   intervalCbs.length = 0;
 
   Corvus.setup.render(container);
-  fire(findByClass(container, "setup-tile")[1], "click");
+  openTile(container, "parameters");
   fire(findOneByClass(container, "params-download-btn"), "click");
   await flushMicrotasks();
 
@@ -894,7 +1674,7 @@ async function testParametersTeardownClosesSseAndPoll() {
   clearedIds.clear();
 
   Corvus.setup.render(container);
-  fire(findByClass(container, "setup-tile")[1], "click");   // Parameters
+  openTile(container, "parameters");
   fire(findOneByClass(container, "params-download-btn"), "click");
   await flushMicrotasks();
 
@@ -923,7 +1703,7 @@ async function testParametersTeardownOnReRender() {
   intervalCbs.length = 0;
 
   Corvus.setup.render(container);
-  fire(findByClass(container, "setup-tile")[1], "click");
+  openTile(container, "parameters");
   fire(findOneByClass(container, "params-download-btn"), "click");
   await flushMicrotasks();
   const sse = eventSources[0];
@@ -1242,8 +2022,7 @@ async function testFirmwareBackCallsDestroyNoLeak() {
   resetFetch();
   eventSources.length = 0;
   Corvus.setup.render(container);
-  // Open the Firmware sub-page (third tile).
-  fire(findByClass(container, "setup-tile")[2], "click");
+  openTile(container, "firmware");
   await flushMicrotasks();
   selectFirmwareFile(container);
   const sse = await performUpload(container);
@@ -1277,11 +2056,46 @@ async function withReset(fn) {
 }
 
 async function run() {
-  await withReset(testTileGridRendersTwoTiles);
+  await withReset(testTileGridRendersEveryTile);
   await withReset(testClickTileSwapsToSubPageAndBackReturns);
+  await withReset(testSafetyTileOpensTheSafetyPage);
   await withReset(testTeardownRunsOnSwap);
   await withReset(testReRenderTearsDownActiveSubPage);
   await withReset(testVehicleInfoUpdatesLive);
+
+  await withReset(testTheAirframeCardOwnsTheClassAndTheMotorCount);
+  await withReset(testChangingTheAirframeTypeWritesAndRedraws);
+  await withReset(testEachAirframeFamilyDrawsItsOwnBody);
+  await withReset(testANonMultirotorSaysItsOutlineIsSchematic);
+  await withReset(testAPusherIsDrawnWithAThrustArrowAndNoBoom);
+  await withReset(testAFirmwareWithoutRotorAxesDrawsPlainDiscs);
+  await withReset(testEveryFormPartCarriesTheSharedBaseClass);
+  await withReset(testATypedValueOutsideTheSchemaBoundsIsRefused);
+  await withReset(testMotorsDrawsTheAirframeFromTheRealPositions);
+  await withReset(testTheDiagramIsDrawnToScale);
+  await withReset(testAGeometryWithNoPositionsIsSpreadOutAndSaysSo);
+  await withReset(testEachMotorShowsItsOutputAndSpinOnTheDrawing);
+  await withReset(testAnUnassignedMotorIsMarkedOnTheDrawing);
+  await withReset(testClickingAMotorSelectsItAndOpensItsPanel);
+  await withReset(testAMotorCanBeSelectedFromTheKeyboard);
+  await withReset(testAssigningTheSelectedMotorPostsBankAndPin);
+  await withReset(testTheOutputBankCanBeChangedToAux);
+  await withReset(testAPinAlreadyDrivingSomethingSaysSoInTheList);
+  await withReset(testUnassigningAMotorPostsANullOutput);
+  await withReset(testARefusedAssignmentIsReportedAndNotShownAsApplied);
+  await withReset(testTheMotorTestRefusesToArmWithoutThePropellerAcknowledgement);
+  await withReset(testConfirmingPropellersOffEnablesTheSpinForTheSelectedMotor);
+  await withReset(testTheAcknowledgementIsNotRememberedAcrossOpens);
+  await withReset(testStopIsAlwaysAvailableAndClearsTheTestingMark);
+  await withReset(testLeavingThePageStopsARunningMotor);
+  await withReset(testAddingAMotorWritesTheRotorCountAndRedraws);
+  await withReset(testTheMotorCountCannotBeDrivenOutOfRange);
+  await withReset(testAProtocolFieldWriteGoesThroughTheParameterEndpoint);
+  await withReset(testMotorsNumberFieldAppliesOnChangeAndRejectsGarbage);
+  await withReset(testMotorsSpinFlipKeepsTheMomentMagnitude);
+  await withReset(testMotorsDisconnectedRendersAnExplanationNotAnError);
+  await withReset(testMotorsArmedGatingDisablesEveryControl);
+  await withReset(testMotorsTeardownReleasesTheSubscription);
 
   await withReset(testCalibrationCardsCoverEveryProcedure);
   await withReset(testCalibrationArmedGating);

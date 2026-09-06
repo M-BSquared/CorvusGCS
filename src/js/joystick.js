@@ -57,9 +57,17 @@ window.Corvus = window.Corvus || {};
   The pad is a movable window over the map, like the flight HUD: drag it by its
   grip bar, double-click that bar to send it back to its corner, and the
   position is persisted. It deliberately does NOT reuse Corvus.hudPanel — that
-  module owns one specific element and adds pin/compact/collapse, none of which
-  belong on a control surface — so the drag maths is mirrored here instead,
+  module owns one specific element and adds pin/compact, neither of which
+  belongs on a control surface — so the drag maths is mirrored here instead,
   including the interface-scale correction (see pointerScale).
+
+  The grip bar also collapses the pad to the bar alone, which is persisted with
+  the position. Collapsed, the pad STOPS BEING AN INPUT SOURCE: the surfaces
+  are released and both the on-screen keys and the keyboard's own arrow keys
+  stand down, for the same reason nothing streams without a pad at all — a
+  control the operator cannot see is a control they cannot centre. The stream
+  itself keeps running at neutral, because a gap in it is what PX4 reads as RC
+  loss; a collapsed pad is a transmitter set down, not one switched off.
 */
 Corvus.joystick = (function () {
   const ACTIVE_HZ = 20;      // while an axis is off centre
@@ -71,6 +79,9 @@ Corvus.joystick = (function () {
   // Keep at least this much of the pad on screen when clamping, so it can
   // never be dragged entirely out of reach.
   const MIN_VISIBLE = 64;
+  // Margin kept between the pad and the map edge when the MAP moves under it,
+  // rather than the pad over the map. See contain().
+  const EDGE = 8;
 
   // Neutral frame: sticks centred, thrust at the hover detent.
   const NEUTRAL = { x: 0, y: 0, z: 0.5, r: 0 };
@@ -86,10 +97,13 @@ Corvus.joystick = (function () {
   let pad = null;
   let sticksEl = null;
   let keysEl = null;
+  let surfacesEl = null;
   let gripEl = null;
   let statusEl = null;
+  let collapseBtn = null;
   let showSticks = false;
   let showKeys = false;
+  let collapsed = false;
   let timer = null;
   let inFlight = false;
   let connected = false;
@@ -100,6 +114,10 @@ Corvus.joystick = (function () {
 
   let position = { x: null, y: null };
   let drag = null;
+  // The map's size at the last reflow, so a change in it can be told from a
+  // re-render. See onHostResize.
+  let lastHost = { w: 0, h: 0 };
+  let hostObserver = null;
 
   /* ------------------------------------------------------------------ */
   /* sticks                                                              */
@@ -278,7 +296,7 @@ Corvus.joystick = (function () {
      is off, while the map view is not the visible page, and while the caret is
      in a field — an operator typing a connection string must not be flying. */
   function keyboardTarget(event) {
-    if (!showKeys) return null;
+    if (!showKeys || collapsed) return null;
     const entry = KEY_DIRS[event.key];
     if (!entry) return null;
     if (event.altKey || event.ctrlKey || event.metaKey) return null;
@@ -347,11 +365,17 @@ Corvus.joystick = (function () {
     return (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2);
   }
 
+  /* Only the axes the visible surfaces can actually move. Four of them is a
+     wider strip than the arrow-key cluster underneath it, so a keys-only pad
+     used to be a narrow control under a bar twice its width; the keys drive
+     pitch and roll and nothing else, so that is all it says. */
   function paintStatus(f) {
     if (!statusEl) return;
-    statusEl.textContent = connected
-      ? `P ${fmt(f.x)}   R ${fmt(f.y)}   T ${f.z.toFixed(2)}   Y ${fmt(f.r)}`
-      : "NO LINK";
+    let text;
+    if (!connected) text = "NO LINK";
+    else if (showSticks) text = `P ${fmt(f.x)}  R ${fmt(f.y)}  T ${f.z.toFixed(2)}  Y ${fmt(f.r)}`;
+    else text = `P ${fmt(f.x)}  R ${fmt(f.y)}`;
+    statusEl.textContent = text;
     statusEl.classList.toggle("offline", !connected);
   }
 
@@ -443,18 +467,96 @@ Corvus.joystick = (function () {
     pad.style.top = c.y + "px";
   }
 
+  /** The map's size in the pad's own (unscaled) pixels. */
+  function hostSize() {
+    const host = boundsEl();
+    return host ? { w: host.clientWidth, h: host.clientHeight } : { w: 0, h: 0 };
+  }
+
+  /**
+   * Keep the WHOLE pad on the map, with a small margin — stricter than
+   * clampPosition(), which deliberately lets a deliberate drag leave only a
+   * strip showing. Used when the map resizes under a pad the operator is not
+   * touching. An axis the pad is simply too large for falls back to the loose
+   * clamp.
+   */
+  function contain(x, y) {
+    const host = boundsEl();
+    if (!host) return { x, y };
+    const loose = clampPosition(x, y);
+    const maxX = host.clientWidth - pad.offsetWidth - EDGE;
+    const maxY = host.clientHeight - pad.offsetHeight - EDGE;
+    return {
+      x: maxX >= EDGE ? Math.min(Math.max(x, EDGE), maxX) : loose.x,
+      y: maxY >= EDGE ? Math.min(Math.max(y, EDGE), maxY) : loose.y,
+    };
+  }
+
+  /**
+   * The map changed size — nearly always because the right utility panel was
+   * slid open or shut, and otherwise because the window was resized.
+   *
+   * A pad that has been dragged is positioned from the map's TOP-LEFT, so a
+   * map that narrows from the right leaves it exactly where it was: behind the
+   * utility panel, which outranks it in the stacking order and simply covers
+   * it. A control surface that disappears under a sidebar is worse than a
+   * readout doing the same, so a pad sitting nearer the right edge travels
+   * with that edge (and one nearer the left stays put), and the whole pad is
+   * then contained rather than merely clamped.
+   */
+  function onHostResize() {
+    if (!pad) return;
+    const size = hostSize();
+    // A hidden map — the operator is on Setup, Options or any other page —
+    // reports 0x0, and a box with no size says nothing about where a panel
+    // belongs. Containing against it collapses every coordinate to the origin,
+    // which is how a carefully arranged pad used to come back to the
+    // top-left corner after a round trip through another page. So there is
+    // nothing to reflow against and nothing is touched — `lastHost` least of
+    // all, because the next real resize still needs the last real size to tell
+    // which edge the pad was travelling with.
+    if (!size.w || !size.h) return;
+    // Showing the map again after a page visit is not a resize: the box came
+    // back the size it left. Reflowing anyway would re-`contain()` a pad the
+    // operator had deliberately parked overhanging the edge, nudging it a few
+    // pixels on every single visit to Setup and back.
+    if (size.w === lastHost.w && size.h === lastHost.h) {
+      applyPosition();
+      return;
+    }
+    if (position.x !== null && lastHost.w && size.w && size.w !== lastHost.w) {
+      const nearRight = (lastHost.w - (position.x + pad.offsetWidth)) < position.x;
+      if (nearRight) position.x += size.w - lastHost.w;
+    }
+    if (position.y !== null && lastHost.h && size.h && size.h !== lastHost.h) {
+      const nearBottom = (lastHost.h - (position.y + pad.offsetHeight)) < position.y;
+      if (nearBottom) position.y += size.h - lastHost.h;
+    }
+    lastHost = size;
+    if (position.x !== null && position.y !== null) {
+      const c = contain(position.x, position.y);
+      position.x = c.x; position.y = c.y;
+    }
+    applyPosition();
+  }
+
   function loadPosition() {
     position = { x: null, y: null };
+    collapsed = false;
     try {
       const saved = JSON.parse(localStorage.getItem(POS_KEY) || "null");
       if (!saved || typeof saved !== "object") return;
       if (typeof saved.x === "number") position.x = saved.x;
       if (typeof saved.y === "number") position.y = saved.y;
-    } catch (_e) { /* unreadable storage -> the default corner */ }
+      collapsed = !!saved.collapsed;
+    } catch (_e) { /* unreadable storage -> the default corner, expanded */ }
   }
 
   function savePosition() {
-    try { localStorage.setItem(POS_KEY, JSON.stringify(position)); } catch (_e) {}
+    try {
+      localStorage.setItem(POS_KEY, JSON.stringify(
+        { x: position.x, y: position.y, collapsed }));
+    } catch (_e) {}
   }
 
   /** Send the pad back to its default corner. */
@@ -464,12 +566,21 @@ Corvus.joystick = (function () {
     savePosition();
   }
 
+  /** True when the event started on one of the grip's own controls. Written
+   *  defensively because `closest` is the one DOM method the test stub omits. */
+  function onGripButton(event) {
+    const el = event && event.target;
+    return !!(el && typeof el.closest === "function" && el.closest(".icon-btn"));
+  }
+
   /* The grip bar is the only drag handle. The sticks and the keys are the
      whole point of the pad, so a drag that started on them would fly the
      aircraft while moving the window. */
   function wireDrag() {
     gripEl.addEventListener("pointerdown", (event) => {
       if (event.button !== 0) return;
+      // The collapse control lives on the grip; its click must not also drag.
+      if (onGripButton(event)) return;
       const host = boundsEl();
       if (!host) return;
       const hb = host.getBoundingClientRect();
@@ -508,7 +619,10 @@ Corvus.joystick = (function () {
       });
     });
 
-    gripEl.addEventListener("dblclick", resetPosition);
+    gripEl.addEventListener("dblclick", (event) => {
+      if (onGripButton(event)) return;
+      resetPosition();
+    });
   }
 
   /* ------------------------------------------------------------------ */
@@ -544,9 +658,20 @@ Corvus.joystick = (function () {
   }
 
   function apply() {
-    if (sticksEl) sticksEl.hidden = !showSticks;
-    if (keysEl) keysEl.hidden = !showKeys;
+    if (sticksEl) sticksEl.hidden = !showSticks || collapsed;
+    if (keysEl) keysEl.hidden = !showKeys || collapsed;
+    if (surfacesEl) surfacesEl.hidden = collapsed;
+    pad.classList.toggle("is-collapsed", collapsed);
     pad.hidden = !streaming();
+    if (collapseBtn) {
+      const label = collapsed ? "Expand the control pad" : "Collapse the control pad";
+      collapseBtn.title = label;
+      collapseBtn.setAttribute("aria-label", label);
+      collapseBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      Corvus.ui.clear(collapseBtn).appendChild(
+        Corvus.ui.icon(collapsed ? "chevron-up" : "chevron-down", 13));
+      Corvus.ui.refreshIcons();
+    }
     stopStream();
     releaseAll();
     if (streaming()) {
@@ -556,6 +681,12 @@ Corvus.joystick = (function () {
     } else {
       paintStatus(frame());
     }
+  }
+
+  function toggleCollapsed() {
+    collapsed = !collapsed;
+    savePosition();
+    apply();
   }
 
   function init(root) {
@@ -580,9 +711,17 @@ Corvus.joystick = (function () {
     statusEl = document.createElement("span");
     statusEl.className = "js-axes";
     gripEl.appendChild(statusEl);
+    collapseBtn = Corvus.ui.iconButton("chevron-down", {
+      size: 13,
+      className: "icon-btn js-collapse",
+      title: "Collapse the control pad",
+      onClick: toggleCollapsed,
+    });
+    gripEl.appendChild(collapseBtn);
 
     const surfaces = document.createElement("div");
     surfaces.className = "js-surfaces";
+    surfacesEl = surfaces;
 
     sticksEl = document.createElement("div");
     sticksEl.className = "js-sticks";
@@ -607,16 +746,26 @@ Corvus.joystick = (function () {
 
     loadPosition();
     wireDrag();
+    lastHost = hostSize();
 
     // One set of global listeners for the pad, not one per surface, so a
     // rebuild cannot stack them. Blur matters most: a window that loses focus
     // must not leave a stick or a key pinned with the stream still sending it.
     if (!boundGlobals) {
       window.addEventListener("blur", releaseAll);
-      window.addEventListener("resize", applyPosition);
+      window.addEventListener("resize", onHostResize);
       window.addEventListener("keydown", onKeyDown);
       window.addEventListener("keyup", onKeyUp);
       boundGlobals = true;
+    }
+    // The right utility panel animates its width over 280ms and fires no event
+    // of its own, so watch the map box directly: the pad then travels WITH the
+    // sidebar instead of jumping once the transition has finished. The window
+    // listener above stays as the fallback where ResizeObserver is missing.
+    if (hostObserver) { hostObserver.disconnect(); hostObserver = null; }
+    if (typeof ResizeObserver === "function" && boundsEl()) {
+      hostObserver = new ResizeObserver(onHostResize);
+      hostObserver.observe(boundsEl());
     }
     Corvus.ui.refreshIcons();
     apply();

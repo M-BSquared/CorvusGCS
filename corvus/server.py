@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import tile_sources
+from . import motor_config, safety_config, tile_sources
 from .config import (
     CorvusConfig,
     default_config_path,
@@ -1040,6 +1040,70 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             "params": params,
         })
 
+    @route("GET", "/api/motors")
+    def _api_motors(self) -> None:
+        """Return the vehicle's motor configuration as a renderable description.
+
+        Reads only the ~100 parameters the Motors page needs (a named batch
+        read, not the full ~1300-parameter download the editor uses) and hands
+        them to :mod:`corvus.motor_config`, which owns the PX4 schema. The
+        response lists only the fields the connected firmware actually answered
+        for, so a parameter absent on v1.16 is one field fewer rather than an
+        error (AGENTS.md: graceful fallback across v1.16/v1.17/v1.18).
+
+        Always 200 so the page can render a "not connected" state instead of an
+        error banner; ``connected`` says which it is.
+        """
+        if self.mavlink is None:
+            payload = motor_config.build({})
+            payload["connected"] = False
+            self._send_json(payload)
+            return
+        try:
+            values = self.mavlink.fetch_params(motor_config.param_names())
+        except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
+            logger.exception("motor parameter fetch failed")
+            payload = motor_config.build({})
+            payload["connected"] = False
+            payload["error"] = str(exc)
+            self._send_json(payload)
+            return
+        payload = motor_config.build(values)
+        payload["connected"] = bool(values)
+        if not values:
+            payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
+        self._send_json(payload)
+
+    @route("GET", "/api/safety")
+    def _api_safety(self) -> None:
+        """Return the vehicle's safety and sensor configuration as a description.
+
+        Same shape and same contract as ``/api/motors``: one batched read of the
+        parameters :mod:`corvus.safety_config` knows about, handed to that module
+        to turn into sections. Only what the connected firmware actually answered
+        for comes back, so a parameter absent on v1.16 is one field fewer rather
+        than an error (AGENTS.md: graceful fallback across v1.16/v1.17/v1.18).
+
+        Always 200 so the page can render a "not connected" state instead of an
+        error banner; ``connected`` says which it is.
+        """
+        if self.mavlink is None:
+            self._send_json({"connected": False, "sections": [], "received": 0})
+            return
+        try:
+            values = self.mavlink.fetch_params(safety_config.param_names())
+        except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
+            logger.exception("safety parameter fetch failed")
+            self._send_json({
+                "connected": False, "sections": [], "received": 0, "error": str(exc),
+            })
+            return
+        payload = safety_config.build(values)
+        payload["connected"] = bool(values)
+        if not values:
+            payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
+        self._send_json(payload)
+
     # ---- POST API ----
     def _handle_api_post(self, path: str) -> None:
         # Guard the Content-Length parse: a non-numeric header raises ValueError
@@ -1954,6 +2018,160 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             return
         result = self.mavlink.get_param_upload_result()
         self._send_json(result)
+
+    @route("POST", "/api/motors/assign")
+    def _api_motors_assign(self, payload: dict) -> None:
+        """Wire one motor to one output pin (Setup -> Motors, click-to-assign).
+
+        PX4 stores the mapping pin-first (``PWM_MAIN_FUNC3 = 103``), so moving
+        *Motor 3* to a different pin is two writes, not one: clear the pin it is
+        on, then claim the new one. Doing that here rather than in the browser
+        keeps the pair together and lets the outcome be judged as a whole.
+
+        Three cases for a target pin that is already taken:
+        free (``Disabled``) is a plain move; another *motor* is a swap, so the
+        displaced motor lands on the pin this one vacated; anything else — a
+        servo, a gimbal, a parachute — is refused by name, because silently
+        moving a servo off its pin is how a control surface stops working.
+
+        Body: ``{motor: 1-16, bank: "MAIN"|"AUX"|"CAN", pin: n}`` to assign, or
+        ``{motor: n, output: null}`` to unassign.
+        """
+        motor = payload.get("motor")
+        if isinstance(motor, bool) or not isinstance(motor, int) or not (
+                1 <= motor <= motor_config.MAX_MOTOR_FUNCTIONS):
+            self._send_json({"ok": False, "error": "motor must be between 1 and 16"}, 400)
+            return
+
+        unassign = payload.get("output", False) is None
+        target_param = None
+        target_label = ""
+        if not unassign:
+            bank = payload.get("bank")
+            pin = payload.get("pin")
+            if not isinstance(bank, str) or isinstance(pin, bool) or not isinstance(pin, int):
+                self._send_json({"ok": False, "error": "bank and pin are required"}, 400)
+                return
+            target_param = motor_config.function_param(bank, pin)
+            if target_param is None:
+                self._send_json({"ok": False, "error": f"unknown output {bank} {pin}"}, 400)
+                return
+            target_label = f"{bank} {pin}"
+
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+
+        values = self.mavlink.fetch_params(
+            [e for e in motor_config.param_names() if "_FUNC" in e])
+        if not values:
+            error = self.mavlink.get_last_command_error() or "no output parameters received"
+            self._send_json({"ok": False, "error": error}, 503)
+            return
+        if target_param is not None and target_param not in values:
+            self._send_json(
+                {"ok": False, "error": f"this board has no output {target_label}"}, 400)
+            return
+
+        entries = motor_config.outputs(values)
+        source = next((e for e in entries if e["motor"] == motor), None)
+        if target_param is not None and source is not None and source["param"] == target_param:
+            self._send_json({"ok": True, "writes": [], "note": "already assigned"})
+            return
+
+        writes: list[tuple[str, float]] = []
+        if target_param is None:
+            if source is None:
+                self._send_json({"ok": True, "writes": [], "note": "already unassigned"})
+                return
+            writes.append((source["param"], 0.0))
+        else:
+            occupant = next(e for e in entries if e["param"] == target_param)
+            displaced = occupant["motor"]
+            if displaced is None and int(round(occupant["value"])) != 0:
+                self._send_json({
+                    "ok": False,
+                    "error": f"{target_label} drives {occupant['function']} — "
+                             "free it in Parameters before assigning a motor to it",
+                }, 409)
+                return
+            if displaced is not None and source is None:
+                self._send_json({
+                    "ok": False,
+                    "error": f"{target_label} already drives Motor {displaced}, and "
+                             f"Motor {motor} has no output to swap it onto",
+                }, 409)
+                return
+            # Source first: a motor briefly on no pin is a safer transient than
+            # one briefly on two.
+            if source is not None:
+                vacated = 0.0 if displaced is None else float(
+                    motor_config.MOTOR_FUNCTION_BASE + displaced)
+                writes.append((source["param"], vacated))
+            writes.append((target_param, float(motor_config.MOTOR_FUNCTION_BASE + motor)))
+
+        applied: list[dict[str, Any]] = []
+        for name, value in writes:
+            if not self.mavlink.set_param(name, value):
+                error = self.mavlink.get_last_command_error() or "parameter write failed"
+                status = 503 if "not connected" in error else 409
+                self._send_json({
+                    "ok": False, "error": error, "applied": applied, "failed": name,
+                }, status)
+                return
+            applied.append({"param": name, "value": value})
+        logger.info("assigned motor %d -> %s", motor, target_label or "unassigned")
+        self._send_json({"ok": True, "writes": applied})
+
+    @route("POST", "/api/motors/test")
+    def _api_motors_test(self, payload: dict) -> None:
+        """Spin one motor on the bench so the operator can identify it.
+
+        PROPELLERS MUST BE OFF — the UI will not enable this until the operator
+        confirms that, and the bridge refuses while armed and bounds the
+        duration so the *vehicle* stops the motor even if the link dies.
+        """
+        motor = payload.get("motor")
+        if isinstance(motor, bool) or not isinstance(motor, int):
+            self._send_json({"ok": False, "error": "motor must be an integer"}, 400)
+            return
+        throttle = payload.get("throttle", 15)
+        if isinstance(throttle, bool) or not isinstance(throttle, (int, float)):
+            self._send_json({"ok": False, "error": "throttle must be a number"}, 400)
+            return
+        duration = payload.get("duration", 2)
+        if isinstance(duration, bool) or not isinstance(duration, (int, float)):
+            self._send_json({"ok": False, "error": "duration must be a number"}, 400)
+            return
+        if not 0 <= float(throttle) <= 100:
+            self._send_json(
+                {"ok": False, "error": "throttle must be between 0 and 100 percent"}, 400)
+            return
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        if self.mavlink.motor_test(motor, float(throttle), float(duration)):
+            self._send_json({"ok": True, "motor": motor, "throttle": float(throttle)})
+            return
+        error = self.mavlink.get_last_command_error() or "motor test failed"
+        status = 503 if "not connected" in error else 409
+        self._send_json({"ok": False, "error": error}, status)
+
+    @route("POST", "/api/motors/test/stop")
+    def _api_motors_test_stop(self, payload: dict) -> None:
+        """Stop every running motor test.
+
+        Never gated on the armed state: this only ever stops a motor, so
+        refusing it would be a safety regression (mirrors /api/calibrate/cancel).
+        """
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        if self.mavlink.stop_motor_test():
+            self._send_json({"ok": True})
+            return
+        error = self.mavlink.get_last_command_error() or "motor stop failed"
+        self._send_json({"ok": False, "error": error}, 503)
 
     @route("POST", "/api/calibrate")
     def _api_calibrate(self, payload: dict) -> None:

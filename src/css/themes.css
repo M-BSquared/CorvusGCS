@@ -106,16 +106,20 @@
   --surface-hover: #E2E6EC;
   --surface-active: #D6DBE3;
 
-  /* A burnt orange, not the dark themes' amber: #F58A2B carries 2.5:1 on
-     white and fails as both text and a fill behind white button labels.
-     This one is 4.6:1 in both directions, and hover/pressed only deepen it
-     so a pressed control never loses contrast under the cursor. */
-  --accent: #C2540A;
-  --accent-dim: rgba(194, 84, 10, 0.12);
-  --accent-bright: #A64500;
-  --accent-dark: #FBE7D6;
-  --accent-hover: #AE4A08;
-  --accent-pressed: #933E05;
+  /* A saturated burnt orange, not the dark themes' amber: #F58A2B carries
+     2.5:1 on white and fails as both text and a fill behind white button
+     labels. This one is fully saturated at hue 27deg — a true orange rather
+     than the red-orange it replaced — and holds 4.0:1 in both directions,
+     which clears AA for the UI components and large text it is actually used
+     on. Accent-coloured body text uses --accent-bright (5.3:1) instead, and
+     hover/pressed only deepen the fill, so a pressed control never loses
+     contrast under the cursor. */
+  --accent: #CE5E00;
+  --accent-dim: rgba(206, 94, 0, 0.14);
+  --accent-bright: #B04E00;
+  --accent-dark: #FCE7D3;
+  --accent-hover: #B85300;
+  --accent-pressed: #9E4700;
 
   --healthy: #0F8B50;
   --healthy-dark: #D8F1E3;
@@ -155,7 +159,7 @@
   --terminal-bg: #FFFFFF;
   --terminal-text: #1B1F26;
   --terminal-muted: #79828D;
-  --terminal-cmd: #C2540A;
+  --terminal-cmd: #BD5500;
   --ssh-bg: #F7F8FA;
 
   --horizon-sky: #58ADE4;
