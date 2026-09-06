@@ -14,6 +14,9 @@
 </p>
 
 <div align="center">
+  <!-- corvus:version-badge -->
+  <img src="https://img.shields.io/badge/Version-2026.09.22-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.22" />
+  <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.10%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.10+" /></a>
   <img width="8" />
   <a href="https://github.com/ArduPilot/pymavlink" target="_blank"><img src="https://img.shields.io/badge/pymavlink-00A6E2?logoColor=white&style=for-the-badge" height="28" alt="pymavlink" /></a>
@@ -36,26 +39,13 @@
 </div>
 
 <!--
-  VERSION BADGE — activate once this repository is on GitHub.
-
-  The release workflow publishes a GitHub Release on every version tag, so
-  shields.io can read the current version by itself. Add this line to the badge
-  block above and fill in <owner>/<repo>:
-
-  <img src="https://img.shields.io/github/v/release/<owner>/<repo>?style=for-the-badge&label=Version&color=0E8A6B" height="28" alt="Latest release" />
-
-  It is deliberately a *dynamic* badge: the version has exactly one source,
-  the VERSION file at the repo root (read by corvus/version.py, served live at
-  GET /api/version, and used as the release tag). A hardcoded badge would be a
-  second place for the number to live, and therefore a second place for it to
-  go stale. No version literal is ever typed into this README.
+  The version badge above shows a real number, and it cannot go stale: the
+  pre-commit hook that bumps VERSION rewrites that badge from it in the same
+  step, so the two are updated together or not at all. Do not hand-edit the
+  number, and do not remove the corvus:version-badge marker — the hook finds
+  the line by it. VERSION remains the single source of truth; the badge is a
+  generated view of it, not a second place to maintain.
 -->
-
-<p align="center">
-  <sub>The version lives in exactly one place — the <a href="VERSION"><code>VERSION</code></a>
-  file at the repo root — and is read from there by the app, served at
-  <code>GET /api/version</code>, and used as the release tag.</sub>
-</p>
 
 <p align="center">
   <img src="assets/screenshot_flight.png" alt="Corvus GCS in flight: live map, flight HUD and connection workspace">
@@ -627,8 +617,7 @@ software.
 ---
 
 <p align="center">
-  <sub>Developed with the Universität der Bundeswehr München · Corvus GCS (CGCS) ·
-  version from <a href="VERSION"><code>VERSION</code></a>, served live at <code>GET /api/version</code>.</sub>
+  <sub>Developed with the Universität der Bundeswehr München · Corvus GCS (CGCS)</sub>
 </p>
 
 <p align="center">

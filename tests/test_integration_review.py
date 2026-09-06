@@ -21,7 +21,8 @@ Cases:
       ``remove_param_listener`` leave no listener behind.
   (d) Version single-source: ``get_version()`` equals the VERSION file, no
       .py/.js/.html/.css file (outside the canonical source) hardcodes the
-      literal, and README.md does not hardcode it either.
+      literal, and README.md carries the version only in its badge, in sync
+      with VERSION.
   (e) Shutdown race mechanism: ``tests/test_shutdown.py`` exists and its
       ``Event.wait()`` race-fix tests pass (the mechanism is covered there;
       this only confirms it, it does not duplicate it).
@@ -288,11 +289,48 @@ def test_no_hardcoded_version_literal_outside_canonical_source() -> None:
     assert not offenders, f"hardcoded version literal {version!r} found in: {offenders}"
 
 
-def test_readme_does_not_hardcode_version_literal() -> None:
+def test_readme_version_badge_matches_the_version_file() -> None:
+    """The README shows a real version number, and it must be the real one.
+
+    The old contract was "no version literal in the README" — which the badge
+    now deliberately breaks, because a pointer to a file is not what a reader
+    wants at the top of a page. So the guarantee moves rather than disappears:
+    the number may appear, in the badge, and it has to agree with VERSION. The
+    pre-commit hook rewrites it from VERSION on every commit, so a mismatch here
+    means the hook did not run (``--no-verify``, or ``core.hooksPath`` unset in
+    a fresh clone) and the README is lying about which build it describes.
+    """
     version = _version_from_file()
-    readme = _REPO_ROOT / "README.md"
-    text = readme.read_text(encoding="utf-8")
-    assert version not in text, f"README.md hardcodes the version literal {version!r}"
+    text = (_REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+    # The exact marker comment, not just the string: the note further down the
+    # README explains the marker by name, so a substring check would still pass
+    # after somebody deleted the real one — and the hook would then quietly
+    # stop updating the badge with nothing failing.
+    assert "<!-- corvus:version-badge -->" in text, (
+        "the <!-- corvus:version-badge --> marker comment is gone — the "
+        "pre-commit hook locates the badge line by it and silently stops "
+        "updating without it"
+    )
+    assert f"badge/Version-{version}-" in text, (
+        f"README version badge does not show {version!r}; run "
+        "`git config core.hooksPath .githooks` and commit again"
+    )
+    assert f'alt="Version {version}"' in text, (
+        f"README version badge alt text does not show {version!r} — screen "
+        "readers would announce a different version from the image"
+    )
+
+    # The number belongs to the badge and nowhere else: two copies in one file
+    # is the stale-literal problem the old rule existed to prevent.
+    stale = [
+        n for n, line in enumerate(text.splitlines(), 1)
+        if version in line and "badge/Version-" not in line and 'alt="Version' not in line
+    ]
+    assert not stale, (
+        f"version literal {version!r} also appears outside the badge, on "
+        f"line(s) {stale} — the badge is the only place it may be written"
+    )
 
 
 # ---------------------------------------------------------------------------

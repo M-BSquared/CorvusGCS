@@ -140,7 +140,11 @@ commit**, so it tracks every change — small or large — with no manual editin
   `PP += 1`; otherwise (new month, first run, or migrated scheme) `PP = 01`
   with today's year-month. A future-dated `VERSION` is never downgraded — its
   counter simply increments. The hook re-stages `VERSION` so the bump ships
-  with the commit. One-time setup per clone:
+  with the commit, and rewrites the README's version badge from the same value
+  (re-staging `README.md` when the badge actually moved — so an unrelated
+  README edit left unstaged will ride along with that commit). A missing README
+  or missing badge marker is a no-op, never a failed commit. One-time setup per
+  clone:
   `git config core.hooksPath .githooks`. Skip for a single commit (rare) with
   `git commit --no-verify`; the version then does not bump for that commit.
 - **Python:** `corvus/version.py` reads `VERSION` at import time and exposes
@@ -151,9 +155,15 @@ commit**, so it tracks every change — small or large — with no manual editin
   frontend fetches it once on load; the HUD / About dialog / window title all
   read from that value. Never hardcode a version in HTML or JS.
 - **README / marketing:** the top-level `README.md` (owned by the `readme`
-  agent) uses **dynamic** version badges (e.g. the GitLab release/tag badge)
-  so the displayed version tracks releases automatically. A version literal
-  is never typed into the README.
+  agent) shows the version as a **real number** in a badge at the top —
+  `YYYY.MM.PP`, not a pointer to the `VERSION` file. That number is *generated,
+  never hand-typed*: the pre-commit hook rewrites it from `VERSION` in the same
+  step that bumps it, so the two cannot disagree. `VERSION` is still the single
+  source of truth; the badge is a view of it, which is why this is not a second
+  place for the number to live.
+  - Do not hand-edit the badge number, and do not remove the
+    `corvus:version-badge` marker comment — the hook locates the line by it.
+  - No *other* version literal is typed into the README.
 - **App wrapper:** the desktop wrapper imports `corvus.version` (or reads
   `VERSION`) for the window title, the `--app` window title, the About page,
   and any user-agent string it sets.

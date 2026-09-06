@@ -64,3 +64,28 @@ fi
 # Stage so the bump ships with this commit regardless of what else is staged.
 git add "$VERSION_FILE"
 echo "corvus-gcs: version -> $NEXT"
+
+# --- README version badge -------------------------------------------------
+# The README shows the version as a real number rather than a pointer to this
+# file. That number is generated, never hand-typed: it is rewritten here, from
+# the value just computed, so the badge and VERSION can never disagree. VERSION
+# stays the single source of truth; the badge is a view of it.
+#
+# The line is found by the corvus:version-badge marker that precedes it. If the
+# marker or the README is gone, this is a no-op — a missing badge must never
+# block a commit.
+README_FILE="$REPO_DIR/README.md"
+if [[ -f "$README_FILE" ]] && grep -q 'corvus:version-badge' "$README_FILE"; then
+    # -i.bak is the portable form: GNU sed wants -i, BSD/macOS sed wants -i ''.
+    sed -E -i.bak \
+        -e "s#(img\.shields\.io/badge/Version-)[0-9]{4}\.[0-9]{2}\.[0-9]+(-)#\1${NEXT}\2#" \
+        -e "s#(alt=\"Version )[0-9]{4}\.[0-9]{2}\.[0-9]+(\")#\1${NEXT}\2#" \
+        "$README_FILE"
+    rm -f "$README_FILE.bak"
+    if ! git diff --quiet -- "$README_FILE"; then
+        # Only speak up when the badge actually moved, and say so plainly: this
+        # stages README.md, so an unrelated edit in progress would ride along.
+        git add "$README_FILE"
+        echo "corvus-gcs: README version badge -> $NEXT (README.md staged)"
+    fi
+fi
