@@ -209,19 +209,42 @@ sign() {  # <path> — re-sign after an install_name_tool rewrite
         || { echo "ERROR: codesign failed for $1" >&2; return 1; }
 }
 
+# install_name_tool's own errors used to go to /dev/null, so a rewrite that did
+# not happen looked exactly like one that did, and the only symptom was the
+# host-reference check failing several lines later with no reason given. The
+# most likely error is worth naming: a Mach-O header has a fixed amount of room
+# for its load commands, and a replacement path longer than the original does
+# not always fit.
+retarget() {  # <binary> <old_ref> <new_ref>
+    local bin="$1" from="$2" to="$3" out
+    if ! out="$(install_name_tool -change "$from" "$to" "$bin" 2>&1)"; then
+        echo "ERROR: install_name_tool failed on $bin" >&2
+        echo "         from: $from (${#from} bytes)" >&2
+        echo "         to:   $to (${#to} bytes)" >&2
+        [ -n "$out" ] && echo "         $out" >&2
+        return 1
+    fi
+    # A silent no-op is the failure mode that actually bit us, so verify.
+    if otool -L "$bin" | grep -q -F "$from"; then
+        echo "ERROR: $bin still references $from after the rewrite" >&2
+        return 1
+    fi
+    return 0
+}
+
 # bin/python, bin/python3, bin/pythonX.Y are three copies of the same launcher.
+NEW_REF="@executable_path/../../../Frameworks/Python.framework/Versions/$PY_MM/Python"
+echo "    install name: $OLD_REF (${#OLD_REF} bytes) -> $NEW_REF (${#NEW_REF} bytes)"
 for b in "$PYROOT"/bin/python "$PYROOT"/bin/python3 "$PYROOT"/bin/python"$PY_MM"; do
     [ -f "$b" ] || continue
-    install_name_tool -change "$OLD_REF" \
-        "@executable_path/../../../Frameworks/Python.framework/Versions/$PY_MM/Python" \
-        "$b" 2>/dev/null
+    retarget "$b" "$OLD_REF" "$NEW_REF"
     sign "$b"
 done
 
 STUB="$FW_DST/Resources/Python.app/Contents/MacOS/Python"
 if [ -f "$STUB" ]; then
     chmod u+w "$STUB"
-    install_name_tool -change "$OLD_REF" "@executable_path/../../../../Python" "$STUB" 2>/dev/null
+    retarget "$STUB" "$OLD_REF" "@executable_path/../../../../Python"
     sign "$STUB"
     # The stub is what actually runs, so [NSBundle mainBundle] resolves to this
     # nested Python.app — give it the product's identity or the menu bar and
