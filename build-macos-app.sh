@@ -23,7 +23,9 @@ BUILD_DIR="$REPO_DIR/build"
 DIST_DIR="$REPO_DIR/dist"
 APP_NAME="Corvus GCS"
 APP="$DIST_DIR/$APP_NAME.app"
-BUNDLE_ID="de.unibw.corvus.gcs"
+# Personal reverse-DNS, not the institution's: the bundle identifier is an
+# ownership claim macOS shows to the user, and it follows LICENSE.md.
+BUNDLE_ID="de.mbsquared.corvus.gcs"
 ARCH="$(uname -m)"
 DMG="$REPO_DIR/Corvus_GCS-${VERSION}-macOS-${ARCH}.dmg"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
