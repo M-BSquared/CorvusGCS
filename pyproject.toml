@@ -14,6 +14,13 @@ dev = ["pytest>=7.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The repo root on sys.path, so `import corvus` resolves however pytest is
+# started. Without it only `python -m pytest` works — that form injects the
+# working directory, the bare `pytest` console script does not — so the suite
+# passed locally and failed in CI with "No module named 'corvus'" while loading
+# conftest. Setting it here fixes every entry point at once: the bare script,
+# `python -m pytest`, an IDE runner, and a run from any directory.
+pythonpath = ["."]
 addopts = "-ra --strict-markers"
 markers = [
     "slow: marks tests as slow (deselect with `-m \"not slow\"`)",
