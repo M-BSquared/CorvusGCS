@@ -272,8 +272,24 @@ else
 fi
 
 # Fail loudly rather than shipping a bundle that only runs on this machine.
-if otool -L "$PYROOT/bin/python3" "$STUB" 2>/dev/null | grep -q "$PY_FW_PREFIX"; then
+# The check greps for the framework *prefix*, not just the one install name that
+# was rewritten, so it also catches a second load command pointing at the host —
+# which is why it must name what it found. Reporting only "still references the
+# build host" left nothing to act on.
+host_refs=""
+for b in "$PYROOT/bin/python3" "$STUB"; do
+    [ -f "$b" ] || continue
+    hits="$(otool -L "$b" 2>/dev/null | grep -F "$PY_FW_PREFIX" || true)"
+    if [ -n "$hits" ]; then
+        host_refs="${host_refs}
+  $b:
+$(printf '%s\n' "$hits" | sed 's/^/    /')"
+    fi
+done
+if [ -n "$host_refs" ]; then
     echo "ERROR: a bundled binary still references the build host at $PY_FW_PREFIX" >&2
+    printf '%s\n' "$host_refs" >&2
+    echo "  (the install name rewritten above was: $OLD_REF)" >&2
     exit 1
 fi
 

@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.25-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.25" />
+  <img src="https://img.shields.io/badge/Version-2026.09.26-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.26" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.10%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.10+" /></a>
   <img width="8" />
