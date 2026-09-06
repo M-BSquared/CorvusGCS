@@ -91,6 +91,13 @@ Both CI pipelines call the same `./build.sh`: `.gitlab-ci.yml` (primary, on
 `git.unibw.de`, Linux only — no macOS runner) and `.github/workflows/build.yml`
 (test + frontend + appimage + macos-app + release). They must not drift.
 
+"Must not drift" is checkable, so check it rather than assuming it. The two
+have to agree on: the jobs that exist (GitLab carried no `frontend` job for a
+while, so the whole browser-side suite went unrun on the primary pipeline), the
+apt package set for the AppImage build, and the build distro — an AppImage
+links against the glibc of its build host, so building on a newer Ubuntu than
+the sibling pipeline silently narrows the machines the artifact runs on.
+
 Shared packaging invariants — a violation of any of these is a build bug:
 
 - **Self-contained.** Bundled CPython + stdlib + PyQt6/QtWebEngine +
