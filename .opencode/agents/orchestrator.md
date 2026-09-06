@@ -42,7 +42,7 @@ request, release tagging and manual version overrides.
    - `perf` — frame-rate and latency optimization, profiling, leak hunting.
    - `doc` — code/architecture/user documentation only; never changes logic.
    - `readme` — top-level `README.md`, GitHub marketing copy, badges
-     (incl. "Vibecoded"), screenshots, Universität der Bundeswehr München
+     (incl. "Vibecoded"), screenshots, the "developed with the" Universität der Bundeswehr München
      attribution. Route any change that alters user-visible features,
      endpoints, scripts, or architecture to `readme` for a README sync.
    - `build` — the per-platform build scripts (`build-appimage.sh` for Linux,

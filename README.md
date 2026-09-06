@@ -584,7 +584,7 @@ imposition here, they are the most useful input there is.
 
 ## About / Origins
 
-Corvus GCS is developed at the **Universität der Bundeswehr München** (University
+Corvus GCS is developed with the **Universität der Bundeswehr München** (University
 of the German Federal Armed Forces, Munich), in the context of the work at
 **Chair LRT 1.1 of Prof. Dr. Matthias Gerdts**.
 
@@ -627,7 +627,7 @@ software.
 ---
 
 <p align="center">
-  <sub>Developed at the Universität der Bundeswehr München · Corvus GCS (CGCS) ·
+  <sub>Developed with the Universität der Bundeswehr München · Corvus GCS (CGCS) ·
   version from <a href="VERSION"><code>VERSION</code></a>, served live at <code>GET /api/version</code>.</sub>
 </p>
 

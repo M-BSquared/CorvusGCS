@@ -306,7 +306,9 @@ pl = {
     "LSMinimumSystemVersion": "11.0",
     "NSHighResolutionCapable": True,
     "NSRequiresAquaSystemAppearance": False,
-    "NSHumanReadableCopyright": "Universitat der Bundeswehr Munchen",
+    # Follows LICENSE.md: the copyright is the author's. ASCII-folded because
+    # this string is written into Info.plist.
+    "NSHumanReadableCopyright": "Copyright (c) 2026 Maximilian Bock",
 }
 with open(path, "wb") as fh:
     plistlib.dump(pl, fh)

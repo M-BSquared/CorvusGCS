@@ -28,8 +28,9 @@ agents.
   API reference.
 - `readme` — GitHub-facing README and marketing copy. Owns the top-level
   `README.md`: badges (including "Vibecoded"), screenshots, plain-language
-  project description, quick start, and the Universität der Bundeswehr
-  München attribution. Promotes Corvus GCS (CGCS); never hardcodes a version.
+  project description, quick start, and the "developed with the Universität
+  der Bundeswehr München" attribution (see *Conventions* for the exact wording
+  rule). Promotes Corvus GCS (CGCS); never hardcodes a version.
 - `build` — packaging/distribution for every supported platform. Owns
   `build-appimage.sh` (Linux AppImage) and `build-macos-app.sh` (macOS `.app`
   bundle + optional `.dmg`), and produces reproducible, self-contained
@@ -215,6 +216,15 @@ logs.
 - **Dependencies:** stdlib first. Justify any third-party add.
 - **Testing:** `pytest` for unit/integration tests. MAVLink parsers, the
   state store, and HTTP/SSE endpoints must have tests.
+- **Attribution (mandatory wording).** Corvus GCS is developed **with** the
+  Universität der Bundeswehr München — never *at* it. That preposition is not a
+  stylistic choice and it is not negotiable: it applies to the README, the
+  in-app credits, docstrings, code comments, and **commit messages**. The
+  institution is furthermore never named in `LICENSE.md` or in any copyright
+  notice (`NSHumanReadableCopyright`, plist, badge, footer); those carry the
+  author, Maximilian Böck, and nobody else. A change that reintroduces "at",
+  or that puts the institution into a licence or copyright line, is rejected on
+  sight.
 
 ## Definition of done
 

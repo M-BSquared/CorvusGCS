@@ -56,10 +56,13 @@ look professional, trustworthy, and easy to understand at a glance.
 - **Quick start, connection, architecture, API:** keep the existing technical
   sections accurate and concise; coordinate with `doc` for deep API/user-
   manual content that lives outside the README.
-- **Attribution:** state clearly that Corvus GCS is **developed at the
+- **Attribution:** state clearly that Corvus GCS is **developed with the
   Universität der Bundeswehr München** (University of the German Federal Armed
   Forces, Munich). Place it in an "About / Origins" section and a short footer
-  line.
+  line. The preposition is not negotiable: always *with* the institution, never
+  *at* it, anywhere — README, in-app credits, commit messages. The institution
+  is also never named in `LICENSE.md` or in any copyright notice; those carry
+  the author only.
 - **License & PX4 compatibility:** surface the license and the PX4 v1.16 /
   v1.17 / v1.18 target set.
 

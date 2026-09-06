@@ -105,7 +105,9 @@ Corvus.credits = (function () {
 
   const PROJECT = {
     author: "Maximilian Böck",
-    org: "Universität der Bundeswehr München",
+    // Always "with", never "at": the institution is a partner in this work,
+    // not the place the software is attributed to.
+    org: "with Universität der Bundeswehr München",
     note: "Corvus GCS is designed, built and maintained by Maximilian Böck. " +
           "Built for real field use with PX4 autonomous aircraft.",
     // This panel names the licence of every component it lists, so leaving the

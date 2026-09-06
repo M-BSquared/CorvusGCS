@@ -1,6 +1,6 @@
 # License
 
-Copyright (c) 2026 Maximilian Böck, Universität der Bundeswehr München
+Copyright (c) 2026 Maximilian Böck
 
 Portions of this software are licensed as follows:
 
