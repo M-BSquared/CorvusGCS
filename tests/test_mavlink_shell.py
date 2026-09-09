@@ -2,7 +2,7 @@
 
 Covers the SERIAL_CONTROL device=SHELL mechanism added to
 ``corvus/mavlink_bridge.py`` (``send_shell_command`` / ``stop_shell`` /
-``_handle_serial_control`` / ``_pull_next_shell_chunk``) and the
+``_handle_serial_control``) and the
 ``/api/console/command`` shell dispatch added to ``corvus/server.py``.
 
 The bridge-level tests run hermetically against the real ``MavlinkBridge``
@@ -28,23 +28,28 @@ from unittest.mock import MagicMock
 import pytest
 from pymavlink import mavutil
 
-from corvus.mavlink_bridge import MavlinkBridge, SHELL_MAX_CHUNKS
+from corvus.mavlink_bridge import MavlinkBridge
 from corvus.state_store import VehicleStateStore
-from corvus.server import CorvusHandler
+from corvus.server import CorvusHandler, _BoundedSseBuffer
 
 
 # ---------------------------------------------------------------------------
 # pymavlink SERIAL_CONTROL constants (verified at import time):
 #   SERIAL_CONTROL_DEV_SHELL = 10
-#   SERIAL_CONTROL_FLAG_REPLY = 1, FLAG_EXCLUSIVE = 4  -> REPLY|EXCLUSIVE = 5
+#   RESPOND = 2, EXCLUSIVE = 4, MULTI = 16
+#
+# RESPOND asks PX4 to return shell output. REPLY marks a packet as the reply;
+# using it on the request breaks commands such as ``listener`` through
+# MAVLink Router because PX4 does not open the response stream.
 # ---------------------------------------------------------------------------
 DEV_SHELL = mavutil.mavlink.SERIAL_CONTROL_DEV_SHELL
-FLAG_REPLY_EXCLUSIVE = (
-    mavutil.mavlink.SERIAL_CONTROL_FLAG_REPLY
+FLAG_RESPOND_EXCLUSIVE_MULTI = (
+    mavutil.mavlink.SERIAL_CONTROL_FLAG_RESPOND
     | mavutil.mavlink.SERIAL_CONTROL_FLAG_EXCLUSIVE
+    | mavutil.mavlink.SERIAL_CONTROL_FLAG_MULTI
 )
 assert DEV_SHELL == 10, "pymavlink SERIAL_CONTROL_DEV_SHELL must be 10"
-assert FLAG_REPLY_EXCLUSIVE == 5, "REPLY|EXCLUSIVE must be 5"
+assert FLAG_RESPOND_EXCLUSIVE_MULTI == 22, "RESPOND|EXCLUSIVE|MULTI must be 22"
 
 
 # ---------------------------------------------------------------------------
@@ -57,9 +62,21 @@ class SerialControlMsg(SimpleNamespace):
     def get_type(self) -> str:
         return "SERIAL_CONTROL"
 
+    def get_srcSystem(self) -> int:
+        return getattr(self, "source_system", 1)
+
+    def get_srcComponent(self) -> int:
+        return getattr(self, "source_component", 1)
+
 
 def shell_reply(
-    payload: bytes, device: int = DEV_SHELL, count: int | None = None,
+    payload: bytes,
+    device: int = DEV_SHELL,
+    count: int | None = None,
+    source_system: int = 1,
+    source_component: int = 1,
+    target_system: int = 254,
+    target_component: int = 190,
 ) -> SerialControlMsg:
     """Build a SERIAL_CONTROL reply chunk.
 
@@ -72,6 +89,10 @@ def shell_reply(
         device=device,
         count=len(payload) if count is None else count,
         data=data,
+        source_system=source_system,
+        source_component=source_component,
+        target_system=target_system,
+        target_component=target_component,
     )
 
 
@@ -90,7 +111,7 @@ class FakeShellConn:
 
     def __init__(self) -> None:
         self.mav = _FakeShellMav()
-        self.source_system = 255
+        self.source_system = 254
         self.source_component = 190
         self.closed = False
 
@@ -135,24 +156,16 @@ def test_send_shell_command_sends_serial_control_with_correct_fields() -> None:
     assert len(sends) == 1
     device, flags, timeout, baudrate, count, data = sends[0]
     assert device == DEV_SHELL
-    assert flags == FLAG_REPLY_EXCLUSIVE
-    assert flags == 5
+    assert flags == FLAG_RESPOND_EXCLUSIVE_MULTI
+    assert flags == 22
+    assert not flags & mavutil.mavlink.SERIAL_CONTROL_FLAG_REPLY
     assert timeout == 0
     assert baudrate == 0
     payload = (text + "\n").encode("utf-8")
     assert count == len(payload)
     assert data == payload.ljust(70, b"\x00")
     assert len(data) == 70
-    # Per-command chunk counter reset so this response can stream again.
-    assert bridge._shell_chunks_pulled == 0
-
-
-def test_send_shell_command_resets_chunk_counter_each_call() -> None:
-    bridge = ready_bridge()
-    bridge._conn = FakeShellConn()
-    bridge._shell_chunks_pulled = 42  # pretend a prior command streamed chunks
-    assert bridge.send_shell_command("top")
-    assert bridge._shell_chunks_pulled == 0
+    assert bridge._shell_active is True
 
 
 def test_send_shell_command_returns_false_and_sets_error_when_disconnected() -> None:
@@ -167,7 +180,7 @@ def test_send_shell_command_returns_false_and_sets_error_when_disconnected() -> 
     err = bridge.get_last_command_error()
     assert "DISCONNECTED" in err, f"expected a DISCONNECTED error, got {err!r}"
     assert err == "Shell failed: DISCONNECTED"  # pin exact string for documentation
-    assert bridge._shell_chunks_pulled == 0  # never reached the reset line
+    assert bridge._shell_active is False
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +191,8 @@ def test_dispatch_routes_serial_control_to_handler() -> None:
     bridge = ready_bridge()
     bridge._conn = FakeShellConn()
     records = _subscribe(bridge)
+    assert bridge.send_shell_command("listener sensor_combined")
+    bridge._conn.mav.serial_sends.clear()
 
     bridge._dispatch(shell_reply(b"hello\n"))
 
@@ -185,10 +200,23 @@ def test_dispatch_routes_serial_control_to_handler() -> None:
     assert shell_lines == ["hello"]
 
 
+def test_dispatch_ignores_router_shell_traffic_when_corvus_console_is_inactive() -> None:
+    bridge = ready_bridge()
+    bridge._conn = FakeShellConn()
+    records = _subscribe(bridge)
+
+    bridge._dispatch(shell_reply(b"QGC output\n", target_system=0, target_component=0))
+
+    assert records == []
+    assert bridge._shell_buffer == ""
+
+
 def test_handle_serial_control_reassembles_two_chunks_into_one_line() -> None:
     bridge = ready_bridge()
     bridge._conn = FakeShellConn()
     records = _subscribe(bridge)
+    assert bridge.send_shell_command("listener sensor_combined")
+    bridge._conn.mav.serial_sends.clear()
 
     # Two 70-byte chunks forming one logical line "listener: sensor_combined".
     bridge._handle_serial_control(shell_reply(b"listener: sensor_"))
@@ -203,10 +231,83 @@ def test_handle_serial_control_reassembles_two_chunks_into_one_line() -> None:
     assert bridge._shell_buffer == ""
 
 
+def test_new_shell_command_discards_partial_output_from_previous_command() -> None:
+    bridge = ready_bridge()
+    bridge._conn = FakeShellConn()
+    records = _subscribe(bridge)
+    assert bridge.send_shell_command("top")
+    bridge._handle_serial_control(shell_reply(b"old partial"))
+
+    assert bridge.send_shell_command("listener sensor_combined")
+    bridge._handle_serial_control(shell_reply(b"new line\n"))
+
+    assert [r["text"] for r in records if r["name"] == "SHELL"] == ["new line"]
+
+
+def test_handle_serial_control_reassembles_utf8_split_across_router_datagrams() -> None:
+    bridge = ready_bridge()
+    bridge._conn = FakeShellConn()
+    records = _subscribe(bridge)
+    assert bridge.send_shell_command("listener temperature")
+    bridge._conn.mav.serial_sends.clear()
+
+    encoded = "listener: Temperatur 21 °C\n".encode("utf-8")
+    degree = encoded.index("°".encode("utf-8"))
+    bridge._handle_serial_control(shell_reply(encoded[:degree + 1]))
+    bridge._handle_serial_control(shell_reply(encoded[degree + 1:]))
+
+    assert [r["text"] for r in records if r["name"] == "SHELL"] == [
+        "listener: Temperatur 21 °C",
+    ]
+
+
+@pytest.mark.parametrize("source_system,source_component", [(2, 1), (1, 42)])
+def test_handle_serial_control_ignores_other_router_sources(
+    source_system: int, source_component: int,
+) -> None:
+    bridge = ready_bridge()
+    bridge._conn = FakeShellConn()
+    records = _subscribe(bridge)
+    assert bridge.send_shell_command("listener sensor_combined")
+    bridge._conn.mav.serial_sends.clear()
+
+    bridge._handle_serial_control(shell_reply(
+        b"foreign console\n",
+        source_system=source_system,
+        source_component=source_component,
+    ))
+
+    assert records == []
+    assert bridge._shell_buffer == ""
+    assert bridge._conn.mav.serial_sends == []
+
+
+@pytest.mark.parametrize("target_system,target_component", [(255, 190), (254, 191)])
+def test_handle_serial_control_ignores_packets_targeted_to_other_router_clients(
+    target_system: int, target_component: int,
+) -> None:
+    bridge = ready_bridge()
+    bridge._conn = FakeShellConn()
+    records = _subscribe(bridge)
+    assert bridge.send_shell_command("listener sensor_combined")
+    bridge._conn.mav.serial_sends.clear()
+
+    bridge._handle_serial_control(shell_reply(
+        b"foreign console\n",
+        target_system=target_system,
+        target_component=target_component,
+    ))
+
+    assert records == []
+    assert bridge._shell_buffer == ""
+
+
 def test_handle_serial_control_strips_cr_and_applies_backspace() -> None:
     bridge = ready_bridge()
     bridge._conn = FakeShellConn()
     records = _subscribe(bridge)
+    assert bridge.send_shell_command("listener test")
+    bridge._conn.mav.serial_sends.clear()
 
     # 'a' -> backspace removes it -> 'b' -> CR stripped -> 'c' -> CR stripped
     # -> '\n' ends the line. Expected published line: "bc".
@@ -220,6 +321,8 @@ def test_handle_serial_control_backspace_crosses_chunk_boundary() -> None:
     bridge = ready_bridge()
     bridge._conn = FakeShellConn()
     records = _subscribe(bridge)
+    assert bridge.send_shell_command("listener test")
+    bridge._conn.mav.serial_sends.clear()
 
     # Chunk 1 leaves "ab" in the buffer; chunk 2's leading \b must remove 'b'
     # from the buffer tail (not just from an empty in-chunk chunk list).
@@ -234,6 +337,8 @@ def test_handle_serial_control_ignores_non_shell_device() -> None:
     bridge = ready_bridge()
     bridge._conn = FakeShellConn()
     records = _subscribe(bridge)
+    assert bridge.send_shell_command("listener test")
+    bridge._conn.mav.serial_sends.clear()
 
     # device=0 (e.g. a GPS serial passthrough) must not be treated as NSH shell.
     bridge._handle_serial_control(shell_reply(b"hello\n", device=0))
@@ -247,6 +352,8 @@ def test_handle_serial_control_never_raises_on_bad_message() -> None:
     bridge = ready_bridge()
     bridge._conn = FakeShellConn()
     records = _subscribe(bridge)
+    assert bridge.send_shell_command("listener test")
+    bridge._conn.mav.serial_sends.clear()
 
     # A malformed message (data is not bytes) must be swallowed, not raised.
     bad = SerialControlMsg(device=DEV_SHELL, count=5, data="not-bytes")
@@ -256,90 +363,62 @@ def test_handle_serial_control_never_raises_on_bad_message() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 3. Event-driven chunk pulling
+# 3. Router-compatible multi-chunk streaming
 # ---------------------------------------------------------------------------
 
 def test_handle_serial_control_count_zero_does_not_pull_next_chunk() -> None:
     bridge = ready_bridge()
     bridge._conn = FakeShellConn()
     records = _subscribe(bridge)
+    assert bridge.send_shell_command("listener sensor_combined")
+    bridge._conn.mav.serial_sends.clear()
 
     bridge._handle_serial_control(shell_reply(b""))  # count == 0
 
     assert records == []
     assert bridge._conn.mav.serial_sends == []  # end-of-response: no pull
-    assert bridge._shell_chunks_pulled == 0
+    assert bridge._shell_active is True
 
 
-def test_handle_serial_control_count_positive_pulls_next_chunk() -> None:
+def test_handle_serial_control_count_positive_does_not_manually_pull() -> None:
     bridge = ready_bridge()
     bridge._conn = FakeShellConn()
     records = _subscribe(bridge)
+    assert bridge.send_shell_command("listener sensor_combined")
+    bridge._conn.mav.serial_sends.clear()
 
-    # No newline in the payload -> nothing published, but count>0 pulls.
+    # No newline in the payload -> nothing published and MULTI owns streaming.
     bridge._handle_serial_control(shell_reply(b"abc"))
 
     assert [r for r in records if r["name"] == "SHELL"] == []
-    sends = bridge._conn.mav.serial_sends
-    assert len(sends) == 1
-    device, flags, timeout, baudrate, count, data = sends[0]
-    assert device == DEV_SHELL
-    assert flags == FLAG_REPLY_EXCLUSIVE
-    assert timeout == 0
-    assert baudrate == 0
-    assert count == 0
-    assert data == b"\x00" * 70
-    assert bridge._shell_chunks_pulled == 1
-
-
-def test_pull_next_shell_chunk_caps_at_shell_max_chunks() -> None:
-    bridge = ready_bridge()
-    bridge._conn = FakeShellConn()
-
-    # Already at the cap -> no send, counter unchanged.
-    bridge._shell_chunks_pulled = SHELL_MAX_CHUNKS
-    bridge._pull_next_shell_chunk()
     assert bridge._conn.mav.serial_sends == []
-    assert bridge._shell_chunks_pulled == SHELL_MAX_CHUNKS
-
-    # One below the cap still pulls once and lands exactly on the cap.
-    bridge._shell_chunks_pulled = SHELL_MAX_CHUNKS - 1
-    bridge._pull_next_shell_chunk()
-    assert len(bridge._conn.mav.serial_sends) == 1
-    assert bridge._shell_chunks_pulled == SHELL_MAX_CHUNKS
-
-    # One more attempt at the cap is a no-op.
-    bridge._pull_next_shell_chunk()
-    assert len(bridge._conn.mav.serial_sends) == 1
 
 
-def test_shell_chunk_cap_via_feeding_replies() -> None:
+def test_count_zero_does_not_end_listener_stream() -> None:
     bridge = ready_bridge()
     bridge._conn = FakeShellConn()
-
-    # Feed SHELL_MAX_CHUNKS + 3 replies; pulls must cap at SHELL_MAX_CHUNKS.
-    for _ in range(SHELL_MAX_CHUNKS + 3):
-        bridge._handle_serial_control(shell_reply(b"x"))
-
-    assert len(bridge._conn.mav.serial_sends) == SHELL_MAX_CHUNKS
-    assert bridge._shell_chunks_pulled == SHELL_MAX_CHUNKS
-
-
-def test_send_shell_command_reset_allows_full_stream_after_prior_cap() -> None:
-    bridge = ready_bridge()
-    bridge._conn = FakeShellConn()
-    # A prior command exhausted the cap.
-    bridge._shell_chunks_pulled = SHELL_MAX_CHUNKS
-    bridge._handle_serial_control(shell_reply(b"x"))
-    assert bridge._conn.mav.serial_sends == []  # capped, no pull
-
-    # A fresh send_shell_command resets the counter and pulls resume. The
-    # command itself emits one SERIAL_CONTROL (count>0); clear it so the
-    # assertion counts only the chunk pulls that follow the reply.
-    assert bridge.send_shell_command("top")
+    records = _subscribe(bridge)
+    assert bridge.send_shell_command("listener sensor_combined")
     bridge._conn.mav.serial_sends.clear()
-    bridge._handle_serial_control(shell_reply(b"out\n"))
-    assert len(bridge._conn.mav.serial_sends) == 1  # pull works again
+
+    bridge._handle_serial_control(shell_reply(b""))
+    bridge._handle_serial_control(shell_reply(b"sample 1\n"))
+
+    assert [r["text"] for r in records if r["name"] == "SHELL"] == ["sample 1"]
+    assert bridge._conn.mav.serial_sends == []
+
+
+def test_serial_control_preserves_line_whitespace() -> None:
+    bridge = ready_bridge()
+    bridge._conn = FakeShellConn()
+    records = _subscribe(bridge)
+    assert bridge.send_shell_command("listener test")
+    bridge._conn.mav.serial_sends.clear()
+    bridge._handle_serial_control(shell_reply(b"  aligned output  \n"))
+
+    assert [r["text"] for r in records if r["name"] == "SHELL"] == [
+        "  aligned output  ",
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -365,6 +444,23 @@ def test_stop_shell_clears_buffer_and_sends_release() -> None:
     assert data == b"\x00" * 70
 
 
+def test_stop_shell_discards_partial_multibyte_decoder_state() -> None:
+    bridge = ready_bridge()
+    bridge._conn = FakeShellConn()
+    records = _subscribe(bridge)
+    encoded = "°".encode("utf-8")
+    assert bridge.send_shell_command("listener temperature")
+    bridge._conn.mav.serial_sends.clear()
+
+    bridge._handle_serial_control(shell_reply(encoded[:1]))
+    bridge.stop_shell()
+    assert bridge.send_shell_command("listener temperature")
+    bridge._conn.mav.serial_sends.clear()
+    bridge._handle_serial_control(shell_reply(encoded + b"C\n"))
+
+    assert [r["text"] for r in records if r["name"] == "SHELL"] == ["°C"]
+
+
 def test_stop_shell_is_noop_and_safe_when_disconnected() -> None:
     bridge = MavlinkBridge(VehicleStateStore())  # no conn
     bridge._shell_buffer = "partial"
@@ -373,6 +469,7 @@ def test_stop_shell_is_noop_and_safe_when_disconnected() -> None:
     bridge.stop_shell()
 
     assert bridge._shell_buffer == ""  # buffer cleared regardless
+    assert bridge._shell_active is False
 
 
 def test_stop_shell_is_idempotent() -> None:
@@ -424,13 +521,13 @@ def test_stop_does_not_leak_shell_state() -> None:
     bridge = ready_bridge()
     bridge._conn = FakeShellConn()
     bridge._shell_buffer = "junk"
-    bridge._shell_chunks_pulled = 50
 
     # Capture the conn before stop(): BUG 3 clears self._conn to None.
     conn = bridge._conn
     bridge.stop()
 
     assert bridge._shell_buffer == ""
+    assert bridge._shell_active is False
     assert conn.closed is True
     assert bridge._conn is None  # BUG 3: stop() clears _conn after closing
     assert bridge._thread is None
@@ -560,6 +657,9 @@ class FakeShellBridge:
         self.error = error
         self.shell_commands: list[str] = []
         self.altitudes: list[float] = []
+        self.console_subs: list[Callable[[dict[str, Any]], None]] = []
+        self.console_add_calls = 0
+        self.console_remove_calls = 0
 
     def send_shell_command(self, text: str) -> bool:
         self.shell_commands.append(text)
@@ -574,6 +674,14 @@ class FakeShellBridge:
 
     def arm(self, arm: bool) -> bool:
         return self.result
+
+    def add_console_sub(self, fn: Callable[[dict[str, Any]], None]) -> None:
+        self.console_add_calls += 1
+        self.console_subs.append(fn)
+
+    def remove_console_sub(self, fn: Callable[[dict[str, Any]], None]) -> None:
+        self.console_remove_calls += 1
+        self.console_subs.remove(fn)
 
 
 def _handler_with_bridge(
@@ -629,6 +737,27 @@ def test_console_shell_command_disconnected_returns_503() -> None:
     assert responses == [({"ok": False, "error": "DISCONNECTED"}, 503)]
 
 
+def test_console_shell_command_lowercase_not_connected_returns_503() -> None:
+    bridge = FakeShellBridge(result=False, error="not connected")
+    handler, responses = _handler_with_bridge(bridge)
+
+    handler._api_console_command({"command": "listener sensor_combined"})
+
+    assert responses == [({"ok": False, "error": "not connected"}, 503)]
+
+
+@pytest.mark.parametrize("command", ["shell", "shell   ", "nsh", "nsh\t"])
+def test_console_empty_shell_prefix_returns_usage_error(command: str) -> None:
+    bridge = FakeShellBridge(result=True)
+    handler, responses = _handler_with_bridge(bridge)
+
+    handler._api_console_command({"command": command})
+
+    assert bridge.shell_commands == []
+    assert responses[0][1] == 400
+    assert "usage:" in responses[0][0]["error"]
+
+
 def test_console_takeoff_does_not_call_send_shell_command() -> None:
     """Non-shell commands keep working and never route to the shell."""
     bridge = FakeShellBridge(result=True)
@@ -639,3 +768,36 @@ def test_console_takeoff_does_not_call_send_shell_command() -> None:
     assert bridge.shell_commands == []
     assert bridge.altitudes == [15.0]
     assert responses == [({"ok": True}, 200)]
+
+
+def test_console_sse_buffer_preserves_repeated_listener_lines() -> None:
+    q = _BoundedSseBuffer(4)
+    entry = {"name": "SHELL", "text": "sensor_combined: 42", "level": "info"}
+
+    q.put_console(entry)
+    q.put_console(dict(entry))
+
+    assert q.get(timeout=0) == entry
+    assert q.get(timeout=0) == entry
+
+
+def test_console_sse_disconnect_removes_bridge_listener(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge = FakeShellBridge()
+    handler = object.__new__(CorvusHandler)
+    handler.mavlink = bridge  # type: ignore[assignment]
+    handler.send_response = lambda status: None  # type: ignore[method-assign]
+    handler.send_header = lambda name, value: None  # type: ignore[method-assign]
+    handler.end_headers = lambda: None  # type: ignore[method-assign]
+
+    def disconnected(self: Any, timeout: float | None = None) -> Any:
+        raise BrokenPipeError("client gone")
+
+    monkeypatch.setattr(_BoundedSseBuffer, "get", disconnected)
+
+    handler._sse_console()
+
+    assert bridge.console_add_calls == 1
+    assert bridge.console_remove_calls == 1
+    assert bridge.console_subs == []

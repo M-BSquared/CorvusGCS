@@ -15,21 +15,23 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.29-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.29" />
+  <img src="https://img.shields.io/badge/Version-2026.09.30-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.30" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.10%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.10+" /></a>
   <img width="8" />
-  <a href="https://github.com/ArduPilot/pymavlink" target="_blank"><img src="https://img.shields.io/badge/pymavlink-00A6E2?logoColor=white&style=for-the-badge" height="28" alt="pymavlink" /></a>
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript" target="_blank"><img src="https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black" height="28" alt="JavaScript" /></a>
   <img width="8" />
+  <!-- <a href="https://github.com/ArduPilot/pymavlink" target="_blank"><img src="https://img.shields.io/badge/pymavlink-00A6E2?logoColor=white&style=for-the-badge" height="28" alt="pymavlink" /></a>
+  <img width="8" /> -->
   <a href="https://px4.io/" target="_blank"><img src="https://img.shields.io/badge/PX4-v1.16%20%7C%201.17%20%7C%201.18-00C7B7?logoColor=white&style=for-the-badge" height="28" alt="PX4 v1.16 | 1.17 | 1.18" /></a>
   <br>
-  <img src="https://img.shields.io/badge/%F0%9F%A4%96%20Vibe%20Coded-100%25-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded: 100%" />
+  <img src="https://img.shields.io/badge/%F0%9F%A4%96-Vibe%20Coded-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded" />
   <img width="8" />
-  <img src="https://img.shields.io/badge/Lines%20of%20Code-60k%2B-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 60k+" />
+  <img src="https://img.shields.io/badge/Lines%20of%20Code-70k%2B-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 70k+" />
   <img width="8" />
-  <img src="https://img.shields.io/badge/Tests-27k%20lines%20%C2%B7%2069%20files-2EA043?style=for-the-badge" height="28" alt="Tests: 27k lines across 69 files" />
+  <img src="https://img.shields.io/badge/Tests-31k%20lines%20%C2%B7%2079%20files-2EA043?style=for-the-badge" height="28" alt="Tests: 31k lines across 79 files" />
   <br>
-  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-6E7681?style=for-the-badge" height="28" alt="Platform: macOS | Linux" />
+  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-6E7681?style=for-the-badge" height="28" alt="Platform: macOS | Linux | Windows (future)" />
   <img width="8" />
   <img src="https://img.shields.io/badge/Offline-First-C2540A?style=for-the-badge" height="28" alt="Offline first" />
   <img width="8" />
@@ -57,14 +59,24 @@
 
 ## Contents
 
+- [Contents](#contents)
 - [What is Corvus GCS?](#what-is-corvus-gcs)
   - [Fast to ready-for-flight](#fast-to-ready-for-flight)
 - [Why this project exists](#why-this-project-exists)
 - [Features](#features)
 - [Screenshots](#screenshots)
-- [Install & run](#install--run)
+- [Install \& run](#install--run)
+  - [The easy way — a ready-made app](#the-easy-way--a-ready-made-app)
+  - [From source](#from-source)
 - [Connect to your aircraft](#connect-to-your-aircraft)
+  - [Run QGroundControl at the same time](#run-qgroundcontrol-at-the-same-time)
 - [Using Corvus](#using-corvus)
+  - [The map and the flight HUD](#the-map-and-the-flight-hud)
+  - [Offline maps](#offline-maps)
+  - [Setup — motors, safety, parameters, calibration, autotune, firmware](#setup--motors-safety-parameters-calibration-autotune-firmware)
+  - [Analysis — logs and Flight Review](#analysis--logs-and-flight-review)
+  - [The side workspace](#the-side-workspace)
+  - [Settings](#settings)
 - [Console commands](#console-commands)
 - [PX4 compatibility](#px4-compatibility)
 - [Get involved](#get-involved)
@@ -179,6 +191,7 @@ Everything here is **built and working today**.
 | 🖥️ **Tools** | MAVLink console, SSH terminal to an onboard companion computer, and a plugin slot (vibration monitor included) | ✅ |
 | 🎨 **Personalise** | Six colour themes, interface scale from 80 % to 150 %, your own logo — all saved between sessions | ✅ |
 | 💻 **Just run it** | One standalone app for macOS and Linux. No install, no server, no browser, clean shutdown every time | ✅ |
+| 🔔 **Stay current** | Tells you when a newer release is published on GitHub — never while you are flying, never over the network you do not have | ✅ |
 
 **Safety is built in:** parameter writes, motor tests, firmware flashing and ESC calibration
 are all refused while the aircraft is armed, and the on-screen controls never
@@ -339,11 +352,49 @@ scripting.
 - **UDP / TCP** — type a connection string such as `udp:0.0.0.0:14540`, or use
   one of the presets for the endpoints PX4 publishes. Presets fill the field
   rather than connecting outright, so you can edit before you commit.
+  `udp:`/`udpin:` bind and wait; `udpout:` dials out, which is what a
+  **mavlink-router** `UdpEndpoint` in `Mode = Server` needs (there the router
+  binds and the station speaks first), and what reaches a router behind NAT.
+  `tcp:` connects to a `TcpEndpoint`, `tcpin:` listens for one.
 - **Recent connections** are saved and one click to reuse, kept exact — a
   `:57600` and a `:115200` link to the same port are different entries, because
   collapsing them would silently reconnect at the wrong baud.
 - **Disconnect** frees the radio without quitting the app, and works *during* a
   connection attempt too — which is exactly when a retry loop needs stopping.
+
+### Run QGroundControl at the same time
+
+A serial port, a USB autopilot and a SiK radio can each be opened by exactly
+one program, so a second ground station has always meant closing the first. It
+does not have to. Tick **Mirror this link over UDP** on the LINK tab and Corvus
+keeps the one real connection and re-broadcasts it; point QGroundControl at a
+UDP link on port 14550 and it sees the same stream. Nothing to install — the
+router is inside Corvus, and it stops when Corvus does.
+
+By default the second station is a *screen*: telemetry flows out to it and
+nothing flows back. **Let it command the aircraft** is a separate switch,
+because two stations that can both arm and both change mode is a hazard rather
+than a convenience, and only you know whether you want it. Turn it on and
+QGroundControl's frames reach the aircraft byte-for-byte — mission uploads,
+mode changes, parameter writes — with Corvus still recording the whole stream
+to its tlog.
+
+One setting to change on the other station: **give QGroundControl a different
+MAVLink system ID.** Corvus deliberately uses the GCS identity 254/190 (system
+ID / component ID), and PX4 tracks message sequence numbers per system ID — two
+stations sharing one makes the autopilot report packet loss that is not
+happening, and muddies which station a GCS failsafe is about. In QGroundControl
+it is *Application Settings → MAVLink → Ground Station system ID*; 255 is a
+fine choice. If you forget, the LINK tab says so: Corvus notices a second
+station transmitting under 254 and names the setting to change.
+
+Whether you share the link this way or put **mavlink-router** in front of it,
+the link then carries more than the aircraft — the other station's heartbeat,
+a companion computer, a gimbal, sometimes a second vehicle. Corvus reads only
+its own aircraft off that link: another node's heartbeat cannot change the
+armed flag or the flight mode, cannot keep a lost aircraft looking connected,
+and the command target is picked from the first heartbeat that comes from an
+actual autopilot rather than the first heartbeat of any kind.
 
 Next to the connection state you get **link quality**, not just "connected":
 signal strength, heartbeat regularity and receive errors. Connected tells you
@@ -354,7 +405,10 @@ the socket is up; link quality tells you whether it is worth flying on.
 | Connecting / reconnecting | Yellow dot (last error shown) |
 | Connected | Green dot |
 | Disconnected | Grey dot |
-| Armed / disarmed | Green **ARMED** / grey **DISARMED** |
+| Ready to fly | Green **READY** — the autopilot's own preflight checks pass |
+| Preflight failing | Yellow **NOT READY** — the autopilot would refuse to arm; the failing check is in the notifications |
+| Armed | Green **ARMED** |
+| Readiness not reported | Grey **DISARMED** — firmware that does not publish its preflight state |
 
 <details>
 <summary>Holybro SiK Telemetry Radio V3, and simulation</summary>
@@ -484,8 +538,9 @@ coverage recovers on its own.
   calibration can be cancelled on the vehicle.
 - **Motor / ESC calibration** — behind a safety confirmation, because motors
   spin at full PWM. **Remove the propellers first.** Refused while armed.
-- **Autotune** — PX4 rate and attitude autotune per axis (roll, pitch, yaw, or
-  all) with live progress and graphs.
+- **Autotune** — one PX4 full/default rate-and-attitude autotune, with live
+  progress and graphs. PX4 v1.16–v1.18 do not expose separate roll, pitch or
+  yaw selections through this command.
 - **Firmware** — flash PX4 firmware over a **direct USB connection only**.
   Refused over a telemetry radio or UDP/TCP, and refused while armed.
 
@@ -515,9 +570,15 @@ picture.
   behind it, so reading one message does not cost you the next fifty. Tab
   completes commands, `?` prints the whole command table, history is kept across
   launches, and Copy / Save hand you the visible lines for a bug report.
-- **SSH** — a terminal into an onboard companion computer over the same link.
-  Connections are **saved by name** with password or key-file authentication, so
-  reconnecting is one click.
+- **SSH** — a real terminal into an onboard companion computer, not a command
+  box: every keystroke goes straight to the remote shell, so `top`, `vim`,
+  `sudo` password prompts, colour output and Ctrl-C all behave the way they do
+  in any other terminal, and the prompt you see is the machine's own. The
+  remote is told the terminal's actual size, and the panel is a few hundred
+  pixels wide, so there is a **full-screen** button next to the connection name
+  (Shift-Escape leaves it — plain Escape belongs to whatever is running).
+  Connections are **saved by name** with password or key-file authentication,
+  so reconnecting is one click.
 - **Plugins** — specialist views that plug in without touching the core. The
   **Vibration Monitor** ships with it: a live graph of the aircraft's vibration
   levels plus cumulative clipping counters.
@@ -528,19 +589,28 @@ Reachable from **SET** at the bottom of the left rail. Everything applies
 instantly and is saved.
 
 - **Appearance** — six colour themes (two light, four dark), an interface-size
-  slider from 80 % to 150 % that scales the entire app, and your own company
-  logo in the top right.
+  slider from 80 % to 150 % that scales the entire app, your own company
+  logo in the top right, and an **app-icon switch** that flips the desktop
+  app's Dock (macOS) / taskbar (Linux) icon between the white mark and the
+  black one for a light dock. The icon switch changes nothing but the icon.
 - **Map** — which service (Esri, OpenStreetMap, Google, Bing) and which of its
   layers. Also switchable from the layer control on the map itself.
-- **Controls** — two switches, **both off by default**, for the on-screen
+- **Controls** — three switches, **all off by default**, for the on-screen
   manual controls: a **virtual joystick** (throttle and yaw left, pitch and roll
-  right) and an **arrow-key pad** that your keyboard's own arrow keys drive.
-  They are input sources only — they never arm, change mode, or override a
-  failsafe.
+  right), an **arrow-key pad** for pitch and roll, and a **WASD pad** for
+  thrust and yaw. The two key pads share one window and your keyboard's own
+  arrow and W/A/S/D keys drive them. They are input sources only — they never
+  arm, change mode, or override a failsafe.
 - **SSH connections** — add, connect and remove saved hosts.
 - **Files** — where parameter exports, logs and downloads are written.
 - **About** — version, the live connection summary, and **Credits** listing
   every bundled dependency and its licence.
+- **Updates** — a switch (on by default) that compares the running version
+  against the published releases on GitHub and shows a notice when a newer one
+  exists, plus **Check now** for an immediate look. Nothing is downloaded and
+  nothing about your machine is sent; with no internet the check fails silently.
+  The notice never appears while the aircraft is armed, and **Skip this
+  version** stops it coming back for that release.
 
 ---
 
@@ -556,6 +626,10 @@ mode AUTO   — set flight mode
 takeoff 10  — takeoff to 10 m
 land        — land at current position
 rtl         — return to launch
+listener sensor_combined
+            — stream a PX4 uORB topic through the MAVLink shell
+shell listener sensor_combined
+            — explicitly route the command to the raw PX4 shell
 ```
 
 Tab completes, `↑` walks history, and `?` prints the full table — it works with

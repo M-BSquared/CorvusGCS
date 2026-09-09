@@ -13,6 +13,7 @@
 <title>CORVUS GCS</title>
 <link rel="stylesheet" href="vendor/fonts.css" />
 <link href="vendor/maplibre-gl.css" rel="stylesheet" />
+<link href="vendor/xterm.css" rel="stylesheet" />
 <!-- Load order is load-bearing: themes.css owns every design token, main.css
      consumes them for layout/screens, components.css layers the shared
      component system on top. Neither of the latter two defines a token. -->
@@ -203,6 +204,24 @@
               <span class="panel-section-title">Connection</span>
             </div>
             <div class="link-content" id="linkContent">
+              <div class="link-status" id="linkStatus">
+                <div class="link-status-main">
+                  <span class="link-status-dot off" id="linkStatusDot"></span>
+                  <span class="link-status-label" id="linkStatusLabel">DISCONNECTED</span>
+                  <span class="link-quality" id="linkQuality" data-level="off" hidden></span>
+                  <button class="btn link-reconnect" id="linkReconnect" type="button" data-variant="secondary" data-size="sm" hidden>
+                    <i data-lucide="refresh-cw"></i>
+                    <span>Reconnect</span>
+                  </button>
+                  <button class="btn link-disconnect" id="linkDisconnect" type="button" data-variant="ghost" data-size="sm" hidden>
+                    <i data-lucide="unplug"></i>
+                    <span>Disconnect</span>
+                  </button>
+                </div>
+                <div class="link-status-conn" id="linkStatusConn" hidden>No connection</div>
+                <div class="link-status-error" id="linkStatusError" hidden></div>
+              </div>
+
               <div class="link-card">
                 <div class="link-card-title">
                   <i data-lucide="cable"></i>
@@ -254,25 +273,45 @@
                 </button>
               </div>
 
-              <div class="link-status" id="linkStatus">
-                <div class="link-status-main">
-                  <span class="link-status-dot off" id="linkStatusDot"></span>
-                  <span class="link-status-label" id="linkStatusLabel">DISCONNECTED</span>
-                  <span class="link-quality" id="linkQuality" data-level="off" hidden></span>
-                  <button class="btn link-reconnect" id="linkReconnect" type="button" data-variant="secondary" data-size="sm" hidden>
-                    <i data-lucide="refresh-cw"></i>
-                    <span>Reconnect</span>
-                  </button>
-                  <button class="btn link-disconnect" id="linkDisconnect" type="button" data-variant="ghost" data-size="sm" hidden>
-                    <i data-lucide="unplug"></i>
-                    <span>Disconnect</span>
-                  </button>
-                </div>
-                <div class="link-status-conn" id="linkStatusConn" hidden>No connection</div>
-                <div class="link-status-error" id="linkStatusError" hidden></div>
-              </div>
-
               <div class="link-recent" id="linkRecent" hidden></div>
+
+              <!-- Sharing the one physical link. A serial port, a USB
+                   autopilot and a SiK radio can each be opened by exactly one
+                   program, so running QGroundControl next to Corvus used to
+                   mean closing one of them. Corvus keeps the link and mirrors
+                   it onto UDP; the second switch is separate because letting
+                   another station command the aircraft is a safety decision,
+                   not a convenience. -->
+              <div class="link-card">
+                <div class="link-card-title">
+                  <i data-lucide="share-2"></i>
+                  <span>Share with another station</span>
+                </div>
+                <label class="link-toggle">
+                  <input type="checkbox" id="fwdEnabled" />
+                  <span>Mirror this link over UDP</span>
+                </label>
+                <div class="link-field">
+                  <label class="link-field-label" for="fwdPort">Port for the other station</label>
+                  <input class="field-input field-input-mono link-input" id="fwdPort" type="number"
+                    min="1" max="65535" value="14550" autocomplete="off" />
+                  <div class="link-hint" id="fwdHint">
+                    Point QGroundControl at a UDP link on this port.
+                  </div>
+                </div>
+                <label class="link-toggle link-toggle-warn">
+                  <input type="checkbox" id="fwdAllowCommands" />
+                  <span>Let it command the aircraft</span>
+                </label>
+                <div class="link-hint link-hint-warn" id="fwdCommandWarning" hidden>
+                  Two stations will be able to arm and change the mode of this
+                  aircraft. Leave off to share telemetry only. Give the other
+                  station its own MAVLink system ID — both default to 255, and
+                  PX4 counts sequence numbers per ID.
+                </div>
+                <div class="link-status-error" id="fwdError" hidden></div>
+                <div class="link-hint" id="fwdStats" hidden></div>
+              </div>
             </div>
           </section>
 
@@ -376,6 +415,8 @@
 <script src="vendor/maplibre-gl.min.js"></script>
 <script src="vendor/lucide.min.js"></script>
 <script src="vendor/plotly-basic.min.js"></script>
+<script src="vendor/xterm.js"></script>
+<script src="vendor/xterm-addon-fit.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/credits.js"></script>
 <script src="js/telemetry.js"></script>
@@ -384,6 +425,7 @@
 <script src="js/map.js"></script>
 <script src="js/instruments.js"></script>
 <script src="js/hud-panel.js"></script>
+<script src="js/ssh-term.js"></script>
 <script src="js/panel.js"></script>
 <script src="js/link.js"></script>
 <script src="js/plugins.js"></script>
@@ -401,6 +443,7 @@
 <script src="js/sidenav.js"></script>
 <script src="js/joystick.js"></script>
 <script src="js/tiles.js"></script>
+<script src="js/update.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

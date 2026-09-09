@@ -83,10 +83,13 @@ Corvus.panel = (function () {
   let histIdx = -1;
   let sshContent, futureContent;
   let consoleUnsub = null;
-  let sshOutputEl = null;
-  let sshInputEl = null;
-  let sshConnectedName = null;
-  let sshSseSource = null;
+  let consoleCommandPending = false;
+  // The live terminal handle from Corvus.sshTerm, or null when the SSH tab is
+  // showing the connection list. It owns an SSE stream, a resize observer and
+  // a theme subscription, so every path that leaves the terminal view has to
+  // dispose it — see closeSSHTerminal().
+  let sshTermHandle = null;
+  let sshFullscreenEl = null;
 
   // The console stream as data. `lines` is the retained history; the DOM shows
   // whichever of them pass the current filter.
@@ -298,6 +301,23 @@ Corvus.panel = (function () {
 
   // ---- command entry ----
 
+  /**
+   * Canonicalise the command verb while preserving case-sensitive NSH args.
+   * The HTTP handler recognises verbs case-insensitively but forwards shell
+   * built-ins verbatim; without this, `LISTENER sensor_combined` reaches PX4
+   * as an unknown uppercase NSH command.
+   */
+  function normalizeCommand(text) {
+    const raw = String(text == null ? "" : text).replace(/[\r\n\0]+/g, " ").trim();
+    if (!raw) return "";
+    const match = raw.match(/^(\S+)([\s\S]*)$/);
+    const verb = match[1].toLowerCase();
+    const rest = match[2].trim();
+    if (!rest) return verb;
+    if (verb === "shell" || verb === "nsh") return verb + " " + rest;
+    return verb + " " + rest.replace(/\s+/g, " ");
+  }
+
   /** Commands whose name starts with the current token. */
   function completionsFor(text) {
     const head = text.split(/\s+/)[0].toLowerCase();
@@ -357,7 +377,8 @@ Corvus.panel = (function () {
   }
 
   async function sendCommand() {
-    const v = input.value.trim();
+    if (consoleCommandPending) return;
+    const v = normalizeCommand(input.value);
     if (!v) return;
     // "?" is the local shortcut for the command list — no round trip, and it
     // works when the link is down, which is exactly when you need to look
@@ -375,6 +396,9 @@ Corvus.panel = (function () {
     addConsoleLine("cmd", v);
     input.value = "";
     showHint("");
+    consoleCommandPending = true;
+    sendBtn.disabled = true;
+    input.setAttribute("aria-busy", "true");
     try {
       const res = await Corvus.telemetry.sendCommand(v);
       if (res.help) {
@@ -388,6 +412,11 @@ Corvus.panel = (function () {
       }
     } catch (err) {
       addConsoleLine("error", `Command failed: ${err.message}`);
+    } finally {
+      consoleCommandPending = false;
+      sendBtn.disabled = false;
+      input.removeAttribute("aria-busy");
+      input.focus();
     }
   }
 
@@ -400,7 +429,40 @@ Corvus.panel = (function () {
     connectConsoleSSE();
   }
 
+  /* One saved connection, as the operator reads it: "pi@192.168.2.10:22".
+     The account is part of the identity of a connection — two entries can
+     differ only by which user they log in as — so it belongs on the card and
+     not just in the add dialog. */
+  function sshAddress(conn) {
+    const host = conn.host || "";
+    const port = conn.port ? ":" + conn.port : "";
+    return (conn.username ? conn.username + "@" : "") + host + port;
+  }
+
+  function sshCardHeader(conn, connected) {
+    return (
+      `<div class="ssh-card-top">
+        <div class="ssh-icon" data-lucide="server"></div>
+        <div class="ssh-info">
+          <span class="ssh-name"></span>
+          <span class="ssh-host"></span>
+        </div>
+        <span class="ssh-status${connected ? " connected" : ""}"><span class="dot"></span>${connected ? "CONNECTED" : "OFFLINE"}</span>
+      </div>`
+    );
+  }
+
+  /* Name and address are written as text, never interpolated into the HTML
+     above: both come from a config file the operator edits by hand, and a
+     hostname with an angle bracket in it should render as a hostname. */
+  function fillSSHCardHeader(card, conn) {
+    card.querySelector(".ssh-name").textContent = conn.name || "";
+    card.querySelector(".ssh-host").textContent = sshAddress(conn);
+  }
+
   async function renderSSHCards() {
+    closeSSHTerminal();
+    sshContent.classList.remove("terminal-mode");
     sshContent.innerHTML = "";
     let devices = [];
     try {
@@ -416,23 +478,19 @@ Corvus.panel = (function () {
       const card = document.createElement("div");
       card.className = "ssh-card";
       const connected = !!dev.connected;
-      card.innerHTML =
-        `<div class="ssh-card-top">
-          <div class="ssh-icon" data-lucide="server"></div>
-          <div class="ssh-info">
-            <span class="ssh-name">${dev.name}</span>
-            <span class="ssh-host">${dev.host}${dev.port ? ":" + dev.port : ""}</span>
-          </div>
-          <span class="ssh-status${connected ? " connected" : ""}"><span class="dot"></span>${connected ? "CONNECTED" : "OFFLINE"}</span>
-        </div>`;
+      card.innerHTML = sshCardHeader(dev, connected);
+      fillSSHCardHeader(card, dev);
       const actions = document.createElement("div");
       actions.className = "ssh-card-actions";
       const btn = Corvus.ui.button({
         variant: "primary",
         shape: "block",
         className: "ssh-connect",
-        label: "CONNECT",
-        onClick: () => connectSSH(dev.name, dev.host, btn),
+        label: connected ? "OPEN TERMINAL" : "CONNECT",
+        onClick: () => {
+          if (connected) showSSHTerminal(dev);
+          else connectSSH(dev, btn);
+        },
       });
       btn.dataset.name = dev.name;
       actions.appendChild(btn);
@@ -488,23 +546,28 @@ Corvus.panel = (function () {
     note.textContent = msg || "Connection failed";
   }
 
-  async function connectSSH(name, host, btn) {
-    if (btn) { btn.textContent = "CONNECTING …"; btn.disabled = true; }
+  async function connectSSH(conn, btn) {
+    if (btn) { btn.textContent = "CONNECTING \u2026"; btn.disabled = true; }
     let res;
     try {
       res = await fetch("/api/ssh/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),   // connect by name; backend loads saved creds
+        body: JSON.stringify({ name: conn.name }),   // backend loads saved creds
       }).then((r) => r.json());
 
       if (res.ok && res.connected) {
-        sshConnectedName = name;
-        renderSSHTerminal(name, host);
+        // Prefer the identity the backend actually authenticated with over
+        // whatever the card was rendered from: it resolved the saved entry.
+        showSSHTerminal(Object.assign({}, conn, {
+          host: res.host || conn.host,
+          port: res.port || conn.port,
+          username: res.username || conn.username,
+        }));
       } else {
         // Failure: do NOT open a fresh terminal/SSE — surface the error in the
         // existing card so the operator can retry from the connection list.
-        addConsoleLine("error", `SSH connect failed: ${res.error || host}`);
+        addConsoleLine("error", `SSH connect failed: ${res.error || conn.host}`);
         showSSHCardError(btn, res.error || "Connection failed");
       }
     } catch (err) {
@@ -515,40 +578,58 @@ Corvus.panel = (function () {
     return res;
   }
 
-  // Hand off to the live terminal view from outside the SSH tab (e.g. the
-  // Settings page CONNECT button). Sets the connected-name state and renders
-  // the terminal + SSE stream exactly once; does NOT issue a connect POST
-  // (the caller already connected by name).
-  function showSSHTerminal(name, host) {
-    sshConnectedName = name;
-    renderSSHTerminal(name, host);
+  /** Tear down the live terminal, if any. Idempotent. */
+  function closeSSHTerminal() {
+    exitSSHFullscreen();
+    if (sshTermHandle) {
+      try { sshTermHandle.dispose(); } catch (_e) {}
+      sshTermHandle = null;
+    }
   }
 
-  function renderSSHTerminal(name, host, errorMsg) {
-    // Close any prior SSH stream BEFORE opening a new one. Without this,
-    // connecting to device B while A is connected (via the card CONNECT, the
-    // Add-Connection modal, or showSSHTerminal) overwrites the reference and
-    // leaves A's /api/ssh/stream open for the page lifetime — a leaked socket
-    // whose output listener still calls appendSSHOutput into the now-different
-    // sshOutputEl (cross-session output bleed).
-    if (sshSseSource) { try { sshSseSource.close(); } catch (_e) {} sshSseSource = null; }
+  /**
+   * Show the live terminal for an already-connected session.
+   *
+   * `conn` is {name, host, port, username} — the second argument used to be a
+   * bare host string, which is how the header ended up unable to name the
+   * account. Callers outside this module (the Settings page CONNECT button)
+   * use this entry point; it does NOT issue a connect POST.
+   */
+  function showSSHTerminal(conn, host) {
+    // Tolerate the old (name, host) call shape from an older sidenav build.
+    const c = (typeof conn === "string") ? { name: conn, host: host } : (conn || {});
+    renderSSHTerminal(c);
+  }
+
+  function renderSSHTerminal(conn, errorMsg) {
+    // Dispose any prior terminal BEFORE opening a new one. Without this,
+    // connecting to device B while A is open leaves A's SSE stream and resize
+    // observer alive for the page lifetime, still writing into a terminal that
+    // is no longer on screen.
+    closeSSHTerminal();
     sshContent.innerHTML = "";
+    // The terminal is the whole tab, not a box inside a scrolling list: it has
+    // to fill the panel for a full-screen program to have room to draw.
+    sshContent.classList.add("terminal-mode");
+
     const card = document.createElement("div");
-    card.className = "ssh-card";
-    card.innerHTML =
-      `<div class="ssh-card-top">
-        <div class="ssh-icon" data-lucide="server"></div>
-        <div class="ssh-info">
-          <span class="ssh-name">${name}</span>
-          <span class="ssh-host">${host}</span>
-        </div>
-        <span class="ssh-status connected"><span class="dot"></span>CONNECTED</span>
-      </div>
-      <div class="ssh-term" id="sshTerm"></div>
-      <div class="ssh-input-row">
-        <span class="t-line"><span class="t-user">corvus@companion</span><span class="t-path">:~$</span>&nbsp;</span>
-        <input class="ssh-input" id="sshInput" placeholder="type a command..." autocomplete="off" spellcheck="false" />
-      </div>`;
+    card.className = "ssh-card ssh-terminal-card";
+    card.innerHTML = sshCardHeader(conn, true);
+    fillSSHCardHeader(card, conn);
+
+    const statusEl = card.querySelector(".ssh-status");
+    const top = card.querySelector(".ssh-card-top");
+    const expand = Corvus.ui.iconButton("maximize-2", {
+      title: "Full screen terminal",
+      ariaLabel: "Full screen terminal",
+    });
+    expand.addEventListener("click", () => toggleSSHFullscreen(card, expand));
+    top.appendChild(expand);
+
+    const termHost = document.createElement("div");
+    termHost.className = "ssh-term";
+    card.appendChild(termHost);
+
     const discBtn = Corvus.ui.button({
       variant: "secondary",
       shape: "block",
@@ -556,61 +637,83 @@ Corvus.panel = (function () {
       label: "DISCONNECT",
     });
     discBtn.addEventListener("click", async () => {
-      await fetch("/api/ssh/disconnect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      }).then((r) => r.json());
-      sshConnectedName = null;
-      if (sshSseSource) { sshSseSource.close(); sshSseSource = null; }
+      try {
+        await fetch("/api/ssh/disconnect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: conn.name }),
+        }).then((r) => r.json());
+      } catch (_e) {}
       renderSSHCards();
     });
     card.appendChild(discBtn);
     sshContent.appendChild(card);
     Corvus.ui.refreshIcons();
 
-    sshOutputEl = card.querySelector("#sshTerm");
-    sshInputEl = card.querySelector("#sshInput");
-
-    if (errorMsg) {
-      const l = document.createElement("div");
-      l.className = "t-line";
-      l.style.color = "var(--critical)";
-      l.textContent = errorMsg;
-      sshOutputEl.appendChild(l);
+    if (!Corvus.sshTerm || !Corvus.sshTerm.available()) {
+      termHost.textContent =
+        "Terminal component unavailable — the xterm bundle did not load.";
+      return;
     }
 
-    sshSseSource = new EventSource("/api/ssh/stream");
-    sshSseSource.addEventListener("output", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        appendSSHOutput(data.text);
-      } catch (err) {}
+    sshTermHandle = Corvus.sshTerm.create(termHost, conn, {
+      onClosed() {
+        statusEl.classList.remove("connected");
+        statusEl.lastChild.textContent = "OFFLINE";
+      },
     });
-    sshSseSource.onerror = () => {};
-
-    sshInputEl.addEventListener("keydown", async (e) => {
-      if (e.key === "Enter") {
-        const v = sshInputEl.value;
-        sshInputEl.value = "";
-        appendSSHOutput(`${v}\r\n`, "cmd");
-        await fetch("/api/ssh/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, data: v + "\n" }),
-        });
-      }
-    });
-    sshInputEl.focus();
+    if (errorMsg) sshTermHandle.write(`\r\n\x1b[31m${errorMsg}\x1b[0m\r\n`);
+    sshTermHandle.focus();
   }
 
-  function appendSSHOutput(text, cls) {
-    if (!sshOutputEl) return;
-    const l = document.createElement("div");
-    l.className = "t-line" + (cls ? " t-" + cls : "");
-    l.textContent = text;
-    sshOutputEl.appendChild(l);
-    sshOutputEl.scrollTop = sshOutputEl.scrollHeight;
+  /* Full screen is not a luxury here: the SSH tab is a side panel a few
+     hundred pixels wide, and an 80-column program does not fit in it. The
+     terminal card is MOVED into the overlay rather than re-created, so the
+     session, its scrollback and its SSE stream all survive the trip. */
+  function toggleSSHFullscreen(card, btn) {
+    if (sshFullscreenEl) { exitSSHFullscreen(); return; }
+    const overlay = document.createElement("div");
+    overlay.className = "ssh-fullscreen";
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    sshFullscreenEl = overlay;
+    btn.querySelector("i, svg")?.remove();
+    const i = document.createElement("i");
+    i.setAttribute("data-lucide", "minimize-2");
+    btn.appendChild(i);
+    btn.title = "Exit full screen";
+    Corvus.ui.refreshIcons();
+    document.addEventListener("keydown", onFullscreenKey);
+    if (sshTermHandle) { sshTermHandle.fit(); sshTermHandle.focus(); }
+  }
+
+  function onFullscreenKey(e) {
+    // Escape belongs to the remote program while the terminal has focus (vim
+    // is the obvious case), so the way out is Escape on a double-tap-free
+    // modifier instead: Shift+Escape.
+    if (e.key === "Escape" && e.shiftKey) {
+      e.preventDefault();
+      exitSSHFullscreen();
+    }
+  }
+
+  function exitSSHFullscreen() {
+    if (!sshFullscreenEl) return;
+    const card = sshFullscreenEl.querySelector(".ssh-terminal-card");
+    document.removeEventListener("keydown", onFullscreenKey);
+    if (card && sshContent) sshContent.appendChild(card);
+    sshFullscreenEl.remove();
+    sshFullscreenEl = null;
+    const btn = card && card.querySelector(".ssh-card-top .icon-btn");
+    if (btn) {
+      btn.querySelector("i, svg")?.remove();
+      const i = document.createElement("i");
+      i.setAttribute("data-lucide", "maximize-2");
+      btn.appendChild(i);
+      btn.title = "Full screen terminal";
+      Corvus.ui.refreshIcons();
+    }
+    if (sshTermHandle) { sshTermHandle.fit(); sshTermHandle.focus(); }
   }
 
   // The fields of the add-SSH dialog, in the order they are shown. One list
@@ -699,24 +802,28 @@ Corvus.panel = (function () {
         return;
       }
       if (onSavedCb) onSavedCb();
-      dialog.close();
 
-      // 2) Connect by name — the creds are now persisted.
+      // 2) Connect by name — the creds are now persisted. The dialog stays up
+      // until this succeeds: a failed connect used to close it and open a
+      // terminal labelled CONNECTED with an error line in it, for a session
+      // that does not exist. Keeping the form open puts the message next to
+      // the fields that produced it, and the entry is already saved either way.
+      let res;
       try {
-        const res = await fetch("/api/ssh/connect", {
+        res = await fetch("/api/ssh/connect", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name }),
         }).then((r) => r.json());
-        if (res.ok && res.connected) {
-          sshConnectedName = name;
-          renderSSHTerminal(name, host);
-        } else {
-          renderSSHTerminal(name, host, res.error || "Connection failed");
-        }
       } catch (err) {
-        renderSSHTerminal(name, host, (err && err.message) || "Connection failed");
+        res = { ok: false, error: (err && err.message) || "Connection failed" };
       }
+      if (!(res.ok && res.connected)) {
+        error.show(res.error || "Connection failed", "err");
+        return;
+      }
+      dialog.close();
+      renderSSHTerminal({ name, host, port, username });
     }
   }
 
@@ -835,9 +942,11 @@ Corvus.panel = (function () {
 
   return {
     init, toggle, addConsoleLine, addSSHConnection, showSSHTerminal,
-    // Exposed for tests: the console's pure pieces, assertable without a DOM.
+    // Exposed for tests: the pure pieces, assertable without a DOM.
+    sshAddress,
     matchesFilter,
     levelClass,
+    normalizeCommand,
     completionsFor,
     COMMANDS,
   };

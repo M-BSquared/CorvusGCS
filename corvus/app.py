@@ -64,7 +64,10 @@ def find_free_port(preferred: int = 8000) -> int:
 
 def start_backend(port: int, mavlink_conn: str) -> tuple:
     """Start the HTTP/SSE server and MAVLink bridge in-process. Return (server, mavlink, ssh)."""
-    from corvus.server import CorvusHandler, CorvusServer, _build_tile_resources
+    from corvus.server import (
+        CorvusHandler, CorvusServer, _build_forwarder, _build_log_service,
+        _build_tile_resources,
+    )
     from corvus.tile_cache import default_cache_dir
 
     store = VehicleStateStore()
@@ -108,6 +111,29 @@ def start_backend(port: int, mavlink_conn: str) -> tuple:
         logger.exception("flash service unavailable")
     CorvusHandler.flash = flash
 
+    # Flight-log service: on-board ULog download over MAVLink plus the local
+    # tlog listing. Built through the same helper create_server() uses — the
+    # desktop app used to skip it entirely, which left every packaged build
+    # with an Analysis page that could not list or download a single ULog.
+    logs = _build_log_service(mavlink, cfg)
+    CorvusHandler.logs = logs
+
+    # Second-station MAVLink forwarding, so QGroundControl can share the one
+    # physical link. Off unless the operator turned it on in the config.
+    forwarder = _build_forwarder(mavlink, cfg)
+    CorvusHandler.forwarder = forwarder
+
+    # Update check against the GitHub releases, wired on the independently-
+    # built desktop server so the app prompts there too. Constructed only; the
+    # first network call happens when the frontend asks.
+    updates = None
+    try:
+        from corvus.update_check import UpdateChecker
+        updates = UpdateChecker()
+    except Exception:
+        logger.exception("update checker unavailable")
+    CorvusHandler.updates = updates
+
     server = CorvusServer(("", port), CorvusHandler)
     server.mavlink = mavlink
     server.ssh = ssh
@@ -115,6 +141,9 @@ def start_backend(port: int, mavlink_conn: str) -> tuple:
     server.config = cfg
     server.config_path = cfg_path
     server.flash = flash
+    server.logs = logs
+    server.forwarder = forwarder
+    server.updates = updates
     # Mirror tile resources onto the server instance so CorvusServer.shutdown()
     # closes the caches and stops the downloader (no leaked SQLite handles).
     server.tile_caches = tile_caches
@@ -126,6 +155,23 @@ def start_backend(port: int, mavlink_conn: str) -> tuple:
     )
     backend_thread.start()
     return server, mavlink, ssh
+
+
+def app_icon_inverted(cfg) -> bool:
+    """Whether the operator asked for the inverted cut of the mark.
+
+    Reads the live config object the HTTP handlers mutate in place, so the
+    Settings switch reaches the Dock / taskbar without a restart. Anything
+    other than a genuine ``True`` means the normal (white artwork) mark.
+    """
+    ui = getattr(cfg, "ui", None)
+    return isinstance(ui, dict) and ui.get("inverted_app_icon") is True
+
+
+def app_icon_path(inverted: bool) -> str:
+    """Absolute path of the PNG the Dock / taskbar icon is built from."""
+    name = "CorvusGCS_logo_inverted.png" if inverted else "CorvusGCS_logo.png"
+    return os.path.join(REPO_ROOT, "assets", name)
 
 
 def _stop_all(server) -> None:
@@ -157,6 +203,19 @@ def _stop_all(server) -> None:
             logger.info("log service stopped")
         except Exception:
             logger.exception("log service shutdown failed")
+    # The forwarder holds a UDP socket, two daemon threads, and a sink on the
+    # bridge's receive path, so it is released before the bridge goes away.
+    forwarder = getattr(server, "forwarder", None)
+    if forwarder is not None:
+        try:
+            logger.info("stopping mavlink forwarding …")
+            mav = getattr(server, "mavlink", None)
+            if mav is not None:
+                mav.set_frame_sink(None)
+            forwarder.stop()
+            logger.info("mavlink forwarding stopped")
+        except Exception:
+            logger.exception("mavlink forwarder shutdown failed")
     mavlink = getattr(server, "mavlink", None)
     if mavlink is not None:
         try:
@@ -202,7 +261,7 @@ def _stop_all(server) -> None:
 
 def main() -> int:
     from PyQt6.QtCore import QUrl, Qt
-    from PyQt6.QtGui import QGuiApplication
+    from PyQt6.QtGui import QGuiApplication, QIcon
     from PyQt6.QtWebEngineWidgets import QWebEngineView
     from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
 
@@ -249,6 +308,34 @@ def main() -> int:
     web.setUrl(QUrl(f"http://localhost:{port}/"))
     layout.addWidget(web)
     window.setCentralWidget(central)
+
+    # Dock / taskbar icon, from the live config. Two cuts of the mark ship in
+    # assets/: white artwork for a dark dock, black for a light one. Applied
+    # here for the first paint and re-checked on the timer below, so flipping
+    # the switch in Settings -> Appearance lands without a restart. Nothing
+    # else in the app reads this: it is the icon only, not a theme.
+    #
+    # Seeded with False, not None, because False is what the platform already
+    # shows: both build scripts cut the bundle icon (.icns / .png) from the
+    # normal mark. An operator who never touches the switch therefore keeps
+    # the packaged icon untouched — Qt is only asked for an icon once the
+    # config actually asks for a different one.
+    applied_icon: list[bool] = [False]
+
+    def sync_app_icon() -> None:
+        want = app_icon_inverted(getattr(server, "config", None))
+        if want == applied_icon[0]:
+            return
+        applied_icon[0] = want          # never retry a missing file every tick
+        path = app_icon_path(want)
+        if not os.path.exists(path):
+            logger.warning("app icon %s missing; keeping the current one", path)
+            return
+        icon = QIcon(path)
+        app.setWindowIcon(icon)         # Dock on macOS, taskbar on Linux
+        window.setWindowIcon(icon)
+
+    sync_app_icon()
 
     import threading as _t
     shutting_down = _t.Event()
@@ -300,6 +387,11 @@ def main() -> int:
     timer = QTimer()
     timer.start(500)
     timer.timeout.connect(lambda: None)
+    # Same tick picks up an app-icon change written by POST /api/config. A
+    # dict lookup and a comparison; the QIcon is only rebuilt when the answer
+    # actually changed, which is why polling here beats plumbing an event out
+    # of the HTTP thread into the Qt loop.
+    timer.timeout.connect(sync_app_icon)
 
     window.show()
     logger.info("CORVUS GCS v%s — standalone window ready", get_version())

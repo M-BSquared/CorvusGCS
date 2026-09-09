@@ -4,18 +4,25 @@ window.Corvus = window.Corvus || {};
 /*
   Corvus.joystick — the on-screen manual-control pad over the map.
 
-  Two input surfaces, each with its own switch in Settings > Appearance >
-  Controls, both feeding ONE MANUAL_CONTROL stream:
+  Three input surfaces, each with its own switch in Settings > Appearance >
+  Controls, all feeding ONE MANUAL_CONTROL stream:
 
     Virtual joystick   two spring-return sticks — full four-axis control
     Arrow keys         a four-key cluster, and the keyboard's own arrow keys —
                        forward / back / left / right only
+    WASD keys          a second four-key cluster in the SAME panel, and the
+                       keyboard's own W/A/S/D — thrust and yaw only
 
-  Both are off by default, and both are INPUT SOURCES and nothing else: they
-  arm nothing, change no mode, and cannot override a failsafe. Whether the
-  autopilot acts on them at all is the vehicle's decision (COM_RC_IN_MODE 1 or
-  3, and a mode that flies from the sticks) — the GCS deliberately does not set
-  that parameter on the operator's behalf.
+  The two key clusters are the two sticks split in half, and they share one
+  panel for that reason: WASD is the left stick (thrust and yaw), the arrows
+  are the right one (pitch and roll). Either alone is half a transmitter;
+  together they are the whole one, without a pointer.
+
+  All three are off by default, and all three are INPUT SOURCES and nothing
+  else: they arm nothing, change no mode, and cannot override a failsafe.
+  Whether the autopilot acts on them at all is the vehicle's decision
+  (COM_RC_IN_MODE 1 or 3, and a mode that flies from the sticks) — the GCS
+  deliberately does not set that parameter on the operator's behalf.
 
   Axis mapping is the transmitter's, because that is what PX4 receives:
 
@@ -25,8 +32,13 @@ window.Corvus = window.Corvus || {};
     right stick   X -> y  roll   (-1 left .. +1 right)
                   Y -> x  pitch  (-1 back .. +1 forward)
     arrow keys    up/down  -> x  pitch      left/right -> y  roll
-                  and nothing else: a key is on or off, and a digital hold on
-                  thrust or yaw is a worse idea than not offering it.
+    WASD keys     W/S      -> z  thrust    A/D        -> r  yaw
+
+  Thrust is the one axis a key cannot simply spring back on: releasing W parks
+  it at the hover detent, not at zero, exactly as letting go of the left stick
+  does. That is what makes a digital thrust key safe enough to offer at all —
+  it climbs while held and hovers when let go, and it is why WASD is its own
+  switch rather than something the arrow keys imply.
 
   The keys deflect to KEY_DEFLECTION rather than to the stop. A key has no
   travel to meter, so full authority on a keypress would make the mildest
@@ -63,11 +75,11 @@ window.Corvus = window.Corvus || {};
 
   The grip bar also collapses the pad to the bar alone, which is persisted with
   the position. Collapsed, the pad STOPS BEING AN INPUT SOURCE: the surfaces
-  are released and both the on-screen keys and the keyboard's own arrow keys
-  stand down, for the same reason nothing streams without a pad at all — a
-  control the operator cannot see is a control they cannot centre. The stream
-  itself keeps running at neutral, because a gap in it is what PX4 reads as RC
-  loss; a collapsed pad is a transmitter set down, not one switched off.
+  are released and both the on-screen keys and the keyboard's own arrow and
+  WASD keys stand down, for the same reason nothing streams without a pad at
+  all — a control the operator cannot see is a control they cannot centre. The
+  stream itself keeps running at neutral, because a gap in it is what PX4 reads
+  as RC loss; a collapsed pad is a transmitter set down, not one switched off.
 */
 Corvus.joystick = (function () {
   const ACTIVE_HZ = 20;      // while an axis is off centre
@@ -86,23 +98,39 @@ Corvus.joystick = (function () {
   // Neutral frame: sticks centred, thrust at the hover detent.
   const NEUTRAL = { x: 0, y: 0, z: 0.5, r: 0 };
 
-  // Arrow key -> the axis it moves and which way. Screen "up" is forward.
+  /* Keyboard key -> the on-screen key it holds down, and which surface owns
+     it. Screen "up" is forward. WASD is stored lower-case and looked up that
+     way, so Shift and Caps Lock fly the aircraft exactly as the bare key
+     does. */
   const KEY_DIRS = {
-    ArrowUp: { dir: "up", axis: "x", sign: 1 },
-    ArrowDown: { dir: "down", axis: "x", sign: -1 },
-    ArrowLeft: { dir: "left", axis: "y", sign: -1 },
-    ArrowRight: { dir: "right", axis: "y", sign: 1 },
+    ArrowUp: { dir: "up", surface: "keys" },
+    ArrowDown: { dir: "down", surface: "keys" },
+    ArrowLeft: { dir: "left", surface: "keys" },
+    ArrowRight: { dir: "right", surface: "keys" },
+    w: { dir: "thrustUp", surface: "wasd" },
+    s: { dir: "thrustDown", surface: "wasd" },
+    a: { dir: "yawLeft", surface: "wasd" },
+    d: { dir: "yawRight", surface: "wasd" },
   };
+
+  /** The entry for a keyboard event's key, or undefined. */
+  function keyEntry(key) {
+    if (typeof key !== "string") return undefined;
+    return KEY_DIRS[key] || KEY_DIRS[key.toLowerCase()];
+  }
 
   let pad = null;
   let sticksEl = null;
   let keysEl = null;
+  let arrowClusterEl = null;
+  let wasdClusterEl = null;
   let surfacesEl = null;
   let gripEl = null;
   let statusEl = null;
   let collapseBtn = null;
   let showSticks = false;
   let showKeys = false;
+  let showWasd = false;
   let collapsed = false;
   let timer = null;
   let inFlight = false;
@@ -222,61 +250,101 @@ Corvus.joystick = (function () {
   }
 
   /* ------------------------------------------------------------------ */
-  /* arrow keys                                                          */
+  /* key clusters                                                        */
   /* ------------------------------------------------------------------ */
 
-  /* The four-key cluster, laid out as a keyboard's own inverted T so it reads
-     as "these keys" rather than as four unrelated buttons. Each is a real
-     <button>, so it is reachable by tab and fires on Space/Enter as well as
-     under a finger. */
-  function buildKeys() {
+  /* The arrow cluster and the WASD cluster, each laid out as its own keys sit
+     on a keyboard — an inverted T — so a cluster reads as "these keys" rather
+     than as four unrelated buttons. The arrows carry direction icons and the
+     WASD keys carry their letters, which is the shortest way to say which
+     physical key lights up which button. Each is a real <button>, so it is
+     reachable by tab and fires on Space/Enter as well as under a finger. */
+  const CLUSTERS = {
+    wasd: {
+      className: "js-keys-cluster js-cluster-wasd",
+      ariaLabel: "WASD control: thrust up, thrust down, yaw left and yaw right",
+      caption: "THR · YAW",
+      keys: [
+        { dir: "thrustUp", cls: "w", letter: "W", label: "Thrust up" },
+        { dir: "yawLeft", cls: "a", letter: "A", label: "Yaw left" },
+        { dir: "thrustDown", cls: "s", letter: "S", label: "Thrust down" },
+        { dir: "yawRight", cls: "d", letter: "D", label: "Yaw right" },
+      ],
+    },
+    keys: {
+      className: "js-keys-cluster js-cluster-arrows",
+      ariaLabel: "Arrow key control: forward, back, left and right",
+      caption: "ARROW KEYS",
+      keys: [
+        { dir: "up", cls: "up", icon: "arrow-up", label: "Forward" },
+        { dir: "left", cls: "left", icon: "arrow-left", label: "Left" },
+        { dir: "down", cls: "down", icon: "arrow-down", label: "Back" },
+        { dir: "right", cls: "right", icon: "arrow-right", label: "Right" },
+      ],
+    },
+  };
+
+  function buildCluster(spec) {
     const wrap = document.createElement("div");
-    wrap.className = "js-keys";
+    wrap.className = spec.className;
 
     const grid = document.createElement("div");
     grid.className = "js-keys-grid";
     grid.setAttribute("role", "group");
-    grid.setAttribute("aria-label", "Arrow key control: forward, back, left and right");
+    grid.setAttribute("aria-label", spec.ariaLabel);
 
-    [
-      { dir: "up", icon: "arrow-up", label: "Forward" },
-      { dir: "left", icon: "arrow-left", label: "Left" },
-      { dir: "down", icon: "arrow-down", label: "Back" },
-      { dir: "right", icon: "arrow-right", label: "Right" },
-    ].forEach((spec) => {
+    spec.keys.forEach((key) => {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "js-key js-key-" + spec.dir;
-      btn.title = spec.label;
-      btn.setAttribute("aria-label", spec.label);
-      btn.appendChild(Corvus.ui.icon(spec.icon, 15));
+      btn.className = "js-key js-key-" + key.cls;
+      btn.title = key.label;
+      btn.setAttribute("aria-label", key.label);
+      if (key.icon) {
+        btn.appendChild(Corvus.ui.icon(key.icon, 15));
+      } else {
+        btn.classList.add("js-key-letter");
+        btn.textContent = key.letter;
+      }
 
       btn.addEventListener("pointerdown", (event) => {
         try { btn.setPointerCapture(event.pointerId); } catch (_e) {}
-        setHeld(spec.dir, true);
+        setHeld(key.dir, true);
         event.preventDefault();
       });
       ["pointerup", "pointercancel"].forEach((name) => {
-        btn.addEventListener(name, () => setHeld(spec.dir, false));
+        btn.addEventListener(name, () => setHeld(key.dir, false));
       });
       // Space/Enter on a focused key: the browser fires click, not a
       // pointer pair, so pulse the axis for one frame rather than leaving
       // the key stuck down with no matching release.
       btn.addEventListener("click", () => {
-        if (held[spec.dir]) return;
-        setHeld(spec.dir, true);
-        window.setTimeout(() => setHeld(spec.dir, false), Math.round(1000 / ACTIVE_HZ) * 2);
+        if (held[key.dir]) return;
+        setHeld(key.dir, true);
+        window.setTimeout(() => setHeld(key.dir, false), Math.round(1000 / ACTIVE_HZ) * 2);
       });
 
-      keyButtons[spec.dir] = btn;
+      keyButtons[key.dir] = btn;
       grid.appendChild(btn);
     });
 
     const caption = document.createElement("span");
     caption.className = "js-caption";
-    caption.textContent = "ARROW KEYS";
+    caption.textContent = spec.caption;
 
     wrap.append(grid, caption);
+    return wrap;
+  }
+
+  /* Both clusters live in ONE panel, switched on independently. They are the
+     two halves of the stick pair, so a pad showing both reads as a single
+     keyboard-sized transmitter rather than as two unrelated key pads; WASD
+     comes first for the same reason the throttle stick is the left one. */
+  function buildKeys() {
+    const wrap = document.createElement("div");
+    wrap.className = "js-keys";
+    wasdClusterEl = buildCluster(CLUSTERS.wasd);
+    arrowClusterEl = buildCluster(CLUSTERS.keys);
+    wrap.append(wasdClusterEl, arrowClusterEl);
     return wrap;
   }
 
@@ -291,14 +359,17 @@ Corvus.joystick = (function () {
     Object.keys(keyButtons).forEach((dir) => setHeld(dir, false));
   }
 
-  /* The keyboard drives the same four keys the cluster does, so the on-screen
-     keys light up under a real keypress. Ignored while the arrow-key surface
-     is off, while the map view is not the visible page, and while the caret is
-     in a field — an operator typing a connection string must not be flying. */
+  function surfaceOn(name) { return name === "wasd" ? showWasd : showKeys; }
+
+  /* The keyboard drives the same buttons its cluster does, so the on-screen
+     keys light up under a real keypress. Ignored while that key's own surface
+     is off — W is an ordinary letter until the WASD switch is on — while the
+     map view is not the visible page, and while the caret is in a field: an
+     operator typing a connection string must not be flying. */
   function keyboardTarget(event) {
-    if (!showKeys || collapsed) return null;
-    const entry = KEY_DIRS[event.key];
-    if (!entry) return null;
+    if (collapsed) return null;
+    const entry = keyEntry(event.key);
+    if (!entry || !surfaceOn(entry.surface)) return null;
     if (event.altKey || event.ctrlKey || event.metaKey) return null;
     if (pad && pad.hidden) return null;
     const el = event.target;
@@ -316,7 +387,7 @@ Corvus.joystick = (function () {
   }
 
   function onKeyUp(event) {
-    const entry = KEY_DIRS[event.key];
+    const entry = keyEntry(event.key);
     // Released unconditionally: a key that went down while the surface was on
     // must still come up if the switch flipped mid-press.
     if (entry) setHeld(entry.dir, false);
@@ -326,11 +397,15 @@ Corvus.joystick = (function () {
   /* the frame                                                           */
   /* ------------------------------------------------------------------ */
 
-  /** The four MAVLink axes for the current state of both surfaces. */
+  /** The four MAVLink axes for the current state of every surface. */
   function frame() {
     const left = (showSticks && sticks[0]) ? sticks[0].value : { x: 0, y: 0 };
     const right = (showSticks && sticks[1]) ? sticks[1].value : { x: 0, y: 0 };
 
+    // Both halves are worked in STICK units — thrust included, where 0 is the
+    // hover detent and ±1 the stops — so the keys sum with their stick and
+    // clamp to the circle the same way on either side. Thrust is converted to
+    // MAVLink's 0..1 once, at the bottom.
     let pitch = right.y;
     let roll = right.x;
     if (showKeys) {
@@ -344,11 +419,22 @@ Corvus.joystick = (function () {
       roll = c.x; pitch = c.y;
     }
 
+    let thrust = left.y;
+    let yaw = left.x;
+    if (showWasd) {
+      if (held.thrustUp) thrust += KEY_DEFLECTION;
+      if (held.thrustDown) thrust -= KEY_DEFLECTION;
+      if (held.yawRight) yaw += KEY_DEFLECTION;
+      if (held.yawLeft) yaw -= KEY_DEFLECTION;
+      const c = clampToCircle(yaw, thrust);
+      yaw = c.x; thrust = c.y;
+    }
+
     return {
       x: round(pitch),                       // pitch, forward positive
       y: round(roll),                        // roll, right positive
-      z: round(0.5 + left.y * 0.5),          // thrust, 0.5 = hover detent
-      r: round(left.x),                      // yaw, clockwise positive
+      z: round(0.5 + thrust * 0.5),          // thrust, 0.5 = hover detent
+      r: round(yaw),                         // yaw, clockwise positive
     };
   }
 
@@ -366,15 +452,21 @@ Corvus.joystick = (function () {
   }
 
   /* Only the axes the visible surfaces can actually move. Four of them is a
-     wider strip than the arrow-key cluster underneath it, so a keys-only pad
-     used to be a narrow control under a bar twice its width; the keys drive
-     pitch and roll and nothing else, so that is all it says. */
+     wider strip than one key cluster underneath it, so a keys-only pad used to
+     be a narrow control under a bar twice its width. The arrows drive pitch
+     and roll, WASD drives thrust and yaw, and the sticks drive all four — so
+     the readout names exactly the half, or the whole, that is switched on. */
   function paintStatus(f) {
     if (!statusEl) return;
     let text;
-    if (!connected) text = "NO LINK";
-    else if (showSticks) text = `P ${fmt(f.x)}  R ${fmt(f.y)}  T ${f.z.toFixed(2)}  Y ${fmt(f.r)}`;
-    else text = `P ${fmt(f.x)}  R ${fmt(f.y)}`;
+    if (!connected) {
+      text = "NO LINK";
+    } else {
+      const parts = [];
+      if (showSticks || showKeys) parts.push(`P ${fmt(f.x)}`, `R ${fmt(f.y)}`);
+      if (showSticks || showWasd) parts.push(`T ${f.z.toFixed(2)}`, `Y ${fmt(f.r)}`);
+      text = parts.join("  ");
+    }
     statusEl.textContent = text;
     statusEl.classList.toggle("offline", !connected);
   }
@@ -414,7 +506,7 @@ Corvus.joystick = (function () {
     if (timer !== null) { window.clearTimeout(timer); timer = null; }
   }
 
-  function streaming() { return showSticks || showKeys; }
+  function streaming() { return showSticks || showKeys || showWasd; }
 
   /* ------------------------------------------------------------------ */
   /* dragging                                                            */
@@ -657,9 +749,20 @@ Corvus.joystick = (function () {
     if (pad) apply();
   }
 
+  function setWasdEnabled(on) {
+    if (!!on === showWasd) return;
+    showWasd = !!on;
+    if (pad) apply();
+  }
+
   function apply() {
     if (sticksEl) sticksEl.hidden = !showSticks || collapsed;
-    if (keysEl) keysEl.hidden = !showKeys || collapsed;
+    // The panel is up while EITHER cluster is on; each cluster answers only to
+    // its own switch, which is what puts WASD and the arrows side by side in
+    // one window instead of giving each a pad of its own.
+    if (keysEl) keysEl.hidden = (!showKeys && !showWasd) || collapsed;
+    if (arrowClusterEl) arrowClusterEl.hidden = !showKeys;
+    if (wasdClusterEl) wasdClusterEl.hidden = !showWasd;
     if (surfacesEl) surfacesEl.hidden = collapsed;
     pad.classList.toggle("is-collapsed", collapsed);
     pad.hidden = !streaming();
@@ -775,8 +878,10 @@ Corvus.joystick = (function () {
     init,
     setEnabled,
     setKeysEnabled,
+    setWasdEnabled,
     isEnabled: () => showSticks,
     isKeysEnabled: () => showKeys,
+    isWasdEnabled: () => showWasd,
     resetPosition,
   };
 })();

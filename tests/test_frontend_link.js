@@ -193,12 +193,39 @@ function testQualityInfo() {
 // Presets exist so the common endpoints are a click rather than a remembered
 // string; a preset with a malformed connection string would be worse than none.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// LINK tab: sharing the link with a second station.
+// ---------------------------------------------------------------------------
+function testForwardingHint() {
+  const hint = Corvus.link.forwardingHint;
+  assert.match(hint({ running: false }), /QGroundControl/,
+    "off: say where to point the other station");
+  assert.match(hint({ running: true, host: "127.0.0.1", port: 14550, peers: [] }),
+    /127\.0\.0\.1:14550/, "on with nobody connected: name the endpoint");
+  assert.match(hint({ running: true, host: "127.0.0.1", port: 14550, peers: ["a", "b"] }),
+    /2 station/, "on with peers: say how many");
+  // A missing status must not paint "undefined:undefined" at an operator.
+  assert.match(hint(null), /QGroundControl/);
+  assert.match(hint({ running: true }), /127\.0\.0\.1:14550/,
+    "falls back to the documented defaults, never to undefined");
+  // Two stations under one MAVLink system id makes the autopilot report
+  // packet loss that is not happening, so it outranks the peer count: the
+  // operator needs to know the link is being misread, not how many are on it.
+  assert.match(
+    hint({ running: true, host: "127.0.0.1", port: 14550, peers: ["a"],
+           sysid_conflict: true }),
+    /system ID/i,
+    "a shared system id must be said, not buried under the peer count");
+}
+
 function testPresets() {
   const link = Corvus.link;
   assert.ok(Array.isArray(link.PRESETS) && link.PRESETS.length, "presets must exist");
   link.PRESETS.forEach((p) => {
     assert.ok(p.label && p.label.length > 2, "preset needs a readable label");
-    assert.ok(/^(udp|tcp|serial):/.test(p.conn),
+    // Mirrors MavlinkBridge._VALID_PREFIXES: a preset the backend would
+    // reject is a button that only ever produces a 400.
+    assert.ok(/^(udp|udpin|udpout|udpbcast|tcp|tcpin|serial):/.test(p.conn),
       `preset "${p.label}" has a connection string the backend would reject: ${p.conn}`);
   });
   const conns = link.PRESETS.map((p) => p.conn);
@@ -458,6 +485,7 @@ function run() {
   testStatusInfo();
   testQualityInfo();
   testPresets();
+  testForwardingHint();
   testModesIdempotency();
   testRefreshModesOnConnectTransition();
   testHeadingShortestPath();

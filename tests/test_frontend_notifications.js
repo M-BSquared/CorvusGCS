@@ -18,6 +18,9 @@
  *  - only a critical takes the screen, so PX4's NOTICE-level running
  *    commentary no longer unfolds a popover over the map mid-flight.
  *
+ * The bar's STATUS block is asserted here too, because it shares this harness
+ * and the same rule: it may never claim more than the vehicle actually said.
+ *
  * Run:
  *   node tests/test_frontend_notifications.js
  */
@@ -237,6 +240,17 @@ function settle(ui) {
   if (ui.open()) clickClose();
 }
 
+/** The STATUS block's rendered value, colour class and dot class. */
+function status() {
+  const root = byId.topBar.querySelector('[data-block="armed"]');
+  return {
+    text: root.querySelector(".v-main").textContent,
+    cls: root.querySelector(".tb-value").className,
+    dot: root.querySelector(".tb-dot").className,
+    title: root.title || "",
+  };
+}
+
 function clickClose() { byId.wpClose._listeners.click.forEach((cb) => cb()); }
 function clickClearAll() { byId.wpClearAll._listeners.click.forEach((cb) => cb()); }
 function openPopover() {
@@ -454,6 +468,50 @@ function testTheTitleSaysHowManyAreNew() {
   clickClose();
 }
 
+// --- the STATUS block ------------------------------------------------------
+
+function testStatusReportsTheAutopilotsOwnPreflightVerdict() {
+  const ui = mount();
+  settle(ui);
+
+  push({ armed: false, prearm_ok: true });
+  assert.equal(status().text, "READY", "the vehicle says it would arm");
+  assert.ok(status().cls.includes("healthy"));
+  assert.ok(status().dot.includes("healthy"));
+
+  push({ armed: false, prearm_ok: false });
+  assert.equal(status().text, "NOT READY", "the vehicle is refusing to arm");
+  assert.ok(status().cls.includes("warning"), "a refused preflight is not a neutral state");
+}
+
+function testStatusNeverInventsReadinessTheVehicleDidNotReport() {
+  const ui = mount();
+  settle(ui);
+
+  // Firmware that does not publish MAV_SYS_STATUS_PREARM_CHECK. All we know is
+  // that the switch is off, and that is all we are allowed to say — a READY
+  // here would read as a preflight clearance nobody gave.
+  push({ armed: false, prearm_ok: null });
+  assert.equal(status().text, "DISARMED");
+  assert.ok(status().cls.includes("off"));
+
+  push({ armed: false, prearm_ok: undefined });
+  assert.equal(status().text, "DISARMED", "a missing field is unknown, not ready");
+}
+
+function testArmedOutranksReadinessAndALostLinkOutranksBoth() {
+  const ui = mount();
+  settle(ui);
+
+  push({ armed: true, prearm_ok: false });
+  assert.equal(status().text, "ARMED", "motors live is the only thing worth saying");
+  assert.ok(status().cls.includes("healthy"));
+
+  push({ connected: false, armed: true, prearm_ok: true });
+  assert.equal(status().text, "\u2014", "nothing is known without a link");
+  assert.ok(status().dot.includes("off"));
+}
+
 const tests = [
   // First, and only first: it is the one test that needs the module's
   // never-seen-a-snapshot state, which nothing can restore afterwards.
@@ -470,6 +528,9 @@ const tests = [
   testDismissingRemovesOneAndClearAllEmptiesTheBoardImmediately,
   testARejectedCommandIsNotDeletedByATimer,
   testTheTitleSaysHowManyAreNew,
+  testStatusReportsTheAutopilotsOwnPreflightVerdict,
+  testStatusNeverInventsReadinessTheVehicleDidNotReport,
+  testArmedOutranksReadinessAndALostLinkOutranksBoth,
 ];
 
 let failed = 0;

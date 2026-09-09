@@ -345,6 +345,37 @@ def test_save_config_omits_none_ui(tmp_path) -> None:
     assert "ui" not in json.loads(p.read_text(encoding="utf-8"))
 
 
+def test_load_config_parses_inverted_app_icon(tmp_path) -> None:
+    """The desktop wrapper's Dock/taskbar icon choice, on its own."""
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"ui": {"inverted_app_icon": True}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"inverted_app_icon": True}
+
+
+def test_load_config_ui_keys_are_independent(tmp_path) -> None:
+    """A bad scale must not take the icon switch down with it, and vice versa."""
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"ui": {"scale": 1.1, "inverted_app_icon": False}}),
+                 encoding="utf-8")
+    assert load_config(str(p)).ui == {"scale": 1.1, "inverted_app_icon": False}
+    p.write_text(json.dumps({"ui": {"scale": "big", "inverted_app_icon": True}}),
+                 encoding="utf-8")
+    assert load_config(str(p)).ui == {"inverted_app_icon": True}
+
+
+def test_load_config_inverted_app_icon_non_bool_dropped(tmp_path) -> None:
+    """A string "true" is not a boolean; the icon falls back to the shipped cut."""
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"ui": {"inverted_app_icon": "true"}}), encoding="utf-8")
+    assert load_config(str(p)).ui is None
+
+
+def test_inverted_app_icon_round_trips_through_save(tmp_path) -> None:
+    p = tmp_path / "config.json"
+    save_config(CorvusConfig(ui={"scale": 1.1, "inverted_app_icon": True}), str(p))
+    assert load_config(str(p)).ui == {"scale": 1.1, "inverted_app_icon": True}
+
+
 def test_load_config_parses_branding(tmp_path) -> None:
     p = tmp_path / "config.json"
     p.write_text(json.dumps({"branding": {"logo": "unibw.png"}}), encoding="utf-8")

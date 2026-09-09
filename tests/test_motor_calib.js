@@ -257,7 +257,7 @@ require("../src/js/setup-calibration.js");
 /** Fresh Plotly + telemetry + container per test so nothing leaks across. */
 function reset(opts) {
   delete window.Plotly;
-  window.Plotly = fakePlotly();   // POD graphs call Plotly.react on render
+  window.Plotly = fakePlotly();   // PID graphs call Plotly.react on render
   clock = 1000;
   dispatched.length = 0;
   const fake = makeFakeTelemetry(opts || {});
@@ -564,9 +564,9 @@ async function testLeavingTheWizardStopsTheWatchdogAndTheStream() {
 async function testPlotlyGraphsArePurgedOnTeardown() {
   const { container } = reset();
   const destroy = Corvus.setupCalibration.render(container, () => {});
-  assert.equal(window.Plotly.reactCalls.length, 3, "three POD graphs initialised");
+  assert.equal(window.Plotly.reactCalls.length, 3, "three PID graphs initialised");
   destroy();
-  assert.equal(window.Plotly.purgeCalls.length, 3, "each POD graph purged exactly once");
+  assert.equal(window.Plotly.purgeCalls.length, 3, "each PID graph purged exactly once");
 }
 
 async function run() {

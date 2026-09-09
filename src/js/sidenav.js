@@ -390,6 +390,7 @@ Corvus.sidenav = (function () {
   function renderAppearanceSection(container, cfg, gen) {
     const body = document.createDocumentFragment();
     body.appendChild(companyLogoCard(cfg));
+    body.appendChild(appIconCard(cfg));
     body.appendChild(themeCard(cfg));
     body.appendChild(scaleCard(cfg));
     body.appendChild(mapServiceCard(cfg, gen));
@@ -397,9 +398,10 @@ Corvus.sidenav = (function () {
     container.appendChild(Corvus.ui.section({ title: "Appearance", body }));
   }
 
-  // Which optional input controls the map carries: the stick pair and the
-  // arrow keys, each its own switch. The card exists as its own group because
-  // controls that can move the aircraft do not belong under "Color theme".
+  // Which optional input controls the map carries: the stick pair, the arrow
+  // keys and the WASD keys, each its own switch. The card exists as its own
+  // group because controls that can move the aircraft do not belong under
+  // "Color theme".
   //
   // Both switches drive the live map immediately and persist in the
   // background, and the persist is what the toggle awaits: a rejected POST
@@ -426,10 +428,20 @@ Corvus.sidenav = (function () {
       value: !!(cfg.controls && cfg.controls.arrow_keys),
       hint: "Adds a four-key pad to the same window and lets the keyboard's " +
             "arrow keys fly the aircraft forward, back, left and right — " +
-            "pitch and roll only, at half stick. The autopilot acts on " +
-            "either control only when the vehicle accepts joystick input " +
-            "(COM_RC_IN_MODE 1 or 3) and is in a mode that flies from the " +
-            "sticks. Both are off by default.",
+            "pitch and roll only, at half stick.",
+    }));
+    card.appendChild(controlSwitch({
+      id: "settingsWasdKeys",
+      key: "wasd_keys",
+      label: "WASD keys",
+      apply: "setWasdEnabled",
+      value: !!(cfg.controls && cfg.controls.wasd_keys),
+      hint: "The other half of the transmitter, in the same window beside the " +
+            "arrow keys: W and S are thrust, A and D are yaw, also at half " +
+            "stick. Releasing a thrust key returns to the hover detent, not " +
+            "to zero. The autopilot acts on any of these controls only when " +
+            "the vehicle accepts joystick input (COM_RC_IN_MODE 1 or 3) and " +
+            "is in a mode that flies from the sticks. All are off by default.",
     }));
     return card;
   }
@@ -467,6 +479,37 @@ Corvus.sidenav = (function () {
       className: "field-switch",
       hint: spec.hint,
     });
+  }
+
+  // Which cut of the Corvus mark the desktop app hands the operating system
+  // for its Dock / taskbar icon: the shipped white artwork, or the inverted
+  // black one for a light dock. The desktop wrapper (corvus/app.py) is the
+  // only consumer — this switch deliberately touches nothing else, so the
+  // color theme, the top-bar mark and the browser tab icon all stay put.
+  //
+  // Persisted in the backend config rather than localStorage because the
+  // process that acts on it is the Python wrapper, not this page. It picks
+  // the change up on its own timer, so the icon flips while the app runs.
+  function appIconCard(cfg) {
+    const card = Corvus.ui.card({ title: "App icon" });
+    const sw = Corvus.ui.toggle({
+      id: "settingsInvertedAppIcon",
+      value: !!(cfg.ui && cfg.ui.inverted_app_icon),
+      ariaLabel: "Inverted app icon",
+      onChange: (on) => postConfig({ ui: { inverted_app_icon: on } }, { strict: true }),
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Inverted app icon",
+      control: sw.el,
+      className: "field-switch",
+      hint: "Switches the icon the desktop app shows in the Dock (macOS) or " +
+            "the taskbar (Linux) from the white mark to the black one, which " +
+            "reads better on a light dock. Applies to the running app within " +
+            "a second; the icon the installer put in Finder or the launcher " +
+            "keeps whatever the build shipped. Changes nothing else \u2014 not " +
+            "the color theme, and not the mark in the top bar.",
+    }));
+    return card;
   }
 
   // Optional company logo shown at the far top right, opposite the Corvus
@@ -871,8 +914,16 @@ Corvus.sidenav = (function () {
       }
       if (res && res.ok && res.connected) {
         // Hand off to the panel's live terminal + switch the SSH tab to it.
+        // The whole connection goes across, not just the host: the terminal
+        // header names the account that logged in, and only the backend's
+        // reply knows which one the saved entry resolved to.
         if (Corvus.panel && typeof Corvus.panel.showSSHTerminal === "function") {
-          Corvus.panel.showSSHTerminal(c.name, c.host);
+          Corvus.panel.showSSHTerminal({
+            name: c.name,
+            host: res.host || c.host,
+            port: res.port || c.port,
+            username: res.username || c.username,
+          });
         }
         switchToSSHTab();
         connectBtn.textContent = "CONNECTED";
@@ -971,6 +1022,93 @@ Corvus.sidenav = (function () {
       onClick: () => Corvus.credits.open(),
     })));
     container.appendChild(Corvus.ui.section({ title: "About", body: card }));
+    container.appendChild(Corvus.ui.section({
+      title: "Updates", body: updatesCard(gen),
+    }));
+  }
+
+  // Update card: the switch that governs whether Corvus looks at the GitHub
+  // releases at all, plus a manual check. Its state comes from GET /api/update
+  // rather than the config read the page already did, because the same
+  // response carries the last check's result and error — one fetch, one truth.
+  function updatesCard(gen) {
+    const card = Corvus.ui.card({});
+    const status = Corvus.ui.message({});
+    const rows = document.createElement("div");
+    card.appendChild(rows);
+
+    const sw = Corvus.ui.toggle({
+      value: true,
+      ariaLabel: "Check for updates",
+      onChange: (on) => postConfig({ updates: { check: on } }, { strict: true }),
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Check for updates",
+      control: sw.el,
+      className: "field-switch",
+      hint: "Compares the running version against the published releases on " +
+            "GitHub and shows a notice when a newer one exists. Nothing is " +
+            "downloaded and nothing is sent about this machine beyond the " +
+            "request itself. The check never runs while the vehicle is armed, " +
+            "and with no internet it fails silently — Corvus never needs the " +
+            "network to fly.",
+    }));
+
+    // "Available" is only worth a row when there is something newer; a machine
+    // running the current release should read as current, not as a comparison.
+    function paint(data) {
+      Corvus.ui.clear(rows);
+      rows.appendChild(row("Installed", data.current || "\u2014"));
+      if (data.update_available) {
+        rows.appendChild(row("Available", data.latest || "\u2014"));
+      } else if (data.latest) {
+        rows.appendChild(row("Latest release", data.latest));
+      }
+      sw.setValue(data.enabled !== false);
+    }
+
+    const checkBtn = Corvus.ui.button({
+      variant: "secondary",
+      icon: "refresh-cw",
+      label: "Check now",
+      onClick: () => {
+        Corvus.ui.setBusy(checkBtn, true);
+        status.hide();
+        // manual: the dialog is raised even for a version the operator
+        // skipped, and the error is reported instead of swallowed.
+        Corvus.update.check({ refresh: true, manual: true }).then((data) => {
+          if (!data) return;
+          paint(data);
+          if (data.enabled === false) {
+            status.show("Update checks are switched off.", "warn");
+          } else if (data.error) {
+            status.show(data.error, "warn");
+          } else if (data.update_available) {
+            status.show(`Version ${data.latest} is available.`, "ok");
+          } else {
+            status.show("Corvus GCS is up to date.", "ok");
+          }
+        }).catch(() => {
+          status.show("Could not reach the release server.", "warn");
+        }).finally(() => Corvus.ui.setBusy(checkBtn, false));
+      },
+    });
+    card.appendChild(Corvus.ui.actions(checkBtn));
+    card.appendChild(status.el);
+
+    // Cached read: opening Settings must not fire a network check by itself.
+    Corvus.telemetry.requestJson("/api/update").then((data) => {
+      if (gen !== undefined && gen !== navGeneration) return;
+      paint(data);
+      if (data.enabled !== false && data.update_available) {
+        status.show(`Version ${data.latest} is available.`, "ok");
+      }
+    }).catch(() => {
+      if (gen !== undefined && gen !== navGeneration) return;
+      status.show("Update status unavailable.", "warn");
+    });
+
+    return card;
   }
 
   function renderSettingsPage(container) {

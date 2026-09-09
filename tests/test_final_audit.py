@@ -52,8 +52,10 @@ _EXPECTED_GET = {
     "/api/firmware/catalog",
     "/api/logs/status",
     "/api/logs/review",
+    "/api/forwarding",
     "/api/firmware/progress",
     "/api/branding/logo",
+    "/api/update",
 }
 
 _EXPECTED_POST = {
@@ -71,10 +73,13 @@ _EXPECTED_POST = {
     "/api/mavlink/manual",
     "/api/ssh/connect",
     "/api/ssh/send",
+    "/api/ssh/resize",
     "/api/ssh/disconnect",
     "/api/ssh/connections",
     "/api/ssh/connections/remove",
     "/api/config",
+    "/api/update/skip",
+    "/api/update/open",
     "/api/motors/assign",
     "/api/motors/test",
     "/api/motors/test/stop",
@@ -90,6 +95,7 @@ _EXPECTED_POST = {
     "/api/logs/erase",
     "/api/logs/cancel",
     "/api/logs/dir",
+    "/api/forwarding",
     "/api/autotune",
     "/api/vibration/stream",
     "/api/tiles/download",

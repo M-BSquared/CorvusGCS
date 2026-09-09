@@ -562,13 +562,13 @@ def test_calibrate_cancel_without_bridge_returns_503() -> None:
     assert responses == [({"ok": False, "error": "not connected"}, 503)]
 
 
-def test_autotune_roll_ok_calls_bridge_lowercased() -> None:
+def test_autotune_all_ok_calls_bridge_lowercased() -> None:
     bridge = FakeParamBridge(result=True)
     handler, responses = _handler_with_bridge(bridge)
 
-    handler._api_autotune({"axis": "roll"})
+    handler._api_autotune({"axis": " All "})
 
-    assert bridge.autotune_calls == ["roll"]
+    assert bridge.autotune_calls == ["all"]
     assert responses == [({"ok": True}, 200)]
 
 
@@ -582,23 +582,25 @@ def test_autotune_accepts_case_insensitive_axis() -> None:
     assert responses == [({"ok": True}, 200)]
 
 
-def test_autotune_unknown_axis_returns_400() -> None:
+@pytest.mark.parametrize("axis", ["roll", "pitch", "yaw", "foobar", "", None, True])
+def test_autotune_rejects_per_axis_and_invalid_values(axis: Any) -> None:
     bridge = FakeParamBridge(result=True)
     handler, responses = _handler_with_bridge(bridge)
 
-    handler._api_autotune({"axis": "foobar"})
+    handler._api_autotune({"axis": axis})
 
     assert bridge.autotune_calls == []
     payload, status = responses[0]
     assert status == 400
     assert payload["ok"] is False
+    assert "full autotune" in payload["error"]
 
 
 def test_autotune_rejected_returns_409() -> None:
     bridge = FakeParamBridge(result=False, error="autotune denied")
     handler, responses = _handler_with_bridge(bridge)
 
-    handler._api_autotune({"axis": "roll"})
+    handler._api_autotune({"axis": "all"})
 
     assert responses == [({"ok": False, "error": "autotune denied"}, 409)]
 
@@ -606,9 +608,19 @@ def test_autotune_rejected_returns_409() -> None:
 def test_autotune_without_bridge_returns_503() -> None:
     handler, responses = _handler_without_bridge()
 
-    handler._api_autotune({"axis": "roll"})
+    handler._api_autotune({"axis": "all"})
 
     assert responses == [({"ok": False, "error": "not connected"}, 503)]
+
+
+@pytest.mark.parametrize("error", ["DISCONNECTED", "not connected", "Link disconnected"])
+def test_autotune_bridge_disconnect_errors_return_503(error: str) -> None:
+    bridge = FakeParamBridge(result=False, error=error)
+    handler, responses = _handler_with_bridge(bridge)
+
+    handler._api_autotune({"axis": "all"})
+
+    assert responses == [({"ok": False, "error": error}, 503)]
 
 
 # ---- POST route dispatch ----

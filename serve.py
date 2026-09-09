@@ -59,6 +59,19 @@ def _stop_all(server) -> None:
             logger.info("log service stopped")
         except Exception:
             logger.exception("log service shutdown failed")
+    # The forwarder holds a UDP socket, two daemon threads, and a sink on the
+    # bridge's receive path, so it is released before the bridge goes away.
+    forwarder = getattr(server, "forwarder", None)
+    if forwarder is not None:
+        try:
+            logger.info("stopping mavlink forwarding …")
+            mav = getattr(server, "mavlink", None)
+            if mav is not None:
+                mav.set_frame_sink(None)
+            forwarder.stop()
+            logger.info("mavlink forwarding stopped")
+        except Exception:
+            logger.exception("mavlink forwarder shutdown failed")
     mavlink = getattr(server, "mavlink", None)
     if mavlink is not None:
         try:

@@ -8,7 +8,7 @@ window.Corvus = window.Corvus || {};
     maplibre-gl, lucide, plotly-basic, ui, telemetry, notification_dedupe,
     topbar, map, instruments, panel, link, plugins, plugin-vibration,
     setup-shared, setup-calibration, setup-parameters, setup, sidenav,
-    joystick, tiles, app (this file).
+    joystick, tiles, update, app (this file).
 
   Contract: every Corvus.<module> exposes a no-arg init() (some take a few
   DOM roots) and owns a narrow public API; nothing imports another module's
@@ -27,6 +27,11 @@ Corvus.app = (function () {
     const btnLand = document.getElementById("btnLand");
     const btnRTL = document.getElementById("btnRTL");
     const modeSel = document.getElementById("modeSelector");
+    /* The flight bar is glass on top of the map; a native select would open
+       the operating system's own list on it. enhanceSelect() keeps this
+       element as the state and only replaces the popup, so everything below
+       still reads modeSel.value and its "change" event. */
+    Corvus.ui.enhanceSelect(modeSel);
 
     btnArm.addEventListener("click", async () => {
       const s = Corvus.telemetry.getState();
@@ -382,6 +387,7 @@ Corvus.app = (function () {
       // rather than guess from a cached value.
       Corvus.joystick.setEnabled(!!(cfg.controls && cfg.controls.virtual_joystick));
       Corvus.joystick.setKeysEnabled(!!(cfg.controls && cfg.controls.arrow_keys));
+      Corvus.joystick.setWasdEnabled(!!(cfg.controls && cfg.controls.wasd_keys));
       // Optional operator branding in the top bar; absent by default, and the
       // top bar keeps the value until it builds itself on the first state.
       Corvus.topbar.setCompanyLogo((cfg.branding && cfg.branding.logo) || "");
@@ -411,6 +417,11 @@ Corvus.app = (function () {
     Corvus.telemetry.requestJson("/api/version").then((v) => {
       document.title = `CORVUS GCS v${v.version}`;
     }).catch(() => {});
+
+    // Background release check; raises a dialog only when GitHub has a newer
+    // version than the one running. Scheduled, never awaited — offline is the
+    // normal case and it must stay silent there.
+    Corvus.update.init();
 
     let userToggled = false;
     document.getElementById("panelHandle").addEventListener("click", () => { userToggled = true; });

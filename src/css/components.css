@@ -369,6 +369,64 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--critical) 20%, transparent);
 }
 
+/* ===== .ui-select — the app's dropdown, replacing a <select>'s OS popup =====
+   Built by Corvus.ui.enhanceSelect(). The native <select> stays as the state
+   and is taken out of the layout; a button wearing the select's own classes
+   takes its place, so every .field-select / .mode-selector / .link-select rule
+   already written still sizes and colours the control. The wrapper is
+   display:contents so it adds no box of its own and the trigger keeps the flex
+   or grid slot the <select> used to occupy. */
+.ui-select { display: contents; }
+.ui-select-native { display: none; }
+
+.ui-select-trigger {
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+.ui-select-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The empty value is a prompt ("SELECT MODE"), not a choice. */
+.ui-select-trigger[data-placeholder="true"] .ui-select-label { color: var(--text-3); }
+/* Open reads like focus, because it is: the ring is the one signal in the app
+   for "this control has the keyboard". */
+.ui-select-trigger[aria-expanded="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+/* The list itself is .option-list / .option-item — the map layer switcher's
+   rows — on the same glass material as the flight bar it drops out of. Fixed
+   and mounted on <body>: enhanceSelect() writes top/left/min-width/max-height
+   from the trigger's box, and flips the list above it when the space below
+   runs out. */
+.ui-select-menu {
+  position: fixed;
+  z-index: var(--z-dropdown);
+  padding: 5px;
+  border-radius: var(--radius);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  animation: corvus-enter 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ui-select-menu .option-item { padding: 7px 9px; }
+.ui-select-menu .option-item[disabled] { opacity: 0.45; cursor: not-allowed; }
+/* Keyboard navigation moves real focus between the rows, so the focused row
+   has to be visible even when the pointer opened the list (:focus-visible
+   alone leaves it unmarked). */
+.ui-select-menu .option-item:focus {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: -2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-select-menu { animation: none !important; }
+}
+
 /* ===== .ui-slider — stepped slider with step indicators =====
    A range input restricted to a handful of named steps, with a tick and a
    clickable label under each one. Used for the interface-scale control, whose
@@ -560,8 +618,18 @@
 .field-switch { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .field-switch > .field-label { text-transform: none; font-size: 12px; color: var(--text-1); letter-spacing: 0; }
 /* The hint is the third child of a row-direction field, so it has to be
-   pulled onto its own line under both of them. */
-.field-switch > .field-hint { flex-basis: 100%; order: 3; margin-top: -4px; }
+   pulled onto its own line under both of them. It stops short of the switch's
+   column (track + gap) so its ragged right edge lines up with the caption
+   above rather than running out under the track. */
+.field-switch > .field-hint { flex-basis: 100%; order: 3; margin-top: -4px; padding-right: 50px; }
+/* Switches stacked in one card (Settings -> Controls): without a rule the next
+   caption butts straight against the previous hint and it stops being obvious
+   which text belongs to which switch. */
+.field-switch + .field-switch {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
 
 /* ===== .ui-actions — horizontal button group ===== */
 .ui-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -914,4 +982,34 @@
   padding: 7px 10px;
   border-radius: var(--radius-btn);
   background: var(--orgmark-plate);
+}
+
+/* ===== update dialog (Corvus.update) =====
+   Release notes come off the network as plain text and are shown as typed —
+   a <pre> so the bullet/heading characters GitHub bodies use keep their
+   shape, capped in height so a long changelog cannot push the dialog's
+   buttons off screen. */
+.update-notes {
+  margin: 0;
+  max-height: 190px;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-btn);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Same reasoning as .credits-entry-url: in the desktop build an external link
+   is inert, so the release URL is read (and copied), never clicked. */
+.update-url {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  word-break: break-all;
 }

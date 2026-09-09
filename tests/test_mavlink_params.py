@@ -2,8 +2,7 @@
 
 Covers the parameter download/upload cycle, PARAM_VALUE dispatch, the
 calibration command mapping (verified against PX4 v1.18 Commander.cpp),
-and autotune axis selection (verified against PX4 v1.18 mavlink_receiver.cpp
-and the AUTOTUNE_AXIS enum).
+and the full-autotune wire contract shared by PX4 v1.16-v1.18.
 """
 from __future__ import annotations
 
@@ -647,29 +646,48 @@ def test_erase_logs_refused_without_a_link() -> None:
 # autotune
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("axis,expected_axis_val", [
-    ("roll", 1.0),
-    ("pitch", 2.0),
-    ("yaw", 4.0),
-    ("all", 0.0),
-])
-def test_autotune_sends_correct_params_on_accepted(
-    axis: str, expected_axis_val: float,
+@pytest.mark.parametrize("px4_version", ["v1.16.0", "v1.17.0", "v1.18.0"])
+def test_autotune_sends_full_tune_params_on_accepted_for_supported_px4(
+    px4_version: str,
 ) -> None:
     bridge = ready_bridge()
+    bridge._store.update(px4_version=px4_version)
 
     def on_send(args: tuple) -> None:
         command = int(args[2])
         bridge._dispatch(ack(command, mavutil.mavlink.MAV_RESULT_ACCEPTED))
 
     bridge._conn = FakeConnection(on_send)
-    assert bridge.autotune(axis) is True
+    assert bridge.autotune("all") is True
     cmd = bridge._conn.mav.commands[0]
     assert cmd[2] == mavutil.mavlink.MAV_CMD_DO_AUTOTUNE_ENABLE
     assert cmd[4] == pytest.approx(1.0)       # param1 = enable
-    assert cmd[5] == pytest.approx(expected_axis_val)  # param2 = axis
+    assert cmd[5] == pytest.approx(0.0)       # param2 = PX4 full/default tune
     for i in range(2, 7):
         assert math.isnan(cmd[4 + i])
+
+
+@pytest.mark.parametrize("axis", ["roll", "pitch", "yaw"])
+def test_autotune_rejects_unsupported_per_axis_requests(axis: str) -> None:
+    bridge = ready_bridge()
+
+    assert bridge.autotune(axis) is False
+    assert "unknown autotune axis" in bridge.get_last_command_error().lower()
+    assert bridge._conn.mav.commands == []
+
+
+def test_autotune_initial_in_progress_ack_confirms_successful_start() -> None:
+    bridge = ready_bridge()
+
+    def on_send(args: tuple) -> None:
+        bridge._dispatch(ack(
+            int(args[2]), mavutil.mavlink.MAV_RESULT_IN_PROGRESS,
+        ))
+
+    bridge._conn = FakeConnection(on_send)
+
+    assert bridge.autotune("all") is True
+    assert bridge.get_last_command_error() == ""
 
 
 def test_autotune_unknown_axis_returns_false() -> None:

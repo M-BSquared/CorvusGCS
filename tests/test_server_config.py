@@ -13,7 +13,9 @@ Covers the read/write config API and the persisted SSH-connection list:
   (stops the subprocess) then removes the entry; idempotent for an unknown
   name.
 - ``POST /api/ssh/connect`` connect-by-name extension: a payload with only a
-  ``name`` (no host) loads creds from the saved connection and connects.
+  ``name`` (no host) loads creds from the saved connection and connects, and
+  reports back the identity it resolved.
+- ``POST /api/ssh/resize`` sets a live session's pty size.
 
 Hermetic: every test uses a tmp config path and a fake SshBridge; no real
 SSH connections are opened, no file under the user's home is touched.
@@ -44,6 +46,7 @@ class FakeSshBridge:
         self._sessions: dict[str, dict[str, Any]] = {}
         self.connect_calls: list[dict[str, Any]] = []
         self.disconnect_calls: list[str] = []
+        self.resize_calls: list[tuple[str, int, int]] = []
 
     def connect(
         self,
@@ -70,6 +73,12 @@ class FakeSshBridge:
 
     def send(self, name: str, data: str) -> bool:
         return name in self._sessions
+
+    def resize(self, name: str, cols: int, rows: int) -> bool:
+        if name not in self._sessions:
+            return False
+        self.resize_calls.append((name, cols, rows))
+        return True
 
     def get_session(self, name: str) -> Any:
         return None
@@ -284,6 +293,48 @@ def test_post_config_ui_update_keeps_theme(tmp_path) -> None:
     assert status == 200
     assert payload["config"]["theme"] == {"name": "green"}
     assert payload["config"]["ui"] == {"scale": 0.9}
+
+
+def test_post_config_persists_inverted_app_icon(tmp_path) -> None:
+    """Settings -> Appearance writes the desktop app-icon switch through here.
+
+    The desktop wrapper reads the same live config object, so this POST is
+    what flips the Dock / taskbar icon of the running app.
+    """
+    cfg_path = tmp_path / "config.json"
+    handler, responses = _handler(
+        config=CorvusConfig(),
+        config_path=str(cfg_path),
+    )
+    handler._api_config_update({"ui": {"inverted_app_icon": True}})
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["config"]["ui"] == {"inverted_app_icon": True}
+    on_disk = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert on_disk["ui"] == {"inverted_app_icon": True}
+
+
+def test_post_config_ui_keys_merge_not_replace(tmp_path) -> None:
+    """The two ui keys are written one at a time and must not clear each other.
+
+    Regression: ``ui`` used to be replaced wholesale, so toggling the app icon
+    would have reset the operator's interface size to the default, and the
+    next size change would have reset the icon.
+    """
+    cfg_path = tmp_path / "config.json"
+    handler, responses = _handler(
+        config=CorvusConfig(ui={"scale": 1.25}),
+        config_path=str(cfg_path),
+    )
+    handler._api_config_update({"ui": {"inverted_app_icon": True}})
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["config"]["ui"] == {"scale": 1.25, "inverted_app_icon": True}
+
+    handler._api_config_update({"ui": {"scale": 0.9}})
+    payload, status = responses[1]
+    assert status == 200
+    assert payload["config"]["ui"] == {"scale": 0.9, "inverted_app_icon": True}
 
 
 def test_post_config_merges_with_existing_keeps_other_fields(tmp_path) -> None:
@@ -656,6 +707,104 @@ def test_post_ssh_connect_with_explicit_host_still_uses_provided_values(tmp_path
     assert call["host"] == "explicit-host"
     assert call["username"] == "explicit"
     assert call["password"] == "explicit-pw"
+
+
+def test_post_ssh_connect_reports_the_identity_it_resolved(tmp_path) -> None:
+    """The reply names the account that logged in.
+
+    The terminal header is drawn from this. Before it existed the UI had no
+    way to know which user a connect-by-name resolved to, and printed a
+    hardcoded "corvus@companion" for every session — wrong for anyone whose
+    companion account is not called corvus.
+    """
+    cfg = CorvusConfig(
+        ssh_connections=[
+            {"name": "CORVUS-01", "host": "192.168.2.10", "port": 2222,
+             "username": "schwalby", "key_path": "", "password": "secret"},
+        ],
+    )
+    handler, responses = _handler(
+        config=cfg, config_path=str(tmp_path / "c.json"), ssh=FakeSshBridge())
+
+    handler._api_ssh_connect({"name": "CORVUS-01"})
+
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["connected"] is True
+    assert payload["username"] == "schwalby"
+    assert payload["host"] == "192.168.2.10"
+    assert payload["port"] == 2222
+
+
+def test_post_ssh_connect_empty_username_is_rejected(tmp_path) -> None:
+    """A saved entry with no username fails auth with an opaque paramiko
+    error; refuse it up front and say which field is missing."""
+    cfg = CorvusConfig(
+        ssh_connections=[
+            {"name": "NOUSER", "host": "h", "port": 22,
+             "username": "", "key_path": "", "password": "p"},
+        ],
+    )
+    ssh = FakeSshBridge()
+    handler, responses = _handler(
+        config=cfg, config_path=str(tmp_path / "c.json"), ssh=ssh)
+
+    handler._api_ssh_connect({"name": "NOUSER"})
+
+    payload, status = responses[0]
+    assert status == 400
+    assert payload["error"] == "username is required"
+    assert ssh.connect_calls == []
+
+
+# ---------------------------------------------------------------------------
+# POST /api/ssh/resize
+# ---------------------------------------------------------------------------
+
+def test_post_ssh_resize_forwards_the_size_to_the_bridge() -> None:
+    ssh = FakeSshBridge()
+    ssh.connect("DEV", "h", 22, "schwalby")
+    handler, responses = _handler(ssh=ssh)
+
+    handler._api_ssh_resize({"name": "DEV", "cols": 120, "rows": 40})
+
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["ok"] is True
+    assert ssh.resize_calls == [("DEV", 120, 40)]
+
+
+@pytest.mark.parametrize("payload", [
+    {"name": "DEV", "cols": "wide", "rows": 40},
+    {"name": "DEV", "cols": True, "rows": 40},
+    {"name": "DEV", "cols": None, "rows": 40},
+    {"name": "DEV", "cols": 120},
+    {"name": "DEV", "cols": 0, "rows": 40},
+    {"name": "DEV", "cols": 120, "rows": 99999},
+    {"cols": 120, "rows": 40},
+])
+def test_post_ssh_resize_rejects_bad_input(payload) -> None:
+    """A malformed size must 400, never reach the bridge and never crash."""
+    ssh = FakeSshBridge()
+    ssh.connect("DEV", "h", 22, "schwalby")
+    handler, responses = _handler(ssh=ssh)
+
+    handler._api_ssh_resize(payload)
+
+    _, status = responses[0]
+    assert status == 400
+    assert ssh.resize_calls == []
+
+
+def test_post_ssh_resize_unknown_session_reports_not_ok() -> None:
+    ssh = FakeSshBridge()
+    handler, responses = _handler(ssh=ssh)
+
+    handler._api_ssh_resize({"name": "GONE", "cols": 80, "rows": 24})
+
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["ok"] is False
 
 
 def test_post_ssh_connect_no_ssh_bridge_returns_500(tmp_path) -> None:

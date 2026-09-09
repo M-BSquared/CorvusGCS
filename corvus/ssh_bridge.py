@@ -2,10 +2,21 @@
 
 Manages SSH connections to companion computers or other devices. Each
 connection runs an interactive shell on a background thread; output is
-streamed to subscribers. Commands are sent via ``exec``.
+streamed byte-for-byte to subscribers, escape sequences included, so the
+frontend can drive a real terminal emulator rather than a line-at-a-time
+command box. Input is written straight to the shell channel, which is what
+makes interactive programs (``top``, ``vim``, a password prompt, Ctrl-C)
+behave the way they do in a terminal.
+
+Two details exist for that terminal: a bounded **replay buffer** of recent
+output, handed to every new subscriber so a stream opened after the
+connection still shows the login banner and the first prompt; and
+``resize``, which tells the remote pty how large the operator's terminal
+actually is so full-screen programs wrap correctly.
 """
 from __future__ import annotations
 
+import collections
 import logging
 import threading
 import time
@@ -14,6 +25,12 @@ from typing import Any, Callable
 import paramiko
 
 logger = logging.getLogger("corvus.ssh")
+
+# How much recent shell output a session keeps for replay to a subscriber that
+# attaches after the fact. One screenful of a scrolling build log is a few KB;
+# 256 KB is enough that reopening the SSH tab shows real history, small enough
+# that an idle session's memory stays negligible.
+REPLAY_LIMIT = 256 * 1024
 
 
 class SshSession:
@@ -38,8 +55,18 @@ class SshSession:
         self._channel: Any = None
         self._thread: threading.Thread | None = None
         self._running = threading.Event()
+        # _sub_lock guards BOTH the subscriber list and the replay buffer, and
+        # is held across a whole publish. That is what makes a late subscriber
+        # see every chunk exactly once: it cannot take its replay copy in the
+        # middle of a publish. Subscribers are queue puts, so the reader thread
+        # is never blocked for long.
+        self._sub_lock = threading.Lock()
         self._subs: list[Callable[[str], None]] = []
+        self._replay: collections.deque[str] = collections.deque()
+        self._replay_len = 0
         self._connected = False
+        self.cols = 80
+        self.rows = 24
 
     @property
     def connected(self) -> bool:
@@ -61,7 +88,9 @@ class SshSession:
             elif self._password:
                 kwargs["password"] = self._password
             self._client.connect(**kwargs)
-            self._channel = self._client.invoke_shell(term="xterm-256color")
+            self._channel = self._client.invoke_shell(
+                term="xterm-256color", width=self.cols, height=self.rows,
+            )
             self._channel.settimeout(0.5)
             self._connected = True
             self._running.set()
@@ -95,12 +124,19 @@ class SshSession:
         self._publish("\r\n[Connection closed]\r\n")
 
     def _publish(self, text: str) -> None:
-        """Push received output to all subscribers."""
-        for sub in self._subs:
-            try:
-                sub(text)
-            except Exception:
-                pass
+        """Append to the replay buffer and push to all subscribers."""
+        if not text:
+            return
+        with self._sub_lock:
+            self._replay.append(text)
+            self._replay_len += len(text)
+            while self._replay_len > REPLAY_LIMIT and len(self._replay) > 1:
+                self._replay_len -= len(self._replay.popleft())
+            for sub in list(self._subs):
+                try:
+                    sub(text)
+                except Exception:
+                    pass
 
     def send(self, data: str) -> None:
         """Send user input to the remote shell."""
@@ -110,16 +146,48 @@ class SshSession:
             except Exception as exc:
                 logger.error("SSH send: %s", exc)
 
-    def add_sub(self, fn: Callable[[str], None]) -> None:
-        """Register an output subscriber."""
-        self._subs.append(fn)
+    def add_sub(self, fn: Callable[[str], None], replay: bool = True) -> None:
+        """Register an output subscriber, replaying recent output to it first.
+
+        The replay is what lets the UI open its SSE stream *after* the connect
+        call returns and still see the login banner and the first prompt —
+        without it the terminal looks blank until the operator types.
+        """
+        with self._sub_lock:
+            if replay and self._replay:
+                buffered = "".join(self._replay)
+                try:
+                    fn(buffered)
+                except Exception:
+                    pass
+            self._subs.append(fn)
 
     def remove_sub(self, fn: Callable[[str], None]) -> None:
         """Unregister an output subscriber."""
+        with self._sub_lock:
+            try:
+                self._subs.remove(fn)
+            except ValueError:
+                pass
+
+    def resize(self, cols: int, rows: int) -> bool:
+        """Tell the remote pty how large the operator's terminal is.
+
+        Full-screen programs (``top``, ``vim``, ``less``) lay out against the
+        pty size, so without this they draw against the 80x24 default and wrap
+        into a mess in any other window.
+        """
+        cols = max(2, min(int(cols), 1000))
+        rows = max(1, min(int(rows), 1000))
+        self.cols, self.rows = cols, rows
+        if not (self._channel and self._connected):
+            return False
         try:
-            self._subs.remove(fn)
-        except ValueError:
-            pass
+            self._channel.resize_pty(width=cols, height=rows)
+            return True
+        except Exception as exc:
+            logger.debug("SSH resize: %s", exc)
+            return False
 
     def disconnect(self) -> None:
         """Close the SSH session cleanly."""
@@ -204,6 +272,14 @@ class SshBridge:
             session.send(data)
             return True
         return False
+
+    def resize(self, name: str, cols: int, rows: int) -> bool:
+        """Resize a named session's remote pty."""
+        with self._lock:
+            session = self._sessions.get(name)
+        if session is None:
+            return False
+        return session.resize(cols, rows)
 
     def get_session(self, name: str) -> SshSession | None:
         """Return a named session if it exists."""

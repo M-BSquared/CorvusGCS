@@ -38,10 +38,15 @@ Corvus.link = (function () {
   const PRESETS = [
     { label: "SITL / onboard UDP", conn: "udp:0.0.0.0:14540" },
     { label: "QGC-style UDP", conn: "udp:0.0.0.0:14550" },
+    // A mavlink-router UdpEndpoint in Server mode binds and waits for the
+    // station to speak first, so this one dials out rather than listening.
+    { label: "mavlink-router (server mode)", conn: "udpout:127.0.0.1:14550" },
     { label: "TCP (SITL)", conn: "tcp:127.0.0.1:5760" },
   ];
 
   // DOM refs (cached in init)
+  let fwdEnabled, fwdPort, fwdAllow, fwdWarning, fwdError, fwdStats, fwdHint;
+  let fwdInFlight = false;
   let serialSelect, baudSelect, refreshBtn, serialConnectBtn, reconnectBtn;
   let customInput, customConnectBtn;
   let statusDot, statusLabel, statusConn, statusError;
@@ -417,19 +422,115 @@ Corvus.link = (function () {
       });
     }
 
+    fwdEnabled = document.getElementById("fwdEnabled");
+    fwdPort = document.getElementById("fwdPort");
+    fwdAllow = document.getElementById("fwdAllowCommands");
+    fwdWarning = document.getElementById("fwdCommandWarning");
+    fwdError = document.getElementById("fwdError");
+    fwdStats = document.getElementById("fwdStats");
+    fwdHint = document.getElementById("fwdHint");
+    if (fwdEnabled) {
+      fwdEnabled.addEventListener("change", saveForwarding);
+      fwdAllow.addEventListener("change", saveForwarding);
+      fwdPort.addEventListener("change", () => {
+        if (fwdEnabled.checked) saveForwarding();
+      });
+    }
+
     // One-shot config fetches (NOT live-telemetry polling — allowed).
     refreshPorts();
+    loadForwarding();
 
     // Re-enumerate when the LINK tab is opened. A radio plugged in after
     // launch used to need the operator to find the refresh button; this is
     // still event-driven, not a poll.
     const linkTab = document.querySelector('.panel-tabs .tab[data-tab="link"]');
-    if (linkTab) linkTab.addEventListener("click", refreshPorts);
+    if (linkTab) {
+      linkTab.addEventListener("click", refreshPorts);
+      linkTab.addEventListener("click", loadForwarding);
+    }
 
     // Status comes from the telemetry SSE stream.
     Corvus.telemetry.subscribe(updateFromState);
     // Seed the status row from the current state immediately.
     updateFromState(Corvus.telemetry.getState() || {});
+  }
+
+  /* ---------------- sharing the link with a second station ----------------
+     One serial port, one program: running QGroundControl next to Corvus used
+     to mean closing one of them. Corvus keeps the link and mirrors it over
+     UDP. The commanding switch is separate and stays off until an operator
+     turns it on — two stations that can both arm one aircraft is a decision
+     only the operator can make, so it is never implied by the first switch. */
+
+  /** Pure: the sentence under the port field for a given forwarding status. */
+  function forwardingHint(status) {
+    const s = status || {};
+    if (!s.running) return "Point QGroundControl at a UDP link on this port.";
+    // Both stations transmitting under one MAVLink system id makes the
+    // autopilot report packet loss that is not happening, so it is said where
+    // the operator is already looking rather than only in the log.
+    if (s.sysid_conflict) {
+      return "The other station is using Corvus' MAVLink system ID (254). Give"
+        + " it its own — in QGroundControl, Application Settings → MAVLink →"
+        + " Ground Station system ID.";
+    }
+    const peers = (s.peers || []).length;
+    const where = `${s.host || "127.0.0.1"}:${s.port || 14550}`;
+    if (!peers) return `Listening on ${where} — nothing connected yet.`;
+    return `${peers} station(s) connected on ${where}.`;
+  }
+
+  function paintForwarding(status) {
+    if (!fwdEnabled) return;
+    const s = status || {};
+    fwdEnabled.checked = !!s.running;
+    fwdAllow.checked = !!s.allow_commands;
+    if (document.activeElement !== fwdPort && s.port) fwdPort.value = s.port;
+    fwdWarning.hidden = !s.allow_commands;
+    fwdHint.textContent = forwardingHint(s);
+    fwdError.textContent = s.error || "";
+    fwdError.hidden = !s.error;
+    const sent = s.frames_sent || 0;
+    const injected = s.frames_injected || 0;
+    fwdStats.hidden = !s.running || !(sent || injected);
+    fwdStats.textContent = `${sent} frame(s) mirrored`
+      + (s.allow_commands ? `, ${injected} received from the other station` : "");
+  }
+
+  async function loadForwarding() {
+    if (!fwdEnabled) return;
+    try {
+      paintForwarding(await Corvus.telemetry.requestJson("/api/forwarding"));
+    } catch (err) {
+      console.error("forwarding status failed:", err);
+    }
+  }
+
+  async function saveForwarding() {
+    if (!fwdEnabled || fwdInFlight) return;
+    fwdInFlight = true;
+    const port = parseInt(fwdPort.value, 10);
+    const payload = {
+      enabled: fwdEnabled.checked,
+      allow_commands: fwdAllow.checked,
+    };
+    if (port > 0 && port < 65536) payload.port = port;
+    // Repaint the warning immediately: the operator has just ticked the box
+    // that lets another station arm the aircraft, and the consequence should
+    // not wait on a round trip.
+    fwdWarning.hidden = !fwdAllow.checked;
+    try {
+      const res = await Corvus.telemetry.postAction("/api/forwarding", payload);
+      if (res && res.status) paintForwarding(res.status);
+      if (res && res.error) { fwdError.textContent = res.error; fwdError.hidden = false; }
+    } catch (err) {
+      fwdError.textContent = String((err && err.message) || err);
+      fwdError.hidden = false;
+    } finally {
+      fwdInFlight = false;
+      loadForwarding();
+    }
   }
 
   return {
@@ -439,6 +540,7 @@ Corvus.link = (function () {
     portOptionText,
     statusInfo,
     qualityInfo,
+    forwardingHint,
     PRESETS,
   };
 })();

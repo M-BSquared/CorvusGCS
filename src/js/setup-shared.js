@@ -128,11 +128,13 @@ Corvus.setupShared = (function () {
         { detail: { level: "critical", message: msg } }));
     } finally {
       btn.classList.remove("busy");
-      // Re-gate from the live armed state; if disarmed, re-enable so the
-      // operator can run the next calibration immediately.
+      // Re-gate from live vehicle state after the request. A link can drop
+      // while the action is in flight; re-enabling on `armed === false` alone
+      // would leave a control actionable with no vehicle behind it.
       const s = Corvus.telemetry && Corvus.telemetry.getState();
       const armed = !!(s && s.armed);
-      siblings.forEach((b) => { b.disabled = armed; });
+      const connected = !!(s && s.connected);
+      siblings.forEach((b) => { b.disabled = armed || !connected; });
     }
   }
 

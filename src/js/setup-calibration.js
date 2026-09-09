@@ -7,7 +7,7 @@ window.Corvus = window.Corvus || {};
  * Two views behind one entry point:
  *
  *   list    the seven calibrations as cards (what each one is for, how long it
- *           takes, how many positions it needs) plus the POD Tuning subsection.
+ *           takes, how many positions it needs) plus the PID Tuning subsection.
  *   wizard  one calibration, guided: the aircraft drawn in the attitude PX4 is
  *           asking for, the six positions tracked as they complete, a live
  *           progress bar, the PX4 transcript, and an abort that actually stops
@@ -62,7 +62,7 @@ Corvus.setupCalibration = (function () {
 
     // Last telemetry snapshot, shared by both views; the subscription itself is
     // owned here so switching views never re-subscribes. Views receive the whole
-    // snapshot, not a digest of it — the POD graphs plot fields out of it, and
+    // snapshot, not a digest of it — the PID graphs plot fields out of it, and
     // re-reading getState() instead would silently drop the pushed values.
     let snapshot = { armed: false, connected: false };
     let active = null;          // { el, destroy, onTelemetry } of the mounted view
@@ -111,7 +111,7 @@ Corvus.setupCalibration = (function () {
   function buildList(openWizard, navigateBack) {
     const el = S.el("div", "calib-list-view");
     el.appendChild(S.backButton(navigateBack));
-    el.appendChild(S.pageHeader("Calibration", "Guided sensor calibration and POD tuning"));
+    el.appendChild(S.pageHeader("Calibration", "Guided sensor calibration and PID tuning"));
 
     // Readiness strip: the two preconditions every calibration shares, stated
     // before the operator picks one rather than as a rejection afterwards.
@@ -163,7 +163,7 @@ Corvus.setupCalibration = (function () {
     armedBanner.textContent = "Cannot calibrate while armed — disarm first.";
     sensorSection.appendChild(armedBanner);
 
-    // --- POD Tuning (autotune + live graphs) -----------------------------
+    // --- PID Tuning (autotune + live graphs) -----------------------------
     const pod = buildPodSection();
     el.appendChild(pod.el);
 
@@ -577,12 +577,12 @@ Corvus.setupCalibration = (function () {
   }
 
   /* ================================================================== */
-  /* POD Tuning                                                          */
+  /* PID Tuning                                                          */
   /* ================================================================== */
 
   function buildPodSection() {
     const el = S.el("div", "page-section pod-section");
-    el.appendChild(S.sectionTitle("POD Tuning"));
+    el.appendChild(S.sectionTitle("PID Tuning"));
 
     const podNote = S.el("div", "pod-note");
     podNote.textContent =
@@ -593,10 +593,7 @@ Corvus.setupCalibration = (function () {
 
     const autotuneControls = S.el("div", "autotune-controls");
     const axisTypes = [
-      { axis: "roll", label: "Roll" },
-      { axis: "pitch", label: "Pitch" },
-      { axis: "yaw", label: "Yaw" },
-      { axis: "all", label: "All" },
+      { axis: "all", label: "Start Full Autotune" },
     ];
     const autotuneBtns = axisTypes.map((a) => {
       const b = Corvus.ui.button({
@@ -680,19 +677,37 @@ Corvus.setupCalibration = (function () {
 
     graphs.forEach((_, i) => redrawGraph(i));
     lastRedraw = Date.now();
+    let autotuneBusy = false;
+    let vehicle = { armed: false, connected: false };
+
+    function gateAutotune() {
+      const blocked = autotuneBusy || vehicle.armed || !vehicle.connected;
+      autotuneBtns.forEach((b) => { b.disabled = blocked; });
+      autotuneBanner.hidden = !vehicle.armed && vehicle.connected;
+      autotuneBanner.textContent = vehicle.armed
+        ? "Cannot autotune while armed — disarm first."
+        : "No link to the vehicle — connect before autotuning.";
+    }
 
     async function runAutotune(axis) {
+      if (autotuneBusy || vehicle.armed || !vehicle.connected) return;
       const btn = autotuneBtns.find((b) => b.dataset.axis === axis) || autotuneBtns[0];
-      await S.runConfigAction(autotuneBtns, btn, "/api/autotune", { axis },
-        "Tuning…", "Autotune started");
+      autotuneBusy = true;
+      gateAutotune();
+      try {
+        await S.runConfigAction(autotuneBtns, btn, "/api/autotune", { axis },
+          "Starting…", "Full autotune started");
+      } finally {
+        autotuneBusy = false;
+        gateAutotune();
+      }
     }
 
     return {
       el,
       onTelemetry(s) {
-        const armed = !!s.armed;
-        autotuneBtns.forEach((b) => { b.disabled = armed; });
-        autotuneBanner.hidden = !armed;
+        vehicle = { armed: !!s.armed, connected: !!s.connected };
+        gateAutotune();
         const tSec = (Date.now() - startMs) / 1000;
         graphs.forEach((g, i) => appendPoint(i, s[g.spec.field], tSec));
         if (Date.now() - lastRedraw >= S.REDRAW_MIN_MS) {

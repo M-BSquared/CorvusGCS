@@ -102,7 +102,7 @@ Corvus.setup = (function () {
     // announces as a control.
     const grid = S.el("div", "setup-tiles");
     grid.appendChild(makeTile("calibration", "sliders-horizontal", "Calibration",
-      "Sensor calibration, level/airspeed, and POD autotune with live graphs."));
+      "Sensor calibration, level/airspeed, and PID autotune with live graphs."));
     grid.appendChild(makeTile("motors", "fan", "Motors",
       "Airframe geometry, motor assignment and spacing, and the output protocol."));
     grid.appendChild(makeTile("safety", "shield", "Safety & Sensors",

@@ -47,6 +47,13 @@ Corvus.credits = (function () {
       role: "The icon set used throughout the interface.",
       url: "https://lucide.dev/",
     },
+    {
+      name: "xterm.js",
+      version: "5.5.0",
+      license: "MIT",
+      role: "The terminal emulator behind the SSH tab.",
+      url: "https://xtermjs.org/",
+    },
   ];
 
   const FONTS = [

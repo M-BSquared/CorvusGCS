@@ -283,6 +283,7 @@ function makeFakeTelemetry(opts = {}) {
   const telemetry = {
     postAction(url, payload) {
       postCalls.push({ url, payload });
+      if (typeof opts.postAction === "function") return opts.postAction(url, payload);
       // /api/params/set may be rejected (e.g. "cannot set while armed") without
       // affecting the download/autotune/calibrate actions.
       if (url === "/api/params/set" && opts.setReject) return Promise.reject(new Error(opts.setReject));
@@ -1290,7 +1291,7 @@ async function testReadinessStripReflectsLinkAndArmedState() {
 }
 
 // ===========================================================================
-// PART C — Autotune (POD Tuning)
+// PART C — Autotune (PID Tuning)
 // ===========================================================================
 
 async function testAutotuneButtonsMapToAxes() {
@@ -1305,28 +1306,23 @@ async function testAutotuneButtonsMapToAxes() {
 
   const controls = findOneByClass(container, "autotune-controls");
   const btns = findByClass(controls, "autotune-btn");
-  assert.equal(btns.length, 4, "four autotune buttons");
+  assert.equal(btns.length, 1, "one full-autotune button");
 
-  const axes = btns.map((b) => b.dataset.axis).sort();
-  assert.deepEqual(axes, ["all", "pitch", "roll", "yaw"].sort(), "axes are roll/pitch/yaw/all");
+  const axes = btns.map((b) => b.dataset.axis);
+  assert.deepEqual(axes, ["all"], "only PX4's supported full tune is offered");
 
   // No velocity-controller autotune button exists (PX4 accuracy note).
   assert.ok(!axes.includes("velocity"), "no 'velocity' autotune button (PX4 has none)");
 
-  // Each button posts /api/autotune with its axis.
-  for (const axis of ["roll", "pitch", "yaw", "all"]) {
-    const btn = btns.find((b) => b.dataset.axis === axis);
-    fake.postCalls.length = 0;
-    fire(btn, "click");
-    await flushMicrotasks();
-    const call = fake.postCalls.find((c) => c.url === "/api/autotune");
-    assert.ok(call, `POST /api/autotune issued for ${axis}`);
-    assert.deepEqual(call.payload, { axis }, `${axis} posts {axis:'${axis}'}`);
-  }
+  fire(btns[0], "click");
+  await flushMicrotasks();
+  const call = fake.postCalls.find((c) => c.url === "/api/autotune");
+  assert.ok(call, "POST /api/autotune issued for the full tune");
+  assert.deepEqual(call.payload, { axis: "all" }, "full tune posts {axis:'all'}");
 }
 
 async function testAutotuneArmedGating() {
-  const fake = makeFakeTelemetry({ state: { armed: false, warnings: [] } });
+  const fake = makeFakeTelemetry({ state: { armed: false, connected: false, warnings: [] } });
   Corvus.telemetry = fake.telemetry;
   const container = makeEl("div");
   pageViewEl = container;
@@ -1336,11 +1332,45 @@ async function testAutotuneArmedGating() {
   openTile(container, "calibration");
   const btns = findByClass(findOneByClass(container, "autotune-controls"), "autotune-btn");
 
-  assert.ok(btns.every((b) => !b.disabled), "autotune enabled while disarmed");
+  assert.ok(btns.every((b) => b.disabled), "autotune disabled without a vehicle link");
+  fire(btns[0], "click");
+  await flushMicrotasks();
+  assert.equal(fake.postCalls.length, 0, "disconnected click never reaches the backend");
+  fake.getSubCb()({ armed: false, connected: true, warnings: [] });
+  assert.ok(btns.every((b) => !b.disabled), "autotune enabled when linked and disarmed");
   fake.getSubCb()({ armed: true, connected: true, warnings: [] });
   assert.ok(btns.every((b) => b.disabled), "autotune disabled while armed");
   fake.getSubCb()({ armed: false, connected: true, warnings: [] });
   assert.ok(btns.every((b) => !b.disabled), "autotune re-enabled when disarmed");
+}
+
+async function testAutotuneBusyGatingPreventsDuplicateStarts() {
+  let resolvePost;
+  const pending = new Promise((resolve) => { resolvePost = resolve; });
+  const fake = makeFakeTelemetry({
+    state: { armed: false, connected: true, warnings: [] },
+    postAction(url) {
+      if (url === "/api/autotune") return pending;
+      return Promise.resolve({ ok: true });
+    },
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  pageViewEl = container;
+
+  Corvus.setup.render(container);
+  openTile(container, "calibration");
+  const btn = findByClass(findOneByClass(container, "autotune-controls"), "autotune-btn")[0];
+
+  fire(btn, "click");
+  assert.equal(btn.disabled, true, "button locks while the start request is pending");
+  fire(btn, "click");
+  assert.equal(fake.postCalls.filter((c) => c.url === "/api/autotune").length, 1,
+    "a second click cannot start a second tune");
+
+  resolvePost({ ok: true });
+  await flushMicrotasks();
+  assert.equal(btn.disabled, false, "button unlocks after the request settles");
 }
 
 // ===========================================================================
@@ -2103,6 +2133,7 @@ async function run() {
 
   await withReset(testAutotuneButtonsMapToAxes);
   await withReset(testAutotuneArmedGating);
+  await withReset(testAutotuneBusyGatingPreventsDuplicateStarts);
 
   await withReset(testAutotuneGraphsReactAndBuffer);
   await withReset(testReducedMotionZeroDurationTransition);

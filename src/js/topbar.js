@@ -95,6 +95,39 @@ Corvus.topbar = (function () {
     return { text: "", cls: "", title: "" };
   }
 
+  /**
+   * The readiness block: what the operator actually needs from the bar, which
+   * is not "is the switch on" (the ARM button on the flight page already says
+   * that) but "can this thing fly right now".
+   *
+   *   ARMED      motors are live — nothing else matters, say that first
+   *   READY      the autopilot's own preflight check passes: arming would be
+   *              accepted right now
+   *   NOT READY  the autopilot refuses to arm; the reason is a PX4
+   *              "Preflight Fail" STATUSTEXT, so it is already in the
+   *              notification centre next door
+   *   DISARMED   firmware that does not publish MAV_SYS_STATUS_PREARM_CHECK,
+   *              or nothing received yet. We know the switch is off and
+   *              nothing more, so we claim nothing more — READY here would be
+   *              a clearance the vehicle never gave.
+   *   —          no link
+   */
+  function readiness(state) {
+    if (!state.connected) return { value: "—", cls: "off", title: "No link to a vehicle" };
+    if (state.armed) return { value: "ARMED", cls: "healthy", title: "Motors are armed" };
+    if (state.prearm_ok === true) {
+      return { value: "READY", cls: "healthy", title: "Preflight checks pass — the vehicle would accept an arm command" };
+    }
+    if (state.prearm_ok === false) {
+      return { value: "NOT READY", cls: "warning", title: "The autopilot is refusing to arm — see the warnings for the failing check" };
+    }
+    return {
+      value: "DISARMED",
+      cls: "off",
+      title: "Disarmed. This firmware does not report its preflight-check state, so readiness is unknown.",
+    };
+  }
+
   function modeLabel(state) {
     if (!state.connected) return "—";
     if (state.armed && !state.mode) return "ARMED";
@@ -184,8 +217,7 @@ Corvus.topbar = (function () {
 
   function blocks(state) {
     const conn = state.connected ? "healthy" : "off";
-    const armed = state.armed ? "ARMED" : "DISARMED";
-    const armedCls = state.armed ? "healthy" : "off";
+    const ready = readiness(state);
     const gpsCls = state.connected && state.gps_fix && state.gps_fix !== "NO_GPS" && state.gps_fix !== "NO_FIX"
       ? "healthy" : "off";
     const battPct = state.battery_percent || 0;
@@ -198,7 +230,7 @@ Corvus.topbar = (function () {
       { type: "logo" },
       { key: "vehicle", label: "Vehicle", value: vehicleLabel(state), dot: conn, sub: fw.text, subCls: fw.cls, title: fw.title, priority: "high" },
       { key: "mode", label: "Mode", value: modeLabel(state), cls: "accent", align: true, priority: "high" },
-      { key: "armed", label: "Armed", value: armed, cls: armedCls, dot: armedCls, priority: "high" },
+      { key: "armed", label: "Status", value: ready.value, cls: ready.cls, dot: ready.cls, title: ready.title, priority: "high" },
       { key: "gps", label: "GPS", value: state.connected ? (state.gps_fix || "NO GPS") : "—", sub: gpsSub, cls: gpsCls, dot: gpsCls, priority: "high" },
       { key: "battery", label: "Battery", value: state.connected ? `${state.battery_voltage.toFixed(1)} V` : "—", sub: state.connected ? `${battPct}%` : "", cls: battCls, dot: battCls, priority: "high" },
       { key: "altitude", label: "Altitude", value: state.connected ? `${Math.round(state.altitude_amsl)}` : "—", sub: "m AMSL", priority: "mid" },

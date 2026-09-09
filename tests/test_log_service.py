@@ -3,8 +3,10 @@
 The MAVLink LOG_* protocol has no ACK and no retry of its own, and exactly one
 log session per vehicle. Both facts drive the design, so both are pinned here:
 downloads run one at a time, a gap in LOG_DATA is re-requested rather than
-written as a hole, and the session is always ended — a vehicle left with an
-open log session cannot start logging the next flight.
+written as a hole, an unanswered request is asked again rather than reported as
+an empty SD card, and the session is opened before data is asked for and closed
+only when the queue is finished — PX4 serves LOG_REQUEST_DATA only inside one,
+and says nothing at all when it is closed.
 """
 from __future__ import annotations
 
@@ -39,6 +41,14 @@ class _FakeBridge:
         self.end_requests = 0
         self.drop_first_chunk = False
         self._dropped: set[tuple[int, int]] = set()
+        # How many LOG_REQUEST_LISTs to swallow before answering, and whether
+        # LOG_REQUEST_DATA is served outside an open session — the two PX4
+        # behaviours that decide whether a download runs at all.
+        self.drop_list_requests = 0
+        self.chunk_delay = 0.0               # slow the vehicle down on purpose
+        self.require_session = False
+        self.ignored_data_requests = 0
+        self._session = False
 
     def is_connected(self) -> bool:
         return self._connected
@@ -48,6 +58,10 @@ class _FakeBridge:
 
     def request_log_list(self, start: int = 0, end: int = 0xFFFF) -> bool:
         self.list_requests += 1
+        if self.drop_list_requests > 0:
+            self.drop_list_requests -= 1
+            return True                      # the request never reached the vehicle
+        self._session = True
         entries = sorted(self.logs.items())
         for index, (log_id, blob) in enumerate(entries):
             if self.sink is None:
@@ -62,6 +76,11 @@ class _FakeBridge:
 
     def request_log_data(self, log_id: int, offset: int, count: int) -> bool:
         self.data_requests.append((log_id, offset, count))
+        if self.require_session and not self._session:
+            # What PX4 does outside a log session: nothing at all, with no
+            # error to tell the GCS why the bytes never came.
+            self.ignored_data_requests += 1
+            return True
         blob = self.logs.get(log_id, b"")
         sent = 0
         while sent < count and self.sink is not None:
@@ -78,10 +97,13 @@ class _FakeBridge:
             self.sink(_FakeMsg(message_type="LOG_DATA", id=log_id,
                                ofs=chunk_off, count=len(chunk), data=payload))
             sent += len(chunk)
+            if self.chunk_delay:
+                time.sleep(self.chunk_delay)
         return True
 
     def log_request_end(self) -> bool:
         self.end_requests += 1
+        self._session = False
         return True
 
     def erase_logs(self) -> bool:
@@ -116,10 +138,65 @@ def _wait_idle(service: LogService, timeout: float = 10.0) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# The vehicle's log session
+# ---------------------------------------------------------------------------
+
+def test_download_reopens_the_session_a_stale_listing_left_closed(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The regression that made the ULog downloader do nothing.
+
+    PX4 answers LOG_REQUEST_DATA only inside a log session, and it leaves that
+    session on LOG_REQUEST_END, on a reboot, and on a link cycle — silently,
+    every time. A download that trusts the session the last listing left behind
+    therefore sits waiting for bytes the vehicle has already decided not to
+    send. So the download opens the session itself, first thing.
+    """
+    bridge = _FakeBridge({1: b"a" * 900})
+    bridge.require_session = True
+    service = _service(tmp_path, bridge)
+    service.refresh()
+    _wait_idle(service)
+    # Whatever closed it — an END from an earlier batch, a reboot between the
+    # listing and the operator pressing Download.
+    bridge.log_request_end()
+
+    assert service.start_download([1]) is True
+    status = _wait_idle(service)
+    assert status["state"] == "done", status["message"]
+    assert bridge.ignored_data_requests == 0, "no request was sent into a closed session"
+    saved = [f for f in os.listdir(tmp_path) if f.endswith(".ulg")]
+    assert len(saved) == 1
+    assert (tmp_path / saved[0]).read_bytes() == b"a" * 900
+    service.shutdown()
+
+
+def test_a_second_batch_downloads_after_the_first_ended_the_session(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Two downloads in a row, which the END after batch one used to break."""
+    bridge = _FakeBridge({1: b"a" * 400, 2: b"b" * 400})
+    bridge.require_session = True
+    service = _service(tmp_path, bridge)
+    service.refresh()
+    _wait_idle(service)
+
+    assert service.start_download([1]) is True
+    assert _wait_idle(service)["state"] == "done"
+    assert bridge.end_requests >= 1, "the batch closed the session behind it"
+
+    assert service.start_download([2]) is True
+    assert _wait_idle(service)["state"] == "done"
+    assert bridge.ignored_data_requests == 0
+    assert len([f for f in os.listdir(tmp_path) if f.endswith(".ulg")]) == 2
+    service.shutdown()
+
+
+# ---------------------------------------------------------------------------
 # Listing
 # ---------------------------------------------------------------------------
 
-def test_listing_collects_entries_and_ends_the_session(tmp_path: pathlib.Path) -> None:
+def test_listing_collects_entries_and_keeps_the_session_open(tmp_path: pathlib.Path) -> None:
     bridge = _FakeBridge({1: b"a" * 200, 2: b"b" * 100})
     service = _service(tmp_path, bridge)
     assert service.refresh() is True
@@ -127,10 +204,53 @@ def test_listing_collects_entries_and_ends_the_session(tmp_path: pathlib.Path) -
 
     assert [log["id"] for log in status["logs"]] == [2, 1], "newest first"
     assert status["logs"][1]["size"] == 200
-    # PX4 keeps the log session open until it hears LOG_REQUEST_END, which
-    # blocks logging of the next flight.
-    assert bridge.end_requests >= 1
+    # A listing must NOT send LOG_REQUEST_END. PX4 serves LOG_REQUEST_DATA only
+    # while a log session is open, and END closes it — on v1.15 and earlier the
+    # handler drops to Inactive and ignores every later data request outright.
+    # Ending the session as soon as the list arrived is what made the operator
+    # tick a log, press Download, and watch nothing happen: the vehicle was
+    # discarding the requests in silence. The session is closed when the
+    # downloads finish, and on shutdown.
+    assert bridge.end_requests == 0
     assert bridge.sink is None, "the sink is detached when the job ends"
+    service.shutdown()
+
+
+def test_a_lost_list_request_is_retried_not_reported_as_an_empty_card(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LOG_REQUEST_LIST is unacknowledged, so one dropped packet must not read
+    as "No logs on the vehicle" — that answer sends an operator home without
+    the flight they came back to fetch."""
+    monkeypatch.setattr("corvus.log_service.LIST_RETRY_S", 0.05)
+    bridge = _FakeBridge({1: b"a" * 200})
+    bridge.drop_list_requests = 2
+    service = _service(tmp_path, bridge)
+    service.refresh()
+    status = _wait_idle(service)
+    assert bridge.list_requests == 3, "asked again after the drops"
+    assert [log["id"] for log in status["logs"]] == [1]
+    service.shutdown()
+
+
+def test_a_silent_vehicle_is_asked_repeatedly_before_being_called_empty(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Silence means "empty SD card" and "the request never arrived" equally —
+    PX4 sends nothing in either case — so the fix is to ask again, several
+    times, and only then report the far likelier reading. Calling it a fault
+    would put an error on the page every time a genuinely empty card is
+    checked."""
+    monkeypatch.setattr("corvus.log_service.LIST_RETRY_S", 0.02)
+    bridge = _FakeBridge({1: b"a" * 200})
+    bridge.drop_list_requests = 99
+    service = _service(tmp_path, bridge)
+    service.refresh()
+    status = _wait_idle(service)
+    assert bridge.list_requests == 4, "asked the full run of attempts"
+    assert status["state"] == "idle"
+    assert status["message"] == "No logs on the vehicle"
+    assert status["logs"] == []
     service.shutdown()
 
 
@@ -242,6 +362,10 @@ def test_cancel_stops_the_queue_and_leaves_no_partial_file(
     tmp_path: pathlib.Path,
 ) -> None:
     bridge = _FakeBridge({1: b"x" * 400_000, 2: b"y" * 400_000})
+    # A real vehicle trickles a log out over a radio; the fake has to as
+    # well, or the queue finishes before there is anything left to cancel
+    # and the test only passes for as long as the download stays slow.
+    bridge.chunk_delay = 0.001
     service = _service(tmp_path, bridge)
     service.refresh()
     _wait_idle(service)

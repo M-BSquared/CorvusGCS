@@ -104,7 +104,9 @@ class _FakeMavlink:
     working link before it is found to be bad.
     """
 
-    _VALID = ("udp:", "udpin:", "udpbcast:", "tcp:", "serial:")
+    _VALID = (
+        "udp:", "udpin:", "udpout:", "udpbcast:", "tcp:", "tcpin:", "serial:",
+    )
 
     def __init__(self) -> None:
         self.connection = "udp:127.0.0.1:14540"

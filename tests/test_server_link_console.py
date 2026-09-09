@@ -206,7 +206,9 @@ def test_safe_filename_defaults_to_json_for_existing_callers() -> None:
 class _TrackingBridge:
     """Records the order of stop/set_connection/start."""
 
-    _VALID_PREFIXES = ("udp:", "udpin:", "udpbcast:", "tcp:", "serial:")
+    _VALID_PREFIXES = (
+        "udp:", "udpin:", "udpout:", "udpbcast:", "tcp:", "tcpin:", "serial:",
+    )
 
     def __init__(self) -> None:
         self.calls: list[str] = []
@@ -252,7 +254,7 @@ def test_a_bad_connection_string_does_not_touch_the_live_link(connect_handler) -
     validated, so a typo in the connection field killed a working radio link
     and handed back a 400. The operator lost the aircraft to a spelling
     mistake, with no way back except retyping the old string from memory."""
-    connect_handler._api_mavlink_connect({"connection": "udpout:127.0.0.1:14550"})
+    connect_handler._api_mavlink_connect({"connection": "rtsp://127.0.0.1:14550"})
     assert connect_handler._send_json.status == 400
     assert connect_handler.mavlink.calls == [], (
         "a rejected connection string must not stop, reconfigure or restart the bridge"
@@ -288,8 +290,11 @@ def test_validate_connection_accepts_what_set_connection_accepts() -> None:
     from corvus.mavlink_bridge import MavlinkBridge
     bridge = _TrackingBridge()
     for good in ("udp:0.0.0.0:14540", "udpin:0.0.0.0:14540", "tcp:127.0.0.1:5760",
+                 # The dial-out halves: a mavlink-router endpoint in Server
+                 # mode binds and waits, so the station must speak first.
+                 "udpout:127.0.0.1:14550", "tcpin:0.0.0.0:5760",
                  "serial:/dev/ttyUSB0:57600"):
         MavlinkBridge.validate_connection(bridge, good)   # must not raise
-    for bad in ("", "udpout:1", "serial:/dev/ttyUSB0:0"):
+    for bad in ("", "udpout", "rtsp://nope", "serial:/dev/ttyUSB0:0"):
         with pytest.raises(ValueError):
             MavlinkBridge.validate_connection(bridge, bad)

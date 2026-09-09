@@ -52,6 +52,8 @@ _CONFIG_FIELD_ORDER: tuple[str, ...] = (
     "branding",
     "controls",
     "ui",
+    "forwarding",
+    "updates",
 )
 
 # Required keys on a saved ssh_connections entry; missing keys default to a
@@ -69,7 +71,7 @@ class CorvusConfig:
     ``~/.corvus/firmware`` / ``~/.corvus/flightlogs``); a non-empty value pins the location. ``None`` dict fields mean "use built-in
     defaults"; a dict overrides the whole registry.
 
-    ``ssh_connections``/``theme``/``map``/``branding``/``controls``/``ui`` are persisted operator UI state:
+    ``ssh_connections``/``theme``/``map``/``branding``/``controls``/``ui``/``updates`` are persisted operator UI state:
     the SSH connection list, the selected color theme (``{"name": ...}``, one
     of the predefined themes in ``src/css/themes.css``; the legacy
     ``{"accent": "#RRGGBB"}`` from the old accent picker is still parsed), and
@@ -77,9 +79,14 @@ class CorvusConfig:
     see ``corvus/tile_sources.py``), and the optional operator-supplied
     company logo (``{"logo": "<original filename>"}``; the bytes live beside
     the config file, never in it), and the optional input controls
-    (``{"virtual_joystick": true}``, the on-screen stick over the map), and
-    the interface size (``{"scale": 1.25}``, the multiplier the frontend puts
-    on every length in the UI).
+    (``{"virtual_joystick": true}``, the on-screen stick over the map, plus
+    ``arrow_keys``/``wasd_keys`` for the two key clusters beside it), and
+    the interface size and desktop app icon (``{"scale": 1.25,
+    "inverted_app_icon": false}`` — the multiplier the frontend puts on every
+    length in the UI, and which cut of the mark the Dock / taskbar gets),
+    and the update check
+    (``{"check": true, "skipped": "2026.09.27"}`` — whether to look at the
+    GitHub releases at all, and the one release the operator dismissed).
     They default to empty/None so an old config file with none of these keys
     still loads cleanly.
     """
@@ -99,6 +106,8 @@ class CorvusConfig:
     branding: dict[str, Any] | None = None
     controls: dict[str, Any] | None = None
     ui: dict[str, Any] | None = None
+    forwarding: dict[str, Any] | None = None
+    updates: dict[str, Any] | None = None
 
     def apply_overrides(self, **kwargs: Any) -> "CorvusConfig":
         """Return a copy with non-None kwargs overriding matching fields.
@@ -239,13 +248,14 @@ def _coerce_branding(raw: Any) -> dict[str, Any] | None:
     return _coerce_str_keys(raw, ("logo",))
 
 
-# The on-screen manual-control surfaces, each its own switch: the stick pair
-# and the four arrow keys. Both feed the same MANUAL_CONTROL stream.
-_CONTROL_KEYS: tuple[str, ...] = ("virtual_joystick", "arrow_keys")
+# The on-screen manual-control surfaces, each its own switch: the stick pair,
+# the four arrow keys (pitch and roll) and the four WASD keys (thrust and
+# yaw). All three feed the same MANUAL_CONTROL stream.
+_CONTROL_KEYS: tuple[str, ...] = ("virtual_joystick", "arrow_keys", "wasd_keys")
 
 
 def _coerce_controls(raw: Any) -> dict[str, Any] | None:
-    """Keep the boolean ``virtual_joystick``/``arrow_keys`` controls keys; else None.
+    """Keep the boolean ``virtual_joystick``/``arrow_keys``/``wasd_keys`` keys; else None.
 
     These are real safety-relevant switches, so only genuine booleans count: a
     config carrying a string ``"true"`` reads as "not set", i.e. off, rather
@@ -267,24 +277,90 @@ _UI_SCALE_MIN = 0.5
 _UI_SCALE_MAX = 3.0
 
 
+_FORWARD_PORT_MIN = 1
+_FORWARD_PORT_MAX = 65535
+
+
+def _coerce_forwarding(raw: Any) -> dict[str, Any] | None:
+    """Second-station MAVLink forwarding (see ``corvus/mavlink_forwarder.py``).
+
+    ``enabled`` and ``allow_commands`` are genuine booleans only, for the same
+    reason the controls keys are: ``allow_commands`` decides whether another
+    ground station can arm this aircraft, and a config carrying the string
+    ``"true"`` must read as "not set", never as an accidental yes.
+
+    ``endpoints`` are kept as typed; the forwarder discards the ones it cannot
+    parse, so a typo costs that endpoint and not the feature.
+    """
+    if not isinstance(raw, dict):
+        return None
+    out: dict[str, Any] = {}
+    for key in ("enabled", "allow_commands"):
+        if isinstance(raw.get(key), bool):
+            out[key] = raw[key]
+    host = raw.get("host")
+    if isinstance(host, str) and host.strip():
+        out["host"] = host.strip()
+    port = raw.get("port")
+    if isinstance(port, int) and not isinstance(port, bool):
+        if _FORWARD_PORT_MIN <= port <= _FORWARD_PORT_MAX:
+            out["port"] = port
+    endpoints = raw.get("endpoints")
+    if isinstance(endpoints, list):
+        kept = [e.strip() for e in endpoints if isinstance(e, str) and e.strip()]
+        if kept:
+            out["endpoints"] = kept
+    return out or None
+
+
 def _coerce_ui(raw: Any) -> dict[str, Any] | None:
-    """Keep the numeric ``scale`` UI key, clamped to a usable range; else None.
+    """Keep the known UI keys (``scale``, ``inverted_app_icon``); else None.
 
     ``scale`` multiplies every length in the frontend (see ``--ui-scale`` in
     ``src/css/themes.css``). Clamped rather than rejected: a hand-edited 40
     would otherwise leave the operator with an interface too large to reach
     the settings page that set it. Booleans are excluded explicitly — ``True``
     is a valid ``float`` in Python and would silently mean 100%.
+
+    ``inverted_app_icon`` picks which cut of the mark the desktop wrapper
+    hands the Dock / taskbar (see ``corvus/app.py``). A genuine boolean only,
+    like the controls keys: a config carrying ``"false"`` must not read as on.
+    Each key is kept independently — a file that names only one of them is not
+    a reason to drop the other.
     """
     if not isinstance(raw, dict):
         return None
+    out: dict[str, Any] = {}
     value = raw.get("scale")
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if not isinstance(value, bool) and isinstance(value, (int, float)):
+        scale = float(value)
+        if scale == scale and scale not in (float("inf"), float("-inf")):  # not NaN / inf
+            out["scale"] = min(max(scale, _UI_SCALE_MIN), _UI_SCALE_MAX)
+    if isinstance(raw.get("inverted_app_icon"), bool):
+        out["inverted_app_icon"] = raw["inverted_app_icon"]
+    return out or None
+
+
+def _coerce_updates(raw: Any) -> dict[str, Any] | None:
+    """Keep the boolean ``check`` and the version string ``skipped``; else None.
+
+    ``check`` is a genuine boolean only, like the controls keys: a config
+    carrying ``"false"`` must not read as "on". ``skipped`` is the version the
+    operator dismissed, stored as the plain version string; anything that is
+    not a version is dropped rather than silencing an update forever.
+    """
+    if not isinstance(raw, dict):
         return None
-    scale = float(value)
-    if scale != scale or scale in (float("inf"), float("-inf")):   # NaN / inf
-        return None
-    return {"scale": min(max(scale, _UI_SCALE_MIN), _UI_SCALE_MAX)}
+    out: dict[str, Any] = {}
+    if isinstance(raw.get("check"), bool):
+        out["check"] = raw["check"]
+    skipped = raw.get("skipped")
+    # Imported here, not at module scope: config.py is pulled in by almost
+    # everything, and update_check drags urllib.request behind it.
+    from .update_check import parse_version
+    if isinstance(skipped, str) and parse_version(skipped) is not None:
+        out["skipped"] = skipped.strip().removeprefix("v")
+    return out or None
 
 
 def _build_config(data: dict[str, Any]) -> CorvusConfig:
@@ -339,7 +415,9 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
     map_cfg = _coerce_map(data.get("map"))
     branding = _coerce_branding(data.get("branding"))
     controls = _coerce_controls(data.get("controls"))
+    forwarding = _coerce_forwarding(data.get("forwarding"))
     ui = _coerce_ui(data.get("ui"))
+    updates = _coerce_updates(data.get("updates"))
 
     return CorvusConfig(
         mavlink_connection=mavlink_connection,
@@ -356,7 +434,9 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         map=map_cfg,
         branding=branding,
         controls=controls,
+        forwarding=forwarding,
         ui=ui,
+        updates=updates,
     )
 
 
@@ -387,7 +467,8 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
     """Serialize a CorvusConfig to a plain dict in stable key order.
 
     Omits ``None`` optional dict fields (``tile_sources``/``stream_rates``/
-    ``theme``/``map``/``branding``/``controls``/``ui``) so the on-disk file stays lean when nothing overrides
+    ``theme``/``map``/``branding``/``controls``/``ui``/``updates``) so the on-disk file stays
+    lean when nothing overrides
     them; an empty ``ssh_connections`` list is kept (it is real operator
     state, the absence of which still round-trips through ``[]``).
     """
@@ -413,8 +494,12 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
         out["branding"] = dict(cfg.branding)
     if cfg.controls is not None:
         out["controls"] = dict(cfg.controls)
+    if cfg.forwarding is not None:
+        out["forwarding"] = dict(cfg.forwarding)
     if cfg.ui is not None:
         out["ui"] = dict(cfg.ui)
+    if cfg.updates is not None:
+        out["updates"] = dict(cfg.updates)
     # Stable key order for a readable on-disk diff.
     return {k: out[k] for k in _CONFIG_FIELD_ORDER if k in out}
 

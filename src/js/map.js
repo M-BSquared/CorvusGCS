@@ -103,6 +103,22 @@ Corvus.map = (function () {
   let started = false;
   let firstFix = true;
 
+  // Follow mode: the map keeps the aircraft in view by itself.
+  //
+  // Not a hard lock on the centre — a camera welded to a 5-10 Hz telemetry
+  // feed shivers, and every small correction the aircraft makes drags the
+  // whole map with it. Instead the vehicle moves freely inside a dead-zone
+  // rectangle in the middle of the viewport, and only crossing that edge pans
+  // the map, which re-centres the aircraft and hands it a full box again.
+  //
+  // Dragging the map turns following OFF (the operator looking somewhere else
+  // must not be yanked back), and the crosshair button turns it back on.
+  let followMode = true;
+  // True while OUR pan is in flight, so the samples arriving during it do not
+  // each queue another one. Cleared on moveend.
+  let followEasing = false;
+  let controlsEl = null;
+
   // Waypoint planning ("Punktabflug") state — operator-clicked route points,
   // their parallel DOM markers, the dashed plan-line source, and the
   // subscription set the gui registers against to track the count / FLY state.
@@ -124,6 +140,22 @@ Corvus.map = (function () {
   // budget rather than a stopwatch.
   const TRACK_MIN_MOVE_M = 2.0;   // metres before a new point is recorded
   const TRACK_MAX_POINTS = 20000; // ~40 km of track at the spacing above
+
+  // Dead-zone rectangle, as a fraction of the map container. 40% leaves the
+  // aircraft a generous middle to manoeuvre in while keeping it well clear of
+  // the control rail and the flight HUD that overlay the map's edges.
+  const FOLLOW_BOX_FRACTION = 0.4;
+  // …but never smaller than this, or a tall narrow window would re-centre on
+  // every twitch.
+  const FOLLOW_BOX_MIN_PX = 140;
+  // …and never so close to the edge that the aircraft cannot leave the box at
+  // all, which would silently stop the map following.
+  const FOLLOW_BOX_MAX_FRACTION = 0.8;
+  const FOLLOW_EASE_MS = 700;
+  // Beyond this many viewports from the centre the pan is a smear, not a
+  // motion the eye can follow — cut instead. This is the reconnect case: the
+  // aircraft was flown somewhere else while the link was down.
+  const FOLLOW_JUMP_VIEWPORTS = 1;
 
   const POS_TAU = 0.22;     // seconds — ease-out time constant for lng/lat
   const HDG_TAU = 0.18;     // seconds — ease-out time constant for heading
@@ -599,10 +631,12 @@ Corvus.map = (function () {
 
   function buildControls(container, layersPopover) {
     layersPopoverEl = layersPopover;
+    controlsEl = container;
     const items = [
       { id: "in", icon: "plus", title: "Zoom in" },
       { id: "out", icon: "minus", title: "Zoom out" },
-      { id: "center", icon: "crosshair", title: "Center on vehicle" },
+      { id: "center", icon: "crosshair", title: "Center on vehicle (resume following)",
+        active: true },
       { id: "divider" },
       { id: "layers", icon: "layers", title: "Map layers" },
       { id: "regions", icon: "frame", title: "Show downloaded areas", active: true },
@@ -801,7 +835,87 @@ Corvus.map = (function () {
     }
     if (animate) map.easeTo({ center: target, duration: 600 });
     else map.setCenter(target);
+    // Centring is also how the operator says "follow this again" — the button
+    // that recovers the aircraft would otherwise hand back a view that stops
+    // tracking it the moment it moves.
+    setFollow(true);
     return true;
+  }
+
+  /**
+   * Half the dead zone along one axis, in CSS pixels.
+   *
+   * Clamped at both ends: a floor so a small window does not re-centre on
+   * every twitch, and a ceiling so the box can never fill the viewport (a box
+   * the aircraft cannot leave is a map that never follows).
+   */
+  function followHalfExtent(size) {
+    const box = Math.max(size * FOLLOW_BOX_FRACTION, FOLLOW_BOX_MIN_PX);
+    return Math.min(box, size * FOLLOW_BOX_MAX_FRACTION) / 2;
+  }
+
+  /**
+   * What the camera should do about a vehicle at (px, py) in a
+   * width x height viewport: "hold", "ease" or "jump".
+   *
+   * Pure geometry — no map, no state — so the dead-zone rule is testable on
+   * its own. An unprojectable point (behind the horizon in 3D mode, or a
+   * degenerate container) holds: moving the map on a coordinate we do not
+   * trust is worse than not moving it.
+   */
+  function followAction(px, py, width, height) {
+    if (![px, py, width, height].every((n) => isFinite(n))) return "hold";
+    if (width <= 0 || height <= 0) return "hold";
+    const dx = Math.abs(px - width / 2);
+    const dy = Math.abs(py - height / 2);
+    if (dx > width * FOLLOW_JUMP_VIEWPORTS || dy > height * FOLLOW_JUMP_VIEWPORTS) {
+      return "jump";
+    }
+    if (dx <= followHalfExtent(width) && dy <= followHalfExtent(height)) return "hold";
+    return "ease";
+  }
+
+  /** Turn following on/off and light the crosshair button to match. */
+  function setFollow(on) {
+    followMode = !!on;
+    if (!followMode) followEasing = false;
+    if (controlsEl) {
+      const btn = controlsEl.querySelector('[data-act="center"]');
+      if (btn) btn.classList.toggle("active", followMode);
+    }
+    return followMode;
+  }
+
+  /**
+   * Keep the aircraft in view. Called once per telemetry sample.
+   *
+   * Aimed at the TARGET (latest telemetry) rather than the eased marker
+   * position, so by the time the pan lands the marker has caught up to it and
+   * the two settle together instead of the camera chasing the marker.
+   */
+  function applyFollow() {
+    if (!map || !followMode || followEasing) return;
+    const target = vehTarget && realFix([vehTarget.lng, vehTarget.lat]);
+    if (!target) return;
+    const container = map.getContainer();
+    const width = container ? container.clientWidth : 0;
+    const height = container ? container.clientHeight : 0;
+    let point;
+    try {
+      point = map.project(target);
+    } catch (_error) {
+      return;   // a transform that is not ready yet is not an error worth logging
+    }
+    if (!point) return;
+    const action = followAction(point.x, point.y, width, height);
+    if (action === "hold") return;
+    // Reduced motion snaps, matching what the marker itself does.
+    if (action === "jump" || Corvus.anim.reducedMotion()) {
+      map.setCenter(target);
+      return;
+    }
+    followEasing = true;
+    map.easeTo({ center: target, duration: FOLLOW_EASE_MS });
   }
 
   /** Push the latest telemetry into the marker's TARGET and (re)start the loop. */
@@ -838,6 +952,9 @@ Corvus.map = (function () {
   function updateVehicle(state) {
     if (!vehicleMarker || !state.connected) return;
     setVehicleTarget(state);
+    // After setVehicleTarget so the camera aims at THIS sample, not the last.
+    // Skipped on the very first fix — the ease below places the map itself.
+    if (!firstFix) applyFollow();
 
     if (firstFix && state.position && state.position[0] !== 0 && state.position[1] !== 0) {
       // Only center on a REAL GPS fix: state.connected reflects the MAVLink
@@ -845,6 +962,7 @@ Corvus.map = (function () {
       // until a fix arrives, so centering on the first connected sample
       // would ease to "null island" at zoom 16 before the real fix lands.
       firstFix = false;
+      followEasing = true;   // cleared on moveend, like any other follow pan
       map.easeTo({ center: state.position, zoom: 16, duration: 1000 });
     }
 
@@ -1281,6 +1399,24 @@ Corvus.map = (function () {
     // the map pans, zooms, rotates or follows the vehicle.
     map.on("move", positionContextMenu);
 
+    // A move the OPERATOR started is them saying "look here instead", so it
+    // stops the aircraft dragging the view back. The crosshair button turns it
+    // on again.
+    //
+    // Keyed on movestart carrying an originalEvent rather than on "dragstart":
+    // our own easeTo/panBy and the rail's zoom buttons are programmatic and
+    // carry none, so they can never trip this, while a drag — mouse or touch —
+    // always does. The wheel is the one input deliberately let through, because
+    // zooming is something you do WHILE watching the aircraft.
+    map.on("movestart", (e) => {
+      const source = e && e.originalEvent;
+      if (!source || source.type === "wheel") return;
+      setFollow(false);
+    });
+    // Clears the in-flight guard whoever moved the map — a user drag that
+    // interrupts a follow pan must not leave it stuck on.
+    map.on("moveend", () => { followEasing = false; });
+
     map.on("load", () => {
       // Regions first: their layers must sit UNDER the track and plan route,
       // and MapLibre stacks in insertion order.
@@ -1347,6 +1483,11 @@ Corvus.map = (function () {
   return {
     init,
     centerOnVehicle,
+    // Follow mode: on by default, dropped by a map drag, restored by
+    // centerOnVehicle. Exposed so a future Settings switch (or a test) can
+    // drive it without reaching into the module.
+    setFollow,
+    isFollowing: () => followMode,
     getMap: () => map,
     isReady: () => started,
     setWaypointMode,
@@ -1378,6 +1519,9 @@ Corvus.map = (function () {
     // is exactly what a test asserting the offline fallback wants to see.
     // Read-only; mirrors the `_animators` hook convention on Corvus.anim.
     _sources: () => sources,
+    // test hook: the dead-zone rule as pure geometry — "hold" / "ease" /
+    // "jump" for a vehicle at (px, py) in a width x height viewport.
+    _followAction: followAction,
     _bootstrap: () => BOOTSTRAP,
     // test hooks: the pure track rules — distance decimation and the reboot
     // edge — assertable without a map.

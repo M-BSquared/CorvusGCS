@@ -111,6 +111,13 @@ class VehicleStateStore:
             # rebooted — the map clears the flown track on that transition,
             # since a link drop must not throw away a flight in progress.
             "boot_ms": 0,
+            # Flight readiness as the AUTOPILOT reports it: the
+            # MAV_SYS_STATUS_PREARM_CHECK health bit out of SYS_STATUS, i.e.
+            # "would an arm command be accepted right now". None means the
+            # firmware does not publish the bit (or nothing has arrived yet),
+            # and the UI must fall back to the plain armed state rather than
+            # invent a clearance the vehicle never gave.
+            "prearm_ok": None,
             "mission": [],
         }
         self._history: dict[str, collections.deque] = {
@@ -289,6 +296,9 @@ class VehicleStateStore:
             self._data["connected"] = False
             self._data["armed"] = False
             self._data["mode"] = "DISCONNECTED"
+            # Readiness belongs to the link that just died; keeping the last
+            # "READY" would leave a stale clearance on the bar.
+            self._data["prearm_ok"] = None
             # Keep link_connection/link_error so the UI can show the last
             # connection + last error after a disconnect; the mavlink agent
             # overrides link_status to "reconnecting" when about to retry.

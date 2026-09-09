@@ -126,7 +126,7 @@ svg { display: block; }
   background: var(--text-disabled);
 }
 /* Placeholder occupying the leading dot slot so undotted value rows (Mode)
-   align with dotted rows (Vehicle / Armed / GPS / Battery). 7px + the 5px
+   align with dotted rows (Vehicle / Status / GPS / Battery). 7px + the 5px
    .tb-value gap = the exact space a real .tb-dot consumes. */
 .tb-dot-placeholder { width: 7px; height: 7px; flex: 0 0 auto; }
 .tb-dot.healthy { background: var(--healthy); box-shadow: 0 0 7px var(--healthy); }
@@ -995,15 +995,21 @@ svg { display: block; }
   color: var(--text-3); text-transform: uppercase;
 }
 
-/* Arrow keys, laid out as a keyboard's own inverted T so the cluster reads as
-   "these keys" — the physical arrow keys drive the same four buttons and light
-   them up, which is what makes the mapping self-evident without a legend. */
+/* The key panel: the WASD cluster and the arrow cluster side by side, each on
+   its own switch. Both are laid out as their keys sit on a keyboard — an
+   inverted T — so a cluster reads as "these keys": the physical keys drive the
+   same buttons and light them up, which is what makes the mapping
+   self-evident without a legend. */
 .js-keys {
-  display: flex; flex-direction: column; align-items: center; gap: 7px;
-  /* Bottom-aligned with the sticks: both surfaces end on their caption. */
+  display: flex; align-items: flex-end; gap: 12px;
+  /* Bottom-aligned with the sticks: every surface ends on its caption. */
   align-self: stretch; justify-content: flex-end;
 }
 .js-keys[hidden] { display: none; }
+.js-keys-cluster {
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+}
+.js-keys-cluster[hidden] { display: none; }
 .js-keys-grid {
   display: grid;
   grid-template-columns: repeat(3, var(--js-key));
@@ -1021,11 +1027,19 @@ svg { display: block; }
   -webkit-tap-highlight-color: transparent;
   transition: background 120ms, color 120ms, border-color 120ms, transform 90ms;
 }
-.js-key-up    { grid-column: 2; grid-row: 1; }
-.js-key-left  { grid-column: 1; grid-row: 2; }
-.js-key-down  { grid-column: 2; grid-row: 2; }
-.js-key-right { grid-column: 3; grid-row: 2; }
+/* Both clusters share the inverted T, so the two key sets are named together
+   rather than the grid being written out twice. */
+.js-key-up,    .js-key-w { grid-column: 2; grid-row: 1; }
+.js-key-left,  .js-key-a { grid-column: 1; grid-row: 2; }
+.js-key-down,  .js-key-s { grid-column: 2; grid-row: 2; }
+.js-key-right, .js-key-d { grid-column: 3; grid-row: 2; }
 .js-key i, .js-key svg { width: 15px; height: 15px; }
+/* WASD carries its letters instead of an icon: the letter IS the mapping, and
+   the caption below the cluster is what says the axes they move. */
+.js-key-letter {
+  font-family: var(--mono);
+  font-size: 12px; font-weight: 600; line-height: 1;
+}
 .js-key:hover { color: var(--text-1); border-color: var(--border-strong); }
 .js-key:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
 /* Held — by finger or by the keyboard's own arrow key. */
@@ -1383,20 +1397,34 @@ svg { display: block; }
 /* .ssh-connect is now .btn + data-variant + data-shape="block"; the legacy
    colour/padding/border rules moved to the component system. */
 
+/* The terminal view is the whole tab: an 80-column program has nowhere to draw
+   inside a card in a scrolling list, so in terminal-mode the content column
+   stops scrolling and the card stretches to the panel. */
+.ssh-content.terminal-mode { overflow: hidden; padding: 10px; }
+.ssh-terminal-card { flex: 1; min-height: 0; }
+
 .ssh-term {
-  flex: 1; min-height: 220px; max-height: 100%;
+  flex: 1; min-height: 160px;
   background: var(--ssh-bg); border: 1px solid var(--border); border-radius: var(--radius-btn);
-  font-family: var(--mono); font-size: 12px; line-height: 1.55; color: var(--terminal-text);
-  padding: 10px 12px; overflow-y: auto; display: flex; flex-direction: column;
+  padding: 8px 4px 8px 10px; overflow: hidden;
 }
-.ssh-term .t-line { white-space: pre-wrap; word-break: break-all; }
-.ssh-term .t-prompt { color: var(--healthy); }
-.ssh-term .t-user { color: var(--healthy); }
-.ssh-term .t-path { color: var(--text-2); }
-.ssh-term .t-cmd { color: var(--text-1); }
-.ssh-term .t-out { color: var(--terminal-text); }
-.ssh-input-row { display: flex; align-items: center; gap: 5px; margin-top: 2px; }
-.ssh-input { flex: 1; background: transparent; border: none; color: var(--text-1); font-family: var(--mono); font-size: 12px; outline: none; }
+/* xterm sizes itself to this box, so it must have a real height to measure. */
+.ssh-term .xterm { height: 100%; }
+.ssh-term .xterm-viewport { background: transparent !important; }
+.ssh-term .xterm-viewport::-webkit-scrollbar { width: 8px; }
+.ssh-term .xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--border); border-radius: 4px;
+}
+
+/* Full screen: the same card, moved. Nothing is re-created, so the session and
+   its scrollback survive the move. */
+.ssh-fullscreen {
+  position: fixed; inset: 0; z-index: var(--z-modal); padding: 20px;
+  background: var(--scrim);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  display: flex; flex-direction: column;
+}
+.ssh-fullscreen .ssh-terminal-card { flex: 1; min-height: 0; }
 
 /* ----- FUTURE ----- */
 /* Base layout so the grid / opened view fills whether or not the empty
@@ -1565,6 +1593,21 @@ svg { display: block; }
   word-break: break-word;
 }
 .link-status-error[hidden] { display: none; }
+
+/* Sharing the link with a second station. The commanding toggle is coloured
+   apart from the mirroring one on purpose: they read as a pair of checkboxes
+   but only one of them lets another ground station arm the aircraft. */
+.link-toggle {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--text-1); cursor: pointer;
+}
+.link-toggle input { width: 14px; height: 14px; flex: 0 0 auto; accent-color: var(--accent); }
+.link-toggle-warn input { accent-color: var(--warning); }
+.link-hint {
+  font-size: 11px; color: var(--text-3); line-height: 1.4; word-break: break-word;
+}
+.link-hint-warn { color: var(--warning); }
+.link-hint[hidden] { display: none; }
 
 /* ===== SETUP PAGE (tile grid + sub-pages) ===== */
 .setup-page { display: flex; flex-direction: column; gap: 4px; }
@@ -1787,7 +1830,7 @@ svg { display: block; }
 .calib-actions { margin-top: 12px; }
 
 /* ----- CALIBRATION: the autotune tile buttons -----
-   .calib-btn is what the POD Tuning axis buttons are built from, and it is the
+   .calib-btn is what the PID Tuning axis buttons are built from, and it is the
    class Corvus.setupShared.runConfigAction writes its busy/ok/err status into.
    The sensor calibrations no longer use it — they are .calib-card rows now. */
 /* .calib-btn is .btn secondary; keep the column layout (icon over label over
@@ -1857,7 +1900,7 @@ svg { display: block; }
   .calib-stage-figure { max-width: 280px; margin: 0 auto; }
 }
 
-/* ----- POD TUNING ----- */
+/* ----- PID TUNING ----- */
 .pod-section { margin-top: 8px; }
 .pod-note {
   font-size: 11px; color: var(--text-3); line-height: 1.5;
@@ -2067,6 +2110,7 @@ svg { display: block; }
   .joystick-pad { --js-size: 84px; --js-knob: 32px; --js-key: 28px; padding: 4px 8px 8px; }
   .js-surfaces { gap: 10px; }
   .js-sticks { gap: 10px; }
+  .js-keys { gap: 8px; }
 }
 
 /* ===== Parameter Export/Import actions (setup-parameters) ===== */

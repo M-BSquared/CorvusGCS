@@ -79,6 +79,10 @@
   --z-left-nav: 20;
   --z-top-bar: 30;
   --z-modal: 100;
+  /* A dropdown's list is mounted on <body>, so it needs a level of its
+     own: above every panel and above a dialog, because the control it
+     belongs to may be inside one. */
+  --z-dropdown: 150;
   --z-toast: 200;
 }
 

@@ -14,7 +14,7 @@ window.Corvus = window.Corvus || {};
 
   Grouping:
     primitives  icon, iconButton, button, statusDot, badge
-    forms       label, field, select, input, toggle
+    forms       label, field, select, setOptions, enhanceSelect, input, toggle
     layout      card, section, sectionTitle, pageHeader, row, empty, actions
     pickers     optionCards, optionList, navItem
     feedback    progress, message, setBusy, setActive
@@ -260,6 +260,317 @@ Corvus.ui = (function () {
     } else if (values.length) {
       el.value = values[0];
     }
+  }
+
+
+  /* The one piece of module state in this file, and it earns it: a dropdown's
+     list is mounted on <body> and listens on the document, so knowing which
+     one is open is not something any single instance can answer. */
+  let openDropdown = null;
+
+  /* ===== enhanceSelect — the app's own dropdown, over a native <select> =====
+     A <select>'s open popup is the one control the design system cannot
+     reach: the option list is drawn by the operating system, so it keeps the
+     platform's white sheet, radius and font whatever theme is on — the flight
+     bar's mode picker was a chrome-grey list dropped on a glass bar.
+
+     This replaces the popup, and only the popup. The <select> stays in the DOM
+     and stays the state (value, options, disabled, the "change" event), so
+     every caller keeps talking to a plain select: nothing downstream changes,
+     and a browser without the enhancement still gets a working control.
+
+     The list is mounted on <body> and positioned fixed. Inside the flight bar
+     it would be clipped by the bar and stacked under the map chrome; on
+     <body> it can also flip above the trigger when the viewport runs out
+     below, which a 15-mode PX4 list needs on a laptop screen. */
+  function enhanceSelect(sel) {
+    if (!sel) return null;
+    if (sel.corvusSelect) return sel.corvusSelect;
+    const parent = sel.parentNode;
+    if (!parent) return null;
+
+    /* The trigger inherits the select's own classes (.field-select,
+       .mode-selector, …) so every width, font and colour rule already written
+       for the control applies to it unchanged. Read them before the native
+       element is marked hidden. */
+    const inherited = sel.className;
+
+    const wrap = document.createElement("div");
+    wrap.className = "ui-select";
+    parent.insertBefore(wrap, sel);
+    wrap.appendChild(sel);
+    sel.classList.add("ui-select-native");
+    sel.setAttribute("aria-hidden", "true");
+    sel.tabIndex = -1;
+
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = (inherited ? inherited + " " : "") + "ui-select-trigger";
+    trigger.setAttribute("role", "combobox");
+    trigger.setAttribute("aria-haspopup", "listbox");
+    trigger.setAttribute("aria-expanded", "false");
+    const name = sel.getAttribute("aria-label") || sel.title || "";
+    if (name) {
+      trigger.setAttribute("aria-label", name);
+      trigger.title = name;
+    }
+    const labelEl = document.createElement("span");
+    labelEl.className = "ui-select-label";
+    trigger.appendChild(labelEl);
+    wrap.appendChild(trigger);
+
+    /* The list IS .option-list / .option-item — the same rows as the map's
+       layer switcher — so the dropdown reads as a member of the family
+       instead of a second, nearly-identical menu style. */
+    const menu = document.createElement("div");
+    menu.className = "ui-select-menu option-list glass";
+    menu.setAttribute("role", "listbox");
+    if (name) menu.setAttribute("aria-label", name);
+
+    let items = [];
+    let opened = false;
+    let cursor = -1;
+    let typed = "";
+    let typedAt = 0;
+
+    function options() {
+      const list = sel.options || sel.querySelectorAll("option");
+      return Array.prototype.slice.call(list || []);
+    }
+    function textOf(opt) {
+      const t = opt.textContent;
+      return String(t == null || t === "" ? opt.value : t);
+    }
+    /* Walk parents rather than call contains(): the same check works for a
+       node that is no longer in the document. */
+    function within(node, root) {
+      let n = node;
+      while (n) {
+        if (n === root) return true;
+        n = n.parentNode;
+      }
+      return false;
+    }
+
+    function syncTrigger() {
+      const chosen = options().filter((o) => String(o.value) === String(sel.value))[0];
+      labelEl.textContent = chosen ? textOf(chosen) : "";
+      /* An empty value is the placeholder row ("SELECT MODE"), which is a
+         prompt and not a choice, so it is dimmed like one. */
+      trigger.dataset.placeholder = !chosen || String(chosen.value) === "" ? "true" : "false";
+      trigger.disabled = !!sel.disabled;
+      if (sel.disabled) closeMenu(false);
+    }
+
+    function buildItems() {
+      clear(menu);
+      cursor = -1;
+      items = options().map((o, i) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "option-item";
+        b.setAttribute("role", "option");
+        b.dataset.value = String(o.value);
+        const on = String(o.value) === String(sel.value);
+        if (on) {
+          b.classList.add("active");
+          cursor = i;
+        }
+        b.setAttribute("aria-selected", on ? "true" : "false");
+        if (o.disabled) b.disabled = true;
+        const dot = document.createElement("span");
+        dot.className = "option-item-dot";
+        b.appendChild(dot);
+        const text = document.createElement("span");
+        text.className = "option-item-label";
+        text.textContent = textOf(o);
+        b.appendChild(text);
+        b.addEventListener("click", () => choose(o.value));
+        menu.appendChild(b);
+        return b;
+      });
+      return items;
+    }
+
+    function choose(value) {
+      const changed = String(sel.value) !== String(value);
+      closeMenu(true);
+      sel.value = String(value);
+      syncTrigger();
+      /* Native selects fire "change" only when the value actually moved;
+         keeping that contract is what lets a caller swap a <select> for this
+         without re-reading its own handler. */
+      if (changed && typeof sel.dispatchEvent === "function") {
+        sel.dispatchEvent(makeChangeEvent());
+      }
+    }
+
+    function makeChangeEvent() {
+      if (typeof Event === "function") return new Event("change", { bubbles: true });
+      return { type: "change", bubbles: true };
+    }
+
+    /* Fixed position, measured from the trigger: below it by default, flipped
+       above when the list would not fit, and capped to the space it has so a
+       long list scrolls instead of running off the screen. */
+    function place() {
+      if (!opened || typeof trigger.getBoundingClientRect !== "function") return;
+      const r = trigger.getBoundingClientRect();
+      const vh = window.innerHeight || 800;
+      const vw = window.innerWidth || 1200;
+      const GAP = 6;
+      const EDGE = 8;
+      const below = vh - r.bottom - GAP - EDGE;
+      const above = r.top - GAP - EDGE;
+      const wanted = menu.scrollHeight || menu.offsetHeight || 0;
+      const up = below < Math.min(wanted, 180) && above > below;
+      menu.style.minWidth = Math.round(r.width) + "px";
+      menu.style.maxHeight = Math.max(120, Math.round(up ? above : below)) + "px";
+      const h = menu.offsetHeight || wanted;
+      const w = menu.offsetWidth || r.width;
+      menu.style.top = Math.round(up ? Math.max(EDGE, r.top - GAP - h) : r.bottom + GAP) + "px";
+      menu.style.left = Math.round(Math.max(EDGE, Math.min(r.left, vw - w - EDGE))) + "px";
+    }
+
+    function openMenu() {
+      if (opened || sel.disabled) return;
+      /* One list at a time, like a native select: a second dropdown opened
+         from the keyboard would otherwise sit under the first and swallow its
+         keys, since both listen on the document. */
+      if (openDropdown && openDropdown !== handle) openDropdown.close();
+      buildItems();
+      if (!items.length) return;
+      document.body.appendChild(menu);
+      opened = true;
+      openDropdown = handle;
+      trigger.setAttribute("aria-expanded", "true");
+      place();
+      document.addEventListener("pointerdown", onOutside, true);
+      document.addEventListener("keydown", onKey, true);
+      document.addEventListener("scroll", onScroll, true);
+      window.addEventListener("resize", place);
+      focusItem(cursor >= 0 ? cursor : nextEnabled(-1, 1));
+    }
+
+    function closeMenu(refocus) {
+      if (!opened) return;
+      opened = false;
+      typed = "";
+      trigger.setAttribute("aria-expanded", "false");
+      document.removeEventListener("pointerdown", onOutside, true);
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", place);
+      if (openDropdown === handle) openDropdown = null;
+      if (menu.parentNode) menu.parentNode.removeChild(menu);
+      if (refocus && typeof trigger.focus === "function") trigger.focus();
+    }
+
+    function nextEnabled(from, step) {
+      if (!items.length) return -1;
+      for (let n = 1; n <= items.length; n++) {
+        const i = (from + step * n + items.length * items.length) % items.length;
+        if (!items[i].disabled) return i;
+      }
+      return -1;
+    }
+
+    function focusItem(i) {
+      if (i < 0 || i >= items.length) return;
+      cursor = i;
+      const b = items[i];
+      if (typeof b.focus === "function") b.focus();
+      if (typeof b.scrollIntoView === "function") b.scrollIntoView({ block: "nearest" });
+    }
+
+    /* The list is positioned once, from the trigger's box. Scrolling the pane
+       the control sits in would leave it hanging in the wrong place, so it
+       closes instead — scrolling the list itself excepted. */
+    function onScroll(e) {
+      if (e && within(e.target, menu)) return;
+      closeMenu(false);
+    }
+
+    function onOutside(e) {
+      const t = e && e.target;
+      if (within(t, menu) || within(t, wrap)) return;
+      closeMenu(false);
+    }
+
+    /* Captured on the document: the map and the modals listen for Escape and
+       arrow keys too, and a key aimed at an open dropdown must not reach
+       them. Registered only while the list is open. */
+    function onKey(e) {
+      const key = e.key;
+      if (key === "Escape") {
+        stop(e);
+        closeMenu(true);
+        return;
+      }
+      if (key === "Tab") {
+        closeMenu(false);
+        return;
+      }
+      if (key === "ArrowDown") { stop(e); focusItem(nextEnabled(cursor, 1)); return; }
+      if (key === "ArrowUp") { stop(e); focusItem(nextEnabled(cursor, -1)); return; }
+      if (key === "Home") { stop(e); focusItem(nextEnabled(-1, 1)); return; }
+      if (key === "End") { stop(e); focusItem(nextEnabled(items.length, -1)); return; }
+      /* Type-ahead: PX4's mode list is long and its names are distinct, so a
+         letter should jump the way it does in a native select. */
+      if (key && key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const now = Date.now();
+        typed = (now - typedAt < 800 ? typed : "") + key.toLowerCase();
+        typedAt = now;
+        const hit = items.findIndex((b, i) => !b.disabled && i !== cursor &&
+          (b.textContent || "").toLowerCase().indexOf(typed) === 0);
+        const wrapHit = hit >= 0 ? hit : items.findIndex((b) => !b.disabled &&
+          (b.textContent || "").toLowerCase().indexOf(typed) === 0);
+        if (wrapHit >= 0) { stop(e); focusItem(wrapHit); }
+      }
+    }
+
+    function stop(e) {
+      if (typeof e.preventDefault === "function") e.preventDefault();
+      if (typeof e.stopPropagation === "function") e.stopPropagation();
+    }
+
+    trigger.addEventListener("click", () => {
+      if (opened) closeMenu(true); else openMenu();
+    });
+    trigger.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        stop(e);
+        openMenu();
+      }
+    });
+    /* Anything that changes the select — a repopulated mode list, a restored
+       selection, the disabled flag app.js sets while PX4 acknowledges — has
+       to reach the trigger, and none of it is an event we could listen for. */
+    sel.addEventListener("change", syncTrigger);
+    if (typeof MutationObserver === "function") {
+      const mo = new MutationObserver(() => {
+        syncTrigger();
+        if (!opened) return;
+        /* Rebuilding drops the row the keyboard was on, so put it back on the
+           current selection rather than letting focus fall to the body. */
+        buildItems();
+        place();
+        focusItem(cursor >= 0 ? cursor : nextEnabled(-1, 1));
+      });
+      mo.observe(sel, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled"] });
+    }
+
+    syncTrigger();
+
+    const handle = {
+      el: wrap, trigger, menu, select: sel,
+      open: openMenu,
+      close: () => closeMenu(false),
+      refresh: syncTrigger,
+      isOpen: () => opened,
+    };
+    sel.corvusSelect = handle;
+    return handle;
   }
 
   /* Text/number input on the shared field styling. `mono` switches to the
@@ -1057,6 +1368,7 @@ Corvus.ui = (function () {
     field,
     select,
     setOptions,
+    enhanceSelect,
     input,
     slider,
     toggle,

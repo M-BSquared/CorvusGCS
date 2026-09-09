@@ -40,8 +40,13 @@ logger = logging.getLogger("corvus.logs")
 LOG_CHUNK_BYTES = 90
 REQUEST_SPAN_BYTES = 90 * 80          # ~7 kB in flight per request
 LIST_TIMEOUT_S = 6.0                  # no LOG_ENTRY for this long = list done
-DATA_STALL_TIMEOUT_S = 4.0            # no LOG_DATA for this long = re-request
+LIST_RETRY_S = 1.5                    # still nothing: ask again
+LIST_ATTEMPTS = 4                     # LOG_REQUEST_LIST has no ACK to wait on
+DATA_STALL_TIMEOUT_S = 4.0            # no LOG_DATA at all = re-request
+DATA_QUIET_S = 0.7                    # stream went quiet mid-span = re-request
 DOWNLOAD_GIVE_UP_S = 60.0             # no progress at all for this long = fail
+STALL_REPRIME_AFTER = 2               # dead spans before re-opening the session
+PRIME_TIMEOUT_S = 3.0                 # wait for the session-opening LOG_ENTRY
 MAX_LOG_BYTES = 2 * 1024 * 1024 * 1024
 # States in which the service owns the vehicle's single log session and must
 # refuse a second job.
@@ -221,58 +226,135 @@ class LogService:
 
     def _run_list(self) -> None:
         seen: dict[int, dict[str, Any]] = {}
-        last_seen = time.monotonic()
+        # Every id the vehicle named, empty slots included. The completion test
+        # has to count those too: PX4's num_logs covers the whole log directory,
+        # so measuring it against the non-empty entries alone never adds up and
+        # every listing sat out the full timeout instead of finishing.
+        heard: set[int] = set()
+        expected = 0
+        last_seen = 0.0               # 0.0 = the vehicle has not said anything
+        # Wakes the retry wait the instant the vehicle answers, so a listing
+        # costs one round trip rather than a full retry interval.
+        answered = threading.Event()
 
         def sink(msg: Any) -> None:
-            nonlocal last_seen
+            nonlocal last_seen, expected
             if msg.get_type() != "LOG_ENTRY":
                 return
             last_seen = time.monotonic()
+            answered.set()
             try:
+                log_id = int(msg.id)
                 size = int(msg.size)
             except (TypeError, ValueError):
                 return
+            heard.add(log_id)
+            expected = int(getattr(msg, "num_logs", 0) or 0) or expected
             # PX4 reports every slot including empty ones; an empty log is not
             # something the operator can do anything with.
             if size <= 0:
                 return
-            seen[int(msg.id)] = {
-                "id": int(msg.id),
+            seen[log_id] = {
+                "id": log_id,
                 "size": size,
                 "utc": int(getattr(msg, "time_utc", 0) or 0),
-                "num_logs": int(getattr(msg, "num_logs", 0) or 0),
+                "num_logs": expected,
             }
 
+        attempts = 0
         try:
             self.mavlink.set_log_sink(sink)
-            if not self.mavlink.request_log_list():
-                self._set("failed", 0, "could not ask the vehicle for its logs")
-                return
             while not self._cancel.is_set():
+                if last_seen == 0.0:
+                    # LOG_REQUEST_LIST is unacknowledged, so a single dropped
+                    # request is indistinguishable from an empty SD card. Ask
+                    # again rather than report "no logs" on one lost packet —
+                    # that answer sends an operator home without the flight.
+                    if attempts >= LIST_ATTEMPTS:
+                        break
+                    if not self.mavlink.request_log_list():
+                        self._set("failed", 0, "could not ask the vehicle for its logs")
+                        return
+                    attempts += 1
+                    deadline = time.monotonic() + LIST_RETRY_S
+                    while time.monotonic() < deadline and not self._cancel.is_set():
+                        if answered.wait(0.05):
+                            break
+                    continue
+                if expected and len(heard) >= expected:
+                    break
                 if time.monotonic() - last_seen > LIST_TIMEOUT_S:
                     break
-                if seen:
-                    expected = next(iter(seen.values())).get("num_logs", 0)
-                    if expected and len(seen) >= expected:
-                        break
-                time.sleep(0.1)
+                self._cancel.wait(0.1)
         except Exception:  # noqa: BLE001 - the worker must never propagate
             logger.exception("log listing crashed")
             self._set("failed", 0, "log listing failed unexpectedly")
             return
         finally:
             self.mavlink.set_log_sink(None)
-            self.mavlink.log_request_end()
+            # Deliberately no log_request_end() here. LOG_REQUEST_END closes the
+            # vehicle's log session, and PX4 answers LOG_REQUEST_DATA only while
+            # one is open (v1.15 drops to Inactive and ignores the request
+            # outright). Ending the session the moment the list arrived is what
+            # made every subsequent download return silence. The session is
+            # closed when the downloads finish, or on shutdown.
 
         with self._lock:
             self._entries = seen
             self._listed_at = time.time()
         if self._cancel.is_set():
             self._set("cancelled", 0, "Listing cancelled")
-        elif not seen:
+            return
+        if last_seen == 0.0:
+            # Silence is genuinely ambiguous: PX4 sends nothing at all for an
+            # empty SD card, and nothing at all for a request that never
+            # arrived. The two are indistinguishable on the wire, which is why
+            # the answer is the retry above rather than a cleverer message —
+            # after several unanswered requests, empty is the honest reading,
+            # and calling it a failure would put a fault on the page every time
+            # an operator checks a vehicle whose card really is empty. The
+            # count goes to the log so a field diagnosis still has it.
+            logger.info("no LOG_ENTRY after %d requests; reporting an empty vehicle",
+                        attempts)
+        if not seen:
             self._set("idle", 0, "No logs on the vehicle")
         else:
             self._set("idle", 0, f"{len(seen)} log(s) on the vehicle")
+
+    def _prime_session(self) -> bool:
+        """Re-open the vehicle's log session, and confirm it with a LOG_ENTRY.
+
+        PX4 serves LOG_REQUEST_DATA only after a LOG_REQUEST_LIST has put its
+        log handler into a listed state, and it falls out of that state on
+        LOG_REQUEST_END, on a reboot, and on a link cycle. It says nothing when
+        it does — a data request against a closed session is dropped in silence.
+        So a download re-opens the session itself instead of trusting the one
+        the last listing left behind, which is the difference between a
+        download that runs and one that waits for bytes that will never come.
+        """
+        heard = threading.Event()
+
+        def sink(msg: Any) -> None:
+            if msg.get_type() == "LOG_ENTRY":
+                heard.set()
+
+        self.mavlink.set_log_sink(sink)
+        try:
+            for _ in range(LIST_ATTEMPTS):
+                if self._cancel.is_set():
+                    return False
+                if not self.mavlink.request_log_list():
+                    return False
+                deadline = time.monotonic() + PRIME_TIMEOUT_S
+                while time.monotonic() < deadline:
+                    if heard.is_set():
+                        return True
+                    if self._cancel.is_set():
+                        return False
+                    heard.wait(0.1)
+            return heard.is_set()
+        finally:
+            self.mavlink.set_log_sink(None)
 
     # ------------------------------------------------------------------
     # Download
@@ -316,6 +398,13 @@ class LogService:
     def _run_download(self) -> None:
         directory = self._resolve_dir()
         try:
+            # Open the session before asking for a single byte. The listing
+            # that filled the picker may be minutes old, and the vehicle keeps
+            # no session across a reboot or a link cycle.
+            if not self._prime_session():
+                if not self._cancel.is_set():
+                    self._set("failed", 0, "the vehicle would not open a log session")
+                return
             while not self._cancel.is_set():
                 with self._lock:
                     if not self._queue:
@@ -368,8 +457,11 @@ class LogService:
         path = os.path.join(directory, name)
 
         self._buffer = bytearray(size)
-        received = bytearray(size)          # 1 per byte received, for gap detection
-        got_any = threading.Event()
+        received = bytearray(size)          # 0 = still missing, 1 = held
+        # Written by the receive thread, read by this one. A bare assignment is
+        # atomic enough under the GIL, and a lock here would sit in the path of
+        # every 90-byte packet on the link.
+        flow = {"at": 0.0}
 
         def sink(msg: Any) -> None:
             if msg.get_type() != "LOG_DATA" or int(msg.id) != log_id:
@@ -380,22 +472,25 @@ class LogService:
             if offset >= size or end <= offset:
                 return
             self._buffer[offset:end] = data[:end - offset]
-            for i in range(offset, end):
-                received[i] = 1
-            got_any.set()
+            # Slice-assign the ledger too. Marking it a byte at a time ran a
+            # 90-iteration Python loop on the receive thread for every packet,
+            # which on a log of any real size starved the whole link.
+            received[offset:end] = b"\x01" * (end - offset)
+            flow["at"] = time.monotonic()
             self._got_data.set()
 
         try:
             self.mavlink.set_log_sink(sink)
-            started = time.monotonic()
-            last_progress = started
-            done_bytes = 0
+            last_progress = time.monotonic()
+            stalls = 0
+            reprimes_left = 1
             offset = 0
             while offset < size:
                 if self._cancel.is_set():
                     return False, "cancelled"
                 self._got_data.clear()
                 span = min(REQUEST_SPAN_BYTES, size - offset)
+                before = flow["at"]
                 if not self.mavlink.request_log_data(log_id, offset, span):
                     return False, "link lost"
                 # Wait for the requested span to arrive, then advance past every
@@ -404,22 +499,46 @@ class LogService:
                 while time.monotonic() < deadline:
                     if self._cancel.is_set():
                         return False, "cancelled"
-                    if all(received[i] for i in range(offset, offset + span)):
+                    if received.find(b"\x00", offset, offset + span) < 0:
                         break
-                    self._got_data.wait(0.2)
+                    self._got_data.wait(0.1)
                     self._got_data.clear()
-                nxt = offset
-                while nxt < size and received[nxt]:
-                    nxt += 1
+                    # The vehicle streams a span in one burst, so once packets
+                    # stop arriving the missing ones are lost, not late. Sitting
+                    # out the full stall timeout for each dropped packet is what
+                    # made a lossy link take minutes per megabyte.
+                    quiet = flow["at"]
+                    if quiet > before and time.monotonic() - quiet > DATA_QUIET_S:
+                        break
+                nxt = received.find(b"\x00", offset)
+                if nxt < 0:
+                    nxt = size
                 if nxt > offset:
                     offset = nxt
-                    done_bytes = offset
+                    stalls = 0
                     last_progress = time.monotonic()
                     total = size or 1
-                    self._set("downloading", int(done_bytes * 100 / total),
-                              f"{name} — {done_bytes // 1024}/{size // 1024} KB"
+                    self._set("downloading", int(offset * 100 / total),
+                              f"{name} — {offset // 1024}/{size // 1024} KB"
                               + (f" (+{remaining} queued)" if remaining else ""))
-                elif time.monotonic() - last_progress > DOWNLOAD_GIVE_UP_S:
+                    continue
+                stalls += 1
+                # Not one byte came back. Either the request was lost, or the
+                # vehicle dropped the log session under us — a reboot, a link
+                # cycle, another station ending it. The second failure is
+                # silent and permanent, so re-open the session once before
+                # spending a minute waiting for data that cannot arrive.
+                if stalls >= STALL_REPRIME_AFTER and reprimes_left:
+                    reprimes_left -= 1
+                    self.mavlink.set_log_sink(None)
+                    reopened = self._prime_session()
+                    self.mavlink.set_log_sink(sink)
+                    if not reopened:
+                        return False, "the vehicle closed its log session"
+                    stalls = 0
+                    last_progress = time.monotonic()
+                    continue
+                if time.monotonic() - last_progress > DOWNLOAD_GIVE_UP_S:
                     return False, "the vehicle stopped sending log data"
             payload = bytes(self._buffer)
         except Exception as exc:  # noqa: BLE001

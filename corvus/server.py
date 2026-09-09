@@ -32,6 +32,10 @@ from .config import (
     save_config,
     to_public_dict,
 )
+from .mavlink_forwarder import (
+    DEFAULT_HOST as _FORWARD_DEFAULT_HOST,
+    DEFAULT_PORT as _FORWARD_DEFAULT_PORT,
+)
 from .mavlink_bridge import (
     TAKEOFF_ALTITUDE_MAX_M,
     TAKEOFF_ALTITUDE_MIN_M,
@@ -93,7 +97,7 @@ _TILE_PATH_RE = re.compile(r"^/api/tiles/([^/]+)/(\d+)/(\d+)/(\d+)\.png$")
 CALIB_SENSORS = frozenset({
     "gyro", "compass", "baro", "accel", "level", "accel_quick", "airspeed", "motor",
 })
-AUTOTUNE_AXES = frozenset({"roll", "pitch", "yaw", "all"})
+AUTOTUNE_AXES = frozenset({"all"})
 # PX4 NuttShell (NSH) builtins with no MAVLink-command equivalent (e.g.
 # `listener <topic>` subscribes to a uORB topic and prints it). Routed to the
 # serial-control debug shell, not a MAV_CMD. `help` stays the local help and
@@ -135,10 +139,11 @@ class _BoundedSseBuffer:
         key = (entry.get("name"), entry.get("text"), entry.get("level"))
         urgent = entry.get("level") in {"error", "critical", "warning"}
         with self._condition:
-            self._items = collections.deque(
-                item for item in self._items
-                if (item.get("name"), item.get("text"), item.get("level")) != key
-            )
+            if entry.get("name") != "SHELL":
+                self._items = collections.deque(
+                    item for item in self._items
+                    if (item.get("name"), item.get("text"), item.get("level")) != key
+                )
             if len(self._items) >= self._capacity:
                 drop_index = next(
                     (
@@ -400,6 +405,57 @@ def _params_export_dir(cfg: Any) -> str:
     return os.path.expanduser("~/.corvus/params")
 
 
+def _build_log_service(mavlink: Any, config: Any) -> Any:
+    """Build the flight-log service, or None if it cannot be constructed.
+
+    Shared by ``create_server`` (browser mode) and ``corvus.app.start_backend``
+    (desktop mode). It lives here for the same reason ``_build_tile_resources``
+    does, and it is not a hypothetical concern: the desktop app never built one
+    at all, so every packaged build shipped an Analysis page whose ULog half
+    reported "log service unavailable" and listed nothing — the feature was
+    only ever reachable in browser mode.
+    """
+    try:
+        from .log_service import LogService
+        return LogService(
+            mavlink,
+            log_dir=lambda: _log_download_dir(config),
+            tlog_dir=lambda: _tlog_dir(config),
+        )
+    except Exception:  # noqa: BLE001 - never block server creation
+        logger.exception("log service unavailable; log endpoints disabled")
+        return None
+
+
+def _build_forwarder(mavlink: Any, config: Any) -> Any:
+    """Build and start the MAVLink forwarder when the operator enabled it.
+
+    Returns None when it is off (the default). A forwarder that could not bind
+    is returned anyway, stopped, so the Settings page can say why instead of
+    showing a switch that silently does nothing — but either way the app comes
+    up with telemetry working, because a busy UDP port must never cost the
+    operator the link to the aircraft.
+    """
+    cfg = getattr(config, "forwarding", None)
+    if not isinstance(cfg, dict) or not cfg.get("enabled"):
+        return None
+    try:
+        from .mavlink_forwarder import DEFAULT_HOST, DEFAULT_PORT, MavlinkForwarder
+        forwarder = MavlinkForwarder(
+            mavlink.inject_raw,
+            host=str(cfg.get("host") or DEFAULT_HOST),
+            port=int(cfg.get("port") or DEFAULT_PORT),
+            endpoints=cfg.get("endpoints") or (),
+            allow_commands=bool(cfg.get("allow_commands")),
+        )
+    except Exception:  # noqa: BLE001 - never block server creation
+        logger.exception("MAVLink forwarder unavailable")
+        return None
+    if forwarder.start():
+        mavlink.set_frame_sink(forwarder.feed)
+    return forwarder
+
+
 def _firmware_dir(cfg: Any) -> str:
     """Directory downloaded PX4 images and the cached catalogue live in.
 
@@ -658,6 +714,12 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     # Flight-log service (on-board ULog download + local tlog listing). None
     # when not wired, same as `flash`.
     logs: Any = None
+    # Second-station MAVLink forwarding (QGroundControl alongside Corvus).
+    # None when off, which is the default.
+    forwarder: Any = None
+    # GitHub release update check. None when not wired; the endpoints then
+    # report "no check available" rather than 500.
+    updates: Any = None
     # Tile resources: per-source caches + a single downloader facade + the
     # progress pub-sub bus. None when tiles are not configured (e.g. the
     # parallel-built tile_downloader module is mid-edit).
@@ -761,12 +823,14 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             merged["controls"] = cfg.controls
         if cfg.ui is not None:
             merged["ui"] = cfg.ui
+        if cfg.updates is not None:
+            merged["updates"] = cfg.updates
 
         known = {
             "mavlink_connection", "http_port", "tile_cache_dir", "tlog_dir",
             "params_dir", "firmware_dir", "log_download_dir",
             "tile_sources", "stream_rates", "ssh_connections",
-            "theme", "map", "branding", "controls", "ui",
+            "theme", "map", "branding", "controls", "ui", "updates",
         }
         for key, value in partial.items():
             if key not in known:
@@ -802,7 +866,18 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             elif key == "ui":
                 if not isinstance(value, dict):
                     return None, "ui must be an object"
-                merged["ui"] = value
+                # Merged per key, like controls: the interface size and the
+                # app-icon switch are independent settings the UI writes one
+                # at a time, so a POST naming only one must not clear the other.
+                base = merged.get("ui")
+                merged["ui"] = {**base, **value} if isinstance(base, dict) else dict(value)
+            elif key == "updates":
+                if not isinstance(value, dict):
+                    return None, "updates must be an object"
+                # Merged per key, like controls: dismissing a version must not
+                # also rewrite the operator's "check for updates" switch.
+                base = merged.get("updates")
+                merged["updates"] = {**base, **value} if isinstance(base, dict) else dict(value)
             elif key == "mavlink_connection":
                 if not isinstance(value, str) or not value:
                     return None, "mavlink_connection must be a non-empty string"
@@ -869,6 +944,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         cfg.branding = new_cfg.branding
         cfg.controls = new_cfg.controls
         cfg.ui = new_cfg.ui
+        cfg.updates = new_cfg.updates
         self._save_live_config()
         return to_public_dict(cfg), None
 
@@ -956,6 +1032,107 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             "version": get_version(),
             "px4_profile": px4_profile,
         })
+
+    @route("GET", "/api/update")
+    def _api_update(self) -> None:
+        """Whether a newer Corvus GCS release exists on GitHub.
+
+        Answered from the on-disk cache unless it has gone stale or
+        ``?refresh=1`` is set, so a launch in the field costs no network and no
+        wait. A failed check returns 200 with the last known release and a
+        non-empty ``error`` — the frontend fetches this in the background and
+        an unreachable GitHub must be silent, not an alert.
+
+        ``enabled`` is false when the operator turned the check off; the
+        network is then never touched and ``update_available`` is always false.
+        ``skipped`` echoes the release the operator dismissed so the frontend
+        knows not to raise the dialog for it again.
+        """
+        cfg = self._live_config()
+        updates_cfg = cfg.updates if isinstance(cfg.updates, dict) else {}
+        enabled = updates_cfg.get("check", True) is not False
+        skipped = str(updates_cfg.get("skipped") or "")
+        if self.updates is None:
+            self._send_json({
+                "enabled": enabled, "skipped": skipped,
+                "current": get_version(), "latest": "", "update_available": False,
+                "name": "", "url": "", "published": "", "notes": "", "assets": [],
+                "checked_at": 0, "error": "update check unavailable",
+            })
+            return
+        params = parse_qs(urlparse(self.path).query)
+        refresh = (params.get("refresh", ["0"])[0] or "0").lower() in ("1", "true", "yes")
+        try:
+            if enabled:
+                data = self.updates.check(force=refresh)
+            else:
+                # Off means off: report what is already on disk, reach for
+                # nothing. update_available stays false so no dialog can fire.
+                data = self.updates.cached_status()
+                data["update_available"] = False
+        except Exception:  # noqa: BLE001 - an update check must never 500
+            logger.exception("update check failed")
+            data = {
+                "current": get_version(), "latest": "", "update_available": False,
+                "name": "", "url": "", "published": "", "notes": "", "assets": [],
+                "checked_at": 0, "error": "update check failed",
+            }
+        data["enabled"] = enabled
+        data["skipped"] = skipped
+        self._send_json(data)
+
+    @route("POST", "/api/update/skip")
+    def _api_update_skip(self, payload: dict) -> None:
+        """Remember a release the operator dismissed, so it stops prompting.
+
+        An empty/absent ``version`` clears the dismissal, which is what the
+        Settings page's "check again" does.
+        """
+        raw = payload.get("version")
+        version = raw.strip() if isinstance(raw, str) else ""
+        public, error = self._apply_config_partial({"updates": {"skipped": version}})
+        if error is not None:
+            self._send_json({"ok": False, "error": error}, 400)
+            return
+        stored = ""
+        cfg_updates = self._live_config().updates
+        if isinstance(cfg_updates, dict):
+            stored = str(cfg_updates.get("skipped") or "")
+        self._send_json({"ok": True, "skipped": stored, "config": public})
+
+    @route("POST", "/api/update/open")
+    def _api_update_open(self, payload: dict) -> None:
+        """Open the latest release's page in the operator's system browser.
+
+        The URL is re-derived from the cached check result and never read from
+        the request. It has to be a server-side action at all because the
+        desktop build runs the UI inside QtWebEngine, where an external link
+        simply goes nowhere (the same reason the credits dialog prints URLs
+        instead of linking them); taking the URL from the caller would turn
+        that convenience into an open redirect out of the app.
+        """
+        if self.updates is None:
+            self._send_json({"ok": False, "error": "update check unavailable"}, 503)
+            return
+        try:
+            url = self.updates.cached_status().get("url") or ""
+        except Exception:  # noqa: BLE001 - never 500 on a convenience action
+            logger.exception("update page lookup failed")
+            url = ""
+        if not url:
+            self._send_json({"ok": False, "error": "no release page known"}, 404)
+            return
+        try:
+            import webbrowser
+            opened = webbrowser.open(url)
+        except Exception:  # noqa: BLE001 - no browser is not a server error
+            logger.info("could not open %s in a browser", url, exc_info=True)
+            opened = False
+        if not opened:
+            self._send_json(
+                {"ok": False, "error": "no browser available", "url": url}, 200)
+            return
+        self._send_json({"ok": True, "url": url})
 
     @route("GET", "/api/state")
     def _api_state(self) -> None:
@@ -1176,12 +1353,18 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             # Strip the prefix from the ORIGINAL cmd so the rest keeps its case
             # (NSH is case-sensitive, e.g. `listener sensor_combined`).
             shell_text = cmd.split(maxsplit=1)[1] if len(cmd.split(maxsplit=1)) > 1 else ""
+            if not shell_text:
+                self._send_json({"error": f"usage: {parts[0]} <command>"}, 400)
+                return
             ok_shell = self.mavlink.send_shell_command(shell_text)
             if ok_shell:
                 self._send_json({"ok": True, "shell": True})
             else:
                 error = self.mavlink.get_last_command_error() or f"shell command failed: {cmd}"
-                status = 503 if "DISCONNECTED" in error else 409
+                normalized_error = error.lower()
+                status = 503 if (
+                    "disconnected" in normalized_error or "not connected" in normalized_error
+                ) else 409
                 self._send_json({"ok": False, "error": error}, status)
             return
         elif parts[0] in SHELL_COMMANDS:
@@ -1191,7 +1374,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"ok": True, "shell": True})
             else:
                 error = self.mavlink.get_last_command_error() or f"shell command failed: {cmd}"
-                status = 503 if "DISCONNECTED" in error else 409
+                normalized_error = error.lower()
+                status = 503 if (
+                    "disconnected" in normalized_error or "not connected" in normalized_error
+                ) else 409
                 self._send_json({"ok": False, "error": error}, status)
             return
         else:
@@ -1574,8 +1760,20 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             if not host:
                 self._send_json({"error": "no host"}, 400)
                 return
+        # An empty username reaches paramiko as an empty auth user and fails
+        # with an opaque authentication error; say what is actually missing.
+        if not isinstance(username, str) or not username:
+            self._send_json({"error": "username is required"}, 400)
+            return
         ok = self.ssh.connect(name, host, port, username, password, key_path)
-        self._send_json({"ok": ok, "connected": ok})
+        # Echo the identity the connection actually used. The UI renders the
+        # terminal header from this rather than assuming a default account,
+        # so an operator connecting as someone other than "corvus" sees their
+        # own user.
+        self._send_json({
+            "ok": ok, "connected": ok,
+            "name": name, "host": host, "port": port, "username": username,
+        })
 
     @route("POST", "/api/config")
     def _api_config_update(self, payload: dict) -> None:
@@ -1813,6 +2011,32 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "no session"}, 400)
 
+    @route("POST", "/api/ssh/resize")
+    def _api_ssh_resize(self, payload: dict) -> None:
+        """Set a session's remote pty size to the operator's terminal size."""
+        name = payload.get("name", "")
+        if not isinstance(name, str) or not name:
+            self._send_json({"ok": False, "error": "name must be a non-empty string"}, 400)
+            return
+        dims = {}
+        for key in ("cols", "rows"):
+            raw = payload.get(key)
+            if isinstance(raw, bool):
+                self._send_json({"ok": False, "error": f"{key} must be an integer"}, 400)
+                return
+            try:
+                dims[key] = int(raw)
+            except (TypeError, ValueError):
+                self._send_json({"ok": False, "error": f"{key} must be an integer"}, 400)
+                return
+            if not 1 <= dims[key] <= 1000:
+                self._send_json({"ok": False, "error": f"{key} out of range"}, 400)
+                return
+        if not self.ssh:
+            self._send_json({"ok": False, "error": "no session"}, 400)
+            return
+        self._send_json({"ok": self.ssh.resize(name, dims["cols"], dims["rows"])})
+
     @route("POST", "/api/ssh/disconnect")
     def _api_ssh_disconnect(self, payload: dict) -> None:
         name = payload.get("name", "")
@@ -1950,7 +2174,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"ok": True})
         else:
             error = self.mavlink.get_last_command_error() or "parameter write failed"
-            status = 503 if "not connected" in error else 409
+            normalized_error = error.lower()
+            status = 503 if (
+                "disconnected" in normalized_error or "not connected" in normalized_error
+            ) else 409
             self._send_json({"ok": False, "error": error}, status)
 
     @route("POST", "/api/params/upload")
@@ -2210,19 +2437,25 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     def _api_autotune(self, payload: dict) -> None:
         """Start an autotune on the given axis."""
         raw = payload.get("axis", "")
-        if not isinstance(raw, str) or raw.lower() not in AUTOTUNE_AXES:
-            self._send_json({"ok": False, "error": "unknown autotune axis"}, 400)
+        axis = raw.strip().lower() if isinstance(raw, str) else ""
+        if axis not in AUTOTUNE_AXES:
+            self._send_json({
+                "ok": False,
+                "error": "PX4 supports full autotune only; use axis 'all'",
+            }, 400)
             return
         if self.mavlink is None:
             self._send_json({"ok": False, "error": "not connected"}, 503)
             return
-        axis = raw.lower()
         ok = self.mavlink.autotune(axis)
         if ok:
             self._send_json({"ok": True})
         else:
             error = self.mavlink.get_last_command_error() or "autotune failed"
-            status = 503 if "not connected" in error else 409
+            normalized_error = error.lower()
+            status = 503 if (
+                "disconnected" in normalized_error or "not connected" in normalized_error
+            ) else 409
             self._send_json({"ok": False, "error": error}, status)
 
     @route("POST", "/api/vibration/stream")
@@ -2411,6 +2644,100 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"ok": True})
         else:
             self._send_json({"ok": False, "error": "no flash in progress"})
+
+    # ---- Second-station MAVLink forwarding ----
+    @route("GET", "/api/forwarding")
+    def _api_forwarding_status(self) -> None:
+        """Where to point QGroundControl, and whether anything is listening."""
+        forwarder = getattr(self, "forwarder", None)
+        if forwarder is None:
+            cfg = getattr(self.config, "forwarding", None) or {}
+            self._send_json({
+                "running": False,
+                "host": cfg.get("host") or _FORWARD_DEFAULT_HOST,
+                "port": cfg.get("port") or _FORWARD_DEFAULT_PORT,
+                "allow_commands": bool(cfg.get("allow_commands")),
+                "endpoints": list(cfg.get("endpoints") or []),
+                "peers": [], "frames_sent": 0, "datagrams_received": 0,
+                "frames_injected": 0, "dropped": 0, "sysid_conflict": False,
+                "error": "",
+            })
+            return
+        self._send_json(forwarder.status())
+
+    @route("POST", "/api/forwarding")
+    def _api_forwarding_set(self, payload: dict) -> None:
+        """Turn forwarding on/off and persist the choice.
+
+        ``allow_commands`` decides whether another ground station may command
+        this aircraft, so it is accepted only as a real boolean and is stored
+        exactly as sent — never inferred from ``enabled``. Restarting the
+        forwarder rather than mutating it in place keeps one rule: what is
+        running is what the saved config says.
+        """
+        for key in ("enabled", "allow_commands"):
+            if key in payload and not isinstance(payload[key], bool):
+                self._send_json({"ok": False, "error": f"{key} must be true or false"}, 400)
+                return
+        port = payload.get("port", None)
+        if port is not None:
+            if isinstance(port, bool) or not isinstance(port, int) or not (0 < port < 65536):
+                self._send_json({"ok": False, "error": "port must be 1-65535"}, 400)
+                return
+        endpoints = payload.get("endpoints", None)
+        if endpoints is not None:
+            if not isinstance(endpoints, list) or any(
+                    not isinstance(e, str) for e in endpoints):
+                self._send_json({"ok": False, "error": "endpoints must be strings"}, 400)
+                return
+        if self.config is None:
+            self._send_json({"ok": False, "error": "no config available"}, 503)
+            return
+
+        current = dict(getattr(self.config, "forwarding", None) or {})
+        for key in ("enabled", "allow_commands"):
+            if key in payload:
+                current[key] = payload[key]
+        if port is not None:
+            current["port"] = port
+        if isinstance(payload.get("host"), str) and payload["host"].strip():
+            current["host"] = payload["host"].strip()
+        if endpoints is not None:
+            current["endpoints"] = [e.strip() for e in endpoints if e.strip()]
+        self.config.forwarding = current
+
+        old = getattr(self, "forwarder", None)
+        if old is not None:
+            try:
+                if self.mavlink is not None:
+                    self.mavlink.set_frame_sink(None)
+                old.stop()
+            except Exception:  # noqa: BLE001 - a stuck old forwarder never blocks the new one
+                logger.exception("stopping the previous forwarder failed")
+        forwarder = _build_forwarder(self.mavlink, self.config) if self.mavlink else None
+        type(self).forwarder = forwarder
+        server = getattr(self, "server", None)
+        if server is not None:
+            server.forwarder = forwarder
+
+        try:
+            save_config(self.config, self.config_path or default_config_path())
+        except Exception:  # noqa: BLE001 - it still runs this session
+            logger.exception("could not persist forwarding config")
+            status = forwarder.status() if forwarder is not None else {"running": False}
+            self._send_json({"ok": True, "status": status,
+                             "warning": "set for this session but not saved"})
+            return
+        if forwarder is not None and not forwarder.status()["running"]:
+            self._send_json({"ok": False, "error": forwarder.error or "could not start",
+                             "status": forwarder.status()}, 409)
+            return
+        self._send_json({
+            "ok": True,
+            "status": forwarder.status() if forwarder is not None else {
+                "running": False, "allow_commands": bool(current.get("allow_commands")),
+            },
+        })
 
     # ---- Flight logs (on-board ULogs + local tlogs) ----
     @route("GET", "/api/logs/status")
@@ -2714,6 +3041,16 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
     @route("GET", "/api/ssh/stream")
     def _sse_ssh_stream(self) -> None:
+        """Stream one session's shell output verbatim.
+
+        ``?name=`` picks the session; without it the first connected one is
+        used (the single-session case, and what older clients sent). Naming it
+        matters once two connections are open at once: the stream would
+        otherwise attach to whichever session the bridge happened to list
+        first, and the terminal would show another machine's output.
+        """
+        params = parse_qs(urlparse(self.path).query)
+        wanted = (params.get("name") or [""])[0]
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
@@ -2726,18 +3063,45 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         if self.ssh:
             sessions = self.ssh.list_sessions()
             for s in sessions:
-                if s["connected"]:
-                    attached_name = s["name"]
-                    session = self.ssh.get_session(s["name"])
-                    if session:
-                        session.add_sub(listener)
-                    break
+                if not s["connected"]:
+                    continue
+                if wanted and s["name"] != wanted:
+                    continue
+                attached_name = s["name"]
+                session = self.ssh.get_session(s["name"])
+                if session:
+                    session.add_sub(listener)
+                break
+        # Poll once a second rather than blocking for the full ping interval:
+        # that is what lets the stream notice the shell has ended, tell the
+        # client, and let this thread go. Blocking on a 15s get left one
+        # handler thread per closed session alive for the life of the page.
+        if attached_name is None:
+            # Nothing to attach to: say so and let the socket go rather than
+            # holding a thread open pinging an empty stream.
+            try:
+                self._send_sse("closed", json.dumps({"name": wanted or None}))
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
+        idle = 0.0
         try:
             while True:
                 try:
-                    text = q.get(timeout=15)
+                    text = q.get(timeout=1.0)
+                    idle = 0.0
                     self._send_sse("output", json.dumps({"text": text, "name": attached_name}))
+                    continue
                 except queue.Empty:
+                    pass
+                if attached_name and self.ssh is not None:
+                    live = self.ssh.get_session(attached_name)
+                    if live is None or not live.connected:
+                        self._send_sse("closed", json.dumps({"name": attached_name}))
+                        break
+                idle += 1.0
+                if idle >= 15.0:
+                    idle = 0.0
                     self._send_sse("ping", "{}")
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -3224,6 +3588,19 @@ class CorvusServer(socketserver.ThreadingTCPServer):
                 downloader.shutdown()
             except Exception:  # noqa: BLE001 - shutdown must not raise
                 logger.exception("tile downloader shutdown failed")
+        # The forwarder holds a UDP socket and two daemon threads. serve.py and
+        # the desktop app both stop it before the bridge, but a caller that
+        # only has the server (the shutdown-path tests, an embedder) must not
+        # be left with a bound port after shutdown() returned.
+        forwarder = getattr(self, "forwarder", None)
+        if forwarder is not None:
+            try:
+                mav = getattr(self, "mavlink", None)
+                if mav is not None:
+                    mav.set_frame_sink(None)
+                forwarder.stop()
+            except Exception:  # noqa: BLE001 - shutdown must not raise
+                logger.exception("mavlink forwarder shutdown failed")
         # Stop the flash service before the HTTP loop so a running upload is
         # cancelled/joined before its (shared) MAVLink bridge is torn down.
         flash = getattr(self, "flash", None)
@@ -3298,17 +3675,23 @@ def create_server(
 
     # Flight-log service: on-board ULog download over MAVLink plus the local
     # tlog listing. Lazily imported for the same reason as the flash service.
-    logs: Any = None
-    try:
-        from .log_service import LogService
-        logs = LogService(
-            mavlink,
-            log_dir=lambda: _log_download_dir(config),
-            tlog_dir=lambda: _tlog_dir(config),
-        )
-    except Exception:  # noqa: BLE001 - never block server creation
-        logger.exception("log service unavailable; log endpoints disabled")
+    logs = _build_log_service(mavlink, config)
     CorvusHandler.logs = logs
+
+    # Second-station forwarding: off unless the operator turned it on, so the
+    # default behaviour is exactly what it was before this existed.
+    forwarder = _build_forwarder(mavlink, config)
+    CorvusHandler.forwarder = forwarder
+
+    # Update check against the GitHub releases. Constructed only — it touches
+    # the network the first time the frontend asks, never at startup.
+    updates: Any = None
+    try:
+        from .update_check import UpdateChecker
+        updates = UpdateChecker()
+    except Exception:  # noqa: BLE001 - never block server creation
+        logger.exception("update checker unavailable; update endpoints disabled")
+    CorvusHandler.updates = updates
 
     server = CorvusServer(("", port), CorvusHandler)
     server.mavlink = mavlink
@@ -3318,6 +3701,8 @@ def create_server(
     server.config_path = cfg_path
     server.flash = flash
     server.logs = logs
+    server.forwarder = forwarder
+    server.updates = updates
     server.tile_caches = tile_caches
     server.tile_downloader = tile_downloader
     mavlink.start()

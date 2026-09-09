@@ -429,7 +429,11 @@ def test_connect_calls_mavserial_with_translated_device_and_baud(
     bridge._connect()
 
     assert captured["device"] == "/dev/ttyUSB0"
-    assert captured["kwargs"] == {"baud": 57600}
+    assert captured["kwargs"] == {
+        "baud": 57600,
+        "source_system": 254,
+        "source_component": 190,
+    }
     # ``timeout=`` must NOT be passed to mavserial.
     assert "timeout" not in captured["kwargs"]
 
@@ -452,7 +456,11 @@ def test_connect_non_serial_keeps_timeout_kwarg(monkeypatch: pytest.MonkeyPatch)
     bridge._connect()
 
     assert captured["device"] == "udp:0.0.0.0:14540"
-    assert captured["kwargs"] == {"timeout": 2}
+    assert captured["kwargs"] == {
+        "timeout": 2,
+        "source_system": 254,
+        "source_component": 190,
+    }
 
 
 # ---------------------------------------------------------------------------

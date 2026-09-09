@@ -14,6 +14,8 @@
  *  - a diagonal drag is clamped to the circle, so travel never exceeds 1;
  *  - the arrow keys move pitch and roll ONLY, at half stick, and sum with the
  *    sticks into one virtual stick rather than exceeding it;
+ *  - the WASD keys move thrust and yaw ONLY, share the arrow keys' panel, and
+ *    release thrust to the hover detent rather than to zero;
  *  - a keypress is ignored while the caret is in a field, so typing a
  *    connection string cannot fly the aircraft;
  *  - releasing a stick or key, disabling a surface, or losing window focus all
@@ -155,6 +157,7 @@ require("./../src/js/joystick.js");
 async function reset() {
   Corvus.joystick.setEnabled(false);
   Corvus.joystick.setKeysEnabled(false);
+  Corvus.joystick.setWasdEnabled(false);
   if (pendingResolve) { pendingResolve.resolve({ ok: true }); pendingResolve = null; }
   await new Promise((r) => setImmediate(r));
   posts.length = 0;
@@ -163,9 +166,10 @@ async function reset() {
 }
 
 /** Mount a fresh pad inside a map-sized host and report the parts the tests
- *  drive. `sticks` / `keys` switch the two surfaces on after init, which is
- *  the order the real app uses (build hidden, then apply the config). */
-async function mount({ connected = true, sticks = true, keys = false } = {}) {
+ *  drive. `sticks` / `keys` / `wasd` switch the three surfaces on after init,
+ *  which is the order the real app uses (build hidden, then apply the
+ *  config). */
+async function mount({ connected = true, sticks = true, keys = false, wasd = false } = {}) {
   await reset();
   const host = makeEl("div");                 // stands in for .map-view
   // clientWidth === rect width means an interface scale of 1; the scaled case
@@ -183,6 +187,7 @@ async function mount({ connected = true, sticks = true, keys = false } = {}) {
   if (stateSubscriber) stateSubscriber({ connected });
   if (sticks) Corvus.joystick.setEnabled(true);
   if (keys) Corvus.joystick.setKeysEnabled(true);
+  if (wasd) Corvus.joystick.setWasdEnabled(true);
   return {
     host, pad,
     left: bases[0], right: bases[1],
@@ -190,6 +195,11 @@ async function mount({ connected = true, sticks = true, keys = false } = {}) {
     grip: pad.querySelector("js-grip"),
     collapse: pad.querySelector("js-collapse"),
     surfaces: pad.querySelector("js-surfaces"),
+    keysPanel: pad.querySelector("js-keys"),
+    arrows: pad.querySelector("js-cluster-arrows"),
+    wasd: pad.querySelector("js-cluster-wasd"),
+    // Takes the key's own class suffix: "up"/"left"/... for the arrows,
+    // "w"/"a"/"s"/"d" for WASD.
     key: (dir) => pad.querySelector("js-key-" + dir),
   };
 }
@@ -714,13 +724,175 @@ async function testTheCollapseControlIsNotADragHandle() {
   assert.equal(m.pad.style.left, "", "no drag started from the collapse control");
 }
 
+// --- WASD keys -------------------------------------------------------------
+
+async function testWasdKeysMoveThrustAndYawOnly() {
+  await mount({ sticks: false, keys: false, wasd: true });
+
+  // Half stick on the throttle axis is 0.25 either side of the 0.5 detent.
+  const cases = [
+    { key: "w", axis: "z", want: 0.75, what: "W is thrust up" },
+    { key: "s", axis: "z", want: 0.25, what: "S is thrust down" },
+    { key: "d", axis: "r", want: 0.5, what: "D is yaw clockwise" },
+    { key: "a", axis: "r", want: -0.5, what: "A is yaw counter-clockwise" },
+  ];
+  for (const c of cases) {
+    await settle();
+    fireKey("keydown", c.key);
+    flushTimers();
+    const f = lastFrame();
+    assert.equal(f[c.axis], c.want, c.what);
+    // Pitch and roll are NOT reachable from WASD.
+    assert.equal(f.x, 0, "pitch stays centred");
+    assert.equal(f.y, 0, "roll stays centred");
+    await settle();
+    fireKey("keyup", c.key);
+    flushTimers();
+  }
+}
+
+async function testReleasingAThrustKeyReturnsToTheHoverDetent() {
+  await mount({ sticks: false, keys: false, wasd: true });
+  await settle();
+  fireKey("keydown", "w");
+  flushTimers();
+  assert.equal(lastFrame().z, 0.75);
+
+  await settle();
+  fireKey("keyup", "w");
+  flushTimers();
+  // The one release that is not a return to zero: letting go of the throttle
+  // parks the aircraft at hover, exactly as letting go of the stick does.
+  assert.equal(lastFrame().z, 0.5, "thrust springs back to the detent, not to zero");
+}
+
+async function testWasdIsShiftAndCapsLockProof() {
+  await mount({ sticks: false, keys: false, wasd: true });
+  await settle();
+  fireKey("keydown", "W");
+  flushTimers();
+  assert.equal(lastFrame().z, 0.75, "a capital W flies the same axis as a lower-case one");
+  fireKey("keyup", "W");
+}
+
+async function testWasdDoesNothingWhileItsSwitchIsOff() {
+  await mount({ sticks: false, keys: true, wasd: false });
+  await settle();
+
+  // W is an ordinary letter until the WASD switch is on: the arrow-key
+  // surface alone must neither claim it nor fly on it.
+  const r = fireKey("keydown", "w");
+  flushTimers();
+  assert.equal(r.defaultPrevented, false, "the key is not even claimed");
+  assert.equal(lastFrame().z, 0.5, "thrust stays at the hover detent");
+  fireKey("keyup", "w");
+}
+
+async function testWasdIsIgnoredWhileTheCaretIsInAField() {
+  await mount({ sticks: false, keys: false, wasd: true });
+  await settle();
+
+  const r = fireKey("keydown", "w", { tagName: "INPUT" });
+  flushTimers();
+
+  assert.equal(r.defaultPrevented, false, "typing a 'w' types a 'w'");
+  assert.equal(lastFrame().z, 0.5, "naming an SSH host cannot fly the aircraft");
+}
+
+async function testWasdSharesTheArrowKeyPanel() {
+  const m = await mount({ sticks: false, keys: true, wasd: true });
+  // The point of the feature: ONE window, two clusters, not a second pad.
+  assert.ok(m.wasd, "the WASD cluster exists");
+  assert.ok(m.arrows, "the arrow cluster exists");
+  assert.equal(m.wasd.parentElement, m.keysPanel, "WASD sits in the key panel");
+  assert.equal(m.arrows.parentElement, m.keysPanel, "so do the arrows");
+  assert.equal(m.keysPanel.hidden, false);
+  assert.equal(m.wasd.hidden, false);
+  assert.equal(m.arrows.hidden, false);
+
+  Corvus.joystick.setKeysEnabled(false);
+  assert.equal(m.keysPanel.hidden, false, "the panel stays up for WASD alone");
+  assert.equal(m.arrows.hidden, true, "each cluster answers to its own switch");
+  assert.equal(m.wasd.hidden, false);
+
+  Corvus.joystick.setWasdEnabled(false);
+  assert.equal(m.keysPanel.hidden, true, "panel goes away with its last cluster");
+  assert.equal(m.pad.hidden, true, "and so does the pad");
+}
+
+async function testAnOnScreenWasdKeyFliesTheSameAxisAsItsKeyboardKey() {
+  const m = await mount({ sticks: false, keys: false, wasd: true });
+  await settle();
+  const w = m.key("w");
+
+  fire(w, "pointerdown", {});
+  flushTimers();
+  assert.equal(lastFrame().z, 0.75, "holding the on-screen W climbs");
+  assert.ok(w.className.includes("active"));
+
+  await settle();
+  fire(w, "pointerup", {});
+  flushTimers();
+  assert.equal(lastFrame().z, 0.5, "releasing it hovers");
+}
+
+async function testWasdAndTheLeftStickSumIntoOneVirtualStick() {
+  const { left } = await mount({ sticks: true, wasd: true });
+  await settle();
+
+  drag(left, 0, 1);                // left stick full up
+  fireKey("keydown", "w");         // and the key pushes the same way
+  flushTimers();
+
+  const f = lastFrame();
+  assert.equal(f.z, 1, "two ways to move one stick, clamped at the stop");
+  fireKey("keyup", "w");
+  release(left);
+}
+
+async function testLosingWindowFocusReleasesAHeldWasdKey() {
+  await mount({ sticks: false, keys: false, wasd: true });
+  await settle();
+  fireKey("keydown", "w");
+
+  (windowListeners.blur || []).forEach((cb) => cb());
+  flushTimers();
+
+  // A window that loses focus must not leave the throttle pinned open with
+  // the stream still sending it.
+  assert.equal(lastFrame().z, 0.5);
+}
+
+async function testACollapsedPadStandsDownWasdToo() {
+  const m = await mount({ sticks: false, keys: false, wasd: true });
+  fire(m.collapse, "click");
+
+  const swallowed = fireKey("keydown", "w");
+  assert.equal(swallowed.defaultPrevented, false, "the key is not even claimed");
+  assert.equal(m.key("w").className.includes("active"), false, "no key held");
+
+  await settle();
+  flushTimers();
+  assert.equal(posts[posts.length - 1].body.z, 0.5,
+    "a collapsed pad streams a released transmitter, not a held throttle");
+  fire(m.collapse, "click");
+}
+
 // --- the axis readout ------------------------------------------------------
 
 async function testTheAxisReadoutOnlyNamesTheAxesTheSurfacesCanMove() {
-  // Keys drive pitch and roll and nothing else. Naming thrust and yaw as well
-  // made the grip bar twice the width of the key cluster under it.
+  // The arrows drive pitch and roll and nothing else. Naming thrust and yaw as
+  // well made the grip bar twice the width of the key cluster under it.
   const keysOnly = await mount({ sticks: false, keys: true });
   assert.equal(keysOnly.axes.textContent, "P +0.00  R +0.00");
+
+  // WASD is the other half, so it names the other two.
+  const wasdOnly = await mount({ sticks: false, wasd: true });
+  assert.equal(wasdOnly.axes.textContent, "T 0.50  Y +0.00");
+
+  const bothClusters = await mount({ sticks: false, keys: true, wasd: true });
+  assert.equal(bothClusters.axes.textContent, "P +0.00  R +0.00  T 0.50  Y +0.00",
+    "the two clusters together are a whole transmitter");
 
   const withSticks = await mount({ sticks: true, keys: true });
   assert.equal(withSticks.axes.textContent, "P +0.00  R +0.00  T 0.50  Y +0.00",
@@ -821,6 +993,16 @@ const tests = [
   testOppositeKeysCancelRatherThanFight,
   testKeysAndSticksSumIntoOneVirtualStick,
   testLosingWindowFocusReleasesAHeldKey,
+  testWasdKeysMoveThrustAndYawOnly,
+  testReleasingAThrustKeyReturnsToTheHoverDetent,
+  testWasdIsShiftAndCapsLockProof,
+  testWasdDoesNothingWhileItsSwitchIsOff,
+  testWasdIsIgnoredWhileTheCaretIsInAField,
+  testWasdSharesTheArrowKeyPanel,
+  testAnOnScreenWasdKeyFliesTheSameAxisAsItsKeyboardKey,
+  testWasdAndTheLeftStickSumIntoOneVirtualStick,
+  testLosingWindowFocusReleasesAHeldWasdKey,
+  testACollapsedPadStandsDownWasdToo,
   testTheGripDragsThePadAndPersistsThePosition,
   testADragIsClampedSoThePadStaysReachable,
   testTheSticksAreNotADragHandle,

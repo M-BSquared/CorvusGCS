@@ -9,6 +9,7 @@ control station and allows arming and mode changes.
 """
 from __future__ import annotations
 
+import codecs
 import collections
 import datetime
 import logging
@@ -146,11 +147,42 @@ RECONNECT_MIN_S = 0.1
 _SIK_RSSI_STRONG = 150.0
 _SIK_RSSI_WEAK = 40.0
 
-# NSH debug-shell chunk-pull cap. PX4 streams the shell response one 70-byte
-# SERIAL_CONTROL per reply; we pull the next chunk on each reply (event-driven
-# so the receive loop isn't pinned). The cap stops a runaway response (e.g.
-# ``dmesg`` on a chatty build) from streaming forever.
-SHELL_MAX_CHUNKS = 256
+# A distinct GCS system id keeps Corvus COMMAND_ACK and SERIAL_CONTROL replies
+# separate from QGroundControl (which normally uses system 255) when both share
+# a vehicle through mavlink-router or the built-in raw-frame forwarder.
+GCS_SYSTEM_ID = 254
+GCS_COMPONENT_ID = mavutil.mavlink.MAV_COMP_ID_MISSIONPLANNER
+
+# How long _connect waits for the aircraft to introduce itself.
+HEARTBEAT_WAIT_S = 10.0
+
+
+def _is_vehicle_heartbeat(hb: Any) -> bool:
+    """Is this HEARTBEAT the flight controller's, or some other node's?
+
+    On a direct link the question never comes up — the only thing heartbeating
+    is the autopilot. Behind mavlink-router it decides whether this session
+    works at all: the link then also carries QGroundControl's own 1 Hz
+    heartbeat, a companion computer's, a gimbal's. Whichever lands first is
+    what ``mavutil.wait_heartbeat`` returns, and Corvus latches its command
+    target onto it.
+
+    The MAVLink spec settles it in one field: a component that is not an
+    autopilot must announce ``MAV_AUTOPILOT_INVALID``. MAV_TYPE_GCS is checked
+    too, for a ground station that fills the field in anyway.
+    """
+    autopilot = getattr(hb, "autopilot", None)
+    if autopilot is None:
+        # Nothing to judge by (a synthetic heartbeat, or a dialect without the
+        # field). Accept: this filter rejects an identified non-autopilot, it
+        # does not demand provenance a frame never carried.
+        return True
+    try:
+        if int(autopilot) == mavutil.mavlink.MAV_AUTOPILOT_INVALID:
+            return False
+        return int(getattr(hb, "type", 0)) != mavutil.mavlink.MAV_TYPE_GCS
+    except (TypeError, ValueError):
+        return True
 
 # Lossy-link parameter-download recovery (BUG 5). After the PARAM_VALUE burst
 # settles, re-request missing indices (bounded rounds), then give up to a
@@ -161,10 +193,30 @@ PARAM_DOWNLOAD_TIMEOUT_S = 30.0
 PARAM_WATCHDOG_TICK_S = 0.5
 
 
+# Flight readiness, straight from the autopilot. PX4 mirrors its preflight
+# checks into the MAV_SYS_STATUS_PREARM_CHECK bit of SYS_STATUS: present/enabled
+# say the firmware publishes the check at all, health says whether an arm
+# command would be accepted right now. Firmware that never sets the bit (some
+# ArduPilot builds, older PX4) yields None — "unknown", never a green light the
+# vehicle did not give.
+_PREARM_BIT = mavutil.mavlink.MAV_SYS_STATUS_PREARM_CHECK
+
+
+def _prearm_ok(msg) -> bool | None:
+    """SYS_STATUS -> True (ready to arm) / False (refused) / None (not reported)."""
+    enabled = getattr(msg, "onboard_control_sensors_enabled", 0) or 0
+    present = getattr(msg, "onboard_control_sensors_present", 0) or 0
+    if not ((enabled | present) & _PREARM_BIT):
+        return None
+    health = getattr(msg, "onboard_control_sensors_health", 0) or 0
+    return bool(health & _PREARM_BIT)
+
+
 @dataclass
 class _PendingAck:
     event: threading.Event = field(default_factory=threading.Event)
     result: int | None = None
+    accept_in_progress: bool = False
 
 
 @dataclass
@@ -215,6 +267,9 @@ class MavlinkBridge:
         self._board_product_id = 0
         # Set by LogService while a listing or download is running.
         self._log_sink: Callable[[Any], None] | None = None
+        # Set by MavlinkForwarder: every raw frame off the link, so a second
+        # station (QGroundControl) can share the one physical connection.
+        self._frame_sink: Callable[[bytes], None] | None = None
         self._send_lock = threading.Lock()
         self._statustext_chunks: dict[tuple[int, int, int], dict[str, Any]] = {}
         self._home_alt_amsl: float | None = None
@@ -257,17 +312,24 @@ class MavlinkBridge:
         self._mission_lock = threading.Lock()
         self._mission_items: list[dict[str, Any]] | None = None
         self._pending_mission_ack: _PendingAck | None = None
-        # NSH debug-shell state: line reassembly buffer + per-command chunk
-        # pull counter (capped by SHELL_MAX_CHUNKS, reset per send_shell).
+        # NSH debug-shell state and UTF-8-safe line reassembly.
+        self._shell_lock = threading.RLock()
         self._shell_buffer: str = ""
-        self._shell_chunks_pulled: int = 0
+        self._shell_decoder: Any = codecs.getincrementaldecoder("utf-8")(
+            errors="replace",
+        )
+        self._shell_active: bool = False
 
     # Accepted MAVLink connection-string prefixes (BUG 2). set_connection()
     # rejects anything else so a non-str/empty/garbage JSON value cannot reach
     # _is_serial() (AttributeError on .startswith) or mavlink_connection("")
     # (which hangs/reconnect-storms).
+    # ``udpout:``/``tcpin:`` are the dial-out halves: without them Corvus can
+    # only ever bind and wait, which leaves a mavlink-router UdpEndpoint in
+    # Server mode (the router binds, the station speaks first) unreachable,
+    # along with any router behind NAT.
     _VALID_PREFIXES: tuple[str, ...] = (
-        "udp:", "udpin:", "udpbcast:", "tcp:", "serial:",
+        "udp:", "udpin:", "udpout:", "udpbcast:", "tcp:", "tcpin:", "serial:",
     )
 
     def validate_connection(self, conn_str: str) -> None:
@@ -407,14 +469,14 @@ class MavlinkBridge:
         serial: connection whose device is a CDC ACM node (/dev/ttyACM*, /dev/serial/by-id/*
         pointing at a known Pixhawk-class FC), NOT a USB-to-serial radio adapter.
         'sik' = a SiK Telemetry Radio or other USB-to-serial adapter (/dev/ttyUSB*).
-        'udp' = any udp:/udpin:/udpbcast: connection.
-        'tcp' = any tcp: connection.
+        'udp' = any udp:/udpin:/udpout:/udpbcast: connection.
+        'tcp' = any tcp:/tcpin: connection.
         'unknown' = anything else (including unrecognised serial devices).
         """
         conn = self._conn_str
-        if conn.startswith("udp:") or conn.startswith("udpin:") or conn.startswith("udpbcast:"):
+        if conn.startswith(("udp:", "udpin:", "udpout:", "udpbcast:")):
             return "udp"
-        if conn.startswith("tcp:"):
+        if conn.startswith(("tcp:", "tcpin:")):
             return "tcp"
         if conn.startswith("serial:"):
             # Reuse the existing parser so the device/baud split stays in one
@@ -527,6 +589,7 @@ class MavlinkBridge:
                 cycle_exc = exc
                 logger.error("MAVLink error: %s", exc)
             self._cancel_pending_commands()
+            self._reset_shell_state()
             # Close this cycle's tlog so a reconnect opens a fresh file.
             self._stop_tlog()
             conn = self._conn
@@ -563,6 +626,7 @@ class MavlinkBridge:
 
     def _connect(self) -> None:
         logger.info("Connecting to %s …", self._conn_str)
+        self._reset_shell_state()
         self._request_sent = False
         self._home_alt_amsl = None
         self._position_home_alt_amsl = None
@@ -581,9 +645,19 @@ class MavlinkBridge:
                 # mavserial takes the bare device path + a baud kwarg; the
                 # ``serial:`` prefix is only a user-facing convention here.
                 device, baud = self._parse_serial(self._conn_str)
-                self._conn = mavutil.mavlink_connection(device, baud=baud)
+                self._conn = mavutil.mavlink_connection(
+                    device,
+                    baud=baud,
+                    source_system=GCS_SYSTEM_ID,
+                    source_component=GCS_COMPONENT_ID,
+                )
             else:
-                self._conn = mavutil.mavlink_connection(self._conn_str, timeout=2)
+                self._conn = mavutil.mavlink_connection(
+                    self._conn_str,
+                    timeout=2,
+                    source_system=GCS_SYSTEM_ID,
+                    source_component=GCS_COMPONENT_ID,
+                )
         except (OSError, FileNotFoundError) as exc:
             if self._is_serial():
                 message = f"serial device unavailable: {self._conn_str}"
@@ -591,7 +665,7 @@ class MavlinkBridge:
                 raise ConnectionError(message) from exc
             raise
         logger.info("Waiting for heartbeat …")
-        hb = self._conn.wait_heartbeat(blocking=True, timeout=10)
+        hb = self._wait_vehicle_heartbeat(HEARTBEAT_WAIT_S)
         if hb is None:
             raise ConnectionError("No heartbeat received")
         # PX4 autopilot is comp 1; comp 0 = broadcast (not addressable).
@@ -623,6 +697,36 @@ class MavlinkBridge:
         # open files or spawn writer threads in ~/.corvus/logs; in production
         # _run only calls _connect while _running is set.
         self._start_tlog()
+
+    def _wait_vehicle_heartbeat(self, timeout: float) -> Any:
+        """The first HEARTBEAT from an actual autopilot, within *timeout*.
+
+        ``mavutil.wait_heartbeat`` matches on message type alone, so on a link
+        that carries more than one node — anything behind mavlink-router — it
+        hands back whichever heartbeat happens to arrive first. If that is
+        QGroundControl's, ``_target_system`` becomes 255 and every command this
+        session sends is addressed to a ground station: arming, mode changes,
+        parameter reads and mission uploads all time out, with a connected
+        green dot the whole time.
+
+        So keep reading until the aircraft identifies itself, inside the same
+        wall-clock budget a single wait would have had.
+        """
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            hb = self._conn.wait_heartbeat(blocking=True, timeout=remaining)
+            if hb is None:
+                return None
+            if _is_vehicle_heartbeat(hb):
+                return hb
+            logger.info(
+                "ignoring heartbeat from sys=%s comp=%s: not an autopilot",
+                getattr(hb, "get_srcSystem", lambda: "?")(),
+                getattr(hb, "get_srcComponent", lambda: "?")(),
+            )
 
     def _decode_mode(self, hb: Any) -> str:
         """Decode the PX4 custom mode layout used by PX4 v1.16-v1.18."""
@@ -727,17 +831,63 @@ class MavlinkBridge:
             logger.debug("tlog stop failed: %s", exc)
 
     def _write_tlog(self, msg: Any) -> None:
-        """Log a raw MAVLink frame if a tlog is active; never breaks the link."""
+        """Log a raw MAVLink frame if a tlog is active; never breaks the link.
+
+        Also hands the same frame to the forwarder when one is attached: both
+        consumers want the bytes exactly as they came off the wire, and both
+        are non-blocking appends, so taking the msgbuf once serves both.
+        """
         tlog = self._tlog
-        if tlog is None:
+        sink = self._frame_sink
+        if tlog is None and sink is None:
             return
         try:
             get_buf = getattr(msg, "get_msgbuf", None)
             if get_buf is None:
                 return
-            tlog.write_frame(get_buf())
+            raw = get_buf()
         except Exception as exc:
-            logger.debug("tlog write failed: %s", exc)
+            logger.debug("frame capture failed: %s", exc)
+            return
+        if tlog is not None:
+            try:
+                tlog.write_frame(raw)
+            except Exception as exc:
+                logger.debug("tlog write failed: %s", exc)
+        if sink is not None:
+            try:
+                sink(raw)
+            except Exception as exc:  # noqa: BLE001 - a sink never breaks the link
+                logger.debug("frame forward failed: %s", exc)
+
+    def set_frame_sink(self, sink: Callable[[bytes], None] | None) -> None:
+        """Route every raw received frame to *sink* (None detaches)."""
+        self._frame_sink = sink
+
+    def inject_raw(self, frame: bytes) -> bool:
+        """Write one already-framed MAVLink message straight to the aircraft.
+
+        The entry point for a second ground station: the bytes are passed
+        through untouched, so QGroundControl's own sequence numbers, system id
+        and (if it uses them) signature reach PX4 exactly as it wrote them —
+        re-encoding here would break signing and confuse PX4's per-sender
+        sequence tracking.
+
+        Guarded by the same send lock as every other transmit path, so an
+        injected frame can never interleave with one Corvus is writing.
+        """
+        conn = self._conn
+        if conn is None or not frame:
+            return False
+        try:
+            with self._send_lock:
+                if conn is not self._conn:
+                    return False
+                conn.write(frame)
+        except Exception as exc:  # noqa: BLE001 - a second station never kills the link
+            logger.debug("inject failed: %s", exc)
+            return False
+        return True
 
     def _stream_rates(self) -> dict[int, int]:
         """Per-stream REQUEST_DATA_STREAM rates, throttled on serial links.
@@ -1057,7 +1207,10 @@ class MavlinkBridge:
     def _dispatch(self, msg: Any) -> None:
         name = msg.get_type()
 
-        if name == "COMMAND_ACK":
+        if name == "COMMAND_ACK" and self._is_from_vehicle(msg):
+            # The console is this aircraft's console: through a router it would
+            # otherwise fill with acknowledgements for commands another station
+            # sent to another vehicle.
             result_text = MAV_RESULT_TEXT.get(msg.result, f"result={msg.result}")
             formatted = f"COMMAND_ACK: cmd={msg.command} {result_text}"
             level = "success" if msg.result == 0 else ("info" if msg.result == 5 else "error")
@@ -1065,7 +1218,10 @@ class MavlinkBridge:
             if self._ack_is_for_us(msg):
                 with self._ack_lock:
                     pending = self._pending_acks.get(msg.command)
-                    if pending and msg.result != mavutil.mavlink.MAV_RESULT_IN_PROGRESS:
+                    if pending and (
+                        msg.result != mavutil.mavlink.MAV_RESULT_IN_PROGRESS
+                        or pending.accept_in_progress
+                    ):
                         pending.result = msg.result
                         pending.event.set()
 
@@ -1080,7 +1236,32 @@ class MavlinkBridge:
         if name == "SERIAL_CONTROL":
             self._handle_serial_control(msg)
 
+        # The SiK radio speaks for itself, not for the aircraft: RADIO_STATUS
+        # carries the radio's own system id (ord('3')/ord('D')), so it is
+        # served before the from-the-vehicle guard below would reject it.
+        if name == "RADIO_STATUS":
+            self._handle_radio_status(msg)
+            return
+
+        # Everything past here writes the aircraft's own state — position,
+        # mode, battery, parameters, the armed flag. On a link that carries
+        # more than one node (mavlink-router, or a second station sharing the
+        # vehicle) the receive loop also sees a ground station's heartbeats, a
+        # companion computer's STATUSTEXT and a second aircraft's telemetry.
+        # Taking those as this vehicle's means an ARMED indicator that blinks
+        # off once a second because QGroundControl said so, and — worse — a
+        # lost aircraft that still looks connected, because somebody else's
+        # heartbeat kept feeding the staleness timer that drives the reconnect.
+        if not self._is_from_vehicle(msg):
+            return
+
         if name == "HEARTBEAT":
+            # Tighter than the guard above: every component on the airframe
+            # heartbeats under the vehicle's system id with its own type,
+            # autopilot and base_mode, so a gimbal would otherwise overwrite
+            # the vehicle type, the flight mode and the armed flag.
+            if not self._is_from_autopilot(msg):
+                return
             self._store.heartbeat()
             # Rolling inter-arrival timestamps for jitter (A1).
             self._hb_times.append(time.monotonic())
@@ -1130,6 +1311,7 @@ class MavlinkBridge:
                 battery_voltage=round(voltage, 1),
                 battery_current=round(current, 1),
                 battery_percent=msg.battery_remaining if msg.battery_remaining != -1 else 0,
+                prearm_ok=_prearm_ok(msg),
             )
         elif name == "SYSTEM_TIME":
             if msg.time_unix_usec:
@@ -1189,8 +1371,6 @@ class MavlinkBridge:
             lon = msg.longitude / 1e7
             self._home_alt_amsl = msg.altitude / 1000.0
             self._store.update(home=[lon, lat])
-        elif name == "RADIO_STATUS":
-            self._handle_radio_status(msg)
 
     # ------------------------------------------------------------------
     # Link-quality tracking (A1)
@@ -1286,11 +1466,38 @@ class MavlinkBridge:
             quality = "poor"
         self._store.update(link_quality=quality)
 
+    def _is_from_vehicle(self, msg: Any) -> bool:
+        """Did *msg* come from the aircraft this bridge is flying?
+
+        Source system 0 means the frame carries no sender id — the synthetic
+        messages unit tests build, and pymavlink's own BAD_DATA — and is
+        accepted: this rejects an identified *other* node, it does not demand
+        provenance a frame never had.
+        """
+        source_system = getattr(msg, "get_srcSystem", lambda: 0)()
+        return not source_system or source_system == self._target_system
+
+    def _is_from_autopilot(self, msg: Any) -> bool:
+        """Tighter than :meth:`_is_from_vehicle`: the flight controller itself.
+
+        A gimbal, a camera and a companion computer all heartbeat under the
+        vehicle's system id, each with its own MAV_TYPE and an empty base_mode.
+        Only the autopilot's component speaks for the airframe's mode and arm
+        state, so the HEARTBEAT branch asks for that one.
+        """
+        if not self._is_from_vehicle(msg):
+            return False
+        source_component = getattr(msg, "get_srcComponent", lambda: 0)()
+        return not source_component or source_component == self._target_component
+
     def _ack_is_for_us(self, msg: Any) -> bool:
         if not self._conn:
             return False
         source_system = getattr(msg, "get_srcSystem", lambda: 0)()
         if source_system and source_system != self._target_system:
+            return False
+        source_component = getattr(msg, "get_srcComponent", lambda: 0)()
+        if source_component and source_component != self._target_component:
             return False
         target_system = getattr(msg, "target_system", 0)
         expected_system = getattr(self._conn, "source_system", 0)
@@ -1503,6 +1710,7 @@ class MavlinkBridge:
     def _send_command_and_wait(
         self, command: int, params: list[float] | None = None,
         timeout: float = 3.0, retries: int = 2,
+        accept_in_progress: bool = False,
     ) -> int:
         """Send COMMAND_LONG and wait for COMMAND_ACK. Returns result int (-1 = no ack)."""
         with self._operation_lock:
@@ -1514,7 +1722,7 @@ class MavlinkBridge:
             conn = self._conn
             p = list(params or [])[:7]
             p.extend([float("nan")] * (7 - len(p)))
-            pending = _PendingAck()
+            pending = _PendingAck(accept_in_progress=accept_in_progress)
             with self._ack_lock:
                 self._pending_acks[command] = pending
 
@@ -2751,31 +2959,26 @@ class MavlinkBridge:
     # ------------------------------------------------------------------
 
     _AUTOTUNE_AXIS_MAP: dict[str, float] = {
-        # AUTOTUNE_AXIS bitmask — verified against PX4 v1.18 mavlink_receiver.cpp
-        # and the AUTOTUNE_AXIS enum (roll=1, pitch=2, yaw=4; 0 = tune all).
-        "roll": 1.0,
-        "pitch": 2.0,
-        "yaw": 4.0,
+        # PX4 v1.16 and v1.17 ignore param2; v1.18 requires it to be zero.
         "all": 0.0,
     }
 
     def autotune(self, axis: str) -> bool:
         """Start PX4 autotune via MAV_CMD_DO_AUTOTUNE_ENABLE (212).
 
-        param1=1 (enable), param2=axis bitmask. The ACK (ACCEPTED) arrives
-        when PX4 starts the autotune task; tuning progress streams as
-        STATUSTEXT. PX4 v1.18 only runs the full tune (param2=0); specific
-        axes are DENIED — the operator should use ``"all"``.
+        param1=1 enables the tune and param2=0 requests the only tune supported
+        by PX4 v1.16-v1.18: all rate and attitude axes. PX4 acknowledges a
+        successful start with IN_PROGRESS; progress then streams as STATUSTEXT.
         """
         with self._operation_lock:
             self._set_command_error("")
-            axis_val = self._AUTOTUNE_AXIS_MAP.get(axis)
-            if axis_val is None:
-                self._set_command_error(f"unknown autotune axis: {axis}")
-                return False
             # Defense-in-depth: refuse while armed.
             if self._store.get_snapshot().get("armed"):
                 self._set_command_error("cannot autotune while armed")
+                return False
+            axis_val = self._AUTOTUNE_AXIS_MAP.get(axis)
+            if axis_val is None:
+                self._set_command_error(f"unknown autotune axis: {axis}")
                 return False
             if not self._connection_ready():
                 return self._command_failure(f"Autotune {axis}", -2)
@@ -2784,10 +2987,14 @@ class MavlinkBridge:
                 mavutil.mavlink.MAV_CMD_DO_AUTOTUNE_ENABLE,
                 [1.0, axis_val, nan, nan, nan, nan, nan],
                 timeout=5.0, retries=0,
+                accept_in_progress=True,
             )
-            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+            if result not in (
+                mavutil.mavlink.MAV_RESULT_ACCEPTED,
+                mavutil.mavlink.MAV_RESULT_IN_PROGRESS,
+            ):
                 return self._command_failure(f"Autotune {axis}", result)
-            self._console_publish("AUTOTUNE", f"Autotune ({axis}) started", "success")
+            self._console_publish("AUTOTUNE", "Full autotune started", "success")
             return True
 
     # ------------------------------------------------------------------
@@ -2977,48 +3184,82 @@ class MavlinkBridge:
     # v1.16, v1.17, and v1.18. The debug shell must be enabled on the
     # autopilot: it is on by default for SITL; on hardware the MAVLink
     # instance must permit shell access (MAV_ADVANCED_PARAMS / instance
-    # config). REPLY|EXCLUSIVE makes PX4 stream the response back one
-    # 70-byte chunk per SERIAL_CONTROL; we pull the next chunk on each
-    # reply so multi-packet output (e.g. ``listener sensor_accel``) streams
-    # without pinning the receive loop.
+    # config). RESPOND|EXCLUSIVE|MULTI is the QGroundControl framing: PX4
+    # keeps the shell open and streams every available 70-byte response chunk.
+
+    def _reset_shell_state(self) -> None:
+        """Clear all state associated with the current PX4 shell session."""
+        with self._shell_lock:
+            self._shell_active = False
+            self._shell_buffer = ""
+            self._shell_decoder.reset()
+
+    def _send_serial_control(
+        self, conn: Any, flags: int, count: int, data: bytes,
+    ) -> None:
+        """Send SERIAL_CONTROL, using target extensions when available."""
+        args: tuple[Any, ...] = (
+            mavutil.mavlink.SERIAL_CONTROL_DEV_SHELL,
+            flags,
+            0,
+            0,
+            count,
+            data,
+        )
+        fields = getattr(
+            mavutil.mavlink.MAVLink_serial_control_message,
+            "fieldnames",
+            (),
+        )
+        if "target_system" in fields and "target_component" in fields:
+            args += (self._target_system, self._target_component)
+        conn.mav.serial_control_send(*args)
 
     def send_shell_command(self, text: str) -> bool:
         """Send ``text`` (plus a newline) to the PX4 NSH debug shell.
 
-        Sends one ``SERIAL_CONTROL`` with ``device=SHELL`` and
-        ``flags=REPLY|EXCLUSIVE`` (=5) so PX4 streams the response back;
-        ``_handle_serial_control`` pulls each following chunk. Returns
+        Sends one or more ``SERIAL_CONTROL`` packets with ``device=SHELL`` and
+        ``flags=RESPOND|EXCLUSIVE|MULTI`` so PX4 streams the response back.
+        Returns
         ``True`` if the SERIAL_CONTROL was sent, ``False`` on disconnect
         or send failure (mirrors the ``-2``/``False`` convention of the
-        other command methods). Resets the per-command chunk-pull counter.
+        other command methods).
         """
         # Clear any stale thread-local error so the caller sees a fresh result
         # (BUG 10). The success path leaves it empty; the failure paths set it.
         self._set_command_error("")
+        if not isinstance(text, str):
+            self._set_command_error("shell command must be text")
+            return False
         with self._send_lock:
             conn = self._conn
             # A6: bail if stop()/reconnect swapped the connection, or the
             # link isn't healthy enough to dispatch an operator command.
             if conn is not self._conn or not self._connection_ready():
                 return self._command_failure("Shell", -2)
-            payload = (text + "\n").encode("utf-8", errors="replace")
-            # SERIAL_CONTROL.data is a fixed 70-byte array; pad with NUL.
-            data = payload.ljust(70, b"\x00")
-            try:
-                conn.mav.serial_control_send(
-                    mavutil.mavlink.SERIAL_CONTROL_DEV_SHELL,
-                    mavutil.mavlink.SERIAL_CONTROL_FLAG_REPLY
-                    | mavutil.mavlink.SERIAL_CONTROL_FLAG_EXCLUSIVE,
-                    0, 0, len(payload), data,
-                )
-            except Exception as exc:
-                logger.error("shell command send failed: %s", exc)
-                # Surface the real cause instead of a stale/generic error (BUG 10).
-                self._set_command_error(f"shell send failed: {exc}")
-                return False
-            # Reset the per-command chunk counter so this response can
-            # stream up to SHELL_MAX_CHUNKS chunks.
-            self._shell_chunks_pulled = 0
+            payload = (text if text.endswith("\n") else text + "\n").encode(
+                "utf-8", errors="replace",
+            )
+            flags = (
+                mavutil.mavlink.SERIAL_CONTROL_FLAG_RESPOND
+                | mavutil.mavlink.SERIAL_CONTROL_FLAG_EXCLUSIVE
+                | mavutil.mavlink.SERIAL_CONTROL_FLAG_MULTI
+            )
+            with self._shell_lock:
+                self._reset_shell_state()
+                self._shell_active = True
+                try:
+                    for offset in range(0, len(payload), 70):
+                        chunk = payload[offset:offset + 70]
+                        self._send_serial_control(
+                            conn, flags, len(chunk), chunk.ljust(70, b"\x00"),
+                        )
+                except Exception as exc:
+                    self._reset_shell_state()
+                    logger.error("shell command send failed: %s", exc)
+                    # Surface the real cause instead of a stale/generic error (BUG 10).
+                    self._set_command_error(f"shell send failed: {exc}")
+                    return False
             return True
 
     def stop_shell(self) -> None:
@@ -3030,89 +3271,64 @@ class MavlinkBridge:
         swallows exceptions and is a safe no-op when not connected. Called
         from :meth:`stop` so exclusive mode is released on shutdown.
         """
-        self._shell_buffer = ""
         with self._send_lock:
             conn = self._conn
+            self._reset_shell_state()
             # A6: only release on the connection we snapshotted; no-op if
             # the link was already torn down (best-effort release).
             if conn is None or conn is not self._conn:
                 return
             try:
-                conn.mav.serial_control_send(
-                    mavutil.mavlink.SERIAL_CONTROL_DEV_SHELL,
-                    0, 0, 0, 0, b"\x00" * 70,
-                )
+                self._send_serial_control(conn, 0, 0, b"\x00" * 70)
             except Exception:
                 pass
 
     def _handle_serial_control(self, msg: Any) -> None:
         """Reassemble an NSH-shell SERIAL_CONTROL reply into console lines.
 
-        PX4 streams the shell response one 70-byte chunk per SERIAL_CONTROL.
-        Each chunk is decoded, sanitized (CR stripped, backspace applied),
+        PX4 streams the shell response in 70-byte SERIAL_CONTROL chunks.
+        Each chunk is decoded incrementally, sanitized (CR stripped,
+        backspace applied),
         appended to the line buffer, and complete lines are published to the
-        console subscribers. On a non-empty reply (``count > 0``) we pull the
-        next chunk; ``count == 0`` is the end-of-response and is not pulled.
-        Robust to stray shell traffic when no command is in flight: it just
-        publishes. Runs in the receive loop — must never block or raise.
+        console subscribers. Runs in the receive loop and never blocks.
         """
         try:
             if int(getattr(msg, "device", -1)) != mavutil.mavlink.SERIAL_CONTROL_DEV_SHELL:
                 return
-            count = int(getattr(msg, "count", 0))
-            if count <= 0:
-                # End of response (or empty): do not pull another chunk.
+            if not self._shell_active or not self._ack_is_for_us(msg):
                 return
-            raw = bytes(msg.data)[:count]
-            text = raw.decode("utf-8", errors="replace")
-            # Sanitize: drop CR (NSH sends \r\n); apply BS by removing the
-            # previous char — in this chunk, or the buffer tail if a
-            # backspace crosses a chunk boundary (NSH line-edit echo).
-            chunk: list[str] = []
-            for ch in text:
-                if ch == "\r":
-                    continue
-                if ch == "\b":
-                    if chunk:
-                        chunk.pop()
-                    elif self._shell_buffer:
-                        self._shell_buffer = self._shell_buffer[:-1]
-                    continue
-                chunk.append(ch)
-            self._shell_buffer += "".join(chunk)
-            # Publish each complete line; keep the trailing partial line.
-            while "\n" in self._shell_buffer:
-                line, self._shell_buffer = self._shell_buffer.split("\n", 1)
-                line = line.strip()
-                if line:
-                    self._console_publish("SHELL", line, "info")
-            # Event-driven chunk pull: one request per reply returns the
-            # receive loop to normal recv between pulls (no tight loop).
-            self._pull_next_shell_chunk()
+            lines: list[str] = []
+            with self._shell_lock:
+                if not self._shell_active:
+                    return
+                count = int(getattr(msg, "count", 0))
+                if count <= 0 or count > 70:
+                    return
+                raw_data = bytes(msg.data)
+                if count > len(raw_data):
+                    return
+                text = self._shell_decoder.decode(raw_data[:count], final=False)
+                # Sanitize: drop CR (NSH sends \r\n); apply BS by removing the
+                # previous char — in this chunk, or the buffer tail if a
+                # backspace crosses a chunk boundary (NSH line-edit echo).
+                chunk: list[str] = []
+                for ch in text:
+                    if ch == "\r":
+                        continue
+                    if ch == "\b":
+                        if chunk:
+                            chunk.pop()
+                        elif self._shell_buffer:
+                            self._shell_buffer = self._shell_buffer[:-1]
+                        continue
+                    chunk.append(ch)
+                self._shell_buffer += "".join(chunk)
+                # Publish each complete line; keep the trailing partial line.
+                while "\n" in self._shell_buffer:
+                    line, self._shell_buffer = self._shell_buffer.split("\n", 1)
+                    if line:
+                        lines.append(line)
+            for line in lines:
+                self._console_publish("SHELL", line, "info")
         except Exception as exc:
             logger.debug("SERIAL_CONTROL handling failed: %s", exc)
-
-    def _pull_next_shell_chunk(self) -> None:
-        """Send one empty SERIAL_CONTROL to request the next shell chunk.
-
-        Capped by :data:`SHELL_MAX_CHUNKS` per command (counter reset in
-        :meth:`send_shell_command`) so a runaway shell response cannot
-        stream forever. Best-effort: a torn-down link simply stops pulling.
-        """
-        if self._shell_chunks_pulled >= SHELL_MAX_CHUNKS:
-            return
-        self._shell_chunks_pulled += 1
-        with self._send_lock:
-            conn = self._conn
-            # A6: drop the pull if stop()/reconnect swapped the connection.
-            if conn is None or conn is not self._conn:
-                return
-            try:
-                conn.mav.serial_control_send(
-                    mavutil.mavlink.SERIAL_CONTROL_DEV_SHELL,
-                    mavutil.mavlink.SERIAL_CONTROL_FLAG_REPLY
-                    | mavutil.mavlink.SERIAL_CONTROL_FLAG_EXCLUSIVE,
-                    0, 0, 0, b"\x00" * 70,
-                )
-            except Exception:
-                pass

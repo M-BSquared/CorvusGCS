@@ -14,6 +14,9 @@ Corvus.telemetry = (function () {
     state = {
       connected: false,
       armed: false,
+      // Autopilot preflight verdict: true = would arm, false = refusing,
+      // null = this firmware does not report it. See topbar readiness().
+      prearm_ok: null,
       vehicle_type: "",
       autopilot: "",
       mode: "",
@@ -105,11 +108,31 @@ Corvus.telemetry = (function () {
      silently stalls a stream in the field. */
   const consoleSubs = new Set();
   let consoleSource = null;
+  let consoleGeneration = 0;
+  let consoleInterrupted = false;
+
+  function publishConsoleEntry(entry) {
+    consoleSubs.forEach((fn) => {
+      try { fn(entry); } catch (err) { console.error("console subscriber failed:", err); }
+    });
+  }
 
   function openConsoleStream() {
     if (consoleSource) return;
+    const generation = ++consoleGeneration;
+    consoleInterrupted = false;
     consoleSource = new EventSource("/api/console/stream");
+    consoleSource.addEventListener("open", () => {
+      if (generation !== consoleGeneration) return;
+      if (consoleInterrupted) {
+        publishConsoleEntry({
+          name: "GCS", level: "success", text: "Console stream reconnected.",
+        });
+        consoleInterrupted = false;
+      }
+    });
     consoleSource.addEventListener("message", (e) => {
+      if (generation !== consoleGeneration) return;
       let entry;
       try {
         entry = JSON.parse(e.data);
@@ -118,17 +141,24 @@ Corvus.telemetry = (function () {
         return;
       }
       if (!entry || entry.name === "ping") return;
-      consoleSubs.forEach((fn) => {
-        try { fn(entry); } catch (err) { console.error("console subscriber failed:", err); }
-      });
+      publishConsoleEntry(entry);
     });
-    consoleSource.onerror = () => {};
+    consoleSource.onerror = () => {
+      if (generation !== consoleGeneration || consoleInterrupted) return;
+      consoleInterrupted = true;
+      publishConsoleEntry({
+        name: "GCS", level: "warning",
+        text: "Console stream interrupted; reconnecting…",
+      });
+    };
   }
 
   function closeConsoleStream() {
     if (!consoleSource) return;
+    consoleGeneration++;
     consoleSource.close();
     consoleSource = null;
+    consoleInterrupted = false;
   }
 
   /**
