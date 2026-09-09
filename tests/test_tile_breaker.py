@@ -85,7 +85,10 @@ def test_cooldown_expiry_allows_exactly_one_probe() -> None:
     b = _UpstreamBreaker(threshold=1, cooldown=0.05)
     b.record_failure()
     assert not b.allow(), "suppressed during the cooldown"
-    time.sleep(0.06)
+    # 0.2 and not 0.06: the breaker compares time.monotonic(), whose
+    # resolution on Windows is ~15.6 ms, so a 10 ms margin over the
+    # cooldown can measure as not-yet-elapsed and the probe never opens.
+    time.sleep(0.2)
     assert b.allow(), "first request after the cooldown is the probe"
     assert not b.allow(), "the probe re-arms the window until it reports back"
 
@@ -94,7 +97,10 @@ def test_a_failed_probe_leaves_the_breaker_suppressing() -> None:
     """Still offline after the probe: back to instant failures, not a stampede."""
     b = _UpstreamBreaker(threshold=1, cooldown=0.05)
     b.record_failure()
-    time.sleep(0.06)
+    # 0.2 and not 0.06: the breaker compares time.monotonic(), whose
+    # resolution on Windows is ~15.6 ms, so a 10 ms margin over the
+    # cooldown can measure as not-yet-elapsed and the probe never opens.
+    time.sleep(0.2)
     assert b.allow()          # the probe
     b.record_failure()        # ...which failed
     assert b.is_open()

@@ -72,4 +72,8 @@ def test_wait_returns_immediately_after_set() -> None:
     elapsed = time.monotonic() - start
 
     assert woke is True
-    assert elapsed < 0.01, f"wait() took {elapsed:.6f}s — not immediate"
+    # Not 0.01: that is under Windows' ~15.6 ms monotonic tick, so an
+    # instantaneous return can still measure as one whole tick. 0.05 is two
+    # orders below the 1.0 s timeout being waited on, which is what "immediate"
+    # has to mean here.
+    assert elapsed < 0.05, f"wait() took {elapsed:.6f}s — not immediate"
