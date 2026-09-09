@@ -27,6 +27,8 @@ pytest.importorskip("paramiko")
 from corvus.config import CorvusConfig  # noqa: E402
 from corvus.server import CorvusHandler, _safe_filename  # noqa: E402
 
+from conftest import posix_permissions
+
 
 class _FakeBridge:
     """Records stop() calls; optionally raises to exercise the failure path."""
@@ -159,6 +161,7 @@ def test_console_save_cannot_escape_the_log_directory(handler, tmp_path) -> None
     assert not (tmp_path.parent / "escaped.log").exists()
 
 
+@posix_permissions
 def test_console_save_reports_an_unwritable_directory(handler, tmp_path) -> None:
     blocked = tmp_path / "blocked"
     blocked.mkdir()

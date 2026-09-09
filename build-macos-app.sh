@@ -71,11 +71,19 @@ done
 py_ok() {  # <path> -> 0 if usable
     local p="$1"
     [ -x "$p" ] || return 1
-    "$p" - <<'PY' >/dev/null 2>&1 || return 1
-import sys, sysconfig
+    ARCH="$ARCH" "$p" - <<'PY' >/dev/null 2>&1 || return 1
+import os, platform, sys, sysconfig
 assert sys.version_info >= (3, 10), sys.version
 assert sysconfig.get_config_var("PYTHONFRAMEWORK"), "not a framework build"
 assert "conda" not in sys.prefix.lower(), "conda interpreter"
+# The interpreter must run as the architecture we are building for. A
+# universal2 python.org build satisfies this natively on either arch; an
+# x86_64-only Homebrew install under /usr/local does not on Apple Silicon,
+# and picking it would produce an Intel bundle carrying an arm64 name --
+# uname -m answers for the shell, not for what ends up inside the .app.
+assert platform.machine() == os.environ["ARCH"], (
+    "%s runs as %s, building for %s" % (sys.executable, platform.machine(),
+                                        os.environ["ARCH"]))
 PY
 }
 
@@ -454,6 +462,31 @@ PY
     BUNDLED_VERSION="$(cat "$APPROOT/VERSION")"
     [ "$BUNDLED_VERSION" = "$VERSION" ] || {
         echo "ERROR: bundled VERSION ($BUNDLED_VERSION) != $VERSION" >&2; exit 1; }
+
+    # The artifact is named from `uname -m`, which answers for the shell and
+    # not for what pip put inside the bundle. Nothing else here checks that the
+    # two agree, so an x86_64 Qt wheel in a bundle called arm64 would ship
+    # silently and only fail on the operator's Mac. Check the two heaviest
+    # native payloads: the interpreter itself and QtWebEngineCore.
+    echo ">>> Verifying the bundle is $ARCH ..."
+    arch_of() {  # <mach-o path> -> the architectures it actually contains
+        lipo -archs "$1" 2>/dev/null || file -b "$1"
+    }
+    SITE="$PYROOT/lib/python$PY_MM/site-packages"
+    QT_CORE="$(/usr/bin/find "$SITE/PyQt6" -name 'QtWebEngineCore' -type f 2>/dev/null | head -1)"
+    for binary in "$PYROOT/bin/python3" ${QT_CORE:+"$QT_CORE"}; do
+        [ -f "$binary" ] || continue
+        archs="$(arch_of "$binary")"
+        case " $archs " in
+            *" $ARCH "*) echo "    $(basename "$binary"): $archs" ;;
+            *)
+                echo "ERROR: $binary is [$archs], but this bundle is named $ARCH." >&2
+                echo "       The interpreter or the Qt wheels came from the wrong" >&2
+                echo "       architecture. Check which python was picked above." >&2
+                exit 1
+                ;;
+        esac
+    done
 fi
 
 SUCCESS=1

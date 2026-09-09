@@ -89,3 +89,19 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[Any]) -> No
     for item in items:
         if "sitl" in item.keywords:
             item.add_marker(skip)
+
+
+# ---------------------------------------------------------------------------
+# Platform gates
+# ---------------------------------------------------------------------------
+# A handful of tests assert POSIX file-permission behaviour: that the saved
+# config is mode 0o600, and that an unwritable directory is reported rather
+# than crashed on. Windows has neither mechanism — os.chmod sets only the
+# read-only attribute, and a directory cannot be made un-creatable-in that way
+# — so those tests are skipped there rather than rewritten into something that
+# no longer checks the thing they exist for. The gap they leave on Windows is
+# named in save_config()'s docstring.
+posix_permissions = pytest.mark.skipif(
+    os.name != "posix",
+    reason="POSIX file permissions; os.chmod on Windows sets only read-only",
+)

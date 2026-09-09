@@ -19,6 +19,8 @@ from corvus.config import (
     to_public_dict,
 )
 
+from conftest import posix_permissions
+
 
 def _defaults() -> CorvusConfig:
     """Fresh built-in defaults for comparison."""
@@ -439,6 +441,7 @@ def test_save_config_creates_parent_dir_and_writes_file(tmp_path) -> None:
     assert data["map"] == {"base_layer": "satellite"}
 
 
+@posix_permissions
 def test_save_config_file_mode_is_600(tmp_path) -> None:
     """The saved config is owner-read/write-only because it may hold passwords."""
     cfg = CorvusConfig(
@@ -504,11 +507,15 @@ def test_save_config_atomic_no_partial_file_on_success(tmp_path) -> None:
 def test_save_config_default_path_creates_corvus_dir(tmp_path, monkeypatch) -> None:
     """save_config(cfg) with no path writes to ~/.corvus/config.json (mode 600)."""
     fake_home = tmp_path / "home"
+    # os.path.expanduser reads HOME on POSIX and USERPROFILE on Windows, so
+    # redirecting only HOME wrote into the real profile on a Windows run.
     monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     save_config(CorvusConfig(http_port=12345))
     p = fake_home / ".corvus" / "config.json"
     assert p.is_file()
-    assert (p.stat().st_mode & 0o777) == 0o600
+    if os.name == "posix":
+        assert (p.stat().st_mode & 0o777) == 0o600
     assert json.loads(p.read_text(encoding="utf-8"))["http_port"] == 12345
 
 

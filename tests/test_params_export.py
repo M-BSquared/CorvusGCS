@@ -32,6 +32,8 @@ from corvus.server import (  # noqa: E402
 )
 from corvus.version import get_version  # noqa: E402
 
+from conftest import posix_permissions
+
 
 # ---------------------------------------------------------------------------
 # 1. Where the file goes
@@ -234,6 +236,7 @@ def test_export_rejects_an_empty_param_set(export_server) -> None:
         assert res["ok"] is False
 
 
+@posix_permissions
 def test_export_reports_an_unwritable_dir_instead_of_crashing(export_server, tmp_path) -> None:
     """The operator needs the reason so they can pick another folder and retry."""
     server, _ = export_server

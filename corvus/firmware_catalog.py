@@ -36,6 +36,7 @@ import urllib.parse
 import urllib.request
 from typing import Any, Callable
 
+from .paths import corvus_path
 from .version import get_version
 
 logger = logging.getLogger("corvus.firmware")
@@ -191,7 +192,7 @@ def detect_board(hints: dict[str, Any], boards: list[dict[str, Any]]) -> dict[st
 
 def default_firmware_dir() -> str:
     """Where downloaded images and the cached catalogue live."""
-    return os.path.expanduser("~/.corvus/firmware")
+    return corvus_path("firmware")
 
 
 def board_label(asset_name: str) -> str:

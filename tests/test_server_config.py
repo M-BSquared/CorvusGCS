@@ -34,6 +34,8 @@ import pytest
 from corvus.config import CorvusConfig, load_config, to_public_dict
 from corvus.server import CorvusHandler, CorvusServer
 
+from conftest import posix_permissions
+
 
 # ---------------------------------------------------------------------------
 # Fakes
@@ -985,6 +987,7 @@ def test_http_remove_disconnects_live_session(http_server) -> None:
     assert on_disk["ssh_connections"] == []
 
 
+@posix_permissions
 def test_http_saved_config_file_is_chmod_600(http_server) -> None:
     """Acceptance check 5: the persisted config file is owner-read/write only."""
     server, ssh, cfg_path = http_server

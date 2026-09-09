@@ -135,7 +135,10 @@ def test_no_hardcoded_version_literal_outside_canonical_sources() -> None:
         rel = path.relative_to(_REPO_ROOT)
         if any(part in _SKIP_DIR_PARTS for part in rel.parts):
             continue
-        if rel in _CANONICAL_FILES:
+        # Compare as posix: _CANONICAL_FILES holds PurePosixPath, and a
+        # WindowsPath never equals one, so on Windows every canonical
+        # file fell through the skip and README.md was reported.
+        if pathlib.PurePosixPath(rel.as_posix()) in _CANONICAL_FILES:
             continue
         if path.suffix.lower() not in _SCANNED_EXTS:
             continue

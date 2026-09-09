@@ -43,6 +43,7 @@ from .mavlink_bridge import (
 )
 from .ssh_bridge import SshBridge
 from .state_store import VehicleStateStore, _sanitize
+from .paths import corvus_path
 from .tile_cache import TileCache, default_cache_dir
 from .version import get_version
 
@@ -402,7 +403,7 @@ def _params_export_dir(cfg: Any) -> str:
     configured = getattr(cfg, "params_dir", "") or ""
     if configured.strip():
         return os.path.expanduser(configured.strip())
-    return os.path.expanduser("~/.corvus/params")
+    return corvus_path("params")
 
 
 def _build_log_service(mavlink: Any, config: Any) -> Any:
@@ -480,7 +481,7 @@ def _log_download_dir(cfg: Any) -> str:
     configured = getattr(cfg, "log_download_dir", "") or ""
     if configured.strip():
         return os.path.expanduser(configured.strip())
-    return os.path.expanduser("~/.corvus/flightlogs")
+    return corvus_path("flightlogs")
 
 
 def _tlog_dir(cfg: Any) -> str:
@@ -488,7 +489,7 @@ def _tlog_dir(cfg: Any) -> str:
     configured = getattr(cfg, "tlog_dir", "") or ""
     if configured.strip():
         return os.path.expanduser(configured.strip())
-    return os.path.expanduser("~/.corvus/logs")
+    return corvus_path("logs")
 
 
 def _slugify(value: Any) -> str:

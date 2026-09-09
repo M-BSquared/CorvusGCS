@@ -23,6 +23,8 @@ import threading
 import time
 from typing import Iterable
 
+from .paths import corvus_path
+
 
 def xyz_to_tms(z: int, y: int) -> int:
     """Convert an XYZ (slippy-map) row *y* at zoom *z* to a TMS (y-flipped) row."""
@@ -82,7 +84,7 @@ def default_cache_dir() -> str:
     there via mkdir(parents=True, exist_ok=True)), mirroring
     mavlink_bridge.default_log_dir; this helper only reports the path.
     """
-    return os.environ.get("CORVUS_TILE_CACHE_DIR") or os.path.expanduser("~/.corvus/tiles")
+    return os.environ.get("CORVUS_TILE_CACHE_DIR") or corvus_path("tiles")
 
 
 class TileCache:

@@ -31,6 +31,8 @@ import pathlib
 import tempfile
 from typing import Any
 
+from .paths import corvus_path
+
 logger = logging.getLogger("corvus.config")
 
 # Canonical key order for the serialized config file. Keeping it stable makes
@@ -126,7 +128,7 @@ class CorvusConfig:
 
 def default_config_path() -> str:
     """Return the conventional config file location (``~`` expanded)."""
-    return os.path.expanduser("~/.corvus/config.json")
+    return corvus_path("config.json")
 
 
 def _coerce_int(value: Any, default: int) -> int:
@@ -511,6 +513,14 @@ def save_config(cfg: CorvusConfig, path: str | None = None) -> None:
     temp file in the same directory, chmod'd 0o600, then ``os.replace``'d
     onto the final path (so a reader never sees a half-written file). The
     parent directory is created with ``exist_ok=True``.
+
+    **On Windows the 0o600 is not protection.** ``os.chmod`` there sets only
+    the read-only attribute; the permission bits are ignored and the file
+    inherits the ACL of its parent directory. ``%USERPROFILE%\\.corvus`` is not
+    readable by other standard users by default, so this is not open to the
+    world — but it is not the explicit owner-only restriction POSIX gets, and
+    an SSH password stored in the config is protected by directory inheritance
+    alone. Storing a key path rather than a password avoids the question.
 
     Stdlib convention: genuine IO failures raise OSError; everything else
     (e.g. a non-serializable value) is logged and returns. The password-

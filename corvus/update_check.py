@@ -36,6 +36,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from .paths import corvus_home
 from .version import get_version
 
 logger = logging.getLogger("corvus.update")
@@ -65,7 +66,7 @@ _TAG_RE = re.compile(r"^v?(\d+(?:\.\d+)*)$")
 
 def default_state_dir() -> str:
     """Where the cached check result lives (``~/.corvus``)."""
-    return os.path.expanduser("~/.corvus")
+    return corvus_home()
 
 
 def parse_version(text: Any) -> tuple[int, ...] | None:

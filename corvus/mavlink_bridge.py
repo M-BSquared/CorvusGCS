@@ -24,6 +24,7 @@ from typing import Any, Callable
 
 from pymavlink import mavutil
 
+from .paths import corvus_path
 from .state_store import VehicleStateStore
 from .tlog import TlogWriter
 
@@ -37,7 +38,7 @@ def default_log_dir() -> str:
     by whoever first writes here (the bridge on connect). Tests monkeypatch
     this to stay hermetic.
     """
-    return os.path.expanduser("~/.corvus/logs")
+    return corvus_path("logs")
 
 MAV_TYPE_MAP: dict[int, str] = {
     0: "GENERIC", 1: "FIXED_WING", 2: "QUADROTOR", 3: "COAXIAL",
