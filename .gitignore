@@ -4,6 +4,10 @@
 *.AppImage
 appimagetool-x86_64.AppImage
 *.dmg
+# Windows build output: the versioned zip and the icon build-windows.ps1
+# renders from the logo when Pillow is available.
+Corvus_GCS-*-windows-x64.zip
+/assets/corvus-gcs.ico
 *.app/
 
 # python

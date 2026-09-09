@@ -128,6 +128,34 @@ _PIXHAWK_BYID_RE = re.compile(
     "|".join(re.escape(t) for t in _BYID_TOKENS), re.IGNORECASE,
 )
 
+# Windows names every serial port the same way, so the port name carries no
+# information at all: COM7 is a Pixhawk, a SiK radio or a Bluetooth pairing
+# with equal probability. The identity is in the USB descriptor pyserial
+# reports as ``hwid`` instead, which is why the classification below looks the
+# port up rather than reading its name.
+_WINDOWS_COM_RE = re.compile(r"^(?:\\\\\.\\)?COM[0-9]+$", re.IGNORECASE)
+# The USB-to-serial bridges a SiK Telemetry Radio (and its clones) is built on.
+# These are adapters: whatever is behind them, it is not a flashable FMU.
+_USB_SERIAL_BRIDGE_TOKENS: tuple[str, ...] = (
+    "vid:pid=0403",   # FTDI FT232 — Holybro/3DR SiK V2 and V3
+    "vid:pid=10c4",   # Silicon Labs CP210x — the common SiK clone bridge
+    "vid:pid=1a86",   # WCH CH340/CH341
+    "vid:pid=067b",   # Prolific PL2303
+)
+_USB_SERIAL_BRIDGE_RE = re.compile(
+    "|".join(re.escape(t) for t in _USB_SERIAL_BRIDGE_TOKENS), re.IGNORECASE,
+)
+
+
+def is_windows_com_port(device: str) -> bool:
+    """Is *device* a Windows COM port name (``COM7``, ``\\\\.\\COM12``)?
+
+    Matched by shape rather than by ``os.name`` so the classification can be
+    exercised from a test on any host — and so a COM name typed into the
+    connection field on Linux is still recognised for what it is.
+    """
+    return bool(_WINDOWS_COM_RE.match(str(device or "").strip()))
+
 # Two-tier heartbeat staleness (A3). WARN marks the link degraded (socket
 # stays open, parsing continues); DROP tears it down and reconnects. Serial
 # tolerates longer SiK-radio dropouts than UDP/SITL.
@@ -472,6 +500,10 @@ class MavlinkBridge:
         'udp' = any udp:/udpin:/udpout:/udpbcast: connection.
         'tcp' = any tcp:/tcpin: connection.
         'unknown' = anything else (including unrecognised serial devices).
+
+        On Windows the device name is COM<n> and says nothing about what is on
+        the other end, so the answer comes from the port's USB descriptor
+        instead — see :meth:`_classify_com_port`.
         """
         conn = self._conn_str
         if conn.startswith(("udp:", "udpin:", "udpout:", "udpbcast:")):
@@ -488,7 +520,37 @@ class MavlinkBridge:
                 return "usb"
             if _SIK_RADIO_RE.match(device):
                 return "sik"
+            if is_windows_com_port(device):
+                return self._classify_com_port(device)
             return "unknown"
+        return "unknown"
+
+    def _classify_com_port(self, device: str) -> str:
+        """'usb' / 'sik' / 'unknown' for a Windows COM port, from its descriptor.
+
+        A COM name is just an index the OS handed out, so unlike a POSIX device
+        path it cannot be classified by inspection. pyserial reports the USB
+        vendor/product ids in ``hwid``, and those do separate the two cases
+        that matter here: a Pixhawk-class FMU presenting its own CDC interface,
+        versus an FTDI/CP210x/CH340 bridge with a radio behind it.
+
+        Unknown wins ties. Getting this wrong in the permissive direction would
+        offer to flash firmware down a telemetry radio, and the operator finds
+        out at the point the autopilot stops answering.
+        """
+        hwid = ""
+        for port in self.list_serial_ports():
+            if str(port.get("device", "")).strip().lower() == device.strip().lower():
+                hwid = f"{port.get('hwid', '')} {port.get('description', '')}"
+                break
+        if not hwid.strip():
+            return "unknown"
+        # Bridge first: an FTDI descriptor may also carry a product string with
+        # a vendor name in it, and a bridge is never the flight controller.
+        if _USB_SERIAL_BRIDGE_RE.search(hwid):
+            return "sik"
+        if _PIXHAWK_BYID_RE.search(hwid):
+            return "usb"
         return "unknown"
 
     def is_direct_usb(self) -> bool:

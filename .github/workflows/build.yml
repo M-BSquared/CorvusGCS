@@ -2,11 +2,13 @@
 # Corvus GCS — GitHub Actions pipeline (mirror of .gitlab-ci.yml)
 # -----------------------------------------------------------------------------
 # Jobs:
-#   test        — pytest suite (python 3.12) on every push, PR, and tag.
+#   test        — pytest suite (python 3.12) on Linux and Windows, every
+#                 push, PR, and tag.
 #   frontend    — the plain-node frontend assertions under tests/*.js.
 #   appimage    — Linux x86_64 AppImage via ./build.sh   (-> build-appimage.sh).
 #   macos-app   — macOS .app + .dmg via ./build.sh --dmg (-> build-macos-app.sh).
-#   release     — on a version tag, attach both artifacts to a GitHub Release.
+#   windows-app — Windows x64 folder + zip via .\build-windows.ps1 (PyInstaller).
+#   release     — on a version tag, attach all three artifacts to a GitHub Release.
 #
 # Packaging cannot be cross-built, so each artifact is produced on its own
 # runner. No version is hardcoded anywhere: the build scripts read the repo-root
@@ -40,8 +42,17 @@ jobs:
   # Installs only the runtime deps the non-GUI unit tests import at module load
   # (corvus.server pulls pymavlink + paramiko; mavlink_bridge uses pyserial
   # lazily). PyQt6 is intentionally NOT installed — no headless test imports Qt.
+  # Run on Windows too, not only Linux: the suite is the only thing that
+  # actually exercises the Windows code paths (COM-port classification, the
+  # bootloader device check), and a platform nobody tests on is a platform the
+  # project only claims to support. A Windows failure skips windows-app and the
+  # release, and leaves the Linux/macOS artifacts building.
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -142,9 +153,39 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # --- Windows artifact ------------------------------------------------------
+  # PyInstaller rather than the hand-rolled relocatable interpreter the other
+  # two platforms need — see the header of build-windows.ps1. Qt's WebEngine
+  # payload is large, so this is the slowest of the three jobs.
+  windows-app:
+    needs: [test, frontend]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pillow, for the .ico
+        # Optional in the script (it builds with the default icon without it),
+        # installed here so release artifacts always carry the mark.
+        run: python -m pip install --disable-pip-version-check Pillow
+      - name: Build the Windows app
+        shell: pwsh
+        run: .\build-windows.ps1 -Zip -Python (Get-Command python).Source
+      - name: Read version
+        id: ver
+        shell: bash
+        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Corvus_GCS-${{ steps.ver.outputs.version }}-windows-x64
+          path: Corvus_GCS-*-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30
+
   # --- release (version tags only) -------------------------------------------
   release:
-    needs: [appimage, macos-app]
+    needs: [appimage, macos-app, windows-app]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:

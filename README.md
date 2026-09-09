@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.30-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.30" />
+  <img src="https://img.shields.io/badge/Version-2026.09.31-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.31" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.10%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.10+" /></a>
   <img width="8" />
@@ -29,9 +29,9 @@
   <img width="8" />
   <img src="https://img.shields.io/badge/Lines%20of%20Code-70k%2B-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 70k+" />
   <img width="8" />
-  <img src="https://img.shields.io/badge/Tests-31k%20lines%20%C2%B7%2079%20files-2EA043?style=for-the-badge" height="28" alt="Tests: 31k lines across 79 files" />
+  <img src="https://img.shields.io/badge/Tests-31k%20lines%20%C2%B7%2080%20files-2EA043?style=for-the-badge" height="28" alt="Tests: 31k lines across 80 files" />
   <br>
-  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-6E7681?style=for-the-badge" height="28" alt="Platform: macOS | Linux | Windows (future)" />
+  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-6E7681?style=for-the-badge" height="28" alt="Platform: macOS | Linux | Windows" />
   <img width="8" />
   <img src="https://img.shields.io/badge/Offline-First-C2540A?style=for-the-badge" height="28" alt="Offline first" />
   <img width="8" />
@@ -280,12 +280,21 @@ Qt and every dependency are already inside.
 |---|---|---|
 | **macOS** (Apple Silicon / Intel) | `Corvus_GCS-<version>-macOS-<arch>.dmg` | Drag to `/Applications`. The build is not notarized, so the first time use **right-click → Open**. |
 | **Linux** (x86_64) | `Corvus_GCS-<version>-x86_64.AppImage` | `chmod +x` it, then run it. Works on a clean Ubuntu/Debian with no system Python or Qt. |
+| **Windows** (x64) | `Corvus_GCS-<version>-windows-x64.zip` | Unzip anywhere and run `Corvus GCS.exe`. The build is unsigned, so SmartScreen asks once — *More info → Run anyway*. |
 
 To pass a port and a connection at startup, launch it from a terminal:
 
 ```bash
 "/Applications/Corvus GCS.app/Contents/MacOS/corvus-gcs" 8000 serial:/dev/tty.usbserial-0001:57600
 ```
+
+```powershell
+& ".\Corvus GCS\Corvus GCS.exe" 8000 serial:COM7:57600
+```
+
+On Windows the serial port is a `COM` name rather than a device path — pick it
+from the dropdown on the LINK tab and you never have to type one. Ports past
+`COM9` need the escaped form, `\\.\COM12`, which is what the dropdown fills in.
 
 ### From source
 
@@ -316,9 +325,14 @@ python3 serve.py        # -> http://localhost:8000/
 ./build.sh --dmg    # macOS: also produce a .dmg
 ```
 
+```powershell
+.\build-windows.ps1 -Zip    # Windows -> dist\Corvus GCS\ + a versioned .zip
+```
+
 `build.sh` dispatches to the platform script for the host you are on and never
-pretends to cross-build. Both produce a self-contained bundle carrying a
-relocatable CPython, Qt and every runtime dependency, named from the
+pretends to cross-build; Windows is PowerShell, so it has its own entry point
+rather than a shell one. All three produce a self-contained bundle carrying a
+Python interpreter, Qt and every runtime dependency, named from the
 [`VERSION`](VERSION) file.
 
 **Linux** needs Ubuntu/Debian x86_64, `python3` (3.10+), `pip`, `wget` or
@@ -331,8 +345,16 @@ A conda interpreter cannot be relocated into a bundle and is rejected with a
 clear error. The bundle is ad-hoc signed; set
 `CODESIGN_IDENTITY="Developer ID Application: ..."` to sign it properly.
 
-Build artifacts (`build/`, `dist/`, `*.AppImage`, `*.dmg`) are gitignored.
-CI runs the same `./build.sh` — see
+**Windows** needs a 64-bit python.org CPython 3.10+ on `PATH` (a conda
+interpreter is rejected — its DLLs live outside the prefix and cannot be
+packaged) and ~2 GB of free disk for Qt. Unlike the other two the bundle is
+built with PyInstaller rather than a hand-relocated interpreter: Windows puts
+no constraint on where a DLL may point, so there is nothing for the extra 300
+lines to buy. `assets\corvus-gcs.ico` is generated from the logo when Pillow is
+installed; without it the build still succeeds, with the default icon.
+
+Build artifacts (`build/`, `dist/`, `*.AppImage`, `*.dmg`, the Windows `.zip`)
+are gitignored. CI runs the same scripts — see
 [`.github/workflows/build.yml`](.github/workflows/build.yml) and
 [`.gitlab-ci.yml`](.gitlab-ci.yml).
 

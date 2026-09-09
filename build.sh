@@ -48,9 +48,21 @@ case "$OS" in
         ARTIFACT="$REPO_DIR/dist/Corvus GCS.app"
         ARGS=("$@")
         ;;
+    MINGW*|MSYS*|CYGWIN*)
+        # Git Bash / MSYS on Windows. The Windows build is PowerShell, so hand
+        # over rather than fail: someone who typed ./build.sh here wants a
+        # build, and the fix is one command, not a platform lecture.
+        echo "ERROR: this is a Windows shell; the Windows build is PowerShell." >&2
+        echo "       Run it from PowerShell instead:" >&2
+        echo "" >&2
+        echo "           .\\build-windows.ps1 -Zip" >&2
+        echo "" >&2
+        exit 1
+        ;;
     *)
         echo "ERROR: unsupported build host '$OS'." >&2
-        echo "       Corvus GCS packages for Linux (AppImage) and macOS (.app)." >&2
+        echo "       Corvus GCS packages for Linux (AppImage), macOS (.app) and" >&2
+        echo "       Windows (.\\build-windows.ps1, run from PowerShell)." >&2
         exit 1
         ;;
 esac

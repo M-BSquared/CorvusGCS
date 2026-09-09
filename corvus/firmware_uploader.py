@@ -39,6 +39,8 @@ import zipfile
 import zlib
 from typing import Any, Callable
 
+from .mavlink_bridge import is_windows_com_port
+
 logger = logging.getLogger("corvus.firmware")
 
 # pyserial is a hard dependency (pymavlink pulls it in), but import lazily with a
@@ -321,13 +323,35 @@ class FirmwareUploader:
     # Protocol steps
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _device_present(device: str) -> bool:
+        """Has the bootloader's serial device re-enumerated yet?
+
+        A POSIX device is a filesystem node, so its existence is the question.
+        A Windows COM port is not: ``os.path.exists("COM7")`` is False for a
+        port that is present and openable, which made this loop wait out the
+        whole connect timeout and report "bootloader device not available" on
+        every Windows flash. There the port list is the only honest answer.
+        """
+        if is_windows_com_port(device):
+            try:
+                from .mavlink_bridge import MavlinkBridge
+                return any(
+                    str(p.get("device", "")).strip().lower() == device.strip().lower()
+                    for p in MavlinkBridge.list_serial_ports()
+                )
+            except Exception:  # noqa: BLE001 - enumeration must never abort a flash
+                # Let pyserial be the judge instead of refusing on our guess.
+                return True
+        return os.path.exists(device)
+
     def _open_device(self, device: str) -> bool:
         """Poll for the device then open it, retrying on transient busy."""
         if _serial is None:
             raise RuntimeError("pyserial is not available; cannot open the bootloader device")
         deadline = time.monotonic() + self._connect_timeout_s
         while time.monotonic() < deadline and not self._cancel.is_set():
-            if os.path.exists(device):
+            if self._device_present(device):
                 for _ in range(5):  # device may be transiently busy right after re-enumeration
                     if self._cancel.is_set():
                         return False
