@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.33-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.33" />
+  <img src="https://img.shields.io/badge/Version-2026.09.34-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.34" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.10%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.10+" /></a>
   <img width="8" />
@@ -279,7 +279,6 @@ Qt and every dependency are already inside.
 | Platform | File | First launch |
 |---|---|---|
 | **macOS** (Apple Silicon) | `Corvus_GCS-<version>-macOS-arm64.dmg` | Drag to `/Applications`. The build is not notarized, so the first time use **right-click → Open**. |
-| **macOS** (Intel) | `Corvus_GCS-<version>-macOS-x86_64.dmg` | Same. Take this one only on a pre-2020 Mac — on Apple Silicon the `arm64` build is the native one. |
 | **Linux** (x86_64) | `Corvus_GCS-<version>-x86_64.AppImage` | `chmod +x` it, then run it. Works on a clean Ubuntu/Debian with no system Python or Qt. |
 | **Windows** (x64) | `Corvus_GCS-<version>-windows-x64.zip` | Unzip anywhere and run `Corvus GCS.exe`. The build is unsigned, so SmartScreen asks once — *More info → Run anyway*. |
 

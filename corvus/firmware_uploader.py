@@ -39,7 +39,7 @@ import zipfile
 import zlib
 from typing import Any, Callable
 
-from .mavlink_bridge import is_windows_com_port
+from .mavlink_bridge import MavlinkBridge, is_windows_com_port
 
 logger = logging.getLogger("corvus.firmware")
 
@@ -333,17 +333,19 @@ class FirmwareUploader:
         whole connect timeout and report "bootloader device not available" on
         every Windows flash. There the port list is the only honest answer.
         """
-        if is_windows_com_port(device):
-            try:
-                from .mavlink_bridge import MavlinkBridge
-                return any(
-                    str(p.get("device", "")).strip().lower() == device.strip().lower()
-                    for p in MavlinkBridge.list_serial_ports()
-                )
-            except Exception:  # noqa: BLE001 - enumeration must never abort a flash
-                # Let pyserial be the judge instead of refusing on our guess.
-                return True
-        return os.path.exists(device)
+        if not is_windows_com_port(device):
+            return os.path.exists(device)
+        try:
+            wanted = device.strip().lower()
+            return any(
+                str(p.get("device", "")).strip().lower() == wanted
+                for p in MavlinkBridge.list_serial_ports()
+            )
+        except Exception:  # noqa: BLE001 - enumeration must never abort a flash
+            # Let pyserial be the judge instead of refusing on our own guess: a
+            # board sitting in its bootloader should not be stranded because we
+            # could not read the port list.
+            return True
 
     def _open_device(self, device: str) -> bool:
         """Poll for the device then open it, retrying on transient busy."""

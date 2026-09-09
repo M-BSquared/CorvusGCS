@@ -6,7 +6,7 @@
 #   test-windows— the same suite on Windows; gates windows-app only.
 #   frontend    — the plain-node frontend assertions under tests/*.js.
 #   appimage    — Linux x86_64 AppImage via ./build.sh   (-> build-appimage.sh).
-#   macos-app   — macOS .app + .dmg via ./build.sh --dmg (-> build-macos-app.sh).
+#   macos-app   — macOS arm64 .app + .dmg via ./build.sh --dmg.
 #   windows-app — Windows x64 folder + zip via .\build-windows.ps1 (PyInstaller).
 #   release     — on a version tag, attach all three artifacts to a GitHub Release.
 #
@@ -131,20 +131,19 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # --- macOS artifacts (both architectures) ----------------------------------
-  # macos-14 is arm64 (Apple Silicon), macos-13 is x86_64 (Intel). Neither can
-  # be cross-built and a universal2 bundle would double an already 300 MB
-  # download, so each runner produces its own. The build script names the DMG
-  # per `uname -m`, so the two never collide — and it now refuses to finish if
+  # --- macOS artifact (Apple Silicon) ----------------------------------------
+  # macos-14 is arm64. An Intel leg (macos-13) was tried and pulled: it sat
+  # queued for over four hours without ever being assigned a runner, and since
+  # `release` needs this job, that stalls every release indefinitely. Add it
+  # back as its own job — never as a matrix leg of this one — if Intel builds
+  # are wanted and the runners come back.
+  #
+  # The build script names the DMG per `uname -m` and now refuses to finish if
   # the payload's architecture disagrees with that name, which is the failure
   # that would otherwise ship an Intel bundle labelled arm64.
   macos-app:
     needs: [test, frontend]
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-14, macos-13]
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
       - name: Ensure a framework CPython

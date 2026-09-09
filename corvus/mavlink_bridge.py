@@ -857,6 +857,33 @@ class MavlinkBridge:
     # Telemetry log (tlog) — one file per connect cycle (F2)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _next_tlog_path(log_dir: str) -> str:
+        """A tlog path in *log_dir* that is not already taken.
+
+        The name is a timestamp because that sorts, and it carried microseconds
+        because two reconnects can land in the same second. That was assumed to
+        make it collision-free; it does not. ``datetime.now()`` resolves to the
+        platform clock, and Windows' is ~1 ms at best — two reconnects inside
+        one tick produced one name, so the second session opened the first
+        session's file and overwrote a flight's recorded telemetry.
+
+        The clock is therefore no longer trusted to be unique on its own: if
+        the path is taken, a counter is appended. The separator is "_" and not
+        "-" so the names still sort into session order — "-" (0x2D) sorts
+        BEFORE "." (0x2E), which would have put the second session's file ahead
+        of the first's in the Analysis listing.
+        """
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        path = os.path.join(log_dir, stamp + ".tlog")
+        n = 1
+        while os.path.exists(path):
+            # Zero-padded so _02 sorts after _01 rather than lexicographically
+            # scattering once a tick collects ten sessions.
+            path = os.path.join(log_dir, f"{stamp}_{n:02d}.tlog")
+            n += 1
+        return path
+
     def _start_tlog(self) -> None:
         """Open a fresh tlog for this flight session.
 
@@ -872,10 +899,7 @@ class MavlinkBridge:
         try:
             log_dir = default_log_dir()
             os.makedirs(log_dir, exist_ok=True)
-            # Microsecond-precision name: sortable and collision-free even on a
-            # sub-second reconnect, so each flight session gets its own file.
-            name = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".tlog"
-            path = os.path.join(log_dir, name)
+            path = self._next_tlog_path(log_dir)
             self._tlog = TlogWriter(path)
             self._tlog.set_conn(self._conn_str)
         except Exception as exc:

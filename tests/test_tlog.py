@@ -9,6 +9,8 @@ real sockets, the log dir monkeypatched).
 """
 from __future__ import annotations
 
+import datetime
+import pathlib
 import threading
 import time
 from types import SimpleNamespace
@@ -437,3 +439,38 @@ def test_bridge_tlog_write_failure_never_breaks_recv_loop(
     # Must not raise despite the tlog write blowing up on every frame.
     bridge._receive_loop()
     bridge.stop()
+
+
+def test_two_reconnects_in_one_clock_tick_still_get_their_own_file(
+    tmp_path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A flight's telemetry must not be overwritten by the next reconnect.
+
+    The tlog name is a microsecond timestamp, which was assumed to be
+    collision-free. It is not: datetime.now() resolves to the platform clock,
+    and Windows' is ~1 ms at best, so two reconnects inside one tick produced
+    one name — the second session opened the first session's file. Freezing the
+    clock reproduces on any host what Windows does on its own.
+    """
+    class _FrozenClock(datetime.datetime):
+        """Real datetime in every respect except that now() does not move."""
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 9, 9, 12, 0, 0, 500000)
+
+    monkeypatch.setattr(datetime, "datetime", _FrozenClock)
+
+    first = MavlinkBridge._next_tlog_path(str(tmp_path))
+    pathlib.Path(first).write_bytes(b"session one")
+    second = MavlinkBridge._next_tlog_path(str(tmp_path))
+    pathlib.Path(second).write_bytes(b"session two")
+    third = MavlinkBridge._next_tlog_path(str(tmp_path))
+
+    assert first != second != third
+    assert len({first, second, third}) == 3
+    assert pathlib.Path(first).read_bytes() == b"session one", (
+        "the second session must not have opened the first session's file"
+    )
+    # Still sorts by session order: the suffix only separates a shared stamp.
+    assert sorted([first, second, third]) == [first, second, third]
