@@ -54,7 +54,12 @@ def test_wait_blocks_when_event_not_set() -> None:
     elapsed = time.monotonic() - start
 
     assert woke is False
-    assert elapsed >= 0.2
+    # Not `>= 0.2`. Windows' default timer granularity is ~15.6 ms, so a 200 ms
+    # wait routinely measures as a hair under it (0.188 s in CI) — the wait
+    # blocked correctly and the clock is simply coarse. The claim under test is
+    # "it blocks rather than busy-looping", and a busy-loop or an early return
+    # lands near zero, nowhere near this bound.
+    assert elapsed >= 0.15, f"wait() returned after {elapsed:.3f}s; it did not block"
 
 
 def test_wait_returns_immediately_after_set() -> None:

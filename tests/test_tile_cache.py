@@ -10,6 +10,7 @@ import os
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
+from corvus.paths import corvus_path
 from corvus.tile_cache import TileCache, default_cache_dir, xyz_to_tms
 
 
@@ -23,7 +24,7 @@ def test_xyz_to_tms_conversion() -> None:
 
 
 def test_default_cache_dir_is_under_home() -> None:
-    assert default_cache_dir() == os.path.expanduser("~/.corvus/tiles")
+    assert default_cache_dir() == corvus_path("tiles")
 
 
 def test_create_and_roundtrip_tile(tmp_path) -> None:

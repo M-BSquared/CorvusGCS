@@ -30,6 +30,7 @@ from corvus.server import (  # noqa: E402
     _params_export_dir,
     _safe_filename,
 )
+from corvus.paths import corvus_path  # noqa: E402
 from corvus.version import get_version  # noqa: E402
 
 from conftest import posix_permissions
@@ -40,7 +41,7 @@ from conftest import posix_permissions
 # ---------------------------------------------------------------------------
 
 def test_export_dir_defaults_to_the_corvus_params_folder() -> None:
-    assert _params_export_dir(CorvusConfig()) == os.path.expanduser("~/.corvus/params")
+    assert _params_export_dir(CorvusConfig()) == corvus_path("params")
 
 
 def test_export_dir_honours_a_pinned_params_dir() -> None:
@@ -51,7 +52,7 @@ def test_export_dir_honours_a_pinned_params_dir() -> None:
 def test_export_dir_treats_whitespace_as_unset() -> None:
     """A field the operator cleared must fall back, not write to a blank path."""
     assert _params_export_dir(CorvusConfig(params_dir="   ")) == \
-        os.path.expanduser("~/.corvus/params")
+        corvus_path("params")
 
 
 # ---------------------------------------------------------------------------
