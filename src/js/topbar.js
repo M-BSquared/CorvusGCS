@@ -72,18 +72,55 @@ Corvus.topbar = (function () {
      size ("auto") — an inline width/height would override those rules. */
   function icon(name) { return Corvus.ui.icon(name, "auto"); }
 
+  /* The bar names the airframe the way an operator does, not the way MAVLINK
+     enumerates it: MAV_TYPE_QUADROTOR reads "Quadcopter". Only the display
+     changes — the raw enum name stays in telemetry state, where the parameter
+     export and the setup page rely on it. */
+  const VEHICLE_TYPE_LABELS = {
+    GENERIC: "Generic",
+    FIXED_WING: "Fixed Wing",
+    QUADROTOR: "Quadcopter",
+    COAXIAL: "Coaxial Helicopter",
+    HELICOPTER: "Helicopter",
+    AIRSHIP: "Airship",
+    FREE_BALLOON: "Balloon",
+    ROCKET: "Rocket",
+    GROUNDED_ROVER: "Rover",
+    SURFACE_BOAT: "Boat",
+    SUBMARINE: "Submarine",
+    HEXAROTOR: "Hexacopter",
+    OCTOROTOR: "Octocopter",
+    TRIROTOR: "Tricopter",
+    VTOL_DUOROTOR: "VTOL Duorotor",
+    VTOL_QUADROTOR: "VTOL Quadrotor",
+    VTOL_TILTROTOR: "VTOL Tiltrotor",
+  };
+
+  /* Anything outside the table — a frame this build predates — is titled from
+     its enum name rather than shouted: "TYPE_23" stays "Type 23". */
+  function vehicleTypeLabel(raw) {
+    if (!raw) return "Unknown";
+    if (VEHICLE_TYPE_LABELS[raw]) return VEHICLE_TYPE_LABELS[raw];
+    return raw.toLowerCase().split("_").filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  }
+
   function vehicleLabel(state) {
     if (!state.connected) return "DISCONNECTED";
-    const type = state.vehicle_type || "UNKNOWN";
+    const type = vehicleTypeLabel(state.vehicle_type);
     const ap = state.autopilot || "";
     return ap ? `${ap} ${type}` : type;
   }
 
   function vehicleFirmware(state) {
     if (!state.connected) return { text: "", cls: "", title: "" };
+    /* Release version only. The git hash the firmware also reports identifies
+       the exact build, which matters when filing a bug and never in flight, so
+       it lives in the tooltip instead of the bar. */
     if (state.px4_version) {
-      const detail = state.px4_version_detail ? ` \u00b7 ${state.px4_version_detail}` : "";
-      return { text: state.px4_version + detail, cls: "", title: "" };
+      const detail = state.px4_version_detail
+        ? `Build ${state.px4_version_detail}` : "";
+      return { text: state.px4_version, cls: "", title: detail };
     }
     if (state.autopilot) {
       return {

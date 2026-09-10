@@ -1,11 +1,13 @@
 """The desktop wrapper's Dock / taskbar icon selection.
 
-``corvus.app`` imports cleanly without PyQt6 (its Qt imports live inside
-``main()``), so the two helpers that decide which cut of the mark the app
+``corvus.app`` imports cleanly without PyQt6 (its Qt imports are all
+function-local), so the helpers that decide how the app draws the mark it
 hands the operating system are tested headless — no QApplication, no display.
+The painting itself needs Qt and is therefore not exercised here; what is
+exercised is every decision that feeds it.
 
-The switch is icon-only by contract: it must not read, or reach, anything
-else in the config.
+The switches are icon-only by contract: they must not read, or reach,
+anything else in the config.
 """
 from __future__ import annotations
 
@@ -37,6 +39,41 @@ def test_non_bool_value_is_not_a_yes() -> None:
 def test_missing_config_object_is_not_a_crash() -> None:
     """The icon sync runs on a timer and must survive a config-less server."""
     assert app.app_icon_inverted(None) is False
+
+
+def test_backplate_is_off_by_default() -> None:
+    """A config without the key keeps the bare silhouette the builds ship."""
+    assert app.app_icon_backplate(CorvusConfig()) is False
+
+
+def test_backplate_when_the_operator_asked_for_it() -> None:
+    assert app.app_icon_backplate(CorvusConfig(ui={"app_icon_backplate": True})) is True
+
+
+def test_backplate_needs_a_real_bool() -> None:
+    assert app.app_icon_backplate(CorvusConfig(ui={"app_icon_backplate": "yes"})) is False
+
+
+def test_backplate_survives_a_config_less_server() -> None:
+    assert app.app_icon_backplate(None) is False
+
+
+def test_the_two_switches_are_independent() -> None:
+    """Inversion picks the mark, the backplate gives it a ground."""
+    cfg = CorvusConfig(ui={"app_icon_backplate": True})
+    assert app.app_icon_backplate(cfg) is True
+    assert app.app_icon_inverted(cfg) is False
+
+    cfg = CorvusConfig(ui={"inverted_app_icon": True})
+    assert app.app_icon_inverted(cfg) is True
+    assert app.app_icon_backplate(cfg) is False
+
+
+def test_the_plate_takes_the_side_the_mark_does_not() -> None:
+    """The plate exists for contrast, so it is never the mark's own shade."""
+    assert app.app_icon_plate_color(False) == app._PLATE_DARK    # white mark
+    assert app.app_icon_plate_color(True) == app._PLATE_LIGHT    # black mark
+    assert app._PLATE_DARK != app._PLATE_LIGHT
 
 
 def test_both_icon_files_ship_beside_the_app() -> None:

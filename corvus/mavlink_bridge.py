@@ -186,6 +186,41 @@ GCS_COMPONENT_ID = mavutil.mavlink.MAV_COMP_ID_MISSIONPLANNER
 HEARTBEAT_WAIT_S = 10.0
 
 
+# MAV_TYPEs that are peripherals rather than aircraft. A node announcing one
+# of these is never the flight controller however it fills in `autopilot` —
+# and some do fill it in: a companion computer running MAVSDK reports
+# MAV_AUTOPILOT_GENERIC, not INVALID, which is exactly the case the autopilot
+# field alone lets through. Kept in step with pymavlink's own
+# `probably_vehicle_heartbeat`, plus the peripherals PX4 and ArduPilot
+# airframes actually carry.
+_NON_VEHICLE_TYPES = frozenset({
+    mavutil.mavlink.MAV_TYPE_GCS,
+    mavutil.mavlink.MAV_TYPE_GIMBAL,
+    mavutil.mavlink.MAV_TYPE_ADSB,
+    mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
+    mavutil.mavlink.MAV_TYPE_CAMERA,
+    mavutil.mavlink.MAV_TYPE_SERVO,
+    mavutil.mavlink.MAV_TYPE_BATTERY,
+    mavutil.mavlink.MAV_TYPE_PARACHUTE,
+    mavutil.mavlink.MAV_TYPE_LOG,
+    mavutil.mavlink.MAV_TYPE_OSD,
+    mavutil.mavlink.MAV_TYPE_IMU,
+    mavutil.mavlink.MAV_TYPE_GPS,
+    mavutil.mavlink.MAV_TYPE_WINCH,
+})
+
+# Component ids that are never the autopilot even under the vehicle's own
+# system id. The gimbal is the one pymavlink singles out; the SiK radio and a
+# UDP bridge matter here because both sit on the wire between Corvus and the
+# aircraft and both heartbeat.
+_NON_AUTOPILOT_COMPONENTS = frozenset({
+    mavutil.mavlink.MAV_COMP_ID_GIMBAL,
+    mavutil.mavlink.MAV_COMP_ID_ONBOARD_COMPUTER,
+    mavutil.mavlink.MAV_COMP_ID_TELEMETRY_RADIO,
+    mavutil.mavlink.MAV_COMP_ID_UDP_BRIDGE,
+})
+
+
 def _is_vehicle_heartbeat(hb: Any) -> bool:
     """Is this HEARTBEAT the flight controller's, or some other node's?
 
@@ -196,10 +231,27 @@ def _is_vehicle_heartbeat(hb: Any) -> bool:
     what ``mavutil.wait_heartbeat`` returns, and Corvus latches its command
     target onto it.
 
-    The MAVLink spec settles it in one field: a component that is not an
-    autopilot must announce ``MAV_AUTOPILOT_INVALID``. MAV_TYPE_GCS is checked
-    too, for a ground station that fills the field in anyway.
+    Three questions, because one is not enough. The spec's own answer is the
+    ``autopilot`` field: a component that is not an autopilot must announce
+    ``MAV_AUTOPILOT_INVALID``. Plenty of them do not — a companion computer
+    running MAVSDK announces ``MAV_AUTOPILOT_GENERIC`` — so the MAV_TYPE is
+    checked against the peripherals that are never an airframe, and the
+    component id against the ones that are never a flight controller even on
+    the airframe's own system id. Latching onto any of them gives a session
+    that looks connected while every command is addressed to a gimbal.
     """
+    try:
+        component = getattr(hb, "get_srcComponent", lambda: 0)()
+        if component and int(component) in _NON_AUTOPILOT_COMPONENTS:
+            return False
+    except (TypeError, ValueError):
+        pass
+    try:
+        vehicle_type = getattr(hb, "type", None)
+        if vehicle_type is not None and int(vehicle_type) in _NON_VEHICLE_TYPES:
+            return False
+    except (TypeError, ValueError):
+        pass
     autopilot = getattr(hb, "autopilot", None)
     if autopilot is None:
         # Nothing to judge by (a synthetic heartbeat, or a dialect without the
@@ -207,9 +259,7 @@ def _is_vehicle_heartbeat(hb: Any) -> bool:
         # does not demand provenance a frame never carried.
         return True
     try:
-        if int(autopilot) == mavutil.mavlink.MAV_AUTOPILOT_INVALID:
-            return False
-        return int(getattr(hb, "type", 0)) != mavutil.mavlink.MAV_TYPE_GCS
+        return int(autopilot) != mavutil.mavlink.MAV_AUTOPILOT_INVALID
     except (TypeError, ValueError):
         return True
 
@@ -283,6 +333,9 @@ class MavlinkBridge:
         # _interruptible_sleep and wake immediately on shutdown (BUG 1, 12).
         self._stop_event = threading.Event()
         self._console_subs: list[Callable[[dict[str, Any]], None]] = []
+        # Guards _console_subs: appended/removed by HTTP handler threads,
+        # iterated by the receive thread on every STATUSTEXT.
+        self._console_lock = threading.Lock()
         self._target_system: int = 1
         self._target_component: int = 1
         self._request_sent = False
@@ -676,6 +729,62 @@ class MavlinkBridge:
                 time.sleep(delay)
                 self._reconnect_attempt += 1
 
+    def _claim_serial_exclusive(self, device: str) -> None:
+        """Take an exclusive advisory lock on the just-opened serial port.
+
+        POSIX will let any number of processes open the same ``/dev/tty*`` and
+        will report no error to any of them; it simply hands each read whatever
+        bytes arrived first. Two ground stations on one USB link therefore each
+        receive an arbitrary *half* of the MAVLink stream — attitude updating
+        but position frozen, commands whose ACK lands in the other program —
+        and neither shows a disconnect. It is the quietest way this application
+        can be badly wrong, and it is exactly what a second launch used to do.
+
+        ``flock`` is what pyserial's own ``exclusive=True`` uses; pymavlink
+        does not pass that through, so it is applied here to the descriptor
+        pymavlink opened. The lock lives on the file handle, so closing the
+        port or losing the process releases it — a crash leaves nothing stale.
+
+        Windows needs none of this: it opens a COM port exclusively already,
+        and the second open fails with a plain "access denied".
+
+        Best-effort by design. A device that cannot be locked (a pty in the
+        tests, an odd driver, a platform without ``fcntl``) is used anyway:
+        refusing to fly over a missing lock would be the worse failure.
+        """
+        if os.name == "nt":
+            return
+        try:
+            import fcntl
+        except ImportError:  # pragma: no cover - POSIX only path
+            return
+        handle = getattr(self._conn, "port", None)
+        fileno = getattr(handle, "fileno", None)
+        if not callable(fileno):
+            return
+        try:
+            fd = fileno()
+        except Exception as exc:  # noqa: BLE001 - a port with no fd is not lockable
+            logger.debug("serial port has no descriptor to lock: %s", exc)
+            return
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            message = (
+                f"{device} is in use by another program — close the other "
+                f"ground station and reconnect"
+            )
+            logger.error("%s", message)
+            self._store.update(link_error=message)
+            try:
+                self._conn.close()
+            except Exception:  # noqa: BLE001 - we are already failing this cycle
+                pass
+            self._conn = None
+            raise ConnectionError(message) from exc
+        except OSError as exc:
+            logger.debug("serial port %s could not be locked: %s", device, exc)
+
     def _reconnect_delay(self, attempt: int) -> float:
         """Exponential backoff with jitter between reconnect cycles (A4).
 
@@ -693,6 +802,15 @@ class MavlinkBridge:
         self._request_sent = False
         self._home_alt_amsl = None
         self._position_home_alt_amsl = None
+        # And forget the DISPLAYED home with it. The bridge already dropped
+        # its own altitude reference here; leaving the map's marker behind
+        # meant a session that reconnected — to the same aircraft moved between
+        # flights, or to a different one — drew last session's launch point as
+        # this one's, and the "centre on vehicle" fallback flew there. A home
+        # marker has to be something the aircraft said in this session or
+        # nothing at all; _request_home() below asks for it immediately so the
+        # gap is one round trip rather than the stream's own 0.5 Hz.
+        self._store.update(home=[0.0, 0.0])
         # Per-connection-cycle state (A1/A3): fresh jitter window + flags.
         self._hb_times.clear()
         self._degraded_warned = False
@@ -727,6 +845,8 @@ class MavlinkBridge:
                 self._store.update(link_error=message)
                 raise ConnectionError(message) from exc
             raise
+        if self._is_serial():
+            self._claim_serial_exclusive(self._parse_serial(self._conn_str)[0])
         logger.info("Waiting for heartbeat …")
         hb = self._wait_vehicle_heartbeat(HEARTBEAT_WAIT_S)
         if hb is None:
@@ -736,6 +856,19 @@ class MavlinkBridge:
         src_comp = getattr(hb, "get_srcComponent", lambda: 0)() or self._conn.target_component
         self._target_system = src_sys or 1
         self._target_component = src_comp or 1
+        # Tell pymavlink which node we picked. It does its own latching in
+        # post_message — first heartbeat its `probably_vehicle_heartbeat`
+        # accepts wins — and that is not always the one _wait_vehicle_heartbeat
+        # chose: behind a router the two can land on different nodes, and
+        # mode_mapping() then reads the mode table of whatever pymavlink
+        # latched onto instead of the aircraft Corvus is flying. Everything
+        # this module sends already addresses _target_system explicitly; this
+        # aligns the parts of mavutil that do not.
+        try:
+            self._conn.target_system = self._target_system
+            self._conn.target_component = self._target_component
+        except Exception as exc:  # noqa: BLE001 - a mavutil that will not be told is not fatal
+            logger.debug("could not pin mavutil target: %s", exc)
         vtype = MAV_TYPE_MAP.get(hb.type, f"TYPE_{hb.type}")
         autopilot = MAV_AUTOPILOT_MAP.get(hb.autopilot, f"AP_{hb.autopilot}")
         armed = bool(hb.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
@@ -754,6 +887,7 @@ class MavlinkBridge:
         # receive loop exists to dispatch their COMMAND_ACKs (BUG 1).
         self._request_streams()
         self._request_version()
+        self._request_home()
         self._start_gcs_heartbeat()
         # Start a fresh tlog for this flight session. Gated on _running so the
         # direct-_connect() unit tests (which never start() the bridge) do not
@@ -1028,6 +1162,12 @@ class MavlinkBridge:
                 m.MAVLINK_MSG_ID_VFR_HUD: 200000,             # 5 Hz
                 m.MAVLINK_MSG_ID_SYS_STATUS: 1_000_000,       # 1 Hz
                 m.MAVLINK_MSG_ID_GPS_RAW_INT: 1_000_000,      # 1 Hz
+                # 0.2 Hz, because home is where RTL ends and a stale one on
+                # the map is a lie about where the aircraft will come back to.
+                # Cheap at this rate — HOME_POSITION is 60 bytes — and it is
+                # the one field the serial set used to leave entirely to PX4's
+                # own defaults, which not every firmware publishes.
+                m.MAVLINK_MSG_ID_HOME_POSITION: 5_000_000,    # 0.2 Hz
             }
         return {
             m.MAVLINK_MSG_ID_HEARTBEAT: 1_000_000,            # 1 Hz
@@ -1101,6 +1241,42 @@ class MavlinkBridge:
     # MAVLINK_MSG_ID_AUTOPILOT_VERSION. Spelled out rather than taken from
     # mavutil so the request cannot silently follow a dialect rename.
     _MSG_ID_AUTOPILOT_VERSION = 148
+    _MSG_ID_HOME_POSITION = 242
+
+    def _request_home(self) -> None:
+        """Ask the autopilot to send HOME_POSITION now.
+
+        Home arrives on its own — PX4 publishes it at 0.5 Hz and again whenever
+        it changes — so this is not what makes the marker appear. It is what
+        makes it appear *promptly*, and the two moments where the wait is worst
+        are the two that call it: straight after connect, where the map would
+        otherwise hold an empty home for up to two seconds while the operator
+        looks for the launch point, and straight after ``set_home``, where the
+        operator has just clicked a spot and is waiting to see the marker move
+        there.
+
+        Fire-and-forget, both times. Whether it worked is judged by
+        HOME_POSITION arriving, and the periodic stream is the backstop if it
+        did not; waiting for an ACK here would stall the connect path (the
+        receive loop is not dispatching yet) and would put a round trip in
+        front of set_home's own reply.
+        """
+        conn = self._conn
+        if conn is None:
+            return
+        nan = float("nan")
+        try:
+            with self._send_lock:
+                if conn is not self._conn:
+                    return
+                conn.mav.command_long_send(
+                    self._target_system, self._target_component,
+                    mavutil.mavlink.MAV_CMD_REQUEST_MESSAGE, 0,
+                    float(self._MSG_ID_HOME_POSITION),
+                    nan, nan, nan, nan, nan, nan,
+                )
+        except Exception as exc:  # noqa: BLE001 - a nudge that fails costs nothing
+            logger.debug("HOME_POSITION request failed: %s", exc)
 
     def _request_version(self) -> None:
         """Ask the autopilot for AUTOPILOT_VERSION — the firmware version.
@@ -1758,21 +1934,37 @@ class MavlinkBridge:
         self._store.merge_warning(text, level)
 
     def _console_publish(self, name: str, text: str, level: str) -> None:
+        """Fan one console line out to every open console stream.
+
+        Called on the MAVLink receive thread; the subscriber list is mutated
+        by HTTP handler threads as tabs open and close. It was the only
+        subscriber list in the backend without a lock — the state store, the
+        param listeners and the SSH bridge all take one — and iterating it
+        while another thread removed an entry silently skipped the subscriber
+        that shifted into the vacated slot, so a closing tab could cost a
+        *different* tab a STATUSTEXT. A copy taken under the lock, then
+        published outside it, keeps the publish off the lock (subscribers are
+        SSE buffers, and a slow one must not stall the receive thread).
+        """
         entry = {"ts": time.time(), "name": name, "text": text, "level": level}
-        for sub in self._console_subs:
+        with self._console_lock:
+            subs = list(self._console_subs)
+        for sub in subs:
             try:
                 sub(entry)
             except Exception:
                 pass
 
     def add_console_sub(self, fn: Callable[[dict[str, Any]], None]) -> None:
-        self._console_subs.append(fn)
+        with self._console_lock:
+            self._console_subs.append(fn)
 
     def remove_console_sub(self, fn: Callable[[dict[str, Any]], None]) -> None:
-        try:
-            self._console_subs.remove(fn)
-        except ValueError:
-            pass
+        with self._console_lock:
+            try:
+                self._console_subs.remove(fn)
+            except ValueError:
+                pass
 
     def get_available_modes(self) -> list[str]:
         if self._mode_mapping:
@@ -2128,6 +2320,11 @@ class MavlinkBridge:
             )
             if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
                 return self._command_failure("Set home", result)
+            # PX4 publishes HOME_POSITION when home changes, but the operator
+            # has just clicked a spot and is watching for the marker to move
+            # there. Ask for it rather than leaving the confirmation to the
+            # next scheduled one.
+            self._request_home()
             self._console_publish(
                 "SETHOME", f"Home set to {lat_f:.7f}, {lon_f:.7f}", "success",
             )

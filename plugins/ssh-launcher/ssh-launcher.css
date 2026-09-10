@@ -1,0 +1,117 @@
+/* SSH Launcher — the only styles this plugin adds.
+   Everything else is the app's own form/card/button styling, reached through
+   Corvus.ui. A plugin stylesheet is loaded into the shared document, so its
+   selectors are prefixed (sshl-) and it never restyles an app class. */
+
+/* The shelf: one row per launch button. Rows are separated by a hairline
+   rather than a gap, so a shelf of eight still reads as one object. */
+.sshl-shelf {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 14px;
+}
+.sshl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.sshl-row:first-child { padding-top: 0; }
+.sshl-row:last-child { border-bottom: none; }
+
+/* The launch button takes the row. It is the thing being pressed, in a panel
+   only a few hundred pixels wide, and a long label truncates rather than
+   wrapping the row into two lines. */
+.sshl-launch {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+}
+.sshl-launch span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Open-terminal, edit and remove: present, but never competing with the launch
+   button. They come up to full strength on hover or keyboard focus. */
+.sshl-row-tools {
+  display: flex;
+  gap: 2px;
+  flex: 0 0 auto;
+  opacity: 0.55;
+  transition: opacity 120ms ease;
+}
+.sshl-row:hover .sshl-row-tools,
+.sshl-row-tools:focus-within { opacity: 1; }
+
+/* A row whose program is running. The live dot sits in the tools group, on the
+   card's own surface — on the filled launch button a semantic green would be
+   fighting the accent colour behind it. The tools stop fading, because a live
+   session is exactly when the arrow matters. */
+.sshl-dot {
+  width: 6px;
+  height: 6px;
+  margin: 0 4px;
+  border-radius: 50%;
+  align-self: center;
+  flex: 0 0 auto;
+  background: var(--healthy);
+}
+.sshl-running .sshl-row-tools { opacity: 1; }
+.sshl-running .sshl-open { color: var(--healthy); }
+
+/* Nothing running means nothing to open; the button says why in its tooltip
+   rather than leading somewhere empty. */
+.sshl-open:disabled { opacity: 0.35; cursor: default; }
+
+/* The command a button will run, shown while editing it. A quiet inset surface
+   rather than a field: it is the plugin telling the operator what it
+   understood, not another control. Wrapping (not scrolling) because a wrong
+   folder is easiest to spot when the whole line is visible at once. */
+.sshl-preview {
+  margin: 4px 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-btn);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* Nothing to preview yet — the same box, reading as a hint rather than data. */
+.sshl-preview-empty {
+  color: var(--text-3);
+  font-family: inherit;
+}
+
+/* Why the connection list is empty, under the Add button. */
+.sshl-note { margin-top: 10px; }
+
+/* Remote output. Capped and scrollable: a failing command's first lines are
+   what matter, and a long one must not push the shelf off screen. */
+.sshl-output {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-btn);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Reduced motion: the tools' fade is decoration, so it goes. */
+@media (prefers-reduced-motion: reduce) {
+  .sshl-row-tools { transition: none; }
+}

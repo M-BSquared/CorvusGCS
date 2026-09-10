@@ -454,9 +454,15 @@ Corvus.panel = (function () {
 
   /* Name and address are written as text, never interpolated into the HTML
      above: both come from a config file the operator edits by hand, and a
-     hostname with an angle bracket in it should render as a hostname. */
+     hostname with an angle bracket in it should render as a hostname.
+
+     `title` overrides the displayed name without changing `name`, which is the
+     session key the terminal talks to. A plugin holding several sessions on one
+     machine keys them by something stable and unreadable (an id) and puts the
+     readable thing here — the operator should see "Start mission", not the id
+     the launcher happens to store. */
   function fillSSHCardHeader(card, conn) {
-    card.querySelector(".ssh-name").textContent = conn.name || "";
+    card.querySelector(".ssh-name").textContent = conn.title || conn.name || "";
     card.querySelector(".ssh-host").textContent = sshAddress(conn);
   }
 
@@ -576,6 +582,25 @@ Corvus.panel = (function () {
     }
     if (btn) btn.disabled = false;
     return res;
+  }
+
+  /**
+   * Activate one of the panel's tabs by id ("console" | "ssh" | "link" | …).
+   *
+   * Exported because two callers outside this module need it — the Settings
+   * page after a CONNECT, and a plugin opening the terminal it started
+   * something in — and both used to carry their own copy of these four lines.
+   * Idempotent, and a no-op for an id that is not there.
+   *
+   * @param {string} id the tab's data-tab value
+   */
+  function showTab(id) {
+    const tabEl = document.querySelector(`.panel-tabs .tab[data-tab="${id}"]`);
+    if (!tabEl) return;
+    document.querySelectorAll(".panel-tabs .tab").forEach((t) =>
+      t.classList.toggle("active", t === tabEl));
+    document.querySelectorAll(".tab-panel").forEach((p) =>
+      p.classList.toggle("active", p.dataset.panel === id));
   }
 
   /** Tear down the live terminal, if any. Idempotent. */
@@ -873,10 +898,7 @@ Corvus.panel = (function () {
     tabs.addEventListener("click", (e) => {
       const tab = e.target.closest(".tab");
       if (!tab) return;
-      tabs.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t === tab));
-      const id = tab.dataset.tab;
-      document.querySelectorAll(".tab-panel").forEach((p) =>
-        p.classList.toggle("active", p.dataset.panel === id));
+      showTab(tab.dataset.tab);
     });
 
     sendBtn.addEventListener("click", sendCommand);
@@ -941,7 +963,7 @@ Corvus.panel = (function () {
   }
 
   return {
-    init, toggle, addConsoleLine, addSSHConnection, showSSHTerminal,
+    init, toggle, addConsoleLine, addSSHConnection, showSSHTerminal, showTab,
     // Exposed for tests: the pure pieces, assertable without a DOM.
     sshAddress,
     matchesFilter,

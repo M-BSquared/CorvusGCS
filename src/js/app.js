@@ -6,7 +6,7 @@ window.Corvus = window.Corvus || {};
 
   Module load order (defined by the <script> tags in src/index.html):
     maplibre-gl, lucide, plotly-basic, ui, telemetry, notification_dedupe,
-    topbar, map, instruments, panel, link, plugins, plugin-vibration,
+    topbar, map, instruments, panel, link, plugins,
     setup-shared, setup-calibration, setup-parameters, setup, sidenav,
     joystick, tiles, update, app (this file).
 
@@ -402,6 +402,11 @@ Corvus.app = (function () {
     // its collapsible body, so they have to exist first.
     Corvus.hudPanel.init(document.getElementById("flightOverlay"));
     Corvus.panel.init();
+    // AFTER panel.init: it is panel.initFuture that calls Corvus.plugins.init,
+    // and the loader wants the plugin api (and its root element) in place. The
+    // fetch is not awaited — plugins register as their scripts arrive and the
+    // grid re-renders itself, so boot never waits on the plugin folder.
+    Corvus.plugins.loadInstalled();
     Corvus.link.init();
     initFlightActions();
     // The offline-map panel is a modal now (it mounts itself to <body>), so

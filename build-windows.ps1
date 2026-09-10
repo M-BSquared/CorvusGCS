@@ -182,6 +182,11 @@ $PyiArgs = @(
     "--add-data", "$(Join-Path $RepoDir 'VERSION');.",
     "--add-data", "$(Join-Path $RepoDir 'src');src",
     "--add-data", "$(Join-Path $RepoDir 'assets');assets",
+    # The plugins that ship with Corvus. plugin_registry.py resolves this root
+    # as a sibling of the package, the same way server.py resolves src\, so it
+    # lands beside them. Operator plugins live in %USERPROFILE%\.corvus\plugins
+    # and are never bundled.
+    "--add-data", "$(Join-Path $RepoDir 'plugins');plugins",
     "--hidden-import", "corvus.app",
     # pymavlink generates its dialects at import time from data the analyser
     # cannot see, so the whole package is collected rather than guessed at.
@@ -202,7 +207,7 @@ if (-not (Test-Path $Exe)) { throw "expected $Exe, which PyInstaller did not pro
 # It runs against the bundled interpreter payload, not the build venv.
 if (-not $NoVerify) {
     Write-Host ">>> Verifying the bundle ..."
-    foreach ($needed in @("VERSION", "src\index.html", "assets")) {
+    foreach ($needed in @("VERSION", "src\index.html", "assets", "plugins")) {
         $p = Join-Path $AppDir "_internal\$needed"
         if (-not (Test-Path $p)) { throw "bundle is missing $needed (looked at $p)" }
     }
@@ -210,7 +215,7 @@ if (-not $NoVerify) {
     if ($stamped -ne $Version) {
         throw "bundled VERSION is '$stamped', expected '$Version'"
     }
-    Write-Host "    payload     : VERSION, src\, assets\ present and in sync"
+    Write-Host "    payload     : VERSION, src\, assets\, plugins\ present and in sync"
 }
 
 # ---- 7. zip -----------------------------------------------------------------

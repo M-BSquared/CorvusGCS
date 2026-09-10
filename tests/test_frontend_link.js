@@ -216,6 +216,18 @@ function testForwardingHint() {
            sysid_conflict: true }),
     /system ID/i,
     "a shared system id must be said, not buried under the peer count");
+  // Two addresses, two roles. host:port is where the OTHER station listens —
+  // Corvus mirrors there and nothing has to be configured on that end —
+  // while listen_port is Corvus' own socket, which only matters to a station
+  // dialling in. Printing one where the other belongs sends an operator to
+  // configure the wrong end.
+  const both = hint({ running: true, host: "127.0.0.1", port: 14550,
+                      listen_host: "127.0.0.1", listen_port: 14551, peers: [] });
+  assert.match(both, /127\.0\.0\.1:14550/, "name where the stream is sent");
+  assert.match(both, /127\.0\.0\.1:14551/, "and where Corvus answers");
+  assert.ok(!/14551/.test(hint({ running: true, host: "127.0.0.1", port: 14550,
+                                 peers: [] })),
+    "no listen port reported, none invented");
 }
 
 function testPresets() {

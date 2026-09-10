@@ -25,10 +25,13 @@ from __future__ import annotations
 
 import collections
 import json
+import logging
 import math
 import threading
 import time
 from typing import Any, Callable
+
+logger = logging.getLogger("corvus.state_store")
 
 
 def _sanitize(obj: Any) -> Any:
@@ -42,6 +45,13 @@ def _sanitize(obj: Any) -> Any:
     if isinstance(obj, (list, tuple)):
         return [_sanitize(v) for v in obj]
     return obj
+
+
+# Listener failures are reported at most this often. A listener that fails
+# once fails on every update, and updates arrive at ~30 Hz — an unthrottled
+# traceback per failure would cost more than the failure does, on the MAVLink
+# receive thread, and would bury everything else in the log during a flight.
+_FAILURE_LOG_INTERVAL_S: float = 5.0
 
 
 class VehicleStateStore:
@@ -137,6 +147,12 @@ class VehicleStateStore:
         self._data_version: int = 0
         self._snapshot_cache: dict[str, Any] | None = None
         self._snapshot_version: int = -1
+        # Throttle state for listener-failure reporting (see
+        # _log_listener_failure). Its own lock, so reporting a failure never
+        # contends with the telemetry write that provoked it.
+        self._failure_lock = threading.Lock()
+        self._failure_last_logged: float = 0.0
+        self._failure_suppressed: int = 0
 
     def _snapshot_locked(self) -> dict[str, Any]:
         """Under ``self._lock``: return the cached snapshot, rebuilding only
@@ -216,8 +232,7 @@ class VehicleStateStore:
                 self._data_version += 1
             snapshot, listeners = self._dispatch_locked(immediate)
         if snapshot is not None:
-            for fn in listeners:
-                fn(snapshot)
+            self._notify(listeners, snapshot)
 
     def merge_warning(
         self,
@@ -248,8 +263,7 @@ class VehicleStateStore:
             self._data_version += 1
             snapshot, listeners = self._dispatch_locked(immediate=False)
         if snapshot is not None:
-            for fn in listeners:
-                fn(snapshot)
+            self._notify(listeners, snapshot)
 
     def clear_warnings(self) -> None:
         """Atomically clear all warnings and notify listeners.
@@ -263,8 +277,7 @@ class VehicleStateStore:
             self._data_version += 1
             snapshot, listeners = self._dispatch_locked(immediate=False)
         if snapshot is not None:
-            for fn in listeners:
-                fn(snapshot)
+            self._notify(listeners, snapshot)
 
     def heartbeat(self) -> None:
         """Record that a heartbeat was received.
@@ -287,8 +300,7 @@ class VehicleStateStore:
                 self._data_version += 1
                 snapshot, listeners = self._dispatch_locked(immediate=True)
         if snapshot is not None:
-            for fn in listeners:
-                fn(snapshot)
+            self._notify(listeners, snapshot)
 
     def set_disconnected(self) -> None:
         """Mark vehicle as disconnected; always notifies immediately."""
@@ -306,8 +318,7 @@ class VehicleStateStore:
             self._data_version += 1
             snapshot, listeners = self._dispatch_locked(immediate=True)
         if snapshot is not None:
-            for fn in listeners:
-                fn(snapshot)
+            self._notify(listeners, snapshot)
 
     def is_stale(self, timeout: float = 5.0) -> bool:
         """Return True if no heartbeat within *timeout* seconds."""
@@ -359,6 +370,63 @@ class VehicleStateStore:
                 self._listeners.remove(fn)
             except ValueError:
                 pass
+
+    def _notify(
+        self,
+        listeners: list[Callable[[dict[str, Any]], None]],
+        snapshot: dict[str, Any],
+    ) -> None:
+        """Push *snapshot* to every listener, isolating each from the others.
+
+        The listeners are SSE fan-out buffers registered by HTTP handler
+        threads, but they are *called* on whichever thread mutated the state —
+        in practice the MAVLink receive thread, on almost every telemetry
+        message. An unguarded ``for fn in listeners: fn(snapshot)`` therefore
+        had two failure modes stacked on top of each other: one listener
+        raising skipped every listener after it in the list (so a single
+        wedged browser tab could stop telemetry reaching the others), and the
+        exception then unwound into the receive loop, which treats it as a
+        link error, closes the connection and reconnects. A bug in the
+        presentation layer could take down the link to the aircraft.
+
+        Each call is isolated and its failure reported, throttled. This
+        matches what the MAVLink console publisher and the SSH bridge already
+        do with their own subscriber lists. Called with ``self._lock``
+        released: a slow listener must never stall a telemetry write.
+        """
+        for fn in listeners:
+            try:
+                fn(snapshot)
+            except Exception:  # noqa: BLE001 - one listener must never stop the rest
+                self._log_listener_failure()
+
+    def _log_listener_failure(self) -> None:
+        """Report a listener failure, at most once per interval.
+
+        The count of everything suppressed in between rides along on the next
+        line, so a throttled log still says how bad it was — a single glitch
+        and a listener that has failed nine thousand times must not read the
+        same. The throttle is per store, not per process, so one store's
+        broken listener cannot silence another's.
+        """
+        now = time.monotonic()
+        with self._failure_lock:
+            last = self._failure_last_logged
+            elapsed = now - last
+            if last and elapsed < _FAILURE_LOG_INTERVAL_S:
+                self._failure_suppressed += 1
+                return
+            suppressed = self._failure_suppressed
+            self._failure_last_logged = now
+            self._failure_suppressed = 0
+        if suppressed:
+            logger.exception(
+                "state listener failed; dropping this update for it "
+                "(%d further failures suppressed in the last %.0fs)",
+                suppressed, elapsed,
+            )
+        else:
+            logger.exception("state listener failed; dropping this update for it")
 
     def shutdown(self) -> None:
         """Idempotent lifecycle hook.

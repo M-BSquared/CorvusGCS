@@ -56,6 +56,7 @@ _CONFIG_FIELD_ORDER: tuple[str, ...] = (
     "ui",
     "forwarding",
     "updates",
+    "plugins",
 )
 
 # Required keys on a saved ssh_connections entry; missing keys default to a
@@ -84,11 +85,15 @@ class CorvusConfig:
     (``{"virtual_joystick": true}``, the on-screen stick over the map, plus
     ``arrow_keys``/``wasd_keys`` for the two key clusters beside it), and
     the interface size and desktop app icon (``{"scale": 1.25,
-    "inverted_app_icon": false}`` — the multiplier the frontend puts on every
-    length in the UI, and which cut of the mark the Dock / taskbar gets),
+    "inverted_app_icon": false, "app_icon_backplate": false}`` — the multiplier
+    the frontend puts on every length in the UI, which cut of the mark the
+    Dock / taskbar gets, and whether that mark sits on a filled backplate),
     and the update check
     (``{"check": true, "skipped": "2026.09.27"}`` — whether to look at the
     GitHub releases at all, and the one release the operator dismissed).
+    ``plugins`` is the state each TOOLS-tab plugin saves for itself
+    (``{"<plugin id>": {...}}``; see ``corvus/plugin_registry.py``).
+
     They default to empty/None so an old config file with none of these keys
     still loads cleanly.
     """
@@ -110,6 +115,7 @@ class CorvusConfig:
     ui: dict[str, Any] | None = None
     forwarding: dict[str, Any] | None = None
     updates: dict[str, Any] | None = None
+    plugins: dict[str, Any] | None = None
 
     def apply_overrides(self, **kwargs: Any) -> "CorvusConfig":
         """Return a copy with non-None kwargs overriding matching fields.
@@ -291,6 +297,11 @@ def _coerce_forwarding(raw: Any) -> dict[str, Any] | None:
     ground station can arm this aircraft, and a config carrying the string
     ``"true"`` must read as "not set", never as an accidental yes.
 
+    ``host``/``port`` say where the OTHER station listens; ``listen_host``/
+    ``listen_port`` are Corvus' own socket, and they are deliberately not the
+    same port (see ``corvus/mavlink_forwarder.py``). ``listen_port`` accepts 0
+    — "any free port" — which is why it is range-checked separately.
+
     ``endpoints`` are kept as typed; the forwarder discards the ones it cannot
     parse, so a typo costs that endpoint and not the feature.
     """
@@ -300,13 +311,18 @@ def _coerce_forwarding(raw: Any) -> dict[str, Any] | None:
     for key in ("enabled", "allow_commands"):
         if isinstance(raw.get(key), bool):
             out[key] = raw[key]
-    host = raw.get("host")
-    if isinstance(host, str) and host.strip():
-        out["host"] = host.strip()
+    for key in ("host", "listen_host"):
+        value = raw.get(key)
+        if isinstance(value, str) and value.strip():
+            out[key] = value.strip()
     port = raw.get("port")
     if isinstance(port, int) and not isinstance(port, bool):
         if _FORWARD_PORT_MIN <= port <= _FORWARD_PORT_MAX:
             out["port"] = port
+    listen_port = raw.get("listen_port")
+    if isinstance(listen_port, int) and not isinstance(listen_port, bool):
+        if 0 <= listen_port <= _FORWARD_PORT_MAX:
+            out["listen_port"] = listen_port
     endpoints = raw.get("endpoints")
     if isinstance(endpoints, list):
         kept = [e.strip() for e in endpoints if isinstance(e, str) and e.strip()]
@@ -316,7 +332,7 @@ def _coerce_forwarding(raw: Any) -> dict[str, Any] | None:
 
 
 def _coerce_ui(raw: Any) -> dict[str, Any] | None:
-    """Keep the known UI keys (``scale``, ``inverted_app_icon``); else None.
+    """Keep the known UI keys (``scale``, the two app-icon keys); else None.
 
     ``scale`` multiplies every length in the frontend (see ``--ui-scale`` in
     ``src/css/themes.css``). Clamped rather than rejected: a hand-edited 40
@@ -325,10 +341,13 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     is a valid ``float`` in Python and would silently mean 100%.
 
     ``inverted_app_icon`` picks which cut of the mark the desktop wrapper
-    hands the Dock / taskbar (see ``corvus/app.py``). A genuine boolean only,
-    like the controls keys: a config carrying ``"false"`` must not read as on.
-    Each key is kept independently — a file that names only one of them is not
-    a reason to drop the other.
+    hands the Dock / taskbar (see ``corvus/app.py``), and ``app_icon_backplate``
+    asks for that mark to be drawn on a filled rounded square instead of bare
+    transparency. They are independent: the backplate is the contrast the
+    silhouette lacks on *any* dock, the inversion picks which way that contrast
+    runs. Genuine booleans only, like the controls keys: a config carrying
+    ``"false"`` must not read as on. Each key is kept independently — a file
+    that names only one of them is not a reason to drop the others.
     """
     if not isinstance(raw, dict):
         return None
@@ -338,8 +357,9 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
         scale = float(value)
         if scale == scale and scale not in (float("inf"), float("-inf")):  # not NaN / inf
             out["scale"] = min(max(scale, _UI_SCALE_MIN), _UI_SCALE_MAX)
-    if isinstance(raw.get("inverted_app_icon"), bool):
-        out["inverted_app_icon"] = raw["inverted_app_icon"]
+    for key in ("inverted_app_icon", "app_icon_backplate"):
+        if isinstance(raw.get(key), bool):
+            out[key] = raw[key]
     return out or None
 
 
@@ -362,6 +382,27 @@ def _coerce_updates(raw: Any) -> dict[str, Any] | None:
     from .update_check import parse_version
     if isinstance(skipped, str) and parse_version(skipped) is not None:
         out["skipped"] = skipped.strip().removeprefix("v")
+    return out or None
+
+
+def _coerce_plugins(raw: Any) -> dict[str, Any] | None:
+    """Keep the per-plugin settings objects; drop everything else.
+
+    ``{"<plugin id>": {...}}`` — the state a plugin saves for itself through
+    ``POST /api/plugins/settings`` (see ``corvus/plugin_registry.py`` for what
+    a plugin is). Corvus has no opinion about what is inside one object beyond
+    it *being* an object, so the values pass through as written; an entry that
+    is not a dict is dropped rather than handed back to a plugin that expects
+    one. A plugin id is a folder name, so a non-string key cannot address
+    anything and goes too.
+
+    Not a place for secrets: the file also carries SSH passwords and is 0o600
+    for that reason, but a plugin references a saved SSH connection by name so
+    it never has to store one here.
+    """
+    if not isinstance(raw, dict):
+        return None
+    out = {k: v for k, v in raw.items() if isinstance(k, str) and k and isinstance(v, dict)}
     return out or None
 
 
@@ -420,6 +461,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
     forwarding = _coerce_forwarding(data.get("forwarding"))
     ui = _coerce_ui(data.get("ui"))
     updates = _coerce_updates(data.get("updates"))
+    plugins = _coerce_plugins(data.get("plugins"))
 
     return CorvusConfig(
         mavlink_connection=mavlink_connection,
@@ -439,6 +481,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         forwarding=forwarding,
         ui=ui,
         updates=updates,
+        plugins=plugins,
     )
 
 
@@ -469,7 +512,7 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
     """Serialize a CorvusConfig to a plain dict in stable key order.
 
     Omits ``None`` optional dict fields (``tile_sources``/``stream_rates``/
-    ``theme``/``map``/``branding``/``controls``/``ui``/``updates``) so the on-disk file stays
+    ``theme``/``map``/``branding``/``controls``/``ui``/``updates``/``plugins``) so the on-disk file stays
     lean when nothing overrides
     them; an empty ``ssh_connections`` list is kept (it is real operator
     state, the absence of which still round-trips through ``[]``).
@@ -502,6 +545,8 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
         out["ui"] = dict(cfg.ui)
     if cfg.updates is not None:
         out["updates"] = dict(cfg.updates)
+    if cfg.plugins is not None:
+        out["plugins"] = {k: dict(v) for k, v in cfg.plugins.items()}
     # Stable key order for a readable on-disk diff.
     return {k: out[k] for k in _CONFIG_FIELD_ORDER if k in out}
 

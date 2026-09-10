@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.35-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.35" />
+  <img src="https://img.shields.io/badge/Version-2026.09.36-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.36" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.10%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.10+" /></a>
   <img width="8" />
@@ -70,6 +70,7 @@
   - [From source](#from-source)
 - [Connect to your aircraft](#connect-to-your-aircraft)
   - [Run QGroundControl at the same time](#run-qgroundcontrol-at-the-same-time)
+  - [One Corvus at a time](#one-corvus-at-a-time)
 - [Using Corvus](#using-corvus)
   - [The map and the flight HUD](#the-map-and-the-flight-hud)
   - [Offline maps](#offline-maps)
@@ -77,6 +78,8 @@
   - [Analysis — logs and Flight Review](#analysis--logs-and-flight-review)
   - [The side workspace](#the-side-workspace)
   - [Settings](#settings)
+- [Plugins](#plugins)
+  - [Adding your own](#adding-your-own)
 - [Console commands](#console-commands)
 - [PX4 compatibility](#px4-compatibility)
 - [Get involved](#get-involved)
@@ -188,9 +191,10 @@ Everything here is **built and working today**.
 | 🔧 **Set up** | Airframe drawn to scale — click a motor to wire, position or spin-test it; ESC protocol; parameter editor with import / export; guided sensor calibration, ESC calibration, autotune, and PX4 firmware flashing | ✅ |
 | 🛡️ **Set limits** | Maximum distance and height, the return-to-launch profile, and a failsafe action for every loss PX4 can detect — plus a distance sensor or optical-flow camera brought up by one switch, driver and estimator together | ✅ |
 | 📊 **Review flights** | Download the vehicle's logs, record the live stream, and analyse both in the built-in Flight Review — all on your own machine | ✅ |
-| 🖥️ **Tools** | MAVLink console, SSH terminal to an onboard companion computer, and a plugin slot (vibration monitor included) | ✅ |
-| 🎨 **Personalise** | Six colour themes, interface scale from 80 % to 150 %, your own logo — all saved between sessions | ✅ |
-| 💻 **Just run it** | One standalone app for macOS and Linux. No install, no server, no browser, clean shutdown every time | ✅ |
+| 🖥️ **Tools** | MAVLink console, SSH terminal to an onboard companion computer, and an extensible plugin system — the Vibration Monitor and the SSH Launcher ship with it, and dropping a folder in adds your own | ✅ |
+| 🎨 **Personalise** | Six colour themes, interface scale from 80 % to 150 %, your own logo, an app-icon switch with an optional backplate — all saved between sessions | ✅ |
+| 🔒 **One at a time** | Launching Corvus while it is already running tells you so instead of splitting one serial link's telemetry across two windows — with `CORVUS_ALLOW_MULTI=1` as the escape hatch for a genuine two-aircraft setup | ✅ |
+| 💻 **Just run it** | One standalone app for macOS, Linux and Windows. No install, no server, no browser, clean shutdown every time | ✅ |
 | 🔔 **Stay current** | Tells you when a newer release is published on GitHub — never while you are flying, never over the network you do not have | ✅ |
 
 **Safety is built in:** parameter writes, motor tests, firmware flashing and ESC calibration
@@ -388,10 +392,23 @@ scripting.
 
 A serial port, a USB autopilot and a SiK radio can each be opened by exactly
 one program, so a second ground station has always meant closing the first. It
-does not have to. Tick **Mirror this link over UDP** on the LINK tab and Corvus
-keeps the one real connection and re-broadcasts it; point QGroundControl at a
-UDP link on port 14550 and it sees the same stream. Nothing to install — the
-router is inside Corvus, and it stops when Corvus does.
+does not have to. Tick **Mirror this link over UDP** on the LINK tab, then
+start QGroundControl. Nothing to configure on either end and nothing to
+install: 14550 is the UDP link QGroundControl opens by itself, Corvus mirrors
+every frame there from the first one, and the router is inside Corvus and stops
+when Corvus does.
+
+Corvus deliberately does *not* bind 14550 itself — it listens on 14551 and
+talks first. The distinction is the difference between the feature working and
+the feature looking like it works: QGroundControl's default link **binds**
+14550 and waits to be spoken to, so a Corvus that binds it too leaves two
+listeners and no talker. On Linux the second bind fails and QGroundControl has
+no link; on macOS both binds succeed and the more specific socket silently
+takes every datagram, so QGroundControl shows a connected link that receives
+nothing and neither program reports an error. If something else already holds
+14551, Corvus takes any free port instead and says which on the LINK tab —
+mirroring outward needs no fixed local port, and losing the whole feature over
+one would be the wrong trade.
 
 By default the second station is a *screen*: telemetry flows out to it and
 nothing flows back. **Let it command the aircraft** is a separate switch,
@@ -417,6 +434,36 @@ its own aircraft off that link: another node's heartbeat cannot change the
 armed flag or the flight mode, cannot keep a lost aircraft looking connected,
 and the command target is picked from the first heartbeat that comes from an
 actual autopilot rather than the first heartbeat of any kind.
+
+### One Corvus at a time
+
+Launching Corvus while Corvus is already running brings up a message saying so
+rather than a second window. That is deliberate, and it is the same constraint
+as the one above: a serial port can be opened by exactly one program *usefully*,
+but on Linux and macOS the operating system does not enforce it. Two copies both
+open `/dev/ttyUSB0` without either being told anything is wrong, and each one
+then reads whatever bytes it got to first — so both windows show the same
+aircraft with half its telemetry missing. Attitude updates while position
+freezes; a command's acknowledgement arrives in the other window. Neither shows
+a disconnect, because from each program's point of view nothing failed.
+
+It is the quietest way this application can be badly wrong, so the second launch
+is stopped before it opens anything, and told where the first one is listening.
+The forwarder's UDP port, the tile database and `~/.corvus/config.json` are
+shared the same way, only less dangerously.
+
+If you genuinely want two — two aircraft, two radios, two separate links on one
+laptop — set `CORVUS_ALLOW_MULTI=1` and both will start. Give the second one its
+own connection string and its own forwarding port; they still cannot share a
+radio, and they will write over each other's settings.
+
+```bash
+CORVUS_ALLOW_MULTI=1 ./run.sh
+```
+
+The guard is a lock the operating system holds on the running process, not a
+file left behind on disk — so a Corvus that crashed, was force-quit, or died
+with the machine leaves nothing to clean up. The next launch just works.
 
 Next to the connection state you get **link quality**, not just "connected":
 signal strength, heartbeat regularity and receive errors. Connected tells you
@@ -601,9 +648,12 @@ picture.
   (Shift-Escape leaves it — plain Escape belongs to whatever is running).
   Connections are **saved by name** with password or key-file authentication,
   so reconnecting is one click.
-- **Plugins** — specialist views that plug in without touching the core. The
-  **Vibration Monitor** ships with it: a live graph of the aircraft's vibration
-  levels plus cumulative clipping counters.
+- **Plugins** — specialist views that plug in without touching the core. Two
+  ship with it: the **Vibration Monitor**, a live graph of the aircraft's
+  vibration levels plus cumulative clipping counters, and the **SSH Launcher**,
+  a shelf of one-press buttons that start programs on a companion computer,
+  each with its own terminal to watch and stop them in. Both are ordinary
+  plugin folders, and you can add your own — see [Plugins](#plugins) below.
 
 ### Settings
 
@@ -625,6 +675,8 @@ instantly and is saved.
   arm, change mode, or override a failsafe.
 - **SSH connections** — add, connect and remove saved hosts.
 - **Files** — where parameter exports, logs and downloads are written.
+- **Plugins** — what Corvus found, and a button that opens the folder you drop
+  plugins into. See [Plugins](#plugins).
 - **About** — version, the live connection summary, and **Credits** listing
   every bundled dependency and its licence.
 - **Updates** — a switch (on by default) that compares the running version
@@ -633,6 +685,106 @@ instantly and is saved.
   nothing about your machine is sent; with no internet the check fails silently.
   The notice never appears while the aircraft is armed, and **Skip this
   version** stops it coming back for that release.
+
+---
+
+## Plugins
+
+The **TOOLS** tab in the side workspace is an extension point: a plugin adds
+its own view there without a fork and without touching the rest of the app.
+
+Two ship with Corvus:
+
+- **Vibration Monitor** — a live graph of gyro coning, gyro high-frequency and
+  accelerometer high-frequency vibration, with the cumulative clipping counters
+  beside it. It asks PX4 for a higher `VIBRATION` rate while it is open and puts
+  the default back when you close it.
+- **SSH Launcher** — a shelf of buttons for the programs you start before a
+  flight. Each one carries its own saved SSH connection, folder and command, so
+  the mission script, the video pipeline and the log recorder are three presses
+  rather than three trips to a terminal. Add, rename, edit and remove them from
+  the plugin itself; they are saved and there again next launch.
+
+  A button runs its program **in its own SSH terminal**, and the small arrow
+  beside it opens that terminal — the program's output is right there to read,
+  and Ctrl-C (or DISCONNECT) is how you stop it. A green dot marks the buttons
+  that have something running, and pressing one of those restarts it. Turn
+  *Run in a terminal* off for a program that has to outlive Corvus itself: it
+  is then started with `nohup` and detached, with nothing to watch and nothing
+  to stop from here.
+
+  Corvus never holds the password — a button names one of your saved SSH
+  connections and the backend takes the credentials from there.
+
+### Adding your own
+
+Plugins are folders. Corvus reads two places:
+
+| Where | What it is |
+| --- | --- |
+| `~/.corvus/plugins` (`%USERPROFILE%\.corvus\plugins` on Windows) | Yours. Survives updates. |
+| `plugins/` inside the application | The ones that ship with Corvus — the two above live here. Replaced by an update. |
+
+**Settings ▸ Plugins ▸ Open plugin folder** opens the first one in Finder /
+Explorer / your file manager, and lists what Corvus found. Drop a folder in,
+restart, and it is on the TOOLS tab. A plugin in your folder with the same id
+as a shipped one replaces it, so you can patch one without editing inside the
+app bundle.
+
+One folder per plugin:
+
+```
+~/.corvus/plugins/
+  my-plugin/
+    plugin.json
+    my-plugin.js
+    my-plugin.css      (optional)
+```
+
+`plugin.json` describes it — `id` defaults to the folder name, `scripts`
+defaults to `<id>.js`, `icon` is any [Lucide](https://lucide.dev) name, and
+`order` decides where the card sits in the grid (lower is earlier, default 100,
+ties broken by name):
+
+```json
+{
+  "id": "my-plugin",
+  "name": "My Plugin",
+  "icon": "puzzle",
+  "description": "What it does, one line.",
+  "version": "1.0.0",
+  "order": 100,
+  "scripts": ["my-plugin.js"],
+  "styles": ["my-plugin.css"]
+}
+```
+
+The script registers itself as it loads and gets a container to build into
+plus a small `api` — live telemetry, the MAVLink console, notifications, JSON
+requests, and its own saved settings:
+
+```js
+Corvus.plugins.register("my-plugin", {
+  name: "My Plugin",
+  icon: "puzzle",
+  description: "What it does, one line.",
+  init: function (containerEl, api) { /* build your UI */ },
+  destroy: function (containerEl) { /* tear it down again */ },
+});
+```
+
+The full `api` is documented at the top of `src/js/plugins.js` and the manifest
+in `corvus/plugin_registry.py`. Both shipped plugins are complete worked
+examples that go through exactly this path — `plugins/ssh-launcher` for a form,
+saved settings and a backend call, `plugins/vibration` for a live chart on the
+telemetry stream. Copy one and start from there. A plugin that fails to load
+costs itself and nothing else: the rest of the app, and the other plugins, come
+up regardless.
+
+A plugin is ordinary JavaScript running in the app's own page, and the SSH
+Launcher runs whatever command you give it as the account you point it at. Read
+a plugin before you drop it in, exactly as you would a script you were about to
+run yourself.
 
 ---
 

@@ -106,10 +106,50 @@ def test_set_home_sends_command_int_not_command_long() -> None:
 
     assert bridge.set_home(48.0812345, 11.6405678)
 
-    assert bridge._conn.mav.commands == [], (
+    # Asserted against DO_SET_HOME specifically rather than against "no
+    # COMMAND_LONG at all": what must never be a COMMAND_LONG is the command
+    # carrying the coordinate, because its params are float32 and a latitude
+    # sent that way lands tens of metres from where the operator pointed. A
+    # COMMAND_LONG that carries no coordinate — the HOME_POSITION nudge below —
+    # is not the thing this is protecting against.
+    assert not [c for c in bridge._conn.mav.commands
+                if c[2] == mavutil.mavlink.MAV_CMD_DO_SET_HOME], (
         "COMMAND_LONG's float32 params cannot carry a coordinate accurately"
     )
     assert len(bridge._conn.mav.command_ints) == 1
+
+
+def test_set_home_asks_for_the_new_home_rather_than_waiting_for_the_stream() -> None:
+    """The operator has just clicked a spot on the map and is watching for the
+    marker to move there. PX4 publishes HOME_POSITION on change and again at
+    0.5 Hz, so the marker would arrive on its own — up to two seconds after the
+    click, which reads as a command that did not take."""
+    bridge = accepting_bridge()
+
+    assert bridge.set_home(48.0812345, 11.6405678)
+
+    requested = [
+        c for c in bridge._conn.mav.commands
+        if c[2] == mavutil.mavlink.MAV_CMD_REQUEST_MESSAGE
+        and int(c[4]) == 242            # MAVLINK_MSG_ID_HOME_POSITION
+    ]
+    assert len(requested) == 1
+
+
+def test_a_refused_set_home_does_not_ask_for_a_home_that_did_not_move() -> None:
+    holder: dict[str, MavlinkBridge] = {}
+
+    def on_send(args: tuple) -> None:
+        holder["bridge"]._dispatch(ack(int(args[2]), mavutil.mavlink.MAV_RESULT_DENIED))
+
+    bridge = ready_bridge(on_send)
+    holder["bridge"] = bridge
+    bridge._home_alt_amsl = 512.0
+
+    assert bridge.set_home(48.0, 11.6) is False
+
+    assert not [c for c in bridge._conn.mav.commands
+                if c[2] == mavutil.mavlink.MAV_CMD_REQUEST_MESSAGE]
 
 
 def test_set_home_carries_the_exact_coordinate_as_deg_e7() -> None:
@@ -223,3 +263,92 @@ def test_set_home_is_allowed_while_armed() -> None:
 
     assert bridge.set_home(48.1, 11.6)
     assert len(bridge._conn.mav.command_ints) == 1
+
+
+# ---------------------------------------------------------------------------
+# The home the map is allowed to draw
+# ---------------------------------------------------------------------------
+
+def test_connect_forgets_the_previous_sessions_home() -> None:
+    """A home marker has to be something the aircraft said in THIS session.
+
+    The bridge already dropped its own home altitude reference here. The
+    displayed one used to survive, so a reconnect — to the same aircraft moved
+    between flights, or to a different airframe entirely — drew last session's
+    launch point as this one's, and the map's "no fix, centre on home" fallback
+    flew the operator there.
+    """
+    from types import SimpleNamespace as NS
+    from corvus import mavlink_bridge as mb
+    from pymavlink import mavutil as mv
+
+    store = VehicleStateStore()
+    store.update(home=[11.6405678, 48.0812345])       # last flight's launch pad
+    bridge = MavlinkBridge(store)
+
+    hb = mv.mavlink.MAVLink_heartbeat_message(
+        type=mv.mavlink.MAV_TYPE_QUADROTOR, autopilot=mv.mavlink.MAV_AUTOPILOT_PX4,
+        base_mode=0, custom_mode=0, system_status=4, mavlink_version=3)
+    hb.pack(mv.mavlink.MAVLink(None, srcSystem=1, srcComponent=1))
+    conn = NS(
+        wait_heartbeat=lambda blocking=True, timeout=None: hb,
+        mode_mapping=lambda: None,
+        target_system=1, target_component=1,
+        mav=NS(request_data_stream_send=lambda *a, **k: None,
+               command_long_send=lambda *a, **k: None,
+               autopilot_version_request_send=lambda *a, **k: None),
+    )
+    original = mb.mavutil.mavlink_connection
+    mb.mavutil.mavlink_connection = lambda *a, **k: conn
+    try:
+        bridge.set_connection("udp:0.0.0.0:14540")
+        bridge._connect()
+    finally:
+        mb.mavutil.mavlink_connection = original
+
+    assert store.get_snapshot()["home"] == [0.0, 0.0]
+
+
+def test_connect_asks_for_home_instead_of_waiting_for_the_stream() -> None:
+    """Clearing home is only tolerable because the replacement is one round
+    trip away rather than the stream's own 0.5 Hz."""
+    from types import SimpleNamespace as NS
+    from corvus import mavlink_bridge as mb
+    from pymavlink import mavutil as mv
+
+    sent: list[tuple] = []
+    hb = mv.mavlink.MAVLink_heartbeat_message(
+        type=mv.mavlink.MAV_TYPE_QUADROTOR, autopilot=mv.mavlink.MAV_AUTOPILOT_PX4,
+        base_mode=0, custom_mode=0, system_status=4, mavlink_version=3)
+    hb.pack(mv.mavlink.MAVLink(None, srcSystem=1, srcComponent=1))
+    conn = NS(
+        wait_heartbeat=lambda blocking=True, timeout=None: hb,
+        mode_mapping=lambda: None,
+        target_system=1, target_component=1,
+        mav=NS(request_data_stream_send=lambda *a, **k: None,
+               command_long_send=lambda *a: sent.append(a),
+               autopilot_version_request_send=lambda *a, **k: None),
+    )
+    bridge = MavlinkBridge(VehicleStateStore())
+    original = mb.mavutil.mavlink_connection
+    mb.mavutil.mavlink_connection = lambda *a, **k: conn
+    try:
+        bridge.set_connection("udp:0.0.0.0:14540")
+        bridge._connect()
+    finally:
+        mb.mavutil.mavlink_connection = original
+
+    assert [c for c in sent
+            if c[2] == mv.mavlink.MAV_CMD_REQUEST_MESSAGE and int(c[4]) == 242]
+
+
+def test_a_serial_link_asks_for_home_too() -> None:
+    """The serial interval set is throttled to fit a 57 kbps SiK radio, and it
+    used to leave HOME_POSITION entirely to whatever the firmware publishes by
+    default. Home is where RTL ends; 60 bytes every five seconds is the wrong
+    thing to save."""
+    bridge = MavlinkBridge(VehicleStateStore(), "serial:/dev/ttyUSB0:57600")
+    intervals = bridge._message_intervals()
+
+    assert 242 in intervals, "HOME_POSITION"
+    assert intervals[242] <= 5_000_000, "at least once every five seconds"

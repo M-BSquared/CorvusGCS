@@ -942,6 +942,12 @@ Corvus.map = (function () {
   /** Apply the DISPLAYED position/heading to the marker element. */
   function renderVehicle() {
     if (!vehicleMarker || !vehDisplay) return;
+    // Same rule as the home marker: an aircraft is drawn where the aircraft
+    // said it is, or not at all. The marker is created at DEFAULT_CENTER, so
+    // without this a launched-but-unconnected Corvus shows an aircraft parked
+    // on the map's opening view.
+    const el = vehicleMarker.getElement();
+    if (el) el.hidden = false;
     vehicleMarker.setLngLat([vehDisplay.lng, vehDisplay.lat]);
     // The whole SVG rotates, so the heading cone and the body stay locked
     // together — they used to be separate elements and could disagree.
@@ -987,9 +993,31 @@ Corvus.map = (function () {
       if (waypoints.length > 0) updateRoute();
     }
 
-    if (state.home && state.home[0] !== 0 && homeMarker) {
-      homeMarker.setLngLat(state.home);
+    updateHome(state);
+  }
+
+  /**
+   * Place — or hide — the home marker.
+   *
+   * Hidden until the aircraft has actually reported a home, and hidden again
+   * the moment it stops: the marker used to be created at DEFAULT_CENTER and
+   * shown from the first frame, so a freshly launched Corvus with nothing
+   * connected drew a landing pad on a map position no aircraft had ever named,
+   * and the update guard tested only the longitude, which meant a home that
+   * was cleared left the last one on screen for good. "H" in a ring is a
+   * promise about where the aircraft will come back to; it must be the
+   * aircraft's answer or no marker at all.
+   */
+  function updateHome(state) {
+    if (!homeMarker) return;
+    const home = realFix(state && state.home);
+    const el = homeMarker.getElement();
+    if (!home) {
+      if (el) el.hidden = true;
+      return;
     }
+    homeMarker.setLngLat(home);
+    if (el) el.hidden = false;
   }
 
   // ---- waypoint planning ("Punktabflug") ----
@@ -1428,6 +1456,11 @@ Corvus.map = (function () {
         .setLngLat(DEFAULT_CENTER).addTo(map);
       vehicleMarker = new maplibregl.Marker({ element: buildVehicleMarker(), anchor: "center", rotationAlignment: "map" })
         .setLngLat(DEFAULT_CENTER).addTo(map);
+      // Both markers start hidden: nothing has reported a position yet, and
+      // DEFAULT_CENTER is where the map opens, not where anything is.
+      const vehEl = vehicleMarker.getElement();
+      if (vehEl) vehEl.hidden = true;
+      updateHome(Corvus.telemetry.getState());
 
       // Register the marker animator with the shared loop. It returns true
       // while still easing toward the target and false once settled, which is
@@ -1527,6 +1560,14 @@ Corvus.map = (function () {
     // edge — assertable without a map.
     _recordTrackPoint: (pos) => recordTrackPoint(pos),
     _realFix: (pos) => realFix(pos),
+    // test hook: the home-marker rule — a marker is drawn only for a home the
+    // aircraft actually reported. Takes the marker so the rule is assertable
+    // without MapLibre.
+    _updateHome: (state, marker) => {
+      const saved = homeMarker;
+      if (marker) homeMarker = marker;
+      try { updateHome(state); } finally { homeMarker = saved; }
+    },
     _checkForReboot: (ms) => checkForReboot(ms),
     // test hook: the open menu's point, so the click -> menu path is assertable
     // without a layout engine.

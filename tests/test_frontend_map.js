@@ -431,7 +431,74 @@ function testPlanRouteMissingTelemetryDegradesToWaypointsOnly() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// The home marker.
+//
+// "H" in a ring is a promise about where the aircraft will come back to, so it
+// has to be the aircraft's own answer or nothing. The marker is created at
+// DEFAULT_CENTER, which is where the map OPENS, not where anything is — and it
+// used to be shown from that moment, and its update guard tested only the
+// longitude, so a cleared home left the last one on screen for good.
+// ---------------------------------------------------------------------------
+function fakeMarker() {
+  const el = { hidden: false };
+  return {
+    el,
+    lngLat: null,
+    getElement() { return el; },
+    setLngLat(v) { this.lngLat = v; return this; },
+  };
+}
+
+function testHomeMarkerHiddenBeforeAnyHomeIsReported() {
+  const m = fakeMarker();
+  map._updateHome({ home: [0, 0] }, m);
+  assert.equal(m.el.hidden, true, "[0,0] is 'nothing yet', not a place");
+  assert.equal(m.lngLat, null, "and nothing is placed there");
+}
+
+function testHomeMarkerHiddenWithoutTelemetryAtAll() {
+  const m = fakeMarker();
+  map._updateHome(null, m);
+  assert.equal(m.el.hidden, true);
+  map._updateHome({}, m);
+  assert.equal(m.el.hidden, true);
+}
+
+function testHomeMarkerAppearsOnAReportedHome() {
+  const m = fakeMarker();
+  m.el.hidden = true;
+  map._updateHome({ home: [11.6405678, 48.0812345] }, m);
+  assert.equal(m.el.hidden, false);
+  assert.deepStrictEqual(m.lngLat, [11.6405678, 48.0812345]);
+}
+
+function testHomeMarkerGoesAwayWhenHomeIsCleared() {
+  // The bridge clears home on every connect, so the previous session's launch
+  // point cannot be drawn as this one's. That is only true if the marker
+  // actually follows it back to nothing.
+  const m = fakeMarker();
+  map._updateHome({ home: [11.64, 48.08] }, m);
+  assert.equal(m.el.hidden, false);
+  map._updateHome({ home: [0, 0] }, m);
+  assert.equal(m.el.hidden, true, "a cleared home must not leave its marker");
+}
+
+function testHomeMarkerIgnoresAMalformedHome() {
+  const m = fakeMarker();
+  [{ home: [NaN, 48] }, { home: ["x", "y"] }, { home: [11.6] }].forEach((state) => {
+    m.el.hidden = false;
+    map._updateHome(state, m);
+    assert.equal(m.el.hidden, true, `malformed home: ${JSON.stringify(state.home)}`);
+  });
+}
+
 const tests = [
+  testHomeMarkerHiddenBeforeAnyHomeIsReported,
+  testHomeMarkerHiddenWithoutTelemetryAtAll,
+  testHomeMarkerAppearsOnAReportedHome,
+  testHomeMarkerGoesAwayWhenHomeIsCleared,
+  testHomeMarkerIgnoresAMalformedHome,
   testCatalogueStartsWithOnlyTheBootstrapEntry,
   testBootstrapEntryMatchesTheRegistry,
   testBootstrapEntryHasNonEmptyAttribution,

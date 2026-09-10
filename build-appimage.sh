@@ -120,6 +120,9 @@ echo ">>> Copying application code ..."
 rsync -a --exclude '__pycache__' "$REPO_DIR/corvus/" "$APPDIR/corvus/"
 rsync -a --exclude '__pycache__' "$REPO_DIR/src/" "$APPDIR/src/"
 rsync -a "$REPO_DIR/assets/" "$APPDIR/assets/"
+# The bundled plugins, beside corvus/ and src/ for the same reason those are
+# (corvus/plugin_registry.py resolves this root as a sibling of the package).
+rsync -a --exclude '__pycache__' "$REPO_DIR/plugins/" "$APPDIR/plugins/"
 cp -a "$REPO_DIR/VERSION" "$APPDIR/VERSION"
 # The Sustainable Use License requires that anyone who receives a copy of
 # the software also receives a copy of its terms, so the licence ships in

@@ -1,0 +1,15 @@
+{
+  "id": "vibration",
+  "name": "Vibration Monitor",
+  "icon": "activity",
+  "description": "Live PX4 vibration metrics and accelerometer clipping",
+  "version": "1.0.0",
+  "author": "Maximilian Böck",
+  "order": 10,
+  "scripts": [
+    "vibration.js"
+  ],
+  "styles": [
+    "vibration.css"
+  ]
+}

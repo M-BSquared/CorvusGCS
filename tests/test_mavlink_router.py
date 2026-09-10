@@ -191,9 +191,57 @@ def test_a_message_with_no_sender_is_still_ours(bridge) -> None:
                 mavutil.mavlink.MAV_AUTOPILOT_ARDUPILOTMEGA), True),
     # Nothing to judge by: accepted, so a dialect without the field still flies.
     (SimpleNamespace(type=2), True),
+    # The cases the autopilot field alone lets through. A companion computer
+    # running MAVSDK announces MAV_AUTOPILOT_GENERIC rather than the INVALID
+    # the spec asks for, and so do plenty of gimbals and cameras — the type
+    # is what gives them away.
+    (_heartbeat(mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
+                mavutil.mavlink.MAV_AUTOPILOT_GENERIC), False),
+    (_heartbeat(mavutil.mavlink.MAV_TYPE_GIMBAL,
+                mavutil.mavlink.MAV_AUTOPILOT_GENERIC), False),
+    (_heartbeat(mavutil.mavlink.MAV_TYPE_CAMERA,
+                mavutil.mavlink.MAV_AUTOPILOT_GENERIC), False),
+    (_heartbeat(mavutil.mavlink.MAV_TYPE_ADSB,
+                mavutil.mavlink.MAV_AUTOPILOT_GENERIC), False),
 ])
 def test_only_an_autopilot_counts_as_the_vehicle(hb, expected) -> None:
     assert _is_vehicle_heartbeat(hb) is expected
+
+
+@pytest.mark.parametrize("component", [
+    mavutil.mavlink.MAV_COMP_ID_GIMBAL,
+    mavutil.mavlink.MAV_COMP_ID_ONBOARD_COMPUTER,
+    mavutil.mavlink.MAV_COMP_ID_TELEMETRY_RADIO,
+    mavutil.mavlink.MAV_COMP_ID_UDP_BRIDGE,
+])
+def test_a_peripheral_claiming_to_be_a_quadrotor_is_still_a_peripheral(component) -> None:
+    """A node can announce any type and any autopilot it likes; its component
+    id is the one thing that says what slot it fills. Latching the command
+    target onto a telemetry radio or a UDP bridge gives a session that looks
+    connected while every command is addressed to the thing in the middle."""
+    hb = _from(_vehicle_heartbeat(), 1, component)
+    assert _is_vehicle_heartbeat(hb) is False
+
+
+def test_the_filter_rejects_nothing_pymavlink_would_have_accepted_as_a_vehicle() -> None:
+    """Corvus picks the command target; pymavlink picks the sysid its
+    mode_mapping() reads. Where the two disagree, one of them is flying the
+    wrong node — so this pins that Corvus is never the looser of the pair."""
+    from pymavlink import mavutil as mv
+    conn = mv.mavfile.__new__(mv.mavfile)
+    for vtype in (mv.mavlink.MAV_TYPE_QUADROTOR, mv.mavlink.MAV_TYPE_GCS,
+                  mv.mavlink.MAV_TYPE_GIMBAL, mv.mavlink.MAV_TYPE_ADSB,
+                  mv.mavlink.MAV_TYPE_ONBOARD_CONTROLLER):
+        for autopilot in (mv.mavlink.MAV_AUTOPILOT_PX4,
+                          mv.mavlink.MAV_AUTOPILOT_GENERIC,
+                          mv.mavlink.MAV_AUTOPILOT_INVALID):
+            for component in (1, mv.mavlink.MAV_COMP_ID_GIMBAL):
+                hb = _from(_heartbeat(vtype, autopilot), 1, component)
+                if _is_vehicle_heartbeat(hb):
+                    assert conn.probably_vehicle_heartbeat(hb), (
+                        f"type={vtype} autopilot={autopilot} comp={component}: "
+                        "Corvus would fly a node pymavlink knows is not one"
+                    )
 
 
 def test_connect_waits_past_the_ground_stations_heartbeat_for_the_aircraft(bridge) -> None:
@@ -251,6 +299,58 @@ def test_the_dial_out_schemes_are_accepted_and_classified(bridge, conn) -> None:
     assert bridge.transport() in ("udp", "tcp")
     assert bridge.transport() != "unknown"
     assert bridge._is_serial() is False
+
+
+# ---------------------------------------------------------------------------
+# Telling pymavlink which node we picked
+# ---------------------------------------------------------------------------
+
+def test_connect_pins_mavutils_target_to_the_aircraft_corvus_chose(bridge, monkeypatch) -> None:
+    """mavutil latches its own sysid in post_message — the first heartbeat its
+    `probably_vehicle_heartbeat` accepts — and that is not always the node
+    _wait_vehicle_heartbeat picked. Whatever it latched onto is the mode table
+    `mode_mapping()` reads and the sysid its param helpers address, so leaving
+    the two disagreeing means Corvus commands one node and reads another's
+    modes.
+    """
+    from pymavlink import mavutil as mv
+    from corvus import mavlink_bridge as mb
+
+    mapping_read_for: list[int] = []
+
+    class FakeConn:
+        def __init__(self) -> None:
+            # As if a second node on the router had heartbeated first and
+            # mavutil had locked onto it.
+            self.target_system = 7
+            self.target_component = 190
+            self.mav = SimpleNamespace(
+                request_data_stream_send=lambda *a, **k: None,
+                command_long_send=lambda *a, **k: None,
+                autopilot_version_request_send=lambda *a, **k: None,
+            )
+
+        def wait_heartbeat(self, blocking=True, timeout=None):
+            return _from(_vehicle_heartbeat(), 3, 1)
+
+        def mode_mapping(self):
+            mapping_read_for.append(self.target_system)
+            return {"POSCTL": (1, 3, 0)}
+
+    conn = FakeConn()
+    monkeypatch.setattr(mb.mavutil, "mavlink_connection", lambda *a, **k: conn)
+    monkeypatch.setattr(bridge, "_start_gcs_heartbeat", lambda: None)
+    monkeypatch.setattr(bridge, "_request_version", lambda: None)
+
+    bridge.set_connection("udp:0.0.0.0:14540")
+    bridge._connect()
+
+    assert (bridge._target_system, bridge._target_component) == (3, 1)
+    assert conn.target_system == 3, "mavutil must be told which node we fly"
+    assert conn.target_component == 1
+    assert mapping_read_for == [3], (
+        "the mode table has to be the aircraft's, not the node mavutil latched onto"
+    )
 
 
 def test_the_forwarders_copy_of_the_gcs_system_id_matches_the_bridge() -> None:

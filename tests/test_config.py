@@ -372,6 +372,33 @@ def test_load_config_inverted_app_icon_non_bool_dropped(tmp_path) -> None:
     assert load_config(str(p)).ui is None
 
 
+def test_load_config_parses_app_icon_backplate(tmp_path) -> None:
+    """The backplate is its own key, kept independently of the inversion."""
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({"ui": {"app_icon_backplate": True}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"app_icon_backplate": True}
+    p.write_text(json.dumps({"ui": {"inverted_app_icon": True,
+                                    "app_icon_backplate": False}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"inverted_app_icon": True,
+                                      "app_icon_backplate": False}
+
+
+def test_load_config_app_icon_backplate_non_bool_dropped(tmp_path) -> None:
+    """A hand-edited string must not read as on, and must not take the rest down."""
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({"ui": {"scale": 1.1, "app_icon_backplate": "true"}}),
+                 encoding="utf-8")
+    assert load_config(str(p)).ui == {"scale": 1.1}
+
+
+def test_app_icon_backplate_round_trips_through_save(tmp_path) -> None:
+    p = tmp_path / "c.json"
+    save_config(CorvusConfig(ui={"inverted_app_icon": True,
+                                 "app_icon_backplate": True}), str(p))
+    assert load_config(str(p)).ui == {"inverted_app_icon": True,
+                                      "app_icon_backplate": True}
+
+
 def test_inverted_app_icon_round_trips_through_save(tmp_path) -> None:
     p = tmp_path / "config.json"
     save_config(CorvusConfig(ui={"scale": 1.1, "inverted_app_icon": True}), str(p))

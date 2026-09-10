@@ -226,9 +226,13 @@ Corvus.link = (function () {
     if (!statusError) return;
     if (text) {
       statusError.textContent = String(text);
+      // The line is clamped to two rows so a long backend message cannot grow
+      // the card; the title keeps the whole of it reachable.
+      statusError.title = String(text);
       statusError.hidden = false;
     } else {
       statusError.textContent = "";
+      statusError.title = "";
       statusError.hidden = true;
     }
   }
@@ -322,6 +326,9 @@ Corvus.link = (function () {
     if (statusConn) {
       const conn = state.link_connection || "";
       statusConn.textContent = conn || "No connection";
+      // Ellipsised on one line — a serial path is long enough to wrap three
+      // times — with the full string on hover.
+      statusConn.title = conn;
       statusConn.hidden = !conn;
     }
 
@@ -463,10 +470,20 @@ Corvus.link = (function () {
      turns it on — two stations that can both arm one aircraft is a decision
      only the operator can make, so it is never implied by the first switch. */
 
-  /** Pure: the sentence under the port field for a given forwarding status. */
+  /** Pure: the sentence under the port field for a given forwarding status.
+   *
+   *  Two addresses matter and they are not the same one. `host:port` is where
+   *  the other station listens — the UDP link QGroundControl opens by itself —
+   *  and Corvus mirrors there from the first frame, so nothing has to be
+   *  configured on that end. `listen_host:listen_port` is Corvus' own socket,
+   *  which is only worth naming when a station has to dial in to it. */
   function forwardingHint(status) {
     const s = status || {};
-    if (!s.running) return "Point QGroundControl at a UDP link on this port.";
+    const where = `${s.host || "127.0.0.1"}:${s.port || 14550}`;
+    if (!s.running) {
+      return `Mirrors this link to ${where} — the UDP link QGroundControl`
+        + " opens on its own.";
+    }
     // Both stations transmitting under one MAVLink system id makes the
     // autopilot report packet loss that is not happening, so it is said where
     // the operator is already looking rather than only in the log.
@@ -476,9 +493,13 @@ Corvus.link = (function () {
         + " Ground Station system ID.";
     }
     const peers = (s.peers || []).length;
-    const where = `${s.host || "127.0.0.1"}:${s.port || 14550}`;
-    if (!peers) return `Listening on ${where} — nothing connected yet.`;
-    return `${peers} station(s) connected on ${where}.`;
+    const back = s.listen_port
+      ? ` Corvus answers on ${s.listen_host || "127.0.0.1"}:${s.listen_port}.`
+      : "";
+    if (!peers) {
+      return `Mirroring to ${where} — nothing has answered yet.` + back;
+    }
+    return `${peers} station(s) connected; mirroring to ${where}.` + back;
   }
 
   function paintForwarding(status) {
@@ -489,8 +510,13 @@ Corvus.link = (function () {
     if (document.activeElement !== fwdPort && s.port) fwdPort.value = s.port;
     fwdWarning.hidden = !s.allow_commands;
     fwdHint.textContent = forwardingHint(s);
-    fwdError.textContent = s.error || "";
-    fwdError.hidden = !s.error;
+    // A notice is the forwarder saying it is running but not quite where it
+    // was asked to — a busy listen port it fell back from. Shown, because a
+    // station configured to dial into the old one needs to know; not styled
+    // as an error, because nothing failed.
+    fwdError.textContent = s.error || s.notice || "";
+    fwdError.hidden = !(s.error || s.notice);
+    fwdError.classList.toggle("link-status-notice", !s.error && !!s.notice);
     const sent = s.frames_sent || 0;
     const injected = s.frames_injected || 0;
     fwdStats.hidden = !s.running || !(sent || injected);

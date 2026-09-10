@@ -18,6 +18,12 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from corvus.config import default_config_path, load_config
+from corvus.instance_lock import (
+    ALLOW_MULTI_ENV,
+    InstanceLock,
+    allow_multi,
+    describe_peer,
+)
 from corvus.server import create_server
 from corvus.version import get_version
 
@@ -115,7 +121,7 @@ def _stop_all(server) -> None:
         logger.exception("http socket close failed")
 
 
-def main() -> None:
+def main() -> int:
     cfg = load_config()
     cfg_path = default_config_path()
     # Forward-compat env hooks: the map/mavlink agents' default_cache_dir()/
@@ -135,7 +141,31 @@ def main() -> None:
     port = int(sys.argv[1]) if len(sys.argv) > 1 else cfg.http_port
     mavlink_conn = sys.argv[2] if len(sys.argv) > 2 else cfg.mavlink_connection
 
-    server = create_server(port=port, mavlink_conn=mavlink_conn)
+    # One ground station per machine — the serial link, the forwarder's UDP
+    # port and ~/.corvus/config.json cannot be shared between two of them, and
+    # nothing about a split serial stream looks like a failure while it is
+    # happening. See corvus/instance_lock.py. CORVUS_ALLOW_MULTI=1 opts out.
+    lock = InstanceLock()
+    if not lock.acquire(port=None) and not allow_multi():
+        logger.error("CORVUS GCS is %s.", describe_peer(lock.peer()))
+        logger.error("Open that one, or set %s=1 to run a second instance.",
+                     ALLOW_MULTI_ENV)
+        return 1
+    atexit.register(lock.release)
+
+    try:
+        server = create_server(port=port, mavlink_conn=mavlink_conn)
+    except OSError as exc:
+        # Every port in the search span is busy. A named error beats a
+        # traceback out of the constructor.
+        logger.error("could not start the HTTP server: %s", exc)
+        lock.release()
+        return 1
+    # create_server may have landed on a different port than the one asked
+    # for; everything the operator is told from here on uses the real one.
+    port = server.server_address[1]
+    lock.write_port(port)
+
     shutting_down = threading.Event()
     # _torn_down tracks whether _stop_all has actually run, so the atexit
     # teardown (which fires if the main thread exits abnormally before the
@@ -145,16 +175,23 @@ def main() -> None:
     # shutdown contract.
     _torn_down = threading.Event()
 
+    # Test-and-set under a lock. The normal path and the atexit hook can
+    # reach _teardown() from different threads, and the window between
+    # is_set() and set() was wide enough for both to pass — two concurrent
+    # _stop_all() runs closing the same sockets and joining the same threads.
+    _teardown_lock = threading.Lock()
+
     def _teardown() -> None:
         """Run _stop_all exactly once; safe from the normal path and atexit."""
-        if _torn_down.is_set():
-            return
-        _torn_down.set()
+        with _teardown_lock:
+            if _torn_down.is_set():
+                return
+            _torn_down.set()
         _stop_all(server)
 
     def shutdown(*_args) -> None:
-        if shutting_down.is_set():
-            return
+        # Event.set() is idempotent and atomic; no guard needed, and none
+        # wanted — this runs in a signal handler.
         shutting_down.set()
 
     signal.signal(signal.SIGINT, shutdown)
@@ -209,8 +246,8 @@ def main() -> None:
     except Exception:
         logger.exception("http server thread join failed")
     logger.info("All connections stopped. Exiting.")
-    sys.exit(0)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

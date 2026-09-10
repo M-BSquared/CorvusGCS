@@ -307,3 +307,86 @@ class SshBridge:
             self._sessions.clear()
         for s in sessions:
             s.disconnect()
+
+
+# How much of a command's output is carried back. A one-shot launcher wants the
+# first screenful of a failure, not a build log; anything past this is cut and
+# marked, so a runaway program cannot fill the HTTP response.
+OUTPUT_LIMIT = 64 * 1024
+
+
+def _truncate(text: str) -> str:
+    """Cut *text* to OUTPUT_LIMIT, marking it when something was dropped."""
+    if len(text) <= OUTPUT_LIMIT:
+        return text
+    return text[:OUTPUT_LIMIT] + "\n… output truncated"
+
+
+def run_command(
+    host: str,
+    command: str,
+    port: int = 22,
+    username: str = "corvus",
+    password: str | None = None,
+    key_path: str | None = None,
+    timeout: float = 20.0,
+) -> dict[str, Any]:
+    """Run one command over its own SSH connection and return the result.
+
+    Deliberately *not* a method on :class:`SshBridge`: the bridge's sessions are
+    interactive shells whose output belongs to the terminal's subscribers, and
+    a command run through one would have to be parsed back out of that stream.
+    A short-lived connection of its own gives a real exit status and clean
+    stdout/stderr, and leaves nothing behind — it is closed in a ``finally``
+    whatever happens.
+
+    *command* is executed by the remote login shell, so the caller composes the
+    whole line (``cd … && …``) and owns its quoting. Returns
+    ``{"ok", "exit_status", "stdout", "stderr", "error"}``; ``ok`` is true only
+    when the command actually ran AND exited 0. Never raises.
+
+    Lifecycle: this blocks its calling thread (an HTTP handler thread, which is
+    a daemon) for at most the 8s connect plus *timeout*, and it owns no state
+    past the call — there is nothing for the shutdown path to join or close,
+    unlike a bridge session. A caller that wants a program to keep running
+    composes it with ``nohup`` rather than holding this open.
+    """
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        kwargs: dict[str, Any] = {
+            "hostname": host,
+            "port": port,
+            "username": username,
+            "timeout": 8,
+        }
+        if key_path:
+            kwargs["key_filename"] = key_path
+        elif password:
+            kwargs["password"] = password
+        client.connect(**kwargs)
+        _stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
+        out = stdout.read().decode("utf-8", errors="replace")
+        err = stderr.read().decode("utf-8", errors="replace")
+        status = stdout.channel.recv_exit_status()
+        return {
+            "ok": status == 0,
+            "exit_status": status,
+            "stdout": _truncate(out),
+            "stderr": _truncate(err),
+            "error": "" if status == 0 else f"command exited with status {status}",
+        }
+    except Exception as exc:  # noqa: BLE001 - every failure is a message, not a 500
+        logger.error("SSH run on %s: %s", host, exc)
+        return {
+            "ok": False,
+            "exit_status": None,
+            "stdout": "",
+            "stderr": "",
+            "error": str(exc) or exc.__class__.__name__,
+        }
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass

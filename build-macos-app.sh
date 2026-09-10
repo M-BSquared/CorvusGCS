@@ -331,6 +331,10 @@ mkdir -p "$APPROOT"
 rsync -a --exclude '__pycache__' "$REPO_DIR/corvus/" "$APPROOT/corvus/"
 rsync -a --exclude '__pycache__' "$REPO_DIR/src/" "$APPROOT/src/"
 rsync -a "$REPO_DIR/assets/" "$APPROOT/assets/"
+# The plugins that ship with Corvus. corvus/plugin_registry.py resolves this
+# root as a sibling of the corvus package, exactly like src/, so it has to land
+# beside it. Operator plugins live in ~/.corvus/plugins and are never bundled.
+rsync -a --exclude '__pycache__' "$REPO_DIR/plugins/" "$APPROOT/plugins/"
 cp -a "$REPO_DIR/VERSION" "$APPROOT/VERSION"
 # The Sustainable Use License requires that anyone who receives a copy of
 # the software also receives a copy of its terms, so the licence ships in

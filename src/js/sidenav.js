@@ -367,19 +367,10 @@ Corvus.sidenav = (function () {
   }
 
   // Activate the SSH tab in the right panel (used after a settings-page CONNECT
-  // so the live terminal the panel rendered becomes visible). Mirrors the
-  // tab-switch logic in panel.init() without re-firing its click handler.
+  // so the live terminal the panel rendered becomes visible). The tab switch
+  // itself belongs to the panel; this used to be a second copy of it.
   function switchToSSHTab() {
-    const tab = document.querySelector('.panel-tabs .tab[data-tab="ssh"]');
-    const panel = document.querySelector('.tab-panel[data-panel="ssh"]');
-    if (tab) {
-      document.querySelectorAll(".panel-tabs .tab").forEach((t) =>
-        t.classList.toggle("active", t === tab));
-    }
-    if (panel) {
-      document.querySelectorAll(".tab-panel").forEach((p) =>
-        p.classList.toggle("active", p === panel));
-    }
+    Corvus.panel.showTab("ssh");
   }
 
   // --- Section A: Appearance (color theme, map service, on-screen controls) ---
@@ -481,34 +472,70 @@ Corvus.sidenav = (function () {
     });
   }
 
-  // Which cut of the Corvus mark the desktop app hands the operating system
-  // for its Dock / taskbar icon: the shipped white artwork, or the inverted
-  // black one for a light dock. The desktop wrapper (corvus/app.py) is the
-  // only consumer — this switch deliberately touches nothing else, so the
-  // color theme, the top-bar mark and the browser tab icon all stay put.
+  // How the desktop app draws the Corvus mark for its Dock / taskbar icon.
+  // Two independent switches: which cut of the mark (the shipped white
+  // artwork, or the inverted black one), and whether that mark sits on a
+  // filled rounded backplate instead of bare transparency. The desktop
+  // wrapper (corvus/app.py) is the only consumer — these switches
+  // deliberately touch nothing else, so the color theme, the top-bar mark
+  // and the browser tab icon all stay put.
   //
   // Persisted in the backend config rather than localStorage because the
-  // process that acts on it is the Python wrapper, not this page. It picks
+  // process that acts on them is the Python wrapper, not this page. It picks
   // the change up on its own timer, so the icon flips while the app runs.
   function appIconCard(cfg) {
     const card = Corvus.ui.card({ title: "App icon" });
-    const sw = Corvus.ui.toggle({
+    const ui = cfg.ui || {};
+
+    const inverted = Corvus.ui.toggle({
       id: "settingsInvertedAppIcon",
-      value: !!(cfg.ui && cfg.ui.inverted_app_icon),
+      value: !!ui.inverted_app_icon,
       ariaLabel: "Inverted app icon",
       onChange: (on) => postConfig({ ui: { inverted_app_icon: on } }, { strict: true }),
     });
     card.appendChild(Corvus.ui.field({
       label: "Inverted app icon",
-      control: sw.el,
+      control: inverted.el,
       className: "field-switch",
       hint: "Switches the icon the desktop app shows in the Dock (macOS) or " +
             "the taskbar (Linux) from the white mark to the black one, which " +
             "reads better on a light dock. Applies to the running app within " +
-            "a second; the icon the installer put in Finder or the launcher " +
-            "keeps whatever the build shipped. Changes nothing else \u2014 not " +
-            "the color theme, and not the mark in the top bar.",
+            "a second. Changes nothing else \u2014 not the color theme, and " +
+            "not the mark in the top bar.",
     }));
+
+    const backplate = Corvus.ui.toggle({
+      id: "settingsAppIconBackplate",
+      value: !!ui.app_icon_backplate,
+      ariaLabel: "Icon backplate",
+      onChange: (on) => postConfig({ ui: { app_icon_backplate: on } }, { strict: true }),
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Icon backplate",
+      control: backplate.el,
+      className: "field-switch",
+      hint: "Draws the mark on a filled rounded square instead of bare " +
+            "transparency \u2014 dark behind the white mark, white behind the " +
+            "black one. The bare silhouette disappears against a dock of its " +
+            "own shade; the backplate carries its own contrast, so it reads " +
+            "either way and the inversion above becomes a matter of taste.",
+    }));
+
+    // Where the two switches stop. macOS and Windows read the icon out of the
+    // signed bundle / the running .exe, neither of which can be rewritten from
+    // inside the app, so there the switches reach the running window only.
+    // Linux is the exception, in two places that are both plain files under
+    // $HOME: the launcher entry a desktop integrator installed, and the
+    // freedesktop thumbnail the file manager paints on the .AppImage itself.
+    const scope = Corvus.ui.empty(
+      "The icon in the Finder or the Start menu keeps whatever the build " +
+      "shipped \u2014 it lives inside the signed bundle. On Linux both " +
+      "follow: the applications grid, once a desktop integrator has picked " +
+      "the AppImage up, and the icon the file manager draws on the " +
+      ".AppImage file itself."
+    );
+    scope.className = "field-hint";
+    card.appendChild(scope);
     return card;
   }
 
@@ -995,6 +1022,95 @@ Corvus.sidenav = (function () {
     container.appendChild(Corvus.ui.section({ title: "Files", body: card }));
   }
 
+  // --- Section D2: Plugins (the drop-in folder) ---
+  // The plugin folder is the whole feature here: an operator copies a folder
+  // in, restarts, and the plugin is on the TOOLS tab. The list is what the
+  // backend actually discovered, so a plugin that is missing from it is a
+  // manifest problem rather than a mystery, and the button opens the folder
+  // in the host's file manager so nobody has to type the path.
+  //
+  // `gen` gates the async /api/plugins fetch against a navigation away, the
+  // same way the SSH and About sections do.
+  function renderPluginsSection(container, gen) {
+    const card = Corvus.ui.card({});
+    const status = Corvus.ui.message({});
+    const list = document.createElement("div");
+    card.appendChild(list);
+
+    const openBtn = Corvus.ui.button({
+      variant: "secondary",
+      icon: "folder-open",
+      label: "Open plugin folder",
+      onClick: () => {
+        Corvus.ui.setBusy(openBtn, true);
+        status.hide();
+        Corvus.telemetry.requestJson("/api/plugins/folder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        }).then((res) => {
+          // A machine with no desktop session (Corvus behind serve.py on a
+          // headless box) cannot open anything, so the path itself is the
+          // useful answer there — show it rather than only the failure.
+          if (res && res.ok) status.show("Opened " + (res.path || "the plugin folder"), "ok");
+          else status.show((res && res.path) ? "Plugin folder: " + res.path : "Could not open the folder", "warn");
+        }).catch((error) => {
+          status.show(error.message || "Could not open the folder", "err");
+        }).finally(() => {
+          Corvus.ui.setBusy(openBtn, false);
+        });
+      },
+    });
+
+    Corvus.telemetry.requestJson("/api/plugins").then((data) => {
+      if (gen !== undefined && gen !== navGeneration) return;
+      const plugins = (data && Array.isArray(data.plugins)) ? data.plugins : [];
+      if (!plugins.length) {
+        list.appendChild(Corvus.ui.empty("No plugins installed."));
+      } else {
+        plugins.forEach((p) => {
+          // "bundled" ships with the application; anything else came out of
+          // the operator's own folder, which is the distinction that matters
+          // when a plugin misbehaves.
+          const where = p.source === "bundled" ? "built in" : "installed";
+          const version = p.version ? " " + p.version : "";
+          list.appendChild(row(p.name || p.id, where + version));
+          if (p.description) {
+            const desc = Corvus.ui.empty(p.description);
+            desc.className = "settings-plugin-desc";
+            list.appendChild(desc);
+          }
+        });
+      }
+      list.appendChild(Corvus.ui.field({
+        label: "Plugin folder",
+        control: pathLine((data && data.user_dir) || "~/.corvus/plugins"),
+        hint: "One folder per plugin, each with a plugin.json. Corvus loads " +
+              "them on the next start, so restart after copying one in. The " +
+              "folder's own README.md describes the format, and the plugins " +
+              "that ship with Corvus are worked examples.",
+      }));
+      Corvus.ui.refreshIcons();
+    }).catch(() => {
+      if (gen !== undefined && gen !== navGeneration) return;
+      list.appendChild(Corvus.ui.empty("Plugin list unavailable."));
+    });
+
+    card.appendChild(Corvus.ui.actions(openBtn));
+    card.appendChild(status.el);
+    container.appendChild(Corvus.ui.section({ title: "Plugins", body: card }));
+  }
+
+  /* A path shown as read-only monospace text. Not an input: unlike the export
+     folder below it, this location is not configurable — the button is how it
+     is reached, and an editable-looking field would promise otherwise. */
+  function pathLine(text) {
+    const el = document.createElement("div");
+    el.className = "settings-path";
+    el.textContent = String(text == null ? "" : text);
+    return el;
+  }
+
   // --- Section E: About (existing — reads /api/version, no hardcoded version) ---
   // `gen` (optional, from renderSettingsPage) gates the independent /api/version
   // fetch so it can't append rows to a pageView that has since been repurposed.
@@ -1128,6 +1244,7 @@ Corvus.sidenav = (function () {
       renderSSHSection(container, gen);
       renderConnectionSection(container, cfg);
       renderFilesSection(container, cfg);
+      renderPluginsSection(container, gen);
       renderAboutSection(container, gen);
       Corvus.ui.refreshIcons();
     }).catch(() => {

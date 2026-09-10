@@ -44,8 +44,53 @@ window.Corvus = window.Corvus || {};
  *                                 resolves to [] on error or when no transport.
  *                                 Lets a plugin offer mode-aware UI without
  *                                 duplicating the fetch.
+ *   postJson(url, body)           POST that resolves with the parsed body even
+ *                                 when it carries {ok:false} — for endpoints
+ *                                 whose failure detail (stderr, an exit
+ *                                 status) is the thing worth showing. Use
+ *                                 postAction instead when a rejection should
+ *                                 simply reject.
+ *   terminal(session)             Show the live terminal for an SSH session the
+ *                                 plugin opened (POST /api/ssh/connect), by
+ *                                 switching the panel to its SSH tab and
+ *                                 rendering that session. `session` is
+ *                                 {name, title, host, port, username}: `name`
+ *                                 is the session key, `title` what the header
+ *                                 reads. Returns true when the panel took it.
+ *                                 Best-effort + guarded, like console().
+ *   getSettings() {() => Object}  This plugin's saved settings, from the
+ *                                 config file. {} when it has never saved any.
+ *   saveSettings(patch, replace)  Merge `patch` into them and persist
+ *                                 (POST /api/plugins/settings). Resolves with
+ *                                 the saved object. Pass `replace` true to
+ *                                 store `patch` as the whole settings object
+ *                                 instead — the only way to drop a key, since
+ *                                 a merge can only add. Plain UI state only —
+ *                                 the config file is not a secret store, so a
+ *                                 plugin names a saved SSH connection rather
+ *                                 than keeping a password.
+ *
+ * getSettings/saveSettings are bound to the plugin they were handed to, so a
+ * plugin cannot read or overwrite another's settings by accident.
  *
  * All feedback helpers are frontend-only: they never fork the server.
+ *
+ * ---------------------------------------------------------------------------
+ * Installed plugins (the drop-in folder)
+ * ---------------------------------------------------------------------------
+ * Beyond the plugins that ship as <script> tags in index.html, `loadInstalled`
+ * fetches GET /api/plugins and appends each installed plugin's styles and
+ * scripts at boot. A plugin is a folder — bundled in the application's own
+ * `plugins/`, or dropped by the operator into `~/.corvus/plugins` — holding a
+ * `plugin.json` manifest and the files it names; see corvus/plugin_registry.py
+ * for the manifest, and the Plugins section of Settings for the button that
+ * opens the folder.
+ *
+ * Loading is deliberately late and forgiving: a plugin that fails to fetch or
+ * throws while loading costs that card and nothing else, and because register()
+ * re-renders the grid, a plugin arriving after the FUTURE tab is already open
+ * simply appears. Nothing is hot-reloaded — a newly dropped-in plugin shows up
+ * on the next start, which is the contract the Settings hint states.
  */
 Corvus.plugins = (function () {
   // Insertion-ordered map: id -> spec. A Map preserves registration order so
@@ -65,6 +110,16 @@ Corvus.plugins = (function () {
   // firmware, so a single fetch serves every plugin for the session.
   let modesCache = null;      // settled modes array (null = not yet loaded)
   let modesInFlight = null;   // pending promise, dedupes concurrent callers
+
+  // Saved per-plugin settings, id -> object. Seeded from GET /api/plugins at
+  // boot and kept in step with every saveSettings, so getSettings can answer
+  // synchronously while a plugin is building its form.
+  let settingsStore = Object.create(null);
+
+  // Ids whose scripts loadInstalled has already appended, so a second call
+  // (a reload of the FUTURE tab, a retry) cannot load the same plugin twice
+  // and have its register() rejected as a duplicate.
+  const loadedInstalled = new Set();
 
   /**
    * Register a plugin. Returns true on success, false on rejection.
@@ -240,7 +295,7 @@ Corvus.plugins = (function () {
     activeId = id;
     activeContainer = container;
     try {
-      spec.init(container, api);
+      spec.init(container, apiFor(id));
     } catch (err) {
       console.error("plugin init failed:", id, err);
     }
@@ -294,6 +349,99 @@ Corvus.plugins = (function () {
   }
 
   /**
+   * POST `body` to `url` and resolve with the parsed response body, whatever
+   * it says. Unlike postAction this does NOT reject on {ok:false}: some
+   * endpoints put the interesting part of a failure (a remote command's
+   * stderr, its exit status) in the body, and rejecting would throw it away.
+   * A network/parse error still rejects, because then there is no body.
+   * @param {string} url
+   * @param {Object} body
+   * @returns {Promise<Object>}
+   */
+  function pluginPostJson(url, body) {
+    const req = api && api.requestJson;
+    if (typeof req !== "function") return Promise.reject(new Error("no transport"));
+    return req(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+  }
+
+  /** This plugin's saved settings; always an object, never null. */
+  function getSettingsFor(id) {
+    const saved = settingsStore[id];
+    return saved && typeof saved === "object" ? Object.assign({}, saved) : {};
+  }
+
+  /**
+   * Merge `patch` into a plugin's saved settings and persist them. The local
+   * copy is updated from the server's answer, so a rejected key never lingers
+   * in the UI as if it had been saved.
+   *
+   * With `replace` the object is stored as given instead of merged, which is
+   * how a plugin that owns its whole settings object drops a key it no longer
+   * writes — a merge can only ever add.
+   *
+   * @param {string} id
+   * @param {Object} patch
+   * @param {boolean} [replace]
+   * @returns {Promise<Object>} the saved settings
+   */
+  function saveSettingsFor(id, patch, replace) {
+    if (!patch || typeof patch !== "object") return Promise.resolve(getSettingsFor(id));
+    return pluginPostJson("/api/plugins/settings", { id, settings: patch, replace: !!replace })
+      .then((res) => {
+        const saved = (res && res.settings)
+          || (replace ? Object.assign({}, patch) : Object.assign(getSettingsFor(id), patch));
+        settingsStore[id] = saved;
+        return Object.assign({}, saved);
+      });
+  }
+
+  /**
+   * The shared api with getSettings/saveSettings bound to one plugin. Built
+   * per open() on top of the shared object (prototype delegation, not a copy)
+   * so every plugin keeps seeing the same telemetry/console helpers and a
+   * later addition to `api` needs no change here.
+   * @param {string} id
+   * @returns {Object}
+   */
+  function apiFor(id) {
+    const scoped = Object.create(api);
+    scoped.getSettings = () => getSettingsFor(id);
+    scoped.saveSettings = (patch, replace) => saveSettingsFor(id, patch, replace);
+    return scoped;
+  }
+
+  /**
+   * Show the live terminal for an SSH session the plugin opened.
+   *
+   * A plugin that starts a program over SSH has somewhere for the operator to
+   * watch it and stop it — the panel's SSH tab already is a real terminal over
+   * the same bridge, so this points it at the session rather than each plugin
+   * growing a terminal of its own.
+   *
+   * Best-effort and guarded: a panel that is missing or mid-build returns
+   * false rather than throwing into the plugin.
+   *
+   * @param {Object} session {name, title, host, port, username}
+   * @returns {boolean} whether the panel showed it
+   */
+  function pluginTerminal(session) {
+    if (!session || typeof session.name !== "string" || !session.name) return false;
+    try {
+      const panel = window.Corvus && window.Corvus.panel;
+      if (!panel || typeof panel.showSSHTerminal !== "function") return false;
+      panel.showSSHTerminal(session);
+      if (typeof panel.showTab === "function") panel.showTab("ssh");
+      return true;
+    } catch (_e) {
+      return false;      // a broken panel must never crash a plugin
+    }
+  }
+
+  /**
    * Return the connected firmware's flight-mode list (GET /api/mavlink/modes).
    * Cached for the session; concurrent callers share one fetch; a transient
    * error resolves to [] and clears the in-flight promise so a later call
@@ -336,9 +484,98 @@ Corvus.plugins = (function () {
       console: pluginConsole,
       notification: pluginNotification,
       modes: pluginModes,
+      terminal: pluginTerminal,
+      postJson: pluginPostJson,
+      // Overwritten per plugin by apiFor(); present here so the shape is the
+      // same object whether a plugin was handed the scoped api or reached the
+      // shared one, and so a plugin calling them outside init() gets an empty
+      // answer rather than a TypeError.
+      getSettings: () => ({}),
+      saveSettings: () => Promise.resolve({}),
     };
     renderGrid();
   }
 
-  return { register, unregister, list, init, open, close, getActive };
+  /**
+   * Load the plugins installed as folders (GET /api/plugins) by appending
+   * their styles and scripts to the document. Each plugin registers itself as
+   * its script runs, exactly as a built-in one does.
+   *
+   * Resolves when every plugin has been attempted — never rejects. One plugin
+   * that 404s, throws on load, or was already loaded costs that plugin only:
+   * the FUTURE tab is an extension point, and a bad extension must not be able
+   * to take the tab (or the boot) down with it.
+   *
+   * @returns {Promise<string[]>} the ids that were loaded this call
+   */
+  function loadInstalled() {
+    const req = api && api.requestJson
+      ? api.requestJson
+      : (window.Corvus && Corvus.telemetry && Corvus.telemetry.requestJson);
+    if (typeof req !== "function") return Promise.resolve([]);
+    return Promise.resolve()
+      .then(() => req("/api/plugins"))
+      .then((data) => {
+        // Seed the settings store before any plugin script runs, so the first
+        // getSettings() inside a plugin's init already has the saved values.
+        if (data && data.settings && typeof data.settings === "object") {
+          settingsStore = Object.assign(Object.create(null), data.settings);
+        }
+        const plugins = (data && Array.isArray(data.plugins)) ? data.plugins : [];
+        const pending = [];
+        plugins.forEach((p) => {
+          if (!p || typeof p.id !== "string" || !p.id) return;
+          if (loadedInstalled.has(p.id)) return;
+          loadedInstalled.add(p.id);
+          (Array.isArray(p.styles) ? p.styles : []).forEach((href) => {
+            appendStyle(assetUrl(p.id, href));
+          });
+          // Sequential per plugin: a manifest listing several scripts means the
+          // later ones may build on the earlier ones, and <script> tags appended
+          // together carry no such guarantee.
+          let chain = Promise.resolve();
+          (Array.isArray(p.scripts) ? p.scripts : []).forEach((src) => {
+            chain = chain.then(() => appendScript(assetUrl(p.id, src)));
+          });
+          pending.push(chain.then(() => p.id, (err) => {
+            console.error("plugin failed to load:", p.id, err);
+            return null;
+          }));
+        });
+        return Promise.all(pending).then((ids) => ids.filter((id) => id !== null));
+      })
+      .catch((err) => {
+        console.error("plugin discovery failed:", err);
+        return [];
+      });
+  }
+
+  /** URL of one file inside a plugin's folder (each segment encoded, "/" kept). */
+  function assetUrl(id, rel) {
+    const path = String(rel).split("/").map(encodeURIComponent).join("/");
+    return `/api/plugins/asset/${encodeURIComponent(id)}/${path}`;
+  }
+
+  /** Append a stylesheet link. Fire-and-forget: a missing CSS is cosmetic. */
+  function appendStyle(href) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = href;
+    document.head.appendChild(link);
+  }
+
+  /** Append a script tag; resolves on load, rejects on error. */
+  function appendScript(src) {
+    return new Promise((resolve, reject) => {
+      const el = document.createElement("script");
+      el.src = src;
+      // Default (async=false for an inserted script with src) preserves the
+      // chain's order; the promise is what the caller actually sequences on.
+      el.onload = () => resolve();
+      el.onerror = () => reject(new Error(`could not load ${src}`));
+      document.head.appendChild(el);
+    });
+  }
+
+  return { register, unregister, list, init, open, close, getActive, loadInstalled };
 })();

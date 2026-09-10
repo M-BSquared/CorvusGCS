@@ -196,7 +196,7 @@
           <button class="tab active" data-tab="link">LINK</button>
           <button class="tab" data-tab="console">CONSOLE</button>
           <button class="tab" data-tab="ssh">SSH</button>
-          <button class="tab" data-tab="future">FUTURE</button>
+          <button class="tab" data-tab="future">PLUGINS</button>
         </div>
         <div class="panel-content">
           <section class="tab-panel active" data-panel="link">
@@ -209,14 +209,14 @@
                   <span class="link-status-dot off" id="linkStatusDot"></span>
                   <span class="link-status-label" id="linkStatusLabel">DISCONNECTED</span>
                   <span class="link-quality" id="linkQuality" data-level="off" hidden></span>
-                  <button class="btn link-reconnect" id="linkReconnect" type="button" data-variant="secondary" data-size="sm" hidden>
-                    <i data-lucide="refresh-cw"></i>
-                    <span>Reconnect</span>
-                  </button>
-                  <button class="btn link-disconnect" id="linkDisconnect" type="button" data-variant="ghost" data-size="sm" hidden>
-                    <i data-lucide="unplug"></i>
-                    <span>Disconnect</span>
-                  </button>
+                  <div class="link-status-actions">
+                    <button class="btn link-reconnect" id="linkReconnect" type="button" data-variant="ghost" data-size="sm" title="Reconnect this link" aria-label="Reconnect this link" hidden>
+                      <i data-lucide="refresh-cw"></i>
+                    </button>
+                    <button class="btn link-disconnect" id="linkDisconnect" type="button" data-size="sm" title="Close this link" hidden>
+                      <span>Disconnect</span>
+                    </button>
+                  </div>
                 </div>
                 <div class="link-status-conn" id="linkStatusConn" hidden>No connection</div>
                 <div class="link-status-error" id="linkStatusError" hidden></div>
@@ -292,11 +292,12 @@
                   <span>Mirror this link over UDP</span>
                 </label>
                 <div class="link-field">
-                  <label class="link-field-label" for="fwdPort">Port for the other station</label>
+                  <label class="link-field-label" for="fwdPort">Port the other station listens on</label>
                   <input class="field-input field-input-mono link-input" id="fwdPort" type="number"
                     min="1" max="65535" value="14550" autocomplete="off" />
                   <div class="link-hint" id="fwdHint">
-                    Point QGroundControl at a UDP link on this port.
+                    14550 is the UDP link QGroundControl opens on its own —
+                    start it and it sees this aircraft.
                   </div>
                 </div>
                 <label class="link-toggle link-toggle-warn">
@@ -305,9 +306,10 @@
                 </label>
                 <div class="link-hint link-hint-warn" id="fwdCommandWarning" hidden>
                   Two stations will be able to arm and change the mode of this
-                  aircraft. Leave off to share telemetry only. Give the other
-                  station its own MAVLink system ID — both default to 255, and
-                  PX4 counts sequence numbers per ID.
+                  aircraft. Leave off to share telemetry only. Corvus transmits
+                  as MAVLink system 254 and QGroundControl as 255; if the other
+                  station is on 254 too, give it its own — PX4 counts sequence
+                  numbers per ID and reports loss that is not happening.
                 </div>
                 <div class="link-status-error" id="fwdError" hidden></div>
                 <div class="link-hint" id="fwdStats" hidden></div>
@@ -385,7 +387,7 @@
 
           <section class="tab-panel" data-panel="future">
             <div class="panel-section-header">
-              <span class="panel-section-title">Future Tools / Plugins</span>
+              <span class="panel-section-title">Plugins</span>
             </div>
             <div class="future-empty" id="futureContent"></div>
           </section>
@@ -429,7 +431,6 @@
 <script src="js/panel.js"></script>
 <script src="js/link.js"></script>
 <script src="js/plugins.js"></script>
-<script src="js/plugin-vibration.js"></script>
 <script src="js/setup-shared.js"></script>
 <script src="js/calib-figures.js"></script>
 <script src="js/calib-protocol.js"></script>

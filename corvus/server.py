@@ -15,6 +15,8 @@ import errno
 import os
 import queue
 import re
+import shlex
+import socket
 import socketserver
 import tempfile
 import threading
@@ -34,6 +36,8 @@ from .config import (
 )
 from .mavlink_forwarder import (
     DEFAULT_HOST as _FORWARD_DEFAULT_HOST,
+    DEFAULT_LISTEN_HOST as _FORWARD_DEFAULT_LISTEN_HOST,
+    DEFAULT_LISTEN_PORT as _FORWARD_DEFAULT_LISTEN_PORT,
     DEFAULT_PORT as _FORWARD_DEFAULT_PORT,
 )
 from .mavlink_bridge import (
@@ -41,7 +45,16 @@ from .mavlink_bridge import (
     TAKEOFF_ALTITUDE_MIN_M,
     MavlinkBridge,
 )
-from .ssh_bridge import SshBridge
+from .file_manager import open_folder
+from .plugin_registry import (
+    bundled_plugins_dir,
+    ensure_user_plugins_dir,
+    find_dir as find_plugin_dir,
+    public_list as public_plugin_list,
+    resolve_asset as resolve_plugin_asset,
+    user_plugins_dir,
+)
+from .ssh_bridge import SshBridge, run_command as ssh_run_command
 from .state_store import VehicleStateStore, _sanitize
 from .paths import corvus_path
 from .tile_cache import TileCache, default_cache_dir
@@ -94,6 +107,12 @@ PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 # never shadow the exact /api/tiles/{sources,jobs,progress,download,cancel}
 # routes (none of which end in ".png" with four numeric segments).
 _TILE_PATH_RE = re.compile(r"^/api/tiles/([^/]+)/(\d+)/(\d+)/(\d+)\.png$")
+# Path-parameter route for a plugin's own files:
+# /api/plugins/asset/<plugin id>/<path inside the plugin folder>. The id is
+# matched narrowly (the same shape plugin_registry accepts) so only the
+# trailing group can carry separators, and that group is resolved against the
+# plugin folder by resolve_plugin_asset rather than trusted here.
+_PLUGIN_ASSET_RE = re.compile(r"^/api/plugins/asset/([A-Za-z0-9][A-Za-z0-9_.\-]{0,63})/(.+)$")
 # "motor" = ESC/motor calibration (MAV_CMD_PREFLIGHT_CALIBRATION param7=1.0); motors spin — props must be removed
 CALIB_SENSORS = frozenset({
     "gyro", "compass", "baro", "accel", "level", "accel_quick", "airspeed", "motor",
@@ -441,11 +460,22 @@ def _build_forwarder(mavlink: Any, config: Any) -> Any:
     if not isinstance(cfg, dict) or not cfg.get("enabled"):
         return None
     try:
-        from .mavlink_forwarder import DEFAULT_HOST, DEFAULT_PORT, MavlinkForwarder
+        from .mavlink_forwarder import (
+            DEFAULT_HOST, DEFAULT_LISTEN_HOST, DEFAULT_LISTEN_PORT, DEFAULT_PORT,
+            MavlinkForwarder,
+        )
+        listen_port = cfg.get("listen_port")
         forwarder = MavlinkForwarder(
             mavlink.inject_raw,
             host=str(cfg.get("host") or DEFAULT_HOST),
             port=int(cfg.get("port") or DEFAULT_PORT),
+            listen_host=str(cfg.get("listen_host") or DEFAULT_LISTEN_HOST),
+            # 0 means "any free port" and must survive: `or DEFAULT` would
+            # turn the operator's explicit ephemeral choice back into 14551.
+            listen_port=(
+                DEFAULT_LISTEN_PORT if not isinstance(listen_port, int)
+                or isinstance(listen_port, bool) else listen_port
+            ),
             endpoints=cfg.get("endpoints") or (),
             allow_commands=bool(cfg.get("allow_commands")),
         )
@@ -490,6 +520,50 @@ def _tlog_dir(cfg: Any) -> str:
     if configured.strip():
         return os.path.expanduser(configured.strip())
     return corvus_path("logs")
+
+
+def _coerce_port(value: Any, default: int) -> int:
+    """A TCP port from *value*, or *default* when it is not one.
+
+    Saved config entries have already been coerced once on load, but a
+    hand-edited file can still carry a port the range check would reject, and
+    a connection attempt is not the place to discover it.
+    """
+    if isinstance(value, bool):
+        return default
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        return default
+    return port if 0 <= port <= 65535 else default
+
+
+def _compose_remote_command(directory: str, command: str, detach: bool) -> str:
+    """Build the shell line a one-button launcher sends to the remote host.
+
+    ``cd -- '<dir>' && <command>``, with the directory quoted for the remote
+    shell (``shlex.quote`` produces POSIX quoting, which is what the ``sh`` on
+    the far end reads — the local platform does not enter into it). ``--`` so a
+    folder whose name begins with a dash is a folder, not an option.
+
+    *command* is passed through as written. It is a command line the operator
+    typed for their own machine, so quoting it would break every pipeline and
+    argument in it; the SSH account's own permissions are the boundary here,
+    exactly as they are in the terminal on the SSH tab.
+
+    With *detach*, the program is started under ``nohup`` in the background and
+    its pid echoed, so it outlives both the SSH connection and this request.
+    Its output goes nowhere unless the command redirects it itself — a launcher
+    starts a long-running program, and holding a request open to collect its
+    log is not what the button is for.
+    """
+    if detach:
+        body = f"{{ nohup {command} >/dev/null 2>&1 & }}; echo $!"
+    else:
+        body = command
+    if directory:
+        return f"cd -- {shlex.quote(directory)} && {body}"
+    return body
 
 
 def _slugify(value: Any) -> str:
@@ -729,6 +803,11 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     tile_breaker: "_UpstreamBreaker | None" = None
     tile_downloader: Any = None
     tile_progress_bus: _TileProgressBus | None = None
+    # Plugin roots. None means "the real ones" (~/.corvus/plugins and the
+    # bundled <repo>/plugins); the tests point them at a tmp_path so a scan
+    # never reads the developer's own plugin folder.
+    plugin_user_dir: str | None = None
+    plugin_bundled_dir: str | None = None
 
     _GET_ROUTES: dict[str, str] = {}
     _POST_ROUTES: dict[str, str] = {}
@@ -744,6 +823,18 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
+
+    def _sse_stopping(self) -> bool:
+        """True once the server this handler belongs to is shutting down.
+
+        Every SSE loop checks this where it would otherwise send a keep-alive
+        ping, so a shutdown is noticed within one wait instead of leaving a
+        thread writing into a torn-down backend. Defensive ``getattr``: the
+        unit-test handlers are built without a ``server``.
+        """
+        server = getattr(self, "server", None)
+        stopping = getattr(server, "stopping", None)
+        return stopping is not None and stopping.is_set()
 
     def _send_sse(self, event: str, data: str) -> None:
         self.wfile.write(f"event: {event}\ndata: {data}\n\n".encode("utf-8"))
@@ -773,14 +864,21 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         return cfg
 
     def _save_live_config(self) -> None:
-        """Persist the live config to its path; never raises into the handler."""
-        cfg = self._live_config()
-        try:
-            save_config(cfg, self.config_path)
-        except OSError as exc:
-            # A failed write must not crash the HTTP handler; the operator's
-            # in-memory state is still correct for this session.
-            logger.error("config save to %s failed: %s", self.config_path, exc)
+        """Persist the live config to its path; never raises into the handler.
+
+        Taken under ``_config_write_lock`` so the serialization walk cannot
+        run between two field assignments of a concurrent update and write a
+        half-applied config to disk. Re-entrant: callers that already hold the
+        lock for a whole read-modify-write pass through.
+        """
+        with _config_write_lock:
+            cfg = self._live_config()
+            try:
+                save_config(cfg, self.config_path)
+            except OSError as exc:
+                # A failed write must not crash the HTTP handler; the operator's
+                # in-memory state is still correct for this session.
+                logger.error("config save to %s failed: %s", self.config_path, exc)
 
     def _public_config(self) -> dict[str, Any]:
         """Return the live config as a redacted dict (passwords stripped)."""
@@ -826,12 +924,14 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             merged["ui"] = cfg.ui
         if cfg.updates is not None:
             merged["updates"] = cfg.updates
+        if cfg.plugins is not None:
+            merged["plugins"] = cfg.plugins
 
         known = {
             "mavlink_connection", "http_port", "tile_cache_dir", "tlog_dir",
             "params_dir", "firmware_dir", "log_download_dir",
             "tile_sources", "stream_rates", "ssh_connections",
-            "theme", "map", "branding", "controls", "ui", "updates",
+            "theme", "map", "branding", "controls", "ui", "updates", "plugins",
         }
         for key, value in partial.items():
             if key not in known:
@@ -879,6 +979,14 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 # also rewrite the operator's "check for updates" switch.
                 base = merged.get("updates")
                 merged["updates"] = {**base, **value} if isinstance(base, dict) else dict(value)
+            elif key == "plugins":
+                if not isinstance(value, dict):
+                    return None, "plugins must be an object"
+                # Replaced wholesale, not merged: POST /api/plugins/settings
+                # has already merged the one plugin's keys into the full store
+                # and sends it back complete, so merging again here would make
+                # a deleted setting un-deletable.
+                merged["plugins"] = value
             elif key == "mavlink_connection":
                 if not isinstance(value, str) or not value:
                     return None, "mavlink_connection must be a non-empty string"
@@ -930,24 +1038,32 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # attribute (and every concurrent handler) shares this one object;
         # replacing it would set a per-request instance attribute that dies
         # with the handler, leaving the next request reading a stale value.
-        cfg.mavlink_connection = new_cfg.mavlink_connection
-        cfg.http_port = new_cfg.http_port
-        cfg.tile_cache_dir = new_cfg.tile_cache_dir
-        cfg.tlog_dir = new_cfg.tlog_dir
-        cfg.params_dir = new_cfg.params_dir
-        cfg.firmware_dir = new_cfg.firmware_dir
-        cfg.log_download_dir = new_cfg.log_download_dir
-        cfg.tile_sources = new_cfg.tile_sources
-        cfg.stream_rates = new_cfg.stream_rates
-        cfg.ssh_connections = new_cfg.ssh_connections
-        cfg.theme = new_cfg.theme
-        cfg.map = new_cfg.map
-        cfg.branding = new_cfg.branding
-        cfg.controls = new_cfg.controls
-        cfg.ui = new_cfg.ui
-        cfg.updates = new_cfg.updates
-        self._save_live_config()
-        return to_public_dict(cfg), None
+        #
+        # In place means the seventeen assignments below are seventeen separate
+        # visible states. Under the lock they are one: no concurrent save can
+        # serialize the object between two of them (which wrote a file that was
+        # part old config and part new), and no second updater can interleave
+        # its own assignments with these.
+        with _config_write_lock:
+            cfg.mavlink_connection = new_cfg.mavlink_connection
+            cfg.http_port = new_cfg.http_port
+            cfg.tile_cache_dir = new_cfg.tile_cache_dir
+            cfg.tlog_dir = new_cfg.tlog_dir
+            cfg.params_dir = new_cfg.params_dir
+            cfg.firmware_dir = new_cfg.firmware_dir
+            cfg.log_download_dir = new_cfg.log_download_dir
+            cfg.tile_sources = new_cfg.tile_sources
+            cfg.stream_rates = new_cfg.stream_rates
+            cfg.ssh_connections = new_cfg.ssh_connections
+            cfg.theme = new_cfg.theme
+            cfg.map = new_cfg.map
+            cfg.branding = new_cfg.branding
+            cfg.controls = new_cfg.controls
+            cfg.ui = new_cfg.ui
+            cfg.updates = new_cfg.updates
+            cfg.plugins = new_cfg.plugins
+            self._save_live_config()
+            return to_public_dict(cfg), None
 
     def _ssh_connections_public(self) -> list[dict[str, Any]]:
         """Return the persisted ssh_connections with live ``connected`` merged.
@@ -1014,6 +1130,13 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                         int(m.group(3)),
                         int(m.group(4)),
                     )
+                    return
+            # Path-parameter plugin asset route, matched before the exact
+            # table so /api/plugins itself is never shadowed by it.
+            if path.startswith("/api/plugins/asset/"):
+                m = _PLUGIN_ASSET_RE.match(path)
+                if m is not None:
+                    self._api_plugin_asset(m.group(1), m.group(2))
                     return
             method_name = self._GET_ROUTES.get(path)
             if method_name is not None:
@@ -1168,6 +1291,78 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         No password is ever echoed back.
         """
         self._send_json({"connections": self._ssh_connections_public()})
+
+    # ---- Plugins ----
+    def _plugin_roots(self) -> tuple[str | None, str | None]:
+        """The (user, bundled) plugin roots this handler scans."""
+        return self.plugin_user_dir, self.plugin_bundled_dir
+
+    @route("GET", "/api/plugins")
+    def _api_plugins(self) -> None:
+        """List the installed plugins and where they are dropped in.
+
+        The frontend loads each plugin's scripts from the returned paths, and
+        the Settings page shows the two folders. ``settings`` carries the saved
+        per-plugin state so a plugin can restore its form without a second
+        request. Always answers 200: no plugins is an empty list, not an error.
+        """
+        user_dir, bundled_dir = self._plugin_roots()
+        try:
+            plugins = public_plugin_list(user_dir, bundled_dir)
+        except Exception:  # noqa: BLE001 - a broken folder must not 500 the UI
+            logger.exception("plugin discovery failed; reporting none")
+            plugins = []
+        self._send_json({
+            "plugins": plugins,
+            "user_dir": user_dir or user_plugins_dir(),
+            "bundled_dir": bundled_dir or bundled_plugins_dir(),
+            "settings": self._plugin_settings_all(),
+        })
+
+    def _api_plugin_asset(self, plugin_id: str, rel: str) -> None:
+        """Serve one file out of a plugin's folder.
+
+        Not a static-file route with a different root: the folder is looked up
+        through the registry (so only a folder that parsed as a plugin is
+        reachable at all) and the path is resolved by the same containment
+        check the manifest parser uses. A miss on either is a 404 — an
+        operator's plugin folder is not a place to probe for files.
+        """
+        user_dir, bundled_dir = self._plugin_roots()
+        try:
+            plugin_dir = find_plugin_dir(plugin_id, user_dir, bundled_dir)
+        except Exception:  # noqa: BLE001
+            logger.exception("plugin lookup failed for %r", plugin_id)
+            plugin_dir = None
+        if plugin_dir is None:
+            self._send_json({"error": "not found"}, 404)
+            return
+        target = resolve_plugin_asset(plugin_dir, rel)
+        if target is None:
+            self._send_json({"error": "not found"}, 404)
+            return
+        try:
+            body = target.read_bytes()
+        except OSError as exc:
+            logger.warning("plugin asset %s/%s unreadable: %s", plugin_id, rel, exc)
+            self._send_json({"error": "not found"}, 404)
+            return
+        ctype, _ = mimetypes.guess_type(str(target))
+        if ctype is None:
+            ctype = "application/octet-stream"
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        # Same as the app's own static files: a plugin edited on disk must show
+        # up on the next start, not after a cache expiry the operator cannot see.
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _plugin_settings_all(self) -> dict[str, Any]:
+        """Every plugin's saved settings, keyed by plugin id."""
+        raw = self._live_config().plugins
+        return dict(raw) if isinstance(raw, dict) else {}
 
     @route("GET", "/api/mavlink/modes")
     def _api_mavlink_modes(self) -> None:
@@ -1703,11 +1898,25 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
     @route("POST", "/api/ssh/connect")
     def _api_ssh_connect(self, payload: dict) -> None:
+        """Open a named interactive SSH session.
+
+        ``name`` is the session key the terminal, ``/api/ssh/send`` and
+        ``/api/ssh/stream`` all address. Credentials come from ``host`` /
+        ``username`` / ``password`` / ``key_path`` when given, and otherwise
+        from the saved connection named by ``from`` — or by ``name`` itself,
+        which is the SSH tab's one-session-per-saved-host case.
+        """
         if not self.ssh:
             self._send_json({"error": "ssh not ready"}, 500)
             return
         name = payload.get("name", "device")
         host = payload.get("host", "")
+        # ``from`` names the SAVED connection to borrow credentials from, while
+        # ``name`` names the session. They are the same thing for the SSH tab
+        # (one session per saved host), but a plugin that wants several live
+        # sessions on one machine — a launcher with a terminal per button —
+        # needs its own session names without duplicating the host entry.
+        borrow = payload.get("from", "")
         # Validate name/host types up front: a non-string (int/list/dict) would
         # crash the saved-entry lookup or the bridge call. Empty host is allowed
         # here — the connect-by-name path below fills it from a saved entry (or
@@ -1718,6 +1927,9 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             return
         if not isinstance(host, str):
             self._send_json({"error": "host must be a string"}, 400)
+            return
+        if not isinstance(borrow, str):
+            self._send_json({"error": "from must be a string"}, 400)
             return
         # Port coercion mirrors _api_ssh_connections_upsert: reject bool, then
         # try/except, then range-check. The unguarded int(payload...) crashed on
@@ -1742,13 +1954,16 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # password) and connect with those. This lets the UI's card CONNECT
         # button connect by name without the UI holding the password.
         if not host:
+            lookup = borrow or name
             saved = None
             for entry in self._live_config().ssh_connections:
-                if isinstance(entry, dict) and entry.get("name") == name:
+                if isinstance(entry, dict) and entry.get("name") == lookup:
                     saved = entry
                     break
             if saved is None:
-                self._send_json({"error": "no host"}, 400)
+                self._send_json(
+                    {"error": f"no saved connection named {lookup!r}" if borrow else "no host"},
+                    400)
                 return
             host = saved.get("host", "")
             port = int(saved.get("port", 22))
@@ -1958,16 +2173,21 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             "key_path": key_path,
             "password": password,
         }
-        cfg = self._live_config()
-        replaced = False
-        for i, existing in enumerate(cfg.ssh_connections):
-            if isinstance(existing, dict) and existing.get("name") == name:
-                cfg.ssh_connections[i] = entry
-                replaced = True
-                break
-        if not replaced:
-            cfg.ssh_connections.append(entry)
-        self._save_live_config()
+        # Scan-then-append is a read-modify-write on a list every handler
+        # thread shares. Two saves racing here lost a connection outright: the
+        # remove endpoint rebuilds the list from a snapshot taken before this
+        # append, so the entry that was just added vanished on the next save.
+        with _config_write_lock:
+            cfg = self._live_config()
+            replaced = False
+            for i, existing in enumerate(cfg.ssh_connections):
+                if isinstance(existing, dict) and existing.get("name") == name:
+                    cfg.ssh_connections[i] = entry
+                    replaced = True
+                    break
+            if not replaced:
+                cfg.ssh_connections.append(entry)
+            self._save_live_config()
         self._send_json({"ok": True, "connections": self._ssh_connections_public()})
 
     @route("POST", "/api/ssh/connections/remove")
@@ -1988,13 +2208,165 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 self.ssh.disconnect(name)
             except Exception as exc:  # noqa: BLE001 - a bad live session must not block removal
                 logger.warning("ssh disconnect for %r during remove failed: %s", name, exc)
-        cfg = self._live_config()
-        cfg.ssh_connections = [
-            entry for entry in cfg.ssh_connections
-            if isinstance(entry, dict) and entry.get("name") != name
-        ]
-        self._save_live_config()
+        with _config_write_lock:
+            cfg = self._live_config()
+            cfg.ssh_connections = [
+                entry for entry in cfg.ssh_connections
+                if isinstance(entry, dict) and entry.get("name") != name
+            ]
+            self._save_live_config()
         self._send_json({"ok": True, "connections": self._ssh_connections_public()})
+
+    @route("POST", "/api/ssh/run")
+    def _api_ssh_run(self, payload: dict) -> None:
+        """Run one command on a host over its own short-lived SSH connection.
+
+        The building block behind a one-button launcher: optionally ``cd`` into
+        *directory*, then run *command*. With ``detach`` the command is started
+        with ``nohup`` in the background and the call returns as soon as the
+        shell has forked it, so a program that runs for hours does not hold the
+        request open — and does not die when the connection closes.
+
+        Credentials come from the saved connection named by ``name`` (the same
+        list the SSH page manages), so neither the browser nor a plugin ever
+        holds a password. ``host``/``username``/``port`` may be given directly
+        instead for an ad-hoc target.
+        """
+        command = payload.get("command")
+        if not isinstance(command, str) or not command.strip():
+            self._send_json({"ok": False, "error": "command must be a non-empty string"}, 400)
+            return
+        command = command.strip()
+        directory = payload.get("directory", "")
+        if not isinstance(directory, str):
+            self._send_json({"ok": False, "error": "directory must be a string"}, 400)
+            return
+        directory = directory.strip()
+        detach = payload.get("detach", False)
+        if not isinstance(detach, bool):
+            self._send_json({"ok": False, "error": "detach must be a boolean"}, 400)
+            return
+
+        name = payload.get("name", "")
+        if not isinstance(name, str):
+            self._send_json({"ok": False, "error": "name must be a string"}, 400)
+            return
+        host = payload.get("host", "")
+        if not isinstance(host, str):
+            self._send_json({"ok": False, "error": "host must be a string"}, 400)
+            return
+        username = payload.get("username", "")
+        if not isinstance(username, str):
+            username = ""
+        raw_port = payload.get("port", 22)
+        if isinstance(raw_port, bool):
+            self._send_json({"ok": False, "error": "port must be an integer"}, 400)
+            return
+        try:
+            port = int(raw_port)
+        except (TypeError, ValueError):
+            self._send_json({"ok": False, "error": "port must be an integer"}, 400)
+            return
+        if not 0 <= port <= 65535:
+            self._send_json({"ok": False, "error": "port must be between 0 and 65535"}, 400)
+            return
+
+        password: str | None = None
+        key_path: str | None = None
+        if name:
+            saved = None
+            for entry in self._live_config().ssh_connections:
+                if isinstance(entry, dict) and entry.get("name") == name:
+                    saved = entry
+                    break
+            if saved is None and not host:
+                self._send_json({"ok": False, "error": f"no saved connection named {name!r}"}, 400)
+                return
+            if saved is not None:
+                host = host or saved.get("host", "")
+                if "port" not in payload:
+                    port = _coerce_port(saved.get("port", 22), 22)
+                username = username or saved.get("username", "")
+                password = saved.get("password") or None
+                key_path = saved.get("key_path") or None
+        if not host:
+            self._send_json({"ok": False, "error": "no host"}, 400)
+            return
+        if not username:
+            self._send_json({"ok": False, "error": "username is required"}, 400)
+            return
+
+        line = _compose_remote_command(directory, command, detach)
+        result = ssh_run_command(
+            host=host, command=line, port=port, username=username,
+            password=password, key_path=key_path,
+        )
+        # Echo what actually ran: a launcher that failed is nearly always a
+        # wrong folder or a wrong binary, and the operator can only see that
+        # if the composed line comes back with the error.
+        result["command"] = line
+        result["host"] = host
+        result["username"] = username
+        result["port"] = port
+        # 200 even for a command that failed: the request itself succeeded, and
+        # the caller needs the ``stderr`` in the body to say *why* it failed —
+        # an error status would leave the UI with nothing but a status line.
+        # ``ok`` is the field to branch on.
+        self._send_json(result)
+
+    @route("POST", "/api/plugins/settings")
+    def _api_plugins_settings(self, payload: dict) -> None:
+        """Save a plugin's settings and persist them.
+
+        Scoped by plugin id, and merged key-by-key by default so a plugin
+        writing one field does not clear the rest. ``replace: true`` stores the
+        object as given instead — for a plugin that owns its whole settings
+        object and needs a key it no longer uses to actually go away, which a
+        merge can never do.
+
+        This is ordinary UI state — which saved SSH connection a launcher
+        points at, which folder it opens — and it is stored in the plain config
+        file, so a plugin must keep secrets out of it and reference a saved SSH
+        connection by name instead.
+        """
+        plugin_id = payload.get("id")
+        if not isinstance(plugin_id, str) or not plugin_id:
+            self._send_json({"error": "id must be a non-empty string"}, 400)
+            return
+        settings = payload.get("settings")
+        if not isinstance(settings, dict):
+            self._send_json({"error": "settings must be an object"}, 400)
+            return
+        replace = payload.get("replace", False)
+        if not isinstance(replace, bool):
+            self._send_json({"error": "replace must be a boolean"}, 400)
+            return
+        cfg = self._live_config()
+        store = dict(cfg.plugins) if isinstance(cfg.plugins, dict) else {}
+        existing = store.get(plugin_id)
+        if replace or not isinstance(existing, dict):
+            store[plugin_id] = dict(settings)
+        else:
+            store[plugin_id] = {**existing, **settings}
+        public, error = self._apply_config_partial({"plugins": store})
+        if error is not None:
+            self._send_json({"error": error}, 400)
+            return
+        self._send_json({"ok": True, "settings": self._plugin_settings_all().get(plugin_id, {})})
+
+    @route("POST", "/api/plugins/folder")
+    def _api_plugins_folder(self, payload: dict) -> None:
+        """Create the operator's plugin folder if needed and show it to them.
+
+        The folder is created here rather than at startup so an operator who
+        never opens this never gets a directory they did not ask for; the
+        README that explains the plugin layout is written with it.
+        """
+        path = self.plugin_user_dir or ensure_user_plugins_dir()
+        ok, error = open_folder(path)
+        # The path is worth returning either way: on a headless machine the
+        # operator still needs to know where to copy the folder to.
+        self._send_json({"ok": ok, "path": path, "error": error}, 200 if ok else 500)
 
     @route("POST", "/api/ssh/send")
     def _api_ssh_send(self, payload: dict) -> None:
@@ -2653,13 +3025,20 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         forwarder = getattr(self, "forwarder", None)
         if forwarder is None:
             cfg = getattr(self.config, "forwarding", None) or {}
+            listen_port = cfg.get("listen_port")
+            if not isinstance(listen_port, int) or isinstance(listen_port, bool):
+                listen_port = _FORWARD_DEFAULT_LISTEN_PORT
             self._send_json({
                 "running": False,
                 "host": cfg.get("host") or _FORWARD_DEFAULT_HOST,
                 "port": cfg.get("port") or _FORWARD_DEFAULT_PORT,
+                "listen_host": cfg.get("listen_host") or _FORWARD_DEFAULT_LISTEN_HOST,
+                "listen_port": listen_port,
+                "listen_port_requested": listen_port,
                 "allow_commands": bool(cfg.get("allow_commands")),
                 "endpoints": list(cfg.get("endpoints") or []),
-                "peers": [], "frames_sent": 0, "datagrams_received": 0,
+                "peers": [], "targets": [], "frames_sent": 0,
+                "datagrams_received": 0,
                 "frames_injected": 0, "dropped": 0, "sysid_conflict": False,
                 "error": "",
             })
@@ -2685,6 +3064,15 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             if isinstance(port, bool) or not isinstance(port, int) or not (0 < port < 65536):
                 self._send_json({"ok": False, "error": "port must be 1-65535"}, 400)
                 return
+        # 0 is a real answer here — "bind any free port" — so the range starts
+        # one lower than the target port's.
+        listen_port = payload.get("listen_port", None)
+        if listen_port is not None:
+            if (isinstance(listen_port, bool) or not isinstance(listen_port, int)
+                    or not (0 <= listen_port < 65536)):
+                self._send_json(
+                    {"ok": False, "error": "listen_port must be 0-65535"}, 400)
+                return
         endpoints = payload.get("endpoints", None)
         if endpoints is not None:
             if not isinstance(endpoints, list) or any(
@@ -2695,40 +3083,53 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": "no config available"}, 503)
             return
 
-        current = dict(getattr(self.config, "forwarding", None) or {})
-        for key in ("enabled", "allow_commands"):
-            if key in payload:
-                current[key] = payload[key]
-        if port is not None:
-            current["port"] = port
-        if isinstance(payload.get("host"), str) and payload["host"].strip():
-            current["host"] = payload["host"].strip()
-        if endpoints is not None:
-            current["endpoints"] = [e.strip() for e in endpoints if e.strip()]
-        self.config.forwarding = current
+        # Stop-old-then-start-new, under the config lock. Without it two
+        # overlapping requests (a double-clicked toggle, or two Settings tabs)
+        # both read the same live forwarder, both stop it, and both then try to
+        # bind the same UDP port. One bind wins and one fails — but the last
+        # writer to reach ``type(self).forwarder`` decides which object the app
+        # keeps a reference to. Lose that coin flip and the *running* forwarder
+        # becomes unreachable while its socket and threads stay alive: the UI
+        # reports forwarding as stopped, and the port it needs to restart on is
+        # held by an object nothing can stop short of quitting Corvus.
+        with _config_write_lock:
+            current = dict(getattr(self.config, "forwarding", None) or {})
+            for key in ("enabled", "allow_commands"):
+                if key in payload:
+                    current[key] = payload[key]
+            if port is not None:
+                current["port"] = port
+            if listen_port is not None:
+                current["listen_port"] = listen_port
+            for key in ("host", "listen_host"):
+                if isinstance(payload.get(key), str) and payload[key].strip():
+                    current[key] = payload[key].strip()
+            if endpoints is not None:
+                current["endpoints"] = [e.strip() for e in endpoints if e.strip()]
+            self.config.forwarding = current
 
-        old = getattr(self, "forwarder", None)
-        if old is not None:
+            old = getattr(self, "forwarder", None)
+            if old is not None:
+                try:
+                    if self.mavlink is not None:
+                        self.mavlink.set_frame_sink(None)
+                    old.stop()
+                except Exception:  # noqa: BLE001 - a stuck old forwarder never blocks the new one
+                    logger.exception("stopping the previous forwarder failed")
+            forwarder = _build_forwarder(self.mavlink, self.config) if self.mavlink else None
+            type(self).forwarder = forwarder
+            server = getattr(self, "server", None)
+            if server is not None:
+                server.forwarder = forwarder
+
             try:
-                if self.mavlink is not None:
-                    self.mavlink.set_frame_sink(None)
-                old.stop()
-            except Exception:  # noqa: BLE001 - a stuck old forwarder never blocks the new one
-                logger.exception("stopping the previous forwarder failed")
-        forwarder = _build_forwarder(self.mavlink, self.config) if self.mavlink else None
-        type(self).forwarder = forwarder
-        server = getattr(self, "server", None)
-        if server is not None:
-            server.forwarder = forwarder
-
-        try:
-            save_config(self.config, self.config_path or default_config_path())
-        except Exception:  # noqa: BLE001 - it still runs this session
-            logger.exception("could not persist forwarding config")
-            status = forwarder.status() if forwarder is not None else {"running": False}
-            self._send_json({"ok": True, "status": status,
-                             "warning": "set for this session but not saved"})
-            return
+                save_config(self.config, self.config_path or default_config_path())
+            except Exception:  # noqa: BLE001 - it still runs this session
+                logger.exception("could not persist forwarding config")
+                status = forwarder.status() if forwarder is not None else {"running": False}
+                self._send_json({"ok": True, "status": status,
+                                 "warning": "set for this session but not saved"})
+                return
         if forwarder is not None and not forwarder.status()["running"]:
             self._send_json({"ok": False, "error": forwarder.error or "could not start",
                              "status": forwarder.status()}, 409)
@@ -2933,14 +3334,15 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                              "error": f"cannot use {path} ({exc.strerror or exc})"}, 400)
             return
         if self.config is not None:
-            self.config.log_download_dir = path
-            try:
-                save_config(self.config, self.config_path or default_config_path())
-            except Exception:  # noqa: BLE001 - the folder still works this session
-                logger.exception("could not persist log_download_dir")
-                self._send_json({"ok": True, "dir": path,
-                                 "warning": "folder set for this session but not saved"})
-                return
+            with _config_write_lock:
+                self.config.log_download_dir = path
+                try:
+                    save_config(self.config, self.config_path or default_config_path())
+                except Exception:  # noqa: BLE001 - the folder still works this session
+                    logger.exception("could not persist log_download_dir")
+                    self._send_json({"ok": True, "dir": path,
+                                     "warning": "folder set for this session but not saved"})
+                    return
         self._send_json({"ok": True, "dir": path})
 
     # ---- SSE endpoints ----
@@ -2970,8 +3372,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                         "state", _serialize_telemetry_snapshot(self.store, snap)
                     )
                 except queue.Empty:
+                    if self._sse_stopping():
+                        break
                     self._send_sse("ping", "{}")
-        except (BrokenPipeError, ConnectionResetError):
+        except CLIENT_GONE_ERRORS:
             pass
         finally:
             if self.store:
@@ -2995,8 +3399,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                     entry = q.get(timeout=15)
                     self._send_sse("message", json.dumps(entry))
                 except queue.Empty:
+                    if self._sse_stopping():
+                        break
                     self._send_sse("ping", "{}")
-        except (BrokenPipeError, ConnectionResetError):
+        except CLIENT_GONE_ERRORS:
             pass
         finally:
             if self.mavlink:
@@ -3033,8 +3439,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                         "received": entry["received"],
                     }))
                 except queue.Empty:
+                    if self._sse_stopping():
+                        break
                     self._send_sse("ping", "{}")
-        except (BrokenPipeError, ConnectionResetError):
+        except CLIENT_GONE_ERRORS:
             pass
         finally:
             if self.mavlink:
@@ -3082,7 +3490,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             # holding a thread open pinging an empty stream.
             try:
                 self._send_sse("closed", json.dumps({"name": wanted or None}))
-            except (BrokenPipeError, ConnectionResetError):
+            except CLIENT_GONE_ERRORS:
                 pass
             return
         idle = 0.0
@@ -3095,6 +3503,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                     continue
                 except queue.Empty:
                     pass
+                if self._sse_stopping():
+                    break
                 if attached_name and self.ssh is not None:
                     live = self.ssh.get_session(attached_name)
                     if live is None or not live.connected:
@@ -3104,7 +3514,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 if idle >= 15.0:
                     idle = 0.0
                     self._send_sse("ping", "{}")
-        except (BrokenPipeError, ConnectionResetError):
+        except CLIENT_GONE_ERRORS:
             pass
         finally:
             if self.ssh and attached_name:
@@ -3146,8 +3556,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                         "message": entry.get("message"),
                     })))
                 except queue.Empty:
+                    if self._sse_stopping():
+                        break
                     self._send_sse("ping", "{}")
-        except (BrokenPipeError, ConnectionResetError):
+        except CLIENT_GONE_ERRORS:
             pass
         finally:
             if self.flash is not None:
@@ -3437,8 +3849,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                     if state in ("done", "cancelled", "failed"):
                         break
                 except queue.Empty:
+                    if self._sse_stopping():
+                        break
                     self._send_sse("ping", "{}")
-        except (BrokenPipeError, ConnectionResetError):
+        except CLIENT_GONE_ERRORS:
             pass
         finally:
             if self.tile_progress_bus is not None:
@@ -3571,9 +3985,44 @@ _pending_routes.clear()
 
 
 class CorvusServer(socketserver.ThreadingTCPServer):
-    """Threaded TCP server with clean shutdown."""
-    allow_reuse_address = True
+    """Threaded TCP server with clean shutdown.
+
+    ``allow_reuse_address`` is deliberately platform-conditional. On POSIX
+    SO_REUSEADDR only lets a restart rebind a port still in TIME_WAIT, which
+    is what we want. On Windows the same flag means something else entirely:
+    it lets a second process bind a port another process is *actively
+    listening on*, and the kernel then delivers each incoming connection to
+    one of them arbitrarily. A second Corvus launched there would silently
+    steal half the first one's HTTP and SSE traffic — telemetry streams
+    landing in the wrong window, config writes hitting the wrong backend.
+    So Windows gets exclusive binding instead (see :meth:`server_bind`).
+    """
+    allow_reuse_address = os.name != "nt"
     daemon_threads = True
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # Set before the base constructor: binding can raise (a taken port),
+        # and shutdown() must find a usable event on a half-built server.
+        self.stopping = threading.Event()
+        super().__init__(*args, **kwargs)
+
+    def server_bind(self) -> None:
+        """Bind, asking Windows for an exclusive claim on the port.
+
+        SO_EXCLUSIVEADDRUSE is the Windows counterpart to *not* setting
+        SO_REUSEADDR: it makes a second bind to a live port fail loudly with
+        EADDRINUSE, which is exactly the answer :func:`bind_server` is
+        looking for. Guarded because the constant only exists on Windows and
+        the option is refused on some layered service providers.
+        """
+        if os.name == "nt":
+            exclusive = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+            if exclusive is not None:
+                try:
+                    self.socket.setsockopt(socket.SOL_SOCKET, exclusive, 1)
+                except OSError:  # noqa: BLE001 - fall back to a plain bind
+                    logger.debug("SO_EXCLUSIVEADDRUSE refused; binding plainly")
+        super().server_bind()
 
     def shutdown(self) -> None:
         """Stop the HTTP loop and release every tile resource.
@@ -3582,7 +4031,18 @@ class CorvusServer(socketserver.ThreadingTCPServer):
         caches; the HTTP serve loop is then stopped; caches are closed last so
         no in-flight handler touches a closed SQLite handle during teardown.
         Any failure is logged, never raised — shutdown must always complete.
+
+        ``stopping`` is set first of all. ``super().shutdown()`` only stops the
+        *accept* loop; every SSE handler already connected is parked in its own
+        thread on a 15-second wait and knows nothing about any of this, so it
+        would wake up afterwards and write to a server whose caches are closed
+        and whose downloader has been set to None. The event is what those
+        loops check on each wake, so they leave on their own within one wait
+        rather than being left to the process exit to clean up.
         """
+        stopping = getattr(self, "stopping", None)
+        if stopping is not None:
+            stopping.set()
         downloader = getattr(self, "tile_downloader", None)
         if downloader is not None:
             try:
@@ -3629,6 +4089,98 @@ class CorvusServer(socketserver.ThreadingTCPServer):
         self.tile_caches = {}
 
 
+# How many consecutive ports a launch will try before giving up. Twenty is
+# enough for every plausible number of Corvus windows plus whatever else on
+# the machine happens to have taken 8000.
+PORT_SEARCH_SPAN = 20
+
+
+def bind_server(
+    port: int,
+    handler: type | None = None,
+    host: str = "",
+    span: int = PORT_SEARCH_SPAN,
+    server_cls: type | None = None,
+) -> "CorvusServer":
+    """Return a server actually listening on *port*, or the next free one.
+
+    This replaces the "probe a port with a throwaway socket, close it, then
+    bind it for real" pattern, which has a window between the probe and the
+    bind. Two Corvus windows launched together both probed 8000, both saw it
+    free, and then one of them hit ``OSError: [Errno 48] Address already in
+    use`` out of the server constructor — an unhandled exception during
+    startup, i.e. the launch died before the operator saw a window.
+
+    Here the bind *is* the test: each candidate port is claimed for real, and
+    EADDRINUSE simply moves on to the next. Whatever comes back is a socket
+    this process owns. Errors that are not "port taken" (a permission denial,
+    an unusable interface) are raised immediately rather than retried across
+    twenty ports that will all fail the same way.
+
+    Raises OSError when the whole span is occupied, naming the range tried so
+    the message is actionable.
+    """
+    handler = handler or CorvusHandler
+    server_cls = server_cls or CorvusServer
+    first = int(port)
+    last_exc: OSError | None = None
+    for candidate in range(first, first + max(1, int(span))):
+        try:
+            return server_cls((host, candidate), handler)
+        except OSError as exc:
+            if exc.errno not in (errno.EADDRINUSE, errno.EACCES):
+                raise
+            last_exc = exc
+            if candidate != first:
+                continue
+            logger.info("port %d is taken; looking for a free one", candidate)
+    raise OSError(
+        errno.EADDRINUSE,
+        f"no free port in {first}-{first + max(1, int(span)) - 1}",
+    ) from last_exc
+
+
+# One writer at a time for the live CorvusConfig object.
+#
+# The config is a single mutable dataclass shared by every handler thread, and
+# the endpoints that change it all do read-modify-write: read the current
+# dict, merge the payload, assign the fields back, then serialize the whole
+# object to disk. Two of those interleaving is not hypothetical — a settings
+# page with two browser tabs open, or a double-clicked toggle, is enough. The
+# damage is real: ``_api_config_apply`` assigns seventeen fields one at a
+# time, so a save running between the third and the fourth writes a file that
+# is half the old config and half the new one; and the SSH list is mutated in
+# place by add (append) while remove rebuilds it, so an add and a remove that
+# overlap lose an entry outright.
+#
+# An RLock (not a Lock) because a guarded endpoint calls other guarded helpers
+# — ``_save_live_config`` is itself taken under the same lock by its callers.
+# Module-level, so it covers every handler thread of every server in the
+# process, which is what "one config file" means.
+_config_write_lock = threading.RLock()
+
+
+# Every way a browser tab closing reaches an SSE writer.
+#
+# The handlers used to catch only BrokenPipeError and ConnectionResetError,
+# which is the complete list on Linux and macOS and an incomplete one on
+# Windows: closing a tab there surfaces as ConnectionAbortedError (WSAECONNAB
+# ORTED, 10053), and a socket torn down under a blocked write raises a bare
+# OSError with WSAENOTSOCK (10038). Those escaped the handler, so socketserver
+# printed a full traceback per closed tab — noise that buries a real fault in
+# the log during a flight. TimeoutError covers a write that stalls on a wedged
+# client. All of them mean exactly one thing: stop writing, drop the listener,
+# let the thread go. OSError is the base of the first four, so the tuple is
+# really "OSError" — spelled out because the specific names are the point.
+CLIENT_GONE_ERRORS = (
+    BrokenPipeError,
+    ConnectionResetError,
+    ConnectionAbortedError,
+    TimeoutError,
+    OSError,
+)
+
+
 def create_server(
     port: int = 8000,
     mavlink_conn: str = "udp:127.0.0.1:14540",
@@ -3663,6 +4215,11 @@ def create_server(
     CorvusHandler.tile_progress_bus = tile_progress_bus
     CorvusHandler.tile_breaker = tile_breaker
 
+    # Create ~/.corvus/plugins (with its README) at startup rather than only
+    # when Settings opens it, so an operator who was told "drop it in the
+    # plugins folder" finds one already there. Never raises.
+    ensure_user_plugins_dir()
+
     # Firmware-flash service (direct USB only). Imported lazily so the server
     # still builds if a parallel edit to flash_service is mid-flight.
     flash: Any = None
@@ -3694,7 +4251,10 @@ def create_server(
         logger.exception("update checker unavailable; update endpoints disabled")
     CorvusHandler.updates = updates
 
-    server = CorvusServer(("", port), CorvusHandler)
+    # bind_server, not a bare constructor: a port that is already taken moves
+    # to the next one instead of raising out of create_server and killing the
+    # launch. Callers that care which port they got read server_address[1].
+    server = bind_server(port, CorvusHandler)
     server.mavlink = mavlink
     server.ssh = ssh
     server.store = store

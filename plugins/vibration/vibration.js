@@ -2,7 +2,17 @@
 window.Corvus = window.Corvus || {};
 
 /**
- * Corvus.pluginVibration — Vibration Monitor plugin for the FUTURE tab.
+ * Corvus.pluginVibration — Vibration Monitor, a plugin for the TOOLS tab.
+ *
+ * Lives in its own folder like every other plugin: the manifest beside this
+ * file is what Corvus discovers, and Corvus.plugins.loadInstalled appends this
+ * script and its stylesheet at boot. It ships with the application (the
+ * bundled `plugins/` root) rather than being dropped in by an operator, but it
+ * goes through exactly the same path — which is the point: the mechanism the
+ * app's own plugins use is the mechanism a third-party plugin gets.
+ *
+ * It reaches two things the app provides and a plugin may rely on: the vendored
+ * `window.Plotly` and `Corvus.ui` for the chart theme.
  *
  * Plots PX4 vibration metrics in a Plotly graph. PX4 repurposes the three
  * VIBRATION fields (verified against PX4 source): vibration_x = gyro delta-
@@ -298,7 +308,8 @@ Corvus.pluginVibration = (function () {
   return { init, destroy, updateBuffer, MAX_POINTS, REDRAW_MIN_MS };
 })();
 
-// Register at module load so the plugin appears in the grid before app init.
+// Registered as this script runs. The grid re-renders on every register(),
+// so the card appears whether the TOOLS tab is already open or not.
 if (window.Corvus && Corvus.plugins && typeof Corvus.plugins.register === "function") {
   Corvus.plugins.register("vibration", {
     name: "Vibration Monitor",
