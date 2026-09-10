@@ -15,11 +15,18 @@ where the first one is listening. An operator who genuinely wants two (two
 aircraft, two links, two config dirs) sets ``CORVUS_ALLOW_MULTI=1``.
 
 Mechanics: an advisory lock on ``~/.corvus/corvus.lock`` — ``fcntl.flock`` on
-POSIX, ``msvcrt.locking`` on Windows. Both are held by the *file handle*, so
-the OS drops the lock when the process dies, however it dies: a crash, a
-``kill -9`` or a power cut leaves no stale lock to clean up, which is exactly
-why this is a lock and not a pid file. The handle is kept open for the life of
-the process; releasing it is what ``release()`` does.
+POSIX, ``msvcrt.locking`` on Windows. Windows locks a *byte range*, and it
+locks it mandatorily: a range the holder locked is one no other handle may
+even read. So the byte taken is one far past the record (:data:`_LOCK_BYTE`),
+never byte 0 — otherwise the holder's own lock would hide the record from the
+very process the record exists for, and the refused launch would print
+"(port unknown)" instead of the address it was supposed to hand the operator.
+
+Both locks are held by the *file handle*, so the OS drops the lock when the
+process dies, however it dies: a crash, a ``kill -9`` or a power cut leaves no
+stale lock to clean up, which is exactly why this is a lock and not a pid file.
+The handle is kept open for the life of the process; releasing it is what
+``release()`` does.
 
 The file's contents (pid, port, start time) are advisory only — they are for
 the message the second instance prints, never for deciding whether the first
@@ -44,6 +51,12 @@ logger = logging.getLogger("corvus.instance_lock")
 ALLOW_MULTI_ENV = "CORVUS_ALLOW_MULTI"
 
 _TRUTHY = {"1", "true", "yes", "on"}
+
+#: Offset of the byte Windows locks. Past any record the file will ever hold,
+#: so the mandatory lock never covers the JSON. Locking beyond EOF is legal
+#: and does not grow the file. POSIX ignores this: flock takes the whole file
+#: and is advisory, so readers are unaffected either way.
+_LOCK_BYTE = 1 << 30
 
 
 def allow_multi() -> bool:
@@ -90,8 +103,10 @@ class InstanceLock:
             return True
         try:
             os.makedirs(os.path.dirname(self._path), exist_ok=True)
-            # O_RDWR (not O_WRONLY): Windows' msvcrt.locking needs a handle it
-            # can read through, and the peer read below uses the same fd.
+            # O_RDWR (not O_WRONLY): Windows' msvcrt.locking needs a handle
+            # it can read through. peer() deliberately does not reuse this fd
+            # — it is the refused process, holding no fd of its own, that has
+            # to be able to read the record.
             fd = os.open(self._path, os.O_RDWR | os.O_CREAT, 0o644)
         except (OSError, ValueError) as exc:
             # ValueError as well as OSError: a path the OS will not even look
@@ -177,6 +192,7 @@ def _try_lock(fd: int) -> bool:
     if os.name == "nt":
         import msvcrt
         try:
+            os.lseek(fd, _LOCK_BYTE, os.SEEK_SET)
             msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
             return True
         except OSError as exc:
@@ -203,7 +219,7 @@ def _unlock(fd: int) -> None:
     """Release the lock taken by :func:`_try_lock`."""
     if os.name == "nt":
         import msvcrt
-        os.lseek(fd, 0, os.SEEK_SET)
+        os.lseek(fd, _LOCK_BYTE, os.SEEK_SET)
         msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
         return
     import fcntl

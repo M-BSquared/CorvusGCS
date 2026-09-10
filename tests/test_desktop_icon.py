@@ -18,7 +18,22 @@ import sys
 
 import pytest
 
+from conftest import posix_permissions
 from corvus import desktop_icon
+
+
+# The module only ever runs on Linux (see its docstring), and a handful of the
+# tests below state that in their assertions rather than in a gate: a Windows
+# tmp_path in an ``Exec=`` line is not something shlex can split back into a
+# path, and ``abspath`` there yields a URI GIO would never compute. Those are
+# facts about the platform under test, not portability bugs, so they are
+# skipped off POSIX rather than weakened into something that passes
+# everywhere — macOS still runs them, since its paths behave. The negative
+# cases, the ones keeping the rewrite out of a stranger's icon, run on every
+# platform; that is where this suite's cross-platform value sits.
+_posix_paths = pytest.mark.skipif(
+    os.name != "posix",
+    reason="POSIX path semantics in a .desktop Exec= line")
 
 
 # ---- fixtures ---------------------------------------------------------------
@@ -66,6 +81,7 @@ def _renderer(calls):
 
 # ---- reading the integrated entry -------------------------------------------
 
+@_posix_paths
 def test_entry_that_launches_this_appimage_yields_its_icon(tmp_path) -> None:
     img = _appimage(tmp_path)
     assert desktop_icon.desktop_entry_icon(
@@ -79,6 +95,7 @@ def test_quoted_exec_still_matches(tmp_path) -> None:
         f'[Desktop Entry]\nExec="{img}" %U\nIcon=corvus-gcs\n', img) == "corvus-gcs"
 
 
+@_posix_paths
 def test_wrapped_exec_still_matches(tmp_path) -> None:
     """The AppImage is not reliably argv[0], so every token is checked."""
     img = _appimage(tmp_path)
@@ -102,6 +119,7 @@ def test_matching_name_without_a_matching_exec_is_not_ours(tmp_path) -> None:
         img) is None
 
 
+@_posix_paths
 def test_action_group_icon_is_not_the_app_icon(tmp_path) -> None:
     """Parsing stops at the first action group, whose Icon is the action's."""
     img = _appimage(tmp_path)
@@ -110,6 +128,7 @@ def test_action_group_icon_is_not_the_app_icon(tmp_path) -> None:
     assert desktop_icon.desktop_entry_icon(text, img) == "corvus-gcs"
 
 
+@_posix_paths
 def test_localised_icon_key_is_ignored(tmp_path) -> None:
     img = _appimage(tmp_path)
     text = f"[Desktop Entry]\nExec={img}\nIcon[de]=raabe\nIcon=corvus-gcs\n"
@@ -122,6 +141,7 @@ def test_commented_out_exec_does_not_claim_the_entry(tmp_path) -> None:
     assert desktop_icon.desktop_entry_icon(text, img) is None
 
 
+@_posix_paths
 def test_integrated_names_scan_only_the_user_applications_dir(tmp_path) -> None:
     env, data = _fake_home(tmp_path)
     img = _appimage(tmp_path)
@@ -191,6 +211,7 @@ def test_non_square_size_directory_is_not_a_size() -> None:
 
 # ---- the rewrite ------------------------------------------------------------
 
+@_posix_paths
 def test_rewrite_replaces_every_installed_size(tmp_path) -> None:
     env, data = _fake_home(tmp_path)
     img = _appimage(tmp_path)
@@ -307,6 +328,7 @@ def _thumb_home(tmp_path):
     return {"XDG_CACHE_HOME": str(cache)}, cache
 
 
+@_posix_paths
 def test_thumbnail_name_is_the_md5_of_the_file_uri(tmp_path) -> None:
     """The spec keys a thumbnail on the hash of the URI, nothing else."""
     img = _appimage(tmp_path)
@@ -314,6 +336,7 @@ def test_thumbnail_name_is_the_md5_of_the_file_uri(tmp_path) -> None:
     assert desktop_icon.thumbnail_name(img) == expected
 
 
+@_posix_paths
 def test_file_uri_escapes_the_way_glib_does() -> None:
     """A hash off by one byte is a thumbnail the desktop never finds.
 
@@ -373,6 +396,7 @@ def test_thumbnail_mtime_is_the_appimage_not_the_artwork(tmp_path) -> None:
     assert {t["Thumb::MTime"] for _s, _d, _size, t in calls} == {"1600000000"}
 
 
+@posix_permissions
 def test_thumbnail_dirs_are_created_private(tmp_path) -> None:
     """A thumbnail can expose a file its owner never shared; 0700 per spec."""
     env, cache = _thumb_home(tmp_path)
