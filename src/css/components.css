@@ -306,6 +306,15 @@
 /* An inline field shares a row with its siblings and splits the width evenly
    (the downloader's min/max zoom pair). */
 .field-inline { flex: 1; }
+/* A field that belongs to the rows ABOVE it rather than beside them — the key
+   strength under the two key switches. The rule is what says "this is theirs,
+   both of them" instead of letting it read as one more setting of the last
+   switch it happens to sit under. */
+.field-ruled {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 12px;
+}
 
 .field-label {
   font-size: 10px;

@@ -9,7 +9,11 @@ from typing import Callable
 import pytest
 from pymavlink import mavutil
 
-from corvus.mavlink_bridge import MavlinkBridge, STATUSTEXT_CHUNK_TIMEOUT_S
+from corvus.mavlink_bridge import (
+    STATUSTEXT_CHUNK_TIMEOUT_S,
+    TAKEOFF_ALTITUDE_MAX_M,
+    MavlinkBridge,
+)
 from corvus.state_store import VehicleStateStore
 
 
@@ -150,7 +154,12 @@ def test_takeoff_rejection_does_not_arm() -> None:
     assert bridge.get_last_command_error() == "Takeoff failed: DENIED"
 
 
-@pytest.mark.parametrize("altitude", [True, None, "bad", float("nan"), 0, 51])
+# "just over the ceiling" is derived, not typed: a literal here silently stops
+# testing the boundary the moment the ceiling moves.
+@pytest.mark.parametrize(
+    "altitude",
+    [True, None, "bad", float("nan"), 0, TAKEOFF_ALTITUDE_MAX_M + 1],
+)
 def test_takeoff_rejects_invalid_altitudes(altitude: object) -> None:
     bridge = ready_bridge()
     bridge._conn = FakeConnection()
@@ -161,17 +170,60 @@ def test_takeoff_rejects_invalid_altitudes(altitude: object) -> None:
     assert bridge.get_last_command_error()
 
 
-def test_takeoff_requires_a_fresh_connection_and_altitude_reference() -> None:
+def test_takeoff_requires_a_fresh_connection() -> None:
     bridge = MavlinkBridge(VehicleStateStore())
     bridge._conn = FakeConnection()
     bridge._home_alt_amsl = 100.0
     assert not bridge.takeoff(10.0)
     assert bridge.get_last_command_error() == "Takeoff failed: DISCONNECTED"
 
+
+def test_takeoff_without_an_altitude_reference_asks_the_vehicle_anyway() -> None:
+    """Corvus used to refuse this on the ground, deciding by itself that the
+    flight could not happen — using a reference it needed only to *convert* the
+    operator's number, never to validate it. Whether the aircraft can take off
+    is the autopilot's call; it is far better placed to make it, and its
+    refusal carries a reason. param7 goes out as NaN ("use your own takeoff
+    altitude"), which is the same convention every unused param here uses.
+    """
     bridge = ready_bridge()
     bridge._conn = FakeConnection()
-    assert not bridge.takeoff(10.0)
-    assert bridge.get_last_command_error() == "Takeoff failed: no home or global altitude reference"
+    bridge.TAKEOFF_REFERENCE_WAIT_S = 0.05   # no reference is going to arrive
+
+    bridge.takeoff(10.0)
+
+    takeoffs = [
+        c for c in bridge._conn.mav.commands
+        if int(c[2]) == mavutil.mavlink.MAV_CMD_NAV_TAKEOFF
+    ]
+    assert takeoffs, "the command must reach the vehicle, not stop at the GCS"
+    altitude = takeoffs[0][10]
+    assert altitude != altitude, "param7 is NaN: the vehicle picks the altitude"
+    # And the operator is told the altitude they typed is not the one flown.
+    warnings = [w["msg"] for w in bridge._store.get_snapshot()["warnings"]]
+    assert any("altitude reference" in w for w in warnings)
+
+
+def test_takeoff_waits_briefly_for_a_reference_before_falling_back() -> None:
+    """The usual case is not "no position ever", it is "the operator clicked
+    Takeoff a second after connecting". Home is requested and the streams get
+    a moment, so the altitude actually asked for is the one flown."""
+    bridge = ready_bridge()
+    bridge._conn = FakeConnection()
+
+    def arrive_late() -> None:
+        time.sleep(0.1)
+        bridge._home_alt_amsl = 400.0
+
+    threading.Thread(target=arrive_late, daemon=True).start()
+    bridge.takeoff(10.0)
+
+    takeoffs = [
+        c for c in bridge._conn.mav.commands
+        if int(c[2]) == mavutil.mavlink.MAV_CMD_NAV_TAKEOFF
+    ]
+    assert takeoffs
+    assert takeoffs[0][10] == pytest.approx(410.0)
 
 
 def test_ack_in_progress_waits_for_final_result() -> None:
@@ -225,17 +277,43 @@ def test_disconnect_wakes_pending_command_without_waiting_for_timeout() -> None:
     assert result == [-2]
 
 
-def test_arm_ack_must_be_confirmed_by_heartbeat_state() -> None:
+def test_an_accepted_arm_is_not_called_a_failure_when_telemetry_lags() -> None:
+    """The confirmation only ever arrives on a HEARTBEAT from the exact
+    component this session latched onto at connect, so behind mavlink-router or
+    a companion computer it can simply never come. Reporting failure then was
+    the more dangerous of the two mistakes: it told the operator the aircraft
+    was disarmed while it was armed and spinning. The ACK is the vehicle's
+    answer; the uncertainty is what gets reported.
+    """
     bridge = ready_bridge()
 
     def on_send(args: tuple) -> None:
         bridge._dispatch(ack(int(args[2]), mavutil.mavlink.MAV_RESULT_ACCEPTED))
 
     bridge._conn = FakeConnection(on_send)
-    bridge._wait_for_armed_state = lambda armed, timeout=3.0: False  # type: ignore[method-assign]
+    bridge._wait_for_armed_state = lambda armed, timeout=None: False  # type: ignore[method-assign]
 
-    assert not bridge.arm(True)
-    assert bridge.get_last_command_error() == "Arm accepted but vehicle state did not change"
+    assert bridge.arm(True) is True
+    warnings = bridge._store.get_snapshot()["warnings"]
+    assert any("no telemetry confirmation" in w["msg"] for w in warnings)
+    # A warning, not a critical: the vehicle accepted, nothing is known to be wrong.
+    assert all(
+        w["level"] != "critical"
+        for w in warnings if "no telemetry confirmation" in w["msg"]
+    )
+
+
+def test_a_refused_arm_is_still_a_failure() -> None:
+    """Relaxing the confirmation must not relax the refusal."""
+    bridge = ready_bridge()
+
+    def on_send(args: tuple) -> None:
+        bridge._dispatch(ack(int(args[2]), mavutil.mavlink.MAV_RESULT_DENIED))
+
+    bridge._conn = FakeConnection(on_send)
+
+    assert bridge.arm(True) is False
+    assert bridge.get_last_command_error() == "Arm failed: DENIED"
 
 
 def test_set_mode_waits_for_accepted_ack() -> None:

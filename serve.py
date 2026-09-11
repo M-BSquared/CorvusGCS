@@ -137,8 +137,22 @@ def main() -> int:
                 cfg_path, cfg.mavlink_connection, cfg.http_port,
                 cfg.tile_cache_dir or "(default)", cfg.tlog_dir or "(default)")
 
-    # CLI args override the config file when present.
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else cfg.http_port
+    # CLI args override the config file when present. A mistyped port is an
+    # operator error, so it gets an operator's answer — the usage line and a
+    # non-zero exit — rather than an int() traceback out of module scope.
+    port = cfg.http_port
+    if len(sys.argv) > 1:
+        try:
+            port = int(sys.argv[1])
+        except ValueError:
+            logger.error(
+                "invalid port %r\nusage: python3 serve.py [PORT] [MAVLINK_CONNECTION]",
+                sys.argv[1],
+            )
+            return 2
+        if not 1 <= port <= 65535:
+            logger.error("port %d is out of range (1-65535)", port)
+            return 2
     mavlink_conn = sys.argv[2] if len(sys.argv) > 2 else cfg.mavlink_connection
 
     # One ground station per machine — the serial link, the forwarder's UDP

@@ -1,12 +1,20 @@
 """Armed-safety regression tests.
 
-Pins the defense-in-depth contract: mutating/destructive preflight actions
-(set_param, calibrate, autotune) are REFUSED client-side while the vehicle is
-armed (no command/param write leaves the GCS), while the in-flight commands
-(takeoff, land, rtl, arm, set_mode) do NOT carry an armed-refusal — they
-proceed while armed (an armed vehicle can be disarmed, landed, switched to
-RTL, etc.). Mirrors the patterns in ``tests/test_mavlink_params.py`` and
+Pins the defense-in-depth contract: mutating/destructive PREFLIGHT actions
+(set_param, calibrate) are REFUSED client-side while the vehicle is armed (no
+command/param write leaves the GCS), while the in-flight commands (takeoff,
+land, rtl, arm, set_mode) do NOT carry an armed-refusal — they proceed while
+armed (an armed vehicle can be disarmed, landed, switched to RTL, etc.).
+Mirrors the patterns in ``tests/test_mavlink_params.py`` and
 ``tests/test_integration_review.py``.
+
+Autotune is deliberately in the second group, not the first. It is not a
+preflight action: PX4 injects steps into the rate controller and identifies the
+airframe from the response, which only works on an armed, airborne vehicle, and
+the firmware rejects the command outright while disarmed. An armed-refusal here
+is not defense in depth, it is a refusal of the only state the command works
+in — which is exactly the bug these tests now pin against. Its own precondition
+(armed AND not on the ground) is covered in ``tests/test_mavlink_params.py``.
 """
 from __future__ import annotations
 
@@ -46,7 +54,7 @@ def _armed_bridge_with_autoack() -> Any:
 
 
 # ---------------------------------------------------------------------------
-# 1. set_param / calibrate / autotune are REFUSED while armed
+# 1. set_param / calibrate are REFUSED while armed
 # ---------------------------------------------------------------------------
 
 def test_set_param_refused_while_armed_no_write_sent() -> None:
@@ -68,14 +76,6 @@ def test_calibrate_refused_while_armed_no_command_sent() -> None:
     assert bridge._conn.mav.commands == []
 
 
-def test_autotune_refused_while_armed_no_command_sent() -> None:
-    bridge = _armed_bridge_with_autoack()
-    ok = bridge.autotune("roll")
-    assert ok is False
-    assert "armed" in bridge.get_last_command_error()
-    assert bridge._conn.mav.commands == []
-
-
 @pytest.mark.parametrize("sensor", ["gyro", "compass", "baro", "accel", "airspeed", "motor"])
 def test_every_calibration_sensor_refused_while_armed(sensor: str) -> None:
     bridge = _armed_bridge_with_autoack()
@@ -84,12 +84,19 @@ def test_every_calibration_sensor_refused_while_armed(sensor: str) -> None:
     assert bridge._conn.mav.commands == []
 
 
-@pytest.mark.parametrize("axis", ["roll", "pitch", "yaw", "all"])
-def test_every_autotune_axis_refused_while_armed(axis: str) -> None:
+def test_autotune_is_not_refused_while_armed() -> None:
+    """The inverse of the rule above, and the reason autotune is not in it.
+
+    An armed, airborne vehicle is the only state PX4 will autotune in. A
+    client-side armed-refusal here would block every autotune that could ever
+    succeed.
+    """
     bridge = _armed_bridge_with_autoack()
-    assert bridge.autotune(axis) is False
-    assert "armed" in bridge.get_last_command_error()
-    assert bridge._conn.mav.commands == []
+    bridge._store.update(landed_state=mavutil.mavlink.MAV_LANDED_STATE_IN_AIR)
+    assert bridge.autotune("all") is True
+    assert "armed" not in bridge.get_last_command_error()
+    assert int(bridge._conn.mav.commands[-1][2]) == \
+        mavutil.mavlink.MAV_CMD_DO_AUTOTUNE_ENABLE
 
 
 # ---------------------------------------------------------------------------
@@ -118,15 +125,17 @@ def test_arm_path_does_not_refuse_while_armed(monkeypatch: pytest.MonkeyPatch) -
 
 def test_takeoff_path_does_not_refuse_while_armed() -> None:
     bridge = _armed_bridge_with_autoack()
-    # Fails on "no home/global altitude reference" (no real telemetry), NOT
-    # on armed — proving the takeoff path has no armed-refusal.
+    # This used to be proved indirectly: takeoff failed on "no home/global
+    # altitude reference" before it could reach any armed check. That reference
+    # no longer stops the command, so the contract can be asserted directly —
+    # the takeoff actually goes out while armed.
+    bridge.TAKEOFF_REFERENCE_WAIT_S = 0.05
+
     ok = bridge.takeoff(10.0)
-    assert ok is False
-    err = bridge.get_last_command_error()
-    assert "armed" not in err
-    # No TAKEOFF command was sent because the altitude reference check
-    # fails first; the armed check never blocked it.
-    assert all(int(c[2]) != mavutil.mavlink.MAV_CMD_NAV_TAKEOFF
+
+    assert ok is True
+    assert "armed" not in bridge.get_last_command_error()
+    assert any(int(c[2]) == mavutil.mavlink.MAV_CMD_NAV_TAKEOFF
                for c in bridge._conn.mav.commands)
 
 
@@ -161,7 +170,7 @@ def test_set_mode_path_does_not_refuse_while_armed() -> None:
                for c in bridge._conn.mav.commands)
 
 
-def test_disarmed_vehicle_allows_set_param_calibrate_autotune() -> None:
+def test_disarmed_vehicle_allows_set_param_and_calibrate() -> None:
     """Negative control: with armed=False the refused actions are NOT
     refused on armed grounds (they proceed to their normal failure path).
     Proves the refusal is armed-specific, not unconditional."""
@@ -178,8 +187,10 @@ def test_disarmed_vehicle_allows_set_param_calibrate_autotune() -> None:
     bridge._conn.mav.on_send = on_send
     assert bridge.calibrate("gyro") is True
     assert "armed" not in bridge.get_last_command_error()
-    assert bridge.autotune("all") is True
-    assert "armed" not in bridge.get_last_command_error()
+    # autotune is NOT in this list: disarmed is the one state it is refused in,
+    # and for a reason that has nothing to do with the armed-safety rule.
+    assert bridge.autotune("all") is False
+    assert "in flight" in bridge.get_last_command_error()
 
 
 def test_calibrate_motor_disarmed_sends_preflight_with_param7_one() -> None:

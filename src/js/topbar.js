@@ -50,6 +50,15 @@ Corvus.topbar = (function () {
   // config, or "" for the default (no company logo at all). Held here because
   // the config lands before the bar is built on the first telemetry state.
   let companyLogo = "";
+  // Whether the small coloured state dots ride along with the block captions.
+  // Off unless the operator asks for them: every block that carries a dot also
+  // paints its own value with the same state (a red "0.0 V", a grey "NO GPS"),
+  // so on a normal bar the dot is the same sentence said twice. Operators who
+  // scan the bar by colour alone can turn them back on in Settings.
+  // Cached in localStorage so the bar is right before the config lands, and
+  // written as an attribute on <html> because the hiding itself is CSS — see
+  // the .tb-dot rules in main.css.
+  const DOTS_KEY = "corvus.topbarDots";
   const localNotifications = new Map();
   const dismissedNotifications = new Set();
   const readNotifications = new Set();
@@ -132,42 +141,86 @@ Corvus.topbar = (function () {
     return { text: "", cls: "", title: "" };
   }
 
+  /* MAV_LANDED_STATE, as EXTENDED_SYS_STATE reports it. */
+  const LANDED_UNDEFINED = 0, LANDED_ON_GROUND = 1;
+  const LANDED_IN_AIR = 2, LANDED_TAKEOFF = 3, LANDED_LANDING = 4;
+  /* Height above home that counts as airborne when the firmware does not
+     publish EXTENDED_SYS_STATE. Deliberately well clear of the noise on a
+     stationary vehicle's altitude estimate. */
+  const AIRBORNE_FALLBACK_M = 1.5;
+
+  /** Is the aircraft off the ground? The vehicle's answer where there is one. */
+  function isAirborne(state) {
+    const landed = state.landed_state;
+    if (landed === LANDED_IN_AIR || landed === LANDED_TAKEOFF || landed === LANDED_LANDING) return true;
+    if (landed === LANDED_ON_GROUND) return false;
+    // UNDEFINED, or a firmware that never sends it: fall back to height.
+    return Number(state.altitude_agl || 0) > AIRBORNE_FALLBACK_M;
+  }
+
   /**
    * The readiness block: what the operator actually needs from the bar, which
    * is not "is the switch on" (the ARM button on the flight page already says
-   * that) but "can this thing fly right now".
+   * that) but "can this thing fly, and is it flying".
    *
-   *   ARMED      motors are live — nothing else matters, say that first
+   *   FLYING     armed and off the ground. This used to read ARMED for the
+   *              whole flight, which is the least informative moment to be
+   *              told about a switch: of course it is armed, it is in the air.
+   *   ARMED      armed, still on the ground. The one moment the word earns its
+   *              place — the propellers are live and the aircraft is within
+   *              reach of somebody — so it keeps it, and it is the only state
+   *              here drawn in the attention colour.
    *   READY      the autopilot's own preflight check passes: arming would be
    *              accepted right now
    *   NOT READY  the autopilot refuses to arm; the reason is a PX4
    *              "Preflight Fail" STATUSTEXT, so it is already in the
    *              notification centre next door
-   *   DISARMED   firmware that does not publish MAV_SYS_STATUS_PREARM_CHECK,
+   *   STANDBY    firmware that does not publish MAV_SYS_STATUS_PREARM_CHECK,
    *              or nothing received yet. We know the switch is off and
    *              nothing more, so we claim nothing more — READY here would be
    *              a clearance the vehicle never gave.
    *   —          no link
    */
   function readiness(state) {
-    if (!state.connected) return { value: "—", cls: "off", title: "No link to a vehicle" };
-    if (state.armed) return { value: "ARMED", cls: "healthy", title: "Motors are armed" };
+    if (!state.connected) return { value: "—", cls: "off", tone: "none", title: "No link to a vehicle" };
+    if (state.armed) {
+      if (isAirborne(state)) {
+        return { value: "FLYING", cls: "nav", tone: "flying", title: "Airborne — motors are live" };
+      }
+      return {
+        value: "ARMED",
+        cls: "armed",
+        tone: "armed",
+        title: "Armed on the ground — propellers are live",
+      };
+    }
     if (state.prearm_ok === true) {
-      return { value: "READY", cls: "healthy", title: "Preflight checks pass — the vehicle would accept an arm command" };
+      return {
+        value: "READY",
+        cls: "healthy",
+        tone: "ready",
+        title: "Preflight checks pass — the vehicle would accept an arm command",
+      };
     }
     if (state.prearm_ok === false) {
-      return { value: "NOT READY", cls: "warning", title: "The autopilot is refusing to arm — see the warnings for the failing check" };
+      return {
+        value: "NOT READY",
+        cls: "warning",
+        tone: "notready",
+        title: "The autopilot is refusing to arm — see the notifications for the failing check",
+      };
     }
     return {
-      value: "DISARMED",
+      value: "STANDBY",
       cls: "off",
+      tone: "none",
       title: "Disarmed. This firmware does not report its preflight-check state, so readiness is unknown.",
     };
   }
 
   function modeLabel(state) {
     if (!state.connected) return "—";
-    if (state.armed && !state.mode) return "ARMED";
+    if (state.armed && !state.mode) return isAirborne(state) ? "FLYING" : "ARMED";
     return state.mode || "STANDBY";
   }
 
@@ -223,13 +276,24 @@ Corvus.topbar = (function () {
    * all been seen — so a board of acknowledged warnings still says it is not
    * empty, without pretending they are new. `level` follows the same split:
    * the worst unread level, or "read" for a board that has been looked at.
+   *
+   * "Worst" is now actually worst. This used to be a two-way split — anything
+   * unread that was not critical was painted "warning" — so a single
+   * informational line ("Takeoff target accepted", "Mode accepted: MISSION")
+   * turned the badge amber. A normal flight produces a steady trickle of
+   * those, which meant the bar spent the flight looking like something was
+   * wrong, and an operator who learns that amber means nothing has been taught
+   * to ignore the one colour that has to keep working.
    */
   function notificationSummary(state) {
     const items = visibleNotifications(state);
     const unread = items.filter((item) => !readNotifications.has(notificationKey(item)));
     let level = "healthy";
     if (unread.length) {
-      level = unread.some((item) => notificationLevel(item) === "critical") ? "critical" : "warning";
+      const levels = unread.map(notificationLevel);
+      if (levels.includes("critical")) level = "critical";
+      else if (levels.includes("warning")) level = "warning";
+      else level = "info";
     } else if (items.length) {
       level = "read";
     }
@@ -253,7 +317,7 @@ Corvus.topbar = (function () {
   }
 
   function blocks(state) {
-    const conn = state.connected ? "healthy" : "off";
+    const conn = state.connected ? "healthy" : "critical";
     const ready = readiness(state);
     const gpsCls = state.connected && state.gps_fix && state.gps_fix !== "NO_GPS" && state.gps_fix !== "NO_FIX"
       ? "healthy" : "off";
@@ -265,15 +329,15 @@ Corvus.topbar = (function () {
 
     return [
       { type: "logo" },
-      { key: "vehicle", label: "Vehicle", value: vehicleLabel(state), dot: conn, sub: fw.text, subCls: fw.cls, title: fw.title, priority: "high" },
-      { key: "mode", label: "Mode", value: modeLabel(state), cls: "accent", align: true, priority: "high" },
-      { key: "armed", label: "Status", value: ready.value, cls: ready.cls, dot: ready.cls, title: ready.title, priority: "high" },
+      { key: "vehicle", label: "Vehicle", value: vehicleLabel(state), cls: state.connected ? "" : "critical", dot: conn, sub: fw.text, subCls: fw.cls, title: fw.title, priority: "high" },
+      { key: "mode", label: "Mode", value: modeLabel(state), cls: "accent", priority: "high" },
+      { key: "armed", label: "Status", value: ready.value, cls: ready.cls, dot: ready.cls, tone: ready.tone, title: ready.title, priority: "high" },
       { key: "gps", label: "GPS", value: state.connected ? (state.gps_fix || "NO GPS") : "—", sub: gpsSub, cls: gpsCls, dot: gpsCls, priority: "high" },
       { key: "battery", label: "Battery", value: state.connected ? `${state.battery_voltage.toFixed(1)} V` : "—", sub: state.connected ? `${battPct}%` : "", cls: battCls, dot: battCls, priority: "high" },
       { key: "altitude", label: "Altitude", value: state.connected ? `${Math.round(state.altitude_amsl)}` : "—", sub: "m AMSL", priority: "mid" },
       { key: "groundspeed", label: "Groundspeed", value: state.connected ? `${state.groundspeed.toFixed(1)}` : "—", sub: "m/s", priority: "mid" },
       { key: "vspeed", label: "Vertical speed", value: state.connected ? `${state.vspeed >= 0 ? "+" : ""}${state.vspeed.toFixed(1)}` : "—", sub: "m/s", priority: "mid" },
-      { key: "warnings", type: "warnings", label: "Warnings", value: notifications.count, level: notifications.level, priority: "high" },
+      { key: "warnings", type: "warnings", label: "Notifications", value: notifications.count, level: notifications.level, priority: "high" },
     ];
   }
 
@@ -292,6 +356,32 @@ Corvus.topbar = (function () {
       img.hidden = true;
       img.removeAttribute("src");
     }
+  }
+
+  /**
+   * Show or hide the caption status dots. Returns the state applied, so a
+   * caller can undo itself with the return value rather than its own copy.
+   */
+  function setStatusDots(on) {
+    const v = !!on;
+    try { document.documentElement.setAttribute("data-topbar-dots", v ? "on" : "off"); } catch (_e) {}
+    try { localStorage.setItem(DOTS_KEY, v ? "1" : "0"); } catch (_e) {}
+    return v;
+  }
+
+  /** Whether the dots are currently shown. */
+  function statusDots() {
+    try { return document.documentElement.getAttribute("data-topbar-dots") === "on"; }
+    catch (_e) { return false; }
+  }
+
+  /** Apply the locally cached choice (called before the config fetch lands).
+   *  Absent storage means off — the default is no dots, not "whatever the
+   *  last machine did". */
+  function applySavedStatusDots() {
+    let v = false;
+    try { v = localStorage.getItem(DOTS_KEY) === "1"; } catch (_e) {}
+    return setStatusDots(v);
   }
 
   function setCompanyLogo(name) {
@@ -344,8 +434,11 @@ Corvus.topbar = (function () {
       blk.setAttribute("aria-expanded", "false");
       blk.setAttribute("aria-haspopup", "dialog");
       blk.innerHTML =
-        `<span class="tb-label"><i data-lucide="triangle-alert" class="tb-icon"></i>${b.label}</span>` +
-        `<span class="tb-value"><span class="tb-warn-badge"></span></span>`;
+        `<span class="tb-label">${b.label}</span>` +
+        `<span class="tb-value"><span class="tb-warn-pill">` +
+        `<span class="tb-warn-count"></span>` +
+        `<i data-lucide="message-square" class="tb-icon tb-warn-icon" aria-hidden="true"></i>` +
+        `</span></span>`;
       blk.addEventListener("click", toggleWarnings);
       return blk;
     }
@@ -353,17 +446,27 @@ Corvus.topbar = (function () {
     blk.className = "tb-block";
     blk.dataset.priority = b.priority;
     blk.dataset.block = b.key;
+    // The status dot rides with the LABEL, not the value. In front of the
+    // value it read as a bullet, it sat immediately beside a value already
+    // painted the same colour (a red dot against a red "0.0 V" is one signal
+    // said twice), and — because only some blocks have one — it indented
+    // those values 12px past the undotted ones. That indent is why an
+    // invisible placeholder used to exist for Mode; with the dot up in the
+    // quiet uppercase caption, every value in the bar starts at the same x
+    // on its own and the placeholder is gone.
     const dotHtml = b.dot ? `<span class="tb-dot ${b.dot}"></span>` : "";
-    // Undotted but aligned blocks (e.g. Mode) get a placeholder occupying the
-    // dot slot so their value text starts at the same x as dotted blocks.
-    const alignHtml = !b.dot && b.align ? `<span class="tb-dot-placeholder"></span>` : "";
     const iconHtml = b.icon ? `<i data-lucide="${b.icon}" class="tb-icon"></i>` : "";
     const subHtml = b.sub !== undefined ? `<span class="sub${b.subCls ? " " + b.subCls : ""}">${b.sub}</span>` : "";
     const valCls = b.cls ? ` ${b.cls}` : "";
     blk.innerHTML =
-      `<span class="tb-label">${iconHtml}${b.label}</span>` +
-      `<span class="tb-value${valCls}">${alignHtml}${dotHtml}<span class="v-main"></span>${subHtml}</span>`;
+      `<span class="tb-label">${iconHtml}${b.label}${dotHtml}</span>` +
+      `<span class="tb-value${valCls}"><span class="v-main"></span>${subHtml}</span>`;
     blk.querySelector(".v-main").textContent = b.value;
+    // The tone is what lets a block say something with more than a text
+    // colour — see the [data-tone] rules in main.css. Colour alone was doing
+    // all the work here, and "ready" and "armed" are exactly the two states an
+    // operator should be able to read without stopping to interpret a hue.
+    if (b.tone && b.tone !== "none") blk.dataset.tone = b.tone;
     if (b.title) blk.title = b.title;
     return blk;
   }
@@ -420,6 +523,10 @@ Corvus.topbar = (function () {
       if (subEl && b.sub !== undefined) subEl.textContent = b.sub;
       if (subEl && b.subCls !== undefined) subEl.className = "sub" + (b.subCls ? " " + b.subCls : "");
       if (b.title !== undefined) el.title = b.title || "";
+      if (b.tone !== undefined) {
+        if (b.tone && b.tone !== "none") el.dataset.tone = b.tone;
+        else delete el.dataset.tone;
+      }
       const dotEl = cached.dot;
       if (dotEl && b.dot) {
         dotEl.className = "tb-dot " + b.dot;
@@ -427,20 +534,19 @@ Corvus.topbar = (function () {
       const valSpan = cached.value;
       if (valSpan) valSpan.className = "tb-value" + (b.cls ? " " + b.cls : "");
     });
-    // Warnings block has a distinct structure (badge, not v-main/sub); keep
+    // Warnings block has a distinct structure (pill, not v-main/sub); keep
     // its single per-update query as-is rather than over-caching it.
-    const warnEl = topBar.querySelector(".tb-block.warnings .tb-warn-badge");
-    if (warnEl) {
+    const warnPill = topBar.querySelector(".tb-block.warnings .tb-warn-pill");
+    if (warnPill) {
       const { items, unread, count, level } = notificationSummary(state);
-      warnEl.textContent = String(count);
-      // The badge colour is a token, set from CSS off this attribute. It used
+      const countEl = warnPill.querySelector(".tb-warn-count");
+      if (countEl) countEl.textContent = String(count);
+      // The pill colour is a token, set from CSS off this attribute. It used
       // to be three hex literals written straight onto style.background, which
       // meant the one element in the bar that never changed with the theme was
       // the one shouting loudest.
-      warnEl.dataset.level = level;
-      const valSpan = warnEl.parentElement;
-      if (valSpan) valSpan.className = `tb-value ${level}`;
-      const warningButton = warnEl.closest(".tb-block.warnings");
+      warnPill.dataset.level = level;
+      const warningButton = warnPill.closest(".tb-block.warnings");
       if (warningButton) {
         const plural = (n) => `${n} notification${n === 1 ? "" : "s"}`;
         warningButton.setAttribute("aria-label", unread.length
@@ -741,6 +847,11 @@ Corvus.topbar = (function () {
     warningsList = document.getElementById("warningsList");
     notificationLive = document.getElementById("notificationLive");
 
+    // Before the first telemetry state, so the bar is never built showing
+    // dots the operator has turned off. The backend config overrides this the
+    // moment it lands (app.js), exactly as it does for theme and scale.
+    applySavedStatusDots();
+
     Corvus.telemetry.subscribe(handleTelemetryState);
     warningsList.setAttribute("role", "list");
     document.getElementById("wpClose").addEventListener("click", () => closeWarnings(true));
@@ -767,6 +878,8 @@ Corvus.topbar = (function () {
   return {
     init,
     setCompanyLogo,
+    setStatusDots,
+    statusDots,
     notifyError: showCmdError,
     beginCommand: (key) => commandDedupe.begin(key),
     succeedCommand: (attempt) => commandDedupe.succeeded(attempt),

@@ -14,6 +14,8 @@
  *  - a diagonal drag is clamped to the circle, so travel never exceeds 1;
  *  - the arrow keys move pitch and roll ONLY, at half stick, and sum with the
  *    sticks into one virtual stick rather than exceeding it;
+ *  - the key strength is the operator's, clamped into the offered range, and
+ *    Shift boosts it while held without ever passing the stop;
  *  - the WASD keys move thrust and yaw ONLY, share the arrow keys' panel, and
  *    release thrust to the hover detent rather than to zero;
  *  - a keypress is ignored while the caret is in a field, so typing a
@@ -158,6 +160,7 @@ async function reset() {
   Corvus.joystick.setEnabled(false);
   Corvus.joystick.setKeysEnabled(false);
   Corvus.joystick.setWasdEnabled(false);
+  Corvus.joystick.setKeyGain(Corvus.joystick.DEFAULT_GAIN);
   if (pendingResolve) { pendingResolve.resolve({ ok: true }); pendingResolve = null; }
   await new Promise((r) => setImmediate(r));
   posts.length = 0;
@@ -205,10 +208,14 @@ async function mount({ connected = true, sticks = true, keys = false, wasd = fal
 }
 
 /** Dispatch a keyboard event at the window listeners the module installed. */
-function fireKey(type, key, target) {
+function fireKey(type, key, target, opts) {
   let defaulted = true;
+  const o = opts || {};
   (windowListeners[type] || []).forEach((cb) => cb({
     key,
+    // Shift is the boost modifier, so it rides on every key event rather than
+    // being a keypress of its own — the tests hold it the same way.
+    shiftKey: !!o.shiftKey,
     target: target || { tagName: "BODY" },
     preventDefault() { defaulted = false; },
   }));
@@ -455,6 +462,190 @@ async function testArrowKeysDeflectHalfStickNotFull() {
   fireKey("keydown", "ArrowUp");
   flushTimers();
   assert.equal(lastFrame().x, 0.5, "a key has no travel to meter, so it is not full authority");
+}
+
+// --- key strength and the Shift boost ---------------------------------------
+
+async function testKeyStrengthSetsHowFarAKeyPushesTheStick() {
+  await mount({ sticks: false, keys: true, wasd: true });
+  Corvus.joystick.setKeyGain(0.25);
+  await settle();
+  fireKey("keydown", "ArrowUp");
+  fireKey("keydown", "d");
+  flushTimers();
+  const f = lastFrame();
+  assert.equal(f.x, 0.25, "the arrow key is worth what the slider says");
+  assert.equal(f.r, 0.25, "and so is the WASD key — one strength for both clusters");
+  // Thrust is the same fraction, measured from the hover detent.
+  fireKey("keyup", "ArrowUp");
+  fireKey("keyup", "d");
+  await settle();
+  fireKey("keydown", "w");
+  flushTimers();
+  assert.equal(lastFrame().z, 0.625, "quarter stick up from the 0.5 detent");
+}
+
+async function testTheStrengthAndTheBoostReachTheArrowKeysWithoutWasd() {
+  // The two clusters share one strength, and the arrows are not the half that
+  // gets it by inheritance from WASD: with WASD switched off entirely, the
+  // slider and Shift still work on the arrow keys alone.
+  await mount({ sticks: false, keys: true, wasd: false });
+  Corvus.joystick.setKeyGain(0.25);
+  await settle();
+  fireKey("keydown", "ArrowLeft");
+  flushTimers();
+  assert.equal(lastFrame().y, -0.25, "the arrows take the strength on their own");
+
+  await settle();
+  fireKey("keydown", "Shift", null, { shiftKey: true });
+  flushTimers();
+  assert.equal(lastFrame().y, -0.5, "and Shift boosts them with no WASD in the panel");
+  assert.equal(Corvus.joystick.isBoosted(), true);
+}
+
+async function testKeyStrengthChangesUnderAHeldKey() {
+  await mount({ sticks: false, keys: true });
+  await settle();
+  fireKey("keydown", "ArrowUp");
+  flushTimers();
+  assert.equal(lastFrame().x, 0.5);
+  // Dragging the slider while a key is down is felt on the next frame, which
+  // is what makes the setting adjustable in the air rather than on the ground.
+  Corvus.joystick.setKeyGain(1);
+  await settle();
+  flushTimers();
+  assert.equal(lastFrame().x, 1, "the next frame carries the new strength");
+}
+
+async function testKeyStrengthIsClampedAndFallsBackToTheDefault() {
+  await mount({ sticks: false, keys: true });
+  assert.equal(Corvus.joystick.setKeyGain(9), 1, "never past the stop");
+  assert.equal(Corvus.joystick.setKeyGain(-1), Corvus.joystick.GAIN_STEPS[0].value,
+    "never below the smallest step the slider offers");
+  assert.equal(Corvus.joystick.setKeyGain("half"), Corvus.joystick.DEFAULT_GAIN,
+    "a config that carries no number leaves the default in place");
+  assert.equal(Corvus.joystick.setKeyGain(undefined), Corvus.joystick.DEFAULT_GAIN,
+    "and so does an absent key");
+  // Values between the steps are honoured rather than snapped: a config
+  // written by another build must not be quietly rewritten.
+  assert.equal(Corvus.joystick.setKeyGain(0.42), 0.42);
+}
+
+async function testShiftBoostsAKeyWhileItIsHeld() {
+  await mount({ sticks: false, keys: true });
+  Corvus.joystick.setKeyGain(0.25);
+  await settle();
+  fireKey("keydown", "ArrowUp", null, { shiftKey: true });
+  flushTimers();
+  assert.equal(lastFrame().x, 0.5, "Shift is worth twice the set strength");
+  assert.equal(Corvus.joystick.isBoosted(), true);
+
+  // Releasing Shift with the direction key still down drops back to cruise:
+  // the modifier is held, not latched.
+  await settle();
+  fireKey("keyup", "Shift", null, { shiftKey: false });
+  flushTimers();
+  assert.equal(lastFrame().x, 0.25, "letting Shift go returns to the set strength");
+  assert.equal(Corvus.joystick.isBoosted(), false);
+}
+
+async function testShiftPressedAfterTheKeyStillBoosts() {
+  await mount({ sticks: false, wasd: true });
+  await settle();
+  fireKey("keydown", "w");
+  flushTimers();
+  assert.equal(lastFrame().z, 0.75, "half stick up from the detent");
+  await settle();
+  // Shift is not a direction key, so this event only carries the modifier.
+  fireKey("keydown", "Shift", null, { shiftKey: true });
+  flushTimers();
+  assert.equal(lastFrame().z, 1, "the boost reaches the key already down");
+}
+
+async function testTypingACapitalLetterIsNotABoost() {
+  const ui = await mount({ sticks: false, keys: true });
+  await settle();
+  // Shift in a text field is an upper-case letter, not a dash. The caret test
+  // used to live only in keyboardTarget, which runs after the boost was read,
+  // so typing an SSH host or a mission name lit BOOST on the flight controls.
+  fireKey("keydown", "Shift", { tagName: "INPUT" }, { shiftKey: true });
+  flushTimers();
+  assert.equal(Corvus.joystick.isBoosted(), false,
+    "Shift in a field is a capital letter, not a boost");
+  assert.ok(!ui.keysPanel.className.includes("is-boost"));
+  assert.ok(!/BOOST/.test(ui.axes.textContent));
+}
+
+async function testReleasingShiftClearsABoostSetBeforeTheCaretMoved() {
+  await mount({ sticks: false, keys: true });
+  await settle();
+  fireKey("keydown", "Shift", null, { shiftKey: true });
+  flushTimers();
+  assert.equal(Corvus.joystick.isBoosted(), true);
+  // The caret lands in a field while Shift is still down; its release must
+  // still come up, or the boost sticks on with nothing left to clear it.
+  await settle();
+  fireKey("keyup", "Shift", { tagName: "INPUT" }, { shiftKey: false });
+  flushTimers();
+  assert.equal(Corvus.joystick.isBoosted(), false,
+    "Shift comes up unconditionally, exactly as a held key does");
+}
+
+async function testTheBoostNeverPassesTheStop() {
+  await mount({ sticks: false, keys: true });
+  Corvus.joystick.setKeyGain(1);
+  await settle();
+  fireKey("keydown", "ArrowUp", null, { shiftKey: true });
+  flushTimers();
+  assert.equal(lastFrame().x, 1, "a key at full strength cannot be boosted past full travel");
+}
+
+async function testShiftStillFliesTheWasdKeysItself() {
+  await mount({ sticks: false, wasd: true });
+  await settle();
+  // Shift+W is upper-case W: it must fly, not be swallowed as a modifier
+  // combination, or holding the boost would take the key away.
+  const r = fireKey("keydown", "W", null, { shiftKey: true });
+  flushTimers();
+  assert.equal(r.defaultPrevented, true);
+  assert.equal(lastFrame().z, 1, "Shift+W is a boosted W, not a lost keypress");
+}
+
+async function testTheBoostIsNamedInTheAxisReadout() {
+  const ui = await mount({ sticks: false, keys: true });
+  await settle();
+  fireKey("keydown", "ArrowUp", null, { shiftKey: true });
+  flushTimers();
+  assert.ok(/BOOST/.test(ui.axes.textContent), "the readout says the keys are boosted");
+  assert.ok(ui.keysPanel.className.includes("is-boost"),
+    "and the panel is marked, so the operator sees it before the aircraft moves");
+  await settle();
+  fireKey("keyup", "ArrowUp", null, { shiftKey: false });
+  flushTimers();
+  assert.ok(!/BOOST/.test(ui.axes.textContent));
+  assert.ok(!ui.keysPanel.className.includes("is-boost"));
+}
+
+async function testLosingWindowFocusDropsTheBoost() {
+  await mount({ sticks: false, keys: true });
+  await settle();
+  fireKey("keydown", "ArrowUp", null, { shiftKey: true });
+  flushTimers();
+  assert.equal(Corvus.joystick.isBoosted(), true);
+  (windowListeners.blur || []).forEach((cb) => cb());
+  await settle();
+  flushTimers();
+  assert.equal(Corvus.joystick.isBoosted(), false,
+    "a Shift whose release this window will never see must not stay held");
+  assert.deepEqual(lastFrame(), { x: 0, y: 0, z: 0.5, r: 0 });
+}
+
+async function testShiftIsAnOrdinaryModifierWhileNoKeySurfaceIsOn() {
+  await mount({ sticks: true, keys: false, wasd: false });
+  await settle();
+  fireKey("keydown", "Shift", null, { shiftKey: true });
+  assert.equal(Corvus.joystick.isBoosted(), false,
+    "nothing to boost, so Shift stays what it is everywhere else in the app");
 }
 
 async function testAKeyPressIsSwallowedSoThePageDoesNotScroll() {
@@ -1016,6 +1207,19 @@ const tests = [
   testACollapsedPadIsRestoredOnTheNextLaunch,
   testTheCollapseControlIsNotADragHandle,
   testTheAxisReadoutOnlyNamesTheAxesTheSurfacesCanMove,
+  testKeyStrengthSetsHowFarAKeyPushesTheStick,
+  testTheStrengthAndTheBoostReachTheArrowKeysWithoutWasd,
+  testKeyStrengthChangesUnderAHeldKey,
+  testKeyStrengthIsClampedAndFallsBackToTheDefault,
+  testShiftBoostsAKeyWhileItIsHeld,
+  testShiftPressedAfterTheKeyStillBoosts,
+  testTypingACapitalLetterIsNotABoost,
+  testReleasingShiftClearsABoostSetBeforeTheCaretMoved,
+  testTheBoostNeverPassesTheStop,
+  testShiftStillFliesTheWasdKeysItself,
+  testTheBoostIsNamedInTheAxisReadout,
+  testLosingWindowFocusDropsTheBoost,
+  testShiftIsAnOrdinaryModifierWhileNoKeySurfaceIsOn,
   testAHiddenMapLeavesThePadWhereItWas,
   testEdgeTrackingSurvivesAHiddenMap,
 ];

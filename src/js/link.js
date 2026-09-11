@@ -17,12 +17,20 @@ window.Corvus = window.Corvus || {};
  *    or stop a reconnect loop hammering a port that moved) meant quitting.
  *  - LINK QUALITY, from the same SSE field the top bar uses. "Connected" alone
  *    does not tell you whether the link is worth flying on.
- *  - RECENT CONNECTIONS, persisted. Retyping udp:0.0.0.0:14540 on every launch
- *    is the kind of friction that gets a laptop closed.
+ *  - RECENT CONNECTIONS, persisted, at the top of the panel. Retyping
+ *    udp:0.0.0.0:14540 on every launch is the kind of friction that gets a
+ *    laptop closed. The newest entry doubles as the panel's memory: the card
+ *    reopens on the kind, port and baud that last worked.
  *  - PRESETS for the endpoints PX4 actually publishes, so the common cases are
  *    a click rather than a remembered string.
  *  - PORT AUTO-REFRESH when the tab is opened, because a radio plugged in
- *    after launch used to require finding the refresh button.
+ *    after launch used to require finding the refresh button. A port that was
+ *    there last time and is not there now stays on the list, named as absent:
+ *    dropping it silently answers "where did my radio go?" with an empty box.
+ *
+ * Serial and network share ONE card and ONE Connect button. Two cards with two
+ * primary buttons read as two links that could both be open, and there is only
+ * ever one — the branch not in use was permanent dead weight above the fold.
  *
  * On a transition to "connected" the flight-mode selector is refreshed from
  * GET /api/mavlink/modes (via Corvus.app.refreshModes) so the operator only
@@ -34,21 +42,49 @@ Corvus.link = (function () {
   const MAX_RECENT = 5;
 
   /* The endpoints PX4 actually publishes, so the common cases are a click.
-     Kept short on purpose — a preset list nobody reads is just noise. */
+     Kept short on purpose — a preset list nobody reads is just noise.
+
+     Each carries its own one-line `note`. The connection string alone says
+     which port, never which of these four situations the operator is in, and
+     picking the wrong one fails as a silent absence of telemetry rather than
+     as an error. The note is the difference between reading the list and
+     guessing at it. */
   const PRESETS = [
-    { label: "SITL / onboard UDP", conn: "udp:0.0.0.0:14540" },
-    { label: "QGC-style UDP", conn: "udp:0.0.0.0:14550" },
+    {
+      label: "SITL / GCS UDP",
+      conn: "udp:0.0.0.0:14550",
+      note: "Waits on the usual ground-station port. Start here — SITL and most telemetry radios send to it by default.",
+    },
+    // 14540 is PX4's onboard link — the one MAVSDK and MAVROS bind. Listed
+    // second, and labelled for what actually lives there, because taking it
+    // silently costs a companion process on the same machine its telemetry.
+    {
+      label: "PX4 onboard UDP",
+      conn: "udp:0.0.0.0:14540",
+      note: "PX4's companion-computer port. MAVROS and MAVSDK bind it too — taking it can leave them without telemetry.",
+    },
     // A mavlink-router UdpEndpoint in Server mode binds and waits for the
     // station to speak first, so this one dials out rather than listening.
-    { label: "mavlink-router (server mode)", conn: "udpout:127.0.0.1:14550" },
-    { label: "TCP (SITL)", conn: "tcp:127.0.0.1:5760" },
+    {
+      // Named for the program, not the mode: "(server mode)" wrapped the row
+      // onto a second line, and the note says it anyway.
+      label: "mavlink-router",
+      conn: "udpout:127.0.0.1:14550",
+      note: "Dials out instead of waiting, because a router in server mode holds the port and expects the station to speak first.",
+    },
+    {
+      label: "TCP (SITL)",
+      conn: "tcp:127.0.0.1:5760",
+      note: "Connects to a simulator on this machine over TCP — the port jMAVSim and Gazebo serve.",
+    },
   ];
 
   // DOM refs (cached in init)
   let fwdEnabled, fwdPort, fwdAllow, fwdWarning, fwdError, fwdStats, fwdHint;
   let fwdInFlight = false;
-  let serialSelect, baudSelect, refreshBtn, serialConnectBtn, reconnectBtn;
-  let customInput, customConnectBtn;
+  let serialSelect, baudSelect, refreshBtn, connectBtn, reconnectBtn;
+  let customInput, portHint;
+  let kindSerialBtn, kindNetBtn, serialFields, netFields;
   let statusDot, statusLabel, statusConn, statusError;
   let disconnectBtn, qualityEl, recentHost, presetHost;
 
@@ -57,11 +93,39 @@ Corvus.link = (function () {
   let lastStatus = "";           // last seen link_status — for transition detection
   let lastSentConnection = "";   // most recently sent connection string (for Reconnect)
   let recent = [];               // recently used connection strings, newest first
+  let kind = "serial";           // which branch of the card is showing
+  let wantDevice = "";           // serial port to re-select once the list arrives
+  let missingDevices = [];       // devices offered but not currently enumerated
 
   /** Pure: build a serial connection string `serial:<device>:<baud>`. */
   function buildConnectionString(device, baud) {
     if (!device) return "";
     return `serial:${device}:${baud}`;
+  }
+
+  /** Pure: split a connection string back into the fields that built it.
+   *  A serial string is cut at the LAST colon: `COM3` has none and a POSIX
+   *  device is a path, so neither end may swallow the baud. */
+  function parseConnection(conn) {
+    const s = String(conn || "").trim();
+    if (!s) return null;
+    const m = /^serial:(.+):(\d+)$/.exec(s);
+    if (m) return { kind: "serial", device: m[1], baud: m[2], conn: s };
+    return { kind: "net", device: "", baud: "", conn: s };
+  }
+
+  /** Pure: how a stored connection reads in the recent list. The raw string is
+   *  what gets sent, but `serial:/dev/tty.usbserial-0001:57600` is a poor
+   *  thing to scan a list of — the parts are what the operator recognises. */
+  function describeConnection(conn) {
+    const p = parseConnection(conn);
+    if (!p) return { icon: "plug", label: "", detail: "" };
+    if (p.kind === "serial") {
+      return { icon: "cable", label: p.device, detail: `${p.baud} baud` };
+    }
+    const t = /^(udpout|udpin|udp|tcpout|tcpin|tcp):(.+)$/i.exec(p.conn);
+    if (t) return { icon: "network", label: t[2], detail: t[1].toLowerCase() };
+    return { icon: "network", label: p.conn, detail: "" };
   }
 
   /** Pure: option text for a serial port — "device  —  description" or device only. */
@@ -136,12 +200,27 @@ Corvus.link = (function () {
     recent.forEach((conn) => {
       const row = document.createElement("div");
       row.className = "link-recent-row";
+      const d = describeConnection(conn);
       const go = document.createElement("button");
       go.type = "button";
       go.className = "link-recent-conn";
-      go.textContent = conn;
+      go.appendChild(Corvus.ui.icon(d.icon, 13));
+      const label = document.createElement("span");
+      label.className = "link-recent-label";
+      label.textContent = d.label;
+      go.appendChild(label);
+      if (d.detail) {
+        const detail = document.createElement("span");
+        detail.className = "link-recent-detail";
+        detail.textContent = d.detail;
+        go.appendChild(detail);
+      }
+      // The raw string is still what is sent, so it is still what the title
+      // shows — the row is a nicer rendering of it, not a different thing.
       go.title = `Connect to ${conn}`;
-      go.addEventListener("click", () => doConnect(conn));
+      // Fill the card as well as connecting: the operator should be able to
+      // see, after the click, exactly which port and baud is being opened.
+      go.addEventListener("click", () => { applyConnection(conn); doConnect(conn); });
       row.appendChild(go);
       row.appendChild(Corvus.ui.iconButton("x", {
         title: "Forget this connection",
@@ -155,26 +234,86 @@ Corvus.link = (function () {
     Corvus.ui.refreshIcons();
   }
 
+  /* ---- which branch of the card is showing ---- */
+
+  /** Show one branch and hide the other. The Connect button belongs to both. */
+  function setKind(next) {
+    kind = next === "net" ? "net" : "serial";
+    const isNet = kind === "net";
+    if (serialFields) serialFields.hidden = isNet;
+    if (netFields) netFields.hidden = !isNet;
+    if (kindSerialBtn) kindSerialBtn.setAttribute("aria-selected", String(!isNet));
+    if (kindNetBtn) kindNetBtn.setAttribute("aria-selected", String(isNet));
+  }
+
+  /** Point the card at a connection string: the right branch, and its fields
+   *  filled in. Used to restore the last link on launch and to show what a
+   *  recent entry actually is when it is clicked. */
+  function applyConnection(conn) {
+    const p = parseConnection(conn);
+    if (!p) return;
+    if (p.kind === "serial") {
+      wantDevice = p.device;
+      if (serialSelect) {
+        // The port list arrives asynchronously; select it now if it is already
+        // there, and refreshPorts() will honour wantDevice when it is not.
+        serialSelect.value = p.device;
+      }
+      // Only a baud the dropdown actually offers — assigning an absent value
+      // to a <select> clears it, which would silently connect at 57600.
+      if (baudSelect && p.baud && baudSelect.querySelector(`option[value="${p.baud}"]`)) {
+        baudSelect.value = p.baud;
+      }
+      setKind("serial");
+    } else {
+      if (customInput) customInput.value = p.conn;
+      setKind("net");
+    }
+  }
+
+  /* One row per preset: name, what it is for, and the string it fills in.
+     They were bare ghost buttons, which put four unexplained phrases under
+     the field and left the Connect button below them looking like part of the
+     same list. Rows read as the pick-one control they are. */
   function renderPresets() {
     if (!presetHost) return;
     Corvus.ui.clear(presetHost);
+    presetHost.appendChild(Corvus.ui.label("Common endpoints"));
+    const list = document.createElement("div");
+    list.className = "link-preset-list";
     PRESETS.forEach((p) => {
-      const b = Corvus.ui.button({
-        variant: "ghost",
-        size: "sm",
-        label: p.label,
-        title: p.conn,
-        onClick: () => {
-          // Fill the field rather than connecting outright: a preset is a
-          // starting point the operator may want to edit (a different host,
-          // a different port) before committing.
-          customInput.value = p.conn;
-          customInput.focus();
-        },
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "link-preset";
+      b.title = `${p.conn} — ${p.note}`;
+
+      const head = document.createElement("span");
+      head.className = "link-preset-head";
+      const name = document.createElement("span");
+      name.className = "link-preset-name";
+      name.textContent = p.label;
+      const conn = document.createElement("span");
+      conn.className = "link-preset-conn";
+      conn.textContent = p.conn;
+      head.appendChild(name);
+      head.appendChild(conn);
+
+      const note = document.createElement("span");
+      note.className = "link-preset-note";
+      note.textContent = p.note;
+
+      b.appendChild(head);
+      b.appendChild(note);
+      b.addEventListener("click", () => {
+        // Fill the field rather than connecting outright: a preset is a
+        // starting point the operator may want to edit (a different host,
+        // a different port) before committing.
+        customInput.value = p.conn;
+        customInput.focus();
       });
-      b.classList.add("link-preset");
-      presetHost.appendChild(b);
+      list.appendChild(b);
     });
+    presetHost.appendChild(list);
   }
 
   function setSelectOptions(select, opts) {
@@ -192,7 +331,7 @@ Corvus.link = (function () {
   async function refreshPorts() {
     if (!serialSelect) return;
     const placeholder = serialSelect.querySelector('option[value=""]');
-    const current = serialSelect.value;
+    const current = serialSelect.value || wantDevice;
     try {
       const data = await Corvus.telemetry.requestJson("/api/mavlink/serial-ports");
       const ports = (data && data.ports) || [];
@@ -200,14 +339,23 @@ Corvus.link = (function () {
       ports.forEach((p) => {
         opts.push({ value: p.device, text: portOptionText(p) });
       });
+      // The port the operator last flew stays on the list even when it is not
+      // enumerated, named as absent. Dropping it answers "where did my radio
+      // go?" with an empty dropdown; keeping it answers with the cable.
+      missingDevices = [];
+      if (current && !ports.some((prt) => prt.device === current)) {
+        missingDevices = [current];
+        opts.push({ value: current, text: `${current}  \u2014  not connected` });
+      }
       setSelectOptions(serialSelect, opts);
       // Auto-select the first port when exactly one real port is available
       // and the operator hasn't chosen one (common case: a single radio plugged in).
-      if (ports.length === 1 && !serialSelect.value) {
+      if (ports.length === 1 && !current) {
         serialSelect.value = ports[0].device;
-      } else if (current && opts.some((o) => o.value === current)) {
+      } else if (current) {
         serialSelect.value = current;
       }
+      paintPortHint();
       // Surface a backend enumeration error (e.g. permission denied) without
       // blocking the empty dropdown.
       if (data && data.error) {
@@ -218,8 +366,30 @@ Corvus.link = (function () {
     } catch (err) {
       // Keep the placeholder; show the error in the status row.
       setSelectOptions(serialSelect, [{ value: "", text: "Select serial port\u2026" }]);
+      missingDevices = [];
+      paintPortHint();
       showError(err && err.message ? err.message : "Could not list serial ports");
     }
+  }
+
+  /** Pure enough: the sentence under the port dropdown for an absent device. */
+  function missingPortHint(device) {
+    return `${device} is not connected. Plug it in, then press refresh.`;
+  }
+
+  /** The operator picking a port by hand replaces the remembered one — including
+   *  picking the placeholder, which is how an absent port is dismissed. */
+  function onPortChange() {
+    wantDevice = serialSelect ? serialSelect.value : "";
+    paintPortHint();
+  }
+
+  function paintPortHint() {
+    if (!portHint) return;
+    const device = serialSelect ? serialSelect.value : "";
+    const absent = !!device && missingDevices.indexOf(device) >= 0;
+    portHint.textContent = absent ? missingPortHint(device) : "";
+    portHint.hidden = !absent;
   }
 
   function showError(text) {
@@ -260,6 +430,12 @@ Corvus.link = (function () {
     }
   }
 
+  /** The one Connect button, dispatched to whichever branch is showing. */
+  function connect() {
+    if (kind === "net") connectCustom();
+    else connectSerial();
+  }
+
   function connectSerial() {
     const device = serialSelect.value;
     const baud = baudSelect.value || "57600";
@@ -267,7 +443,14 @@ Corvus.link = (function () {
       showError("Select a serial port first.");
       return;
     }
+    // Refusing here rather than letting the backend fail on open(): the cause
+    // is a cable, and the operator should read that instead of an errno.
+    if (missingDevices.indexOf(device) >= 0) {
+      showError(missingPortHint(device));
+      return;
+    }
     showError("");
+    wantDevice = device;
     doConnect(buildConnectionString(device, baud));
   }
 
@@ -307,8 +490,7 @@ Corvus.link = (function () {
 
   /** Disable the connect buttons while a request is in flight. */
   function setBusy(busy) {
-    if (serialConnectBtn) serialConnectBtn.disabled = busy;
-    if (customConnectBtn) customConnectBtn.disabled = busy;
+    if (connectBtn) connectBtn.disabled = busy;
     if (reconnectBtn) reconnectBtn.disabled = busy;
     if (disconnectBtn) disconnectBtn.disabled = busy;
   }
@@ -347,18 +529,9 @@ Corvus.link = (function () {
     //  - connected   -> disabled "Connected" + enabled "Reconnect"
     //  - otherwise   -> enabled "Connect", Reconnect hidden
     const busy = inFlight || status === "connecting";
-    if (serialConnectBtn) {
-      serialConnectBtn.disabled = busy || status === "connected";
-      const span = serialConnectBtn.querySelector("span");
-      if (span) {
-        span.textContent = status === "connecting" ? "Connecting\u2026"
-          : status === "connected" ? "Connected"
-          : "Connect";
-      }
-    }
-    if (customConnectBtn) {
-      customConnectBtn.disabled = busy || status === "connected";
-      const span = customConnectBtn.querySelector("span");
+    if (connectBtn) {
+      connectBtn.disabled = busy || status === "connected";
+      const span = connectBtn.querySelector("span");
       if (span) {
         span.textContent = status === "connecting" ? "Connecting\u2026"
           : status === "connected" ? "Connected"
@@ -399,10 +572,14 @@ Corvus.link = (function () {
     serialSelect = document.getElementById("linkSerialPort");
     baudSelect = document.getElementById("linkBaud");
     refreshBtn = document.getElementById("linkRefreshPorts");
-    serialConnectBtn = document.getElementById("linkSerialConnect");
+    connectBtn = document.getElementById("linkConnect");
     reconnectBtn = document.getElementById("linkReconnect");
     customInput = document.getElementById("linkCustomConn");
-    customConnectBtn = document.getElementById("linkCustomConnect");
+    portHint = document.getElementById("linkPortHint");
+    kindSerialBtn = document.getElementById("linkKindSerial");
+    kindNetBtn = document.getElementById("linkKindNet");
+    serialFields = document.getElementById("linkSerialFields");
+    netFields = document.getElementById("linkNetFields");
     statusDot = document.getElementById("linkStatusDot");
     statusLabel = document.getElementById("linkStatusLabel");
     statusConn = document.getElementById("linkStatusConn");
@@ -415,12 +592,19 @@ Corvus.link = (function () {
     loadRecent();
     renderRecent();
     renderPresets();
+    // The panel opens on the link that last worked — kind, port and baud. Only
+    // connections the backend accepted are remembered (see rememberRecent), so
+    // this restores a setting that is known to have flown, not a typo.
+    setKind("serial");
+    if (recent.length) applyConnection(recent[0]);
 
     if (disconnectBtn) disconnectBtn.addEventListener("click", disconnect);
     if (refreshBtn) refreshBtn.addEventListener("click", refreshPorts);
-    if (serialConnectBtn) serialConnectBtn.addEventListener("click", connectSerial);
-    if (customConnectBtn) customConnectBtn.addEventListener("click", connectCustom);
+    if (connectBtn) connectBtn.addEventListener("click", connect);
     if (reconnectBtn) reconnectBtn.addEventListener("click", reconnect);
+    if (kindSerialBtn) kindSerialBtn.addEventListener("click", () => setKind("serial"));
+    if (kindNetBtn) kindNetBtn.addEventListener("click", () => setKind("net"));
+    if (serialSelect) serialSelect.addEventListener("change", onPortChange);
 
     // Custom connect on Enter.
     if (customInput) {
@@ -563,6 +747,8 @@ Corvus.link = (function () {
     init,
     // Exposed for unit tests:
     buildConnectionString,
+    parseConnection,
+    describeConnection,
     portOptionText,
     statusInfo,
     qualityInfo,

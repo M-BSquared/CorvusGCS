@@ -4,17 +4,17 @@ window.Corvus = window.Corvus || {};
 /**
  * Corvus.setupShared — shared helpers and constants for the Setup page modules.
  *
- * Kept stateless (no DOM ownership, no subscriptions) so the calibration and
- * parameters sub-pages can import these without coupling to each other. This
- * is the common layer extracted out of the former setup.js monolith so each
- * page lives in its own file.
+ * Kept stateless (no DOM ownership, no subscriptions) so the sub-pages can
+ * import these without coupling to each other. This is the common layer
+ * extracted out of the former setup.js monolith so each page lives in its own
+ * file.
  *
  * The second half of the file is the *schema-driven parameter form*: the
  * machinery behind every page that renders a description the backend sent —
- * Motors and Safety & Sensors today — rather than a form somebody typed out.
- * Those helpers take the calling page's `state` object and write to it; the
- * module itself still holds nothing, so "stateless" above is unchanged. The
- * contract is small and both pages already satisfy it:
+ * Motors, Safety & Sensors and PID Tuning — rather than a form somebody typed
+ * out. Those helpers take the calling page's `state` object and write to it;
+ * the module itself still holds nothing, so "stateless" above is unchanged.
+ * The contract is small and every one of those pages already satisfies it:
  *
  *   state.armed         boolean, the live armed flag
  *   state.controls      array, the registry these helpers push to
@@ -33,8 +33,8 @@ Corvus.setupShared = (function () {
   const REDRAW_MIN_MS = 100;
 
   // Semantic palette reused from the app CSS variables (kept in sync here so
-  // the Plotly dark theme matches the HUD). Roll rate + horizontal velocity use
-  // nav blue (#4CC9FF); roll attitude uses healthy green (#45D483).
+  // the Plotly dark theme matches the HUD). A measured response is nav blue
+  // (#4CC9FF); the setpoint it is read against is healthy green (#45D483).
   // Trace colors are read from the theme at draw time rather than frozen as
   // constants, so the light theme gets its darker, saturated variants instead
   // of the dark theme's glowing ones. Kept as getters because the old constant
@@ -61,7 +61,7 @@ Corvus.setupShared = (function () {
   // shared component layer. Setup used to carry its own copies of all four;
   // these are re-exports so the Setup sub-modules keep their short S.* names.
   // Icons are built with "auto" sizing because Setup's stylesheet already owns
-  // their dimensions (.setup-tile .tile-icon svg, .calib-btn svg, ...).
+  // their dimensions (.setup-tile .tile-icon svg, .calib-card svg, ...).
   function icon(name) { return Corvus.ui.icon(name, "auto"); }
   const refreshIcons = Corvus.ui.refreshIcons;
   const pageHeader = Corvus.ui.pageHeader;
@@ -104,41 +104,6 @@ Corvus.setupShared = (function () {
     });
   }
 
-  /**
-   * Shared one-shot config action: disable siblings while in flight, show a
-   * spinner on the clicked button, then a green confirmation or the error
-   * message via the existing notification system + a local status line.
-   * `siblings` is the explicit button list (avoids parentElement walks so the
-   * action is robust and the lifecycle is testable).
-   */
-  async function runConfigAction(siblings, btn, url, payload, busyText, okText) {
-    const status = btn.querySelector(".calib-btn-status");
-    siblings.forEach((b) => { b.disabled = true; });
-    btn.classList.add("busy");
-    if (status) { status.textContent = busyText; status.className = "calib-btn-status busy"; }
-    try {
-      await Corvus.telemetry.postAction(url, payload);
-      if (status) { status.textContent = okText; status.className = "calib-btn-status ok"; }
-      window.dispatchEvent(new CustomEvent("corvus:notification",
-        { detail: { level: "info", message: okText } }));
-    } catch (err) {
-      const msg = (err && err.message) || "Action failed";
-      if (status) { status.textContent = msg; status.className = "calib-btn-status err"; }
-      window.dispatchEvent(new CustomEvent("corvus:notification",
-        { detail: { level: "critical", message: msg } }));
-    } finally {
-      btn.classList.remove("busy");
-      // Re-gate from live vehicle state after the request. A link can drop
-      // while the action is in flight; re-enabling on `armed === false` alone
-      // would leave a control actionable with no vehicle behind it.
-      const s = Corvus.telemetry && Corvus.telemetry.getState();
-      const armed = !!(s && s.armed);
-      const connected = !!(s && s.connected);
-      siblings.forEach((b) => { b.disabled = armed || !connected; });
-    }
-  }
-
-  /** A dark Plotly layout for a single-trace live graph (shared by all graphs). */
   /** Graph layout, themed. The surfaces, type and grid come from the active
    *  theme via Corvus.ui.plotlyTheme(); only what is specific to these graphs
    *  — margins, axis titles — is set here. Called on every redraw, so a theme
@@ -153,9 +118,13 @@ Corvus.setupShared = (function () {
     });
   }
 
-  /** Plotly config with reduced-motion zero-duration transitions when requested. */
+  /** Plotly config with reduced-motion zero-duration transitions when requested.
+   *  showTips is off: Plotly's own "double-click to zoom back out" hint is an
+   *  unstyled toast it draws itself, positioned over whatever else is on the
+   *  page rather than the chart — Corvus.ui.attachZoomHint() replaces it with
+   *  the app's own toast on the charts that call it. */
   function plotlyConfig(reduced) {
-    const config = { displayModeBar: false, responsive: true };
+    const config = { displayModeBar: false, responsive: true, showTips: false };
     if (reduced) { config.transition = { duration: 0 }; config.frame = { duration: 0 }; }
     return config;
   }
@@ -402,7 +371,7 @@ Corvus.setupShared = (function () {
     get COLOR_ATT() { return chartColor("healthy", "#45D483"); },
     get COLOR_VEL() { return chartColor("nav", "#4CC9FF"); },
     reducedMotion, el, icon, refreshIcons, pageHeader, sectionTitle, infoRow,
-    backButton, runConfigAction, plotlyLayout, plotlyConfig,
+    backButton, plotlyLayout, plotlyConfig,
     // Schema-driven parameter forms (Motors, Safety & Sensors).
     notify, formatNumber, isNumeric, rangeProblem,
     setFieldStatus, setActionsStatus,

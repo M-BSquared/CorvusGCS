@@ -3,11 +3,11 @@ window.Corvus = window.Corvus || {};
 
 Corvus.instruments = (function () {
   const NS = "http://www.w3.org/2000/svg";
-  let compassCard, compassArrow, compassValue, adiInner, adiRollScale, attitudeValue, ftGrid;
+  let compassCard, compassArrow, compassValue, adiInner, adiRollArc, adiRollScale, attitudeValue, ftGrid;
   // key -> value span, cached at build time so updateFlightTelemetry does not
   // re-query the grid on every telemetry tick (≤30 Hz after backend coalescing).
   const ftCells = {};
-  const PPD = 2.0;
+  const PPD = 1.7;
 
   // Interpolation state. TARGET = latest telemetry; DISPLAYED = eased value the
   // SVG transforms are rendered from. Driven by the single shared Corvus.anim
@@ -32,12 +32,21 @@ Corvus.instruments = (function () {
     const card = compassCard;
     card.innerHTML = "";
 
+    // A face disc under the tick band, so the ticks read as a raised ring
+    // around a dial rather than as marks floating on the bezel fill.
+    card.appendChild(el("circle", { cx: 0, cy: 0, r: 74, class: "compass-face" }));
+
+    // Three tick weights, not two: 5deg hairlines for texture, 10deg for
+    // counting, 30deg for the labelled bearings — and the four cardinals
+    // heavier still, so N/E/S/W are findable without reading the letters.
     for (let deg = 0; deg < 360; deg += 5) {
       const rad = ((deg - 90) * Math.PI) / 180;
+      const isCardinal = deg % 90 === 0;
       const isMajor = deg % 30 === 0;
       const isMedium = deg % 10 === 0;
-      const r1 = isMajor ? 72 : isMedium ? 78 : 82;
-      const r2 = 88;
+      const r1 = isMajor ? 75 : isMedium ? 79 : 82;
+      const r2 = 86;
+      const cls = isCardinal ? " cardinal" : isMajor ? " major" : isMedium ? " medium" : "";
 
       card.appendChild(
         el("line", {
@@ -45,13 +54,16 @@ Corvus.instruments = (function () {
           y1: (Math.sin(rad) * r1).toFixed(1),
           x2: (Math.cos(rad) * r2).toFixed(1),
           y2: (Math.sin(rad) * r2).toFixed(1),
-          stroke: isMajor ? "#38bdf8" : "rgba(255, 255, 255, 0.35)",
-          "stroke-width": isMajor ? "1.8" : "1",
+          class: "compass-tick" + cls,
           "stroke-linecap": "round",
         })
       );
     }
 
+    // Cardinals and the eight 30deg numbers share one radius. Mixing the two
+    // rings — as this did — made the numbers look like a second, unrelated
+    // scale; on one ring they are plainly the same scale at two weights.
+    const LABEL_R = 60;
     const cardinals = [
       { d: 0, t: "N" },
       { d: 90, t: "E" },
@@ -60,16 +72,11 @@ Corvus.instruments = (function () {
     ];
     cardinals.forEach(({ d, t }) => {
       const rad = ((d - 90) * Math.PI) / 180;
-      const x = Math.cos(rad) * 58;
-      const y = Math.sin(rad) * 58;
-
       card.appendChild(
         el("text", {
-          x: x.toFixed(1),
-          y: y.toFixed(1),
-          fill: t === "N" ? "#38bdf8" : "#f8fafc",
-          "font-size": "11",
-          "font-weight": "700",
+          x: (Math.cos(rad) * LABEL_R).toFixed(1),
+          y: (Math.sin(rad) * LABEL_R).toFixed(1),
+          class: "compass-label" + (t === "N" ? " north" : ""),
           "text-anchor": "middle",
           "dominant-baseline": "central",
         }, t)
@@ -78,16 +85,11 @@ Corvus.instruments = (function () {
 
     for (const d of [30, 60, 120, 150, 210, 240, 300, 330]) {
       const rad = ((d - 90) * Math.PI) / 180;
-      const x = Math.cos(rad) * 60;
-      const y = Math.sin(rad) * 60;
-
       card.appendChild(
         el("text", {
-          x: x.toFixed(1),
-          y: y.toFixed(1),
-          fill: "rgba(248, 250, 252, 0.45)",
-          "font-size": "8",
-          "font-weight": "600",
+          x: (Math.cos(rad) * LABEL_R).toFixed(1),
+          y: (Math.sin(rad) * LABEL_R).toFixed(1),
+          class: "compass-digit",
           "text-anchor": "middle",
           "dominant-baseline": "central",
         }, String(d / 10).padStart(2, "0"))
@@ -97,79 +99,78 @@ Corvus.instruments = (function () {
 
   function buildCompassArrow() {
     compassArrow.innerHTML = "";
-    compassArrow.appendChild(el("polygon", {
-      points: "0,-42 -10,-18 10,-18",
-      class: "arrow-body",
+    // A waisted needle rather than the old pair of triangles: one shape whose
+    // north half is obviously the pointing end. The tip stops at r=50, inside
+    // the label ring, so the needle never sits on top of a bearing it is
+    // supposed to be indicating.
+    compassArrow.appendChild(el("path", {
+      d: "M 0 43 L 5 9 L 0 3 L -5 9 Z",
+      class: "needle-south",
     }));
-    compassArrow.appendChild(el("polygon", {
-      points: "0,42 -6,18 6,18",
-      class: "arrow-tail",
-    }));
-    compassArrow.appendChild(el("line", {
-      x1: 0, y1: -18, x2: 0, y2: 18,
-      stroke: "rgba(255, 81, 77, 0.4)", "stroke-width": "3.5",
+    compassArrow.appendChild(el("path", {
+      d: "M 0 -50 L 7 -9 L 0 -3 L -7 -9 Z",
+      class: "needle-north",
     }));
   }
 
   function buildAttitude() {
     const inner = adiInner;
-    const R = 800;
+    inner.innerHTML = "";
+    const R = 900;
 
-    const skyGrad = el("linearGradient", { id: "adi-sky", x1: "0", y1: "0", x2: "0", y2: "1" });
-    skyGrad.appendChild(el("stop", { offset: "0%", "stop-color": "#0D1B2A" }));
-    skyGrad.appendChild(el("stop", { offset: "50%", "stop-color": "#1B4965" }));
-    skyGrad.appendChild(el("stop", { offset: "100%", "stop-color": "#2D7FB0" }));
-    inner.appendChild(skyGrad);
+    // Two flat halves. This carried a pair of linear gradients and a vignette
+    // circle; the shading was doing no work the horizon line was not already
+    // doing, and it cost the dial its flatness.
+    inner.appendChild(el("rect", { x: -R, y: -R, width: 2 * R, height: R, class: "adi-sky" }));
+    inner.appendChild(el("rect", { x: -R, y: 0, width: 2 * R, height: R, class: "adi-ground" }));
 
-    const grdGrad = el("linearGradient", { id: "adi-ground", x1: "0", y1: "0", x2: "0", y2: "1" });
-    grdGrad.appendChild(el("stop", { offset: "0%", "stop-color": "#1B5E3F" }));
-    grdGrad.appendChild(el("stop", { offset: "50%", "stop-color": "#0E3D2A" }));
-    grdGrad.appendChild(el("stop", { offset: "100%", "stop-color": "#06231A" }));
-    inner.appendChild(grdGrad);
+    inner.appendChild(el("line", { x1: -R, y1: 0, x2: R, y2: 0, class: "adi-horizon" }));
 
-    inner.appendChild(el("rect", { x: -R, y: -R, width: 2 * R, height: R, fill: "url(#adi-sky)" }));
-    inner.appendChild(el("rect", { x: -R, y: 0, width: 2 * R, height: R, fill: "url(#adi-ground)" }));
-
-    inner.appendChild(el("line", {
-      x1: -R, y1: 0, x2: R, y2: 0,
-      stroke: "#FFFFFF", "stroke-width": 2, opacity: "0.9",
-    }));
-
-    for (const p of [5, 10, 15, 20, 25, 30, -5, -10, -15, -20, -25, -30]) {
+    // Ten-degree steps only, one weight, one label per side. The 5deg
+    // half-ticks and the three-weight hierarchy that used to be here were
+    // reading as precision this instrument does not have: it is a glance
+    // check on attitude, and the numeric pitch/roll is printed underneath
+    // for anyone who actually needs a figure.
+    for (const p of [10, 20, 30, -10, -20, -30]) {
       const y = -p * PPD;
-      const isMajor = p % 10 === 0;
-      const isBig = p % 30 === 0;
-      const w = isBig ? 30 : (isMajor ? 18 : 8);
+      const w = 22;
 
       inner.appendChild(el("line", {
-        x1: -w, y1: y, x2: w, y2: y,
-        stroke: "#FFFFFF", "stroke-width": isBig ? 1.8 : (isMajor ? 1.2 : 0.8),
-        opacity: isBig ? "0.8" : (isMajor ? "0.5" : "0.3"),
+        x1: -w, y1: y, x2: w, y2: y, class: "pitch-tick", "stroke-linecap": "round",
       }));
 
-      if (isMajor && p !== 0) {
-        for (const [lx, anchor] of [[w + 5, "start"], [-(w + 5), "end"]]) {
-          inner.appendChild(el("text", {
-            x: lx, y: y - 2, fill: "rgba(255,255,255,0.6)", "font-size": "7",
-            "font-weight": "500", "text-anchor": anchor, "dominant-baseline": "central",
-          }, String(Math.abs(p))));
-        }
+      for (const [lx, anchor] of [[w + 5, "start"], [-(w + 5), "end"]]) {
+        inner.appendChild(el("text", {
+          x: lx, y: y, class: "pitch-label",
+          "text-anchor": anchor, "dominant-baseline": "central",
+        }, String(Math.abs(p))));
       }
     }
 
-    const scale = adiRollScale;
-    for (const r of [-60, -45, -30, -20, -10, 0, 10, 20, 30, 45, 60]) {
+    // Level, half-bank, full-bank, on the ring rather than on the sky — the
+    // same band, radii and weights the compass uses for its 30deg ticks, so
+    // the two dials read as one pair of instruments. Eleven ticks invited the
+    // operator to read a bank angle off an arc that is 11px tall on the real
+    // panel; three say the one thing the arc is good for — how far past level
+    // the aircraft is.
+    adiRollArc.innerHTML = "";
+    for (const r of [-60, -30, 0, 30, 60]) {
       const rad = (r - 90) * Math.PI / 180;
-      const major = r % 30 === 0;
-      const r1 = major ? 76 : 82;
-      const r2 = 88;
-      scale.appendChild(el("line", {
+      const r1 = r === 0 ? 75 : 79;
+      const r2 = 86;
+      adiRollArc.appendChild(el("line", {
         x1: (Math.cos(rad) * r1).toFixed(1), y1: (Math.sin(rad) * r1).toFixed(1),
         x2: (Math.cos(rad) * r2).toFixed(1), y2: (Math.sin(rad) * r2).toFixed(1),
-        class: "roll-tick" + (major ? " major" : ""),
+        class: "roll-tick" + (r === 0 ? " zero" : ""),
+        "stroke-linecap": "round",
       }));
     }
-    scale.appendChild(el("polygon", { points: "0,-90 -4,-82 4,-82", class: "roll-pointer" }));
+
+    // Sky pointer: the only part that banks, so the gap between it and the 0
+    // tick IS the roll angle. Its apex meets the ball edge, which is what ties
+    // the moving half of the instrument to the fixed scale above it.
+    adiRollScale.innerHTML = "";
+    adiRollScale.appendChild(el("polygon", { points: "0,-73 -5,-64 5,-64", class: "roll-pointer" }));
   }
 
   function updateAttitude(pitch, roll) {
@@ -191,8 +192,6 @@ Corvus.instruments = (function () {
     const h = Math.round(Corvus.anim.normAngle(insDisplay.heading)) % 360;
     if (compassArrow) compassArrow.setAttribute("transform", `rotate(${h})`);
     if (compassValue) compassValue.textContent = String(h).padStart(3, "0") + "\u00B0";
-    const cw = document.getElementById("compassWindow");
-    if (cw) cw.textContent = String(h).padStart(3, "0");
     updateAttitude(insDisplay.pitch, insDisplay.roll);
   }
 
@@ -266,6 +265,7 @@ Corvus.instruments = (function () {
     compassArrow = document.getElementById("compassArrow");
     compassValue = document.getElementById("compassValue");
     adiInner = document.getElementById("adiInner");
+    adiRollArc = document.getElementById("adiRollArc");
     adiRollScale = document.getElementById("adiRollScale");
     attitudeValue = document.getElementById("attitudeValue");
     ftGrid = document.getElementById("flightTelemetry");

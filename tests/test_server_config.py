@@ -472,6 +472,87 @@ def test_post_ssh_connections_upsert_replaces_existing_by_name(tmp_path) -> None
     assert conns[0]["port"] == 2222
 
 
+def test_post_ssh_connections_upsert_without_password_keeps_existing(tmp_path) -> None:
+    cfg = CorvusConfig(
+        ssh_connections=[
+            {"name": "CORVUS-01", "host": "old-host", "port": 22,
+             "username": "corvus", "key_path": "", "password": "kept"},
+        ],
+    )
+    cfg_path = tmp_path / "config.json"
+    handler, responses = _handler(config=cfg, config_path=str(cfg_path))
+    # No "password" key at all — an edit form that never learned the saved
+    # password (GET redacts it) submitting only the fields it showed.
+    handler._api_ssh_connections_upsert({
+        "name": "CORVUS-01", "host": "new-host", "port": 22, "username": "corvus",
+    })
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["connections"][0]["host"] == "new-host"
+    on_disk = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert on_disk["ssh_connections"][0]["password"] == "kept"
+
+
+def test_post_ssh_connections_upsert_empty_password_clears_it(tmp_path) -> None:
+    cfg = CorvusConfig(
+        ssh_connections=[
+            {"name": "CORVUS-01", "host": "h", "port": 22,
+             "username": "corvus", "key_path": "", "password": "old"},
+        ],
+    )
+    cfg_path = tmp_path / "config.json"
+    handler, responses = _handler(config=cfg, config_path=str(cfg_path))
+    handler._api_ssh_connections_upsert({
+        "name": "CORVUS-01", "host": "h", "port": 22, "username": "corvus", "password": "",
+    })
+    on_disk = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert on_disk["ssh_connections"][0]["password"] == ""
+
+
+def test_post_ssh_connections_upsert_original_name_renames_in_place(tmp_path) -> None:
+    cfg = CorvusConfig(
+        ssh_connections=[
+            {"name": "OLD", "host": "h", "port": 22,
+             "username": "corvus", "key_path": "", "password": "secret"},
+        ],
+    )
+    cfg_path = tmp_path / "config.json"
+    handler, responses = _handler(config=cfg, config_path=str(cfg_path))
+    handler._api_ssh_connections_upsert({
+        "name": "NEW", "host": "h", "port": 22, "username": "corvus",
+        "original_name": "OLD",
+    })
+    payload, status = responses[0]
+    assert status == 200
+    conns = payload["connections"]
+    assert len(conns) == 1  # renamed in place, not appended
+    assert conns[0]["name"] == "NEW"
+    on_disk = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert on_disk["ssh_connections"][0]["password"] == "secret"
+
+
+def test_post_ssh_connections_upsert_rename_onto_existing_name_rejected(tmp_path) -> None:
+    cfg = CorvusConfig(
+        ssh_connections=[
+            {"name": "A", "host": "h1", "port": 22, "username": "u", "key_path": "", "password": ""},
+            {"name": "B", "host": "h2", "port": 22, "username": "u", "key_path": "", "password": ""},
+        ],
+    )
+    cfg_path = tmp_path / "config.json"
+    handler, responses = _handler(config=cfg, config_path=str(cfg_path))
+    handler._api_ssh_connections_upsert({
+        "name": "B", "host": "h1", "port": 22, "username": "u", "original_name": "A",
+    })
+    payload, status = responses[0]
+    assert status == 400
+    assert "already saved" in payload["error"]
+    # Nothing was merged, overwritten, or even written — the config file is
+    # untouched (this handler never got past validation to _save_live_config).
+    assert not cfg_path.exists()
+    names = sorted(e["name"] for e in handler.config.ssh_connections)
+    assert names == ["A", "B"]
+
+
 def test_post_ssh_connections_coerces_port_string_to_int(tmp_path) -> None:
     handler, responses = _handler(
         config=CorvusConfig(),

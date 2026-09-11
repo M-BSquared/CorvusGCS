@@ -54,6 +54,7 @@ function fireMutations() { observers.forEach((o) => o.cb([], o)); }
 function makeEl(tag) {
   const e = {
     tagName: String(tag || "div").toUpperCase(),
+    nodeType: 1,
     className: "", children: [], dataset: {}, style: {},
     type: "", hidden: false, disabled: false, value: "", id: "", title: "",
     tabIndex: 0, _attrs: {}, _listeners: {}, _text: "", _isEl: true,
@@ -99,6 +100,7 @@ function makeEl(tag) {
   };
   e.setAttribute = (k, v) => { e._attrs[k] = String(v); if (k === "class") e.className = String(v); };
   e.getAttribute = (k) => (k in e._attrs ? e._attrs[k] : null);
+  e.hasAttribute = (k) => k in e._attrs;
   e.addEventListener = (t, cb) => { (e._listeners[t] = e._listeners[t] || []).push(cb); };
   e.removeEventListener = (t, cb) => {
     const list = e._listeners[t] || [];
@@ -119,13 +121,10 @@ function makeEl(tag) {
     bottom: e._box.top + e._box.height, right: e._box.left + e._box.width,
   });
   e.querySelectorAll = (sel) => {
-    const cls = sel.replace(/^\./, "");
     const out = [];
     (function walk(list) {
       list.forEach((c) => {
-        const hit = sel[0] === "." ? c.className.split(/\s+/).includes(cls)
-                                   : c.tagName === sel.toUpperCase();
-        if (hit) out.push(c);
+        if (matches(c, sel)) out.push(c);
         walk(c.children);
       });
     })(e.children);
@@ -137,6 +136,21 @@ function makeEl(tag) {
   Object.defineProperty(e, "scrollHeight", { get: () => e._box.height });
   Object.defineProperty(e, "firstChild", { get: () => e.children[0] || null });
   return e;
+}
+
+/* Selector support is deliberately thin — a tag, a class, or a tag carrying
+   one quoted attribute are the three shapes ui.js queries with. */
+function matches(el, sel) {
+  const m = /^([a-zA-Z-]*)(?:\.([\w-]+))?(?:\[([\w-]+)="([^"]*)"\])?$/.exec(sel);
+  if (!m || (!m[1] && !m[2] && !m[3])) return false;
+  if (m[1] && el.tagName !== m[1].toUpperCase()) return false;
+  if (m[2] && !el.className.split(/\s+/).includes(m[2])) return false;
+  if (m[3]) {
+    // `for` is reflected by the htmlFor property, which is what ui.label sets.
+    const got = m[3] === "for" && el.htmlFor != null ? el.htmlFor : el.getAttribute(m[3]);
+    if (String(got == null ? "" : got) !== m[4]) return false;
+  }
+  return true;
 }
 
 function makeSelect(pairs) {
@@ -156,10 +170,18 @@ function makeSelect(pairs) {
 
 const documentListeners = {};
 const windowListeners = {};
+const body = makeEl("body");
 global.document = {
-  body: makeEl("body"),
+  body,
   activeElement: null,
   createElement: makeEl,
+  querySelectorAll: (sel) => body.querySelectorAll(sel),
+  querySelector: (sel) => body.querySelector(sel),
+  contains: (node) => {
+    let n = node;
+    while (n) { if (n === body) return true; n = n.parentNode; }
+    return false;
+  },
   addEventListener: (t, cb) => { (documentListeners[t] = documentListeners[t] || []).push(cb); },
   removeEventListener: (t, cb) => {
     const list = documentListeners[t] || [];
@@ -418,6 +440,145 @@ function labelOf(h) { return h.trigger.textContent; }
   assert.equal(h.menu.style.left, "1122px", "clamped to 8px inside the viewport (1280 - 150 - 8)");
   h.close();
   host.parentNode.removeChild(host);
+}
+
+// ---------------------------------------------------------------------------
+// enhanceSelects: every plain select in a subtree, and only those
+// ---------------------------------------------------------------------------
+{
+  const host = makeEl("div");
+  document.body.appendChild(host);
+
+  const plain = makeSelect([["time-desc", "Newest first"], ["time-asc", "Oldest first"]]);
+  plain.className = "field-select logs-sort-select";
+  const listbox = makeSelect([["a", "A"], ["b", "B"]]);
+  listbox.multiple = true;
+  const sized = makeSelect([["a", "A"], ["b", "B"]]);
+  sized.size = 4;
+  const optedOut = makeSelect([["a", "A"]]);
+  optedOut.setAttribute("data-native-select", "");
+
+  const nested = makeEl("div");
+  [plain, listbox, sized].forEach((el) => host.appendChild(el));
+  host.appendChild(nested);
+  nested.appendChild(optedOut);
+
+  ui.enhanceSelects(host);
+  assert.ok(plain.corvusSelect, "a plain select anywhere in the subtree gets the app's dropdown");
+  assert.equal(plain.corvusSelect.trigger.className,
+    "field-select logs-sort-select ui-select-trigger",
+    "and the trigger wears its classes, so .logs-sort .field-select still sizes it");
+  assert.equal(listbox.corvusSelect, undefined, "a multiple list box is not a dropdown");
+  assert.equal(sized.corvusSelect, undefined, "neither is a size>1 list box");
+  assert.equal(optedOut.corvusSelect, undefined, "data-native-select keeps the platform control");
+
+  const first = plain.corvusSelect;
+  ui.enhanceSelects(host);
+  assert.equal(plain.corvusSelect, first, "a second pass over the same subtree changes nothing");
+  host.parentNode.removeChild(host);
+}
+
+// ---------------------------------------------------------------------------
+// The field caption follows the control it labels
+// ---------------------------------------------------------------------------
+{
+  const field = makeEl("div");
+  document.body.appendChild(field);
+  const caption = makeEl("label");
+  caption.htmlFor = "tilesSource";
+  const sel = makeSelect([["osm", "OpenStreetMap"]]);
+  sel.id = "tilesSource";
+  field.appendChild(caption);
+  field.appendChild(sel);
+
+  const h = ui.enhanceSelect(sel);
+  assert.equal(sel.id, "tilesSource", "the id stays on the state — modules look it up by that");
+  assert.equal(h.trigger.id, "tilesSource-trigger");
+  assert.equal(caption.htmlFor, "tilesSource-trigger",
+    "clicking the caption must reach the control that is actually visible");
+  field.parentNode.removeChild(field);
+}
+
+// The caption is not always the control's sibling: index.html's serial-port
+// field puts the select one level deeper, in the row it shares with the
+// refresh button. An id is unique, so the search starts at the tree's root.
+{
+  const linkField = makeEl("div");
+  document.body.appendChild(linkField);
+  const caption = makeEl("label");
+  caption.htmlFor = "linkSerialPort";
+  const row = makeEl("div");
+  const sel = makeSelect([["", "Select serial port…"]]);
+  sel.id = "linkSerialPort";
+  linkField.appendChild(caption);
+  linkField.appendChild(row);
+  row.appendChild(sel);
+  row.appendChild(makeEl("button"));
+
+  const h = ui.enhanceSelect(sel);
+  assert.equal(caption.htmlFor, "linkSerialPort-trigger",
+    "a caption a level above the control still follows it");
+  assert.equal(h.trigger.id, "linkSerialPort-trigger");
+  linkField.parentNode.removeChild(linkField);
+}
+
+// ---------------------------------------------------------------------------
+// watchSelects: the page as it loads, and everything built after it
+// ---------------------------------------------------------------------------
+{
+  const host = makeEl("div");
+  document.body.appendChild(host);
+  const early = makeSelect([["115200", "115200"]]);   // an index.html select
+  early.className = "field-select link-select";
+  host.appendChild(early);
+
+  ui.watchSelects();
+  assert.ok(early.corvusSelect, "the boot pass reaches what the HTML already shipped");
+
+  const watcher = observers.filter((o) => o.target === document.body).pop();
+  assert.ok(watcher, "and a watcher is left on the body for what comes later");
+  assert.equal(watcher.opts.subtree, true);
+
+  // A setup screen rendering its card minutes after boot.
+  const card = makeEl("div");
+  const late = makeSelect([["all", "All messages"], ["error", "Errors only"]]);
+  card.appendChild(late);
+  host.appendChild(card);
+  watcher.cb([{ addedNodes: [card], removedNodes: [] }], watcher);
+  assert.ok(late.corvusSelect, "a select built long after boot is enhanced too");
+
+  // The wrapper the enhancement itself inserts comes back through the observer.
+  watcher.cb([{ addedNodes: [late.parentNode], removedNodes: [] }], watcher);
+  assert.ok(late.corvusSelect, "re-entry through the observer is a no-op, not a second dropdown");
+
+  // A select appended straight into a mounted parent arrives on its own.
+  const direct = makeSelect([["a", "A"]]);
+  host.appendChild(direct);
+  watcher.cb([{ addedNodes: [direct], removedNodes: [] }], watcher);
+  assert.ok(direct.corvusSelect, "…as does one added with no wrapper around it");
+
+  ui.watchSelects();
+  assert.equal(observers.filter((o) => o.target === document.body).length, 1,
+    "calling it again does not stack a second watcher on the body");
+  host.parentNode.removeChild(host);
+}
+
+// ---------------------------------------------------------------------------
+// A re-render under an open list takes the list with it
+// ---------------------------------------------------------------------------
+{
+  const { host, h } = mount();
+  h.open();
+  assert.equal(h.isOpen(), true);
+  assert.equal(h.menu.parentNode, document.body);
+
+  // The screen rebuilds. The menu is on <body>, not inside what was removed,
+  // so nothing but this would take it down.
+  host.parentNode.removeChild(host);
+  const watcher = observers.filter((o) => o.target === document.body).pop();
+  watcher.cb([{ addedNodes: [], removedNodes: [host] }], watcher);
+  assert.equal(h.isOpen(), false, "the list goes with the trigger it belonged to");
+  assert.equal(h.menu.parentNode, null, "and is taken off the body");
 }
 
 console.log("test_frontend_dropdown.js: all assertions passed");

@@ -66,7 +66,8 @@ class VehicleStateStore:
     # coalesce window: arming, flight mode, and link status/quality/connected
     # transitions are user-visible safety events, not smooth telemetry.
     IMMEDIATE_KEYS: frozenset[str] = frozenset(
-        {"armed", "mode", "link_status", "link_quality", "connected"}
+        {"armed", "mode", "link_status", "link_quality", "connected",
+         "landed_state", "autotune_state"}
     )
 
     def __init__(self, history_len: int = 600) -> None:
@@ -92,6 +93,32 @@ class VehicleStateStore:
             "rollspeed": 0.0,
             "pitchspeed": 0.0,
             "yawspeed": 0.0,
+            # Velocity in the local NED frame (GLOBAL_POSITION_INT.vx/vy/vz).
+            # groundspeed alone cannot be compared against a velocity setpoint:
+            # it is a magnitude, and the controller commands components.
+            "vx": 0.0,
+            "vy": 0.0,
+            "vz": 0.0,
+            # What the CONTROLLER asked for, next to what it got. The PID
+            # tuning page is unreadable without the pair: a response that lags
+            # its setpoint and one that rings past it look identical on their
+            # own, and they call for opposite corrections. All of these stay at
+            # 0.0 on a firmware that does not stream the setpoint messages,
+            # which the page renders as "no setpoint" rather than as a flat
+            # commanded zero.
+            "roll_sp": 0.0,
+            "pitch_sp": 0.0,
+            "yaw_sp": 0.0,
+            "rollspeed_sp": 0.0,
+            "pitchspeed_sp": 0.0,
+            "yawspeed_sp": 0.0,
+            "vx_sp": 0.0,
+            "vy_sp": 0.0,
+            "vz_sp": 0.0,
+            # True once ATTITUDE_TARGET / POSITION_TARGET_LOCAL_NED have
+            # actually arrived, so the page can tell "commanded zero" apart
+            # from "never told".
+            "setpoints_live": False,
             "battery_percent": 0,
             "battery_voltage": 0.0,
             "battery_current": 0.0,
@@ -104,6 +131,20 @@ class VehicleStateStore:
             "clipping_0": 0,
             "clipping_1": 0,
             "clipping_2": 0,
+            # Raw transmitter channel values in microseconds, channel 1 first,
+            # trimmed to what the receiver actually delivers. The Radio Control
+            # page's calibration is measured from these and from nothing else:
+            # PX4 has no autopilot-side RC calibration to narrate, so the sweep
+            # the operator performs is only ever visible here.
+            "rc_channels": [],
+            "rc_channel_count": 0,
+            # 0-100, or -1 when the receiver does not report link strength at
+            # all — which is not the same as a link strength of zero.
+            "rc_rssi": -1,
+            # True once RC_CHANNELS has actually arrived. A transmitter that is
+            # switched off looks identical to one that was never streamed
+            # without it, and only one of those is the operator's mistake.
+            "rc_live": False,
             "uplink": 0,
             "uplink_rssi": 0.0,
             "uplink_rxerrors": 0,
@@ -128,6 +169,23 @@ class VehicleStateStore:
             # and the UI must fall back to the plain armed state rather than
             # invent a clearance the vehicle never gave.
             "prearm_ok": None,
+            # MAV_LANDED_STATE from EXTENDED_SYS_STATE: 0 UNDEFINED,
+            # 1 ON_GROUND, 2 IN_AIR, 3 TAKEOFF, 4 LANDING. The autopilot's own
+            # answer to "is it flying", which is not derivable from the armed
+            # flag (armed on the ground is its own state) and only roughly
+            # derivable from altitude. 0 means the firmware does not publish it
+            # or nothing has arrived yet, and the bar falls back to height.
+            "landed_state": 0,
+            # Autotune, as the autopilot reports it. PX4 answers
+            # MAV_CMD_DO_AUTOTUNE_ENABLE with a repeated COMMAND_ACK carrying
+            # MAV_RESULT_IN_PROGRESS and a 0-100 progress field for as long as
+            # the tune runs, then one final ACK with the outcome. That stream is
+            # the only progress a GCS gets — the module's own uORB status topic
+            # never leaves the autopilot — so it is latched here rather than
+            # left in the console log.
+            # "": never started this session, "running", "done", "failed".
+            "autotune_state": "",
+            "autotune_progress": 0,
             "mission": [],
         }
         self._history: dict[str, collections.deque] = {
@@ -136,6 +194,8 @@ class VehicleStateStore:
             "battery": collections.deque(maxlen=history_len),
         }
         self._listeners: list[Callable[[dict[str, Any]], None]] = []
+        # Monotonic timestamp of the last heartbeat; 0.0 = none yet. See
+        # is_stale for why this is not the wall clock.
         self._last_heartbeat: float = 0.0
         # Monotonic ts of the last listener notification. Starts at 0.0 so the
         # first update after construction always notifies (monotonic time is
@@ -279,17 +339,23 @@ class VehicleStateStore:
         if snapshot is not None:
             self._notify(listeners, snapshot)
 
-    def heartbeat(self) -> None:
-        """Record that a heartbeat was received.
+    def heartbeat(self) -> float:
+        """Record that a heartbeat was received; return the instant recorded.
 
         On the False->True connected transition, notify listeners immediately
         so the UI flips to "connected" without waiting for the next telemetry
         update; subsequent heartbeats only refresh the staleness clock and do
         not re-notify.
+
+        The monotonic timestamp is handed back so the caller does not read the
+        clock a second time for the same arrival: the bridge feeds it straight
+        into its jitter window, which makes the staleness timer and the jitter
+        measurement agree on when the heartbeat landed instead of bracketing it.
         """
         with self._lock:
             was_connected = self._data["connected"]
-            self._last_heartbeat = time.time()
+            stamp = time.monotonic()
+            self._last_heartbeat = stamp
             self._data["connected"] = True
             if was_connected:
                 snapshot, listeners = None, []
@@ -301,6 +367,7 @@ class VehicleStateStore:
                 snapshot, listeners = self._dispatch_locked(immediate=True)
         if snapshot is not None:
             self._notify(listeners, snapshot)
+        return stamp
 
     def set_disconnected(self) -> None:
         """Mark vehicle as disconnected; always notifies immediately."""
@@ -311,6 +378,21 @@ class VehicleStateStore:
             # Readiness belongs to the link that just died; keeping the last
             # "READY" would leave a stale clearance on the bar.
             self._data["prearm_ok"] = None
+            # Same reasoning: whether it was flying belonged to the link that
+            # just died. Holding "IN_AIR" would leave the bar saying FLYING
+            # over a vehicle nobody can see any more.
+            self._data["landed_state"] = 0
+            # A tune in progress on the far side of a dead link is a tune this
+            # station can no longer follow or stop, so it is not reported as
+            # still running. The setpoint traces stop being live for the same
+            # reason: nothing is arriving to draw.
+            if self._data["autotune_state"] == "running":
+                self._data["autotune_state"] = "failed"
+            self._data["setpoints_live"] = False
+            # The channel bars belonged to the dead link too. Leaving them live
+            # would let a calibration keep measuring the last frame that ever
+            # arrived and write it to the vehicle as an endpoint.
+            self._data["rc_live"] = False
             # Keep link_connection/link_error so the UI can show the last
             # connection + last error after a disconnect; the mavlink agent
             # overrides link_status to "reconnecting" when about to retry.
@@ -321,11 +403,23 @@ class VehicleStateStore:
             self._notify(listeners, snapshot)
 
     def is_stale(self, timeout: float = 5.0) -> bool:
-        """Return True if no heartbeat within *timeout* seconds."""
+        """Return True if no heartbeat within *timeout* seconds.
+
+        Measured on the monotonic clock, not the wall clock. The wall clock on
+        a field laptop is not monotonic: it has no network time at power-on and
+        is corrected the moment one appears — by NTP when the operator finds a
+        hotspot, or by the GPS-disciplined time the autopilot itself supplies.
+        A correction of a few seconds forwards makes every link look stale at
+        once and drops a healthy connection mid-flight; a correction backwards
+        parks ``_last_heartbeat`` in the future, and the staleness test then
+        never fires again — a dead link that keeps its green dot and never
+        reconnects, which is the worse of the two. Elapsed time is a duration,
+        so it is measured with the clock that only ever moves forwards.
+        """
         with self._lock:
             if self._last_heartbeat == 0.0:
                 return True
-            return (time.time() - self._last_heartbeat) > timeout
+            return (time.monotonic() - self._last_heartbeat) > timeout
 
     def get_snapshot(self) -> dict[str, Any]:
         """Return a read-only snapshot of the current state.

@@ -83,11 +83,14 @@ class CorvusConfig:
     company logo (``{"logo": "<original filename>"}``; the bytes live beside
     the config file, never in it), and the optional input controls
     (``{"virtual_joystick": true}``, the on-screen stick over the map, plus
-    ``arrow_keys``/``wasd_keys`` for the two key clusters beside it), and
-    the interface size and desktop app icon (``{"scale": 1.25,
-    "inverted_app_icon": false, "app_icon_backplate": false}`` — the multiplier
+    ``arrow_keys``/``wasd_keys`` for the two key clusters beside it and
+    ``key_gain`` for how much stick one held key is worth), and
+    the interface size, desktop app icon and top bar (``{"scale": 1.25,
+    "inverted_app_icon": false, "app_icon_backplate": false,
+    "topbar_status_dots": false}`` — the multiplier
     the frontend puts on every length in the UI, which cut of the mark the
-    Dock / taskbar gets, and whether that mark sits on a filled backplate),
+    Dock / taskbar gets, whether that mark sits on a filled backplate, and
+    whether the top bar shows its per-block state dots),
     and the update check
     (``{"check": true, "skipped": "2026.09.27"}`` — whether to look at the
     GitHub releases at all, and the one release the operator dismissed).
@@ -98,7 +101,16 @@ class CorvusConfig:
     still loads cleanly.
     """
 
-    mavlink_connection: str = "udp:0.0.0.0:14540"
+    # 14550 is the port a ground station is expected on. 14540 — which this
+    # defaulted to — is PX4's *onboard* link, the one MAVSDK and MAVROS use,
+    # and "udp:" means bind, so Corvus was taking a socket a companion process
+    # on the same machine needs. Only one of them can hold it: whoever loses
+    # gets no telemetry at all, and on a simulator that looks exactly like a
+    # broken vehicle rather than a port clash.
+    #
+    # An existing config file keeps whatever it already has; this moves the
+    # default for a fresh install only.
+    mavlink_connection: str = "udp:0.0.0.0:14550"
     http_port: int = 8000
     tile_cache_dir: str = ""          # "" = ~/.corvus/tiles (default_cache_dir)
     tlog_dir: str = ""               # "" = ~/.corvus/logs
@@ -261,18 +273,39 @@ def _coerce_branding(raw: Any) -> dict[str, Any] | None:
 # yaw). All three feed the same MANUAL_CONTROL stream.
 _CONTROL_KEYS: tuple[str, ...] = ("virtual_joystick", "arrow_keys", "wasd_keys")
 
+# How much stick one held key is worth, as a fraction of full travel
+# (``controls.key_gain``; the frontend's GAIN_STEPS in src/js/joystick.js).
+# Mirrored here only as bounds, not as the step list, for the same reason
+# ``ui.scale`` is: the backend stores what the operator picked and has no
+# opinion about which steps a given build offers, but it must never persist a
+# gain of zero — a key that moves nothing — or one past the stop.
+_KEY_GAIN_MIN = 0.05
+_KEY_GAIN_MAX = 1.0
+
 
 def _coerce_controls(raw: Any) -> dict[str, Any] | None:
-    """Keep the boolean ``virtual_joystick``/``arrow_keys``/``wasd_keys`` keys; else None.
+    """Keep the three boolean surface switches and the numeric ``key_gain``; else None.
 
-    These are real safety-relevant switches, so only genuine booleans count: a
-    config carrying a string ``"true"`` reads as "not set", i.e. off, rather
+    The switches are real safety-relevant ones, so only genuine booleans count:
+    a config carrying a string ``"true"`` reads as "not set", i.e. off, rather
     than as an accidental enable. Keys that are absent stay absent, so turning
     one surface on never writes a decision about the other.
+
+    ``key_gain`` is not a decision to fly or not — the surfaces are already
+    off unless switched on — so it is coerced like ``ui.scale`` instead: a
+    number is clamped into the offered range, and anything else (a string, a
+    bool, NaN) is dropped so the frontend falls back to its own default rather
+    than to a value nobody chose.
     """
     if not isinstance(raw, dict):
         return None
-    out = {k: raw[k] for k in _CONTROL_KEYS if isinstance(raw.get(k), bool)}
+    out: dict[str, Any] = {k: raw[k] for k in _CONTROL_KEYS if isinstance(raw.get(k), bool)}
+    gain = raw.get("key_gain")
+    # bool is an int in Python; True must not read as a gain of 1.0.
+    if isinstance(gain, (int, float)) and not isinstance(gain, bool):
+        value = float(gain)
+        if value == value and value not in (float("inf"), float("-inf")):  # not NaN / inf
+            out["key_gain"] = min(max(value, _KEY_GAIN_MIN), _KEY_GAIN_MAX)
     return out or None
 
 
@@ -332,7 +365,7 @@ def _coerce_forwarding(raw: Any) -> dict[str, Any] | None:
 
 
 def _coerce_ui(raw: Any) -> dict[str, Any] | None:
-    """Keep the known UI keys (``scale``, the two app-icon keys); else None.
+    """Keep the known UI keys (``scale``, the app-icon and top-bar keys); else None.
 
     ``scale`` multiplies every length in the frontend (see ``--ui-scale`` in
     ``src/css/themes.css``). Clamped rather than rejected: a hand-edited 40
@@ -348,6 +381,12 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     runs. Genuine booleans only, like the controls keys: a config carrying
     ``"false"`` must not read as on. Each key is kept independently — a file
     that names only one of them is not a reason to drop the others.
+
+    ``topbar_status_dots`` asks the top bar to show the small state dot beside
+    the VEHICLE / STATUS / GPS / BATTERY captions. Absent means off: those
+    blocks already carry their state in the colour of the value itself, so the
+    dots are opt-in rather than something an old config file turns on by
+    saying nothing.
     """
     if not isinstance(raw, dict):
         return None
@@ -357,7 +396,7 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
         scale = float(value)
         if scale == scale and scale not in (float("inf"), float("-inf")):  # not NaN / inf
             out["scale"] = min(max(scale, _UI_SCALE_MIN), _UI_SCALE_MAX)
-    for key in ("inverted_app_icon", "app_icon_backplate"):
+    for key in ("inverted_app_icon", "app_icon_backplate", "topbar_status_dots"):
         if isinstance(raw.get(key), bool):
             out[key] = raw[key]
     return out or None

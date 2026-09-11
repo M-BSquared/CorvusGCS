@@ -66,6 +66,19 @@
    rather than leading somewhere empty. */
 .sshl-open:disabled { opacity: 0.35; cursor: default; }
 
+/* The connection typed in for a button that has none saved yet. Inset and
+   hairlined so six fields read as one answer to the Connection question above
+   them, rather than as six more questions of the same rank. */
+.sshl-newconn {
+  margin: -4px 0 14px;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-btn);
+  background: var(--surface-2);
+}
+.sshl-newconn .field:last-child { margin-bottom: 0; }
+
 /* The command a button will run, shown while editing it. A quiet inset surface
    rather than a field: it is the plugin telling the operator what it
    understood, not another control. Wrapping (not scrolling) because a wrong

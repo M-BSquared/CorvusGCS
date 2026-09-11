@@ -561,6 +561,25 @@ def test_filenames_are_sortable_and_cannot_escape_the_folder() -> None:
     assert _safe_component("") == "log"
 
 
+def test_the_filename_stamp_is_this_machines_clock_not_utc() -> None:
+    """The vehicle reports UTC; the operator remembers the wall clock.
+
+    A name an hour or two off the clock they flew by is a name they have to
+    convert before they can trust it, so the stamp is local — the same clock
+    the tlog names and the Analysis page use.
+    """
+    service = LogService(_FakeBridge(), log_dir=lambda: "/tmp")
+    utc = 1_700_000_000
+    name = service._filename(7, {"utc": utc})
+    assert name == "log_007" + time.strftime(
+        "_%Y-%m-%d_%H-%M", time.localtime(utc)) + ".ulg"
+
+
+def test_a_log_the_vehicle_never_stamped_still_gets_a_name() -> None:
+    assert LogService(_FakeBridge(), log_dir=lambda: "/tmp")._filename(
+        3, {"utc": 0}) == "log_003.ulg"
+
+
 def test_a_missing_download_folder_is_created(tmp_path: pathlib.Path) -> None:
     target = tmp_path / "nested" / "flightlogs"
     bridge = _FakeBridge({1: b"x" * 90})
@@ -580,6 +599,47 @@ def test_local_tlogs_are_listed(tmp_path: pathlib.Path) -> None:
                          tlog_dir=lambda: str(tmp_path))
     names = [t["name"] for t in service.local_tlogs()]
     assert names == ["corvus_2026-01-01.tlog"]
+    service.shutdown()
+
+
+def test_tlogs_carry_when_the_recording_opened(tmp_path: pathlib.Path) -> None:
+    """The start, not the mtime: "the flight at half two" is when it took off,
+    not when the link finally dropped. The recorder's own name carries it."""
+    (tmp_path / "20260910-143205-123456.tlog").write_bytes(b"x" * 8)
+    service = LogService(_FakeBridge(), log_dir=lambda: str(tmp_path),
+                         tlog_dir=lambda: str(tmp_path))
+    entry = service.local_tlogs()[0]
+    assert time.strftime("%Y-%m-%d %H:%M:%S",
+                         time.localtime(entry["started"])) == "2026-09-10 14:32:05"
+    service.shutdown()
+
+
+def test_a_handmade_tlog_falls_back_to_its_mtime(tmp_path: pathlib.Path) -> None:
+    """A file dropped into the folder by hand carries no stamp in its name;
+    its mtime is the only honest answer left, and it must still sort."""
+    path = tmp_path / "from-a-colleague.tlog"
+    path.write_bytes(b"x" * 8)
+    os.utime(path, (1_700_000_000, 1_700_000_000))
+    service = LogService(_FakeBridge(), log_dir=lambda: str(tmp_path),
+                         tlog_dir=lambda: str(tmp_path))
+    assert service.local_tlogs()[0]["started"] == 1_700_000_000
+    service.shutdown()
+
+
+def test_tlogs_come_back_newest_session_first(tmp_path: pathlib.Path) -> None:
+    """Ordered by when each session opened, not by filename. The two differ the
+    moment a de-collision suffix or a hand-copied file is in the folder."""
+    for name in ("20260910-090000-000000.tlog",
+                 "20260910-143205-000000.tlog",
+                 "20260909-235900-000000.tlog"):
+        (tmp_path / name).write_bytes(b"x" * 8)
+    service = LogService(_FakeBridge(), log_dir=lambda: str(tmp_path),
+                         tlog_dir=lambda: str(tmp_path))
+    assert [t["name"] for t in service.local_tlogs()] == [
+        "20260910-143205-000000.tlog",
+        "20260910-090000-000000.tlog",
+        "20260909-235900-000000.tlog",
+    ]
     service.shutdown()
 
 

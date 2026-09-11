@@ -55,6 +55,38 @@ BUSY_STATES = frozenset({"listing", "downloading", "erasing"})
 ERASE_SETTLE_S = 2.0
 
 
+# ``20260910-143205-123456`` (plus an optional ``_02`` de-collision suffix) —
+# the name MavlinkBridge._next_tlog_path writes, in this machine's LOCAL time.
+_TLOG_NAME_RE = re.compile(
+    r"^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})(?:-(\d{1,6}))?"
+)
+
+
+def _tlog_started(name: str, fallback: float) -> float:
+    """When a tlog's recording opened, as an epoch timestamp.
+
+    The stamp in the name is local wall-clock, so it is turned back into an
+    epoch through ``mktime`` rather than read as UTC — off by the machine's
+    offset otherwise, which is exactly the confusion this is meant to end.
+    A DST fold makes one hour a year ambiguous; ``mktime`` picks one, and an
+    hour's slip on a sort key is not worth carrying a tz database for.
+    """
+    match = _TLOG_NAME_RE.match(name)
+    if not match:
+        return float(fallback)
+    year, month, day, hour, minute, second = (int(g) for g in match.groups()[:6])
+    try:
+        stamp = time.mktime(
+            (year, month, day, hour, minute, second, 0, 1, -1)
+        )
+    except (OverflowError, ValueError):
+        return float(fallback)
+    micro = match.group(7)
+    if micro:
+        stamp += int(micro.ljust(6, "0")) / 1_000_000.0
+    return stamp
+
+
 def _safe_component(value: Any) -> str:
     """A filename fragment that cannot escape the target directory."""
     text = "".join(c if (c.isalnum() or c in "-_.") else "-" for c in str(value or ""))
@@ -177,18 +209,35 @@ class LogService:
         except Exception:  # noqa: BLE001
             return ""
 
-    def local_tlogs(self) -> list[dict[str, Any]]:
-        """tlogs Corvus already recorded on this laptop."""
-        out: list[dict[str, Any]] = []
-        directory = ""
+    def resolve_tlog_dir(self) -> str:
+        """Where the recordings live, or "" when nothing is configured.
+
+        Public because the review endpoint has to resolve a filename inside
+        this folder and check it did not escape — the same confinement the
+        ULog review does against the download folder.
+        """
         try:
-            directory = (self._tlog_dir() if self._tlog_dir else "") or ""
+            return (self._tlog_dir() if self._tlog_dir else "") or ""
         except Exception:  # noqa: BLE001
-            return out
+            return ""
+
+    def local_tlogs(self) -> list[dict[str, Any]]:
+        """tlogs Corvus already recorded on this laptop, newest session first.
+
+        Each entry carries both ends of the session: ``started`` is when the
+        recording opened, ``mtime`` when the last frame was written. The start
+        is the one an operator sorts and searches by — "the flight at half two"
+        is when it took off, not when the link finally dropped — so it is read
+        from the recorder's own filename rather than from the file's mtime.
+        A file that does not follow that name (one dropped into the folder by
+        hand) falls back to its mtime, which is the only honest answer left.
+        """
+        out: list[dict[str, Any]] = []
+        directory = self.resolve_tlog_dir()
         if not directory:
             return out
         try:
-            names = sorted(os.listdir(directory), reverse=True)
+            names = os.listdir(directory)
         except OSError:
             return out
         for name in names:
@@ -201,8 +250,10 @@ class LogService:
                 continue
             out.append({
                 "name": name, "size": stat.st_size,
+                "started": _tlog_started(name, stat.st_mtime),
                 "mtime": stat.st_mtime, "path": path,
             })
+        out.sort(key=lambda f: f["started"], reverse=True)
         return out
 
     # ------------------------------------------------------------------
@@ -560,12 +611,22 @@ class LogService:
         return True, path
 
     def _filename(self, log_id: int, entry: dict[str, Any]) -> str:
-        """``log_<id>_<UTC date>.ulg`` — sortable, and readable a month later."""
+        """``log_<id>_<local date>.ulg`` — sortable, and readable a month later.
+
+        The vehicle reports the log's time as UTC, and the name used to keep it
+        that way. Nobody flies in UTC: the operator remembers the flight by the
+        clock on the wall, and a name an hour or two off that is a name they
+        have to convert before they can trust it. So the stamp is this
+        machine's local time, matching both the tlog names and every time this
+        page shows. Files downloaded before this change keep their UTC names —
+        harmless, because a log is matched to the vehicle by id and size, never
+        by the stamp in its name.
+        """
         stamp = ""
         utc = int(entry.get("utc") or 0)
         if utc > 0:
             try:
-                stamp = time.strftime("_%Y-%m-%d_%H-%M", time.gmtime(utc))
+                stamp = time.strftime("_%Y-%m-%d_%H-%M", time.localtime(utc))
             except (ValueError, OSError):
                 stamp = ""
         return _safe_component(f"log_{log_id:03d}{stamp}") + ".ulg"

@@ -242,12 +242,15 @@ class _FakeConn:
 
 
 class _FakeClock:
-    """Controllable wall clock for the store's is_stale() (time.time)."""
+    """Controllable monotonic clock for the store's is_stale()."""
 
     def __init__(self, start: float = 100.0) -> None:
         self.now = start
 
     def time(self) -> float:
+        return self.now
+
+    def monotonic(self) -> float:
         return self.now
 
 
@@ -313,7 +316,7 @@ def test_bridge_receive_loop_writes_raw_frame_to_tlog(
     monkeypatch.setattr("corvus.mavlink_bridge.default_log_dir", lambda: str(tmp_path))
     # Pin the store clock so is_stale() returns False inside the receive loop.
     clock = _FakeClock()
-    monkeypatch.setattr("corvus.state_store.time.time", clock.time)
+    monkeypatch.setattr("corvus.state_store.time.monotonic", clock.monotonic)
 
     store = VehicleStateStore()
     store.heartbeat()  # last_heartbeat == clock.now (100.0)
@@ -402,7 +405,7 @@ def test_bridge_tlog_write_failure_never_breaks_recv_loop(
     """A tlog write exception is swallowed; the recv loop keeps going."""
     monkeypatch.setattr("corvus.mavlink_bridge.default_log_dir", lambda: str(tmp_path))
     clock = _FakeClock()
-    monkeypatch.setattr("corvus.state_store.time.time", clock.time)
+    monkeypatch.setattr("corvus.state_store.time.monotonic", clock.monotonic)
 
     store = VehicleStateStore()
     store.heartbeat()

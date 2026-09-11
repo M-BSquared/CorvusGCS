@@ -644,13 +644,28 @@ def test_erase_logs_refused_without_a_link() -> None:
 
 # ---------------------------------------------------------------------------
 # autotune
+#
+# The autotune runs IN FLIGHT: PX4 injects steps into the rate controller and
+# identifies the airframe from the response, so it rejects the command while
+# the vehicle is disarmed. These tests pin that precondition in the direction
+# PX4 actually enforces it — the bridge used to refuse unless the vehicle was
+# *disarmed*, which meant the command only ever left the GCS in the one state
+# PX4 refuses it in, and no autotune could ever start.
 # ---------------------------------------------------------------------------
+
+def flying_bridge() -> MavlinkBridge:
+    """A ready bridge that is armed and airborne — the autotune precondition."""
+    bridge = ready_bridge()
+    bridge._store.update(
+        armed=True, landed_state=mavutil.mavlink.MAV_LANDED_STATE_IN_AIR)
+    return bridge
+
 
 @pytest.mark.parametrize("px4_version", ["v1.16.0", "v1.17.0", "v1.18.0"])
 def test_autotune_sends_full_tune_params_on_accepted_for_supported_px4(
     px4_version: str,
 ) -> None:
-    bridge = ready_bridge()
+    bridge = flying_bridge()
     bridge._store.update(px4_version=px4_version)
 
     def on_send(args: tuple) -> None:
@@ -669,7 +684,7 @@ def test_autotune_sends_full_tune_params_on_accepted_for_supported_px4(
 
 @pytest.mark.parametrize("axis", ["roll", "pitch", "yaw"])
 def test_autotune_rejects_unsupported_per_axis_requests(axis: str) -> None:
-    bridge = ready_bridge()
+    bridge = flying_bridge()
 
     assert bridge.autotune(axis) is False
     assert "unknown autotune axis" in bridge.get_last_command_error().lower()
@@ -677,7 +692,7 @@ def test_autotune_rejects_unsupported_per_axis_requests(axis: str) -> None:
 
 
 def test_autotune_initial_in_progress_ack_confirms_successful_start() -> None:
-    bridge = ready_bridge()
+    bridge = flying_bridge()
 
     def on_send(args: tuple) -> None:
         bridge._dispatch(ack(
@@ -688,30 +703,77 @@ def test_autotune_initial_in_progress_ack_confirms_successful_start() -> None:
 
     assert bridge.autotune("all") is True
     assert bridge.get_last_command_error() == ""
+    assert bridge._store.get_snapshot()["autotune_state"] == "running"
 
 
 def test_autotune_unknown_axis_returns_false() -> None:
-    bridge = ready_bridge()
+    bridge = flying_bridge()
     assert bridge.autotune("sideways") is False
     assert "unknown autotune axis" in bridge.get_last_command_error()
     assert bridge._conn.mav.commands == []
 
 
-def test_autotune_refuses_if_armed() -> None:
+def test_autotune_refused_while_disarmed_says_to_take_off() -> None:
+    """The regression: disarmed is the one state PX4 will not autotune in."""
     bridge = ready_bridge()
-    bridge._store.update(armed=True)
     assert bridge.autotune("all") is False
-    assert "armed" in bridge.get_last_command_error()
+    error = bridge.get_last_command_error()
+    assert "in flight" in error and "take off" in error
     assert bridge._conn.mav.commands == []
+
+
+def test_autotune_refused_while_armed_on_the_ground() -> None:
+    bridge = ready_bridge()
+    bridge._store.update(
+        armed=True, landed_state=mavutil.mavlink.MAV_LANDED_STATE_ON_GROUND)
+    assert bridge.autotune("all") is False
+    assert "on the ground" in bridge.get_last_command_error()
+    assert bridge._conn.mav.commands == []
+
+
+def test_autotune_allowed_when_the_landed_state_is_unknown() -> None:
+    """A firmware that never sends EXTENDED_SYS_STATE must not be locked out.
+
+    landed_state 0 means "not reported", not "on the ground". Blocking on the
+    absence of a message would refuse a command PX4 would have accepted, and
+    PX4 stays the authority — it rejects the tune itself if the vehicle really
+    is grounded.
+    """
+    bridge = ready_bridge()
+    bridge._store.update(armed=True, landed_state=0)
+
+    def on_send(args: tuple) -> None:
+        bridge._dispatch(ack(int(args[2]), mavutil.mavlink.MAV_RESULT_ACCEPTED))
+
+    bridge._conn = FakeConnection(on_send)
+    assert bridge.autotune("all") is True
+
+
+def test_autotune_stop_sends_param1_zero_and_needs_no_precondition() -> None:
+    """Stopping is never gated: an operator ending the injection is not asked
+    to satisfy a precondition first (mirrors cancel_calibration)."""
+    bridge = ready_bridge()   # disarmed, on the ground
+
+    def on_send(args: tuple) -> None:
+        bridge._dispatch(ack(int(args[2]), mavutil.mavlink.MAV_RESULT_ACCEPTED))
+
+    bridge._conn = FakeConnection(on_send)
+    assert bridge.autotune("all", enable=False) is True
+    cmd = bridge._conn.mav.commands[0]
+    assert cmd[2] == mavutil.mavlink.MAV_CMD_DO_AUTOTUNE_ENABLE
+    assert cmd[4] == pytest.approx(0.0)       # param1 = disable
+    assert bridge._store.get_snapshot()["autotune_state"] == ""
 
 
 def test_autotune_returns_false_when_disconnected() -> None:
     bridge = MavlinkBridge(VehicleStateStore())
+    bridge._store.update(
+        armed=True, landed_state=mavutil.mavlink.MAV_LANDED_STATE_IN_AIR)
     assert bridge.autotune("all") is False
 
 
 def test_autotune_deny_ack_returns_false() -> None:
-    bridge = ready_bridge()
+    bridge = flying_bridge()
 
     def on_send(args: tuple) -> None:
         bridge._dispatch(ack(int(args[2]), mavutil.mavlink.MAV_RESULT_DENIED))
@@ -719,6 +781,70 @@ def test_autotune_deny_ack_returns_false() -> None:
     bridge._conn = FakeConnection(on_send)
     assert bridge.autotune("all") is False
     assert "DENIED" in bridge.get_last_command_error()
+    assert bridge._store.get_snapshot()["autotune_state"] == "failed"
+
+
+# ---------------------------------------------------------------------------
+# autotune progress, out of the repeated COMMAND_ACK
+#
+# PX4 re-acknowledges MAV_CMD_DO_AUTOTUNE_ENABLE for the whole run with
+# IN_PROGRESS + a 0-100 progress field. That stream is the only progress a
+# ground station gets, so the bridge latches it into the store.
+# ---------------------------------------------------------------------------
+
+def autotune_ack(result: int, progress: int = 0) -> FakeMessage:
+    return FakeMessage(
+        message_type="COMMAND_ACK",
+        command=mavutil.mavlink.MAV_CMD_DO_AUTOTUNE_ENABLE,
+        result=result,
+        progress=progress,
+    )
+
+
+def test_autotune_in_progress_acks_publish_progress() -> None:
+    bridge = flying_bridge()
+    bridge._dispatch(autotune_ack(mavutil.mavlink.MAV_RESULT_IN_PROGRESS, 42))
+    snap = bridge._store.get_snapshot()
+    assert snap["autotune_state"] == "running"
+    assert snap["autotune_progress"] == 42
+
+
+def test_autotune_progress_is_clamped_to_the_reported_range() -> None:
+    bridge = flying_bridge()
+    bridge._dispatch(autotune_ack(mavutil.mavlink.MAV_RESULT_IN_PROGRESS, 250))
+    assert bridge._store.get_snapshot()["autotune_progress"] == 100
+
+
+def test_autotune_final_accepted_ack_completes_a_running_tune() -> None:
+    bridge = flying_bridge()
+    bridge._dispatch(autotune_ack(mavutil.mavlink.MAV_RESULT_IN_PROGRESS, 90))
+    bridge._dispatch(autotune_ack(mavutil.mavlink.MAV_RESULT_ACCEPTED))
+    snap = bridge._store.get_snapshot()
+    assert snap["autotune_state"] == "done"
+    assert snap["autotune_progress"] == 100
+
+
+def test_accepted_ack_alone_does_not_claim_a_finished_tune() -> None:
+    """The very first ACK only means "command taken"."""
+    bridge = flying_bridge()
+    bridge._dispatch(autotune_ack(mavutil.mavlink.MAV_RESULT_ACCEPTED))
+    assert bridge._store.get_snapshot()["autotune_state"] == ""
+
+
+def test_autotune_rejection_ack_fails_the_tune_and_warns() -> None:
+    bridge = flying_bridge()
+    bridge._dispatch(
+        autotune_ack(mavutil.mavlink.MAV_RESULT_TEMPORARILY_REJECTED))
+    snap = bridge._store.get_snapshot()
+    assert snap["autotune_state"] == "failed"
+    assert any("Autotune refused" in w["msg"] for w in snap["warnings"])
+
+
+def test_disconnect_ends_a_running_tune_this_station_can_no_longer_follow() -> None:
+    bridge = flying_bridge()
+    bridge._dispatch(autotune_ack(mavutil.mavlink.MAV_RESULT_IN_PROGRESS, 30))
+    bridge._store.set_disconnected()
+    assert bridge._store.get_snapshot()["autotune_state"] == "failed"
 
 
 # ---------------------------------------------------------------------------

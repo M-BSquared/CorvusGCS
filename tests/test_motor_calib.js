@@ -561,12 +561,19 @@ async function testLeavingTheWizardStopsTheWatchdogAndTheStream() {
   assert.equal(fake.unsubCalls, 1, "and releases it on teardown");
 }
 
-async function testPlotlyGraphsArePurgedOnTeardown() {
+async function testTheCalibrationPageOwnsNoTuningGraphs() {
+  /* The PID band used to live at the bottom of this page: one autotune button
+     and three live graphs. It moved to its own sub-page (setup-tuning.js),
+     because an autotune runs in flight and a calibration does not — the band's
+     armed-gating was inherited from calibration and made the autotune
+     unstartable. This asserts the separation stays: a calibration screen that
+     silently regains a Plotly chart has regained the tuning band with it. */
   const { container } = reset();
   const destroy = Corvus.setupCalibration.render(container, () => {});
-  assert.equal(window.Plotly.reactCalls.length, 3, "three PID graphs initialised");
+  assert.equal(window.Plotly.reactCalls.length, 0, "no chart on a calibration page");
+  assert.equal(findByClass(container, "tune-chart").length, 0, "and none in the DOM");
   destroy();
-  assert.equal(window.Plotly.purgeCalls.length, 3, "each PID graph purged exactly once");
+  assert.equal(window.Plotly.purgeCalls.length, 0, "so nothing to purge on teardown");
 }
 
 async function run() {
@@ -587,7 +594,7 @@ async function run() {
     testMotorCancelNoPost,
     testDestroyReleasesEverythingTheWizardTookOut,
     testLeavingTheWizardStopsTheWatchdogAndTheStream,
-    testPlotlyGraphsArePurgedOnTeardown,
+    testTheCalibrationPageOwnsNoTuningGraphs,
   ];
   for (const t of tests) {
     await t();

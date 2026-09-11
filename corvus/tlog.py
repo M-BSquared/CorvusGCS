@@ -15,9 +15,12 @@ from __future__ import annotations
 
 import collections
 import json
+import logging
 import pathlib
 import threading
 from typing import Any
+
+logger = logging.getLogger("corvus.tlog")
 
 # A reader identifies the metadata header by this leading byte sequence on the
 # first line; everything after the newline is raw MAVLink frames.
@@ -54,6 +57,13 @@ class TlogWriter:
         self._stop = threading.Event()
         self._conn_str = ""
         self._header_written = False
+        # Set once a write to disk has failed. A field laptop fills its disk
+        # mid-flight; the writer thread used to die on the resulting OSError
+        # with nothing logged, so recording stopped silently and stop() then
+        # raised out of _ensure_header before it reached the close, leaking the
+        # file handle. Now the failure is reported once, the writer keeps
+        # draining (so the producer never backs up), and stop() still closes.
+        self._failed = False
         self._thread = threading.Thread(
             target=self._writer_loop, name="tlog-writer", daemon=True,
         )
@@ -75,7 +85,7 @@ class TlogWriter:
         Drops the oldest buffered frame when the deque is full (recent data is
         preserved). A stop()d writer discards further frames.
         """
-        if self._stop.is_set():
+        if self._stop.is_set() or self._failed:
             return
         with self._cond:
             self._buf.append(raw_bytes)
@@ -93,7 +103,12 @@ class TlogWriter:
         if self._thread.is_alive():
             self._thread.join(timeout=2.0)
         # Best-effort final header + flush + close; safe if the writer did it.
-        self._ensure_header()
+        # Guarded so a failing disk cannot skip the close below and leak the
+        # descriptor — the whole point of stop() is that the handle goes away.
+        try:
+            self._ensure_header()
+        except Exception:  # noqa: BLE001 - teardown never raises
+            self._note_failure("tlog header write failed")
         with self._file_lock:
             if self._file is not None and not self._file.closed:
                 try:
@@ -113,6 +128,17 @@ class TlogWriter:
     # ------------------------------------------------------------------
 
     def _writer_loop(self) -> None:
+        try:
+            self._drain_until_stopped()
+        except Exception:  # noqa: BLE001 - the writer thread must not die silently
+            self._note_failure("tlog writer stopped after a write failure")
+        with self._file_lock:
+            try:
+                self._file.flush()
+            except Exception:
+                pass
+
+    def _drain_until_stopped(self) -> None:
         while not self._stop.is_set():
             with self._cond:
                 while not self._buf and not self._stop.is_set():
@@ -134,11 +160,15 @@ class TlogWriter:
             self._write_batch(batch)
         # An empty tlog still carries its metadata header for attributability.
         self._ensure_header()
-        with self._file_lock:
-            try:
-                self._file.flush()
-            except Exception:
-                pass
+
+    def _note_failure(self, message: str) -> None:
+        """Report the first write failure and stop accepting further frames."""
+        already = self._failed
+        self._failed = True
+        with self._cond:
+            self._buf.clear()
+        if not already:
+            logger.warning("%s: %s", message, self._path, exc_info=True)
 
     def _ensure_header(self) -> None:
         """Write the metadata header once (double-checked under the file lock)."""

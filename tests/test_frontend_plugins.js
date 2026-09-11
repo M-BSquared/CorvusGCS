@@ -735,13 +735,16 @@ function destroyLaunchers() {
 function mountLauncher(opts) {
   const o = opts || {};
   const calls = [];
-  const connections = [
+  // Mutable: the launcher can now create one, and the endpoint answers with
+  // the list the new entry is in.
+  const connections = o.connections || [
     { name: "companion", host: "10.0.0.7", username: "pilot", port: 22 },
     { name: "ground", host: "10.0.0.2", username: "ops", port: 22 },
   ];
   let sessions = (o.sessions || []).map((name) => ({ name, connected: true }));
   let settings = o.saved || {};
   const terminals = [];
+  const termOpts = [];
   const container = makeEl("div");
   mountedLaunchers.push(container);
   Corvus.pluginSshLauncher.init(container, {
@@ -753,24 +756,48 @@ function mountLauncher(opts) {
     },
     postJson: (url, body) => {
       calls.push({ url, body });
+      // The backend modelled closely enough to matter: a connect makes the
+      // session live, and a send only succeeds while it IS live — which is
+      // what tells the launcher whether it has to open a shell at all.
       if (url === "/api/ssh/connect") {
-        return Promise.resolve(o.connect || { ok: true, connected: true });
+        const res = o.connect || { ok: true, connected: true };
+        if (res.ok && res.connected && !sessions.some((x) => x.name === body.name)) {
+          sessions.push({ name: body.name, connected: true });
+        }
+        return Promise.resolve(res);
       }
-      if (url === "/api/ssh/send" || url === "/api/ssh/disconnect") {
+      if (url === "/api/ssh/send") {
+        return Promise.resolve({
+          ok: sessions.some((x) => x.name === body.name && x.connected),
+        });
+      }
+      if (url === "/api/ssh/disconnect") {
+        sessions = sessions.filter((x) => x.name !== body.name);
         return Promise.resolve({ ok: true });
+      }
+      if (url === "/api/ssh/connections") {
+        if (o.upsert && o.upsert.ok === false) return Promise.resolve(o.upsert);
+        // The real endpoint answers with the redacted list, the new entry in it.
+        connections.push({
+          name: body.name, host: body.host, port: body.port, username: body.username,
+        });
+        return Promise.resolve({ ok: true, connections: connections.map((c) => c) });
       }
       return Promise.resolve(o.run || { ok: true, stdout: "4711", stderr: "", command: "x" });
     },
     getSettings: () => settings,
     saveSettings: (patch) => { settings = Object.assign({}, settings, patch); return Promise.resolve(settings); },
-    terminal: (session) => { terminals.push(session); return true; },
+    terminal: (session, opts) => { terminals.push(session); termOpts.push(opts || null); return true; },
     console: () => {},
     notification: () => {},
   });
   return {
-    container, calls, connections, terminals,
+    container, calls, connections, terminals, termOpts,
     savedNow: () => settings,
     setSessions: (names) => { sessions = names.map((name) => ({ name, connected: true })); },
+    /** Every /api/ssh/send body, in order. */
+    sends: () => calls.filter((c) => c.url === "/api/ssh/send").map((c) => c.body),
+    connects: () => calls.filter((c) => c.url === "/api/ssh/connect").map((c) => c.body),
     /** The launch buttons currently on the shelf, in order. */
     shelf: () => querySel(container.children, ".sshl-launch"),
     /** A row's tool button, found by what it announces rather than by index —
@@ -782,6 +809,21 @@ function mountLauncher(opts) {
     byLabel: (text) => querySel(container.children, ".btn")
       .filter((b) => b.children.some((c) => c.textContent === text)),
     fields: () => querySel(container.children, ".field-input"),
+    /** The inline new-connection form's inputs, in the order they are asked. */
+    newConnFields: () => {
+      const box = querySel(container.children, ".sshl-newconn")[0];
+      return box ? querySel(box.children, ".field-input") : [];
+    },
+    /** Whether the form is showing: the container is always in the card, but
+     *  its fields exist only while a connection is being typed in. */
+    newConnShowing: () => {
+      const box = querySel(container.children, ".sshl-newconn")[0];
+      return !!box && !box.hidden && querySel(box.children, ".field-input").length > 0;
+    },
+    /** One input by what it announces — robust against fields appearing
+     *  between it and the top of the form. */
+    fieldBy: (aria) => querySel(container.children, ".field-input")
+      .find((i) => i.getAttribute("aria-label") === aria),
     select: () => querySel(container.children, ".field-select")[0],
     preview: () => querySel(container.children, ".sshl-preview")[0],
     status: () => querySel(container.children, ".ui-msg")[0],
@@ -791,6 +833,12 @@ function mountLauncher(opts) {
 
 /** Fire an element's first click listener. */
 function click(el) { el._listeners.click[0](); }
+
+/** Pick an option in a <select> built by Corvus.ui.select. */
+function changeTo(el, value) {
+  el.value = value;
+  (el._listeners.change || []).forEach((cb) => cb());
+}
 
 /** Type into an input built by Corvus.ui.input (fires its "input" listener). */
 function typeInto(el, value) {
@@ -875,14 +923,65 @@ async function testSshLauncherTerminalButtonOpensASessionAndTypesTheLine() {
   click(h.shelf()[0]);
   await flushMicrotasks();
   await flushMicrotasks();
+  await flushMicrotasks();
 
   const connect = h.calls.find((c) => c.url === "/api/ssh/connect");
   assert.deepEqual(connect.body, { name: "ssh-launcher/a", from: "companion" },
-    "the session is the button's own, borrowing the saved connection's credentials");
-  const send = h.calls.find((c) => c.url === "/api/ssh/send");
-  assert.deepEqual(send.body, { name: "ssh-launcher/a", data: "cd -- '/srv' && ./run.sh\n" });
+    "with nothing running, the button opens the session it needs");
+  assert.deepEqual(h.sends()[h.sends().length - 1],
+    { name: "ssh-launcher/a", data: "cd -- '/srv' && ./run.sh\n" },
+    "and types the line into it");
   assert.ok(!h.calls.some((c) => c.url === "/api/ssh/run"),
     "a terminal button never goes through the one-shot run endpoint");
+  Corvus.pluginSshLauncher.destroy(h.container);
+}
+
+/* The heart of it: a key on a shelf pressed twice means "run it again". It
+   runs again in the SAME shell — one run under the last, one scrollback — and
+   the session is never thrown away and rebuilt, which used to kill whatever
+   was still running and hand back a blank screen. */
+async function testSshLauncherPressingItAgainRunsInTheSameSession() {
+  const h = mountLauncher({
+    saved: { buttons: [TERMINAL_BUTTON] },
+    sessions: ["ssh-launcher/a"],
+  });
+  await flushMicrotasks();
+  click(h.shelf()[0]);
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  assert.deepEqual(h.connects(), [],
+    "a live session is never replaced — that would stop what is running");
+  assert.deepEqual(h.sends(), [{ name: "ssh-launcher/a", data: "cd -- '/srv' && ./run.sh\n" }],
+    "the line simply goes to the shell that is already there");
+
+  click(h.shelf()[0]);
+  await flushMicrotasks();
+  await flushMicrotasks();
+  assert.equal(h.sends().length, 2, "and again on the next press");
+  assert.deepEqual(h.connects(), []);
+  assert.match(h.status().textContent, /sent again/,
+    "the message says it went to the terminal that was already open");
+  Corvus.pluginSshLauncher.destroy(h.container);
+}
+
+/* A shell that has since ended leaves the button pressable: the send comes
+   back ok:false, and only then is a new session opened. */
+async function testSshLauncherReopensASessionThatHasEnded() {
+  const h = mountLauncher({
+    saved: { buttons: [TERMINAL_BUTTON] },
+    sessions: ["ssh-launcher/a"],
+  });
+  await flushMicrotasks();
+  h.setSessions([]);                      // the remote shell exited
+  click(h.shelf()[0]);
+  await flushMicrotasks();
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  assert.deepEqual(h.connects(), [{ name: "ssh-launcher/a", from: "companion" }],
+    "the session is opened again");
+  assert.equal(h.sends().length, 2, "the probe that failed, then the real one");
   Corvus.pluginSshLauncher.destroy(h.container);
 }
 
@@ -897,8 +996,10 @@ async function testSshLauncherTerminalButtonReportsAFailedConnect() {
   await flushMicrotasks();
 
   assert.equal(h.status().textContent, "Start mission: Authentication failed");
-  assert.ok(!h.calls.some((c) => c.url === "/api/ssh/send"),
-    "nothing is typed into a session that did not open");
+  // One send: the probe that discovered there was no session. Nothing is typed
+  // after the connect failed — there is nothing on the far end to type into.
+  assert.equal(h.sends().length, 1);
+  assert.equal(h.dots().length, 0, "and the row does not claim to be running");
   Corvus.pluginSshLauncher.destroy(h.container);
 }
 
@@ -936,6 +1037,52 @@ async function testSshLauncherBackgroundButtonHasNoArrow() {
   Corvus.pluginSshLauncher.destroy(h.container);
 }
 
+/* A launch is a launch. Opening the window on every press threw a terminal at
+   an operator who asked for a program to start — four buttons on the pad would
+   have meant four windows in the way. The arrow is the request to watch. */
+async function testSshLauncherLaunchingOpensNoTerminalWindow() {
+  const h = mountLauncher({ saved: { buttons: [TERMINAL_BUTTON] } });
+  await flushMicrotasks();
+  click(h.shelf()[0]);
+  await flushMicrotasks();
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  const asked = h.termOpts.filter((o) => !o || !o.existingOnly);
+  assert.deepEqual(asked, [], "nothing was opened for the operator to look at");
+  // A window that IS open must still be repaired when a new shell took over
+  // the session name, so the launch may touch one — quietly, and only that.
+  h.termOpts.forEach((o) => assert.equal(o.existingOnly, true,
+    "a launch only ever repairs a window that is already there"));
+  Corvus.pluginSshLauncher.destroy(h.container);
+}
+
+/* Two buttons are two sessions: the whole point of a shelf is that the mission
+   script and the video pipeline run side by side, each in a terminal of its
+   own when the operator asks to see them. */
+async function testSshLauncherTwoButtonsUseTwoSeparateSessions() {
+  const second = { id: "b", label: "Video", connection: "ground",
+    directory: "/opt/cam", command: "./stream.sh", mode: "terminal" };
+  const h = mountLauncher({ saved: { buttons: [TERMINAL_BUTTON, second] } });
+  await flushMicrotasks();
+  click(h.shelf()[0]);
+  await flushMicrotasks();
+  await flushMicrotasks();
+  await flushMicrotasks();
+  click(h.shelf()[1]);
+  await flushMicrotasks();
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  assert.deepEqual(h.connects().map((b) => b.name),
+    ["ssh-launcher/a", "ssh-launcher/b"],
+    "each button opens a session of its own");
+  assert.deepEqual(h.connects().map((b) => b.from), ["companion", "ground"],
+    "each on its own saved connection");
+  assert.equal(h.dots().length, 2, "and both rows show they are running");
+  Corvus.pluginSshLauncher.destroy(h.container);
+}
+
 async function testSshLauncherArrowOpensTheSessionsTerminal() {
   const h = mountLauncher({
     saved: { buttons: [TERMINAL_BUTTON] },
@@ -945,8 +1092,10 @@ async function testSshLauncherArrowOpensTheSessionsTerminal() {
   const arrow = h.tool("Open the terminal for Start mission");
   assert.equal(arrow.disabled, false, "a live session makes the arrow live too");
   assert.equal(h.dots().length, 1, "and the row shows it is running");
-  // Pressing it restarts rather than promising a second copy.
-  assert.equal(h.shelf()[0].getAttribute("aria-label"), "Restart Start mission");
+  // Pressing it runs the command again in that same session, so it says so
+  // rather than promising a second copy — or threatening a restart.
+  assert.equal(h.shelf()[0].getAttribute("aria-label"), "Run Start mission again");
+  assert.match(h.shelf()[0].title, /already in/);
 
   click(arrow);
   assert.deepEqual(h.terminals[0], {
@@ -955,7 +1104,9 @@ async function testSshLauncherArrowOpensTheSessionsTerminal() {
     host: "10.0.0.7",
     port: 22,
     username: "pilot",
-  }, "the panel gets the session key plus a readable title and the host it is on");
+  }, "the window gets the session key plus a readable title and the host it is on");
+  assert.deepEqual(h.termOpts[0], { reattach: false, existingOnly: false },
+    "the arrow opens the window — it is the one thing that does");
   Corvus.pluginSshLauncher.destroy(h.container);
 }
 
@@ -1098,23 +1249,164 @@ async function testSshLauncherShowsStderrOfAFailedBackgroundRun() {
   Corvus.pluginSshLauncher.destroy(h.container);
 }
 
-async function testSshLauncherWithoutConnectionsCannotAdd() {
-  const container = makeEl("div");
-  mountedLaunchers.push(container);
-  Corvus.pluginSshLauncher.init(container, {
-    requestJson: () => Promise.resolve({ connections: [], sessions: [] }),
-    postJson: () => Promise.resolve({ ok: true }),
-    getSettings: () => ({}),
-    saveSettings: () => Promise.resolve({}),
-    terminal: () => true,
-    console: () => {},
-    notification: () => {},
+/* A connection typed into the editor, checked without a DOM. */
+function testSshLauncherNewConnectionHelpers() {
+  const { derivedName, newConnectionError, newConnectionBody } = Corvus.pluginSshLauncher;
+
+  assert.equal(derivedName({ host: "10.0.0.7", username: "pilot" }), "pilot@10.0.0.7",
+    "the name writes itself the way the operator would have typed it");
+  assert.equal(derivedName({ host: "10.0.0.7" }), "10.0.0.7");
+  assert.equal(derivedName({ username: "pilot" }), "", "a user without a host is not a name");
+
+  assert.match(newConnectionError({ host: "" }, []), /host/,
+    "a connection with nowhere to go cannot be saved");
+  assert.equal(newConnectionError({ host: "10.0.0.7", port: "22" }, []), "");
+  assert.match(newConnectionError({ host: "10.0.0.7", port: "70000" }, []), /1 and 65535/);
+  assert.match(newConnectionError({ host: "10.0.0.7", port: "ssh" }, []), /1 and 65535/);
+  // The one that matters: upserting an existing name would REPLACE that
+  // connection's credentials and silently repoint a card the operator trusts.
+  assert.match(
+    newConnectionError({ host: "10.0.0.7", username: "pilot" }, ["pilot@10.0.0.7"]),
+    /already saved/);
+  assert.match(newConnectionError({ host: "x", name: "companion" }, ["companion"]), /already saved/);
+
+  assert.deepEqual(
+    newConnectionBody({ host: " 10.0.0.7 ", username: " pilot ", password: " s3cret ", port: "" }),
+    { name: "pilot@10.0.0.7", host: "10.0.0.7", port: 22, username: "pilot",
+      password: " s3cret ", key_path: "" },
+    "fields are trimmed, the port defaults to 22 — and the password is left exactly as typed");
+}
+
+/* Without a single saved connection the shelf used to be a dead end: the
+   editor offered an empty list and the note sent the operator to Settings.
+   A shelf is built on the pad as often as at a desk, so the form is right
+   there instead. */
+async function testSshLauncherWithoutConnectionsOffersToTypeOneIn() {
+  const h = mountLauncher({ connections: [] });
+  await flushMicrotasks();
+  const note = querySel(h.container.children, ".sshl-note")[0];
+  assert.ok(note && /New connection/.test(note.textContent),
+    "the empty state points at the form, not at a trip to Settings");
+
+  click(h.byLabel("Add button")[0]);
+  assert.ok(h.newConnShowing(), "the editor opens straight into the connection form");
+  assert.equal(h.select().value, Corvus.pluginSshLauncher.NEW_CONNECTION);
+  Corvus.pluginSshLauncher.destroy(h.container);
+}
+
+/* A password field that is merely hidden is still a password field in the
+   page, so the form only exists while it is the answer. */
+async function testSshLauncherPickingASavedConnectionHasNoForm() {
+  const h = mountLauncher({ saved: { buttons: [] } });
+  await flushMicrotasks();
+  click(h.byLabel("Add button")[0]);
+  assert.equal(h.newConnShowing(), false, "a saved connection needs no form");
+  changeTo(h.select(), Corvus.pluginSshLauncher.NEW_CONNECTION);
+  assert.ok(h.newConnShowing(), "and picking New connection… brings one");
+  changeTo(h.select(), "companion");
+  assert.equal(h.newConnFields().length, 0, "going back takes the fields away again");
+  Corvus.pluginSshLauncher.destroy(h.container);
+}
+
+async function testSshLauncherSavesATypedInConnectionBeforeTheButton() {
+  const h = mountLauncher({ saved: { buttons: [] } });
+  await flushMicrotasks();
+  click(h.byLabel("Add button")[0]);
+  changeTo(h.select(), Corvus.pluginSshLauncher.NEW_CONNECTION);
+
+  const [host, port, user, password] = h.newConnFields();
+  typeInto(host, "10.0.0.9");
+  typeInto(user, "pilot");
+  typeInto(password, "s3cret");
+  typeInto(port, "2222");
+  typeInto(h.fieldBy("Command to start"), "./run.sh");
+  typeInto(h.fieldBy("Remote folder"), "/srv");
+
+  assert.equal(h.preview().textContent, "ssh pilot@10.0.0.9 'cd /srv && ./run.sh'",
+    "the preview names the connection that is about to be created");
+
+  click(h.byLabel("Save")[0]);
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  const upsert = h.calls.find((c) => c.url === "/api/ssh/connections" && c.body);
+  assert.deepEqual(upsert.body, {
+    name: "pilot@10.0.0.9", host: "10.0.0.9", port: 2222, username: "pilot",
+    password: "s3cret", key_path: "",
+  }, "the credentials go to the backend's store, under a name it can resolve");
+
+  const saved = h.savedNow().buttons;
+  assert.equal(saved.length, 1, "the button is on the shelf");
+  assert.equal(saved[0].connection, "pilot@10.0.0.9",
+    "and carries the NAME — never the password");
+  assert.equal(JSON.stringify(saved).indexOf("s3cret"), -1,
+    "nothing secret reaches the plugin's settings file");
+  assert.equal(h.shelf().length, 1);
+  Corvus.pluginSshLauncher.destroy(h.container);
+}
+
+async function testSshLauncherOffersTheNewConnectionToTheNextButton() {
+  const h = mountLauncher({ saved: { buttons: [] } });
+  await flushMicrotasks();
+  click(h.byLabel("Add button")[0]);
+  changeTo(h.select(), Corvus.pluginSshLauncher.NEW_CONNECTION);
+  typeInto(h.newConnFields()[0], "10.0.0.9");
+  typeInto(h.newConnFields()[2], "pilot");
+  typeInto(h.fieldBy("Command to start"), "./run.sh");
+  click(h.byLabel("Save")[0]);
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  click(h.byLabel("Add button")[0]);
+  const values = h.select().children.map((o) => o.value);
+  assert.ok(values.includes("pilot@10.0.0.9"),
+    "a connection typed in once is simply pickable the next time");
+  Corvus.pluginSshLauncher.destroy(h.container);
+}
+
+async function testSshLauncherRefusesAConnectionNameThatIsAlreadySaved() {
+  const h = mountLauncher({ saved: { buttons: [] } });
+  await flushMicrotasks();
+  click(h.byLabel("Add button")[0]);
+  changeTo(h.select(), Corvus.pluginSshLauncher.NEW_CONNECTION);
+  typeInto(h.newConnFields()[0], "10.9.9.9");
+  typeInto(h.fieldBy("Command to start"), "./run.sh");
+  // "companion" is already a saved connection; saving over it would repoint it.
+  typeInto(h.newConnFields()[5], "companion");
+
+  assert.equal(h.byLabel("Save")[0].disabled, true, "Save refuses the collision");
+  assert.match(h.status().textContent, /already saved/,
+    "and says why, because a disabled button explains nothing");
+  assert.ok(!h.calls.some((c) => c.url === "/api/ssh/connections" && c.body),
+    "nothing was written (the GET at init is not a write)");
+
+  typeInto(h.newConnFields()[5], "companion-2");
+  assert.equal(h.byLabel("Save")[0].disabled, false, "another name is fine");
+  Corvus.pluginSshLauncher.destroy(h.container);
+}
+
+async function testSshLauncherKeepsTheFormWhenTheConnectionCannotBeSaved() {
+  const h = mountLauncher({
+    saved: { buttons: [] },
+    upsert: { ok: false, error: "host must be a non-empty string" },
   });
   await flushMicrotasks();
-  const note = querySel(container.children, ".sshl-note")[0];
-  assert.ok(note && note.textContent.includes("Settings"),
-    "the empty state points at where connections are added");
-  Corvus.pluginSshLauncher.destroy(container);
+  click(h.byLabel("Add button")[0]);
+  changeTo(h.select(), Corvus.pluginSshLauncher.NEW_CONNECTION);
+  typeInto(h.newConnFields()[0], "10.0.0.9");
+  typeInto(h.newConnFields()[3], "s3cret");
+  typeInto(h.fieldBy("Command to start"), "./run.sh");
+  click(h.byLabel("Save")[0]);
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  assert.equal(h.status().textContent, "host must be a non-empty string");
+  assert.equal((h.savedNow().buttons || []).length, 0,
+    "a button that names a connection the backend does not have is not a button");
+  assert.ok(h.newConnShowing(), "the form stays up");
+  assert.equal(h.newConnFields()[3].value, "s3cret",
+    "with what was typed still in it — a typo is fixed, not retyped");
+  Corvus.pluginSshLauncher.destroy(h.container);
 }
 
 async function testSshLauncherDestroyStopsThePollAndLateCallbacks() {
@@ -1197,6 +1489,10 @@ async function run() {
   await testSshLauncherBackgroundButtonUsesTheRunEndpoint();
   await testSshLauncherArrowIsOffUntilSomethingIsRunning();
   await testSshLauncherBackgroundButtonHasNoArrow();
+  await testSshLauncherPressingItAgainRunsInTheSameSession();
+  await testSshLauncherReopensASessionThatHasEnded();
+  await testSshLauncherLaunchingOpensNoTerminalWindow();
+  await testSshLauncherTwoButtonsUseTwoSeparateSessions();
   await testSshLauncherArrowOpensTheSessionsTerminal();
   await testSshLauncherLaunchingMarksTheRowRunning();
   await testSshLauncherAddsAButton();
@@ -1206,7 +1502,13 @@ async function run() {
   await testSshLauncherRemovingARunningButtonAsksAndClosesItsTerminal();
   await testSshLauncherSaveIsBlockedWithoutACommand();
   await testSshLauncherShowsStderrOfAFailedBackgroundRun();
-  await testSshLauncherWithoutConnectionsCannotAdd();
+  testSshLauncherNewConnectionHelpers();
+  await testSshLauncherWithoutConnectionsOffersToTypeOneIn();
+  await testSshLauncherPickingASavedConnectionHasNoForm();
+  await testSshLauncherSavesATypedInConnectionBeforeTheButton();
+  await testSshLauncherOffersTheNewConnectionToTheNextButton();
+  await testSshLauncherRefusesAConnectionNameThatIsAlreadySaved();
+  await testSshLauncherKeepsTheFormWhenTheConnectionCannotBeSaved();
   await testSshLauncherDestroyStopsThePollAndLateCallbacks();
 
   // Let the best-effort postAction microtasks (from destroy) drain so the

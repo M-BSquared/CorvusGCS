@@ -95,7 +95,7 @@
           </div>
           <div class="takeoff-body">
             <div class="takeoff-slider-row">
-              <input type="range" min="1" max="50" value="10" step="1" class="takeoff-slider" id="takeoffAlt" />
+              <input type="range" min="1" max="120" value="10" step="1" class="takeoff-slider" id="takeoffAlt" />
               <span class="takeoff-alt-value" id="takeoffAltValue">10 m</span>
             </div>
             <button class="takeoff-confirm" id="takeoffConfirm">
@@ -140,15 +140,16 @@
         <div class="flight-overlay glass" id="flightOverlay">
           <div class="instruments">
             <div class="instrument compass-wrap">
+              <!-- North-up rose: the card is fixed and the needle carries the
+                   heading, so N is always up and the operator reads a bearing
+                   the same way they read the map under it. The digits used to
+                   be repeated in a pill on the bezel; they are in the readout
+                   directly below, which is larger and does not crowd the ring. -->
               <svg class="compass" viewBox="-100 -100 200 200" aria-label="Compass">
                 <circle class="compass-ring" cx="0" cy="0" r="88" />
                 <g id="compassCard"></g>
                 <g id="compassArrow"></g>
-                <g class="compass-fixed">
-                  <rect class="compass-window" x="-26" y="-94" width="52" height="20" rx="4" />
-                  <text class="compass-window-text" id="compassWindow" x="0" y="-84" text-anchor="middle" dominant-baseline="central">000</text>
-                </g>
-                <circle class="compass-hub" cx="0" cy="0" r="3" />
+                <circle class="compass-hub" cx="0" cy="0" r="4" />
               </svg>
               <div class="instrument-readout">
                 <span class="readout-label">HEADING</span>
@@ -157,21 +158,32 @@
             </div>
 
             <div class="instrument attitude-wrap">
+              <!-- Same two-part build as the compass: an outer ring carrying
+                   the scale, an inset face inside it. The ball used to run all
+                   the way to r=88 with the roll ticks lying on the sky, which
+                   left the dial with no edge at all once the bezel came off. -->
               <svg class="attitude" viewBox="-100 -100 200 200" aria-label="Attitude indicator">
                 <defs>
-                  <clipPath id="adi-clip"><circle cx="0" cy="0" r="88" /></clipPath>
+                  <clipPath id="adi-clip"><circle cx="0" cy="0" r="74" /></clipPath>
                 </defs>
+                <circle class="adi-ring" cx="0" cy="0" r="88" />
                 <g clip-path="url(#adi-clip)">
                   <g id="adiInner"></g>
                 </g>
+                <circle class="adi-ball-edge" cx="0" cy="0" r="74" />
+                <!-- The roll ticks are the FIXED reference and the sky pointer
+                     is what moves; they used to share one rotating group, which
+                     meant the pointer sat over the 0 tick at every bank angle. -->
+                <g id="adiRollArc" class="adi-roll-arc"></g>
                 <g id="adiRollScale" class="adi-roll-scale"></g>
+                <!-- Two bars and a dot. The bent wingtips this replaced were a
+                     literal quote of a mechanical instrument, which is exactly
+                     the detail that made the dial look drawn rather than read. -->
                 <g class="adi-aircraft">
-                  <line class="adi-wing" x1="-36" y1="0" x2="-14" y2="0" />
-                  <line class="adi-wing" x1="14" y1="0" x2="36" y2="0" />
-                  <line class="adi-tail" x1="0" y1="0" x2="0" y2="12" />
-                  <circle class="adi-center" cx="0" cy="0" r="2.5" />
+                  <path class="adi-mark-outline" d="M -32 0 L -13 0 M 32 0 L 13 0" />
+                  <path class="adi-mark" d="M -32 0 L -13 0 M 32 0 L 13 0" />
+                  <circle class="adi-mark-dot" cx="0" cy="0" r="2.2" />
                 </g>
-                <circle class="adi-bezel" cx="0" cy="0" r="88" />
               </svg>
               <div class="instrument-readout">
                 <span class="readout-label">ATTITUDE</span>
@@ -222,58 +234,82 @@
                 <div class="link-status-error" id="linkStatusError" hidden></div>
               </div>
 
+              <!-- The link the operator already flew, first: recent entries
+                   carry the port and the baud, so a laptop reopened at the
+                   field is one click from the link it had rather than two
+                   dropdowns and a guess. Hidden entirely until there is one. -->
+              <div class="link-recent" id="linkRecent" hidden></div>
+
+              <!-- One link, one card. Two cards with two primary Connect
+                   buttons read as two links that could both be open; there is
+                   only ever one, and whichever branch was not in use sat above
+                   the fold as permanent dead weight. The switch opens on the
+                   kind that was last connected, so the common case is no
+                   switch at all. -->
               <div class="link-card">
                 <div class="link-card-title">
-                  <i data-lucide="cable"></i>
-                  <span>Serial</span>
+                  <i data-lucide="plug"></i>
+                  <span>New connection</span>
                 </div>
-                <div class="link-field">
-                  <label class="link-field-label" for="linkSerialPort">Port</label>
-                  <div class="link-row">
-                    <select class="field-select field-input-mono link-select" id="linkSerialPort" autocomplete="off" aria-label="Serial port">
-                      <option value="">Select serial port…</option>
+                <div class="link-kinds" role="tablist" aria-label="Connection type">
+                  <button class="link-kind" id="linkKindSerial" type="button" role="tab"
+                    data-kind="serial" aria-selected="true" aria-controls="linkSerialFields">
+                    <i data-lucide="cable"></i>
+                    <span>Serial</span>
+                  </button>
+                  <button class="link-kind" id="linkKindNet" type="button" role="tab"
+                    data-kind="net" aria-selected="false" aria-controls="linkNetFields">
+                    <i data-lucide="network"></i>
+                    <span>UDP / TCP</span>
+                  </button>
+                </div>
+
+                <div class="link-kind-fields" id="linkSerialFields" role="tabpanel"
+                  aria-labelledby="linkKindSerial">
+                  <div class="link-field">
+                    <label class="link-field-label" for="linkSerialPort">Port</label>
+                    <div class="link-row">
+                      <select class="field-select field-input-mono link-select" id="linkSerialPort" autocomplete="off" aria-label="Serial port">
+                        <option value="">Select serial port…</option>
+                      </select>
+                      <button class="icon-btn" id="linkRefreshPorts" type="button"
+                        title="Refresh serial ports" aria-label="Refresh serial ports">
+                        <i data-lucide="refresh-cw"></i>
+                      </button>
+                    </div>
+                    <!-- Said here rather than only in the status row: the port
+                         is the thing that went missing, and this is where the
+                         operator is looking when they notice. -->
+                    <div class="link-hint link-hint-warn" id="linkPortHint" hidden></div>
+                  </div>
+                  <div class="link-field">
+                    <label class="link-field-label" for="linkBaud">Baud</label>
+                    <select class="field-select field-input-mono link-select" id="linkBaud" autocomplete="off" aria-label="Baud rate">
+                      <option value="9600">9600</option>
+                      <option value="19200">19200</option>
+                      <option value="38400">38400</option>
+                      <option value="57600" selected>57600 (SiK Radio v3)</option>
+                      <option value="115200">115200</option>
+                      <option value="230400">230400</option>
                     </select>
-                    <button class="icon-btn" id="linkRefreshPorts" type="button"
-                      title="Refresh serial ports" aria-label="Refresh serial ports">
-                      <i data-lucide="refresh-cw"></i>
-                    </button>
                   </div>
                 </div>
-                <div class="link-field">
-                  <label class="link-field-label" for="linkBaud">Baud</label>
-                  <select class="field-select field-input-mono link-select" id="linkBaud" autocomplete="off" aria-label="Baud rate">
-                    <option value="9600">9600</option>
-                    <option value="19200">19200</option>
-                    <option value="38400">38400</option>
-                    <option value="57600" selected>57600 (SiK Radio v3)</option>
-                    <option value="115200">115200</option>
-                    <option value="230400">230400</option>
-                  </select>
+
+                <div class="link-kind-fields" id="linkNetFields" role="tabpanel"
+                  aria-labelledby="linkKindNet" hidden>
+                  <div class="link-field">
+                    <label class="link-field-label" for="linkCustomConn">Connection string</label>
+                    <input class="field-input field-input-mono link-input" id="linkCustomConn" type="text"
+                      placeholder="udp:0.0.0.0:14550" autocomplete="off" spellcheck="false" />
+                    <div class="link-presets" id="linkPresets"></div>
+                  </div>
                 </div>
-                <button class="btn link-connect" id="linkSerialConnect" type="button" data-variant="primary" data-shape="block">
+
+                <button class="btn link-connect" id="linkConnect" type="button" data-variant="primary" data-shape="block">
                   <i data-lucide="plug"></i>
                   <span>Connect</span>
                 </button>
               </div>
-
-              <div class="link-card">
-                <div class="link-card-title">
-                  <i data-lucide="network"></i>
-                  <span>UDP / TCP</span>
-                </div>
-                <div class="link-field">
-                  <label class="link-field-label" for="linkCustomConn">Connection string</label>
-                  <input class="field-input field-input-mono link-input" id="linkCustomConn" type="text"
-                    placeholder="udp:0.0.0.0:14540" autocomplete="off" spellcheck="false" />
-                  <div class="link-presets" id="linkPresets"></div>
-                </div>
-                <button class="btn link-connect" id="linkCustomConnect" type="button" data-variant="primary" data-shape="block">
-                  <i data-lucide="plug"></i>
-                  <span>Connect</span>
-                </button>
-              </div>
-
-              <div class="link-recent" id="linkRecent" hidden></div>
 
               <!-- Sharing the one physical link. A serial port, a USB
                    autopilot and a SiK radio can each be opened by exactly one
@@ -428,6 +464,7 @@
 <script src="js/instruments.js"></script>
 <script src="js/hud-panel.js"></script>
 <script src="js/ssh-term.js"></script>
+<script src="js/term-window.js"></script>
 <script src="js/panel.js"></script>
 <script src="js/link.js"></script>
 <script src="js/plugins.js"></script>
@@ -435,6 +472,8 @@
 <script src="js/calib-figures.js"></script>
 <script src="js/calib-protocol.js"></script>
 <script src="js/setup-calibration.js"></script>
+<script src="js/setup-control.js"></script>
+<script src="js/setup-tuning.js"></script>
 <script src="js/setup-motors.js"></script>
 <script src="js/setup-safety.js"></script>
 <script src="js/setup-parameters.js"></script>

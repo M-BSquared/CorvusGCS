@@ -9,7 +9,9 @@ window.Corvus = window.Corvus || {};
  *   ULog   PX4's own high-rate log, on the flight controller's SD card. Listed
  *          and pulled off the vehicle over the MAVLink LOG_* protocol.
  *   tlog   the MAVLink stream Corvus recorded on this laptop. Already local;
- *          listed here so one flight's evidence is findable in one place.
+ *          listed here so one flight's evidence is findable in one place, and
+ *          readable as a Telemetry Review — the same plots, from the log that
+ *          exists even when the ULog never came off the aircraft.
  *
  * The folder is picked once, in a single slim row at the top, and persisted to
  * the config — the point of the feature is that after a flight you press one
@@ -34,6 +36,8 @@ window.Corvus = window.Corvus || {};
  *   POST /api/logs/download  {ids:[...]} queue a sequential download
  *   GET  /api/logs/review?file=<name>
  *                            one ULog reduced to review plots + its messages
+ *   GET  /api/logs/tlog-review?file=<name>
+ *                            one recorded tlog, in the same payload shape
  *   POST /api/logs/erase     erase EVERY on-board log (no per-log delete exists)
  *   POST /api/logs/cancel
  *   POST /api/logs/dir       {dir} set + persist the download folder
@@ -75,58 +79,171 @@ Corvus.analysis = (function () {
     return n + " B";
   }
 
-  function formatUtc(seconds) {
+  function pad2(n) { return (n < 10 ? "0" : "") + n; }
+
+  /**
+   * An epoch timestamp as this computer's own wall clock.
+   *
+   * Everything upstream of here is UTC — the vehicle stamps its logs in it,
+   * epochs are defined in it — and the page used to print it that way. Nobody
+   * flies in UTC. An operator looking for "the flight before lunch" was doing
+   * the offset in their head every time, and in summer, for half the world,
+   * getting it wrong. So every time this page shows is local, formatted by
+   * hand rather than through toLocaleString: the field order stays
+   * year-month-day whatever locale the browser thinks it is in, which is the
+   * order that reads the same as the filenames next to it.
+   */
+  function formatStamp(seconds, withSeconds) {
     const n = Number(seconds) || 0;
     if (n <= 0) return "no timestamp";
-    try {
-      return new Date(n * 1000).toISOString().replace("T", " ").slice(0, 16) + " UTC";
-    } catch (_e) {
-      return "no timestamp";
-    }
+    const d = new Date(n * 1000);
+    if (isNaN(d.getTime())) return "no timestamp";
+    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate())
+      + " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes())
+      + (withSeconds ? ":" + pad2(d.getSeconds()) : "");
   }
 
-  /* The nine values the Current Telemetry card shows, as label + formatter.
-     A table rather than nine append calls, so the card can be repainted from a
-     telemetry frame without restating the layout. */
-  const TELEMETRY_ROWS = [
-    ["Altitude AMSL", (s) => Math.round(s.altitude_amsl) + " m"],
-    ["Altitude AGL", (s) => Math.round(s.altitude_agl) + " m"],
-    ["Groundspeed", (s) => s.groundspeed.toFixed(1) + " m/s"],
-    ["Vertical speed", (s) => s.vspeed.toFixed(1) + " m/s"],
-    ["Heading", (s) => Math.round(s.heading) + "°"],
-    ["Pitch", (s) => s.pitch.toFixed(1) + "°"],
-    ["Roll", (s) => s.roll.toFixed(1) + "°"],
-    ["Battery", (s) => s.battery_voltage.toFixed(1) + " V (" + s.battery_percent + "%)"],
-    ["GPS Fix", (s) => s.gps_fix + " (" + s.gps_satellites + " sats)"],
+  /* ---------------- sorting ----------------
+     Both log lists are read the same way — "what came off the aircraft this
+     afternoon?" — so both get the same control rather than one page ordering
+     by id and the other by filename, which is what they did before. */
+
+  const SORT_KEY_PREFIX = "corvus.analysis.sort.";
+  const SORT_OPTIONS = [
+    { value: "time-desc", label: "Newest first" },
+    { value: "time-asc", label: "Oldest first" },
+    { value: "size-desc", label: "Largest first" },
+  ];
+  const ULOG_SORT_OPTIONS = SORT_OPTIONS.concat(
+    [{ value: "id-desc", label: "Log number" }]);
+  const TLOG_SORT_OPTIONS = SORT_OPTIONS.concat(
+    [{ value: "name-asc", label: "Name (A–Z)" }]);
+
+  function readSort(kind, fallback, allowed) {
+    let value = "";
+    try { value = window.localStorage.getItem(SORT_KEY_PREFIX + kind) || ""; }
+    catch (_e) { value = ""; }
+    return allowed.some((o) => o.value === value) ? value : fallback;
+  }
+
+  function writeSort(kind, value) {
+    try { window.localStorage.setItem(SORT_KEY_PREFIX + kind, value); }
+    catch (_e) { /* a browser with storage off still sorts, just not next time */ }
+  }
+
+  /**
+   * `items` ordered by `mode`. `timeOf` and `tieOf` are what makes this shared
+   * between the two lists: a ULog is timed by the vehicle's clock and tied by
+   * its log number, a tlog by when its recording opened and its filename.
+   *
+   * A log the vehicle never stamped is not sorted onto the time axis at all —
+   * it lands after everything that has a time, in either direction. Treating
+   * "no timestamp" as 1970 would put those rows at one end of the list and
+   * make it look like the ordering had failed.
+   */
+  function sortRows(items, mode, timeOf, tieOf) {
+    const rows = items.slice();
+    if (mode === "size-desc") {
+      rows.sort((a, b) => (Number(b.size) || 0) - (Number(a.size) || 0) || tieOf(a, b));
+      return rows;
+    }
+    if (mode === "id-desc" || mode === "name-asc") {
+      rows.sort(tieOf);
+      return rows;
+    }
+    const dir = mode === "time-asc" ? -1 : 1;
+    rows.sort((a, b) => {
+      const ta = timeOf(a), tb = timeOf(b);
+      if (!ta !== !tb) return ta ? -1 : 1;
+      if (ta && tb && ta !== tb) return dir * (tb - ta);
+      return tieOf(a, b);
+    });
+    return rows;
+  }
+
+  /* The nine values the Current Telemetry card shows, one small tile each:
+     label, the number, its unit, and — where the frame carries a second number
+     worth seeing — a muted detail under it. A table rather than nine append
+     calls, so the grid can be repainted from a telemetry frame without
+     restating the layout. */
+  const TELEMETRY_TILES = [
+    { label: "Altitude AMSL", icon: "mountain", unit: "m",
+      value: (s) => String(Math.round(s.altitude_amsl)) },
+    { label: "Altitude AGL", icon: "arrow-up-from-line", unit: "m",
+      value: (s) => String(Math.round(s.altitude_agl)) },
+    { label: "Groundspeed", icon: "gauge", unit: "m/s",
+      value: (s) => s.groundspeed.toFixed(1) },
+    { label: "Vertical speed", icon: "move-vertical", unit: "m/s",
+      value: (s) => s.vspeed.toFixed(1) },
+    { label: "Heading", icon: "compass", unit: "°",
+      value: (s) => String(Math.round(s.heading)) },
+    { label: "Pitch", icon: "plane", unit: "°",
+      value: (s) => s.pitch.toFixed(1) },
+    { label: "Roll", icon: "rotate-3d", unit: "°",
+      value: (s) => s.roll.toFixed(1) },
+    { label: "Battery", icon: "battery-medium", unit: "V",
+      value: (s) => s.battery_voltage.toFixed(1),
+      detail: (s) => s.battery_percent + "%" },
+    { label: "GPS Fix", icon: "satellite",
+      value: (s) => String(s.gps_fix),
+      detail: (s) => s.gps_satellites + " sats" },
   ];
 
   /**
    * Current Telemetry, live. It used to snapshot at render and then sit there —
    * a card labelled "current" showing whatever was true when the page opened.
-   * Returns {el, destroy}.
+   *
+   * Nine tiles rather than nine full-width rows: the values are short, so a row
+   * each left the whole right half of the card empty and pushed the log tools
+   * a screen down. Returns {el, destroy}.
    */
   function telemetryCard() {
-    const card = Corvus.ui.card({});
-    const values = [];
-    TELEMETRY_ROWS.forEach(([label]) => {
-      const r = Corvus.ui.row(label, "—");
-      values.push(r.querySelector(".page-row-value"));
-      card.appendChild(r);
+    const body = S.el("div", "tele-body");
+    const grid = S.el("div", "tele-grid");
+    const tiles = TELEMETRY_TILES.map((spec) => {
+      const el = S.el("div", "tele-tile");
+      const head = S.el("div", "tele-tile-head");
+      head.appendChild(S.icon(spec.icon));
+      head.appendChild(S.el("span", "tele-tile-label", spec.label));
+      el.appendChild(head);
+      const line = S.el("div", "tele-tile-line");
+      const num = S.el("span", "tele-tile-value", "—");
+      line.appendChild(num);
+      const unit = S.el("span", "tele-tile-unit", spec.unit || "");
+      unit.hidden = !spec.unit;
+      line.appendChild(unit);
+      el.appendChild(line);
+      /* The detail line is present on every tile, empty ones included: without
+         it the tiles in a row would stand at two different heights. */
+      const detail = S.el("div", "tele-tile-detail");
+      el.appendChild(detail);
+      grid.appendChild(el);
+      return { spec, el, num, unit, detail };
     });
+    body.appendChild(grid);
     const empty = Corvus.ui.empty("Vehicle not connected.");
-    card.appendChild(empty);
+    body.appendChild(empty);
 
     function paint(s) {
       const connected = !!(s && s.connected);
       empty.hidden = connected;
-      TELEMETRY_ROWS.forEach(([, format], i) => {
-        const target = values[i];
-        if (!target || !target.parentNode) return;
-        target.parentNode.hidden = !connected;
-        if (!connected) return;
+      /* Disconnected shows the dashes rather than an empty card: the grid is
+         the page's own frame, and a frame that vanishes on link loss reads as
+         a bug. */
+      grid.dataset.state = connected ? "live" : "off";
+      tiles.forEach((t) => {
         let text = "—";
-        try { text = format(s); } catch (_e) { text = "—"; }
-        if (target.textContent !== text) target.textContent = text;
+        let detail = "";
+        if (connected) {
+          try { text = t.spec.value(s); } catch (_e) { text = "—"; }
+          if (t.spec.detail) {
+            try { detail = t.spec.detail(s); } catch (_e) { detail = ""; }
+          }
+        }
+        const live = connected && text !== "—";
+        if (t.num.textContent !== text) t.num.textContent = text;
+        if (t.unit.hidden === live) t.unit.hidden = !live;
+        if (t.detail.textContent !== detail) t.detail.textContent = detail;
       });
     }
 
@@ -135,7 +252,7 @@ Corvus.analysis = (function () {
       ? Corvus.telemetry.subscribe(paint)
       : function () {};
     return {
-      el: Corvus.ui.section({ title: "Current Telemetry", body: card }),
+      el: Corvus.ui.section({ title: "Current Telemetry", body: body }),
       destroy: unsub,
     };
   }
@@ -193,6 +310,11 @@ Corvus.analysis = (function () {
     let destroyed = false;
     let inFlight = false;
     let view = "tiles";        // "tiles" | "ulog" | "tlog" | "review"
+    // Per-list, and remembered: an operator who works oldest-first works that
+    // way every time, and re-picking it on every visit is the kind of small
+    // friction this page exists to remove.
+    let ulogSort = readSort("ulog", "time-desc", ULOG_SORT_OPTIONS);
+    let tlogSort = readSort("tlog", "time-desc", TLOG_SORT_OPTIONS);
     let reviewToken = 0;       // so a slow read cannot paint over a newer one
     let eraseModal = null;     // open confirm dialog, so destroy() can drop it
 
@@ -212,6 +334,40 @@ Corvus.analysis = (function () {
 
     function logs() { return (status && status.logs) || []; }
     function tlogs() { return (status && status.tlogs) || []; }
+
+    /** The vehicle's logs in the order the sort control asks for. The backend
+     *  hands them over by id; ordering is a reading preference, so it lives
+     *  here rather than in a round trip. */
+    function sortedLogs() {
+      return sortRows(
+        logs(), ulogSort,
+        (l) => Number(l.utc) || 0,
+        (a, b) => (Number(b.id) || 0) - (Number(a.id) || 0),
+      );
+    }
+
+    function sortedTlogs() {
+      return sortRows(
+        tlogs(), tlogSort,
+        (t) => Number(t.started) || Number(t.mtime) || 0,
+        (a, b) => String(a.name || "").localeCompare(String(b.name || "")),
+      );
+    }
+
+    /** The sort control both lists carry. Repainting the list is the caller's
+     *  job because the two lists rebuild differently — one has checkboxes to
+     *  keep. */
+    function sortControl(kind, options, current, onPick) {
+      const wrap = S.el("div", "logs-sort");
+      const field = Corvus.ui.select({
+        ariaLabel: "Sort logs by", className: "logs-sort-select",
+        options: options, value: current,
+        onChange: (value) => { writeSort(kind, value); onPick(value); },
+      });
+      wrap.appendChild(S.el("span", "logs-sort-label", "Sort"));
+      wrap.appendChild(field);
+      return wrap;
+    }
     function saved() { return (status && status.saved) || []; }
 
     /* ---------------- tile view ---------------- */
@@ -232,6 +388,8 @@ Corvus.analysis = (function () {
         desc: "The MAVLink stream Corvus recorded on this laptop.",
         chevron: true, onClick: () => setView("tlog"),
       });
+      tlogTile.title = "Every session Corvus recorded — each one can be "
+        + "plotted as a Telemetry Review";
       tlogTile.dataset.view = "tlog";
       const reviewTile = Corvus.ui.tile({
         className: "logs-tile", icon: "activity",
@@ -295,6 +453,15 @@ Corvus.analysis = (function () {
       head.appendChild(refreshBtn);
       card.appendChild(head);
 
+      const desc = S.el("div", "params-desc");
+      // Said once, here, rather than tagged onto every row: the vehicle stamps
+      // its logs in UTC and this page converts, so the times below are the
+      // same clock as the corner of this screen.
+      desc.textContent =
+        "Times are this computer's local clock, converted from the vehicle's "
+        + "UTC stamp.";
+      card.appendChild(desc);
+
       const linkBanner = S.el("div", "params-banner");
       linkBanner.hidden = true;
       linkBanner.textContent = "No link to the vehicle — connect to read its logs.";
@@ -317,6 +484,12 @@ Corvus.analysis = (function () {
       selectRow.appendChild(selectAll);
       selectRow.appendChild(selectNone);
       selectRow.appendChild(selectionCount);
+      // Far end of the same row: ordering is a reading control, not one of the
+      // selection actions, and it should not sit where the hand goes for them.
+      selectRow.appendChild(sortControl(
+        "ulog", ULOG_SORT_OPTIONS, ulogSort,
+        (value) => { ulogSort = value; renderList(); },
+      ));
       card.appendChild(selectRow);
 
       const list = S.el("div", "logs-list");
@@ -369,7 +542,7 @@ Corvus.analysis = (function () {
       if (!ui || ui.kind !== "ulog") return;
       const list = ui.list;
       Corvus.ui.clear(list);
-      const items = logs();
+      const items = sortedLogs();
       if (!items.length) {
         list.appendChild(S.el("div", "guidance-empty",
           "No logs read yet — press “Read from vehicle”."));
@@ -400,7 +573,7 @@ Corvus.analysis = (function () {
         }
         rowBody.appendChild(titleRow);
         rowBody.appendChild(S.el("span", "logs-row-meta",
-          formatUtc(log.utc) + "  ·  " + formatSize(log.size)
+          formatStamp(log.utc) + "  ·  " + formatSize(log.size)
           + (log.downloaded && log.file ? "  ·  " + log.file : "")));
         rowEl.appendChild(rowBody);
         // A downloaded log is one click from being read. Without this the
@@ -466,37 +639,117 @@ Corvus.analysis = (function () {
       Corvus.ui.clear(body);
       body.appendChild(S.backButton(() => setView("tiles"), "Analysis"));
       const card = S.el("div", "page-card logs-card");
-      card.appendChild(S.sectionTitle("Recorded tlogs"));
+      const head = S.el("div", "logs-head");
+      head.appendChild(S.sectionTitle("Recorded tlogs"));
+      head.appendChild(sortControl(
+        "tlog", TLOG_SORT_OPTIONS, tlogSort,
+        (value) => { tlogSort = value; paintTlog(); },
+      ));
+      card.appendChild(head);
       const desc = S.el("div", "params-desc");
       desc.textContent =
-        "Every session Corvus recorded from the MAVLink stream. These are "
-        + "already on disk — nothing to download.";
+        "Every session Corvus recorded from the MAVLink stream — already on "
+        + "disk, nothing to download. Review reads one as plots, the same way "
+        + "a ULog is read. Times are when the recording opened, on this "
+        + "computer's clock.";
       card.appendChild(desc);
       const list = S.el("div", "logs-list");
       card.appendChild(list);
+      const note = S.el("div", "logs-status");
+      card.appendChild(note);
       body.appendChild(card);
-      ui = { kind: "tlog", list };
+      ui = { kind: "tlog", list, note };
       paintTlog();
       S.refreshIcons();
     }
 
+    // A folder that has collected a season of flights is not a list anyone
+    // scrolls; the cap keeps the page fast and the sort control is what makes
+    // it enough — whichever end you asked for is the end you get.
+    const TLOG_ROWS = 60;
+
     function paintTlog() {
       if (!ui || ui.kind !== "tlog") return;
       Corvus.ui.clear(ui.list);
-      const items = tlogs();
+      const items = sortedTlogs();
+      if (ui.note) ui.note.textContent = items.length > TLOG_ROWS
+        ? "Showing " + TLOG_ROWS + " of " + items.length + " recordings."
+        : "";
       if (!items.length) {
         ui.list.appendChild(S.el("div", "guidance-empty", "No tlogs recorded yet."));
         return;
       }
-      items.slice(0, 60).forEach((t) => {
+      items.slice(0, TLOG_ROWS).forEach((t) => {
         const rowEl = S.el("div", "logs-row logs-row-static");
         const rowBody = S.el("div", "logs-row-body");
-        rowBody.appendChild(S.el("span", "logs-row-title", t.name));
+        const started = Number(t.started) || Number(t.mtime) || 0;
+        // The clock leads the row now. The filename is the same stamp without
+        // the separators, so reading it was a small act of decoding on a page
+        // whose whole job is to find one flight among a folder of them.
+        const titleRow = S.el("div", "logs-row-title-row");
+        titleRow.appendChild(S.el("span", "logs-row-title",
+          formatStamp(started, true)));
+        rowBody.appendChild(titleRow);
         rowBody.appendChild(S.el("span", "logs-row-meta",
-          formatSize(t.size) + "  ·  " + t.path));
+          t.name + "  ·  " + formatSize(t.size) + "  ·  " + t.path));
         rowEl.appendChild(rowBody);
+        // The tlog list used to be a dead end — a folder of filenames with
+        // nothing to do to them. This is the way in.
+        const open = Corvus.ui.button({
+          variant: "ghost", size: "sm", icon: "arrow-right",
+          className: "logs-row-review", label: "Review",
+          onClick: () => setView("tlogreview", t.name),
+        });
+        open.title = "Read " + t.name + " as a Telemetry Review";
+        rowEl.appendChild(open);
         ui.list.appendChild(rowEl);
       });
+    }
+
+    /* ---------------- Telemetry Review (a tlog) ---------------- */
+
+    /**
+     * A recorded tlog, read with the renderer the ULog review already has.
+     *
+     * `ui.kind` is "review" on purpose: purgeReview, runReview, renderReview
+     * and drawPlot are the same code for both, and giving this view its own
+     * kind would have meant a second copy of all of it drifting away from the
+     * first. What differs is only where Back goes and that there is no picker
+     * — the recording was chosen by the row that opened this.
+     */
+    function buildTlogReview(name) {
+      Corvus.ui.clear(body);
+      body.appendChild(S.backButton(() => setView("tlog"), "Recorded tlogs"));
+
+      const pickCard = S.el("div", "page-card logs-card");
+      pickCard.appendChild(S.sectionTitle("Telemetry Review"));
+      const desc = S.el("div", "params-desc");
+      desc.textContent =
+        "What Corvus heard over the link, plotted. Lower rate than a ULog and "
+        + "without motor or per-IMU data — but it exists for every session, "
+        + "including the ones where the ULog never came off the aircraft, and "
+        + "it is the only log that can show the radio link itself.";
+      pickCard.appendChild(desc);
+      const pickNote = S.el("div", "logs-status");
+      pickCard.appendChild(pickNote);
+      body.appendChild(pickCard);
+
+      const out = S.el("div", "review-out");
+      body.appendChild(out);
+
+      ui = { kind: "review", source: "tlog", pickNote, out, drawn: [], modes: [] };
+      S.refreshIcons();
+      // Checked against the listing rather than fired blind: a recording
+      // deleted between the poll that drew the row and the click is a real
+      // case, and the honest answer is to say so.
+      if (!name) return;
+      if (!tlogs().some((t) => t.name === name)) {
+        ui.pickNote.classList.add("err");
+        ui.pickNote.textContent = name + " is no longer in the folder.";
+        return;
+      }
+      runReview(name, () => Corvus.telemetry.requestJson(
+        "/api/logs/tlog-review?file=" + encodeURIComponent(name)));
     }
 
     /* ---------------- Flight Review ---------------- */
@@ -585,7 +838,7 @@ Corvus.analysis = (function () {
     }
 
     function fillReviewFiles() {
-      if (!ui || ui.kind !== "review") return;
+      if (!ui || ui.kind !== "review" || !ui.fileField) return;
       const files = saved();
       if (!files.length) {
         Corvus.ui.setOptions(ui.fileField,
@@ -594,8 +847,11 @@ Corvus.analysis = (function () {
         ui.openBtn.disabled = true;
         return;
       }
+      // The clock as well as the size: two downloads of the same flight differ
+      // by when they landed in the folder, and the list is read to find one.
       Corvus.ui.setOptions(ui.fileField, files.map((f) => ({
-        value: f.name, label: f.name + "  ·  " + formatSize(f.size),
+        value: f.name,
+        label: f.name + "  ·  " + formatStamp(f.mtime) + "  ·  " + formatSize(f.size),
       })), ui.fileField.value);
       ui.fileField.disabled = false;
       ui.openBtn.disabled = false;
@@ -605,7 +861,7 @@ Corvus.analysis = (function () {
      *  folder. Opening a file from disk never is gated: it is the way in when
      *  the folder is empty. */
     function gateReviewPick() {
-      if (!ui || ui.kind !== "review") return;
+      if (!ui || ui.kind !== "review" || !ui.fileField) return;
       const none = !saved().length;
       ui.fileField.disabled = none;
       ui.openBtn.disabled = none;
@@ -638,8 +894,10 @@ Corvus.analysis = (function () {
      *  read guard, the wait shown on the page — is the same job. */
     async function runReview(label, fetcher) {
       if (!ui || ui.kind !== "review") return;
-      Corvus.ui.setBusy(ui.openBtn, true);   // also disables it
-      Corvus.ui.setBusy(ui.browseBtn, true);
+      // The Telemetry Review has no picker to disable: it was opened by the
+      // row for one recording, and that is the only thing it ever reads.
+      if (ui.openBtn) Corvus.ui.setBusy(ui.openBtn, true);   // also disables it
+      if (ui.browseBtn) Corvus.ui.setBusy(ui.browseBtn, true);
       ui.pickNote.classList.remove("err");
       ui.pickNote.textContent = "Reading " + label + "…";
       purgeReview();
@@ -667,8 +925,8 @@ Corvus.analysis = (function () {
         ui.pickNote.textContent = (err && err.message) || "Could not read that log";
       } finally {
         if (ui && ui.kind === "review" && mine === reviewToken) {
-          Corvus.ui.setBusy(ui.openBtn, false);
-          Corvus.ui.setBusy(ui.browseBtn, false);
+          if (ui.openBtn) Corvus.ui.setBusy(ui.openBtn, false);
+          if (ui.browseBtn) Corvus.ui.setBusy(ui.browseBtn, false);
           // setBusy clears `disabled`, and the picker has nothing to pick from
           // when the folder is empty.
           gateReviewPick();
@@ -718,14 +976,21 @@ Corvus.analysis = (function () {
       const head = S.el("div", "page-card review-summary");
       head.appendChild(S.sectionTitle(summary.name || "Flight Review"));
       const facts = S.el("div", "review-facts");
-      [
-        ["Duration", summary.duration_s ? summary.duration_s + " s" : "—"],
-        ["Airframe", summary.airframe || "—"],
-        ["Firmware", (summary.sw || "").slice(0, 10) || "—"],
-        ["Board", summary.hw || "—"],
-        ["Dropouts", summary.dropouts
-          ? summary.dropouts + " (" + summary.dropout_ms + " ms)" : "none"],
-      ].forEach(([label, value]) => {
+      // A tlog and a ULog do not have the same five things worth stating —
+      // a recording has no ULog dropouts to report, and it does have a frame
+      // count and an armed time that matter. So the backend may name its own
+      // facts; the ULog review names none and keeps the original five.
+      const factRows = Array.isArray(summary.facts) && summary.facts.length
+        ? summary.facts
+        : [
+          ["Duration", summary.duration_s ? summary.duration_s + " s" : "—"],
+          ["Airframe", summary.airframe || "—"],
+          ["Firmware", (summary.sw || "").slice(0, 10) || "—"],
+          ["Board", summary.hw || "—"],
+          ["Dropouts", summary.dropouts
+            ? summary.dropouts + " (" + summary.dropout_ms + " ms)" : "none"],
+        ];
+      factRows.forEach(([label, value]) => {
         const fact = S.el("div", "review-fact");
         fact.appendChild(S.el("span", "review-fact-label", label));
         fact.appendChild(S.el("span", "review-fact-value", String(value)));
@@ -1046,6 +1311,7 @@ Corvus.analysis = (function () {
       if (annotations.length) layout.annotations = annotations;
       try {
         window.Plotly.react(host, traces, layout, S.plotlyConfig(S.reducedMotion()));
+        Corvus.ui.attachZoomHint(host);
         ui.drawn.push(host);
       } catch (err) {
         console.error("flight review plot failed:", err);
@@ -1056,7 +1322,8 @@ Corvus.analysis = (function () {
 
     function setView(next, file) {
       view = next;
-      const sub = next === "ulog" || next === "tlog" || next === "review";
+      const sub = next === "ulog" || next === "tlog" || next === "review"
+        || next === "tlogreview";
       // The swap, not a fold-out: the landing view goes away entirely so the
       // sub-page owns the screen and Back is the only way out.
       landing.hidden = sub;
@@ -1065,6 +1332,7 @@ Corvus.analysis = (function () {
       if (next === "ulog") buildUlog();
       else if (next === "tlog") buildTlog();
       else if (next === "review") buildReview(file);
+      else if (next === "tlogreview") buildTlogReview(file);
       else { Corvus.ui.clear(body); buildTiles(); }
       if (container && typeof container.scrollTop === "number") container.scrollTop = 0;
       apply(status);
@@ -1094,7 +1362,8 @@ Corvus.analysis = (function () {
         // repainting it on every poll would drop the checkboxes mid-selection.
         // The flag is part of the signature: a finished download changes it,
         // and without that the "in folder" tag would never appear.
-        const signature = logs().map((l) => l.id + ":" + (l.downloaded ? 1 : 0)).join(",");
+        const signature = ulogSort + "|"
+          + logs().map((l) => l.id + ":" + (l.downloaded ? 1 : 0)).join(",");
         if (signature !== ui.signature) {
           ui.signature = signature;
           renderList();

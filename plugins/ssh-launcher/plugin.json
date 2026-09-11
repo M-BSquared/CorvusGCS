@@ -3,7 +3,7 @@
   "name": "SSH Launcher",
   "icon": "rocket",
   "description": "One-press buttons that start programs on a companion computer",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "Maximilian Böck",
   "order": 20,
   "scripts": [

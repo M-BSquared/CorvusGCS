@@ -40,12 +40,22 @@ window.Corvus = window.Corvus || {};
   it climbs while held and hovers when let go, and it is why WASD is its own
   switch rather than something the arrow keys imply.
 
-  The keys deflect to KEY_DEFLECTION rather than to the stop. A key has no
-  travel to meter, so full authority on a keypress would make the mildest
-  correction the largest one available; the sticks are there when full
-  deflection is wanted. Keys and sticks SUM into the same virtual stick — they
-  are two ways to move one control, not two controls — and the result is
-  clamped to the circle, so pushing both at once cannot exceed full travel.
+  The keys deflect part of the way rather than to the stop. A key has no travel
+  to meter, so full authority on a keypress would make the mildest correction
+  the largest one available. How far is the operator's choice — Settings >
+  Appearance > Controls carries a "Key strength" slider (GAIN_STEPS, default
+  half stick, persisted as controls.key_gain) — because how much stick a
+  keypress should be worth depends on the airframe, not on this module.
+
+  Holding SHIFT while a key is down boosts that deflection by BOOST_FACTOR,
+  clamped at the stop: the slider sets the cruise and Shift is the dash, so a
+  gain low enough to place the aircraft precisely does not also make crossing
+  the field take all afternoon. It is a held modifier and nothing else — let go
+  of Shift and the key is back at its set gain, exactly as easing a stick is.
+
+  Keys and sticks SUM into the same virtual stick — they are two ways to move
+  one control, not two controls — and the result is clamped to the circle, so
+  pushing both at once cannot exceed full travel.
 
   Everything springs back to centre on release, which parks the aircraft at
   hover in the modes this is useful in (Position / Altitude) rather than at
@@ -85,7 +95,27 @@ Corvus.joystick = (function () {
   const ACTIVE_HZ = 20;      // while an axis is off centre
   const IDLE_HZ = 5;         // holding the link open at neutral
   const DEADZONE = 0.06;     // fraction of stick travel that still reads as centre
-  const KEY_DEFLECTION = 0.5;
+
+  /* How much stick one held key is worth, as a fraction of full travel. A
+     short ordered list rather than a continuous range, for the same reason the
+     interface scale is one: the choice is coarse — an operator picks "more
+     than that", not 47%. The values are the contract with the settings slider
+     and with the backend config (controls.key_gain); the labels are only what
+     the step indicators read. Half stick is the default, and the value every
+     build before the slider used. */
+  const GAIN_STEPS = [
+    { value: 0.25, label: "25%" },
+    { value: 0.5, label: "50%" },
+    { value: 0.75, label: "75%" },
+    { value: 1, label: "100%" },
+  ];
+  const KEY_DEFLECTION = 0.5;                        // the default gain
+  const GAIN_MIN = GAIN_STEPS[0].value;
+  const GAIN_MAX = GAIN_STEPS[GAIN_STEPS.length - 1].value;
+  /* Shift multiplies the gain rather than jumping to the stop, so the slider
+     still means something while boosting: at 25% Shift flies at 50%, and only
+     a gain of half or more reaches full travel. */
+  const BOOST_FACTOR = 2;
 
   const POS_KEY = "corvus.joystick";
   // Keep at least this much of the pad on screen when clamping, so it can
@@ -100,8 +130,9 @@ Corvus.joystick = (function () {
 
   /* Keyboard key -> the on-screen key it holds down, and which surface owns
      it. Screen "up" is forward. WASD is stored lower-case and looked up that
-     way, so Shift and Caps Lock fly the aircraft exactly as the bare key
-     does. */
+     way, so Caps Lock flies the aircraft exactly as the bare key does, and so
+     does Shift — which is what lets Shift be the boost modifier without also
+     taking W away from the operator holding it. */
   const KEY_DIRS = {
     ArrowUp: { dir: "up", surface: "keys" },
     ArrowDown: { dir: "down", surface: "keys" },
@@ -131,6 +162,8 @@ Corvus.joystick = (function () {
   let showSticks = false;
   let showKeys = false;
   let showWasd = false;
+  let keyGain = KEY_DEFLECTION;
+  let boost = false;
   let collapsed = false;
   let timer = null;
   let inFlight = false;
@@ -359,6 +392,23 @@ Corvus.joystick = (function () {
     Object.keys(keyButtons).forEach((dir) => setHeld(dir, false));
   }
 
+  /** How much stick one held key is worth right now, boost included. */
+  function deflection() {
+    return Math.min(GAIN_MAX, keyGain * (boost ? BOOST_FACTOR : 1));
+  }
+
+  /* Shift is a held modifier, so it is read off every key event rather than
+     tracked as a key of its own: pressing or releasing Shift with a direction
+     key already down changes the deflection under it mid-press, which is the
+     whole point of a dash. The clusters carry the state so the operator can
+     see the aircraft is about to move faster before it does. */
+  function setBoost(on) {
+    if (!!on === boost) return;
+    boost = !!on;
+    if (keysEl) keysEl.classList.toggle("is-boost", boost);
+    if (streaming()) paintStatus(frame());
+  }
+
   function surfaceOn(name) { return name === "wasd" ? showWasd : showKeys; }
 
   /* The keyboard drives the same buttons its cluster does, so the on-screen
@@ -380,6 +430,9 @@ Corvus.joystick = (function () {
   }
 
   function onKeyDown(event) {
+    // Read before the target check: Shift itself is not a direction key, and
+    // pressing it while a direction key is held must still take effect.
+    if (keysLive(event)) setBoost(!!event.shiftKey);
     const entry = keyboardTarget(event);
     if (!entry) return;
     event.preventDefault();          // no page scroll while flying
@@ -387,10 +440,31 @@ Corvus.joystick = (function () {
   }
 
   function onKeyUp(event) {
+    // Boost comes up the way a held key does: unconditionally. A Shift whose
+    // press was ignored still has to be able to clear a boost set before the
+    // caret moved into a field, or the indicator sticks on with nothing left
+    // to turn it off.
+    if (!event.shiftKey) setBoost(false);
+    else if (keysLive(event)) setBoost(true);
     const entry = keyEntry(event.key);
     // Released unconditionally: a key that went down while the surface was on
     // must still come up if the switch flipped mid-press.
     if (entry) setHeld(entry.dir, false);
+  }
+
+  /* Whether this event's Shift is a boost at all. Shift is an ordinary
+     modifier everywhere else in the app, so it reads as boost only where a
+     direction key would have been accepted — which includes the caret test:
+     an operator typing a capital letter into a connection string is not
+     asking the aircraft to move faster. */
+  function keysLive(event) {
+    if (collapsed || !(showKeys || showWasd)) return false;
+    if (pad && pad.hidden) return false;
+    const el = event && event.target;
+    if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName || ""))) {
+      return false;
+    }
+    return true;
   }
 
   /* ------------------------------------------------------------------ */
@@ -406,13 +480,15 @@ Corvus.joystick = (function () {
     // hover detent and ±1 the stops — so the keys sum with their stick and
     // clamp to the circle the same way on either side. Thrust is converted to
     // MAVLink's 0..1 once, at the bottom.
+    const step = deflection();
+
     let pitch = right.y;
     let roll = right.x;
     if (showKeys) {
-      if (held.up) pitch += KEY_DEFLECTION;
-      if (held.down) pitch -= KEY_DEFLECTION;
-      if (held.right) roll += KEY_DEFLECTION;
-      if (held.left) roll -= KEY_DEFLECTION;
+      if (held.up) pitch += step;
+      if (held.down) pitch -= step;
+      if (held.right) roll += step;
+      if (held.left) roll -= step;
       // Sticks and keys move ONE virtual stick, so the sum is clamped to the
       // circle exactly as the stick itself is.
       const c = clampToCircle(roll, pitch);
@@ -422,10 +498,10 @@ Corvus.joystick = (function () {
     let thrust = left.y;
     let yaw = left.x;
     if (showWasd) {
-      if (held.thrustUp) thrust += KEY_DEFLECTION;
-      if (held.thrustDown) thrust -= KEY_DEFLECTION;
-      if (held.yawRight) yaw += KEY_DEFLECTION;
-      if (held.yawLeft) yaw -= KEY_DEFLECTION;
+      if (held.thrustUp) thrust += step;
+      if (held.thrustDown) thrust -= step;
+      if (held.yawRight) yaw += step;
+      if (held.yawLeft) yaw -= step;
       const c = clampToCircle(yaw, thrust);
       yaw = c.x; thrust = c.y;
     }
@@ -465,6 +541,9 @@ Corvus.joystick = (function () {
       const parts = [];
       if (showSticks || showKeys) parts.push(`P ${fmt(f.x)}`, `R ${fmt(f.y)}`);
       if (showSticks || showWasd) parts.push(`T ${f.z.toFixed(2)}`, `Y ${fmt(f.r)}`);
+      // Named, not implied: the axes read the same held at 50% as at 100%
+      // until a key is actually down, so the modifier says itself.
+      if (boost) parts.push("BOOST");
       text = parts.join("  ");
     }
     statusEl.textContent = text;
@@ -724,6 +803,9 @@ Corvus.joystick = (function () {
   function releaseAll() {
     sticks.forEach((s) => s.release());
     releaseKeys();
+    // A Shift held when the window went away is a Shift whose release this
+    // module will never see, so it comes up with the keys.
+    setBoost(false);
   }
 
   /* Show or hide each surface and start or stop the stream to match.
@@ -753,6 +835,22 @@ Corvus.joystick = (function () {
     if (!!on === showWasd) return;
     showWasd = !!on;
     if (pad) apply();
+  }
+
+  /* How much stick one held key is worth, as a fraction of full travel.
+     Clamped into the offered range but never snapped to a step, so a config
+     written by a build with a different GAIN_STEPS list stays honoured and the
+     slider simply shows the nearest step for it. Anything that is not a number
+     — an absent key, a config that never carried one — is the default rather
+     than an error, for the same reason every surface is off by default.
+
+     Takes effect on the next frame, so it can be dragged while a key is held.
+     Returns what was actually taken, which is what the caller persists. */
+  function setKeyGain(v) {
+    const n = Number(v);
+    keyGain = isFinite(n) ? Math.min(Math.max(n, GAIN_MIN), GAIN_MAX) : KEY_DEFLECTION;
+    if (streaming()) paintStatus(frame());
+    return keyGain;
   }
 
   function apply() {
@@ -879,9 +977,14 @@ Corvus.joystick = (function () {
     setEnabled,
     setKeysEnabled,
     setWasdEnabled,
+    setKeyGain,
     isEnabled: () => showSticks,
     isKeysEnabled: () => showKeys,
     isWasdEnabled: () => showWasd,
+    keyGain: () => keyGain,
+    isBoosted: () => boost,
+    GAIN_STEPS,
+    DEFAULT_GAIN: KEY_DEFLECTION,
     resetPosition,
   };
 })();

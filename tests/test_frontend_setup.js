@@ -257,11 +257,21 @@ function fire(el, type, detail) {
 // ---------------------------------------------------------------------------
 // Fake Plotly (mirrors tests/test_frontend_plugins.js) and a fake telemetry.
 // ---------------------------------------------------------------------------
-function fakePlotly() {
+function fakePlotly(opts) {
+  const o = opts || {};
   return {
     reactCalls: [],
     purgeCalls: [],
-    react(gd, data, layout, config) { this.reactCalls.push({ gd, data, layout, config }); },
+    /* The real Plotly.react finishes asynchronously — its auto-margin pass
+       resolves a tick later and throws if the graph was torn out meanwhile.
+       `rejectAsync` reproduces that so the caller's handling is exercised
+       rather than assumed. */
+    react(gd, data, layout, config) {
+      this.reactCalls.push({ gd, data, layout, config });
+      return o.rejectAsync
+        ? Promise.reject(new Error("Cannot read properties of undefined"))
+        : Promise.resolve(gd);
+    },
     purge(gd) { this.purgeCalls.push(gd); },
   };
 }
@@ -332,6 +342,8 @@ require("../src/js/setup-shared.js");
 require("../src/js/calib-figures.js");
 require("../src/js/calib-protocol.js");
 require("../src/js/setup-calibration.js");
+require("../src/js/setup-control.js");
+require("../src/js/setup-tuning.js");
 require("../src/js/setup-motors.js");
 require("../src/js/setup-safety.js");
 require("../src/js/setup-parameters.js");
@@ -353,7 +365,8 @@ async function testTileGridRendersEveryTile() {
 
   const tiles = findByClass(container, "setup-tile");
   assert.deepEqual(tiles.map((t) => t.dataset.view),
-    ["calibration", "motors", "safety", "parameters", "firmware"],
+    ["calibration", "control", "tuning", "motors", "safety", "parameters",
+     "firmware"],
     "every Setup tile, in order");
 
   // Tile titles are real text nodes. Setup tiles are Corvus.ui.tile instances
@@ -361,7 +374,8 @@ async function testTileGridRendersEveryTile() {
   // .tile-title class; .setup-tile is now only the layout modifier.
   const titles = tiles.map((t) => findOneByClass(t, "tile-title").textContent);
   assert.deepEqual(titles,
-    ["Calibration", "Motors", "Safety & Sensors", "Parameters", "Firmware"]);
+    ["Calibration", "Radio Control", "PID Tuning", "Motors", "Safety & Sensors",
+     "Parameters", "Firmware"]);
 }
 
 async function testClickTileSwapsToSubPageAndBackReturns() {
@@ -407,23 +421,21 @@ async function testSafetyTileOpensTheSafetyPage() {
 }
 
 async function testTeardownRunsOnSwap() {
+  // Driven through PID Tuning because it is the sub-page that owns Plotly
+  // graphs: a leaked chart is the leak this asserts against.
   const plot = fakePlotly();
   window.Plotly = plot;
-  const fake = makeFakeTelemetry();
-  Corvus.telemetry = fake.telemetry;
-  const container = makeEl("div");
-  pageViewEl = container;
+  const fake = makeFakeTelemetry({ state: { connected: true, armed: false } });
   clock = 1000;
+  const container = await openTuning(fake);
 
-  Corvus.setup.render(container);
-  openTile(container, "calibration");
-  assert.equal(plot.reactCalls.length, 3, "three graphs initialised");
+  assert.equal(plot.reactCalls.length, 1, "the loop's chart is initialised");
   assert.equal(fake.unsubCalls, 1, "grid unsub fired on openView");
 
-  // Click back → teardown runs: grid + calibration unsub, Plotly.purge exactly 3.
+  // Click back → teardown runs: grid + tuning unsub, one Plotly.purge.
   fire(findOneByClass(container, "setup-back"), "click");
-  assert.equal(fake.unsubCalls, 2, "grid + calibration unsub on back");
-  assert.equal(plot.purgeCalls.length, 3, "Plotly.purge called exactly once per graph on back");
+  assert.equal(fake.unsubCalls, 2, "grid + tuning unsub on back");
+  assert.equal(plot.purgeCalls.length, 1, "Plotly.purge called exactly once per chart on back");
   delete window.Plotly;
 }
 
@@ -432,20 +444,15 @@ async function testReRenderTearsDownActiveSubPage() {
   // — the left-nav re-entry case. No leaks.
   const plot = fakePlotly();
   window.Plotly = plot;
-  const fake = makeFakeTelemetry();
-  Corvus.telemetry = fake.telemetry;
-  const container = makeEl("div");
-  pageViewEl = container;
+  const fake = makeFakeTelemetry({ state: { connected: true, armed: false } });
   clock = 1000;
+  const container = await openTuning(fake);
+  assert.equal(plot.reactCalls.length, 1);
 
-  Corvus.setup.render(container);
-  openTile(container, "calibration");
-  assert.equal(plot.reactCalls.length, 3);
-
-  // Re-render (left-nav re-entry) → teardown of the calibration sub-page.
+  // Re-render (left-nav re-entry) → teardown of the tuning sub-page.
   Corvus.setup.render(container);
   assert.equal(fake.unsubCalls, 2, "unsub on re-render");
-  assert.equal(plot.purgeCalls.length, 3, "purge on re-render");
+  assert.equal(plot.purgeCalls.length, 1, "purge on re-render");
   assert.ok(findOneByClass(container, "setup-tiles"), "tile grid restored on re-render");
   delete window.Plotly;
 }
@@ -1291,150 +1298,388 @@ async function testReadinessStripReflectsLinkAndArmedState() {
 }
 
 // ===========================================================================
-// PART C — Autotune (PID Tuning)
+// PART C — PID Tuning
+//
+// The page this replaced could not tune anything: one autotune button that was
+// disabled whenever the vehicle was armed (PX4 runs the autotune IN FLIGHT, so
+// the button was live only in the state PX4 refuses), no way to set a gain by
+// hand, and three graphs with no setpoint to compare against. Each of those is
+// pinned below.
 // ===========================================================================
 
-async function testAutotuneButtonsMapToAxes() {
-  const fake = makeFakeTelemetry();
+/** A multicopter tuning description: two controller groups plus the autotune. */
+function tuningDoc(overrides) {
+  return Object.assign({
+    connected: true,
+    received: 6,
+    groups: [
+      {
+        id: "rate", title: "Rate Controller", kind: "fields",
+        hint: "The innermost loop.",
+        charts: [{
+          id: "rollrate", title: "Roll rate", unit: "deg/s",
+          actual: "rollspeed", setpoint: "rollspeed_sp",
+        }],
+        sections: [{
+          id: "roll", title: "Roll", fields: [
+            { param: "MC_ROLLRATE_P", label: "Roll rate P", kind: "number", value: 0.15, step: 0.001, min: 0 },
+            { param: "MC_ROLLRATE_D", label: "Roll rate D", kind: "number", value: 0.003, step: 0.001, min: 0 },
+          ],
+        }],
+      },
+      {
+        id: "velocity", title: "Velocity Controller", kind: "fields",
+        hint: "PX4 has no autotune for it.",
+        charts: [{ id: "vx", title: "Velocity north", unit: "m/s", actual: "vx", setpoint: "vx_sp" }],
+        sections: [{
+          id: "horizontal", title: "Horizontal velocity", fields: [
+            { param: "MPC_XY_VEL_P_ACC", label: "Horizontal velocity P", kind: "number", value: 1.8, step: 0.001, min: 0 },
+          ],
+        }],
+      },
+      {
+        id: "autotune", title: "Autotune", kind: "autotune",
+        label: "Multicopter autotune", family: "MC", enabled: true,
+        enable_param: "MC_AT_EN",
+        hint: "PX4 tunes in flight.",
+        steps: ["Take off and hold a hover.", "Start the tune and let go."],
+        charts: [],
+        sections: [{
+          id: "settings", title: "Autotune settings", fields: [
+            {
+              param: "MC_AT_EN", label: "Autotune module", kind: "enum", value: 1,
+              options: [{ value: 0, label: "Off" }, { value: 1, label: "On" }],
+            },
+          ],
+        }],
+      },
+    ],
+  }, overrides || {});
+}
+
+/** Open Setup -> PID Tuning with a canned description. */
+async function openTuning(fake, doc, state) {
+  fake.setResponse("/api/tuning", doc === undefined ? tuningDoc() : doc);
+  if (state) fake.setState(state);
   Corvus.telemetry = fake.telemetry;
   const container = makeEl("div");
   pageViewEl = container;
-  clock = 1000;
-
   Corvus.setup.render(container);
-  openTile(container, "calibration");
-
-  const controls = findOneByClass(container, "autotune-controls");
-  const btns = findByClass(controls, "autotune-btn");
-  assert.equal(btns.length, 1, "one full-autotune button");
-
-  const axes = btns.map((b) => b.dataset.axis);
-  assert.deepEqual(axes, ["all"], "only PX4's supported full tune is offered");
-
-  // No velocity-controller autotune button exists (PX4 accuracy note).
-  assert.ok(!axes.includes("velocity"), "no 'velocity' autotune button (PX4 has none)");
-
-  fire(btns[0], "click");
+  openTile(container, "tuning");
   await flushMicrotasks();
-  const call = fake.postCalls.find((c) => c.url === "/api/autotune");
-  assert.ok(call, "POST /api/autotune issued for the full tune");
-  assert.deepEqual(call.payload, { axis: "all" }, "full tune posts {axis:'all'}");
+  return container;
 }
 
-async function testAutotuneArmedGating() {
-  const fake = makeFakeTelemetry({ state: { armed: false, connected: false, warnings: [] } });
-  Corvus.telemetry = fake.telemetry;
-  const container = makeEl("div");
-  pageViewEl = container;
-  clock = 1000;
+/** The vehicle states this page distinguishes. MAV_LANDED_STATE: 1 on ground,
+ *  2 in air; 0 means the firmware does not report it. */
+const GROUNDED = { connected: true, armed: true, landed_state: 1, warnings: [] };
+const FLYING = { connected: true, armed: true, landed_state: 2, warnings: [] };
+const DISARMED = { connected: true, armed: false, landed_state: 1, warnings: [] };
+const OFFLINE = { connected: false, armed: false, landed_state: 0, warnings: [] };
 
-  Corvus.setup.render(container);
-  openTile(container, "calibration");
-  const btns = findByClass(findOneByClass(container, "autotune-controls"), "autotune-btn");
-
-  assert.ok(btns.every((b) => b.disabled), "autotune disabled without a vehicle link");
-  fire(btns[0], "click");
-  await flushMicrotasks();
-  assert.equal(fake.postCalls.length, 0, "disconnected click never reaches the backend");
-  fake.getSubCb()({ armed: false, connected: true, warnings: [] });
-  assert.ok(btns.every((b) => !b.disabled), "autotune enabled when linked and disarmed");
-  fake.getSubCb()({ armed: true, connected: true, warnings: [] });
-  assert.ok(btns.every((b) => b.disabled), "autotune disabled while armed");
-  fake.getSubCb()({ armed: false, connected: true, warnings: [] });
-  assert.ok(btns.every((b) => !b.disabled), "autotune re-enabled when disarmed");
+function tabs(container) {
+  return findByClass(container, "tune-tab").map((t) => t.dataset.group);
 }
 
-async function testAutotuneBusyGatingPreventsDuplicateStarts() {
-  let resolvePost;
-  const pending = new Promise((resolve) => { resolvePost = resolve; });
-  const fake = makeFakeTelemetry({
-    state: { armed: false, connected: true, warnings: [] },
-    postAction(url) {
-      if (url === "/api/autotune") return pending;
-      return Promise.resolve({ ok: true });
-    },
-  });
-  Corvus.telemetry = fake.telemetry;
-  const container = makeEl("div");
-  pageViewEl = container;
+function startBtn(container) { return buttonByLabel(container, "Start autotune"); }
+function stopBtn(container) { return buttonByLabel(container, "Stop autotune"); }
 
-  Corvus.setup.render(container);
-  openTile(container, "calibration");
-  const btn = findByClass(findOneByClass(container, "autotune-controls"), "autotune-btn")[0];
+async function testTuningRendersOneTabPerControlLoop() {
+  const fake = makeFakeTelemetry({ state: DISARMED });
+  const container = await openTuning(fake);
 
-  fire(btn, "click");
-  assert.equal(btn.disabled, true, "button locks while the start request is pending");
-  fire(btn, "click");
-  assert.equal(fake.postCalls.filter((c) => c.url === "/api/autotune").length, 1,
-    "a second click cannot start a second tune");
+  assert.deepEqual(tabs(container), ["rate", "velocity", "autotune"],
+    "one tab per loop the firmware reported, innermost first");
+  assert.equal(findByClass(container, "tune-tab")[0].className.includes("active"), true,
+    "the innermost loop is the one opened first");
+  // Only the active group's fields are mounted — four pages of gains at once
+  // is the flat list this page exists to replace.
+  assert.deepEqual(findByClass(container, "tune-field").map((f) => f.dataset.param),
+    ["MC_ROLLRATE_P", "MC_ROLLRATE_D"]);
+}
 
-  resolvePost({ ok: true });
+async function testEveryLoopIsEditableByHandNotJustAutotuned() {
+  const fake = makeFakeTelemetry({ state: DISARMED });
+  const container = await openTuning(fake);
+
+  // The velocity controller has no autotune in PX4 at all, so if it is not
+  // editable here it is not tunable from Corvus at all.
+  fire(findByClass(container, "tune-tab")[1], "click");
+  const input = findByClass(container, "tune-input")[0];
+  assert.equal(input.dataset.param, "MPC_XY_VEL_P_ACC");
+
+  input.value = "2.4";
+  fire(input, "change");
   await flushMicrotasks();
-  assert.equal(btn.disabled, false, "button unlocks after the request settles");
+
+  const call = fake.postCalls.find((c) => c.url === "/api/params/set");
+  assert.deepEqual(call.payload, { name: "MPC_XY_VEL_P_ACC", value: 2.4 },
+    "a hand-set gain is written through the shared parameter endpoint");
+}
+
+async function testSwitchingTabsSwapsTheFieldsAndTheCharts() {
+  window.Plotly = fakePlotly();
+  const fake = makeFakeTelemetry({ state: DISARMED });
+  const container = await openTuning(fake);
+
+  fire(findByClass(container, "tune-tab")[1], "click");
+  assert.deepEqual(findByClass(container, "tune-field").map((f) => f.dataset.param),
+    ["MPC_XY_VEL_P_ACC"], "the rate fields are gone, the velocity ones are up");
+  assert.deepEqual(findByClass(container, "tune-chart").map((c) => c.dataset.chart),
+    ["vx"], "and the chart follows the loop");
+  assert.deepEqual(
+    findByClass(container, "tune-tab").map((t) => t.className.includes("active")),
+    [false, true, false], "exactly one tab is active");
+  delete window.Plotly;
+}
+
+async function testAutotuneIsOfferedInFlightNotOnTheGround() {
+  // The regression. PX4 injects steps into the rate controller and identifies
+  // the airframe from the response, so it rejects the command while disarmed —
+  // the old page disabled the button on exactly the state that works.
+  const fake = makeFakeTelemetry({ state: DISARMED });
+  const container = await openTuning(fake);
+  fire(findByClass(container, "tune-tab")[2], "click");
+
+  const gate = findOneByClass(container, "tune-gate");
+  assert.ok(startBtn(container).disabled, "a disarmed vehicle cannot be autotuned");
+  assert.ok(gate.textContent.includes("take off"), "and the gate says what is missing");
+
+  fake.getSubCb()(GROUNDED);
+  assert.ok(startBtn(container).disabled, "armed but grounded is still not enough");
+  assert.ok(gate.textContent.includes("hover"), "the gate names the next step");
+
+  fake.getSubCb()(FLYING);
+  assert.ok(!startBtn(container).disabled, "in flight, the autotune is available");
+  assert.ok(gate.hidden, "and the gate is gone");
+
+  fake.getSubCb()(OFFLINE);
+  assert.ok(startBtn(container).disabled, "no link, no tune");
+}
+
+async function testAnUnreportedLandedStateDoesNotLockTheAutotuneOut() {
+  // landed_state 0 means "the firmware does not publish it", not "on the
+  // ground". The backend applies the same rule; PX4 stays the authority.
+  const fake = makeFakeTelemetry({ state: DISARMED });
+  const container = await openTuning(fake);
+  fire(findByClass(container, "tune-tab")[2], "click");
+
+  fake.getSubCb()({ connected: true, armed: true, landed_state: 0, warnings: [] });
+  assert.ok(!startBtn(container).disabled,
+    "an armed vehicle whose landed state is unknown may still be tuned");
+}
+
+async function testStartingAndStoppingTheAutotune() {
+  const fake = makeFakeTelemetry({ state: FLYING });
+  const container = await openTuning(fake);
+  fire(findByClass(container, "tune-tab")[2], "click");
+
+  fire(startBtn(container), "click");
+  await flushMicrotasks();
+  const start = fake.postCalls.find((c) => c.url === "/api/autotune");
+  assert.deepEqual(start.payload, { axis: "all", enabled: true });
+
+  // PX4 reports the run through repeated COMMAND_ACKs, which the backend
+  // latches into the snapshot; the page follows that, not its own timer.
+  fake.getSubCb()(Object.assign({}, FLYING,
+    { autotune_state: "running", autotune_progress: 40 }));
+  assert.ok(startBtn(container).hidden, "start is replaced while the tune runs");
+  assert.ok(!stopBtn(container).hidden, "and stop takes its place");
+  const fill = findOneByClass(container, "calib-progress-fill");
+  assert.equal(fill.style._props.width || fill.style.width, "40%",
+    "the progress bar follows PX4's own progress field");
+
+  fire(stopBtn(container), "click");
+  await flushMicrotasks();
+  const stop = fake.postCalls.filter((c) => c.url === "/api/autotune")[1];
+  assert.deepEqual(stop.payload, { axis: "all", enabled: false },
+    "a running tune can always be stopped");
+}
+
+async function testAFinishedAutotuneRereadsTheGainsItWrote() {
+  const fake = makeFakeTelemetry({ state: FLYING });
+  const container = await openTuning(fake);
+  fire(findByClass(container, "tune-tab")[2], "click");
+  const before = fake.requests.filter((u) => u === "/api/tuning").length;
+
+  fake.getSubCb()(Object.assign({}, FLYING, { autotune_state: "running", autotune_progress: 90 }));
+  fake.getSubCb()(Object.assign({}, FLYING, { autotune_state: "done", autotune_progress: 100 }));
+  await flushMicrotasks();
+
+  assert.ok(fake.requests.filter((u) => u === "/api/tuning").length > before,
+    "the tune replaced the gains, so the page re-reads them rather than showing the old ones");
+}
+
+async function testAnAutotuneModuleThatIsOffIsCalledOut() {
+  const doc = tuningDoc();
+  doc.groups[2].enabled = false;
+  const fake = makeFakeTelemetry({ state: FLYING });
+  const container = await openTuning(fake, doc);
+  fire(findByClass(container, "tune-tab")[2], "click");
+
+  const warning = findOneByClass(container, "tune-module-warning");
+  assert.ok(!warning.hidden, "a compiled-in but switched-off module is stated");
+  assert.ok(warning.textContent.includes("reboot"), "including the reboot it needs");
+}
+
+async function testAFirmwareWithoutAnAutotuneOffersNoAutotuneTab() {
+  const doc = tuningDoc();
+  doc.groups = doc.groups.slice(0, 2);
+  const fake = makeFakeTelemetry({ state: FLYING });
+  const container = await openTuning(fake, doc);
+
+  assert.deepEqual(tabs(container), ["rate", "velocity"]);
+  assert.equal(startBtn(container), undefined,
+    "no button for a tune this firmware cannot run");
+}
+
+async function testGainsAreReadOnlyWhileArmed() {
+  // The existing Corvus armed-safety contract: POST /api/params/set is refused
+  // while armed, in the bridge as well as here. The page says so rather than
+  // letting the operator find out from a refused write.
+  const fake = makeFakeTelemetry({ state: DISARMED });
+  const container = await openTuning(fake);
+  const banner = findOneByClass(container, "params-banner");
+  const fields = () => findByClass(container, "tune-input");
+
+  assert.ok(banner.hidden, "no banner while disarmed");
+  assert.ok(fields().every((f) => !f.disabled), "gains editable while disarmed");
+
+  fake.getSubCb()(FLYING);
+  assert.ok(!banner.hidden, "armed banner shown");
+  assert.ok(fields().every((f) => f.disabled), "every gain is read-only while armed");
+
+  fake.getSubCb()(DISARMED);
+  assert.ok(fields().every((f) => !f.disabled), "editable again on disarm");
+}
+
+async function testTuningDisconnectedRendersAnExplanationNotAnError() {
+  const fake = makeFakeTelemetry({ state: OFFLINE });
+  const container = await openTuning(fake, { connected: false, groups: [], received: 0 });
+
+  assert.equal(findByClass(container, "tune-tab").length, 0, "no tabs to offer");
+  assert.ok(findOneByClass(container, "params-desc"), "an explanation is shown instead");
+  assert.ok(findOneByClass(container, "params-actions-status").className.includes("err"),
+    "the status line reports the failure");
 }
 
 // ===========================================================================
-// PART F — Plotly autotune graphs (buffer + react + purge)
+// PART F — The tuning charts: setpoint against response
 // ===========================================================================
 
-async function testAutotuneGraphsReactAndBuffer() {
+async function testChartsPlotTheSetpointBesideTheResponse() {
   const plot = fakePlotly();
   window.Plotly = plot;
-  const fake = makeFakeTelemetry({ state: { armed: false, warnings: [] } });
-  Corvus.telemetry = fake.telemetry;
-  const container = makeEl("div");
-  pageViewEl = container;
+  const fake = makeFakeTelemetry({ state: DISARMED });
   clock = 1000;
+  const container = await openTuning(fake);
 
-  Corvus.setup.render(container);
-  openTile(container, "calibration");
+  assert.equal(findByClass(container, "tune-chart").length, 1, "one chart for this loop");
+  const before = plot.reactCalls.length;
+  assert.ok(before >= 1, "the chart is initialised");
 
-  // Three graphs → three initial Plotly.react calls (empty figures).
-  assert.equal(plot.reactCalls.length, 3, "three initial react calls");
-  const charts = findByClass(container, "autotune-graph");
-  assert.equal(charts.length, 3, "three graph containers in the DOM");
-
-  // Drive telemetry with rollspeed/roll/groundspeed; the buffer appends one
-  // point per graph and the throttled redraw fires after the window elapses.
   const cb = fake.getSubCb();
-  // First frame within the throttle window → buffer appends, no redraw yet.
-  cb({ armed: false, connected: true, warnings: [], rollspeed: 1.5, roll: 2.5, groundspeed: 3.5 });
-  assert.equal(plot.reactCalls.length, 3, "no redraw within the throttle window");
+  // Within the throttle window: the buffer appends, nothing redraws.
+  cb(Object.assign({}, DISARMED,
+    { setpoints_live: true, rollspeed: 12, rollspeed_sp: 15 }));
+  assert.equal(plot.reactCalls.length, before, "no redraw within the throttle window");
 
-  // Advance past the throttle window → one redraw per graph.
   clock = 1000 + 150;
-  cb({ armed: false, connected: true, warnings: [], rollspeed: 1.5, roll: 2.5, groundspeed: 3.5 });
-  assert.equal(plot.reactCalls.length, 6, "one redraw per graph after the throttle window");
+  cb(Object.assign({}, DISARMED,
+    { setpoints_live: true, rollspeed: 12, rollspeed_sp: 15 }));
+  const drawn = plot.reactCalls[plot.reactCalls.length - 1].data;
+  assert.equal(drawn.length, 2, "two traces: what was asked for, and what happened");
+  assert.ok(drawn[0].y.includes(12), "the response trace carries the measured rate");
+  assert.ok(drawn[1].y.includes(15), "the setpoint trace carries the commanded rate");
+  assert.equal(drawn[1].line.dash, "dot", "the setpoint is drawn as the reference");
 
-  // The three graphs' redraw data carries the appended telemetry values.
-  // The last three react calls correspond to roll rate / roll attitude / h-vel.
-  const r3 = plot.reactCalls[3].data[0].y;
-  const r4 = plot.reactCalls[4].data[0].y;
-  const r5 = plot.reactCalls[5].data[0].y;
-  assert.ok(r3.includes(1.5), "roll rate buffer has rollspeed value");
-  assert.ok(r4.includes(2.5), "roll attitude buffer has roll value");
-  assert.ok(r5.includes(3.5), "horizontal velocity buffer has groundspeed value");
-
-  // Teardown purges each graph exactly once.
   fire(findOneByClass(container, "setup-back"), "click");
-  assert.equal(plot.purgeCalls.length, 3, "Plotly.purge exactly once per graph on teardown");
+  assert.equal(plot.purgeCalls.length, 1, "Plotly.purge exactly once per chart on teardown");
   delete window.Plotly;
+}
+
+async function testAFirmwareThatSendsNoSetpointDrawsNoSetpointTrace() {
+  // A dashed line pinned at zero would read as "the controller is commanding
+  // nothing", which is a different and far more alarming claim than "this
+  // firmware is not streaming its setpoint".
+  const plot = fakePlotly();
+  window.Plotly = plot;
+  const fake = makeFakeTelemetry({ state: DISARMED });
+  clock = 1000;
+  await openTuning(fake);
+
+  const cb = fake.getSubCb();
+  clock = 1000 + 150;
+  cb(Object.assign({}, DISARMED, { setpoints_live: false, rollspeed: 12 }));
+
+  const drawn = plot.reactCalls[plot.reactCalls.length - 1].data;
+  assert.equal(drawn.length, 1, "the response is drawn alone rather than against a fiction");
+  delete window.Plotly;
+}
+
+async function testTheSetpointStreamIsRaisedWhileOpenAndHandedBackOnLeaving() {
+  const fake = makeFakeTelemetry({ state: DISARMED });
+  const container = await openTuning(fake);
+
+  const opened = fake.postCalls.filter((c) => c.url === "/api/tuning/stream");
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0].payload.enabled, true, "the page asks for a tuning rate");
+
+  fire(findOneByClass(container, "setup-back"), "click");
+  const closed = fake.postCalls.filter((c) => c.url === "/api/tuning/stream");
+  assert.equal(closed.length, 2);
+  assert.equal(closed[1].payload.enabled, false,
+    "and hands the rate back to the firmware on the way out");
+}
+
+async function testAChartTornDownMidRedrawDoesNotThrow() {
+  /* Regression. Plotly.react finishes asynchronously, and switching tabs
+     purges the chart and drops its element in between — the pending pass then
+     rejects on a graph that no longer exists. A synchronous try/catch cannot
+     see that, so it surfaced as an uncaught promise rejection on every tab
+     switch. */
+  const plot = fakePlotly({ rejectAsync: true });
+  window.Plotly = plot;
+  const rejections = [];
+  const onRejection = (err) => rejections.push(err);
+  process.on("unhandledRejection", onRejection);
+
+  const fake = makeFakeTelemetry({ state: { connected: true, armed: false } });
+  clock = 1000;
+  const container = await openTuning(fake);
+
+  // Switch tabs repeatedly: each swap purges the previous group's chart while
+  // its react is still in flight.
+  fire(findByClass(container, "tune-tab")[1], "click");
+  fire(findByClass(container, "tune-tab")[0], "click");
+  fire(findOneByClass(container, "setup-back"), "click");
+  await flushMicrotasks();
+
+  process.removeListener("unhandledRejection", onRejection);
+  assert.deepEqual(rejections, [], "a purged chart's pending redraw is swallowed, not thrown");
+  delete window.Plotly;
+}
+
+async function testTuningTeardownReleasesTheSubscription() {
+  const fake = makeFakeTelemetry({ state: DISARMED });
+  const container = await openTuning(fake);
+  const before = fake.unsubCalls;
+
+  fire(findOneByClass(container, "setup-back"), "click");
+  assert.equal(fake.unsubCalls, before + 1, "the tuning telemetry subscription is released");
+  assert.ok(findOneByClass(container, "setup-tiles"), "tile grid restored after back");
+  assert.equal(findByClass(container, "tune-tab").length, 0, "tabs gone after back");
 }
 
 async function testReducedMotionZeroDurationTransition() {
   reducedMotion = true;
   const plot = fakePlotly();
   window.Plotly = plot;
-  const fake = makeFakeTelemetry();
-  Corvus.telemetry = fake.telemetry;
-  const container = makeEl("div");
-  pageViewEl = container;
+  const fake = makeFakeTelemetry({ state: DISARMED });
   clock = 1000;
+  const container = await openTuning(fake);
 
-  Corvus.setup.render(container);
-  openTile(container, "calibration");
-
-  assert.ok(plot.reactCalls.length >= 3, "graphs initialised under reduced motion");
+  assert.ok(plot.reactCalls.length >= 1, "charts initialised under reduced motion");
   for (const call of plot.reactCalls) {
     assert.ok(call.config && call.config.transition && call.config.transition.duration === 0,
       "reduced-motion config has transition.duration === 0");
@@ -2131,11 +2376,23 @@ async function run() {
   await withReset(testCalibrationArmedGating);
   await withReset(testReadinessStripReflectsLinkAndArmedState);
 
-  await withReset(testAutotuneButtonsMapToAxes);
-  await withReset(testAutotuneArmedGating);
-  await withReset(testAutotuneBusyGatingPreventsDuplicateStarts);
+  await withReset(testTuningRendersOneTabPerControlLoop);
+  await withReset(testEveryLoopIsEditableByHandNotJustAutotuned);
+  await withReset(testSwitchingTabsSwapsTheFieldsAndTheCharts);
+  await withReset(testAutotuneIsOfferedInFlightNotOnTheGround);
+  await withReset(testAnUnreportedLandedStateDoesNotLockTheAutotuneOut);
+  await withReset(testStartingAndStoppingTheAutotune);
+  await withReset(testAFinishedAutotuneRereadsTheGainsItWrote);
+  await withReset(testAnAutotuneModuleThatIsOffIsCalledOut);
+  await withReset(testAFirmwareWithoutAnAutotuneOffersNoAutotuneTab);
+  await withReset(testGainsAreReadOnlyWhileArmed);
+  await withReset(testTuningDisconnectedRendersAnExplanationNotAnError);
 
-  await withReset(testAutotuneGraphsReactAndBuffer);
+  await withReset(testChartsPlotTheSetpointBesideTheResponse);
+  await withReset(testAFirmwareThatSendsNoSetpointDrawsNoSetpointTrace);
+  await withReset(testTheSetpointStreamIsRaisedWhileOpenAndHandedBackOnLeaving);
+  await withReset(testAChartTornDownMidRedrawDoesNotThrow);
+  await withReset(testTuningTeardownReleasesTheSubscription);
   await withReset(testReducedMotionZeroDurationTransition);
 
   await withReset(testParametersDoesNotAutoDownload);

@@ -51,13 +51,26 @@ window.Corvus = window.Corvus || {};
  *                                 postAction instead when a rejection should
  *                                 simply reject.
  *   terminal(session)             Show the live terminal for an SSH session the
- *                                 plugin opened (POST /api/ssh/connect), by
- *                                 switching the panel to its SSH tab and
- *                                 rendering that session. `session` is
+ *                                 plugin opened (POST /api/ssh/connect), in a
+ *                                 floating window of its own — one per
+ *                                 session, so a plugin may hold several at
+ *                                 once and the operator keeps the tab they
+ *                                 were on. `session` is
  *                                 {name, title, host, port, username}: `name`
- *                                 is the session key, `title` what the header
- *                                 reads. Returns true when the panel took it.
- *                                 Best-effort + guarded, like console().
+ *                                 is the session key, `title` what the window
+ *                                 header reads. Calling it again for the same
+ *                                 session raises that window. Second argument,
+ *                                 both optional: {reattach: true} right after
+ *                                 (re)connecting, so an open window takes the
+ *                                 new shell instead of a dead stream;
+ *                                 {existingOnly: true} to repair a window that
+ *                                 is already open WITHOUT opening, raising or
+ *                                 focusing one — what a plugin does on an
+ *                                 action the operator did not ask to watch.
+ *                                 Closing the window leaves the session
+ *                                 running; the window's disconnect button ends
+ *                                 it. Returns true when a terminal is showing
+ *                                 it. Best-effort + guarded, like console().
  *   getSettings() {() => Object}  This plugin's saved settings, from the
  *                                 config file. {} when it has never saved any.
  *   saveSettings(patch, replace)  Merge `patch` into them and persist
@@ -417,20 +430,32 @@ Corvus.plugins = (function () {
   /**
    * Show the live terminal for an SSH session the plugin opened.
    *
-   * A plugin that starts a program over SSH has somewhere for the operator to
-   * watch it and stop it — the panel's SSH tab already is a real terminal over
-   * the same bridge, so this points it at the session rather than each plugin
-   * growing a terminal of its own.
+   * Every session gets a floating window of its own (Corvus.termWindows), so a
+   * plugin with several sessions has several terminals side by side and the
+   * operator stays on the tab they were working in. Pointing them all at the
+   * panel's single SSH tab — which is what this did — meant four independent
+   * programs sharing one terminal, each opening replacing the last, and the
+   * shelf that started them left behind.
    *
-   * Best-effort and guarded: a panel that is missing or mid-build returns
-   * false rather than throwing into the plugin.
+   * Calling this again for a session that already has a window raises and
+   * focuses that window instead of opening a second one.
+   *
+   * Best-effort and guarded: a missing window layer falls back to the SSH tab,
+   * and anything throwing returns false rather than throwing into the plugin.
    *
    * @param {Object} session {name, title, host, port, username}
-   * @returns {boolean} whether the panel showed it
+   * @param {Object} [opts] {reattach} — pass true right after (re)connecting
+   *        the session, so a window already open on it takes the new shell
+   *        rather than a stream the replaced session left behind.
+   * @returns {boolean} whether a terminal is now showing it
    */
-  function pluginTerminal(session) {
+  function pluginTerminal(session, opts) {
     if (!session || typeof session.name !== "string" || !session.name) return false;
     try {
+      const windows = window.Corvus && window.Corvus.termWindows;
+      if (windows && typeof windows.open === "function") return windows.open(session, opts);
+      // The panel's tab is the older, single-terminal path; still better than
+      // nothing if term-window.js did not load.
       const panel = window.Corvus && window.Corvus.panel;
       if (!panel || typeof panel.showSSHTerminal !== "function") return false;
       panel.showSSHTerminal(session);

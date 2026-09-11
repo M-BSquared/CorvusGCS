@@ -15,9 +15,11 @@ window.Corvus = window.Corvus || {};
   Grouping:
     primitives  icon, iconButton, button, statusDot, badge
     forms       label, field, select, setOptions, enhanceSelect, input, toggle
+                (every <select> becomes the app's dropdown — see watchSelects)
     layout      card, section, sectionTitle, pageHeader, row, empty, actions
     pickers     optionCards, optionList, navItem
-    feedback    progress, message, setBusy, setActive
+    feedback    progress, message, toast, setBusy, setActive
+    charts      token, plotlyTheme, chartColors, onThemeChange, attachZoomHint
     helpers     clear, refreshIcons
 
   Version is never referenced here — the HUD/About read it from
@@ -109,7 +111,7 @@ Corvus.ui = (function () {
     if (o.id) btn.id = o.id;
     if (o.title) btn.title = o.title;
     if (o.ariaLabel) btn.setAttribute("aria-label", o.ariaLabel);
-    /* Extra classes layer a screen-specific modifier (.calib-btn, .setup-back)
+    /* Extra classes layer a screen-specific modifier (.setup-back, .tune-tab)
        on top of the shared .btn foundation rather than replacing it. */
     if (o.className) btn.className += " " + o.className;
     if (typeof o.onClick === "function") btn.addEventListener("click", o.onClick);
@@ -268,6 +270,23 @@ Corvus.ui = (function () {
      one is open is not something any single instance can answer. */
   let openDropdown = null;
 
+  /* The <label for> that names a select, or null. Searched from the tree's
+     root rather than from the select's own parent: the caption and the
+     control are siblings in ui.field(), but index.html's serial-port field
+     puts the select one level deeper, inside the .link-row it shares with the
+     refresh button — a parent-only lookup missed exactly that one. An id is
+     unique, so the root is the right and only scope to search, and taking it
+     from getRootNode() means a subtree that is not mounted yet works too. */
+  function labelOwner(sel) {
+    let root = typeof sel.getRootNode === "function" ? sel.getRootNode() : null;
+    if (!root) {
+      root = sel;
+      while (root.parentNode) root = root.parentNode;
+    }
+    if (!root || typeof root.querySelector !== "function") return null;
+    return root.querySelector('label[for="' + sel.id + '"]');
+  }
+
   /* ===== enhanceSelect — the app's own dropdown, over a native <select> =====
      A <select>'s open popup is the one control the design system cannot
      reach: the option list is drawn by the operating system, so it keeps the
@@ -313,6 +332,16 @@ Corvus.ui = (function () {
     if (name) {
       trigger.setAttribute("aria-label", name);
       trigger.title = name;
+    }
+    /* A <label for> written against the select now points at a hidden
+       element: clicking it would open nothing, and the trigger would have no
+       accessible name. The association moves to the trigger, which takes an
+       id derived from the select's rather than the id itself — several
+       modules still look the state up with getElementById(sel.id). */
+    const owner = sel.id ? labelOwner(sel) : null;
+    if (owner) {
+      trigger.id = sel.id + "-trigger";
+      owner.htmlFor = trigger.id;
     }
     const labelEl = document.createElement("span");
     labelEl.className = "ui-select-label";
@@ -571,6 +600,77 @@ Corvus.ui = (function () {
     };
     sel.corvusSelect = handle;
     return handle;
+  }
+
+  /* ===== enhanceSelects — the dropdown, adopted by the whole UI =====
+     enhanceSelect() was written for one control, the flight bar's mode
+     picker, and only that control ever called it. Every other <select> kept
+     the operating system's popup, so a single screen could show both: the
+     logs toolbar's "Sort" picker dropped a white platform list out of a glass
+     bar styled in the theme's colours.
+
+     The fix is not fifteen extra call sites (and a plugin's select left
+     behind anyway) but applying the enhancement where selects appear — once
+     over the document, then to whatever is added to it afterwards. A caller
+     keeps writing Corvus.ui.select() or plain <select> markup and gets the
+     app's dropdown without knowing this exists.
+
+     Two selects are left native: a list box (`multiple`, or size > 1), which
+     this dropdown does not model, and anything marked data-native-select,
+     for the case where the platform control is the right answer. */
+  function enhanceSelects(root) {
+    const scope = root || (typeof document !== "undefined" ? document : null);
+    if (!scope || typeof scope.querySelectorAll !== "function") return;
+    const found = scope.querySelectorAll("select");
+    Array.prototype.forEach.call(found || [], enhanceIfPlain);
+  }
+
+  function enhanceIfPlain(sel) {
+    if (!sel || sel.corvusSelect) return;
+    if (sel.multiple || (sel.size && sel.size > 1)) return;
+    if (typeof sel.hasAttribute === "function" && sel.hasAttribute("data-native-select")) return;
+    enhanceSelect(sel);
+  }
+
+  let selectWatcher = null;
+
+  /* Enhance what is on the page now, and keep enhancing: every setup screen,
+     modal and plugin builds its controls long after boot, and several rebuild
+     them on each render. The observer costs one pass over the added subtree;
+     enhanceIfPlain() is idempotent, so the wrapper enhanceSelect() itself
+     inserts comes back through here and is ignored.
+
+     Enhancement is a microtask behind the insertion, which is one frame in
+     which the native control can paint. Calling enhanceSelects() directly
+     after building a control avoids even that, and nothing needs to. */
+  function watchSelects() {
+    enhanceSelects(document);
+    if (selectWatcher || typeof MutationObserver !== "function") return;
+    const body = document.body;
+    if (!body) return;
+    selectWatcher = new MutationObserver((records) => {
+      records.forEach((rec) => {
+        Array.prototype.forEach.call(rec.addedNodes || [], (node) => {
+          if (!node || node.nodeType !== 1) return;
+          if (node.tagName === "SELECT") enhanceIfPlain(node);
+          else enhanceSelects(node);
+        });
+        /* A re-render that replaces the control while its list is open would
+           otherwise leave the list on <body>, hanging over a trigger that no
+           longer exists — the menu is not inside the subtree that was
+           removed, so nothing else would take it down. */
+        if (openDropdown && (rec.removedNodes || []).length) closeOrphanedDropdown();
+      });
+    });
+    selectWatcher.observe(body, { childList: true, subtree: true });
+  }
+
+  function closeOrphanedDropdown() {
+    const open = openDropdown;
+    if (!open) return;
+    const root = open.trigger;
+    if (typeof document.contains === "function" ? document.contains(root) : true) return;
+    open.close();
   }
 
   /* Text/number input on the shared field styling. `mono` switches to the
@@ -1164,10 +1264,17 @@ Corvus.ui = (function () {
       (o.mount || document.body).appendChild(overlay);
       document.addEventListener("keydown", onKey, true);
       refreshIcons();
+      /* Ahead of the focus call, and ahead of the observer that would get to
+         it a microtask later: a select still wearing the platform popup here
+         is the control the next line would hand the keyboard to, moments
+         before it is taken out of the layout. */
+      enhanceSelects(dialog);
       /* Move focus into the dialog so the keyboard is not left behind on the
-         page underneath. */
+         page underneath. An enhanced select is display:none and cannot take
+         focus — its trigger, the next node along, is what stands in for it. */
       const first = dialog.querySelector(
-        "input:not([disabled]), select:not([disabled]), textarea:not([disabled]), .btn:not([disabled])");
+        "input:not([disabled]), select:not([disabled]):not(.ui-select-native), " +
+        "textarea:not([disabled]), .ui-select-trigger:not([disabled]), .btn:not([disabled])");
       if (first && typeof first.focus === "function") first.focus();
       return overlay;
     }
@@ -1209,6 +1316,100 @@ Corvus.ui = (function () {
     reset();
 
     return { el, fill, text, set, reset };
+  }
+
+  /*
+    Toast — a transient, self-dismissing notice in the app's own design
+    language (glass surface, level icon and colour, same palette as the
+    notification centre), for messages that are not vehicle/flight state and
+    so have no business sitting in that board (a UI hint like "double-click
+    to zoom back out"). Any part of the app can call this; it mounts its own
+    stack on <body> the first time it is used.
+
+    opts: {level: "info" | "warning" | "critical", title, message, duration}
+      level     picks the icon, accent colour and default title/duration.
+      title     overrides the default ("Info" / "Warning" / "Error").
+      duration  ms before it auto-dismisses; 0 pins it open (the default for
+                "critical" — an error is the operator's to dismiss). Omit to
+                use the level's default.
+
+    Returns {el, close}.
+  */
+  let toastStack = null;
+  function toastHost() {
+    if (toastStack && toastStack.isConnected) return toastStack;
+    toastStack = document.createElement("div");
+    toastStack.className = "ui-toast-stack";
+    document.body.appendChild(toastStack);
+    return toastStack;
+  }
+
+  /* The notification popover and the toast stack share a corner by default.
+     If the popover happens to be open when a toast fires, drop the stack
+     below it instead of drawing over it — an operator who opened the board
+     to read a warning should not have a hint toast blot it out. */
+  function repositionToastStack(stack) {
+    const popover = document.getElementById("warningsPopover");
+    if (!popover || popover.hidden || typeof popover.getBoundingClientRect !== "function") {
+      stack.style.top = "";
+      return;
+    }
+    const rect = popover.getBoundingClientRect();
+    stack.style.top = rect.height > 0 ? Math.round(rect.bottom + 10) + "px" : "";
+  }
+  const TOAST_ICON = { info: "info", warning: "triangle-alert", critical: "octagon-alert" };
+  const TOAST_TITLE = { info: "Info", warning: "Warning", critical: "Error" };
+  const TOAST_DURATION = { info: 4500, warning: 6000, critical: 0 };
+
+  function toast(opts) {
+    const o = opts || {};
+    const level = (o.level === "warning" || o.level === "critical") ? o.level : "info";
+
+    const el = document.createElement("div");
+    el.className = "ui-toast glass corvus-enter";
+    el.dataset.level = level;
+    el.setAttribute("role", level === "critical" ? "alert" : "status");
+
+    const head = document.createElement("div");
+    head.className = "ui-toast-head";
+    const iconWrap = document.createElement("div");
+    iconWrap.className = "ui-toast-icon " + level;
+    iconWrap.appendChild(icon(TOAST_ICON[level], 15));
+    const title = document.createElement("span");
+    title.className = "ui-toast-title";
+    title.textContent = o.title || TOAST_TITLE[level];
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "ui-toast-close";
+    closeBtn.setAttribute("aria-label", "Dismiss");
+    closeBtn.appendChild(icon("x", 12));
+    head.append(iconWrap, title, closeBtn);
+
+    const body = document.createElement("div");
+    body.className = "ui-toast-body";
+    body.textContent = o.message == null ? "" : String(o.message);
+    el.append(head, body);
+
+    const host = toastHost();
+    repositionToastStack(host);
+    host.appendChild(el);
+    refreshIcons();
+
+    let closed = false;
+    let timer = null;
+    function close() {
+      if (closed) return;
+      closed = true;
+      if (timer != null) window.clearTimeout(timer);
+      el.classList.add("is-leaving");
+      window.setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 160);
+    }
+    closeBtn.addEventListener("click", close);
+
+    const duration = o.duration != null ? o.duration : TOAST_DURATION[level];
+    if (duration > 0) timer = window.setTimeout(close, duration);
+
+    return { el, close };
   }
 
   /*
@@ -1320,6 +1521,31 @@ Corvus.ui = (function () {
     };
   }
 
+  /* Plotly's own built-in zoom hint (its "notifier" toast) is unstyled and
+     positions itself off the chart, over whatever else happens to be on the
+     page — plotlyConfig() turns it off (showTips: false) everywhere. This is
+     its replacement: the app's own toast, shown once per session the first
+     time an operator box-zooms any chart, on whichever host asks for it.
+     Attaching twice on the same host (a live chart redraws on every sample)
+     is a no-op, tracked by identity rather than a flag on the element so a
+     plugin's plain object host cannot collide with it. */
+  const zoomHintHosts = (typeof WeakSet === "function") ? new WeakSet() : null;
+  let zoomHintShown = false;
+  function attachZoomHint(host) {
+    if (!host || typeof host.on !== "function") return;
+    if (zoomHintHosts) {
+      if (zoomHintHosts.has(host)) return;
+      zoomHintHosts.add(host);
+    }
+    host.on("plotly_relayout", (ev) => {
+      if (zoomHintShown || !ev) return;
+      const zoomedIn = Object.keys(ev).some((k) => /^[xy]axis\d*\.range\[/.test(k));
+      if (!zoomedIn) return;
+      zoomHintShown = true;
+      toast({ level: "info", message: "Double-click to zoom back out" });
+    });
+  }
+
   /* ===================== helpers ===================== */
 
   /* Empty a container. Faster than innerHTML="" for large lists and, unlike
@@ -1369,6 +1595,8 @@ Corvus.ui = (function () {
     select,
     setOptions,
     enhanceSelect,
+    enhanceSelects,
+    watchSelects,
     input,
     slider,
     toggle,
@@ -1390,6 +1618,7 @@ Corvus.ui = (function () {
     // feedback
     progress,
     message,
+    toast,
     setBusy,
     setActive,
     // charts
@@ -1397,6 +1626,7 @@ Corvus.ui = (function () {
     plotlyTheme,
     chartColors,
     onThemeChange,
+    attachZoomHint,
     // helpers
     clear,
     refreshIcons,

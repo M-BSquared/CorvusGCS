@@ -37,7 +37,7 @@ class FakeParamBridge:
         self.set_calls: list[tuple[str, float]] = []
         self.calibrate_calls: list[str] = []
         self.cancel_calls: int = 0
-        self.autotune_calls: list[str] = []
+        self.autotune_calls: list[tuple[str, bool]] = []
         self.upload_calls: list[list[dict]] = []
         self.param_listeners: list[Any] = []
         self.add_listener_calls: int = 0
@@ -85,8 +85,8 @@ class FakeParamBridge:
         self.cancel_calls += 1
         return self.result
 
-    def autotune(self, axis: str) -> bool:
-        self.autotune_calls.append(axis)
+    def autotune(self, axis: str = "all", enable: bool = True) -> bool:
+        self.autotune_calls.append((axis, enable))
         return self.result
 
     def start_param_upload(self, params: list[dict]) -> bool:
@@ -568,7 +568,7 @@ def test_autotune_all_ok_calls_bridge_lowercased() -> None:
 
     handler._api_autotune({"axis": " All "})
 
-    assert bridge.autotune_calls == ["all"]
+    assert bridge.autotune_calls == [("all", True)]
     assert responses == [({"ok": True}, 200)]
 
 
@@ -578,7 +578,7 @@ def test_autotune_accepts_case_insensitive_axis() -> None:
 
     handler._api_autotune({"axis": "ALL"})
 
-    assert bridge.autotune_calls == ["all"]
+    assert bridge.autotune_calls == [("all", True)]
     assert responses == [({"ok": True}, 200)]
 
 
@@ -623,6 +623,45 @@ def test_autotune_bridge_disconnect_errors_return_503(error: str) -> None:
     assert responses == [({"ok": False, "error": error}, 503)]
 
 
+def test_autotune_stop_passes_enable_false_to_the_bridge() -> None:
+    """An autotune in progress has to be stoppable.
+
+    PX4 keeps injecting steps until it is told to stop or the tune finishes, so
+    a page with no stop leaves the only way out as landing on a vehicle that is
+    still shaking itself.
+    """
+    bridge = FakeParamBridge(result=True)
+    handler, responses = _handler_with_bridge(bridge)
+
+    handler._api_autotune({"axis": "all", "enabled": False})
+
+    assert bridge.autotune_calls == [("all", False)]
+    assert responses == [({"ok": True}, 200)]
+
+
+def test_autotune_defaults_to_starting_when_enabled_is_absent() -> None:
+    bridge = FakeParamBridge(result=True)
+    handler, responses = _handler_with_bridge(bridge)
+
+    handler._api_autotune({"axis": "all"})
+
+    assert bridge.autotune_calls == [("all", True)]
+    assert responses == [({"ok": True}, 200)]
+
+
+@pytest.mark.parametrize("enabled", ["yes", 1, 0, None])
+def test_autotune_rejects_a_non_boolean_enabled(enabled: Any) -> None:
+    bridge = FakeParamBridge(result=True)
+    handler, responses = _handler_with_bridge(bridge)
+
+    handler._api_autotune({"axis": "all", "enabled": enabled})
+
+    assert bridge.autotune_calls == []
+    payload, status = responses[0]
+    assert status == 400
+    assert payload["ok"] is False
+
+
 # ---- POST route dispatch ----
 
 def test_post_params_download_route_dispatches_to_helper() -> None:
@@ -659,7 +698,7 @@ def test_post_autotune_route_dispatches_to_helper() -> None:
 
     handler._handle_api_post("/api/autotune")
 
-    assert bridge.autotune_calls == ["all"]
+    assert bridge.autotune_calls == [("all", True)]
     assert responses == [({"ok": True}, 200)]
 
 

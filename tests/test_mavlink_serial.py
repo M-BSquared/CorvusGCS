@@ -346,16 +346,18 @@ def test_run_sets_reconnecting_and_retries_on_serial_disconnect(
         connect_calls["n"] += 1
         raise ConnectionError("serial device unavailable: serial:/dev/ttyUSB0:57600")
 
-    sleep_calls = {"n": 0}
+    # The backoff runs through _interruptible_sleep (so stop() can wake it),
+    # which slices the wait — count the backoffs, not the slices.
+    backoffs: list[float] = []
 
-    def fake_sleep(seconds: float) -> None:
-        sleep_calls["n"] += 1
+    def fake_backoff(seconds: float) -> None:
+        backoffs.append(seconds)
         # Stop the retry loop after two reconnect cycles.
-        if sleep_calls["n"] >= 2:
+        if len(backoffs) >= 2:
             bridge._running.clear()
 
     monkeypatch.setattr(bridge, "_connect", fake_connect)
-    monkeypatch.setattr(time, "sleep", fake_sleep)
+    monkeypatch.setattr(bridge, "_interruptible_sleep", fake_backoff)
 
     bridge._run()
 
@@ -363,8 +365,9 @@ def test_run_sets_reconnecting_and_retries_on_serial_disconnect(
     snap = store.get_snapshot()
     assert snap["link_status"] == "reconnecting"
     assert "serial device unavailable" in snap["link_error"]
-    # Serial backoff escalated on the second cycle (attempt 2 -> 4.0s).
-    assert sleep_calls["n"] == 2
+    # Serial backoff escalated on the second cycle (attempt 2 -> ~1.0s).
+    assert len(backoffs) == 2
+    assert backoffs[1] > backoffs[0]
 
 
 def test_run_resets_reconnect_attempt_after_successful_connect(

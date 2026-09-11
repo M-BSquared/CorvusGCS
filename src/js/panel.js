@@ -741,18 +741,33 @@ Corvus.panel = (function () {
     if (sshTermHandle) { sshTermHandle.fit(); sshTermHandle.focus(); }
   }
 
-  // The fields of the add-SSH dialog, in the order they are shown. One list
-  // drives both the DOM and the read-back, so a field can never be rendered
-  // and then forgotten when the form is submitted.
-  const SSH_FIELDS = [
-    { key: "name", label: "Name", placeholder: "CORVUS-01" },
-    { key: "host", label: "Host", placeholder: "192.168.2.10", mono: true, autofocus: true },
-    { key: "port", label: "Port", type: "number", value: "22", mono: true },
-    { key: "username", label: "Username", placeholder: "corvus", value: "corvus" },
-    { key: "password", label: "Password", type: "password", mono: true,
-      placeholder: "optional — use key file" },
-    { key: "key_path", label: "Key file", mono: true, placeholder: "/home/user/.ssh/id_rsa" },
-  ];
+  // The fields of the SSH connection form, in the order they are shown. One
+  // list drives both the DOM and the read-back, so a field can never be
+  // rendered and then forgotten when the form is submitted. Shared by the add
+  // and edit dialogs: `conn` is null/omitted for a fresh connection (defaults
+  // below) or the entry being edited (prefilled from it).
+  //
+  // The password field is the one exception: GET /api/ssh/connections never
+  // echoes a saved password back (see server.py's `_ssh_connections_public`),
+  // so an edit has nothing to prefill it with — leaving it blank there means
+  // "keep what's already saved", not "there is no password".
+  function sshFieldDefs(conn) {
+    const c = conn || {};
+    return [
+      { key: "name", label: "Name", placeholder: "CORVUS-01", value: c.name || "" },
+      { key: "host", label: "Host", placeholder: "192.168.2.10", mono: true,
+        autofocus: true, value: c.host || "" },
+      { key: "port", label: "Port", type: "number", mono: true,
+        value: c.port != null ? String(c.port) : "22" },
+      { key: "username", label: "Username", placeholder: "corvus",
+        value: c.username || (conn ? "" : "corvus") },
+      { key: "password", label: "Password", type: "password", mono: true,
+        placeholder: conn ? "leave blank to keep the current password"
+                           : "optional — use key file" },
+      { key: "key_path", label: "Key file", mono: true,
+        placeholder: "/home/user/.ssh/id_rsa", value: c.key_path || "" },
+    ];
+  }
 
   function addSSHConnection(onSaved) {
     // onSaved: optional () => void, invoked after a successful save so a caller
@@ -763,7 +778,7 @@ Corvus.panel = (function () {
     const body = document.createDocumentFragment();
     const inputs = {};
     let autofocusEl = null;
-    SSH_FIELDS.forEach((f) => {
+    sshFieldDefs(null).forEach((f) => {
       const control = Corvus.ui.input({
         id: "sshFld_" + f.key,
         type: f.type || "text",
@@ -849,6 +864,97 @@ Corvus.panel = (function () {
       }
       dialog.close();
       renderSSHTerminal({ name, host, port, username });
+    }
+  }
+
+  /**
+   * Edit a saved SSH connection's name/host/port/username/key file, and
+   * optionally its password. Unlike addSSHConnection this only saves — it
+   * never connects, so editing an entry has no side effect beyond the save
+   * itself.
+   *
+   * @param {Object} conn        the connection being edited (from a
+   *                             /api/ssh/connections list — no password on it)
+   * @param {Function} [onSaved] invoked after a successful save, so the
+   *                             caller (the SSH tab, or the Settings page) can
+   *                             refresh its own list
+   */
+  function editSSHConnection(conn, onSaved) {
+    const onSavedCb = typeof onSaved === "function" ? onSaved : null;
+    const originalName = (conn && conn.name) || "";
+
+    const body = document.createDocumentFragment();
+    const inputs = {};
+    let autofocusEl = null;
+    sshFieldDefs(conn).forEach((f) => {
+      const control = Corvus.ui.input({
+        id: "sshEditFld_" + f.key,
+        type: f.type || "text",
+        value: f.value,
+        placeholder: f.placeholder,
+        mono: f.mono,
+        ariaLabel: f.label,
+        autocomplete: false,
+      });
+      inputs[f.key] = control;
+      if (f.autofocus) autofocusEl = control;
+      body.appendChild(Corvus.ui.field({ label: f.label, control }));
+    });
+    const error = Corvus.ui.message();
+    body.appendChild(error.el);
+
+    const cancelBtn = Corvus.ui.button({
+      variant: "secondary", label: "CANCEL", onClick: () => dialog.close(),
+    });
+    const saveBtn = Corvus.ui.button({
+      variant: "primary", icon: "check", label: "SAVE", onClick: submit,
+    });
+
+    const dialog = Corvus.ui.modal({
+      title: "Edit SSH Connection",
+      size: "sm",
+      body,
+      actions: [cancelBtn, saveBtn],
+    });
+    dialog.open();
+    if (autofocusEl && typeof autofocusEl.focus === "function") autofocusEl.focus();
+
+    function value(key) { return (inputs[key].value || "").trim(); }
+
+    async function submit() {
+      const name = value("name") || originalName || "DEVICE";
+      const host = value("host");
+      const port = parseInt(inputs.port.value, 10) || 22;
+      const username = value("username") || "corvus";
+      const key_path = value("key_path") || "";
+      if (!host) { error.show("Host is required.", "err"); return; }
+      error.hide();
+
+      const payload = { name, host, port, username, key_path, original_name: originalName };
+      // Only send a password when one was typed — an empty field means "keep
+      // what's saved", not "clear it" (see sshFieldDefs' placeholder above).
+      if (inputs.password.value) payload.password = inputs.password.value;
+
+      Corvus.ui.setBusy(saveBtn, true);
+      let res;
+      try {
+        res = await fetch("/api/ssh/connections", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }).then((r) => r.json());
+      } catch (err) {
+        Corvus.ui.setBusy(saveBtn, false);
+        error.show((err && err.message) || "Save failed", "err");
+        return;
+      }
+      if (!res || !res.ok) {
+        Corvus.ui.setBusy(saveBtn, false);
+        error.show((res && res.error) || "Save failed", "err");
+        return;
+      }
+      if (onSavedCb) onSavedCb();
+      dialog.close();
     }
   }
 
@@ -963,7 +1069,7 @@ Corvus.panel = (function () {
   }
 
   return {
-    init, toggle, addConsoleLine, addSSHConnection, showSSHTerminal, showTab,
+    init, toggle, addConsoleLine, addSSHConnection, editSSHConnection, showSSHTerminal, showTab,
     // Exposed for tests: the pure pieces, assertable without a DOM.
     sshAddress,
     matchesFilter,

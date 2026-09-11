@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from corvus.mavlink_bridge import TAKEOFF_ALTITUDE_MAX_M
 from corvus.server import CorvusHandler, _BoundedSseBuffer, _parse_takeoff_altitude
 
 
@@ -32,7 +33,11 @@ def handler_with_bridge(bridge: FakeBridge) -> tuple[CorvusHandler, list[tuple[d
     return handler, responses
 
 
-@pytest.mark.parametrize("value", [True, None, "bad", "nan", float("inf"), 0, 51])
+# Derived, not typed — see the sibling case in tests/test_mavlink_takeoff.py.
+@pytest.mark.parametrize(
+    "value",
+    [True, None, "bad", "nan", float("inf"), 0, TAKEOFF_ALTITUDE_MAX_M + 1],
+)
 def test_parse_takeoff_altitude_rejects_invalid_values(value: Any) -> None:
     with pytest.raises(ValueError):
         _parse_takeoff_altitude(value)

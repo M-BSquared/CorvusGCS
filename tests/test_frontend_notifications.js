@@ -211,7 +211,10 @@ function mount() {
 
   Corvus.topbar.init();
   return {
-    badge: () => byId.topBar.querySelector(".tb-warn-badge"),
+    // The badge is a pill of two parts: the count is its own span, the level
+    // is an attribute on the pill around it (topbar.js renderBlock).
+    badge: () => byId.topBar.querySelector(".tb-warn-count"),
+    badgeLevel: () => byId.topBar.querySelector(".tb-warn-pill").dataset.level,
     items: () => byId.warningsList.querySelectorAll(".wp-item"),
     open: () => !byId.warningsPopover.hidden,
     title: () => byId.warningsTitle.textContent,
@@ -247,6 +250,7 @@ function status() {
     text: root.querySelector(".v-main").textContent,
     cls: root.querySelector(".tb-value").className,
     dot: root.querySelector(".tb-dot").className,
+    tone: (root.dataset && root.dataset.tone) || "",
     title: root.title || "",
   };
 }
@@ -259,13 +263,71 @@ function openPopover() {
 
 // ===========================================================================
 
+function testInformationalNotificationsDoNotPaintTheBadgeAmber() {
+  const ui = mount();
+  settle(ui);
+
+  // A normal flight produces a steady trickle of these. The badge used to be a
+  // two-way split — anything unread that was not critical became "warning" —
+  // so the bar spent the whole flight looking like something was wrong. An
+  // operator who learns that amber means nothing has been taught to ignore the
+  // one colour that has to keep working.
+  push({ warnings: [warning("info", "Mode accepted: MISSION"),
+                    warning("info", "Takeoff target accepted")] });
+  assert.equal(ui.badge().textContent, "2");
+  assert.equal(ui.badgeLevel(), "info", "informational is its own level");
+
+  // A real warning among them still wins.
+  push({ warnings: [warning("info", "Mode accepted: MISSION"),
+                    warning("warning", "Preflight Fail: compass")] });
+  assert.equal(ui.badgeLevel(), "warning");
+
+  // And a critical outranks the warning.
+  push({ warnings: [warning("info", "Mode accepted: MISSION"),
+                    warning("warning", "Preflight Fail: compass"),
+                    warning("critical", "Arm failed: DENIED")] });
+  assert.equal(ui.badgeLevel(), "critical");
+}
+
+function testAnEmptyBoardIsTheGoodColourNotAQuietBad() {
+  const ui = mount();
+  settle(ui);
+  push({ warnings: [] });
+  assert.equal(ui.badge().textContent, "0");
+  assert.equal(ui.badgeLevel(), "healthy",
+    "nothing wrong should look like nothing wrong");
+}
+
+function testTheStatusBlockCarriesAToneNotJustAColour() {
+  const ui = mount();
+  settle(ui);
+
+  // Colour alone was carrying every one of these states, which asks the
+  // operator to interpret a hue mid-flight. The three worth recognising at a
+  // glance get a tone the stylesheet turns into a tinted pill.
+  push({ armed: false, prearm_ok: true, landed_state: 1 });
+  assert.equal(status().tone, "ready");
+
+  push({ armed: true, prearm_ok: true, landed_state: 1, altitude_agl: 0 });
+  assert.equal(status().tone, "armed");
+
+  push({ armed: true, prearm_ok: true, landed_state: 2, altitude_agl: 20 });
+  assert.equal(status().tone, "flying");
+
+  // NOT READY deliberately gets no pill: it is the absence of a clearance,
+  // not an active state, and giving it the same weight is how a bar ends up
+  // amber from end to end.
+  push({ armed: false, prearm_ok: false, landed_state: 1 });
+  assert.equal(status().tone, "notready");
+}
+
 function testBadgeCountsUnreadAndGoesQuietOnceRead() {
   const ui = mount();
   settle(ui);
 
   push({ warnings: [warning("warning", "Low battery"), warning("warning", "GPS jamming")] });
   assert.equal(ui.badge().textContent, "2", "both unread");
-  assert.equal(ui.badge().dataset.level, "warning");
+  assert.equal(ui.badgeLevel(), "warning");
 
   openPopover();
   assert.equal(ui.badge().textContent, "2", "opening alone does not mark them read");
@@ -274,7 +336,7 @@ function testBadgeCountsUnreadAndGoesQuietOnceRead() {
   // Read, not gone: the board still says how many are on it, in a colour that
   // is no longer asking for anything.
   assert.equal(ui.badge().textContent, "2", "total once everything is read");
-  assert.equal(ui.badge().dataset.level, "read");
+  assert.equal(ui.badgeLevel(), "read");
 }
 
 function testANotificationArrivingWhileOpenStaysNew() {
@@ -283,14 +345,14 @@ function testANotificationArrivingWhileOpenStaysNew() {
   push({ warnings: [warning("warning", "Low battery")] });
   openPopover();
   clickClose();
-  assert.equal(ui.badge().dataset.level, "read");
+  assert.equal(ui.badgeLevel(), "read");
 
   openPopover();
   push({ warnings: [warning("warning", "Low battery"), warning("warning", "Compass drift")] });
   assert.equal(ui.badge().textContent, "1", "the new one is unread while on screen");
-  assert.equal(ui.badge().dataset.level, "warning");
+  assert.equal(ui.badgeLevel(), "warning");
   clickClose();
-  assert.equal(ui.badge().dataset.level, "read");
+  assert.equal(ui.badgeLevel(), "read");
 }
 
 function testReadItemsStayInTheListDimmedRatherThanDisappearing() {
@@ -352,7 +414,7 @@ function testArmingMarksTheBoardReadWithoutDeletingIt() {
 
   // The vehicle armed, so every preflight complaint on the board was answered.
   push({ armed: true, warnings: [warning("critical", "Arming denied: GPS fix required"), warning("warning", "Compass drift")] });
-  assert.equal(ui.badge().dataset.level, "read", "arming marks the board read");
+  assert.equal(ui.badgeLevel(), "read", "arming marks the board read");
   assert.equal(ui.badge().textContent, "2", "and keeps both — read is not deleted");
   assert.deepEqual(posted, [], "nothing was cleared at the backend");
 }
@@ -375,7 +437,7 @@ function testADisconnectDoesNotQuietenTheBoard() {
   push({ connected: false, armed: false, warnings: board });
   assert.deepEqual(posted, [], "a disconnect clears nothing");
   assert.equal(ui.badge().textContent, "1", "and marks nothing read");
-  assert.equal(ui.badge().dataset.level, "critical", "still shouting");
+  assert.equal(ui.badgeLevel(), "critical", "still shouting");
   openPopover();
   assert.equal(ui.items().length, 2, "both are still on the board");
   clickClose();
@@ -394,7 +456,7 @@ function testAFreshLinkClearsTheBoard() {
   push({ connected: true, warnings: [warning("critical", "Preflight fail: Accel calibration")] });
   assert.deepEqual(posted.map((p) => p.url), ["/api/warnings/clear"]);
   assert.equal(ui.badge().textContent, "0", "board empty straight away, not a round trip later");
-  assert.equal(ui.badge().dataset.level, "healthy");
+  assert.equal(ui.badgeLevel(), "healthy");
 }
 
 function testAnAutopilotRebootClearsTheBoard() {
@@ -492,22 +554,51 @@ function testStatusNeverInventsReadinessTheVehicleDidNotReport() {
   // that the switch is off, and that is all we are allowed to say — a READY
   // here would read as a preflight clearance nobody gave.
   push({ armed: false, prearm_ok: null });
-  assert.equal(status().text, "DISARMED");
+  assert.equal(status().text, "STANDBY");
   assert.ok(status().cls.includes("off"));
 
   push({ armed: false, prearm_ok: undefined });
-  assert.equal(status().text, "DISARMED", "a missing field is unknown, not ready");
+  assert.equal(status().text, "STANDBY", "a missing field is unknown, not ready");
 }
 
-function testArmedOutranksReadinessAndALostLinkOutranksBoth() {
+function testArmedOnTheGroundIsNotTheSameAsFlying() {
   const ui = mount();
   settle(ui);
 
-  push({ armed: true, prearm_ok: false });
-  assert.equal(status().text, "ARMED", "motors live is the only thing worth saying");
-  assert.ok(status().cls.includes("healthy"));
+  // Armed, still on the ground: the one moment the word ARMED earns its place,
+  // because the propellers are live and somebody can walk into them.
+  push({ armed: true, prearm_ok: false, landed_state: 1, altitude_agl: 0 });
+  assert.equal(status().text, "ARMED");
+  assert.ok(status().cls.includes("armed"), "its own tone, not the healthy green");
 
-  push({ connected: false, armed: true, prearm_ok: true });
+  // Off the ground. Telling the operator the switch is on is the least useful
+  // thing the bar could say at this point — of course it is armed, it is flying.
+  push({ armed: true, prearm_ok: false, landed_state: 2, altitude_agl: 30 });
+  assert.equal(status().text, "FLYING");
+  assert.ok(status().cls.includes("nav"), "flying is an active state, not a fault");
+}
+
+function testAirborneFallsBackToHeightWhenTheFirmwareIsSilent() {
+  const ui = mount();
+  settle(ui);
+
+  // Firmware that never sends EXTENDED_SYS_STATE (landed_state stays 0).
+  push({ armed: true, landed_state: 0, altitude_agl: 0.2 });
+  assert.equal(status().text, "ARMED", "0.2 m is ground noise, not flight");
+
+  push({ armed: true, landed_state: 0, altitude_agl: 25 });
+  assert.equal(status().text, "FLYING", "clearly airborne without the message");
+
+  // An explicit ON_GROUND outranks a bad altitude reference.
+  push({ armed: true, landed_state: 1, altitude_agl: 25 });
+  assert.equal(status().text, "ARMED", "the vehicle's own verdict wins");
+}
+
+function testALostLinkOutranksEverything() {
+  const ui = mount();
+  settle(ui);
+
+  push({ connected: false, armed: true, prearm_ok: true, landed_state: 2 });
   assert.equal(status().text, "\u2014", "nothing is known without a link");
   assert.ok(status().dot.includes("off"));
 }
@@ -517,6 +608,9 @@ const tests = [
   // never-seen-a-snapshot state, which nothing can restore afterwards.
   testTheFirstSnapshotTriggersNoMilestone,
   testBadgeCountsUnreadAndGoesQuietOnceRead,
+  testInformationalNotificationsDoNotPaintTheBadgeAmber,
+  testAnEmptyBoardIsTheGoodColourNotAQuietBad,
+  testTheStatusBlockCarriesAToneNotJustAColour,
   testANotificationArrivingWhileOpenStaysNew,
   testReadItemsStayInTheListDimmedRatherThanDisappearing,
   testOnlyACriticalTakesTheScreen,
@@ -530,7 +624,9 @@ const tests = [
   testTheTitleSaysHowManyAreNew,
   testStatusReportsTheAutopilotsOwnPreflightVerdict,
   testStatusNeverInventsReadinessTheVehicleDidNotReport,
-  testArmedOutranksReadinessAndALostLinkOutranksBoth,
+  testArmedOnTheGroundIsNotTheSameAsFlying,
+  testAirborneFallsBackToHeightWhenTheFirmwareIsSilent,
+  testALostLinkOutranksEverything,
 ];
 
 let failed = 0;

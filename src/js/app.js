@@ -26,12 +26,11 @@ Corvus.app = (function () {
     const btnTakeoff = document.getElementById("btnTakeoff");
     const btnLand = document.getElementById("btnLand");
     const btnRTL = document.getElementById("btnRTL");
-    const modeSel = document.getElementById("modeSelector");
-    /* The flight bar is glass on top of the map; a native select would open
-       the operating system's own list on it. enhanceSelect() keeps this
-       element as the state and only replaces the popup, so everything below
+    /* The mode picker is a plain <select> and stays one: the app's dropdown
+       is put over every select in the page by ui.watchSelects() (called from
+       init below), and it keeps the element as the state, so everything here
        still reads modeSel.value and its "change" event. */
-    Corvus.ui.enhanceSelect(modeSel);
+    const modeSel = document.getElementById("modeSelector");
 
     btnArm.addEventListener("click", async () => {
       const s = Corvus.telemetry.getState();
@@ -388,10 +387,24 @@ Corvus.app = (function () {
       Corvus.joystick.setEnabled(!!(cfg.controls && cfg.controls.virtual_joystick));
       Corvus.joystick.setKeysEnabled(!!(cfg.controls && cfg.controls.arrow_keys));
       Corvus.joystick.setWasdEnabled(!!(cfg.controls && cfg.controls.wasd_keys));
+      // How much stick a held key is worth. Unlike the switches this is not a
+      // decision to fly or not, so an absent key is the module's default
+      // rather than "off" — setKeyGain() clamps and falls back on its own.
+      Corvus.joystick.setKeyGain(cfg.controls && cfg.controls.key_gain);
       // Optional operator branding in the top bar; absent by default, and the
       // top bar keeps the value until it builds itself on the first state.
       Corvus.topbar.setCompanyLogo((cfg.branding && cfg.branding.logo) || "");
+      // The caption status dots. Off unless the config says otherwise, like
+      // the control switches above: the backend is the authority, and an
+      // absent key is the default (no dots), not the cached value.
+      Corvus.topbar.setStatusDots(!!(cfg.ui && cfg.ui.topbar_status_dots));
     }).catch(() => {});
+
+    /* Before any module builds its DOM: this replaces the operating system's
+       popup on every <select> in the app with the themed dropdown, both the
+       ones already in index.html and the ones the setup screens, modals and
+       plugins create later. */
+    Corvus.ui.watchSelects();
 
     Corvus.topbar.init();
     Corvus.sidenav.init();

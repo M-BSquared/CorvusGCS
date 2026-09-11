@@ -381,11 +381,14 @@ Corvus.sidenav = (function () {
   function renderAppearanceSection(container, cfg, gen) {
     const body = document.createDocumentFragment();
     body.appendChild(companyLogoCard(cfg));
-    body.appendChild(appIconCard(cfg));
     body.appendChild(themeCard(cfg));
     body.appendChild(scaleCard(cfg));
     body.appendChild(mapServiceCard(cfg, gen));
     body.appendChild(controlsCard(cfg));
+    // The top-bar dots and the Dock icon sit after Controls: both are small
+    // finishing touches on an interface the cards above it decide.
+    body.appendChild(topBarCard(cfg));
+    body.appendChild(appIconCard(cfg));
     container.appendChild(Corvus.ui.section({ title: "Appearance", body }));
   }
 
@@ -407,9 +410,9 @@ Corvus.sidenav = (function () {
       label: "Virtual joystick",
       apply: "setEnabled",
       value: !!(cfg.controls && cfg.controls.virtual_joystick),
-      hint: "Shows a two-stick pad over the map on the Home tab: left stick " +
-            "throttle and yaw, right stick pitch and roll. Drag the pad by " +
-            "its grip bar to move it; double-click the bar to send it back.",
+      hint: "Two-stick pad over the map: left is throttle and yaw, right is " +
+            "pitch and roll. Drag it by the grip bar, double-click the bar to " +
+            "send it back.",
     }));
     card.appendChild(controlSwitch({
       id: "settingsArrowKeys",
@@ -417,9 +420,8 @@ Corvus.sidenav = (function () {
       label: "Arrow keys",
       apply: "setKeysEnabled",
       value: !!(cfg.controls && cfg.controls.arrow_keys),
-      hint: "Adds a four-key pad to the same window and lets the keyboard's " +
-            "arrow keys fly the aircraft forward, back, left and right — " +
-            "pitch and roll only, at half stick.",
+      hint: "Flies pitch and roll from the arrow keys — on screen and on your " +
+            "own keyboard — at the strength set below.",
     }));
     card.appendChild(controlSwitch({
       id: "settingsWasdKeys",
@@ -427,14 +429,61 @@ Corvus.sidenav = (function () {
       label: "WASD keys",
       apply: "setWasdEnabled",
       value: !!(cfg.controls && cfg.controls.wasd_keys),
-      hint: "The other half of the transmitter, in the same window beside the " +
-            "arrow keys: W and S are thrust, A and D are yaw, also at half " +
-            "stick. Releasing a thrust key returns to the hover detent, not " +
-            "to zero. The autopilot acts on any of these controls only when " +
-            "the vehicle accepts joystick input (COM_RC_IN_MODE 1 or 3) and " +
-            "is in a mode that flies from the sticks. All are off by default.",
+      hint: "The other half: W/S are thrust, A/D are yaw, at the same " +
+            "strength; a released thrust key returns to the hover detent. " +
+            "Any of these controls reach the aircraft only with " +
+            "COM_RC_IN_MODE 1 or 3 and a mode that flies from the sticks. " +
+            "Off by default.",
     }));
+    card.appendChild(keyStrengthField(cfg));
     return card;
+  }
+
+  // How much stick one held key is worth. A key has no travel to meter, so
+  // this is the only place that decision can be made — and it belongs to the
+  // operator rather than to the module, because the right answer depends on
+  // the airframe: 25% places a small quad precisely, 100% is a key that pushes
+  // the stick to the stop. It sits under the two key switches because it is
+  // the setting for both of them, and it does nothing to the sticks.
+  //
+  // Live on every step crossed, persisted once on release: the same split the
+  // interface-size slider uses, so dragging it while a key is held is felt
+  // immediately without writing the config four times on the way.
+  function keyStrengthField(cfg) {
+    const js = Corvus.joystick;
+    // Named for both clusters and ruled off from the switches above it: sitting
+    // directly under the WASD row, an unqualified "Key strength" reads as that
+    // row's own setting rather than as the one strength both key pads share.
+
+    // The joystick module owns the range and the default, exactly as it owns
+    // what is on screen; this reads back what it actually took.
+    let persisted = js.setKeyGain((cfg.controls && cfg.controls.key_gain));
+
+    const control = Corvus.ui.slider({
+      id: "settingsKeyGain",
+      ariaLabel: "Key strength for the arrow keys and WASD",
+      value: persisted,
+      steps: js.GAIN_STEPS,
+      onInput: (v) => js.setKeyGain(v),
+      onChange: (v) => postConfig({ controls: { key_gain: js.setKeyGain(v) } }, { strict: true })
+        .then(() => { persisted = js.keyGain(); })
+        .catch((error) => {
+          // Both the pad and the thumb go back to what the stored config still
+          // says, rather than leaving the slider claiming a strength that was
+          // never written.
+          control.setValue(js.setKeyGain(persisted));
+          throw error;
+        }),
+    });
+
+    return Corvus.ui.field({
+      label: "Key strength — arrow keys and WASD",
+      control: control.el,
+      className: "field-ruled",
+      hint: "How far a held arrow or W/A/S/D key pushes the stick, as a share " +
+            "of full travel. Hold Shift for twice that while it is down. Keys " +
+            "only — the sticks always reach their own stops. 50% is the default.",
+    });
   }
 
   // One row of the Controls card. Every switch here does the same three
@@ -472,6 +521,49 @@ Corvus.sidenav = (function () {
     });
   }
 
+  // The small coloured dots beside the top bar's captions (VEHICLE, STATUS,
+  // GPS, BATTERY). Off by default and deliberately so: each of those blocks
+  // already paints its own value in the state colour, so the dot repeats what
+  // the value says. It stays on offer because a dot row is scannable in a way
+  // that reading four values is not — an operator who flies by a glance at the
+  // bar can have it back.
+  //
+  // The switch drives the live bar immediately and persists in the background,
+  // and it awaits that persist: a rejected POST puts the bar back rather than
+  // leaving it showing a state the config does not have.
+  function topBarCard(cfg) {
+    const card = Corvus.ui.card({ title: "Top bar" });
+    const on = !!((cfg.ui || {}).topbar_status_dots);
+    // The config is the authority, and this card is rendered from it — so
+    // apply it here too rather than trusting the cached value app.js used
+    // before the fetch landed.
+    Corvus.topbar.setStatusDots(on);
+
+    const sw = Corvus.ui.toggle({
+      id: "settingsTopbarDots",
+      value: on,
+      ariaLabel: "Status dots",
+      onChange: (next) => {
+        Corvus.topbar.setStatusDots(next);
+        return postConfig({ ui: { topbar_status_dots: next } }, { strict: true })
+          .catch((error) => {
+            Corvus.topbar.setStatusDots(!next);
+            throw error;
+          });
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Status dots",
+      control: sw.el,
+      className: "field-switch",
+      hint: "Adds a state dot after the VEHICLE, STATUS, GPS and BATTERY " +
+            "captions \u2014 green good, amber caution, red fault, grey " +
+            "nothing to report. Off by default: the values already carry that " +
+            "colour themselves. Turn it on to scan the bar by colour alone.",
+    }));
+    return card;
+  }
+
   // How the desktop app draws the Corvus mark for its Dock / taskbar icon.
   // Two independent switches: which cut of the mark (the shipped white
   // artwork, or the inverted black one), and whether that mark sits on a
@@ -497,11 +589,9 @@ Corvus.sidenav = (function () {
       label: "Inverted app icon",
       control: inverted.el,
       className: "field-switch",
-      hint: "Switches the icon the desktop app shows in the Dock (macOS) or " +
-            "the taskbar (Linux) from the white mark to the black one, which " +
-            "reads better on a light dock. Applies to the running app within " +
-            "a second. Changes nothing else \u2014 not the color theme, and " +
-            "not the mark in the top bar.",
+      hint: "Uses the black mark instead of the white one for the Dock " +
+            "(macOS) or taskbar (Linux) icon \u2014 better on a light dock. " +
+            "Applies within a second, and changes nothing else.",
     }));
 
     const backplate = Corvus.ui.toggle({
@@ -514,11 +604,9 @@ Corvus.sidenav = (function () {
       label: "Icon backplate",
       control: backplate.el,
       className: "field-switch",
-      hint: "Draws the mark on a filled rounded square instead of bare " +
-            "transparency \u2014 dark behind the white mark, white behind the " +
-            "black one. The bare silhouette disappears against a dock of its " +
-            "own shade; the backplate carries its own contrast, so it reads " +
-            "either way and the inversion above becomes a matter of taste.",
+      hint: "Draws the mark on a filled rounded square \u2014 dark behind the " +
+            "white mark, white behind the black one \u2014 so it stays visible " +
+            "against a dock of any shade.",
     }));
 
     // Where the two switches stop. macOS and Windows read the icon out of the
@@ -528,11 +616,9 @@ Corvus.sidenav = (function () {
     // $HOME: the launcher entry a desktop integrator installed, and the
     // freedesktop thumbnail the file manager paints on the .AppImage itself.
     const scope = Corvus.ui.empty(
-      "The icon in the Finder or the Start menu keeps whatever the build " +
-      "shipped \u2014 it lives inside the signed bundle. On Linux both " +
-      "follow: the applications grid, once a desktop integrator has picked " +
-      "the AppImage up, and the icon the file manager draws on the " +
-      ".AppImage file itself."
+      "Finder and the Start menu keep the icon the build shipped \u2014 it " +
+      "lives inside the signed bundle. On Linux the applications grid and " +
+      "the .AppImage\u2019s own thumbnail follow."
     );
     scope.className = "field-hint";
     card.appendChild(scope);
@@ -652,9 +738,8 @@ Corvus.sidenav = (function () {
     card.appendChild(Corvus.ui.field({
       label: "Top-right logo",
       control: row,
-      hint: "Optional PNG shown at the top right of the status bar. The Corvus " +
-            "mark stays on the left. Transparent artwork works best; max 4 MB. " +
-            "None is set by default.",
+      hint: "Optional PNG at the top right of the status bar; the Corvus mark " +
+            "keeps the left. Transparent artwork works best, max 4 MB.",
     }));
     card.appendChild(Corvus.ui.actions([chooseBtn, removeBtn]));
     card.appendChild(status.el);
@@ -710,9 +795,9 @@ Corvus.sidenav = (function () {
     const card = Corvus.ui.card({ title: "Interface size" });
     card.appendChild(Corvus.ui.field({
       control: control.el,
-      hint: "Scales the whole interface — text, icons, bars and panels — on this " +
-            "machine. Larger reads better on a bright field laptop; smaller fits " +
-            "more of the map and the engineering panel on screen. 100% is the default.",
+      hint: "Scales the whole interface on this machine — text, icons, bars " +
+            "and panels. Larger reads better on a bright field laptop. " +
+            "100% is the default.",
     }));
     return card;
   }
@@ -964,6 +1049,17 @@ Corvus.sidenav = (function () {
     });
     actions.appendChild(connectBtn);
     actions.appendChild(note);
+
+    const edit = Corvus.ui.iconButton("pencil", {
+      title: `Edit ${c.name}`,
+      ariaLabel: `Edit ${c.name}`,
+    });
+    edit.addEventListener("click", () => {
+      if (Corvus.panel && typeof Corvus.panel.editSSHConnection === "function") {
+        Corvus.panel.editSSHConnection(c, () => refreshSettingsSSHList(list));
+      }
+    });
+    actions.appendChild(edit);
 
     const rm = Corvus.ui.iconButton("trash-2", {
       title: `Remove ${c.name}`,

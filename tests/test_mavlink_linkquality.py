@@ -295,12 +295,15 @@ def test_link_quality_good_requires_low_jitter(monkeypatch: pytest.MonkeyPatch) 
 # ---------------------------------------------------------------------------
 
 class _FakeClock:
-    """Controllable wall clock for the store's is_stale() (time.time)."""
+    """Controllable monotonic clock for the store's is_stale()."""
 
     def __init__(self, start: float = 100.0) -> None:
         self.now = start
 
     def time(self) -> float:
+        return self.now
+
+    def monotonic(self) -> float:
         return self.now
 
 
@@ -313,7 +316,7 @@ def _bridge_for_receive_test(clock: _FakeClock, monkeypatch: pytest.MonkeyPatch)
     bridge._conn = FakeConnection()
     bridge._running.set()
     # Store reads time.time() for is_stale/heartbeat; pin it to our clock.
-    monkeypatch.setattr("corvus.state_store.time.time", clock.time)
+    monkeypatch.setattr("corvus.state_store.time.monotonic", clock.monotonic)
     # Establish a fresh heartbeat at the starting clock time.
     store.heartbeat()
     return bridge

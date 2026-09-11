@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.37-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.37" />
+  <img src="https://img.shields.io/badge/Version-2026.09.38-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.38" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.10%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.10+" /></a>
   <img width="8" />
@@ -74,8 +74,8 @@
 - [Using Corvus](#using-corvus)
   - [The map and the flight HUD](#the-map-and-the-flight-hud)
   - [Offline maps](#offline-maps)
-  - [Setup — motors, safety, parameters, calibration, autotune, firmware](#setup--motors-safety-parameters-calibration-autotune-firmware)
-  - [Analysis — logs and Flight Review](#analysis--logs-and-flight-review)
+  - [Setup — motors, safety, parameters, calibration, tuning, firmware](#setup--motors-safety-parameters-calibration-tuning-firmware)
+  - [Analysis — logs, Flight Review and Telemetry Review](#analysis--logs-flight-review-and-telemetry-review)
   - [The side workspace](#the-side-workspace)
   - [Settings](#settings)
 - [Plugins](#plugins)
@@ -105,7 +105,7 @@ manage: one window, one process, one clean shutdown.
   and its flown track, plus a floating flight-instrument HUD (compass, attitude
   indicator, altitude, speeds, GPS) that stays visible while you fly.
 - **Preparing an aircraft** — motor wiring and ESC protocol on a drawing of your
-  own airframe, parameters, sensor and ESC calibration, PX4 autotune, and
+  own airframe, parameters, sensor and ESC calibration, PID tuning, and
   firmware flashing, all from the same window.
 - **Understanding a flight afterwards** — download the vehicle's ULog files over
   MAVLink and analyse them locally in the built-in Flight Review.
@@ -184,13 +184,13 @@ Everything here is **built and working today**.
 | | What you get | |
 |---|---|:--:|
 | ⚡ **Ready fast** | On connect Corvus loads only flight telemetry. Parameters are fetched when *you* ask for them — so you are flying in seconds, not minutes | ✅ |
-| 🛩️ **Fly** | Live map, floating flight HUD, arm / takeoff / land / RTL, flight-mode selection, on-screen joystick and arrow-key control | ✅ |
+| 🛩️ **Fly** | Live map, floating flight HUD, arm / takeoff / land / RTL, flight-mode selection, on-screen joystick and arrow-key control with adjustable key strength | ✅ |
 | 🗺️ **Navigate** | 4 map services with 12 layers, vehicle heading, home point, the flown track, and click-the-map to fly there or move home | ✅ |
 | 📴 **Work offline** | Nothing loads from the internet. Download named map areas in advance and the whole app keeps working with no connection | ✅ |
 | 📡 **Connect** | Serial, UDP and TCP, a live port picker, saved recent connections, link-quality display and automatic reconnect | ✅ |
-| 🔧 **Set up** | Airframe drawn to scale — click a motor to wire, position or spin-test it; ESC protocol; parameter editor with import / export; guided sensor calibration, ESC calibration, autotune, and PX4 firmware flashing | ✅ |
+| 🔧 **Set up** | Airframe drawn to scale — click a motor to wire, position or spin-test it; ESC protocol; parameter editor with import / export; guided sensor calibration, ESC calibration, PID tuning by hand or by in-flight autotune, and PX4 firmware flashing | ✅ |
 | 🛡️ **Set limits** | Maximum distance and height, the return-to-launch profile, and a failsafe action for every loss PX4 can detect — plus a distance sensor or optical-flow camera brought up by one switch, driver and estimator together | ✅ |
-| 📊 **Review flights** | Download the vehicle's logs, record the live stream, and analyse both in the built-in Flight Review — all on your own machine | ✅ |
+| 📊 **Review flights** | Download the vehicle's logs and record the live stream, then read either on your own machine: Flight Review for a ULog, Telemetry Review for the recording that exists even when the ULog does not — including the radio link, which an onboard log cannot see | ✅ |
 | 🖥️ **Tools** | MAVLink console, SSH terminal to an onboard companion computer, and an extensible plugin system — the Vibration Monitor and the SSH Launcher ship with it, and dropping a folder in adds your own | ✅ |
 | 🎨 **Personalise** | Six colour themes, interface scale from 80 % to 150 %, your own logo, an app-icon switch with an optional backplate — all saved between sessions | ✅ |
 | 🔒 **One at a time** | Launching Corvus while it is already running tells you so instead of splitting one serial link's telemetry across two windows — with `CORVUS_ALLOW_MULTI=1` as the escape hatch for a genuine two-aircraft setup | ✅ |
@@ -370,21 +370,27 @@ are gitignored. CI runs the same scripts — see
 
 Open the **LINK** tab in the side panel and pick how you are connected. This is
 the normal way to connect — a command-line connection string is only for
-scripting.
+scripting. Serial and UDP/TCP share one card and one **Connect** button; the
+switch at the top of it chooses which, and it opens on whichever kind you
+connected with last.
 
 - **Serial** — choose the port from the dropdown (it is re-read every time you
   open the tab, so a radio plugged in after launch just appears) and a baud
-  rate. 57600 is the default, labelled for the Holybro SiK Radio V3.
-- **UDP / TCP** — type a connection string such as `udp:0.0.0.0:14540`, or use
+  rate. 57600 is the default, labelled for the Holybro SiK Radio V3. The port
+  you last flew stays on the list even when it is unplugged, marked *not
+  connected*, so an empty dropdown is never the whole answer.
+- **UDP / TCP** — type a connection string such as `udp:0.0.0.0:14550`, or use
   one of the presets for the endpoints PX4 publishes. Presets fill the field
   rather than connecting outright, so you can edit before you commit.
   `udp:`/`udpin:` bind and wait; `udpout:` dials out, which is what a
   **mavlink-router** `UdpEndpoint` in `Mode = Server` needs (there the router
   binds and the station speaks first), and what reaches a router behind NAT.
   `tcp:` connects to a `TcpEndpoint`, `tcpin:` listens for one.
-- **Recent connections** are saved and one click to reuse, kept exact — a
-  `:57600` and a `:115200` link to the same port are different entries, because
-  collapsing them would silently reconnect at the wrong baud.
+- **Recent connections** sit at the top of the tab, one click to reuse, and are
+  kept exact — a `:57600` and a `:115200` link to the same port are different
+  entries, because collapsing them would silently reconnect at the wrong baud.
+  The newest is also the tab's memory: the card reopens on that kind, port and
+  baud, so a laptop opened at the field is one button from the link it had.
 - **Disconnect** frees the radio without quitting the app, and works *during* a
   connection attempt too — which is exactly when a retry loop needs stopping.
 
@@ -474,10 +480,23 @@ the socket is up; link quality tells you whether it is worth flying on.
 | Connecting / reconnecting | Yellow dot (last error shown) |
 | Connected | Green dot |
 | Disconnected | Grey dot |
-| Ready to fly | Green **READY** — the autopilot's own preflight checks pass |
-| Preflight failing | Yellow **NOT READY** — the autopilot would refuse to arm; the failing check is in the notifications |
-| Armed | Green **ARMED** |
-| Readiness not reported | Grey **DISARMED** — firmware that does not publish its preflight state |
+| Ready to fly | **READY** in a green pill — the autopilot's own preflight checks pass |
+| Armed, on the ground | **ARMED** in an amber pill — propellers are live and the aircraft is still within reach |
+| Airborne | **FLYING** in a blue pill — from the vehicle's own `EXTENDED_SYS_STATE`, falling back to height above home on firmware that does not send it |
+| Preflight failing | Amber **NOT READY** — the autopilot would refuse to arm; the failing check is in the notifications |
+| Readiness not reported | Grey **STANDBY** — firmware that does not publish its preflight state |
+
+The three states worth recognising at a glance — cleared to fly, propellers
+live, airborne — carry a tinted pill as well as a colour, so they are
+distinguishable by shape before the colour is read at all. `NOT READY`
+deliberately gets no pill: it is the absence of a clearance, not an active
+state.
+
+Notification counts follow the same principle. The badge is **green** when the
+board is empty, **blue** when the only unread lines are informational (a normal
+flight produces a steady trickle of those), **amber** for a real warning and
+**red** for a critical. It used to go amber for anything unread at all, which
+taught the operator to ignore the one colour that has to keep working.
 
 <details>
 <summary>Holybro SiK Telemetry Radio V3, and simulation</summary>
@@ -497,12 +516,34 @@ On a serial link Corvus automatically applies conservative MAVLink stream rates
 so a 57 kbps radio is not saturated, allows a longer heartbeat timeout (10 s),
 and reconnects with backoff if the link drops.
 
-**PX4 SITL** broadcasts to UDP 14540, which Corvus connects to automatically on
-startup:
+**PX4 SITL** publishes to UDP 14550 (the ground-station link), which Corvus
+binds automatically on startup:
 
 ```bash
 make px4_sitl     # in the PX4-Autopilot directory
 ```
+
+**Alongside MAVROS / MAVSDK / ROS.** Those bind UDP **14540**, PX4's *onboard*
+link — a different socket from the 14550 one Corvus uses. Only one process can
+hold a UDP port, so pointing Corvus at 14540 while MAVROS is running (or the
+other way round) leaves one of them with no telemetry at all. On a simulator
+that looks like a broken vehicle rather than a port clash, which is why Corvus
+now names the conflict when the bind fails. Leave Corvus on 14550, and if you
+need both on the same endpoint put a **mavlink-router** in front and give each
+one its own port.
+
+**What needs a position, and what does not.** Corvus asks the aircraft for
+`HOME_POSITION` as soon as it connects, and needs home (or the global position)
+only where an altitude has to be *converted* or *set*:
+
+| Action | Without a position reference |
+|---|---|
+| Takeoff | Waits briefly, then sends it anyway with the altitude field unspecified, so the **vehicle** picks its own configured takeoff altitude. You get a warning, not a refusal. |
+| Fly to points | Unaffected. Mission items carry your AGL number directly in `MAV_FRAME_GLOBAL_RELATIVE_ALT`, so nothing has to be converted. |
+| Set home | Waits briefly, then **refuses**. This altitude is not being converted for the wire — it is the altitude home will *have*, and home altitude is what RTL descends to. Guessing it would move the landing point vertically as a side effect of dragging it sideways. |
+
+Whether the aircraft can actually take off stays the autopilot's decision; if it
+cannot, its own refusal reaches you with a reason attached.
 
 </details>
 
@@ -549,7 +590,7 @@ lookups Corvus stops trying for 30 seconds, so cached tiles render at full speed
 and the rest simply stays blank rather than freezing the map. Walking back into
 coverage recovers on its own.
 
-### Setup — motors, safety, parameters, calibration, autotune, firmware
+### Setup — motors, safety, parameters, calibration, tuning, firmware
 
 - **Motors** — your airframe, drawn. Every motor sits at its real distance from
   the centre of gravity with its number, its output and a spin-direction arrow,
@@ -607,25 +648,75 @@ coverage recovers on its own.
   calibration can be cancelled on the vehicle.
 - **Motor / ESC calibration** — behind a safety confirmation, because motors
   spin at full PWM. **Remove the propellers first.** Refused while armed.
-- **Autotune** — one PX4 full/default rate-and-attitude autotune, with live
-  progress and graphs. PX4 v1.16–v1.18 do not expose separate roll, pitch or
-  yaw selections through this command.
+- **Radio Control** — the transmitter in your hands, on one page. Live channel
+  bars sit at the top and each one says what it is bound to, so "is the radio
+  even talking, and is that switch the one I think it is" is answered by
+  looking rather than by a test flight. Underneath: which input the vehicle
+  accepts and what it does when the transmitter goes quiet, the stick channels,
+  the flight-mode switch with its six positions, every other switch PX4 can
+  bind — arm, kill, return, hold — and the AUX passthroughs. Next to every
+  channel picker is **Detect**: press it, move the switch, and Corvus binds the
+  channel that moved. A channel bound to two actions at once is flagged, because
+  PX4 permits it and a kill switch sharing the mode switch's channel fires on a
+  mode change.
+- **Radio calibration** — a guided wizard, and on this page the wizard *is* the
+  calibration: PX4 has no autopilot-side RC procedure, so a ground station has
+  to watch the channels while you sweep every control and write the endpoints it
+  saw. Centre the sticks, sweep everything through its travel, then move one
+  named stick at a time — the channel that answers is the one that gets bound,
+  and the direction it moved decides whether PX4 has to reverse it. Nothing is
+  written until you have seen the whole measurement, and a channel that never
+  really moved is refused by name instead of being written as a stick that
+  works like a switch. The six mode positions light up live, so you can check
+  the order before you take off rather than in the air.
+- **PID Tuning** — its own page, split the way the controller is: rate,
+  attitude, velocity and position, one tab per loop, innermost first. Every
+  gain is editable by hand and written back one at a time, confirmed by the
+  aircraft — autotune only covers two of the four loops, so a page that offered
+  nothing else could not tune a vehicle. Each tab plots what the controller
+  *asked for* beside what the airframe *did*, because a response trace on its
+  own cannot tell a gain that is too low from one that is too high. Only the
+  loops the connected firmware reports are shown, so a multicopter and a fixed
+  wing each get their own.
+- **Autotune** — PX4 tunes the rate and attitude controllers together, **in
+  flight**: it injects steps and measures what comes back, so the vehicle has to
+  be armed and hovering. The page says that up front, states the preconditions
+  before you take off, refuses to send the command on the ground, and follows
+  PX4's own progress to a stop button that works throughout. PX4 v1.16–v1.18
+  expose no separate roll, pitch or yaw selection through this command.
 - **Firmware** — flash PX4 firmware over a **direct USB connection only**.
   Refused over a telemetry radio or UDP/TCP, and refused while armed.
 
-### Analysis — logs and Flight Review
+### Analysis — logs, Flight Review and Telemetry Review
 
 - **Vehicle logs (ULog)** — browse the flight controller's SD card and download
   logs. Tick several and walk away: they are fetched one after another with a
   progress bar and a Cancel that works throughout. Files land as
   `log_<id>_<UTC date>.ulg`, still readable a month later.
 - **Recorded tlogs** — the MAVLink stream Corvus recorded on this laptop, one
-  file per flight session.
+  file per flight session, written from the first frame of every connection
+  without being asked. This is the log that always exists.
 - **Flight Review** — pick a downloaded log and Corvus reduces it to the plots
   that answer *"was that flight healthy?"* — motors, clipping, EKF, battery —
   with findings above the plots and the aircraft's own messages below, filtered
   by severity. **A log that never came through Corvus can be opened too**, from
   anywhere on your machine. Everything is parsed locally; nothing is uploaded.
+- **Telemetry Review** — the same page, for a recording rather than a ULog.
+  The ULog is the better log and, when you can get it, it is the one to read.
+  This exists because you cannot always get it: the card was not fitted, the
+  download would take an hour over a 57600 link, or the aircraft did not come
+  back. Corvus recorded the flight on this laptop either way, so pick a tlog
+  and it is reduced to the same plots, the same mode and armed bands, the same
+  findings and the same message log — drawn by the renderer Flight Review
+  already uses, so the two read alike.
+
+  What it can and cannot show is stated on the page rather than left for you to
+  find out. Telemetry arrives at 1–50 Hz, not a ULog's 200–1000: an oscillation
+  is visible, the shape of one cycle is not. There are no motor outputs and no
+  per-IMU data — those never leave the aircraft. And there is one thing a ULog
+  can never have: **the link itself**. RADIO_STATUS, the drop counters and both
+  ends' signal strength describe the radio between you and the aircraft, which
+  a log written on board has no way of knowing about.
 
 ### The side workspace
 
@@ -671,8 +762,13 @@ instantly and is saved.
   manual controls: a **virtual joystick** (throttle and yaw left, pitch and roll
   right), an **arrow-key pad** for pitch and roll, and a **WASD pad** for
   thrust and yaw. The two key pads share one window and your keyboard's own
-  arrow and W/A/S/D keys drive them. They are input sources only — they never
-  arm, change mode, or override a failsafe.
+  arrow and W/A/S/D keys drive them. One **key-strength** slider (25 – 100 %,
+  50 % by default) sets how far a held key pushes the stick — the same strength
+  for both pads, arrows and WASD alike — and holding **Shift** flies at twice
+  that strength for as long as it is down, on either pad. The slider is the
+  cruise, Shift is the dash. Neither touches the sticks, which always
+  reach their own stops. They are input sources only — they never arm, change
+  mode, or override a failsafe.
 - **SSH connections** — add, connect and remove saved hosts.
 - **Files** — where parameter exports, logs and downloads are written.
 - **Plugins** — what Corvus found, and a button that opens the folder you drop
@@ -705,16 +801,35 @@ Two ship with Corvus:
   rather than three trips to a terminal. Add, rename, edit and remove them from
   the plugin itself; they are saved and there again next launch.
 
-  A button runs its program **in its own SSH terminal**, and the small arrow
-  beside it opens that terminal — the program's output is right there to read,
-  and Ctrl-C (or DISCONNECT) is how you stop it. A green dot marks the buttons
-  that have something running, and pressing one of those restarts it. Turn
-  *Run in a terminal* off for a program that has to outlive Corvus itself: it
-  is then started with `nohup` and detached, with nothing to watch and nothing
-  to stop from here.
+  A button runs its program **in its own SSH session**, and pressing it again
+  runs it again **in that same terminal** — one run under the last, in one
+  scrollback, with nothing thrown away in between. (It is a real shell: if the
+  last program is still running in the foreground, what you send goes to it,
+  just as if you had typed it there. Ctrl-C first, or let it finish.)
 
-  Corvus never holds the password — a button names one of your saved SSH
-  connections and the backend takes the credentials from there.
+  The **arrow** beside a button opens that session's terminal — a floating
+  window you can move, resize, maximise and put away like any other, while the
+  tab you were on stays where it was. Only the arrow opens it; pressing the
+  button starts the program without throwing a window at you, which matters
+  when four of them go up on the pad. Three buttons are three terminals, side
+  by side when you want to see them. Output is right there to read, and Ctrl-C
+  (or the window's disconnect button) is how you stop it; closing the window
+  with × leaves the program running, and the arrow brings the window back with
+  its scrollback intact. A green dot marks the buttons that have something
+  running. Turn *Run in a terminal* off for a program that has to outlive
+  Corvus itself: it is then started with `nohup` and detached, with nothing to
+  watch and nothing to stop from here.
+
+  A button does not need a connection you set up beforehand. The connection
+  list in the editor ends in **New connection…**, which opens host, user,
+  password and key file right there — so a shelf can be built on the pad, for a
+  companion computer Corvus has never seen. What you type is saved as a normal
+  SSH connection (it appears in the SSH tab, ready to be picked by the next
+  button, edited or removed), named `user@host` unless you give it a name of
+  your own.
+
+  Corvus never holds the password in the plugin — a button names a saved SSH
+  connection and the backend takes the credentials from there.
 
 ### Adding your own
 

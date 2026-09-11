@@ -136,8 +136,10 @@ class _Resp:
     def __exit__(self, *exc) -> bool:
         return False
 
-    def read(self) -> bytes:
-        return self._data
+    def read(self, amt: int | None = None) -> bytes:
+        # Mirrors http.client.HTTPResponse.read(amt): the caller reads a
+        # bounded number of bytes, not the whole body unconditionally.
+        return self._data if amt is None else self._data[:amt]
 
 
 @pytest.fixture

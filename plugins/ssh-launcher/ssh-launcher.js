@@ -13,12 +13,21 @@ window.Corvus = window.Corvus || {};
  *
  * Two ways to run one, per button:
  *
- *   TERMINAL (the default)  Opens an interactive SSH session of its own and
- *     types `cd -- <folder> && <command>` into it. The arrow beside the button
- *     opens that terminal, so the program's output is the operator's to read
- *     and Ctrl-C is theirs to press — this is a real shell, not a captured
- *     one. The session lives in the backend's SSH bridge for as long as Corvus
- *     runs, and closing it (DISCONNECT in the terminal) stops the program.
+ *   TERMINAL (the default)  Types `cd -- <folder> && <command>` into an
+ *     interactive SSH session of the button's own, opening one the first time.
+ *     Pressing the button again types it again into the SAME shell — one run
+ *     under the last, in one scrollback — because a key on a shelf pressed
+ *     twice means "run it again", not "throw this session away and start
+ *     over". Three buttons are three sessions, so three terminals can be open
+ *     side by side.
+ *
+ *     The terminal window itself opens on the ARROW beside the button, never
+ *     on the button: a launch is a launch, and an operator starting four
+ *     programs on the pad does not want four windows thrown at them. The
+ *     program's output is theirs to read there and Ctrl-C theirs to press —
+ *     this is a real shell, not a captured one. Closing the window leaves the
+ *     program running; the window's disconnect button, like Ctrl-C, stops it.
+ *     The session lives in the backend's SSH bridge for as long as Corvus runs.
  *
  *   BACKGROUND  One-shot `POST /api/ssh/run` with nohup. Nothing to watch and
  *     nothing to stop from here, but the program outlives the connection, the
@@ -29,9 +38,20 @@ window.Corvus = window.Corvus || {};
  * backend, so neither the browser nor this plugin ever holds a password: a
  * button stores the connection's NAME.
  *
+ * That name no longer has to exist first. The editor's connection list ends in
+ * "New connection…", which opens the host/user/password form inline and, on
+ * Save, POSTs it to /api/ssh/connections before the button that names it —
+ * because a shelf is built on the pad as often as at a desk, and requiring a
+ * trip to Settings first made the plugin useless exactly when it was most
+ * wanted. The credentials land in the app's own SSH connection store (the same
+ * one the SSH tab reads, so the connection is visible, reusable and removable
+ * there); what this plugin saves is still only the name.
+ *
  * The shelf is the plugin's state: a list of {id, label, connection, directory,
  * command, mode}, saved through api.saveSettings, so the buttons are there on
- * the next start. Nothing secret goes in there.
+ * the next start. Nothing secret goes in there — a typed-in password is in the
+ * form for as long as the editor is open and is never written to these
+ * settings.
  *
  * Two views, never both: the SHELF (the buttons plus Add) and the EDITOR (one
  * button's fields). Editing is a mode rather than an expanding row because the
@@ -58,6 +78,89 @@ Corvus.pluginSshLauncher = (function () {
 
   const MODE_TERMINAL = "terminal";
   const MODE_BACKGROUND = "background";
+
+  // The connection <select>'s last entry: not a connection but a way to type
+  // one in. A button used to require a connection saved in Settings first,
+  // which made the shelf unusable exactly when it is most wanted — a new
+  // companion computer on the pad, nothing configured yet.
+  const NEW_CONNECTION = "__new__";
+
+  /** The blank ad-hoc connection form. */
+  function blankConnection() {
+    return { name: "", host: "", port: "22", username: "", password: "", key_path: "" };
+  }
+
+  /**
+   * The name an ad-hoc connection is saved under when the operator types none:
+   * user@host, the way they would have written it on the command line anyway.
+   *
+   * Pure, and exported for the test suite.
+   *
+   * @param {Object} conn the connection form
+   * @returns {string} "" when there is not even a host yet
+   */
+  function derivedName(conn) {
+    const c = conn || {};
+    const host = String(c.host == null ? "" : c.host).trim();
+    if (!host) return "";
+    const user = String(c.username == null ? "" : c.username).trim();
+    return user ? `${user}@${host}` : host;
+  }
+
+  /**
+   * Why an ad-hoc connection cannot be saved yet, or "" when it can.
+   *
+   * The name check is the one that matters: saving under a name that is
+   * already taken would REPLACE that connection's credentials — the launcher
+   * would silently repoint an SSH card the operator relies on at another
+   * machine. So a collision is refused here rather than resolved.
+   *
+   * Pure, and exported for the test suite.
+   *
+   * @param {Object} conn the connection form
+   * @param {string[]} taken the names already saved
+   * @returns {string} the reason, or "" when the form is good
+   */
+  function newConnectionError(conn, taken) {
+    const c = conn || {};
+    if (!String(c.host == null ? "" : c.host).trim()) return "Name the host to connect to.";
+    const name = String(c.name == null ? "" : c.name).trim() || derivedName(c);
+    const port = String(c.port == null ? "" : c.port).trim();
+    if (port !== "") {
+      const n = Number(port);
+      if (!isFinite(n) || Math.floor(n) !== n || n < 1 || n > 65535) {
+        return "The port has to be a number between 1 and 65535.";
+      }
+    }
+    if ((taken || []).indexOf(name) >= 0) {
+      return `"${name}" is already saved. Pick it above, or save this one as another name.`;
+    }
+    return "";
+  }
+
+  /**
+   * The body of POST /api/ssh/connections for an ad-hoc connection.
+   *
+   * Pure, and exported for the test suite — the shape of this request is the
+   * whole contract between the plugin and the credential store.
+   *
+   * @param {Object} conn the connection form
+   * @returns {Object}
+   */
+  function newConnectionBody(conn) {
+    const c = conn || {};
+    const trim = (v) => String(v == null ? "" : v).trim();
+    return {
+      name: trim(c.name) || derivedName(c),
+      host: trim(c.host),
+      port: parseInt(trim(c.port), 10) || 22,
+      username: trim(c.username),
+      // Not trimmed: a password may legitimately begin or end with a space,
+      // and this one is going straight to the backend's store.
+      password: String(c.password == null ? "" : c.password),
+      key_path: trim(c.key_path),
+    };
+  }
 
   /** A short, collision-free id for a new button. Never shown. */
   function newId() {
@@ -308,9 +411,13 @@ Corvus.pluginSshLauncher = (function () {
       });
       card.appendChild(ui.actions(addBtn));
 
+      // Not an error any more, just a hint: a button can carry a connection
+      // that was never saved in Settings.
       if (connectionsError) {
         const note = ui.empty(connectionsError);
-        note.className = "sshl-note";
+        // add, not assign: `className =` dropped the muted description styling
+        // ui.empty() had just put there, and the hint came out as body text.
+        note.classList.add("sshl-note");
         card.appendChild(note);
       }
 
@@ -329,17 +436,16 @@ Corvus.pluginSshLauncher = (function () {
       const launchBtn = ui.button({
         variant: "primary",
         size: "sm",
-        // Pressing a button whose program is already up restarts it (the
-        // backend replaces a same-name session), so the icon says restart
-        // rather than promising a second copy.
-        icon: running ? "rotate-cw" : "play",
+        // Always "run it": pressing a button whose session is already open
+        // types the line into that same shell rather than replacing it.
+        icon: "play",
         label: entry.label,
         className: "sshl-launch",
-        ariaLabel: running ? `Restart ${entry.label}` : `Launch ${entry.label}`,
+        ariaLabel: running ? `Run ${entry.label} again` : `Launch ${entry.label}`,
         // The composed line as a tooltip: the row shows the label, and the
         // label is often nothing like the command it stands for.
         title: running
-          ? `Restart — this stops what is running first.\n${previewLine(entry) || entry.command}`
+          ? `Run it again in the terminal it is already in.\n${previewLine(entry) || entry.command}`
           : (previewLine(entry) || entry.command),
         onClick: () => launch(entry, launchBtn),
       });
@@ -357,16 +463,17 @@ Corvus.pluginSshLauncher = (function () {
         tools.appendChild(dot);
       }
 
-      // The arrow into the terminal this button's program is running in. Only
-      // terminal-mode buttons have one to go to, and only while the session is
-      // actually up — an arrow that led to a dead terminal would be worse than
-      // no arrow, so it says why it is off instead.
+      // The arrow back to this button's own terminal window. Launching opens
+      // it; this is how it is fetched again after it was closed or buried.
+      // Only terminal-mode buttons have one to go to, and only while the
+      // session is actually up — an arrow that led to a dead terminal would be
+      // worse than no arrow, so it says why it is off instead.
       if (entry.mode !== MODE_BACKGROUND) {
         const openBtn = ui.iconButton("chevron-right", {
           className: "icon-btn sshl-open",
           ariaLabel: `Open the terminal for ${entry.label}`,
           title: running
-            ? "Open the terminal — watch it, or press Ctrl-C to stop it"
+            ? "Open its terminal window — watch it, or press Ctrl-C to stop it"
             : "Not running. Launch it to open its terminal.",
           disabled: !running,
           onClick: () => openTerminal(entry),
@@ -420,21 +527,83 @@ Corvus.pluginSshLauncher = (function () {
         hint: "What the button says. Leave empty to use the command itself.",
       }));
 
+      // The connection form the operator fills in when they pick "New
+      // connection…". Held here rather than on the draft: it carries a
+      // password, and the draft is what gets written to the config file.
+      const newConn = blankConnection();
+      let nameInput = null;
+
       const connSel = ui.select({
         ariaLabel: "SSH connection",
         options: connectionOptions(),
-        value: draft.connection,
-        onChange: (v) => { draft.connection = v; paintPreview(); },
+        // With nothing saved there is nothing to pick, so the editor opens on
+        // the form instead of on an empty list.
+        value: connections.length ? draft.connection : NEW_CONNECTION,
+        onChange: () => { renderNewConnection(); paintPreview(); },
       });
       card.appendChild(ui.field({
         label: "Connection",
         control: connSel,
-        hint: "One of the SSH connections saved in Settings. The password stays " +
-              "on the backend — this plugin only ever names the connection.",
+        hint: "One of the saved SSH connections, or a new one typed in below. " +
+              "Either way the password is kept by the backend — this plugin " +
+              "only ever names the connection.",
       }));
-      // The select coerces an unknown value to its first option, so the draft
-      // takes back whatever it actually settled on.
-      draft.connection = connSel.value || "";
+      if (connSel.value !== NEW_CONNECTION) draft.connection = connSel.value || "";
+
+      const newConnEl = document.createElement("div");
+      newConnEl.className = "sshl-newconn";
+      card.appendChild(newConnEl);
+
+      /** Whether the operator is typing a connection rather than picking one. */
+      function pickedNew() { return connSel.value === NEW_CONNECTION; }
+
+      /** The connection name this button will end up carrying. */
+      function targetName() {
+        if (!pickedNew()) return connSel.value || "";
+        return String(newConn.name || "").trim() || derivedName(newConn);
+      }
+
+      /* The fields of an ad-hoc connection, in the order they are answered:
+         where it is, then who logs in, then how — and the name it is filed
+         under last, because it writes itself from the two above. */
+      const NEW_FIELDS = [
+        { key: "host", label: "Host", placeholder: "192.168.2.10", mono: true },
+        { key: "port", label: "Port", type: "number", mono: true },
+        { key: "username", label: "User", placeholder: "corvus" },
+        { key: "password", label: "Password", type: "password", mono: true,
+          placeholder: "optional — or a key file" },
+        { key: "key_path", label: "Key file", mono: true,
+          placeholder: "/home/you/.ssh/id_rsa" },
+        { key: "name", label: "Save as", placeholder: "pilot@10.0.0.7",
+          hint: "The name this connection is saved under. Leave it empty to " +
+                "use user@host. It joins the SSH connections in Settings, so " +
+                "the next button can simply pick it." },
+      ];
+
+      /* Built only while it is in use, and thrown away when a saved connection
+         is picked instead: a password field that is merely hidden is still a
+         password field in the page. */
+      function renderNewConnection() {
+        ui.clear(newConnEl);
+        nameInput = null;
+        newConnEl.hidden = !pickedNew();
+        if (!pickedNew()) return;
+        NEW_FIELDS.forEach((f) => {
+          const control = ui.input({
+            type: f.type || "text",
+            value: newConn[f.key],
+            placeholder: f.placeholder,
+            mono: f.mono,
+            ariaLabel: f.label,
+            autocomplete: false,
+            spellcheck: false,
+            onInput: (v) => { newConn[f.key] = v; paintPreview(); },
+          });
+          if (f.key === "name") nameInput = control;
+          newConnEl.appendChild(ui.field({ label: f.label, control, hint: f.hint }));
+        });
+      }
+      renderNewConnection();
 
       const dirInput = ui.input({
         value: draft.directory,
@@ -478,11 +647,13 @@ Corvus.pluginSshLauncher = (function () {
         label: "Run in a terminal",
         control: terminalSwitch.el,
         className: "field-switch",
-        hint: "On: the program runs in its own SSH terminal, and the arrow " +
-              "beside the button opens it — read its output there, and stop it " +
-              "with Ctrl-C or DISCONNECT. The terminal lasts as long as Corvus " +
-              "does. Off: the program is started with nohup and detached, so it " +
-              "survives Corvus closing — but there is nothing to watch and " +
+        hint: "On: the program runs in an SSH session of this button's own, " +
+              "and pressing the button again runs it again in that same " +
+              "terminal. The arrow beside the button opens the window to watch " +
+              "it in — read its output there, and stop it with Ctrl-C or the " +
+              "window's disconnect button. The session lasts as long as Corvus " +
+              "does. Off: the program is started with nohup and detached, so " +
+              "it survives Corvus closing — but there is nothing to watch and " +
               "nothing to stop from here.",
       }));
 
@@ -495,14 +666,53 @@ Corvus.pluginSshLauncher = (function () {
         icon: "check",
         label: "Save",
         onClick: () => {
-          const entry = coerceButton(draft);
-          if (!entry) return;                      // guarded by paintPreview anyway
-          if (isNew) buttons.push(entry);
-          else buttons = buttons.map((b) => (b.id === entry.id ? entry : b));
-          persist();
-          renderShelf();
+          if (pickedNew()) saveNewConnectionThenButton();
+          else { draft.connection = connSel.value || ""; commit(); }
         },
       });
+
+      /** Put the finished draft on the shelf and go back to it. */
+      function commit() {
+        const entry = coerceButton(draft);
+        if (!entry) return;                        // guarded by paintPreview anyway
+        if (isNew) buttons.push(entry);
+        else buttons = buttons.map((b) => (b.id === entry.id ? entry : b));
+        persist();
+        renderShelf();
+      }
+
+      /**
+       * Save the typed-in connection first, then the button that names it.
+       *
+       * In that order because a button carries a NAME: saving it against a
+       * connection the backend does not have yet would leave a button that
+       * cannot run. If the save fails, nothing is added and the form stays up
+       * with the reason — the password is still in it, so the operator fixes a
+       * typo rather than typing it all again.
+       */
+      function saveNewConnectionThenButton() {
+        const body = newConnectionBody(newConn);
+        ui.setBusy(saveBtn, true);
+        api.postJson("/api/ssh/connections", body).then((res) => {
+          if (cancelled) return;
+          if (!(res && res.ok)) {
+            ui.setBusy(saveBtn, false);
+            status.show((res && res.error) || "The connection could not be saved.", "err");
+            return;
+          }
+          // The endpoint answers with the redacted list, so the shelf's own
+          // copy is up to date without a second request — and the next button
+          // can pick this connection from the select.
+          if (Array.isArray(res.connections)) connections = res.connections;
+          connectionsError = connections.length ? "" : connectionsError;
+          draft.connection = body.name;
+          commit();
+        }).catch((error) => {
+          if (cancelled) return;
+          ui.setBusy(saveBtn, false);
+          status.show(error.message || "Could not reach the backend", "err");
+        });
+      }
       const cancelBtn = ui.button({
         variant: "ghost",
         label: "Cancel",
@@ -511,11 +721,26 @@ Corvus.pluginSshLauncher = (function () {
       card.appendChild(ui.actions([saveBtn, cancelBtn]));
 
       function paintPreview() {
-        const line = previewLine(draft);
+        const target = targetName();
+        const line = previewLine(Object.assign({}, draft, { connection: target }));
         preview.textContent = line || "Name a program to see the command.";
         preview.classList.toggle("sshl-preview-empty", !line);
-        // Nothing to save until there is a command AND somewhere to run it.
-        saveBtn.disabled = !line || !draft.connection;
+
+        // The name writes itself from user and host until the operator types
+        // one, so the placeholder has to keep up with what they are entering.
+        if (nameInput) nameInput.placeholder = derivedName(newConn) || "pilot@10.0.0.7";
+
+        // Nothing to save until there is a command AND somewhere to run it —
+        // and, for a typed-in connection, enough of one to save.
+        const connError = pickedNew()
+          ? newConnectionError(newConn, connections.map((c) => c.name))
+          : (target ? "" : "Pick a connection to run it on.");
+        saveBtn.disabled = !line || !!connError;
+        saveBtn.title = connError || (line ? "" : "Name a program first.");
+        // A name that is already taken is the one refusal the operator cannot
+        // see for themselves — everything else is a field they can look at.
+        if (connError && connError.indexOf("already saved") >= 0) status.show(connError, "warn");
+        else status.hide();
       }
       paintPreview();
 
@@ -523,15 +748,21 @@ Corvus.pluginSshLauncher = (function () {
       ui.refreshIcons();
     }
 
-    /** Options for the connection <select>, including the empty states. */
+    /** Options for the connection <select>: the saved ones, then the way to
+     *  type one that was never saved. The last entry is always there — a shelf
+     *  is built on the pad as often as at a desk. */
     function connectionOptions() {
-      if (!connections.length) {
-        return [{ value: "", label: connectionsError || "No saved connections", disabled: true }];
-      }
-      return connections.map((c) => ({
-        value: c.name,
-        label: c.username ? `${c.name} — ${c.username}@${c.host}` : `${c.name} — ${c.host}`,
-      }));
+      const saved = connections.map((c) => {
+        const address = c.username ? `${c.username}@${c.host}` : String(c.host || "");
+        // A connection typed in here is named user@host by default, so spelling
+        // the address out again would read "pilot@10.0.0.7 — pilot@10.0.0.7".
+        return {
+          value: c.name,
+          label: (address && address !== c.name) ? `${c.name} — ${address}` : c.name,
+        };
+      });
+      saved.push({ value: NEW_CONNECTION, label: "New connection…" });
+      return saved;
     }
 
     /** The saved connection a button points at, for the terminal's header. */
@@ -552,13 +783,43 @@ Corvus.pluginSshLauncher = (function () {
     }
 
     /**
-     * TERMINAL mode: open a session of this button's own and type the line into
-     * it. Connect first every time — the backend replaces a same-name session,
-     * so pressing a button whose program has finished gives a fresh shell, and
-     * pressing one that is still running restarts it rather than typing a
-     * second command into a shell that is busy with the first.
+     * TERMINAL mode: type the line into the button's OWN session, and open one
+     * only when it has none.
+     *
+     * Send first, connect only if that fails. The button is a key on a shelf,
+     * so pressing it twice means "run it again", and it runs again in the same
+     * shell — the same window, one prompt under the last run, the scrollback
+     * of the whole session intact. Connecting first every time (what this did)
+     * replaced the session on every press: it killed the running program to
+     * start it again, and every press cost a fresh shell and a fresh screen.
+     *
+     * The shell is the shell: if the last program is still in the foreground,
+     * the line goes to ITS stdin rather than to a prompt, exactly as it would
+     * for someone typing in that terminal. Ctrl-C first, or let it finish.
+     *
+     * The window is NOT opened here. A launch is a launch; the arrow beside
+     * the button is the request to watch it.
      */
     function launchInTerminal(entry) {
+      const session = sessionName(entry);
+      const line = remoteLine(entry);
+      return api.postJson("/api/ssh/send", { name: session, data: line + "\n" })
+        .then((res) => {
+          if (cancelled) return null;
+          // ok:false is the backend saying it has no such live session — the
+          // first press, or the shell has since ended.
+          if (res && res.ok) return ran(entry, line, false);
+          return connectThenSend(entry, line);
+        })
+        .catch((error) => {
+          if (cancelled) return null;
+          status.show(error.message || "Could not reach the backend", "err");
+          return null;
+        });
+    }
+
+    /** Open this button's session, then type the line into it. */
+    function connectThenSend(entry, line) {
       const session = sessionName(entry);
       return api.postJson("/api/ssh/connect", { name: session, from: entry.connection })
         .then((res) => {
@@ -569,24 +830,33 @@ Corvus.pluginSshLauncher = (function () {
             api.notification("warning", `SSH Launcher — ${entry.label}: ${detail}`);
             return null;
           }
-          const line = remoteLine(entry);
           return api.postJson("/api/ssh/send", { name: session, data: line + "\n" })
-            .then(() => {
-              if (cancelled) return null;
-              live[session] = true;
-              status.show(`${entry.label}: running — the arrow opens its terminal.`, "ok");
-              // The console is the app's shared record of what was commanded; a
-              // program started on a companion computer belongs in it.
-              api.console(`ssh-launcher: ${line}`, "success");
-              renderShelf();
-              return res;
-            });
-        })
-        .catch((error) => {
-          if (cancelled) return null;
-          status.show(error.message || "Could not reach the backend", "err");
-          return null;
+            .then(() => (cancelled ? null : ran(entry, line, true)));
         });
+    }
+
+    /**
+     * Record a launch: mark the row live, say so, and log it.
+     *
+     * `reconnected` says a NEW shell is behind the session name. A terminal
+     * window left open on the old one is quietly repointed at it — quietly
+     * because the operator pressed a launch button, not the arrow: nothing is
+     * opened, raised or focused, but a window that is already there must not
+     * keep showing a shell that has stopped printing.
+     */
+    function ran(entry, line, reconnected) {
+      const session = sessionName(entry);
+      const was = !!live[session];
+      live[session] = true;
+      if (reconnected) openTerminal(entry, true, true);
+      status.show(was && !reconnected
+        ? `${entry.label}: sent again to its terminal — the arrow opens it.`
+        : `${entry.label}: running — the arrow opens its terminal.`, "ok");
+      // The console is the app's shared record of what was commanded; a
+      // program started on a companion computer belongs in it.
+      api.console(`ssh-launcher: ${line}`, "success");
+      renderShelf();
+      return true;
     }
 
     /** BACKGROUND mode: one-shot nohup, nothing left to watch. */
@@ -631,7 +901,7 @@ Corvus.pluginSshLauncher = (function () {
      */
     function remove(entry, running) {
       if (running && !window.confirm(
-        `Remove "${entry.label}"?\n\nIts terminal is open and will be closed, ` +
+        `Remove "${entry.label}"?\n\nIts session will be closed, ` +
         `which stops what it is running.`)) return;
       buttons = buttons.filter((b) => b.id !== entry.id);
       persist();
@@ -643,8 +913,16 @@ Corvus.pluginSshLauncher = (function () {
       renderShelf();
     }
 
-    /** Show the terminal a button's program is running in. */
-    function openTerminal(entry) {
+    /**
+     * Show the terminal window a button's program is running in. Raises the
+     * window when it is already open, rather than opening a second one.
+     *
+     * @param {Object} entry the button
+     * @param {boolean} [reattach]    the session behind the name is a new shell
+     * @param {boolean} [existingOnly] repair an open window, open none — a
+     *        launch does this, the arrow does not
+     */
+    function openTerminal(entry, reattach, existingOnly) {
       const conn = connectionFor(entry);
       const shown = api.terminal({
         name: sessionName(entry),
@@ -653,8 +931,10 @@ Corvus.pluginSshLauncher = (function () {
         host: conn.host,
         port: conn.port,
         username: conn.username,
-      });
-      if (!shown) status.show("The SSH panel is not available.", "warn");
+      }, { reattach: !!reattach, existingOnly: !!existingOnly });
+      // "No window" is the normal answer for a launch, and only a failure when
+      // the operator actually asked for one.
+      if (!shown && !existingOnly) status.show("The terminal window could not be opened.", "warn");
     }
 
     // ---- boot ---------------------------------------------------------------
@@ -668,7 +948,9 @@ Corvus.pluginSshLauncher = (function () {
     api.requestJson("/api/ssh/connections").then((data) => {
       if (cancelled) return;
       connections = (data && Array.isArray(data.connections)) ? data.connections : [];
-      connectionsError = connections.length ? "" : "Add an SSH connection in Settings first.";
+      connectionsError = connections.length ? ""
+        : "No saved SSH connections yet — add a button and choose " +
+          "\u201CNew connection\u2026\u201D to enter one here.";
       if (editing === null) renderShelf();
     }).catch(() => {
       if (cancelled) return;
@@ -698,8 +980,8 @@ Corvus.pluginSshLauncher = (function () {
   return {
     init, destroy,
     previewLine, remoteLine, resultSummary, normalizeButtons, coerceButton,
-    coerceMode, sessionName,
-    MAX_BUTTONS, LIVE_POLL_MS, MODE_TERMINAL, MODE_BACKGROUND,
+    coerceMode, sessionName, derivedName, newConnectionError, newConnectionBody,
+    MAX_BUTTONS, LIVE_POLL_MS, MODE_TERMINAL, MODE_BACKGROUND, NEW_CONNECTION,
   };
 })();
 

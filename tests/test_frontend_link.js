@@ -124,6 +124,63 @@ function testBuildConnectionString() {
 // ---------------------------------------------------------------------------
 // LINK tab: serial-port option text
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// LINK tab: reading a stored connection string back
+// ---------------------------------------------------------------------------
+function testParseConnection() {
+  const link = Corvus.link;
+  // The panel restores the last link from this, so the baud has to survive a
+  // device path full of colons and a Windows device with none.
+  assert.deepEqual(link.parseConnection("serial:/dev/ttyUSB0:57600"), {
+    kind: "serial", device: "/dev/ttyUSB0", baud: "57600", conn: "serial:/dev/ttyUSB0:57600",
+  });
+  assert.deepEqual(link.parseConnection("serial:COM3:115200"), {
+    kind: "serial", device: "COM3", baud: "115200", conn: "serial:COM3:115200",
+  });
+  assert.equal(link.parseConnection("serial:/dev/tty.usbserial-0001:57600").device,
+    "/dev/tty.usbserial-0001", "device keeps its dashes and dots");
+  // Round-trip with the builder: what one writes, the other must read.
+  const conn = link.buildConnectionString("/dev/ttyUSB0", 230400);
+  const back = link.parseConnection(conn);
+  assert.equal(back.device, "/dev/ttyUSB0");
+  assert.equal(back.baud, "230400");
+
+  const net = link.parseConnection("udp:0.0.0.0:14550");
+  assert.equal(net.kind, "net");
+  assert.equal(net.conn, "udp:0.0.0.0:14550");
+  assert.equal(link.parseConnection(""), null);
+  assert.equal(link.parseConnection(null), null);
+  // "serial:" without a trailing baud is not a serial string we built, and
+  // must not be torn apart as if it were.
+  assert.equal(link.parseConnection("serial:/dev/ttyUSB0").kind, "net");
+}
+
+function testDescribeConnection() {
+  const link = Corvus.link;
+  const s = link.describeConnection("serial:/dev/ttyUSB0:57600");
+  assert.equal(s.label, "/dev/ttyUSB0", "the port is what identifies the link");
+  assert.equal(s.detail, "57600 baud");
+  assert.equal(s.icon, "cable");
+
+  const u = link.describeConnection("udp:0.0.0.0:14550");
+  assert.equal(u.label, "0.0.0.0:14550", "the scheme is not part of the address");
+  assert.equal(u.detail, "udp");
+  assert.equal(u.icon, "network");
+
+  // udpout must not be shortened to udp — it dials out where udp listens, and
+  // the recent list is where the two are told apart.
+  assert.equal(link.describeConnection("udpout:127.0.0.1:14550").detail, "udpout");
+  assert.equal(link.describeConnection("tcp:127.0.0.1:5760").detail, "tcp");
+  assert.equal(link.describeConnection("").label, "");
+
+  // Every preset must render as something, or the list has a blank row in it.
+  link.PRESETS.forEach((p) => {
+    const d = link.describeConnection(p.conn);
+    assert.ok(d.label, `preset ${p.conn} has a label`);
+    assert.ok(d.icon, `preset ${p.conn} has an icon`);
+  });
+}
+
 function testPortOptionText() {
   const link = Corvus.link;
   assert.equal(
@@ -493,6 +550,8 @@ function testSharedLoopMultipleAnimators() {
 // ---------------------------------------------------------------------------
 function run() {
   testBuildConnectionString();
+  testParseConnection();
+  testDescribeConnection();
   testPortOptionText();
   testStatusInfo();
   testQualityInfo();

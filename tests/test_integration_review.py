@@ -13,9 +13,10 @@ Cases:
       bridge cache, the vibration fields reach the store snapshot, and the
       armed/mode state reaches the store snapshot.
   (b) Refuse-when-armed end-to-end: with an armed HEARTBEAT dispatched,
-      set_param / calibrate / autotune are refused client-side (no command
-      sent, "armed" in the error) while set_vibration_stream is NOT refused
-      (a command is actually sent and accepted).
+      set_param / calibrate are refused client-side (no command sent, "armed"
+      in the error) while the stream-rate controls and the autotune are NOT
+      (a command is actually sent and accepted). Autotune is in the second
+      group because PX4 runs it in flight and rejects it while disarmed.
   (c) SSE params listener cleanup: the real ``_BoundedSseBuffer`` used by
       ``_sse_params`` plus the bridge's ``add_param_listener`` /
       ``remove_param_listener`` leave no listener behind.
@@ -177,16 +178,24 @@ def test_dispatch_pipeline_param_vibration_heartbeat_reach_store() -> None:
 # (b) Refuse-when-armed end-to-end (defense-in-depth, backend-enforced)
 # ---------------------------------------------------------------------------
 
-def test_refuse_when_armed_set_param_calibrate_autotune_but_not_vibration(
+def test_refuse_when_armed_set_param_and_calibrate_but_not_streams(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # No real sleeps: the armed-refusal paths return before any wait loop, and
     # the vibration path is auto-acked synchronously.
     monkeypatch.setattr(time, "sleep", lambda s: None)
 
+    # Only the commands that are *expected* to leave the client are acked, so
+    # a refusal that regressed into a send shows up as a timeout rather than
+    # quietly passing.
+    acked = {
+        mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+        mavutil.mavlink.MAV_CMD_DO_AUTOTUNE_ENABLE,
+    }
+
     def on_send(args: tuple) -> None:
         command = int(args[2])
-        if command == mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL:
+        if command in acked:
             bridge._dispatch(ack(command, mavutil.mavlink.MAV_RESULT_ACCEPTED))
 
     bridge = _ready_bridge(on_send)
@@ -205,10 +214,20 @@ def test_refuse_when_armed_set_param_calibrate_autotune_but_not_vibration(
     assert "armed" in bridge.get_last_command_error()
     assert bridge._conn.mav.commands == []
 
-    # autotune: refused client-side → no command.
-    assert bridge.autotune("roll") is False
-    assert "armed" in bridge.get_last_command_error()
+    # autotune: NOT refused while armed. It is not a preflight action — PX4
+    # runs it in flight and rejects it while disarmed — so an armed-refusal
+    # here would block the only state it can succeed in. It is refused on the
+    # ground instead, which is its real precondition.
+    bridge._store.update(landed_state=mavutil.mavlink.MAV_LANDED_STATE_ON_GROUND)
+    assert bridge.autotune("all") is False
+    assert "on the ground" in bridge.get_last_command_error()
     assert bridge._conn.mav.commands == []
+
+    bridge._store.update(landed_state=mavutil.mavlink.MAV_LANDED_STATE_IN_AIR)
+    assert bridge.autotune("all") is True
+    assert "armed" not in bridge.get_last_command_error()
+    assert bridge._conn.mav.commands, "autotune was expected to go out in flight"
+    bridge._conn.mav.commands.clear()
 
     # set_vibration_stream: NOT refused while armed — read-only stream-rate
     # control is safe. A SET_MESSAGE_INTERVAL command is actually sent and
@@ -218,6 +237,13 @@ def test_refuse_when_armed_set_param_calibrate_autotune_but_not_vibration(
     assert "armed" not in err
     assert vib_ok is True
     assert bridge._conn.mav.commands, "vibration stream-rate command was expected while armed"
+    bridge._conn.mav.commands.clear()
+
+    # set_tuning_stream: same class of action, and the one the PID tuning page
+    # opens with — in flight, which is the only time a setpoint trace exists.
+    assert bridge.set_tuning_stream(True, 20) is True
+    assert "armed" not in bridge.get_last_command_error()
+    assert bridge._conn.mav.commands, "tuning stream-rate command was expected while armed"
     assert bridge._conn.mav.commands[-1][2] == mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL
 
 

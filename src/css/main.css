@@ -121,17 +121,25 @@ svg { display: block; }
 }
 .tb-value .sub { font-size: 11px; color: var(--text-2); font-weight: 500; }
 .tb-value .sub.undetected { color: var(--text-3); }
+/* Hidden unless the operator asks for them in Settings > Appearance > Top
+   bar, which writes data-topbar-dots on <html> (Corvus.topbar.setStatusDots).
+   Default off: the blocks that carry a dot already paint their own value in
+   the same state colour, so the dot is usually the same thing said twice.
+   display:none rather than visibility/opacity so the .tb-label gap collapses
+   with it and the caption does not sit beside an empty 7px hole. */
 .tb-dot {
+  display: none;
   width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto;
   background: var(--text-disabled);
 }
-/* Placeholder occupying the leading dot slot so undotted value rows (Mode)
-   align with dotted rows (Vehicle / Status / GPS / Battery). 7px + the 5px
-   .tb-value gap = the exact space a real .tb-dot consumes. */
-.tb-dot-placeholder { width: 7px; height: 7px; flex: 0 0 auto; }
+:root[data-topbar-dots="on"] .tb-dot { display: block; }
 .tb-dot.healthy { background: var(--healthy); box-shadow: 0 0 7px var(--healthy); }
 .tb-dot.warning { background: var(--warning); box-shadow: 0 0 7px var(--warning); }
 .tb-dot.critical { background: var(--critical); box-shadow: 0 0 7px var(--critical); }
+.tb-dot.nav { background: var(--nav); box-shadow: 0 0 7px var(--nav); }
+/* Armed on the ground. Amber because live propellers are a caution, and the
+   pill below is what keeps it from reading as the same thing as NOT READY. */
+.tb-dot.armed { background: var(--warning); box-shadow: 0 0 7px var(--warning); }
 .tb-dot.off { background: var(--text-disabled); }
 
 .tb-value.healthy { color: var(--healthy); }
@@ -139,29 +147,106 @@ svg { display: block; }
 .tb-value.critical { color: var(--critical); }
 .tb-value.accent { color: var(--text-1); }
 .tb-value.nav { color: var(--nav); }
+.tb-value.armed { color: var(--warning); }
+/* Informational notifications. Blue, not the green of "all good" and not the
+   amber of "something is wrong": a line the operator may want to read is
+   neither. */
+.tb-value.info { color: var(--nav); }
+.tb-value.read { color: var(--text-3); }
+
+/* The STATUS block's tone.
+   Colour alone was carrying every one of these states, which asks the operator
+   to interpret a hue mid-flight. The three states worth recognising at a
+   glance — cleared to fly, propellers live, airborne — get a tinted pill as
+   well, so they are distinguishable by shape before the colour is read at all.
+   NOT READY deliberately gets no pill: it is the absence of a clearance, not
+   an active state, and giving it the same weight is how a bar ends up amber
+   from end to end. */
+.tb-block[data-tone] {
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border-soft);
+}
+.tb-block[data-tone="ready"] {
+  background: var(--healthy-dark);
+  box-shadow: inset 0 0 0 1px var(--healthy);
+}
+.tb-block[data-tone="flying"] {
+  background: var(--nav-dark);
+  box-shadow: inset 0 0 0 1px var(--nav);
+}
+.tb-block[data-tone="armed"] {
+  background: var(--warning-dark);
+  box-shadow: inset 0 0 0 1px var(--warning);
+}
+.tb-block[data-tone="notready"],
+.tb-block[data-tone="none"] { background: none; box-shadow: none; }
+.tb-block[data-tone]:hover { background: var(--surface-hover); }
+.tb-block[data-tone="ready"]:hover { background: var(--healthy-dark); }
+.tb-block[data-tone="flying"]:hover { background: var(--nav-dark); }
+.tb-block[data-tone="armed"]:hover { background: var(--warning-dark); }
 
 .tb-icon { width: 14px; height: 14px; color: var(--text-3); }
 .tb-spacer { flex: 1; }
-.tb-block.warnings .tb-value { display: flex; align-items: center; gap: 5px; }
-/* The unread count. Its colour is a token driven by data-level, which
-   Corvus.topbar writes — it used to be three hex literals assigned straight to
-   style.background, so the loudest element in the bar was also the only one
-   that never followed the theme.
+/* Centred under its label rather than left-hugging like the data blocks: this
+   tile is a button to a popover, not a field, so its badge reads as one
+   balanced mark under the word, not as a value in a column.
+   Line-locked, though. It used to let the pill set its own row height, and
+   because .tb-block centres its content vertically, that taller row pushed
+   the NOTIFICATIONS label ~2px above every other label in the bar. The height
+   is in em so it tracks the .tb-value font-size through the responsive step,
+   and the pill — still taller than the line box — is centred on it and
+   allowed to overhang. */
+.tb-block.warnings .tb-value {
+  display: flex;
+  height: 1.1em;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+/* One pill, count then icon — not a bare circled digit. Its colour is a token
+   driven by data-level, which Corvus.topbar writes — it used to be three hex
+   literals assigned straight to style.background, so the loudest element in
+   the bar was also the only one that never followed the theme.
    "read" is the acknowledged board: notifications are still there, and the
-   badge still says how many, but a grey count is not asking for anything. */
-.tb-warn-badge {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
+   pill still says how many, but a grey count is not asking for anything. */
+.tb-warn-pill {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  height: 18px; padding: 0 7px; border-radius: 9px;
   font-size: 12px; font-weight: 700; color: var(--text-inverted);
   font-variant-numeric: tabular-nums;
   background: var(--healthy);
   transition: background 160ms;
 }
-.tb-warn-badge[data-level="warning"] { background: var(--warning); }
-.tb-warn-badge[data-level="critical"] { background: var(--critical); }
-.tb-warn-badge[data-level="read"] { background: var(--text-3); }
+/* Two digits is the width the pill is sized for, so a board going from 9 to
+   10 notifications changes the number and nothing else. Without it the badge
+   grows a character mid-flight and the block twitches under the cursor. */
+.tb-warn-count { min-width: 2ch; text-align: center; }
+/* Same colour as the count beside it — the pill is one badge, not an icon
+   sitting next to a separate badge. */
+.tb-warn-pill .tb-warn-icon { width: 12px; height: 12px; color: inherit; }
+.tb-warn-pill[data-level="warning"] {
+  background: var(--warning);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--warning) 55%, transparent);
+}
+/* Critical is the one state worth interrupting a glance at the bar for, so it
+   gets the same soft pulse the flight-action busy ring uses elsewhere — not a
+   louder colour, a slower-moving one. */
+.tb-warn-pill[data-level="critical"] {
+  background: var(--critical);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--critical) 60%, transparent);
+  animation: corvus-warn-pill-pulse 1.8s ease-in-out infinite;
+}
+.tb-warn-pill[data-level="read"] { background: var(--text-3); }
+/* Unread, but only informational. This used to be painted with the warning
+   amber, so a normal flight's running commentary ("Mode accepted", "Takeoff
+   target accepted") kept the bar looking like something had gone wrong. */
+.tb-warn-pill[data-level="info"] { background: var(--nav); }
+@keyframes corvus-warn-pill-pulse {
+  0%, 100% { box-shadow: 0 0 7px color-mix(in srgb, var(--critical) 60%, transparent); }
+  50% { box-shadow: 0 0 13px color-mix(in srgb, var(--critical) 90%, transparent); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .tb-warn-badge { transition: none; }
+  .tb-warn-pill { transition: none; animation: none; }
 }
 
 /* ===== LEFT NAVIGATION ===== */
@@ -436,6 +521,10 @@ svg { display: block; }
   display: flex;
   align-items: center;
   gap: 5px;
+  /* MapLibre's compact rule sets box-sizing: content-box, so its own 20px
+     min-height and every padding below were being added to each other rather
+     than absorbed. */
+  box-sizing: border-box;
   min-height: 0;
   padding: 2px 8px;
   background: rgb(8 11 15 / 0.42);
@@ -448,8 +537,13 @@ svg { display: block; }
   color: rgb(255 255 255 / 0.58);
   transition: background 160ms ease, color 160ms ease;
 }
+/* Readable on hover, and readable whenever the credit is actually open. This
+   was keyed to :focus-within, but the toggle is a <summary> and a summary keeps
+   focus after the click that opened it — so the pill stayed lit until the user
+   happened to click somewhere else on the map. */
 .maplibregl-ctrl-bottom-left > .maplibregl-ctrl.maplibregl-ctrl-attrib:hover,
-.maplibregl-ctrl-bottom-left > .maplibregl-ctrl.maplibregl-ctrl-attrib:focus-within {
+.maplibregl-ctrl-bottom-left
+  > .maplibregl-ctrl.maplibregl-ctrl-attrib.maplibregl-compact-show {
   background: rgb(8 11 15 / 0.72);
   color: rgb(255 255 255 / 0.92);
 }
@@ -457,6 +551,11 @@ svg { display: block; }
    the row holds nothing but the button and the pill becomes its disc. */
 .maplibregl-ctrl-bottom-left
   > .maplibregl-ctrl.maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show) {
+  /* The credit is display:none here, but the row's 5px gap is still charged to
+     its shrink-to-fit width — 5px of nothing on the right, which is what turned
+     the disc into a 27x22 ellipse with the "i" sitting left of centre. Zero the
+     gap and the box is square again, so border-radius: 50% draws a circle. */
+  gap: 0;
   padding: 3px;
   border-radius: 50%;
 }
@@ -487,9 +586,17 @@ svg { display: block; }
   font-size: 8.5px; font-weight: 700; font-style: italic;
   line-height: 1;
 }
-.maplibregl-ctrl-attrib-button:focus,
-.maplibregl-ctrl-attrib-button:focus-visible { outline: none; box-shadow: none; }
-.maplibregl-ctrl-attrib:focus-within .maplibregl-ctrl-attrib-button {
+/* MapLibre paints a 2px blue glow on plain :focus. That fires on mouse-down and
+   then stays, so a single click left the least important thing on the map
+   wearing the loudest ring on it. The glow goes; the accent ring is handed to
+   :focus-visible, which a pointer click does not trigger. The selector is three
+   classes deep to outrank the border-color on the base rule above. */
+.maplibregl-ctrl-attrib-button:focus { outline: none; box-shadow: none; }
+.maplibregl-ctrl-bottom-left
+  .maplibregl-ctrl-attrib
+  .maplibregl-ctrl-attrib-button:focus-visible {
+  outline: none;
+  box-shadow: none;
   border-color: var(--accent-bright);
 }
 .maplibregl-ctrl-logo { opacity: 0.35 !important; }
@@ -1066,6 +1173,25 @@ svg { display: block; }
   color: var(--text-inverted);
   transform: translateY(1px);
 }
+/* Shift held: every key in the panel is worth more travel than the slider
+   says, so the whole panel is marked rather than only the key under the
+   finger — the boost is a state of the surface, not of one key. The ring sits
+   outside the cluster so it does not move the keys under the operator's hand,
+   and the held key changes color as well, because a key that is now flying
+   twice as fast must not look identical to one that is not. */
+.js-keys.is-boost .js-keys-grid {
+  box-shadow: 0 0 0 2px var(--warning-dark);
+  border-radius: var(--radius-btn);
+}
+.js-keys.is-boost .js-key.active {
+  background: var(--warning);
+  border-color: var(--warning);
+  /* --text-inverted is what every other --warning fill in the app writes on
+     (.tb-warn-badge), and it is the token that flips with the theme, so the
+     letter stays legible on amber and on yellow alike. */
+  color: var(--text-inverted);
+}
+.js-keys.is-boost .js-caption { color: var(--warning); }
 
 /* The spring-back and the key press are the only motion here, and both are
    decorative: the axis values are already updated by the time they play. */
@@ -1187,19 +1313,62 @@ svg { display: block; }
 .instruments { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .instrument { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .compass, .attitude { width: 100%; aspect-ratio: 1; }
-.compass-ring { fill: rgb(var(--input-rgb) / 0.25); stroke: rgb(var(--tint-rgb) / 0.08); stroke-width: 1.5; }
-#compassArrow .arrow-body { fill: var(--vehicle); }
-#compassArrow .arrow-tail { fill: rgb(var(--vehicle-rgb) / 0.3); }
-.compass-window { fill: rgb(var(--input-rgb) / 0.92); stroke: var(--nav); stroke-width: 1.2; }
-.compass-window-text { font: 700 13px var(--sans); fill: var(--nav); font-variant-numeric: tabular-nums; }
-.compass-hub { fill: var(--bg); stroke: var(--vehicle); stroke-width: 1.5; }
 
-.attitude .adi-bezel { fill: none; stroke: var(--border); stroke-width: 2; }
-.adi-roll-scale .roll-tick { stroke: var(--text-3); stroke-width: 1.2; }
-.adi-roll-scale .roll-tick.major { stroke: var(--text-1); stroke-width: 2; }
-.adi-roll-scale .roll-pointer { fill: var(--warning); }
-.adi-aircraft .adi-wing, .adi-aircraft .adi-tail { stroke: var(--text-1); stroke-width: 3; stroke-linecap: round; }
-.adi-aircraft .adi-center { fill: var(--text-1); }
+/* --- Compass ---
+   Two concentric surfaces (bezel ring, dial face) and one tick band between
+   them. Everything is a theme token, including the tick colours, so the dial
+   inverts with the interface instead of being a light-theme drawing that a
+   dark theme has to fight. */
+.compass-ring { fill: rgb(var(--tint-rgb) / 0.06); stroke: rgb(var(--tint-rgb) / 0.16); stroke-width: 1.5; }
+.compass-face { fill: rgb(var(--input-rgb) / 0.55); stroke: rgb(var(--tint-rgb) / 0.06); stroke-width: 1; }
+.compass-tick { stroke: rgb(var(--tint-rgb) / 0.22); stroke-width: 0.9; }
+.compass-tick.medium { stroke: rgb(var(--tint-rgb) / 0.34); stroke-width: 1.1; }
+.compass-tick.major { stroke: var(--text-3); stroke-width: 1.6; }
+.compass-tick.cardinal { stroke: var(--text-2); stroke-width: 2.2; }
+.compass-label { font: 700 13px var(--sans); fill: var(--text-2); letter-spacing: 0.3px; }
+/* North is the datum the whole dial is read from, so it is the one label
+   allowed to carry the navigation accent. */
+.compass-label.north { fill: var(--nav); }
+.compass-digit { font: 600 7.5px var(--sans); fill: var(--text-3); font-variant-numeric: tabular-nums; }
+.needle-north { fill: var(--vehicle); }
+.needle-south { fill: rgb(var(--vehicle-rgb) / 0.28); }
+.compass-hub { fill: var(--surface-1); stroke: var(--vehicle); stroke-width: 1.6; }
+
+/* --- Attitude indicator ---
+   Flat. Two tones from the --adi-* tokens in themes.css and one white line
+   between them; no gradient, no vignette. Everything drawn ON
+   the ball is white except the aircraft symbol, which is the single amber
+   accent — the roll ticks and the symbol used to be --text-1/--text-3, which
+   is near-black on the light themes and vanished into the sky.
+
+   The weights are deliberately uniform (one for the ladder, one for the arc)
+   rather than a three-step hierarchy: at 88 units across there is only room
+   for a hierarchy to look busy. */
+/* The ring is the compass's ring, to the value: same band, same fill, same
+   hairline. That shared edge is what makes the pair read as two instruments
+   rather than two drawings. */
+.attitude .adi-ring { fill: rgb(var(--tint-rgb) / 0.06); stroke: rgb(var(--tint-rgb) / 0.16); stroke-width: 1.5; }
+.attitude .adi-sky { fill: var(--adi-sky); }
+.attitude .adi-ground { fill: var(--adi-ground); }
+.attitude .adi-horizon { stroke: #FFFFFF; stroke-width: 1.8; }
+/* Seats the ball into the ring. The two colours it separates are both mid
+   values, so this only has to be a hairline to register. */
+.attitude .adi-ball-edge { fill: none; stroke: rgb(var(--tint-rgb) / 0.14); stroke-width: 1; }
+
+.attitude .pitch-tick { stroke: rgba(255, 255, 255, 0.85); stroke-width: 1.3; }
+.attitude .pitch-label { font: 500 7px var(--sans); fill: rgba(255, 255, 255, 0.85); font-variant-numeric: tabular-nums; }
+
+/* On the ring now, not on the sky — so they take the ring's colours, which
+   are the compass's tick colours. */
+.adi-roll-arc .roll-tick { stroke: var(--text-3); stroke-width: 1.6; }
+.adi-roll-arc .roll-tick.zero { stroke: var(--text-2); stroke-width: 2.2; }
+.adi-roll-scale .roll-pointer { fill: var(--adi-mark); }
+
+.adi-aircraft .adi-mark { stroke: var(--adi-mark); stroke-width: 2.6; fill: none; stroke-linecap: round; }
+/* A hairline casing under the amber — enough to keep the bars a shape where
+   they cross the horizon, not enough to read as a shadow. */
+.adi-aircraft .adi-mark-outline { stroke: var(--adi-mark-outline); stroke-width: 4.4; fill: none; stroke-linecap: round; }
+.adi-aircraft .adi-mark-dot { fill: var(--adi-mark); }
 
 .instrument-readout { display: flex; flex-direction: column; align-items: center; gap: 1px; }
 .readout-label { font-size: 8.5px; font-weight: 600; letter-spacing: 0.9px; color: var(--text-3); }
@@ -1249,7 +1418,7 @@ svg { display: block; }
 .wp-item:last-child { border-bottom: none; }
 /* Unread carries a bar in its own severity colour along the leading edge —
    inset rather than a child element, so it costs the flex row nothing. */
-.wp-item[data-level="info"] { box-shadow: inset 2px 0 0 var(--healthy); }
+.wp-item[data-level="info"] { box-shadow: inset 2px 0 0 var(--nav); }
 .wp-item[data-level="warning"] { box-shadow: inset 2px 0 0 var(--warning); }
 .wp-item[data-level="critical"] { box-shadow: inset 2px 0 0 var(--critical); }
 /* Read: the bar goes and the row recedes. Still legible, still in place — the
@@ -1262,7 +1431,7 @@ svg { display: block; }
 .wp-icon { width: 20px; height: 20px; flex: 0 0 auto; display: grid; place-items: center; margin-top: 1px; }
 .wp-icon.warning { color: var(--warning); }
 .wp-icon.critical { color: var(--critical); }
-.wp-icon.info { color: var(--healthy); }
+.wp-icon.info { color: var(--nav); }
 .wp-icon svg { width: 16px; height: 16px; }
 .wp-body { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .wp-msg { font-size: 12px; color: var(--text-1); line-height: 1.3; }
@@ -1274,6 +1443,50 @@ svg { display: block; }
 }
 .wp-dismiss:hover { color: var(--text-1); background: var(--surface-hover); }
 .wp-dismiss svg { width: 13px; height: 13px; }
+
+/* ===== TOASTS =====
+   A transient sibling of the warnings popover, not a replacement for it: the
+   notification board is a log of vehicle/flight state, kept until dismissed;
+   a toast is a UI aside (a hint, a local confirmation) that says its piece
+   and clears itself. Same surface, same level colours and icons, so the two
+   read as one family — but stacked in its own column and never added to the
+   board underneath. */
+.ui-toast-stack {
+  position: fixed; top: calc(var(--top-h) + 10px); right: 12px; z-index: var(--z-toast);
+  width: min(320px, calc(100vw / var(--ui-scale, 1) - 24px));
+  display: flex; flex-direction: column; gap: 8px;
+  /* The stack itself is not a target — only the cards inside it are — so a
+     click meant for the map or a button behind an already-faded toast still
+     lands. */
+  pointer-events: none;
+}
+.ui-toast {
+  pointer-events: auto;
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: opacity 160ms, transform 160ms;
+}
+.ui-toast[data-level="info"] { box-shadow: inset 2px 0 0 var(--nav); }
+.ui-toast[data-level="warning"] { box-shadow: inset 2px 0 0 var(--warning); }
+.ui-toast[data-level="critical"] { box-shadow: inset 2px 0 0 var(--critical); }
+.ui-toast.is-leaving { opacity: 0; transform: translateY(-4px); }
+@media (prefers-reduced-motion: reduce) {
+  .ui-toast { transition: none; }
+}
+.ui-toast-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 0 11px; }
+.ui-toast-icon { width: 18px; height: 18px; flex: 0 0 auto; display: grid; place-items: center; }
+.ui-toast-icon svg { width: 15px; height: 15px; }
+.ui-toast-icon.info { color: var(--nav); }
+.ui-toast-icon.warning { color: var(--warning); }
+.ui-toast-icon.critical { color: var(--critical); }
+.ui-toast-title { flex: 1; font-size: 12px; font-weight: 600; letter-spacing: 0.4px; color: var(--text-1); }
+.ui-toast-close {
+  width: 22px; height: 22px; flex: 0 0 auto; display: grid; place-items: center;
+  margin: -3px -3px -3px 0; border-radius: var(--radius-btn); color: var(--text-3);
+}
+.ui-toast-close:hover { color: var(--text-1); background: var(--surface-hover); }
+.ui-toast-close svg { width: 12px; height: 12px; }
+.ui-toast-body { font-size: 12px; color: var(--text-2); line-height: 1.35; padding: 6px 12px 11px 37px; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
@@ -1414,6 +1627,22 @@ svg { display: block; }
 /* .ssh-connect is now .btn + data-variant + data-shape="block"; the legacy
    colour/padding/border rules moved to the component system. */
 
+/* Settings page's own SSH connection list (sidenav.js renderSSHSection) — a
+   plain name-left, actions-right row rather than the SSH tab's cards. Without
+   these rules the row's two divs (info, actions) stack as plain blocks, and
+   CONNECT/edit/remove pile up under the name instead of sitting beside it. */
+.settings-ssh-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 0; border-bottom: 1px solid var(--border);
+}
+.settings-ssh-row:last-of-type { border-bottom: none; }
+.settings-ssh-info {
+  flex: 1; min-width: 0; font-size: 12px; color: var(--text-1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.settings-ssh-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.settings-ssh-note { font-size: 11px; color: var(--critical); }
+
 /* The terminal view is the whole tab: an 80-column program has nowhere to draw
    inside a card in a scrolling list, so in terminal-mode the content column
    stops scrolling and the card stretches to the panel. */
@@ -1442,6 +1671,66 @@ svg { display: block; }
   display: flex; flex-direction: column;
 }
 .ssh-fullscreen .ssh-terminal-card { flex: 1; min-height: 0; }
+
+/* ----- FLOATING SSH TERMINALS ----- */
+/* One window per SSH session a plugin opened, over the whole app. The layer
+   itself is transparent to the pointer, so everything a window is not sitting
+   on keeps working; stacking is DOM order, so raising one is an appendChild
+   and never a z-index race. */
+.term-layer {
+  position: fixed; inset: 0; z-index: var(--z-term-window);
+  pointer-events: none;
+}
+.term-win {
+  position: absolute; pointer-events: auto;
+  display: flex; flex-direction: column; min-width: 0;
+  background: var(--surface-2); border: 1px solid var(--border-strong);
+  border-radius: var(--radius); box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+/* While a window is being moved or sized, no part of it selects text — an
+   accidental selection in the terminal would swallow the drag. */
+.term-win.is-dragging, .term-win.is-dragging * { user-select: none; }
+
+.term-win-bar {
+  flex: 0 0 auto; height: 34px; display: flex; align-items: center; gap: 8px;
+  padding: 0 6px 0 10px; cursor: grab;
+  background: var(--surface-3); border-bottom: 1px solid var(--border);
+}
+.term-win.is-dragging .term-win-bar { cursor: grabbing; }
+.term-win.is-max .term-win-bar { cursor: default; }
+.term-win-icon { display: grid; place-items: center; color: var(--text-2); flex: 0 0 auto; }
+.term-win-info { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+.term-win-name {
+  font-size: 12px; font-weight: 600; color: var(--text-1);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.term-win-host {
+  font-size: 10px; color: var(--text-3); font-family: var(--mono);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto;
+}
+.term-win-tools { display: flex; gap: 1px; flex: 0 0 auto; }
+.term-win-tools .icon-btn { width: 24px; height: 24px; }
+/* Disconnect ends a running program; it says so in colour as well as in its
+   tooltip, but only once the pointer is on it. */
+.term-win-disconnect:hover { color: var(--critical); }
+
+/* The terminal fills the frame. .ssh-term carries the xterm styling already;
+   these two only undo the SSH tab's card metrics. */
+.term-win-body { flex: 1; min-height: 0; border: none; border-radius: 0; margin: 0; }
+
+/* Bottom-right size grip: a corner target rather than four edges, because a
+   1px edge is a poor hit area and the window is already resizable to anything
+   useful from one corner. */
+.term-win-grip {
+  position: absolute; right: 0; bottom: 0; width: 16px; height: 16px;
+  cursor: nwse-resize;
+  background:
+    linear-gradient(135deg, transparent 50%, var(--border-strong) 50%, var(--border-strong) 62%,
+      transparent 62%, transparent 74%, var(--border-strong) 74%, var(--border-strong) 86%,
+      transparent 86%);
+}
+.term-win.is-max .term-win-grip { display: none; }
 
 /* ----- FUTURE ----- */
 /* Base layout so the grid / opened view fills whether or not the empty
@@ -1501,14 +1790,14 @@ svg { display: block; }
   .plugin-view,
   .plugin-back,
   .setup-back,
-  .calib-btn,
   .calib-card,
   .calib-pose,
   .calib-progress-fill,
   .calib-figure-marker circle,
   .calib-pose[data-state="active"] .calib-pose-mark,
-  .autotune-btn,
   .autotune-live-dot,
+  .tune-tab,
+  .link-kind,
   .params-download-btn,
   .params-apply,
   .plan-panel,
@@ -1534,6 +1823,30 @@ svg { display: block; }
   font-size: 12px; font-weight: 600; letter-spacing: 0.4px; color: var(--text-1);
 }
 .link-card-title i, .link-card-title svg { width: 15px; height: 15px; color: var(--accent); }
+/* Serial or network, one card, one Connect button below both. A segmented
+   control rather than tabs: it picks what the button will do, which is a
+   choice about this card, not navigation to somewhere else. */
+.link-kinds {
+  display: flex; gap: 3px; padding: 3px;
+  background: var(--panel-fill); border: 1px solid var(--panel-hairline);
+  border-radius: var(--radius-btn);
+}
+.link-kind {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 6px 8px;
+  border: 0; border-radius: calc(var(--radius-btn) - 2px);
+  background: transparent; color: var(--text-3);
+  font-family: inherit; font-size: 11px; font-weight: 600; letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: background 130ms ease, color 130ms ease;
+}
+.link-kind i, .link-kind svg { width: 13px; height: 13px; }
+.link-kind:hover { color: var(--text-1); }
+.link-kind[aria-selected="true"] { background: var(--surface-1); color: var(--text-1); }
+.link-kind[aria-selected="true"] i, .link-kind[aria-selected="true"] svg { color: var(--accent); }
+.link-kind:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: -2px; }
+.link-kind-fields { display: flex; flex-direction: column; gap: 10px; }
+.link-kind-fields[hidden] { display: none; }
 .link-field { display: flex; flex-direction: column; gap: 5px; }
 .link-field-label {
   font-size: 10px; font-weight: 600; letter-spacing: 0.7px; color: var(--text-3);
@@ -1844,24 +2157,6 @@ svg { display: block; }
 .calib-log-card { display: flex; flex-direction: column; gap: 8px; }
 .calib-actions { margin-top: 12px; }
 
-/* ----- CALIBRATION: the autotune tile buttons -----
-   .calib-btn is what the PID Tuning axis buttons are built from, and it is the
-   class Corvus.setupShared.runConfigAction writes its busy/ok/err status into.
-   The sensor calibrations no longer use it — they are .calib-card rows now. */
-/* .calib-btn is .btn secondary; keep the column layout (icon over label over
-   status), the accent icon, and the busy/ok/err status text. The hover border
-   bump and the .busy nav border need .btn.calib-btn specificity to override the
-   variant's border. */
-.btn.calib-btn { flex-direction: column; padding: 14px 10px; gap: 5px; }
-.btn.calib-btn:hover { border-color: var(--border-strong); }
-.btn.calib-btn > svg, .btn.calib-btn > i[data-lucide] { width: 19px; height: 19px; color: var(--accent-bright); }
-.calib-btn-label { font-size: 12px; font-weight: 600; letter-spacing: 0.2px; }
-.calib-btn-status { font-size: 10.5px; color: var(--text-3); min-height: 13px; text-align: center; line-height: 1.3; }
-.calib-btn-status.busy { color: var(--nav); }
-.calib-btn-status.ok { color: var(--healthy); }
-.calib-btn-status.err { color: var(--critical); }
-.btn.calib-btn.busy { border-color: var(--nav); }
-
 /* ----- MOTOR / ESC SAFETY WARNING -----
    The dialog shell (scrim, glass panel, entrance, reduced-motion and
    reduced-transparency handling) is .modal in components.css. All that is
@@ -1915,35 +2210,65 @@ svg { display: block; }
   .calib-stage-figure { max-width: 280px; margin: 0 auto; }
 }
 
-/* ----- PID TUNING ----- */
-.pod-section { margin-top: 8px; }
-.pod-note {
-  font-size: 11px; color: var(--text-3); line-height: 1.5;
-  background: var(--surface-2); border: 1px solid var(--border-soft);
-  border-radius: var(--radius-btn); padding: 9px 11px; margin-bottom: 12px;
+/* ----- PID TUNING -----
+   One tab per loop of the control cascade. The tab strip is the page's whole
+   navigation, so it is the one piece of chrome here that is allowed to be
+   loud: the operator has to be able to tell at a glance which controller they
+   are editing, because the four look alike and the consequences do not. */
+.tune-ready { margin-bottom: 12px; }
+.tune-tabs {
+  display: flex; flex-wrap: wrap; gap: 2px;
+  border-bottom: 1px solid var(--border); margin-bottom: 14px;
 }
-.autotune-controls {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 10px; margin-bottom: 4px;
+.tune-tab {
+  appearance: none; background: none; border: none; cursor: pointer;
+  font-family: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0.2px;
+  color: var(--text-3); padding: 9px 12px;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
 }
-/* .autotune-btn extends .btn.calib-btn with a row layout (label beside status). */
-.btn.calib-btn.autotune-btn { flex-direction: row; justify-content: center; gap: 8px; padding: 11px 12px; }
+.tune-tab:hover { color: var(--text-1); background: var(--surface-hover); }
+.tune-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tune-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
-.autotune-graphs {
+.tune-panel { display: flex; flex-direction: column; gap: 14px; }
+.tune-card { display: flex; flex-direction: column; gap: 10px; }
+/* Each group leads with what its loop actually does. Four pages of gains with
+   no such line is how an operator ends up tuning the wrong controller. */
+.tune-hint {
+  font-size: 12px; color: var(--text-2); line-height: 1.55;
+  background: var(--surface-2); border: 1px solid var(--border-soft);
+  border-radius: var(--radius-btn); padding: 10px 12px;
+}
+
+/* Layout comes from .pform-* above. Tuning's own departure: a wider label
+   column, because its labels name an axis and a term ("Pitch rate feed-forward"),
+   and narrow controls, because every value is a bare number. */
+.tune-field { grid-template-columns: minmax(150px, 240px) 1fr; }
+.field-select.tune-select { min-width: 150px; max-width: 300px; }
+
+/* ----- PID TUNING: setpoint against response -----
+   Two traces per chart, always: what the controller asked for and what the
+   airframe did. The pair is the measurement — a response alone cannot tell a
+   gain that is too low from one that is too high. */
+.tune-charts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 12px; margin-top: 14px;
+  gap: 12px;
 }
-.autotune-graph-host {
+.tune-chart-host {
   background: var(--surface-1); border: 1px solid var(--border-soft);
   border-radius: var(--radius-btn); padding: 8px 8px 4px;
   display: flex; flex-direction: column; gap: 4px;
 }
-.autotune-graph-head {
+.tune-chart-head {
   display: flex; align-items: center; justify-content: space-between; padding: 0 4px;
 }
-.autotune-graph-title { font-size: 11px; font-weight: 600; color: var(--text-2); letter-spacing: 0.3px; }
+.tune-chart-title { font-size: 11px; font-weight: 600; color: var(--text-2); letter-spacing: 0.3px; }
+.tune-chart { width: 100%; height: 180px; }
+
+/* The live pill, shared with anything else that streams. Kept as .autotune-live
+   because components.css already references the dot's animation by that name. */
 .autotune-live { display: inline-flex; align-items: center; gap: 5px; font-size: 9.5px; color: var(--text-3); letter-spacing: 0.6px; text-transform: uppercase; }
 .autotune-live-dot {
   width: 7px; height: 7px; border-radius: 50%;
@@ -1951,7 +2276,31 @@ svg { display: block; }
   animation: livePulse 1.6s ease-in-out infinite;
 }
 @keyframes livePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-.autotune-graph { width: 100%; height: 180px; }
+
+/* ----- PID TUNING: the autotune -----
+   The steps are numbered and sit above the button on purpose. PX4 runs this in
+   flight and answers a premature attempt with a bare result code, so the
+   preconditions have to be readable before the aircraft leaves the ground. */
+.tune-autotune { display: flex; flex-direction: column; gap: 11px; }
+.tune-autotune-head { display: flex; align-items: center; gap: 10px; }
+.tune-autotune-label { font-size: 13px; font-weight: 650; color: var(--text-1); }
+.tune-autotune-phase { margin-left: auto; }
+.tune-steps {
+  margin: 0; padding-left: 20px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.tune-step { font-size: 12px; line-height: 1.5; color: var(--text-2); }
+.tune-progress { margin: 2px 0; }
+.tune-gate[hidden], .tune-module-warning[hidden] { display: none; }
+.tune-autotune-actions { margin-top: 2px; }
+
+@media (max-width: 720px) {
+  /* Repeated for the same reason as Motors and Safety: the widened column
+     above is written after the .pform-field collapse, at the same
+     specificity. */
+  .tune-field { grid-template-columns: 1fr; }
+  .field-select.tune-select { max-width: none; }
+}
 
 /* ----- PARAMETERS ----- */
 .params-card { display: flex; flex-direction: column; gap: 12px; }
@@ -2094,6 +2443,184 @@ svg { display: block; }
 .brand-logo-name { font-family: var(--mono); font-size: 11.5px; color: var(--text-2); word-break: break-all; }
 .brand-logo-input { display: none; }
 
+/* ----- RADIO CONTROL -----
+   The channel bars are the page. Everything else here is a form the operator
+   fills in once; the bars are the only thing that answers "is the transmitter
+   talking, and is that switch the one I think it is" — and the calibration is
+   measured from nothing but what they show. So they get a fixed-height row, a
+   monospace pulse readout that does not reflow as digits change at 20 Hz, and
+   a centre mark, because a stick resting off-centre is a trim about to be
+   written as a centre. */
+.rc-sections { display: flex; flex-direction: column; gap: 14px; }
+.rc-card { display: flex; flex-direction: column; gap: 10px; }
+
+.rc-monitor { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.rc-monitor-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.rc-monitor-state {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 10px 4px 8px;
+  background: var(--surface-1); border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  font-size: 11px; font-weight: 600; color: var(--text-2); white-space: nowrap;
+}
+.rc-monitor-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); flex: 0 0 auto;
+}
+.rc-monitor-state[data-state="ok"] .rc-monitor-dot { background: var(--healthy); }
+.rc-monitor-state[data-state="ok"] { color: var(--text-1); }
+.rc-monitor-state[data-state="bad"] .rc-monitor-dot { background: var(--critical); }
+.rc-monitor-empty { font-size: 11.5px; line-height: 1.5; color: var(--text-3); }
+.rc-monitor-empty[hidden] { display: none; }
+
+.rc-channels { display: flex; flex-direction: column; gap: 3px; }
+.rc-channels[hidden] { display: none; }
+.rc-channel {
+  display: grid;
+  grid-template-columns: 46px 1fr 66px minmax(0, 150px);
+  align-items: center; gap: 10px;
+  padding: 2px 4px; border-radius: 6px;
+}
+.rc-channel[data-active="1"] { background: var(--surface-2); }
+.rc-channel-label {
+  font-family: var(--mono); font-size: 10.5px; font-weight: 700; color: var(--text-3);
+}
+.rc-channel-track {
+  position: relative; height: 10px; border-radius: 5px;
+  background: var(--surface-2); border: 1px solid var(--border-soft); overflow: hidden;
+}
+.rc-channel-fill {
+  position: absolute; inset: 0 auto 0 0; width: 0;
+  background: var(--nav); border-radius: 5px 0 0 5px;
+  /* No transition: the bar is a measurement instrument, and an eased bar lags
+     the stick it is supposed to be showing. */
+}
+.rc-channel-centre {
+  position: absolute; top: 0; bottom: 0; left: 50%; width: 1px;
+  background: var(--border-strong);
+}
+.rc-channel-value {
+  font-family: var(--mono); font-size: 10.5px; color: var(--text-2); text-align: right;
+}
+.rc-channel-note {
+  font-size: 10.5px; color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rc-channel[data-bound="1"] .rc-channel-note { color: var(--text-2); }
+
+/* Layout comes from .pform-* ; radio's own departure is room for the Detect
+   button beside every channel picker. */
+.rc-field { grid-template-columns: minmax(140px, 230px) 1fr; }
+.rc-field[data-conflict="1"] .rc-field-label { color: var(--warning); }
+.field-select.rc-select { min-width: 140px; max-width: 280px; }
+.btn.rc-detect { padding: 5px 9px; }
+
+.rc-conflict {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 10px 12px; border-radius: 10px;
+  background: var(--critical-dark); border: 1px solid var(--critical);
+  color: var(--critical-bright); font-size: 11.5px; line-height: 1.5;
+}
+.rc-conflict svg, .rc-conflict i { width: 15px; height: 15px; flex: 0 0 auto; }
+
+/* Flight-mode strip: six positions, the live one lit. This is the only place
+   the operator can check the slot ORDER without taking off. */
+.rc-modes-wrap { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.rc-modes {
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px;
+}
+.rc-mode-slot {
+  display: flex; flex-direction: column; gap: 3px; min-width: 0;
+  padding: 8px 9px; border-radius: 9px;
+  background: var(--surface-1); border: 1px solid var(--border-soft);
+}
+.rc-mode-slot[data-active="1"] {
+  border-color: var(--nav); background: var(--surface-2);
+}
+.rc-mode-slot-index {
+  font-family: var(--mono); font-size: 10px; font-weight: 700; color: var(--text-3);
+}
+.rc-mode-slot[data-active="1"] .rc-mode-slot-index { color: var(--nav); }
+.rc-mode-slot-name {
+  font-size: 11.5px; color: var(--text-1);
+  overflow: hidden; text-overflow: ellipsis;
+}
+.rc-modes-note { margin: 0; }
+
+/* Calibration table: the numbers themselves, editable, with the live pulse
+   beside them so an endpoint can be checked against the stick that made it. */
+/* The table scrolls inside its own card rather than widening it. Every column
+   here is a number the operator has to be able to read against the others —
+   dropping the direction column on a narrow window would hide which way a
+   stick moves, which is the one value on this table you cannot infer from the
+   rest. */
+.rc-cal-table { display: flex; flex-direction: column; overflow-x: auto; }
+.rc-cal-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 74px repeat(3, 96px) 128px;
+  align-items: center; gap: 8px; min-width: 580px;
+  padding: 6px 0; border-bottom: 1px solid var(--border-soft);
+}
+.rc-cal-row:last-child { border-bottom: none; }
+.rc-cal-head {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+  text-transform: uppercase; color: var(--text-3);
+}
+.rc-cal-cell { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.rc-cal-name { font-size: 11.5px; font-weight: 650; color: var(--text-1); }
+.rc-cal-num, .rc-cal-now {
+  font-family: var(--mono); font-size: 11px; color: var(--text-2);
+}
+.rc-cal-missing { font-size: 11px; color: var(--text-3); }
+.rc-cal-flag {
+  padding: 1px 6px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--border-soft);
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.3px; color: var(--text-3);
+}
+.rc-cal-row[data-uncalibrated="1"] .rc-cal-flag {
+  color: var(--critical-bright); border-color: var(--critical); background: var(--critical-dark);
+}
+.field-input.rc-cal-input { width: 74px; padding: 5px 7px; }
+.field-select.rc-cal-rev { min-width: 110px; max-width: 128px; padding: 5px 8px; }
+
+/* ----- the calibration wizard ----- */
+.rc-stage { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.rc-step {
+  align-self: flex-start; padding: 3px 9px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--border-soft);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+  text-transform: uppercase; color: var(--text-3);
+}
+.rc-headline { font-size: 16px; font-weight: 700; color: var(--text-1); line-height: 1.35; }
+.rc-detail { font-size: 12px; line-height: 1.55; color: var(--text-2); }
+.rc-hint {
+  font-family: var(--mono); font-size: 11px; color: var(--text-3);
+  padding-top: 2px;
+}
+.rc-hint[hidden] { display: none; }
+.rc-review { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.rc-review[hidden] { display: none; }
+.rc-review-warn {
+  padding: 9px 11px; border-radius: 9px;
+  background: var(--critical-dark); border: 1px solid var(--critical);
+  color: var(--critical-bright); font-size: 11.5px; line-height: 1.5;
+}
+.rc-actions { margin-top: 4px; }
+.rc-status { padding-top: 6px; }
+
+@media (max-width: 720px) {
+  /* Repeated for the same reason as Motors and Safety: the widened column
+     above is written after the .pform-field collapse, at the same
+     specificity. */
+  .rc-field { grid-template-columns: 1fr; }
+  /* The note column is the first thing to go — the bar and the pulse are the
+     measurement; what the channel is bound to is on the form below. */
+  .rc-channel { grid-template-columns: 42px 1fr 62px; }
+  .rc-channel-note { display: none; }
+  .rc-modes { grid-template-columns: repeat(3, 1fr); }
+}
+
 /* Reduced transparency: make translucent/animated surfaces frostier (apple-design §14). */
 @media (prefers-reduced-transparency: reduce) {
   .autotune-live-dot { animation: none; }
@@ -2139,7 +2666,8 @@ svg { display: block; }
 
 /* ----- PARAMETER FORMS (.pform-*) -----
    The layout behind every page that renders a form the *backend* described —
-   Motors and Safety & Sensors — built by Corvus.setupShared.paramFieldGrid.
+   Motors, Safety & Sensors and PID Tuning — built by
+   Corvus.setupShared.paramFieldGrid.
    Each element carries this base class plus its page's own modifier
    (class="pform-field motors-field"), so the layout is written once here and a
    page overrides only what genuinely differs: its label-column width, and how
@@ -2499,10 +3027,60 @@ svg { display: block; }
 }
 .link-disconnect[hidden] { display: none; }
 
-.link-presets { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-.btn.link-preset {
-  padding: 4px 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.2px;
+/* Presets. Four bordered rows rather than a wrapped strip of ghost buttons:
+   the strip had no edges, so the labels read as prose under the field and the
+   longest of them wrapped into the line below. A row shows what the endpoint
+   is for next to the string it fills in, which is the part a preset list
+   exists to explain. */
+.link-presets { display: flex; flex-direction: column; gap: 5px; margin-top: 9px; }
+.link-preset-list { display: flex; flex-direction: column; gap: 4px; }
+.link-preset {
+  display: flex; flex-direction: column; gap: 2px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: var(--radius-btn);
+  background: var(--panel-fill);
+  border: 1px solid var(--panel-hairline);
+  text-align: left;
+  cursor: pointer;
+  transition: background 130ms, border-color 130ms;
 }
+.link-preset:hover {
+  background: var(--panel-fill-hover);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--panel-hairline-hover));
+}
+.link-preset:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.link-preset-head {
+  display: flex; align-items: baseline; gap: 8px;
+  width: 100%;
+}
+.link-preset-name {
+  flex: 1; min-width: 0;
+  color: var(--text-1);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.1px;
+}
+.link-preset-conn {
+  flex: none;
+  color: var(--text-3);
+  font-family: var(--mono); font-size: 10px;
+  white-space: nowrap;
+}
+/* The note is the reason the row is here, so it gets the full width and is
+   allowed to wrap — truncating it would leave the same unexplained label the
+   ghost buttons had. */
+.link-preset-note {
+  color: var(--text-3);
+  font-size: 10px; line-height: 1.35;
+}
+.link-preset:hover .link-preset-name { color: var(--accent); }
+
+/* Connect sits directly under the preset rows, which are now bordered and
+   the same width as it; a little extra air keeps it from reading as a fifth
+   row of the list. */
+.btn.link-connect { margin-top: 4px; }
 
 .link-recent { display: flex; flex-direction: column; gap: 5px; }
 .link-recent-list { display: flex; flex-direction: column; gap: 3px; }
@@ -2512,6 +3090,7 @@ svg { display: block; }
 }
 .link-recent-conn {
   flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 7px;
   padding: 6px 9px;
   border-radius: var(--radius-btn);
   background: var(--panel-fill);
@@ -2529,6 +3108,14 @@ svg { display: block; }
   color: var(--text-1);
 }
 .link-recent-conn:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 1px; }
+.link-recent-conn i, .link-recent-conn svg {
+  width: 13px; height: 13px; flex: 0 0 auto; color: var(--text-3);
+}
+/* The name is what identifies the link and the one part allowed to shrink;
+   the baud (or the scheme) rides the right edge at a size that reads as an
+   annotation, because it is only ever consulted second. */
+.link-recent-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link-recent-detail { flex: 0 0 auto; font-size: 10px; color: var(--text-3); }
 
 /* ===================================================================
    ANALYSIS — flight-log download
@@ -2537,6 +3124,52 @@ svg { display: block; }
    re-answering "where to?" every time.
    =================================================================== */
 .logs-view { display: flex; flex-direction: column; gap: 12px; }
+
+/* Current Telemetry as a grid of small tiles. Nine full-width rows left the
+   right half of the card empty and pushed the log tools most of a screen
+   down; the values are two or three characters each, so they get a tile the
+   size of the number rather than a line the width of the page. */
+.tele-body { display: flex; flex-direction: column; gap: 8px; }
+.tele-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.tele-tile {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--panel-hairline);
+  border-radius: var(--radius-btn);
+  background: var(--panel-fill);
+  backdrop-filter: var(--blur-fine);
+  -webkit-backdrop-filter: var(--blur-fine);
+}
+.tele-tile-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.tele-tile-head svg, .tele-tile-head i {
+  width: 13px; height: 13px; flex: 0 0 auto; color: var(--text-3);
+}
+.tele-tile-label {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.6px;
+  text-transform: uppercase; color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The number and its unit share a baseline: the unit is an annotation on the
+   value, not a second value. */
+.tele-tile-line { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
+.tele-tile-value {
+  font-family: var(--mono); font-size: 20px; line-height: 1.1;
+  color: var(--text-1); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tele-tile-unit { font-size: 11px; color: var(--text-3); flex: 0 0 auto; }
+/* Kept in the flow even when empty, so tiles in a row stand at one height. */
+.tele-tile-detail {
+  font-size: 10.5px; color: var(--text-3); min-height: 14px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* No link: the dashes stay, dimmed. A frame that disappears on link loss
+   reads as a bug rather than as "nothing to show". */
+.tele-grid[data-state="off"] .tele-tile-value { color: var(--text-3); }
 
 /* The download folder is a setting, not a section: one slim row, no card, no
    heading, no paragraph. Given all three it out-shouted the logs, which are
@@ -2592,6 +3225,18 @@ svg { display: block; }
 .logs-head .page-section-title { margin: 0; }
 .logs-select-row { display: flex; align-items: center; gap: 6px; }
 .logs-selection { font-size: 11px; color: var(--text-3); margin-left: 4px; }
+/* Ordering is a reading control, not one of the selection actions, so it sits
+   at the far end of the row rather than next to Select all. `margin-left:auto`
+   on the wrapper (not the select) so the label travels with it. */
+.logs-sort { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.logs-sort-label {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.5px;
+  text-transform: uppercase; color: var(--text-3);
+}
+.logs-sort .field-select { max-width: 150px; font-size: 11.5px; padding-block: 4px; }
+/* In the tlog head the sort is the only thing beside the title, and
+   .logs-head already spaces its ends apart. */
+.logs-head .logs-sort { margin-left: 0; }
 
 .logs-list {
   display: flex; flex-direction: column; gap: 2px;

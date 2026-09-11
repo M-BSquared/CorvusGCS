@@ -303,6 +303,40 @@ def test_a_control_key_that_is_absent_stays_absent() -> None:
     assert config_mod._coerce_controls({"arrow_keys": True}) == {"arrow_keys": True}
 
 
+def test_key_gain_round_trips_beside_the_switches(tmp_path: pathlib.Path) -> None:
+    """How much stick a held key is worth is persisted with the switches."""
+    path = tmp_path / "config.json"
+    stored = {"arrow_keys": True, "wasd_keys": True, "key_gain": 0.75}
+    path.write_text(json.dumps({"controls": stored}), encoding="utf-8")
+
+    cfg = config_mod.load_config(str(path))
+
+    assert cfg.controls == stored
+    assert config_mod.to_public_dict(cfg)["controls"]["key_gain"] == 0.75
+
+
+@pytest.mark.parametrize("raw, want", [
+    ({"key_gain": 2.5}, 1.0),        # never past the stop
+    ({"key_gain": 0}, 0.05),         # never a key that moves nothing
+    ({"key_gain": -3}, 0.05),
+    ({"key_gain": 1}, 1.0),          # an int is a gain, and comes back a float
+])
+def test_key_gain_is_clamped_into_the_offered_range(raw: Any, want: float) -> None:
+    assert config_mod._coerce_controls(raw) == {"key_gain": want}
+
+
+@pytest.mark.parametrize("raw", [
+    {"key_gain": "0.5"},             # a string is not a number
+    {"key_gain": True},              # bool is an int in Python; True is not 100%
+    {"key_gain": None},
+    {"key_gain": float("nan")},
+    {"key_gain": float("inf")},
+])
+def test_a_key_gain_that_is_not_a_number_is_dropped(raw: Any) -> None:
+    """Dropped rather than defaulted here: the frontend owns the default."""
+    assert config_mod._coerce_controls(raw) is None
+
+
 def test_config_post_merges_controls_without_disturbing_the_rest() -> None:
     handler = object.__new__(CorvusHandler)
     handler.config = config_mod.CorvusConfig(theme={"name": "blue"})

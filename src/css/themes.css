@@ -79,6 +79,10 @@
   --z-left-nav: 20;
   --z-top-bar: 30;
   --z-modal: 100;
+  /* Floating SSH terminals: above the whole app, because they are windows the
+     operator placed there on purpose — but under a dialog, which is the one
+     thing that is allowed to demand an answer first. */
+  --z-term-window: 90;
   /* A dropdown's list is mounted on <body>, so it needs a level of its
      own: above every panel and above a dialog, because the control it
      belongs to may be inside one. */
@@ -166,8 +170,27 @@
   --terminal-cmd: #BD5500;
   --ssh-bg: #F7F8FA;
 
-  --horizon-sky: #58ADE4;
-  --horizon-ground: #B08050;
+  /* --- Attitude indicator ---
+     Two flat tones, no gradient and no vignette. The dome shading this
+     replaced was three separate effects all arguing for the same thing, and
+     what an artificial horizon actually has to communicate — which way is up
+     and by how much — is carried entirely by the angle of one line. Sky is
+     the lighter value and ground the darker, so the split reads even before
+     the hues do.
+
+     Muted rather than saturated on purpose: amber is the only saturated
+     colour in the instrument, which is what lets the aircraft symbol be the
+     first thing the eye lands on. And none of these are tied to the theme
+     accent — a horizon that changes colour with the interface theme stops
+     being something the operator can read at a glance. */
+  /* --adi-sky: #74A2CC; */
+  --adi-sky: #3aa7d6;
+  /* --adi-ground: #7E6A57; */
+  --adi-ground: #006310;
+  --adi-mark: #F58A2B;
+  /* A hairline casing, not a drop shadow: amber over a mid-value sky is a
+     1.4:1 pairing and needs the edge to stay a shape. */
+  --adi-mark-outline: rgba(12, 16, 22, 0.45);
   --graph-tertiary: #6B7480;
 
   /* --- Translucency channels ---
@@ -300,8 +323,14 @@
   --terminal-cmd: #5BC896;
   --ssh-bg: #090C0F;
 
-  --horizon-sky: #4CC9FF;
-  --horizon-ground: #8A5A32;
+  /* Dimmer than the light themes' horizon by design: the same instrument in
+     a darkened cockpit should not be the brightest thing on the screen. */
+  /* --adi-sky: #4E7CA3; */
+  --adi-sky: #4a92d1;
+  /* --adi-ground: #5C4C3D; */
+  --adi-ground: #0e5200;
+  --adi-mark: #F58A2B;
+  --adi-mark-outline: rgba(0, 0, 0, 0.5);
   --graph-tertiary: #7C7F87;
 
   /* The contrast overlay flips to white, so every hover wash and hairline

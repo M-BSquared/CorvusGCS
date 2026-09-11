@@ -12,6 +12,7 @@ from __future__ import annotations
 import codecs
 import collections
 import datetime
+import errno
 import logging
 import math
 import os
@@ -24,6 +25,7 @@ from typing import Any, Callable
 
 from pymavlink import mavutil
 
+from . import rc_config
 from .paths import corvus_path
 from .state_store import VehicleStateStore
 from .tlog import TlogWriter
@@ -104,10 +106,25 @@ PX4_FALLBACK_MODE_VALUES: dict[str, tuple[int, int, int]] = {
 }
 
 TAKEOFF_ALTITUDE_MIN_M = 1.0
-TAKEOFF_ALTITUDE_MAX_M = 50.0
+# 120 m, not 50. The old ceiling was an arbitrary round number that refused
+# perfectly ordinary survey and inspection heights; 120 m AGL is the actual
+# operational ceiling most crews fly to — it is the EU open-category limit and
+# matches the equivalent rule in the UK, and is the same number PX4's own
+# defaults are written around. A GCS should stop at the number the rules stop
+# at, not at one somebody picked because it sounded cautious.
+#
+# The takeoff slider in src/index.html carries the same maximum; a test pins
+# the two together so they cannot drift.
+TAKEOFF_ALTITUDE_MAX_M = 120.0
 HEARTBEAT_TIMEOUT_S = 5.0
 STATUSTEXT_CHUNK_BYTES = 50
 STATUSTEXT_CHUNK_TIMEOUT_S = 10.0
+# Partial multi-chunk STATUSTEXTs held at once. They age out after
+# STATUSTEXT_CHUNK_TIMEOUT_S, but nothing bounded how many could accumulate
+# *inside* that window: one entry per (system, component, id), and a noisy
+# router carries plenty of all three. A cap keeps a link that is misbehaving
+# from growing the table without limit on the receive thread.
+STATUSTEXT_MAX_PARTIALS = 64
 # Linux 8250 platform serial ports (always phantom on field laptops).
 _PHANTOM_TTY_RE = re.compile(r"^/dev/ttyS[0-9]+$")
 
@@ -165,6 +182,13 @@ HEARTBEAT_WARN_TIMEOUT_UDP = 3.0
 HEARTBEAT_DROP_TIMEOUT_SERIAL = 15.0
 HEARTBEAT_DROP_TIMEOUT_UDP = 8.0
 
+# Consecutive-read-failure handling in the receive loop. A failing read can
+# return instantly (an unplugged USB serial port does), so each failure costs a
+# short pause, and this many in a row ends the connection cycle and hands over
+# to the reconnect backoff rather than spinning until the heartbeat times out.
+RECV_ERROR_BACKOFF_S = 0.05
+RECV_ERROR_LIMIT = 40
+
 # Exponential reconnect backoff (A4): base*2^(n-1), capped, +/- jitter.
 RECONNECT_BASE_S = 0.5
 RECONNECT_CAP_S = 8.0
@@ -175,6 +199,14 @@ RECONNECT_MIN_S = 0.1
 # map RADIO_STATUS.remrssi (the drone's signal as seen by the radio) to 0-100.
 _SIK_RSSI_STRONG = 150.0
 _SIK_RSSI_WEAK = 40.0
+
+# The NSH shell reassembles 70-byte chunks into lines, so a "line" is only
+# bounded by the vehicle sending a newline. `dd`-ing a binary to the console,
+# or a firmware that streams without one, would otherwise grow the buffer for
+# as long as the shell stays open — on the receive thread. At the cap the
+# buffer is flushed as a line of its own, which keeps the output visible
+# instead of silently discarding it.
+SHELL_LINE_MAX_CHARS = 8192
 
 # A distinct GCS system id keeps Corvus COMMAND_ACK and SERIAL_CONTROL replies
 # separate from QGroundControl (which normally uses system 255) when both share
@@ -291,6 +323,47 @@ def _prearm_ok(msg) -> bool | None:
     return bool(health & _PREARM_BIT)
 
 
+def _rc_rssi_percent(value: Any) -> int:
+    """RC_CHANNELS.rssi -> 0-100, or -1 when the receiver does not report it.
+
+    MAVLink reserves 255 for "unknown". Below that the field is ambiguous in
+    practice: PX4 publishes a percentage, while several receivers publish the
+    raw 0-254 scale the message was originally specified with. A value above
+    100 can only be the second, so it is scaled; anything at or below 100 is
+    already the percentage it claims to be. Guessing either way beats showing a
+    254 % link.
+    """
+    try:
+        rssi = int(value)
+    except (TypeError, ValueError):
+        return -1
+    if rssi < 0 or rssi >= 255:
+        return -1
+    if rssi <= 100:
+        return rssi
+    return max(0, min(100, round(rssi * 100 / 254)))
+
+
+def _quaternion_to_euler_deg(w: float, x: float, y: float, z: float) -> tuple[float, float, float]:
+    """Convert a MAVLink attitude quaternion to roll/pitch/yaw in degrees.
+
+    Same convention as the ATTITUDE message this is plotted against (NED body
+    frame, roll about the nose axis) so a setpoint trace and a response trace
+    share one scale. Pitch is clamped before ``asin`` because a quaternion that
+    arrives fractionally un-normalised over a lossy link would otherwise raise
+    on a value a hair outside [-1, 1].
+    """
+    sinr_cosp = 2.0 * (w * x + y * z)
+    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
+    roll = math.atan2(sinr_cosp, cosr_cosp)
+    sinp = max(-1.0, min(1.0, 2.0 * (w * y - z * x)))
+    pitch = math.asin(sinp)
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    yaw = math.atan2(siny_cosp, cosy_cosp)
+    return math.degrees(roll), math.degrees(pitch), math.degrees(yaw)
+
+
 @dataclass
 class _PendingAck:
     event: threading.Event = field(default_factory=threading.Event)
@@ -313,7 +386,7 @@ class MavlinkBridge:
     def __init__(
         self,
         store: VehicleStateStore,
-        connection: str = "udp:0.0.0.0:14540",
+        connection: str = "udp:0.0.0.0:14550",
     ) -> None:
         self._store = store
         self._conn_str = connection
@@ -726,7 +799,11 @@ class MavlinkBridge:
                     self._store.update(link_status="reconnecting", link_error=str(cycle_exc))
                 else:
                     self._store.update(link_status="reconnecting")
-                time.sleep(delay)
+                # Interruptible: the backoff reaches 8 s, stop() joins this
+                # thread for 3, so a plain sleep meant shutdown returned while
+                # the reconnect loop was still parked — and then woke up to
+                # reconnect against a store the app had already torn down.
+                self._interruptible_sleep(delay)
                 self._reconnect_attempt += 1
 
     def _claim_serial_exclusive(self, device: str) -> None:
@@ -844,6 +921,18 @@ class MavlinkBridge:
                 message = f"serial device unavailable: {self._conn_str}"
                 self._store.update(link_error=message)
                 raise ConnectionError(message) from exc
+            if getattr(exc, "errno", None) == errno.EADDRINUSE:
+                # "[Errno 48] Address already in use" is true and useless. The
+                # cause is nearly always another program already listening on
+                # the port — QGroundControl, MAVROS, a second Corvus — and the
+                # fix is to pick a different one, which the message should say.
+                message = (
+                    f"{self._conn_str}: port already in use by another program "
+                    f"(QGroundControl, MAVROS/MAVSDK or a second Corvus) — "
+                    f"close it or connect on a different port"
+                )
+                self._store.update(link_error=message)
+                raise ConnectionError(message) from exc
             raise
         if self._is_serial():
             self._claim_serial_exclusive(self._parse_serial(self._conn_str)[0])
@@ -911,12 +1000,34 @@ class MavlinkBridge:
         """
         deadline = time.monotonic() + timeout
         while True:
+            # stop() during connect: bail rather than sit out the rest of the
+            # budget. Closing the socket would end the wait too, but only by
+            # raising through _run's error path, which then logs a shutdown as
+            # a link failure.
+            if self._stop_event.is_set():
+                return None
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return None
-            hb = self._conn.wait_heartbeat(blocking=True, timeout=remaining)
-            if hb is None:
+            conn = self._conn
+            if conn is None:
                 return None
+            # Each wait is capped so the stop check above is reached within a
+            # second even on a link where nothing arrives at all; the deadline
+            # above still bounds the whole thing to the caller's budget.
+            wait_for = min(1.0, remaining)
+            waited_from = time.monotonic()
+            hb = conn.wait_heartbeat(blocking=True, timeout=wait_for)
+            if hb is None:
+                # Retry only if that wait really blocked for its timeout. A
+                # transport that answers "nothing" the instant it is asked is
+                # not going to start answering differently, and retrying it
+                # would burn the whole budget at full tilt — so an immediate
+                # None is taken at face value, exactly as a single
+                # full-length wait used to take it.
+                if time.monotonic() - waited_from < wait_for / 2:
+                    return None
+                continue
             if _is_vehicle_heartbeat(hb):
                 return hb
             logger.info(
@@ -964,17 +1075,19 @@ class MavlinkBridge:
         # Runs while _running is set regardless of link_status: a degraded
         # link (A3) must NOT stop the GCS heartbeat, or the autopilot drops us
         # while we wait for its heartbeat to return (A7).
-        while self._running.is_set():
-            if not self._conn:
-                time.sleep(1)
+        me = threading.current_thread()
+        while self._running.is_set() and not self._stop_event.is_set():
+            conn = self._conn
+            if not conn:
+                self._interruptible_sleep(1)
                 continue
             try:
                 with self._send_lock:
                     # Re-check under the lock: stop()/reconnect can clear
                     # _conn or _running while we waited for the lock.
-                    if not self._running.is_set() or not self._conn:
+                    if not self._running.is_set() or conn is not self._conn:
                         break
-                    self._conn.mav.heartbeat_send(
+                    conn.mav.heartbeat_send(
                         mavutil.mavlink.MAV_TYPE_GCS,
                         mavutil.mavlink.MAV_AUTOPILOT_INVALID,
                         0, 0, 0,
@@ -983,9 +1096,15 @@ class MavlinkBridge:
                 # Socket closed under us: exit cleanly so _start_gcs_heartbeat
                 # can spawn a fresh loop on reconnect (A6).
                 break
-            time.sleep(1)
-        # Allow _start_gcs_heartbeat to restart us on the next connect.
-        self._hb_thread = None
+            self._interruptible_sleep(1)
+        # Allow _start_gcs_heartbeat to restart us on the next connect — but
+        # only if nobody already has. A reconnect can call
+        # _start_gcs_heartbeat() while this loop is on its way out; clearing
+        # the field unconditionally then orphaned the *new* thread, so stop()
+        # never joined it and the next connect started a second heartbeat
+        # alongside it — two GCS heartbeats at 1 Hz on the same link.
+        if self._hb_thread is me:
+            self._hb_thread = None
 
     # ------------------------------------------------------------------
     # Telemetry log (tlog) — one file per connect cycle (F2)
@@ -1136,15 +1255,21 @@ class MavlinkBridge:
         }
 
     def _request_streams(self) -> None:
-        if self._request_sent or not self._conn:
+        conn = self._conn
+        if self._request_sent or conn is None:
             return
         for stream, rate in self._stream_rates().items():
             if rate == 0:
                 continue
-            with self._send_lock:
-                self._conn.mav.request_data_stream_send(
-                    self._target_system, self._target_component, stream, rate, 1,
-                )
+            try:
+                with self._send_lock:
+                    if conn is not self._conn:
+                        return
+                    conn.mav.request_data_stream_send(
+                        self._target_system, self._target_component, stream, rate, 1,
+                    )
+            except Exception as exc:  # noqa: BLE001 - a fallback request is best-effort
+                logger.debug("REQUEST_DATA_STREAM %s failed: %s", stream, exc)
         self._request_sent = True
 
     def _message_intervals(self) -> dict[int, int]:
@@ -1168,6 +1293,9 @@ class MavlinkBridge:
                 # the one field the serial set used to leave entirely to PX4's
                 # own defaults, which not every firmware publishes.
                 m.MAVLINK_MSG_ID_HOME_POSITION: 5_000_000,    # 0.2 Hz
+                # 1 Hz even on a 57 kbps radio: the message is two bytes of
+                # payload, and it is what tells the bar the aircraft is flying.
+                m.MAVLINK_MSG_ID_EXTENDED_SYS_STATE: 1_000_000,  # 1 Hz
             }
         return {
             m.MAVLINK_MSG_ID_HEARTBEAT: 1_000_000,            # 1 Hz
@@ -1177,6 +1305,7 @@ class MavlinkBridge:
             m.MAVLINK_MSG_ID_SYS_STATUS: 1_000_000,          # 1 Hz
             m.MAVLINK_MSG_ID_GPS_RAW_INT: 1_000_000,         # 1 Hz
             m.MAVLINK_MSG_ID_HOME_POSITION: 1_000_000,       # 1 Hz
+            m.MAVLINK_MSG_ID_EXTENDED_SYS_STATE: 1_000_000,  # 1 Hz
         }
 
     def _interruptible_sleep(self, seconds: float) -> None:
@@ -1423,6 +1552,15 @@ class MavlinkBridge:
         )
 
     def _receive_loop(self) -> None:
+        # A read that fails does not necessarily fail slowly. Unplug the USB
+        # cable and pyserial raises on every call the instant it is made, so
+        # the loop below used to spin at full CPU until the heartbeat drop
+        # timeout finally ended the cycle — fifteen seconds of a pegged core on
+        # a battery-powered field laptop, at the exact moment the operator has
+        # just lost the aircraft. Consecutive failures are counted: each one
+        # costs a short sleep, and enough of them in a row end the cycle so the
+        # reconnect path (with its proper backoff) takes over instead.
+        consecutive_errors = 0
         while self._running.is_set() and self._conn:
             # Snapshot the connection (A6): a concurrent stop()/reconnect can
             # close self._conn under us; use the local ref for recv_match.
@@ -1433,6 +1571,7 @@ class MavlinkBridge:
                         raise ConnectionError("heartbeat timeout")
                     self._mark_degraded_once()
                 msg = conn.recv_match(blocking=True, timeout=1)
+                consecutive_errors = 0
                 self._cleanup_statustext_chunks()
                 if msg is None:
                     continue
@@ -1451,7 +1590,11 @@ class MavlinkBridge:
             except ConnectionError:
                 raise
             except Exception as exc:
-                logger.debug("recv error: %s", exc)
+                consecutive_errors += 1
+                logger.debug("recv error (%d in a row): %s", consecutive_errors, exc)
+                if consecutive_errors >= RECV_ERROR_LIMIT:
+                    raise ConnectionError(f"link read failed: {exc}") from exc
+                self._interruptible_sleep(RECV_ERROR_BACKOFF_S)
 
     def _mark_degraded_once(self) -> None:
         """Transition to degraded link quality once per connection cycle (A3).
@@ -1478,6 +1621,8 @@ class MavlinkBridge:
             formatted = f"COMMAND_ACK: cmd={msg.command} {result_text}"
             level = "success" if msg.result == 0 else ("info" if msg.result == 5 else "error")
             self._console_publish(name, formatted, level)
+            if msg.command == mavutil.mavlink.MAV_CMD_DO_AUTOTUNE_ENABLE:
+                self._handle_autotune_ack(msg)
             if self._ack_is_for_us(msg):
                 with self._ack_lock:
                     pending = self._pending_acks.get(msg.command)
@@ -1525,9 +1670,10 @@ class MavlinkBridge:
             # the vehicle type, the flight mode and the armed flag.
             if not self._is_from_autopilot(msg):
                 return
-            self._store.heartbeat()
-            # Rolling inter-arrival timestamps for jitter (A1).
-            self._hb_times.append(time.monotonic())
+            # One clock read per heartbeat, shared by the staleness timer and
+            # the jitter window, so the two cannot disagree about when this
+            # heartbeat landed (A1).
+            self._hb_times.append(self._store.heartbeat())
             self._publish_heartbeat_jitter()
             vtype = MAV_TYPE_MAP.get(msg.type, f"TYPE_{msg.type}")
             autopilot = MAV_AUTOPILOT_MAP.get(msg.autopilot, f"AP_{msg.autopilot}")
@@ -1546,6 +1692,16 @@ class MavlinkBridge:
                 altitude_amsl=round(altitude_amsl, 1),
                 altitude_agl=round(altitude_agl, 1),
                 heading=msg.hdg / 100.0 if msg.hdg != 65535 else 0,
+                # cm/s in the local NED frame. Kept as components, not as the
+                # groundspeed magnitude VFR_HUD already carries, because the
+                # velocity controller commands components and the tuning page
+                # plots each one against what was asked for. Read through
+                # getattr for the same reason landed_state is: a truncated or
+                # non-standard message must cost a trace, not the position
+                # update the HUD and the map are built on.
+                vx=round(float(getattr(msg, "vx", 0) or 0) / 100.0, 2),
+                vy=round(float(getattr(msg, "vy", 0) or 0) / 100.0, 2),
+                vz=round(float(getattr(msg, "vz", 0) or 0) / 100.0, 2),
             )
         elif name == "ATTITUDE":
             self._store.update(
@@ -1577,9 +1733,20 @@ class MavlinkBridge:
                 prearm_ok=_prearm_ok(msg),
             )
         elif name == "SYSTEM_TIME":
+            # utcfromtimestamp is deprecated (and gone in a coming release);
+            # more to the point it raises on an out-of-range value, and an
+            # autopilot that has no GPS lock yet sends exactly that — a huge
+            # or nonsensical time_unix_usec — which used to abort the whole
+            # dispatch for this frame, taking the boot_ms read below with it.
             if msg.time_unix_usec:
-                t = datetime.datetime.utcfromtimestamp(msg.time_unix_usec / 1e6)
-                self._store.update(time=t.strftime("%H:%M:%S UTC"))
+                try:
+                    t = datetime.datetime.fromtimestamp(
+                        msg.time_unix_usec / 1e6, datetime.timezone.utc,
+                    )
+                except (OverflowError, OSError, ValueError, TypeError):
+                    logger.debug("SYSTEM_TIME out of range: %s", msg.time_unix_usec)
+                else:
+                    self._store.update(time=t.strftime("%H:%M:%S UTC"))
             # Autopilot uptime. Published because it is the only honest signal
             # that the vehicle REBOOTED as opposed to the link having dropped:
             # time_boot_ms restarts near zero on boot, so a value that moves
@@ -1629,11 +1796,173 @@ class MavlinkBridge:
                 clipping_1=int(msg.clipping_1),
                 clipping_2=int(msg.clipping_2),
             )
+        elif name == "EXTENDED_SYS_STATE":
+            # The autopilot's own on-ground/in-air verdict. Worth having rather
+            # than inferring: armed does not mean flying (a vehicle sits armed
+            # on the ground before every takeoff), and altitude cannot tell a
+            # low hover from a bad home reference.
+            try:
+                landed = int(getattr(msg, "landed_state", 0) or 0)
+            except (TypeError, ValueError):
+                landed = 0
+            if 0 <= landed <= 4:
+                self._store.update(landed_state=landed)
+        elif name in ("RC_CHANNELS", "RC_CHANNELS_RAW"):
+            self._handle_rc_channels(msg, raw=(name == "RC_CHANNELS_RAW"))
+        elif name == "ATTITUDE_TARGET":
+            self._handle_attitude_target(msg)
+        elif name == "POSITION_TARGET_LOCAL_NED":
+            self._handle_position_target(msg)
         elif name == "HOME_POSITION":
             lat = msg.latitude / 1e7
             lon = msg.longitude / 1e7
             self._home_alt_amsl = msg.altitude / 1000.0
             self._store.update(home=[lon, lat])
+
+    # ------------------------------------------------------------------
+    # Controller setpoints (PID tuning)
+    # ------------------------------------------------------------------
+
+    def _handle_attitude_target(self, msg: Any) -> None:
+        """Publish the attitude and body-rate setpoints the controller is following.
+
+        ATTITUDE_TARGET carries the attitude as a quaternion and the body rates
+        as rad/s, and it is the counterpart of ATTITUDE: together they are the
+        commanded-versus-achieved pair the PID tuning page plots. Streamed at
+        PX4's default rate normally, and raised while the tuning page is open
+        (see :meth:`set_tuning_stream`).
+
+        A malformed or short quaternion is dropped rather than guessed at: an
+        invented setpoint on a tuning graph is worse than a missing one.
+        """
+        try:
+            quat = list(getattr(msg, "q", None) or [])
+            rates = (
+                math.degrees(float(msg.body_roll_rate)),
+                math.degrees(float(msg.body_pitch_rate)),
+                math.degrees(float(msg.body_yaw_rate)),
+            )
+        except (TypeError, ValueError, AttributeError):
+            return
+        update: dict[str, Any] = {
+            "rollspeed_sp": round(rates[0], 1),
+            "pitchspeed_sp": round(rates[1], 1),
+            "yawspeed_sp": round(rates[2], 1),
+            "setpoints_live": True,
+        }
+        if len(quat) >= 4:
+            try:
+                roll, pitch, yaw = _quaternion_to_euler_deg(
+                    float(quat[0]), float(quat[1]), float(quat[2]), float(quat[3]))
+            except (TypeError, ValueError):
+                pass
+            else:
+                update["roll_sp"] = round(roll, 1)
+                update["pitch_sp"] = round(pitch, 1)
+                update["yaw_sp"] = round(yaw, 1)
+        self._store.update(**update)
+
+    def _handle_position_target(self, msg: Any) -> None:
+        """Publish the velocity setpoint the position controller is following.
+
+        POSITION_TARGET_LOCAL_NED carries the whole setpoint triplet; only the
+        velocity part is kept, because that is the one the velocity-controller
+        gains are read against. The type mask is not consulted: PX4 fills the
+        velocity fields with the controller's own setpoint regardless of which
+        of them the active mode considers authoritative, and a masked field
+        reads as the zero the controller is in fact tracking.
+        """
+        try:
+            self._store.update(
+                vx_sp=round(float(msg.vx), 2),
+                vy_sp=round(float(msg.vy), 2),
+                vz_sp=round(float(msg.vz), 2),
+                setpoints_live=True,
+            )
+        except (TypeError, ValueError, AttributeError):
+            return
+
+    # ------------------------------------------------------------------
+    # Transmitter channels (Setup -> Radio Control)
+    # ------------------------------------------------------------------
+
+    def _handle_rc_channels(self, msg: Any, raw: bool = False) -> None:
+        """Publish the raw transmitter channel values, in microseconds.
+
+        The Radio Control page is built on these: the calibration wizard has no
+        autopilot-side procedure to follow (PX4 has none for RC), so what the
+        operator sweeps on the transmitter reaches the browser through this
+        message and nothing else.
+
+        ``RC_CHANNELS`` carries all 18 channels and is what PX4 sends.
+        ``RC_CHANNELS_RAW`` carries eight at a time with ``port`` naming the
+        bank, and is accepted as a fallback so a non-PX4 autopilot on the same
+        link is not silently channel-less; its banks are merged into the
+        published list rather than replacing it.
+
+        A channel value of ``UINT16_MAX`` is MAVLink's "not delivered", which is
+        published as 0 — the page draws that as an empty channel instead of a
+        bar pinned to the top of its range.
+        """
+        try:
+            offset = (int(getattr(msg, "port", 0) or 0) * 8) if raw else 0
+            width = 8 if raw else rc_config.MAX_CHANNELS
+        except (TypeError, ValueError):
+            return
+        if offset < 0 or offset >= rc_config.MAX_CHANNELS:
+            return
+
+        values: list[int] = []
+        for index in range(1, width + 1):
+            value = getattr(msg, f"chan{index}_raw", None)
+            if value is None:
+                break
+            try:
+                pulse = int(value)
+            except (TypeError, ValueError):
+                pulse = 0
+            values.append(0 if pulse == 65535 else max(0, min(pulse, 65534)))
+
+        if raw:
+            # Merge the bank into whatever the other bank already published, so
+            # a receiver split across two messages does not flip between eight
+            # channels and the other eight on every frame.
+            # Clamp the bank to the channels PX4 defines before merging: the
+            # offset guard above admits port=2 (channels 17-24), and without
+            # this the merged list grows past MAX_CHANNELS and the page draws
+            # channels no firmware here has. The RC_CHANNELS path below clamps
+            # for the same reason.
+            room = rc_config.MAX_CHANNELS - offset
+            if room <= 0:
+                return
+            values = values[:room]
+            if not values:
+                return
+            existing = list(self._store.get_snapshot().get("rc_channels") or [])
+            needed = offset + len(values)
+            if len(existing) < needed:
+                existing.extend([0] * (needed - len(existing)))
+            existing[offset:offset + len(values)] = values
+            values = existing
+            count = len(values)
+        else:
+            try:
+                count = int(getattr(msg, "chancount", 0) or 0)
+            except (TypeError, ValueError):
+                count = 0
+            # chancount is what the receiver actually delivers; trust it over
+            # the fixed 18 slots, but never let a bad value grow the list.
+            if 0 < count <= len(values):
+                values = values[:count]
+            else:
+                count = len(values)
+
+        self._store.update(
+            rc_channels=values,
+            rc_channel_count=count,
+            rc_rssi=_rc_rssi_percent(getattr(msg, "rssi", 255)),
+            rc_live=True,
+        )
 
     # ------------------------------------------------------------------
     # Link-quality tracking (A1)
@@ -1754,7 +2083,10 @@ class MavlinkBridge:
         return not source_component or source_component == self._target_component
 
     def _ack_is_for_us(self, msg: Any) -> bool:
-        if not self._conn:
+        # Snapshot: stop()/reconnect can clear _conn between the guard and the
+        # source_system/source_component reads below.
+        conn = self._conn
+        if conn is None:
             return False
         source_system = getattr(msg, "get_srcSystem", lambda: 0)()
         if source_system and source_system != self._target_system:
@@ -1763,11 +2095,11 @@ class MavlinkBridge:
         if source_component and source_component != self._target_component:
             return False
         target_system = getattr(msg, "target_system", 0)
-        expected_system = getattr(self._conn, "source_system", 0)
+        expected_system = getattr(conn, "source_system", 0)
         if target_system and expected_system and target_system != expected_system:
             return False
         target_component = getattr(msg, "target_component", 0)
-        expected_component = getattr(self._conn, "source_component", 0)
+        expected_component = getattr(conn, "source_component", 0)
         return not (target_component and expected_component and target_component != expected_component)
 
     def _handle_mission_request(self, msg: Any, as_int: bool) -> None:
@@ -1898,6 +2230,18 @@ class MavlinkBridge:
         source_system = getattr(msg, "get_srcSystem", lambda: 0)()
         source_component = getattr(msg, "get_srcComponent", lambda: 0)()
         key = (int(source_system), int(source_component), chunk_id)
+        if (
+            key not in self._statustext_chunks
+            and len(self._statustext_chunks) >= STATUSTEXT_MAX_PARTIALS
+        ):
+            # Evict the least recently updated rather than refusing the new
+            # one: the oldest partial is the one least likely to still be
+            # completed, and dropping the newest would stall the live message.
+            oldest = min(
+                self._statustext_chunks,
+                key=lambda k: float(self._statustext_chunks[k]["updated"]),
+            )
+            self._statustext_chunks.pop(oldest, None)
         partial = self._statustext_chunks.setdefault(
             key,
             {"parts": {}, "final_seq": None, "severity": severity, "updated": now},
@@ -2130,7 +2474,12 @@ class MavlinkBridge:
             self._console_publish("MODE", f"Mode accepted: {mode}", "success")
             return True
 
-    def _wait_for_armed_state(self, armed: bool, timeout: float = 3.0) -> bool:
+    # How long to watch for the arm/disarm to show up in telemetry. Confirmation
+    # arrives on HEARTBEAT, which is 1 Hz on every link Corvus supports, so the
+    # old 3 s was three heartbeats — and on a lossy radio, sometimes one.
+    ARMED_STATE_CONFIRM_S = 6.0
+
+    def _wait_for_armed_state(self, armed: bool, timeout: float = ARMED_STATE_CONFIRM_S) -> bool:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             snapshot = self._store.get_snapshot()
@@ -2160,20 +2509,85 @@ class MavlinkBridge:
             if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
                 return self._command_failure(action, result)
             if not self._wait_for_armed_state(arm):
-                text = f"{action} accepted but vehicle state did not change"
-                self._set_command_error(text)
-                self._console_publish("ARM", text, "error")
-                self._store_update_warning(text, "critical")
-                return False
+                # The vehicle ACCEPTED the command; telemetry has not caught up.
+                # That is a reporting gap, not a refusal, and calling it a
+                # failure was the more dangerous of the two mistakes: the arm
+                # confirmation only ever arrives on a HEARTBEAT from the exact
+                # component this session latched onto at connect, so behind
+                # mavlink-router or a companion computer it can simply never
+                # come — and Corvus would then tell the operator the aircraft
+                # was disarmed while it was armed and spinning.
+                #
+                # So the ACK is taken at its word and the *uncertainty* is what
+                # gets reported. The armed indicator on the bar is driven by
+                # telemetry either way, so it keeps showing the truth as soon
+                # as any arrives.
+                text = (
+                    f"{action} accepted by the vehicle, but no telemetry "
+                    f"confirmation within {self.ARMED_STATE_CONFIRM_S:.0f}s — "
+                    f"check the armed indicator"
+                )
+                self._console_publish("ARM", text, "warning")
+                self._store_update_warning(text, "warning")
+                return True
             completed = "Armed" if arm else "Disarmed"
             self._console_publish("ARM", f"{completed} successfully", "success")
             return True
+
+    # MAV_LANDED_STATE values that mean the aircraft is off the ground.
+    _AIRBORNE_LANDED_STATES = frozenset({2, 3, 4})   # IN_AIR, TAKEOFF, LANDING
+    # Height above home that counts as airborne when the firmware does not
+    # publish EXTENDED_SYS_STATE. Clear of the noise on a stationary estimate.
+    AIRBORNE_FALLBACK_M = 1.5
+
+    def _is_airborne(self) -> bool:
+        """Is the aircraft off the ground? The vehicle's own answer first.
+
+        Mirrors the frontend's reading of the same two fields, so the mission
+        planner and the status bar cannot disagree about whether a takeoff item
+        needs prepending.
+        """
+        snapshot = self._store.get_snapshot()
+        landed = snapshot.get("landed_state")
+        if landed in self._AIRBORNE_LANDED_STATES:
+            return True
+        if landed == 1:            # ON_GROUND, stated outright
+            return False
+        try:
+            return float(snapshot.get("altitude_agl", 0.0)) > self.AIRBORNE_FALLBACK_M
+        except (TypeError, ValueError):
+            return False
 
     def _takeoff_altitude_amsl(self, altitude_agl: float) -> float | None:
         reference = self._home_alt_amsl
         if reference is None:
             reference = self._position_home_alt_amsl
         return None if reference is None else reference + altitude_agl
+
+    # How long takeoff waits for an altitude reference to turn up before it
+    # gives up on converting AGL to AMSL. HOME_POSITION streams at 0.5-1 Hz and
+    # GLOBAL_POSITION_INT far faster, so this covers "the operator clicked
+    # Takeoff a second after connecting" without putting a noticeable pause in
+    # front of the command in the normal case, where the reference is already
+    # there and this is never called.
+    TAKEOFF_REFERENCE_WAIT_S = 2.0
+
+    def _await_takeoff_reference(self, altitude_agl: float) -> float | None:
+        """Nudge the vehicle for home and wait briefly for an altitude reference.
+
+        Returns the AMSL takeoff altitude once one can be derived, or None if
+        nothing arrives inside the window.
+        """
+        self._request_home()
+        deadline = time.monotonic() + self.TAKEOFF_REFERENCE_WAIT_S
+        while time.monotonic() < deadline:
+            if self._stop_event.is_set() or not self._connection_ready():
+                return None
+            amsl = self._takeoff_altitude_amsl(altitude_agl)
+            if amsl is not None:
+                return amsl
+            time.sleep(0.05)
+        return self._takeoff_altitude_amsl(altitude_agl)
 
     def takeoff(self, altitude_agl: float = 10.0) -> bool:
         """Set a PX4 takeoff target in AGL metres, then arm after acceptance."""
@@ -2198,23 +2612,46 @@ class MavlinkBridge:
                 return False
             if not self._connection_ready():
                 return self._command_failure("Takeoff", -2)
+            nan = float("nan")
             alt_amsl = self._takeoff_altitude_amsl(altitude_agl)
             if alt_amsl is None:
-                text = "Takeoff failed: no home or global altitude reference"
-                self._set_command_error(text)
-                self._console_publish("TAKEOFF", text, "error")
-                self._store_update_warning(text, "critical")
-                return False
-
-            nan = float("nan")
-            self._console_publish(
-                "TAKEOFF",
-                f"Requesting {altitude_agl:.0f} m AGL ({alt_amsl:.1f} m AMSL)",
-                "info",
-            )
+                # No altitude reference yet — usually because HOME_POSITION and
+                # GLOBAL_POSITION_INT simply have not arrived in the second
+                # since connect. Ask for home once and give the streams a
+                # moment rather than refusing on the spot.
+                alt_amsl = self._await_takeoff_reference(altitude_agl)
+            if alt_amsl is None:
+                # Still nothing. param7 is left unspecified rather than
+                # invented: NaN is this protocol's "use your own default" (the
+                # same convention every unused param in this file uses), so the
+                # vehicle takes off to its configured takeoff altitude.
+                #
+                # Refusing here was the wrong call. Corvus was deciding, on the
+                # ground, that a flight could not happen — using a reference it
+                # only ever needed in order to *convert* the operator's number,
+                # not to validate it. Whether this aircraft can take off right
+                # now is the autopilot's judgement, and it is far better placed
+                # to make it; if it cannot, its own refusal reaches the operator
+                # with a reason attached.
+                takeoff_alt = nan
+                text = (
+                    "No altitude reference yet (no HOME_POSITION or global "
+                    "position) — asking the vehicle to take off to its own "
+                    f"configured altitude instead of {altitude_agl:.0f} m"
+                )
+                logger.warning("%s", text)
+                self._console_publish("TAKEOFF", text, "warning")
+                self._store_update_warning(text, "warning")
+            else:
+                takeoff_alt = alt_amsl
+                self._console_publish(
+                    "TAKEOFF",
+                    f"Requesting {altitude_agl:.0f} m AGL ({alt_amsl:.1f} m AMSL)",
+                    "info",
+                )
             result = self._send_command_and_wait(
                 mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-                [nan, nan, nan, nan, nan, nan, alt_amsl],
+                [nan, nan, nan, nan, nan, nan, takeoff_alt],
                 timeout=5.0, retries=1,
             )
             if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
@@ -2302,6 +2739,16 @@ class MavlinkBridge:
 
             alt_amsl = self._takeoff_altitude_amsl(0.0)
             if alt_amsl is None:
+                # Same brief wait the takeoff path takes: right after connect
+                # the reference is usually just late, not absent.
+                alt_amsl = self._await_takeoff_reference(0.0)
+            if alt_amsl is None:
+                # Unlike takeoff, this one keeps its refusal. The altitude here
+                # is not a number being converted for the wire — it is the
+                # altitude home will *have*, and home altitude is what RTL
+                # descends to. A guessed value moves the landing point
+                # vertically as a side effect of dragging it sideways, which is
+                # the one outcome this command exists to avoid.
                 text = "Set home failed: no home or global altitude reference"
                 self._set_command_error("no home or global altitude reference")
                 self._console_publish("SETHOME", text, "error")
@@ -2433,21 +2880,13 @@ class MavlinkBridge:
                 return False
             if not self._connection_ready():
                 return self._command_failure("Fly to points", -2)
-            # Reuse the takeoff altitude reference. The relative-alt frame
-            # below carries AGL directly, so the AMSL value only validates
-            # that a home/global altitude reference exists.
-            for _, _, alt_agl in cleaned:
-                if self._takeoff_altitude_amsl(alt_agl) is None:
-                    text = "Fly to points failed: no home or global altitude reference"
-                    self._set_command_error(
-                        "no home or global altitude reference"
-                    )
-                    self._console_publish("GOTOPOINTS", text, "error")
-                    self._store_update_warning(text, "critical")
-                    return False
-
-            snapshot = self._store.get_snapshot()
-            on_ground = float(snapshot.get("altitude_agl", 0.0)) < 0.5
+            # No altitude-reference gate here, on purpose. There used to be
+            # one, and it was pure ceremony: every item below is built in
+            # MAV_FRAME_GLOBAL_RELATIVE_ALT, whose z *is* the AGL number the
+            # operator typed, so the AMSL value the gate computed was thrown
+            # away without ever being sent. It refused missions over a
+            # conversion the mission does not need.
+            on_ground = not self._is_airborne()
             nan = float("nan")
             items: list[dict[str, Any]] = []
             seq = 0
@@ -2530,23 +2969,71 @@ class MavlinkBridge:
                 self._param_download_started_at = now
                 self._param_last_value_at = now
                 self._param_retransmit_round = 0
-            with self._send_lock:
-                self._conn.mav.param_request_list_send(
-                    self._target_system, self._target_component,
-                )
+            conn = self._conn
+            try:
+                with self._send_lock:
+                    if conn is None or conn is not self._conn:
+                        raise ConnectionError("link closed")
+                    conn.mav.param_request_list_send(
+                        self._target_system, self._target_component,
+                    )
+            except Exception as exc:  # noqa: BLE001 - a torn-down link is not a 500
+                # Roll the state machine back: leaving it at "downloading" with
+                # nothing on the wire would block every later parameter
+                # operation behind an "in progress" that never progresses.
+                with self._param_lock:
+                    if self._param_download_state == "downloading":
+                        self._param_download_state = "idle"
+                self._set_command_error(f"parameter list request failed: {exc}")
+                return False
             self._start_param_watchdog()
             return True
+
+    # PARAM_VALUE / PARAM_SET carry the id in a fixed char[16] with no
+    # terminator when it is exactly full, so anything longer is not a
+    # parameter this vehicle could ever have — and pymavlink packs it by
+    # raising rather than truncating.
+    PARAM_ID_MAX_BYTES = 16
+
+    @classmethod
+    def _encode_param_name(cls, name: Any) -> bytes | None:
+        """Encode *name* for the wire, or None when it cannot be one.
+
+        Rejects instead of truncating: a silently shortened name addresses a
+        *different* parameter, which on a parameter write is the difference
+        between setting a rate gain and setting something else entirely.
+        """
+        if not isinstance(name, str) or not name:
+            return None
+        try:
+            encoded = name.encode("ascii")
+        except UnicodeEncodeError:
+            return None
+        if len(encoded) > cls.PARAM_ID_MAX_BYTES:
+            return None
+        return encoded
 
     def request_param(self, name: str) -> bool:
         """Request a single parameter by name (param_index=-1)."""
         with self._operation_lock:
             if not self._connection_ready():
                 return False
-            with self._send_lock:
-                self._conn.mav.param_request_read_send(
-                    self._target_system, self._target_component,
-                    name.encode(), -1,
-                )
+            encoded = self._encode_param_name(name)
+            if encoded is None:
+                self._set_command_error("invalid parameter name")
+                return False
+            conn = self._conn
+            try:
+                with self._send_lock:
+                    if conn is None or conn is not self._conn:
+                        return False
+                    conn.mav.param_request_read_send(
+                        self._target_system, self._target_component,
+                        encoded, -1,
+                    )
+            except Exception as exc:  # noqa: BLE001 - a torn-down link is not a 500
+                logger.debug("param read request failed (%s): %s", name, exc)
+                return False
             return True
 
     def fetch_params(
@@ -2620,6 +3107,21 @@ class MavlinkBridge:
         """Write a parameter and confirm the echoed PARAM_VALUE matches."""
         with self._operation_lock:
             self._set_command_error("")
+            if self._encode_param_name(name) is None:
+                self._set_command_error("invalid parameter name")
+                return False
+            # bool is an int in Python: True would be written as 1.0.
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                self._set_command_error("parameter value must be a number")
+                return False
+            value = float(value)
+            if not math.isfinite(value):
+                # NaN/Inf reaches PX4 as a valid float32 and is stored as one.
+                # The echo check below could never confirm it either (NaN is
+                # not equal to itself), so it would report an unconfirmed write
+                # for a value that did land on the vehicle.
+                self._set_command_error("parameter value must be finite")
+                return False
             if not self._connection_ready():
                 self._set_command_error("not connected")
                 return False
@@ -2642,12 +3144,21 @@ class MavlinkBridge:
             try:
                 for attempt in range(3):
                     if not self._connection_ready():
+                        self._set_command_error("not connected")
                         return False
-                    with self._send_lock:
-                        self._conn.mav.param_set_send(
-                            self._target_system, self._target_component,
-                            name.encode(), float(value), entry.type,
-                        )
+                    conn = self._conn
+                    try:
+                        with self._send_lock:
+                            if conn is None or conn is not self._conn:
+                                self._set_command_error("not connected")
+                                return False
+                            conn.mav.param_set_send(
+                                self._target_system, self._target_component,
+                                name.encode("ascii"), value, entry.type,
+                            )
+                    except Exception as exc:  # noqa: BLE001 - report, never raise
+                        self._set_command_error(f"parameter write failed: {exc}")
+                        return False
                     if pending.event.wait(timeout=1.0):
                         break
                 else:
@@ -2662,7 +3173,7 @@ class MavlinkBridge:
             if echoed is None:
                 self._set_command_error("parameter write not confirmed (no echo)")
                 return False
-            if abs(echoed.value - float(value)) <= max(1e-4, 1e-3 * abs(float(value))):
+            if abs(echoed.value - value) <= max(1e-4, 1e-3 * abs(value)):
                 self._console_publish("PARAM", f"{name} set to {value}", "success")
                 return True
             text = (f"parameter write not confirmed (got {echoed.value} expected {value})")
@@ -3241,35 +3752,61 @@ class MavlinkBridge:
     # ------------------------------------------------------------------
     # Autotune
     # ------------------------------------------------------------------
+    #
+    # The autotune runs IN FLIGHT. PX4's mc_autotune_attitude_control injects
+    # steps into the rate controller and identifies the airframe from the
+    # response, which it can only do on an armed, airborne vehicle; the command
+    # handler answers TEMPORARILY_REJECTED while the vehicle is disarmed.
+    #
+    # Corvus used to refuse to send this command *unless* the vehicle was
+    # disarmed, copying the armed-refusal that is correct for calibration and
+    # parameter writes. Applied here it inverted the precondition, so the only
+    # state in which the command was sent was the only state PX4 rejects it in,
+    # and the autotune could never run. The gate below is the real one: the
+    # vehicle must be armed, and must not be sitting on the ground.
+    #
+    # Progress is not STATUSTEXT. PX4 answers this command with a repeated
+    # COMMAND_ACK carrying MAV_RESULT_IN_PROGRESS and a 0-100 progress field
+    # for as long as the tune runs, then a final ACK with the outcome; that
+    # stream is latched into the store by _handle_autotune_ack.
 
     _AUTOTUNE_AXIS_MAP: dict[str, float] = {
-        # PX4 v1.16 and v1.17 ignore param2; v1.18 requires it to be zero.
+        # PX4's multicopter autotune always tunes all three axes: it ignores
+        # param2 on v1.16/v1.17 and wants zero on v1.18. The fixed-wing tune
+        # does take an axis selection, but through FW_AT_AXES rather than
+        # through this command, so "all" stays the only value on the wire.
         "all": 0.0,
     }
 
-    def autotune(self, axis: str) -> bool:
-        """Start PX4 autotune via MAV_CMD_DO_AUTOTUNE_ENABLE (212).
+    def autotune(self, axis: str = "all", enable: bool = True) -> bool:
+        """Start or stop the PX4 autotune via MAV_CMD_DO_AUTOTUNE_ENABLE (212).
 
-        param1=1 enables the tune and param2=0 requests the only tune supported
-        by PX4 v1.16-v1.18: all rate and attitude axes. PX4 acknowledges a
-        successful start with IN_PROGRESS; progress then streams as STATUSTEXT.
+        param1 is 1 to start and 0 to stop; param2 is the axis selection, which
+        PX4 v1.16-v1.18 accept only as 0 ("all"). A successful start is
+        acknowledged with ACCEPTED or IN_PROGRESS.
+
+        Starting is gated on the vehicle being armed and airborne, because that
+        is what PX4 requires. Stopping is gated on nothing at all: an operator
+        who wants the injection to end is never told to satisfy a precondition
+        first, the same reasoning as :meth:`cancel_calibration`.
         """
         with self._operation_lock:
             self._set_command_error("")
-            # Defense-in-depth: refuse while armed.
-            if self._store.get_snapshot().get("armed"):
-                self._set_command_error("cannot autotune while armed")
-                return False
             axis_val = self._AUTOTUNE_AXIS_MAP.get(axis)
             if axis_val is None:
                 self._set_command_error(f"unknown autotune axis: {axis}")
                 return False
+            if enable:
+                problem = self._autotune_precondition()
+                if problem:
+                    self._set_command_error(problem)
+                    return False
             if not self._connection_ready():
                 return self._command_failure(f"Autotune {axis}", -2)
             nan = float("nan")
             result = self._send_command_and_wait(
                 mavutil.mavlink.MAV_CMD_DO_AUTOTUNE_ENABLE,
-                [1.0, axis_val, nan, nan, nan, nan, nan],
+                [1.0 if enable else 0.0, axis_val, nan, nan, nan, nan, nan],
                 timeout=5.0, retries=0,
                 accept_in_progress=True,
             )
@@ -3277,9 +3814,79 @@ class MavlinkBridge:
                 mavutil.mavlink.MAV_RESULT_ACCEPTED,
                 mavutil.mavlink.MAV_RESULT_IN_PROGRESS,
             ):
+                if enable:
+                    self._store.update(autotune_state="failed", autotune_progress=0)
                 return self._command_failure(f"Autotune {axis}", result)
-            self._console_publish("AUTOTUNE", "Full autotune started", "success")
+            if enable:
+                self._store.update(autotune_state="running", autotune_progress=0)
+                self._console_publish("AUTOTUNE", "Autotune started", "success")
+            else:
+                self._store.update(autotune_state="", autotune_progress=0)
+                self._console_publish("AUTOTUNE", "Autotune stopped", "warning")
             return True
+
+    def _autotune_precondition(self) -> str:
+        """Why the autotune cannot start right now, or "" when it can.
+
+        The message is the whole point of this method: "cannot autotune" tells
+        an operator standing in a field nothing, whereas naming the missing
+        precondition tells them what to do next.
+
+        An unknown landed state (0, the firmware does not publish
+        EXTENDED_SYS_STATE, or nothing has arrived yet) is not treated as being
+        on the ground. Blocking on the absence of a message would refuse a
+        command PX4 would have accepted, and PX4 remains the authority — it
+        rejects the tune itself if the vehicle really is grounded.
+        """
+        snapshot = self._store.get_snapshot()
+        if not snapshot.get("armed"):
+            return ("the autotune runs in flight: arm the vehicle and take off "
+                    "before starting it")
+        on_ground = mavutil.mavlink.MAV_LANDED_STATE_ON_GROUND
+        if int(snapshot.get("landed_state") or 0) == on_ground:
+            return ("the vehicle is still on the ground: hold a stable hover "
+                    "before starting the autotune")
+        return ""
+
+    def _handle_autotune_ack(self, msg: Any) -> None:
+        """Latch the autotune's progress and outcome out of its COMMAND_ACK.
+
+        PX4 re-acknowledges MAV_CMD_DO_AUTOTUNE_ENABLE for the whole run: one
+        IN_PROGRESS ACK per step carrying `progress` 0-100, then one final ACK
+        whose result is the outcome. This is the only progress a ground station
+        receives — the module's uORB status topic never leaves the autopilot —
+        so it is stored rather than left to scroll past in the console.
+
+        Called from the receive loop for every autotune ACK, including ones
+        answering a command another station sent: a tune running on this
+        aircraft is this station's business regardless of who started it.
+        """
+        try:
+            result = int(msg.result)
+        except (TypeError, ValueError):
+            return
+        if result == mavutil.mavlink.MAV_RESULT_IN_PROGRESS:
+            try:
+                progress = int(getattr(msg, "progress", 0) or 0)
+            except (TypeError, ValueError):
+                progress = 0
+            self._store.update(
+                autotune_state="running",
+                autotune_progress=max(0, min(100, progress)),
+            )
+            return
+        if result == mavutil.mavlink.MAV_RESULT_ACCEPTED:
+            # ACCEPTED closes a run that was already reporting progress; on the
+            # very first ACK it only means "command taken", which the start
+            # path has already recorded as running.
+            if self._store.get_snapshot().get("autotune_state") == "running":
+                self._store.update(autotune_state="done", autotune_progress=100)
+            return
+        self._store.update(autotune_state="failed")
+        self._store.merge_warning(
+            "Autotune refused: " + MAV_RESULT_TEXT.get(result, f"result={result}"),
+            "warning",
+        )
 
     # ------------------------------------------------------------------
     # Reboot to bootloader (Firmware Flash)
@@ -3421,8 +4028,14 @@ class MavlinkBridge:
 
         try:
             mask = int(buttons) & 0xFFFF if isinstance(buttons, int) and not isinstance(buttons, bool) else 0
+            conn = self._conn
             with self._send_lock:
-                self._conn.mav.manual_control_send(
+                if conn is None or conn is not self._conn:
+                    self._set_command_error(
+                        f"Manual control failed: {MAV_RESULT_TEXT[-2]}"
+                    )
+                    return False
+                conn.mav.manual_control_send(
                     self._target_system,
                     axis(x, -1.0, 1.0),
                     axis(y, -1.0, 1.0),
@@ -3456,6 +4069,108 @@ class MavlinkBridge:
             return self.set_message_interval(
                 mavutil.mavlink.MAVLINK_MSG_ID_VIBRATION, interval_us,
             )
+
+    def set_rc_stream(self, enabled: bool, rate_hz: int = 20) -> bool:
+        """Raise (or restore) the RC_CHANNELS rate the Radio Control page needs.
+
+        Lean, exactly like :meth:`set_vibration_stream`: PX4 streams
+        RC_CHANNELS at a few hertz by default, which is enough for a channel
+        bar and not enough for a calibration — a stick swept through its travel
+        in half a second is three samples at 5 Hz, and the endpoint the wizard
+        writes is then whatever those three happened to catch.
+
+        Safe while armed, and deliberately so — this is read-only telemetry,
+        and the page reads channels in flight to check a switch does what the
+        operator thinks it does. Disabling sends interval 0, handing the rate
+        back to the firmware's own default rather than to a number this build
+        picked.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            if enabled:
+                if isinstance(rate_hz, bool) or not isinstance(rate_hz, int):
+                    self._set_command_error("RC rate must be an integer")
+                    return False
+                if not 1 <= rate_hz <= 50:
+                    self._set_command_error("RC rate must be between 1 and 50 Hz")
+                    return False
+                interval_us = max(1, int(1_000_000 / rate_hz))
+            else:
+                interval_us = 0
+            if not self._connection_ready():
+                # set_message_interval returns False here without a reason, and
+                # the page opened over a dead link is the common case for this
+                # route — an unexplained refusal would reach the browser as a
+                # conflict rather than as "there is no vehicle".
+                self._set_command_error("not connected")
+                self._store.update(rc_live=False)
+                return False
+            ok = self.set_message_interval(
+                mavutil.mavlink.MAVLINK_MSG_ID_RC_CHANNELS, interval_us,
+            )
+            if not enabled:
+                # The channel bars stop being live the moment the rate is handed
+                # back, so the page stops claiming a reading it is no longer
+                # being sent.
+                self._store.update(rc_live=False)
+            return ok
+
+    # The messages the PID tuning page plots, as commanded/achieved pairs.
+    # ATTITUDE is already streamed for the HUD; it is raised here too because a
+    # 50 Hz response sampled against a 5 Hz setpoint makes a clean tune look
+    # like a lagging one.
+    _TUNING_MSG_IDS: tuple[int, ...] = (
+        mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE,
+        mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE_TARGET,
+        mavutil.mavlink.MAVLINK_MSG_ID_POSITION_TARGET_LOCAL_NED,
+    )
+
+    def set_tuning_stream(self, enabled: bool, rate_hz: int = 20) -> bool:
+        """Raise (or restore) the setpoint stream the PID tuning page plots.
+
+        Lean, exactly like :meth:`set_vibration_stream`: PX4 streams
+        ATTITUDE_TARGET and POSITION_TARGET_LOCAL_NED slowly by default, the
+        GCS asks for a tuning rate only while the page is open, and disabling
+        sends interval 0 to hand the rate back to the firmware's own default
+        rather than to a number this build picked.
+
+        Safe while armed, and deliberately so — this is read-only telemetry,
+        and the page that wants it is used in flight.
+
+        Returns True only if every message was accepted; a firmware that
+        refuses one still gets the others, because a missing setpoint trace is
+        a degraded graph and not a failure worth aborting the page for.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            if enabled:
+                if isinstance(rate_hz, bool) or not isinstance(rate_hz, int):
+                    self._set_command_error("tuning rate must be an integer")
+                    return False
+                if not 1 <= rate_hz <= 50:
+                    self._set_command_error("tuning rate must be between 1 and 50 Hz")
+                    return False
+                interval_us = max(1, int(1_000_000 / rate_hz))
+            else:
+                interval_us = 0
+            if not self._connection_ready():
+                # Same reason set_rc_stream carries this guard: without it
+                # set_message_interval clears the command error and returns
+                # False without setting one, so the route answers 409 with a
+                # generic "request failed" for what is simply no vehicle.
+                self._set_command_error("not connected")
+                self._store.update(setpoints_live=False)
+                return False
+            ok = True
+            for msg_id in self._TUNING_MSG_IDS:
+                if not self.set_message_interval(msg_id, interval_us):
+                    ok = False
+            if not enabled:
+                # The traces stop being live the moment the rate is handed
+                # back, so the page stops claiming a setpoint it is no longer
+                # being sent.
+                self._store.update(setpoints_live=False)
+            return ok
 
     # ------------------------------------------------------------------
     # PX4 NuttShell (NSH) debug shell — SERIAL_CONTROL device=SHELL
@@ -3612,6 +4327,11 @@ class MavlinkBridge:
                     line, self._shell_buffer = self._shell_buffer.split("\n", 1)
                     if line:
                         lines.append(line)
+                # No newline in sight and the buffer has run long: flush what
+                # is there rather than keep growing it.
+                if len(self._shell_buffer) >= SHELL_LINE_MAX_CHARS:
+                    lines.append(self._shell_buffer)
+                    self._shell_buffer = ""
             for line in lines:
                 self._console_publish("SHELL", line, "info")
         except Exception as exc:

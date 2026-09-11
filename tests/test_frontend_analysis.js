@@ -28,6 +28,16 @@ const dispatched = [];
 window.dispatchEvent = (event) => { dispatched.push(event); };
 window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
 
+// In-memory storage, cleared by reset(). The sort preference is remembered
+// across visits, so a shared real one would leak one test's choice into the
+// next and the failure would look like a sort bug.
+const storage = new Map();
+window.localStorage = {
+  getItem: (k) => (storage.has(k) ? storage.get(k) : null),
+  setItem: (k, v) => { storage.set(k, String(v)); },
+  removeItem: (k) => { storage.delete(k); },
+};
+
 // Timers are captured, never auto-fired: the page polls, and a test that races
 // a real timer is a test that fails on a slow machine. Node's own setTimeout is
 // captured FIRST — window IS global here, so overriding it would also take away
@@ -114,6 +124,15 @@ function fire(el, type) {
   ((el && el._listeners && el._listeners[type]) || []).forEach((cb) => cb(event));
   return event;
 }
+/** Run the page's next scheduled status poll. Timers are captured rather than
+ *  real, so the only way a poll happens in a test is by asking for it. */
+function firePoll() {
+  const next = timeouts.filter((t) => !clearedTimeouts.has(t.id)).pop();
+  assert.ok(next, "the page has a poll scheduled");
+  clearedTimeouts.add(next.id);
+  return next.cb();
+}
+
 /** Open one of the two log tiles, the way the Setup page's tiles work. */
 function openTile(container, view) {
   const tile = container.querySelectorAll(".logs-tile").find((t) => t.dataset.view === view);
@@ -164,6 +183,34 @@ const REVIEW = {
   armed: [{ start: 1, end: 10 }],
 };
 
+/** What the backend returns for a recorded tlog: the same payload shape as a
+ *  ULog review — one renderer draws both — with the facts a recording can
+ *  actually state and the Link group a ULog can never have. */
+const TLOG_REVIEW = {
+  ok: true,
+  kind: "tlog",
+  summary: {
+    name: "20260101-140000.tlog", duration_s: 448.7, airframe: "Quadrotor",
+    sw: "1.18.0", hw: "board 51", dropouts: 0, dropout_ms: 0, frames: 15721,
+    armed_s: 447.9,
+    facts: [
+      ["Duration", "449 s"], ["Armed", "448 s"], ["Airframe", "Quadrotor"],
+      ["Firmware", "1.18.0"], ["Frames", "15,721"],
+    ],
+  },
+  findings: [{ level: "warning", text: "Remote radio RSSI fell to 50." }],
+  plots: [
+    { id: "altitude", title: "Altitude", unit: "m", group: "Flight",
+      series: [{ name: "Above home", x: [0, 1], y: [0, 12] }] },
+    { id: "radio", title: "Radio signal", unit: "dB", group: "Link",
+      series: [{ name: "Remote RSSI", x: [0, 1], y: [140, 50] }] },
+  ],
+  messages: [{ t: 3, level: "error", text: "Preflight Fail: Compass" }],
+  groups: ["Flight", "Link"],
+  modes: [{ mode: "Mission", state: 0, start: 0, end: 448.7 }],
+  armed: [{ start: 0.8, end: 448.7 }],
+};
+
 // Stub fetch for the "open a .ulg from this computer" path: the review page
 // POSTs the file body raw, not through postAction, and reads res.json().
 let fetchCalls = [];
@@ -186,12 +233,21 @@ function makeFakeTelemetry(status) {
   let subCb = null;
   let unsubCalls = 0;
   let reviewResponse = REVIEW;
+  let tlogReviewResponse = TLOG_REVIEW;
   return {
     setReview(r) { reviewResponse = r; },
+    setTlogReview(r) { tlogReviewResponse = r; },
+    /** Make the next Telemetry Review fail the way a bad recording does. */
+    setReviewError(message) { tlogReviewResponse = new Error(message); },
     telemetry: {
       requestJson(url, options) {
         requests.push({ url, options });
         if (url === "/api/logs/status") return Promise.resolve(current);
+        if (String(url).startsWith("/api/logs/tlog-review")) {
+          return tlogReviewResponse instanceof Error
+            ? Promise.reject(tlogReviewResponse)
+            : Promise.resolve(tlogReviewResponse);
+        }
         if (String(url).startsWith("/api/logs/review")) {
           return reviewResponse instanceof Error
             ? Promise.reject(reviewResponse)
@@ -224,8 +280,16 @@ const STATUS = {
       file_name: "log_001.ulg" },
     { id: 0, size: 10240, utc: 1699992800, downloaded: false, file: "" },
   ],
-  saved: [{ name: "log_001.ulg", id: 1, size: 30720, path: "/home/pilot/x.ulg" }],
-  tlogs: [{ name: "20260101-120000.tlog", size: 4096, path: "/home/p/.corvus/logs/x.tlog" }],
+  saved: [{ name: "log_001.ulg", id: 1, size: 30720, mtime: 1700000500,
+            path: "/home/pilot/x.ulg" }],
+  tlogs: [
+    { name: "20260101-140000.tlog", size: 4096, started: 1700003600,
+      mtime: 1700004000, path: "/home/p/.corvus/logs/c.tlog" },
+    { name: "20260101-130000.tlog", size: 999999, started: 1700000000,
+      mtime: 1700000400, path: "/home/p/.corvus/logs/b.tlog" },
+    { name: "20260101-120000.tlog", size: 4096, started: 1699996400,
+      mtime: 1699996800, path: "/home/p/.corvus/logs/a.tlog" },
+  ],
   dir: "/home/pilot/.corvus/flightlogs",
   connected: true,
 };
@@ -237,6 +301,7 @@ require("../src/js/analysis.js");
 function reset(status) {
   dispatched.length = 0;
   timeouts.length = 0;
+  storage.clear();
   resetFetch();
   const fake = makeFakeTelemetry(status || JSON.parse(JSON.stringify(STATUS)));
   Corvus.telemetry = fake.telemetry;
@@ -299,7 +364,7 @@ async function testTheLandingViewIsTwoTilesWithCounts() {
   // What is already saved is stated up front — it decides whether opening the
   // tile is a chore or a no-op.
   assert.match(findOneByClass(tiles[0], "tile-desc").textContent, /1 already in the folder/);
-  assert.match(findOneByClass(tiles[1], "tile-desc").textContent, /1 session\(s\)/);
+  assert.match(findOneByClass(tiles[1], "tile-desc").textContent, /3 session\(s\)/);
   // Neither list is built until its tile is opened.
   assert.equal(findByClass(container, "logs-row").length, 0);
   destroy();
@@ -473,8 +538,240 @@ async function testLocalTlogsAreListedSeparately() {
   await flush();
   openTile(container, "tlog");
   const staticRows = findByClass(container, "logs-row-static");
-  assert.equal(staticRows.length, 1, "the recorded tlog is listed");
-  assert.match(findOneByClass(staticRows[0], "logs-row-title").textContent, /\.tlog$/);
+  assert.equal(staticRows.length, 3, "every recorded tlog is listed");
+  // The clock leads the row; the filename stays in the meta line beside it.
+  assert.equal(findOneByClass(staticRows[0], "logs-row-title").textContent,
+    localStamp(1700003600, true));
+  assert.match(findOneByClass(staticRows[0], "logs-row-meta").textContent,
+    /20260101-140000\.tlog/);
+  destroy();
+}
+
+/** What the page should print for an epoch second: THIS machine's wall clock,
+ *  built the same way the page builds it, so the test states the intent
+ *  rather than hard-coding one runner's timezone. */
+function localStamp(seconds, withSeconds) {
+  const d = new Date(seconds * 1000);
+  const p = (n) => (n < 10 ? "0" : "") + n;
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate())
+    + " " + p(d.getHours()) + ":" + p(d.getMinutes())
+    + (withSeconds ? ":" + p(d.getSeconds()) : "");
+}
+
+async function testTimesAreThisMachinesClockNotUtc() {
+  const { container } = reset();
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "ulog");
+
+  const rows = findByClass(container, "logs-row").filter((r) => r.dataset.id !== undefined);
+  const meta = findOneByClass(rows[0], "logs-row-meta").textContent;
+  assert.ok(meta.startsWith(localStamp(1700000000)),
+    "the vehicle's UTC stamp is shown on the local clock, got: " + meta);
+  assert.ok(!/UTC/.test(meta), "and is not labelled UTC any more");
+  destroy();
+}
+
+async function testALogTheVehicleNeverStampedSaysSo() {
+  const status = JSON.parse(JSON.stringify(STATUS));
+  status.logs[0].utc = 0;
+  const { container } = reset(status);
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "ulog");
+
+  const rows = findByClass(container, "logs-row").filter((r) => r.dataset.id !== undefined);
+  // Newest-first, and an unstamped log has no place on a time axis: it goes
+  // after everything that has one rather than to 1970.
+  assert.deepEqual(rows.map((r) => r.dataset.id), ["1", "0", "2"]);
+  assert.match(findOneByClass(rows[2], "logs-row-meta").textContent, /^no timestamp/);
+  destroy();
+}
+
+/** The sort control, wherever it is on the open page. */
+function sortSelect(container) {
+  return findOneByClass(container, "logs-sort-select");
+}
+
+function pickSort(container, value) {
+  const sel = sortSelect(container);
+  assert.ok(sel, "the list carries a sort control");
+  sel.value = value;
+  fire(sel, "change");
+}
+
+async function testVehicleLogsCanBeReorderedByTimeAndSize() {
+  const { container } = reset();
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "ulog");
+  const ids = () => findByClass(container, "logs-row")
+    .filter((r) => r.dataset.id !== undefined).map((r) => r.dataset.id);
+
+  assert.deepEqual(ids(), ["2", "1", "0"], "newest first by default");
+  pickSort(container, "time-asc");
+  assert.deepEqual(ids(), ["0", "1", "2"], "oldest first");
+  pickSort(container, "size-desc");
+  assert.deepEqual(ids(), ["1", "0", "2"], "largest first — 30 KB, 10 KB, 2 KB");
+  pickSort(container, "id-desc");
+  assert.deepEqual(ids(), ["2", "1", "0"], "by log number");
+  destroy();
+}
+
+async function testTlogsCanBeReorderedToo() {
+  const { container } = reset();
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "tlog");
+  const names = () => findByClass(container, "logs-row-static")
+    .map((r) => findOneByClass(r, "logs-row-meta").textContent.split("  ·  ")[0]);
+
+  assert.deepEqual(names(),
+    ["20260101-140000.tlog", "20260101-130000.tlog", "20260101-120000.tlog"]);
+  pickSort(container, "time-asc");
+  assert.deepEqual(names(),
+    ["20260101-120000.tlog", "20260101-130000.tlog", "20260101-140000.tlog"]);
+  pickSort(container, "size-desc");
+  assert.equal(names()[0], "20260101-130000.tlog", "the ~1 MB session leads");
+  destroy();
+}
+
+/* ---------------- Telemetry Review (a tlog) ---------------- */
+
+/** Open a recording's review from its row in the tlog list. */
+function openTlogReview(container, match) {
+  openTile(container, "tlog");
+  const rows = findByClass(container, "logs-row-static");
+  const row = match
+    ? rows.find((r) => findOneByClass(r, "logs-row-meta").textContent.includes(match))
+    : rows[0];
+  assert.ok(row, "a recording row to review");
+  const btn = findOneByClass(row, "logs-row-review");
+  assert.ok(btn, "the row carries a Review shortcut");
+  fire(btn, "click");
+  return btn;
+}
+
+async function testEveryRecordingCanBeOpenedAsAReview() {
+  // The tlog list used to be a dead end: a folder of filenames with nothing
+  // to do to them. Every row is now a way in.
+  const { container, fake } = reset();
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "tlog");
+  const rows = findByClass(container, "logs-row-static");
+  assert.equal(rows.filter((r) => findOneByClass(r, "logs-row-review")).length, 3,
+    "every recording, not just the newest");
+  fire(findOneByClass(rows[0], "logs-row-review"), "click");
+  await flush();
+  assert.equal(fake.requests[fake.requests.length - 1].url,
+    "/api/logs/tlog-review?file=20260101-140000.tlog");
+  destroy();
+}
+
+async function testATelemetryReviewIsDrawnByTheSameRendererAsAUlog() {
+  // One renderer for both, deliberately: a second copy would drift.
+  const { container } = reset();
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTlogReview(container);
+  await flush();
+  assert.ok(findOneByClass(container, "review-summary"), "the summary card is drawn");
+  assert.equal(findByClass(container, "review-plot-card").length, TLOG_REVIEW.plots.length);
+  assert.ok(findByClass(container, "review-mode-seg").length,
+    "the mode strip is drawn from the heartbeats");
+  destroy();
+}
+
+async function testARecordingNamesItsOwnFactsRatherThanAUlogs() {
+  // A recording has no ULog dropouts to report, and it does have a frame
+  // count and an armed time that matter.
+  const { container } = reset();
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTlogReview(container);
+  await flush();
+  const labels = findByClass(container, "review-fact-label").map((e) => e.textContent);
+  assert.deepEqual(labels, ["Duration", "Armed", "Airframe", "Firmware", "Frames"]);
+  assert.ok(!labels.includes("Dropouts"), "a tlog has no ULog dropouts to report");
+  destroy();
+}
+
+async function testAUlogReviewKeepsItsOwnFactsWhenTheBackendNamesNone() {
+  const { container } = reset();
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "review");
+  await flush();
+  fire(buttonByLabel(container, "Review"), "click");
+  await flush();
+  const labels = findByClass(container, "review-fact-label").map((e) => e.textContent);
+  assert.deepEqual(labels, ["Duration", "Airframe", "Firmware", "Board", "Dropouts"]);
+  destroy();
+}
+
+async function testBackFromATelemetryReviewReturnsToTheRecordings() {
+  // Back goes where you came from, not to the tiles: the list is the place
+  // you were, and you are probably reading the next recording down.
+  const { container } = reset();
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTlogReview(container);
+  await flush();
+  fire(buttonByLabel(container, "Recorded tlogs"), "click");
+  assert.equal(findByClass(container, "logs-row-static").length, 3);
+  destroy();
+}
+
+async function testAnUnreadableRecordingReportsTheReasonAndKeepsThePage() {
+  const { container, fake } = reset();
+  fake.setReviewError("that recording is empty");
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTlogReview(container);
+  await flush();
+  const note = findOneByClass(container, "logs-status");
+  assert.match(note.textContent, /that recording is empty/);
+  assert.ok(note.className.includes("err"));
+  assert.equal(findByClass(container, "review-plot-card").length, 0);
+  destroy();
+}
+
+async function testTheSortChoiceSurvivesLeavingThePage() {
+  const { container } = reset();
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "ulog");
+  pickSort(container, "time-asc");
+  destroy();
+
+  // Same storage, a fresh page: the operator who works oldest-first should not
+  // have to say so again.
+  const second = makeEl("div");
+  const destroy2 = Corvus.analysis.render(second);
+  await flush();
+  openTile(second, "ulog");
+  const ids = findByClass(second, "logs-row")
+    .filter((r) => r.dataset.id !== undefined).map((r) => r.dataset.id);
+  assert.deepEqual(ids, ["0", "1", "2"]);
+  assert.equal(sortSelect(second).value, "time-asc", "and the control agrees");
+  destroy2();
+}
+
+async function testAPollDoesNotUndoTheChosenOrder() {
+  const { container, fake } = reset();
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "ulog");
+  pickSort(container, "time-asc");
+  // The list is rebuilt only when its signature changes; the sort is part of
+  // that signature, and a poll that changes nothing must not reorder it back.
+  fake.setStatus(JSON.parse(JSON.stringify(STATUS)));
+  firePoll();
+  await flush();
+  const ids = findByClass(container, "logs-row")
+    .filter((r) => r.dataset.id !== undefined).map((r) => r.dataset.id);
+  assert.deepEqual(ids, ["0", "1", "2"]);
   destroy();
 }
 
@@ -1011,6 +1308,18 @@ async function run() {
     testDownloadIsBlockedWithoutASelectionOrALink,
     testARunningQueueShowsWhichLogIsCurrentAndOffersCancel,
     testLocalTlogsAreListedSeparately,
+    testTimesAreThisMachinesClockNotUtc,
+    testALogTheVehicleNeverStampedSaysSo,
+    testVehicleLogsCanBeReorderedByTimeAndSize,
+    testTlogsCanBeReorderedToo,
+    testTheSortChoiceSurvivesLeavingThePage,
+    testAPollDoesNotUndoTheChosenOrder,
+    testEveryRecordingCanBeOpenedAsAReview,
+    testATelemetryReviewIsDrawnByTheSameRendererAsAUlog,
+    testARecordingNamesItsOwnFactsRatherThanAUlogs,
+    testAUlogReviewKeepsItsOwnFactsWhenTheBackendNamesNone,
+    testBackFromATelemetryReviewReturnsToTheRecordings,
+    testAnUnreadableRecordingReportsTheReasonAndKeepsThePage,
     testEraseIsGatedBehindAConfirmThatNamesTheLoss,
     testKeepingTheLogsPostsNothing,
     testConfirmingErasePostsTheErase,

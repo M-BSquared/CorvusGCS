@@ -18,15 +18,16 @@ import re
 import shlex
 import socket
 import socketserver
+import sys
 import tempfile
 import threading
 import time
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
 
-from . import motor_config, safety_config, tile_sources
+from . import motor_config, rc_config, safety_config, tile_sources, tuning_config
 from .config import (
     CorvusConfig,
     default_config_path,
@@ -74,6 +75,12 @@ FIRMWARE_SSE_CAPACITY = 16
 # frame it was wanted for. The offline DOWNLOADER uses its own, longer timeout
 # (corvus/tile_downloader._FETCH_TIMEOUT) because there nobody is watching.
 TILE_UPSTREAM_TIMEOUT_S = 4
+# Largest tile body accepted from an upstream. A 256px tile is tens of
+# kilobytes; anything past this is a captive portal's login page, a proxy
+# error page, or an upstream that has stopped being a tile server. Read one
+# byte past the cap so a body that exceeds it can be recognised and dropped
+# rather than cached and later served as a map tile.
+TILE_UPSTREAM_MAX_BYTES = 4 * 1024 * 1024
 
 # Offline circuit breaker for the interactive fill path.
 #
@@ -117,6 +124,9 @@ _PLUGIN_ASSET_RE = re.compile(r"^/api/plugins/asset/([A-Za-z0-9][A-Za-z0-9_.\-]{
 CALIB_SENSORS = frozenset({
     "gyro", "compass", "baro", "accel", "level", "accel_quick", "airspeed", "motor",
 })
+# PX4's multicopter autotune always tunes all three axes; the fixed-wing one
+# takes its axis selection from FW_AT_AXES rather than from the command. So
+# "all" is the only value that ever goes on the wire.
 AUTOTUNE_AXES = frozenset({"all"})
 # PX4 NuttShell (NSH) builtins with no MAVLink-command equivalent (e.g.
 # `listener <topic>` subscribes to a uORB topic and prints it). Routed to the
@@ -812,8 +822,82 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     _GET_ROUTES: dict[str, str] = {}
     _POST_ROUTES: dict[str, str] = {}
 
+    # Socket timeout for this connection, in seconds.
+    #
+    # Without one, every blocking read and write on the client socket waits
+    # forever. A browser tab killed between its headers and its body leaves
+    # ``rfile.read(Content-Length)`` parked on a thread that never comes back,
+    # and the connection, the thread and everything the handler is holding
+    # leak for the life of the process — a reloaded Firmware or Analysis page
+    # is enough to do it, because both POST bodies are megabytes.
+    #
+    # Generous on purpose. It has to clear the SSE keep-alive interval (15 s)
+    # by a wide margin, because it also bounds the *writes* those streams
+    # make; a client that has stopped reading for a minute while telemetry
+    # piles up in its socket buffer is wedged, and dropping it is right.
+    # TimeoutError is already in CLIENT_GONE_ERRORS, so the SSE loops treat
+    # that exactly like a closed tab.
+    timeout = 120
+
+    def setup(self) -> None:
+        # Whether any bytes of a response have gone out yet. The error handler
+        # below can only send a clean 500 while this is False — once a status
+        # line is on the wire (every SSE stream, any partially written body),
+        # appending another response would corrupt the stream, so the only
+        # honest move left is to close the connection.
+        self._response_started = False
+        super().setup()
+
+    # The subset of CLIENT_GONE_ERRORS that really only ever means "the peer
+    # left". CLIENT_GONE_ERRORS itself ends in the OSError those four inherit
+    # from, which is right for an SSE write loop — where every OSError is the
+    # socket — and wrong for a whole request, where an OSError is just as
+    # likely to be a disk the endpoint could not read. Swallowing that one
+    # quietly would hide the very failure worth reporting.
+    _PEER_GONE_ERRORS = (
+        BrokenPipeError,
+        ConnectionResetError,
+        ConnectionAbortedError,
+        TimeoutError,
+    )
+
+    def send_response(self, *args: Any, **kwargs: Any) -> None:
+        self._response_started = True
+        super().send_response(*args, **kwargs)
+
     def log_message(self, fmt: str, *args) -> None:
         logger.debug("%s - %s", self.address_string(), fmt % args)
+
+    def _guarded(self, dispatch: Callable[[], None]) -> None:
+        """Run one request, turning any escape into a response, never a drop.
+
+        ``http.server`` does not catch exceptions out of ``do_GET``/``do_POST``:
+        they unwind into ``socketserver``, which prints a bare traceback and
+        closes the socket without writing anything. The browser sees a network
+        error rather than a status code, so the UI cannot tell "the backend has
+        a bug" from "the backend is gone" — and during a flight the two call
+        for very different reactions from the operator. Any endpoint that
+        raises now answers 500 instead, with the traceback in the log where it
+        belongs.
+
+        A client that simply left is not an error and is logged as such; there
+        is nobody to answer.
+        """
+        self._response_started = False
+        try:
+            dispatch()
+        except self._PEER_GONE_ERRORS as exc:
+            logger.debug("client gone during %s: %s", self.path, exc)
+            self.close_connection = True
+        except Exception:  # noqa: BLE001 - an endpoint bug must not drop the socket
+            logger.exception("unhandled error serving %s", self.path)
+            if self._response_started:
+                self.close_connection = True
+                return
+            try:
+                self._send_json({"error": "internal server error"}, 500)
+            except CLIENT_GONE_ERRORS:
+                self.close_connection = True
 
     def _send_json(self, data: dict, status: int = 200) -> None:
         body = json.dumps(_sanitize(data)).encode("utf-8")
@@ -1088,6 +1172,9 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         return out
 
     def do_GET(self) -> None:
+        self._guarded(self._do_get)
+
+    def _do_get(self) -> None:
         path = urlparse(self.path).path
         if path.startswith("/api/"):
             self._handle_api_get(path)
@@ -1095,6 +1182,9 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._serve_static(path)
 
     def do_POST(self) -> None:
+        self._guarded(self._do_post)
+
+    def _do_post(self) -> None:
         path = urlparse(self.path).path
         # Firmware upload carries a raw octet-stream body, not JSON. Handle it
         # before the JSON dispatcher so the binary payload is never json-parsed.
@@ -1477,6 +1567,87 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
         self._send_json(payload)
 
+    @route("GET", "/api/tuning")
+    def _api_tuning(self) -> None:
+        """Return the vehicle's PID tuning configuration as a description.
+
+        Same shape and same contract as ``/api/safety`` and ``/api/motors``:
+        one batched read of the parameters :mod:`corvus.tuning_config` knows
+        about, handed to that module to turn into groups — one per loop of the
+        control cascade, innermost first, plus the autotune.
+
+        A parameter the connected firmware does not answer for is one field
+        fewer, an empty section is dropped, and an empty group disappears, so a
+        multicopter and a fixed wing each get their own controllers out of the
+        one schema without a version switch (AGENTS.md: graceful fallback
+        across v1.16/v1.17/v1.18).
+
+        Always 200 so the page can render a "not connected" state instead of an
+        error banner; ``connected`` says which it is.
+        """
+        if self.mavlink is None:
+            self._send_json({"connected": False, "groups": [], "received": 0})
+            return
+        try:
+            values = self.mavlink.fetch_params(tuning_config.param_names())
+        except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
+            logger.exception("tuning parameter fetch failed")
+            self._send_json({
+                "connected": False, "groups": [], "received": 0, "error": str(exc),
+            })
+            return
+        payload = tuning_config.build(values)
+        payload["connected"] = bool(values)
+        if not values:
+            payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
+        self._send_json(payload)
+
+    @route("GET", "/api/rc")
+    def _api_rc(self) -> None:
+        """Return the vehicle's transmitter configuration as a description.
+
+        Same shape and same contract as ``/api/safety``, ``/api/motors`` and
+        ``/api/tuning``: one batched read of the parameters
+        :mod:`corvus.rc_config` knows about, handed to that module to turn into
+        sections — the input mode and its failsafe, the stick channels, the
+        flight-mode switch and its six slots, the remaining switches, the AUX
+        passthroughs, and the per-channel calibration table.
+
+        The channel pickers are capped at what the receiver actually delivers
+        (``RC_CHANNELS.chancount``, via the telemetry store) rather than at
+        PX4's eighteen, so an eight-channel radio does not present ten empty
+        rows. When no RC has arrived the cap falls back to the full eighteen —
+        an unknown receiver must not narrow the choices.
+
+        A parameter the connected firmware does not answer for is one field
+        fewer and an empty section disappears, so one schema serves v1.16,
+        v1.17 and v1.18 without a version switch (AGENTS.md).
+
+        Always 200 so the page can render a "not connected" state instead of an
+        error banner; ``connected`` says which it is.
+        """
+        empty = {"connected": False, "sections": [], "assignments": {},
+                 "channel_limit": rc_config.MAX_CHANNELS, "received": 0}
+        if self.mavlink is None:
+            self._send_json(empty)
+            return
+        channels = rc_config.MAX_CHANNELS
+        if self.store is not None:
+            reported = self.store.get_snapshot().get("rc_channel_count") or 0
+            if isinstance(reported, int) and 0 < reported <= rc_config.MAX_CHANNELS:
+                channels = reported
+        try:
+            values = self.mavlink.fetch_params(rc_config.param_names())
+        except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
+            logger.exception("RC parameter fetch failed")
+            self._send_json(dict(empty, error=str(exc)))
+            return
+        payload = rc_config.build(values, channels)
+        payload["connected"] = bool(values)
+        if not values:
+            payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
+        self._send_json(payload)
+
     # ---- POST API ----
     def _handle_api_post(self, path: str) -> None:
         # Guard the Content-Length parse: a non-numeric header raises ValueError
@@ -1640,7 +1811,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
     @route("POST", "/api/mavlink/connect")
     def _api_mavlink_connect(self, payload: dict) -> None:
-        conn = payload.get("connection", "udp:127.0.0.1:14540")
+        conn = payload.get("connection", "udp:127.0.0.1:14550")
         # Validate the connection string up front: a non-string/empty value
         # would be passed straight to the bridge. set_connection() now raises
         # ValueError on a bad spec — surface that as a 400, not a 500.
@@ -2129,10 +2300,23 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         """Upsert a saved SSH connection by name; does NOT connect.
 
         Validates ``name`` (non-empty str), ``host`` (non-empty str),
-        ``port`` (int, default 22), ``username`` (str). ``key_path`` and
-        ``password`` are optional and may be ``""``. Replaces any existing
-        entry with the same name; appends otherwise. Persists atomically.
-        Returns the redacted connection list (no password).
+        ``port`` (int, default 22), ``username`` (str). ``key_path`` is
+        optional and may be ``""``. Replaces any existing entry with the same
+        name; appends otherwise. Persists atomically. Returns the redacted
+        connection list (no password).
+
+        ``password`` is optional too, but treated differently: GET never
+        echoes it back (see ``_ssh_connections_public``), so an editor working
+        from that list cannot round-trip it. Omitting the key entirely keeps
+        whatever password the entry being replaced already had; sending it
+        (including ``""``) sets it, same as before.
+
+        ``original_name`` renames an existing entry in place instead of
+        appending a second one: the entry matched for both the replace target
+        and the password fallback above is the one named ``original_name``
+        (falling back to ``name`` when omitted, i.e. the non-renaming case).
+        Renaming onto a name already used by a *different* saved entry is
+        rejected — silently replacing it would merge two connections into one.
         """
         name = payload.get("name")
         host = payload.get("host")
@@ -2161,31 +2345,49 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         key_path = payload.get("key_path", "")
         if not isinstance(key_path, str):
             key_path = ""
+        has_password = "password" in payload
         password = payload.get("password", "")
         if not isinstance(password, str):
             password = ""
+        original_name = payload.get("original_name")
+        if not isinstance(original_name, str) or not original_name:
+            original_name = name
 
-        entry = {
-            "name": name,
-            "host": host,
-            "port": port,
-            "username": username,
-            "key_path": key_path,
-            "password": password,
-        }
         # Scan-then-append is a read-modify-write on a list every handler
         # thread shares. Two saves racing here lost a connection outright: the
         # remove endpoint rebuilds the list from a snapshot taken before this
         # append, so the entry that was just added vanished on the next save.
         with _config_write_lock:
             cfg = self._live_config()
-            replaced = False
+            existing_index = None
+            existing_entry = None
             for i, existing in enumerate(cfg.ssh_connections):
-                if isinstance(existing, dict) and existing.get("name") == name:
-                    cfg.ssh_connections[i] = entry
-                    replaced = True
+                if isinstance(existing, dict) and existing.get("name") == original_name:
+                    existing_index = i
+                    existing_entry = existing
                     break
-            if not replaced:
+
+            if name != original_name and any(
+                isinstance(e, dict) and e.get("name") == name for e in cfg.ssh_connections
+            ):
+                self._send_json(
+                    {"error": f'"{name}" is already saved. Pick another name.'}, 400)
+                return
+
+            if not has_password:
+                password = existing_entry.get("password", "") if existing_entry else ""
+
+            entry = {
+                "name": name,
+                "host": host,
+                "port": port,
+                "username": username,
+                "key_path": key_path,
+                "password": password,
+            }
+            if existing_index is not None:
+                cfg.ssh_connections[existing_index] = entry
+            else:
                 cfg.ssh_connections.append(entry)
             self._save_live_config()
         self._send_json({"ok": True, "connections": self._ssh_connections_public()})
@@ -2808,7 +3010,13 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
     @route("POST", "/api/autotune")
     def _api_autotune(self, payload: dict) -> None:
-        """Start an autotune on the given axis."""
+        """Start or stop the PX4 autotune.
+
+        ``{"axis": "all"}`` starts it; ``{"axis": "all", "enabled": false}``
+        stops one that is running. Starting is refused unless the vehicle is
+        armed and airborne — the autotune injects steps into the rate
+        controller and PX4 will only run it in flight.
+        """
         raw = payload.get("axis", "")
         axis = raw.strip().lower() if isinstance(raw, str) else ""
         if axis not in AUTOTUNE_AXES:
@@ -2817,10 +3025,14 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 "error": "PX4 supports full autotune only; use axis 'all'",
             }, 400)
             return
+        enabled = payload.get("enabled", True)
+        if not isinstance(enabled, bool):
+            self._send_json({"ok": False, "error": "enabled must be boolean"}, 400)
+            return
         if self.mavlink is None:
             self._send_json({"ok": False, "error": "not connected"}, 503)
             return
-        ok = self.mavlink.autotune(axis)
+        ok = self.mavlink.autotune(axis, enable=enabled)
         if ok:
             self._send_json({"ok": True})
         else:
@@ -2864,6 +3076,146 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             error = self.mavlink.get_last_command_error() or "vibration stream request failed"
             status = 503 if "not connected" in error else 409
             self._send_json({"ok": False, "error": error}, status)
+
+    @route("POST", "/api/tuning/stream")
+    def _api_tuning_stream(self, payload: dict) -> None:
+        """Enable/disable the high-rate controller-setpoint stream on demand.
+
+        Read-only stream-rate control, and safe while armed for the same reason
+        the vibration one is — no command and no parameter write leaves the
+        GCS. Unlike that one it is *used* while armed: the PID tuning page it
+        feeds is opened in flight, which is the only time a setpoint trace has
+        anything to show.
+
+        The frontend toggles this when the tuning page opens and closes, so the
+        rest of the time PX4 streams these messages at its own default rate.
+        """
+        enabled = payload.get("enabled")
+        if not isinstance(enabled, bool):
+            self._send_json({"ok": False, "error": "enabled must be boolean"}, 400)
+            return
+        raw_rate = payload.get("rate_hz", 20)
+        # bool is a subclass of int — reject it so True is never coerced to 1 Hz
+        if isinstance(raw_rate, bool) or not isinstance(raw_rate, (int, float)):
+            self._send_json({"ok": False, "error": "rate_hz must be a number"}, 400)
+            return
+        rate_hz = int(raw_rate)
+        if raw_rate != rate_hz or not 1 <= rate_hz <= 50:
+            self._send_json(
+                {"ok": False, "error": "rate_hz must be between 1 and 50 Hz"}, 400
+            )
+            return
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        ok = self.mavlink.set_tuning_stream(enabled, rate_hz)
+        if ok:
+            self._send_json({"ok": True, "enabled": enabled, "rate_hz": rate_hz})
+        else:
+            error = self.mavlink.get_last_command_error() or "tuning stream request failed"
+            status = 503 if "not connected" in error else 409
+            self._send_json({"ok": False, "error": error}, status)
+
+    @route("POST", "/api/rc/stream")
+    def _api_rc_stream(self, payload: dict) -> None:
+        """Enable/disable the high-rate RC_CHANNELS stream on demand.
+
+        Read-only stream-rate control, and safe while armed for the same reason
+        the tuning one is: no command and no parameter write leaves the GCS.
+        The Radio Control page toggles it on open and close, so the rest of the
+        time PX4 streams channels at its own default rate.
+        """
+        enabled = payload.get("enabled")
+        if not isinstance(enabled, bool):
+            self._send_json({"ok": False, "error": "enabled must be boolean"}, 400)
+            return
+        raw_rate = payload.get("rate_hz", 20)
+        # bool is a subclass of int — reject it so True is never coerced to 1 Hz
+        if isinstance(raw_rate, bool) or not isinstance(raw_rate, (int, float)):
+            self._send_json({"ok": False, "error": "rate_hz must be a number"}, 400)
+            return
+        rate_hz = int(raw_rate)
+        if raw_rate != rate_hz or not 1 <= rate_hz <= 50:
+            self._send_json(
+                {"ok": False, "error": "rate_hz must be between 1 and 50 Hz"}, 400
+            )
+            return
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        if self.mavlink.set_rc_stream(enabled, rate_hz):
+            self._send_json({"ok": True, "enabled": enabled, "rate_hz": rate_hz})
+            return
+        error = self.mavlink.get_last_command_error() or "RC stream request failed"
+        status = 503 if "not connected" in error else 409
+        self._send_json({"ok": False, "error": error}, status)
+
+    @route("POST", "/api/rc/calibrate")
+    def _api_rc_calibrate(self, payload: dict) -> None:
+        """Write a measured RC calibration to the vehicle.
+
+        PX4 has no autopilot-side RC calibration: unlike the accelerometer, the
+        whole procedure belongs to the ground station, which watches
+        RC_CHANNELS while the operator sweeps every control and then writes the
+        endpoints it saw. This is the write half. The measuring half is the
+        wizard in ``setup-control.js``; what arrives here is its result:
+
+        ``{channels: [{channel, min, max, trim, reversed}], count, mapping}``,
+        where ``mapping`` is the stick assignment the wizard learned by asking
+        for one named stick at a time and watching which channel answered.
+
+        Validation lives in :func:`corvus.rc_config.calibration_writes` and is
+        all-or-nothing on purpose — a rejected measurement leaves the vehicle
+        exactly as it was, because a half-written endpoint set looks calibrated
+        and is not. A write that fails part-way is reported with the parameters
+        that did land, so the operator knows the radio is now inconsistent and
+        must run the wizard again rather than fly it.
+
+        Refused while armed by the bridge's own parameter gate; refused here
+        first so the reason names the page rather than a parameter.
+        """
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        if self.store is not None and self.store.get_snapshot().get("armed"):
+            self._send_json(
+                {"ok": False, "error": "cannot calibrate the radio while armed"}, 409)
+            return
+
+        count = payload.get("count")
+        if count is not None and (isinstance(count, bool) or not isinstance(count, int)):
+            self._send_json({"ok": False, "error": "count must be an integer"}, 400)
+            return
+
+        # The known-parameter set is what makes this version-tolerant: a write
+        # to an RC<n>_REV a firmware does not have is dropped rather than sent
+        # and reported as a failure the operator cannot act on.
+        known = set(self.mavlink.fetch_params(rc_config.param_names()))
+        if not known:
+            error = self.mavlink.get_last_command_error() or "no parameters received"
+            self._send_json({"ok": False, "error": error}, 503)
+            return
+
+        try:
+            writes = rc_config.calibration_writes(
+                payload.get("channels"), count, known, payload.get("mapping"))
+        except rc_config.CalibrationError as exc:
+            self._send_json({"ok": False, "error": str(exc)}, 400)
+            return
+
+        applied: list[dict[str, Any]] = []
+        for write in writes:
+            if not self.mavlink.set_param(write["name"], write["value"]):
+                error = self.mavlink.get_last_command_error() or "parameter write failed"
+                status = 503 if "not connected" in error else 409
+                self._send_json({
+                    "ok": False, "error": error, "applied": applied,
+                    "failed": write["name"],
+                }, status)
+                return
+            applied.append(write)
+        logger.info("RC calibration written: %d parameters", len(applied))
+        self._send_json({"ok": True, "writes": applied})
 
     @route("POST", "/api/warnings/clear")
     def _api_warnings_clear(self, payload: dict) -> None:
@@ -3207,9 +3559,17 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         if self.logs is None:
             self._send_json({"ok": False, "error": "log service unavailable"}, 503)
             return
-        directory = os.path.realpath(self.logs.status().get("dir") or "")
+        # Emptiness is tested BEFORE realpath: realpath("") is the process's
+        # working directory, so the commonpath guard below would happily pass
+        # and an unconfigured folder would resolve names against wherever
+        # Corvus was started from.
+        configured = self.logs.status().get("dir") or ""
+        if not configured:
+            self._send_json({"ok": False, "error": "no download folder configured"}, 400)
+            return
+        directory = os.path.realpath(configured)
         target = os.path.realpath(os.path.join(directory, os.path.basename(name)))
-        if not directory or os.path.commonpath([directory, target]) != directory:
+        if os.path.commonpath([directory, target]) != directory:
             self._send_json({"ok": False, "error": "unknown log file"}, 400)
             return
         if not target.endswith(".ulg") or not os.path.isfile(target):
@@ -3228,6 +3588,57 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         except Exception:  # noqa: BLE001 - a bad log must not 500 the app
             logger.exception("flight review failed for %s", target)
             self._send_json({"ok": False, "error": "could not analyse this log"}, 400)
+            return
+        # Spread, not mutated: the result may be a cached one that another
+        # request is about to send.
+        self._send_json({**data, "ok": True})
+
+    @route("GET", "/api/logs/tlog-review")
+    def _api_logs_tlog_review(self) -> None:
+        """Telemetry Review for one recorded tlog.
+
+        Confined to the tlog folder exactly the way the ULog review is confined
+        to the download folder: the request names a file, never a path, and the
+        resolved target is checked with realpath before it is opened.
+        """
+        params = parse_qs(urlparse(self.path).query)
+        name = (params.get("file", [""])[0] or "").strip()
+        if not name:
+            self._send_json({"ok": False, "error": "file is required"}, 400)
+            return
+        if self.logs is None:
+            self._send_json({"ok": False, "error": "log service unavailable"}, 503)
+            return
+        # Emptiness is tested BEFORE realpath, not after: realpath("") is the
+        # process's working directory, which is always a real path, so the
+        # guard below would pass and an unconfigured folder would resolve
+        # names against wherever Corvus happened to be started.
+        configured = self.logs.resolve_tlog_dir() or ""
+        if not configured:
+            self._send_json({"ok": False, "error": "no recording folder configured"}, 400)
+            return
+        directory = os.path.realpath(configured)
+        target = os.path.realpath(os.path.join(directory, os.path.basename(name)))
+        if os.path.commonpath([directory, target]) != directory:
+            self._send_json({"ok": False, "error": "unknown recording"}, 400)
+            return
+        if not target.endswith(".tlog") or not os.path.isfile(target):
+            self._send_json({"ok": False, "error": "unknown recording"}, 404)
+            return
+        try:
+            from .tlog_review import TlogError, review_file
+            data = review_file(target, os.path.basename(target))
+        except TlogError as exc:
+            self._send_json({"ok": False, "error": str(exc)}, 400)
+            return
+        except (OSError, MemoryError) as exc:
+            self._send_json({"ok": False,
+                             "error": f"could not read that recording ({exc})"}, 400)
+            return
+        except Exception:  # noqa: BLE001 - a bad recording must not 500 the app
+            logger.exception("telemetry review failed for %s", target)
+            self._send_json({"ok": False,
+                             "error": "could not analyse that recording"}, 400)
             return
         # Spread, not mutated: the result may be a cached one that another
         # request is about to send.
@@ -3933,16 +4344,18 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 url, headers={"User-Agent": f"CorvusGCS/{get_version()}"}
             )
             with urllib.request.urlopen(req, timeout=TILE_UPSTREAM_TIMEOUT_S) as resp:
-                data = resp.read()
+                data = resp.read(TILE_UPSTREAM_MAX_BYTES + 1)
         except Exception:  # noqa: BLE001 - offline field use must never 500
             logger.debug("upstream tile fetch failed: %s", url, exc_info=True)
             if breaker is not None:
                 breaker.record_failure()
             return None
-        if not data:
-            # A 200 with an empty body is as useless as a failure, and counting
-            # it keeps a broken-but-reachable upstream from holding the breaker
-            # closed forever.
+        if not data or len(data) > TILE_UPSTREAM_MAX_BYTES:
+            # A 200 with an empty body is as useless as a failure, and so is an
+            # oversized one; counting both keeps a broken-but-reachable
+            # upstream from holding the breaker closed forever.
+            if len(data) > TILE_UPSTREAM_MAX_BYTES:
+                logger.debug("upstream tile too large, discarding: %s", url)
             if breaker is not None:
                 breaker.record_failure()
             return None
@@ -4024,6 +4437,26 @@ class CorvusServer(socketserver.ThreadingTCPServer):
                     logger.debug("SO_EXCLUSIVEADDRUSE refused; binding plainly")
         super().server_bind()
 
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        """Report a request that died outside the handler's own guard.
+
+        ``socketserver``'s default prints a bare traceback to stderr, which is
+        how a closed browser tab used to produce forty lines of noise: the
+        reset lands on ``handle_one_request``'s read of the request line,
+        before ``do_GET``/``do_POST`` exist to catch anything. That noise is
+        what buries a real fault in the log during a flight — the same reason
+        CLIENT_GONE_ERRORS exists for the SSE writers, applied to the half of
+        the connection they never see.
+
+        A peer that left is logged at debug. Anything else keeps its full
+        traceback, because anything else is a bug.
+        """
+        exc = sys.exc_info()[1]
+        if isinstance(exc, CLIENT_GONE_ERRORS):
+            logger.debug("client %s disconnected: %s", client_address, exc)
+            return
+        logger.exception("error serving %s", client_address)
+
     def shutdown(self) -> None:
         """Stop the HTTP loop and release every tile resource.
 
@@ -4079,6 +4512,11 @@ class CorvusServer(socketserver.ThreadingTCPServer):
             clear_cache()
         except Exception:  # noqa: BLE001 - shutdown must not raise
             logger.exception("flight review cache clear failed")
+        try:
+            from .tlog_review import clear_cache as clear_tlog_cache
+            clear_tlog_cache()
+        except Exception:  # noqa: BLE001 - shutdown must not raise
+            logger.exception("telemetry review cache clear failed")
         caches = getattr(self, "tile_caches", None) or {}
         for cache in caches.values():
             try:
@@ -4183,7 +4621,7 @@ CLIENT_GONE_ERRORS = (
 
 def create_server(
     port: int = 8000,
-    mavlink_conn: str = "udp:127.0.0.1:14540",
+    mavlink_conn: str = "udp:127.0.0.1:14550",
     config_path: str | None = None,
 ) -> CorvusServer:
     """Create and wire up the full Corvus backend server."""
