@@ -16,6 +16,23 @@ service's layers. The Esri and OSM ids are unprefixed for backwards
 compatibility: they predate the provider grouping and name existing caches
 and persisted ``map.base_layer`` values.
 
+Terrain (elevation) sources
+---------------------------
+``TERRAIN_SOURCES`` is a THIRD, deliberately separate registry: RGB-encoded
+digital elevation model tiles, which are data rather than imagery. They are
+kept out of ``TILE_SOURCES`` because everything that iterates that registry
+means "a base layer the operator can look at" — the layer switcher, the
+Appearance picker, the provider partition assertion below. A DEM is never a
+base layer; it is what 3D mode reads heights from. They still flow through the
+same ``/api/tiles/<id>/<z>/<x>/<y>.png`` route and the same per-id MBTiles
+cache, which is what makes 3D terrain work offline in the field: use
+:func:`all_sources` wherever a lookup means "anything servable" and
+``TILE_SOURCES`` wherever it means "a base layer".
+
+``encoding`` names the height packing so the frontend can hand it to
+MapLibre's ``raster-dem`` source unchanged. ``terrarium`` is Mapzen's
+(height = R * 256 + G + B / 256 - 32768 metres).
+
 URL templates
 -------------
 ``upstream`` carries the placeholder tokens :func:`build_tile_url`
@@ -166,6 +183,31 @@ TILE_SOURCES: dict[str, dict[str, Any]] = {
     },
 }
 
+# Elevation tiles. One entry today, but a registry rather than a constant so a
+# second DEM (a national high-resolution model, an operator's own tile server)
+# is a line here and nothing else.
+#
+# AWS Terrain Tiles is the elevation set the Mapzen project left behind: a
+# global merge of SRTM, the USGS National Elevation Dataset, and national
+# models, served from S3 with no key and no rate limit. maxzoom 15 is the
+# grid's own limit (~4 m/px at the equator); the underlying data is coarser
+# than that almost everywhere, which is why 3D terrain still reads correctly
+# when only z12 tiles were cached for a region.
+TERRAIN_SOURCES: dict[str, dict[str, Any]] = {
+    "terrain": {
+        "label": "Elevation",
+        "provider": "terrain",
+        "style": "dem",
+        "encoding": "terrarium",
+        "upstream": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
+        "maxzoom": 15,
+        "attribution": "Elevation: AWS Terrain Tiles \u2014 SRTM, USGS NED, and national datasets",
+    },
+}
+
+# The DEM 3D mode reads from when the operator has not chosen otherwise.
+DEFAULT_TERRAIN = "terrain"
+
 # Provider grouping. ``sources`` lists the source ids this service serves, in
 # the order the UI should present them; the first entry is the provider's
 # default layer. Every id here MUST exist in TILE_SOURCES (asserted below).
@@ -214,6 +256,12 @@ assert all(
 assert sorted(
     sid for prov in PROVIDERS.values() for sid in prov["sources"]
 ) == sorted(TILE_SOURCES), "PROVIDERS must cover every source exactly once"
+# A DEM id that shadowed a base id would give the two one shared MBTiles cache
+# and serve elevation bytes as imagery (or the reverse). They share a route and
+# a cache directory, so the ids have to stay disjoint.
+assert not (set(TERRAIN_SOURCES) & set(TILE_SOURCES)), \
+    "a terrain source id must not shadow a base layer id"
+assert DEFAULT_TERRAIN in TERRAIN_SOURCES, "DEFAULT_TERRAIN must name a real DEM"
 
 
 def quadkey(z: int, x: int, y: int) -> str:
@@ -267,10 +315,50 @@ def build_tile_url(template: str, z: int, x: int, y: int) -> str:
             .replace("{x}", str(x)))
 
 
+def all_sources() -> dict[str, dict[str, Any]]:
+    """Every servable source: the base layers plus the elevation tiles.
+
+    The "anything with an upstream URL and a cache" view, used by the parts
+    that do not care what a tile *means* — cache construction, the serve
+    route, the downloader pool. Anything that means "a base layer the operator
+    can look at" must read ``TILE_SOURCES`` instead, or a DEM ends up in the
+    layer switcher.
+    """
+    return {**TILE_SOURCES, **TERRAIN_SOURCES}
+
+
 def get(source_id: str) -> dict | None:
-    """Return a copy of the source definition for *source_id*, or None."""
-    entry = TILE_SOURCES.get(source_id)
+    """Return a copy of the source definition for *source_id*, or None.
+
+    Resolves base layers and elevation sources alike: this is what the tile
+    route and the downloader look up, and both serve either kind.
+    """
+    entry = TILE_SOURCES.get(source_id) or TERRAIN_SOURCES.get(source_id)
     return dict(entry) if entry is not None else None
+
+
+def is_terrain(source_id: str) -> bool:
+    """True when *source_id* names an elevation source rather than a layer."""
+    return source_id in TERRAIN_SOURCES
+
+
+def list_terrain() -> list[dict]:
+    """Return ``[{id, label, encoding, maxzoom, attribution}, ...]``.
+
+    Served next to :func:`list_sources` so the frontend can build its
+    ``raster-dem`` source — including the height packing — without a
+    hand-mirrored copy of this registry, exactly as it does for base layers.
+    """
+    return [
+        {
+            "id": sid,
+            "label": s["label"],
+            "encoding": s["encoding"],
+            "maxzoom": s["maxzoom"],
+            "attribution": s["attribution"],
+        }
+        for sid, s in TERRAIN_SOURCES.items()
+    ]
 
 
 def list_sources() -> list[dict]:

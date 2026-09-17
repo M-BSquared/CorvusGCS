@@ -373,13 +373,24 @@ _SIGNING_UNSIGNED_MESSAGE_IDS = frozenset({
 
 
 def _load_signing_key() -> bytes | None:
-    """Load an opt-in MAVLink 2 signing key from an owner-only file."""
+    """Load an opt-in MAVLink 2 signing key from an owner-only file.
+
+    O_BINARY is not optional on Windows, where a descriptor opened without it
+    is a TEXT-mode descriptor: reads stop at the first 0x1A (DOS end-of-file)
+    and CRLF pairs collapse to LF. A signing key is 32 bytes of entropy, so
+    roughly one key in eight contains an 0x1A somewhere — and what the
+    operator then sees is not a corrupted key, it is "MAVLink signing key must
+    be 32 raw bytes or 64 hex characters" about a file that is exactly 32
+    bytes long. The flag is guarded because only Windows defines it.
+    """
     path = (os.environ.get(MAVLINK_SIGNING_KEY_FILE_ENV) or "").strip()
     if not path:
         return None
     flags = os.O_RDONLY
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY
     fd = os.open(path, flags)
     try:
         info = os.fstat(fd)

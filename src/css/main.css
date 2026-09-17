@@ -491,6 +491,21 @@ svg { display: block; }
 .main { flex: 1; position: relative; min-width: 0; background: var(--bg); }
 .map-view { position: absolute; inset: 0; }
 .map { position: absolute; inset: 0; }
+/* The sky, in 3D mode.
+   MapLibre 4 has no sky layer and draws nothing above the horizon, so the
+   container itself is what shows there — which means a gradient here IS the
+   sky, at no cost in layers, tiles or frame time. Themed rather than blue:
+   the map sits inside an app wearing one palette, and a photographic sky over
+   a dark UI looks like a screenshot of a different program. Only the part
+   above the horizon is ever visible; the terrain covers the rest. */
+.map.three-d {
+  background: linear-gradient(
+    to bottom,
+    var(--bg) 0%,
+    color-mix(in srgb, var(--surface-2) 70%, var(--bg)) 55%,
+    color-mix(in srgb, var(--surface-3) 85%, var(--bg)) 100%
+  );
+}
 .page-view { position: absolute; inset: 0; overflow-y: auto; padding: 32px 40px; }
 .page-view[hidden] { display: none; }
 /* Tile attribution. The credit is a legal requirement, so it is always on and
@@ -834,6 +849,72 @@ svg { display: block; }
 .vehicle-marker .v-ring { fill: #fff; }
 .vehicle-marker .v-fill { fill: var(--vehicle); }
 .vehicle-marker .v-centre { fill: #fff; }
+
+/* ===== THE AIRCRAFT IN 3D =====
+   In 3D mode the aircraft is not a MapLibre marker: a marker takes a lngLat
+   and drapes onto the terrain, which is the one thing a flying aircraft does
+   not do. map.js positions these four elements itself from the map's own
+   projection matrix, so they are plain absolutely-positioned children of the
+   map container, transformed per frame and never hit-tested.
+
+   No z-index on purpose: they come after the canvas and the marker container
+   in the DOM, so they paint above the map, and they stay below the control
+   rail and the clear-track button, which do carry one. */
+.veh3d, .veh3d-shadow, .veh3d-lead, .veh3d-alt {
+  position: absolute;
+  top: 0; left: 0;
+  pointer-events: none;
+  /* Positioned from a render matrix that is recomputed every frame — a
+     transition would make the aircraft chase the camera instead of ride it. */
+  transition: none;
+}
+.veh3d { transform-origin: 50% 50%; }
+.veh3d[hidden], .veh3d-shadow[hidden], .veh3d-lead[hidden], .veh3d-alt[hidden] {
+  display: none !important;
+}
+
+/* Where the aircraft is on the GROUND, directly under itself. Flat and quiet:
+   it answers "which point on the map is that", and nothing else. The ring is
+   what survives being drawn over dark imagery, the same job the white ring
+   does on the marker above it. */
+.veh3d-shadow {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.3);
+  border: 1.5px solid rgb(var(--vehicle-rgb) / 0.75);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.25);
+}
+
+/* The line joining the two. Dashed, because a solid one reads as a tether or
+   a route; this is a measurement, not a thing in the world. Sized to the
+   container so it can draw anywhere in it. */
+.veh3d-lead { width: 100%; height: 100%; overflow: visible; }
+.veh3d-lead line {
+  stroke: rgb(var(--vehicle-rgb) / 0.8);
+  stroke-width: 1.6;
+  stroke-dasharray: 5 4;
+  /* The dark companion stroke the track lines use, done with a shadow so the
+     line stays one element: over bright ground a thin coloured line alone
+     disappears. */
+  filter: drop-shadow(0 0 1.5px rgb(0 0 0 / 0.7));
+}
+
+/* Height above ground, on the leader line. Small and tabular: it is a
+   confirmation of what the operator is already seeing, not the primary
+   altitude readout — that is the HUD's job. */
+.veh3d-alt {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgb(var(--glass-rgb) / 0.72);
+  backdrop-filter: var(--blur-fine);
+  -webkit-backdrop-filter: var(--blur-fine);
+  border: 1px solid rgb(var(--tint-rgb) / 0.08);
+  color: var(--text-2);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  white-space: nowrap;
+}
 
 /* ===== HOME / LAUNCH POINT =====
    A landing-pad mark: "H" in a ring, with crosshair ticks on the exact

@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.39-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.39" />
+  <img src="https://img.shields.io/badge/Version-2026.09.40-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.40" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.10%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.10+" /></a>
   <img width="8" />
@@ -74,6 +74,7 @@
   - [Who can reach the ground station](#who-can-reach-the-ground-station)
 - [Using Corvus](#using-corvus)
   - [The map and the flight HUD](#the-map-and-the-flight-hud)
+  - [3D](#3d)
   - [Offline maps](#offline-maps)
   - [Setup — motors, safety, parameters, calibration, tuning, firmware](#setup--motors-safety-parameters-calibration-tuning-firmware)
   - [Analysis — logs, Flight Review and Telemetry Review](#analysis--logs-flight-review-and-telemetry-review)
@@ -104,7 +105,9 @@ manage: one window, one process, one clean shutdown.
 
 - **Flying and monitoring** — a large live map with the vehicle, its home point
   and its flown track, plus a floating flight-instrument HUD (compass, attitude
-  indicator, altitude, speeds, GPS) that stays visible while you fly.
+  indicator, altitude, speeds, GPS) that stays visible while you fly. Tilt it
+  into 3D and the ground takes its real shape, buildings stand up, and the
+  aircraft flies above them at the height it is actually at.
 - **Preparing an aircraft** — motor wiring and ESC protocol on a drawing of your
   own airframe, parameters, sensor and ESC calibration, PID tuning, and
   firmware flashing, all from the same window.
@@ -112,8 +115,8 @@ manage: one window, one process, one clean shutdown.
   MAVLink and analyse them locally in the built-in Flight Review.
 - **Working in the field** — the interface loads nothing from the internet, map
   tiles are cached into a local offline store, and named map regions can be
-  downloaded ahead of time. A laptop that has never seen a network still gets
-  correct icons, fonts, graphs and maps.
+  downloaded ahead of time, elevation included. A laptop that has never seen a
+  network still gets correct icons, fonts, graphs, maps and terrain.
 
 ### Fast to ready-for-flight
 
@@ -187,6 +190,7 @@ Everything here is **built and working today**.
 | ⚡ **Ready fast** | On connect Corvus loads only flight telemetry. Parameters are fetched when *you* ask for them — so you are flying in seconds, not minutes | ✅ |
 | 🛩️ **Fly** | Live map, floating flight HUD, arm / takeoff / land / RTL, flight-mode selection, on-screen joystick and arrow-key control with adjustable key strength | ✅ |
 | 🗺️ **Navigate** | 4 map services with 12 layers, vehicle heading, home point, the flown track, and click-the-map to fly there or move home | ✅ |
+| ⛰️ **See in 3D** | Real terrain relief from an elevation model, extruded OpenStreetMap buildings, and the aircraft drawn at the altitude it is actually flying | ✅ |
 | 📴 **Work offline** | Nothing loads from the internet. Download named map areas in advance and the whole app keeps working with no connection | ✅ |
 | 📡 **Connect** | Connects on its own to whatever is plugged in — flight controller on USB first, then telemetry radio, then the simulator port — plus serial, UDP and TCP by hand, a live port picker, saved recent connections, link-quality display and automatic reconnect | ✅ |
 | 🔧 **Set up** | Airframe drawn to scale — click a motor to wire, position or spin-test it; ESC protocol; parameter editor with import / export; guided sensor calibration, ESC calibration, PID tuning by hand or by in-flight autotune, and PX4 firmware flashing | ✅ |
@@ -634,6 +638,31 @@ Where you put either window stays put: across restarts, across a trip to Setup
 or Options and back, and when the side workspace slides open — a window parked
 against the right edge travels in with it rather than disappearing behind it.
 
+### 3D
+
+The cube button on the map's control rail tilts the view — and gives the ground
+its real shape. Terrain comes from an elevation model, so hills are hills and a
+valley is a valley, drawn at true scale rather than exaggerated: what you are
+judging is clearance, and a hill drawn half again too tall is a hill you
+misjudge. Buildings are extruded from OpenStreetMap footprints at their tagged
+heights, so the things actually in your way are in your way on screen too.
+
+Your aircraft flies in that scene rather than sliding along the ground. It is
+drawn at the altitude it is really at, with a dashed line down to a shadow on
+the ground directly beneath it and its height above ground beside it — so "how
+high am I over that ridge" is something you can see instead of work out from two
+numbers.
+
+Elevation and building data are cached exactly like map tiles, and **Download
+offline map** includes the elevation for the area by default. 3D therefore keeps
+its relief in the field with no connection. Without a connection over ground you
+never downloaded, the terrain flattens and the buildings stay away; everything
+else on the map keeps working.
+
+A note on what this is not: the photorealistic 3D buildings in Google Earth are
+a licensed product that needs a Google API key and a different renderer. Corvus
+draws real footprints at real heights, not photographed models.
+
 ### Offline maps
 
 Corvus caches every map tile it fetches into a local store, so ground you have
@@ -642,7 +671,9 @@ already looked at keeps working with no connection.
 To prepare for a field trip, use **Download offline map** on the map and select
 an area. Downloads are **named**, listed, and drawn as outlines on the map, so
 "what do I actually have offline?" is a question you can answer at a glance
-instead of guessing from coordinates.
+instead of guessing from coordinates. **Elevation** rides along by default, so
+the area you downloaded is an area that still has terrain in 3D; the estimate
+shown before you commit includes it.
 
 Panning onto ground you never downloaded stays fast: after a few failed
 lookups Corvus stops trying for 30 seconds, so cached tiles render at full speed

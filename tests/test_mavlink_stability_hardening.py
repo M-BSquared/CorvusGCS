@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 from pymavlink import mavutil
 
+from corvus import mavlink_bridge
 from corvus.mavlink_bridge import (
     FLY_TO_MAX_POINTS,
     MISSION_UPLOAD_QUIET_S,
@@ -492,6 +493,67 @@ def test_an_unusable_signing_key_fails_the_connection_rather_than_downgrading(
     with pytest.raises(ConnectionError):
         b._apply_signing()
     assert "signing key" in b._store.get_snapshot()["link_error"]
+
+
+# Windows' own value for os.O_BINARY. Stated here so the test can pretend the
+# platform has the flag on a machine that does not, and still assert the exact
+# bit the loader has to set.
+_WINDOWS_O_BINARY = 0x8000
+
+
+def test_the_key_file_is_opened_in_binary_mode(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows opens a descriptor in TEXT mode unless told otherwise.
+
+    A text-mode read stops at the first 0x1A and collapses CRLF to LF, so a
+    32-byte key containing either comes back short and is rejected as "not 32
+    bytes" — about a file that is exactly 32 bytes. Roughly one random key in
+    eight contains an 0x1A, and this test's own sample key (bytes 0..31) is
+    one of them, which is how it reached CI as a Windows-only failure while
+    every POSIX run stayed green.
+
+    Asserted on the FLAGS rather than on the bytes, because the bytes come
+    back intact on POSIX whatever the flags say — a behavioural test on the
+    key itself would pass on every machine that cannot reproduce the bug.
+
+    And the flag is FAKED where the platform has none, so this runs on the
+    developer's laptop and on the Linux runner too. A test that could only
+    assert anything on Windows is what let the original bug through: the
+    Linux job was green, and nobody reads a green job.
+    """
+    key = bytes(range(32))
+    monkeypatch.setenv("CORVUS_MAVLINK_SIGNING_KEY_FILE", _write_key(tmp_path, key))
+
+    native = hasattr(os, "O_BINARY")
+    if not native:
+        monkeypatch.setattr(mavlink_bridge.os, "O_BINARY", _WINDOWS_O_BINARY, raising=False)
+
+    seen: list[int] = []
+    real_open = os.open
+
+    def _recording_open(path: Any, flags: int, *args: Any) -> int:
+        seen.append(flags)
+        # Strip the pretend flag again before the real syscall: POSIX has no
+        # meaning for that bit. On Windows it is the genuine article and is
+        # passed through, which is what makes the key survive the read.
+        passed = flags if native else flags & ~_WINDOWS_O_BINARY
+        return real_open(path, passed, *args)
+
+    monkeypatch.setattr(mavlink_bridge.os, "open", _recording_open)
+    assert mavlink_bridge._load_signing_key() == key
+    assert seen, "the loader must open the key file itself"
+    assert seen[0] & _WINDOWS_O_BINARY, "the key file must be read as bytes, not text"
+
+
+def test_a_key_containing_a_dos_end_of_file_byte_loads_intact(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The byte-level half of the same rule, for the platform that can fail it."""
+    key = b"\x1a" * 4 + b"\r\n" * 4 + bytes(range(20))
+    assert len(key) == 32
+    monkeypatch.setenv("CORVUS_MAVLINK_SIGNING_KEY_FILE", _write_key(tmp_path, key))
+    assert mavlink_bridge._load_signing_key() == key
 
 
 def test_a_world_readable_signing_key_is_refused(

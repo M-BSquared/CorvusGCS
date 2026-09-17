@@ -49,6 +49,10 @@ Corvus.tiles = (function () {
 
   let sources = [];    // last /api/tiles/sources result
   let providers = [];  // service grouping from the same response
+  // Elevation sources from the same response. Not offered in the layer
+  // picker — a DEM is not something you look at — but a download can carry
+  // one alongside the imagery, which is what makes 3D terrain work offline.
+  let terrainSources = [];
   let regions = [];    // last /api/tiles/regions result
   let captured = null; // {w,s,e,n,zoom} captured from the map at open/recapture
   let es = null;       // active EventSource for the running job
@@ -137,7 +141,33 @@ Corvus.tiles = (function () {
   }
 
   function sourceLabelById(id) {
+    const dem = terrainSources.find((d) => d.id === id);
+    // An elevation area is labelled for what it is rather than by a service
+    // name: it belongs to no map service, and "Elevation" is what the
+    // operator chose when they ticked the box.
+    if (dem) return dem.label || "Elevation";
     return sourceLabel(sources.find((s) => s.id === id)) || id || "";
+  }
+
+  /** The DEM a download would carry along, or null when none is served. */
+  function terrainSpec() {
+    return terrainSources[0] || null;
+  }
+
+  /** True when the operator has asked for elevation with this download. */
+  function terrainWanted() {
+    return !!(terrainSpec() && dom.terrainToggle && dom.terrainToggle.getValue());
+  }
+
+  /**
+   * Show the elevation option only when the backend actually serves a DEM.
+   * A tickbox for a capability that is not there is worse than no tickbox:
+   * it promises offline terrain the field laptop would not have.
+   */
+  function renderTerrainOption() {
+    if (!dom.terrainField) return;
+    dom.terrainField.hidden = !terrainSpec();
+    updateEstimate();
   }
 
   /** True if the MapLibre map is ready for a bounds read. */
@@ -207,6 +237,24 @@ Corvus.tiles = (function () {
     zoomRow.appendChild(Corvus.ui.field({ label: "Max zoom", control: maxZoom, inline: true }));
     body.appendChild(zoomRow);
 
+    // Elevation. On by default: a pre-downloaded area without heights is flat
+    // the moment the laptop leaves the network, and an operator who downloads
+    // an area before driving out is exactly the operator who will be in 3D
+    // with no way to fetch the missing DEM.
+    const terrainToggle = Corvus.ui.toggle({
+      value: true,
+      ariaLabel: "Include elevation data",
+      onChange: updateEstimate,
+    });
+    const terrainField = Corvus.ui.field({
+      label: "Elevation (3D terrain)",
+      control: terrainToggle.el,
+      className: "field-switch",
+      hint: "Downloads the height model for the same area, so 3D mode keeps its relief offline.",
+    });
+    terrainField.hidden = true;   // until the catalogue says a DEM is served
+    body.appendChild(terrainField);
+
     // Estimate
     const est = el("div", "tiles-estimate");
     est.appendChild(Corvus.ui.label("Estimate"));
@@ -240,7 +288,7 @@ Corvus.tiles = (function () {
     });
 
     dom = {
-      srcSelect, nameInput, bndValue, dlBtn, cancelBtn,
+      srcSelect, nameInput, bndValue, dlBtn, cancelBtn, terrainToggle, terrainField,
       progress, msg, regionList, regionsCount, minZoom, maxZoom, estVal, estSub,
     };
 
@@ -276,12 +324,16 @@ Corvus.tiles = (function () {
       .then((data) => {
         sources = (data && data.sources) || [];
         providers = (data && data.providers) || [];
+        terrainSources = (data && data.terrain) || [];
         renderSourceSelect();
+        renderTerrainOption();
       })
       .catch(() => {
         sources = [];
         providers = [];
+        terrainSources = [];
         renderSourceSelect();
+        renderTerrainOption();
       });
   }
 
@@ -526,7 +578,16 @@ Corvus.tiles = (function () {
     const cap = currentCap();
     const lo = clampInt(dom.minZoom.value, HARD_ZOOM_FLOOR, cap);
     const hi = clampInt(dom.maxZoom.value, HARD_ZOOM_FLOOR, cap);
-    const count = estimateTileCount(captured.w, captured.s, captured.e, captured.n, lo, hi);
+    let count = estimateTileCount(captured.w, captured.s, captured.e, captured.n, lo, hi);
+    // The elevation job is a second download over the same ground, capped at
+    // the DEM's own maxzoom — so it has to be in the number the operator
+    // decides on, not a surprise on their disk afterwards.
+    const dem = terrainWanted() ? terrainSpec() : null;
+    if (dem) {
+      const demHi = Math.min(hi, dem.maxzoom);
+      count += estimateTileCount(
+        captured.w, captured.s, captured.e, captured.n, Math.min(lo, demHi), demHi);
+    }
     dom.estVal.textContent = `≈ ${fmtCount(count)} tiles`;
     dom.estSub.textContent = `~ ${fmtSize(count * AVG_TILE_KB)}`;
     if (count > BIG_JOB_TILES) showMsg("Very large region — consider a smaller zoom range.", "warn");
@@ -557,6 +618,7 @@ Corvus.tiles = (function () {
         name: dom.nameInput.value.trim(),
         bounds: { w: captured.w, s: captured.s, e: captured.e, n: captured.n },
         minzoom, maxzoom,
+        terrain: terrainWanted(),
       }),
     }).then((data) => {
       const id = data && data.job_id;

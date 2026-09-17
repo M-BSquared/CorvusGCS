@@ -152,6 +152,11 @@ Corvus.map = (function () {
   // all, which would silently stop the map following.
   const FOLLOW_BOX_MAX_FRACTION = 0.8;
   const FOLLOW_EASE_MS = 700;
+  // How far the ground point under the airborne marker may be from the
+  // aircraft itself before the offset is treated as nonsense rather than as
+  // perspective. Ten kilometres is far more than any real altitude produces
+  // and far less than the horizon, which is the case being caught.
+  const FOLLOW_AIRBORNE_MAX_OFFSET_M = 10000;
   // Beyond this many viewports from the centre the pan is a smear, not a
   // motion the eye can follow — cut instead. This is the reconnect case: the
   // aircraft was flown somewhere else while the link was down.
@@ -524,9 +529,15 @@ Corvus.map = (function () {
     regions = Array.isArray(list) ? list.slice() : [];
     if (!map || !started || !regionSource) return;
 
+    // Elevation rides along with an imagery download over the same ground, so
+    // drawing it would put a second rectangle and a second label on top of
+    // the first — the same area, claimed twice. The offline-map dialog still
+    // lists it, which is where an operator manages what is on their disk.
+    const drawn = regions.filter((r) => r.source !== terrainSourceId());
+
     regionSource.setData({
       type: "FeatureCollection",
-      features: regionsVisible ? regions.map((r) => ({
+      features: regionsVisible ? drawn.map((r) => ({
         type: "Feature",
         geometry: { type: "Polygon", coordinates: boundsRing(r.bounds || {}) },
         properties: { id: r.id, name: r.name || "" },
@@ -536,7 +547,7 @@ Corvus.map = (function () {
     regionMarkers.forEach((m) => m.remove());
     regionMarkers = [];
     if (!regionsVisible) return;
-    regions.forEach((r) => {
+    drawn.forEach((r) => {
       const b = r.bounds || {};
       const centre = [((b.w + b.e) / 2), ((b.s + b.n) / 2)];
       if (!isFinite(centre[0]) || !isFinite(centre[1])) return;
@@ -627,8 +638,19 @@ Corvus.map = (function () {
       maxzoom: spec.maxzoom,
       attribution: spec.attribution,
     });
-    // Insert base BELOW "path-glow" so the track/waypoints stay on top.
-    map.addLayer({ id: "base", type: "raster", source: "base" }, "path-glow");
+    // Insert base BELOW everything drawn ON it, so the track, the waypoints
+    // and 3D mode's extruded buildings all stay on top. "path-glow" alone was
+    // not enough once buildings existed: they are added while the bootstrap
+    // base is showing, so a later re-insert before path-glow landed the
+    // imagery on top of them and they vanished.
+    map.addLayer({ id: "base", type: "raster", source: "base" }, firstOverlayLayer());
+  }
+
+  /** The lowest layer the base imagery must stay beneath, or undefined when
+   *  none of them is in the style yet (before "load"). */
+  function firstOverlayLayer() {
+    return ["buildings-3d", "path-glow", "path-casing", "path-line"]
+      .find((id) => map.getLayer(id));
   }
 
   function buildControls(container) {
@@ -679,9 +701,10 @@ Corvus.map = (function () {
       } else if (act === "regions") {
         b.classList.toggle("active", setRegionsVisible(!regionsVisible));
       } else if (act === "three") {
-        const on = map.getPitch() < 10;
-        map.easeTo({ pitch: on ? 50 : 0, duration: 500 });
-        b.classList.toggle("active", on);
+        // set3D owns the button's own state, because the mode is more than a
+        // camera angle now — terrain, buildings and the airborne aircraft all
+        // come and go with it, and any of them can decline.
+        set3D(!threeD);
       }
     });
   }
@@ -825,6 +848,18 @@ Corvus.map = (function () {
       list.forEach((s) => { next[s.id] = s; });
       sources = next;
       providers = (data && data.providers) || [];
+      // The DEM 3D mode reads heights from, including its encoding — stated
+      // once in corvus/tile_sources.py and never mirrored here. A backend
+      // that serves none leaves terrainSpec null, and 3D degrades to a tilt
+      // over flat ground rather than failing.
+      const dems = (data && data.terrain) || [];
+      const wanted = (data && data.default_terrain) || (dems[0] && dems[0].id);
+      terrainSpec = dems.find((d) => d.id === wanted) || dems[0] || null;
+      // 3D may already be on: the rail works from the first frame, and this
+      // catalogue arrives over the network. Re-applying the mode is how a
+      // press that landed before the DEM was known still gets its terrain,
+      // instead of a tilt over flat ground for the rest of the session.
+      if (threeD) set3D(true);
       if (layersMenuHandle) layersMenuHandle.rebuild();
       // The active layer's attribution/maxzoom may have been the bootstrap
       // fallback until now; re-apply so MapLibre credits the real source.
@@ -935,22 +970,65 @@ Corvus.map = (function () {
     const container = map.getContainer();
     const width = container ? container.clientWidth : 0;
     const height = container ? container.clientHeight : 0;
-    let point;
-    try {
-      point = map.project(target);
-    } catch (_error) {
-      return;   // a transform that is not ready yet is not an error worth logging
+    // In 3D the aircraft is drawn at its altitude, which at 150 m and 60
+    // degrees of pitch is a few hundred pixels above the ground point — far
+    // enough that the marker can leave the top of the screen while the point
+    // the dead zone is watching sits comfortably in the middle. So follow
+    // what the operator is actually looking at.
+    const airborne = threeD ? veh3dScreen : null;
+    let point = airborne;
+    if (!point) {
+      try {
+        point = map.project(target);
+      } catch (_error) {
+        return;   // a transform that is not ready yet is not an error worth logging
+      }
     }
     if (!point) return;
     const action = followAction(point.x, point.y, width, height);
     if (action === "hold") return;
+
+    // Where the camera goes. The test above and this have to agree on which
+    // point they mean, or following oscillates: testing the marker and then
+    // centring its shadow leaves the marker outside the same dead zone it was
+    // just measured against, and the map pans again on the very next sample,
+    // forever. In 3D that means centring the GROUND UNDER THE MARKER.
+    const centre = airborne ? followCentreFor(airborne, target) : target;
+
     // Reduced motion snaps, matching what the marker itself does.
     if (action === "jump" || Corvus.anim.reducedMotion()) {
-      map.setCenter(target);
+      map.setCenter(centre);
       return;
     }
     followEasing = true;
-    map.easeTo({ center: target, duration: FOLLOW_EASE_MS });
+    map.easeTo({ center: centre, duration: FOLLOW_EASE_MS });
+  }
+
+  /**
+   * The centre that puts the AIRBORNE marker in the middle of the viewport.
+   *
+   * Un-projects the marker's own screen position, so the camera moves by the
+   * offset the altitude introduced rather than by a formula that would have
+   * to model the pitch itself.
+   *
+   * Falls back to the aircraft's ground position whenever that un-projection
+   * cannot be trusted: a marker near or above the horizon un-projects to a
+   * point kilometres away (or to infinity), and easing there would throw the
+   * map off the map. The sanity bound is generous — it only has to catch the
+   * horizon case, not second-guess a legitimate pan.
+   */
+  function followCentreFor(screenPoint, groundTarget) {
+    let at;
+    try {
+      at = map.unproject([screenPoint.x, screenPoint.y]);
+    } catch (_error) {
+      return groundTarget;
+    }
+    if (!at || !isFinite(at.lng) || !isFinite(at.lat)) return groundTarget;
+    const centre = [at.lng, at.lat];
+    return metresBetween(centre, groundTarget) > FOLLOW_AIRBORNE_MAX_OFFSET_M
+      ? groundTarget
+      : centre;
   }
 
   /** Push the latest telemetry into the marker's TARGET and (re)start the loop. */
@@ -982,17 +1060,38 @@ Corvus.map = (function () {
     // without this a launched-but-unconnected Corvus shows an aircraft parked
     // on the map's opening view.
     const el = vehicleMarker.getElement();
-    if (el) el.hidden = false;
+    // Hidden in 3D, where the aircraft is drawn at its real altitude instead
+    // (renderVehicle3D). Leaving it would park a second aircraft on the
+    // ground directly under the flying one.
+    if (el) el.hidden = threeD;
     vehicleMarker.setLngLat([vehDisplay.lng, vehDisplay.lat]);
     // The whole SVG rotates, so the heading cone and the body stay locked
     // together — they used to be separate elements and could disagree.
     const body = vehicleMarker.getElement().querySelector(".v-body");
     if (body) body.style.transform = `rotate(${vehDisplay.heading}deg)`;
+    // The airborne aircraft is placed from the map's render matrix, which
+    // only exists on a frame the map actually draws — so a vehicle that moves
+    // while the camera is still has to ask for that frame.
+    if (threeD && map && typeof map.triggerRepaint === "function") map.triggerRepaint();
+  }
+
+  /** Refresh the altitudes the 3D aircraft is drawn at. Per telemetry sample
+   *  rather than per frame: the DEM lookup behind it is a terrain-mesh query,
+   *  and nothing about it changes between two frames of the same sample. */
+  function updateVehicleAltitude(state) {
+    const agl = Number(state && state.altitude_agl);
+    vehAltAgl = isFinite(agl) ? agl : null;
+    vehAltDraw = vehicleDrawAltitude(state);
+    // Where the shadow goes. Same reason it lives here rather than in the
+    // render hook: it is a terrain-mesh query, and the ground under the
+    // aircraft moves at telemetry rate, not at frame rate.
+    vehGroundDraw = terrainElevation(realFix(state && state.position));
   }
 
   function updateVehicle(state) {
     if (!vehicleMarker || !state.connected) return;
     setVehicleTarget(state);
+    updateVehicleAltitude(state);
     // After setVehicleTarget so the camera aims at THIS sample, not the last.
     // Skipped on the very first fix — the ease below places the map itself.
     if (!firstFix) applyFollow();
@@ -1393,6 +1492,809 @@ Corvus.map = (function () {
     }
   }
 
+  // ---- 3D: terrain, buildings, and an aircraft drawn where it actually is ----
+  //
+  // 3D mode used to be a camera tilt and nothing else: the ground stayed a
+  // flat plane, buildings did not exist, and the aircraft marker sat on that
+  // plane whether it was at 5 m or 500 m. Tilting a flat map tells an operator
+  // nothing they did not already know.
+  //
+  // What it is now, in three parts, each of which can fail on its own without
+  // taking the other two down:
+  //
+  //  * TERRAIN — a raster-dem source (RGB-packed elevation tiles) routed
+  //    through the same backend cache as the imagery, handed to MapLibre's
+  //    setTerrain. The ground gets its real shape, and the imagery, the flown
+  //    track and every marker drape over it.
+  //  * BUILDINGS — OSM footprints with heights, extruded. Not Google's
+  //    photorealistic meshes: those are a licensed 3D-Tiles product MapLibre
+  //    cannot render (see corvus/buildings.py). Extruded footprints are the
+  //    part of "show what is in the way" a key-less offline station can give.
+  //  * THE AIRCRAFT — drawn at its actual altitude above that terrain, with a
+  //    leader line down to a ground shadow, so height is something the
+  //    operator SEES rather than reads off a number.
+  //
+  // Exaggeration is deliberately 1.0. Terrain is a clearance aid here, not
+  // scenery: a hill drawn 1.5x too tall is a hill the operator misjudges.
+  // MapLibre 4.7's own ceiling, and deliberately not raised. Past 60 degrees
+  // its terrain renderer smears the mesh into vertical streaks — the cap is
+  // there for a reason, and a spectacular camera angle is not worth a map the
+  // operator cannot read.
+  const THREE_D_PITCH = 60;
+  const TERRAIN_EXAGGERATION = 1.0;
+  // Ground-height reconciliation (syncTerrainElevation). Below the epsilon the
+  // camera and the DEM already agree closely enough that a correction would be
+  // invisible; the interval keeps a burst of arriving DEM tiles from
+  // recomputing it on every one.
+  const TERRAIN_SYNC_EPSILON_M = 2.0;
+  const TERRAIN_SYNC_MIN_MS = 200;
+  // The slippy-grid zoom building cells are addressed on. Must match
+  // corvus/buildings.CELL_ZOOM — the backend answers that zoom and nothing
+  // else, because the cache is keyed by it.
+  const BUILDING_CELL_Z = 15;
+  // Below this the extrusions are sub-pixel slivers and a viewport covers
+  // dozens of cells, so the fetching would cost far more than it shows.
+  const BUILDING_MIN_ZOOM = 14;
+  // Hard cap on cells requested for one view. A zoomed-out 3D view would
+  // otherwise queue a hundred Overpass cells in one gesture.
+  const BUILDING_MAX_CELLS = 24;
+  // In-memory cell budget. ~24 cells cover a view; 240 is ten views' worth of
+  // panning before the oldest is dropped and re-fetched from the backend
+  // cache (which is on disk and keeps it).
+  const BUILDING_CACHE_CELLS = 240;
+  // Polygons the extrusion source may hold at once. A dense European centre
+  // fills this from a handful of cells; past it the cost is a visibly slower
+  // map, and what is being paid for is buildings near the horizon.
+  const BUILDING_MAX_FEATURES = 12000;
+  // Re-asking for a cell the backend has queued. The delay grows with the
+  // attempt, so a slow upstream is waited out rather than hammered.
+  const BUILDING_RETRY_MS = 2500;
+  const BUILDING_MAX_RETRIES = 4;
+  // See addBuildingLayer: chosen against map imagery, not against the theme.
+  const BUILDING_COLOR = "#A7B0BD";
+  // Perspective scaling of the airborne marker, as a fraction of its 2D size.
+  // Bounded at both ends: an aircraft near the horizon must still be findable,
+  // and one close to the camera must not swallow the viewport.
+  const VEH3D_SCALE_MIN = 0.55;
+  const VEH3D_SCALE_MAX = 1.6;
+  // Below this the aircraft is on the ground for drawing purposes: the leader
+  // line and the shadow are noise under a marker that is already sitting on
+  // the shadow.
+  const VEH3D_MIN_AGL_M = 1.0;
+
+  let threeD = false;
+  // The DEM descriptor from GET /api/tiles/sources ({id, encoding, maxzoom,
+  // attribution}). Null until the catalogue lands — and stays null on a
+  // backend that does not serve one, which is what makes 3D degrade to a
+  // plain tilt rather than break.
+  let terrainSpec = null;
+  let terrainOn = false;
+  // When the ground height under the camera was last reconciled with the DEM.
+  // See syncTerrainElevation.
+  let terrainSyncAt = 0;
+  let buildingSource = null;
+  // "z/x/y" -> feature array. An empty array is a cell that is either genuinely
+  // empty or still in flight; either way it must not be requested twice.
+  const buildingCells = new Map();
+  // "z/x/y" -> how many times we have re-asked for a cell the backend was
+  // still fetching. Bounded, so a permanently unreachable upstream costs a
+  // handful of requests and then nothing.
+  const buildingRetries = new Map();
+  let buildingsRefreshTimer = null;
+  let buildingsPaintTimer = null;
+
+  // The airborne aircraft is NOT a maplibregl.Marker: markers take a lngLat
+  // and drape onto the terrain, which is exactly the thing an aircraft does
+  // not do. These four elements are positioned by hand from the map's own
+  // projection matrix (see renderVehicle3D).
+  let veh3dEl = null;        // the aircraft, at altitude
+  let veh3dShadowEl = null;  // where it is on the ground, directly below
+  let veh3dLeadEl = null;    // the line joining the two
+  let veh3dAltEl = null;     // its height above ground, as a number
+  let veh3dLayerAdded = false;
+  // The height to draw the aircraft at, in MapLibre's drawing frame (see
+  // terrainElevation). Recomputed per telemetry sample rather than per frame —
+  // the DEM lookup behind it is a terrain-mesh query, not an array read.
+  let vehAltDraw = null;
+  let vehAltAgl = null;
+  // Terrain height under the aircraft, same frame, same reason.
+  let vehGroundDraw = null;
+  // Where the aircraft was last drawn on screen, in CSS pixels, or null. Follow
+  // mode reads it: in 3D the marker is hundreds of pixels above the ground
+  // point, so a dead zone measured on the ground point would let the aircraft
+  // leave the top of the screen while its shadow sat comfortably in the middle.
+  let veh3dScreen = null;
+
+  /** Multiply column-major 4x4 *m* by vec4 *v*. MapLibre hands out gl-matrix
+   *  matrices, which are column-major: element (row r, column c) is m[c*4+r]. */
+  function transformVec4(m, v) {
+    const out = [0, 0, 0, 0];
+    for (let r = 0; r < 4; r++) {
+      out[r] = m[r] * v[0] + m[4 + r] * v[1] + m[8 + r] * v[2] + m[12 + r] * v[3];
+    }
+    return out;
+  }
+
+  /**
+   * Screen position of a point *altitude* metres up, in MapLibre's own
+   * drawing frame (see terrainElevation — that frame's zero is the terrain
+   * under the map centre, not sea level).
+   *
+   * *matrix* is the one MapLibre hands a custom layer — its own mercator
+   * projection, pitch, bearing, terrain and all — so this agrees with where
+   * the map draws everything else by construction rather than by a formula
+   * that has to be kept in step with it. Checked against map.project() for
+   * points on the terrain: the two agree to a tenth of a pixel.
+   *
+   * Returns null for a point behind the camera (w <= 0), where the projection
+   * is meaningless and the naive division would place it, mirrored, in front.
+   */
+  function projectAltitude(matrix, lng, lat, altitude, width, height) {
+    if (!matrix || typeof maplibregl === "undefined") return null;
+    const mc = maplibregl.MercatorCoordinate.fromLngLat(
+      { lng, lat }, isFinite(altitude) ? altitude : 0);
+    const clip = transformVec4(matrix, [mc.x, mc.y, mc.z, 1]);
+    const w = clip[3];
+    if (!(w > 1e-6)) return null;
+    return {
+      x: (clip[0] / w * 0.5 + 0.5) * width,
+      y: (0.5 - clip[1] / w * 0.5) * height,
+      w,
+    };
+  }
+
+  /**
+   * Terrain height under *lngLat* in MapLibre's drawing frame, or null.
+   *
+   * That frame's zero is NOT sea level: MapLibre 4 draws everything relative
+   * to the terrain height under the map CENTRE (it keeps that height in
+   * transform.elevation and subtracts it from the world it renders). This is
+   * verifiable rather than folklore — projecting a point at the height this
+   * returns lands exactly where map.project() puts it, and projecting it at
+   * its sea-level height does not.
+   *
+   * queryTerrainElevation answers in that same frame, so terrain heights and
+   * drawing heights are directly comparable and nothing has to be converted.
+   * The one value that does not arrive in this frame is the autopilot's AMSL,
+   * which vehicleDrawAltitude converts at the edge.
+   */
+  function terrainElevation(lngLat) {
+    if (!map || !lngLat || !terrainOn) return null;
+    if (typeof map.queryTerrainElevation !== "function") return null;
+    let value = null;
+    try {
+      value = map.queryTerrainElevation({ lng: lngLat[0], lat: lngLat[1] });
+    } catch (_error) {
+      return null;   // terrain tiles not loaded here yet
+    }
+    return (value == null || !isFinite(value)) ? null : value;
+  }
+
+  /** The drawing frame's zero, as a height above sea level. */
+  function terrainDatum() {
+    const transform = map && map.transform;
+    return (transform && isFinite(transform.elevation)) ? transform.elevation : 0;
+  }
+
+  /**
+   * The height to draw the aircraft at, in MapLibre's drawing frame.
+   *
+   * Preference order is an accuracy order, not a convenience one:
+   *
+   *  1. Terrain height under HOME plus the reported relative altitude. PX4
+   *     measures relative_alt from the launch point, so anchoring it to the
+   *     DEM at that same point puts the aircraft the right distance above the
+   *     ground it took off from — the number the operator actually flies to,
+   *     and the only one a hill under the aircraft cannot distort.
+   *  2. The autopilot's own AMSL, brought into the drawing frame. Correct in
+   *     principle, but a bare GNSS altitude carries metres of error, and
+   *     metres of error is a visible wobble.
+   *  3. Terrain under the aircraft plus relative altitude, for a flight with
+   *     no home fix. Wrong over a slope, but never by more than the slope,
+   *     and it keeps the aircraft off the ground.
+   */
+  function vehicleDrawAltitude(state) {
+    const agl = Number(state && state.altitude_agl);
+    const amsl = Number(state && state.altitude_amsl);
+    const hasAgl = isFinite(agl);
+    const homeGround = terrainElevation(realFix(state && state.home));
+    if (hasAgl && homeGround !== null) return homeGround + agl;
+    if (isFinite(amsl) && amsl !== 0) return amsl - terrainDatum();
+    const ground = terrainElevation(realFix(state && state.position));
+    return (ground === null ? 0 : ground) + (hasAgl ? agl : 0);
+  }
+
+  // ---- terrain ----
+
+  /** The raster-dem source id, or null when the backend serves no DEM. */
+  function terrainSourceId() {
+    return terrainSpec ? terrainSpec.id : null;
+  }
+
+  /**
+   * Put the DEM into the style and switch terrain on. Idempotent, and a no-op
+   * without a DEM descriptor — the tilt then still works, on flat ground.
+   *
+   * tileSize 256 is not a default: MapLibre assumes 512 for raster-dem, and
+   * the terrarium tiles are 256, so leaving it out halves every elevation and
+   * quietly flattens the world.
+   */
+  function enableTerrain() {
+    const id = terrainSourceId();
+    if (!map || !started || !id || terrainOn) return false;
+    try {
+      if (!map.getSource(id)) {
+        map.addSource(id, {
+          type: "raster-dem",
+          tiles: [tileUrl(id)],
+          tileSize: 256,
+          maxzoom: terrainSpec.maxzoom,
+          encoding: terrainSpec.encoding || "terrarium",
+          attribution: terrainSpec.attribution,
+        });
+      }
+      map.setTerrain({ source: id, exaggeration: TERRAIN_EXAGGERATION });
+    } catch (error) {
+      // A DEM that will not load is a flat 3D view, not a broken map.
+      console.warn("Corvus: terrain unavailable", error);
+      return false;
+    }
+    terrainOn = true;
+    // From here on, DEM tiles landing are the cue to reconcile the camera's
+    // idea of the ground height with the real one — see syncTerrainElevation
+    // for why that is not optional.
+    terrainSyncAt = 0;
+    map.on("data", onTerrainData);
+    return true;
+  }
+
+  /**
+   * Tell the camera how high the ground under it really is.
+   *
+   * This is not polish — without it 3D mode BLANKS THE MAP anywhere above sea
+   * level, which is most places worth flying. MapLibre positions the camera as
+   * if the ground were at zero until it is told otherwise, so over a valley
+   * floor at 600 m the camera sits underground: nothing is in front of it, no
+   * tile computes as visible, and the map renders empty while insisting
+   * everything has loaded.
+   *
+   * It writes transform.elevation and NOTHING else, deliberately. MapLibre's
+   * own correction for this — transform.recalculateZoom — preserves the
+   * camera's ALTITUDE instead of its zoom, so it drops the operator to street
+   * level; and when the camera turns out to be below the new ground it divides
+   * by a distance that is no longer positive and leaves the zoom NaN, which
+   * poisons the whole transform (getZoom, getBounds and every tile calculation
+   * come back NaN with it). Moving the ground is the correct half of that
+   * operation and the only half that is safe.
+   *
+   * Runs for as long as 3D is on, not once: DEM tiles refine as they load, and
+   * a camera moved by anything that does not interpolate elevation (a follow
+   * jump, a programmatic setCenter) can drift back into the ground. Rate
+   * limited, and a no-op once the two agree.
+   */
+  function syncTerrainElevation() {
+    if (!map || !terrainOn) return;
+    // Never mid-animation: MapLibre interpolates the elevation itself across
+    // an ease, and a write here would fight its next frame.
+    if (typeof map.isEasing === "function" && map.isEasing()) return;
+    const at = Date.now();
+    if (at - terrainSyncAt < TERRAIN_SYNC_MIN_MS) return;
+    const transform = map.transform;
+    if (!transform || !isFinite(transform.elevation)) return;
+    let centre;
+    try { centre = map.getCenter(); } catch (_error) { return; }
+    if (!centre || !isFinite(centre.lng) || !isFinite(centre.lat)) return;
+    // queryTerrainElevation answers RELATIVE to the elevation the camera
+    // currently believes (see terrainElevation), so this IS the outstanding
+    // correction — no datum arithmetic, and nothing to get backwards.
+    const offset = terrainElevation([centre.lng, centre.lat]);
+    if (offset === null) return;   // the DEM under the centre has not arrived
+    terrainSyncAt = at;
+    if (Math.abs(offset) < TERRAIN_SYNC_EPSILON_M) return;   // already agreed
+    const corrected = transform.elevation + offset;
+    if (!isFinite(corrected)) return;
+    transform.elevation = corrected;
+    map.triggerRepaint();
+  }
+
+  /** DEM tiles landing is the cue that the heights are worth asking for. */
+  function onTerrainData(event) {
+    if (!event || event.sourceId !== terrainSourceId()) return;
+    if (event.sourceDataType === "metadata") return;
+    syncTerrainElevation();
+  }
+
+
+  /**
+   * Give the map a sky, or take it away.
+   *
+   * At 68 degrees of pitch the horizon is on screen, and the ground has to
+   * stop against SOMETHING or the map reads as half-drawn. MapLibre 4.7 has
+   * no `sky` layer (it arrived in 5.0) — but it also draws nothing above the
+   * horizon, so the map container shows through there. A gradient on the
+   * container is therefore a real sky, not a trick: the theme owns its
+   * colours (see #map.three-d in main.css) and it costs no layer, no tiles
+   * and no frame time.
+   */
+  function setSky(on) {
+    const container = map && map.getContainer();
+    if (container) container.classList.toggle("three-d", !!on);
+  }
+
+  /** Take terrain back out. The source stays in the style so re-entering 3D
+   *  does not re-download every DEM tile the operator just looked at. */
+  function disableTerrain() {
+    if (!map || !terrainOn) return;
+    map.off("data", onTerrainData);
+    try { map.setTerrain(null); } catch (_error) { /* already gone */ }
+    terrainOn = false;
+  }
+
+  // ---- 3D buildings ----
+
+  function addBuildingLayer() {
+    if (!map || map.getSource("buildings")) return;
+    map.addSource("buildings", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+    // Under the track and the plan route, which are added first and therefore
+    // stack above it: a building must never hide where the aircraft has been.
+    map.addLayer({
+      id: "buildings-3d",
+      source: "buildings",
+      type: "fill-extrusion",
+      minzoom: BUILDING_MIN_ZOOM,
+      paint: {
+        // A literal mid-slate, not a theme token — the same argument the
+        // vehicle marker's white ring makes: a building is read against
+        // IMAGERY, not against the UI. A theme colour would be a pale block
+        // on a pale street map and a dark block on dark satellite, i.e.
+        // invisible in exactly the two cases it has to work in. A mid tone is
+        // darker than bright roofs and lighter than shadowed ground.
+        "fill-extrusion-color": BUILDING_COLOR,
+        "fill-extrusion-height": ["get", "height"],
+        "fill-extrusion-base": ["get", "min_height"],
+        // Slightly translucent: an opaque block hides the ground the aircraft
+        // has to land on, and the operator needs both. Not more than this, or
+        // the extrusions stop reading as solid volumes.
+        "fill-extrusion-opacity": 0.85,
+        // Shades the lower part of each wall, which is the only cue that
+        // these are volumes rather than flat polygons lying on a slope.
+        "fill-extrusion-vertical-gradient": true,
+      },
+    }, map.getLayer("path-glow") ? "path-glow" : undefined);
+    buildingSource = map.getSource("buildings");
+  }
+
+  function removeBuildingLayer() {
+    // Timers first: a pending repaint or refresh would otherwise fire against
+    // a source that is no longer in the style. Both check `threeD` too, but a
+    // timer nobody is waiting for is work the field laptop should not do.
+    if (buildingsRefreshTimer) window.clearTimeout(buildingsRefreshTimer);
+    if (buildingsPaintTimer) window.clearTimeout(buildingsPaintTimer);
+    buildingsRefreshTimer = null;
+    buildingsPaintTimer = null;
+    if (!map) return;
+    if (map.getLayer("buildings-3d")) map.removeLayer("buildings-3d");
+    if (map.getSource("buildings")) map.removeSource("buildings");
+    buildingSource = null;
+  }
+
+  /** Slippy-grid column for *lon* at BUILDING_CELL_Z. */
+  function cellX(lon) {
+    const n = 1 << BUILDING_CELL_Z;
+    return Math.max(0, Math.min(n - 1, Math.floor(((lon + 180) / 360) * n)));
+  }
+
+  /** Slippy-grid row for *lat* at BUILDING_CELL_Z. */
+  function cellY(lat) {
+    const n = 1 << BUILDING_CELL_Z;
+    const clamped = Math.max(-85.05112878, Math.min(85.05112878, lat));
+    const rad = (clamped * Math.PI) / 180;
+    const frac = (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2;
+    return Math.max(0, Math.min(n - 1, Math.floor(frac * n)));
+  }
+
+  /**
+   * The cell keys covering the current view, capped.
+   *
+   * Pure-ish geometry over the map's own bounds, so a pitched view — whose
+   * bounds MapLibre already widens to the visible ground — asks for the cells
+   * that are actually on screen. The cap is a fetch budget, not a correctness
+   * rule: beyond it the nearest cells are kept, because those are the ones
+   * under the aircraft.
+   */
+  function viewBuildingCells() {
+    if (!map) return [];
+    let bounds, centre;
+    try {
+      bounds = map.getBounds();
+      centre = map.getCenter();
+    } catch (_error) {
+      return [];   // a transform that is not ready yet asks for nothing
+    }
+    if (!bounds || !centre) return [];
+    return buildingCellsIn(
+      { w: bounds.getWest(), s: bounds.getSouth(), e: bounds.getEast(), n: bounds.getNorth() },
+      [centre.lng, centre.lat],
+    );
+  }
+
+  /**
+   * The cell keys inside *box* ({w,s,e,n}), nearest to *centre* first, capped.
+   *
+   * Pure geometry, split out from viewBuildingCells for the same reason
+   * followAction is: the rule is worth asserting on its own, and it has no
+   * business needing a renderer to check.
+   *
+   * It grows OUTWARD from the centre rather than enumerating the box. A
+   * pitched camera sees to the horizon and MapLibre's bounds say so: at 60
+   * degrees the visible ground can be hundreds of cells across, so walking
+   * that rectangle to then keep the nearest two dozen means materialising a
+   * five-figure array on every pan, on the frame budget of a field laptop.
+   * Square rings visit the cells that would have been kept, in the order they
+   * would have been kept, and stop.
+   *
+   * Nearest-first is also load-bearing downstream: paintBuildings fills its
+   * feature budget from the front of this list, so what a dense city drops is
+   * the ground near the horizon rather than the ground under the aircraft.
+   */
+  function buildingCellsIn(box, centre) {
+    if (!box || !centre) return [];
+    if (![box.w, box.s, box.e, box.n, centre[0], centre[1]].every(isFinite)) return [];
+    const x0 = cellX(box.w), x1 = cellX(box.e);
+    const y0 = cellY(box.n), y1 = cellY(box.s);
+    if (x1 < x0 || y1 < y0) return [];
+    const cx = cellX(centre[0]), cy = cellY(centre[1]);
+    const inView = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+
+    const cells = [];
+    const reach = Math.max(x1 - x0, y1 - y0);
+    for (let ring = 0; ring <= reach && cells.length < BUILDING_MAX_CELLS; ring++) {
+      for (let dx = -ring; dx <= ring && cells.length < BUILDING_MAX_CELLS; dx++) {
+        for (let dy = -ring; dy <= ring && cells.length < BUILDING_MAX_CELLS; dy++) {
+          // Only the ring's edge; its interior was covered by earlier rings.
+          if (ring > 0 && Math.abs(dx) !== ring && Math.abs(dy) !== ring) continue;
+          const x = cx + dx, y = cy + dy;
+          if (inView(x, y)) cells.push(`${BUILDING_CELL_Z}/${x}/${y}`);
+        }
+      }
+    }
+    return cells;
+  }
+
+  /**
+   * Ask the backend for one cell. At most once per key at a time: the entry
+   * is claimed with an empty array BEFORE the fetch, so the several move
+   * events a single drag produces cannot each start the same request.
+   *
+   * The backend never blocks on the OSM upstream — it answers what it has and
+   * says `pending` when it has queued the rest (see corvus/buildings.py). So
+   * a pending cell is retried a few times, a few seconds apart, and then let
+   * go. A failure is simply an empty cell: offline every cell fails, and a
+   * map that re-asks on every pan is a map that stutters.
+   */
+  function fetchBuildingCell(key) {
+    if (buildingCells.has(key)) return;
+    buildingCells.set(key, []);
+    Corvus.telemetry.requestJson(`/api/buildings/${key}.json`)
+      .then((data) => {
+        const features = (data && data.features) || [];
+        buildingCells.set(key, features);
+        if (features.length) schedulePaintBuildings();
+        if (data && data.pending) retryBuildingCell(key);
+      })
+      .catch(() => { /* offline, or no service: an empty cell is the answer */ });
+  }
+
+  /** Re-ask for a cell the backend is still fetching, up to a few times. */
+  function retryBuildingCell(key) {
+    const tries = (buildingRetries.get(key) || 0) + 1;
+    if (tries > BUILDING_MAX_RETRIES) return;
+    buildingRetries.set(key, tries);
+    window.setTimeout(() => {
+      // Only if 3D is still on and the cell is still worth having: an
+      // operator who left the area (or left 3D) must not be paying for
+      // requests about ground they are not looking at.
+      if (!threeD || !buildingSource) return;
+      if (!viewBuildingCells().includes(key)) return;
+      buildingCells.delete(key);
+      fetchBuildingCell(key);
+    }, BUILDING_RETRY_MS * tries);
+  }
+
+  /**
+   * Coalesce the repaints a burst of arriving cells would otherwise cause.
+   *
+   * A pan asks for up to two dozen cells and they land within a second of
+   * each other; repainting per cell re-tiles a collection of thousands of
+   * polygons that many times, for the same final picture. One frame's delay
+   * turns that into one repaint.
+   */
+  function schedulePaintBuildings() {
+    if (buildingsPaintTimer) return;
+    buildingsPaintTimer = window.setTimeout(() => {
+      buildingsPaintTimer = null;
+      paintBuildings();
+    }, 60);
+  }
+
+  /**
+   * Push the visible cells' features into the extrusion source.
+   *
+   * Capped, and the cap is why viewBuildingCells returns its cells nearest
+   * first: over a city centre the visible cells can hold more polygons than a
+   * field laptop can extrude at a usable frame rate, and the ones worth
+   * keeping are the ones near the aircraft, not the ones near the horizon.
+   * Dropping the far cells costs detail where the operator is not looking.
+   */
+  function paintBuildings() {
+    if (!buildingSource || !threeD) return;
+    const features = [];
+    for (const key of viewBuildingCells()) {
+      const cell = buildingCells.get(key);
+      if (!cell || !cell.length) continue;
+      for (const feature of cell) {
+        if (features.length >= BUILDING_MAX_FEATURES) break;
+        features.push(feature);
+      }
+      if (features.length >= BUILDING_MAX_FEATURES) break;
+    }
+    buildingSource.setData({ type: "FeatureCollection", features });
+  }
+
+  /** Evict the oldest cells once the in-memory set outgrows its budget.
+   *  Map iterates in insertion order, so the first keys are the oldest. */
+  function trimBuildingCells() {
+    while (buildingCells.size > BUILDING_CACHE_CELLS) {
+      const oldest = buildingCells.keys().next();
+      if (oldest.done) return;
+      buildingCells.delete(oldest.value);
+      buildingRetries.delete(oldest.value);
+    }
+  }
+
+  /**
+   * Fetch what the current view needs and repaint. Debounced, because a drag
+   * ends in a burst of move events and each one would otherwise walk the grid.
+   */
+  function refreshBuildings() {
+    if (!map || !threeD || !buildingSource) return;
+    if (buildingsRefreshTimer) window.clearTimeout(buildingsRefreshTimer);
+    buildingsRefreshTimer = window.setTimeout(() => {
+      buildingsRefreshTimer = null;
+      if (!threeD || !buildingSource) return;
+      if (map.getZoom() < BUILDING_MIN_ZOOM) {
+        buildingSource.setData({ type: "FeatureCollection", features: [] });
+        return;
+      }
+      viewBuildingCells().forEach(fetchBuildingCell);
+      trimBuildingCells();
+      paintBuildings();
+    }, 250);
+  }
+
+  // ---- the aircraft, at altitude ----
+
+  /** Build the four elements that make up the airborne aircraft. */
+  function buildVehicle3D(mapEl) {
+    if (!mapEl || veh3dEl) return;
+
+    veh3dLeadEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    veh3dLeadEl.setAttribute("class", "veh3d-lead");
+    veh3dLeadEl.setAttribute("aria-hidden", "true");
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    veh3dLeadEl.appendChild(line);
+    veh3dLeadEl.hidden = true;
+    mapEl.appendChild(veh3dLeadEl);
+
+    veh3dShadowEl = document.createElement("div");
+    veh3dShadowEl.className = "veh3d-shadow";
+    veh3dShadowEl.hidden = true;
+    mapEl.appendChild(veh3dShadowEl);
+
+    // The same markup as the 2D marker, so the aircraft the operator learned
+    // to read on a flat map is the aircraft they read in the air.
+    veh3dEl = buildVehicleMarker();
+    veh3dEl.classList.add("veh3d");
+    veh3dEl.hidden = true;
+    mapEl.appendChild(veh3dEl);
+
+    veh3dAltEl = document.createElement("div");
+    veh3dAltEl.className = "veh3d-alt";
+    veh3dAltEl.hidden = true;
+    mapEl.appendChild(veh3dAltEl);
+  }
+
+  function hideVehicle3D() {
+    veh3dScreen = null;
+    [veh3dEl, veh3dShadowEl, veh3dLeadEl, veh3dAltEl].forEach((el) => {
+      if (el) el.hidden = true;
+    });
+  }
+
+  /**
+   * Place the airborne aircraft, its shadow, the line between them and the
+   * height readout, from the map's own projection matrix.
+   *
+   * Called from a custom layer's render hook — the one documented way to get
+   * that matrix — which also means it runs on exactly the frames the map
+   * draws, so the aircraft can never lag the ground it is over.
+   */
+  function renderVehicle3D(matrix) {
+    if (!threeD || !veh3dEl || !vehDisplay || !map) return;
+    const container = map.getContainer();
+    const width = container ? container.clientWidth : 0;
+    const height = container ? container.clientHeight : 0;
+    if (!(width > 0 && height > 0)) return;
+
+    const lng = vehDisplay.lng, lat = vehDisplay.lat;
+    if (!realFix([lng, lat])) { hideVehicle3D(); return; }
+    veh3dScreen = null;
+
+    // vehGroundDraw, not a terrain query: this runs on every rendered frame,
+    // and queryTerrainElevation walks the terrain mesh. The ground under an
+    // aircraft changes at telemetry rate, not at 60 Hz, so it is computed
+    // with the sample (updateVehicleAltitude) and read here.
+    const groundM = vehGroundDraw === null ? 0 : vehGroundDraw;
+    const airM = vehAltDraw === null ? groundM : Math.max(vehAltDraw, groundM);
+    const air = projectAltitude(matrix, lng, lat, airM, width, height);
+    const base = projectAltitude(matrix, lng, lat, groundM, width, height);
+    if (!air) { hideVehicle3D(); return; }
+
+    // Perspective: an object's screen size falls off as 1/w, and w at the map
+    // centre is the natural reference because that is where the 2D marker's
+    // size was chosen. The exponent softens it — a literal 1/w makes the
+    // aircraft lurch in size on every pitch change.
+    const centre = map.getCenter();
+    // Altitude 0 at the map centre IS the ground under the map centre: that
+    // point is the drawing frame's own zero (see terrainElevation). So the
+    // reference costs a matrix multiply, not a second mesh query.
+    const ref = projectAltitude(matrix, centre.lng, centre.lat, 0, width, height);
+    const ratio = (ref && ref.w > 1e-6) ? ref.w / air.w : 1;
+    const scale = Math.max(VEH3D_SCALE_MIN,
+      Math.min(VEH3D_SCALE_MAX, Math.pow(ratio, 0.7)));
+
+    // Laid into the ground plane (rotateX by the camera pitch) rather than
+    // left facing the screen: it is the same trick MapLibre's own
+    // pitchAlignment:"map" uses, and it is what makes the heading cone point
+    // somewhere in the WORLD instead of somewhere on the display.
+    const pitch = map.getPitch();
+    const bearing = map.getBearing();
+    veh3dScreen = { x: air.x, y: air.y };
+    veh3dEl.hidden = false;
+    veh3dEl.style.transform =
+      `translate(-50%, -50%) translate(${air.x}px, ${air.y}px) scale(${scale.toFixed(3)}) rotateX(${pitch}deg)`;
+    const body = veh3dEl.querySelector(".v-body");
+    if (body) body.style.transform = `rotate(${vehDisplay.heading - bearing}deg)`;
+
+    // Below this the aircraft is effectively on its own shadow, and a leader
+    // line of two pixels reads as a rendering fault.
+    const airborne = vehAltAgl !== null && vehAltAgl > VEH3D_MIN_AGL_M && !!base;
+    if (!airborne) {
+      if (veh3dShadowEl) veh3dShadowEl.hidden = true;
+      if (veh3dLeadEl) veh3dLeadEl.hidden = true;
+      if (veh3dAltEl) veh3dAltEl.hidden = true;
+      return;
+    }
+
+    veh3dShadowEl.hidden = false;
+    veh3dShadowEl.style.transform =
+      `translate(-50%, -50%) translate(${base.x}px, ${base.y}px) scale(${scale.toFixed(3)}) rotateX(${pitch}deg)`;
+
+    veh3dLeadEl.hidden = false;
+    veh3dLeadEl.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    veh3dLeadEl.setAttribute("width", String(width));
+    veh3dLeadEl.setAttribute("height", String(height));
+    const line = veh3dLeadEl.firstChild;
+    line.setAttribute("x1", base.x.toFixed(1));
+    line.setAttribute("y1", base.y.toFixed(1));
+    line.setAttribute("x2", air.x.toFixed(1));
+    line.setAttribute("y2", air.y.toFixed(1));
+
+    veh3dAltEl.hidden = false;
+    veh3dAltEl.textContent = `${Math.round(vehAltAgl)} m`;
+    veh3dAltEl.style.transform =
+      `translate(-50%, -50%) translate(${air.x}px, ${(air.y + (base.y - air.y) * 0.5).toFixed(1)}px)`;
+  }
+
+  /**
+   * Register the custom layer whose only job is to hand us the projection
+   * matrix once per rendered frame.
+   *
+   * It draws nothing itself. A WebGL aircraft would need its own shaders,
+   * its own theming and its own text; the DOM marker already exists, is
+   * already themed, and is already what the operator recognises — all it was
+   * ever missing was the third coordinate.
+   */
+  function addVehicle3DLayer() {
+    if (!map || veh3dLayerAdded) return;
+    try {
+      map.addLayer({
+        id: "vehicle-altitude",
+        type: "custom",
+        renderingMode: "3d",
+        onAdd: () => {},
+        render: (_gl, matrix) => {
+          // An exception thrown out of a custom layer's render aborts
+          // MapLibre's whole frame — the map would stop drawing because a
+          // marker could not be placed. Swallow it and leave the aircraft
+          // where it was; the next frame tries again.
+          try { renderVehicle3D(matrix); } catch (_error) { /* one bad frame */ }
+        },
+      });
+      veh3dLayerAdded = true;
+    } catch (error) {
+      console.warn("Corvus: 3D aircraft unavailable", error);
+    }
+  }
+
+  // ---- the mode itself ----
+
+  /**
+   * Turn 3D mode on or off. Returns the resulting state.
+   *
+   * Each half is independent: a missing DEM still gets the tilt and the
+   * buildings, a backend without buildings still gets the terrain, and either
+   * way the aircraft is drawn at its altitude (above sea level if there is no
+   * DEM to measure from). Nothing here can leave the map in a state the
+   * operator cannot get out of by pressing the button again.
+   */
+  /** Tilt the camera, honouring the reduced-motion contract the rest of the
+   *  app keeps: an operator who asked for no animation gets the new angle,
+   *  not a six-hundred-millisecond swing into it. */
+  function tiltTo(pitch) {
+    if (Corvus.anim.reducedMotion()) map.jumpTo({ pitch });
+    else map.easeTo({ pitch, duration: 600 });
+  }
+
+  function set3D(on) {
+    on = !!on;
+    if (!map) return threeD;
+    threeD = on;
+    if (on) {
+      // Everything that touches the style waits for the style. The rail is
+      // built before "load" (so the operator is never left without controls
+      // during the first tile fetch), which means this can be pressed before
+      // there is a style to add a source to; the "load" handler re-applies.
+      if (started) {
+        enableTerrain();
+        setSky(true);
+        addBuildingLayer();
+        addVehicle3DLayer();
+        refreshBuildings();
+        updateVehicleAltitude(Corvus.telemetry.getState());
+      }
+      if (vehicleMarker) {
+        const el = vehicleMarker.getElement();
+        if (el) el.hidden = true;
+      }
+      // The end of the tilt reconciles the ground height through the map's
+      // own moveend handler — which matters when the DEM is already cached
+      // and no further data event is coming. Deliberately NOT a
+      // once("moveend") here: a 3D press cancelled before the tilt lands
+      // leaves that listener registered forever, and an operator toggling the
+      // button accumulates one per press.
+      tiltTo(THREE_D_PITCH);
+    } else {
+      hideVehicle3D();
+      removeBuildingLayer();
+      setSky(false);
+      disableTerrain();
+      // The 2D marker comes back only if the aircraft has actually reported a
+      // position — the same rule renderVehicle applies, and the reason it is
+      // not simply un-hidden here.
+      renderVehicle();
+      tiltTo(0);
+    }
+    if (controlsEl) {
+      const btn = controlsEl.querySelector('[data-act="three"]');
+      if (btn) btn.classList.toggle("active", threeD);
+    }
+    return threeD;
+  }
+
   function init(mapEl, controlsEl) {
     map = new maplibregl.Map({
       container: mapEl,
@@ -1422,6 +2324,10 @@ Corvus.map = (function () {
     // already defers its own work until `started`.
     buildControls(controlsEl);
     buildTrackControl(mapEl);
+    // Pure DOM, like the rail and the clear-track button, so it is built
+    // before "load" for the same reason they are: nothing about it needs a
+    // resolved style, and the elements stay hidden until 3D asks for them.
+    buildVehicle3D(mapEl);
 
     // The context menu lives in the map container so it scrolls, resizes and
     // stacks with everything else on the map. Wired here rather than on "load"
@@ -1451,7 +2357,16 @@ Corvus.map = (function () {
     });
     // Clears the in-flight guard whoever moved the map — a user drag that
     // interrupts a follow pan must not leave it stuck on.
-    map.on("moveend", () => { followEasing = false; });
+    map.on("moveend", () => {
+      followEasing = false;
+      // The camera landed somewhere new. Not every way it can get there
+      // interpolates the ground height on the way — a follow jump and a plain
+      // setCenter do not — so reconcile it here as well as on DEM tiles.
+      syncTerrainElevation();
+      // New ground came into view; ask the backend for its buildings. A no-op
+      // outside 3D, and debounced, so a drag costs one pass over the grid.
+      refreshBuildings();
+    });
 
     map.on("load", () => {
       // Regions first: their layers must sit UNDER the track and plan route,
@@ -1497,6 +2412,10 @@ Corvus.map = (function () {
       // MapLibre paint properties are literal colours, so a theme switch has
       // to push new ones — the same reason the Plotly charts subscribe.
       Corvus.ui.onThemeChange(repaintTrack);
+      // A 3D press that landed before the style did: apply it now that there
+      // is something to apply it to. set3D is idempotent, so this is a no-op
+      // in the usual case where the operator has not pressed it at all.
+      if (threeD) set3D(true);
       applyScale();
       window.addEventListener("corvus:scalechange", applyScale);
       // Draw whatever regions arrived while the style was still loading, then
@@ -1532,6 +2451,12 @@ Corvus.map = (function () {
     getMap: () => map,
     isReady: () => started,
     setWaypointMode,
+    // 3D mode: terrain relief, extruded buildings, and the aircraft drawn at
+    // the altitude it is actually flying. Exposed so Settings (or a test) can
+    // drive it without reaching through the control rail.
+    set3D,
+    is3D: () => threeD,
+    hasTerrain: () => terrainOn,
     getWaypoints,
     clearWaypoints,
     onWaypointsUpdate,
@@ -1564,6 +2489,21 @@ Corvus.map = (function () {
     // "jump" for a vehicle at (px, py) in a width x height viewport.
     _followAction: followAction,
     _bootstrap: () => BOOTSTRAP,
+    // test hooks: the pure 3D maths — a column-major 4x4 times a vec4, and
+    // the altitude preference chain — assertable without WebGL or a DEM.
+    _transformVec4: transformVec4,
+    _vehicleDrawAltitude: (state) => vehicleDrawAltitude(state),
+    _projectAltitude: projectAltitude,
+    // test hook: the building-cell grid as pure geometry — which cells a
+    // {w,s,e,n} view around a centre asks for, in which order, and how many.
+    // Mirrors the _followAction convention.
+    _buildingCellsIn: (box, centre) => buildingCellsIn(box, centre),
+    _buildingLimits: () => ({
+      cellZoom: BUILDING_CELL_Z,
+      maxCells: BUILDING_MAX_CELLS,
+      maxFeatures: BUILDING_MAX_FEATURES,
+      minZoom: BUILDING_MIN_ZOOM,
+    }),
     // test hooks: the pure track rules — distance decimation and the reboot
     // edge — assertable without a map.
     _recordTrackPoint: (pos) => recordTrackPoint(pos),
@@ -1577,6 +2517,10 @@ Corvus.map = (function () {
       try { updateHome(state); } finally { homeMarker = saved; }
     },
     _checkForReboot: (ms) => checkForReboot(ms),
+    // test hook: push one telemetry sample through the whole marker path
+    // (target, altitude, follow, track) without an SSE stream behind it.
+    // Mirrors the _updateHome convention.
+    _updateVehicle: (state) => updateVehicle(state),
     // test hook: the open menu's point, so the click -> menu path is assertable
     // without a layout engine.
     _contextPoint: () => (contextPoint ? { lng: contextPoint.lng, lat: contextPoint.lat } : null),

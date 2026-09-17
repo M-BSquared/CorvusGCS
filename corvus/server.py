@@ -114,11 +114,22 @@ MAX_LOGO_BODY_BYTES = 4 * 1024 * 1024
 # before anything has looked at it.
 MAX_ULOG_BODY_BYTES = 128 * 1024 * 1024
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+# The two constant building-cell bodies. `pending` tells the frontend the
+# backend has queued the fetch and is worth asking again; its absence means
+# this cell is simply empty and asking again would be a loop.
+_EMPTY_BUILDINGS = b'{"type":"FeatureCollection","features":[]}'
+_PENDING_BUILDINGS = b'{"type":"FeatureCollection","features":[],"pending":true}'
 # Path-parameter tile route: /api/tiles/<source>/<z>/<x>/<y>.png
 # Checked in _handle_api_get only when the path ends in ".png", so it can
 # never shadow the exact /api/tiles/{sources,jobs,progress,download,cancel}
 # routes (none of which end in ".png" with four numeric segments).
 _TILE_PATH_RE = re.compile(r"^/api/tiles/([^/]+)/(\d+)/(\d+)/(\d+)\.png$")
+# Path-parameter building route: /api/buildings/<z>/<x>/<y>.json — the OSM
+# footprints 3D mode extrudes, addressed on the same slippy grid as the tiles
+# so a pan over ground already visited is a cache hit. Same shadowing argument
+# as the tile route: ".json" with three numeric segments cannot collide with
+# any exact /api/... path.
+_BUILDINGS_PATH_RE = re.compile(r"^/api/buildings/(\d+)/(\d+)/(\d+)\.json$")
 # Path-parameter route for a plugin's own files:
 # /api/plugins/asset/<plugin id>/<path inside the plugin folder>. The id is
 # matched narrowly (the same shape plugin_registry accepts) so only the
@@ -457,6 +468,30 @@ def _build_tile_downloader(
     return _TileDownloaderPool(caches, TileDownloader)
 
 
+def _build_building_service(cache_dir: str) -> Any:
+    """Construct the OSM building-footprint service, or None.
+
+    Deliberately NOT part of ``_build_tile_resources``' return tuple: that
+    tuple is a contract two entry points and several tests unpack, and the
+    buildings cache is an independent, optional overlay. None everywhere it
+    cannot be built means 3D mode loses its buildings and keeps its terrain,
+    which is the right failure for a rendering aid.
+    """
+    try:
+        from .buildings import BuildingService, default_cache_path
+    except ImportError:
+        logger.warning("buildings module not available; 3D buildings disabled")
+        return None
+    try:
+        return BuildingService(
+            default_cache_path(cache_dir),
+            user_agent=f"CorvusGCS/{get_version()}",
+        )
+    except Exception:  # noqa: BLE001 - an unwritable cache dir must not stop launch
+        logger.exception("building service init failed")
+        return None
+
+
 def _build_tile_resources(
     cache_dir: str,
 ) -> tuple[dict[str, TileCache], "_TileProgressBus", Any, "_UpstreamBreaker"]:
@@ -470,9 +505,12 @@ def _build_tile_resources(
     field. The caller picks the cache dir (operator-config override or the
     default); this helper only constructs the objects rooted at that dir.
     """
+    # all_sources(), not TILE_SOURCES: the elevation tiles 3D mode reads
+    # heights from are served and cached through exactly the same route, and a
+    # DEM without a cache is a 3D map that flattens the moment the link drops.
     tile_caches: dict[str, TileCache] = {
         sid: TileCache(os.path.join(cache_dir, f"{sid}.mbtiles"))
-        for sid in tile_sources.TILE_SOURCES
+        for sid in tile_sources.all_sources()
     }
     tile_progress_bus = _TileProgressBus()
     tile_downloader = _build_tile_downloader(tile_caches)
@@ -937,6 +975,9 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     tile_breaker: "_UpstreamBreaker | None" = None
     tile_downloader: Any = None
     tile_progress_bus: _TileProgressBus | None = None
+    # OSM building footprints for 3D mode. None when the module could not be
+    # built; the route then answers an empty FeatureCollection.
+    buildings: Any = None
     # Plugin roots. None means "the real ones" (~/.corvus/plugins and the
     # bundled <repo>/plugins); the tests point them at a tmp_path so a scan
     # never reads the developer's own plugin folder.
@@ -1429,6 +1470,14 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                         int(m.group(2)),
                         int(m.group(3)),
                         int(m.group(4)),
+                    )
+                    return
+            # Path-parameter building route: /api/buildings/<z>/<x>/<y>.json
+            if path.startswith("/api/buildings/") and path.endswith(".json"):
+                m = _BUILDINGS_PATH_RE.match(path)
+                if m is not None:
+                    self._api_buildings_serve(
+                        int(m.group(1)), int(m.group(2)), int(m.group(3)),
                     )
                     return
             # Path-parameter plugin asset route, matched before the exact
@@ -4457,10 +4506,33 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 "cached_minzoom": stats["minzoom"],
                 "cached_maxzoom": stats["maxzoom"],
             })
+        # Elevation sources travel in their own key, never mixed into
+        # `sources`: everything that reads that list means "a base layer the
+        # operator can pick", and a DEM in the layer switcher would paint the
+        # map in false colour. The frontend builds its raster-dem source from
+        # this, encoding included, so the height packing is stated once.
+        terrain = []
+        for entry in tile_sources.list_terrain():
+            cache = caches.get(entry["id"])
+            stats = cache.stats() if cache is not None else {
+                "count": 0, "minzoom": None, "maxzoom": None,
+            }
+            terrain.append({
+                **entry,
+                "minzoom": 0,
+                "cached_count": stats["count"],
+                "cached_minzoom": stats["minzoom"],
+                "cached_maxzoom": stats["maxzoom"],
+            })
+        buildings = (self.buildings.stats()
+                     if self.buildings is not None else {"cells": 0, "bytes": 0})
         self._send_json({
             "sources": sources,
             "providers": tile_sources.list_providers(),
             "default_provider": tile_sources.DEFAULT_PROVIDER,
+            "terrain": terrain,
+            "default_terrain": tile_sources.DEFAULT_TERRAIN,
+            "buildings": buildings,
         })
 
     @route("GET", "/api/tiles/jobs")
@@ -4527,7 +4599,54 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 })
             except Exception:  # noqa: BLE001 - bookkeeping must not fail the download
                 logger.exception("region record write failed")
-        self._send_json({"job_id": job_id, "name": name})
+        # Elevation rides along when asked for, as its own job on its own
+        # cache. Without it a pre-downloaded area is flat the moment the
+        # laptop leaves the network — imagery cached for the field and terrain
+        # that is not is exactly the split that makes 3D mode useless there.
+        terrain_job = None
+        if payload.get("terrain") and not tile_sources.is_terrain(source):
+            terrain_job = self._start_terrain_companion(bounds, minzoom, maxzoom, name)
+        self._send_json({"job_id": job_id, "name": name, "terrain_job_id": terrain_job})
+
+    def _start_terrain_companion(
+        self, bounds: tuple, minzoom: int, maxzoom: int, name: str,
+    ) -> str | None:
+        """Start the elevation half of a region download. None if it cannot run.
+
+        Best effort on purpose: the imagery job has already been accepted and
+        the operator has been shown progress for it, so a DEM that cannot be
+        started must not turn their download into an error. It also caps the
+        zooms at the DEM's own — elevation is a smooth surface, and asking for
+        z19 heights would quadruple the job for tiles the upstream does not
+        even serve.
+        """
+        default_terrain = tile_sources.DEFAULT_TERRAIN
+        src = tile_sources.get(default_terrain)
+        if src is None or self.tile_downloader is None:
+            return None
+        hi = min(maxzoom, src["maxzoom"])
+        lo = min(minzoom, hi)
+        cache = (self.tile_caches or {}).get(default_terrain)
+        try:
+            job_id = self.tile_downloader.start(
+                default_terrain, src["upstream"], bounds, lo, hi,
+                on_progress=self._make_tile_progress(cache),
+            )
+        except Exception:  # noqa: BLE001 - the imagery job is already running
+            logger.exception("terrain companion download start failed")
+            return None
+        if cache is not None and job_id:
+            w, s, e, n = bounds
+            try:
+                cache.add_region({
+                    "id": job_id, "name": name, "source": default_terrain,
+                    "w": w, "s": s, "e": e, "n": n,
+                    "minzoom": lo, "maxzoom": hi,
+                    "tile_count": 0, "state": "running",
+                })
+            except Exception:  # noqa: BLE001 - bookkeeping must not fail the download
+                logger.exception("terrain region record write failed")
+        return job_id
 
     def _make_tile_progress(self, cache: Any) -> Any:
         """Compose the progress callback handed to the downloader.
@@ -4804,6 +4923,62 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             breaker.record_success()
         return data
 
+    def _api_buildings_serve(self, z: int, x: int, y: int) -> None:
+        """Serve the OSM building footprints for one grid cell, as GeoJSON.
+
+        Always 200 with a FeatureCollection, even when there is nothing to
+        give. This is on the map's render path: a 404 or a 503 would make the
+        frontend distinguish "no buildings here" from "the service is down",
+        and both answers draw the same thing — nothing. A cell is fetched from
+        Overpass at most once and then answered from disk, offline included.
+        """
+        from .buildings import CELL_ZOOM
+
+        service = self.buildings
+        if (service is None
+                or z != CELL_ZOOM
+                or x < 0 or y < 0 or x >= (1 << z) or y >= (1 << z)):
+            # An off-grid zoom is a frontend bug, not an operator-visible one:
+            # answer empty rather than teaching the map to handle an error it
+            # can do nothing about. `pending` is false: nothing is coming.
+            self._send_buildings(_EMPTY_BUILDINGS, gzipped=False)
+            return
+        try:
+            payload = service.cell(z, x, y)
+        except Exception:  # noqa: BLE001 - an overlay must never 500 the map
+            logger.exception("building cell lookup failed: %d/%d/%d", z, x, y)
+            self._send_buildings(_EMPTY_BUILDINGS, gzipped=False)
+            return
+        if payload is None:
+            # Not cached: the service has queued it and will have it shortly.
+            # `pending` is the frontend's cue to ask again rather than record
+            # this cell as empty forever.
+            self._send_buildings(_PENDING_BUILDINGS, gzipped=False, cache=False)
+            return
+        self._send_buildings(payload, gzipped=True)
+
+    def _send_buildings(self, body: bytes, *, gzipped: bool, cache: bool = True) -> None:
+        """Write a building-cell response.
+
+        The store holds the GeoJSON already gzipped, so the compressed bytes
+        go straight onto the wire instead of being inflated here and deflated
+        again by the HTTP layer.
+
+        A real cell is cacheable for a day — buildings do not move, and the
+        frontend keeps its own in-memory set anyway. A "pending" answer must
+        NOT be, or the browser would keep replaying it from its own cache
+        after the worker has long since filled ours.
+        """
+        self.send_response(200)
+        self.send_header("Content-Type", "application/geo+json")
+        if gzipped:
+            self.send_header("Content-Encoding", "gzip")
+        self.send_header("Content-Length", str(len(body)))
+        self._send_cors()
+        self.send_header("Cache-Control", "max-age=86400" if cache else "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
     # ---- Static files ----
     def _serve_static(self, path: str) -> None:
         if path == "/":
@@ -4964,8 +5139,15 @@ class CorvusServer(socketserver.ThreadingTCPServer):
                 cache.close()
             except Exception:  # noqa: BLE001 - shutdown must not raise
                 logger.exception("tile cache close failed")
+        buildings = getattr(self, "buildings", None)
+        if buildings is not None:
+            try:
+                buildings.close()
+            except Exception:  # noqa: BLE001 - shutdown must not raise
+                logger.exception("building cache close failed")
         self.tile_downloader = None
         self.tile_caches = {}
+        self.buildings = None
 
 
 # How many consecutive ports a launch will try before giving up. Twenty is
@@ -5221,6 +5403,7 @@ def create_server(
     # (app.start_backend) and browser mode (create_server) never diverge.
     tile_caches, tile_progress_bus, tile_downloader, tile_breaker = \
         _build_tile_resources(default_cache_dir())
+    buildings = _build_building_service(default_cache_dir())
 
     CorvusHandler.store = store
     CorvusHandler.mavlink = mavlink
@@ -5232,6 +5415,7 @@ def create_server(
     CorvusHandler.tile_downloader = tile_downloader
     CorvusHandler.tile_progress_bus = tile_progress_bus
     CorvusHandler.tile_breaker = tile_breaker
+    CorvusHandler.buildings = buildings
 
     # Create ~/.corvus/plugins (with its README) at startup rather than only
     # when Settings opens it, so an operator who was told "drop it in the
@@ -5295,6 +5479,7 @@ def create_server(
     server.updates = updates
     server.tile_caches = tile_caches
     server.tile_downloader = tile_downloader
+    server.buildings = buildings
     server.autoconnect_session = autoconnect_session
     mavlink.start()
     # After mavlink.start(), never before: the resolver above already decided

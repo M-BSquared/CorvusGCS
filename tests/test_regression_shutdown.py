@@ -24,7 +24,7 @@ import pytest
 import corvus.server as srv
 from corvus.mavlink_bridge import MavlinkBridge
 from corvus.tile_cache import TileCache
-from corvus.tile_sources import TILE_SOURCES
+from corvus.tile_sources import all_sources
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +214,10 @@ def test_stop_sequence_releases_tile_resources(backend_server) -> None:
 
     # Preconditions: the prior wave wired the tile resources onto the server.
     assert caches, "server.tile_caches should hold one cache per source"
-    assert set(caches) == set(TILE_SOURCES)
+    # all_sources(), not TILE_SOURCES: the elevation tiles 3D mode reads from
+    # get their own cache too, and a DEM handle left open on stop is the same
+    # leak as an imagery one.
+    assert set(caches) == set(all_sources())
     if downloader is not None:
         assert per_source, "downloader pool should hold one TileDownloader per source"
         for sid, dl in per_source.items():

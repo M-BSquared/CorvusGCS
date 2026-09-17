@@ -167,7 +167,7 @@ def start_backend(port: int, mavlink_conn: str | None = None) -> tuple:
     """
     from corvus.server import (
         CorvusHandler, _build_forwarder, _build_log_service,
-        _build_tile_resources, apply_startup_connection, bind_server,
+        _build_building_service, _build_tile_resources, apply_startup_connection, bind_server,
         build_autoconnect_session, start_autoconnect_watcher,
         DEFAULT_MAVLINK_CONNECTION,
     )
@@ -218,6 +218,10 @@ def start_backend(port: int, mavlink_conn: str | None = None) -> tuple:
     CorvusHandler.tile_downloader = tile_downloader
     CorvusHandler.tile_progress_bus = tile_progress_bus
     CorvusHandler.tile_breaker = tile_breaker
+    # 3D mode's building footprints. Built here as well as in create_server so
+    # the desktop app and browser mode offer the same map (the reason
+    # _build_tile_resources is shared), and None-safe when it cannot be built.
+    CorvusHandler.buildings = _build_building_service(cache_dir)
 
     # Same as create_server(): make sure ~/.corvus/plugins exists (with its
     # README) so the folder Settings points at is there before it is opened.
@@ -282,6 +286,7 @@ def start_backend(port: int, mavlink_conn: str | None = None) -> tuple:
     # closes the caches and stops the downloader (no leaked SQLite handles).
     server.tile_caches = tile_caches
     server.tile_downloader = tile_downloader
+    server.buildings = CorvusHandler.buildings
     server.autoconnect_session = autoconnect_session
     mavlink.start()
     # After mavlink.start(), never before — see create_server() for why.
