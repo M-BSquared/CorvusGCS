@@ -1,11 +1,12 @@
 /*
   Corvus GCS — design tokens and the predefined color themes.
 
-  Loaded FIRST (before main.css and components.css) because it owns every
-  design token in the app: the palette, the translucency/shadow recipes, and
-  the structural constants (radii, bar sizes, fonts, interface scale). Nothing
-  else defines a token — main.css and components.css only consume them. That
-  is what makes a whole-app theme switch a single attribute write.
+  Loaded FIRST (before components.css and main.css) because it owns every
+  design token in the app: the palette, the translucency/shadow recipes, the
+  structural constants (radii, bar sizes, fonts, interface scale), and the
+  spacing and type scales. Nothing else defines a token — components.css and
+  main.css only consume them. That is what makes a whole-app theme switch a
+  single attribute write.
 
   How a theme is selected
   -----------------------
@@ -38,6 +39,50 @@
   --radius: 8px;
   --radius-btn: 6px;
   --radius-lg: 12px;
+
+  /* --- Spacing scale ---
+     The gaps and paddings a layout is allowed to use. Introduced because the
+     stylesheet had drifted to twelve different column gaps and over a hundred
+     distinct padding values: not a deliberate rhythm, just whatever each page
+     was written with. The steps below are the values that were already load-
+     bearing, kept as they were so adopting a token never moves anything.
+
+     The number is the value in px, because this app is px-absolute by design
+     (see --ui-scale: `zoom` does the scaling, there is no rem lever). That
+     makes a migration mechanical — `gap: 8px` becomes `gap: var(--space-8)` —
+     and keeps the token readable at the call site.
+
+     Not every literal in the app is on this scale yet. New rules use it;
+     the ones left over are page-specific values that predate it. A value off
+     the scale is allowed where the design genuinely needs it (optical
+     alignment against an icon, a hairline inset) — it just has to be a
+     decision rather than a default. */
+  --space-2: 2px;
+  --space-4: 4px;
+  --space-6: 6px;
+  --space-8: 8px;
+  --space-10: 10px;
+  --space-12: 12px;
+  --space-14: 14px;
+  --space-18: 18px;
+
+  /* --- Type scale ---
+     Same story as the spacing scale, and the same rule: these are the sizes
+     already in use, not a new set. The half-steps are deliberate and stay —
+     at 9-12px a half pixel is a real difference in weight, and they are what
+     separates a readout's label from its value without a second font weight.
+
+     --text-md and up are the page furniture (card titles, page titles); the
+     dense instrument and parameter UI lives at --text-xs and below. */
+  --text-3xs: 9px;
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-xs-plus: 11.5px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 14px;
+  --text-xl: 15px;
+
   --top-h: 60px;
   --left-w: 70px;
   --panel-w: 380px;

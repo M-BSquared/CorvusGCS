@@ -376,9 +376,15 @@ Corvus.ui = (function () {
                          point passes the container those pixels belong to.
        render(el)        fills the cleared surface, returns the row elements
        side              "bottom" (default) or "left" of an element anchor
+       gap               pixels between the surface and its trigger (default 6),
+                         or a function returning them, re-read on each place()
        matchAnchorWidth  false for a menu wider than its trigger (a rail icon)
        closeOnScroll     default true. False for a surface inside a host that
                          does not scroll and repositions itself (the map).
+       autofocus         default true — opening moves the keyboard onto the
+                         current row. False for a surface opened by hover,
+                         where taking the focus would be a decision the
+                         operator did not make.
        typeahead         default true
        onOpen() / onClose()
 
@@ -432,7 +438,18 @@ Corvus.ui = (function () {
       const r = trigger.getBoundingClientRect();
       const vh = window.innerHeight || 800;
       const vw = window.innerWidth || 1200;
-      const GAP = 6;
+      /* How far the surface stands off its trigger. The default suits a list
+         dropped under a control inside a panel, where the two read as one
+         thing. A surface that hangs BESIDE a floating rail is a separate
+         object next to another separate object, and at six pixels the two
+         glass edges look stuck together rather than adjacent.
+
+         A function is re-read on every placement, which is what a caller
+         needs when the distance depends on something measured — the map
+         rail's popovers clear the RAIL, not the button inside it, and only
+         the live layout knows how far apart those two are. */
+      const GAP = typeof o.gap === "function" ? Number(o.gap()) || 0
+        : (typeof o.gap === "number" ? o.gap : 6);
       const EDGE = 8;
       if (o.matchAnchorWidth !== false) el.style.minWidth = Math.round(r.width) + "px";
 
@@ -545,7 +562,11 @@ Corvus.ui = (function () {
         window.addEventListener("resize", onResize);
       }
       if (typeof o.onOpen === "function") o.onOpen();
-      focusRow(cursor >= 0 ? cursor : nextEnabled(-1, 1));
+      /* A surface the operator opened by POINTING at something must not take
+         the focus off whatever they were using — a hover is not a decision to
+         move the keyboard. The arrow keys still reach into it (onKey is on the
+         document while it is open), so it stays operable either way. */
+      if (o.autofocus !== false) focusRow(cursor >= 0 ? cursor : nextEnabled(-1, 1));
       return handle;
     }
 
@@ -574,7 +595,7 @@ Corvus.ui = (function () {
       if (!opened) return;
       build();
       place();
-      focusRow(cursor >= 0 ? cursor : nextEnabled(-1, 1));
+      if (o.autofocus !== false) focusRow(cursor >= 0 ? cursor : nextEnabled(-1, 1));
     }
 
     function nextEnabled(from, step) {

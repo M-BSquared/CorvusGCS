@@ -85,7 +85,9 @@ class CorvusConfig:
     the SSH connection list, the selected color theme (``{"name": ...}``, one
     of the predefined themes in ``src/css/themes.css``; the legacy
     ``{"accent": "#RRGGBB"}`` from the old accent picker is still parsed), and
-    the map service + base layer (``{"provider": ..., "base_layer": ...}``,
+    the map service, base layer and 3D mode
+    (``{"provider": ..., "base_layer": ..., "three_d": "off"|"simple"|"full",
+    "three_d_detail": "simple"|"full"}``,
     see ``corvus/tile_sources.py``), and the optional operator-supplied
     company logo (``{"logo": "<original filename>"}``; the bytes live beside
     the config file, never in it), and the optional input controls
@@ -256,15 +258,23 @@ def _coerce_theme(raw: Any) -> dict[str, Any] | None:
 
 
 def _coerce_map(raw: Any) -> dict[str, Any] | None:
-    """Keep the string-valued ``base_layer``/``provider`` map keys; else None.
+    """Keep the string-valued ``base_layer``/``provider``/``three_d`` map keys.
 
     ``provider`` names the tile service (esri/osm/google/bing) and
     ``base_layer`` the concrete source id within it; see
-    ``corvus/tile_sources.py``. Neither is validated against the registry
-    here — an unknown value must not stop the config from loading, so the
-    frontend falls back to its defaults when it cannot resolve one.
+    ``corvus/tile_sources.py``.
+
+    ``three_d`` is the 3D mode the map opens in — ``"off"``, ``"simple"``
+    (the camera tilt alone) or ``"full"`` (elevation relief, buildings and the
+    globe) — and ``three_d_detail`` is which of the two the map's 3D button
+    hands back, kept separately because it has to survive the mode being off.
+
+    None is validated against anything here: an unknown value must not stop
+    the config from loading, so the frontend falls back to its defaults — a
+    flat map, and the bootstrap layer — when it cannot resolve one.
     """
-    return _coerce_str_keys(raw, ("base_layer", "provider"))
+    return _coerce_str_keys(
+        raw, ("base_layer", "provider", "three_d", "three_d_detail"))
 
 
 def _coerce_branding(raw: Any) -> dict[str, Any] | None:

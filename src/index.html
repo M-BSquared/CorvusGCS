@@ -14,12 +14,22 @@
 <link rel="stylesheet" href="vendor/fonts.css" />
 <link href="vendor/maplibre-gl.css" rel="stylesheet" />
 <link href="vendor/xterm.css" rel="stylesheet" />
-<!-- Load order is load-bearing: themes.css owns every design token, main.css
-     consumes them for layout/screens, components.css layers the shared
-     component system on top. Neither of the latter two defines a token. -->
+<!-- Load order is load-bearing, and it reads tokens -> library -> app:
+     themes.css owns every design token, components.css defines the shared
+     controls out of those tokens, main.css lays out the screens and may
+     override a control for one page. Neither of the latter two defines a
+     token.
+
+     components.css comes BEFORE main.css so that last part is true. It used
+     to come after, which meant a page override could only win on specificity
+     — and three of them silently did not: `.params-actions .btn`,
+     `.btn.rc-detect` and `.btn.rc-tx-chip-drop` each tie `.btn[data-size=sm]`
+     at (0,2,0), so the component's padding won and the page's was dead CSS.
+     Library first, app second is the order that makes an override mean what
+     it says. -->
 <link rel="stylesheet" href="css/themes.css" />
-<link rel="stylesheet" href="css/main.css" />
 <link rel="stylesheet" href="css/components.css" />
+<link rel="stylesheet" href="css/main.css" />
 <script>
 /* Apply the saved theme and interface size BEFORE first paint. Corvus.theme /
    Corvus.scale re-apply (and reconcile with the backend config) once the app

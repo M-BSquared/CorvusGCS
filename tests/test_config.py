@@ -270,6 +270,24 @@ def test_load_config_parses_map(tmp_path) -> None:
     assert cfg.map == {"base_layer": "satellite"}
 
 
+def test_load_config_map_keeps_the_three_d_mode(tmp_path) -> None:
+    """``three_d`` is the map's 3D mode, persisted beside the base layer."""
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"map": {"base_layer": "topo", "three_d": "simple"}}),
+                 encoding="utf-8")
+    cfg = load_config(str(p))
+    assert cfg.map == {"base_layer": "topo", "three_d": "simple"}
+
+
+def test_load_config_map_non_string_three_d_dropped(tmp_path) -> None:
+    """A non-string mode is no mode at all — the frontend opens flat."""
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"map": {"base_layer": "topo", "three_d": True}}),
+                 encoding="utf-8")
+    cfg = load_config(str(p))
+    assert cfg.map == {"base_layer": "topo"}
+
+
 def test_load_config_map_non_string_base_layer_dropped(tmp_path) -> None:
     p = tmp_path / "config.json"
     p.write_text(json.dumps({"map": {"base_layer": 3}}), encoding="utf-8")

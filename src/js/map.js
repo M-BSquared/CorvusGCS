@@ -152,11 +152,14 @@ Corvus.map = (function () {
   // all, which would silently stop the map following.
   const FOLLOW_BOX_MAX_FRACTION = 0.8;
   const FOLLOW_EASE_MS = 700;
-  // How far the ground point under the airborne marker may be from the
-  // aircraft itself before the offset is treated as nonsense rather than as
-  // perspective. Ten kilometres is far more than any real altitude produces
-  // and far less than the horizon, which is the case being caught.
-  const FOLLOW_AIRBORNE_MAX_OFFSET_M = 10000;
+  // How far the camera may be aimed off the aircraft's ground point to bring
+  // the AIRBORNE marker into the middle, as a fraction of the viewport. The
+  // offset is perspective, so it is normally small; the clamp is for the case
+  // it is not — a high aircraft at a close zoom can be a whole viewport above
+  // its own shadow, and chasing that would put the ground the operator is
+  // flying over off the bottom of the screen entirely. Past the clamp the
+  // marker is allowed to sit high rather than the ground being thrown away.
+  const FOLLOW_AIRBORNE_MAX_FRACTION = 0.35;
   // Beyond this many viewports from the centre the pan is a smear, not a
   // motion the eye can follow — cut instead. This is the reconnect case: the
   // aircraft was flown somewhere else while the link was down.
@@ -216,12 +219,32 @@ Corvus.map = (function () {
   // setBaseLayer, and the Settings map-service picker all agree on it
   // independently of the buildControls closure.
   let activeLayer = BOOTSTRAP_LAYER;
+  // How far the rail's popovers stand off the RAIL's own edge — not off the
+  // button inside it, which is where the measurement has to start from. Both
+  // the rail and the popovers are floating glass over the map, so the gap has
+  // to read as a space between two objects rather than as a seam in one, and
+  // no wider than that or they stop looking related at all.
+  const MAP_RAIL_MENU_GAP = 8;
   // The layer switcher, as the app's dropdown: a Corvus.ui.menu opened from
   // the rail's layers button, built on first use.
   let layersMenuHandle = null;
   // Handle returned by Corvus.ui.optionList — it owns the "which layer is
   // active" highlight, so setBaseLayer never has to walk the DOM for it.
   let layerPicker = null;
+  // The 3D panel and the switch inside it, one rail button down from the
+  // layer switcher. It opens on hover rather than on press, because press is
+  // already the mode's on/off — see wireThreeDPanel.
+  let threeDMenuHandle = null;
+  let threeDPicker = null;
+  let threeDHoverTimer = null;
+  // Long enough that a pointer travelling up the rail to the zoom buttons
+  // does not leave a panel open behind it, short enough that a pointer that
+  // stopped on the button is not left waiting.
+  const THREE_D_HOVER_OPEN_MS = 220;
+  // Longer, and for a different reason: there is a real gap between the rail
+  // and the panel, and a surface that disappears while the pointer is
+  // crossing it is a surface nobody can reach.
+  const THREE_D_HOVER_CLOSE_MS = 320;
   // The little clear-track control. Only in the DOM while a track exists.
   let trackClearEl = null;
 
@@ -654,10 +677,24 @@ Corvus.map = (function () {
   }
 
   /** The lowest layer the base imagery must stay beneath, or undefined when
-   *  none of them is in the style yet (before "load"). */
+   *  none of them is in the style yet (before "load").
+   *
+   * EVERY overlay, in the order they are stacked, not just the track: the
+   * offline-region rectangles are added FIRST (on "load", before the track),
+   * so a list that started at "path-glow" re-inserted the imagery above them
+   * and the downloaded areas disappeared the moment the operator switched
+   * base layer — the one action most likely to be taken while deciding what
+   * still needs downloading.
+   */
+  const OVERLAY_LAYERS = [
+    "offline-regions-fill", "offline-regions-line",
+    "buildings-3d",
+    "path-glow", "path-casing", "path-line",
+    "waypoints-route",
+  ];
+
   function firstOverlayLayer() {
-    return ["buildings-3d", "path-glow", "path-casing", "path-line"]
-      .find((id) => map.getLayer(id));
+    return OVERLAY_LAYERS.find((id) => map.getLayer(id));
   }
 
   function buildControls(container) {
@@ -708,12 +745,103 @@ Corvus.map = (function () {
       } else if (act === "regions") {
         b.classList.toggle("active", setRegionsVisible(!regionsVisible));
       } else if (act === "three") {
-        // set3D owns the button's own state, because the mode is more than a
-        // camera angle now — terrain, buildings and the airborne aircraft all
-        // come and go with it, and any of them can decline.
+        // Press is on/off, and nothing else. Which of the two 3D modes is
+        // wanted is a setting, not a thing to cycle through on the way to the
+        // one you meant — it lives in the panel that appears on hover.
         set3D(!threeD);
+        persistThreeD();
       }
     });
+
+    wireThreeDPanel(container.querySelector('[data-act="three"]'));
+  }
+
+  /**
+   * The 3D button's second gesture: hover to reveal which 3D it will give you,
+   * and change it there.
+   *
+   * Pressing is the common action and stays instant. Choosing between terrain
+   * and the plain tilt is the rare one, and it is a SETTING — putting it on
+   * the same press would mean walking through a mode you did not want on the
+   * way to the one you did, in the middle of a flight.
+   *
+   * Three ways in, because hover alone is not a control:
+   *
+   *  * The pointer resting on the button. Delayed, so a pointer travelling
+   *    across the rail to the zoom buttons does not leave a panel behind it.
+   *  * Keyboard focus, which opens it WITHOUT taking the focus — the arrow
+   *    keys reach into it from there (Corvus.ui.menu listens while open) and
+   *    Escape closes it.
+   *  * A long press or a right-click, which is the only one of the three a
+   *    touch screen has. A field laptop with a touch display would otherwise
+   *    have no way to reach this at all.
+   *
+   * Closing is delayed too, and cancelled by the pointer arriving on the
+   * panel: the gap between the rail and the surface is real, and a panel that
+   * vanishes while you are reaching for it is a panel you cannot use.
+   */
+  function wireThreeDPanel(btn) {
+    if (!btn) return;
+    btn.setAttribute("aria-haspopup", "true");
+    btn.setAttribute("aria-expanded", "false");
+
+    btn.addEventListener("mouseenter", () => scheduleThreeDPanel(true));
+    btn.addEventListener("mouseleave", () => scheduleThreeDPanel(false));
+    // Focus opens it; focus leaving for anywhere OUTSIDE the panel closes it,
+    // so tabbing away tidies up while arrowing INTO it does not.
+    btn.addEventListener("focus", () => openThreeDPanel());
+    btn.addEventListener("blur", (e) => {
+      const to = e && e.relatedTarget;
+      if (to && threeDMenuHandle && withinNode(to, threeDMenuHandle.el)) return;
+      closeThreeDPanel(true);
+    });
+    btn.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      openThreeDPanel();
+    });
+
+    // The same pair on the surface itself, so the pointer can cross the gap
+    // and then stay as long as it likes.
+    const surface = threeDMenu().el;
+    surface.addEventListener("mouseenter", () => scheduleThreeDPanel(true));
+    surface.addEventListener("mouseleave", () => scheduleThreeDPanel(false));
+  }
+
+  /** Is *node* inside *root*? Mirrors the same helper in ui.js, which is not
+   *  exported — one `contains` with a null guard is cheaper than a new export. */
+  function withinNode(node, root) {
+    return !!(root && node && typeof root.contains === "function" && root.contains(node));
+  }
+
+  function clearThreeDHoverTimer() {
+    if (threeDHoverTimer) window.clearTimeout(threeDHoverTimer);
+    threeDHoverTimer = null;
+  }
+
+  /** Open or close the panel after the appropriate grace period. The pending
+   *  timer is always replaced, so leaving and re-entering settles on the last
+   *  thing the pointer actually did. */
+  function scheduleThreeDPanel(open) {
+    clearThreeDHoverTimer();
+    threeDHoverTimer = window.setTimeout(
+      () => { threeDHoverTimer = null; if (open) openThreeDPanel(); else closeThreeDPanel(false); },
+      open ? THREE_D_HOVER_OPEN_MS : THREE_D_HOVER_CLOSE_MS);
+  }
+
+  function openThreeDPanel() {
+    clearThreeDHoverTimer();
+    const btn = controlsEl && controlsEl.querySelector('[data-act="three"]');
+    if (!btn || threeDMenu().isOpen()) return;
+    // autofocus:false — see Corvus.ui.menu. A panel the operator revealed by
+    // pointing at a button must not move their keyboard.
+    threeDMenu().open({ el: btn });
+  }
+
+  /** Close the panel. *refocus* puts the keyboard back on the button, which is
+   *  right for Escape and wrong for the pointer simply moving away. */
+  function closeThreeDPanel(refocus) {
+    clearThreeDHoverTimer();
+    if (threeDMenuHandle) threeDMenuHandle.close(!!refocus);
   }
 
   /**
@@ -758,6 +886,7 @@ Corvus.map = (function () {
       // edge of the map, and a list dropped below its layers button would
       // cover the buttons under it.
       side: "left",
+      gap: railMenuGap,
       // The rail button is 34px wide; the layer names are not.
       matchAnchorWidth: false,
       render: renderLayerRows,
@@ -765,6 +894,140 @@ Corvus.map = (function () {
       onClose: () => markLayersButton(false),
     });
     return layersMenuHandle;
+  }
+
+  /**
+   * The 3D switcher, as the app's dropdown.
+   *
+   * The same component and the same shape as the layer switcher above it,
+   * because it is the same kind of question: one of a short list is showing,
+   * and the operator is choosing which. It is a list rather than a cycle
+   * through the three on a repeated press — a mode with a cost (elevation
+   * tiles, building requests, a terrain mesh) should be picked deliberately
+   * and should say what it costs, which is what the second line of each row
+   * is for.
+   */
+  function threeDMenu() {
+    if (threeDMenuHandle) return threeDMenuHandle;
+    threeDMenuHandle = Corvus.ui.menu({
+      className: "layers-popover three-d-popover",
+      // A group, not a menu: what is inside is one setting, not a list of
+      // actions to pick from.
+      role: "group",
+      ariaLabel: "3D mode",
+      // Beside the rail, level with the cube button it belongs to — the same
+      // placement the layer switcher above it uses, so the two rail popovers
+      // behave alike. The gap is measured to the RAIL's edge rather than to
+      // the button inside it; see railMenuGap.
+      side: "left",
+      gap: railMenuGap,
+      matchAnchorWidth: false,
+      // It opens on hover. Taking the keyboard because a pointer passed over
+      // a button is not something the operator asked for.
+      autofocus: false,
+      render: renderThreeDRows,
+      onOpen: () => markThreeButton(true),
+      onClose: () => markThreeButton(false),
+    });
+    return threeDMenuHandle;
+  }
+
+  /**
+   * Fill the open 3D panel: one switch, for the one thing the button itself
+   * cannot say.
+   *
+   * There is no "off" row. Off is what the button does — a mode that can be
+   * reached two ways is a mode the operator has to work out which way they
+   * reached, and the panel exists to answer a different question: WHICH 3D
+   * the button will give them.
+   *
+   * The hint is the point of the panel, not decoration. The two modes look
+   * almost the same over flat ground; what actually separates them is that
+   * one downloads elevation tiles and asks the backend for buildings and the
+   * other touches the network not at all. On a field laptop over a radio link
+   * that is the whole decision, and it is invisible unless it is written down.
+   *
+   * Built on every open, so a mode changed from anywhere else (a restored
+   * config, a test) is simply already showing.
+   */
+  function renderThreeDRows(surface) {
+    const head = document.createElement("div");
+    head.className = "ui-menu-head";
+    head.textContent = "3D mode";
+    surface.appendChild(head);
+
+    threeDPicker = Corvus.ui.toggle({
+      value: threeDDetail === THREE_D_FULL,
+      ariaLabel: "Terrain and buildings",
+      onChange: (on) => {
+        // Which 3D, never whether. The button is on/off and this is the
+        // setting behind it, so flipping this while 3D is off records the
+        // choice and leaves the map alone — the operator did not press the
+        // button, and a map that tilts because a pointer wandered onto a
+        // switch is a map that moved on its own.
+        set3DDetail(on ? THREE_D_FULL : THREE_D_SIMPLE);
+        persistThreeD();
+      },
+    });
+
+    const field = Corvus.ui.field({
+      label: "Terrain & buildings",
+      control: threeDPicker.el,
+      className: "field-switch",
+      hint: "Elevation relief, extruded buildings and the globe. Off is the "
+        + "camera tilt alone, over flat ground \u2014 and nothing downloaded "
+        + "that a flat map does not already download.",
+    });
+    surface.appendChild(field);
+    // The one row the keyboard walks. A menu with nothing to walk does not
+    // open at all (see Corvus.ui.menu), so this is load-bearing.
+    return [threeDPicker.el];
+  }
+
+  /**
+   * The 3D rail button's state.
+   *
+   * Two different things, deliberately on two different attributes: .active
+   * says the MODE is on, aria-expanded says the MENU is open. The layers
+   * button next to it can put both on .active because its button has no state
+   * of its own; this one does, and an operator watching the button go dark
+   * when they closed the list without changing anything would be right to
+   * read it as the mode having been turned off.
+   */
+  function markThreeButton(open) {
+    const b = controlsEl && controlsEl.querySelector('[data-act="three"]');
+    if (!b) return;
+    b.classList.toggle("active", threeD);
+    if (open !== undefined) b.setAttribute("aria-expanded", open ? "true" : "false");
+    b.title = threeD
+      ? (threeDDetail === THREE_D_FULL
+        ? "3D: terrain & buildings" : "3D: simple")
+      : "3D mode";
+  }
+
+  /**
+   * The gap a rail popover opens with, measured from the RAIL rather than
+   * from the button it hangs off.
+   *
+   * Corvus.ui.menu places a surface relative to its TRIGGER, and that trigger
+   * is a 34 px button sitting inside the rail's own padding. Measuring from
+   * the button spends most of the gap inside the rail, and what the operator
+   * sees between the two glass edges is whatever is left — five pixels of a
+   * twelve-pixel gap, which is why the surface looked stuck to the rail.
+   * Adding the button's inset back puts the space where it shows.
+   *
+   * Read fresh on every placement (Corvus.ui.menu re-reads a function), so
+   * the interface scale and any change to the rail's padding are simply
+   * accounted for rather than mirrored here as a number.
+   */
+  function railMenuGap() {
+    const rail = controlsEl;
+    const btn = rail && rail.querySelector(".mc-btn");
+    if (!rail || !btn || typeof rail.getBoundingClientRect !== "function") {
+      return MAP_RAIL_MENU_GAP;
+    }
+    const inset = btn.getBoundingClientRect().left - rail.getBoundingClientRect().left;
+    return MAP_RAIL_MENU_GAP + Math.max(0, inset);
   }
 
   /** The rail button reads as pressed while its menu is open. */
@@ -982,9 +1245,43 @@ Corvus.map = (function () {
     // enough that the marker can leave the top of the screen while the point
     // the dead zone is watching sits comfortably in the middle. So follow
     // what the operator is actually looking at.
-    const airborne = threeD ? veh3dScreen : null;
-    let point = airborne;
-    if (!point) {
+    //
+    // The camera is always aimed at the GROUND — a position on the map, which
+    // MapLibre can place exactly — and the altitude is handled as a SCREEN
+    // OFFSET instead: easeTo's own `offset` says where in the viewport the
+    // aimed-at centre should land, so asking for the ground point to sit
+    // exactly as far below the middle as the marker is drawn above it puts
+    // the marker in the middle, by construction.
+    //
+    // This replaces un-projecting the marker's own screen position. That read
+    // correctly at low altitude and failed at high: a marker above the
+    // horizon un-projects to a point kilometres away or to nothing at all, so
+    // the code fell back to the ground point, the marker stayed exactly as
+    // far off the top of the screen as before, and the next sample asked for
+    // the same useless pan — a follow mode that had quietly stopped
+    // following, on exactly the flights where it matters most.
+    const offset = followAirborneOffset(width, height);
+    const shifted = offset[0] !== 0 || offset[1] !== 0;
+
+    // The point the camera will actually deliver to the middle, which is what
+    // the dead zone has to be measured against. The test and the pan MUST
+    // mean the same point or following never settles: measure the marker,
+    // move something else, and the marker is still outside the box it was
+    // just judged by, so the next sample asks for the same pan, forever.
+    //
+    // Unclamped, this IS the marker (ground minus the full rise is where the
+    // aircraft is drawn). Clamped — an aircraft a kilometre and a half above
+    // the valley it is crossing, which is a normal thing to be after
+    // launching off a ridge — it is the highest point the camera can reach
+    // without throwing the ground off the bottom of the screen. The aircraft
+    // then sits above the viewport and the map holds still, instead of
+    // chasing something it can never catch.
+    let point;
+    if (threeD && shifted && veh3dGroundScreen) {
+      point = { x: veh3dGroundScreen.x - offset[0], y: veh3dGroundScreen.y - offset[1] };
+    } else if (threeD && veh3dScreen) {
+      point = veh3dScreen;
+    } else {
       try {
         point = map.project(target);
       } catch (_error) {
@@ -995,47 +1292,50 @@ Corvus.map = (function () {
     const action = followAction(point.x, point.y, width, height);
     if (action === "hold") return;
 
-    // Where the camera goes. The test above and this have to agree on which
-    // point they mean, or following oscillates: testing the marker and then
-    // centring its shadow leaves the marker outside the same dead zone it was
-    // just measured against, and the map pans again on the very next sample,
-    // forever. In 3D that means centring the GROUND UNDER THE MARKER.
-    const centre = airborne ? followCentreFor(airborne, target) : target;
-
-    // Reduced motion snaps, matching what the marker itself does.
+    // Reduced motion snaps, matching what the marker itself does; so does a
+    // vehicle more than a viewport away, where a pan would be a smear rather
+    // than a motion the eye can follow.
     if (action === "jump" || Corvus.anim.reducedMotion()) {
-      map.setCenter(centre);
+      // setCenter for the plain case, because that is what it means. Only a
+      // shifted camera has to go through easeTo, which is the one call that
+      // takes a screen offset; at zero duration it lands in the same frame.
+      if (shifted) map.easeTo({ center: target, offset, duration: 0 });
+      else map.setCenter(target);
       return;
     }
     followEasing = true;
-    map.easeTo({ center: centre, duration: FOLLOW_EASE_MS });
+    map.easeTo({ center: target, offset, duration: FOLLOW_EASE_MS });
   }
 
   /**
-   * The centre that puts the AIRBORNE marker in the middle of the viewport.
+   * The screen offset that puts the AIRBORNE marker where the ground point
+   * would otherwise go, as `[dx, dy]` for easeTo — or `[0, 0]` when there is
+   * no airborne marker to correct for (2D, on the ground, on the globe, or a
+   * frame where the shadow could not be placed).
    *
-   * Un-projects the marker's own screen position, so the camera moves by the
-   * offset the altitude introduced rather than by a formula that would have
-   * to model the pitch itself.
-   *
-   * Falls back to the aircraft's ground position whenever that un-projection
-   * cannot be trusted: a marker near or above the horizon un-projects to a
-   * point kilometres away (or to infinity), and easing there would throw the
-   * map off the map. The sanity bound is generous — it only has to catch the
-   * horizon case, not second-guess a legitimate pan.
+   * It is a difference between two points drawn in the SAME frame, so it
+   * needs no model of the pitch, the zoom or the terrain: whatever MapLibre
+   * did to separate the aircraft from its shadow is exactly what is undone
+   * here. Clamped, because perspective can separate them by more than a
+   * viewport and the ground is worth keeping on screen too.
    */
-  function followCentreFor(screenPoint, groundTarget) {
-    let at;
-    try {
-      at = map.unproject([screenPoint.x, screenPoint.y]);
-    } catch (_error) {
-      return groundTarget;
-    }
-    if (!at || !isFinite(at.lng) || !isFinite(at.lat)) return groundTarget;
-    const centre = [at.lng, at.lat];
-    return metresBetween(centre, groundTarget) > FOLLOW_AIRBORNE_MAX_OFFSET_M
-      ? groundTarget
-      : centre;
+  function followAirborneOffset(width, height) {
+    if (!threeD) return [0, 0];
+    return airborneOffset(veh3dScreen, veh3dGroundScreen, width, height);
+  }
+
+  /** The offset rule itself, over two screen points. Pure, so the geometry is
+   *  assertable without a renderer — the _followAction convention. */
+  function airborneOffset(air, ground, width, height) {
+    if (!air || !ground) return [0, 0];
+    const dx = ground.x - air.x;
+    const dy = ground.y - air.y;
+    if (![dx, dy, width, height].every(isFinite)) return [0, 0];
+    const clamp = (value, limit) => Math.max(-limit, Math.min(limit, value));
+    return [
+      clamp(dx, Math.max(0, width) * FOLLOW_AIRBORNE_MAX_FRACTION),
+      clamp(dy, Math.max(0, height) * FOLLOW_AIRBORNE_MAX_FRACTION),
+    ];
   }
 
   /** Push the latest telemetry into the marker's TARGET and (re)start the loop. */
@@ -1587,6 +1887,27 @@ Corvus.map = (function () {
   const VEH3D_MIN_AGL_M = 1.0;
 
   let threeD = false;
+  // Which 3D the operator asked for, remembered across off/on so pressing the
+  // mode they were last in does not first hand them the other one.
+  //
+  //   "simple" — the camera tilt and the sky, over flat ground. No DEM, no
+  //              Overpass, no globe: nothing is fetched that a 2D map does
+  //              not already fetch, which is the whole point of it. The
+  //              aircraft is still drawn at its height above that flat
+  //              ground, because that costs nothing and is what the mode is
+  //              being entered to see.
+  //   "full"   — the tilt plus everything that makes the ground real:
+  //              elevation relief, extruded buildings, and the globe at the
+  //              far end of the zoom. It fetches elevation tiles and asks the
+  //              backend for building footprints.
+  //
+  // The split exists because the second one has a cost — tiles over a radio
+  // link, Overpass round trips, a terrain mesh on a field laptop's GPU — and
+  // an operator who only wants to see the camera angle should not pay it.
+  const THREE_D_SIMPLE = "simple";
+  const THREE_D_FULL = "full";
+  const THREE_D_OFF = "off";
+  let threeDDetail = THREE_D_FULL;
   // The DEM descriptor from GET /api/tiles/sources ({id, encoding, maxzoom,
   // attribution}). Null until the catalogue lands — and stays null on a
   // backend that does not serve one, which is what makes 3D degrade to a
@@ -1609,6 +1930,10 @@ Corvus.map = (function () {
   // See syncTerrainElevation.
   let terrainSyncAt = 0;
   let terrainSyncTimer = null;
+  // Attempts left in the current settle poll. Module-level so a DEM tile
+  // landing mid-poll continues it rather than restarting it — see
+  // scheduleTerrainSync.
+  let terrainSyncTries = 0;
   let buildingSource = null;
   // "z/x/y" -> feature array. An empty array is a cell that is either genuinely
   // empty or still in flight; either way it must not be requested twice.
@@ -1641,6 +1966,13 @@ Corvus.map = (function () {
   // point, so a dead zone measured on the ground point would let the aircraft
   // leave the top of the screen while its shadow sat comfortably in the middle.
   let veh3dScreen = null;
+  // …and where its SHADOW was drawn, same frame, same units, or null when
+  // there is no shadow (on the ground, on the globe, or over terrain whose
+  // DEM has not arrived). Follow needs both: the difference between them is
+  // exactly the screen offset the altitude introduced, and that offset is
+  // what lets the camera be aimed at the marker without ever un-projecting a
+  // point that may be above the horizon. See applyFollow.
+  let veh3dGroundScreen = null;
 
   /**
    * The projection matrix out of a custom layer's render arguments.
@@ -1708,6 +2040,20 @@ Corvus.map = (function () {
    * both to sea level. Verified rather than assumed — projecting a point at
    * the height this returns lands on the same pixel map.project() reports,
    * and projecting it in the old frame does not.
+   *
+   * A literal 0 is NOT an answer. MapLibre returns 0 — not null — for a point
+   * whose DEM tile is not loaded, which is every point outside the current
+   * view and every point at all for the second or two after terrain is
+   * attached. Taken at face value that is a confident "sea level", and it is
+   * the difference between an aircraft drawn 150 m above an alpine valley and
+   * one drawn 1 500 m inside the mountain: the home point is the usual
+   * casualty, because after a few kilometres of flight its tile is no longer
+   * loaded and homeGround silently becomes zero.
+   *
+   * The same rule syncTerrainElevation already applies to the camera, and for
+   * the same reason. It costs nothing at genuine sea level: every caller's
+   * fallback for "unknown" is 0 there anyway, so the answer is unchanged and
+   * only its confidence is honest.
    */
   function terrainElevation(lngLat) {
     if (!map || !lngLat || !terrainOn) return null;
@@ -1718,7 +2064,19 @@ Corvus.map = (function () {
     } catch (_error) {
       return null;   // terrain tiles not loaded here yet
     }
-    return (value == null || !isFinite(value)) ? null : value;
+    return readTerrainValue(value);
+  }
+
+  /**
+   * What one raw queryTerrainElevation answer MEANS, as a pure rule.
+   *
+   * Split out for the same reason wantsGlobe and followAction are: this is
+   * the rule that decides whether an aircraft is drawn above a mountain or
+   * inside it, and checking it should not need a GPU, a DEM or a map.
+   */
+  function readTerrainValue(value) {
+    if (value == null || !isFinite(value)) return null;
+    return value === 0 ? null : value;
   }
 
   /**
@@ -1737,11 +2095,24 @@ Corvus.map = (function () {
    *  3. Terrain under the aircraft plus relative altitude, for a flight with
    *     no home fix. Wrong over a slope, but never by more than the slope,
    *     and it keeps the aircraft off the ground.
+   *
+   * With NO terrain at all — no DEM served, or 3D degraded to a plain tilt —
+   * the whole preference order is beside the point: the ground MapLibre draws
+   * is the sea-level plane, the shadow sits on it, and the leader line
+   * between them is a measurement the operator reads as height above ground.
+   * Drawing an AMSL there makes that line say 670 m for an aircraft 120 m up,
+   * while the label beside it says 120. So on a flat world the aircraft is
+   * drawn at its height above ground, which is the only reading that agrees
+   * with the flat ground under it.
    */
   function vehicleDrawAltitude(state) {
     const agl = Number(state && state.altitude_agl);
     const amsl = Number(state && state.altitude_amsl);
     const hasAgl = isFinite(agl);
+    if (!terrainOn) {
+      if (hasAgl) return agl;
+      return isFinite(amsl) ? amsl : 0;
+    }
     const homeGround = terrainElevation(realFix(state && state.home));
     if (hasAgl && homeGround !== null) return homeGround + agl;
     if (isFinite(amsl) && amsl !== 0) return amsl;
@@ -1933,7 +2304,7 @@ Corvus.map = (function () {
     // idea of the ground height with the real one — see syncTerrainElevation.
     terrainSyncAt = 0;
     map.on("data", onTerrainData);
-    scheduleTerrainSync();
+    scheduleTerrainSync(true);
   }
 
   /**
@@ -1975,7 +2346,6 @@ Corvus.map = (function () {
     // mountain it is on. Keeping it unsettled costs a few retries at genuine
     // sea level and then leaves 0 standing, which is the right answer there.
     if (ground === 0) return false;
-    terrainSyncAt = Date.now();
     const current = Number(map.getCenterElevation());
     if (isFinite(current) && Math.abs(ground - current) < TERRAIN_SYNC_EPSILON_M) return true;
     try {
@@ -2001,25 +2371,44 @@ Corvus.map = (function () {
    * come. It stops on the first agreement, and it stops regardless after a
    * few seconds — a DEM that never loads (offline, uncached ground) must not
    * leave a timer running for the rest of the flight.
+   *
+   * Two things make it genuinely bounded, both of which the first version
+   * only claimed:
+   *
+   *  * The try budget is refilled by a NEW CUE (terrain attached, camera
+   *    moved) and not by a DEM tile landing. Panning over a city delivers
+   *    tiles in a steady trickle, and a budget topped up by each one is a
+   *    poll that never ends.
+   *  * TERRAIN_SYNC_MIN_MS is a floor between attempts, not merely the gap
+   *    between retries. Behind every attempt is a terrain-mesh query, and a
+   *    burst of two dozen arriving tiles used to buy two dozen of them —
+   *    which is what terrainSyncAt was written for and never read for.
    */
-  function scheduleTerrainSync() {
-    if (terrainSyncTimer) window.clearTimeout(terrainSyncTimer);
+  function scheduleTerrainSync(restart) {
+    if (restart) terrainSyncTries = 0;
+    if (terrainSyncTimer) return;   // one is already pending; it will run
+    const wait = Math.max(0, TERRAIN_SYNC_MIN_MS - (Date.now() - terrainSyncAt));
+    if (wait > 0) {
+      terrainSyncTimer = window.setTimeout(attemptTerrainSync, wait);
+      return;
+    }
+    attemptTerrainSync();
+  }
+
+  function attemptTerrainSync() {
     terrainSyncTimer = null;
-    let tries = 0;
-    const attempt = () => {
-      terrainSyncTimer = null;
-      if (!terrainOn) return;
-      if (syncTerrainElevation()) return;
-      if (++tries >= TERRAIN_SYNC_TRIES) return;
-      terrainSyncTimer = window.setTimeout(attempt, TERRAIN_SYNC_MIN_MS);
-    };
-    attempt();
+    if (!terrainOn) return;
+    terrainSyncAt = Date.now();
+    if (syncTerrainElevation()) return;
+    if (++terrainSyncTries >= TERRAIN_SYNC_TRIES) return;
+    terrainSyncTimer = window.setTimeout(attemptTerrainSync, TERRAIN_SYNC_MIN_MS);
   }
 
   /** Stop the settle poll. Idempotent. */
   function stopTerrainSync() {
     if (terrainSyncTimer) window.clearTimeout(terrainSyncTimer);
     terrainSyncTimer = null;
+    terrainSyncTries = 0;
   }
 
   /** DEM tiles landing is the cue that the heights are worth asking for. */
@@ -2027,6 +2416,22 @@ Corvus.map = (function () {
     if (!event || event.sourceId !== terrainSourceId()) return;
     if (event.sourceDataType === "metadata") return;
     scheduleTerrainSync();
+    // The ground under the AIRCRAFT is read once per telemetry sample, not
+    // per frame — so a DEM tile that lands between two samples would leave
+    // the aircraft drawn against a ground height it no longer has to guess
+    // at, which on entering 3D is every aircraft for the first second or two.
+    // Only while that height is still unknown: once the tile under the
+    // aircraft is in, telemetry keeps it current by itself and this costs
+    // nothing for the rest of the flight.
+    if (threeD && vehGroundDraw === null) refreshVehicleTerrain();
+  }
+
+  /** Re-read the terrain heights the airborne aircraft is drawn against, and
+   *  ask for the frame that shows it. */
+  function refreshVehicleTerrain() {
+    if (!map || !threeD) return;
+    updateVehicleAltitude(Corvus.telemetry.getState());
+    if (typeof map.triggerRepaint === "function") map.triggerRepaint();
   }
 
 
@@ -2057,7 +2462,13 @@ Corvus.map = (function () {
         "horizon-fog-blend": 0.6,
         "fog-ground-blend": 0.05,
         "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 0.8, 8, 0.4, 12, 0],
-      } : null);
+      // undefined, not null, to take it away: MapLibre validates the argument
+      // against the style spec and null fails it ("sky: object expected, null
+      // found"). The sky does come off either way — the validator logs rather
+      // than throws — but leaving 3D printed a console error every time, and
+      // an error the operator is meant to ignore is an error they will ignore
+      // when it matters.
+      } : undefined);
     } catch (_error) { /* no sky in this MapLibre: the CSS backstop stands */ }
   }
 
@@ -2111,7 +2522,9 @@ Corvus.map = (function () {
   }
 
   function applyProjectionForZoom() {
-    if (!map || !started || !threeD) return;
+    // Simple 3D has neither half of this handover: it is the camera angle and
+    // nothing else, so the flat map stays flat all the way out.
+    if (!map || !started || !threeD || threeDDetail !== THREE_D_FULL) return;
     let zoom;
     try { zoom = map.getZoom(); } catch (_error) { return; }
     const wantGlobe = wantsGlobe(zoom, globeOn);
@@ -2123,21 +2536,37 @@ Corvus.map = (function () {
       setGlobe(true);
     } else {
       setGlobe(false);
+      // enableTerrain starts its own settle poll once it has attached; this
+      // is for the case where terrain was already on and only the projection
+      // changed under it.
       enableTerrain();
-      scheduleTerrainSync();
+      scheduleTerrainSync(true);
     }
   }
 
-  /** Take terrain back out. The source stays in the style so re-entering 3D
-   *  does not re-download every DEM tile the operator just looked at. */
+  /**
+   * Take terrain back out.
+   *
+   * The DEM SOURCE goes with it, deliberately. Leaving it in the style and
+   * re-binding terrain to it on the next press is what made the second press
+   * of the button behave differently from the first: MapLibre leaves a
+   * raster-dem source's tiles marked loaded across a setTerrain(null), so the
+   * new terrain waits for tiles that have already arrived, no further events
+   * come, and queryTerrainElevation answers a confident 0 forever. See
+   * attachTerrain, which rebuilds it. The cost is a loopback fetch against
+   * our own tile cache — not a download, and it works offline.
+   */
   function disableTerrain() {
     // The generation bump comes first and unconditionally: it cancels an
     // attach that is still waiting on its elevation probe, which is the one
     // way terrain could come back after being switched off.
     terrainGeneration++;
     terrainWanted = false;
-    if (!map || !terrainOn) return;
+    // Also unconditional: an attach that never completed can still have left
+    // a settle poll running, and that poll outliving the mode is a timer
+    // nobody is waiting for on a field laptop's battery.
     stopTerrainSync();
+    if (!map || !terrainOn) return;
     map.off("data", onTerrainData);
     // Order matters: MapLibre refuses to remove a source the terrain is still
     // bound to, so the binding goes first.
@@ -2300,11 +2729,30 @@ Corvus.map = (function () {
     Corvus.telemetry.requestJson(`/api/buildings/${key}.json`)
       .then((data) => {
         const features = (data && data.features) || [];
+        const pending = !!(data && data.pending);
         buildingCells.set(key, features);
+        // The budget is cleared by a FINAL answer only. A `pending` reply is
+        // an HTTP success but not an answer, and clearing the count on one
+        // hands every retry a fresh budget — with the upstream unreachable,
+        // where every reply is pending forever, that is an unbounded retry
+        // loop against a cell that is never coming. Measured: eight requests
+        // per cell in twenty seconds instead of the five the cap describes.
+        if (!pending) buildingRetries.delete(key);
         if (features.length) schedulePaintBuildings();
-        if (data && data.pending) retryBuildingCell(key);
+        if (pending) retryBuildingCell(key);
       })
-      .catch(() => { /* offline, or no service: an empty cell is the answer */ });
+      .catch(() => {
+        // An empty cell is the right ANSWER offline, but it must not become a
+        // permanent one: the claim above is what stops two requests racing,
+        // and leaving it standing after a failure meant a single dropped
+        // request (a radio coming back, a backend restarting, a laptop
+        // waking) removed those buildings for the rest of the session — the
+        // operator could pan away and back and never see them again. Dropping
+        // the claim hands the cell to the same bounded retry a pending cell
+        // gets, so it costs a handful of requests and then genuinely stops.
+        buildingCells.delete(key);
+        retryBuildingCell(key);
+      });
   }
 
   /** Re-ask for a cell the backend is still fetching, up to a few times. */
@@ -2428,9 +2876,51 @@ Corvus.map = (function () {
 
   function hideVehicle3D() {
     veh3dScreen = null;
+    veh3dGroundScreen = null;
+    // Only where it changes something: this runs from the custom layer's
+    // render hook, which fires on every frame the map draws — including every
+    // frame of plain 2D, where all four are hidden already and four attribute
+    // writes per frame is a cost with nothing to show for it.
     [veh3dEl, veh3dShadowEl, veh3dLeadEl, veh3dAltEl].forEach((el) => {
-      if (el) el.hidden = true;
+      if (el && !el.hidden) el.hidden = true;
     });
+  }
+
+  /**
+   * Is the GLOBE the projection right now?
+   *
+   * `globeOn` is authoritative — the module is the only thing that sets a
+   * projection — but MapLibre is asked as well, because the answer decides
+   * whether the render matrix may be used at all and a wrong "no" puts the
+   * aircraft in the corner of the screen (see renderVehicle3D).
+   */
+  function usingGlobe() {
+    if (globeOn) return true;
+    if (!map || typeof map.getProjection !== "function") return false;
+    try {
+      const projection = map.getProjection();
+      return !!projection && projection.type === "globe";
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  /**
+   * Is *lngLat* on the far side of the globe, behind the Earth?
+   *
+   * Only meaningful under the globe; on the flat map nothing is occluded.
+   * Feature-detected against the transform because MapLibre exposes no public
+   * form of this, and a bundle that does not have it simply draws the
+   * aircraft — which is what every version did before the globe existed.
+   */
+  function occludedByGlobe(lngLat) {
+    const transform = map && map.transform;
+    if (!transform || typeof transform.isLocationOccluded !== "function") return false;
+    try {
+      return !!transform.isLocationOccluded({ lng: lngLat[0], lat: lngLat[1] });
+    } catch (_error) {
+      return false;
+    }
   }
 
   /**
@@ -2442,24 +2932,53 @@ Corvus.map = (function () {
    * draws, so the aircraft can never lag the ground it is over.
    */
   function renderVehicle3D(matrix) {
-    if (!threeD || !veh3dEl || !vehDisplay || !map) return;
+    // Every way out of this function has to forget the last screen position:
+    // follow mode reads it, and a point left over from the frame before the
+    // map was resized (or from before the aircraft lost its fix) is a camera
+    // that pans to somewhere the aircraft is not.
+    if (!threeD || !veh3dEl || !vehDisplay || !map) { hideVehicle3D(); return; }
     const container = map.getContainer();
     const width = container ? container.clientWidth : 0;
     const height = container ? container.clientHeight : 0;
-    if (!(width > 0 && height > 0)) return;
+    if (!(width > 0 && height > 0)) { hideVehicle3D(); return; }
 
     const lng = vehDisplay.lng, lat = vehDisplay.lat;
     if (!realFix([lng, lat])) { hideVehicle3D(); return; }
     veh3dScreen = null;
+    veh3dGroundScreen = null;
+
+    // On the GLOBE the render matrix is the globe's own, and it takes points
+    // on a sphere — feeding it the mercator coordinates every other
+    // projection wants put the aircraft in the bottom-right corner of the
+    // viewport while the map drew it in the middle. There is no altitude to
+    // show at that zoom anyway: terrain is off (see applyProjectionForZoom)
+    // and a kilometre of height is well under a pixel when a continent fits
+    // on screen. So the globe gets the aircraft where MapLibre itself says it
+    // is, and nothing else.
+    if (usingGlobe()) { renderVehicleOnGlobe(lng, lat); return; }
 
     // vehGroundDraw, not a terrain query: this runs on every rendered frame,
     // and queryTerrainElevation walks the terrain mesh. The ground under an
     // aircraft changes at telemetry rate, not at 60 Hz, so it is computed
     // with the sample (updateVehicleAltitude) and read here.
+    //
+    // Unknown is not zero. With terrain attached but its tiles not yet in
+    // (the first seconds of 3D, or ground that has just come into view), a
+    // shadow drawn at sea level lands hundreds of pixels from the aircraft
+    // and the leader line becomes a wire into the ground. With NO terrain the
+    // drawing plane really is sea level, so there zero is the answer.
+    const groundKnown = vehGroundDraw !== null || !terrainOn;
     const groundM = vehGroundDraw === null ? 0 : vehGroundDraw;
-    const airM = vehAltDraw === null ? groundM : Math.max(vehAltDraw, groundM);
+    // The floor keeps an aircraft whose reported altitude is below the DEM
+    // from being drawn inside the hill. It applies only where the ground is
+    // actually KNOWN: clamping to a zero that only means "no tile yet" would
+    // haul an aircraft over a valley floor up to sea level.
+    const airM = vehAltDraw === null ? groundM
+      : (groundKnown ? Math.max(vehAltDraw, groundM) : vehAltDraw);
     const air = projectAltitude(matrix, lng, lat, airM, width, height);
-    const base = projectAltitude(matrix, lng, lat, groundM, width, height);
+    const base = groundKnown
+      ? projectAltitude(matrix, lng, lat, groundM, width, height)
+      : null;
     if (!air) { hideVehicle3D(); return; }
 
     // Perspective: an object's screen size falls off as 1/w, and w at the map
@@ -2498,6 +3017,7 @@ Corvus.map = (function () {
       return;
     }
 
+    veh3dGroundScreen = { x: base.x, y: base.y };
     veh3dShadowEl.hidden = false;
     veh3dShadowEl.style.transform =
       `translate(-50%, -50%) translate(${base.x}px, ${base.y}px) scale(${scale.toFixed(3)}) rotateX(${pitch}deg)`;
@@ -2516,6 +3036,39 @@ Corvus.map = (function () {
     veh3dAltEl.textContent = `${Math.round(vehAltAgl)} m`;
     veh3dAltEl.style.transform =
       `translate(-50%, -50%) translate(${air.x}px, ${(air.y + (base.y - air.y) * 0.5).toFixed(1)}px)`;
+  }
+
+  /**
+   * The aircraft on the globe: one marker, where MapLibre puts the ground.
+   *
+   * map.project() rather than the render matrix, because the globe's matrix
+   * takes points on a sphere and the mercator coordinates the flat map needs
+   * land somewhere else entirely on it. Height is dropped rather than
+   * approximated: the globe only shows at the far end of the zoom range, and
+   * there even a kilometre is a fraction of a pixel — a leader line drawn
+   * from arithmetic nobody can check is worse than no leader line.
+   *
+   * Nothing is drawn for an aircraft on the far side of the Earth, where the
+   * projection still answers with a screen point and the map draws ocean.
+   */
+  function renderVehicleOnGlobe(lng, lat) {
+    if (occludedByGlobe([lng, lat])) { hideVehicle3D(); return; }
+    let at;
+    try { at = map.project([lng, lat]); } catch (_error) { hideVehicle3D(); return; }
+    if (!at || !isFinite(at.x) || !isFinite(at.y)) { hideVehicle3D(); return; }
+
+    veh3dScreen = { x: at.x, y: at.y };
+    veh3dGroundScreen = { x: at.x, y: at.y };
+    veh3dEl.hidden = false;
+    // No rotateX: the globe's camera is looking at a sphere, and laying the
+    // marker into a ground plane that is not flat would only skew it.
+    veh3dEl.style.transform =
+      `translate(-50%, -50%) translate(${at.x.toFixed(1)}px, ${at.y.toFixed(1)}px)`;
+    const body = veh3dEl.querySelector(".v-body");
+    if (body) body.style.transform = `rotate(${vehDisplay.heading - map.getBearing()}deg)`;
+    if (veh3dShadowEl) veh3dShadowEl.hidden = true;
+    if (veh3dLeadEl) veh3dLeadEl.hidden = true;
+    if (veh3dAltEl) veh3dAltEl.hidden = true;
   }
 
   /**
@@ -2568,10 +3121,70 @@ Corvus.map = (function () {
     else map.easeTo({ pitch, duration: 600 });
   }
 
+  /**
+   * Normalise anything into one of the three modes.
+   *
+   * Pure, and forgiving on purpose: the value can come from a config file
+   * written by a newer build, and a mode nobody recognises must leave the map
+   * flat rather than half-built.
+   */
+  function normaliseThreeDMode(value) {
+    if (value === THREE_D_SIMPLE || value === THREE_D_FULL) return value;
+    return THREE_D_OFF;
+  }
+
+  /** The mode showing right now: "off", "simple" or "full". */
+  function threeDMode() {
+    return threeD ? threeDDetail : THREE_D_OFF;
+  }
+
+  /**
+   * Ask for one of the three modes. Returns the one that resulted.
+   *
+   * Switching BETWEEN the two 3D modes is a real transition, not a no-op:
+   * going to "simple" has to take the terrain, the buildings and the globe
+   * back out, and going to "full" has to build them. Both directions run
+   * through the same body, so there is one place that decides what a mode
+   * consists of.
+   */
+  function set3DMode(mode) {
+    const next = normaliseThreeDMode(mode);
+    // Remembered even when the map is not ready to apply it, so the rail and
+    // a restored config agree about which 3D the operator is in.
+    if (next !== THREE_D_OFF) threeDDetail = next;
+    applyThreeD(next !== THREE_D_OFF);
+    return threeDMode();
+  }
+
+  /**
+   * Choose WHICH 3D, without saying anything about whether it is on.
+   *
+   * The rail's button owns on/off; this is the setting behind it. Applied
+   * immediately when 3D is already showing — the operator is looking at the
+   * thing they just changed — and otherwise only remembered, so the next
+   * press of the button hands them the one they picked.
+   */
+  function set3DDetail(detail) {
+    const next = normaliseThreeDMode(detail);
+    if (next === THREE_D_OFF) return threeDMode();   // not a detail
+    threeDDetail = next;
+    if (threeD) applyThreeD(true);
+    else markThreeButton();
+    return threeDMode();
+  }
+
+  /** The old boolean door onto the mode: on means whichever 3D was last
+   *  chosen, which is the full one until the operator says otherwise. */
   function set3D(on) {
+    if (!map) return threeD;
+    return applyThreeD(!!on);
+  }
+
+  function applyThreeD(on) {
     on = !!on;
     if (!map) return threeD;
     threeD = on;
+    const full = threeDDetail === THREE_D_FULL;
     let tiltHandled = false;
     if (on) {
       // Everything that touches the style waits for the style. The rail is
@@ -2579,19 +3192,55 @@ Corvus.map = (function () {
       // during the first tile fetch), which means this can be pressed before
       // there is a style to add a source to; the "load" handler re-applies.
       if (started) {
-        // Which of the two the zoom calls for. Entering 3D over the field is
-        // terrain; entering it zoomed out to the country is the globe.
-        globeOn = map.getZoom() < GLOBE_MAX_ZOOM;
-        if (globeOn) setGlobe(true);
-        // The tilt is handed to enableTerrain so it runs after the camera has
-        // been placed above the ground — see there. When there is no terrain
-        // to wait for, it happens immediately below instead.
-        else tiltHandled = enableTerrain(() => tiltTo(THREE_D_PITCH));
+        if (full) {
+          // Which of the two the zoom calls for. Entering 3D over the field
+          // is terrain; entering it zoomed out to the country is the globe.
+          //
+          // Through wantsGlobe, and through the CURRENT state, for two
+          // reasons. A bare threshold could enter on the globe at a zoom
+          // applyProjectionForZoom would have taken straight back off it — a
+          // mode change the operator watches happen for no reason they asked
+          // for. And this runs again on an already-3D map (the style
+          // finishing, the source catalogue landing, the other 3D mode being
+          // chosen), where deciding "terrain" while the globe is still the
+          // projection used to attach terrain UNDER the globe: the camera is
+          // then told the ground is at sea level, looks at a point far
+          // underground, and the map renders empty.
+          const wantGlobe = wantsGlobe(map.getZoom(), globeOn);
+          if (wantGlobe) {
+            if (!globeOn) setGlobe(true);
+            globeOn = true;
+            // The two cannot both be on — see applyProjectionForZoom.
+            disableTerrain();
+          } else {
+            if (globeOn) setGlobe(false);
+            globeOn = false;
+            // The tilt is handed to enableTerrain so it runs after the camera
+            // has been placed above the ground — see there. When there is no
+            // terrain to wait for, it happens immediately below instead.
+            tiltHandled = enableTerrain(() => tiltTo(THREE_D_PITCH));
+          }
+          addBuildingLayer();
+          refreshBuildings();
+        } else {
+          // Simple: the tilt and the sky, and nothing that costs a fetch.
+          // Written as a teardown rather than as "do less", because this is
+          // also the path from "full" to "simple" — the ground has to lose
+          // its relief, the buildings have to go, and the globe has to hand
+          // back to the flat map, all while 3D stays on.
+          if (globeOn) setGlobe(false);
+          globeOn = false;
+          disableTerrain();
+          removeBuildingLayer();
+        }
         setSky(true);
-        addBuildingLayer();
         addVehicle3DLayer();
-        refreshBuildings();
+        // The aircraft's ground changed under it — from a DEM to the flat
+        // plane or the other way — so the height it is drawn at has to be
+        // re-read before the next frame rather than at the next telemetry
+        // sample, which on a dropped link may never come.
         updateVehicleAltitude(Corvus.telemetry.getState());
+        if (typeof map.triggerRepaint === "function") map.triggerRepaint();
       }
       if (vehicleMarker) {
         const el = vehicleMarker.getElement();
@@ -2617,11 +3266,61 @@ Corvus.map = (function () {
       renderVehicle();
       tiltTo(0);
     }
-    if (controlsEl) {
-      const btn = controlsEl.querySelector('[data-act="three"]');
-      if (btn) btn.classList.toggle("active", threeD);
+    markThreeButton();
+    // The panel may be open over the button that was just pressed — the whole
+    // point of a hover panel is that it is there while you use the control it
+    // belongs to. setValue rather than rebuild: rebuilding would replace the
+    // switch the pointer is on mid-press.
+    if (threeDPicker && threeDMenuHandle && threeDMenuHandle.isOpen()) {
+      threeDPicker.setValue(threeDDetail === THREE_D_FULL);
     }
     return threeD;
+  }
+
+  /**
+   * Save the 3D state so the map comes back the way it was left.
+   *
+   * TWO keys, because there are two independent things here and one of them
+   * survives the other being off. `three_d` is what the map opens in;
+   * `three_d_detail` is where the panel's switch sits, which has to be
+   * remembered even while 3D is off — an operator who prefers the cheap mode
+   * and left the map flat must not be handed the expensive one on their next
+   * press, and a single key that says "off" cannot remember anything.
+   *
+   * Fire-and-forget, like the layer choice: a failed save (backend busy,
+   * offline) must never break the control the operator just used.
+   */
+  function persistThreeD() {
+    if (!Corvus.telemetry || typeof Corvus.telemetry.postAction !== "function") return;
+    Corvus.telemetry.postAction("/api/config", {
+      map: { three_d: threeDMode(), three_d_detail: threeDDetail },
+    }).catch(() => {});
+  }
+
+  /**
+   * Put the map back into the 3D it was left in.
+   *
+   * The switch's position is restored always; the MODE only ever on the way
+   * up. A config with neither key, or one from a newer build naming a mode
+   * this one does not have, leaves the map flat — half-building a 3D nobody
+   * asked for is worse than opening the way every version of this map has.
+   *
+   * `three_d_detail` falls back to `three_d` so a config written before the
+   * two were separated still restores the right switch.
+   *
+   * A 3D press the operator made while this fetch was in flight wins — they
+   * are looking at the map now, and a config written days ago is not an
+   * argument against that.
+   */
+  function restoreThreeD(saved) {
+    const map3d = saved || {};
+    set3DDetail(map3d.three_d_detail || map3d.three_d);
+    const mode = normaliseThreeDMode(map3d.three_d);
+    if (mode === THREE_D_OFF || threeD) return;
+    if (started) set3DMode(mode);
+    else window.addEventListener("corvus:mapready", () => {
+      if (!threeD) set3DMode(mode);
+    }, { once: true });
   }
 
   function init(mapEl, controlsEl) {
@@ -2694,7 +3393,7 @@ Corvus.map = (function () {
       // jump and a plain setCenter do not — so reconcile it here as well as
       // on DEM tiles.
       applyProjectionForZoom();
-      scheduleTerrainSync();
+      scheduleTerrainSync(true);
       // New ground came into view; ask the backend for its buildings. A no-op
       // outside 3D, and debounced, so a drag costs one pass over the grid.
       refreshBuildings();
@@ -2764,7 +3463,9 @@ Corvus.map = (function () {
     // leaves that default — the map is never blank (offline-safe). Errors are
     // swallowed: /api/config may not exist yet or the backend may be busy.
     loadSources().then(() => Corvus.telemetry.requestJson("/api/config")).then((res) => {
-      const key = res && res.config && res.config.map && res.config.map.base_layer;
+      const saved = (res && res.config && res.config.map) || {};
+      restoreThreeD(saved);
+      const key = saved.base_layer;
       if (!key || !sources[key] || key === activeLayer) return;
       activeLayer = key;
       if (started) setBaseLayer(key);
@@ -2788,6 +3489,12 @@ Corvus.map = (function () {
     // drive it without reaching through the control rail.
     set3D,
     is3D: () => threeD,
+    // The mode as one of "off" / "simple" / "full", and the way to set it.
+    // Settings (or a test) drives the rail's 3D switcher through these.
+    set3DMode,
+    get3DMode: threeDMode,
+    // Which 3D the button will give you, without turning it on.
+    set3DDetail,
     hasTerrain: () => terrainOn,
     getWaypoints,
     clearWaypoints,
@@ -2830,8 +3537,29 @@ Corvus.map = (function () {
     // {w,s,e,n} view around a centre asks for, in which order, and how many.
     // Mirrors the _followAction convention.
     _buildingCellsIn: (box, centre) => buildingCellsIn(box, centre),
+    // test hook: the mode-name rule. A config file from a newer build can
+    // name a mode this one does not have, and the answer has to be "flat"
+    // rather than "half-built".
+    _normaliseThreeDMode: (value) => normaliseThreeDMode(value),
+    // test hook: which 3D the operator last chose, remembered across off/on
+    // so pressing 3D hands back the mode they were in, not the other one.
+    _threeDDetail: () => threeDDetail,
     // test hook: the globe/terrain handover rule, including its hysteresis.
     _wantsGlobe: (zoom, currentlyGlobe) => wantsGlobe(zoom, currentlyGlobe),
+    // test hook: what a raw terrain reading means. A literal 0 is MapLibre's
+    // answer for a DEM tile that is not loaded, not a claim about sea level,
+    // and reading it as one is what buried the aircraft in the mountain.
+    _readTerrainValue: (value) => readTerrainValue(value),
+    // test hook: the screen offset that aims the camera at the AIRBORNE
+    // marker instead of at its shadow, clamped. Pure geometry over two
+    // points, like _followAction.
+    _airborneOffset: (air, ground, width, height) =>
+      airborneOffset(air, ground, width, height),
+    // test hook: the overlay stack the base imagery must stay underneath, in
+    // the order the layers are added. A base layer re-inserted above the
+    // first of these hides it — which is how switching map service used to
+    // erase the downloaded-area rectangles.
+    _overlayLayers: () => OVERLAY_LAYERS.slice(),
     // test hook: the elevation-tile pixel decoder that seeds the camera. It
     // is what keeps the map from going white over high ground, and it is
     // plain arithmetic, so it is assertable without a canvas.

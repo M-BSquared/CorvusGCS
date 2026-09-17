@@ -1,11 +1,19 @@
 /*
   Corvus GCS — layout, panels, and screen-specific styling.
 
-  Loaded AFTER css/themes.css (which owns every design token) and BEFORE
-  css/components.css (the reusable .btn / .glass / field component layer).
-  This file defines no tokens of its own: every color, radius, shadow, and
-  translucency here reads a var() from themes.css, which is what lets the
+  Loaded LAST — after css/themes.css (which owns every design token) and
+  css/components.css (the reusable .btn / .glass / .page-* / field component
+  layer). This file defines no tokens of its own: every color, radius, shadow,
+  and translucency here reads a var() from themes.css, which is what lets the
   light theme invert the whole app without a single override in this file.
+
+  Loading last is what makes an override here mean what it says: a scoped
+  modifier on a component (`.btn.rc-detect`, `.hud-actions .icon-btn`,
+  `.nav-item` inside a responsive block) now wins on order even when it ties
+  the component's own rule on specificity. What this file must NOT do is
+  *define* a component — a bare `.btn`, `.icon-btn` or `.page-card` rule
+  belongs in components.css, and tests/test_frontend_css_boundary.js fails the
+  build if one appears here.
 */
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -257,22 +265,6 @@ svg { display: block; }
   display: flex; flex-direction: column; align-items: center;
   padding: 10px 0; gap: 4px; z-index: var(--z-left-nav);
 }
-.nav-item {
-  width: 58px; display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 9px 0; border-radius: var(--radius-btn);
-  color: var(--text-2); transition: background 140ms, color 140ms;
-  position: relative;
-}
-.nav-item i, .nav-item svg { width: 21px; height: 21px; }
-.nav-item .nav-label { font-size: 9px; font-weight: 600; letter-spacing: 0.7px; color: var(--text-3); }
-.nav-item:hover { background: var(--surface-hover); color: var(--text-1); }
-.nav-item:hover .nav-label { color: var(--text-2); }
-.nav-item.active { background: var(--accent-dark); color: var(--text-1); }
-.nav-item.active .nav-label { color: var(--text-1); }
-.nav-item.active::before {
-  content: ""; position: absolute; left: -10px; top: 50%; transform: translateY(-50%);
-  width: 3px; height: 26px; border-radius: 2px; background: var(--accent);
-}
 .nav-divider { width: 34px; height: 1px; background: var(--border-soft); margin: 6px 0; }
 .nav-spacer { flex: 1; }
 
@@ -451,29 +443,6 @@ svg { display: block; }
 
 
 /* ===== PAGE VIEW ===== */
-.page-header { margin-bottom: 28px; }
-.page-title { font-size: 22px; font-weight: 700; letter-spacing: 0.5px; color: var(--text-1); margin-bottom: 4px; }
-.page-subtitle { font-size: 13px; color: var(--text-3); }
-.page-section { margin-bottom: 24px; }
-.page-section-title { font-size: 13px; font-weight: 600; letter-spacing: 0.6px; color: var(--text-2); text-transform: uppercase; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border-soft); }
-/* Cards wear the same subtle glass as the buttons inside them, so a settings
-   page reads as one substance. The fill is a touch heavier than a button's
-   because a card is a surface things sit ON, not a control. */
-.page-card {
-  background: var(--panel-fill);
-  backdrop-filter: var(--blur-fine);
-  -webkit-backdrop-filter: var(--blur-fine);
-  border: 1px solid var(--panel-hairline);
-  border-radius: var(--radius);
-  padding: 18px;
-  margin-bottom: 12px;
-}
-.page-card-title { font-size: 14px; font-weight: 600; color: var(--text-1); margin-bottom: 6px; }
-.page-card-desc { font-size: 12px; color: var(--text-3); line-height: 1.5; }
-.page-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-soft); }
-.page-row:last-child { border-bottom: none; }
-.page-row-label { font-size: 13px; color: var(--text-1); }
-.page-row-value { font-size: 13px; color: var(--text-2); font-family: var(--mono); }
 /* Settings > Plugins. The description belongs to the row above it, so it sits
    under that row rather than between two of them — no border, tucked in. */
 .settings-plugin-desc { padding: 0 0 10px; margin-top: -6px; }
@@ -661,6 +630,23 @@ svg { display: block; }
    the rail. What is left here is a width the layer names can live in, and the
    per-service group headings that are interleaved between the rows. */
 .layers-popover { min-width: 168px; }
+
+/* ===== 3D PANEL (hover the map rail's cube button) =====
+   The one map popover that is a SETTING rather than a list: the button itself
+   is the mode's on/off, and this says which 3D it will give you. So it holds
+   a .field-switch out of the settings vocabulary instead of .option-item rows,
+   and it needs the padding a menu of rows gets from the rows themselves.
+
+   Wider than the layer switcher because the hint is the reason the panel
+   exists — the two modes look alike and differ in what they download, and a
+   caption wrapped to four lines is a caption nobody reads. */
+.three-d-popover { min-width: 244px; max-width: 276px; }
+.three-d-popover .field { padding: 2px 6px 6px; }
+/* The settings cards keep the hint clear of the switch's column so its ragged
+   edge lines up with the caption. In a popover this narrow that reserved
+   column is most of the line, so the hint takes the full width instead — the
+   switch is one line up, with nothing beside the text to line up with. */
+.three-d-popover .field-switch > .field-hint { padding-right: 0; }
 .layer-group {
   font-size: 9.5px; font-weight: 600; letter-spacing: 0.9px;
   color: var(--text-3); text-transform: uppercase;
@@ -1446,25 +1432,97 @@ svg { display: block; }
 .wp-clear-all:disabled:hover, .wp-clear-all[aria-disabled="true"]:hover { background: transparent; color: var(--text-3); }
 .wp-list { max-height: 280px; overflow-y: auto; }
 .wp-item {
-  display: flex; gap: 10px; padding: 10px 13px;
+  /* The leading column, stated once because three rules have to agree on it:
+     where it starts, how wide the icon is, and how thick the mark under it
+     is. The gutter is narrower than the row's right padding on purpose — the
+     severity icon is the first thing the eye lands on and it earns the edge —
+     and the flex gap makes up the difference so the TEXT stays where it was. */
+  --wp-gutter: 9px;
+  --wp-icon: 20px;
+  --wp-mark: 3px;
+  /* Clearance around the rule: the same value against the icon it threads
+     through and against the row's own top and bottom, so the two segments sit
+     in the column with even air at every end rather than reaching for the
+     edges.
+     --wp-mark-fill is the share of the room BESIDE the icon that a segment
+     takes; the rest is the air at the row's edge. A share rather than a fixed
+     length, because neither extreme reads well: segments anchored to the
+     edges grew into long rails on a three-line notification, while a fixed
+     length that suited three lines was most of the room a one-liner had. A
+     share settles both at once — it comes out near 4px on a one-line
+     notification, 7px on two and 10px on three, so the mark grows with the
+     message without ever running away with it. */
+  --wp-mark-gap: 4px;
+  --wp-mark-fill: 0.38;
+  position: relative;
+  display: flex; gap: 14px; padding: 10px 13px 10px var(--wp-gutter);
   border-bottom: 1px solid var(--border-soft);
   align-items: flex-start;
   transition: opacity 200ms;
 }
 .wp-item:last-child { border-bottom: none; }
-/* Unread carries a bar in its own severity colour along the leading edge —
-   inset rather than a child element, so it costs the flex row nothing. */
-.wp-item[data-level="info"] { box-shadow: inset 2px 0 0 var(--nav); }
-.wp-item[data-level="warning"] { box-shadow: inset 2px 0 0 var(--warning); }
-.wp-item[data-level="critical"] { box-shadow: inset 2px 0 0 var(--critical); }
-/* Read: the bar goes and the row recedes. Still legible, still in place — the
-   board is a log, not a queue that empties itself. */
-.wp-item.is-read { box-shadow: none; opacity: 0.55; }
+
+/* Unread draws a rule in its own severity colour down the leading column,
+   BROKEN BY THE ICON: a segment above it, the icon, a segment below. The icon
+   is centred in the row so the break falls in the middle of the rule rather
+   than clipping one end of it.
+
+   It replaced an inset box-shadow that ran the full height of the row, hard
+   against the popover's edge and square at both ends: on a two-line
+   notification that read as a red rule someone had drawn down the side of the
+   card rather than as anything belonging to the row. Threading the rule
+   through the icon ties the two together — one leading column, with the
+   severity stated once in the middle of it.
+
+   Absolutely positioned, so both segments still cost the flex row nothing. */
+.wp-item::before,
+.wp-item::after {
+  content: "";
+  position: absolute;
+  /* On the icon's own centre line. */
+  left: calc(var(--wp-gutter) + (var(--wp-icon) - var(--wp-mark)) / 2);
+  width: var(--wp-mark);
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity 200ms;
+}
+/* Each segment hangs off the icon's clearance and takes --wp-mark-fill of
+   what is left between there and the row's edge; the remainder is the air
+   that keeps it off that edge, so both scale with the message together. The
+   percentages resolve against the row, and both are measured from its middle,
+   which is where the icon is — so the two segments come out the same length
+   however the message wraps. */
+.wp-item::before {
+  bottom: calc(50% + var(--wp-icon) / 2 + var(--wp-mark-gap));
+  height: calc((50% - var(--wp-icon) / 2 - var(--wp-mark-gap)) * var(--wp-mark-fill));
+}
+.wp-item::after {
+  top: calc(50% + var(--wp-icon) / 2 + var(--wp-mark-gap));
+  height: calc((50% - var(--wp-icon) / 2 - var(--wp-mark-gap)) * var(--wp-mark-fill));
+}
+.wp-item[data-level="info"]::before,
+.wp-item[data-level="info"]::after { color: var(--nav); opacity: 1; }
+.wp-item[data-level="warning"]::before,
+.wp-item[data-level="warning"]::after { color: var(--warning); opacity: 1; }
+.wp-item[data-level="critical"]::before,
+.wp-item[data-level="critical"]::after { color: var(--critical); opacity: 1; }
+/* Read: the mark goes and the row recedes. Still legible, still in place —
+   the board is a log, not a queue that empties itself. */
+.wp-item.is-read::before, .wp-item.is-read::after { opacity: 0; }
+.wp-item.is-read { opacity: 0.55; }
 .wp-item.is-read:hover, .wp-item.is-read:focus-within { opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
-  .wp-item { transition: none; }
+  .wp-item, .wp-item::before, .wp-item::after { transition: none; }
 }
-.wp-icon { width: 20px; height: 20px; flex: 0 0 auto; display: grid; place-items: center; margin-top: 1px; }
+.wp-icon {
+  width: var(--wp-icon); height: var(--wp-icon);
+  flex: 0 0 auto; display: grid; place-items: center;
+  /* Centred in the row rather than on the first line of text: the rule is
+     broken AT the icon, and a break at the top of a three-line notification
+     would leave one segment and a stub. */
+  align-self: center;
+}
 .wp-icon.warning { color: var(--warning); }
 .wp-icon.critical { color: var(--critical); }
 .wp-icon.info { color: var(--nav); }
@@ -1480,49 +1538,6 @@ svg { display: block; }
 .wp-dismiss:hover { color: var(--text-1); background: var(--surface-hover); }
 .wp-dismiss svg { width: 13px; height: 13px; }
 
-/* ===== TOASTS =====
-   A transient sibling of the warnings popover, not a replacement for it: the
-   notification board is a log of vehicle/flight state, kept until dismissed;
-   a toast is a UI aside (a hint, a local confirmation) that says its piece
-   and clears itself. Same surface, same level colours and icons, so the two
-   read as one family — but stacked in its own column and never added to the
-   board underneath. */
-.ui-toast-stack {
-  position: fixed; top: calc(var(--top-h) + 10px); right: 12px; z-index: var(--z-toast);
-  width: min(320px, calc(100vw / var(--ui-scale, 1) - 24px));
-  display: flex; flex-direction: column; gap: 8px;
-  /* The stack itself is not a target — only the cards inside it are — so a
-     click meant for the map or a button behind an already-faded toast still
-     lands. */
-  pointer-events: none;
-}
-.ui-toast {
-  pointer-events: auto;
-  border-radius: var(--radius);
-  overflow: hidden;
-  transition: opacity 160ms, transform 160ms;
-}
-.ui-toast[data-level="info"] { box-shadow: inset 2px 0 0 var(--nav); }
-.ui-toast[data-level="warning"] { box-shadow: inset 2px 0 0 var(--warning); }
-.ui-toast[data-level="critical"] { box-shadow: inset 2px 0 0 var(--critical); }
-.ui-toast.is-leaving { opacity: 0; transform: translateY(-4px); }
-@media (prefers-reduced-motion: reduce) {
-  .ui-toast { transition: none; }
-}
-.ui-toast-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 0 11px; }
-.ui-toast-icon { width: 18px; height: 18px; flex: 0 0 auto; display: grid; place-items: center; }
-.ui-toast-icon svg { width: 15px; height: 15px; }
-.ui-toast-icon.info { color: var(--nav); }
-.ui-toast-icon.warning { color: var(--warning); }
-.ui-toast-icon.critical { color: var(--critical); }
-.ui-toast-title { flex: 1; font-size: 12px; font-weight: 600; letter-spacing: 0.4px; color: var(--text-1); }
-.ui-toast-close {
-  width: 22px; height: 22px; flex: 0 0 auto; display: grid; place-items: center;
-  margin: -3px -3px -3px 0; border-radius: var(--radius-btn); color: var(--text-3);
-}
-.ui-toast-close:hover { color: var(--text-1); background: var(--surface-hover); }
-.ui-toast-close svg { width: 12px; height: 12px; }
-.ui-toast-body { font-size: 12px; color: var(--text-2); line-height: 1.35; padding: 6px 12px 11px 37px; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
@@ -1572,13 +1587,6 @@ svg { display: block; }
 }
 .panel-section-title { font-size: 12px; font-weight: 600; letter-spacing: 0.4px; color: var(--text-1); }
 .header-actions { display: flex; gap: 4px; }
-.icon-btn {
-  width: 28px; height: 28px; display: grid; place-items: center;
-  border-radius: var(--radius-btn); color: var(--text-3); transition: background 130ms, color 130ms;
-}
-.icon-btn:hover { background: var(--surface-hover); color: var(--text-1); }
-.icon-btn.active { background: var(--accent-dark); color: var(--accent-bright); }
-.icon-btn i, .icon-btn svg { width: 15px; height: 15px; }
 
 /* ----- CONSOLE ----- */
 .console-output {
@@ -2355,15 +2363,6 @@ svg { display: block; }
 .params-status[hidden] { display: none; }
 
 .progress-host { display: flex; flex-direction: column; gap: 8px; }
-.progress-bar {
-  height: 8px; background: var(--surface-3); border-radius: 4px; overflow: hidden;
-  border: 1px solid var(--border-soft);
-}
-.progress-bar-fill {
-  height: 100%; width: 0%; background: var(--accent);
-  border-radius: 4px;
-  transition: width 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
 .progress-label { font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
 
 .params-toolbar {

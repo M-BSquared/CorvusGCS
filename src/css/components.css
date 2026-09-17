@@ -1,20 +1,44 @@
 /*
   Corvus GCS — reusable component layer.
 
-  Loaded LAST (after css/themes.css and css/main.css) so it can layer the
-  shared component system on top of the page/panel layout. It defines no
-  design tokens: every value here reads a var() from themes.css, which is
-  what makes a theme switch restyle every component at once.
+  Loaded SECOND — after css/themes.css, before css/main.css. That order is
+  the contract: themes.css owns the tokens, this file defines the controls out
+  of them, and main.css lays out the screens and may override a control for
+  one page. It defines no design tokens itself: every value here reads a
+  var() from themes.css, which is what makes a theme switch restyle every
+  component at once.
+
+  It used to load last, which quietly inverted the contract — a page override
+  could then only win on specificity, and a tie went to the component. Three
+  of them silently lost that tie (`.params-actions .btn`, `.btn.rc-detect`,
+  `.btn.rc-tx-chip-drop` all tie `.btn[data-size="sm"]`), so their padding was
+  dead CSS with a comment above it explaining an effect that never happened.
+  See the note on the <link> tags in index.html.
 
   This is the CSS half of src/js/ui.js — one class system per factory there:
-  .btn / .icon-btn (button, iconButton), .field-* (label, field, select,
-  input), .ui-slider (slider), .option-cards / .option-list (optionCards,
-  optionList), .ui-menu / .option-item (menu, menuItem — every dropdown the
-  app opens),
-  .ui-progress / .ui-msg / .ui-actions (progress, message, actions),
-  .ui-info / .ui-popover (infoHint, popover), .glass (every floating surface), .status-dot (statusDot). New UI is composed from
-  these; a screen-specific class layers a modifier on top rather than
-  re-implementing the control.
+    .btn                          button
+    .icon-btn / .nav-item         iconButton (the second via `className`)
+    .field-*                      label, field, select, input
+    .ui-slider / .ui-toggle       slider, toggle
+    .ui-menu / .option-item       menu, menuItem — every dropdown the app opens
+    .option-cards / .option-list  optionCards, optionList
+    .tile                         tile
+    .page-*                       pageHeader, sectionTitle, section, card, row
+    .ui-progress / .progress-bar  progress
+    .ui-msg / .ui-toast           message, toast
+    .ui-actions                   actions
+    .ui-info / .ui-popover        infoHint, popover
+    .modal                        modal
+    .status-dot                   statusDot
+    .glass                        every floating surface
+
+  Every class ui.js writes is defined here and nowhere else. main.css may add
+  a scoped modifier on top (`.btn.rc-detect`, `.hud-actions .icon-btn`) but
+  never a bare definition — tests/test_frontend_css_boundary.js enforces that,
+  because the drift it catches is invisible until someone edits this file and
+  wonders why nothing changed. New UI is composed from these classes; a
+  screen-specific class layers a modifier on top rather than re-implementing
+  the control.
 */
 
 /* ===== .glass — one translucent material for every floating surface =====
@@ -301,6 +325,48 @@
 .btn .btn-icon { width: 15px; height: 15px; flex: 0 0 auto; }
 .btn[data-size="sm"] .btn-icon { width: 13px; height: 13px; }
 .btn[data-size="lg"] .btn-icon { width: 17px; height: 17px; }
+
+/* ===== .icon-btn — the bare icon-only button =====
+   Corvus.ui.iconButton's default surface: a square hit target with no border
+   and no fill until hover, for the chrome that sits inside a panel header or
+   a toolbar, where a full .btn would read as a second-level action. It is not
+   a .btn variant because it shares none of that box — different padding
+   model, no label, no data-variant.
+
+   iconButton's `className` option swaps this base for a bespoke one
+   (.mc-btn on the map controls, .nav-item on the left rail), so those live
+   next to the layout they belong to; this is the fallback everything else
+   gets. */
+.icon-btn {
+  width: 28px; height: 28px; display: grid; place-items: center;
+  border-radius: var(--radius-btn); color: var(--text-3); transition: background 130ms, color 130ms;
+}
+.icon-btn:hover { background: var(--surface-hover); color: var(--text-1); }
+.icon-btn.active { background: var(--accent-dark); color: var(--accent-bright); }
+.icon-btn i, .icon-btn svg { width: 15px; height: 15px; }
+
+/* ===== .nav-item — the left rail's icon-over-label button =====
+   iconButton/navItem's own surface (passed as `className`), so it belongs to
+   the component layer rather than to the rail's layout. .left-nav in main.css
+   still owns the rail itself: its width, its column, its dividers. The
+   responsive rules that fold the label away at narrow widths stay there too,
+   because that is a layout decision about the rail, not about the item. */
+.nav-item {
+  width: 58px; display: flex; flex-direction: column; align-items: center; gap: var(--space-4);
+  padding: 9px 0; border-radius: var(--radius-btn);
+  color: var(--text-2); transition: background 140ms, color 140ms;
+  position: relative;
+}
+.nav-item i, .nav-item svg { width: 21px; height: 21px; }
+.nav-item .nav-label { font-size: var(--text-3xs); font-weight: 600; letter-spacing: 0.7px; color: var(--text-3); }
+.nav-item:hover { background: var(--surface-hover); color: var(--text-1); }
+.nav-item:hover .nav-label { color: var(--text-2); }
+.nav-item.active { background: var(--accent-dark); color: var(--text-1); }
+.nav-item.active .nav-label { color: var(--text-1); }
+.nav-item.active::before {
+  content: ""; position: absolute; left: -10px; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 26px; border-radius: 2px; background: var(--accent);
+}
 
 /* ===== .status-dot — unified status indicator =====
    Replaces the duplicated .tb-dot / .link-status-dot pattern (migration
@@ -1030,13 +1096,61 @@
 }
 
 /* ===== .ui-progress — determinate bar + caption ===== */
-.ui-progress { display: flex; flex-direction: column; gap: 8px; }
+.ui-progress { display: flex; flex-direction: column; gap: var(--space-8); }
 .ui-progress[hidden] { display: none; }
 .ui-progress-text {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
+/* The bar itself. progress() builds .ui-progress > .progress-bar >
+   .progress-bar-fill, so all three belong to the same factory even though the
+   inner two carry the older, unprefixed names. */
+.progress-bar {
+  height: 8px; background: var(--surface-3); border-radius: 4px; overflow: hidden;
+  border: 1px solid var(--border-soft);
+}
+.progress-bar-fill {
+  height: 100%; width: 0%; background: var(--accent);
+  border-radius: 4px;
+  transition: width 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* ===== .page-* — the settings/setup page skeleton =====
+   pageHeader, sectionTitle, section, card and row build every non-map page out
+   of these. They are page furniture rather than controls, which is why they
+   are set at --text-md and up while the instrument and parameter UI below
+   lives at --text-xs: a page you read, not a panel you scan. */
+.page-header { margin-bottom: 28px; }
+.page-title { font-size: 22px; font-weight: 700; letter-spacing: 0.5px; color: var(--text-1); margin-bottom: var(--space-4); }
+.page-subtitle { font-size: var(--text-md); color: var(--text-3); }
+.page-section { margin-bottom: 24px; }
+.page-section-title {
+  font-size: var(--text-md); font-weight: 600; letter-spacing: 0.6px; color: var(--text-2);
+  text-transform: uppercase; margin-bottom: var(--space-12);
+  padding-bottom: var(--space-8); border-bottom: 1px solid var(--border-soft);
+}
+/* Cards wear the same subtle glass as the buttons inside them, so a settings
+   page reads as one substance. The fill is a touch heavier than a button's
+   because a card is a surface things sit ON, not a control. */
+.page-card {
+  background: var(--panel-fill);
+  backdrop-filter: var(--blur-fine);
+  -webkit-backdrop-filter: var(--blur-fine);
+  border: 1px solid var(--panel-hairline);
+  border-radius: var(--radius);
+  padding: var(--space-18);
+  margin-bottom: var(--space-12);
+}
+.page-card-title { font-size: var(--text-lg); font-weight: 600; color: var(--text-1); margin-bottom: var(--space-6); }
+.page-card-desc { font-size: var(--text-sm); color: var(--text-3); line-height: 1.5; }
+.page-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--space-10) 0; border-bottom: 1px solid var(--border-soft);
+}
+.page-row:last-child { border-bottom: none; }
+.page-row-label { font-size: var(--text-md); color: var(--text-1); }
+.page-row-value { font-size: var(--text-md); color: var(--text-2); font-family: var(--mono); }
 
 /* ===== .ui-msg — inline status message =====
    Three severities sharing one shape. The tinted background is derived from
@@ -1051,6 +1165,50 @@
 .ui-msg.ok   { color: var(--healthy);  background: var(--healthy-dark);  border: 1px solid var(--healthy); }
 .ui-msg.err  { color: var(--critical); background: var(--critical-dark); border: 1px solid var(--critical); }
 .ui-msg.warn { color: var(--warning);  background: var(--warning-dark);  border: 1px solid var(--warning); }
+
+/* ===== .ui-toast — transient feedback (Corvus.ui.toast) =====
+   A transient sibling of the warnings popover, not a replacement for it: the
+   notification board is a log of vehicle/flight state, kept until dismissed;
+   a toast is a UI aside (a hint, a local confirmation) that says its piece
+   and clears itself. Same surface, same level colours and icons, so the two
+   read as one family — but stacked in its own column and never added to the
+   board underneath. */
+.ui-toast-stack {
+  position: fixed; top: calc(var(--top-h) + 10px); right: 12px; z-index: var(--z-toast);
+  width: min(320px, calc(100vw / var(--ui-scale, 1) - 24px));
+  display: flex; flex-direction: column; gap: var(--space-8);
+  /* The stack itself is not a target — only the cards inside it are — so a
+     click meant for the map or a button behind an already-faded toast still
+     lands. */
+  pointer-events: none;
+}
+.ui-toast {
+  pointer-events: auto;
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: opacity 160ms, transform 160ms;
+}
+.ui-toast[data-level="info"] { box-shadow: inset 2px 0 0 var(--nav); }
+.ui-toast[data-level="warning"] { box-shadow: inset 2px 0 0 var(--warning); }
+.ui-toast[data-level="critical"] { box-shadow: inset 2px 0 0 var(--critical); }
+.ui-toast.is-leaving { opacity: 0; transform: translateY(-4px); }
+@media (prefers-reduced-motion: reduce) {
+  .ui-toast { transition: none; }
+}
+.ui-toast-head { display: flex; align-items: center; gap: var(--space-8); padding: 10px 12px 0 11px; }
+.ui-toast-icon { width: 18px; height: 18px; flex: 0 0 auto; display: grid; place-items: center; }
+.ui-toast-icon svg { width: 15px; height: 15px; }
+.ui-toast-icon.info { color: var(--nav); }
+.ui-toast-icon.warning { color: var(--warning); }
+.ui-toast-icon.critical { color: var(--critical); }
+.ui-toast-title { flex: 1; font-size: var(--text-sm); font-weight: 600; letter-spacing: 0.4px; color: var(--text-1); }
+.ui-toast-close {
+  width: 22px; height: 22px; flex: 0 0 auto; display: grid; place-items: center;
+  margin: -3px -3px -3px 0; border-radius: var(--radius-btn); color: var(--text-3);
+}
+.ui-toast-close:hover { color: var(--text-1); background: var(--surface-hover); }
+.ui-toast-close svg { width: 12px; height: 12px; }
+.ui-toast-body { font-size: var(--text-sm); color: var(--text-2); line-height: 1.35; padding: 6px 12px 11px 37px; }
 
 /* ===== Dark-theme corrections =====
    Two places cannot read a token: the chevron baked into the select's data:

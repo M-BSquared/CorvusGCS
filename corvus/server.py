@@ -1230,7 +1230,14 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             elif key == "map":
                 if not isinstance(value, dict):
                     return None, "map must be an object"
-                merged["map"] = value
+                # Merged per key, like controls: the base layer and the 3D
+                # mode are independent settings written by two different
+                # controls on the map's own rail, one at a time. Replacing
+                # wholesale meant choosing a map service erased which 3D the
+                # operator was in, and choosing a 3D mode erased their map
+                # service — each silently, and only noticed at the next launch.
+                base = merged.get("map")
+                merged["map"] = {**base, **value} if isinstance(base, dict) else dict(value)
             elif key == "branding":
                 if not isinstance(value, dict):
                     return None, "branding must be an object"
@@ -1238,7 +1245,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             elif key == "controls":
                 if not isinstance(value, dict):
                     return None, "controls must be an object"
-                # Merged per key, unlike theme/map which replace wholesale.
+                # Merged per key, unlike theme which replaces wholesale.
                 # Each control is an independent switch and the UI toggles one
                 # at a time, so a POST naming only "arrow_keys" must not turn
                 # the joystick off as a side effect.

@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.42-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.42" />
+  <img src="https://img.shields.io/badge/Version-2026.09.43-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.43" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.10%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.10+" /></a>
   <img width="8" />
@@ -27,9 +27,9 @@
   <br>
   <img src="https://img.shields.io/badge/%F0%9F%A4%96-Vibe%20Coded-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded" />
   <img width="8" />
-  <img src="https://img.shields.io/badge/Lines%20of%20Code-70k%2B-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 70k+" />
+  <img src="https://img.shields.io/badge/Lines%20of%20Code-61k%2B-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 61k+" />
   <img width="8" />
-  <img src="https://img.shields.io/badge/Tests-31k%20lines%20%C2%B7%2080%20files-2EA043?style=for-the-badge" height="28" alt="Tests: 31k lines across 80 files" />
+  <img src="https://img.shields.io/badge/Tests-51k%20lines%20%C2%B7%20116%20files-2EA043?style=for-the-badge" height="28" alt="Tests: 51k lines across 116 files" />
   <br>
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-6E7681?style=for-the-badge" height="28" alt="Platform: macOS | Linux | Windows" />
   <img width="8" />
@@ -191,7 +191,7 @@ Everything here is **built and working today**.
 | ⚡ **Ready fast** | On connect Corvus loads only flight telemetry. Parameters are fetched when *you* ask for them — so you are flying in seconds, not minutes | ✅ |
 | 🛩️ **Fly** | Live map, floating flight HUD, arm / takeoff / land / RTL, flight-mode selection, on-screen joystick and arrow-key control with adjustable key strength | ✅ |
 | 🗺️ **Navigate** | 4 map services with 12 layers, vehicle heading, home point, the flown track, and click-the-map to fly there or move home | ✅ |
-| 🌍 **See in 3D** | A spinnable globe when you zoom out, real terrain relief and extruded OpenStreetMap buildings when you zoom in, and the aircraft drawn at the altitude it is actually flying | ✅ |
+| 🌍 **See in 3D** | A spinnable globe when you zoom out, real terrain relief and extruded OpenStreetMap buildings when you zoom in, and the aircraft drawn at the altitude it is actually flying — or switch terrain and buildings off and keep just the camera tilt, for a slow link or a low battery | ✅ |
 | 📴 **Work offline** | Nothing loads from the internet. Download named map areas in advance and the whole app keeps working with no connection | ✅ |
 | 📡 **Connect** | Connects on its own to whatever is plugged in — flight controller on USB first, then telemetry radio, then the simulator port — plus serial, UDP and TCP by hand, a live port picker, saved recent connections, link-quality display and automatic reconnect | ✅ |
 | 🔧 **Set up** | Airframe drawn to scale — click a motor to wire, position or spin-test it; ESC protocol; parameter editor with import / export; guided sensor calibration, ESC calibration, PID tuning by hand or by in-flight autotune, and PX4 firmware flashing | ✅ |
@@ -641,12 +641,27 @@ against the right edge travels in with it rather than disappearing behind it.
 
 ### 3D and the globe
 
-The cube button on the map's control rail turns the flat map into a world.
+The cube button on the map's control rail turns 3D on and off. Rest the pointer
+on it (or long-press it on a touch screen) and a small panel appears with the
+one thing the button cannot say — **which** 3D it gives you:
 
-Zoomed out you get **the globe** — the Earth as a sphere, with an atmosphere
-around its rim, that you can spin. Zoom in and it hands over to the close-up
-view with no mode to switch and nothing to press: from the whole planet down to
-the far end of the runway is one continuous movement.
+- **Terrain & buildings on** is the full picture below: elevation relief,
+  extruded buildings and the globe. It fetches elevation tiles and building
+  footprints.
+- **Off** is the camera tilt alone, over flat ground — and nothing downloaded
+  that a flat map does not already download. This is the one to pick on a
+  laptop that is low on battery, or on a link you would rather keep for
+  telemetry.
+
+The switch chooses; it never turns 3D on by itself, so you can set it before
+you press the button. Both the switch and whether 3D was on come back the next
+time you open Corvus.
+
+With terrain and buildings on, zoomed out you get **the globe** — the Earth as
+a sphere, with an atmosphere around its rim, that you can spin. Zoom in and it
+hands over to the close-up view with no mode to switch and nothing to press:
+from the whole planet down to the far end of the runway is one continuous
+movement.
 
 Close up, the ground has **its real shape**. Terrain comes from an elevation
 model, so hills are hills and a valley is a valley, drawn at true scale rather

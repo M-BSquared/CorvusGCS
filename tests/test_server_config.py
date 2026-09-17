@@ -192,6 +192,36 @@ def test_post_config_persists_partial_update(tmp_path) -> None:
     assert on_disk["map"] == {"base_layer": "topo"}
 
 
+def test_post_config_map_keys_merge_instead_of_replacing(tmp_path) -> None:
+    """The base layer and the 3D mode are written by two different controls.
+
+    Both live under ``map`` and each is posted on its own, so replacing the
+    dict wholesale meant picking a map service erased which 3D the operator
+    was in — and picking a 3D mode erased their map service. Silently, and
+    only visible at the next launch.
+    """
+    cfg_path = tmp_path / "config.json"
+    handler, responses = _handler(
+        config=CorvusConfig(map={"base_layer": "topo", "provider": "esri"}),
+        config_path=str(cfg_path),
+    )
+    handler._api_config_update({"map": {"three_d": "simple"}})
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["config"]["map"] == {
+        "base_layer": "topo", "provider": "esri", "three_d": "simple",
+    }
+
+    # …and back the other way: choosing a layer keeps the 3D mode.
+    handler._api_config_update({"map": {"base_layer": "satellite", "provider": "esri"}})
+    payload, _ = responses[1]
+    assert payload["config"]["map"] == {
+        "base_layer": "satellite", "provider": "esri", "three_d": "simple",
+    }
+    on_disk = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert on_disk["map"]["three_d"] == "simple"
+
+
 def test_post_config_unknown_key_dropped_with_warning(tmp_path, caplog) -> None:
     cfg_path = tmp_path / "config.json"
     handler, responses = _handler(

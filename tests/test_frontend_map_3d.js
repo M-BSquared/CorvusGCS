@@ -181,14 +181,27 @@ check("a non-finite altitude is treated as ground, not as NaN pixels", () => {
 // conversion. (MapLibre 4 drew relative to the terrain under the map centre,
 // and getting that wrong put the aircraft hundreds of pixels off.)
 //
-// Without a map there is no terrain, so terrainElevation() returns null for
-// every lookup — which is exactly the no-DEM branch of the preference order,
-// and the one that has to keep working when a region was never downloaded.
+// Without a map there is no terrain at all, which is the FLAT-WORLD branch:
+// the ground MapLibre draws is the sea-level plane, the shadow sits on it,
+// and the leader line between them is what the operator reads as height. So
+// the answer there is height above GROUND — an AMSL would draw a 700 m line
+// under an aircraft whose own label says 140 m. It is also the branch a field
+// laptop lands on whenever the elevation for an area was never downloaded.
 
-check("with no DEM, the autopilot's own AMSL is used", () => {
+check("with no DEM the aircraft is drawn at its height above the ground", () => {
+  // The flat plane IS the ground, so the relative altitude is the height
+  // above it. Drawing the AMSL instead made the leader line disagree with the
+  // number printed beside it.
   const altitude = map._vehicleDrawAltitude({
     altitude_amsl: 713, altitude_agl: 140,
     home: [11.39, 47.26], position: [11.39, 47.27],
+  });
+  assert.equal(altitude, 140);
+});
+
+check("with no DEM and no relative altitude, AMSL is better than nothing", () => {
+  const altitude = map._vehicleDrawAltitude({
+    altitude_amsl: 713, position: [11.39, 47.27],
   });
   assert.equal(altitude, 713);
 });
@@ -382,13 +395,181 @@ check("an unknown encoding falls back to terrarium rather than to NaN", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 7. The mode's own surface
+// 7. What a terrain reading means
+// ---------------------------------------------------------------------------
+//
+// MapLibre answers queryTerrainElevation with 0 — not null — for a point
+// whose DEM tile is not loaded. Every point outside the current view is such
+// a point, and so is every point at all for the first second or two after
+// terrain is attached. Taken as sea level it is the difference between an
+// aircraft drawn 150 m above an alpine valley and one drawn 1.5 km inside the
+// mountain, and the usual casualty is the HOME point: a few kilometres into a
+// sortie its tile is no longer loaded, and the height the whole preference
+// order is anchored to silently becomes zero.
+
+check("a literal zero is not an answer about the ground", () => {
+  assert.equal(map._readTerrainValue(0), null);
+  assert.equal(map._readTerrainValue(-0), null);
+});
+
+check("a real height is passed straight through, sign and all", () => {
+  assert.equal(map._readTerrainValue(2962), 2962);
+  // Below sea level is real ground: the Dead Sea, a polder, a dry lake bed.
+  assert.equal(map._readTerrainValue(-413), -413);
+  assert.equal(map._readTerrainValue(0.5), 0.5);
+});
+
+check("nothing, and nonsense, are both unknown", () => {
+  assert.equal(map._readTerrainValue(null), null);
+  assert.equal(map._readTerrainValue(undefined), null);
+  assert.equal(map._readTerrainValue(NaN), null);
+  assert.equal(map._readTerrainValue(Infinity), null);
+});
+
+// ---------------------------------------------------------------------------
+// 8. Aiming the camera at an aircraft that is not on the ground
+// ---------------------------------------------------------------------------
+//
+// In 3D the marker is drawn at altitude, well above the ground point the
+// camera can actually be told to centre on. The offset between the two is
+// measured on screen, in one frame, and handed to easeTo — which is what
+// makes it need no model of the pitch, the zoom or the terrain. It replaced
+// un-projecting the marker's own position, which worked low and failed high:
+// a marker above the horizon un-projects to nowhere useful, the code fell
+// back to the ground point, and follow mode quietly stopped following.
+
+check("no airborne marker means no offset", () => {
+  assert.deepEqual(map._airborneOffset(null, { x: 1, y: 2 }, 800, 600), [0, 0]);
+  assert.deepEqual(map._airborneOffset({ x: 1, y: 2 }, null, 800, 600), [0, 0]);
+});
+
+check("the offset is the marker's own rise above its shadow", () => {
+  // Shadow at the centre, aircraft 200 px above it: the ground has to sit 200
+  // px BELOW the middle for the aircraft to land in it.
+  assert.deepEqual(
+    map._airborneOffset({ x: 400, y: 100 }, { x: 400, y: 300 }, 800, 600),
+    [0, 200]);
+});
+
+check("a rotated camera offsets sideways too", () => {
+  assert.deepEqual(
+    map._airborneOffset({ x: 330, y: 100 }, { x: 400, y: 300 }, 800, 600),
+    [70, 200]);
+});
+
+check("an aircraft on its own shadow asks for nothing", () => {
+  assert.deepEqual(
+    map._airborneOffset({ x: 400, y: 300 }, { x: 400, y: 300 }, 800, 600),
+    [0, 0]);
+});
+
+check("a marker a whole viewport up does not throw the ground off screen", () => {
+  // Perspective can separate the two by more than the viewport. Past the
+  // clamp the marker is allowed to sit high; the ground the aircraft is
+  // flying over is worth keeping on screen too.
+  const [, dy] = map._airborneOffset({ x: 400, y: -900 }, { x: 400, y: 300 }, 800, 600);
+  assert.ok(dy > 0 && dy <= 600 * 0.35 + 1e-9, `clamped, was ${dy}`);
+});
+
+check("a degenerate viewport asks for nothing rather than for NaN", () => {
+  assert.deepEqual(
+    map._airborneOffset({ x: 400, y: 100 }, { x: 400, y: NaN }, 800, 600), [0, 0]);
+  assert.deepEqual(
+    map._airborneOffset({ x: 400, y: 100 }, { x: 400, y: 300 }, 0, 0), [0, 0]);
+});
+
+// ---------------------------------------------------------------------------
+// 9. What the base imagery has to stay underneath
+// ---------------------------------------------------------------------------
+
+check("every overlay is above the base imagery, regions first", () => {
+  const overlays = map._overlayLayers();
+  const at = (id) => overlays.indexOf(id);
+  assert.ok(at("offline-regions-fill") === 0,
+    "the downloaded-area rectangles are added first, so they are the floor " +
+    "the imagery must stay under — a list starting at the track re-inserted " +
+    "the imagery on top of them and switching map service erased them");
+  assert.ok(at("offline-regions-line") < at("buildings-3d"));
+  assert.ok(at("buildings-3d") < at("path-glow"), "a building never hides the track");
+  assert.ok(at("path-line") < at("waypoints-route"));
+  assert.ok(overlays.every((id) => typeof id === "string" && id.length));
+});
+
+// ---------------------------------------------------------------------------
+// 10. The mode's own surface
 // ---------------------------------------------------------------------------
 
 check("3D exposes a state that starts off", () => {
   assert.equal(typeof map.set3D, "function");
   assert.equal(map.is3D(), false);
   assert.equal(map.hasTerrain(), false);
+  assert.equal(map.get3DMode(), "off");
+});
+
+// ---------------------------------------------------------------------------
+// 11. The three modes
+// ---------------------------------------------------------------------------
+//
+// "simple" is the camera tilt and the sky, over flat ground: no elevation
+// tiles, no building requests, no globe. "full" is the tilt over ground that
+// is really shaped, with buildings on it. The split is not cosmetic — the
+// second one downloads, and a field laptop on a radio link is exactly where
+// that is worth being able to decline.
+
+check("only the two 3D modes are modes; anything else is flat", () => {
+  assert.equal(map._normaliseThreeDMode("simple"), "simple");
+  assert.equal(map._normaliseThreeDMode("full"), "full");
+  assert.equal(map._normaliseThreeDMode("off"), "off");
+  // A config file written by a newer build, a typo, a hand-edited JSON: the
+  // answer has to be a flat map, never a half-built 3D one.
+  assert.equal(map._normaliseThreeDMode("photoreal"), "off");
+  assert.equal(map._normaliseThreeDMode(""), "off");
+  assert.equal(map._normaliseThreeDMode(undefined), "off");
+  assert.equal(map._normaliseThreeDMode(null), "off");
+  assert.equal(map._normaliseThreeDMode(true), "off");
+  assert.equal(map._normaliseThreeDMode({ mode: "full" }), "off");
+});
+
+check("the chosen 3D is remembered while 3D is off", () => {
+  // The rail's button turns the mode the operator last picked back on. Asking
+  // for "off" must not throw that choice away, or every operator who prefers
+  // the cheap mode gets handed the expensive one on their next press.
+  assert.equal(map._threeDDetail(), "full", "terrain & buildings is the default");
+  map.set3DMode("simple");
+  assert.equal(map._threeDDetail(), "simple");
+  map.set3DMode("off");
+  assert.equal(map._threeDDetail(), "simple", "off is not a third preference");
+  map.set3DMode("full");
+  assert.equal(map._threeDDetail(), "full");
+  // A mode nobody recognises is "off", so it must not be remembered either.
+  map.set3DMode("simple");
+  map.set3DMode("photoreal");
+  assert.equal(map._threeDDetail(), "simple");
+});
+
+check("the panel's switch chooses WHICH 3D, never whether", () => {
+  // The rail button owns on/off. Flipping the switch while 3D is off records
+  // the choice and leaves the map alone — a map that tilts because a pointer
+  // wandered onto a switch is a map that moved on its own.
+  map.set3DMode("off");
+  map.set3DDetail("full");
+  assert.equal(map._threeDDetail(), "full");
+  assert.equal(map.is3D(), false, "the switch does not turn 3D on");
+  map.set3DDetail("simple");
+  assert.equal(map._threeDDetail(), "simple");
+  assert.equal(map.is3D(), false);
+  // "off" is not a detail: the switch has two positions and neither is off.
+  map.set3DDetail("off");
+  assert.equal(map._threeDDetail(), "simple", "off is not one of the two");
+  map.set3DDetail("nonsense");
+  assert.equal(map._threeDDetail(), "simple");
+});
+
+check("choosing a mode without a map is a no-op, not a crash", () => {
+  // The rail is built before the style loads, so the menu can be opened and
+  // a row pressed before there is anything to apply it to.
+  assert.equal(map.set3DMode("full"), "off");
+  assert.equal(map.is3D(), false);
 });
 
 check("set3D without a map is a no-op, not a crash", () => {
