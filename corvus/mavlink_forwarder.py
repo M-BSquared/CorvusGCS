@@ -17,6 +17,15 @@ default can know whether a given operator wants it. Forwarding telemetry
 outward carries no such risk and is what the toggle turns on first; commanding
 inward is a second, explicit switch. Neither is inferred.
 
+And the switch grants that privilege to the *configured* endpoints, not to
+whoever happens to reach the socket. The two directions are deliberately not
+symmetric: being learned as a peer earns a copy of the telemetry, because that
+costs nothing and is the whole mechanism by which a second screen works, while
+putting a frame on the uplink is restricted to the addresses the operator
+named. The difference matters the moment ``listen_host`` is widened past
+loopback — an operator who does that to reach a tablet across the field would
+otherwise have handed an arm command to every machine on the network.
+
 Two ports, not one, and the distinction is the whole feature working
 =================================================================
 
@@ -262,6 +271,11 @@ class MavlinkForwarder:
         # Latched once a second station is seen transmitting under Corvus'
         # system id; surfaced in status() so the LINK tab can say so.
         self._sysid_conflict = False
+        # Frames dropped because their sender is not a configured endpoint,
+        # and the addresses they came from, so the refusal is visible rather
+        # than a station whose commands quietly do nothing.
+        self._refused = 0
+        self._refused_peers: set[tuple[str, int]] = set()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -291,6 +305,8 @@ class MavlinkForwarder:
         self._error = ""
         self._notice = note
         self._sysid_conflict = False
+        self._refused = 0
+        self._refused_peers = set()
         self._resolve_static(force=True)
         self._stop.clear()
         self._rx_thread = threading.Thread(
@@ -510,15 +526,37 @@ class MavlinkForwarder:
                 self._rx_buf.pop(addr, None)
             if len(self._rx_buf) > _MAX_RX_BUFFERS:
                 self._drop_stale_rx_buffers()
-            # Learned only on MAVLink, not on any datagram that arrives. A
-            # peer is subscribed to the whole telemetry stream, so a stray
-            # packet — a port scan, another program's stale socket, a broadcast
-            # picked up when the operator widened listen_host — must not be
-            # able to sign itself up for the aircraft's position at 10 Hz.
-            if not frames and not remainder:
+            # Learned only on a WHOLE MAVLink frame, not on any datagram that
+            # arrives. A peer is subscribed to the whole telemetry stream, so a
+            # stray packet — a port scan, another program's stale socket, a
+            # broadcast picked up when the operator widened listen_host — must
+            # not be able to sign itself up for the aircraft's position at
+            # 10 Hz.
+            #
+            # A leftover remainder used to count, and that let anything in: a
+            # datagram of random bytes ending in 0xFD or 0xFE leaves exactly
+            # such a remainder, because split_frames parks on a start byte it
+            # has not yet seen a length for. One arbitrary trailing byte was
+            # the whole admission test. The remainder is still kept above — a
+            # sender really may split a frame across two datagrams — but it is
+            # the completed frame that subscribes them, on the datagram that
+            # finishes it.
+            if not frames:
                 continue
             with self._peer_lock:
                 self._peers[addr] = time.monotonic()
+            # Commanding is gated on WHO is speaking, not only on whether the
+            # operator armed the uplink at all. Being learned as a peer earns a
+            # copy of the telemetry — that costs nothing and is how a second
+            # screen works. Reaching the aircraft is a different privilege, and
+            # it belongs to the endpoints the operator named: anything else
+            # that found the socket is a stranger, and on a forwarder the
+            # operator widened to listen_host 0.0.0.0 that is every machine on
+            # the network. Without this, turning commanding on handed an arm
+            # and a mode change to the whole LAN.
+            may_command = self._allow_commands and addr in self._resolved
+            if self._allow_commands and not may_command:
+                self._note_command_refused(addr)
             for frame in frames:
                 # Checked before the commanding gate: the conflict is about
                 # sequence numbers on the DOWNLINK, so it is just as real when
@@ -526,7 +564,7 @@ class MavlinkForwarder:
                 # the default, which is where the LINK tab promises to say so.
                 if frame_source_system(frame) == _CORVUS_SYSTEM_ID:
                     self._note_sysid_conflict()
-                if not self._allow_commands or self._inject is None:
+                if not may_command or self._inject is None:
                     continue
                 try:
                     if self._inject(frame):
@@ -545,6 +583,27 @@ class MavlinkForwarder:
             live = {a for a, seen in self._peers.items() if now - seen <= _PEER_TTL_S}
         for addr in [a for a in self._rx_buf if a not in live]:
             self._rx_buf.pop(addr, None)
+
+    def _note_command_refused(self, addr: tuple[str, int]) -> None:
+        """Record (and log once) a station whose frames were not put on the uplink.
+
+        Without this the refusal is silent, and silent is the wrong shape for
+        it: the operator turned commanding on, the other station is plainly
+        connected and receiving telemetry, and its commands simply do nothing.
+        The fix is one line of config, but only if they can find out that this
+        is what happened.
+        """
+        self._refused += 1
+        if addr in self._refused_peers:
+            return
+        self._refused_peers.add(addr)
+        logger.warning(
+            "refusing to forward commands from %s:%d — commanding is allowed only "
+            "from the configured endpoints (%s). Add it to the forwarding "
+            "endpoint list if this station should be able to command the aircraft.",
+            addr[0], addr[1],
+            ", ".join(f"{h}:{p}" for h, p in self._static) or "none",
+        )
 
     def _note_sysid_conflict(self) -> None:
         """Latch (and log once) that the other station shares our system id.
@@ -604,6 +663,12 @@ class MavlinkForwarder:
             "frames_injected": self._injected,
             "dropped": self._dropped,
             "sysid_conflict": self._sysid_conflict,
+            # Stations that reached the socket and spoke MAVLink, but are not
+            # among the endpoints allowed to command.
+            "commands_refused": self._refused,
+            "commands_refused_from": sorted(
+                f"{h}:{p}" for h, p in self._refused_peers
+            ),
             "notice": self._notice,
             "error": self._error,
         }

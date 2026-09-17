@@ -273,6 +273,35 @@ function testForwardingHint() {
            sysid_conflict: true }),
     /system ID/i,
     "a shared system id must be said, not buried under the peer count");
+  // A station that is fed telemetry and refused commands is the misconfiguration
+  // the backend has always counted and never showed. Telemetry is earned by
+  // speaking MAVLink; commanding is earned by being a configured endpoint — so
+  // a tablet at an unlisted address gets a link that looks fine and whose every
+  // command vanishes. Without this line the only evidence is a log file nobody
+  // is reading in a field.
+  const refusedHint = hint({
+    running: true, host: "127.0.0.1", port: 14550, peers: ["a"],
+    allow_commands: true, commands_refused: 4,
+    commands_refused_from: ["192.168.1.55:14550"],
+  });
+  assert.match(refusedHint, /refused/i, "the refusal is said, not buried");
+  assert.match(refusedHint, /192\.168\.1\.55/, "and the station is named");
+  assert.match(refusedHint, /endpoints/, "and the way to fix it is given");
+  // It outranks the peer count for the same reason the sysid clash does: a
+  // working-looking link that silently drops commands is the thing to say.
+  assert.doesNotMatch(refusedHint, /1 station\(s\) connected/);
+  // A shared system id still outranks it — that one makes the autopilot
+  // misreport packet loss on BOTH stations.
+  assert.match(
+    hint({ running: true, host: "127.0.0.1", port: 14550, peers: ["a"],
+           sysid_conflict: true, commands_refused: 4 }),
+    /system ID/i);
+  // Nothing refused, nothing said.
+  assert.doesNotMatch(
+    hint({ running: true, host: "127.0.0.1", port: 14550, peers: ["a"],
+           commands_refused: 0 }),
+    /refused/i);
+
   // Two addresses, two roles. host:port is where the OTHER station listens —
   // Corvus mirrors there and nothing has to be configured on that end —
   // while listen_port is Corvus' own socket, which only matters to a station
@@ -299,6 +328,26 @@ function testPresets() {
   });
   const conns = link.PRESETS.map((p) => p.conn);
   assert.equal(new Set(conns).size, conns.length, "duplicate preset connection string");
+
+  // 5760 is ArduPilot's SITL base port (SERIAL0, the one MAVProxy dials). PX4
+  // SITL publishes no MAVLink over TCP at all — its 4560 belongs to the
+  // simulator's own link to PX4. This row used to read "TCP (SITL)" and credit
+  // jMAVSim and Gazebo, which sent every PX4 user to a port nothing answers on,
+  // and a preset that is wrong is worse than one that is missing: the note is
+  // the only thing telling the operator which situation they are in.
+  const tcp = link.PRESETS.find((p) => p.conn.startsWith("tcp:"));
+  if (tcp) {
+    const said = `${tcp.label} ${tcp.note}`;
+    assert.ok(/ardupilot/i.test(said),
+      `the TCP preset must name ArduPilot, not PX4's simulators: ${said}`);
+    assert.ok(!/jmavsim|gazebo/i.test(said),
+      `jMAVSim and Gazebo do not serve ${tcp.conn}: ${said}`);
+  }
+  // Nothing may point a ground station at PX4's simulator channel.
+  link.PRESETS.forEach((p) => {
+    assert.ok(!/:4560$/.test(p.conn),
+      `4560 is the simulator's link to PX4, never a GCS endpoint: ${p.conn}`);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -545,6 +594,79 @@ function testSharedLoopMultipleAnimators() {
   anim._reset();
 }
 
+
+// ---------------------------------------------------------------------------
+// LINK tab: auto-connect.
+//
+// The backend picks a link on its own — USB flight controller, then SiK radio,
+// then the ground-station UDP port. The panel's job is to say which rule won
+// and to keep out of the way: a device plugged in mid-session is an offer, and
+// the operator's own connect silences the whole mechanism for the session.
+// ---------------------------------------------------------------------------
+
+function testAutoInfo() {
+  const autoInfo = Corvus.link.autoInfo;
+
+  // Off, or absent, means there is nothing to say — not an empty chip.
+  assert.equal(autoInfo({}), null, "no link_auto at all");
+  assert.equal(autoInfo({ link_auto: { enabled: false } }), null, "switched off");
+
+  // The operator chose this link. Describing the rule that did not pick it
+  // would be describing a decision that is no longer in force.
+  assert.equal(
+    autoInfo({ link_auto: { enabled: true, manual_override: true, reason: "usb-direct" } },
+             "connected"),
+    null,
+    "a manual connect takes the chip down with it");
+
+  // Nothing connected yet: the question is whether it is still trying.
+  const scanning = autoInfo({ link_auto: { enabled: true, reason: "usb-direct" } },
+                            "reconnecting");
+  assert.match(scanning.label, /SCANNING/, "still looking says so");
+  assert.match(scanning.title, /USB/, "and the hover says what it is looking for");
+
+  // Connected: name the rule that won.
+  const cases = [
+    ["usb-direct", /USB/],
+    ["sik", /RADIO/],
+    ["udp-fallback", /UDP/],
+    ["configured", /SAVED/],
+    ["cli", /ARGUMENT/],
+    ["default-invalid-fallback", /DEFAULT/],
+  ];
+  cases.forEach(([reason, expected]) => {
+    const info = autoInfo({ link_auto: { enabled: true, reason } }, "connected");
+    assert.ok(info, `reason ${reason} has a chip`);
+    assert.match(info.label, /^AUTO/, `reason ${reason} is labelled as automatic`);
+    assert.match(info.label, expected, `reason ${reason} names itself`);
+    assert.ok(info.title.length > 20, `reason ${reason} explains itself on hover`);
+  });
+
+  // A reason the frontend does not know is not painted as "AUTO · undefined".
+  assert.equal(
+    autoInfo({ link_auto: { enabled: true, reason: "quantum-entanglement" } }, "connected"),
+    null,
+    "an unknown reason shows nothing rather than a broken chip");
+
+  // The status is taken from the argument so the chip and the label beside it
+  // cannot disagree, but a caller that passes neither still gets an answer.
+  assert.match(
+    autoInfo({ link_auto: { enabled: true, reason: "sik" }, link_status: "connected" }).label,
+    /RADIO/,
+    "falls back to link_status on the state");
+}
+
+function testSuggestionText() {
+  const text = Corvus.link.suggestionText;
+  assert.match(text({ device: "/dev/ttyACM0", kind: "usb-direct" }), /ttyACM0/,
+    "names the device — 'a new device' is not something anyone can act on");
+  assert.match(text({ device: "/dev/ttyACM0", kind: "usb-direct" }), /flight controller/);
+  assert.match(text({ device: "/dev/ttyUSB0", kind: "sik" }), /telemetry radio/);
+  // A malformed suggestion must not paint "undefined" at an operator.
+  assert.doesNotMatch(text(null), /undefined/);
+  assert.doesNotMatch(text({}), /undefined/);
+}
+
 // ---------------------------------------------------------------------------
 // Run all tests.
 // ---------------------------------------------------------------------------
@@ -557,6 +679,8 @@ function run() {
   testQualityInfo();
   testPresets();
   testForwardingHint();
+  testAutoInfo();
+  testSuggestionText();
   testModesIdempotency();
   testRefreshModesOnConnectTransition();
   testHeadingShortestPath();

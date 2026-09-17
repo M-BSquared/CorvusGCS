@@ -27,7 +27,10 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
 
-from . import motor_config, rc_config, safety_config, tile_sources, tuning_config
+from . import (
+    motor_config, rc_config, safety_config, sik_config, sik_service,
+    tile_sources, tuning_config,
+)
 from .config import (
     CorvusConfig,
     default_config_path,
@@ -42,6 +45,7 @@ from .mavlink_forwarder import (
     DEFAULT_PORT as _FORWARD_DEFAULT_PORT,
 )
 from .mavlink_bridge import (
+    FLY_TO_MAX_POINTS,
     TAKEOFF_ALTITUDE_MAX_M,
     TAKEOFF_ALTITUDE_MIN_M,
     MavlinkBridge,
@@ -68,6 +72,7 @@ WEB_DIR = REPO_ROOT / "src"
 TELEMETRY_SSE_CAPACITY = 1
 CONSOLE_SSE_CAPACITY = 100
 PARAMS_SSE_CAPACITY = 16
+SSH_SSE_CAPACITY = 256
 TILES_PROGRESS_SSE_CAPACITY = 16
 FIRMWARE_SSE_CAPACITY = 16
 # Interactive cache-fill timeout. Short on purpose: this is the browser waiting
@@ -137,6 +142,51 @@ SHELL_COMMANDS = frozenset({
     "listener", "top", "free", "dmesg", "tasks", "perf", "boot_log", "hrt",
 })
 
+# Cross-origin reads of the API.
+#
+# Every JSON body and every SSE stream used to go out with
+# ``Access-Control-Allow-Origin: *``, which is a standing invitation: any page
+# the operator happens to open in a browser could fetch
+# http://localhost:PORT/api/state, subscribe to the telemetry stream, and read
+# the SSH host, user and key path back out of GET /api/config. The UI never
+# needed the header — it is served by this same server, so its own requests are
+# same-origin and carry no Origin at all.
+#
+# What the header is still for is the case that is not the web at large:
+# another tool on this machine — a plugin's dev server, or the UI opened at
+# "localhost" while something else talks to "127.0.0.1", which the spec counts
+# as two origins. Those are echoed back by name. Everything else gets no
+# header unless the operator explicitly names one exact remote origin through
+# CORVUS_ALLOWED_ORIGIN, and the browser refuses to hand the body to any other
+# page that asked.
+_CORS_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+REMOTE_ORIGIN_ENV = "CORVUS_ALLOWED_ORIGIN"
+
+
+def _cors_allowed_origin(origin: Any) -> str:
+    """Return *origin* when it is a configured or loopback web origin.
+
+    Never returns ``*``. This header is the only thing between a visited web
+    page and a vehicle's live telemetry, so the answer is a name or nothing.
+    """
+    if not isinstance(origin, str) or not origin or len(origin) > 256:
+        return ""
+    try:
+        parsed = urlparse(origin)
+        host = parsed.hostname or ""
+        parsed.port
+    except ValueError:
+        return ""
+    if parsed.scheme not in ("http", "https"):
+        return ""
+    if parsed.username is not None or parsed.password is not None:
+        return ""
+    if parsed.path not in ("", "/") or parsed.params or parsed.query or parsed.fragment:
+        return ""
+    configured = (os.environ.get(REMOTE_ORIGIN_ENV) or "").strip()
+    return origin if host in _CORS_LOOPBACK_HOSTS or origin == configured else ""
+
+
 # Route registry: the @route decorator tags handler methods while the
 # CorvusHandler class body executes; the pending entries are wired onto the
 # class-level _GET_ROUTES/_POST_ROUTES tables after the class is defined. The
@@ -155,7 +205,7 @@ def route(http_method: str, path: str):
 
 class _BoundedSseBuffer:
     def __init__(self, capacity: int) -> None:
-        self._capacity = capacity
+        self._capacity = max(1, int(capacity))
         self._items: collections.deque[Any] = collections.deque()
         self._condition = threading.Condition()
 
@@ -192,6 +242,14 @@ class _BoundedSseBuffer:
                 self._items.appendleft(entry)
             else:
                 self._items.append(entry)
+            self._condition.notify()
+
+    def put_fifo(self, item: Any) -> None:
+        """Append one item, dropping the oldest when the buffer is full."""
+        with self._condition:
+            if len(self._items) >= self._capacity:
+                self._items.popleft()
+            self._items.append(item)
             self._condition.notify()
 
     def get(self, timeout: float | None = None) -> Any:
@@ -497,6 +555,61 @@ def _build_forwarder(mavlink: Any, config: Any) -> Any:
     return forwarder
 
 
+def build_autoconnect_session(config: Any) -> Any:
+    """The per-process auto-connect state, seeded from the operator config.
+
+    Public because both launchers build one and neither may end up with
+    different toggles than the other. Never raises: auto-connect failing to
+    read its own settings must degrade to "off", not to "no ground station".
+    """
+    from .autoconnect import SessionState
+    session = SessionState()
+    try:
+        from .config import autoconnect_settings
+        session.apply_config(autoconnect_settings(config))
+    except Exception:  # noqa: BLE001 - never block server creation
+        logger.exception("autoconnect: settings unreadable; running with defaults")
+    return session
+
+
+def start_autoconnect_watcher(mavlink: Any, store: Any, session: Any) -> Any:
+    """Start the auto-connect watcher, or return None when it is off.
+
+    Returns None rather than a stopped object when disabled: unlike the
+    forwarder there is no settings page that has to explain a switch which did
+    nothing, and a None is one fewer thing for the teardown path to reason
+    about.
+    """
+    if session is None or not session.enabled:
+        return None
+    try:
+        from .autoconnect import AutoConnectWatcher
+        watcher = AutoConnectWatcher(bridge=mavlink, store=store, session=session)
+        watcher.start()
+    except Exception:  # noqa: BLE001 - never block server creation
+        logger.exception("autoconnect: watcher unavailable")
+        return None
+    return watcher
+
+
+def stop_autoconnect_watcher(server: Any) -> None:
+    """Join the auto-connect watcher. Never raises; safe on a server without one.
+
+    Called from both launchers' teardown BEFORE ``mavlink.stop()``: the watcher
+    calls ``stop/set_connection/start`` on the bridge, so a tick that lands
+    after the bridge went down would restart the link the shutdown just closed.
+    """
+    watcher = getattr(server, "autoconnect", None)
+    if watcher is None:
+        return
+    try:
+        logger.info("stopping autoconnect watcher …")
+        watcher.stop()
+        logger.info("autoconnect watcher stopped")
+    except Exception:  # noqa: BLE001 - teardown never raises
+        logger.exception("autoconnect watcher stop failed")
+
+
 def _firmware_dir(cfg: Any) -> str:
     """Directory downloaded PX4 images and the cached catalogue live in.
 
@@ -735,6 +848,10 @@ def _parse_takeoff_altitude(value: object) -> float:
     return altitude
 
 
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON number: {value}")
+
+
 # 1-slot memoization of the serialized telemetry snapshot, keyed by the
 # store's mutation version: N browser tabs sharing one backend re-serialize
 # the SAME snapshot exactly once per version instead of N times. The store
@@ -796,6 +913,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     # parallel-built flash_service module is mid-edit or the handler is used in
     # a unit test that only sets mavlink/store).
     flash: Any = None
+    # SiK telemetry-radio configuration (corvus/sik_service.py). None when not
+    # wired, same as `flash`; the endpoints then report the service as absent
+    # rather than 500.
+    sik: Any = None
     # Flight-log service (on-board ULog download + local tlog listing). None
     # when not wired, same as `flash`.
     logs: Any = None
@@ -805,6 +926,9 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     # GitHub release update check. None when not wired; the endpoints then
     # report "no check available" rather than 500.
     updates: Any = None
+    # Auto-connect session state (corvus/autoconnect.py). None in the unit-test
+    # fixtures, where a connect must still work and simply records no override.
+    autoconnect_session: Any = None
     # Tile resources: per-source caches + a single downloader facade + the
     # progress pub-sub bus. None when tiles are not configured (e.g. the
     # parallel-built tile_downloader module is mid-edit).
@@ -899,12 +1023,26 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             except CLIENT_GONE_ERRORS:
                 self.close_connection = True
 
+    def _send_cors(self) -> None:
+        """Emit this response's CORS headers: a loopback origin, or nothing.
+
+        ``Vary: Origin`` rides along unconditionally so a cache cannot serve
+        one origin's allowed response to another. Defensive ``getattr``: the
+        unit-test handlers are built with ``object.__new__`` and have no
+        ``headers``.
+        """
+        headers = getattr(self, "headers", None)
+        origin = _cors_allowed_origin(headers.get("Origin", "") if headers else "")
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Vary", "Origin")
+
     def _send_json(self, data: dict, status: int = 200) -> None:
         body = json.dumps(_sanitize(data)).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors()
         self.end_headers()
         self.wfile.write(body)
 
@@ -1006,6 +1144,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             merged["controls"] = cfg.controls
         if cfg.ui is not None:
             merged["ui"] = cfg.ui
+        if cfg.autoconnect is not None:
+            merged["autoconnect"] = cfg.autoconnect
         if cfg.updates is not None:
             merged["updates"] = cfg.updates
         if cfg.plugins is not None:
@@ -1016,10 +1156,25 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             "params_dir", "firmware_dir", "log_download_dir",
             "tile_sources", "stream_rates", "ssh_connections",
             "theme", "map", "branding", "controls", "ui", "updates", "plugins",
+            "autoconnect",
         }
+        # Real config keys that belong to their own endpoint. A client that
+        # POSTs back a whole GET /api/config body carries them along, and
+        # calling those "unknown" sends whoever reads the log hunting for a typo
+        # that is not there. They are still dropped from this merge: forwarding
+        # is applied by POST /api/forwarding, which also starts and stops the
+        # forwarder, so a generic merge would change the file and not the
+        # running state. The live value is untouched either way — it is not in
+        # ``merged``, and _save_live_config serializes the live config object.
+        owned_elsewhere = {"forwarding"}
+
         for key, value in partial.items():
             if key not in known:
-                logger.warning("dropping unknown config key %r in POST /api/config", key)
+                if key in owned_elsewhere:
+                    logger.debug("ignoring config key %r in POST /api/config; "
+                                 "it is owned by its own endpoint", key)
+                else:
+                    logger.warning("dropping unknown config key %r in POST /api/config", key)
                 continue
             if key == "ssh_connections":
                 # Coerce each entry defensively before storing; a non-list or
@@ -1063,6 +1218,20 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 # also rewrite the operator's "check for updates" switch.
                 base = merged.get("updates")
                 merged["updates"] = {**base, **value} if isinstance(base, dict) else dict(value)
+            elif key == "autoconnect":
+                if not isinstance(value, dict):
+                    return None, "autoconnect must be an object"
+                # Merged per key, like controls: the four toggles are
+                # independent, and a POST naming only "enabled" must not put
+                # the transport switches back to their defaults. Persisted
+                # only — this endpoint never dials and never tears a link down,
+                # the way POST /api/config has never dialled for
+                # mavlink_connection either. The new toggles take effect on the
+                # live watcher below, and fully on the next launch.
+                base = merged.get("autoconnect")
+                merged["autoconnect"] = (
+                    {**base, **value} if isinstance(base, dict) else dict(value)
+                )
             elif key == "plugins":
                 if not isinstance(value, dict):
                     return None, "plugins must be an object"
@@ -1144,10 +1313,31 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             cfg.branding = new_cfg.branding
             cfg.controls = new_cfg.controls
             cfg.ui = new_cfg.ui
+            cfg.autoconnect = new_cfg.autoconnect
             cfg.updates = new_cfg.updates
             cfg.plugins = new_cfg.plugins
             self._save_live_config()
+            self._refresh_autoconnect_session(cfg)
             return to_public_dict(cfg), None
+
+    def _refresh_autoconnect_session(self, cfg: Any) -> None:
+        """Point the live auto-connect session at the toggles just persisted.
+
+        A switch the operator turned off in Settings has to stop the watcher
+        that is already running, not only the one the next launch would start.
+        Never raises: a settings save must not 500 over the feature it is
+        configuring.
+        """
+        session = self.autoconnect_session
+        if session is None:
+            return
+        try:
+            from .config import autoconnect_settings
+            session.apply_config(autoconnect_settings(cfg))
+            if self.store is not None:
+                self.store.update(link_auto=session.as_dict())
+        except Exception:  # noqa: BLE001 - never fail a config save over this
+            logger.exception("autoconnect: could not apply the new settings")
 
     def _ssh_connections_public(self) -> list[dict[str, Any]]:
         """Return the persisted ssh_connections with live ``connected`` merged.
@@ -1185,6 +1375,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self._guarded(self._do_post)
 
     def _do_post(self) -> None:
+        if not self._mutating_request_allowed():
+            return
         path = urlparse(self.path).path
         # Firmware upload carries a raw octet-stream body, not JSON. Handle it
         # before the JSON dispatcher so the binary payload is never json-parsed.
@@ -1204,6 +1396,24 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._handle_api_post(path)
         else:
             self._send_json({"error": "not found"}, 404)
+
+    def _mutating_request_allowed(self) -> bool:
+        """Reject browser cross-site writes before any endpoint sees them."""
+        headers = getattr(self, "headers", None)
+        origin = headers.get("Origin", "") if headers is not None else ""
+        fetch_site = headers.get("Sec-Fetch-Site", "") if headers is not None else ""
+        if origin:
+            allowed = bool(_cors_allowed_origin(origin))
+        else:
+            allowed = not (
+                isinstance(fetch_site, str)
+                and fetch_site.strip().lower() == "cross-site"
+            )
+        if allowed:
+            return True
+        self.close_connection = True
+        self._send_json({"ok": False, "error": "cross-site request forbidden"}, 403)
+        return False
 
     # ---- GET API ----
     def _handle_api_get(self, path: str) -> None:
@@ -1547,21 +1757,34 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         for comes back, so a parameter absent on v1.16 is one field fewer rather
         than an error (AGENTS.md: graceful fallback across v1.16/v1.17/v1.18).
 
+        ``?extra=A,B,C`` adds parameters the operator named on the page itself,
+        for the settings no preset can know about. They ride the same batch read
+        and come back as ``extra``. The names are browser input, so
+        :func:`safety_config.normalise_extra` bounds them before they reach the
+        bridge — an unbounded list here would be an unbounded burst of
+        ``PARAM_REQUEST_READ`` at the aircraft.
+
         Always 200 so the page can render a "not connected" state instead of an
         error banner; ``connected`` says which it is.
         """
+        query = parse_qs(urlparse(self.path).query)
+        extra = safety_config.normalise_extra(
+            [n for value in query.get("extra", []) for n in value.split(",")])
         if self.mavlink is None:
-            self._send_json({"connected": False, "sections": [], "received": 0})
+            self._send_json({
+                "connected": False, "sections": [], "extra": [], "received": 0,
+            })
             return
         try:
-            values = self.mavlink.fetch_params(safety_config.param_names())
+            values = self.mavlink.fetch_params(safety_config.param_names() + extra)
         except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
             logger.exception("safety parameter fetch failed")
             self._send_json({
-                "connected": False, "sections": [], "received": 0, "error": str(exc),
+                "connected": False, "sections": [], "extra": [], "received": 0,
+                "error": str(exc),
             })
             return
-        payload = safety_config.build(values)
+        payload = safety_config.build(values, extra)
         payload["connected"] = bool(values)
         if not values:
             payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
@@ -1666,9 +1889,13 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"error": "request too large"}, 413)
             return
         raw = self.rfile.read(length) if length else b"{}"
+        if length and len(raw) != length:
+            self.close_connection = True
+            self._send_json({"error": "request body was cut short"}, 400)
+            return
         try:
-            payload = json.loads(raw)
-        except json.JSONDecodeError:
+            payload = json.loads(raw, parse_constant=_reject_json_constant)
+        except (json.JSONDecodeError, ValueError):
             self._send_json({"error": "invalid json"}, 400)
             return
         if not isinstance(payload, dict):
@@ -1809,6 +2036,47 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         logger.info("console log written to %s", path)
         self._send_json({"ok": True, "path": path, "dir": target_dir, "filename": filename})
 
+    def _note_manual_link(self, conn: str) -> None:
+        """Record that the operator chose the link by hand, and clear the offer.
+
+        Never raises: this is bookkeeping on top of a connect that has already
+        succeeded, and an auto-connect bug must not turn a working link into a
+        500.
+        """
+        session = self.autoconnect_session
+        if session is None:
+            return
+        try:
+            session.note_manual_connect()
+            if conn:
+                session.note_decision("manual", conn)
+            if self.store is not None:
+                self.store.update(
+                    link_suggestion=None, link_auto=session.as_dict(),
+                )
+        except Exception:  # noqa: BLE001 - never fail a good connect over this
+            logger.exception("autoconnect: could not record the manual connect")
+
+    @route("GET", "/api/mavlink/auto")
+    def _api_mavlink_auto(self) -> None:
+        """Read-only view of what auto-connect decided and what it is offering.
+
+        The same two values the store pushes over SSE (``link_auto`` and
+        ``link_suggestion``), served as a plain GET so the behaviour can be
+        asked about directly — from a test, from a support session, from a
+        terminal at the field — without holding an event stream open. No side
+        effects: this endpoint decides nothing and dials nothing.
+        """
+        session = self.autoconnect_session
+        snapshot = self.store.get_snapshot() if self.store is not None else {}
+        auto = session.as_dict() if session is not None else dict(
+            snapshot.get("link_auto") or {},
+        )
+        self._send_json({
+            "auto": auto,
+            "suggestion": snapshot.get("link_suggestion"),
+        })
+
     @route("POST", "/api/mavlink/connect")
     def _api_mavlink_connect(self, payload: dict) -> None:
         conn = payload.get("connection", "udp:127.0.0.1:14550")
@@ -1839,6 +2107,12 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         except ValueError as exc:
             self._send_json({"ok": False, "error": str(exc)}, 400)
             return
+        # The operator picked a link, so auto-connect stops picking for them —
+        # for the rest of this process, not for the rest of time (the flag is
+        # never persisted, so the next field launch starts from the hardware
+        # again). Set only now, after the dial actually went through: a string
+        # the bridge refused is not a choice, it is a typo.
+        self._note_manual_link(conn)
         self._send_json({"ok": True, "connection": conn})
 
     @route("POST", "/api/mavlink/disconnect")
@@ -1867,6 +2141,11 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             logger.exception("mavlink disconnect failed")
             self._send_json({"ok": False, "error": f"disconnect failed: {exc}"}, 500)
             return
+        # "Leave it closed" has to mean closed. Auto-connect keeps the manual
+        # override it was given (and takes one now if it had none), so nothing
+        # dials the link back open behind the operator who just freed the
+        # radio. The way back is another connect, or a restart.
+        self._note_manual_link("")
         self._send_json({"ok": True})
 
     @route("POST", "/api/mavlink/arm")
@@ -2020,6 +2299,17 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         raw_points = payload.get("points")
         if not isinstance(raw_points, list) or not raw_points:
             self._send_json({"ok": False, "error": "points must be a non-empty list"}, 400)
+            return
+        # Checked before the per-point walk below, so an oversized payload
+        # costs one comparison rather than a coordinate-validated copy of
+        # itself. The bridge enforces the same bound — this is the early out.
+        if len(raw_points) > FLY_TO_MAX_POINTS:
+            self._send_json(
+                {"ok": False,
+                 "error": f"too many points ({len(raw_points)}); "
+                          f"the maximum is {FLY_TO_MAX_POINTS}"},
+                400,
+            )
             return
         cleaned: list[dict[str, float]] = []
         for index, item in enumerate(raw_points):
@@ -2237,6 +2527,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": "logo too large (max 4 MB)"}, 413)
             return
         raw = self.rfile.read(length)
+        if len(raw) != length:
+            self.close_connection = True
+            self._send_json({"ok": False, "error": "logo upload was cut short"}, 400)
+            return
         if not raw.startswith(PNG_MAGIC):
             self._send_json({"ok": False, "error": "logo must be a PNG image"}, 400)
             return
@@ -2654,7 +2948,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         Never fails: no telemetry, no tag.
         """
         try:
-            state = self.state_store.snapshot() if self.state_store is not None else {}
+            state = self.store.get_snapshot() if self.store is not None else {}
         except Exception:  # noqa: BLE001 - a filename hint must never raise
             return ""
         parts = [state.get("autopilot"), state.get("vehicle_type")]
@@ -3353,6 +3647,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": "empty firmware body"}, 400)
             return
         raw = self.rfile.read(length)
+        if len(raw) != length:
+            self.close_connection = True
+            self._send_json({"ok": False, "error": "firmware upload was cut short"}, 400)
+            return
         ok = self.flash.start(raw)
         if ok:
             self._send_json({"ok": True, "state": "flashing"})
@@ -3369,6 +3667,149 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"ok": True})
         else:
             self._send_json({"ok": False, "error": "no flash in progress"})
+
+    # ---- SiK telemetry radio ----
+    #
+    # These five are the only endpoints in the server that configure something
+    # other than the autopilot. A SiK radio holds its own EEPROM and is reached
+    # over AT commands on a serial port rather than over MAVLink (see
+    # corvus/sik_config.py for what the settings mean and corvus/sik_service.py
+    # for how the port is borrowed and given back).
+    #
+    # All four of the acting endpoints are POST, including the read. That is not
+    # an oversight: loading settings takes the serial port away from the MAVLink
+    # bridge for a second or two and puts a radio into command mode, which is a
+    # side effect on the aircraft's telemetry link and has no business behind a
+    # method a browser may retry, prefetch or cache.
+
+    @route("GET", "/api/sik/status")
+    def _api_sik_status(self) -> None:
+        """Ports, the live link's own port, and whether a session may run.
+
+        Always 200 so the page can poll it: an absent service is reported as one
+        that cannot configure, with the reason in ``blocked_reason``.
+        """
+        if self.sik is None:
+            self._send_json({
+                "ports": [], "link_device": "", "link_baud": sik_config.DEFAULT_BAUD,
+                "transport": "unknown", "armed": False, "busy": False,
+                "can_configure": False,
+                "blocked_reason": "radio configuration is unavailable",
+                "default_baud": sik_config.DEFAULT_BAUD,
+                "bauds": list(sik_config.BAUD_CANDIDATES),
+                "schema": sik_config.schema(),
+            })
+            return
+        status = self.sik.status()
+        # The register table travels with the status so the page can render its
+        # form, option lists and help text before a radio has been read — and so
+        # the labels live in exactly one place rather than being restated in JS.
+        status["schema"] = sik_config.schema()
+        self._send_json(status)
+
+    def _sik_target(self, payload: dict) -> tuple[str, int | None] | None:
+        """Pull ``device`` and optional ``baud`` out of a request body.
+
+        Returns ``None`` after sending the error response, so every caller is a
+        two-line guard. A baud that is not a positive integer is refused rather
+        than defaulted: silently substituting 57600 for a typo would open the
+        port, fail the escape, and report the failure against a number the
+        operator never chose.
+        """
+        device = payload.get("device")
+        if not isinstance(device, str) or not device.strip():
+            self._send_json({"ok": False, "error": "device is required"}, 400)
+            return None
+        raw = payload.get("baud")
+        if raw is None:
+            return device.strip(), None
+        if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
+            self._send_json({"ok": False, "error": "baud must be a positive integer"}, 400)
+            return None
+        return device.strip(), raw
+
+    def _sik_run(self, call: Any) -> None:
+        """Run one session and map its outcome onto a status code.
+
+        409 rather than 500 for a :class:`SikError`: every one of them is a
+        condition the operator can do something about — a radio that is not
+        powered, a port something else has open, a vehicle that is armed — and
+        none of them is the server failing.
+        """
+        if self.sik is None:
+            self._send_json({"ok": False, "error": "radio configuration unavailable"}, 503)
+            return
+        try:
+            result = call()
+        except sik_config.SikConfigError as exc:
+            self._send_json({"ok": False, "error": str(exc)}, 400)
+            return
+        except sik_service.SikError as exc:
+            self._send_json({"ok": False, "error": str(exc)}, 409)
+            return
+        except Exception as exc:  # noqa: BLE001 - a serial layer raises broadly
+            logger.exception("SiK radio session failed")
+            self._send_json({"ok": False, "error": f"radio session failed: {exc}"}, 500)
+            return
+        result["ok"] = True
+        self._send_json(result)
+
+    @route("POST", "/api/sik/load")
+    def _api_sik_load(self, payload: dict) -> None:
+        """Read both radios and report where the pair disagrees.
+
+        ``remote`` may be sent false to skip the far radio, which is what a
+        bench session with only one radio plugged in wants: the remote read is
+        the slow part of a load, and waiting six seconds for a partner that is
+        known to be switched off is time spent learning nothing.
+        """
+        target = self._sik_target(payload)
+        if target is None:
+            return
+        device, baud = target
+        include_remote = payload.get("remote", True)
+        if not isinstance(include_remote, bool):
+            self._send_json({"ok": False, "error": "remote must be boolean"}, 400)
+            return
+        self._sik_run(lambda: self.sik.load(device, baud, include_remote=include_remote))
+
+    @route("POST", "/api/sik/save")
+    def _api_sik_save(self, payload: dict) -> None:
+        """Write settings to either radio, far end first.
+
+        ``local`` and ``remote`` are each ``{REGISTER_NAME: value}`` and both are
+        optional; what is not sent is not written. Validation, the write order
+        and the commit-and-reboot sequence all live in the service and the
+        schema module — see :meth:`corvus.sik_service.SikService.save` for why
+        the remote radio is written before the one on the cable.
+        """
+        target = self._sik_target(payload)
+        if target is None:
+            return
+        device, baud = target
+        local = payload.get("local")
+        remote = payload.get("remote")
+        for name, value in (("local", local), ("remote", remote)):
+            if value is not None and not isinstance(value, dict):
+                self._send_json({"ok": False, "error": f"{name} must be an object"}, 400)
+                return
+        if not local and not remote:
+            self._send_json({"ok": False, "error": "nothing to write"}, 400)
+            return
+        self._sik_run(lambda: self.sik.save(device, baud, local=local, remote=remote))
+
+    @route("POST", "/api/sik/reset")
+    def _api_sik_reset(self, payload: dict) -> None:
+        """Factory-default one end of the link (``AT&F`` / ``RT&F``)."""
+        target = self._sik_target(payload)
+        if target is None:
+            return
+        device, baud = target
+        which = payload.get("target", "local")
+        if which not in {"local", "remote"}:
+            self._send_json({"ok": False, "error": "target must be 'local' or 'remote'"}, 400)
+            return
+        self._sik_run(lambda: self.sik.reset(device, baud, target=which))
 
     # ---- Second-station MAVLink forwarding ----
     @route("GET", "/api/forwarding")
@@ -3763,7 +4204,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors()
         self.end_headers()
         q = _BoundedSseBuffer(TELEMETRY_SSE_CAPACITY)
         listener = q.put_latest
@@ -3798,7 +4239,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors()
         self.end_headers()
         q = _BoundedSseBuffer(CONSOLE_SSE_CAPACITY)
         listener = q.put_console
@@ -3826,7 +4267,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors()
         self.end_headers()
         q = _BoundedSseBuffer(PARAMS_SSE_CAPACITY)
         listener = q.put_latest
@@ -3875,10 +4316,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors()
         self.end_headers()
-        q: queue.Queue = queue.Queue()
-        listener = lambda text: q.put(text)
+        q = _BoundedSseBuffer(SSH_SSE_CAPACITY)
+        listener = q.put_fifo
         attached_name: str | None = None
         if self.ssh:
             sessions = self.ssh.list_sessions()
@@ -3945,7 +4386,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors()
         self.end_headers()
         q: queue.Queue = queue.Queue()
         listener = q.put
@@ -4244,7 +4685,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors()
         self.end_headers()
         q = _BoundedSseBuffer(TILES_PROGRESS_SSE_CAPACITY)
         listener = q.put_latest
@@ -4317,7 +4758,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(blob)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors()
         self.send_header("Cache-Control", "max-age=86400")
         self.end_headers()
         self.wfile.write(blob)
@@ -4532,11 +4973,46 @@ class CorvusServer(socketserver.ThreadingTCPServer):
 # the machine happens to have taken 8000.
 PORT_SEARCH_SPAN = 20
 
+# Which interface the HTTP server listens on.
+#
+# This defaulted to "" — every interface on the machine — and the API behind it
+# has no authentication of any kind: arm, takeoff, a parameter write and a
+# firmware upload are each one unauthenticated POST. On a flight-line hotspot
+# "every interface" means every laptop and phone on that network, which is not
+# what "a local UI served to the operator's own browser" was ever meant to be.
+# Loopback is the default, so the API is reachable by this machine only.
+#
+# CORVUS_BIND is the deliberate way out for the setup that genuinely wants a
+# second screen: give it an interface address (or 0.0.0.0 for all of them) and
+# accept that whoever can reach the port can fly the aircraft. It is logged
+# loudly, once, at bind time — an exposed ground station should never be a
+# thing you find out about later.
+BIND_HOST_ENV = "CORVUS_BIND"
+DEFAULT_BIND_HOST = "127.0.0.1"
+
+
+def bind_host() -> str:
+    """The interface to listen on: loopback unless ``CORVUS_BIND`` says otherwise."""
+    host = (os.environ.get(BIND_HOST_ENV) or "").strip()
+    if not host or host == DEFAULT_BIND_HOST:
+        return DEFAULT_BIND_HOST
+    logger.warning(
+        "%s=%s: the HTTP API will accept requests from the network, and it has "
+        "no authentication — any non-browser client that can reach this port can "
+        "arm the vehicle. Browser writes from a remote UI remain blocked unless "
+        "%s is set to that UI's exact origin",
+        BIND_HOST_ENV, host, REMOTE_ORIGIN_ENV,
+    )
+    allowed_origin = (os.environ.get(REMOTE_ORIGIN_ENV) or "").strip()
+    if allowed_origin:
+        logger.warning("remote browser origin allowed to control the vehicle: %s", allowed_origin)
+    return host
+
 
 def bind_server(
     port: int,
     handler: type | None = None,
-    host: str = "",
+    host: str | None = None,
     span: int = PORT_SEARCH_SPAN,
     server_cls: type | None = None,
 ) -> "CorvusServer":
@@ -4555,18 +5031,23 @@ def bind_server(
     an unusable interface) are raised immediately rather than retried across
     twenty ports that will all fail the same way.
 
+    *host* defaults to :func:`bind_host` — loopback, unless ``CORVUS_BIND``
+    deliberately opts into a wider interface. Passing it explicitly (the tests
+    do) bypasses the environment.
+
     Raises OSError when the whole span is occupied, naming the range tried so
     the message is actionable.
     """
     handler = handler or CorvusHandler
     server_cls = server_cls or CorvusServer
+    host = bind_host() if host is None else host
     first = int(port)
     last_exc: OSError | None = None
     for candidate in range(first, first + max(1, int(span))):
         try:
             return server_cls((host, candidate), handler)
         except OSError as exc:
-            if exc.errno not in (errno.EADDRINUSE, errno.EACCES):
+            if exc.errno != errno.EADDRINUSE:
                 raise
             last_exc = exc
             if candidate != first:
@@ -4619,21 +5100,119 @@ CLIENT_GONE_ERRORS = (
 )
 
 
+DEFAULT_MAVLINK_CONNECTION = "udp:127.0.0.1:14550"
+
+
+def apply_startup_connection(
+    bridge: MavlinkBridge,
+    conn: Any,
+    *,
+    configured: str | None = None,
+    session: Any = None,
+    store: Any = None,
+) -> str:
+    """Point *bridge* at the link to start on, and say in the log which and why.
+
+    The string reaches here from a command-line argument or from
+    ``~/.corvus/config.json``, and neither was checked against what
+    ``mavlink_connection`` actually accepts: only ``POST /api/mavlink/connect``
+    validated, because that is the path with somewhere to put a 400. A typo in
+    the file or on the command line therefore started the app into a reconnect
+    loop that could never succeed, reporting whatever pymavlink made of the
+    string — for a bare word, an attempt to open it as a serial device.
+
+    Falling back rather than refusing to start: a ground station that comes up
+    on the default port is recoverable from inside the app, and one that exits
+    on a config typo is recoverable only by editing JSON in the field.
+
+    With a *session* (:class:`corvus.autoconnect.SessionState`) this also runs
+    the auto-connect resolver, so a flight controller on a USB cable beats the
+    string a config file was left holding last week. *conn* is then the
+    command-line argument and *configured* the file's value; called with
+    neither, or with auto-connect disabled, the behaviour is exactly what it
+    was — set the string, fall back on a bad one.
+
+    Returns the connection string the bridge ended up with.
+    """
+    from . import autoconnect as ac
+
+    decision: Any = None
+    if session is not None and session.enabled:
+        try:
+            decision = ac.resolve_startup_connection(
+                conn if isinstance(conn, str) else None,
+                configured,
+                ac.classify_ports(bridge.list_serial_ports()),
+                usb_enabled=session.usb,
+                sik_enabled=session.sik,
+                udp_fallback_enabled=session.udp_fallback,
+                default_connection=DEFAULT_MAVLINK_CONNECTION,
+                validator=bridge.validate_connection,
+            )
+        except Exception:  # noqa: BLE001 - resolution must never block a launch
+            logger.exception("autoconnect: startup resolution failed")
+            decision = None
+
+    target = decision.connection_string if decision is not None else conn
+    try:
+        bridge.set_connection(target)
+    except ValueError as exc:
+        logger.error(
+            "MAVLink connection %r is not usable (%s) — starting on %s instead",
+            target, exc, DEFAULT_MAVLINK_CONNECTION,
+        )
+        bridge.set_connection(DEFAULT_MAVLINK_CONNECTION)
+        decision = ac.StartupDecision(
+            DEFAULT_MAVLINK_CONNECTION, ac.REASON_DEFAULT_FALLBACK,
+        )
+
+    if decision is not None:
+        logger.info(
+            "autoconnect: startup winner=%s reason=%s%s",
+            bridge.connection_string(), decision.reason,
+            f" detail={decision.detail}" if decision.detail else "",
+        )
+        if session is not None:
+            session.note_decision(decision.reason, bridge.connection_string())
+            if store is not None:
+                try:
+                    store.update(link_auto=session.as_dict())
+                except Exception:  # noqa: BLE001 - publishing is never fatal
+                    logger.exception("autoconnect: could not publish link_auto")
+    return bridge.connection_string()
+
+
 def create_server(
     port: int = 8000,
-    mavlink_conn: str = "udp:127.0.0.1:14550",
+    mavlink_conn: str | None = None,
     config_path: str | None = None,
 ) -> CorvusServer:
-    """Create and wire up the full Corvus backend server."""
+    """Create and wire up the full Corvus backend server.
+
+    *mavlink_conn* is the command-line connection string, or None when none was
+    given. None does not mean the default — it means "nobody has said", which
+    is what lets auto-connect look at the hardware before it reaches for the
+    config file (see :func:`apply_startup_connection`).
+    """
     store = VehicleStateStore()
-    mavlink = MavlinkBridge(store, mavlink_conn)
+    mavlink = MavlinkBridge(store, DEFAULT_MAVLINK_CONNECTION)
     ssh = SshBridge()
 
     # Operator config: loaded once at startup; the /api/config endpoints
     # mutate the live object and persist it back through save_config. The
     # CLI args (port/mavlink_conn) still beat the file for the bind/conn.
+    # Loaded BEFORE the bridge is pointed anywhere, because the auto-connect
+    # toggles live in it and the startup resolver needs them.
     cfg_path = config_path or default_config_path()
     config = load_config(cfg_path)
+
+    autoconnect_session = build_autoconnect_session(config)
+    apply_startup_connection(
+        mavlink, mavlink_conn,
+        configured=config.mavlink_connection,
+        session=autoconnect_session,
+        store=store,
+    )
 
     # Tile resources: one MBTiles cache per source under ~/.corvus/tiles/.
     # TileDownloader binds a single cache at construction, so per-source caches
@@ -4648,6 +5227,7 @@ def create_server(
     CorvusHandler.ssh = ssh
     CorvusHandler.config = config
     CorvusHandler.config_path = cfg_path
+    CorvusHandler.autoconnect_session = autoconnect_session
     CorvusHandler.tile_caches = tile_caches
     CorvusHandler.tile_downloader = tile_downloader
     CorvusHandler.tile_progress_bus = tile_progress_bus
@@ -4668,6 +5248,16 @@ def create_server(
     except Exception:  # noqa: BLE001 - never block server creation
         logger.exception("flash service unavailable; firmware endpoints disabled")
     CorvusHandler.flash = flash
+
+    # SiK telemetry-radio configuration. Borrows the bridge's serial port for
+    # the length of an AT session, so it holds the same two handles the flash
+    # service does and is torn down on the same path.
+    sik: Any = None
+    try:
+        sik = sik_service.SikService(mavlink, store)
+    except Exception:  # noqa: BLE001 - never block server creation
+        logger.exception("SiK radio service unavailable; radio endpoints disabled")
+    CorvusHandler.sik = sik
 
     # Flight-log service: on-board ULog download over MAVLink plus the local
     # tlog listing. Lazily imported for the same reason as the flash service.
@@ -4699,10 +5289,17 @@ def create_server(
     server.config = config
     server.config_path = cfg_path
     server.flash = flash
+    server.sik = sik
     server.logs = logs
     server.forwarder = forwarder
     server.updates = updates
     server.tile_caches = tile_caches
     server.tile_downloader = tile_downloader
+    server.autoconnect_session = autoconnect_session
     mavlink.start()
+    # After mavlink.start(), never before: the resolver above already decided
+    # the first link synchronously, and the watcher exists only for what is
+    # plugged in afterwards. Starting it earlier would let it dial a bridge
+    # that has not been started yet.
+    server.autoconnect = start_autoconnect_watcher(mavlink, store, autoconnect_session)
     return server

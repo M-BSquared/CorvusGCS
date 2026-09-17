@@ -301,6 +301,53 @@ def test_the_dial_out_schemes_are_accepted_and_classified(bridge, conn) -> None:
     assert bridge._is_serial() is False
 
 
+@pytest.mark.parametrize("conn", ["tcpout:127.0.0.1:5760", "wsserver:0.0.0.0:5760"])
+def test_a_scheme_pymavlink_has_no_handler_for_is_refused_not_guessed_at(bridge, conn) -> None:
+    """There is no ``tcpout:``: pymavlink's ``tcp:`` IS the dial-out half and
+    ``tcpin:`` is the listen half, so the missing prefix is correct rather than
+    an omission. It is pinned because the failure mode is documentation — a
+    manual or a preset promising a spelling validation rejects sends an
+    operator to retype a string that was never going to work.
+    """
+    with pytest.raises(ValueError):
+        bridge.validate_connection(conn)
+
+
+def test_every_command_ack_waiter_goes_through_the_one_operation_lock(bridge) -> None:
+    """``_pending_acks`` holds ONE slot per command id, so two overlapping
+    waits on the same id would share it. What makes that safe is not the dict —
+    it is that every sender serialises through ``_operation_lock`` and the pop
+    checks identity. A third waiter added without the lock would reintroduce
+    the race silently, so the discipline is asserted rather than assumed.
+    """
+    import inspect
+
+    from corvus.mavlink_bridge import MavlinkBridge
+
+    writes = 0
+    writers = []
+    for name, attr in vars(MavlinkBridge).items():
+        if not callable(attr):
+            continue
+        try:
+            body = inspect.getsource(attr)
+        except (OSError, TypeError):
+            continue
+        count = body.count("self._pending_acks[")
+        if not count:
+            continue
+        writes += count
+        writers.append(name)
+        assert "with self._operation_lock" in body, (
+            f"{name} writes _pending_acks outside _operation_lock"
+        )
+
+    assert writers, "no waiters found — the check would be vacuous"
+    # Every write in the class is accounted for by a method that took the lock;
+    # one that slipped into a nested helper or module scope would not be.
+    assert writes == inspect.getsource(MavlinkBridge).count("self._pending_acks[")
+
+
 # ---------------------------------------------------------------------------
 # Telling pymavlink which node we picked
 # ---------------------------------------------------------------------------

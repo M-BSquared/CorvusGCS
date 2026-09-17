@@ -23,6 +23,7 @@ import pytest
 
 from corvus.firmware_uploader import (
     FirmwareUploader,
+    MAX_FIRMWARE_IMAGE_BYTES,
     _bl_crc32,
     parse_firmware,
     BAD_SILICON,
@@ -178,6 +179,56 @@ def test_parse_firmware_invalid_json_raises() -> None:
 def test_parse_firmware_json_without_image_field_raises() -> None:
     with pytest.raises(ValueError):
         parse_firmware(b'{"board_id": 1}')
+
+
+def _compressed_zeros(size: int) -> bytes:
+    """Build a high-ratio zlib stream without allocating its expanded form."""
+    compressor = zlib.compressobj()
+    chunk = b"\x00" * (64 * 1024)
+    parts: list[bytes] = []
+    remaining = size
+    while remaining:
+        amount = min(remaining, len(chunk))
+        parts.append(compressor.compress(chunk[:amount]))
+        remaining -= amount
+    parts.append(compressor.flush())
+    return b"".join(parts)
+
+
+def test_parse_firmware_rejects_a_zlib_image_expanding_past_the_cap() -> None:
+    """A tiny canonical .px4 container must not expand without a hard bound."""
+    compressed = _compressed_zeros(MAX_FIRMWARE_IMAGE_BYTES + 1)
+    desc = {"image": base64.b64encode(compressed).decode("ascii")}
+
+    with pytest.raises(ValueError, match="size limit|too large"):
+        parse_firmware(json.dumps(desc).encode("ascii"))
+
+
+def test_parse_firmware_rejects_an_oversized_zip_before_reading_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ZipInfo declares the expansion size, so reject before allocating it."""
+    import corvus.firmware_uploader as fu
+
+    archive = MagicMock()
+    archive.__enter__.return_value = archive
+    archive.namelist.return_value = ["firmware.px4"]
+    archive.getinfo.return_value = MagicMock(
+        filename="firmware.px4",
+        file_size=MAX_FIRMWARE_IMAGE_BYTES + 1,
+    )
+    archive.read.side_effect = AssertionError("oversized entry must not be read")
+    monkeypatch.setattr(fu.zipfile, "ZipFile", lambda *_args, **_kwargs: archive)
+
+    with pytest.raises(ValueError, match="size limit|too large"):
+        parse_firmware(b"PK\x03\x04synthetic archive")
+
+    archive.read.assert_not_called()
+
+
+def test_parse_firmware_rejects_an_oversized_raw_image() -> None:
+    with pytest.raises(ValueError, match="size limit|too large"):
+        parse_firmware(b"\xff" * (MAX_FIRMWARE_IMAGE_BYTES + 1))
 
 
 # ---------------------------------------------------------------------------

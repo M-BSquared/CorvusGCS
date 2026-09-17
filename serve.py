@@ -55,6 +55,15 @@ def _stop_all(server) -> None:
             logger.info("flash stopped")
         except Exception:
             logger.exception("flash shutdown failed")
+    # The radio service may be holding the bridge's serial port and will
+    # restart the bridge when its session ends, so it is told to stop doing that
+    # in the same breath as flash and for the same reason.
+    sik = getattr(server, "sik", None)
+    if sik is not None:
+        try:
+            sik.shutdown()
+        except Exception:
+            logger.exception("SiK radio shutdown failed")
     # Log downloads hold a sink on the MAVLink bridge and a worker thread, so
     # they are stopped alongside flash — before the bridge itself goes away.
     logs = getattr(server, "logs", None)
@@ -78,6 +87,11 @@ def _stop_all(server) -> None:
             logger.info("mavlink forwarding stopped")
         except Exception:
             logger.exception("mavlink forwarder shutdown failed")
+    # The auto-connect watcher calls stop/set_connection/start on the bridge,
+    # so it is joined before the bridge goes away: a tick landing after
+    # mavlink.stop() would start the link the shutdown just closed.
+    from corvus.server import stop_autoconnect_watcher
+    stop_autoconnect_watcher(server)
     mavlink = getattr(server, "mavlink", None)
     if mavlink is not None:
         try:
@@ -153,7 +167,12 @@ def main() -> int:
         if not 1 <= port <= 65535:
             logger.error("port %d is out of range (1-65535)", port)
             return 2
-    mavlink_conn = sys.argv[2] if len(sys.argv) > 2 else cfg.mavlink_connection
+    # None, not the config value, when no argument was given: the startup
+    # resolver treats an explicit argument as the operator's own decision and
+    # lets it outrank a flight controller on a cable, so handing it the config
+    # file's string would make auto-connect impossible to reach. The file is
+    # passed separately, at its own priority.
+    mavlink_conn = sys.argv[2] if len(sys.argv) > 2 else None
 
     # One ground station per machine — the serial link, the forwarder's UDP
     # port and ~/.corvus/config.json cannot be shared between two of them, and
@@ -218,7 +237,7 @@ def main() -> int:
     atexit.register(_teardown)
 
     logger.info("CORVUS GCS v%s — http://localhost:%d/ (MAVLink: %s)",
-                get_version(), port, mavlink_conn)
+                get_version(), port, server.mavlink.connection_string())
     logger.info("Press Ctrl+C to stop.")
 
     server_thread = threading.Thread(target=server.serve_forever, name="http-server", daemon=True)

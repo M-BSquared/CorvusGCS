@@ -11,12 +11,20 @@ window.Corvus = window.Corvus || {};
  *
  * Two views behind one entry point, the same shape as the Calibration page:
  *
- *   overview  the live channel monitor at the top — the one thing on this page
- *             that answers "is the radio even talking" — then the schema-driven
- *             configuration: input mode and RC-loss action, stick channels, the
- *             flight-mode switch with its six slots, the remaining switches,
- *             the AUX passthroughs, and the per-channel calibration table.
+ *   overview  the drawn transmitter and the live channel monitor at the top —
+ *             the two things on this page that answer "is the radio even
+ *             talking" — then the schema-driven configuration: input mode and
+ *             RC-loss action, stick channels, the flight-mode switch with its
+ *             six slots, the remaining switches, the AUX passthroughs, and the
+ *             per-channel calibration table.
  *   wizard    the calibration itself, step by step.
+ *
+ * The drawing (Corvus.rcTransmitter) is the same widget in both views and it
+ * is the physical half of the page: the form below it says "the kill switch is
+ * on channel 7", the drawing says which toggle that is, lights it while it is
+ * held, and — during the calibration — points at the stick the current step is
+ * asking for. Which drawn control sits on which channel is learned by moving
+ * it, since the vehicle does not know and cannot be asked.
  *
  * Why the calibration is a wizard here and not a button
  * ----------------------------------------------------
@@ -49,7 +57,9 @@ window.Corvus = window.Corvus || {};
  *   GET  /api/rc                     {connected,sections,assignments,channel_limit}
  *   POST /api/rc/stream {enabled,rate_hz}   raise RC_CHANNELS while open
  *   POST /api/rc/calibrate {channels,count,mapping}  write a measurement
- *   POST /api/params/set {name,value}       edit one field (refused while armed)
+ *   POST /api/params/set {name,value}       edit one field (refused while armed),
+ *                                           including an RC_MAP_* assigned from
+ *                                           the drawn transmitter
  *
  * Exposes render(container, navigateBack) -> destroy(). The caller (setup.js)
  * owns the lifecycle and calls destroy() on back / left-nav re-entry, which
@@ -97,6 +107,18 @@ Corvus.setupControl = (function () {
     { id: "yaw", param: "RC_MAP_YAW", label: "Yaw",
       action: "Move the yaw stick all the way RIGHT and hold it." },
   ];
+
+  /** Which way on the DRAWING each stick prompt asks the operator to push.
+   *  Forward on a gimbal is up on screen, which is why pitch — the axis PX4
+   *  wants pushed forward — points up here and not down. */
+  const STICK_DIRECTION = {
+    throttle: "up", pitch: "up", roll: "right", yaw: "right",
+  };
+
+  /** "Mode 2", for the wizard's one-line note about which stick is which. */
+  function stickModeName() {
+    return "Mode " + Corvus.rcTransmitter.loadMode();
+  }
 
   /* ================================================================== */
   /* Entry point                                                         */
@@ -290,6 +312,226 @@ Corvus.setupControl = (function () {
     return { el, update, setLabels, highlight, rows };
   }
 
+  /**
+   * The drawing and the channel bars, side by side where they fit.
+   *
+   * They are two readings of the same thing — the picture says which control
+   * moved, the bars say by how much — and checking one against the other is
+   * most of what this page is for. Stacked, that means scrolling between them.
+   *
+   * Whether they fit is a question about THIS COLUMN, not about the window:
+   * the operator can collapse the right-hand panel and double the room without
+   * the viewport changing by a pixel. So the switch is a container query, and
+   * an engine that does not have them keeps the stacked layout, which is the
+   * pre-existing one and correct at any width.
+   */
+  function topRow(drawing, bars) {
+    const wrap = S.el("div", "rc-top");
+    const row = S.el("div", "rc-top-row");
+    row.appendChild(drawing);
+    row.appendChild(bars);
+    wrap.appendChild(row);
+    return wrap;
+  }
+
+  /* ================================================================== */
+  /* Shared: the drawn transmitter                                       */
+  /* ================================================================== */
+
+  /**
+   * The transmitter card — Corvus.rcTransmitter in a page card, with the two
+   * things the drawing itself cannot own: the stick mode, and the vehicle
+   * data it has to be fed (which channel each stick is on, and each channel's
+   * calibrated endpoints).
+   *
+   * Used by both views. The wizard builds it non-interactive: while a
+   * measurement is being taken, a widget that also writes mappings would be
+   * changing the thing the measurement is about.
+   *
+   * Returns {el, widget, setDoc(doc), update(state), setFunctionRenderer(fn),
+   * destroy()}.
+   */
+  function transmitterCard(opts) {
+    const o = opts || {};
+    const interactive = o.interactive !== false;
+
+    const card = S.el("div", "page-card rc-tx-card");
+    const head = S.el("div", "rc-monitor-head");
+    head.appendChild(S.sectionTitle(o.title || "Transmitter"));
+
+    // Assigned after construction by the overview, which is the only view that
+    // has the schema (and the armed gate) a function picker needs.
+    let renderFunctions = null;
+
+    const widget = Corvus.rcTransmitter.create({
+      interactive,
+      renderFunctions: (channel, controlId, armed) => (
+        renderFunctions ? renderFunctions(channel, controlId, armed) : null
+      ),
+    });
+
+    const tools = S.el("div", "rc-tx-tools");
+    if (interactive) {
+      const modeSelect = Corvus.ui.select({
+        className: "rc-tx-mode",
+        ariaLabel: "Transmitter stick mode",
+        title: "Which thumb carries throttle",
+        options: [1, 2, 3, 4].map((m) => ({ value: m, label: "Mode " + m })),
+        value: widget.getMode(),
+        onChange: (value) => { widget.setMode(Number(value)); widget.update(last); },
+      });
+      tools.appendChild(modeSelect);
+      tools.appendChild(Corvus.ui.button({
+        variant: "ghost", size: "sm", icon: "eraser", label: "Forget controls",
+        ariaLabel: "Forget every learned control",
+        title: "Drop every control this browser learned — for a new transmitter",
+        onClick: () => { widget.forgetAll(); widget.update(last); },
+      }));
+    }
+    head.appendChild(tools);
+    card.appendChild(head);
+
+    if (o.hint) card.appendChild(S.el("div", "field-hint", o.hint));
+    card.appendChild(widget.el);
+
+    let last = null;
+
+    return {
+      el: card,
+      widget,
+      setFunctionRenderer(fn) { renderFunctions = fn; widget.refresh(); },
+      /**
+       * Feed the vehicle's own view of the radio into the drawing: which
+       * channel each stick axis is on, and per channel the endpoints the
+       * positions are measured against.
+       */
+      setDoc(doc) {
+        const assignments = (doc && doc.assignments) || {};
+        const sticks = {};
+        Object.keys(Corvus.rcTransmitter.ROLE_PARAM).forEach((role) => {
+          const channel = Number(assignments[Corvus.rcTransmitter.ROLE_PARAM[role]]);
+          if (channel >= 1) sticks[role] = channel;
+        });
+        widget.setStickChannels(sticks);
+
+        const info = {};
+        ((doc && doc.sections) || []).forEach((section) => {
+          if (section.kind !== "channels") return;
+          (section.rows || []).forEach((row) => {
+            // Only a channel the vehicle says is calibrated may set the scale
+            // its switch positions are read against: PX4's untouched 1000/2000
+            // defaults would put a three-position switch's middle slot
+            // wherever the receiver's idle happens to sit.
+            if (!row.calibrated) return;
+            info[row.channel] = {
+              min: row.min, max: row.max, reversed: !!row.reversed,
+            };
+          });
+        });
+        widget.setChannelInfo(info);
+        widget.update(last);
+      },
+      update(state) { last = state; widget.update(state); },
+      destroy() { widget.destroy(); },
+    };
+  }
+
+  /**
+   * What a channel does on the vehicle, and how to change it — the panel the
+   * transmitter widget shows under a learned control.
+   *
+   * Chips for every RC_MAP_* already pointing at this channel (with an X that
+   * unassigns it), plus a picker that binds another one to it. This is the
+   * "assign a switch" half of the page done from the handset's side: the form
+   * below asks "which channel is the kill switch on", this asks "what does
+   * THIS toggle do", and both write the same parameter.
+   */
+  function functionPanel(state, channel, armed) {
+    const wrap = S.el("div", "rc-tx-fns");
+    const fields = channelFields(state.doc);
+    if (!fields.length) return null;
+
+    // Not registerControl'd: this panel is rebuilt by the widget whenever the
+    // armed flag changes, so its controls are gated where they are built and
+    // never outlive the rebuild in the page's control registry.
+    const blocked = !!armed;
+
+    const assigned = fields.filter((f) => Number(f.value) === channel);
+    const chips = S.el("div", "rc-tx-chips");
+    if (assigned.length) {
+      assigned.forEach((field) => {
+        const chip = S.el("span", "rc-tx-chip");
+        chip.appendChild(S.el("span", null, field.label || field.param));
+        const drop = Corvus.ui.button({
+          variant: "ghost", size: "sm", icon: "x",
+          ariaLabel: "Unassign " + (field.label || field.param),
+          onClick: () => writeMapping(state, field, 0),
+        });
+        drop.classList.add("rc-tx-chip-drop");
+        drop.disabled = blocked;
+        chip.appendChild(drop);
+        chips.appendChild(chip);
+      });
+    } else {
+      chips.appendChild(S.el("span", "rc-tx-chip rc-tx-chip-empty",
+        "Channel " + channel + " does nothing on this vehicle yet"));
+    }
+    wrap.appendChild(chips);
+
+    const picker = Corvus.ui.select({
+      className: "rc-tx-fn-select",
+      ariaLabel: "Assign a function to channel " + channel,
+      options: [{ value: "", label: "Assign a function…" }].concat(
+        fields
+          .filter((f) => Number(f.value) !== channel)
+          .map((f) => ({ value: f.param, label: f.label || f.param })),
+      ),
+      value: "",
+      onChange: (value) => {
+        if (!value) return;
+        const field = fields.find((f) => f.param === value);
+        if (field) writeMapping(state, field, channel);
+      },
+    });
+    picker.disabled = blocked;
+    wrap.appendChild(picker);
+    return wrap;
+  }
+
+  /** Every RC_MAP_* field the vehicle answered for, across all sections. */
+  function channelFields(doc) {
+    const out = [];
+    ((doc && doc.sections) || []).forEach((section) => {
+      (section.fields || []).forEach((field) => {
+        if (field.role === "channel") out.push(field);
+      });
+    });
+    return out;
+  }
+
+  /**
+   * Write one RC_MAP_* from the transmitter widget.
+   *
+   * Goes through the same endpoint and the same armed refusal as every other
+   * edit on this page, then re-reads: a mapping write changes what every other
+   * channel means, and the widget's own chips are one of the things that has
+   * to be re-derived rather than patched.
+   */
+  function writeMapping(state, field, channel) {
+    if (state.armed) return;
+    setStatus(state, "pending", "Writing " + field.param + "…");
+    Corvus.telemetry.postAction("/api/params/set", {
+      name: field.param, value: channel,
+    }).then(() => {
+      field.value = channel;
+      load(state);
+    }).catch((err) => {
+      const msg = (err && err.message) || "write failed";
+      setStatus(state, "err", msg);
+      notify("critical", "Could not set " + field.param + ": " + msg);
+    });
+  }
+
   /* ================================================================== */
   /* Overview view                                                       */
   /* ================================================================== */
@@ -318,8 +560,9 @@ Corvus.setupControl = (function () {
     banner.textContent = "Radio configuration is read-only while armed";
     el.appendChild(banner);
 
+    const transmitter = transmitterCard({ interactive: true });
     const monitor = channelMonitor({ title: "Live channels" });
-    el.appendChild(monitor.el);
+    el.appendChild(topRow(transmitter.el, monitor.el));
 
     const host = S.el("div", "page-section rc-sections");
     el.appendChild(host);
@@ -328,7 +571,7 @@ Corvus.setupControl = (function () {
     // transition re-gates the whole page without walking the DOM. Same
     // contract the Motors and Safety pages hand to setupShared.
     const state = {
-      host, banner, actionsStatus, monitor,
+      host, banner, actionsStatus, monitor, transmitter,
       armed: false, loading: false, destroyed: false, controls: [],
       doc: null, detect: null,
       // Live-updating pieces of the rendered sections, refreshed from the
@@ -344,6 +587,8 @@ Corvus.setupControl = (function () {
     reloadBtn.addEventListener("click", () => load(state));
     registerControl(state, calibrateBtn);
     registerControl(state, reloadBtn, () => { reloadBtn.disabled = state.loading; });
+    transmitter.setFunctionRenderer(
+      (channel, _controlId, armed) => functionPanel(state, channel, armed));
 
     load(state);
 
@@ -352,12 +597,14 @@ Corvus.setupControl = (function () {
       onTelemetry(s) {
         applyArmed(state, !!(s && s.armed));
         state.monitor.update(s);
+        state.transmitter.update(s);
         paintLive(state, s);
         if (state.detect) state.detect.sample(s);
       },
       destroy() {
         state.destroyed = true;
         cancelDetect(state, "cancelled");
+        transmitter.destroy();
       },
     };
   }
@@ -426,6 +673,7 @@ Corvus.setupControl = (function () {
     state.channelRows = {};
 
     state.monitor.setLabels(assignmentLabels(doc));
+    if (state.transmitter) state.transmitter.setDoc(doc);
 
     const sections = Array.isArray(doc.sections) ? doc.sections : [];
     if (!sections.length) {
@@ -825,8 +1073,21 @@ Corvus.setupControl = (function () {
     stage.appendChild(hint);
     el.appendChild(stage);
 
+    // The drawing goes above the bars in the wizard too, and for a stronger
+    // reason than on the overview: every step of this procedure is an
+    // instruction about a physical control, and "push the pitch stick all the
+    // way FORWARD" is a sentence the operator has to map onto their own
+    // handset. The arrow does that mapping for them.
+    const transmitter = transmitterCard({
+      interactive: false,
+      title: "What to move",
+      hint: "Drawn in " + stickModeName() + ". Change the stick mode on the "
+        + "Radio Control page if the sticks here are not where yours are.",
+    });
+    transmitter.setDoc(doc);
+
     const monitor = channelMonitor({ title: "Live channels" });
-    el.appendChild(monitor.el);
+    el.appendChild(topRow(transmitter.el, monitor.el));
 
     const review = S.el("div", "page-card rc-review");
     review.hidden = true;
@@ -867,6 +1128,39 @@ Corvus.setupControl = (function () {
         .filter((c) => c.value > 0);
     }
 
+    /**
+     * What the drawing should be pointing at on this step.
+     *
+     * The sweep step is the interesting one: it lights every control whose
+     * channel has already been swept far enough, which turns "four channels
+     * swept so far" from a number into a picture of which switch is still
+     * sitting untouched.
+     */
+    function promptFor() {
+      const axes = ["left_x", "left_y", "right_x", "right_y"];
+      if (step === "centre") return { controls: axes };
+      if (step === "sweep") {
+        const swept = sweptChannels();
+        const map = transmitter.widget.channelMap();
+        return {
+          controls: Object.keys(map),
+          swept: Object.keys(map).filter((id) => swept.indexOf(map[id]) >= 0),
+        };
+      }
+      if (step === "sticks") {
+        const stick = STICKS[stickIndex];
+        const roles = Corvus.rcTransmitter.axisRoles(transmitter.widget.getMode());
+        const axis = axes.find((id) => roles[id] === stick.id);
+        if (!axis) return {};
+        return {
+          controls: [axis],
+          gimbal: axis.indexOf("left") === 0 ? "left" : "right",
+          direction: STICK_DIRECTION[stick.id] || null,
+        };
+      }
+      return {};
+    }
+
     /** Channels whose sweep is wide enough to be a real measurement. */
     function sweptChannels() {
       return Object.keys(measurement.max)
@@ -890,6 +1184,7 @@ Corvus.setupControl = (function () {
       review.hidden = step !== "review";
       hint.hidden = true;
       monitor.highlight(null);
+      transmitter.widget.setPrompt(promptFor());
 
       if (step === "intro") {
         headline.textContent = "Before you start";
@@ -1213,6 +1508,7 @@ Corvus.setupControl = (function () {
         vehicle = next;
         latest = (s && s.rc_channels) || [];
         monitor.update(s);
+        transmitter.update(s);
         accumulate();
         // Otherwise every step but the review is repainted per frame: each of
         // them gates its Next button on what is arriving right now, and a
@@ -1221,7 +1517,7 @@ Corvus.setupControl = (function () {
         // repainting it rebuilds its table under the operator's cursor.
         if (gateChanged || step !== "review") paint();
       },
-      destroy() {},
+      destroy() { transmitter.destroy(); },
     };
   }
 

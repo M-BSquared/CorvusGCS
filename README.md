@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.38-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.38" />
+  <img src="https://img.shields.io/badge/Version-2026.09.39-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.39" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.10%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.10+" /></a>
   <img width="8" />
@@ -71,6 +71,7 @@
 - [Connect to your aircraft](#connect-to-your-aircraft)
   - [Run QGroundControl at the same time](#run-qgroundcontrol-at-the-same-time)
   - [One Corvus at a time](#one-corvus-at-a-time)
+  - [Who can reach the ground station](#who-can-reach-the-ground-station)
 - [Using Corvus](#using-corvus)
   - [The map and the flight HUD](#the-map-and-the-flight-hud)
   - [Offline maps](#offline-maps)
@@ -187,7 +188,7 @@ Everything here is **built and working today**.
 | 🛩️ **Fly** | Live map, floating flight HUD, arm / takeoff / land / RTL, flight-mode selection, on-screen joystick and arrow-key control with adjustable key strength | ✅ |
 | 🗺️ **Navigate** | 4 map services with 12 layers, vehicle heading, home point, the flown track, and click-the-map to fly there or move home | ✅ |
 | 📴 **Work offline** | Nothing loads from the internet. Download named map areas in advance and the whole app keeps working with no connection | ✅ |
-| 📡 **Connect** | Serial, UDP and TCP, a live port picker, saved recent connections, link-quality display and automatic reconnect | ✅ |
+| 📡 **Connect** | Connects on its own to whatever is plugged in — flight controller on USB first, then telemetry radio, then the simulator port — plus serial, UDP and TCP by hand, a live port picker, saved recent connections, link-quality display and automatic reconnect | ✅ |
 | 🔧 **Set up** | Airframe drawn to scale — click a motor to wire, position or spin-test it; ESC protocol; parameter editor with import / export; guided sensor calibration, ESC calibration, PID tuning by hand or by in-flight autotune, and PX4 firmware flashing | ✅ |
 | 🛡️ **Set limits** | Maximum distance and height, the return-to-launch profile, and a failsafe action for every loss PX4 can detect — plus a distance sensor or optical-flow camera brought up by one switch, driver and estimator together | ✅ |
 | 📊 **Review flights** | Download the vehicle's logs and record the live stream, then read either on your own machine: Flight Review for a ULog, Telemetry Review for the recording that exists even when the ULog does not — including the radio link, which an onboard log cannot see | ✅ |
@@ -368,9 +369,29 @@ are gitignored. CI runs the same scripts — see
 
 ## Connect to your aircraft
 
-Open the **LINK** tab in the side panel and pick how you are connected. This is
-the normal way to connect — a command-line connection string is only for
-scripting. Serial and UDP/TCP share one card and one **Connect** button; the
+Usually you do not have to. Corvus looks for a link at launch and takes the
+first one it finds: a flight controller on a **USB cable**, then a **SiK
+telemetry radio**, then the **ground-station UDP port** — which is where PX4
+SITL publishes, so a simulator connects with no clicking either. The LINK tab
+says which rule won with an `AUTO` chip beside the status, and `AUTO ·
+SCANNING` while it is still looking.
+
+Two things it will not do. It never takes a link that is up: plug a second
+device in mid-flight and it offers you a row with a **Connect** button instead
+of switching, because the link it would replace may be carrying an aircraft
+that is flying. And once *you* pick a link, it stops picking — for that
+session, then starts fresh at the next launch, so tomorrow's cable wins again
+on its own. A connection string on the command line always wins outright.
+
+To turn any of it off, add an `autoconnect` block to `~/.corvus/config.json`:
+
+```json
+{ "autoconnect": { "enabled": true, "usb": true, "sik": true, "udp_fallback": true } }
+```
+
+Open the **LINK** tab in the side panel to connect by hand at any time. This is
+the normal way to override the automatic choice — a command-line connection
+string is only for scripting. Serial and UDP/TCP share one card and one **Connect** button; the
 switch at the top of it chooses which, and it opens on whichever kind you
 connected with last.
 
@@ -547,6 +568,44 @@ cannot, its own refusal reaches you with a reason attached.
 
 </details>
 
+### Who can reach the ground station
+
+Corvus is a web UI served by a local HTTP server, and that server answers on
+**this machine only**. It matters because the API behind the UI is the whole
+application: arming, takeoff, a parameter write and a firmware upload are each
+one request, and none of them asks who is calling. There is no login, because
+the ground station is a program on your laptop rather than a service on a
+network — and that is only true for as long as the port stays off the network.
+
+Two things follow from it.
+
+The server binds `127.0.0.1`. On a flight-line hotspot the alternative is every
+laptop and phone on that WiFi being able to arm your aircraft. If you genuinely
+want a second screen — a tablet running the UI off the same link — set
+`CORVUS_BIND` and it will listen where you point it:
+
+```bash
+CORVUS_BIND=0.0.0.0 ./run.sh
+```
+
+Corvus says so in the log when you do, every launch. Treat that network the way
+you would treat handing someone the transmitter.
+
+A website you visit cannot read your telemetry. The API used to answer every
+browser with `Access-Control-Allow-Origin: *`, which is not about who can reach
+the port — it is about who is allowed to *read the answer*. With the wildcard,
+any page open in any tab could fetch `http://localhost:8000/api/state` and read
+back position, battery and mode, or pull the SSH host, username and key path
+out of the config. The header now names loopback origins only, so another tool
+on your own machine still works and the web at large gets nothing.
+
+SSH to a companion computer remembers host keys, in `~/.corvus/known_hosts`. The
+first connection to a new machine is accepted and written down — you rarely have
+a known_hosts entry for a companion computer, and being stopped at the field is
+worse than the risk. The second one is checked: a key that does not match what
+was recorded is refused, which is the case that actually means something. Set
+`CORVUS_SSH_HOST_KEYS=strict` to refuse unknown hosts as well.
+
 ---
 
 ## Using Corvus
@@ -590,7 +649,7 @@ lookups Corvus stops trying for 30 seconds, so cached tiles render at full speed
 and the rest simply stays blank rather than freezing the map. Walking back into
 coverage recovers on its own.
 
-### Setup — motors, safety, parameters, calibration, tuning, firmware
+### Setup — motors, safety, parameters, calibration, tuning, radio, firmware
 
 - **Motors** — your airframe, drawn. Every motor sits at its real distance from
   the centre of gravity with its number, its output and a spin-direction arrow,
@@ -627,16 +686,34 @@ coverage recovers on its own.
   loiter before landing), and a failsafe action for every loss PX4 can detect —
   RC, data link, position, battery, actuator — with the battery levels that
   trigger them.
-- **Distance sensor and optical flow** — on the same page, because a ground
-  lidar is what half those limits lean on. One switch brings a sensor up:
-  Corvus starts the driver *and* tells the estimator to fuse it, which is the
-  step usually missed — a rangefinder reading perfectly while the EKF ignores
-  it looks exactly like a working sensor. Pick the model (Lightware,
-  Lidar-Lite, Benewake, PMW3901 and the rest, or a sensor arriving over
-  MAVLink), name the serial port if it needs one, and the few settings that are
-  genuinely per-airframe — mounting offset, height limits, quality gates — stay
-  underneath. The state line always names both halves, so a half-configured
+- **Distance sensor and optical flow** — a **Sensors** card on the same page,
+  because a ground lidar is what half those limits lean on. Each sensor is one
+  tile that says whether it is up and what is feeding it, and opens onto its own
+  page. There, one switch brings the sensor up: Corvus starts the driver *and*
+  tells the estimator to fuse it, which is the step usually missed — a
+  rangefinder reading perfectly while the EKF ignores it looks exactly like a
+  working sensor. The state line always names both halves, so a half-configured
   sensor cannot look finished.
+- **Hardware presets** — you do not own a `SENS_TFMINI_CFG`, you own a TFmini-S.
+  One dropdown lists the modules Corvus knows — Holybro H-Flow, Benewake
+  TFmini-S, TFmini Plus and TF03, with more to come — each row naming its bus
+  and model, because picking "UART" when the module on the bench has a CAN plug
+  is the mistake a list like this can actually prevent. Choose one and Corvus
+  writes its whole chain: the driver, the estimator, and the numbers off that
+  module's datasheet (the height band a flow camera can track in, the noise a
+  lidar's accuracy implies). Every parameter it would write is listed with its
+  value and its reason *before* anything is sent, a module this firmware cannot
+  run says so in the row rather than failing once chosen, and a parameter your
+  PX4 version does not carry is named rather than silently skipped.
+- **Custom, and your own parameters** — the first row of that dropdown writes
+  nothing and leaves everything to you: the model picker (Lightware, Lidar-Lite,
+  Benewake, PMW3901, DroneCAN and the rest, or a sensor arriving over MAVLink),
+  the serial port if it needs one, and the settings that are genuinely
+  per-airframe — mounting offset, height limits, quality gates. It also stops
+  pretending Corvus knows every setting your airframe needs: name any PX4
+  parameter and it joins the form, read in the same batch and written by the
+  same path as everything else. The list is remembered per browser profile, so
+  the row you added because *this* aircraft needs it is still there next time.
 - **Parameters** — the full set is downloaded only when you open this page (see
   [Fast to ready-for-flight](#fast-to-ready-for-flight)), with a live progress
   bar. Then you can edit any value; writes are confirmed by the aircraft and
@@ -648,17 +725,25 @@ coverage recovers on its own.
   calibration can be cancelled on the vehicle.
 - **Motor / ESC calibration** — behind a safety confirmation, because motors
   spin at full PWM. **Remove the propellers first.** Refused while armed.
-- **Radio Control** — the transmitter in your hands, on one page. Live channel
-  bars sit at the top and each one says what it is bound to, so "is the radio
+- **Radio Control** — the transmitter in your hands, on one page, and drawn
+  there. At the top is a labelled diagram of a twin-stick handset — two
+  thumbsticks, six switches, two knobs, every one of them named out in the
+  margin — and it moves with your own radio: push a stick and the thumbstick
+  travels across its well, flip a switch and its handle swings to the position
+  it is in and lights up, turn a knob and its pointer follows. So "is the radio
   even talking, and is that switch the one I think it is" is answered by
-  looking rather than by a test flight. Underneath: which input the vehicle
-  accepts and what it does when the transmitter goes quiet, the stick channels,
-  the flight-mode switch with its six positions, every other switch PX4 can
-  bind — arm, kill, return, hold — and the AUX passthroughs. Next to every
-  channel picker is **Detect**: press it, move the switch, and Corvus binds the
-  channel that moved. A channel bound to two actions at once is flagged, because
-  PX4 permits it and a kill switch sharing the mode switch's channel fires on a
-  mode change.
+  looking at the thing rather than by a test flight — with no props on and
+  nothing armed. Click any control, on the drawing or on its label, to see the
+  channel it sends on, **learn** one by moving it, and give that channel a job:
+  arm, kill, return, hold, an AUX passthrough. Choose your stick mode (1–4) so
+  the drawn sticks are where yours are. Underneath sit the live channel bars
+  and the full configuration: which input the vehicle accepts and what it does
+  when the transmitter goes quiet, the stick channels, the flight-mode switch
+  with its six positions, every other switch PX4 can bind, and the AUX
+  passthroughs. Next to every channel picker is **Detect**: press it, move the
+  switch, and Corvus binds the channel that moved. A channel bound to two
+  actions at once is flagged, because PX4 permits it and a kill switch sharing
+  the mode switch's channel fires on a mode change.
 - **Radio calibration** — a guided wizard, and on this page the wizard *is* the
   calibration: PX4 has no autopilot-side RC procedure, so a ground station has
   to watch the channels while you sweep every control and write the endpoints it
@@ -667,8 +752,12 @@ coverage recovers on its own.
   and the direction it moved decides whether PX4 has to reverse it. Nothing is
   written until you have seen the whole measurement, and a channel that never
   really moved is refused by name instead of being written as a stick that
-  works like a switch. The six mode positions light up live, so you can check
-  the order before you take off rather than in the air.
+  works like a switch. The drawn handset comes along for the ride: each step
+  draws an arrow inside the gimbal it wants and points it the way to push, and
+  during the sweep every control whose channel has already travelled far enough
+  is marked off, so what is left to move is something you can see rather than
+  count. The six mode positions light up live, so you can check the order
+  before you take off rather than in the air.
 - **PID Tuning** — its own page, split the way the controller is: rate,
   attitude, velocity and position, one tab per loop, innermost first. Every
   gain is editable by hand and written back one at a time, confirmed by the
@@ -684,6 +773,26 @@ coverage recovers on its own.
   before you take off, refuses to send the command on the ground, and follows
   PX4's own progress to a stop button that works throughout. PX4 v1.16–v1.18
   expose no separate roll, pitch or yaw selection through this command.
+- **Telemetry Radio** — program a SiK radio pair the way Mission Planner's SiK
+  Radio page does, without leaving Corvus. Pick the port, press Load, and both
+  radios come back side by side: the one on your cable, and the one on the
+  aircraft read through it over the air. Network ID, air data rate, transmit
+  power, MAVLink framing, the hopping band, duty cycle and listen-before-talk
+  are all editable, each with what it actually costs you written next to it.
+  Eight of those settings have to be identical at both ends or the radios
+  cannot hear each other at all — so a pair that disagrees is called out by
+  name, with both values, and one button stages the near radio's values into
+  the far column. Nothing is written until you press Save, and then the far
+  radio is written **first**, because it is only reachable through the near
+  one. Air rates and transmit powers that the radio would silently round up are
+  offered as the list it actually supports rather than as a free number, and
+  both radios are read back afterwards so you see what took rather than what
+  was sent. A radio at a baud rate you no longer remember is found by trying
+  the rest; change the near radio's baud and Corvus moves the link to match.
+  Configuring the radio that carries the live link interrupts telemetry for the
+  few seconds a session takes — Corvus stops the link itself and reconnects —
+  and a radio on any other port does not touch the link at all. Refused while
+  armed.
 - **Firmware** — flash PX4 firmware over a **direct USB connection only**.
   Refused over a telemetry radio or UDP/TCP, and refused while armed.
 

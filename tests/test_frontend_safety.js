@@ -48,6 +48,16 @@ window.matchMedia = (query) => ({
 let dispatched = [];
 window.dispatchEvent = (event) => { dispatched.push(event); };
 
+// In-memory localStorage: the operator's added-parameter list lives there, so
+// a missing stub would hide whether it is actually persisted.
+const storage = {};
+window.localStorage = {
+  getItem: (k) => (k in storage ? storage[k] : null),
+  setItem: (k, v) => { storage[k] = String(v); },
+  removeItem: (k) => { delete storage[k]; },
+  clear: () => { Object.keys(storage).forEach((k) => delete storage[k]); },
+};
+
 window.setTimeout = global.setTimeout;
 window.clearTimeout = global.clearTimeout;
 window.setInterval = () => 1;
@@ -63,6 +73,8 @@ function makeEl(tag) {
     type: "", hidden: false, disabled: false, value: "", id: "",
     _attrs: {}, _listeners: {}, _isEl: true,
   };
+  e.style.setProperty = (k, v) => { e.style[k] = String(v); };
+  e.style.removeProperty = (k) => { delete e.style[k]; };
   let _html = "";
   Object.defineProperty(e, "innerHTML", {
     get() { return _html; },
@@ -196,7 +208,50 @@ require("../src/js/setup-safety.js");
 // kinds, and one sensor toggle carrying a bus driver, a serial driver and the
 // external option — i.e. one instance of everything the page knows how to draw.
 // ---------------------------------------------------------------------------
-function safetyDoc(toggleOverrides) {
+// The preset catalogue the sensor page offers: one module whose driver is a
+// plain parameter, one whose driver is a serial port, and one this firmware
+// cannot run at all — the three cases the panel has to render differently.
+function defaultPresets() {
+  return [
+    {
+      id: "holybro-h-flow", label: "Holybro H-Flow", vendor: "Holybro",
+      model: "19006", bus: "DroneCAN", serial: false, supported: true,
+      unsupported: "", driver: "UAVCAN_SUB_RNG:1", active: false, reboot: true,
+      summary: "Flow and distance on one CAN cable.",
+      note: "A DroneCAN node rather than a local driver.",
+      writes: [
+        { param: "UAVCAN_ENABLE", value: 2, label: "Run the DroneCAN stack" },
+        { param: "UAVCAN_SUB_RNG", value: 1, label: "Subscribe to its distance message" },
+        { param: "EKF2_RNG_CTRL", value: 1, label: "Fuse it when low and slow" },
+      ],
+      missing: ["EKF2_RNG_QLTY_T"],
+    },
+    {
+      id: "benewake-tfmini-s", label: "Benewake TFmini-S", vendor: "Benewake",
+      model: "TFmini-S", bus: "UART", serial: true, supported: true,
+      unsupported: "", driver: "SENS_TFMINI_CFG", active: false, reboot: true,
+      summary: "0.1–12 m time-of-flight rangefinder.",
+      note: "Leave the module in UART mode.",
+      writes: [
+        { param: "SENS_TFMINI_CFG", value: null, port: true,
+          label: "The serial port the module is wired to" },
+        { param: "EKF2_RNG_CTRL", value: 1, label: "Fuse it when low and slow" },
+        { param: "EKF2_RNG_NOISE", value: 0.06, label: "Datasheet accuracy" },
+      ],
+      missing: [],
+    },
+    {
+      id: "matek-3901-l0x", label: "Matek 3901-L0X", vendor: "Matek Systems",
+      model: "3901-L0X", bus: "UART (MSP v2)", serial: false, supported: false,
+      unsupported: "PX4 has no MSP sensor input.",
+      driver: "", active: false, reboot: false,
+      summary: "PMW3901 flow and a VL53L0X lidar over MSP.",
+      note: "", writes: [], missing: [],
+    },
+  ];
+}
+
+function safetyDoc(toggleOverrides, presets) {
   return {
     connected: true,
     received: 14,
@@ -219,7 +274,10 @@ function safetyDoc(toggleOverrides) {
       },
       {
         id: "rangefinder", title: "Distance sensor", kind: "toggle",
+        group: "sensors", icon: "radar",
+        short: "A downward lidar or sonar.",
         hint: "A downward lidar or sonar.",
+        presets: presets === undefined ? defaultPresets() : presets,
         toggle: Object.assign({
           label: "Distance sensor",
           enabled: false,
@@ -264,6 +322,59 @@ function openWith(doc, opts) {
   return open(fake).then((r) => Object.assign(r, { fake }));
 }
 
+/** Click through from the overview into one sensor's own page. */
+function enterSensor(container, id) {
+  const tile = findByDataset(container, "sensor", id || "rangefinder")
+    .filter((e) => e.tagName === "BUTTON" && e.className.includes("safety-sensor-tile"))[0];
+  assert.ok(tile, `a tile for ${id || "rangefinder"} is on the overview`);
+  fire(tile, "click");
+}
+
+/** Open the page and go straight to the sensor — the entry point of PART B. */
+async function openSensorPage(doc, opts, id) {
+  const r = await openWith(doc || safetyDoc(), opts);
+  enterSensor(r.container, id);
+  return r;
+}
+
+/** Choose one module in the hardware dropdown and return the panel it revealed. */
+function pickPreset(container, id) {
+  const select = findOneByClass(container, "safety-preset-select");
+  assert.ok(select, "the hardware dropdown");
+  select.value = String(id);
+  fire(select, "change");
+  return findOneByClass(container, "safety-preset-detail");
+}
+
+/** The {value,label} pairs a <select> is offering, in order. */
+function optionsOf(select) {
+  return (select.children || [])
+    .filter((c) => c.tagName === "OPTION")
+    .map((c) => ({ value: c.value, label: c.textContent }));
+}
+
+/** The Custom panel's add box, and the button that submits it.
+ *
+ *  The status span is found where it lives rather than by the class it was
+ *  built with: setFieldStatus rewrites the class list on every update. */
+function addBox(container) {
+  const row = findOneByClass(container, "safety-extra-add");
+  return {
+    row,
+    input: row && findOneByClass(row, "safety-extra-input"),
+    button: row && findOneByClass(row, "safety-extra-button"),
+    status: row && findOneByClass(row, "params-row-status"),
+  };
+}
+
+/** Type a parameter name into the Custom panel and press Add. */
+function addExtraParam(container, name) {
+  const box = addBox(container);
+  box.input.value = name;
+  fire(box.button, "click");
+  return box;
+}
+
 // ===========================================================================
 // PART A — the schema-driven form
 // ===========================================================================
@@ -273,10 +384,11 @@ async function testRendersEverySectionFromTheSchema() {
 
   assert.ok(fake.requests.includes("/api/safety"), "the page reads /api/safety on open");
   const titles = findByClass(container, "page-section-title").map((t) => t.textContent);
-  assert.deepEqual(titles, ["Flight limits", "Distance sensor"], "one card per section");
+  assert.deepEqual(titles, ["Flight limits", "Sensors"],
+    "the envelope is a form; the sensors are collected into one card of their own");
 
   const rows = findByClass(container, "safety-field");
-  assert.equal(rows.length, 5, "four limit fields plus the rangefinder setting");
+  assert.equal(rows.length, 4, "the overview carries the limit fields only");
   assert.equal(findOneByClass(rows[0], "safety-field-label").textContent, "Maximum distance");
   assert.equal(findOneByClass(rows[0], "safety-unit").textContent, "m");
 
@@ -406,7 +518,7 @@ async function testARefusedFieldWriteRestoresTheControl() {
 // ===========================================================================
 
 async function testTheSensorHeaderShowsTheStateAndThePickers() {
-  const { container } = await openWith(safetyDoc());
+  const { container } = await openSensorPage();
 
   const header = findOneByClass(container, "safety-sensor");
   assert.equal(header.dataset.sensor, "rangefinder");
@@ -423,7 +535,7 @@ async function testTheSensorHeaderShowsTheStateAndThePickers() {
 // The port only means something for a serial sensor, so it must not sit there
 // implying it is being written for an I2C one.
 async function testThePortPickerFollowsTheSelectedDriver() {
-  const { container } = await openWith(safetyDoc());
+  const { container } = await openSensorPage();
 
   const port = findOneByClass(container, "safety-port-select");
   assert.ok(port.parentNode.hidden, "hidden while a bus driver is selected");
@@ -437,7 +549,7 @@ async function testThePortPickerFollowsTheSelectedDriver() {
 // The whole point of the page: one press starts the driver AND tells the
 // estimator to fuse it. Half of that chain is the classic PX4 trap.
 async function testEnablingASensorWritesTheWholeChain() {
-  const { container, fake } = await openWith(safetyDoc());
+  const { container, fake } = await openSensorPage();
 
   fire(findOneByClass(container, "safety-sensor-switch"), "click");
   await flushMicrotasks();
@@ -454,7 +566,7 @@ async function testEnablingASensorWritesTheWholeChain() {
 }
 
 async function testEnablingASerialSensorWritesTheChosenPort() {
-  const { container, fake } = await openWith(safetyDoc());
+  const { container, fake } = await openSensorPage();
 
   const driver = findOneByClass(container, "safety-driver-select");
   driver.value = "SENS_TFMINI_CFG";
@@ -479,7 +591,7 @@ async function testSwitchingDriverZeroesTheOldOneFirst() {
     clear: ["SENS_TFMINI_CFG"],
     detail: "Benewake TFmini (serial) · fusion: Conditional (range aid)",
   });
-  const { container, fake } = await openWith(doc);
+  const { container, fake } = await openSensorPage(doc);
 
   const driver = findOneByClass(container, "safety-driver-select");
   driver.value = "SENS_EN_SF1XX:6";
@@ -498,7 +610,7 @@ async function testDisablingASensorTakesDownBothHalves() {
     enabled: true, selected: "SENS_EN_SF1XX:6", clear: ["SENS_EN_SF1XX"],
     detail: "Lightware SF/LW20/c · fusion: Conditional (range aid)",
   });
-  const { container, fake } = await openWith(doc);
+  const { container, fake } = await openSensorPage(doc);
 
   const sw = findOneByClass(container, "safety-sensor-switch");
   assert.equal(sw.getAttribute("aria-checked"), "true", "the switch starts on");
@@ -514,7 +626,7 @@ async function testDisablingASensorTakesDownBothHalves() {
 // A refused write must never leave an "on" switch over a sensor that is still
 // off — the operator would fly believing the lidar was live.
 async function testARefusedEnableSnapsTheSwitchBack() {
-  const { container, fake } = await openWith(safetyDoc(), {
+  const { container, fake } = await openSensorPage(safetyDoc(), {
     rejectFrom: 1, rejectMessage: "parameter write failed",
   });
 
@@ -537,7 +649,7 @@ async function testAChainRefusedHalfwayStopsAndIsReported() {
   // A stale serial driver still configured, so the chain is three writes long
   // and a refusal in the middle is observable.
   const doc = safetyDoc({ clear: ["SENS_TFMINI_CFG"] });
-  const { container, fake } = await openWith(doc, { rejectFrom: 3 });
+  const { container, fake } = await openSensorPage(doc, { rejectFrom: 3 });
 
   const sw = findOneByClass(container, "safety-sensor-switch");
   fire(sw, "click");
@@ -559,7 +671,7 @@ async function testAChainRefusedHalfwayStopsAndIsReported() {
 // would leave a configuration nobody asked for.
 async function testAChainStopsAtTheFirstRefusal() {
   const doc = safetyDoc({ clear: ["SENS_TFMINI_CFG"] });
-  const { container, fake } = await openWith(doc, { rejectFrom: 2 });
+  const { container, fake } = await openSensorPage(doc, { rejectFrom: 2 });
 
   fire(findOneByClass(container, "safety-sensor-switch"), "click");
   await flushMicrotasks();
@@ -572,18 +684,469 @@ async function testAChainStopsAtTheFirstRefusal() {
 }
 
 // ===========================================================================
+// PART B1 — the Sensors card and the page each sensor gets
+// ===========================================================================
+
+// The overview has to answer "is the lidar up?" without being opened, or the
+// card is just a longer route to the same page.
+async function testTheOverviewListsEachSensorWithItsState() {
+  const { container } = await openWith(safetyDoc({
+    enabled: true, detail: "Lightware SF/LW20/c · fusion: Conditional (range aid)",
+  }));
+
+  const card = findByDataset(container, "section", "sensors")[0];
+  assert.ok(card, "the sensors are collected into a card of their own");
+
+  const tiles = findByClass(container, "safety-sensor-tile");
+  assert.equal(tiles.length, 1, "one tile per sensor");
+  assert.equal(tiles[0].dataset.sensor, "rangefinder");
+  assert.equal(findOneByClass(tiles[0], "tile-title").textContent, "Distance sensor");
+  assert.equal(findOneByClass(tiles[0], "safety-sensor-pill").textContent, "On");
+  assert.match(findOneByClass(tiles[0], "safety-sensor-state-detail").textContent,
+    /Lightware SF\/LW20\/c · fusion: Conditional/,
+    "the tile names the driver AND the estimator, so a half-state cannot look configured");
+
+  assert.equal(findByClass(container, "safety-preset-cards").length, 0,
+    "a sensor's own controls stay on its own page");
+}
+
+async function testASensorTileOpensItsPageAndBackReturns() {
+  let wentBackToSetup = 0;
+  const fake = makeFakeTelemetry({ doc: safetyDoc() });
+  dispatched = [];
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  Corvus.setupSafety.render(container, () => { wentBackToSetup++; });
+  await flushMicrotasks();
+
+  enterSensor(container);
+  assert.ok(findOneByClass(container, "safety-sensor"), "the sensor page is shown");
+  assert.equal(findByClass(container, "safety-sensor-tile").length, 0,
+    "the overview is gone rather than stacked underneath");
+
+  const back = findOneByClass(container, "setup-back");
+  assert.match(back.getAttribute("aria-label"), /Safety & Sensors/,
+    "back names where it actually goes, not the Setup grid");
+  fire(back, "click");
+  assert.equal(wentBackToSetup, 0, "back stays inside the page instead of leaving it");
+  assert.ok(findByClass(container, "safety-sensor-tile").length, "the overview is restored");
+
+  fire(findOneByClass(container, "setup-back"), "click");
+  assert.equal(wentBackToSetup, 1, "back from the overview leaves for the Setup grid");
+}
+
+// A reload while a sensor page is open re-reads the whole document. The view
+// must survive it — a page that bounced to the overview after every write
+// would throw the operator out mid-setup, since every write triggers a re-read.
+async function testAReloadKeepsTheOpenSensorPage() {
+  const { container, fake } = await openSensorPage();
+
+  fire(findOneByClass(container, "safety-sensor-switch"), "click");
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  assert.ok(fake.requests.filter((u) => u === "/api/safety").length >= 2, "the page re-read");
+  assert.ok(findOneByClass(container, "safety-sensor"), "still on the sensor page");
+}
+
+// A firmware that no longer reports the sensor must not leave the operator
+// staring at a page about a sensor that is not there.
+async function testASensorThatDisappearsFallsBackToTheOverview() {
+  const { container, fake } = await openSensorPage();
+
+  fake.setDoc({ connected: true, received: 4, sections: [safetyDoc().sections[0]] });
+  fire(findOneByClass(container, "safety-reload"), "click");
+  await flushMicrotasks();
+
+  assert.equal(findByClass(container, "safety-sensor").length, 0, "the sensor page is gone");
+  assert.ok(findByClass(container, "safety-field").length, "the overview is shown instead");
+}
+
+// ===========================================================================
+// PART B2 — hardware presets
+// ===========================================================================
+
+async function testTheHardwareDropdownLeadsWithCustomAndWritesNothingOnSelection() {
+  const { container, fake } = await openSensorPage();
+
+  const select = findOneByClass(container, "safety-preset-select");
+  assert.deepEqual(optionsOf(select).map((o) => o.value),
+    ["custom", "holybro-h-flow", "benewake-tfmini-s", "matek-3901-l0x"],
+    "Custom leads, then one row per product the backend offered");
+  assert.equal(select.value, "custom", "the page opens on Custom, never on a preset");
+
+  // The bus is in the label, not only in the panel: picking "UART" when the
+  // module on the bench has a CAN plug is the mistake this list can prevent,
+  // and a dropdown is read one row at a time.
+  const labels = optionsOf(select).map((o) => o.label);
+  assert.match(labels[0], /^Custom/);
+  assert.match(labels[1], /Holybro H-Flow — DroneCAN · 19006/);
+  assert.match(labels[3], /not supported by PX4/,
+    "a module this firmware cannot run says so before it is chosen");
+
+  pickPreset(container, "holybro-h-flow");
+  assert.equal(fake.writes().length, 0,
+    "selecting a preset only previews it; nothing reaches the aircraft yet");
+}
+
+// A preset whose driver half is already running says so in the row itself.
+async function testADropdownRowSaysWhenItsDriverIsAlreadyRunning() {
+  const presets = defaultPresets();
+  presets[1].active = true;
+  const { container } = await openSensorPage(safetyDoc(undefined, presets));
+
+  const select = findOneByClass(container, "safety-preset-select");
+  assert.match(optionsOf(select)[2].label, /Benewake TFmini-S — UART · TFmini-S {2}\(in use\)/);
+  assert.ok(!/in use/.test(optionsOf(select)[1].label),
+    "and the ones that are not stay quiet");
+}
+
+// A preset touches a dozen safety parameters at once, so the operator is shown
+// every one of them — name, value and reason — before anything is written.
+async function testAPresetShowsExactlyWhatItWouldWrite() {
+  const { container } = await openSensorPage();
+  const panel = pickPreset(container, "holybro-h-flow");
+
+  assert.match(findOneByClass(panel, "safety-preset-summary").textContent, /one CAN cable/);
+  const rows = findByClass(panel, "safety-preset-write");
+  assert.deepEqual(rows.map((r) => r.dataset.param),
+    ["UAVCAN_ENABLE", "UAVCAN_SUB_RNG", "EKF2_RNG_CTRL"],
+    "every parameter the preset would write is listed, in the order it writes them");
+  assert.deepEqual(rows.map((r) => findOneByClass(r, "safety-preset-write-value").textContent),
+    ["2", "1", "1"]);
+  assert.equal(findOneByClass(rows[0], "safety-preset-write-why").textContent,
+    "Run the DroneCAN stack", "each write says why it is there");
+
+  assert.match(findOneByClass(panel, "safety-preset-missing").textContent,
+    /EKF2_RNG_QLTY_T/,
+    "a parameter this firmware lacks is reported, not silently dropped");
+}
+
+async function testApplyingAPresetWritesItsWholeChain() {
+  const { container, fake } = await openSensorPage();
+  pickPreset(container, "holybro-h-flow");
+
+  fire(findOneByClass(container, "safety-preset-apply"), "click");
+  await flushMicrotasks();
+
+  assert.deepEqual(fake.writes(), [
+    { name: "UAVCAN_ENABLE", value: 2 },
+    { name: "UAVCAN_SUB_RNG", value: 1 },
+    { name: "EKF2_RNG_CTRL", value: 1 },
+  ], "the driver half first, the estimator last");
+
+  const note = dispatched.filter((e) => e.type === "corvus:notification").pop();
+  assert.match(note.detail.message, /reboot/, "the operator is told a reboot is needed");
+  assert.ok(fake.requests.filter((u) => u === "/api/safety").length >= 2,
+    "the page re-reads itself afterwards");
+}
+
+// A serial module is "enabled" by naming its port, and only the operator knows
+// which one it is wired to — so the preset asks, and substitutes the answer.
+async function testAPresetForASerialModuleWritesThePickedPort() {
+  const { container, fake } = await openSensorPage();
+  const panel = pickPreset(container, "benewake-tfmini-s");
+
+  const row = findByClass(panel, "safety-preset-write")[0];
+  assert.equal(findOneByClass(row, "safety-preset-write-value").textContent, "the port below",
+    "the port is shown as pending rather than as a made-up number");
+
+  const port = findOneByClass(panel, "safety-preset-port");
+  port.value = "101";
+  fire(findOneByClass(container, "safety-preset-apply"), "click");
+  await flushMicrotasks();
+
+  assert.deepEqual(fake.writes(), [
+    { name: "SENS_TFMINI_CFG", value: 101 },
+    { name: "EKF2_RNG_CTRL", value: 1 },
+    { name: "EKF2_RNG_NOISE", value: 0.06 },
+  ], "the port the operator picked starts the driver, then the estimator follows");
+}
+
+// Two rangefinder drivers must never claim one bus, so a preset zeroes whatever
+// is already configured — except the parameters it is about to set itself,
+// which would otherwise be written twice.
+async function testApplyingAPresetZeroesAConflictingDriverFirst() {
+  const doc = safetyDoc({ clear: ["SENS_EN_SF1XX", "UAVCAN_SUB_RNG"] });
+  const { container, fake } = await openSensorPage(doc);
+  pickPreset(container, "holybro-h-flow");
+
+  fire(findOneByClass(container, "safety-preset-apply"), "click");
+  await flushMicrotasks();
+
+  assert.deepEqual(fake.writes(), [
+    { name: "SENS_EN_SF1XX", value: 0 },
+    { name: "UAVCAN_ENABLE", value: 2 },
+    { name: "UAVCAN_SUB_RNG", value: 1 },
+    { name: "EKF2_RNG_CTRL", value: 1 },
+  ], "the old driver is zeroed; the one the preset sets itself is not zeroed first");
+}
+
+// A module this firmware cannot run is listed rather than hidden — an operator
+// who owns one needs to be told why, not left concluding the wiring is wrong —
+// but it is never offered as something that can be applied.
+async function testAnUnsupportedPresetExplainsItselfAndOffersNoApply() {
+  const { container, fake } = await openSensorPage();
+  const panel = pickPreset(container, "matek-3901-l0x");
+
+  assert.match(findOneByClass(panel, "safety-preset-warning-text").textContent,
+    /PX4 has no MSP sensor input/, "the reason is spelled out");
+  assert.equal(findByClass(panel, "safety-preset-apply").length, 0,
+    "there is no Apply button to press");
+  assert.equal(findByClass(panel, "safety-preset-write").length, 0,
+    "and no write list implying something could be set");
+  assert.equal(fake.writes().length, 0);
+}
+
+// Half a preset is worse than none: the chain stops at the refusal, says so,
+// and re-reads so the page shows what the aircraft actually holds.
+async function testAPresetRefusedHalfwayStopsAndIsReported() {
+  const { container, fake } = await openSensorPage(safetyDoc(), { rejectFrom: 2 });
+  pickPreset(container, "holybro-h-flow");
+
+  fire(findOneByClass(container, "safety-preset-apply"), "click");
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  assert.deepEqual(fake.writes(), [
+    { name: "UAVCAN_ENABLE", value: 2 },
+    { name: "UAVCAN_SUB_RNG", value: 1 },
+  ], "nothing is attempted after the refused write");
+  // setFieldStatus rewrites the class list, so the panel's own status row is
+  // found where it lives rather than by the class it was built with.
+  const panel = findOneByClass(container, "safety-preset-detail");
+  assert.equal(panel.dataset.preset, "holybro-h-flow",
+    "the panel still shows the preset that failed, not a reset to Custom");
+  assert.ok(findOneByClass(panel, "params-row-status").className.includes("err"),
+    "the panel does not claim success");
+  const note = dispatched.filter((e) => e.type === "corvus:notification").pop();
+  assert.equal(note.detail.level, "critical", "the half-applied chain is reported");
+  assert.ok(fake.requests.filter((u) => u === "/api/safety").length >= 2,
+    "the page re-reads so it shows the half-applied reality");
+}
+
+// A sensor whose firmware offered no presets must still render its page.
+async function testASensorWithoutPresetsStillRendersItsPage() {
+  const { container } = await openSensorPage(safetyDoc(undefined, []));
+
+  assert.equal(findByClass(container, "safety-preset-cards").length, 0, "no hardware card");
+  assert.ok(findOneByClass(container, "safety-sensor"), "the switch is still there");
+  assert.ok(control(container, "EKF2_RNG_A_HMAX"), "and so are its parameters");
+}
+
+// ===========================================================================
+// PART B3 — parameters the operator adds under Custom
+// ===========================================================================
+
+async function testCustomOffersAnEmptyListAndABoxToAddTo() {
+  const { container } = await openSensorPage();
+
+  const panel = findOneByClass(container, "safety-preset-detail");
+  assert.equal(panel.dataset.preset, "custom", "the page opens on Custom");
+  assert.ok(findOneByClass(panel, "safety-extra-empty"), "nothing added yet is said plainly");
+  assert.ok(addBox(container).input, "and the box to add one is there");
+
+  pickPreset(container, "holybro-h-flow");
+  assert.equal(findByClass(container, "safety-extra-input").length, 0,
+    "a preset is a written chain, not a place to hand-add parameters");
+}
+
+// The added name has to be carried to the backend or the value can never come
+// back: the page does one batched read and the schema does not know this name.
+async function testAddingAParameterReReadsWithItNamedInTheQuery() {
+  const { container, fake } = await openSensorPage();
+
+  addExtraParam(container, "EKF2_RNG_QLTY_T");
+  await flushMicrotasks();
+
+  assert.ok(fake.requests.some((u) => u === "/api/safety?extra=EKF2_RNG_QLTY_T"),
+    "the re-read asks the aircraft for the parameter that was just added");
+  assert.equal(fake.writes().length, 0, "adding a row writes nothing on its own");
+}
+
+async function testAnAddedParameterBecomesAnOrdinaryEditableField() {
+  const doc = safetyDoc();
+  const { container, fake } = await openSensorPage(doc);
+
+  fake.setDoc(Object.assign({}, doc, {
+    extra: [{ param: "EKF2_RNG_QLTY_T", label: "EKF2_RNG_QLTY_T", kind: "number",
+              present: true, value: 0.2 }],
+  }));
+  addExtraParam(container, "ekf2_rng_qlty_t");
+  await flushMicrotasks();
+
+  const input = control(container, "EKF2_RNG_QLTY_T");
+  assert.ok(input, "the name is upper-cased and the row is drawn");
+  assert.equal(input.value, "0.2", "prefilled with what the aircraft answered");
+
+  input.value = "0.5";
+  fire(input, "change");
+  await flushMicrotasks();
+  assert.deepEqual(fake.writes(), [{ name: "EKF2_RNG_QLTY_T", value: 0.5 }],
+    "and it writes through the same path as every other field");
+}
+
+// A name the vehicle never answered for keeps its row. Dropping it silently
+// would leave the operator unable to tell a typo from a parameter their PX4
+// version does not have — and unable to remove it.
+async function testAParameterTheFirmwareLacksKeepsItsRowAndSaysSo() {
+  const doc = safetyDoc();
+  const { container, fake } = await openSensorPage(doc);
+
+  fake.setDoc(Object.assign({}, doc, {
+    extra: [{ param: "NOT_A_PARAM", label: "NOT_A_PARAM", kind: "number",
+              present: false, value: 0 }],
+  }));
+  addExtraParam(container, "NOT_A_PARAM");
+  await flushMicrotasks();
+
+  const row = findByDataset(container, "param", "NOT_A_PARAM")
+    .filter((e) => e.className.includes("safety-extra-field"))[0];
+  assert.ok(row, "the row is still there");
+  assert.equal(findOneByClass(row, "safety-extra-absent").textContent,
+    "this firmware does not have it");
+  assert.equal(control(container, "NOT_A_PARAM"), undefined, "with nothing to edit");
+  assert.ok(findOneByClass(row, "safety-extra-remove"), "but it can still be removed");
+}
+
+async function testRemovingAParameterDropsItsRowWithoutTouchingTheAircraft() {
+  const doc = safetyDoc();
+  const { container, fake } = await openSensorPage(doc);
+  fake.setDoc(Object.assign({}, doc, {
+    extra: [{ param: "MPC_XY_P", label: "MPC_XY_P", kind: "number",
+              present: true, value: 0.95 }],
+  }));
+  addExtraParam(container, "MPC_XY_P");
+  await flushMicrotasks();
+  assert.ok(control(container, "MPC_XY_P"), "added");
+
+  fire(findOneByClass(container, "safety-extra-remove"), "click");
+  assert.equal(control(container, "MPC_XY_P"), undefined, "the row is gone");
+  assert.ok(findOneByClass(container, "safety-extra-empty"), "and the list is empty again");
+  assert.equal(fake.writes().length, 0, "removing a row never writes to the aircraft");
+}
+
+// Every refusal is answered where the operator is typing, not silently at the
+// far end of the link.
+async function testABadNameIsRefusedInTheBoxItWasTypedIn() {
+  const { container, fake } = await openSensorPage();
+
+  const box = addExtraParam(container, "not a param");
+  assert.ok(box.status.className.includes("err"));
+  assert.match(box.status.textContent, /not a parameter name/);
+  assert.ok(box.input.className.includes("invalid"));
+  assert.equal(fake.requests.filter((u) => u.indexOf("extra=") >= 0).length, 0,
+    "nothing was asked of the aircraft");
+
+  // 17 characters: one past what a PX4 parameter id can hold on the wire.
+  addExtraParam(container, "ABCDEFGHIJKLMNOPQ");
+  assert.match(addBox(container).status.textContent, /16 characters/);
+}
+
+// Not missing — somewhere the operator has not scrolled to. Saying which card
+// it is on is the difference between a useful refusal and a confusing one.
+async function testAParameterAlreadyOnThePageIsRefusedByName() {
+  const { container } = await openSensorPage();
+
+  const box = addExtraParam(container, "EKF2_RNG_A_HMAX");
+  assert.match(box.status.textContent, /already on this page, under Distance sensor/);
+
+  addExtraParam(container, "GF_MAX_HOR_DIST");
+  assert.match(addBox(container).status.textContent, /already on this page, under Flight limits/);
+}
+
+async function testTheSameParameterCannotBeAddedTwice() {
+  const doc = safetyDoc();
+  const { container, fake } = await openSensorPage(doc);
+  fake.setDoc(Object.assign({}, doc, {
+    extra: [{ param: "MPC_XY_P", label: "MPC_XY_P", kind: "number",
+              present: true, value: 0.95 }],
+  }));
+  addExtraParam(container, "MPC_XY_P");
+  await flushMicrotasks();
+
+  const box = addExtraParam(container, "MPC_XY_P");
+  assert.match(box.status.textContent, /already added/);
+  assert.equal(findByClass(container, "safety-extra-field").length, 1);
+}
+
+// The list describes how this operator works on their airframe, so it outlives
+// the page — a reload that lost the row would lose it silently.
+async function testTheAddedListSurvivesANewPage() {
+  window.localStorage.clear();
+  const doc = safetyDoc();
+  const first = await openSensorPage(doc);
+  first.fake.setDoc(Object.assign({}, doc, {
+    extra: [{ param: "MPC_XY_P", label: "MPC_XY_P", kind: "number",
+              present: true, value: 0.95 }],
+  }));
+  addExtraParam(first.container, "MPC_XY_P");
+  await flushMicrotasks();
+  first.destroy();
+
+  const again = await openSensorPage(Object.assign({}, doc, {
+    extra: [{ param: "MPC_XY_P", label: "MPC_XY_P", kind: "number",
+              present: true, value: 0.95 }],
+  }));
+  assert.ok(again.fake.requests.some((u) => u === "/api/safety?extra=MPC_XY_P"),
+    "the remembered name is asked for on the next open");
+  assert.ok(control(again.container, "MPC_XY_P"), "and its row is drawn again");
+  window.localStorage.clear();
+}
+
+// A remembered name that this build now renders as a field of its own would sit
+// there forever claiming the firmware does not have a parameter that is visible
+// two cards down — the backend refuses to return it, so the page forgets it.
+async function testARememberedNameThatBecameAFieldIsForgotten() {
+  window.localStorage.clear();
+  window.localStorage.setItem("corvus.safety.extra",
+    JSON.stringify({ rangefinder: ["EKF2_RNG_A_HMAX", "MPC_XY_P"] }));
+
+  const doc = safetyDoc();
+  const { container, fake } = await openSensorPage(Object.assign({}, doc, {
+    extra: [{ param: "MPC_XY_P", label: "MPC_XY_P", kind: "number",
+              present: true, value: 0.95 }],
+  }));
+
+  assert.equal(findByClass(container, "safety-extra-field").length, 1,
+    "only the one that is not already a field is kept");
+  assert.ok(control(container, "MPC_XY_P"));
+  assert.deepEqual(JSON.parse(window.localStorage.getItem("corvus.safety.extra")),
+    { rangefinder: ["MPC_XY_P"] }, "and the stale name is dropped for good");
+  assert.ok(fake.requests.every((u) => u.indexOf("EKF2_RNG_A_HMAX") < 0)
+    || fake.requests.length >= 1);
+  window.localStorage.clear();
+}
+
+async function testTheAddBoxIsGatedWhileArmed() {
+  window.localStorage.clear();
+  const fake = makeFakeTelemetry({ doc: safetyDoc(), state: { connected: true, armed: true } });
+  const { container } = await open(fake);
+  enterSensor(container);
+
+  const box = addBox(container);
+  assert.ok(box.input.disabled, "the name box is disabled while armed");
+  assert.ok(box.button.disabled, "and so is Add");
+}
+
+// ===========================================================================
 // PART C — armed gating and teardown
 // ===========================================================================
+
+function gatedControls(container) {
+  return findByClass(container, "safety-select")
+    .concat(findByClass(container, "safety-input"))
+    .concat(findByClass(container, "safety-sensor-switch"))
+    .concat(findByClass(container, "safety-preset-apply"));
+}
 
 async function testArmedGatingDisablesEveryControl() {
   const fake = makeFakeTelemetry({ doc: safetyDoc(), state: { connected: true, armed: false } });
   const { container } = await open(fake);
 
   const banner = findOneByClass(container, "params-banner");
-  const controls = findByClass(container, "safety-select")
-    .concat(findByClass(container, "safety-input"))
-    .concat(findByClass(container, "safety-sensor-switch"));
-  assert.ok(controls.length >= 6, "controls rendered");
+  const controls = gatedControls(container);
+  assert.ok(controls.length >= 4, "controls rendered");
   assert.ok(banner.hidden, "no banner while disarmed");
   assert.ok(controls.every((c) => !c.disabled), "controls editable while disarmed");
 
@@ -596,9 +1159,28 @@ async function testArmedGatingDisablesEveryControl() {
   assert.ok(controls.every((c) => !c.disabled), "controls editable again on disarm");
 }
 
+// The armed gate is a page-level fact, so it has to survive the page rebuilding
+// itself for a different view. A sensor page entered while armed that came up
+// editable would be the gate failing exactly where it matters most.
+async function testTheArmedGateSurvivesEnteringASensor() {
+  const fake = makeFakeTelemetry({ doc: safetyDoc(), state: { connected: true, armed: true } });
+  const { container } = await open(fake);
+
+  enterSensor(container);
+  pickPreset(container, "holybro-h-flow");
+
+  assert.ok(!findOneByClass(container, "params-banner").hidden,
+    "the armed banner is on the sensor page too");
+  const controls = gatedControls(container);
+  assert.ok(controls.length >= 4, "the sensor page rendered its controls");
+  assert.ok(controls.every((c) => c.disabled),
+    "every control on the sensor page comes up disabled, presets included");
+}
+
 async function testAnArmedSwitchWritesNothing() {
   const fake = makeFakeTelemetry({ doc: safetyDoc(), state: { connected: true, armed: true } });
   const { container } = await open(fake);
+  enterSensor(container);
 
   fire(findOneByClass(container, "safety-sensor-switch"), "click");
   await flushMicrotasks();
@@ -651,12 +1233,41 @@ async function main() {
     testARefusedEnableSnapsTheSwitchBack,
     testAChainRefusedHalfwayStopsAndIsReported,
     testAChainStopsAtTheFirstRefusal,
+    testTheOverviewListsEachSensorWithItsState,
+    testASensorTileOpensItsPageAndBackReturns,
+    testAReloadKeepsTheOpenSensorPage,
+    testASensorThatDisappearsFallsBackToTheOverview,
+    testTheHardwareDropdownLeadsWithCustomAndWritesNothingOnSelection,
+    testADropdownRowSaysWhenItsDriverIsAlreadyRunning,
+    testAPresetShowsExactlyWhatItWouldWrite,
+    testApplyingAPresetWritesItsWholeChain,
+    testAPresetForASerialModuleWritesThePickedPort,
+    testApplyingAPresetZeroesAConflictingDriverFirst,
+    testAnUnsupportedPresetExplainsItselfAndOffersNoApply,
+    testAPresetRefusedHalfwayStopsAndIsReported,
+    testASensorWithoutPresetsStillRendersItsPage,
+    testCustomOffersAnEmptyListAndABoxToAddTo,
+    testAddingAParameterReReadsWithItNamedInTheQuery,
+    testAnAddedParameterBecomesAnOrdinaryEditableField,
+    testAParameterTheFirmwareLacksKeepsItsRowAndSaysSo,
+    testRemovingAParameterDropsItsRowWithoutTouchingTheAircraft,
+    testABadNameIsRefusedInTheBoxItWasTypedIn,
+    testAParameterAlreadyOnThePageIsRefusedByName,
+    testTheSameParameterCannotBeAddedTwice,
+    testTheAddedListSurvivesANewPage,
+    testARememberedNameThatBecameAFieldIsForgotten,
+    testTheAddBoxIsGatedWhileArmed,
     testArmedGatingDisablesEveryControl,
+    testTheArmedGateSurvivesEnteringASensor,
     testAnArmedSwitchWritesNothing,
     testTeardownReleasesTheSubscription,
     testALateResponseAfterTeardownIsIgnored,
   ];
   for (const t of tests) {
+    // The added-parameter list is persisted, so it would otherwise leak from
+    // one test into the next exactly the way it is meant to leak across page
+    // loads. Each test starts from an empty profile.
+    window.localStorage.clear();
     await t();
     console.log("  ok", t.name);
   }

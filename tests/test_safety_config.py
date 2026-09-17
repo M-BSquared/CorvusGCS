@@ -304,3 +304,222 @@ def test_reading_every_parameter_at_once_never_raises() -> None:
     assert {s["id"] for s in doc["sections"]} == {
         "limits", "rtl", "failsafe", "battery", "rangefinder", "flow",
     }
+
+
+# ---- hardware presets ----
+#
+# A preset is a product, not a driver: the operator owns a TFmini-S, not a
+# SENS_TFMINI_CFG. What is pinned here is that the catalogue keeps that promise
+# — the whole chain in the right order, the datasheet numbers that go with the
+# module, and the same version tolerance everything else on this page owes.
+
+def _presets(section: dict) -> dict[str, dict]:
+    return {p["id"]: p for p in section["presets"]}
+
+
+def _full() -> dict[str, float]:
+    """A board that answers for the entire superset."""
+    return {n: 0.0 for n in safety_config.param_names()}
+
+
+def test_every_preset_reaches_the_page_it_claims_to_cover() -> None:
+    sections = _sections(safety_config.build(_full()))
+    for preset in safety_config.SENSOR_PRESETS:
+        for kind, sid in (("range", "rangefinder"), ("flow", "flow")):
+            offered = kind in preset["provides"]
+            assert (preset["id"] in _presets(sections[sid])) is offered, (
+                f"{preset['id']} on the {sid} page"
+            )
+
+
+def test_a_module_carrying_both_sensors_is_offered_on_both_pages() -> None:
+    """The H-Flow is one board with a flow camera and a rangefinder on it, so it
+    configures the whole module from either page rather than half of itself."""
+    sections = _sections(safety_config.build(_full()))
+    flow = _presets(sections["flow"])["holybro-h-flow"]
+    rng = _presets(sections["rangefinder"])["holybro-h-flow"]
+    assert _writes(flow["writes"]) == _writes(rng["writes"])
+    assert ("EKF2_OF_CTRL", 1.0) in _writes(flow["writes"])
+    assert ("EKF2_RNG_CTRL", 1.0) in _writes(flow["writes"])
+
+
+def test_a_dronecan_preset_starts_the_can_stack_before_it_subscribes() -> None:
+    """A subscription is silent while the CAN stack is off, and that is the
+    usual reason a CAN sensor never appears."""
+    preset = _presets(_sections(safety_config.build(_full()))["rangefinder"])["holybro-h-flow"]
+    written = [w["param"] for w in preset["writes"]]
+    assert written.index("UAVCAN_ENABLE") < written.index("UAVCAN_SUB_RNG")
+    assert written.index("UAVCAN_SUB_RNG") < written.index("EKF2_RNG_CTRL"), (
+        "the estimator is told last, as everywhere else on this page"
+    )
+
+
+def test_a_serial_preset_leaves_the_port_for_the_operator_to_name() -> None:
+    """Only the operator knows which UART the lidar is soldered to, so the
+    driver write is left open rather than guessed."""
+    preset = _presets(_sections(safety_config.build(_full()))["rangefinder"])["benewake-tfmini-s"]
+    assert preset["serial"] is True
+    first = preset["writes"][0]
+    assert first["param"] == "SENS_TFMINI_CFG"
+    assert first["value"] is None and first["port"] is True
+    assert [w["param"] for w in preset["writes"][1:]] == [
+        "EKF2_RNG_CTRL", "EKF2_RNG_A_HMAX", "EKF2_RNG_NOISE", "EKF2_RNG_SFE",
+    ]
+
+
+def test_the_benewake_presets_differ_in_their_datasheet_numbers() -> None:
+    """They share one driver — the point of separate presets is the numbers: how
+    far the unit still returns, and the noise its accuracy implies."""
+    presets = _presets(_sections(safety_config.build(_full()))["rangefinder"])
+    noise = {
+        pid: dict(_writes(presets[pid]["writes"]))["EKF2_RNG_NOISE"]
+        for pid in ("benewake-tfmini-s", "benewake-tfmini-plus", "benewake-tf03")
+    }
+    assert noise["benewake-tfmini-plus"] < noise["benewake-tfmini-s"] < noise["benewake-tf03"]
+    hmax = dict(_writes(presets["benewake-tf03"]["writes"]))["EKF2_RNG_A_HMAX"]
+    assert hmax == 10.0, "the range aid stays near the ground whatever the 180 m reach"
+
+
+def test_a_module_px4_cannot_read_is_listed_but_writes_nothing() -> None:
+    """Hiding it would leave an operator who owns one concluding their wiring is
+    wrong. It is offered with the reason, and with nothing to apply."""
+    preset = _presets(_sections(safety_config.build(_full()))["flow"])["matek-3901-l0x"]
+    assert preset["supported"] is False
+    assert preset["writes"] == []
+    assert "MSP" in preset["unsupported"]
+    assert preset["reboot"] is False
+
+
+def test_a_parameter_the_firmware_lacks_is_skipped_and_reported() -> None:
+    """Same tolerance as every field on this page — except a preset that quietly
+    wrote eleven of its thirteen parameters would be the half-configured sensor
+    this page exists to prevent, so what fell out is named."""
+    values = _full()
+    del values["EKF2_RNG_QLTY_T"]
+    del values["UAVCAN_RNG_MAX"]
+    preset = _presets(_sections(safety_config.build(values))["rangefinder"])["holybro-h-flow"]
+    assert preset["missing"] == ["UAVCAN_RNG_MAX", "EKF2_RNG_QLTY_T"]
+    assert "EKF2_RNG_QLTY_T" not in [w["param"] for w in preset["writes"]]
+    assert preset["supported"] is True, "the rest of the module still comes up"
+
+
+def test_a_firmware_without_the_driver_parameter_cannot_offer_the_preset() -> None:
+    values = _full()
+    del values["UAVCAN_SUB_RNG"]
+    preset = _presets(_sections(safety_config.build(values))["rangefinder"])["holybro-h-flow"]
+    assert preset["supported"] is False
+    assert "UAVCAN_SUB_RNG" in preset["unsupported"]
+    assert preset["writes"] == []
+
+
+def test_a_preset_reports_its_driver_running_without_claiming_the_model() -> None:
+    """SENS_TFMINI_CFG says a Benewake lidar is configured and cannot say which
+    one, so all three report it and none of them claims to be the fitted part."""
+    values = _full()
+    values["SENS_TFMINI_CFG"] = 102.0
+    presets = _presets(_sections(safety_config.build(values))["rangefinder"])
+    assert all(presets[pid]["active"] for pid in
+               ("benewake-tfmini-s", "benewake-tfmini-plus", "benewake-tf03"))
+    assert presets["holybro-h-flow"]["active"] is False
+
+    values["SENS_TFMINI_CFG"] = 0.0
+    values["UAVCAN_SUB_RNG"] = 1.0
+    presets = _presets(_sections(safety_config.build(values))["rangefinder"])
+    assert presets["holybro-h-flow"]["active"] is True
+    assert not any(presets[pid]["active"] for pid in
+                   ("benewake-tfmini-s", "benewake-tf03"))
+
+
+def test_every_preset_parameter_is_in_the_batched_read() -> None:
+    """A preset parameter missing from the batch would look absent on every
+    firmware, so the preset would silently shrink on all of them."""
+    names = set(safety_config.param_names())
+    for preset in safety_config.SENSOR_PRESETS:
+        for param, _value, _why in preset.get("params", []):
+            assert param in names, f"{preset['id']} writes {param}, which is never read"
+
+
+def test_a_can_driver_carries_the_stack_write_only_when_it_is_needed() -> None:
+    """Dropping a board running DroneCAN ESCs from 3 to 2 to bring a lidar up
+    would stop the motors answering."""
+    values = _full()
+    toggle = _sections(safety_config.build(values))["rangefinder"]["toggle"]
+    can = [d for d in toggle["drivers"] if d["id"] == "UAVCAN_SUB_RNG:1"][0]
+    assert _writes(can["extra"]) == [("UAVCAN_ENABLE", 2.0)]
+
+    values["UAVCAN_ENABLE"] = 3.0
+    toggle = _sections(safety_config.build(values))["rangefinder"]["toggle"]
+    can = [d for d in toggle["drivers"] if d["id"] == "UAVCAN_SUB_RNG:1"][0]
+    assert "extra" not in can, "a board already past the threshold is left alone"
+
+
+def test_each_sensor_section_is_tagged_for_its_own_page() -> None:
+    """The frontend collects these into the Sensors card and gives each one a
+    page; a section that lost the tag would fall back into the envelope form."""
+    sections = _sections(safety_config.build(_full()))
+    for sid in ("rangefinder", "flow"):
+        assert sections[sid]["group"] == "sensors"
+        assert sections[sid]["icon"]
+        assert sections[sid]["short"]
+    for sid in ("limits", "rtl", "failsafe", "battery"):
+        assert "group" not in sections[sid]
+
+
+# ---- parameters the operator adds by name ----
+#
+# These names come from the browser, which makes them untrusted input reaching
+# the parameter bridge. What is pinned here is the bound on that: shape, count,
+# and that nothing the page already draws can be duplicated by one.
+
+def test_an_added_name_is_read_and_comes_back_as_a_field() -> None:
+    doc = safety_config.build({"MPC_XY_P": 0.95}, ["MPC_XY_P"])
+    assert doc["extra"] == [{
+        "param": "MPC_XY_P", "label": "MPC_XY_P", "kind": "number",
+        "present": True, "value": 0.95,
+    }]
+
+
+def test_a_name_the_vehicle_never_answered_for_still_comes_back_flagged() -> None:
+    """Dropping it would leave the operator unable to tell a typo from a
+    parameter their PX4 version does not have."""
+    doc = safety_config.build({}, ["NOT_A_PARAM"])
+    assert [f["param"] for f in doc["extra"]] == ["NOT_A_PARAM"]
+    assert doc["extra"][0]["present"] is False
+
+
+def test_a_name_that_is_not_shaped_like_a_parameter_never_reaches_the_bridge() -> None:
+    assert safety_config.normalise_extra([
+        "lower_case_ok", "has space", "has-dash", "1LEADING", "", "TOO_LONG_A_NAME_X",
+        None, 7,
+    ]) == ["LOWER_CASE_OK"], "case is normalised; everything else is dropped"
+
+
+def test_the_added_list_is_deduplicated_and_capped() -> None:
+    """An unbounded list here is an unbounded burst of PARAM_REQUEST_READ at an
+    aircraft that is very likely flying."""
+    assert safety_config.normalise_extra(["A_B", "a_b", " A_B "]) == ["A_B"]
+    many = [f"P{i:03d}" for i in range(safety_config.EXTRA_PARAM_LIMIT * 3)]
+    assert len(safety_config.normalise_extra(many)) == safety_config.EXTRA_PARAM_LIMIT
+
+
+def test_a_parameter_the_page_already_draws_is_not_offered_twice() -> None:
+    """Two controls over one number can disagree until the next read, and the
+    one the operator did not touch is then lying about the aircraft."""
+    values = _full()
+    doc = safety_config.build(values, ["EKF2_RNG_A_HMAX", "MPC_XY_P"])
+    assert [f["param"] for f in doc["extra"]] == ["MPC_XY_P"]
+
+
+def test_a_parameter_read_but_never_drawn_can_still_be_added() -> None:
+    """param_names() is the batch this page reads, which is far wider than the
+    set it draws — EKF2_RNG_QLTY_T is read for a preset and shown nowhere.
+    Refusing it would block the exact case this feature exists for."""
+    values = _full()
+    assert "EKF2_RNG_QLTY_T" in safety_config.param_names()
+    doc = safety_config.build(values, ["EKF2_RNG_QLTY_T"])
+    assert [f["param"] for f in doc["extra"]] == ["EKF2_RNG_QLTY_T"]
+
+
+def test_no_added_names_is_an_empty_list_not_a_missing_key() -> None:
+    for extra in (None, []):
+        assert safety_config.build(_safe(), extra)["extra"] == []

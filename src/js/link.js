@@ -72,10 +72,16 @@ Corvus.link = (function () {
       conn: "udpout:127.0.0.1:14550",
       note: "Dials out instead of waiting, because a router in server mode holds the port and expects the station to speak first.",
     },
+    // 5760 is ArduPilot's, not PX4's: it is SERIAL0 of an ArduPilot SITL
+    // build (base port 5760, the one MAVProxy dials), and PX4 SITL serves no
+    // MAVLink over TCP at all — its 4560 is the simulator's own channel to
+    // PX4, which a ground station must never take. This row used to be
+    // labelled "TCP (SITL)" and credited to jMAVSim and Gazebo, which sent
+    // anyone running PX4 to a port nothing was listening on.
     {
-      label: "TCP (SITL)",
+      label: "ArduPilot SITL",
       conn: "tcp:127.0.0.1:5760",
-      note: "Connects to a simulator on this machine over TCP — the port jMAVSim and Gazebo serve.",
+      note: "ArduPilot's simulator on this machine. PX4 SITL serves no TCP — use the UDP rows above for it.",
     },
   ];
 
@@ -87,6 +93,7 @@ Corvus.link = (function () {
   let kindSerialBtn, kindNetBtn, serialFields, netFields;
   let statusDot, statusLabel, statusConn, statusError;
   let disconnectBtn, qualityEl, recentHost, presetHost;
+  let autoBadge, suggestionHost;
 
   // Local state
   let inFlight = false;          // a connect POST is currently pending
@@ -96,6 +103,8 @@ Corvus.link = (function () {
   let kind = "serial";           // which branch of the card is showing
   let wantDevice = "";           // serial port to re-select once the list arrives
   let missingDevices = [];       // devices offered but not currently enumerated
+  let shownSuggestion = "";      // connection string currently on the suggestion row
+  let dismissedSuggestion = "";  // one the operator answered — offered once, not again
 
   /** Pure: build a serial connection string `serial:<device>:<baud>`. */
   function buildConnectionString(device, baud) {
@@ -157,6 +166,128 @@ Corvus.link = (function () {
       case "lost": return { label: "LOST", level: "critical" };
       default:     return { label: "", level: "off" };
     }
+  }
+
+  /* ---------------------------- auto-connect ----------------------------
+     The backend picks a link on its own (see corvus/autoconnect.py): a flight
+     controller on a USB cable, else a SiK radio, else the UDP port a simulator
+     publishes on. Two fields ride the same SSE stream the status row already
+     reads — `link_auto`, the last automatic decision, and `link_suggestion`, a
+     device that turned up while the link was busy elsewhere.
+
+     The panel's job here is honesty, not automation. A station that connected
+     to something nobody selected has to say which and why, or the operator is
+     left guessing whether they are talking to the aircraft in front of them or
+     to the one on the next bench. And a suggestion stays a suggestion: the
+     Connect button is the operator's, because the link it would replace may be
+     carrying a vehicle that is flying. */
+
+  /* Pure: the wording of the AUTO chip, or null when there is nothing to say
+     (auto-connect off, or the operator chose this link by hand).
+
+     While nothing is connected it says SCANNING rather than naming the rule
+     that picked the current string: during those minutes the operator's real
+     question is "is this thing still trying, or is it stuck", and the answer
+     to that is worth more than the name of a decision that has not landed.
+     `link_status` is passed in rather than read off the state, so the chip and
+     the status label beside it can never disagree about what is connected. */
+  function autoInfo(state, linkStatus) {
+    const auto = (state && state.link_auto) || {};
+    if (!auto.enabled || auto.manual_override) return null;
+    const status = String(
+      linkStatus || (state && state.link_status) || "disconnected",
+    ).toLowerCase();
+    if (status !== "connected") {
+      return {
+        label: "AUTO \u00b7 SCANNING",
+        title: "Looking for a flight controller on USB, then a telemetry"
+          + " radio, then the ground-station UDP port.",
+      };
+    }
+    const label = AUTO_REASON_LABELS[String(auto.reason || "")];
+    if (!label) return null;
+    return { label: `AUTO \u00b7 ${label.short}`, title: label.title };
+  }
+
+  const AUTO_REASON_LABELS = {
+    "usb-direct": {
+      short: "USB",
+      title: "Connected automatically to the flight controller on USB.",
+    },
+    "sik": {
+      short: "RADIO",
+      title: "Connected automatically to the SiK telemetry radio.",
+    },
+    "udp-fallback": {
+      short: "UDP",
+      title: "No flight controller or radio found — listening on the"
+        + " ground-station UDP port, which is where a simulator publishes.",
+    },
+    "configured": {
+      short: "SAVED",
+      title: "No flight controller or radio found — using the connection saved"
+        + " in the config file.",
+    },
+    "cli": {
+      short: "ARGUMENT",
+      title: "Using the connection given on the command line.",
+    },
+    "default-invalid-fallback": {
+      short: "DEFAULT",
+      title: "The configured connection could not be used — started on the"
+        + " built-in default instead.",
+    },
+  };
+
+  /* Pure: the sentence on the suggestion row. Names the device, because
+     "a new device" is not something an operator can act on. */
+  function suggestionText(suggestion) {
+    const s = suggestion || {};
+    const kind = s.kind === "sik" ? "telemetry radio" : "flight controller";
+    return `${s.device || "A device"} \u2014 ${kind} plugged in just now.`;
+  }
+
+  /* One row, offered and never taken: Connect sends the same string the serial
+     branch would build, Dismiss only hides it here. The backend re-publishes
+     on a DIFFERENT device, never on the same one again, so dismissing is final
+     for that cable without the frontend having to remember anything. */
+  function renderSuggestion(state) {
+    if (!suggestionHost) return;
+    const suggestion = (state && state.link_suggestion) || null;
+    const conn = suggestion ? String(suggestion.connection_string || "") : "";
+    if (!conn || conn === dismissedSuggestion) {
+      Corvus.ui.clear(suggestionHost);
+      suggestionHost.hidden = true;
+      shownSuggestion = "";
+      return;
+    }
+    if (conn === shownSuggestion) return;
+    shownSuggestion = conn;
+
+    Corvus.ui.clear(suggestionHost);
+    const text = document.createElement("div");
+    text.className = "link-suggestion-text";
+    text.textContent = suggestionText(suggestion);
+    text.title = conn;
+
+    const connectIt = Corvus.ui.button({
+      label: "Connect", size: "sm", variant: "secondary",
+      onClick: () => { dismissedSuggestion = conn; doConnect(conn); },
+    });
+    const dismiss = Corvus.ui.button({
+      label: "Dismiss", size: "sm", variant: "ghost",
+      onClick: () => { dismissedSuggestion = conn; renderSuggestion(state); },
+    });
+
+    const actions = document.createElement("div");
+    actions.className = "link-suggestion-actions";
+    actions.appendChild(connectIt);
+    actions.appendChild(dismiss);
+
+    suggestionHost.appendChild(text);
+    suggestionHost.appendChild(actions);
+    suggestionHost.hidden = false;
+    Corvus.ui.refreshIcons();
   }
 
   // ---- recent connections ----
@@ -271,10 +402,15 @@ Corvus.link = (function () {
     }
   }
 
-  /* One row per preset: name, what it is for, and the string it fills in.
-     They were bare ghost buttons, which put four unexplained phrases under
-     the field and left the Connect button below them looking like part of the
-     same list. Rows read as the pick-one control they are. */
+  /* One row per preset: name, the string it fills in, and a hint holding the
+     reason it is on the list. The note used to be printed under every row,
+     which made four endpoints into eight lines of prose and pushed Connect
+     off the bottom of the card; behind Corvus.ui.infoHint it stays one
+     keystroke or one hover away without costing the scan.
+
+     The row is a <div>, not a <button>, because the hint is a button too and
+     a button inside a button is markup the browser reflows out of the parent.
+     The pick target is its own button filling the row. */
   function renderPresets() {
     if (!presetHost) return;
     Corvus.ui.clear(presetHost);
@@ -282,28 +418,22 @@ Corvus.link = (function () {
     const list = document.createElement("div");
     list.className = "link-preset-list";
     PRESETS.forEach((p) => {
+      const row = document.createElement("div");
+      row.className = "link-preset";
+
       const b = document.createElement("button");
       b.type = "button";
-      b.className = "link-preset";
-      b.title = `${p.conn} — ${p.note}`;
+      b.className = "link-preset-pick";
+      b.title = p.conn;
 
-      const head = document.createElement("span");
-      head.className = "link-preset-head";
       const name = document.createElement("span");
       name.className = "link-preset-name";
       name.textContent = p.label;
       const conn = document.createElement("span");
       conn.className = "link-preset-conn";
       conn.textContent = p.conn;
-      head.appendChild(name);
-      head.appendChild(conn);
-
-      const note = document.createElement("span");
-      note.className = "link-preset-note";
-      note.textContent = p.note;
-
-      b.appendChild(head);
-      b.appendChild(note);
+      b.appendChild(name);
+      b.appendChild(conn);
       b.addEventListener("click", () => {
         // Fill the field rather than connecting outright: a preset is a
         // starting point the operator may want to edit (a different host,
@@ -311,9 +441,19 @@ Corvus.link = (function () {
         customInput.value = p.conn;
         customInput.focus();
       });
-      list.appendChild(b);
+
+      row.appendChild(b);
+      // The row already shows the connection string, so the popover carries
+      // only what the row cannot: the reason to pick this endpoint.
+      row.appendChild(Corvus.ui.infoHint({
+        title: p.label,
+        text: p.note,
+        ariaLabel: `What ${p.label} is for`,
+      }));
+      list.appendChild(row);
     });
     presetHost.appendChild(list);
+    Corvus.ui.refreshIcons();
   }
 
   function setSelectOptions(select, opts) {
@@ -505,6 +645,18 @@ Corvus.link = (function () {
     }
     if (statusLabel) statusLabel.textContent = info.label;
 
+    // AUTO chip: which rule picked this link, in two words, with the whole
+    // sentence on hover. Hidden the moment the operator connects by hand —
+    // it would then be describing a decision that is no longer in force.
+    if (autoBadge) {
+      const auto = autoInfo(state, status);
+      autoBadge.textContent = auto ? auto.label : "";
+      autoBadge.title = auto ? auto.title : "";
+      autoBadge.hidden = !auto;
+    }
+
+    renderSuggestion(state);
+
     if (statusConn) {
       const conn = state.link_connection || "";
       statusConn.textContent = conn || "No connection";
@@ -588,6 +740,8 @@ Corvus.link = (function () {
     qualityEl = document.getElementById("linkQuality");
     recentHost = document.getElementById("linkRecent");
     presetHost = document.getElementById("linkPresets");
+    autoBadge = document.getElementById("linkAutoBadge");
+    suggestionHost = document.getElementById("linkSuggestion");
 
     loadRecent();
     renderRecent();
@@ -676,6 +830,20 @@ Corvus.link = (function () {
         + " it its own — in QGroundControl, Application Settings → MAVLink →"
         + " Ground Station system ID.";
     }
+    // A station is being fed telemetry and refused commands. That pair is
+    // earned two different ways — telemetry by speaking MAVLink at all,
+    // commanding by being a configured endpoint — so a tablet at an address
+    // nobody listed gets a working-looking link whose every command
+    // disappears. The backend has counted this from the start and named the
+    // address in the log; without a line here the operator's evidence is a
+    // log file they are not reading in a field.
+    const refused = s.commands_refused || 0;
+    if (refused) {
+      const who = (s.commands_refused_from || [])[0];
+      return `${refused} command(s) refused${who ? ` from ${who}` : ""} — that`
+        + " address is not in the endpoint list, so it receives telemetry but"
+        + " cannot command. Add it to forwarding.endpoints to let it.";
+    }
     const peers = (s.peers || []).length;
     const back = s.listen_port
       ? ` Corvus answers on ${s.listen_host || "127.0.0.1"}:${s.listen_port}.`
@@ -753,6 +921,8 @@ Corvus.link = (function () {
     statusInfo,
     qualityInfo,
     forwardingHint,
+    autoInfo,
+    suggestionText,
     PRESETS,
   };
 })();

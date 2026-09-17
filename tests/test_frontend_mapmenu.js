@@ -229,10 +229,12 @@ assert.equal(map.isReady(), true, "the fake map must reach the loaded state");
 function menuEl() { return mapEl.querySelector(".map-context-menu"); }
 function pinEl() { return mapEl.querySelector(".map-context-pin"); }
 function rows() { return mapEl.querySelectorAll(".map-context-item"); }
+/* The rows are Corvus.ui.menuItem()s now — the app's one dropdown row — so
+   the label and the note are read by the shared class names. */
 function rowText(btn) {
   return {
-    label: btn.querySelector(".map-context-label").textContent,
-    note: (btn.querySelector(".map-context-note") || {}).textContent,
+    label: btn.querySelector(".option-item-label").textContent,
+    note: (btn.querySelector(".option-item-note") || {}).textContent,
     disabled: btn.disabled,
   };
 }

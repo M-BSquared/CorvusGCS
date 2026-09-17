@@ -206,7 +206,9 @@ Corvus.map = (function () {
   // setBaseLayer, and the Settings map-service picker all agree on it
   // independently of the buildControls closure.
   let activeLayer = BOOTSTRAP_LAYER;
-  let layersPopoverEl = null;
+  // The layer switcher, as the app's dropdown: a Corvus.ui.menu opened from
+  // the rail's layers button, built on first use.
+  let layersMenuHandle = null;
   // Handle returned by Corvus.ui.optionList — it owns the "which layer is
   // active" highlight, so setBaseLayer never has to walk the DOM for it.
   let layerPicker = null;
@@ -225,7 +227,7 @@ Corvus.map = (function () {
   // the armed gating, all of which live in app.js. The map owns where and when
   // the menu appears; it does not own what the vehicle is asked to do.
   let contextActions = [];
-  let contextMenuEl = null;
+  let contextMenuHandle = null; // the Corvus.ui.menu the actions are drawn in
   let contextPinEl = null;
   let contextPoint = null;      // {lng, lat} the open menu refers to, or null
   let contextHostEl = null;     // the map container the menu is positioned in
@@ -629,8 +631,7 @@ Corvus.map = (function () {
     map.addLayer({ id: "base", type: "raster", source: "base" }, "path-glow");
   }
 
-  function buildControls(container, layersPopover) {
-    layersPopoverEl = layersPopover;
+  function buildControls(container) {
     controlsEl = container;
     const items = [
       { id: "in", icon: "plus", title: "Zoom in" },
@@ -661,8 +662,6 @@ Corvus.map = (function () {
       container.appendChild(b);
     });
 
-    renderLayersPopover();
-
     container.addEventListener("click", (e) => {
       const b = e.target.closest(".mc-btn");
       if (!b) return;
@@ -673,23 +672,16 @@ Corvus.map = (function () {
       else if (act === "out") map.zoomOut();
       else if (act === "center") centerOnVehicle(true);
       else if (act === "layers") {
-        const open = !layersPopover.hidden;
-        layersPopover.hidden = open;
-        b.classList.toggle("active", !open);
+        // The menu owns the button's own state through onOpen/onClose, so the
+        // click only has to say which way it is going.
+        if (layersMenu().isOpen()) layersMenu().close(false);
+        else layersMenu().open({ el: b });
       } else if (act === "regions") {
         b.classList.toggle("active", setRegionsVisible(!regionsVisible));
       } else if (act === "three") {
         const on = map.getPitch() < 10;
         map.easeTo({ pitch: on ? 50 : 0, duration: 500 });
         b.classList.toggle("active", on);
-      }
-    });
-
-    document.addEventListener("click", (e) => {
-      if (!e.target.closest(".map-controls") && !e.target.closest(".layers-popover")) {
-        layersPopover.hidden = true;
-        const lb = container.querySelector('[data-act="layers"]');
-        if (lb) lb.classList.remove("active");
       }
     });
   }
@@ -715,19 +707,56 @@ Corvus.map = (function () {
   }
 
   /**
-   * (Re)build the layer switcher from the hydrated source catalogue. Layers are
+   * The layer switcher, as the app's dropdown.
+   *
+   * It used to be a panel in index.html positioned with a top offset
+   * hard-coded to where the layers button happened to sit in the rail — so it
+   * drifted the moment the rail gained a button — and nothing but a click
+   * somewhere else took it down. As a Corvus.ui.menu it hangs off the button
+   * itself, dismisses on Escape like every other list the app opens, and
+   * cannot be open at the same time as one of them.
+   */
+  function layersMenu() {
+    if (layersMenuHandle) return layersMenuHandle;
+    layersMenuHandle = Corvus.ui.menu({
+      className: "layers-popover",
+      // A group, not a menu: the rows inside are the radio group ui.optionList
+      // builds, because exactly one layer is showing at a time.
+      role: "group",
+      ariaLabel: "Map layers",
+      // Beside the rail rather than under it: the rail is against the right
+      // edge of the map, and a list dropped below its layers button would
+      // cover the buttons under it.
+      side: "left",
+      // The rail button is 34px wide; the layer names are not.
+      matchAnchorWidth: false,
+      render: renderLayerRows,
+      onOpen: () => markLayersButton(true),
+      onClose: () => markLayersButton(false),
+    });
+    return layersMenuHandle;
+  }
+
+  /** The rail button reads as pressed while its menu is open. */
+  function markLayersButton(on) {
+    const b = controlsEl && controlsEl.querySelector('[data-act="layers"]');
+    if (!b) return;
+    b.classList.toggle("active", !!on);
+    b.setAttribute("aria-expanded", on ? "true" : "false");
+  }
+
+  /**
+   * Fill the open switcher from the hydrated source catalogue. Layers are
    * grouped under their service (Esri / OpenStreetMap / Google / Bing) so the
    * twelve entries stay scannable and the operator can see which service a
-   * layer belongs to without opening Settings. Called once from buildControls
-   * with just the bootstrap entry, and again after the catalogue loads.
+   * layer belongs to without opening Settings. Built on every open, so a
+   * catalogue that arrived since the last one is simply there.
    */
-  function renderLayersPopover() {
-    if (!layersPopoverEl) return;
-    Corvus.ui.clear(layersPopoverEl);
-
-    const head = document.createElement("h4");
+  function renderLayerRows(surface) {
+    const head = document.createElement("div");
+    head.className = "ui-menu-head";
     head.textContent = "Map layers";
-    layersPopoverEl.appendChild(head);
+    surface.appendChild(head);
 
     // Fall back to a single ungrouped group before the catalogue arrives.
     const groups = providers.length
@@ -758,10 +787,13 @@ Corvus.map = (function () {
       },
     });
 
+    // The rows, before the headings are interleaved between them: this is
+    // what the keyboard walks, and a heading is not a stop on that walk.
+    const items = Array.from(layerPicker.el.children);
+
     // Insert a heading before the first item of each group. Skipped when there
     // is only one group (no point labelling a single section).
     if (groups.length > 1) {
-      const items = Array.from(layerPicker.el.children);
       let cursor = 0;
       groups.forEach((g) => {
         const count = (g.sources || []).filter((id) => sources[id]).length;
@@ -774,13 +806,16 @@ Corvus.map = (function () {
       });
     }
 
-    layersPopoverEl.appendChild(layerPicker.el);
+    surface.appendChild(layerPicker.el);
+    return items;
   }
 
   /**
-   * Load the source catalogue from the backend and rebuild the layer switcher.
-   * Failure is non-fatal: the bootstrap entry keeps the map painting, so the
-   * worst case is a switcher with one option rather than a broken map.
+   * Load the source catalogue from the backend. Failure is non-fatal: the
+   * bootstrap entry keeps the map painting, so the worst case is a switcher
+   * with one option rather than a broken map. The switcher itself is built
+   * from `sources` every time it opens, so there is nothing to re-render here
+   * unless it is open right now.
    */
   function loadSources() {
     return Corvus.telemetry.requestJson("/api/tiles/sources").then((data) => {
@@ -790,7 +825,7 @@ Corvus.map = (function () {
       list.forEach((s) => { next[s.id] = s; });
       sources = next;
       providers = (data && data.providers) || [];
-      renderLayersPopover();
+      if (layersMenuHandle) layersMenuHandle.rebuild();
       // The active layer's attribution/maxzoom may have been the bootstrap
       // fallback until now; re-apply so MapLibre credits the real source.
       if (started && activeLayer !== BOOTSTRAP_LAYER) setBaseLayer(activeLayer);
@@ -1199,146 +1234,119 @@ Corvus.map = (function () {
     return `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}`;
   }
 
-  /** Tear the menu and its pin out of the DOM. Idempotent — every close path
-   *  (Escape, outside click, an action, a new click, teardown) lands here. */
-  function closeContextMenu() {
-    if (contextMenuEl && contextMenuEl.parentNode) {
-      contextMenuEl.parentNode.removeChild(contextMenuEl);
-    }
+  /**
+   * The menu surface, built once on first use. It is a Corvus.ui.menu — the
+   * same component the flight bar's mode list and the layer switcher open —
+   * so the rows, the glass, Escape, the outside press and the keyboard are
+   * the app's, and what is left here is only what is particular to a menu
+   * anchored to a place on the ground: the pin, the coordinates it acts on,
+   * and following the point while the map pans.
+   */
+  function contextMenu() {
+    if (contextMenuHandle) return contextMenuHandle;
+    contextMenuHandle = Corvus.ui.menu({
+      className: "map-context-menu",
+      role: "menu",
+      ariaLabel: "Map position actions",
+      // Inside the map container, not on <body>: the menu has to scroll,
+      // resize and pan with the ground it points at.
+      host: () => contextHostEl,
+      // The map does not scroll; it moves, and positionContextMenu() follows.
+      closeOnScroll: false,
+      render: renderContextRows,
+      onClose: dropContextPin,
+    });
+    return contextMenuHandle;
+  }
+
+  /** Fill the open menu: the coordinates it acts on, then one row per action. */
+  function renderContextRows(surface) {
+    const point = { lng: contextPoint.lng, lat: contextPoint.lat };
+
+    const coords = document.createElement("span");
+    coords.className = "ui-menu-head map-context-coords";
+    coords.textContent = formatLngLat(point);
+    surface.appendChild(coords);
+
+    return contextActions.map((action) => {
+      const enabled = typeof action.enabled === "function"
+        ? !!action.enabled(point) : true;
+      // The note explains the row: why it cannot be used, or what it will do.
+      // `note` may be a function so it can read live state at open time.
+      const note = typeof action.note === "function"
+        ? action.note(point, enabled) : action.note;
+      const row = Corvus.ui.menuItem({
+        className: "map-context-item",
+        icon: action.icon,
+        label: action.label == null ? action.id : action.label,
+        note,
+        disabled: !enabled,
+        onSelect: () => {
+          // Close first: the action is async and the operator has already made
+          // the choice — leaving the menu up while a command flies would invite
+          // a second click on a row that is now acting on a stale point.
+          closeContextMenu();
+          try { action.run(point); } catch (err) { console.error("map action failed:", err); }
+        },
+      });
+      row.dataset.action = action.id || "";
+      surface.appendChild(row);
+      return row;
+    });
+  }
+
+  /** Take the pin off the map and forget the point. Idempotent: it runs both
+   *  from closeContextMenu() and from the menu closing itself (Escape, an
+   *  outside press, another dropdown opening). */
+  function dropContextPin() {
     if (contextPinEl && contextPinEl.parentNode) {
       contextPinEl.parentNode.removeChild(contextPinEl);
     }
-    contextMenuEl = null;
     contextPinEl = null;
     contextPoint = null;
-    document.removeEventListener("keydown", onContextKey);
-    document.removeEventListener("pointerdown", onContextOutside, true);
   }
 
-  function onContextKey(e) {
-    if (e.key === "Escape" || e.key === "Esc") {
-      if (e.preventDefault) e.preventDefault();
-      closeContextMenu();
-    }
-  }
-
-  /* Capture phase: a click on the map canvas must close the menu BEFORE
-     MapLibre's own click handler reopens it at the new point, or the menu
-     would flicker shut and straight back open on its own dismissal click. */
-  function onContextOutside(e) {
-    if (contextMenuEl && e.target && e.target.closest &&
-        e.target.closest(".map-context-menu")) return;
-    closeContextMenu();
+  /** Close the menu and clear what it was about. Idempotent — every close path
+   *  (Escape, outside click, an action, a new click, teardown) lands here. */
+  function closeContextMenu() {
+    if (contextMenuHandle) contextMenuHandle.close(false);
+    dropContextPin();
   }
 
   /**
-   * Place the menu next to the pin, flipping it back inside the map when the
-   * click was near an edge. Both are positioned in the container's own pixels
-   * (`map.project`), which is also what `style.left` writes — so this needs no
-   * correction under the interface scale, unlike anything reading a client
-   * rect. Called on open and on every map move.
+   * Keep the pin and the menu on their ground point. Both are positioned in
+   * the container's own pixels (`map.project`), which is also what
+   * `style.left` writes — so this needs no correction under the interface
+   * scale, unlike anything reading a client rect. Called on every map move.
    */
   function positionContextMenu() {
-    if (!contextMenuEl || !contextPoint || !map || !contextHostEl) return;
+    if (!contextMenuHandle || !contextMenuHandle.isOpen()) return;
+    if (!contextPoint || !map || !contextHostEl) return;
     const at = map.project([contextPoint.lng, contextPoint.lat]);
-    const hostW = contextHostEl.clientWidth;
-    const hostH = contextHostEl.clientHeight;
-    const menuW = contextMenuEl.offsetWidth;
-    const menuH = contextMenuEl.offsetHeight;
-    const GAP = 12;   // clear of the pin, which is 14px across
-
     contextPinEl.style.left = `${at.x}px`;
     contextPinEl.style.top = `${at.y}px`;
-
-    // Prefer down-right of the pin; flip on whichever axis would overflow.
-    const flipX = at.x + GAP + menuW > hostW && at.x - GAP - menuW >= 0;
-    const flipY = at.y + GAP + menuH > hostH && at.y - GAP - menuH >= 0;
-    let left = flipX ? at.x - GAP - menuW : at.x + GAP;
-    let top = flipY ? at.y - GAP - menuH : at.y + GAP;
-    // A menu taller/wider than the space on either side (a small window, a
-    // large interface scale) is clamped rather than flipped, so it stays
-    // fully readable even when it has to cover the pin.
-    left = Math.max(4, Math.min(left, hostW - menuW - 4));
-    top = Math.max(4, Math.min(top, hostH - menuH - 4));
-    contextMenuEl.style.left = `${left}px`;
-    contextMenuEl.style.top = `${top}px`;
-    // Grow out of the corner nearest the pin.
-    contextMenuEl.style.transformOrigin =
-      `${flipX ? "right" : "left"} ${flipY ? "bottom" : "top"}`;
+    contextMenuHandle.place({ x: at.x, y: at.y });
   }
 
   /** Build and show the menu for *lngLat*. Replaces any menu already open. */
   function openContextMenu(lngLat) {
+    // Closed before the new point is recorded: the menu clears contextPoint as
+    // it goes, and doing this the other way round would drop the point the
+    // rows are about to be built from.
     closeContextMenu();
     if (!map || !contextHostEl || !contextActions.length) return;
     contextPoint = { lng: lngLat.lng, lat: lngLat.lat };
-    const point = { lng: contextPoint.lng, lat: contextPoint.lat };
 
     contextPinEl = document.createElement("div");
     contextPinEl.className = "map-context-pin";
     contextHostEl.appendChild(contextPinEl);
 
-    contextMenuEl = document.createElement("div");
-    contextMenuEl.className = "map-context-menu glass";
-    contextMenuEl.setAttribute("role", "menu");
-    contextMenuEl.setAttribute("aria-label", "Map position actions");
-
-    const coords = document.createElement("span");
-    coords.className = "map-context-coords";
-    coords.textContent = formatLngLat(point);
-    contextMenuEl.appendChild(coords);
-
-    contextActions.forEach((action) => {
-      const enabled = typeof action.enabled === "function"
-        ? !!action.enabled(point) : true;
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "map-context-item";
-      btn.dataset.action = action.id || "";
-      btn.setAttribute("role", "menuitem");
-      btn.disabled = !enabled;
-      if (action.icon) btn.appendChild(Corvus.ui.icon(action.icon, "auto"));
-
-      const text = document.createElement("span");
-      text.className = "map-context-text";
-      const label = document.createElement("span");
-      label.className = "map-context-label";
-      label.textContent = String(action.label == null ? action.id : action.label);
-      text.appendChild(label);
-      // The note explains the row: why it cannot be used, or what it will do.
-      // `note` may be a function so it can read live state at open time.
-      const note = typeof action.note === "function" ? action.note(point, enabled) : action.note;
-      if (note) {
-        const n = document.createElement("span");
-        n.className = "map-context-note";
-        n.textContent = String(note);
-        text.appendChild(n);
-      }
-      btn.appendChild(text);
-
-      btn.addEventListener("click", () => {
-        if (btn.disabled) return;
-        // Close first: the action is async and the operator has already made
-        // the choice — leaving the menu up while a command flies would invite
-        // a second click on a row that is now acting on a stale point.
-        closeContextMenu();
-        try { action.run(point); } catch (err) { console.error("map action failed:", err); }
-      });
-      contextMenuEl.appendChild(btn);
-    });
-
-    contextHostEl.appendChild(contextMenuEl);
-    // Lucide swaps the <i> placeholders for <svg> in place, so this has to run
-    // BEFORE the first measurement — an unswapped placeholder has no width and
-    // the menu would be positioned from the wrong size.
-    Corvus.ui.refreshIcons();
-    positionContextMenu();
-    document.addEventListener("keydown", onContextKey);
-    document.addEventListener("pointerdown", onContextOutside, true);
-    // Focus the first usable row so the menu is operable from the keyboard the
-    // moment it opens (and Escape has something to return from).
-    const first = contextMenuEl.querySelector(".map-context-item:not([disabled])");
-    if (first && typeof first.focus === "function") first.focus();
+    const at = map.project([contextPoint.lng, contextPoint.lat]);
+    contextPinEl.style.left = `${at.x}px`;
+    contextPinEl.style.top = `${at.y}px`;
+    // Opening focuses the first usable row, so the menu is operable from the
+    // keyboard the moment it appears (and Escape has something to return from).
+    if (!contextMenu().open({ x: at.x, y: at.y })) dropContextPin();
   }
 
   /* A left-click on the map opens the menu — MapLibre fires "click" only for a
@@ -1385,7 +1393,7 @@ Corvus.map = (function () {
     }
   }
 
-  function init(mapEl, controlsEl, layersPopover) {
+  function init(mapEl, controlsEl) {
     map = new maplibregl.Map({
       container: mapEl,
       center: DEFAULT_CENTER,
@@ -1412,7 +1420,7 @@ Corvus.map = (function () {
     // worse offline. Nothing in the rail needs a loaded style: the handlers act
     // on the map object (which exists from the constructor), and setBaseLayer
     // already defers its own work until `started`.
-    buildControls(controlsEl, layersPopover);
+    buildControls(controlsEl);
     buildTrackControl(mapEl);
 
     // The context menu lives in the map container so it scrolls, resizes and

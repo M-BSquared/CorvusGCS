@@ -639,17 +639,12 @@ svg { display: block; }
 .mc-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
 .mc-divider { height: 1px; background: var(--border-soft); margin: 2px 4px; }
 
-.layers-popover {
-  position: absolute; top: 156px; right: var(--map-rail-clear); z-index: var(--z-map-popover);
-  border-radius: var(--radius);
-  padding: 8px; min-width: 168px;
-  animation: corvus-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.layers-popover h4 { font-size: 10px; color: var(--text-3); letter-spacing: 0.8px; margin: 4px 6px 6px; text-transform: uppercase; }
-/* The layer rows themselves are .option-item from components.css — the popover
-   only contributes its own sizing and the per-service group headings that are
-   interleaved between them. */
-.layers-popover { max-height: 60vh; overflow-y: auto; }
+/* The switcher is a .ui-menu (components.css) opened from the rail's layers
+   button: the surface, the caption, the .option-item rows and the dismissal
+   are all the app's shared dropdown, and Corvus.ui.menu() positions it beside
+   the rail. What is left here is a width the layer names can live in, and the
+   per-service group headings that are interleaved between the rows. */
+.layers-popover { min-width: 168px; }
 .layer-group {
   font-size: 9.5px; font-weight: 600; letter-spacing: 0.9px;
   color: var(--text-3); text-transform: uppercase;
@@ -664,11 +659,11 @@ svg { display: block; }
    itself is offset from the click (a menu under the cursor hides the thing it
    is about), and without the pin "this point" would be a guess.
 
-   Same .glass material as the flight bar and the layer popover — this is a
-   transient surface opened FROM the map, so it sits at --z-map-popover and
-   wins against every panel that lives on the map. It grows out of the pin:
-   transform-origin is set inline to the corner the menu was flipped to, so a
-   menu opened near the right edge still appears to come from the click. */
+   The menu is a .ui-menu of .option-item rows like every other dropdown in
+   the app (components.css) — the surface, the rows and the way it grows out
+   of the corner nearest the pin all come from there. What is left here is the
+   pin, the coordinate caption and a width that suits a menu sitting ON the
+   ground the operator is choosing. */
 .map-context-pin {
   position: absolute;
   z-index: var(--z-map-popover);
@@ -692,81 +687,40 @@ svg { display: block; }
 }
 
 .map-context-menu {
-  position: absolute;
-  z-index: var(--z-map-popover);
-  border-radius: var(--radius);
-  padding: 5px;
   /* Sized to its two rows and nothing more. The old 186px floor made the menu
      a third wider than its widest label, and this surface sits ON the ground
      the operator is choosing — every column of it is map they cannot see. */
   min-width: 0;
   width: max-content;
   max-width: 210px;
-  animation: corvus-enter 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .map-context-menu[hidden] { display: none; }
 
 /* The coordinates of the clicked point, in the same tabular mono the telemetry
    readouts use. A caption, not a control: the menu should say what it is about
    before it says what it can do. */
-.map-context-coords {
-  display: block;
+/* Scoped past .ui-menu-head, the shared caption it is a variant of: a
+   coordinate is read digit by digit, so this one is mono and tabular rather
+   than the uppercase label a menu head usually carries. */
+.map-context-menu .map-context-coords {
   padding: 3px 7px 6px;
-  margin-bottom: 3px;
+  margin: 0 0 3px;
   border-bottom: 1px solid rgb(var(--tint-rgb) / 0.08);
   font-family: var(--mono);
   font-size: 10px;
+  font-weight: 500;
   letter-spacing: -0.2px;
+  text-transform: none;
   font-variant-numeric: tabular-nums;
-  color: var(--text-3);
   white-space: nowrap;
 }
 
-.map-context-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 7px;
-  border-radius: var(--radius-btn);
-  color: var(--text-1);
-  text-align: left;
-  transition: background 130ms, color 130ms;
-}
-.map-context-item i, .map-context-item svg {
-  width: 14px; height: 14px; flex: 0 0 auto; color: var(--text-2);
-}
-.map-context-item:hover:not(:disabled) { background: var(--panel-wash); }
-.map-context-item:hover:not(:disabled) i,
-.map-context-item:hover:not(:disabled) svg { color: var(--accent); }
-.map-context-item:active:not(:disabled) { background: var(--accent-dim); }
-.map-context-item:focus-visible {
-  outline: 2px solid var(--accent-bright); outline-offset: -2px;
-}
-/* Disabled is a normal state here — both actions need a connected (and, to
-   fly, an armed) vehicle — so it has to read as "not yet", not as broken: the
-   row stays legible and says why in .map-context-note.
-   --text-3, not --text-disabled: the note below is already --text-3, and the
-   palest token on the label put the two the wrong way round, with the reason
-   shouting over the thing it was explaining. The label keeps the lead; only
-   the note recedes. */
-.map-context-item:disabled { color: var(--text-3); cursor: not-allowed; }
-.map-context-item:disabled i, .map-context-item:disabled svg { color: var(--text-disabled); }
-.map-context-item:disabled .map-context-note { color: var(--text-disabled); }
-
-.map-context-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.map-context-label {
-  font-size: 11.5px; font-weight: 600; letter-spacing: 0;
-  white-space: nowrap;
-}
-/* Why the row is unavailable, or what it will do — never both, and only when
-   there is something to say. */
-.map-context-note {
-  font-size: 9.5px; color: var(--text-3); white-space: nowrap;
-}
+/* The rows are .option-item (components.css): the icon, the label, the note
+   under it and the disabled treatment are the shared recipe, so an action on
+   the map reads like a choice in any other list the app opens. */
 
 @media (prefers-reduced-motion: reduce) {
-  .map-context-menu, .map-context-pin { animation: none !important; }
+  .map-context-pin { animation: none !important; }
 }
 
 /* ===== OFFLINE MAP (tile download) =====
@@ -1802,10 +1756,10 @@ svg { display: block; }
   .params-apply,
   .plan-panel,
   .takeoff-panel,
-  .layers-popover,
   .warnings-popover { transition: none !important; animation: none !important; transform: none !important; }
-  /* Dialogs are .modal (components.css) and carry their own reduced-motion
-     override there; the offline-map panel is one of them now. */
+  /* Dialogs are .modal and every dropdown is a .ui-menu (components.css);
+     both carry their own reduced-motion override there, so the layer switcher
+     and the map's context menu are covered by the component, not here. */
 }
 
 /* ----- LINK (connection manager) ----- */
@@ -2372,6 +2326,91 @@ svg { display: block; }
 }
 .params-banner[hidden] { display: none; }
 
+/* ----- TELEMETRY RADIO (SiK) -----
+   The page is two radios side by side, because the failure it exists to fix is
+   a pair that disagrees and that is only visible with both ends on screen at
+   once. The columns collapse to one below the breakpoint; on a narrow window
+   the comparison is made by scrolling rather than by looking, which is worse
+   but still possible, where a squeezed two-column grid would be neither. */
+.sik-port-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) minmax(120px, 1fr) minmax(140px, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.sik-results { display: flex; flex-direction: column; gap: 14px; }
+.sik-results:empty { display: none; }
+
+.sik-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.sik-radio-card { display: flex; flex-direction: column; gap: 12px; }
+/* A radio that did not answer keeps its column rather than closing the gap:
+   the empty half is the message, and a page that silently became one column
+   would read as a page that only ever had one. */
+.sik-radio-unreachable { opacity: 0.75; }
+
+.sik-field-grid { display: flex; flex-direction: column; gap: 12px; }
+.sik-field { display: flex; flex-direction: column; gap: 3px; }
+.sik-field[hidden] { display: none; }
+/* An edited field is marked before it is written, not after: between staging a
+   change and pressing Save the value on screen is not the value in the radio,
+   and nothing else on the page says so. */
+.sik-field.sik-dirty .field-input,
+.sik-field.sik-dirty .field-select {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.sik-match-mark {
+  font-size: 10px;
+  color: var(--text-3);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.sik-link-card { display: flex; flex-direction: column; gap: 6px; }
+/* The mismatch card is a warning surface rather than a neutral one: it only
+   exists when something is wrong, and it carries the button that fixes it. */
+.sik-mismatch-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-color: var(--warning);
+}
+.sik-mismatch-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+.sik-mismatch-list li { font-variant-numeric: tabular-nums; }
+/* Content-width inside the column card, like every other action on the page —
+   a full-bleed button reads as a banner rather than as something to press. */
+.sik-mismatch-card .btn { align-self: flex-start; }
+
+.sik-actions-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+/* Save sits left with the advanced toggle; the two resets are pushed to the
+   far edge so a destructive button is never adjacent to the one an operator
+   reaches for every time. */
+.sik-actions-card .btn[data-action^="reset-"] { margin-left: auto; }
+.sik-actions-card .btn[data-action^="reset-"] ~ .btn[data-action^="reset-"] {
+  margin-left: 0;
+}
+
+@media (max-width: 900px) {
+  .sik-columns { grid-template-columns: minmax(0, 1fr); }
+  .sik-port-row { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* ----- FIRMWARE ----- */
 /* Dedicated card class (mirrors .params-card's column layout) so the firmware
    page reads as its own surface, not a params reuse. */
@@ -2509,6 +2548,260 @@ svg { display: block; }
 }
 .rc-channel[data-bound="1"] .rc-channel-note { color: var(--text-2); }
 
+/* ----- the drawn transmitter -----
+   A technical drawing of the handset, moved by the same RC_CHANNELS stream the
+   bars are, and labelled the way a handset manual labels one: leader lines out
+   to two margin columns, so the drawing itself stays uncluttered and the words
+   have room to say "CH5 · Up" rather than "5".
+
+   Everything is a theme token. The case is a surface, lit controls are the
+   accent, the wizard's pointing is nav blue and "already swept" is the healthy
+   green the rest of the app uses for a check that has passed — so the drawing
+   reads the same way in all six themes and never becomes a second palette.
+
+   The one rule the whole thing hangs on: NOTHING here transitions. A switch
+   handle that eases into its new position is a handle whose picture disagrees
+   with the operator's thumb for 150 ms, which is exactly the window in which
+   they are deciding whether the control works at all. Same reason
+   .rc-channel-fill carries no transition. */
+/* The drawing and the channel bars share a row once the COLUMN they sit in is
+   wide enough — not once the window is. Collapsing the right-hand panel is the
+   commonest way an operator makes room on this page, and it never changes the
+   viewport, so a media query would miss exactly the case it is there for. An
+   engine without container queries keeps them stacked, which is correct at
+   every width and is what the page did before. */
+.rc-top { container-type: inline-size; }
+.rc-top-row { display: flex; flex-direction: column; }
+@container (min-width: 880px) {
+  .rc-top-row { flex-direction: row; align-items: flex-start; gap: 14px; }
+  /* The drawing gets the larger share: it is the half with a fixed aspect
+     ratio and with text inside it, so it is the half that stops being readable
+     first. The bars take what is left, down to their own minimum. */
+  .rc-top-row > .rc-tx-card { flex: 1 1 62%; min-width: 0; }
+  .rc-top-row > .rc-monitor { flex: 1 1 38%; min-width: 280px; }
+  /* Below ~400px of column the channel note is the first thing to go, for the
+     same reason the narrow-window rule drops it: the bar and the pulse are the
+     measurement, and what the channel is bound to is on the form below. */
+  .rc-top-row .rc-channel { grid-template-columns: 46px 1fr 66px minmax(0, 110px); }
+}
+@container (max-width: 1180px) {
+  .rc-top-row .rc-channel-note { display: none; }
+  .rc-top-row .rc-channel { grid-template-columns: 46px 1fr 66px; }
+}
+
+.rc-tx-card { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.rc-tx-tools { display: flex; align-items: center; gap: 8px; }
+.field-select.rc-tx-mode { min-width: 104px; max-width: 120px; padding: 5px 8px; }
+
+.rc-tx { display: flex; flex-direction: column; gap: 10px; }
+.rc-tx-figure { display: flex; justify-content: center; }
+.rc-tx-svg { width: 100%; max-width: 720px; height: auto; display: block; }
+
+/* --- the shell ---
+   Line-drawing weights: the case outline is the heaviest line on the page, the
+   mouldings inside it are hairlines. That hierarchy is what keeps a drawing
+   with forty tick marks in it from reading as noise. */
+.rc-tx-body {
+  fill: var(--surface-1); stroke: var(--text-3); stroke-width: 3;
+  stroke-linejoin: round;
+}
+.rc-tx-antenna, .rc-tx-antenna-hinge, .rc-tx-chin {
+  fill: var(--surface-2); stroke: var(--text-3); stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+.rc-tx-brand {
+  font-family: var(--sans); font-size: 21px; font-weight: 800;
+  letter-spacing: 4px; fill: var(--text-3);
+}
+.rc-tx-case-text {
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  letter-spacing: 1.5px; fill: var(--text-3);
+}
+.rc-tx-screen-bezel { fill: var(--surface-3); stroke: var(--border); stroke-width: 1.5; }
+.rc-tx-screen { fill: var(--terminal-bg); stroke: var(--border-strong); stroke-width: 1.5; }
+.rc-tx-screen-head {
+  font-family: var(--mono); font-size: 12px; letter-spacing: 2px;
+  fill: var(--text-3);
+}
+.rc-tx-screen-line {
+  font-family: var(--mono); font-size: 22px; font-weight: 700;
+  letter-spacing: 1px; fill: var(--text-1);
+}
+.rc-tx-screen-sub { font-family: var(--mono); font-size: 13px; fill: var(--text-2); }
+
+/* Menu pad and scroll wheel — the handset's own controls. Drawn flat and
+   unlabelled-by-callout on purpose: they never reach a channel, so there is
+   nothing here to bind and no reason to invite a click. */
+.rc-tx-nav { fill: var(--surface-2); stroke: var(--border-strong); stroke-width: 1.5; }
+.rc-tx-nav-hub { fill: var(--surface-3); stroke: var(--border); stroke-width: 1.5; }
+.rc-tx-knurl { stroke: var(--border-strong); stroke-width: 1.5; }
+.rc-tx-chrome-label {
+  font-family: var(--sans); font-size: 9px; font-weight: 700;
+  letter-spacing: 0.6px; fill: var(--text-3);
+}
+
+/* Trims carry no channel and nothing to click, so they stay quiet. */
+.rc-tx-trim { fill: var(--surface-2); stroke: var(--border); stroke-width: 1; }
+.rc-tx-trim-thumb { fill: var(--surface-3); stroke: var(--border-strong); stroke-width: 1; }
+.rc-tx-trim-mark { font-size: 9px; fill: var(--text-3); }
+
+/* --- gimbals and thumbsticks ---
+   The cap is the thing the thumb touches, so it is drawn as that: a knurled
+   rim around a dished top, standing on a shaft that grows out of the well's
+   centre as the stick is pushed. At centre there is no shaft at all, which is
+   the state the calibration's second step asks for and the one an abstract
+   marker could never show. */
+.rc-tx-gimbal-boot { fill: var(--surface-2); stroke: var(--border-strong); stroke-width: 2; }
+.rc-tx-gimbal-well { fill: var(--surface-3); stroke: var(--border); stroke-width: 1; }
+.rc-tx-gimbal-tick { stroke: var(--border-strong); stroke-width: 1.5; opacity: 0.55; }
+.rc-tx-gimbal-centre { fill: var(--border-strong); }
+.rc-tx-stick-shaft {
+  stroke: var(--border-strong); stroke-width: 11; stroke-linecap: round;
+}
+.rc-tx-stick-rim { fill: var(--surface-1); stroke: var(--text-3); stroke-width: 2.5; }
+.rc-tx-stick-knurl { stroke: var(--text-3); stroke-width: 1.5; opacity: 0.7; }
+.rc-tx-stick-dish { fill: var(--surface-2); stroke: var(--border-strong); stroke-width: 1.5; }
+/* A stick with a live channel behind it takes the accent, because "this stick
+   is centred" and "this stick is telling me nothing" are the two states most
+   easily confused on this page, and at centre they are the same picture. */
+.rc-tx-gimbal[data-signal="1"] .rc-tx-stick-rim {
+  fill: var(--accent); stroke: var(--accent-pressed);
+}
+.rc-tx-gimbal[data-signal="1"] .rc-tx-stick-dish {
+  fill: var(--accent-hover); stroke: var(--accent-pressed);
+}
+.rc-tx-gimbal[data-signal="1"] .rc-tx-stick-knurl { stroke: var(--accent-pressed); }
+.rc-tx-gimbal[data-signal="1"] .rc-tx-stick-shaft { stroke: var(--accent-pressed); }
+.rc-tx-gimbal[data-prompted="1"] .rc-tx-gimbal-boot {
+  stroke: var(--nav); stroke-width: 3.5;
+}
+.rc-tx-arrow {
+  stroke: var(--nav); stroke-width: 5; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* --- switches ---
+   A mounting nut and a bat handle that leans to the position the channel says
+   it is in. Position is carried by the ANGLE, which is what the operator's own
+   switch is doing; colour carries only whether it is at rest or not, so the
+   two facts never have to share one signal. */
+.rc-tx-nut { fill: var(--surface-2); stroke: var(--border-strong); stroke-width: 2; }
+.rc-tx-nut-hub { fill: var(--surface-3); stroke: var(--border); stroke-width: 1; }
+.rc-tx-lever-stem {
+  stroke: var(--text-2); stroke-width: 7; stroke-linecap: round;
+}
+.rc-tx-lever-ball { fill: var(--text-2); stroke: var(--surface-1); stroke-width: 1.5; }
+.rc-tx-control[data-on="1"] .rc-tx-lever-stem { stroke: var(--accent); }
+.rc-tx-control[data-on="1"] .rc-tx-lever-ball { fill: var(--accent); }
+.rc-tx-control[data-on="1"] .rc-tx-nut { stroke: var(--accent); }
+/* Nothing arriving: a dashed nut and a washed-out handle, so a switch with no
+   signal can never be mistaken for one sitting in its down position. */
+.rc-tx-control[data-signal=""] .rc-tx-nut { stroke-dasharray: 3 3; }
+.rc-tx-control[data-signal=""] .rc-tx-lever-stem,
+.rc-tx-control[data-signal=""] .rc-tx-lever-ball,
+.rc-tx-control[data-signal=""] .rc-tx-knob-pointer { opacity: 0.4; }
+
+/* --- knobs --- */
+.rc-tx-knob-body { fill: var(--surface-2); stroke: var(--border-strong); stroke-width: 2; }
+.rc-tx-knob-cap { fill: var(--surface-3); stroke: var(--border); stroke-width: 1; }
+.rc-tx-knob-pointer { stroke: var(--text-2); stroke-width: 4; stroke-linecap: round; }
+.rc-tx-control[data-on="1"] .rc-tx-knob-pointer { stroke: var(--accent); }
+.rc-tx-control[data-on="1"] .rc-tx-knob-body { stroke: var(--accent); }
+
+/* --- callouts ---
+   The margin label, its leader line, and the dot where the line lands. The
+   label is the click target for a stick axis, which has no body of its own to
+   click, and the easier target for everything else. */
+.rc-tx-leader { fill: none; stroke: var(--border-strong); stroke-width: 1.5; }
+.rc-tx-leader-dot { fill: var(--border-strong); }
+.rc-tx-callout-name {
+  font-family: var(--sans); font-size: 16px; font-weight: 700; fill: var(--text-2);
+}
+.rc-tx-callout-value {
+  font-family: var(--mono); font-size: 13px; fill: var(--text-3);
+}
+.rc-tx-callout-hit { fill: transparent; stroke: none; }
+.rc-tx-callout[data-bound="1"] .rc-tx-callout-name { fill: var(--text-1); }
+.rc-tx-callout[data-on="1"] .rc-tx-callout-value { fill: var(--accent-bright); }
+.rc-tx-callout[data-on="1"] .rc-tx-leader,
+.rc-tx-callout[data-on="1"] .rc-tx-leader-dot { stroke: var(--accent); fill: var(--accent); }
+.rc-tx-callout[data-on="1"] .rc-tx-leader { fill: none; }
+
+/* Selection and the wizard's prompt are two different statements — "you are
+   looking at this one" and "move this one" — so they are two different
+   colours, never one shared highlight. */
+.rc-tx[data-interactive="1"] .rc-tx-control,
+.rc-tx[data-interactive="1"] .rc-tx-callout { cursor: pointer; }
+.rc-tx-control:focus-visible, .rc-tx-callout:focus-visible {
+  outline: 2px solid var(--nav); outline-offset: 2px;
+}
+.rc-tx-control[data-selected="1"] .rc-tx-nut,
+.rc-tx-control[data-selected="1"] .rc-tx-knob-body {
+  stroke: var(--accent); stroke-width: 3.5; stroke-dasharray: none;
+}
+.rc-tx-control[data-prompted="1"] .rc-tx-nut,
+.rc-tx-control[data-prompted="1"] .rc-tx-knob-body {
+  stroke: var(--nav); stroke-width: 3.5; stroke-dasharray: none;
+}
+.rc-tx-control[data-swept="1"] .rc-tx-nut,
+.rc-tx-control[data-swept="1"] .rc-tx-knob-body {
+  stroke: var(--healthy); stroke-width: 3.5; stroke-dasharray: none;
+}
+.rc-tx-callout[data-selected="1"] .rc-tx-callout-name { fill: var(--accent-bright); }
+.rc-tx-callout[data-selected="1"] .rc-tx-leader { stroke: var(--accent); }
+.rc-tx-callout[data-selected="1"] .rc-tx-leader-dot { fill: var(--accent); }
+.rc-tx-callout[data-prompted="1"] .rc-tx-callout-name { fill: var(--nav-bright); }
+.rc-tx-callout[data-prompted="1"] .rc-tx-leader { stroke: var(--nav); stroke-width: 2.5; }
+.rc-tx-callout[data-prompted="1"] .rc-tx-leader-dot { fill: var(--nav); }
+.rc-tx-callout[data-swept="1"] .rc-tx-leader { stroke: var(--healthy); }
+.rc-tx-callout[data-swept="1"] .rc-tx-leader-dot { fill: var(--healthy); }
+.rc-tx-callout[data-swept="1"] .rc-tx-callout-name { fill: var(--healthy-bright); }
+
+/* --- the inspector under the drawing --- */
+.rc-tx-legend { font-size: 11.5px; line-height: 1.5; color: var(--text-3); }
+.rc-tx-legend[hidden], .rc-tx-inspector[hidden] { display: none; }
+.rc-tx-inspector {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 12px; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--border-soft);
+}
+.rc-tx-inspector-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+}
+.rc-tx-inspector-title { font-size: 12.5px; font-weight: 700; color: var(--text-1); }
+.rc-tx-inspector-value { font-family: var(--mono); font-size: 11px; color: var(--text-2); }
+.rc-tx-inspector-body { display: flex; flex-direction: column; gap: 8px; }
+.rc-tx-inspector-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rc-tx-inspector-note { font-size: 11.5px; line-height: 1.5; color: var(--text-3); }
+.field-select.rc-tx-pos-select { min-width: 120px; max-width: 148px; padding: 5px 8px; }
+
+.rc-tx-fns { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rc-tx-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rc-tx-chip {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 2px 4px 2px 9px; border-radius: 999px;
+  background: var(--accent-dark); border: 1px solid var(--accent);
+  font-size: 11px; font-weight: 600; color: var(--accent-bright);
+}
+.rc-tx-chip-empty {
+  padding: 3px 9px; background: var(--surface-1); border-color: var(--border-soft);
+  color: var(--text-3); font-weight: 500;
+}
+.btn.rc-tx-chip-drop { padding: 1px 3px; min-height: 0; }
+.field-select.rc-tx-fn-select { min-width: 170px; max-width: 240px; padding: 5px 8px; }
+
+/* No-SVG fallback (the DOM-stub harness, and any engine without createElementNS):
+   the same controls as a list, so the wizard's prompt is still readable. */
+.rc-tx-fallback { display: flex; flex-direction: column; gap: 3px; width: 100%; }
+.rc-tx-fallback-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 3px 6px; border-radius: 6px; background: var(--surface-2);
+}
+.rc-tx-fallback-row[data-prompted="1"] { outline: 1px solid var(--nav); }
+.rc-tx-fallback-row[data-swept="1"] { outline: 1px solid var(--healthy); }
+.rc-tx-fallback-label { font-size: 11.5px; color: var(--text-1); }
+.rc-tx-fallback-value { font-family: var(--mono); font-size: 11px; color: var(--text-2); }
+
 /* Layout comes from .pform-* ; radio's own departure is room for the Detect
    button beside every channel picker. */
 .rc-field { grid-template-columns: minmax(140px, 230px) 1fr; }
@@ -2619,6 +2912,11 @@ svg { display: block; }
   .rc-channel { grid-template-columns: 42px 1fr 62px; }
   .rc-channel-note { display: none; }
   .rc-modes { grid-template-columns: repeat(3, 1fr); }
+  /* The drawing keeps its aspect ratio and simply gets smaller; what has to
+     give is the tool row in its header, which would otherwise push the title
+     off the card. */
+  .rc-monitor-head { flex-wrap: wrap; }
+  .field-select.rc-tx-fn-select { min-width: 0; width: 100%; max-width: none; }
 }
 
 /* Reduced transparency: make translucent/animated surfaces frostier (apple-design §14). */
@@ -2879,12 +3177,116 @@ svg { display: block; }
 .field-select.safety-driver-select { min-width: 220px; max-width: 340px; }
 .safety-sensor-status { align-self: center; }
 
+/* Sensor tiles on the overview. One card per sensor, carrying the two facts
+   that decide whether the operator needs to open it: is it on, and what is
+   feeding it. Same .tile recipe as the Setup grid, one column narrower. */
+.safety-sensor-tiles {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+/* Same row as a Setup tile — icon, text, trailing chevron — but the icon sits
+   at the top rather than centred: this tile carries three lines, and an icon
+   centred against them drifts down beside the state row instead of marking the
+   title it belongs to. */
+.safety-sensor-tile { align-items: flex-start; gap: 12px; padding: 14px 16px; }
+.safety-sensor-tile .tile-icon { width: 34px; height: 34px; }
+.safety-sensor-tile .tile-icon svg, .safety-sensor-tile .tile-icon i {
+  width: 17px; height: 17px;
+}
+.safety-sensor-tile .tile-body { flex: 1; }
+.safety-sensor-tile > svg, .safety-sensor-tile > i[data-lucide="chevron-right"] {
+  align-self: flex-start; margin-top: 9px;
+}
+.safety-sensor-state {
+  display: flex; align-items: center; gap: 7px; margin-top: 5px; min-width: 0;
+}
+/* The pill is the across-the-tent read. The detail beside it is the honest
+   half — it names the driver AND the estimator, so a sensor that streams but
+   is not fused cannot look configured from the overview either. */
+.safety-sensor-pill {
+  flex: 0 0 auto; font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+  text-transform: uppercase; padding: 2px 7px; border-radius: 999px;
+  border: 1px solid var(--border-soft); color: var(--text-3);
+}
+.safety-sensor-pill.on {
+  color: var(--healthy); border-color: color-mix(in srgb, var(--healthy) 45%, transparent);
+  background: color-mix(in srgb, var(--healthy) 12%, transparent);
+}
+.safety-sensor-state-detail {
+  font-size: 11px; color: var(--text-3); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ----- Hardware presets -----
+   A preset is a product, not a driver, so the row carries the bus and the model
+   number with the name — a list read one line at a time is where "UART" vs
+   "DroneCAN" actually prevents a mistake. Picking one only previews it; the
+   write list below is shown in full before anything reaches the aircraft. */
+.field-select.safety-preset-select { min-width: 280px; max-width: 460px; }
+.safety-preset-detail:empty { display: none; }
+.safety-preset-detail {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 11px 12px; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--border-soft);
+}
+.safety-preset-summary { margin: 0; font-size: 12.5px; color: var(--text-1); }
+.safety-preset-note { margin: 0; font-size: 11.5px; color: var(--text-2); line-height: 1.5; }
+.safety-preset-warning {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 11.5px; line-height: 1.5; color: var(--warning);
+}
+.safety-preset-warning svg { flex: 0 0 auto; width: 15px; height: 15px; margin-top: 1px; }
+
+/* The write list is the consent surface: every parameter, its value, and why.
+   Monospace on the first two columns because a parameter name read wrong is a
+   different parameter. */
+.safety-preset-writes { display: flex; flex-direction: column; gap: 2px; }
+.safety-preset-write {
+  display: grid; gap: 10px; align-items: baseline;
+  grid-template-columns: minmax(120px, 175px) minmax(70px, 108px) 1fr;
+  padding: 3px 0; border-top: 1px solid var(--border-soft);
+}
+.safety-preset-write:first-child { border-top: 0; }
+.safety-preset-write-param {
+  font-family: var(--mono); font-size: 11px; color: var(--text-2);
+}
+.safety-preset-write-value {
+  font-family: var(--mono); font-size: 11px; font-weight: 650; color: var(--text-1);
+}
+.safety-preset-write-value.pending { font-style: italic; font-weight: 500; color: var(--text-3); }
+.safety-preset-write-why { font-size: 11px; color: var(--text-3); }
+.safety-preset-missing { font-size: 11px; color: var(--warning); }
+.safety-preset-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* ----- Parameters the operator adds themselves -----
+   Deliberately the same row as every other field on the page — same label
+   column, same control, same status — because it *is* one: read in the same
+   batch, written by the same path. Only the trailing remove button is new. */
+.safety-extra-list { display: flex; flex-direction: column; gap: 2px; }
+.safety-extra-field { padding: 3px 0; border-top: 1px solid var(--border-soft); }
+.safety-extra-field:first-child { border-top: 0; }
+.safety-extra-field .safety-field-label { font-family: var(--mono); font-size: 11.5px; }
+.safety-extra-empty { font-size: 11.5px; color: var(--text-3); }
+/* A name the firmware never answered for keeps its row and says why, so a typo
+   is distinguishable from a parameter this PX4 version does not have. */
+.safety-extra-absent { font-size: 11.5px; color: var(--warning); align-self: center; }
+.icon-btn.safety-extra-remove { width: 26px; height: 26px; flex: 0 0 auto; }
+.icon-btn.safety-extra-remove svg { width: 13px; height: 13px; }
+.safety-extra-add { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.field-input.safety-extra-input { min-width: 200px; }
+.safety-extra-add .params-row-status { align-self: center; }
+
 @media (max-width: 720px) {
   /* Repeated for the same reason as Motors: the widened column above is
      written after the .pform-field collapse, at the same specificity. */
   .safety-field { grid-template-columns: 1fr; }
   .safety-sensor-picker { flex-direction: column; align-items: stretch; }
   .field-select.safety-select { max-width: none; }
+  .field-select.safety-preset-select { min-width: 0; max-width: none; }
+  .safety-preset-write { grid-template-columns: 1fr auto; gap: 2px 10px; }
+  .safety-preset-write-why { grid-column: 1 / -1; }
+  .safety-extra-add { flex-direction: column; align-items: stretch; }
+  .field-input.safety-extra-input { min-width: 0; }
 }
 
 /* ===== CONSOLE =====
@@ -3006,6 +3408,43 @@ svg { display: block; }
 .link-quality[data-level="critical"] { color: var(--critical); }
 .link-quality[data-level="off"] { color: var(--text-3); }
 
+/* The AUTO chip rides the connection line rather than the status row: it
+   answers the same question the connection string does ("what link is this"),
+   and the status row has no width to spare — a third pill beside the state
+   word clipped CONNECTED down to "C\2026", which is the one word on the panel
+   that has to stay readable. Quieter than the quality pill on purpose: quality
+   is a flying decision, "who picked this" is context. */
+.link-status-why {
+  display: flex; align-items: center; gap: 6px; min-width: 0;
+}
+.link-status-why > .link-status-conn { flex: 1 1 auto; min-width: 0; }
+.link-auto-badge {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.6px;
+  padding: 2px 5px; border-radius: 999px;
+  border: 1px dashed var(--border-strong);
+  color: var(--text-3);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.link-auto-badge[hidden] { display: none; }
+
+/* The mid-session plug: a device turned up while the link was busy elsewhere.
+   Outlined in the accent rather than filled, because it is an offer and a
+   filled row reads as something that already happened. */
+.link-suggestion {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 7px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-btn);
+  background: var(--surface-2);
+}
+.link-suggestion[hidden] { display: none; }
+.link-suggestion-text {
+  flex: 1 1 160px; min-width: 0;
+  font-size: 10.5px; color: var(--text-2); line-height: 1.35;
+}
+.link-suggestion-actions { display: flex; gap: 4px; flex: 0 0 auto; }
+
 /* Disconnect used to be grey ghost text, which on a live link read as
    decoration: the one control an operator reaches for when a port has moved
    was the hardest one on the panel to find. It now carries an outline in its
@@ -3029,51 +3468,58 @@ svg { display: block; }
 
 /* Presets. Four bordered rows rather than a wrapped strip of ghost buttons:
    the strip had no edges, so the labels read as prose under the field and the
-   longest of them wrapped into the line below. A row shows what the endpoint
-   is for next to the string it fills in, which is the part a preset list
-   exists to explain. */
+   longest of them wrapped into the line below.
+
+   One line per row now: name, the string it fills in, and a hint icon. The
+   note that explains the endpoint used to be printed under every row, three
+   lines of prose deep at the narrowest panel width, which turned a four-item
+   list into a wall of text and pushed Connect out of sight. It lives in the
+   hint's popover, which is the whole reason Corvus.ui.infoHint exists.
+
+   The row is a container, not the control: it holds the pick button and the
+   hint button side by side, so the hover and focus treatment moves onto the
+   wrapper (:focus-within, since the focus lands on a child). */
 .link-presets { display: flex; flex-direction: column; gap: 5px; margin-top: 9px; }
 .link-preset-list { display: flex; flex-direction: column; gap: 4px; }
 .link-preset {
-  display: flex; flex-direction: column; gap: 2px;
+  display: flex; align-items: center; gap: 6px;
   width: 100%;
-  padding: 7px 9px;
+  padding: 6px 8px;
   border-radius: var(--radius-btn);
   background: var(--panel-fill);
   border: 1px solid var(--panel-hairline);
-  text-align: left;
-  cursor: pointer;
   transition: background 130ms, border-color 130ms;
 }
 .link-preset:hover {
   background: var(--panel-fill-hover);
   border-color: color-mix(in srgb, var(--accent) 45%, var(--panel-hairline-hover));
 }
-.link-preset:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+.link-preset:focus-within {
+  border-color: var(--accent);
 }
-.link-preset-head {
+.link-preset-pick {
   display: flex; align-items: baseline; gap: 8px;
-  width: 100%;
+  flex: 1; min-width: 0;
+  padding: 1px 0;
+  text-align: left;
+  cursor: pointer;
+}
+.link-preset-pick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-btn);
 }
 .link-preset-name {
   flex: 1; min-width: 0;
   color: var(--text-1);
   font-size: 11px; font-weight: 600; letter-spacing: 0.1px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .link-preset-conn {
   flex: none;
   color: var(--text-3);
   font-family: var(--mono); font-size: 10px;
   white-space: nowrap;
-}
-/* The note is the reason the row is here, so it gets the full width and is
-   allowed to wrap — truncating it would leave the same unexplained label the
-   ghost buttons had. */
-.link-preset-note {
-  color: var(--text-3);
-  font-size: 10px; line-height: 1.35;
 }
 .link-preset:hover .link-preset-name { color: var(--accent); }
 

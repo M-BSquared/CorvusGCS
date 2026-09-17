@@ -40,6 +40,7 @@ a parameter that is absent must never break the page):
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 # EKF2_AID_MASK bit 1 — the pre-v1.14 way to switch optical-flow fusion on.
@@ -210,6 +211,28 @@ FLOW_BUS_DRIVERS: list[tuple[str, list[tuple[int, str]]]] = [
     ("SENS_EN_PAW3902", [(1, "PAW3902 (SPI)")]),
 ]
 
+# Flow cameras started by naming a serial port — the UART variants of the
+# PMW3901 family (Holybro PMW3901, ThoneFlow-3901U).
+FLOW_SERIAL_DRIVERS: list[tuple[str, str]] = [
+    ("SENS_TFLOW_CFG", "PMW3901 / ThoneFlow-3901U (serial)"),
+]
+
+# A DroneCAN sensor is not a local driver but a subscription: the autopilot
+# listens for the node's message. Both halves need the CAN stack itself running,
+# which is a second parameter and the usual reason a CAN sensor stays silent.
+RANGEFINDER_CAN_DRIVERS: list[tuple[str, str]] = [
+    ("UAVCAN_SUB_RNG", "DroneCAN node"),
+]
+
+FLOW_CAN_DRIVERS: list[tuple[str, str]] = [
+    ("UAVCAN_SUB_FLOW", "DroneCAN node"),
+]
+
+# UAVCAN_ENABLE = 2 is "sensors, automatic node allocation". 3 adds DroneCAN
+# ESCs, so a board already on 3 is left alone rather than quietly downgraded.
+CAN_ENABLE_PARAM = "UAVCAN_ENABLE"
+CAN_ENABLE_VALUE = 2.0
+
 # Estimator controls that switch rangefinder fusion on, most modern first. Only
 # the first one the firmware answers for is used, so v1.16+ writes
 # EKF2_RNG_CTRL and a pre-v1.14 board writes EKF2_RNG_AID.
@@ -225,6 +248,215 @@ FLOW_FUSION_CANDIDATES: list[tuple[str, list[dict[str, Any]], float]] = [
 # The sensor a vehicle reports over MAVLink rather than through a local driver.
 # It needs no driver parameter at all — only the estimator half of the chain.
 EXTERNAL_DRIVER_ID = "external"
+
+# ---------------------------------------------------------------------------
+# Hardware presets
+# ---------------------------------------------------------------------------
+#
+# A preset is one *specific product* — not a PX4 driver. The driver picker below
+# answers "which chip is on the bus"; a preset answers "I bought this module",
+# which is the question an operator actually has, and carries the numbers that
+# come off that module's datasheet rather than off a generic default: the height
+# band the flow camera can track in, the distance the lidar can still return, the
+# noise its accuracy implies.
+#
+# Everything here is a *candidate*, exactly like the fields: a parameter the
+# connected firmware does not carry is dropped from the write list and reported
+# under ``missing`` instead of failing the whole preset (AGENTS.md, PX4 v1.16 /
+# v1.17 / v1.18).
+#
+# ``provides``  which sensor pages offer it — "range", "flow", or both for a
+#               module that is one board carrying both sensors.
+# ``driver_id`` per kind, the driver entry the picker should show as selected
+#               once this preset is applied. Absent for an unsupported preset.
+# ``serial``    the driver is enabled by naming a port, so the port the operator
+#               picked is substituted into the write list at apply time.
+# ``params``    ordered ``(parameter, value, why)``. The order is the chain:
+#               driver first, estimator last, so the bus is never claimed twice
+#               and fusion is never switched on ahead of the sensor feeding it.
+
+SENSOR_PRESETS: list[dict[str, Any]] = [
+    {
+        "id": "holybro-h-flow",
+        "label": "Holybro H-Flow",
+        "vendor": "Holybro",
+        "model": "19006",
+        "bus": "DroneCAN",
+        "provides": ["flow", "range"],
+        "driver_id": {"flow": "UAVCAN_SUB_FLOW:1", "range": "UAVCAN_SUB_RNG:1"},
+        "summary": "PAA3905E1 optical flow and an AFBR-S50LV85D distance sensor on one "
+                   "board, 0.08–30 m, over a single CAN cable.",
+        "note": "A DroneCAN node rather than a local driver: the autopilot subscribes to "
+                "the messages it publishes, which is why the CAN stack itself has to be "
+                "running. Wire it to a CAN port — this module has no UART mode.",
+        "params": [
+            (CAN_ENABLE_PARAM, CAN_ENABLE_VALUE,
+             "Run the DroneCAN stack and configure sensor nodes automatically"),
+            ("UAVCAN_SUB_FLOW", 1.0, "Subscribe to the module's optical-flow message"),
+            ("UAVCAN_SUB_RNG", 1.0, "Subscribe to its distance message"),
+            ("UAVCAN_RNG_MIN", 0.08, "Shortest distance the module reports"),
+            ("UAVCAN_RNG_MAX", 30.0, "Longest distance the module reports"),
+            ("SENS_FLOW_ROT", 0.0,
+             "Mounted with the connector aft — change it if the board is turned"),
+            ("SENS_FLOW_MINHGT", 0.08, "Below this height the flow reading is not used"),
+            ("SENS_FLOW_MAXHGT", 25.0, "Above it the ground is too far to track"),
+            ("SENS_FLOW_MAXR", 7.4, "Fastest angular rate the PAA3905E1 can follow"),
+            ("EKF2_OF_CTRL", 1.0, "Fuse the flow into the estimator"),
+            ("EKF2_RNG_CTRL", 1.0, "Use the distance sensor for height when low and slow"),
+            ("EKF2_RNG_A_HMAX", 10.0, "Height below which that range aid is trusted"),
+            ("EKF2_RNG_QLTY_T", 0.2, "Seconds of poor returns tolerated before dropping it"),
+        ],
+        "reboot": True,
+    },
+    {
+        "id": "matek-3901-l0x",
+        "label": "Matek 3901-L0X",
+        "vendor": "Matek Systems",
+        "model": "3901-L0X",
+        "bus": "UART (MSP v2)",
+        "provides": ["flow", "range"],
+        "summary": "PMW3901 optical flow and a VL53L0X lidar, 0.08–2 m, on one UART "
+                   "speaking MSP v2.",
+        # Listed rather than hidden on purpose: an operator who owns this module
+        # needs to be told why it cannot work here, not left to conclude the
+        # wiring is wrong.
+        "supported": False,
+        "unsupported": "PX4 has no MSP sensor input. The module speaks MSP v2, which INAV "
+                       "(2.3+) and ArduPilot (4.1+) read and PX4 does not — no parameter "
+                       "on this page can make its flow or distance data reach the "
+                       "estimator. For PX4, use a SPI PMW3901 board or a DroneCAN module.",
+        "params": [],
+        "reboot": False,
+    },
+]
+
+
+def _benewake_serial_preset(pid: str, label: str, model: str, *, span: str,
+                            accuracy: str, hmax: float, noise: float,
+                            note: str) -> dict[str, Any]:
+    """One Benewake serial lidar, as a preset.
+
+    The whole family comes up on the same driver — they ship the same 9-byte
+    frame at 115200 baud — so what separates the presets is not the driver but
+    the numbers: how far the unit can still return, and the measurement noise
+    its datasheet accuracy implies. ``EKF2_RNG_SFE`` is the 1 % range-proportional
+    term every one of them quotes.
+    """
+    return {
+        "id": pid,
+        "label": label,
+        "vendor": "Benewake",
+        "model": model,
+        "bus": "UART",
+        "provides": ["range"],
+        "driver_id": {"range": "SENS_TFMINI_CFG"},
+        "serial": True,
+        "summary": f"{span} time-of-flight rangefinder, {accuracy}, on one UART.",
+        "note": note,
+        "params": [
+            ("EKF2_RNG_CTRL", 1.0, "Use it for height while the vehicle is low and slow"),
+            ("EKF2_RNG_A_HMAX", hmax, "Height below which that range aid is trusted"),
+            ("EKF2_RNG_NOISE", noise, "Measurement noise implied by the datasheet accuracy"),
+            ("EKF2_RNG_SFE", 0.01, "The 1 % range-proportional part of that accuracy"),
+        ],
+        "reboot": True,
+    }
+
+
+SENSOR_PRESETS += [
+    _benewake_serial_preset(
+        "benewake-tfmini-s", "Benewake TFmini-S", "TFmini-S",
+        span="0.1–12 m", accuracy="±6 cm", hmax=7.0, noise=0.06,
+        note="Leave the module in its UART mode; PX4's driver does not read its I2C "
+             "mode. Any free serial port will do — the baud rate is fixed in the "
+             "driver, so there is nothing else to set.",
+    ),
+    _benewake_serial_preset(
+        "benewake-tfmini-plus", "Benewake TFmini Plus", "TFmini Plus",
+        span="0.1–12 m", accuracy="±5 cm", hmax=7.0, noise=0.05,
+        note="Same driver and the same fixed baud rate as the TFmini-S, with a "
+             "slightly tighter short-range accuracy. Leave it in UART mode.",
+    ),
+    _benewake_serial_preset(
+        "benewake-tf03", "Benewake TF03", "TF03",
+        span="0.1–180 m", accuracy="±10 cm", hmax=10.0, noise=0.1,
+        note="PX4 documents this driver for the TFmini family; the TF03 ships the same "
+             "9-byte Benewake frame at 115200 baud, so it comes up on the same serial "
+             "port parameter. Its CAN mode is not read by PX4 — keep the module in UART "
+             "mode. The range aid stays capped near the ground whatever the 180 m reach: "
+             "height from a lidar is only trustworthy over terrain it can actually see.",
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Operator-added parameters
+# ---------------------------------------------------------------------------
+#
+# The presets and fields above cover what this build knows. They cannot cover
+# what a particular airframe turns out to need — a quality gate that only
+# matters over water, a delay that only this lidar has — and sending the
+# operator to the full Parameters page for one number loses the context they
+# were working in.
+#
+# So the page can ask for a few more parameters by name. They are read in the
+# same batch as everything else and edited by the same write path; the only new
+# thing is that the *frontend* chooses the names. That makes them untrusted
+# input, which is what the guards below are for: a PX4 parameter id is at most
+# 16 bytes on the wire, and an unbounded list would turn one page load into an
+# unbounded burst of PARAM_REQUEST_READ at the aircraft.
+
+EXTRA_PARAM_LIMIT = 24
+
+_EXTRA_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,15}$")
+
+
+def normalise_extra(names: list[str] | tuple[str, ...] | None) -> list[str]:
+    """The operator-added names this module will actually read, in order.
+
+    Anything that is not shaped like a PX4 parameter id is dropped rather than
+    passed to the bridge, duplicates collapse, and the list is capped.
+
+    Being in :func:`param_names` is deliberately *not* a reason to drop a name.
+    That list is the batch this page reads, which is much wider than the set it
+    renders — ``EKF2_RNG_QLTY_T`` is read for a preset and shown nowhere — and
+    refusing it here would block the operator from the exact kind of parameter
+    this feature exists for. What must not happen is two controls writing one
+    parameter, and that is settled in :func:`build`, which knows which fields
+    this firmware actually produced.
+    """
+    if not names:
+        return []
+    out: list[str] = []
+    for raw in names:
+        if not isinstance(raw, str):
+            continue
+        name = raw.strip().upper()
+        if not _EXTRA_NAME_RE.match(name) or name in out:
+            continue
+        out.append(name)
+        if len(out) >= EXTRA_PARAM_LIMIT:
+            break
+    return out
+
+
+def extra_fields(names: list[str], values: dict[str, float]) -> list[dict[str, Any]]:
+    """One field description per requested name, present on this firmware or not.
+
+    A name the vehicle never answered for still comes back, flagged. Dropping it
+    silently would leave the operator staring at a row they added that simply
+    vanished, with no way to tell a typo from a parameter their PX4 version does
+    not have.
+    """
+    fields: list[dict[str, Any]] = []
+    for name in names:
+        field: dict[str, Any] = {
+            "param": name, "label": name, "kind": "number",
+            "present": name in values,
+            "value": values.get(name, 0.0),
+        }
+        fields.append(field)
+    return fields
 
 
 def param_names() -> list[str]:
@@ -249,18 +481,25 @@ def param_names() -> list[str]:
         # Rangefinder estimator + geometry
         "EKF2_RNG_CTRL", "EKF2_RNG_AID", "EKF2_HGT_REF", "EKF2_RNG_A_HMAX",
         "EKF2_RNG_A_VMAX", "EKF2_RNG_POS_Z", "EKF2_RNG_PITCH", "EKF2_RNG_DELAY",
-        "EKF2_RNG_NOISE", "EKF2_RNG_SFE", "MPC_ALT_MODE",
+        "EKF2_RNG_NOISE", "EKF2_RNG_SFE", "EKF2_RNG_QLTY_T", "MPC_ALT_MODE",
         # Optical flow estimator + geometry
         "EKF2_OF_CTRL", "EKF2_AID_MASK", "EKF2_OF_DELAY", "EKF2_OF_QMIN",
         "EKF2_OF_QMIN_GND", "EKF2_OF_N_MIN", "EKF2_OF_N_MAX",
         "EKF2_OF_POS_X", "EKF2_OF_POS_Y", "EKF2_OF_POS_Z",
         "SENS_FLOW_ROT", "SENS_FLOW_MINHGT", "SENS_FLOW_MAXHGT", "SENS_FLOW_MAXR",
+        # DroneCAN sensors: the stack itself plus the two subscriptions and the
+        # distance bounds a CAN rangefinder is read through.
+        CAN_ENABLE_PARAM, "UAVCAN_RNG_MIN", "UAVCAN_RNG_MAX",
     ]
     for param, _models in RANGEFINDER_BUS_DRIVERS:
         names.append(param)
     for param, _label in RANGEFINDER_SERIAL_DRIVERS:
         names.append(param)
     for param, _models in FLOW_BUS_DRIVERS:
+        names.append(param)
+    for param, _label in FLOW_SERIAL_DRIVERS:
+        names.append(param)
+    for param, _label in RANGEFINDER_CAN_DRIVERS + FLOW_CAN_DRIVERS:
         names.append(param)
     return names
 
@@ -447,6 +686,30 @@ def _serial_drivers(values: dict[str, float],
     return drivers
 
 
+def _can_drivers(values: dict[str, float],
+                 table: list[tuple[str, str]]) -> list[dict[str, Any]]:
+    """Driver entries for a DroneCAN subscription.
+
+    A subscription on its own is silent if the CAN stack is not running, so the
+    entry carries the ``UAVCAN_ENABLE`` write alongside it — but only when the
+    board is not already past it. A vehicle on 3 runs DroneCAN ESCs; dropping it
+    to 2 to bring a lidar up would stop the motors answering.
+    """
+    drivers: list[dict[str, Any]] = []
+    for param, label in table:
+        if param not in values:
+            continue
+        driver: dict[str, Any] = {
+            "id": f"{param}:1", "label": label,
+            "param": param, "value": 1.0, "serial": False,
+        }
+        current = values.get(CAN_ENABLE_PARAM)
+        if current is not None and float(current) < CAN_ENABLE_VALUE:
+            driver["extra"] = [{"param": CAN_ENABLE_PARAM, "value": CAN_ENABLE_VALUE}]
+        drivers.append(driver)
+    return drivers
+
+
 def _active_driver(values: dict[str, float],
                    drivers: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, int | None]:
     """The driver currently switched on, and its port when it is a serial one.
@@ -576,9 +839,101 @@ def _sensor_toggle(values: dict[str, float], *, label: str,
     return toggle
 
 
+def _preset_driver_param(preset: dict[str, Any], kind: str) -> tuple[str, int] | None:
+    """The ``(parameter, value)`` a preset's driver half sets, for *kind*."""
+    driver_id = (preset.get("driver_id") or {}).get(kind)
+    if not driver_id:
+        return None
+    if ":" in driver_id:
+        param, _sep, raw = driver_id.partition(":")
+        return param, int(raw)
+    return driver_id, 0
+
+
+def _preset_is_active(preset: dict[str, Any], kind: str,
+                      values: dict[str, float]) -> bool:
+    """True when the vehicle already runs the driver half this preset sets.
+
+    Deliberately not "this preset is selected": the whole Benewake family shares
+    one driver parameter, so a configured ``SENS_TFMINI_CFG`` says a Benewake
+    lidar is running and cannot say which one. The flag is rendered as a hint
+    beside the card, never as a claim about the model.
+    """
+    driver = _preset_driver_param(preset, kind)
+    if driver is None:
+        return False
+    param, value = driver
+    if param not in values:
+        return False
+    current = int(round(values[param]))
+    if preset.get("serial"):
+        return current != 0
+    return current == value
+
+
+def _resolve_preset(preset: dict[str, Any], kind: str,
+                    values: dict[str, float]) -> dict[str, Any]:
+    """Turn one catalogue entry into what this firmware can actually do with it.
+
+    The write list is filtered against the parameters the vehicle answered for,
+    and what fell out is reported rather than dropped silently — a preset that
+    quietly wrote eleven of its thirteen parameters and called itself applied is
+    the same half-configured sensor this page exists to prevent.
+    """
+    driver = _preset_driver_param(preset, kind)
+    supported = bool(preset.get("supported", True))
+    reason = str(preset.get("unsupported", "")) if not supported else ""
+
+    if supported and driver is not None and driver[0] not in values:
+        supported = False
+        reason = (f"This firmware does not carry {driver[0]}, so the driver half of "
+                  "this module cannot be started from here.")
+
+    writes: list[dict[str, Any]] = []
+    missing: list[str] = []
+    if supported:
+        if preset.get("serial") and driver is not None:
+            # The value is the port, which only the operator can answer, so the
+            # write is left open and filled in when the preset is applied.
+            writes.append({
+                "param": driver[0], "value": None, "port": True,
+                "label": "The serial port the module is wired to",
+            })
+        for param, value, label in preset.get("params", []):
+            if param in values:
+                writes.append({"param": param, "value": float(value), "label": label})
+            else:
+                missing.append(param)
+
+    return {
+        "id": preset["id"],
+        "label": preset["label"],
+        "vendor": preset.get("vendor", ""),
+        "model": preset.get("model", ""),
+        "bus": preset.get("bus", ""),
+        "summary": preset.get("summary", ""),
+        "note": preset.get("note", ""),
+        "serial": bool(preset.get("serial")),
+        "supported": supported,
+        "unsupported": reason,
+        "driver": (preset.get("driver_id") or {}).get(kind, ""),
+        "writes": writes,
+        "missing": missing,
+        "active": _preset_is_active(preset, kind, values),
+        "reboot": bool(preset.get("reboot")) and supported,
+    }
+
+
+def _presets_for(kind: str, values: dict[str, float]) -> list[dict[str, Any]]:
+    """Every catalogue entry that claims to cover *kind*, resolved for this board."""
+    return [_resolve_preset(p, kind, values)
+            for p in SENSOR_PRESETS if kind in p.get("provides", [])]
+
+
 def _rangefinder_section(values: dict[str, float]) -> dict[str, Any] | None:
     drivers = (_bus_drivers(values, RANGEFINDER_BUS_DRIVERS)
-               + _serial_drivers(values, RANGEFINDER_SERIAL_DRIVERS))
+               + _serial_drivers(values, RANGEFINDER_SERIAL_DRIVERS)
+               + _can_drivers(values, RANGEFINDER_CAN_DRIVERS))
     toggle = _sensor_toggle(
         values, label="Distance sensor",
         drivers=drivers,
@@ -608,7 +963,10 @@ def _rangefinder_section(values: dict[str, float]) -> dict[str, Any] | None:
     ])
     return {
         "id": "rangefinder", "title": "Distance sensor", "kind": "toggle",
+        "group": "sensors", "icon": "radar",
+        "short": "A downward lidar or sonar: height above the ground under the aircraft.",
         "toggle": toggle, "fields": fields,
+        "presets": _presets_for("range", values),
         "hint": "A downward lidar or sonar. Switching it on starts the driver and tells the "
                 "estimator to fuse it — doing only one of the two is the usual reason a "
                 "rangefinder reads perfectly and changes nothing.",
@@ -629,7 +987,9 @@ def _flow_section(values: dict[str, float]) -> dict[str, Any] | None:
 
     mask_on = bool(extra_on and int(round(values["EKF2_AID_MASK"])) & AID_MASK_FLOW_BIT)
 
-    drivers = _bus_drivers(values, FLOW_BUS_DRIVERS)
+    drivers = (_bus_drivers(values, FLOW_BUS_DRIVERS)
+               + _serial_drivers(values, FLOW_SERIAL_DRIVERS)
+               + _can_drivers(values, FLOW_CAN_DRIVERS))
     toggle = _sensor_toggle(
         values, label="Optical flow", drivers=drivers, fusion=fusion,
         extra_on=extra_on, extra_off=extra_off,
@@ -659,14 +1019,18 @@ def _flow_section(values: dict[str, float]) -> dict[str, Any] | None:
     ])
     return {
         "id": "flow", "title": "Optical flow", "kind": "toggle",
+        "group": "sensors", "icon": "scan-line",
+        "short": "A downward camera: horizontal speed without GPS. Needs a distance sensor.",
         "toggle": toggle, "fields": fields,
+        "presets": _presets_for("flow", values),
         "hint": "Horizontal velocity from a downward camera, for position hold without GPS. "
                 "It needs a distance sensor: without a height above ground the flow rate "
                 "cannot be turned into a speed.",
     }
 
 
-def build(values: dict[str, float]) -> dict[str, Any]:
+def build(values: dict[str, float],
+          extra: list[str] | None = None) -> dict[str, Any]:
     """Turn raw ``{param: value}`` into the Safety & Sensors page description.
 
     *values* holds only the parameters the vehicle actually answered for, so
@@ -679,6 +1043,10 @@ def build(values: dict[str, float]) -> dict[str, Any]:
     it writes, so the frontend applies edits through the existing
     ``POST /api/params/set``; each toggle carries the ordered write lists that
     bring the sensor up or take it down.
+
+    ``extra`` — the parameters the operator added by name, already normalised by
+    :func:`normalise_extra`. They come back as ``extra`` in the same field shape
+    as everything else, each flagged with whether this firmware answered for it.
     """
     sections = [s for s in (
         _limits_section(values),
@@ -688,4 +1056,14 @@ def build(values: dict[str, float]) -> dict[str, Any]:
         _rangefinder_section(values),
         _flow_section(values),
     ) if s is not None]
-    return {"sections": sections, "received": len(values)}
+
+    # A parameter this build already renders is not offered a second time: two
+    # controls over one number can disagree until the next read, and the one the
+    # operator did not touch is then lying about the aircraft.
+    rendered = {f["param"] for section in sections for f in section["fields"]}
+    names = [n for n in normalise_extra(extra) if n not in rendered]
+    return {
+        "sections": sections,
+        "extra": extra_fields(names, values),
+        "received": len(values),
+    }

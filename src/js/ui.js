@@ -16,8 +16,12 @@ window.Corvus = window.Corvus || {};
     primitives  icon, iconButton, button, statusDot, badge
     forms       label, field, select, setOptions, enhanceSelect, input, toggle
                 (every <select> becomes the app's dropdown — see watchSelects)
+    menus       menu, menuItem — the one dropdown surface and its rows, for
+                every list that opens over something (the select's own list,
+                the map's context menu, the map's layer switcher)
     layout      card, section, sectionTitle, pageHeader, row, empty, actions
     pickers     optionCards, optionList, navItem
+    overlays    modal, popover, infoHint
     feedback    progress, message, toast, setBusy, setActive
     charts      token, plotlyTheme, chartColors, onThemeChange, attachZoomHint
     helpers     clear, refreshIcons
@@ -265,10 +269,394 @@ Corvus.ui = (function () {
   }
 
 
-  /* The one piece of module state in this file, and it earns it: a dropdown's
-     list is mounted on <body> and listens on the document, so knowing which
-     one is open is not something any single instance can answer. */
+  /* The one piece of module state in this file, and it earns it: a menu's
+     surface is mounted away from its trigger and listens on the document, so
+     knowing which one is open is not something any single instance can
+     answer. */
   let openDropdown = null;
+
+  /* Walk parents rather than call contains(): the same check works for a node
+     that is no longer in the document, which is exactly the case a dismissal
+     handler runs in. */
+  function withinNode(node, root) {
+    let n = node;
+    while (n) {
+      if (n === root) return true;
+      n = n.parentNode;
+    }
+    return false;
+  }
+
+  function stopEvent(e) {
+    if (e && typeof e.preventDefault === "function") e.preventDefault();
+    if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+  }
+
+  /* ===== menuItem — one row of the app's dropdown =====
+     The row the flight bar's mode list, the map's layer switcher and the
+     map's context menu all draw: a leading state dot OR an icon, a label, and
+     an optional second line saying what the row will do or why it cannot be
+     used. Everything about how it looks is .option-item in components.css, so
+     a row is the same row wherever it is opened from.
+
+     opts: {label, note, icon, dot, value, active, disabled, role, className,
+            onSelect}
+       dot       the state dot of a value picker (a chooser, not an action)
+       icon      a Lucide name, for an action row; callers must refreshIcons()
+       role      "option" inside a listbox, "menuitem" (the default) in a menu
+       note      a second, quieter line under the label */
+  function menuItem(opts) {
+    const o = opts || {};
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "option-item" + (o.className ? " " + o.className : "");
+    b.setAttribute("role", o.role || "menuitem");
+    if (o.value != null) b.dataset.value = String(o.value);
+    if (o.active) b.classList.add("active");
+    if (o.role === "option") b.setAttribute("aria-selected", o.active ? "true" : "false");
+    if (o.disabled) b.disabled = true;
+
+    if (o.dot) {
+      const dot = document.createElement("span");
+      dot.className = "option-item-dot";
+      b.appendChild(dot);
+    }
+    if (o.icon) b.appendChild(icon(o.icon, "auto"));
+
+    const labelEl = document.createElement("span");
+    labelEl.className = "option-item-label";
+    labelEl.textContent = String(o.label == null ? "" : o.label);
+    /* The note only earns the extra column box when there is one: a single
+       line stays a single span, which is what every list of plain choices in
+       the app is. */
+    if (o.note) {
+      const text = document.createElement("span");
+      text.className = "option-item-text";
+      text.appendChild(labelEl);
+      const note = document.createElement("span");
+      note.className = "option-item-note";
+      note.textContent = String(o.note);
+      text.appendChild(note);
+      b.appendChild(text);
+    } else {
+      b.appendChild(labelEl);
+    }
+
+    if (typeof o.onSelect === "function") {
+      b.addEventListener("click", () => {
+        if (b.disabled) return;
+        o.onSelect(o.value, b);
+      });
+    }
+    return b;
+  }
+
+  /* ===== menu — the app's dropdown, as a surface anything can open =====
+     The dropdown the app wears — glass surface, .option-item rows, one open
+     list at a time, Escape and outside-press dismissal, roving focus and
+     type-ahead — was written inside enhanceSelect() for the flight bar's mode
+     picker. Every other list that opens over something then grew its own
+     copy: the map's context menu carried its own positioning, its own
+     document listeners and its own row styling, and the layer switcher had no
+     dismissal beyond a click elsewhere and a top offset hard-coded to the
+     rail button it was meant to hang under.
+
+     This is that behaviour, once. The component owns the surface, where it
+     goes, how it is dismissed and how the keyboard moves through it; the
+     caller owns what is in it — render() fills the cleared surface and hands
+     back the rows the keyboard should walk (menuItem() builds them).
+
+     opts:
+       className         extra classes on the surface
+       role              "listbox" for a value picker, "menu" for actions
+       ariaLabel
+       host              the element (or () => element) the surface mounts in.
+                         The default <body> is what keeps a list out of the
+                         pane that would clip it; a surface positioned from a
+                         point passes the container those pixels belong to.
+       render(el)        fills the cleared surface, returns the row elements
+       side              "bottom" (default) or "left" of an element anchor
+       matchAnchorWidth  false for a menu wider than its trigger (a rail icon)
+       closeOnScroll     default true. False for a surface inside a host that
+                         does not scroll and repositions itself (the map).
+       typeahead         default true
+       onOpen() / onClose()
+
+     open(anchor) takes {el} — a trigger the list drops out of — or {x, y}, a
+     point in the host's own pixels, which is what a menu anchored to a place
+     on the map needs. Both are re-measured by place(), so a caller whose
+     anchor moves (a panning map) calls place() with the new one. */
+  function menu(opts) {
+    const o = opts || {};
+
+    const el = document.createElement("div");
+    el.className = "ui-menu glass" + (o.className ? " " + o.className : "");
+    el.setAttribute("role", o.role || "menu");
+    if (o.ariaLabel) el.setAttribute("aria-label", o.ariaLabel);
+
+    let rows = [];
+    let opened = false;
+    let cursor = -1;
+    let anchor = null;
+    let hostEl = null;
+    let typed = "";
+    let typedAt = 0;
+
+    function resolveHost() {
+      const h = typeof o.host === "function" ? o.host() : o.host;
+      if (h) return h;
+      return typeof document !== "undefined" ? document.body : null;
+    }
+
+    /* The row the keyboard starts on: the current choice if the list has one,
+       the first usable row otherwise. A value picker marks its selection
+       .active, an action menu marks nothing — so one rule covers both. */
+    function build() {
+      clear(el);
+      const built = typeof o.render === "function" ? o.render(el) : [];
+      rows = Array.prototype.slice.call(built || []);
+      cursor = -1;
+      rows.forEach((b, i) => {
+        if (cursor < 0 && b && b.classList && b.classList.contains("active")) cursor = i;
+      });
+      return rows;
+    }
+
+    /* Fixed, measured from the trigger: below it by default, flipped above
+       when the list would not fit, and capped to the space it has so a long
+       list scrolls instead of running off the screen. "left" is the same
+       thing on the other axis, for a menu opened from a rail against the edge
+       of the window. */
+    function placeByElement(trigger) {
+      if (typeof trigger.getBoundingClientRect !== "function") return;
+      const r = trigger.getBoundingClientRect();
+      const vh = window.innerHeight || 800;
+      const vw = window.innerWidth || 1200;
+      const GAP = 6;
+      const EDGE = 8;
+      if (o.matchAnchorWidth !== false) el.style.minWidth = Math.round(r.width) + "px";
+
+      if (o.side === "left") {
+        const w = el.offsetWidth || 0;
+        const h = el.offsetHeight || el.scrollHeight || 0;
+        el.style.maxHeight = Math.max(120, Math.round(vh - 2 * EDGE)) + "px";
+        const flip = r.left - GAP - w < EDGE && vw - r.right - GAP - w >= EDGE;
+        const left = flip ? r.right + GAP : r.left - GAP - w;
+        el.style.left = Math.round(Math.max(EDGE, Math.min(left, vw - w - EDGE))) + "px";
+        el.style.top = Math.round(Math.max(EDGE, Math.min(r.top, vh - h - EDGE))) + "px";
+        el.dataset.placement = flip ? "right" : "left";
+        return;
+      }
+
+      const below = vh - r.bottom - GAP - EDGE;
+      const above = r.top - GAP - EDGE;
+      const wanted = el.scrollHeight || el.offsetHeight || 0;
+      const up = below < Math.min(wanted, 180) && above > below;
+      el.style.maxHeight = Math.max(120, Math.round(up ? above : below)) + "px";
+      const h = el.offsetHeight || wanted;
+      const w = el.offsetWidth || r.width;
+      const wantLeft = o.align === "end" ? r.right - w : r.left;
+      el.style.top = Math.round(up ? Math.max(EDGE, r.top - GAP - h) : r.bottom + GAP) + "px";
+      el.style.left = Math.round(Math.max(EDGE, Math.min(wantLeft, vw - w - EDGE))) + "px";
+      el.dataset.placement = up ? "top" : "bottom";
+    }
+
+    /* Positioned in the host's own pixels, next to a point inside it: down and
+       right of it by default, flipped on whichever axis would overflow, and
+       clamped back inside when the surface is too large to fit on either side
+       (a small window, a large interface scale) rather than pushed off the
+       edge. It grows out of the corner nearest the point. */
+    function placeByPoint(x, y) {
+      if (!hostEl) return;
+      const hostW = hostEl.clientWidth;
+      const hostH = hostEl.clientHeight;
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      const GAP = 12;
+      const EDGE = 4;
+      const flipX = x + GAP + w > hostW && x - GAP - w >= 0;
+      const flipY = y + GAP + h > hostH && y - GAP - h >= 0;
+      let left = flipX ? x - GAP - w : x + GAP;
+      let top = flipY ? y - GAP - h : y + GAP;
+      left = Math.max(EDGE, Math.min(left, hostW - w - EDGE));
+      top = Math.max(EDGE, Math.min(top, hostH - h - EDGE));
+      el.style.left = `${left}px`;
+      el.style.top = `${top}px`;
+      el.style.transformOrigin =
+        `${flipX ? "right" : "left"} ${flipY ? "bottom" : "top"}`;
+    }
+
+    /* Re-measure and reposition. `next` replaces the anchor, which is how a
+       menu anchored to a ground point follows it while the map pans. An
+       anchor that does not parse leaves the current one alone — place() is
+       also the window's resize handler, and that hands it an Event. */
+    function place(next) {
+      const moved = normalizeAnchor(next);
+      if (moved) anchor = moved;
+      if (!opened || !anchor) return;
+      if (anchor.el) placeByElement(anchor.el);
+      else placeByPoint(anchor.x, anchor.y);
+    }
+    function onResize() { place(); }
+
+    function normalizeAnchor(at) {
+      if (!at) return null;
+      if (at.el) return { el: at.el };
+      if (typeof at.x === "number" && typeof at.y === "number") {
+        return { x: at.x, y: at.y };
+      }
+      /* A bare element is the common case written the short way. */
+      if (typeof at.getBoundingClientRect === "function" || at.nodeType === 1) {
+        return { el: at };
+      }
+      return null;
+    }
+
+    function open(at) {
+      if (opened) close(false);
+      const next = normalizeAnchor(at);
+      const host = resolveHost();
+      if (!next || !host) return null;
+      anchor = next;
+      hostEl = host;
+      build();
+      /* Nothing to offer is nothing to open — an empty surface is a floating
+         rectangle the operator has to dismiss for no reason. */
+      if (!rows.length) return null;
+
+      /* One list at a time, like a native select: a second menu opened from
+         the keyboard would otherwise sit under the first and swallow its
+         keys, since both listen on the document. */
+      if (openDropdown && openDropdown !== handle) openDropdown.close();
+
+      hostEl.appendChild(el);
+      opened = true;
+      openDropdown = handle;
+      el.dataset.anchor = anchor.el ? "element" : "point";
+      /* Lucide swaps the <i> placeholders for <svg> in place, so this has to
+         run BEFORE the first measurement — an unswapped placeholder has no
+         width and the surface would be positioned from the wrong size. */
+      refreshIcons();
+      place();
+      document.addEventListener("pointerdown", onOutside, true);
+      document.addEventListener("keydown", onKey, true);
+      if (o.closeOnScroll !== false) document.addEventListener("scroll", onScroll, true);
+      if (typeof window !== "undefined" && window.addEventListener) {
+        window.addEventListener("resize", onResize);
+      }
+      if (typeof o.onOpen === "function") o.onOpen();
+      focusRow(cursor >= 0 ? cursor : nextEnabled(-1, 1));
+      return handle;
+    }
+
+    function close(refocus) {
+      if (!opened) return;
+      opened = false;
+      typed = "";
+      document.removeEventListener("pointerdown", onOutside, true);
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("scroll", onScroll, true);
+      if (typeof window !== "undefined" && window.removeEventListener) {
+        window.removeEventListener("resize", onResize);
+      }
+      if (openDropdown === handle) openDropdown = null;
+      if (el.parentNode) el.parentNode.removeChild(el);
+      const back = refocus && anchor && anchor.el;
+      if (typeof o.onClose === "function") o.onClose();
+      if (back && typeof anchor.el.focus === "function") anchor.el.focus();
+    }
+
+    /* Rebuild the rows under an open surface — a repopulated mode list, a row
+       whose availability changed. Dropping the rows drops the one the
+       keyboard was on, so it goes back to the current choice rather than
+       letting focus fall to the body. */
+    function rebuild() {
+      if (!opened) return;
+      build();
+      place();
+      focusRow(cursor >= 0 ? cursor : nextEnabled(-1, 1));
+    }
+
+    function nextEnabled(from, step) {
+      if (!rows.length) return -1;
+      for (let n = 1; n <= rows.length; n++) {
+        const i = (from + step * n + rows.length * rows.length) % rows.length;
+        if (!rows[i].disabled) return i;
+      }
+      return -1;
+    }
+
+    function focusRow(i) {
+      if (i < 0 || i >= rows.length) return;
+      cursor = i;
+      const b = rows[i];
+      if (typeof b.focus === "function") b.focus();
+      if (typeof b.scrollIntoView === "function") b.scrollIntoView({ block: "nearest" });
+    }
+
+    /* The surface is positioned once, from its anchor. Scrolling the pane the
+       anchor sits in would leave it hanging in the wrong place, so it closes
+       instead — scrolling the surface itself excepted. */
+    function onScroll(e) {
+      if (e && withinNode(e.target, el)) return;
+      close(false);
+    }
+
+    /* A press on the trigger is not an outside press: the trigger toggles on
+       click, and closing here first would make it reopen immediately. */
+    function onOutside(e) {
+      const t = e && e.target;
+      if (withinNode(t, el)) return;
+      if (anchor && anchor.el && withinNode(t, anchor.el)) return;
+      close(false);
+    }
+
+    /* Captured on the document: the map and the modals listen for Escape and
+       arrow keys too, and a key aimed at an open menu must not reach them.
+       Registered only while the surface is open. */
+    function onKey(e) {
+      const key = e.key;
+      if (key === "Escape") {
+        stopEvent(e);
+        close(true);
+        return;
+      }
+      if (key === "Tab") {
+        close(false);
+        return;
+      }
+      if (key === "ArrowDown") { stopEvent(e); focusRow(nextEnabled(cursor, 1)); return; }
+      if (key === "ArrowUp") { stopEvent(e); focusRow(nextEnabled(cursor, -1)); return; }
+      if (key === "Home") { stopEvent(e); focusRow(nextEnabled(-1, 1)); return; }
+      if (key === "End") { stopEvent(e); focusRow(nextEnabled(rows.length, -1)); return; }
+      /* Type-ahead: PX4's mode list is long and its names are distinct, so a
+         letter should jump the way it does in a native select. */
+      if (o.typeahead === false) return;
+      if (key && key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const now = Date.now();
+        typed = (now - typedAt < 800 ? typed : "") + key.toLowerCase();
+        typedAt = now;
+        const starts = (b) => (b.textContent || "").toLowerCase().indexOf(typed) === 0;
+        const hit = rows.findIndex((b, i) => !b.disabled && i !== cursor && starts(b));
+        const wrapHit = hit >= 0 ? hit : rows.findIndex((b) => !b.disabled && starts(b));
+        if (wrapHit >= 0) { stopEvent(e); focusRow(wrapHit); }
+      }
+    }
+
+    const handle = {
+      el,
+      open,
+      close,
+      place,
+      rebuild,
+      isOpen: () => opened,
+      rows: () => rows.slice(),
+      /* What the surface belongs to, for the watcher that takes a menu down
+         when the screen under it is re-rendered away. */
+      anchorNode: () => (anchor && anchor.el) || hostEl,
+    };
+    return handle;
+  }
 
   /* The <label for> that names a select, or null. Searched from the tree's
      root rather than from the select's own parent: the caption and the
@@ -298,10 +686,9 @@ Corvus.ui = (function () {
      every caller keeps talking to a plain select: nothing downstream changes,
      and a browser without the enhancement still gets a working control.
 
-     The list is mounted on <body> and positioned fixed. Inside the flight bar
-     it would be clipped by the bar and stacked under the map chrome; on
-     <body> it can also flip above the trigger when the viewport runs out
-     below, which a 15-mode PX4 list needs on a laptop screen. */
+     The list itself is a ui.menu — the same surface, rows, dismissal and
+     keyboard as the map's context menu and the layer switcher; this function
+     is only the part that is specific to standing in for a <select>. */
   function enhanceSelect(sel) {
     if (!sel) return null;
     if (sel.corvusSelect) return sel.corvusSelect;
@@ -348,20 +735,6 @@ Corvus.ui = (function () {
     trigger.appendChild(labelEl);
     wrap.appendChild(trigger);
 
-    /* The list IS .option-list / .option-item — the same rows as the map's
-       layer switcher — so the dropdown reads as a member of the family
-       instead of a second, nearly-identical menu style. */
-    const menu = document.createElement("div");
-    menu.className = "ui-select-menu option-list glass";
-    menu.setAttribute("role", "listbox");
-    if (name) menu.setAttribute("aria-label", name);
-
-    let items = [];
-    let opened = false;
-    let cursor = -1;
-    let typed = "";
-    let typedAt = 0;
-
     function options() {
       const list = sel.options || sel.querySelectorAll("option");
       return Array.prototype.slice.call(list || []);
@@ -369,16 +742,6 @@ Corvus.ui = (function () {
     function textOf(opt) {
       const t = opt.textContent;
       return String(t == null || t === "" ? opt.value : t);
-    }
-    /* Walk parents rather than call contains(): the same check works for a
-       node that is no longer in the document. */
-    function within(node, root) {
-      let n = node;
-      while (n) {
-        if (n === root) return true;
-        n = n.parentNode;
-      }
-      return false;
     }
 
     function syncTrigger() {
@@ -388,42 +751,31 @@ Corvus.ui = (function () {
          prompt and not a choice, so it is dimmed like one. */
       trigger.dataset.placeholder = !chosen || String(chosen.value) === "" ? "true" : "false";
       trigger.disabled = !!sel.disabled;
-      if (sel.disabled) closeMenu(false);
+      if (sel.disabled) list.close(false);
     }
 
-    function buildItems() {
-      clear(menu);
-      cursor = -1;
-      items = options().map((o, i) => {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "option-item";
-        b.setAttribute("role", "option");
-        b.dataset.value = String(o.value);
-        const on = String(o.value) === String(sel.value);
-        if (on) {
-          b.classList.add("active");
-          cursor = i;
-        }
-        b.setAttribute("aria-selected", on ? "true" : "false");
-        if (o.disabled) b.disabled = true;
-        const dot = document.createElement("span");
-        dot.className = "option-item-dot";
-        b.appendChild(dot);
-        const text = document.createElement("span");
-        text.className = "option-item-label";
-        text.textContent = textOf(o);
-        b.appendChild(text);
-        b.addEventListener("click", () => choose(o.value));
-        menu.appendChild(b);
-        return b;
+    /* The rows ARE .option-item — the same rows as the map's layer switcher —
+       so the list reads as a member of the family instead of a second,
+       nearly-identical menu style. */
+    function buildRows(surface) {
+      return options().map((o) => {
+        const row = menuItem({
+          role: "option",
+          dot: true,
+          value: o.value,
+          label: textOf(o),
+          active: String(o.value) === String(sel.value),
+          disabled: !!o.disabled,
+          onSelect: () => choose(o.value),
+        });
+        surface.appendChild(row);
+        return row;
       });
-      return items;
     }
 
     function choose(value) {
       const changed = String(sel.value) !== String(value);
-      closeMenu(true);
+      list.close(true);
       sel.value = String(value);
       syncTrigger();
       /* Native selects fire "change" only when the value actually moved;
@@ -439,137 +791,27 @@ Corvus.ui = (function () {
       return { type: "change", bubbles: true };
     }
 
-    /* Fixed position, measured from the trigger: below it by default, flipped
-       above when the list would not fit, and capped to the space it has so a
-       long list scrolls instead of running off the screen. */
-    function place() {
-      if (!opened || typeof trigger.getBoundingClientRect !== "function") return;
-      const r = trigger.getBoundingClientRect();
-      const vh = window.innerHeight || 800;
-      const vw = window.innerWidth || 1200;
-      const GAP = 6;
-      const EDGE = 8;
-      const below = vh - r.bottom - GAP - EDGE;
-      const above = r.top - GAP - EDGE;
-      const wanted = menu.scrollHeight || menu.offsetHeight || 0;
-      const up = below < Math.min(wanted, 180) && above > below;
-      menu.style.minWidth = Math.round(r.width) + "px";
-      menu.style.maxHeight = Math.max(120, Math.round(up ? above : below)) + "px";
-      const h = menu.offsetHeight || wanted;
-      const w = menu.offsetWidth || r.width;
-      menu.style.top = Math.round(up ? Math.max(EDGE, r.top - GAP - h) : r.bottom + GAP) + "px";
-      menu.style.left = Math.round(Math.max(EDGE, Math.min(r.left, vw - w - EDGE))) + "px";
-    }
+    const list = menu({
+      className: "ui-select-menu option-list",
+      role: "listbox",
+      ariaLabel: name,
+      render: buildRows,
+      onOpen: () => trigger.setAttribute("aria-expanded", "true"),
+      onClose: () => trigger.setAttribute("aria-expanded", "false"),
+    });
 
-    function openMenu() {
-      if (opened || sel.disabled) return;
-      /* One list at a time, like a native select: a second dropdown opened
-         from the keyboard would otherwise sit under the first and swallow its
-         keys, since both listen on the document. */
-      if (openDropdown && openDropdown !== handle) openDropdown.close();
-      buildItems();
-      if (!items.length) return;
-      document.body.appendChild(menu);
-      opened = true;
-      openDropdown = handle;
-      trigger.setAttribute("aria-expanded", "true");
-      place();
-      document.addEventListener("pointerdown", onOutside, true);
-      document.addEventListener("keydown", onKey, true);
-      document.addEventListener("scroll", onScroll, true);
-      window.addEventListener("resize", place);
-      focusItem(cursor >= 0 ? cursor : nextEnabled(-1, 1));
-    }
-
-    function closeMenu(refocus) {
-      if (!opened) return;
-      opened = false;
-      typed = "";
-      trigger.setAttribute("aria-expanded", "false");
-      document.removeEventListener("pointerdown", onOutside, true);
-      document.removeEventListener("keydown", onKey, true);
-      document.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", place);
-      if (openDropdown === handle) openDropdown = null;
-      if (menu.parentNode) menu.parentNode.removeChild(menu);
-      if (refocus && typeof trigger.focus === "function") trigger.focus();
-    }
-
-    function nextEnabled(from, step) {
-      if (!items.length) return -1;
-      for (let n = 1; n <= items.length; n++) {
-        const i = (from + step * n + items.length * items.length) % items.length;
-        if (!items[i].disabled) return i;
-      }
-      return -1;
-    }
-
-    function focusItem(i) {
-      if (i < 0 || i >= items.length) return;
-      cursor = i;
-      const b = items[i];
-      if (typeof b.focus === "function") b.focus();
-      if (typeof b.scrollIntoView === "function") b.scrollIntoView({ block: "nearest" });
-    }
-
-    /* The list is positioned once, from the trigger's box. Scrolling the pane
-       the control sits in would leave it hanging in the wrong place, so it
-       closes instead — scrolling the list itself excepted. */
-    function onScroll(e) {
-      if (e && within(e.target, menu)) return;
-      closeMenu(false);
-    }
-
-    function onOutside(e) {
-      const t = e && e.target;
-      if (within(t, menu) || within(t, wrap)) return;
-      closeMenu(false);
-    }
-
-    /* Captured on the document: the map and the modals listen for Escape and
-       arrow keys too, and a key aimed at an open dropdown must not reach
-       them. Registered only while the list is open. */
-    function onKey(e) {
-      const key = e.key;
-      if (key === "Escape") {
-        stop(e);
-        closeMenu(true);
-        return;
-      }
-      if (key === "Tab") {
-        closeMenu(false);
-        return;
-      }
-      if (key === "ArrowDown") { stop(e); focusItem(nextEnabled(cursor, 1)); return; }
-      if (key === "ArrowUp") { stop(e); focusItem(nextEnabled(cursor, -1)); return; }
-      if (key === "Home") { stop(e); focusItem(nextEnabled(-1, 1)); return; }
-      if (key === "End") { stop(e); focusItem(nextEnabled(items.length, -1)); return; }
-      /* Type-ahead: PX4's mode list is long and its names are distinct, so a
-         letter should jump the way it does in a native select. */
-      if (key && key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const now = Date.now();
-        typed = (now - typedAt < 800 ? typed : "") + key.toLowerCase();
-        typedAt = now;
-        const hit = items.findIndex((b, i) => !b.disabled && i !== cursor &&
-          (b.textContent || "").toLowerCase().indexOf(typed) === 0);
-        const wrapHit = hit >= 0 ? hit : items.findIndex((b) => !b.disabled &&
-          (b.textContent || "").toLowerCase().indexOf(typed) === 0);
-        if (wrapHit >= 0) { stop(e); focusItem(wrapHit); }
-      }
-    }
-
-    function stop(e) {
-      if (typeof e.preventDefault === "function") e.preventDefault();
-      if (typeof e.stopPropagation === "function") e.stopPropagation();
+    function openList() {
+      if (sel.disabled) return;
+      list.open({ el: trigger });
     }
 
     trigger.addEventListener("click", () => {
-      if (opened) closeMenu(true); else openMenu();
+      if (list.isOpen()) list.close(true); else openList();
     });
     trigger.addEventListener("keydown", (e) => {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        stop(e);
-        openMenu();
+        stopEvent(e);
+        openList();
       }
     });
     /* Anything that changes the select — a repopulated mode list, a restored
@@ -579,12 +821,7 @@ Corvus.ui = (function () {
     if (typeof MutationObserver === "function") {
       const mo = new MutationObserver(() => {
         syncTrigger();
-        if (!opened) return;
-        /* Rebuilding drops the row the keyboard was on, so put it back on the
-           current selection rather than letting focus fall to the body. */
-        buildItems();
-        place();
-        focusItem(cursor >= 0 ? cursor : nextEnabled(-1, 1));
+        list.rebuild();
       });
       mo.observe(sel, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled"] });
     }
@@ -592,11 +829,11 @@ Corvus.ui = (function () {
     syncTrigger();
 
     const handle = {
-      el: wrap, trigger, menu, select: sel,
-      open: openMenu,
-      close: () => closeMenu(false),
+      el: wrap, trigger, menu: list.el, select: sel,
+      open: openList,
+      close: () => list.close(false),
       refresh: syncTrigger,
-      isOpen: () => opened,
+      isOpen: list.isOpen,
     };
     sel.corvusSelect = handle;
     return handle;
@@ -668,7 +905,7 @@ Corvus.ui = (function () {
   function closeOrphanedDropdown() {
     const open = openDropdown;
     if (!open) return;
-    const root = open.trigger;
+    const root = open.anchorNode();
     if (typeof document.contains === "function" ? document.contains(root) : true) return;
     open.close();
   }
@@ -1282,6 +1519,317 @@ Corvus.ui = (function () {
     return { el: overlay, dialog, body: bodyEl, open, close };
   }
 
+  /* ===== popover — the explainer that only appears when it is asked for =====
+     A screen full of rows each carrying two lines of prose is a screen the
+     operator has to read before they can scan it: the LINK tab's four preset
+     endpoints filled a whole card because every one of them explained itself
+     out loud, permanently. The explanation still has to be there — a preset
+     nobody can tell apart from the next one is a button that produces a 400 —
+     so it moves off the row and behind a hint the pointer or the keyboard
+     opens.
+
+     This is the generic half: it attaches to ANY anchor (a hint icon, a field
+     caption, a status chip) and owns only the surface and when it is on
+     screen. The anchor keeps being whatever it was.
+
+     The surface is .ui-popover.glass — the same translucent material as the
+     dropdown list, deliberately, because both are transient sheets that drop
+     out of a control. Like the dropdown it is mounted on <body> and placed
+     fixed from the anchor's box, since a popover inside a scrolling card
+     would be clipped by it, and flips above the anchor when the space below
+     runs out.
+
+     There are two ways in and they are not the same promise. A HOVER is a
+     glance: the pointer has to rest on the anchor before the sheet appears,
+     the sheet is transparent to the pointer while it is up, and it leaves as
+     soon as the pointer does. That transparency is the whole fix for a sheet
+     that used to outstay its welcome — it hung under the anchor exactly where
+     the pointer left, caught its own enter event and cancelled the close it
+     had just scheduled, so brushing a hint held a sheet open until the
+     operator hunted for somewhere else to point. A PRESS — a click, a tap, a
+     keyboard focus — is a request to read: it opens at once, pins the sheet
+     so the pointer can enter it and select the text, and closes only on
+     Escape, a click outside, or a second press.
+
+     opts: {title, text, body, className, maxWidth, placement, delay, openDelay}
+       title      bold first line; omit for a single paragraph
+       text       the explanation; \n splits it into paragraphs
+       body       node appended after the text, for a caller with real markup
+       placement  "bottom" (default) | "top" — a preference, not a promise:
+                  both flip when the viewport says so
+       openDelay  ms the pointer must rest on the anchor before a hover opens
+                  it (default 120), so a pointer crossing a column of hints
+                  on its way somewhere else does not set off every one of
+                  them. A press ignores it.
+       delay      ms a hover-opened sheet lingers after the pointer leaves
+                  (default 80) — enough that the edge of the icon does not
+                  flicker, short enough that it is gone before it is noticed.
+
+     Returns {el, anchor, show, hide, toggle, isOpen, isPinned, setContent,
+     destroy}. show(true) pins; show() does not.
+  */
+  let openPopover = null;
+
+  function popover(anchor, opts) {
+    if (!anchor) return null;
+    if (anchor.corvusPopover) return anchor.corvusPopover;
+    const o = opts || {};
+    const grace = o.delay == null ? 80 : o.delay;
+    const openDelay = o.openDelay == null ? 120 : o.openDelay;
+
+    const el = document.createElement("div");
+    el.className = "ui-popover glass" + (o.className ? " " + o.className : "");
+    el.setAttribute("role", "tooltip");
+    el.id = "ui-popover-" + Math.random().toString(36).slice(2, 9);
+    if (o.maxWidth) el.style.maxWidth = o.maxWidth;
+
+    let opened = false;
+    let pinned = false;
+    let timer = null;
+    let openTimer = null;
+    /* A pointer press focuses the button before the click lands, and that
+       focus must not count as the keyboard arriving. */
+    let fromPointer = false;
+
+    /* Replaces the whole content, so a caller whose explanation depends on
+       live state (a port that is taken, a firmware that is absent) can keep
+       one popover rather than build a new one per change. */
+    function setContent(next) {
+      const c = next || {};
+      clear(el);
+      if (c.title) {
+        const t = document.createElement("div");
+        t.className = "ui-popover-title";
+        t.textContent = String(c.title);
+        el.appendChild(t);
+      }
+      if (c.text) {
+        String(c.text).split("\n").forEach((line) => {
+          if (!line) return;
+          const p = document.createElement("p");
+          p.className = "ui-popover-text";
+          p.textContent = line;
+          el.appendChild(p);
+        });
+      }
+      if (c.body) el.appendChild(c.body);
+      if (opened) place();
+    }
+
+    /* Fixed, measured from the anchor: centred under it, flipped above when
+       the space below cannot hold it, and clamped to the viewport so a hint
+       at the right edge of a card does not push the sheet off screen. */
+    function place() {
+      if (!opened || typeof anchor.getBoundingClientRect !== "function") return;
+      const r = anchor.getBoundingClientRect();
+      const vw = window.innerWidth || 1200;
+      const vh = window.innerHeight || 800;
+      const GAP = 8;
+      const EDGE = 8;
+      const h = el.offsetHeight || el.scrollHeight || 0;
+      const w = el.offsetWidth || 0;
+      const below = vh - r.bottom - GAP - EDGE;
+      const above = r.top - GAP - EDGE;
+      const wantTop = o.placement === "top";
+      const up = wantTop ? (above >= h || above >= below) : (below < h && above > below);
+      el.dataset.placement = up ? "top" : "bottom";
+      el.style.top = Math.round(up
+        ? Math.max(EDGE, r.top - GAP - h)
+        : Math.max(EDGE, Math.min(r.bottom + GAP, vh - EDGE - h))) + "px";
+      const centred = r.left + r.width / 2 - w / 2;
+      el.style.left = Math.round(Math.max(EDGE, Math.min(centred, vw - w - EDGE))) + "px";
+    }
+
+    /* pin: the opening was deliberate (a click, a tap, the keyboard), so the
+       sheet stays until it is dismissed and accepts the pointer. A hover
+       opening does neither. */
+    function show(pin) {
+      cancelOpen();
+      cancelHide();
+      if (anchor.disabled) return;
+      if (opened) { if (pin) setPinned(true); return; }
+      /* Nothing to say is not a reason to paint an empty sheet. */
+      if (!el.children.length) return;
+      /* One at a time, like the dropdown: two popovers open from neighbouring
+         rows would overlap each other's text and both listen on the
+         document. */
+      if (openPopover && openPopover !== handle) openPopover.hide();
+      if (openDropdown) openDropdown.close();
+      document.body.appendChild(el);
+      opened = true;
+      openPopover = handle;
+      /* Described-by only while it is on screen: a reference to a node that
+         is not in the document is one a screen reader cannot follow. */
+      anchor.setAttribute("aria-describedby", el.id);
+      if (anchor.dataset) anchor.dataset.popoverOpen = "true";
+      setPinned(!!pin);
+      place();
+      document.addEventListener("keydown", onKey, true);
+      document.addEventListener("scroll", onScroll, true);
+      document.addEventListener("pointerdown", onOutside, true);
+      window.addEventListener("resize", place);
+      refreshIcons();
+    }
+
+    /* The flag is on the element, not only in this closure, because the
+       stylesheet is what actually takes the pointer away from an unpinned
+       sheet; the inline style is the belt to that braces, for a caller who
+       loads the component without the stylesheet. */
+    function setPinned(next) {
+      pinned = !!next;
+      el.dataset.pinned = pinned ? "true" : "false";
+      el.style.pointerEvents = pinned ? "" : "none";
+    }
+
+    function hide() {
+      cancelOpen();
+      cancelHide();
+      if (!opened) return;
+      opened = false;
+      setPinned(false);
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("scroll", onScroll, true);
+      document.removeEventListener("pointerdown", onOutside, true);
+      window.removeEventListener("resize", place);
+      if (openPopover === handle) openPopover = null;
+      if (el.parentNode) el.parentNode.removeChild(el);
+      if (typeof anchor.removeAttribute === "function") anchor.removeAttribute("aria-describedby");
+      if (anchor.dataset) delete anchor.dataset.popoverOpen;
+    }
+
+    /* A hover follows the pointer out. The short grace is only so the seam
+       between the icon and its own hover background cannot flicker the sheet;
+       a pinned sheet ignores the pointer leaving entirely, because something
+       asked for it to stay. */
+    function hideSoon() {
+      cancelHide();
+      if (!opened || pinned) return;
+      if (!grace) { hide(); return; }
+      timer = setTimeout(() => { timer = null; hide(); }, grace);
+    }
+    function cancelHide() {
+      if (timer == null) return;
+      clearTimeout(timer);
+      timer = null;
+    }
+
+    /* Hover intent: the pointer has to mean it. Without this, a pointer
+       travelling down a column of hinted rows opens every sheet on the way
+       past. */
+    function showSoon() {
+      cancelHide();
+      if (opened || openTimer != null) return;
+      if (!openDelay) { show(false); return; }
+      openTimer = setTimeout(() => { openTimer = null; show(false); }, openDelay);
+    }
+    function cancelOpen() {
+      if (openTimer == null) return;
+      clearTimeout(openTimer);
+      openTimer = null;
+    }
+
+    function onScroll(e) {
+      if (e && within(e.target, el)) return;
+      hide();
+    }
+    function onOutside(e) {
+      const t = e && e.target;
+      if (within(t, el) || within(t, anchor)) return;
+      hide();
+    }
+    /* Captured, like the dropdown's: Escape belongs to the topmost transient
+       surface, and the map and the modals listen for it too. */
+    function onKey(e) {
+      if (!e || e.key !== "Escape") return;
+      if (typeof e.preventDefault === "function") e.preventDefault();
+      if (typeof e.stopPropagation === "function") e.stopPropagation();
+      hide();
+      if (typeof anchor.focus === "function") anchor.focus();
+    }
+
+    function within(node, root) {
+      let n = node;
+      while (n) {
+        if (n === root) return true;
+        n = n.parentNode;
+      }
+      return false;
+    }
+
+    anchor.addEventListener("pointerenter", showSoon);
+    anchor.addEventListener("pointerleave", () => { cancelOpen(); hideSoon(); });
+    anchor.addEventListener("pointerdown", () => { fromPointer = true; });
+    /* Focus opens it too, or the explanation exists only for people using a
+       pointer — but only the keyboard's focus does, since the pointer's own
+       focus is the front half of a click the next listener answers. */
+    anchor.addEventListener("focus", () => { if (!fromPointer) show(true); });
+    anchor.addEventListener("blur", () => { fromPointer = false; hide(); });
+    /* A touch screen has no hover at all, so the tap has to do it. A press on
+       a sheet the pointer had already opened pins it rather than closing it:
+       the operator reaching for a hint that is already showing wants to keep
+       it, not dismiss it. */
+    anchor.addEventListener("click", (e) => {
+      if (typeof e.preventDefault === "function") e.preventDefault();
+      fromPointer = false;
+      if (opened && pinned) hide(); else show(true);
+    });
+    /* Only a pinned sheet should receive these at all — the unpinned one is
+       transparent to the pointer — but a pinned one still needs the gap
+       between anchor and sheet to be crossable. The guard is what stops the
+       sheet reprieving itself: without it, a sheet lying under the pointer's
+       exit path cancels its own close, and that is exactly the lingering the
+       transparency was added to end. */
+    el.addEventListener("pointerenter", () => { if (pinned) cancelHide(); });
+    el.addEventListener("pointerleave", hideSoon);
+
+    setContent({ title: o.title, text: o.text, body: o.body });
+
+    const handle = {
+      el, anchor,
+      show, hide, setContent,
+      toggle: () => { if (opened) hide(); else show(true); },
+      isOpen: () => opened,
+      isPinned: () => pinned,
+      destroy: () => { hide(); anchor.corvusPopover = null; },
+    };
+    anchor.corvusPopover = handle;
+    return handle;
+  }
+
+  /*
+    infoHint — the circled "i" and its popover, as one call.
+
+    The shape every caller wanted from popover(): a small round icon button
+    that sits next to a label and holds the sentence that would otherwise be
+    printed under it. Returns the BUTTON (append it wherever the hint
+    belongs); the popover handle hangs off it as .corvusPopover, for the rare
+    caller that has to drive it.
+
+    opts: title, text, body, placement, delay (see popover), plus
+      ariaLabel  what a screen reader announces for the button itself
+                 (default: "More information about <title>")
+      size       icon size in px, default 13 — a hint must not out-shout the
+                 label it annotates
+      className  extra classes on the button
+  */
+  function infoHint(opts) {
+    const o = opts || {};
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ui-info" + (o.className ? " " + o.className : "");
+    /* Not in the tab order by default: on a list of hinted rows every hint
+       would otherwise sit between two rows and double the tab stops. The
+       content is reachable from the row itself, whose title carries it. */
+    btn.tabIndex = o.focusable === false ? -1 : 0;
+    const name = o.ariaLabel || (o.title ? "More information about " + o.title : "More information");
+    btn.setAttribute("aria-label", name);
+    /* No native title: it would put the platform's own yellow tooltip on top
+       of the popover that replaced it. */
+    btn.appendChild(icon(o.icon || "info", o.size == null ? 13 : o.size));
+    popover(btn, o);
+    return btn;
+  }
+
   /* ===================== feedback ===================== */
 
   /*
@@ -1597,6 +2145,8 @@ Corvus.ui = (function () {
     enhanceSelect,
     enhanceSelects,
     watchSelects,
+    menu,
+    menuItem,
     input,
     slider,
     toggle,
@@ -1615,6 +2165,8 @@ Corvus.ui = (function () {
     tile,
     // overlays
     modal,
+    popover,
+    infoHint,
     // feedback
     progress,
     message,

@@ -54,7 +54,6 @@
       <div id="mapView" class="map-view">
         <div id="map" class="map"></div>
         <div class="map-controls" id="mapControls"></div>
-        <div class="layers-popover glass" id="layersPopover" hidden></div>
 
         <button class="tiles-trigger" id="tilesTrigger" type="button"
           title="Download offline map" aria-label="Download offline map">
@@ -230,9 +229,21 @@
                     </button>
                   </div>
                 </div>
-                <div class="link-status-conn" id="linkStatusConn" hidden>No connection</div>
+                <div class="link-status-why">
+                  <div class="link-status-conn" id="linkStatusConn" hidden>No connection</div>
+                  <!-- Which rule picked this link, or that one is still being
+                       looked for. A station that connected to something nobody
+                       selected has to say so; the whole sentence is on hover. -->
+                  <span class="link-auto-badge" id="linkAutoBadge" hidden></span>
+                </div>
                 <div class="link-status-error" id="linkStatusError" hidden></div>
               </div>
+
+              <!-- A device plugged in while the link was busy elsewhere. An
+                   offer, never an action: the link it would replace may be
+                   carrying an aircraft that is flying, so the button is the
+                   operator's. Filled in from SSE; hidden until there is one. -->
+              <div class="link-suggestion" id="linkSuggestion" hidden></div>
 
               <!-- The link the operator already flew, first: recent entries
                    carry the port and the baud, so a laptop reopened at the
@@ -472,10 +483,12 @@
 <script src="js/calib-figures.js"></script>
 <script src="js/calib-protocol.js"></script>
 <script src="js/setup-calibration.js"></script>
+<script src="js/rc-transmitter.js"></script>
 <script src="js/setup-control.js"></script>
 <script src="js/setup-tuning.js"></script>
 <script src="js/setup-motors.js"></script>
 <script src="js/setup-safety.js"></script>
+<script src="js/setup-sik.js"></script>
 <script src="js/setup-parameters.js"></script>
 <script src="js/setup-firmware.js"></script>
 <script src="js/setup.js"></script>

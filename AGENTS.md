@@ -86,10 +86,18 @@ the current host and fails loudly rather than pretending to cross-build.
 | --- | --- | --- | --- |
 | Linux x86_64 | `./build.sh` -> `build-appimage.sh` | `Corvus_GCS-<version>-x86_64.AppImage` | `appimagetool`, bundled CPython + Qt |
 | macOS (arm64 / x86_64) | `./build.sh --dmg` -> `build-macos-app.sh` | `dist/Corvus GCS.app` (+ `Corvus_GCS-<version>-macOS-<arch>.dmg`) | relocatable framework CPython, ad-hoc codesigned |
+| Windows x64 | `.\build-windows.ps1 [-Zip]` | `dist\Corvus GCS\` (+ `Corvus_GCS-<version>-windows-x64.zip`) | PyInstaller, not a hand-relocated interpreter; `./build.sh` from a Windows shell points here rather than cross-building |
 
 Both CI pipelines call the same `./build.sh`: `.gitlab-ci.yml` (primary, on
-`git.unibw.de`, Linux only — no macOS runner) and `.github/workflows/build.yml`
-(test + frontend + appimage + macos-app + release). They must not drift.
+`git.unibw.de`, Linux only — no macOS or Windows runner) and
+`.github/workflows/build.yml` (test + test-windows + frontend + appimage +
+macos-app + windows-app + release). They must not drift.
+
+Windows is the one row whose entry point is not `./build.sh`, because the script
+is PowerShell — `build.sh` detects an MSYS/Git-Bash shell and says so rather
+than pretending to cross-build. Everything else in this section still applies to
+it unchanged: one `VERSION`, the layout contract, `LICENSE.md` inside the
+artifact, no version literal.
 
 "Must not drift" is checkable, so check it rather than assuming it. The two
 have to agree on: the jobs that exist (GitLab carried no `frontend` job for a

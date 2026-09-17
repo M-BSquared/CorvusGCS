@@ -346,6 +346,7 @@ require("../src/js/setup-control.js");
 require("../src/js/setup-tuning.js");
 require("../src/js/setup-motors.js");
 require("../src/js/setup-safety.js");
+require("../src/js/setup-sik.js");
 require("../src/js/setup-parameters.js");
 require("../src/js/setup-firmware.js");
 require("../src/js/setup.js");
@@ -365,8 +366,8 @@ async function testTileGridRendersEveryTile() {
 
   const tiles = findByClass(container, "setup-tile");
   assert.deepEqual(tiles.map((t) => t.dataset.view),
-    ["calibration", "control", "tuning", "motors", "safety", "parameters",
-     "firmware"],
+    ["calibration", "control", "tuning", "motors", "safety", "sik",
+     "parameters", "firmware"],
     "every Setup tile, in order");
 
   // Tile titles are real text nodes. Setup tiles are Corvus.ui.tile instances
@@ -375,7 +376,7 @@ async function testTileGridRendersEveryTile() {
   const titles = tiles.map((t) => findOneByClass(t, "tile-title").textContent);
   assert.deepEqual(titles,
     ["Calibration", "Radio Control", "PID Tuning", "Motors", "Safety & Sensors",
-     "Parameters", "Firmware"]);
+     "Telemetry Radio", "Parameters", "Firmware"]);
 }
 
 async function testClickTileSwapsToSubPageAndBackReturns() {
@@ -415,6 +416,32 @@ async function testSafetyTileOpensTheSafetyPage() {
 
   assert.ok(fake.requests.includes("/api/safety"), "the Safety tile opens the Safety page");
   assert.ok(findOneByClass(container, "safety-sections"), "the safety section host is rendered");
+
+  fire(findOneByClass(container, "setup-back"), "click");
+  assert.ok(findOneByClass(container, "setup-tiles"), "tile grid restored after back");
+}
+
+async function testTelemetryRadioTileOpensTheRadioPage() {
+  const fake = makeFakeTelemetry({
+    urlResponses: {
+      "/api/sik/status": {
+        ports: [], link_device: "", link_baud: 57600, transport: "unknown",
+        armed: false, busy: false, can_configure: true, blocked_reason: "",
+        default_baud: 57600, bauds: [57600], schema: { registers: [] },
+      },
+    },
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  pageViewEl = container;
+
+  Corvus.setup.render(container);
+  openTile(container, "sik");
+  await flushMicrotasks();
+
+  assert.ok(fake.requests.includes("/api/sik/status"),
+    "the Telemetry Radio tile opens the radio page");
+  assert.ok(findOneByClass(container, "sik-page"), "the radio page is rendered");
 
   fire(findOneByClass(container, "setup-back"), "click");
   assert.ok(findOneByClass(container, "setup-tiles"), "tile grid restored after back");
@@ -2334,6 +2361,7 @@ async function run() {
   await withReset(testTileGridRendersEveryTile);
   await withReset(testClickTileSwapsToSubPageAndBackReturns);
   await withReset(testSafetyTileOpensTheSafetyPage);
+  await withReset(testTelemetryRadioTileOpensTheRadioPage);
   await withReset(testTeardownRunsOnSwap);
   await withReset(testReRenderTearsDownActiveSubPage);
   await withReset(testVehicleInfoUpdatesLive);

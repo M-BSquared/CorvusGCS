@@ -9,9 +9,10 @@
   This is the CSS half of src/js/ui.js — one class system per factory there:
   .btn / .icon-btn (button, iconButton), .field-* (label, field, select,
   input), .ui-slider (slider), .option-cards / .option-list (optionCards,
-  optionList),
-  .ui-progress / .ui-msg / .ui-actions (progress, message, actions), .glass
-  (every floating surface), .status-dot (statusDot). New UI is composed from
+  optionList), .ui-menu / .option-item (menu, menuItem — every dropdown the
+  app opens),
+  .ui-progress / .ui-msg / .ui-actions (progress, message, actions),
+  .ui-info / .ui-popover (infoHint, popover), .glass (every floating surface), .status-dot (statusDot). New UI is composed from
   these; a screen-specific class layers a modifier on top rather than
   re-implementing the control.
 */
@@ -409,31 +410,150 @@
   box-shadow: 0 0 0 2px var(--accent-dim);
 }
 
-/* The list itself is .option-list / .option-item — the map layer switcher's
-   rows — on the same glass material as the flight bar it drops out of. Fixed
-   and mounted on <body>: enhanceSelect() writes top/left/min-width/max-height
-   from the trigger's box, and flips the list above it when the space below
-   runs out. */
-.ui-select-menu {
-  position: fixed;
-  z-index: var(--z-dropdown);
+/* The list itself is a .ui-menu of .option-item rows — the same surface the
+   map's context menu and layer switcher open — on the same glass material as
+   the flight bar it drops out of; .ui-select-menu adds nothing to it. */
+
+/* ===== .ui-menu — the one dropdown surface =====
+   Built by Corvus.ui.menu(). Everything that opens a list over something else
+   wears this: the list behind a <select>, the map's layer switcher, the map's
+   context menu. The surface carries the material, the padding and the entry
+   animation; ui.menu() writes the geometry inline from the anchor it was
+   opened against, and data-anchor says which of the two kinds that was.
+
+   "element" is a list dropped out of a trigger: mounted on <body> and fixed,
+   because inside the flight bar or a setup card it would be clipped by the
+   pane and stacked under the map chrome. "point" is a menu anchored to a
+   place INSIDE a container — the map's context menu, which has to scroll,
+   resize and pan with the ground it points at — so it is absolute in that
+   container and sits at the map-popover level rather than above the
+   whole app. */
+.ui-menu {
   padding: 5px;
   border-radius: var(--radius);
-  overflow-y: auto;
   overscroll-behavior: contain;
   animation: corvus-enter 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.ui-select-menu .option-item { padding: 7px 9px; }
-.ui-select-menu .option-item[disabled] { opacity: 0.45; cursor: not-allowed; }
+.ui-menu[data-anchor="element"] {
+  position: fixed;
+  z-index: var(--z-dropdown);
+  overflow-y: auto;
+}
+.ui-menu[data-anchor="point"] {
+  position: absolute;
+  z-index: var(--z-map-popover);
+}
 /* Keyboard navigation moves real focus between the rows, so the focused row
    has to be visible even when the pointer opened the list (:focus-visible
    alone leaves it unmarked). */
-.ui-select-menu .option-item:focus {
+.ui-menu .option-item:focus {
   outline: 2px solid var(--accent-bright);
   outline-offset: -2px;
 }
+/* The caption a menu can carry above its rows: what the list is about, said
+   before it says what it can do. */
+.ui-menu-head {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin: 4px 6px 6px;
+}
 @media (prefers-reduced-motion: reduce) {
-  .ui-select-menu { animation: none !important; }
+  .ui-menu { animation: none !important; }
+}
+
+/* ===== .ui-info / .ui-popover — the hint icon and the sheet it opens =====
+   The icon is sized to annotate, not to compete: it carries the label's own
+   muted colour until it is hovered or focused, and only then takes the
+   accent. The row it sits in must still read as one line, which is why it is
+   a 16px box with no padding of its own.
+
+   The sheet is .glass, the dropdown list's material, because the two are the
+   same kind of thing — a transient surface dropped out of a control — and a
+   second, nearly-identical popover style is exactly what that class exists to
+   prevent. Fixed and mounted on <body>: ui.js writes top/left from the
+   anchor's box and flips it above when the space below runs out. */
+.ui-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--text-3);
+  /* A pointer, not the help cursor: the icon is a button that opens a sheet,
+     and the question-mark arrow reads as a mode change the click does not
+     make. */
+  cursor: pointer;
+  transition: color 130ms, background 130ms;
+}
+.ui-info:hover,
+.ui-info[data-popover-open="true"] {
+  color: var(--accent);
+  background: var(--surface-hover);
+}
+.ui-info:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 1px;
+}
+.ui-info svg { width: 13px; height: 13px; }
+
+.ui-popover {
+  position: fixed;
+  z-index: var(--z-dropdown);
+  /* max-content, not the shrink-to-fit a fixed box would take on its own: with
+     `left` set and `right` auto, that box's available width is whatever is
+     left of the viewport BEYOND its own left edge. A hint on the right-hand
+     rail therefore got ~100px to lay 120 characters out in, and came back a
+     tall thin column of stacked words — and since ui.js centres the sheet on
+     the width it measures, every reopen moved it 8px and re-measured, so the
+     shape drifted with each look. Sizing by content instead makes the width a
+     property of the text, which is what it was always meant to be. */
+  width: max-content;
+  max-width: min(260px, calc(100vw - 16px));
+  padding: 9px 11px;
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: corvus-enter 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+/* A sheet the pointer only grazed is transparent to it: hovering the hint
+   must not hand the sheet the power to keep itself open, which is what made
+   one linger every time the pointer left the icon across it. Opening it
+   deliberately — a click, or the keyboard — pins it, and a pinned sheet takes
+   the pointer back so its text can be selected. ui.js sets this per opening. */
+.ui-popover:not([data-pinned="true"]) {
+  pointer-events: none;
+}
+.ui-popover-title {
+  color: var(--text-1);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+}
+.ui-popover-text {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.45;
+}
+/* A popover placed above its anchor rises from below, so the entrance moves
+   with it instead of against it. */
+.ui-popover[data-placement="top"] {
+  animation-name: corvus-enter-down;
+}
+@keyframes corvus-enter-down {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-popover { animation: none !important; }
 }
 
 /* ===== .ui-slider — stepped slider with step indicators =====
@@ -765,7 +885,12 @@
 }
 .option-card.selected .option-card-desc { color: var(--text-2); }
 
-/* ===== .option-list — vertical single-line chooser (map layer switcher) ===== */
+/* ===== .option-list / .option-item — the row every list is made of =====
+   One row, three shapes: a leading state dot for a chooser (the layer
+   switcher, the list behind a <select>), a leading icon for an action (the
+   map's context menu), and an optional second line under the label saying
+   what the row will do or why it cannot be used. Built by Corvus.ui.menuItem
+   and laid out in a .option-list or a .ui-menu. */
 .option-list { display: flex; flex-direction: column; gap: 2px; }
 .option-item {
   display: flex;
@@ -781,9 +906,29 @@
   cursor: pointer;
   transition: background 130ms, color 130ms;
 }
-.option-item:hover { background: var(--surface-hover); color: var(--text-1); }
+.option-item:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-1); }
+.option-item:active:not(:disabled) { background: var(--accent-dim); }
 .option-item:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: -2px; }
 .option-item.active { background: var(--accent-dark); color: var(--text-1); }
+/* Disabled is a normal state on an action row — the map's two actions need a
+   connected (and, to fly, an armed) vehicle — so it has to read as "not yet",
+   not as broken: the row stays legible and says why in .option-item-note.
+   --text-3, not --text-disabled: the note is already --text-3, and the palest
+   token on the label put the two the wrong way round, with the reason
+   shouting over the thing it was explaining. */
+.option-item:disabled { color: var(--text-3); cursor: not-allowed; }
+/* An action row's leading icon, which picks up the accent on hover the way
+   the map chrome's buttons do. Inert on a row that carries a dot instead. */
+.option-item > i, .option-item > svg {
+  width: 14px; height: 14px; flex: 0 0 auto; color: var(--text-2);
+}
+.option-item:hover:not(:disabled) > i,
+.option-item:hover:not(:disabled) > svg { color: var(--accent); }
+.option-item:disabled > i, .option-item:disabled > svg { color: var(--text-disabled); }
+/* Label over note, when there is a note. */
+.option-item-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.option-item-note { font-size: 9.5px; color: var(--text-3); white-space: nowrap; }
+.option-item:disabled .option-item-note { color: var(--text-disabled); }
 .option-item-dot {
   width: 8px;
   height: 8px;

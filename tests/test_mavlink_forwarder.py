@@ -167,9 +167,13 @@ def test_an_enabled_station_reaches_the_aircraft_frame_for_frame() -> None:
         return True
 
     port = _free_port()
-    fwd = _forwarder(inject, listen_port=port, allow_commands=True)
+    station_port = _free_port()
+    fwd = _forwarder(
+        inject, listen_port=port, port=station_port, allow_commands=True,
+    )
     assert fwd.start() is True
     qgc = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    qgc.bind(("127.0.0.1", station_port))
     try:
         a, b = _v1(seq=7), _v2()
         qgc.sendto(a + b, ("127.0.0.1", port))
@@ -187,9 +191,14 @@ def test_an_enabled_station_reaches_the_aircraft_frame_for_frame() -> None:
 def test_a_half_frame_is_never_put_on_the_link() -> None:
     injected: list[bytes] = []
     port = _free_port()
-    fwd = _forwarder(injected.append, listen_port=port, allow_commands=True)
+    station_port = _free_port()
+    fwd = _forwarder(
+        injected.append, listen_port=port, port=station_port,
+        allow_commands=True,
+    )
     assert fwd.start() is True
     qgc = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    qgc.bind(("127.0.0.1", station_port))
     try:
         frame = _v2()
         qgc.sendto(frame[:6], ("127.0.0.1", port))
@@ -468,10 +477,15 @@ def test_the_system_id_clash_is_reported_with_commanding_off() -> None:
 
 def test_a_station_with_its_own_system_id_raises_no_conflict() -> None:
     port = _free_port()
-    fwd = _forwarder(lambda _f: True, listen_port=port, allow_commands=True)
+    station_port = _free_port()
+    fwd = _forwarder(
+        lambda _f: True, listen_port=port, port=station_port,
+        allow_commands=True,
+    )
     assert fwd.start() is True
     try:
         other = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        other.bind(("127.0.0.1", station_port))
         other.sendto(bytes([0xFE, 3, 0, 255, 190, 0]) + b"\x11" * 3 + b"\xAB\xCD",
                      ("127.0.0.1", port))
         time.sleep(0.3)
@@ -479,6 +493,41 @@ def test_a_station_with_its_own_system_id_raises_no_conflict() -> None:
         assert fwd.status()["sysid_conflict"] is False
         assert fwd.status()["frames_injected"] == 1
     finally:
+        fwd.stop()
+
+
+def test_wildcard_listener_injects_only_from_a_configured_station() -> None:
+    """A learned LAN peer may receive telemetry, but may not command the aircraft."""
+    listen_port = _free_port()
+    station_port = _free_port()
+    injected: list[bytes] = []
+    fwd = MavlinkForwarder(
+        lambda frame: bool(injected.append(frame)) or True,
+        host="127.0.0.1",
+        port=station_port,
+        listen_host="0.0.0.0",
+        listen_port=listen_port,
+        allow_commands=True,
+    )
+    trusted = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    untrusted = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    trusted.bind(("127.0.0.1", station_port))
+    untrusted.bind(("127.0.0.1", 0))
+    try:
+        assert fwd.start() is True
+        hostile = _v1(seq=11)
+        allowed = _v1(seq=12)
+        untrusted.sendto(hostile, ("127.0.0.1", listen_port))
+        trusted.sendto(allowed, ("127.0.0.1", listen_port))
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline and not injected:
+            time.sleep(0.02)
+
+        assert injected == [allowed]
+        assert len(fwd.status()["peers"]) == 2, "both may still receive telemetry"
+    finally:
+        trusted.close()
+        untrusted.close()
         fwd.stop()
 
 
@@ -570,4 +619,139 @@ def test_a_name_that_does_not_resolve_costs_that_endpoint_and_nothing_else() -> 
         assert qgc.recv(1024) == frame
     finally:
         qgc.close()
+        fwd.stop()
+
+
+# ---------------------------------------------------------------------------
+# What it takes to be subscribed to the aircraft's telemetry
+# ---------------------------------------------------------------------------
+
+def test_a_datagram_that_is_not_mavlink_does_not_subscribe_its_sender() -> None:
+    """Learning a peer used to need only a plausible trailing byte.
+
+    ``split_frames`` parks on a 0xFD/0xFE it has not yet seen a length for and
+    hands it back as the remainder, and a non-empty remainder counted as
+    "spoke MAVLink to us". So any datagram ending in one of those two bytes —
+    a port scan, a stray broadcast, another program's stale socket — signed
+    its sender up for the whole telemetry stream at 10 Hz. Only a complete
+    frame does that now.
+    """
+    port = _free_port()
+    fwd = _forwarder(listen_port=port)
+    assert fwd.start() is True
+    try:
+        # One socket per probe: each sender keeps its own reassembly buffer,
+        # and a leftover start byte joined to the next datagram would form a
+        # length-valid frame between them — which is a property of the framing
+        # parser, not of the admission rule under test here.
+        for probe in (b"GET / HTTP/1.1\r\n\xfd", b"\x00" * 32 + b"\xfe", b"\xfd"):
+            noise = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            noise.sendto(probe, ("127.0.0.1", port))
+            time.sleep(0.15)
+            noise.close()
+        assert fwd.status()["peers"] == []
+
+        # A station that actually speaks MAVLink is still learned, so the
+        # guard above is not passing because nothing is ever learned.
+        station = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        station.sendto(_v2(), ("127.0.0.1", port))
+        time.sleep(0.3)
+        station.close()
+        assert len(fwd.status()["peers"]) == 1
+    finally:
+        fwd.stop()
+
+
+def test_a_frame_split_across_two_datagrams_still_subscribes_its_sender() -> None:
+    """Deferring the subscription to a whole frame must not lose a real one.
+
+    A sender is free to split a frame across datagrams; the remainder is kept
+    either way, and the datagram that completes the frame is what learns it.
+    """
+    port = _free_port()
+    fwd = _forwarder(listen_port=port)
+    assert fwd.start() is True
+    try:
+        frame = _v2()
+        station = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        station.sendto(frame[:5], ("127.0.0.1", port))
+        time.sleep(0.2)
+        assert fwd.status()["peers"] == [], "half a frame is not yet a station"
+
+        station.sendto(frame[5:], ("127.0.0.1", port))
+        time.sleep(0.3)
+        station.close()
+        assert len(fwd.status()["peers"]) == 1
+    finally:
+        fwd.stop()
+
+
+def test_a_refused_station_is_named_rather_than_silently_ignored() -> None:
+    """The operator turned commanding on and the station's commands do nothing.
+
+    That is the wrong thing to be quiet about: the station is plainly
+    connected and receiving telemetry, so without this the only symptom is an
+    aircraft that ignores it. The fix is one line of config — findable only if
+    the refusal is reported.
+    """
+    listen_port = _free_port()
+    station_port = _free_port()
+    injected: list[bytes] = []
+    fwd = MavlinkForwarder(
+        lambda frame: bool(injected.append(frame)) or True,
+        host="127.0.0.1", port=station_port,
+        listen_host="127.0.0.1", listen_port=listen_port,
+        allow_commands=True,
+    )
+    stranger = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    stranger.bind(("127.0.0.1", 0))
+    try:
+        assert fwd.start() is True
+        stranger.sendto(_v1(), ("127.0.0.1", listen_port))
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline and not fwd.status()["commands_refused"]:
+            time.sleep(0.02)
+
+        status = fwd.status()
+        assert injected == []
+        assert status["commands_refused"] >= 1
+        assert status["commands_refused_from"] == [
+            f"127.0.0.1:{stranger.getsockname()[1]}",
+        ]
+        # It is still a peer: telemetry out is not the privilege being withheld.
+        assert status["peers"] == [f"127.0.0.1:{stranger.getsockname()[1]}"]
+    finally:
+        stranger.close()
+        fwd.stop()
+
+
+def test_nothing_is_refused_when_commanding_is_off() -> None:
+    """Telemetry-only is the default, and it is not a refusal to report."""
+    listen_port = _free_port()
+    fwd = _forwarder(lambda frame: True, listen_port=listen_port)
+    assert fwd.start() is True
+    try:
+        station = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        station.sendto(_v1(), ("127.0.0.1", listen_port))
+        time.sleep(0.3)
+        station.close()
+        assert fwd.status()["commands_refused"] == 0
+    finally:
+        fwd.stop()
+
+
+def test_noise_is_never_injected_even_with_commanding_on() -> None:
+    """The gate the peer table feeds is separate from the one that arms the
+    uplink, so check the uplink directly: garbage produces no frames at all."""
+    injected: list[bytes] = []
+    port = _free_port()
+    fwd = _forwarder(injected.append, listen_port=port, allow_commands=True)
+    assert fwd.start() is True
+    try:
+        noise = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        noise.sendto(b"not mavlink at all\xfd", ("127.0.0.1", port))
+        time.sleep(0.3)
+        noise.close()
+        assert injected == []
+    finally:
         fwd.stop()

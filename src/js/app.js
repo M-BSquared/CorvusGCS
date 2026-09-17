@@ -408,8 +408,7 @@ Corvus.app = (function () {
 
     Corvus.topbar.init();
     Corvus.sidenav.init();
-    Corvus.map.init(document.getElementById("map"), document.getElementById("mapControls"),
-      document.getElementById("layersPopover"));
+    Corvus.map.init(document.getElementById("map"), document.getElementById("mapControls"));
     Corvus.instruments.init(document.getElementById("flightOverlay"));
     // AFTER instruments.init: the panel re-parents the built instruments into
     // its collapsible body, so they have to exist first.

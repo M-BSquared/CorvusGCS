@@ -236,6 +236,24 @@ Corvus.telemetry = (function () {
     return postAction("/api/mavlink/connect", { connection: conn });
   }
 
+  /* Close both streams the moment the page goes away.
+     The browser tears an EventSource down on unload by itself, so this is not
+     a leak fix — it is a timing one. The socket is only released when the OS
+     gets round to it, and this app already runs telemetry, console, params,
+     tiles and firmware streams against a six-per-origin HTTP/1.1 cap: on a
+     reload the new page can find the budget still held by the old one's
+     connections. pagehide rather than beforeunload, because beforeunload does
+     not fire on a mobile/background tab teardown and pagehide does. */
+  function closeStreams() {
+    connectionGeneration++;
+    if (eventSource) { try { eventSource.close(); } catch (_e) {} eventSource = null; }
+    closeConsoleStream();
+  }
+
+  if (typeof window !== "undefined" && window.addEventListener) {
+    window.addEventListener("pagehide", closeStreams);
+  }
+
   return {
     connect, getState, subscribe, subscribeConsole, requestJson, postAction,
     sendCommand, arm, setMode, connectMavlink,

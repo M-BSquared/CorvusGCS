@@ -210,6 +210,7 @@ function makeFakeTelemetry(opts = {}) {
 // ---------------------------------------------------------------------------
 require("../src/js/ui.js");
 require("../src/js/setup-shared.js");
+require("../src/js/rc-transmitter.js");
 require("../src/js/setup-control.js");
 
 // ---------------------------------------------------------------------------
@@ -332,8 +333,8 @@ async function testReadsTheSchemaAndRaisesTheChannelRate() {
     "opening the page asks for a rate a sweep can actually be measured at");
 
   const titles = textsOf(container, "page-section-title");
-  assert.deepEqual(titles, ["Live channels", "Input and failsafe", "Stick channels",
-    "Flight mode switch", "Switches", "Channel calibration"]);
+  assert.deepEqual(titles, ["Transmitter", "Live channels", "Input and failsafe",
+    "Stick channels", "Flight mode switch", "Switches", "Channel calibration"]);
 }
 
 async function testChannelBarsFollowTheTelemetry() {

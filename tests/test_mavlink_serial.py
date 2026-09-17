@@ -311,9 +311,10 @@ def test_connect_success_sets_connected_status(monkeypatch: pytest.MonkeyPatch) 
     assert snap["link_error"] == ""
     assert snap["link_connection"] == "udp:0.0.0.0:14540"
     assert snap["connected"] is True
-    # High-rate (non-serial) streams were actually requested.
-    requested = dict(fake_conn.mav.streams)
-    assert requested[mavutil.mavlink.MAV_DATA_STREAM_EXTRA1] == 50
+    # A UDP link no longer opens with the deprecated REQUEST_DATA_STREAM set:
+    # the per-message requests go out first, and only their COMMAND_ACKs can
+    # call for the legacy fallback. See tests/test_mavlink_stream_fallback.py.
+    assert fake_conn.mav.streams == []
 
 
 def test_stop_marks_link_disconnected() -> None:

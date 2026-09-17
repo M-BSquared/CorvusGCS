@@ -7,6 +7,7 @@ those (the server and bridge modules) is imported lazily inside fixtures via
 """
 from __future__ import annotations
 
+import logging
 import os
 import threading
 from typing import Any
@@ -15,6 +16,41 @@ from unittest.mock import MagicMock
 import pytest
 
 from corvus.state_store import VehicleStateStore
+
+
+@pytest.fixture(autouse=True)
+def corvus_log_propagation() -> Any:
+    """Keep ``corvus.*`` records reaching pytest's ``caplog`` handler.
+
+    A handful of tests assert on what the code logged — a throttled listener
+    failure, a dropped config key, a traceback that must survive. ``caplog``
+    installs its handler on the ROOT logger, so a record only ever arrives
+    there if the logger that emitted it propagates.
+
+    Propagation is not this suite's to assume. An environment that also has the
+    ROS 2 pytest plugins installed (``launch_testing_ros``, ``ament_lint``) has
+    them sweep every logger at collection time and set ``propagate = False``;
+    the ``corvus.*`` loggers own no handlers, so their records were then dropped
+    on the floor. The tests failed, the code was correct, and the only signal
+    was the log line appearing on stderr and not in ``caplog``.
+
+    So the suite states the property it depends on instead of inheriting it,
+    and puts back whatever it found afterwards.
+    """
+    names = ["corvus"] + [
+        name for name in list(logging.Logger.manager.loggerDict)
+        if name.startswith("corvus.")
+    ]
+    saved = {}
+    for name in names:
+        log = logging.getLogger(name)
+        saved[name] = log.propagate
+        log.propagate = True
+    try:
+        yield
+    finally:
+        for name, value in saved.items():
+            logging.getLogger(name).propagate = value
 
 
 @pytest.fixture

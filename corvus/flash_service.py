@@ -72,6 +72,7 @@ class FlashService:
         self.last_error: str = ""
         self._cancel = threading.Event()
         self._worker: threading.Thread | None = None
+        self._uploader: FirmwareUploader | None = None
         self._listeners: list[Callable[[dict[str, Any]], None]] = []
         # Raised by shutdown() so the worker's finally does NOT reconnect the
         # bridge while the app is tearing down.
@@ -136,8 +137,6 @@ class FlashService:
         if refusal:
             self.last_error = refusal
             return False
-        with self._lock:
-            conn = self.mavlink.connection_string()
         # Parse now so an invalid archive is rejected before we reboot the FC.
         try:
             image = parse_firmware(firmware_bytes)
@@ -147,16 +146,23 @@ class FlashService:
         if not image:
             self.last_error = "empty firmware image"
             return False
-        self._cancel.clear()
         with self._lock:
+            if self._shutting_down:
+                self.last_error = "flash service is shutting down"
+                return False
+            if self._state in BUSY_STATES:
+                self.last_error = "flash already in progress"
+                return False
+            conn = self.mavlink.connection_string()
+            self._cancel.clear()
             self._state = "flashing"
             self._percent = 0
             self._message = "Preparing to flash…"
+            self._worker = threading.Thread(
+                target=self._run, args=(conn, image), name="firmware-flash", daemon=True,
+            )
+            self._worker.start()
         self._notify_listeners({"state": "flashing", "percent": 0, "message": "Preparing to flash…"})
-        self._worker = threading.Thread(
-            target=self._run, args=(conn, image), name="firmware-flash", daemon=True,
-        )
-        self._worker.start()
         return True
 
     def start_release(self, release_tag: str, board_name: str) -> bool:
@@ -182,15 +188,25 @@ class FlashService:
         if entry is None:
             self.last_error = "unknown firmware release or board"
             return False
+        message = f"Downloading {entry.get('name', '')}…"
         with self._lock:
+            if self._shutting_down:
+                self.last_error = "flash service is shutting down"
+                return False
+            if self._state in BUSY_STATES:
+                self.last_error = "flash already in progress"
+                return False
             conn = self.mavlink.connection_string()
-        self._cancel.clear()
-        self._set("downloading", 0, f"Downloading {entry.get('name', '')}…")
-        self._worker = threading.Thread(
-            target=self._run_release, args=(conn, entry),
-            name="firmware-download", daemon=True,
-        )
-        self._worker.start()
+            self._cancel.clear()
+            self._state = "downloading"
+            self._percent = 0
+            self._message = message
+            self._worker = threading.Thread(
+                target=self._run_release, args=(conn, entry),
+                name="firmware-download", daemon=True,
+            )
+            self._worker.start()
+        self._notify_listeners({"state": "downloading", "percent": 0, "message": message})
         return True
 
     def _run_release(self, conn: str, entry: dict[str, Any]) -> None:
@@ -265,6 +281,8 @@ class FlashService:
                 self._set("failed", 0, "no serial device for bootloader")
                 return
             uploader = FirmwareUploader(on_progress=self._on_uploader_progress, cancel=self._cancel)
+            with self._lock:
+                self._uploader = uploader
             ok = uploader.run(device, image)
             if self._cancel.is_set():
                 self._set("cancelled", self._percent, "Flash cancelled")
@@ -281,6 +299,9 @@ class FlashService:
                     uploader.shutdown()
                 except Exception:  # noqa: BLE001
                     pass
+                with self._lock:
+                    if self._uploader is uploader:
+                        self._uploader = None
             self._reconnect(conn)
 
     def _reconnect(self, conn: str) -> None:
@@ -311,9 +332,16 @@ class FlashService:
 
     def shutdown(self) -> None:
         """Idempotent teardown: cancel the worker, join it, reset state. Never raises."""
-        self._shutting_down = True
-        self._cancel.set()
-        worker = self._worker
+        with self._lock:
+            self._shutting_down = True
+            self._cancel.set()
+            uploader = self._uploader
+            worker = self._worker
+        if uploader is not None:
+            try:
+                uploader.shutdown()
+            except Exception:  # noqa: BLE001
+                pass
         if worker is not None:
             try:
                 worker.join(timeout=3.0)

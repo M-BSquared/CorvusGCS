@@ -94,6 +94,12 @@ ERASE_TIMEOUT_S = 30.0
 # re-checked promptly during a long erase, long enough to avoid busy-spinning.
 READ_TIMEOUT_S = 1.0
 
+# Current PX4 flight-controller images are only a few MiB. 32 MiB leaves
+# ample room for future boards while preventing a compressed upload from
+# expanding until it exhausts the field laptop's memory.
+MAX_FIRMWARE_IMAGE_BYTES = 32 * 1024 * 1024
+MAX_BOOTLOADER_FLASH_BYTES = 64 * 1024 * 1024
+
 
 def _bl_crc32(data: bytes, state: int = 0) -> int:
     """Bootloader CRC-32 (poly 0xEDB88320, init=state, no final XOR).
@@ -129,7 +135,7 @@ def parse_firmware(data: bytes) -> bytes:
 
     Raises ``ValueError`` on an empty or invalid payload.
     """
-    if not data:
+    if not isinstance(data, bytes) or not data:
         raise ValueError("empty firmware data")
 
     stripped = data.lstrip()
@@ -141,10 +147,25 @@ def parse_firmware(data: bytes) -> bytes:
             raise ValueError(f"invalid firmware JSON: {exc}") from exc
         if not isinstance(desc, dict) or "image" not in desc:
             raise ValueError("firmware JSON has no 'image' field")
+        encoded = desc["image"]
+        if not isinstance(encoded, str):
+            raise ValueError("firmware JSON 'image' must be a base64 string")
         try:
             import base64
-            raw = base64.b64decode(desc["image"])
-            image = zlib.decompress(raw)
+            raw = base64.b64decode(encoded.encode("ascii"), validate=True)
+            decoder = zlib.decompressobj()
+            image = decoder.decompress(raw, MAX_FIRMWARE_IMAGE_BYTES + 1)
+            if len(image) > MAX_FIRMWARE_IMAGE_BYTES or decoder.unconsumed_tail:
+                raise ValueError("decoded firmware image exceeds size limit")
+            room = MAX_FIRMWARE_IMAGE_BYTES + 1 - len(image)
+            if room > 0:
+                image += decoder.flush(room)
+            if len(image) > MAX_FIRMWARE_IMAGE_BYTES:
+                raise ValueError("decoded firmware image exceeds size limit")
+            if not decoder.eof:
+                raise ValueError("firmware image has an incomplete zlib stream")
+        except ValueError:
+            raise
         except Exception as exc:  # base64/zlib errors
             raise ValueError(f"could not decode firmware image: {exc}") from exc
         if not image:
@@ -162,19 +183,27 @@ def parse_firmware(data: bytes) -> bytes:
             raise ValueError("firmware archive is empty")
         for preferred in ("firmware.px4", "image.px4"):
             if preferred in names:
-                blob = zf.read(preferred)
+                info = zf.getinfo(preferred)
+                if info.file_size > MAX_FIRMWARE_IMAGE_BYTES:
+                    raise ValueError("firmware archive image exceeds size limit")
+                blob = zf.read(info)
                 if not blob:
                     raise ValueError(f"firmware archive entry {preferred!r} is empty")
                 return blob
         candidates = [n for n in names if n.lower().endswith((".px4", ".bin"))]
         pool = candidates or names
         best = max(pool, key=lambda n: zf.getinfo(n).file_size)
-        blob = zf.read(best)
+        info = zf.getinfo(best)
+        if info.file_size > MAX_FIRMWARE_IMAGE_BYTES:
+            raise ValueError("firmware archive image exceeds size limit")
+        blob = zf.read(info)
         if not blob:
             raise ValueError("firmware archive contains an empty image")
         return blob
 
     # 3. Raw binary (.bin).
+    if len(data) > MAX_FIRMWARE_IMAGE_BYTES:
+        raise ValueError("firmware image exceeds size limit")
     return data
 
 
@@ -238,6 +267,13 @@ class FirmwareUploader:
         RESET is only sent after a clean program + verify; any error or
         cancellation returns ``False`` without resetting (no bricking).
         """
+        if not isinstance(firmware_bytes, bytes) or not firmware_bytes:
+            self._set("failed", 0, "firmware image is empty or invalid")
+            return False
+        if len(firmware_bytes) > MAX_FIRMWARE_IMAGE_BYTES:
+            self._set("failed", 0, "firmware image exceeds size limit")
+            return False
+        self._fw_maxsize = None
         # The bootloader requires PROG_MULTI counts to be a multiple of 4; pad
         # the image to a 4-byte boundary with 0xFF (erased-flash value), which
         # also matches the padding used by the verify CRC.
@@ -396,9 +432,12 @@ class FirmwareUploader:
             self._serial.write(bytes([GET_DEVICE, INFO_FLASH_SIZE, EOC]))
             self._serial.flush()
             raw = self._recv_exact(4, timeout_s=2.0)
-            if raw is not None:
-                self._fw_maxsize = int.from_bytes(raw, "little")
-                self._recv_exact(2, timeout_s=1.0)  # INSYNC OK
+            if raw is not None and self._expect_insync_ok(timeout_s=1.0):
+                size = int.from_bytes(raw, "little")
+                if 0 < size <= MAX_BOOTLOADER_FLASH_BYTES:
+                    self._fw_maxsize = size
+                else:
+                    logger.error("bootloader reported invalid flash size: %d", size)
         except Exception:  # noqa: BLE001 - best-effort
             pass
         try:
@@ -457,9 +496,12 @@ class FirmwareUploader:
         """Bootloader CRC over the image padded with 0xFF to fw_maxsize."""
         state = _bl_crc32(image, 0)
         if self._fw_maxsize is not None and self._fw_maxsize > len(image):
-            # Byte-wise CRC is a stream fold, so one call over the whole pad is
-            # identical to px_uploader's 4-byte chunked loop.
-            state = _bl_crc32(b"\xff" * (self._fw_maxsize - len(image)), state)
+            remaining = self._fw_maxsize - len(image)
+            padding = b"\xff" * 65536
+            while remaining:
+                chunk = padding[:min(remaining, len(padding))]
+                state = _bl_crc32(chunk, state)
+                remaining -= len(chunk)
         return state & 0xFFFFFFFF
 
     def _verify(self, image: bytes) -> bool | None:
@@ -467,8 +509,8 @@ class FirmwareUploader:
 
         Returns ``True`` on match, ``False`` on mismatch (corruption — do NOT
         boot), ``None`` when the check could not be performed (no CRC returned,
-        no INSYNC/OK, or fw_maxsize unknown) — treated as best-effort: the
-        caller proceeds to boot. Reply framing is ``<crc:4 LE> INSYNC OK``
+        no INSYNC/OK, or fw_maxsize unknown). Reply framing is
+        ``<crc:4 LE> INSYNC OK``
         (data first, then the status pair) per ``bl.c`` PROTO_GET_CRC.
         """
         try:
@@ -493,17 +535,18 @@ class FirmwareUploader:
         logger.error("firmware CRC mismatch: got 0x%08x expected 0x%08x", reported, expected)
         return False
 
-    def _reboot(self) -> None:
-        """Send REBOOT; best-effort read of the final INSYNC OK (board resets)."""
+    def _reboot(self) -> bool:
+        """Send REBOOT and report whether the command reached the serial link."""
         try:
             self._serial.write(bytes([REBOOT, EOC]))
             self._serial.flush()
         except Exception:  # noqa: BLE001
-            return
+            return False
         # bl.c sends sync_response() before jumping to the app, so the pair
         # usually arrives — but the board resets immediately after, so a read
         # timeout is normal and tolerated.
         self._expect_insync_ok(timeout_s=2.0)
+        return True
 
     # ------------------------------------------------------------------
     # Orchestrator
@@ -529,6 +572,17 @@ class FirmwareUploader:
 
         self._identify_best_effort()
 
+        if self._fw_maxsize is None:
+            self._set("failed", 0, "could not determine bootloader flash size")
+            return False
+        if len(image) > self._fw_maxsize:
+            self._set(
+                "failed", 0,
+                f"firmware image ({len(image)} bytes) exceeds board flash limit "
+                f"({self._fw_maxsize} bytes)",
+            )
+            return False
+
         if self._cancel.is_set():
             self._set("cancelled", 0, "Flash cancelled")
             return False
@@ -546,12 +600,21 @@ class FirmwareUploader:
 
         self._set("verifying", self._percent, "Verifying…")
         verify = self._verify(image)
-        if verify is False:
-            # Corruption detected: do NOT boot. Leave the FC in the bootloader.
-            self._set("failed", self._percent, "firmware CRC mismatch — not booting")
+        if verify is not True:
+            message = (
+                "firmware CRC mismatch — not booting" if verify is False
+                else "firmware CRC verification unavailable — not booting"
+            )
+            self._set("failed", self._percent, message)
+            return False
+
+        if self._cancel.is_set():
+            self._set("cancelled", self._percent, "Flash cancelled")
             return False
 
         self._set("booting", 100, "Booting new firmware…")
-        self._reboot()
+        if not self._reboot():
+            self._set("failed", self._percent, "bootloader reboot command failed")
+            return False
         self._set("done", 100, "Firmware flashed successfully")
         return True

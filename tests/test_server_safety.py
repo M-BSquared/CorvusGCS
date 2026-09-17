@@ -39,9 +39,12 @@ class FakeSafetyBridge:
         return self.error
 
 
-def _handler(bridge: Any) -> tuple[CorvusHandler, list[tuple[dict, int]]]:
+def _handler(bridge: Any,
+             path: str = "/api/safety") -> tuple[CorvusHandler, list[tuple[dict, int]]]:
     handler = object.__new__(CorvusHandler)
     handler.mavlink = bridge  # type: ignore[assignment]
+    # The endpoint reads its own query string for the operator-added parameters.
+    handler.path = path  # type: ignore[assignment]
     responses: list[tuple[dict, int]] = []
     handler._send_json = lambda data, status=200: responses.append((data, status))  # type: ignore[method-assign]
     return handler, responses
@@ -92,7 +95,9 @@ def test_without_a_bridge_the_page_still_renders() -> None:
 
     payload, status = responses[0]
     assert status == 200
-    assert payload == {"connected": False, "sections": [], "received": 0}
+    assert payload == {
+        "connected": False, "sections": [], "extra": [], "received": 0,
+    }
 
 
 def test_a_vehicle_that_answers_nothing_reports_why_at_200() -> None:
@@ -126,3 +131,33 @@ def test_a_firmware_missing_parameters_yields_fewer_sections_not_an_error() -> N
     assert status == 200
     assert payload["connected"] is True
     assert set(_sections(payload)) == {"limits", "failsafe"}
+
+
+def test_added_parameters_ride_the_same_batch_read() -> None:
+    """One read, not two: the operator's own parameters are appended to the
+    schema's batch rather than costing a second round trip."""
+    bridge = FakeSafetyBridge(dict(_safety_values(), MPC_XY_P=0.95))
+    handler, responses = _handler(bridge, "/api/safety?extra=MPC_XY_P,ekf2_rng_qlty_t")
+    handler._api_safety()
+
+    assert len(bridge.requested) == 1
+    assert bridge.requested[0][-2:] == ["MPC_XY_P", "EKF2_RNG_QLTY_T"]
+    payload, status = responses[0]
+    assert status == 200
+    assert [f["param"] for f in payload["extra"]] == ["MPC_XY_P", "EKF2_RNG_QLTY_T"]
+    assert [f["present"] for f in payload["extra"]] == [True, False]
+
+
+def test_a_hostile_extra_query_never_reaches_the_bridge() -> None:
+    """The names are browser input. An unbounded or malformed list would become
+    an unbounded burst of PARAM_REQUEST_READ at the aircraft."""
+    schema = len(safety_config.param_names())
+    bridge = FakeSafetyBridge(_safety_values())
+    query = ",".join(["has space", "x" * 40, "../etc/passwd", ""]
+                     + [f"P{i:03d}" for i in range(200)])
+    handler, _responses = _handler(bridge, "/api/safety?extra=" + query)
+    handler._api_safety()
+
+    added = bridge.requested[0][schema:]
+    assert len(added) == safety_config.EXTRA_PARAM_LIMIT
+    assert all(name.startswith("P") and name[1:].isdigit() for name in added)

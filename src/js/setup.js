@@ -5,7 +5,7 @@ window.Corvus = window.Corvus || {};
  * Corvus.setup — the Setup page (left-nav "SETUP").
  *
  * Thin orchestrator: renders the tile grid (Calibration, Radio Control, PID
- * Tuning, Motors, Safety & Sensors, Parameters, Firmware) plus a compact
+ * Tuning, Motors, Safety & Sensors, Telemetry Radio, Parameters, Firmware) plus a compact
  * Vehicle Info card, and routes to the sub-pages. The actual page content lives
  * in its own file:
  *   - setup-calibration.js  (Corvus.setupCalibration)
@@ -13,6 +13,7 @@ window.Corvus = window.Corvus || {};
  *   - setup-tuning.js       (Corvus.setupTuning)
  *   - setup-motors.js       (Corvus.setupMotors)
  *   - setup-safety.js       (Corvus.setupSafety)
+ *   - setup-sik.js          (Corvus.setupSik)
  *   - setup-parameters.js   (Corvus.setupParameters)
  *   - setup-firmware.js     (Corvus.setupFirmware)
  * Shared helpers live in setup-shared.js (Corvus.setupShared).
@@ -28,7 +29,8 @@ Corvus.setup = (function () {
   const S = Corvus.setupShared;
 
   // Active view of the Setup page: "tiles" (the grid) | "calibration" |
-  // "control" | "tuning" | "motors" | "safety" | "parameters" | "firmware".
+  // "control" | "tuning" | "motors" | "safety" | "sik" | "parameters" |
+  // "firmware".
   let activeView = "tiles";
 
   // Teardown handle for the currently-rendered view. `render` calls this before
@@ -114,6 +116,8 @@ Corvus.setup = (function () {
       "Airframe geometry, motor assignment and spacing, and the output protocol."));
     grid.appendChild(makeTile("safety", "shield", "Safety & Sensors",
       "Distance and height limits, failsafe actions, rangefinder and optical flow."));
+    grid.appendChild(makeTile("sik", "radio-tower", "Telemetry Radio",
+      "Program a SiK radio pair: network ID, air rate, transmit power and band."));
     grid.appendChild(makeTile("parameters", "list", "Parameters",
       "Download all PX4 parameters on demand, then edit any value."));
     grid.appendChild(makeTile("firmware", "cpu", "Firmware",
@@ -162,8 +166,8 @@ Corvus.setup = (function () {
 
   /** Swap the container to a sub-page. Tears the grid down first. */
   function openView(viewId) {
-    if (["calibration", "control", "tuning", "motors", "safety", "parameters",
-         "firmware"].indexOf(viewId) < 0) return;
+    if (["calibration", "control", "tuning", "motors", "safety", "sik",
+         "parameters", "firmware"].indexOf(viewId) < 0) return;
     teardown();
     activeView = viewId;
     const container = document.getElementById("pageView");
@@ -188,6 +192,8 @@ Corvus.setup = (function () {
       activeDestroy = Corvus.setupMotors.render(container, navigateBack);
     } else if (viewId === "safety") {
       activeDestroy = Corvus.setupSafety.render(container, navigateBack);
+    } else if (viewId === "sik") {
+      activeDestroy = Corvus.setupSik.render(container, navigateBack);
     } else if (viewId === "parameters") {
       activeDestroy = Corvus.setupParameters.render(container, navigateBack);
     } else { // firmware

@@ -35,6 +35,12 @@ from .paths import corvus_path
 
 logger = logging.getLogger("corvus.config")
 
+MAX_CONFIG_FILE_BYTES = 16 * 1024 * 1024
+
+
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON number: {value}")
+
 # Canonical key order for the serialized config file. Keeping it stable makes
 # diffs of the on-disk JSON readable across edits (an operator can review a
 # git diff of ~/.corvus/config.json in the field).
@@ -55,6 +61,7 @@ _CONFIG_FIELD_ORDER: tuple[str, ...] = (
     "controls",
     "ui",
     "forwarding",
+    "autoconnect",
     "updates",
     "plugins",
 )
@@ -126,6 +133,7 @@ class CorvusConfig:
     controls: dict[str, Any] | None = None
     ui: dict[str, Any] | None = None
     forwarding: dict[str, Any] | None = None
+    autoconnect: dict[str, Any] | None = None
     updates: dict[str, Any] | None = None
     plugins: dict[str, Any] | None = None
 
@@ -151,6 +159,8 @@ def default_config_path() -> str:
 
 def _coerce_int(value: Any, default: int) -> int:
     """Coerce *value* to int; fall back to *default* on any failure."""
+    if isinstance(value, bool):
+        return default
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -174,6 +184,8 @@ def _coerce_ssh_entry(raw: Any) -> dict[str, Any] | None:
     if not isinstance(host, str):
         host = ""
     port = _coerce_int(raw.get("port", 22), 22)
+    if not 1 <= port <= 65535:
+        port = 22
     username = raw.get("username", "")
     if not isinstance(username, str):
         username = ""
@@ -364,6 +376,59 @@ def _coerce_forwarding(raw: Any) -> dict[str, Any] | None:
     return out or None
 
 
+# Auto-connect defaults. All on: the feature is a smart default, and a default
+# an operator has to find and enable is not one. See corvus/autoconnect.py.
+DEFAULT_AUTOCONNECT: dict[str, bool] = {
+    "enabled": True,
+    "usb": True,
+    "sik": True,
+    "udp_fallback": True,
+}
+
+
+def _coerce_autoconnect(raw: Any) -> dict[str, Any] | None:
+    """Auto-connect toggles (see ``corvus/autoconnect.py``).
+
+    Genuine booleans only, for the same reason the forwarding keys are:
+    ``enabled`` decides whether the station dials an aircraft on its own, and a
+    config carrying the string ``"false"`` must read as "not set" — which means
+    the documented default — rather than as an accidental off switch the
+    operator then cannot find. A key that is absent, or present with the wrong
+    type, is dropped here and the default applies.
+
+    An old config file with no ``autoconnect`` block loads exactly as before and
+    gets the defaults, which is the whole backward-compatibility story.
+    """
+    if not isinstance(raw, dict):
+        return None
+    out: dict[str, Any] = {}
+    for key in DEFAULT_AUTOCONNECT:
+        value = raw.get(key)
+        if isinstance(value, bool):
+            out[key] = value
+        elif value is not None:
+            logger.warning(
+                "config: autoconnect.%s must be true or false, not %r — using %s",
+                key, value, DEFAULT_AUTOCONNECT[key],
+            )
+    return out or None
+
+
+def autoconnect_settings(cfg: Any) -> dict[str, bool]:
+    """The effective auto-connect toggles for *cfg*: defaults, then overrides.
+
+    One place answers "is USB auto-connect on", so the startup resolver and the
+    runtime watcher cannot disagree about a half-filled block.
+    """
+    out = dict(DEFAULT_AUTOCONNECT)
+    block = getattr(cfg, "autoconnect", None)
+    if isinstance(block, dict):
+        for key in DEFAULT_AUTOCONNECT:
+            if isinstance(block.get(key), bool):
+                out[key] = block[key]
+    return out
+
+
 def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     """Keep the known UI keys (``scale``, the app-icon and top-bar keys); else None.
 
@@ -455,7 +520,9 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
 
     mavlink_connection = defaults.mavlink_connection
     if isinstance(data.get("mavlink_connection"), str):
-        mavlink_connection = data["mavlink_connection"]
+        candidate = data["mavlink_connection"].strip()
+        if candidate:
+            mavlink_connection = candidate
 
     http_port = defaults.http_port
     if "http_port" in data:
@@ -498,6 +565,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
     branding = _coerce_branding(data.get("branding"))
     controls = _coerce_controls(data.get("controls"))
     forwarding = _coerce_forwarding(data.get("forwarding"))
+    autoconnect = _coerce_autoconnect(data.get("autoconnect"))
     ui = _coerce_ui(data.get("ui"))
     updates = _coerce_updates(data.get("updates"))
     plugins = _coerce_plugins(data.get("plugins"))
@@ -518,6 +586,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         branding=branding,
         controls=controls,
         forwarding=forwarding,
+        autoconnect=autoconnect,
         ui=ui,
         updates=updates,
         plugins=plugins,
@@ -534,9 +603,12 @@ def load_config(path: str | None = None) -> CorvusConfig:
     if not cfg_path.is_file():
         return CorvusConfig()
     try:
-        raw = cfg_path.read_text(encoding="utf-8")
-        data = json.loads(raw)
-    except (OSError, ValueError) as exc:
+        with cfg_path.open("r", encoding="utf-8") as handle:
+            raw = handle.read(MAX_CONFIG_FILE_BYTES + 1)
+        if len(raw) > MAX_CONFIG_FILE_BYTES:
+            raise ValueError(f"config exceeds {MAX_CONFIG_FILE_BYTES} bytes")
+        data = json.loads(raw, parse_constant=_reject_json_constant)
+    except (OSError, ValueError, RecursionError) as exc:
         logger.warning("config file %s unreadable/malformed; using defaults: %s",
                        cfg_path, exc)
         return CorvusConfig()
@@ -580,6 +652,8 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
         out["controls"] = dict(cfg.controls)
     if cfg.forwarding is not None:
         out["forwarding"] = dict(cfg.forwarding)
+    if cfg.autoconnect is not None:
+        out["autoconnect"] = dict(cfg.autoconnect)
     if cfg.ui is not None:
         out["ui"] = dict(cfg.ui)
     if cfg.updates is not None:
@@ -614,7 +688,7 @@ def save_config(cfg: CorvusConfig, path: str | None = None) -> None:
     data = _config_to_dict(cfg)
     try:
         text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, RecursionError) as exc:
         # Should not happen — every value is JSON-native — but never let a
         # serialization bug leave a password file in a bad state.
         logger.error("config serialization failed; not writing %s: %s", cfg_path, exc)
@@ -629,6 +703,8 @@ def save_config(cfg: CorvusConfig, path: str | None = None) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
         # Restrict to owner-only BEFORE the replace so the final file is
         # never briefly world-readable.
         os.chmod(tmp_path, 0o600)

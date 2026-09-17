@@ -139,3 +139,89 @@ def test_to_json_uses_cached_snapshot(store: VehicleStateStore) -> None:
     store.update(roll=7.0)
     c = store.to_json()
     assert c != a  # rebuilt after the mutation
+
+
+# ---------------------------------------------------------------------------
+# Snapshot isolation is by value shape, not by a list of known field names
+# ---------------------------------------------------------------------------
+
+def test_every_mutable_field_is_isolated_from_the_store(
+    store: VehicleStateStore,
+) -> None:
+    """A caller mutating what it was handed must not reach canonical state.
+
+    ``warnings`` was the only field this was ever checked for, because it was
+    the only one copied. Position, home and the RC channel list are just as
+    mutable and were just as reachable.
+    """
+    store.update(
+        position=[11.5, 48.1], home=[11.4, 48.0], rc_channels=[1500] * 8,
+    )
+    store.merge_warning("battery low", "warning")
+
+    snapshot = store.get_snapshot()
+    snapshot["position"][0] = 999.0
+    snapshot["home"][0] = 999.0
+    snapshot["rc_channels"][0] = 9999
+    snapshot["warnings"][0]["msg"] = "TAMPERED"
+
+    store.update(boot_ms=1)          # any mutation forces a rebuild
+    fresh = store.get_snapshot()
+    assert fresh["position"] == [11.5, 48.1]
+    assert fresh["home"] == [11.4, 48.0]
+    assert fresh["rc_channels"][0] == 1500
+    assert fresh["warnings"][0]["msg"] == "battery low"
+
+
+def test_a_nested_container_is_isolated_too(store: VehicleStateStore) -> None:
+    """Isolation follows the shape down, so a list of dicts of lists is safe.
+
+    ``mission`` carries nothing yet, which is exactly why this is worth
+    pinning: it is the field most likely to gain nested structure, and the
+    copy has to keep working when it does without anyone remembering to
+    register it anywhere.
+    """
+    store.update(mission=[{"seq": 0, "waypoint": [11.5, 48.1]}])
+
+    snapshot = store.get_snapshot()
+    snapshot["mission"][0]["waypoint"][0] = 999.0
+    snapshot["mission"][0]["seq"] = 42
+
+    store.update(boot_ms=1)
+    fresh = store.get_snapshot()
+    assert fresh["mission"] == [{"seq": 0, "waypoint": [11.5, 48.1]}]
+
+
+def test_the_write_path_copies_what_the_caller_kept_a_reference_to(
+    store: VehicleStateStore,
+) -> None:
+    """update() must not store the caller's own list.
+
+    The bridge builds an RC channel list per frame, but a caller that reuses
+    one buffer would otherwise be editing stored state from outside the lock.
+    """
+    channels = [1500] * 4
+    store.update(rc_channels=channels)
+    channels[0] = 9999
+
+    assert store.get_snapshot()["rc_channels"] == [1500] * 4
+
+    nested = [{"waypoint": [1.0]}]
+    store.update(mission=nested)
+    nested[0]["waypoint"].append(2.0)
+
+    assert store.get_snapshot()["mission"] == [{"waypoint": [1.0]}]
+
+
+def test_scalars_are_shared_rather_than_copied(store: VehicleStateStore) -> None:
+    """What makes the rebuild cheap: only containers are rebuilt.
+
+    Sharing an immutable value is not a route back into the store, so the
+    scalars — which are almost the whole dict — are handed out as they are.
+    """
+    store.update(link_connection="serial:/dev/ttyUSB0:57600")
+
+    snapshot = store.get_snapshot()
+
+    assert snapshot["link_connection"] is store._data["link_connection"]
+    assert snapshot["rc_channels"] is not store._data["rc_channels"]

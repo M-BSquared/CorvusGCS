@@ -210,6 +210,42 @@ def test_post_config_unknown_key_dropped_with_warning(tmp_path, caplog) -> None:
     assert any("bogus_key" in r.getMessage() for r in caplog.records)
 
 
+def test_post_config_does_not_call_forwarding_an_unknown_key(tmp_path, caplog) -> None:
+    """``forwarding`` is real config — it just belongs to POST /api/forwarding.
+
+    A client that reads GET /api/config and posts the body back carries the key
+    along, and logging it as "unknown" sends whoever reads that line hunting for
+    a typo that is not there. The value itself must survive: it is not part of
+    this merge, and the live config object is what gets serialized.
+    """
+    cfg_path = tmp_path / "config.json"
+    cfg = CorvusConfig(forwarding={"enabled": True, "port": 14551})
+    handler, responses = _handler(config=cfg, config_path=str(cfg_path))
+
+    with caplog.at_level("WARNING", logger="corvus.server"):
+        handler._api_config_update({
+            "forwarding": {"enabled": False},
+            "theme": {"accent": "#abc"},
+        })
+
+    payload, status = responses[0]
+    assert status == 200
+    assert not any("forwarding" in r.getMessage() for r in caplog.records)
+    # Untouched, on disk and live: the dedicated endpoint owns this key, and it
+    # is the one that also starts and stops the forwarder.
+    assert cfg.forwarding == {"enabled": True, "port": 14551}
+    on_disk = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert on_disk["forwarding"] == {"enabled": True, "port": 14551}
+
+
+def test_post_config_still_warns_about_a_key_nobody_owns(tmp_path, caplog) -> None:
+    cfg_path = tmp_path / "config.json"
+    handler, _responses = _handler(config=CorvusConfig(), config_path=str(cfg_path))
+    with caplog.at_level("WARNING", logger="corvus.server"):
+        handler._api_config_update({"bogus_key": 1})
+    assert any("bogus_key" in r.getMessage() for r in caplog.records)
+
+
 def test_post_config_bad_http_port_returns_400(tmp_path) -> None:
     handler, responses = _handler(
         config=CorvusConfig(),

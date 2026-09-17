@@ -433,12 +433,15 @@ Corvus.topbar = (function () {
       blk.setAttribute("aria-controls", "warningsPopover");
       blk.setAttribute("aria-expanded", "false");
       blk.setAttribute("aria-haspopup", "dialog");
+      // Static markup only — the label is a text node, never interpolated
+      // into the string (see renderBlock's note below).
       blk.innerHTML =
-        `<span class="tb-label">${b.label}</span>` +
+        `<span class="tb-label"></span>` +
         `<span class="tb-value"><span class="tb-warn-pill">` +
         `<span class="tb-warn-count"></span>` +
         `<i data-lucide="message-square" class="tb-icon tb-warn-icon" aria-hidden="true"></i>` +
         `</span></span>`;
+      blk.querySelector(".tb-label").textContent = b.label;
       blk.addEventListener("click", toggleWarnings);
       return blk;
     }
@@ -454,14 +457,40 @@ Corvus.topbar = (function () {
     // invisible placeholder used to exist for Mode; with the dot up in the
     // quiet uppercase caption, every value in the bar starts at the same x
     // on its own and the placeholder is gone.
-    const dotHtml = b.dot ? `<span class="tb-dot ${b.dot}"></span>` : "";
-    const iconHtml = b.icon ? `<i data-lucide="${b.icon}" class="tb-icon"></i>` : "";
-    const subHtml = b.sub !== undefined ? `<span class="sub${b.subCls ? " " + b.subCls : ""}">${b.sub}</span>` : "";
-    const valCls = b.cls ? ` ${b.cls}` : "";
-    blk.innerHTML =
-      `<span class="tb-label">${iconHtml}${b.label}${dotHtml}</span>` +
-      `<span class="tb-value${valCls}"><span class="v-main"></span>${subHtml}</span>`;
-    blk.querySelector(".v-main").textContent = b.value;
+    // Built node by node rather than interpolated into innerHTML. The bar is
+    // not a static template: `sub` on the Vehicle block is the firmware string
+    // the AUTOPILOT the operator plugged in reported, and the moment a value
+    // that came off the wire is pasted into markup, the aircraft is writing
+    // HTML in the ground station. It is safe as numbers today; it stops being
+    // a question at all as text nodes.
+    const label = document.createElement("span");
+    label.className = "tb-label";
+    if (b.icon) {
+      const icon = document.createElement("i");
+      icon.className = "tb-icon";
+      icon.dataset.lucide = b.icon;
+      label.appendChild(icon);
+    }
+    label.appendChild(document.createTextNode(b.label === undefined ? "" : String(b.label)));
+    if (b.dot) {
+      const dot = document.createElement("span");
+      dot.className = "tb-dot " + b.dot;
+      label.appendChild(dot);
+    }
+    const value = document.createElement("span");
+    value.className = "tb-value" + (b.cls ? " " + b.cls : "");
+    const vMain = document.createElement("span");
+    vMain.className = "v-main";
+    vMain.textContent = b.value;
+    value.appendChild(vMain);
+    if (b.sub !== undefined) {
+      const sub = document.createElement("span");
+      sub.className = "sub" + (b.subCls ? " " + b.subCls : "");
+      sub.textContent = b.sub;
+      value.appendChild(sub);
+    }
+    blk.appendChild(label);
+    blk.appendChild(value);
     // The tone is what lets a block say something with more than a text
     // colour — see the [data-tone] rules in main.css. Colour alone was doing
     // all the work here, and "ready" and "armed" are exactly the two states an

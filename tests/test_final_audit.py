@@ -34,6 +34,7 @@ _EXPECTED_GET = {
     "/api/ssh/connections",
     "/api/ssh/stream",
     "/api/plugins",
+    "/api/mavlink/auto",
     "/api/mavlink/modes",
     "/api/mavlink/serial-ports",
     "/api/motors",
@@ -53,6 +54,7 @@ _EXPECTED_GET = {
     "/api/config",
     "/api/firmware/status",
     "/api/firmware/catalog",
+    "/api/sik/status",
     "/api/logs/status",
     "/api/logs/review",
     "/api/logs/tlog-review",
@@ -113,6 +115,12 @@ _EXPECTED_POST = {
     "/api/tiles/regions/rename",
     "/api/tiles/regions/remove",
     "/api/firmware/cancel",
+    # SiK radio sessions are POST including the read: loading settings takes the
+    # serial port from the bridge and puts a radio into command mode, which is a
+    # side effect on the telemetry link and not a fetch.
+    "/api/sik/load",
+    "/api/sik/save",
+    "/api/sik/reset",
     "/api/warnings/clear",
     # The logo UPLOAD is not here on purpose: like /api/firmware/upload it
     # carries a raw octet-stream body and is dispatched ahead of the JSON

@@ -377,5 +377,6 @@ Corvus.setupShared = (function () {
     setFieldStatus, setActionsStatus,
     registerControl, dropControls, recheckAll, applyArmed,
     restoreControl, applyParam, signedValue, paramControl, paramFieldGrid,
+    pformClass,
   };
 })();

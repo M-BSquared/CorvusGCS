@@ -8,6 +8,8 @@ drop), and the exponential reconnect backoff.
 """
 from __future__ import annotations
 
+import threading
+import time
 from types import SimpleNamespace
 from typing import Any, Callable
 
@@ -454,20 +456,39 @@ def test_send_command_and_wait_bails_when_conn_swapped_under_send_lock(
     assert result == -2
 
 
-def test_gcs_hb_loop_resets_hb_thread_on_exit() -> None:
-    """_gcs_hb_loop must clear _hb_thread on exit so reconnect can restart it."""
+def test_gcs_hb_loop_survives_a_send_failure_and_exits_on_stop() -> None:
+    """A failed send must not end the GCS heartbeat; only stop() may.
+
+    The loop used to ``break`` on any send error, which lost the heartbeat
+    whenever a reconnect swapped the socket out from under this worker — and
+    PX4 drops a ground station that stops heartbeating. So it rides out the
+    failure and keeps going, and ``_hb_thread`` is cleared on the way out so
+    the next connect can start a fresh one.
+
+    Driven on a thread, because the loop is now genuinely non-terminating
+    while the bridge is running: calling it inline with a send that always
+    raises never returns.
+    """
     bridge = ready_bridge()
     bridge._running.set()
-    # heartbeat_send raises (closed socket) → loop breaks and resets _hb_thread.
+    attempts: list[int] = []
+
     def boom(*args: Any) -> None:
+        attempts.append(1)
         raise OSError("send on closed socket")
 
     bridge._conn.mav.heartbeat_send = boom  # type: ignore[assignment]
-    # Fast-forward sleep so the loop iterates promptly.
-    monkey = pytest.MonkeyPatch()
-    monkey.setattr("corvus.mavlink_bridge.time.sleep", lambda _: None)
-    try:
-        bridge._gcs_hb_loop()
-    finally:
-        monkey.undo()
+    worker = threading.Thread(target=bridge._gcs_hb_loop, daemon=True)
+    worker.start()
+
+    deadline = time.monotonic() + 3.0
+    while len(attempts) < 3 and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert len(attempts) >= 3, "the loop gave up on the first send failure"
+
+    bridge._running.clear()
+    bridge._stop_event.set()
+    worker.join(timeout=3.0)
+
+    assert not worker.is_alive(), "the loop must exit once the bridge stops"
     assert bridge._hb_thread is None

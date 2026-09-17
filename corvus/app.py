@@ -58,7 +58,7 @@ from corvus.state_store import VehicleStateStore
 from corvus.version import get_version
 
 
-def _report_already_running(detail: str) -> None:
+def _report_startup_failure(text: str, detail: str) -> None:
     """Tell the operator why this launch stopped, in a window they will see.
 
     A packaged build has no console attached: on macOS a double-clicked .app
@@ -74,14 +74,47 @@ def _report_already_running(detail: str) -> None:
         box = QMessageBox()
         box.setIcon(QMessageBox.Icon.Information)
         box.setWindowTitle("CORVUS GCS")
-        box.setText("CORVUS GCS is already running.")
-        box.setInformativeText(
-            f"{detail}\n\nBring the existing window forward, or set "
-            f"{ALLOW_MULTI_ENV}=1 to run a second instance."
-        )
+        box.setText(text)
+        box.setInformativeText(detail)
         box.exec()
     except Exception:  # noqa: BLE001 - the log line is the fallback
-        logger.debug("could not show the already-running dialog", exc_info=True)
+        logger.debug("could not show the startup dialog", exc_info=True)
+
+
+def _report_already_running(detail: str) -> None:
+    """The one-instance refusal, as a window."""
+    _report_startup_failure(
+        "CORVUS GCS is already running.",
+        f"{detail}\n\nBring the existing window forward, or set "
+        f"{ALLOW_MULTI_ENV}=1 to run a second instance.",
+    )
+
+
+def _report_bad_port(reason: str) -> None:
+    """A mistyped port is an operator error, so it gets an operator's answer."""
+    _report_startup_failure(
+        "CORVUS GCS could not start.",
+        f"{reason}\n\nusage: corvus-gcs [PORT] [MAVLINK_CONNECTION]",
+    )
+
+
+def parse_port_arg(argv: list[str], default: int) -> tuple[int, str]:
+    """Resolve the optional PORT argument; return ``(port, error)``.
+
+    Split out of :func:`main` so the rule can be tested without bringing up
+    Qt, and so the answer to a mistyped port is decided in one place rather
+    than by whichever ``int()`` happened to run first.
+    """
+    if len(argv) <= 1:
+        return default, ""
+    raw = argv[1]
+    try:
+        port = int(raw)
+    except (TypeError, ValueError):
+        return default, f"invalid port {raw!r}"
+    if not 1 <= port <= 65535:
+        return default, f"port {port} is out of range (1-65535)"
+    return port, ""
 
 
 def webengine_profile_dir(multi: bool) -> str:
@@ -125,7 +158,7 @@ def find_free_port(preferred: int = 8000) -> int:
     return preferred
 
 
-def start_backend(port: int, mavlink_conn: str) -> tuple:
+def start_backend(port: int, mavlink_conn: str | None = None) -> tuple:
     """Start the HTTP/SSE server and MAVLink bridge in-process.
 
     Returns ``(server, mavlink, ssh)``. The server may be listening on a
@@ -134,12 +167,14 @@ def start_backend(port: int, mavlink_conn: str) -> tuple:
     """
     from corvus.server import (
         CorvusHandler, _build_forwarder, _build_log_service,
-        _build_tile_resources, bind_server,
+        _build_tile_resources, apply_startup_connection, bind_server,
+        build_autoconnect_session, start_autoconnect_watcher,
+        DEFAULT_MAVLINK_CONNECTION,
     )
     from corvus.tile_cache import default_cache_dir
 
     store = VehicleStateStore()
-    mavlink = MavlinkBridge(store, mavlink_conn)
+    mavlink = MavlinkBridge(store, DEFAULT_MAVLINK_CONNECTION)
     ssh = SshBridge()
 
     # Operator config: the desktop app reads the same config file browser mode
@@ -147,14 +182,29 @@ def start_backend(port: int, mavlink_conn: str) -> tuple:
     # Set these on the class BEFORE constructing the server so every handler
     # shares the one live config object (per-request instance attrs would not
     # persist, leaving the next request reading a stale/default value).
+    # Loaded before the bridge is pointed anywhere, because the auto-connect
+    # toggles live in it and the startup resolver reads them.
     cfg = load_config()
     cfg_path = default_config_path()
     CorvusHandler.config = cfg
     CorvusHandler.config_path = cfg_path
 
+    # Same resolution browser mode makes: a flight controller on a USB cable
+    # beats the string the config file is holding, an unusable string from
+    # either source starts on the default rather than into a reconnect loop
+    # that can never succeed.
+    autoconnect_session = build_autoconnect_session(cfg)
+    apply_startup_connection(
+        mavlink, mavlink_conn,
+        configured=cfg.mavlink_connection,
+        session=autoconnect_session,
+        store=store,
+    )
+
     CorvusHandler.store = store
     CorvusHandler.mavlink = mavlink
     CorvusHandler.ssh = ssh
+    CorvusHandler.autoconnect_session = autoconnect_session
 
     # Tile resources: built through the SAME helper create_server() uses so
     # offline maps work in the desktop app too (POST /api/tiles/download,
@@ -182,6 +232,17 @@ def start_backend(port: int, mavlink_conn: str) -> tuple:
     except Exception:
         logger.exception("flash service unavailable")
     CorvusHandler.flash = flash
+
+    # SiK telemetry-radio configuration. Like flash, it borrows the serial port
+    # from the MAVLink bridge for the length of a session, so it needs the same
+    # bridge handle and the same armed gate from the store.
+    sik = None
+    try:
+        from corvus.sik_service import SikService
+        sik = SikService(mavlink, store)
+    except Exception:
+        logger.exception("SiK radio service unavailable")
+    CorvusHandler.sik = sik
 
     # Flight-log service: on-board ULog download over MAVLink plus the local
     # tlog listing. Built through the same helper create_server() uses — the
@@ -213,6 +274,7 @@ def start_backend(port: int, mavlink_conn: str) -> tuple:
     server.config = cfg
     server.config_path = cfg_path
     server.flash = flash
+    server.sik = sik
     server.logs = logs
     server.forwarder = forwarder
     server.updates = updates
@@ -220,7 +282,10 @@ def start_backend(port: int, mavlink_conn: str) -> tuple:
     # closes the caches and stops the downloader (no leaked SQLite handles).
     server.tile_caches = tile_caches
     server.tile_downloader = tile_downloader
+    server.autoconnect_session = autoconnect_session
     mavlink.start()
+    # After mavlink.start(), never before — see create_server() for why.
+    server.autoconnect = start_autoconnect_watcher(mavlink, store, autoconnect_session)
 
     backend_thread = threading.Thread(
         target=server.serve_forever, name="corvus-backend", daemon=True,
@@ -380,6 +445,15 @@ def _stop_all(server) -> None:
             logger.info("flash stopped")
         except Exception:
             logger.exception("flash shutdown failed")
+    # The radio service may be holding the bridge's serial port and will
+    # restart the bridge when its session ends, so it is told to stop doing that
+    # in the same breath as flash and for the same reason.
+    sik = getattr(server, "sik", None)
+    if sik is not None:
+        try:
+            sik.shutdown()
+        except Exception:
+            logger.exception("SiK radio shutdown failed")
     # Log downloads hold a sink on the MAVLink bridge and a worker thread, so
     # they are stopped alongside flash — before the bridge itself goes away.
     logs = getattr(server, "logs", None)
@@ -403,6 +477,11 @@ def _stop_all(server) -> None:
             logger.info("mavlink forwarding stopped")
         except Exception:
             logger.exception("mavlink forwarder shutdown failed")
+    # The auto-connect watcher calls stop/set_connection/start on the bridge,
+    # so it is joined before the bridge goes away: a tick landing after
+    # mavlink.stop() would start the link the shutdown just closed.
+    from corvus.server import stop_autoconnect_watcher
+    stop_autoconnect_watcher(server)
     mavlink = getattr(server, "mavlink", None)
     if mavlink is not None:
         try:
@@ -468,9 +547,22 @@ def main() -> int:
                 cfg_path, cfg.mavlink_connection, cfg.http_port,
                 cfg.tile_cache_dir or "(default)", cfg.tlog_dir or "(default)")
 
-    # CLI args override the config file when present.
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else cfg.http_port
-    mavlink_conn = sys.argv[2] if len(sys.argv) > 2 else cfg.mavlink_connection
+    # CLI args override the config file when present. A mistyped port reaches
+    # a packaged build with no console attached, so a bare int() would end the
+    # launch with a traceback nobody ever sees and no window — indistinguishable
+    # from the app simply failing to start. serve.py answers this with a usage
+    # line; here the answer has to be a dialog as well.
+    port, port_error = parse_port_arg(sys.argv, cfg.http_port)
+    if port_error:
+        logger.error("%s\nusage: corvus-gcs [PORT] [MAVLINK_CONNECTION]", port_error)
+        _report_bad_port(port_error)
+        return 2
+    # None, not the config value, when no argument was given: the startup
+    # resolver treats an explicit argument as the operator's own decision and
+    # lets it outrank a flight controller on a cable, so handing it the config
+    # file's string would make auto-connect impossible to reach. The file is
+    # passed separately, at its own priority.
+    mavlink_conn = sys.argv[2] if len(sys.argv) > 2 else None
 
     # One ground station per machine. Taken BEFORE the serial link, the
     # forwarder's UDP port, the tile database or the config file are touched,
@@ -495,7 +587,8 @@ def main() -> int:
                        "are not shareable — point this one at its own link.",
                        ALLOW_MULTI_ENV)
 
-    logger.info("Starting backend on port %d (MAVLink: %s)", port, mavlink_conn)
+    logger.info("Starting backend on port %d (MAVLink: %s)", port,
+                mavlink_conn or cfg.mavlink_connection)
     try:
         server, mavlink, ssh = start_backend(port, mavlink_conn)
     except OSError as exc:

@@ -703,6 +703,33 @@ def test_a_bad_port_argument_is_reported_rather_than_raised(argument: str) -> No
     assert "Traceback" not in (result.stdout + result.stderr)
 
 
+@pytest.mark.parametrize("argument", ["--port", "8137x", "", "70000", "0", "-1"])
+def test_the_desktop_app_refuses_a_bad_port_instead_of_tracing_back(argument: str) -> None:
+    """The same typo, on the path that has no console to print a traceback to.
+
+    ``corvus/app.py`` did a bare ``int(sys.argv[1])`` where ``serve.py`` had
+    already learned not to. In a packaged build that is worse than a traceback:
+    a double-clicked .app writes it where nobody looks and no window ever
+    appears, so a typo is indistinguishable from the application being broken.
+
+    The rule is tested here rather than through ``main()`` because the answer
+    it produces is a modal dialog, and Qt is not a thing a unit test brings up.
+    """
+    from corvus.app import parse_port_arg
+
+    port, error = parse_port_arg(["app.py", argument], 8000)
+
+    assert error, f"{argument!r} was accepted as a port"
+    assert port == 8000   # the config's port, untouched
+
+
+def test_a_good_port_argument_still_beats_the_config_file() -> None:
+    from corvus.app import parse_port_arg
+
+    assert parse_port_arg(["app.py", "8137"], 8000) == (8137, "")
+    assert parse_port_arg(["app.py"], 8000) == (8000, "")
+
+
 def test_the_heartbeat_wait_does_not_spin_on_a_transport_that_answers_instantly() -> None:
     """The wait is sliced so shutdown is noticed promptly, which means it now
     retries. A transport that returns "nothing" immediately must not be
