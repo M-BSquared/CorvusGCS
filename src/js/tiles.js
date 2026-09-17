@@ -7,12 +7,24 @@ window.Corvus = window.Corvus || {};
   Contract:
     init(triggerEl) — wire the floating trigger on the map. Called from
       app.init AFTER Corvus.map.init so the map is available.
-    Reads the current map view bounds from Corvus.map.getMap().getBounds()
+    useMap(adapter) — which map the dialog is reading and framing on. The
+      Mission planner owns a SECOND MapLibre map and hands its own adapter
+      over while that page is up; null goes back to the Home map. See
+      "Two maps, one cache" below.
+    Reads the current map view bounds from the active map's getBounds()
     (a MapLibre LngLatBounds: .getWest/.getSouth/.getEast/.getNorth), prefills
     minzoom = current zoom, maxzoom = current zoom + 4 (capped at the source
     cap), and estimates the slippy-map tile count + disk size client-side.
     POST /api/tiles/download starts a job; an EventSource streams progress from
     /api/tiles/progress?id=<job_id>; POST /api/tiles/cancel aborts it.
+
+  TWO MAPS, ONE CACHE. The tiles live in the backend's .mbtiles store and are
+  served to both maps through the same /api/tiles/<source>/z/x/y.png proxy, so
+  an area downloaded while planning a mission is an area the Home map already
+  has — there is no second copy and nothing to sync. What IS per map is the
+  view: which bounds a download is framed on, and which map a region row
+  frames. That is the only thing `useMap` switches. The drawn rectangles go to
+  BOTH maps, because a download made on one is a fact about the other.
 
   Why a dialog and not a popover: this panel used to be anchored to the map's
   top-right corner, where the flight-action bar, the HUD, the layer switcher
@@ -46,6 +58,13 @@ Corvus.tiles = (function () {
   const BIG_JOB_TILES = 100000; // above this, warn before the operator commits
 
   let triggerEl = null;
+  // Whichever button opened the dialog, so the pressed state goes back on the
+  // right one: the Home map's trigger and the Mission map's are two buttons
+  // for one dialog.
+  let activeTrigger = null;
+  // The map the dialog reads its bounds from and frames regions on. Null is
+  // the Home map, which is the case for everything except the Mission page.
+  let host = null;
 
   let sources = [];    // last /api/tiles/sources result
   let providers = [];  // service grouping from the same response
@@ -170,17 +189,38 @@ Corvus.tiles = (function () {
     updateEstimate();
   }
 
+  /** Whichever map the operator is looking at. */
+  function mapHost() { return host || Corvus.map; }
+
+  /** Every map that can draw the downloaded areas — not just the active one:
+   *  a region downloaded while planning is one the Home map has too, and it
+   *  must not have to be reopened to find that out. */
+  function eachHost(fn) {
+    const hosts = [];
+    if (Corvus.map && typeof Corvus.map.setRegions === "function") hosts.push(Corvus.map);
+    if (host && host !== Corvus.map && typeof host.setRegions === "function") hosts.push(host);
+    hosts.forEach(fn);
+  }
+
+  /** Point the dialog at a map. `null` returns it to the Home map, which is
+   *  what a page owning its own map must do on teardown — the adapter it
+   *  handed over is dead the moment its map is removed. */
+  function useMap(adapter) {
+    host = (adapter && typeof adapter.getMap === "function") ? adapter : null;
+  }
+
   /** True if the MapLibre map is ready for a bounds read. */
   function mapReady() {
-    return !!(Corvus.map && typeof Corvus.map.getMap === "function"
-      && Corvus.map.getMap() && typeof Corvus.map.getMap().getBounds === "function");
+    const owner = mapHost();
+    return !!(owner && typeof owner.getMap === "function"
+      && owner.getMap() && typeof owner.getMap().getBounds === "function");
   }
 
   /** Read + store the current view bounds; returns null if the map isn't ready. */
   function captureBounds() {
     if (!mapReady()) return null;
-    const b = Corvus.map.getMap().getBounds();
-    const z = Corvus.map.getMap().getZoom();
+    const b = mapHost().getMap().getBounds();
+    const z = mapHost().getMap().getZoom();
     captured = {
       w: b.getWest(), s: b.getSouth(), e: b.getEast(), n: b.getNorth(),
       zoom: Math.floor(z),
@@ -358,8 +398,9 @@ Corvus.tiles = (function () {
     // map. Falls back to the first source when neither resolves.
     const prev = sel.value;
     const known = (id) => !!id && sources.some((s) => s.id === id);
-    const mapLayer = (Corvus.map && typeof Corvus.map.getBaseLayer === "function")
-      ? Corvus.map.getBaseLayer()
+    const owner = mapHost();
+    const mapLayer = (owner && typeof owner.getBaseLayer === "function")
+      ? owner.getBaseLayer()
       : null;
     Corvus.ui.setOptions(sel, options,
       known(prev) ? prev : (known(mapLayer) ? mapLayer : sources[0].id));
@@ -371,11 +412,9 @@ Corvus.tiles = (function () {
       .then((data) => {
         regions = (data && data.regions) || [];
         renderRegions();
-        // The map overlay reads the same list, so both are refreshed together
-        // and can never disagree about what is cached.
-        if (Corvus.map && typeof Corvus.map.setRegions === "function") {
-          Corvus.map.setRegions(regions);
-        }
+        // Every map overlay reads the same list, so they are refreshed
+        // together and can never disagree about what is cached.
+        eachHost((owner) => owner.setRegions(regions));
         return regions;
       })
       .catch(() => {
@@ -419,8 +458,9 @@ Corvus.tiles = (function () {
     locate.appendChild(name);
     locate.appendChild(meta);
     locate.addEventListener("click", () => {
-      if (Corvus.map && typeof Corvus.map.fitBounds === "function") {
-        Corvus.map.fitBounds(region.bounds);
+      const owner = mapHost();
+      if (owner && typeof owner.fitBounds === "function") {
+        owner.fitBounds(region.bounds);
       }
       close();
     });
@@ -487,11 +527,12 @@ Corvus.tiles = (function () {
   }
 
   // ---- open / close / refresh ----
-  function open() {
+  function open(trigger) {
     if (dialog) return;
+    activeTrigger = trigger || triggerEl;
     dialog = buildDialog();
     dialog.open();
-    if (triggerEl) triggerEl.classList.add("active");
+    if (activeTrigger) activeTrigger.classList.add("active");
 
     refreshFromMap();
     renderRegions();
@@ -519,7 +560,8 @@ Corvus.tiles = (function () {
   function onDialogClosed() {
     dialog = null;
     dom = {};
-    if (triggerEl) triggerEl.classList.remove("active");
+    if (activeTrigger) activeTrigger.classList.remove("active");
+    activeTrigger = null;
     // A running job keeps streaming in the background; only the UI surface is
     // torn down. The stream is closed here and re-opened on the next open()
     // so it is not writing into detached nodes in the meantime.
@@ -527,6 +569,10 @@ Corvus.tiles = (function () {
   }
 
   function toggle() { dialog ? close() : open(); }
+
+  /** Is the dialog up? Read by a second trigger that has to decide whether its
+   *  press means open or close. */
+  function isOpen() { return !!dialog; }
 
   function refreshFromMap() {
     if (!dom.bndValue) return;
@@ -717,13 +763,18 @@ Corvus.tiles = (function () {
   function init(trigger) {
     triggerEl = trigger;
     if (!triggerEl) return;
-    triggerEl.addEventListener("click", () => toggle());
+    // This trigger belongs to the Home map, so pressing it means that map —
+    // whatever page last handed an adapter over and, in the failure case,
+    // forgot to hand it back.
+    triggerEl.addEventListener("click", () => { useMap(null); toggle(); });
   }
 
   return {
     init,
+    useMap,
     open,
     close,
+    isOpen,
     // exposed for testability / reuse
     estimateTileCount,
     loadSources,

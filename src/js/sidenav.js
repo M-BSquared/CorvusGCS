@@ -212,6 +212,34 @@ Corvus.sidenav = (function () {
     { id: "logs", label: "LOGS", icon: "file-text" },
   ];
 
+  // Whether the rail carries MISSION. Off until the backend config says
+  // otherwise, and the config is the only authority: the planner is an opt-in
+  // page, so an unreachable backend leaves the rail exactly as it was rather
+  // than guessing from a cached value.
+  let missionEnabled = false;
+
+  /**
+   * Show or hide the Mission planner in the rail. Idempotent, and safe before
+   * init(): the flag is remembered and the rail renders from it whenever it is
+   * next built, which is what lets app.js call this while its /api/config
+   * fetch is still in flight.
+   *
+   * Turning it OFF while the operator is standing on the page moves them to
+   * HOME first — a rail without an entry for the page currently showing
+   * is a dead end, and the page's map and profile have to be torn down anyway.
+   */
+  function setMissionEnabled(on) {
+    const next = !!on;
+    if (next === missionEnabled) return missionEnabled;
+    missionEnabled = next;
+    if (!leftNav) return missionEnabled;
+    // Leave the page BEFORE the rail loses its button, so switchTo still finds
+    // the entry it is deactivating and the planner's teardown still runs.
+    if (!missionEnabled && activeNav === "mission") switchTo("home");
+    renderLeftNav();
+    return missionEnabled;
+  }
+
   function renderLeftNav() {
     Corvus.ui.clear(leftNav);
 
@@ -219,12 +247,22 @@ Corvus.sidenav = (function () {
     // entries only by the separator/spacer around them, not by how the
     // button itself is built, so they share ui.navItem like everything else.
     const items = [
-      { id: "home", label: "HOME", icon: "house", after: "divider" },
+      // MISSION sits WITH home rather than with the configuration pages: both
+      // are the flight itself — one flown live, one drawn beforehand —
+      // and the divider under them is what separates flying from setting up.
+      { id: "home", label: "HOME", icon: "house" },
+      ...(missionEnabled
+        ? [{ id: "mission", label: "MISSION", icon: "route", after: "divider" }]
+        : [{ divider: true }]),
       ...NAV,
       { id: "settings", label: "SET", icon: "settings", title: "Settings", before: "spacer" },
     ];
 
     items.forEach((n) => {
+      // A bare filler, not a button: the hairline under HOME still has to be
+      // drawn when MISSION is switched off and there is no second flight entry
+      // to hang it off.
+      if (n.divider) { leftNav.appendChild(railFiller("divider")); return; }
       if (n.before) leftNav.appendChild(railFiller(n.before));
       leftNav.appendChild(Corvus.ui.navItem({
         id: n.id,
@@ -263,6 +301,13 @@ Corvus.sidenav = (function () {
         Corvus.setup && typeof Corvus.setup.teardown === "function") {
       Corvus.setup.teardown();
     }
+    // Same for the Mission planner: it owns a second MapLibre map, a Plotly
+    // profile and a window resize listener, none of which belong to a page the
+    // operator has left. BEFORE pageView is repurposed, like Setup above.
+    if (prev === "mission" && navId !== "mission" &&
+        Corvus.mission && typeof Corvus.mission.teardown === "function") {
+      Corvus.mission.teardown();
+    }
     // Same for the Analysis page's log downloader, on every left-nav exit.
     if (typeof analysisDestroy === "function") {
       try { analysisDestroy(); } catch (err) { console.error("analysis teardown failed:", err); }
@@ -274,6 +319,7 @@ Corvus.sidenav = (function () {
     if (navId === "home") {
       mapView.hidden = false;
       pageView.hidden = true;
+      delete pageView.dataset.page;
     } else {
       mapView.hidden = true;
       pageView.hidden = false;
@@ -283,12 +329,17 @@ Corvus.sidenav = (function () {
 
   function renderPage(navId) {
     const pages = {
+      mission: renderMissionPage,
       setup: renderSetupPage,
       logs: renderLogsPage,
       analysis: renderAnalysisPage,
       settings: renderSettingsPage,
     };
     const fn = pages[navId] || renderPlaceholder;
+    // Which page is showing, as an attribute, so a screen that needs a
+    // different container (Mission wants the padding and the scrolling off)
+    // can say so in CSS instead of reaching into pageView from its own module.
+    pageView.dataset.page = navId;
     Corvus.ui.clear(pageView);
     fn(pageView);
     Corvus.ui.refreshIcons();
@@ -310,6 +361,18 @@ Corvus.sidenav = (function () {
       Corvus.setup.render(container);
     } else {
       container.appendChild(pageHeader("Setup", "Vehicle configuration and calibration"));
+    }
+  }
+
+  function renderMissionPage(container) {
+    // The whole page — map, tool rail, item list and altitude profile —
+    // is owned by Corvus.mission, exactly as Setup is owned by Corvus.setup. It
+    // tears down its own map and chart on every entry, so a left-nav re-entry
+    // cannot leak a second MapLibre context.
+    if (Corvus.mission && typeof Corvus.mission.render === "function") {
+      Corvus.mission.render(container);
+    } else {
+      container.appendChild(pageHeader("Mission", "Mission planner unavailable"));
     }
   }
 
@@ -383,6 +446,7 @@ Corvus.sidenav = (function () {
     body.appendChild(companyLogoCard(cfg));
     body.appendChild(themeCard(cfg));
     body.appendChild(scaleCard(cfg));
+    body.appendChild(pagesCard(cfg));
     body.appendChild(mapServiceCard(cfg, gen));
     body.appendChild(controlsCard(cfg));
     // The top-bar dots and the Dock icon sit after Controls: both are small
@@ -390,6 +454,48 @@ Corvus.sidenav = (function () {
     body.appendChild(topBarCard(cfg));
     body.appendChild(appIconCard(cfg));
     container.appendChild(Corvus.ui.section({ title: "Appearance", body }));
+  }
+
+  // Which optional PAGES the left rail carries.
+  //
+  // One switch today, and it is a structural one: the Mission planner is a
+  // whole screen, with its own map and its own altitude chart, and a station
+  // that is flown by hand never opens it. So it is off by default and the rail
+  // stays three entries long for everyone who does not ask.
+  //
+  // Same contract as the Controls switches below: the rail changes
+  // immediately, the config is written in the background, and the switch
+  // awaits that write so a refused POST snaps it back rather than leaving a
+  // rail entry the config does not know about.
+  function pagesCard(cfg) {
+    const card = Corvus.ui.card({ title: "Pages" });
+    const on = !!((cfg.ui || {}).mission_page);
+    Corvus.sidenav.setMissionEnabled(on);
+
+    const sw = Corvus.ui.toggle({
+      id: "settingsMissionPage",
+      value: on,
+      ariaLabel: "Mission planner",
+      onChange: (next) => {
+        Corvus.sidenav.setMissionEnabled(next);
+        return postConfig({ ui: { mission_page: next } }, { strict: true })
+          .catch((error) => {
+            Corvus.sidenav.setMissionEnabled(!next);
+            throw error;
+          });
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Mission planner",
+      control: sw.el,
+      className: "field-switch",
+      hint: "Adds MISSION under HOME in the left rail: a planning map with " +
+            "takeoff, waypoints, orbits and landing, and an altitude profile " +
+            "of the whole flight you can drag each point's height on. " +
+            "Missions are drawn, saved and uploaded there — nothing is " +
+            "sent to the aircraft until you press Upload.",
+    }));
+    return card;
   }
 
   // Which optional input controls the map carries: the stick pair, the arrow
@@ -834,6 +940,7 @@ Corvus.sidenav = (function () {
 
   function buildMapServicePicker(providers, sources, cfg, fallbackProvider) {
     const wrap = document.createElement("div");
+    wrap.className = "settings-map-service";
     const byId = {};
     sources.forEach((s) => { byId[s.id] = s; });
 
@@ -1170,12 +1277,7 @@ Corvus.sidenav = (function () {
           // when a plugin misbehaves.
           const where = p.source === "bundled" ? "built in" : "installed";
           const version = p.version ? " " + p.version : "";
-          list.appendChild(row(p.name || p.id, where + version));
-          if (p.description) {
-            const desc = Corvus.ui.empty(p.description);
-            desc.className = "settings-plugin-desc";
-            list.appendChild(desc);
-          }
+          list.appendChild(pluginRow(p.name || p.id, where + version, p.description));
         });
       }
       list.appendChild(Corvus.ui.field({
@@ -1195,6 +1297,34 @@ Corvus.sidenav = (function () {
     card.appendChild(Corvus.ui.actions(openBtn));
     card.appendChild(status.el);
     container.appendChild(Corvus.ui.section({ title: "Plugins", body: card }));
+  }
+
+  /* One plugin: name and origin on a line, then what it does under them.
+     Not Corvus.ui.row — that is a label/value pair on ONE line, and a
+     description hung below it had to be pulled back up over the row's own
+     bottom border to look attached, which left the rule cutting through the
+     text. The two lines belong inside one bordered block instead. */
+  function pluginRow(name, origin, description) {
+    const el = document.createElement("div");
+    el.className = "settings-plugin";
+    const head = document.createElement("div");
+    head.className = "settings-plugin-head";
+    const n = document.createElement("span");
+    n.className = "settings-plugin-name";
+    n.textContent = name;
+    const o = document.createElement("span");
+    o.className = "settings-plugin-origin";
+    o.textContent = origin;
+    head.appendChild(n);
+    head.appendChild(o);
+    el.appendChild(head);
+    if (description) {
+      const desc = document.createElement("div");
+      desc.className = "settings-plugin-desc";
+      desc.textContent = description;
+      el.appendChild(desc);
+    }
+    return el;
   }
 
   /* A path shown as read-only monospace text. Not an input: unlike the export
@@ -1254,11 +1384,16 @@ Corvus.sidenav = (function () {
       ariaLabel: "Check for updates",
       onChange: (on) => postConfig({ updates: { check: on } }, { strict: true }),
     });
+    // The paragraph is a privacy answer, not an instruction — it is read once
+    // and then only when someone wonders what the switch reaches out to. Under
+    // the switch it was four lines outweighing the setting itself and pushing
+    // the version rows and Check now apart; behind the hint icon it is one
+    // click away and the card reads as the three facts it is about.
     card.appendChild(Corvus.ui.field({
       label: "Check for updates",
       control: sw.el,
       className: "field-switch",
-      hint: "Compares the running version against the published releases on " +
+      info: "Compares the running version against the published releases on " +
             "GitHub and shows a notice when a newer one exists. Nothing is " +
             "downloaded and nothing is sent about this machine beyond the " +
             "request itself. The check never runs while the vehicle is armed, " +
@@ -1364,5 +1499,5 @@ Corvus.sidenav = (function () {
     renderLeftNav();
   }
 
-  return { init };
+  return { init, setMissionEnabled, isMissionEnabled: () => missionEnabled };
 })();

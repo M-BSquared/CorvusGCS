@@ -2120,6 +2120,11 @@ async function testFirmwareUsbAllowedHidesBannerAndEnablesUploadAfterFile() {
   assert.equal(uploadBtn.disabled, false, "Upload enabled after selecting a file over USB");
 }
 
+// Mirrors what /api/firmware/catalog serves: the backend derives vendor,
+// board, variant and peripheral from the `<vendor>_<board>_<variant>.px4`
+// target name. The beta release deliberately carries none of them — a
+// catalog.json written by an older Corvus has only name/label/size, and the
+// list must still render from it.
 const FAKE_CATALOG = {
   dir: "/home/pilot/.corvus/firmware",
   error: "",
@@ -2132,46 +2137,170 @@ const FAKE_CATALOG = {
     },
     {
       tag: "v1.17.0", name: "v1.17.0", prerelease: false, boards: [
-        { name: "px4_fmu-v6x_default.px4", label: "Pixhawk 6X (FMUv6X)", size: 2048, cached: true },
-        { name: "cubepilot_cubeorange_default.px4", label: "Cube Orange", size: 2048, cached: false },
+        { name: "px4_fmu-v6x_default.px4", label: "Pixhawk 6X (FMUv6X)", size: 2048,
+          cached: true, vendor: "PX4", board: "fmu-v6x", variant: "default",
+          peripheral: false, title: "Pixhawk 6X (FMUv6X)" },
+        { name: "px4_fmu-v6x_rover.px4", label: "px4_fmu-v6x_rover", size: 2048,
+          cached: false, vendor: "PX4", board: "fmu-v6x", variant: "rover",
+          peripheral: false, title: "fmu-v6x" },
+        { name: "px4_io-v2_default.px4", label: "px4_io-v2_default", size: 52,
+          cached: false, vendor: "PX4", board: "io-v2", variant: "default",
+          peripheral: true, title: "io-v2" },
+        { name: "cubepilot_cubeorange_default.px4", label: "Cube Orange", size: 2048,
+          cached: false, vendor: "CubePilot", board: "cubeorange", variant: "default",
+          peripheral: false, title: "Cube Orange" },
       ],
     },
   ],
 };
 
-function firmwareSelects(container) {
-  const selects = findByTag(container, "select");
-  return { release: selects[0], board: selects[1] };
+function firmwareRelease(container) {
+  return findByTag(container, "select")[0];
+}
+
+function firmwareBoardRows(container) {
+  return findByClass(container, "firmware-board-item");
+}
+
+function firmwareFilter(container) {
+  return findByClass(container, "field-input")
+    .find((i) => /^Search by name/.test(i.placeholder || ""));
+}
+
+/** Click one board row by its target name. */
+function pickFirmwareBoard(container, name) {
+  const row = firmwareBoardRows(container).find((r) => r.dataset.name === name);
+  assert.ok(row, "board row present: " + name);
+  fire(row, "click");
+  return row;
 }
 
 async function testFirmwareCatalogDefaultsToTheNewestStableRelease() {
   const { container } = await renderFirmware({ catalog: FAKE_CATALOG });
   await flushMicrotasks();
 
-  const { release, board } = firmwareSelects(container);
   // A pre-release is a deliberate choice. Landing on one by not choosing is
   // how an operator flashes beta firmware onto an aircraft by accident.
-  assert.equal(release.value, "v1.17.0", "newest stable release preselected");
-  assert.ok(board.children.length >= 2, "the release's boards are listed");
+  assert.equal(firmwareRelease(container).value, "v1.17.0",
+    "newest stable release preselected");
+  const rows = firmwareBoardRows(container);
+  assert.ok(rows.length >= 2, "the release's boards are listed");
   // Cached images flash with no network; the list has to say which ones those are.
-  const cached = board.children.find((o) => o.value === "px4_fmu-v6x_default.px4");
-  assert.match(cached.textContent, /downloaded/, "a cached image is marked");
+  const cached = rows.find((r) => r.dataset.name === "px4_fmu-v6x_default.px4");
+  assert.ok(cached.querySelector(".firmware-board-cached"), "a cached image is marked");
+  // The size is the other half of "what would this download".
+  assert.match(cached.querySelector(".firmware-board-size").textContent, /KB|MB/,
+    "the image size is shown");
+  assert.equal(cached.querySelector(".firmware-board-target").textContent,
+    "px4_fmu-v6x_default.px4", "the exact file is named");
+}
+
+async function testFirmwareBoardsAreGroupedByVendor() {
+  const { container } = await renderFirmware({ catalog: FAKE_CATALOG });
+  await flushMicrotasks();
+
+  // 150 targets per release is a list nobody reads top to bottom; the vendor
+  // heading is what makes finding your own hardware a scan rather than a hunt.
+  const groups = findByClass(container, "firmware-board-group").map((g) => g.textContent);
+  assert.deepEqual(groups, ["PX4", "CubePilot"], "one heading per vendor, PX4 first");
+  assert.equal(groups.length, new Set(groups).size, "a vendor heads exactly one block");
+}
+
+async function testFirmwareHidesDeveloperBuildsUntilAsked() {
+  const { container } = await renderFirmware({ catalog: FAKE_CATALOG });
+  await flushMicrotasks();
+
+  // PX4 publishes each board several times over (_rover, _multicopter, _debug).
+  // None of them is what an operator flashing an aircraft wants, and on
+  // v1.17.0 they are 55 of the 150 targets.
+  let names = firmwareBoardRows(container).map((r) => r.dataset.name);
+  assert.ok(!names.includes("px4_fmu-v6x_rover.px4"), "developer builds hidden by default");
+  assert.ok(names.includes("px4_fmu-v6x_default.px4"), "the plain build is listed");
+
+  const toggle = findOneByClass(container, "firmware-variant-btn");
+  fire(toggle, "click");
+  names = firmwareBoardRows(container).map((r) => r.dataset.name);
+  assert.ok(names.includes("px4_fmu-v6x_rover.px4"), "and reachable on request");
+  assert.equal(toggle._attrs["aria-pressed"], "true", "the switch says it is on");
+}
+
+async function testFirmwareMarksPeripheralsAndSortsThemLast() {
+  const { container } = await renderFirmware({ catalog: FAKE_CATALOG });
+  await flushMicrotasks();
+
+  // PX4 ships IO, CAN-node and GNSS firmware in the same release. Flashing the
+  // IO image onto a flight controller is the accident this label prevents.
+  const rows = firmwareBoardRows(container);
+  const ioRow = rows.find((r) => r.dataset.name === "px4_io-v2_default.px4");
+  assert.ok(ioRow.querySelector(".firmware-board-peripheral"),
+    "a non-autopilot target says so");
+  assert.ok(!rows.find((r) => r.dataset.name === "px4_fmu-v6x_default.px4")
+    .querySelector(".firmware-board-peripheral"), "an autopilot does not");
+  const px4 = rows.filter((r) => /^px4_/.test(r.dataset.name)).map((r) => r.dataset.name);
+  assert.equal(px4[px4.length - 1], "px4_io-v2_default.px4",
+    "peripherals sort behind the autopilots of their vendor");
+}
+
+async function testFirmwareSelectsNothingUntilTheOperatorPicks() {
+  const { container } = await renderFirmware({
+    catalog: FAKE_CATALOG,
+    status: { can_flash: true, transport: "usb", state: "idle",
+      device: "/dev/ttyACM0", armed: false, progress: 0, message: "" },
+  });
+  await flushMicrotasks();
+
+  // The old <select> adopted its first option, which armed "Download & Flash"
+  // with whatever sorted first — invisibly, because a dropdown shows one row.
+  assert.ok(!firmwareBoardRows(container).some((r) => r.className.includes("selected")),
+    "no board is chosen for the operator");
+  const uploadBtn = findByClass(container, "params-download-btn")[0];
+  assert.equal(uploadBtn.disabled, true, "and nothing can be flashed yet");
+
+  pickFirmwareBoard(container, "cubepilot_cubeorange_default.px4");
+  assert.equal(uploadBtn.disabled, false, "flash enabled once a board is picked");
 }
 
 async function testFirmwareBoardFilterNarrowsTheList() {
   const { container } = await renderFirmware({ catalog: FAKE_CATALOG });
   await flushMicrotasks();
 
-  const { board } = firmwareSelects(container);
-  assert.equal(board.children.length, 2, "both boards before filtering");
-  // PX4 ships ~150 targets per release, so the filter is the only way the
-  // list is usable at all.
-  const filter = findByClass(container, "field-input")
-    .find((i) => i.placeholder === "Filter boards…");
+  assert.equal(firmwareBoardRows(container).length, 3, "the release's boards before filtering");
+  // PX4 ships ~150 targets per release, so search is the only way the list is
+  // usable at all — and it has to match the friendly name as well as the file.
+  const filter = firmwareFilter(container);
   filter.value = "cube";
   fire(filter, "input");
-  assert.equal(board.children.length, 1, "filter narrows the board list");
-  assert.equal(board.children[0].value, "cubepilot_cubeorange_default.px4");
+  const names = firmwareBoardRows(container).map((r) => r.dataset.name);
+  assert.deepEqual(names, ["cubepilot_cubeorange_default.px4"], "filter narrows the list");
+}
+
+async function testFirmwareFilterNeverHidesTheChosenBoard() {
+  const { container } = await renderFirmware({ catalog: FAKE_CATALOG });
+  await flushMicrotasks();
+
+  pickFirmwareBoard(container, "px4_fmu-v6x_default.px4");
+  const filter = firmwareFilter(container);
+  filter.value = "cube";
+  fire(filter, "input");
+  // Flash is still pointed at the 6X, so the row saying so must stay on
+  // screen: a picker that hides what the button is about to write to the
+  // aircraft is the one thing this control must never do.
+  const selected = firmwareBoardRows(container).filter((r) => r.className.includes("selected"));
+  assert.deepEqual(selected.map((r) => r.dataset.name), ["px4_fmu-v6x_default.px4"],
+    "the selected board survives a filter that excludes it");
+}
+
+async function testFirmwareRefreshAsksTheBackendToGoToTheNetwork() {
+  const { container, fake } = await renderFirmware({ catalog: FAKE_CATALOG });
+  await flushMicrotasks();
+
+  // Without this nothing in the app ever re-reads the release list: the first
+  // fetch is cached to disk and served from there forever, so a laptop that
+  // was offline then stayed empty and one that was not never saw a new PX4.
+  fire(findOneByClass(container, "firmware-refresh"), "click");
+  await flushMicrotasks();
+  assert.ok(fake.requests.some((u) => String(u) === "/api/firmware/catalog?refresh=1"),
+    "Refresh asks for a fresh catalogue");
 }
 
 async function testFirmwareFlashPostsReleaseAndBoardNotAUrl() {
@@ -2179,6 +2308,7 @@ async function testFirmwareFlashPostsReleaseAndBoardNotAUrl() {
   await flushMicrotasks();
 
   const uploadBtn = findByClass(container, "params-download-btn")[0];
+  pickFirmwareBoard(container, "px4_fmu-v6x_default.px4");
   assert.equal(uploadBtn.disabled, false, "flash enabled once a board is selected");
   fire(uploadBtn, "click");
   await flushMicrotasks();
@@ -2438,7 +2568,13 @@ async function run() {
   await withReset(testFirmwareUsbGateDisablesUploadAndShowsBanner);
   await withReset(testFirmwareUsbAllowedHidesBannerAndEnablesUploadAfterFile);
   await withReset(testFirmwareCatalogDefaultsToTheNewestStableRelease);
+  await withReset(testFirmwareBoardsAreGroupedByVendor);
+  await withReset(testFirmwareHidesDeveloperBuildsUntilAsked);
+  await withReset(testFirmwareMarksPeripheralsAndSortsThemLast);
+  await withReset(testFirmwareSelectsNothingUntilTheOperatorPicks);
   await withReset(testFirmwareBoardFilterNarrowsTheList);
+  await withReset(testFirmwareFilterNeverHidesTheChosenBoard);
+  await withReset(testFirmwareRefreshAsksTheBackendToGoToTheNetwork);
   await withReset(testFirmwareFlashPostsReleaseAndBoardNotAUrl);
   await withReset(testFirmwareCatalogOfflineKeepsThePageUsable);
   await withReset(testDownloadingCountsAsBusy);

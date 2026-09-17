@@ -398,6 +398,11 @@ Corvus.app = (function () {
       // the control switches above: the backend is the authority, and an
       // absent key is the default (no dots), not the cached value.
       Corvus.topbar.setStatusDots(!!(cfg.ui && cfg.ui.topbar_status_dots));
+      // The optional Mission entry in the left rail. Off unless the config
+      // asks for it, and asked for here rather than inside sidenav.init()
+      // because the rail is built before this fetch can land — the rail
+      // re-renders itself when the answer arrives.
+      Corvus.sidenav.setMissionEnabled(!!(cfg.ui && cfg.ui.mission_page));
     }).catch(() => {});
 
     /* Before any module builds its DOM: this replaces the operating system's

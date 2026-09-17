@@ -40,6 +40,26 @@
   --radius-btn: 6px;
   --radius-lg: 12px;
 
+  /* --- The planned route, on the map ---
+     One value for every theme, deliberately, and the only colour in this file
+     that is not retuned per palette. It lies on photographic imagery and never
+     on a themed surface, so a light theme's darker amber — which is what this
+     used to borrow from --warning — simply disappeared into a satellite tile.
+     The same reason the attribution pill in main.css carries literals.
+
+     --plan-ink is the dark casing under it. The amber alone reads on a field
+     and vanishes on a white roof; the two together read on both, which is what
+     a route drawn over ground nobody chose has to do. It is a heavy black
+     rather than a hint of one: at 45% it was a soft edge that a bright roof or
+     a sunlit field still swallowed, and the casing is the half of the pair
+     that has to survive the worst tile.
+
+     Read from CSS by the markers and from JS by the MapLibre layers, through
+     Corvus.ui.token — src/js/map.js (the Home tab's fly-to-points route) and
+     src/js/mission.js (the Mission planner) are both painted from here. */
+  --plan: #FFC21A;
+  --plan-ink: rgba(0, 0, 0, 0.7);
+
   /* --- Spacing scale ---
      The gaps and paddings a layout is allowed to use. Introduced because the
      stylesheet had drifted to twelve different column gaps and over a hundred

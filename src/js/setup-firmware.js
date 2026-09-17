@@ -17,7 +17,13 @@ window.Corvus = window.Corvus || {};
  *                                  progress,message}
  *   GET  /api/firmware/catalog[?refresh=1]
  *                                  {releases:[{tag,name,prerelease,boards:[
- *                                   {name,label,size,cached}]}],cached,error,dir}
+ *                                   {name,label,size,cached,
+ *                                    vendor,board,variant,title}]}],
+ *                                   cached,error,dir}
+ *                                  vendor/variant/title are derived from the
+ *                                  `<vendor>_<board>_<variant>.px4` target
+ *                                  name by the backend; they are what the
+ *                                  board list groups, filters and labels by.
  *   POST /api/firmware/flash       {release,board} -> downloads then flashes
  *   POST /api/firmware/upload     raw .px4/.bin body
  *                                  (Content-Type: application/octet-stream),
@@ -129,21 +135,58 @@ Corvus.setupFirmware = (function () {
       options: [{ value: "", label: "Loading releases…" }],
       disabled: true,
     });
+    // The release list is fetched once and then served from disk forever, so
+    // without this nothing in the app ever asks GitHub again: a laptop that
+    // was offline the first time it opened this page stayed empty, and a
+    // machine that has the list never saw a new PX4 release. It is the only
+    // control here that needs the network on purpose.
+    const refreshBtn = Corvus.ui.button({
+      variant: "secondary", size: "sm", icon: "refresh-cw",
+      className: "firmware-refresh", label: "Refresh",
+      onClick: () => loadCatalog(true),
+    });
+    const releaseRow = S.el("div", "firmware-release-row");
+    releaseRow.appendChild(releaseField);
+    releaseRow.appendChild(refreshBtn);
     catalogBox.appendChild(Corvus.ui.field({
-      label: "Release", control: releaseField,
+      label: "Release", control: releaseRow,
     }));
 
     const boardFilter = Corvus.ui.input({
-      placeholder: "Filter boards…", ariaLabel: "Filter the board list",
+      placeholder: "Search by name, e.g. pixhawk, cube, v6x…",
+      ariaLabel: "Filter the board list",
     });
-    const boardField = Corvus.ui.select({
-      ariaLabel: "Flight controller board",
-      options: [{ value: "", label: "Select a release first" }],
-      disabled: true,
+    // Developer builds are off by default, not hidden: they are half the
+    // targets and none of them are what an operator flashing their aircraft
+    // wants, but someone who came for `_rover` has to be able to reach it.
+    const variantBtn = Corvus.ui.button({
+      variant: "secondary", size: "sm",
+      className: "firmware-variant-btn", label: "Developer builds",
+      onClick: () => {
+        state.showVariants = !state.showVariants;
+        variantBtn.classList.toggle("active", state.showVariants);
+        variantBtn.setAttribute("aria-pressed", state.showVariants ? "true" : "false");
+        renderBoards();
+      },
     });
+    variantBtn.setAttribute("aria-pressed", "false");
+    const boardTools = S.el("div", "firmware-board-tools");
+    boardTools.appendChild(boardFilter);
+    boardTools.appendChild(variantBtn);
+
+    // The list itself, rather than a <select>: PX4 ships 150 targets per
+    // release and a dropdown shows one of them at a time, so "which boards can
+    // I flash, and which of those do I already have" — the two questions this
+    // page exists to answer — were both a click away and out of sight.
+    const boardList = S.el("div", "firmware-board-list");
+    boardList.setAttribute("role", "radiogroup");
+    boardList.setAttribute("aria-label", "Flight controller board");
+    const boardCount = S.el("div", "firmware-board-count");
+
     const boardBox = S.el("div", "firmware-board");
-    boardBox.appendChild(boardFilter);
-    boardBox.appendChild(boardField);
+    boardBox.appendChild(boardTools);
+    boardBox.appendChild(boardList);
+    boardBox.appendChild(boardCount);
     catalogBox.appendChild(Corvus.ui.field({
       label: "Board", control: boardBox,
       hint: "PX4 ships one image per flight-controller target — pick the one your board is.",
@@ -237,6 +280,8 @@ Corvus.setupFirmware = (function () {
       catalog: null,        // last /api/firmware/catalog payload
       releases: [],         // releases from the catalogue
       boards: [],           // boards of the selected release (unfiltered)
+      board: "",            // target name of the selected board ("" = none)
+      showVariants: false,  // include PX4's non-default developer builds
       detected: null,       // {name,label,source} board the backend recognised
       boardTouched: false,  // true once the operator picked a board themselves
       // Telemetry signature for refetch gating (avoid /api/firmware/status spam).
@@ -279,7 +324,7 @@ Corvus.setupFirmware = (function () {
       const canFlash = !!s.can_flash && !busy && !armed;
       const haveSource = state.source === "file"
         ? !!state.file
-        : !!(releaseField.value && boardField.value);
+        : !!(releaseField.value && state.board);
       uploadBtn.disabled = !(canFlash && haveSource);
       // The button says what it will actually do — a catalogue flash downloads
       // first, and a button labelled "Flash" that spends two minutes fetching
@@ -309,21 +354,152 @@ Corvus.setupFirmware = (function () {
       return kb >= 1024 ? (kb / 1024).toFixed(1) + " MB" : Math.round(kb) + " KB";
     }
 
-    /** Fill the board <select> from the selected release, honouring the filter. */
-    function renderBoards() {
+    /** Everything the filter should search: the friendly name, the target, the
+     *  vendor. An operator types "pixhawk", "cube" or "v6x" — all three have to
+     *  land on the same row. */
+    function boardHaystack(b) {
+      return [b.label, b.title, b.name, b.vendor, b.board]
+        .filter(Boolean).join(" ").toLowerCase();
+    }
+
+    /** The boards to show: the filter, and developer builds only on request. */
+    function visibleBoards() {
       const needle = String(boardFilter.value || "").trim().toLowerCase();
-      const matches = state.boards.filter((b) =>
-        !needle || b.label.toLowerCase().includes(needle)
-          || b.name.toLowerCase().includes(needle));
-      Corvus.ui.setOptions(boardField, matches.map((b) => ({
-        value: b.name,
-        // Cached images flash with no network at all, so say which ones those
-        // are — that is the difference between a 3-minute wait and none.
-        label: b.label + (b.cached ? "  ·  downloaded" : "") ,
-      })), preferredBoard());
-      boardField.disabled = matches.length === 0;
-      if (!matches.length) {
-        Corvus.ui.setOptions(boardField, [{ value: "", label: "No board matches the filter" }]);
+      return state.boards.filter((b) => {
+        // The selected board always stays visible, whatever the filter says —
+        // a list that silently drops what the Flash button is about to write
+        // to the aircraft is the one thing this control must not do.
+        if (b.name === state.board) return true;
+        if (!state.showVariants && (b.variant || "default") !== "default") return false;
+        return !needle || boardHaystack(b).includes(needle);
+      }).sort(compareBoards);
+    }
+
+    /** Display order. The backend sorts named targets to the front, which is
+     *  right for a flat list and wrong for a grouped one — it split every
+     *  vendor into a named half and a raw half, so each heading appeared
+     *  twice. Here a vendor is one block: the detected board's vendor leads,
+     *  then PX4's own reference boards, then the rest alphabetically. */
+    function compareBoards(a, b) {
+      const av = a.vendor || "", bv = b.vendor || "";
+      if (av !== bv) return vendorRank(av) - vendorRank(bv) || av.localeCompare(bv);
+      // Inside a vendor: autopilots before peripherals, the plain build
+      // before its developer variants, then by name.
+      if (!!a.peripheral !== !!b.peripheral) return a.peripheral ? 1 : -1;
+      const ad = (a.variant || "default") === "default" ? 0 : 1;
+      const bd = (b.variant || "default") === "default" ? 0 : 1;
+      if (ad !== bd) return ad - bd;
+      return String(a.title || a.name).localeCompare(String(b.title || b.name));
+    }
+
+    /** 0 = the vendor of the board we think is plugged in, 1 = PX4, 2 = rest. */
+    function vendorRank(vendor) {
+      const detected = state.detected
+        && (state.boards.find((b) => b.name === state.detected.name) || {}).vendor;
+      if (detected && vendor === detected) return 0;
+      return vendor === "PX4" ? 1 : 2;
+    }
+
+    /** One row: what the board is called, which file it is, how big, and
+     *  whether it is already on this machine. */
+    function boardRow(b) {
+      const item = S.el("button", "firmware-board-item");
+      item.type = "button";
+      item.dataset.name = b.name;
+      item.setAttribute("role", "radio");
+      const head = S.el("div", "firmware-board-head");
+      head.appendChild(S.el("span", "firmware-board-name", b.title || b.label || b.name));
+      if ((b.variant || "default") !== "default") {
+        head.appendChild(S.el("span", "firmware-board-variant", b.variant));
+      }
+      // PX4 publishes IO, CAN-node and GNSS firmware in the same release. They
+      // are legitimate downloads, but they are not the aircraft's autopilot,
+      // and an unlabelled row in a list headed "Board" is how one gets flashed
+      // onto one.
+      if (b.peripheral) {
+        head.appendChild(S.el("span", "firmware-board-peripheral", "peripheral"));
+      }
+      // Cached images flash with no network at all, so say which ones those
+      // are — that is the difference between a 3-minute wait and none.
+      if (b.cached) head.appendChild(S.el("span", "firmware-board-cached", "downloaded"));
+      item.appendChild(head);
+      const meta = S.el("div", "firmware-board-meta");
+      meta.appendChild(S.el("span", "firmware-board-target", b.name));
+      const size = formatSize(b.size);
+      if (size) meta.appendChild(S.el("span", "firmware-board-size", size));
+      item.appendChild(meta);
+      item.addEventListener("click", () => {
+        // Once the operator picks, detection stops moving the selection under
+        // them.
+        state.boardTouched = true;
+        selectBoard(b.name);
+      });
+      return item;
+    }
+
+    /** Fill the board list from the selected release, grouped by vendor. */
+    function renderBoards() {
+      const matches = visibleBoards();
+      Corvus.ui.clear(boardList);
+      if (!state.boards.length) {
+        boardList.appendChild(S.el("div", "firmware-board-empty",
+          "Pick a release to see the boards it ships images for."));
+      } else if (!matches.length) {
+        boardList.appendChild(S.el("div", "firmware-board-empty",
+          "No board matches \u201c" + boardFilter.value.trim() + "\u201d."
+          + (state.showVariants ? "" : " Developer builds are hidden.")));
+      }
+      // Grouped by vendor, in the order the boards already arrive in (named
+      // targets first), so the common hardware heads the list and a vendor is
+      // one heading to scan for rather than 150 rows to read.
+      let vendor = null;
+      matches.forEach((b) => {
+        const group = b.vendor || "Other";
+        if (group !== vendor) {
+          vendor = group;
+          boardList.appendChild(S.el("div", "firmware-board-group", group));
+        }
+        boardList.appendChild(boardRow(b));
+      });
+      // Only ever land on a board somebody chose: the operator's own pick, or
+      // the one detected on the USB port. The old dropdown adopted its first
+      // option, which on v1.17.0 armed "Download & Flash" with the PX4 IO
+      // coprocessor image — invisibly, because a <select> shows one row.
+      const wanted = preferredBoard();
+      selectBoard(matches.some((b) => b.name === wanted) ? wanted : "");
+      renderBoardCount(matches.length);
+    }
+
+    /** "95 of 150 targets · 1 already downloaded" — the answer to "what can I
+     *  get from here", which the dropdown never showed. */
+    function renderBoardCount(shown) {
+      if (!state.boards.length) {
+        boardCount.textContent = "";
+        return;
+      }
+      const downloaded = state.boards.filter((b) => b.cached).length;
+      const parts = [shown === state.boards.length
+        ? state.boards.length + " targets"
+        : shown + " of " + state.boards.length + " targets"];
+      if (downloaded) parts.push(downloaded + " already downloaded");
+      boardCount.textContent = parts.join(" \u00b7 ");
+    }
+
+    /** Mark one row as the selection and tell the gate about it. */
+    function selectBoard(name) {
+      state.board = name || "";
+      let active = null;
+      boardList.querySelectorAll(".firmware-board-item").forEach((item) => {
+        const on = item.dataset.name === state.board;
+        item.classList.toggle("selected", on);
+        item.setAttribute("aria-checked", on ? "true" : "false");
+        /* Roving tabindex: the group is one tab stop, not 150. */
+        item.tabIndex = on ? 0 : -1;
+        if (on) active = item;
+      });
+      if (!active) {
+        const first = boardList.querySelector(".firmware-board-item");
+        if (first) first.tabIndex = 0;
       }
       recomputeUploadGate();
     }
@@ -340,9 +516,9 @@ Corvus.setupFirmware = (function () {
 
     /** Board the picker should land on: the operator's, else the detected one. */
     function preferredBoard() {
-      if (state.boardTouched && boardField.value) return boardField.value;
+      if (state.boardTouched && state.board) return state.board;
       if (state.detected && state.detected.name) return state.detected.name;
-      return boardField.value;
+      return state.board;
     }
 
     /** Show what the backend recognised on the USB port, and say how. */
@@ -372,6 +548,7 @@ Corvus.setupFirmware = (function () {
     function loadCatalog(refresh) {
       catalogNote.textContent = refresh ? "Checking for PX4 releases…" : "Loading releases…";
       catalogNote.classList.remove("err");
+      Corvus.ui.setBusy(refreshBtn, true);
       const url = "/api/firmware/catalog" + (refresh ? "?refresh=1" : "");
       return Corvus.telemetry.requestJson(url).then((data) => {
         state.catalog = data || {};
@@ -382,10 +559,17 @@ Corvus.setupFirmware = (function () {
           Corvus.ui.setOptions(releaseField, [{ value: "", label: "No releases available" }]);
           releaseField.disabled = true;
           state.boards = [];
+          state.board = "";
           renderBoards();
-          catalogNote.textContent = (data && data.error)
-            || "No PX4 releases cached yet — connect once to download the list, "
-               + "or use a local file.";
+          // Say what to do about it. The list lives on GitHub and this is the
+          // one page that fetches it, so "press Refresh once you have
+          // internet" is the whole recovery — and the local-file path is still
+          // open to a laptop that will never have any.
+          catalogNote.textContent = ((data && data.error)
+            ? data.error + " — "
+            : "No PX4 releases downloaded yet — ")
+            + "press Refresh once this machine is online, or flash a local "
+            + ".px4 file instead.";
           catalogNote.classList.add("err");
           return;
         }
@@ -411,15 +595,12 @@ Corvus.setupFirmware = (function () {
         catalogNote.textContent = (err && err.message) || "Could not load the release list";
         catalogNote.classList.add("err");
         recomputeUploadGate();
+      }).finally(() => {
+        Corvus.ui.setBusy(refreshBtn, false);
       });
     }
 
     releaseField.addEventListener("change", () => selectRelease(releaseField.value));
-    boardField.addEventListener("change", () => {
-      // Once the operator picks, detection stops moving the selection under them.
-      state.boardTouched = true;
-      recomputeUploadGate();
-    });
     boardFilter.addEventListener("input", renderBoards);
 
     /** Replace the .page-row-value child of an infoRow element with new text. */
@@ -621,7 +802,7 @@ Corvus.setupFirmware = (function () {
      */
     async function onFlashRelease() {
       const release = releaseField.value;
-      const board = boardField.value;
+      const board = state.board;
       if (!release || !board) return;
       uploadBtn.disabled = true;
       status.hidden = false;

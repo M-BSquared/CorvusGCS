@@ -20,8 +20,10 @@ from corvus.firmware_catalog import (
     _parse_releases,
     asset_url,
     board_label,
+    describe_board,
     detect_board,
     is_flashable_asset,
+    is_peripheral_board,
 )
 
 _BOARDS = [
@@ -160,6 +162,84 @@ def test_board_label_falls_back_to_the_target_name() -> None:
     """A board added to PX4 after this table was written must still be listed."""
     assert board_label("px4_fmu-v6x_default.px4") == "Pixhawk 6X (FMUv6X)"
     assert board_label("brand_new-board_default.px4") == "brand_new-board_default"
+
+
+# ---------------------------------------------------------------------------
+# Reading a target name
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(("name", "vendor", "board", "variant"), [
+    ("px4_fmu-v6x_default.px4", "PX4", "fmu-v6x", "default"),
+    ("cubepilot_cubeorange_default.px4", "CubePilot", "cubeorange", "default"),
+    ("nxp_fmuk66-e_default.px4", "NXP", "fmuk66-e", "default"),
+    ("mro_x21-777_default.px4", "mRo", "x21-777", "default"),
+    # The variant is everything after the board, underscores and all.
+    ("ark_fmu-v6x_encrypted_logs.px4", "ARK Electronics", "fmu-v6x", "encrypted_logs"),
+    ("auterion_fmu-v6x_performance-test.px4", "Auterion", "fmu-v6x", "performance-test"),
+])
+def test_a_target_name_splits_into_vendor_board_and_variant(
+    name: str, vendor: str, board: str, variant: str,
+) -> None:
+    """The grouping the board list is built on: every PX4 asset is
+    ``<vendor>_<board>_<variant>.px4``."""
+    described = describe_board(name)
+    assert described["vendor"] == vendor
+    assert described["board"] == board
+    assert described["variant"] == variant
+
+
+def test_an_unconventional_name_still_describes_itself() -> None:
+    """A naming scheme PX4 changes must not drop a board off the list."""
+    described = describe_board("oddity.px4")
+    assert described["board"] == "oddity"
+    assert described["variant"] == "default"
+    assert described["title"] == "oddity"
+
+
+def test_the_row_title_is_the_marketing_name_where_there_is_one() -> None:
+    """Under a vendor heading, repeating the vendor in every row is noise —
+    but a board we have a real name for should still show it."""
+    assert describe_board("px4_fmu-v6x_default.px4")["title"] == "Pixhawk 6X (FMUv6X)"
+    assert describe_board("nxp_fmuk66-e_default.px4")["title"] == "fmuk66-e"
+
+
+@pytest.mark.parametrize("board", [
+    "io-v2",            # the PX4 IO coprocessor
+    "can-gps", "can-flow", "cannode",
+    "f9p-gps", "septentrio-gps",
+    "gnss-m9n-f4",
+    "voxl2-io",
+    "dist", "h-flow",
+])
+def test_peripherals_are_recognised_from_their_target_name(board: str) -> None:
+    """PX4 ships IO, CAN-node and GNSS firmware in the same release as the
+    autopilots. Flashing one onto a flight controller is the accident the
+    label on those rows exists to prevent."""
+    assert is_peripheral_board(board)
+
+
+@pytest.mark.parametrize("board", [
+    "fmu-v6x", "cubeorange", "kakuteh7", "h743-slim", "fmuk66-e", "pixracerpro",
+])
+def test_autopilots_are_not_called_peripherals(board: str) -> None:
+    """The rule errs the safe way: a peripheral missed is merely unlabelled,
+    an autopilot wrongly labelled is a board the operator stops trusting."""
+    assert not is_peripheral_board(board)
+
+
+def test_the_catalogue_describes_every_board_it_serves(tmp_path: pathlib.Path) -> None:
+    """Derived at serve time, not at parse time: a catalog.json written by an
+    older Corvus is read straight back as the release list, and the fields the
+    UI groups by must not depend on when that file was written."""
+    catalog = FirmwareCatalog(str(tmp_path))
+    legacy = {"releases": [{"tag": "v1.17.0", "name": "v1.17.0", "prerelease": False,
+                            "boards": [{"name": "px4_fmu-v6x_default.px4",
+                                        "label": "Pixhawk 6X (FMUv6X)", "size": 2048}]}]}
+    (tmp_path / "catalog.json").write_text(json.dumps(legacy), encoding="utf-8")
+    board = catalog.catalog()["releases"][0]["boards"][0]
+    assert board["vendor"] == "PX4"
+    assert board["variant"] == "default"
+    assert board["peripheral"] is False
 
 
 # ---------------------------------------------------------------------------

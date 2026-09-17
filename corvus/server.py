@@ -28,7 +28,7 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
 
 from . import (
-    motor_config, rc_config, safety_config, sik_config, sik_service,
+    mission, motor_config, rc_config, safety_config, sik_config, sik_service,
     tile_sources, tuning_config,
 )
 from .config import (
@@ -529,6 +529,16 @@ def _params_export_dir(cfg: Any) -> str:
     if configured.strip():
         return os.path.expanduser(configured.strip())
     return corvus_path("params")
+
+
+def _missions_dir(cfg: Any) -> str:
+    """Directory saved mission plans are read from and written to.
+
+    Same convention as the parameter export folder above: the operator's
+    ``missions_dir`` when set, ``~/.corvus/missions`` otherwise.
+    """
+    configured = getattr(cfg, "missions_dir", "") or ""
+    return mission.missions_dir(os.path.expanduser(configured.strip()))
 
 
 def _build_log_service(mavlink: Any, config: Any) -> Any:
@@ -1169,6 +1179,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             "params_dir": cfg.params_dir,
             "firmware_dir": cfg.firmware_dir,
             "log_download_dir": cfg.log_download_dir,
+            "missions_dir": cfg.missions_dir,
             "ssh_connections": [dict(e) for e in cfg.ssh_connections],
         }
         if cfg.tile_sources is not None:
@@ -1194,7 +1205,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
         known = {
             "mavlink_connection", "http_port", "tile_cache_dir", "tlog_dir",
-            "params_dir", "firmware_dir", "log_download_dir",
+            "params_dir", "firmware_dir", "log_download_dir", "missions_dir",
             "tile_sources", "stream_rates", "ssh_connections",
             "theme", "map", "branding", "controls", "ui", "updates", "plugins",
             "autoconnect",
@@ -1322,6 +1333,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 if not isinstance(value, str):
                     return None, "log_download_dir must be a string"
                 merged["log_download_dir"] = value
+            elif key == "missions_dir":
+                if not isinstance(value, str):
+                    return None, "missions_dir must be a string"
+                merged["missions_dir"] = value
             elif key == "tile_sources":
                 if not isinstance(value, dict):
                     return None, "tile_sources must be an object"
@@ -2412,6 +2427,143 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             error = self.mavlink.get_last_command_error() or "fly to points failed"
             status = 503 if "DISCONNECTED" in error else 409
             self._send_json({"ok": False, "error": error}, status)
+
+    # ---- Mission planner -------------------------------------------------
+    #
+    # A plan is validated in exactly one place (``corvus.mission``), and every
+    # route below goes through it — the one that uploads to the aircraft, the
+    # one that writes a file, and the one that reads a file back. That is the
+    # whole reason the model is its own module: the frontend is not a trusted
+    # source of mission items, and neither is a JSON file an operator copied
+    # from another machine.
+
+    @route("POST", "/api/mission/upload")
+    def _api_mission_upload(self, payload: dict) -> None:
+        """Upload a planned mission to the vehicle, optionally starting it.
+
+        ``start`` is a separate flag rather than a separate call so the two
+        cannot be reordered by a slow link: an operator who asked to fly gets
+        the mission on board and started, and one who did not gets a vehicle
+        holding a route it has not been told to run.
+        """
+        plan, error = mission.validate_plan(payload.get("plan"))
+        if plan is None:
+            self._send_json({"ok": False, "error": error}, 400)
+            return
+        if not plan["items"]:
+            self._send_json({"ok": False, "error": "the mission is empty"}, 400)
+            return
+        start = payload.get("start")
+        if start is not None and not isinstance(start, bool):
+            self._send_json({"ok": False, "error": "start must be true or false"}, 400)
+            return
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 400)
+            return
+
+        items = mission.plan_to_items(plan)
+        if not self.mavlink.upload_mission_plan(items):
+            self._send_mission_failure("mission upload failed")
+            return
+        if not start:
+            self._send_json({"ok": True, "items": len(items), "started": False})
+            return
+        if not self.mavlink.start_mission(len(items)):
+            self._send_mission_failure("mission start failed")
+            return
+        self._send_json({"ok": True, "items": len(items), "started": True})
+
+    @route("POST", "/api/mission/start")
+    def _api_mission_start(self, payload: dict) -> None:
+        """Run the mission already uploaded to the vehicle."""
+        count = payload.get("items")
+        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+            self._send_json({"ok": False, "error": "items must be a positive integer"}, 400)
+            return
+        if count > FLY_TO_MAX_POINTS:
+            self._send_json(
+                {"ok": False,
+                 "error": f"items must be at most {FLY_TO_MAX_POINTS}"}, 400)
+            return
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 400)
+            return
+        if not self.mavlink.start_mission(count):
+            self._send_mission_failure("mission start failed")
+            return
+        self._send_json({"ok": True})
+
+    @route("POST", "/api/mission/clear")
+    def _api_mission_clear(self, payload: dict) -> None:
+        """Wipe the mission stored on the vehicle."""
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 400)
+            return
+        if not self.mavlink.clear_mission():
+            self._send_mission_failure("mission clear failed")
+            return
+        self._send_json({"ok": True})
+
+    def _send_mission_failure(self, fallback: str) -> None:
+        """Report why the bridge refused, with the status that says whose fault.
+
+        503 for a link that is not there (try again when it is), 409 for a
+        vehicle that answered and said no.
+        """
+        error = (self.mavlink.get_last_command_error() if self.mavlink else "") or fallback
+        status = 503 if "DISCONNECTED" in error else 409
+        self._send_json({"ok": False, "error": error}, status)
+
+    @route("GET", "/api/mission/plans")
+    def _api_mission_plans(self) -> None:
+        """List the saved mission plans, newest first."""
+        directory = _missions_dir(self._live_config())
+        self._send_json({"dir": directory, "plans": mission.list_plans(directory)})
+
+    @route("POST", "/api/mission/plans/save")
+    def _api_mission_plans_save(self, payload: dict) -> None:
+        """Save a plan under its (sanitized) name, overwriting a namesake."""
+        plan, error = mission.validate_plan(payload.get("plan"))
+        if plan is None:
+            self._send_json({"ok": False, "error": error}, 400)
+            return
+        name = mission.safe_plan_name(payload.get("name")) or plan["name"]
+        if not name:
+            self._send_json({"ok": False, "error": "a mission needs a name"}, 400)
+            return
+        directory = _missions_dir(self._live_config())
+        try:
+            stored = mission.write_plan(directory, name, plan)
+        except OSError as exc:
+            logger.exception("could not save mission %r", name)
+            self._send_json({"ok": False, "error": f"could not save: {exc}"}, 500)
+            return
+        self._send_json({"ok": True, "name": stored, "dir": directory})
+
+    @route("POST", "/api/mission/plans/load")
+    def _api_mission_plans_load(self, payload: dict) -> None:
+        """Read one saved plan back, re-validated on the way out."""
+        name = mission.safe_plan_name(payload.get("name"))
+        if not name:
+            self._send_json({"ok": False, "error": "name must be a mission name"}, 400)
+            return
+        plan = mission.read_plan(_missions_dir(self._live_config()), name)
+        if plan is None:
+            self._send_json({"ok": False, "error": f"no saved mission named {name!r}"}, 404)
+            return
+        self._send_json({"ok": True, "name": name, "plan": plan})
+
+    @route("POST", "/api/mission/plans/remove")
+    def _api_mission_plans_remove(self, payload: dict) -> None:
+        """Delete one saved plan. Deleting what is gone is a success."""
+        name = mission.safe_plan_name(payload.get("name"))
+        if not name:
+            self._send_json({"ok": False, "error": "name must be a mission name"}, 400)
+            return
+        if not mission.remove_plan(_missions_dir(self._live_config()), name):
+            self._send_json({"ok": False, "error": "could not delete the mission"}, 500)
+            return
+        self._send_json({"ok": True})
 
     @route("POST", "/api/ssh/connect")
     def _api_ssh_connect(self, payload: dict) -> None:

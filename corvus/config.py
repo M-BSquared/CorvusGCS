@@ -52,6 +52,7 @@ _CONFIG_FIELD_ORDER: tuple[str, ...] = (
     "params_dir",
     "firmware_dir",
     "log_download_dir",
+    "missions_dir",
     "tile_sources",
     "stream_rates",
     "ssh_connections",
@@ -76,10 +77,11 @@ class CorvusConfig:
     """Operator-tunable runtime defaults.
 
     Empty-string dir fields (``tile_cache_dir``/``tlog_dir``/``params_dir``/
-    ``firmware_dir``/``log_download_dir``) mean "use the built-in default"
-    (``~/.corvus/tiles`` / ``~/.corvus/logs`` / ``~/.corvus/params`` /
-    ``~/.corvus/firmware`` / ``~/.corvus/flightlogs``); a non-empty value pins the location. ``None`` dict fields mean "use built-in
-    defaults"; a dict overrides the whole registry.
+    ``firmware_dir``/``log_download_dir``/``missions_dir``) mean "use the
+    built-in default" (``~/.corvus/tiles`` / ``~/.corvus/logs`` /
+    ``~/.corvus/params`` / ``~/.corvus/firmware`` / ``~/.corvus/flightlogs`` /
+    ``~/.corvus/missions``); a non-empty value pins the location. ``None`` dict
+    fields mean "use built-in defaults"; a dict overrides the whole registry.
 
     ``ssh_connections``/``theme``/``map``/``branding``/``controls``/``ui``/``updates`` are persisted operator UI state:
     the SSH connection list, the selected color theme (``{"name": ...}``, one
@@ -96,10 +98,11 @@ class CorvusConfig:
     ``key_gain`` for how much stick one held key is worth), and
     the interface size, desktop app icon and top bar (``{"scale": 1.25,
     "inverted_app_icon": false, "app_icon_backplate": false,
-    "topbar_status_dots": false}`` — the multiplier
+    "topbar_status_dots": false, "mission_page": false}`` — the multiplier
     the frontend puts on every length in the UI, which cut of the mark the
-    Dock / taskbar gets, whether that mark sits on a filled backplate, and
-    whether the top bar shows its per-block state dots),
+    Dock / taskbar gets, whether that mark sits on a filled backplate, whether
+    the top bar shows its per-block state dots, and whether the left rail
+    carries the Mission planner),
     and the update check
     (``{"check": true, "skipped": "2026.09.27"}`` — whether to look at the
     GitHub releases at all, and the one release the operator dismissed).
@@ -126,6 +129,7 @@ class CorvusConfig:
     params_dir: str = ""             # "" = ~/.corvus/params (exported param files)
     firmware_dir: str = ""           # "" = ~/.corvus/firmware (downloaded PX4 images)
     log_download_dir: str = ""       # "" = ~/.corvus/flightlogs (ULogs + exported tlogs)
+    missions_dir: str = ""           # "" = ~/.corvus/missions (saved mission plans)
     tile_sources: dict[str, dict] | None = None
     stream_rates: dict | None = None
     ssh_connections: list[dict[str, Any]] = dataclasses.field(default_factory=list)
@@ -462,6 +466,11 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     blocks already carry their state in the colour of the value itself, so the
     dots are opt-in rather than something an old config file turns on by
     saying nothing.
+
+    ``mission_page`` puts the Mission planner in the left rail under HOME. Off
+    unless asked for: a station flown by hand has no use for a route editor,
+    and a rail entry that leads somewhere the operator never goes is one more
+    thing to skip past in the field.
     """
     if not isinstance(raw, dict):
         return None
@@ -471,7 +480,8 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
         scale = float(value)
         if scale == scale and scale not in (float("inf"), float("-inf")):  # not NaN / inf
             out["scale"] = min(max(scale, _UI_SCALE_MIN), _UI_SCALE_MAX)
-    for key in ("inverted_app_icon", "app_icon_backplate", "topbar_status_dots"):
+    for key in ("inverted_app_icon", "app_icon_backplate", "topbar_status_dots",
+                "mission_page"):
         if isinstance(raw.get(key), bool):
             out[key] = raw[key]
     return out or None
@@ -561,6 +571,10 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
     if isinstance(data.get("log_download_dir"), str):
         log_download_dir = data["log_download_dir"]
 
+    missions_dir = defaults.missions_dir
+    if isinstance(data.get("missions_dir"), str):
+        missions_dir = data["missions_dir"]
+
     tile_sources = defaults.tile_sources
     if isinstance(data.get("tile_sources"), dict):
         tile_sources = data["tile_sources"]
@@ -588,6 +602,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         params_dir=params_dir,
         firmware_dir=firmware_dir,
         log_download_dir=log_download_dir,
+        missions_dir=missions_dir,
         tile_sources=tile_sources,
         stream_rates=stream_rates,
         ssh_connections=ssh_connections,
@@ -646,6 +661,7 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
         "params_dir": cfg.params_dir,
         "firmware_dir": cfg.firmware_dir,
         "log_download_dir": cfg.log_download_dir,
+        "missions_dir": cfg.missions_dir,
         "ssh_connections": [dict(entry) for entry in cfg.ssh_connections],
     }
     if cfg.tile_sources is not None:

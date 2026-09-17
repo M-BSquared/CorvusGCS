@@ -228,9 +228,6 @@ Corvus.map = (function () {
   // The layer switcher, as the app's dropdown: a Corvus.ui.menu opened from
   // the rail's layers button, built on first use.
   let layersMenuHandle = null;
-  // Handle returned by Corvus.ui.optionList — it owns the "which layer is
-  // active" highlight, so setBaseLayer never has to walk the DOM for it.
-  let layerPicker = null;
   // The 3D panel and the switch inside it, one rail button down from the
   // layer switcher. It opens on hover rather than on press, because press is
   // already the mode's on/off — see wireThreeDPanel.
@@ -623,7 +620,9 @@ Corvus.map = (function () {
       type: "line",
       layout: { "line-cap": "butt", "line-join": "round" },
       paint: {
-        "line-color": "#F5C842",
+        // --plan, not a literal: the Mission planner draws its route in the
+        // same amber, and the two are the same object seen on two screens.
+        "line-color": Corvus.ui.token("--plan", "#FFC21A"),
         "line-width": 2,
         "line-opacity": 0.9,
         "line-dasharray": [3, 2],
@@ -656,7 +655,7 @@ Corvus.map = (function () {
     activeLayer = key;
     // Sync the switcher before the early-out, so a choice made from Settings
     // while the map is still loading is already reflected when it appears.
-    if (layerPicker) layerPicker.setValue(key);
+    if (layersMenuHandle) layersMenuHandle.setLayerValue(key);
     if (!map || !started) return;
     const spec = specFor(key);
     if (map.getLayer("base")) map.removeLayer("base");
@@ -876,7 +875,66 @@ Corvus.map = (function () {
    */
   function layersMenu() {
     if (layersMenuHandle) return layersMenuHandle;
-    layersMenuHandle = Corvus.ui.menu({
+    layersMenuHandle = createLayerMenu({
+      rail: () => controlsEl,
+      active: () => activeLayer,
+      onSelect: setBaseLayer,
+    });
+    return layersMenuHandle;
+  }
+
+  /**
+   * Build a layer switcher for a map rail — this one's, or another map's.
+   *
+   * The Mission planner has its own MapLibre map and its own rail, and an
+   * operator switching layers there expects exactly what this rail does: the
+   * same grouped list under the same service headings, the same surface, the
+   * same dismissal, the same placement beside the rail, and the choice written
+   * to the config so it survives a restart. That was a second, thinner copy
+   * over there, and it behaved like none of those things.
+   *
+   * So the switcher is built here, once, and handed the only two things that
+   * differ: which rail it hangs off, and what applies a layer to which map.
+   * Everything the operator can see about it is the same by construction
+   * rather than by two files agreeing.
+   *
+   * `spec.rail` is the rail element (or a function returning it, for a rail
+   * that is rebuilt), `spec.active()` is the layer showing now, and
+   * `spec.onSelect(id)` puts a layer on that caller's map. Persistence is NOT
+   * the caller's: the base layer is the operator's map service, one setting
+   * that both maps read at startup, so it is written from here.
+   *
+   * The returned handle is a Corvus.ui.menu with one addition: setLayerValue,
+   * so a layer changed from somewhere else (Settings) is reflected in an open
+   * list without the caller reaching into the picker.
+   */
+  function createLayerMenu(spec) {
+    let picker = null;
+    const railOf = () => (typeof spec.rail === "function" ? spec.rail() : spec.rail);
+
+    /** The rail button reads as pressed while its menu is open. */
+    function markButton(on) {
+      const rail = railOf();
+      const b = rail && rail.querySelector('[data-act="layers"]');
+      if (!b) return;
+      b.classList.toggle("active", !!on);
+      b.setAttribute("aria-expanded", on ? "true" : "false");
+    }
+
+    function render(surface) {
+      picker = null;
+      const rows = renderLayerRows(surface, spec.active(), (id) => {
+        spec.onSelect(id);
+        // Persist the choice so it survives restarts. Fire-and-forget: a
+        // failed save (backend busy/offline) must never break the switch.
+        Corvus.telemetry.postAction("/api/config", {
+          map: { base_layer: id, provider: specFor(id).provider },
+        }).catch(() => {});
+      }, (built) => { picker = built; });
+      return rows;
+    }
+
+    const handle = Corvus.ui.menu({
       className: "layers-popover",
       // A group, not a menu: the rows inside are the radio group ui.optionList
       // builds, because exactly one layer is showing at a time.
@@ -886,14 +944,15 @@ Corvus.map = (function () {
       // edge of the map, and a list dropped below its layers button would
       // cover the buttons under it.
       side: "left",
-      gap: railMenuGap,
+      gap: () => railGapOf(railOf()),
       // The rail button is 34px wide; the layer names are not.
       matchAnchorWidth: false,
-      render: renderLayerRows,
-      onOpen: () => markLayersButton(true),
-      onClose: () => markLayersButton(false),
+      render,
+      onOpen: () => markButton(true),
+      onClose: () => markButton(false),
     });
-    return layersMenuHandle;
+    handle.setLayerValue = (id) => { if (picker) picker.setValue(id); };
+    return handle;
   }
 
   /**
@@ -1021,21 +1080,18 @@ Corvus.map = (function () {
    * accounted for rather than mirrored here as a number.
    */
   function railMenuGap() {
-    const rail = controlsEl;
+    return railGapOf(controlsEl);
+  }
+
+  /** The same measurement for any rail, so a second map's rail opens its
+   *  popovers at the same distance this one does. */
+  function railGapOf(rail) {
     const btn = rail && rail.querySelector(".mc-btn");
     if (!rail || !btn || typeof rail.getBoundingClientRect !== "function") {
       return MAP_RAIL_MENU_GAP;
     }
     const inset = btn.getBoundingClientRect().left - rail.getBoundingClientRect().left;
     return MAP_RAIL_MENU_GAP + Math.max(0, inset);
-  }
-
-  /** The rail button reads as pressed while its menu is open. */
-  function markLayersButton(on) {
-    const b = controlsEl && controlsEl.querySelector('[data-act="layers"]');
-    if (!b) return;
-    b.classList.toggle("active", !!on);
-    b.setAttribute("aria-expanded", on ? "true" : "false");
   }
 
   /**
@@ -1045,7 +1101,7 @@ Corvus.map = (function () {
    * layer belongs to without opening Settings. Built on every open, so a
    * catalogue that arrived since the last one is simply there.
    */
-  function renderLayerRows(surface) {
+  function renderLayerRows(surface, active, onChange, onBuilt) {
     const head = document.createElement("div");
     head.className = "ui-menu-head";
     head.textContent = "Map layers";
@@ -1066,23 +1122,17 @@ Corvus.map = (function () {
       });
     });
 
-    layerPicker = Corvus.ui.optionList({
+    const picker = Corvus.ui.optionList({
       ariaLabel: "Map layer",
-      value: activeLayer,
+      value: active,
       options,
-      onChange: (id) => {
-        setBaseLayer(id);
-        // Persist the choice so it survives restarts. Fire-and-forget: a
-        // failed save (backend busy/offline) must never break the switch.
-        Corvus.telemetry.postAction("/api/config", {
-          map: { base_layer: id, provider: specFor(id).provider },
-        }).catch(() => {});
-      },
+      onChange,
     });
+    if (typeof onBuilt === "function") onBuilt(picker);
 
     // The rows, before the headings are interleaved between them: this is
     // what the keyboard walks, and a heading is not a stop on that walk.
-    const items = Array.from(layerPicker.el.children);
+    const items = Array.from(picker.el.children);
 
     // Insert a heading before the first item of each group. Skipped when there
     // is only one group (no point labelling a single section).
@@ -1094,12 +1144,12 @@ Corvus.map = (function () {
         const h = document.createElement("div");
         h.className = "layer-group";
         h.textContent = g.label;
-        layerPicker.el.insertBefore(h, items[cursor]);
+        picker.el.insertBefore(h, items[cursor]);
         cursor += count;
       });
     }
 
-    surface.appendChild(layerPicker.el);
+    surface.appendChild(picker.el);
     return items;
   }
 
@@ -3511,6 +3561,14 @@ Corvus.map = (function () {
     // about which base layer is showing.
     setBaseLayer,
     getBaseLayer: () => activeLayer,
+    // The layer switcher, built for ANOTHER map's rail. The Mission planner
+    // has its own map and its own rail and must offer the same list, the same
+    // surface and the same persistence as this one — see createLayerMenu.
+    createLayerMenu,
+    // One layer's descriptor out of the hydrated catalogue — its label,
+    // maxzoom and attribution. A second map building its own raster source
+    // needs those, and the catalogue is fetched once, here.
+    layerSpec: specFor,
     // Downloaded-area overlay, driven by the offline-map dialog.
     clearTrack,
     getTrack: () => pathCoords.map((c) => c.slice()),

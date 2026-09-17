@@ -26,6 +26,7 @@ from typing import Any, Callable
 
 from pymavlink import mavutil
 
+from . import mission as mission_plan
 from . import rc_config
 from .paths import corvus_path
 from .state_store import VehicleStateStore
@@ -138,6 +139,30 @@ TAKEOFF_ALTITUDE_MAX_M = 120.0
 # anything hand-planned and still bounds the upload to something an operator
 # can wait out.
 FLY_TO_MAX_POINTS = 255
+
+# corvus/mission.py states each planner item's MAV_CMD as a frozen literal so
+# it stays importable without pymavlink. This is where that claim is checked:
+# a mismatch is a wire-format bug, and it fails at import rather than uploading
+# a mission whose "circle" turns out to be some other command entirely.
+_MISSION_CMD_NAMES: dict[str, str] = {
+    "takeoff": "MAV_CMD_NAV_TAKEOFF",
+    "waypoint": "MAV_CMD_NAV_WAYPOINT",
+    "loiter_turns": "MAV_CMD_NAV_LOITER_TURNS",
+    "loiter_time": "MAV_CMD_NAV_LOITER_TIME",
+    "land": "MAV_CMD_NAV_LAND",
+    "rtl": "MAV_CMD_NAV_RETURN_TO_LAUNCH",
+}
+assert set(_MISSION_CMD_NAMES) == set(mission_plan.COMMAND_OF), \
+    "mission.py item types and the MAV_CMD name table disagree"
+for _kind, _name in _MISSION_CMD_NAMES.items():
+    assert mission_plan.COMMAND_OF[_kind] == getattr(mavutil.mavlink, _name), \
+        f"mission.py MAV_CMD for {_kind} disagrees with pymavlink"
+assert mission_plan.MAV_CMD_DO_CHANGE_SPEED == mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED
+
+# Non-navigation mission items (DO_CHANGE_SPEED) travel in MAV_FRAME_MISSION:
+# they name no place, and PX4's feasibility checker reads the frame of every
+# item it walks.
+MISSION_DO_FRAME = mavutil.mavlink.MAV_FRAME_MISSION
 # How long the upload waits with no MISSION_REQUEST and no MISSION_ACK before
 # calling it lost. PX4 requests items back to back, so a gap this long means
 # the vehicle has stopped asking — a dropped MISSION_COUNT, or a mission
@@ -3552,14 +3577,17 @@ class MavlinkBridge:
     def _build_mission_item_spec(
         seq: int, command: int, lat: float, lon: float, alt: float,
         p1: float, p2: float, p3: float, p4: float,
+        frame: int | None = None,
     ) -> dict[str, Any]:
         """Build one MISSION_ITEM_INT / MISSION_ITEM send-spec.
 
-        Frame is MAV_FRAME_GLOBAL_RELATIVE_ALT (relative to home = AGL),
-        supported by PX4 v1.16-v1.18 for MISSION_ITEM_INT.
+        Frame defaults to MAV_FRAME_GLOBAL_RELATIVE_ALT (relative to home =
+        AGL), supported by PX4 v1.16-v1.18 for MISSION_ITEM_INT. A planner item
+        that names no place passes MISSION_DO_FRAME instead.
         """
         return {
-            "frame": mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
+            "frame": (mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT
+                      if frame is None else int(frame)),
             "command": command,
             "current": 1 if seq == 0 else 0,
             "autocontinue": 1,
@@ -3652,6 +3680,115 @@ class MavlinkBridge:
                 return False
 
             self._console_publish("GOTOPOINTS", "Fly to points started", "success")
+            return True
+
+    # ------------------------------------------------------------------
+    # Mission plan (the Mission page)
+    # ------------------------------------------------------------------
+    #
+    # Separate from fly_to_points on purpose. "Fly to points" is one gesture —
+    # click, click, FLY — and uploading, starting and arming are all part of
+    # that one press. A planned mission is drawn, reviewed, saved and only then
+    # flown, so upload and start are two decisions and two methods: an operator
+    # must be able to put a route on the aircraft and walk out to it before
+    # anything spins.
+
+    def upload_mission_plan(self, items: list[dict[str, Any]]) -> bool:
+        """Upload a planned mission. Does not start it and does not arm.
+
+        *items* is :func:`corvus.mission.plan_to_items` output — a flat list of
+        ``{"command", "lat", "lon", "alt", "params": [p1..p4]}``. Returns True
+        only on MAV_MISSION_ACCEPTED.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            if not isinstance(items, list) or not items:
+                self._set_command_error("mission must carry at least one item")
+                return False
+            if len(items) > FLY_TO_MAX_POINTS:
+                self._set_command_error(
+                    f"too many mission items ({len(items)}); "
+                    f"the maximum is {FLY_TO_MAX_POINTS}"
+                )
+                return False
+            if not self._connection_ready():
+                return self._command_failure("Mission upload", -2)
+
+            specs: list[dict[str, Any]] = []
+            for seq, entry in enumerate(items):
+                params = list(entry.get("params") or [0.0, 0.0, 0.0, 0.0])
+                params += [0.0] * (4 - len(params))
+                command = int(entry["command"])
+                # A DO_ command carries no position, so it carries no altitude
+                # frame either; everything that navigates stays in the
+                # relative-alt frame the plan's altitudes are written in.
+                frame = (MISSION_DO_FRAME
+                         if command == mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED
+                         else None)
+                specs.append(self._build_mission_item_spec(
+                    seq, command,
+                    float(entry.get("lat", 0.0)), float(entry.get("lon", 0.0)),
+                    float(entry.get("alt", 0.0)),
+                    params[0], params[1], params[2], params[3],
+                    frame=frame,
+                ))
+
+            self._console_publish(
+                "MISSION", f"Uploading {len(specs)} mission item(s) …", "info",
+            )
+            ack = self._upload_mission(specs)
+            if ack != mavutil.mavlink.MAV_MISSION_ACCEPTED:
+                result = ack if ack < 0 else self._mission_ack_to_result(ack)
+                return self._command_failure("Mission upload", result)
+            self._console_publish("MISSION", "Mission accepted by the vehicle", "success")
+            return True
+
+    def start_mission(self, count: int) -> bool:
+        """Run the mission already on the vehicle: MISSION_START, AUTO, arm.
+
+        *count* is how many items were uploaded — MAV_CMD_MISSION_START is sent
+        with an explicit first/last pair rather than PX4's "0 = last item"
+        convention, which is the one part of this that differs across v1.16 to
+        v1.18.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            if not isinstance(count, int) or count <= 0:
+                self._set_command_error("mission item count must be positive")
+                return False
+            if not self._connection_ready():
+                return self._command_failure("Mission start", -2)
+            nan = float("nan")
+            result = self._send_command_and_wait(
+                mavutil.mavlink.MAV_CMD_MISSION_START,
+                [0.0, float(count - 1), nan, nan, nan, nan, nan],
+                timeout=5.0, retries=1,
+            )
+            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                return self._command_failure("Mission start", result)
+            if not self.set_mode("MISSION"):
+                return False
+            if not self.arm(True):
+                return False
+            self._console_publish("MISSION", "Mission started", "success")
+            return True
+
+    def clear_mission(self) -> bool:
+        """Wipe the mission stored on the vehicle.
+
+        Uploading a zero-item mission is the protocol's own way of saying this,
+        and it goes through the same MISSION_COUNT / MISSION_ACK handshake —
+        so a vehicle that refuses reports why, exactly as a real upload does.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            if not self._connection_ready():
+                return self._command_failure("Mission clear", -2)
+            ack = self._upload_mission([])
+            if ack != mavutil.mavlink.MAV_MISSION_ACCEPTED:
+                result = ack if ack < 0 else self._mission_ack_to_result(ack)
+                return self._command_failure("Mission clear", result)
+            self._console_publish("MISSION", "Mission cleared", "success")
             return True
 
     # ------------------------------------------------------------------

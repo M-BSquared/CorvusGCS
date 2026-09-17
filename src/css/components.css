@@ -464,6 +464,12 @@
   padding-top: 12px;
 }
 
+/* A caption that carries a hint icon (field's `info`). The two are one
+   caption: the wrapper is what keeps the icon beside the words in a
+   row-direction field, where a bare sibling would be pushed to the far end by
+   the space-between that puts the control there. */
+.field-label-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+
 .field-label {
   font-size: 10px;
   font-weight: 600;
@@ -892,7 +898,8 @@
    carries the meaning, so stacking them would leave a labelled switch floating
    under a heading with nothing beside it. */
 .field-switch { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
-.field-switch > .field-label { text-transform: none; font-size: 12px; color: var(--text-1); letter-spacing: 0; }
+.field-switch > .field-label,
+.field-switch > .field-label-row > .field-label { text-transform: none; font-size: 12px; color: var(--text-1); letter-spacing: 0; }
 /* The hint is the third child of a row-direction field, so it has to be
    pulled onto its own line under both of them. It stops short of the switch's
    column (track + gap) so its ragged right edge lines up with the caption

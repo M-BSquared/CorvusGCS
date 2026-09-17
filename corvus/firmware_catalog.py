@@ -90,6 +90,60 @@ BOARD_LABELS: dict[str, str] = {
     "matek_h743-slim_default": "Matek H743 Slim",
 }
 
+# Vendor prefixes whose capitalisation a plain title-case gets wrong. Everything
+# else is title-cased from the prefix itself, so a vendor PX4 adds tomorrow is
+# grouped correctly without an entry here — the table is for spelling, not for
+# deciding who is allowed in the list.
+VENDOR_LABELS: dict[str, str] = {
+    "3dr": "3DR",
+    "ark": "ARK Electronics",
+    "atl": "ATL",
+    "av": "AV",
+    "cuav": "CUAV",
+    "cubepilot": "CubePilot",
+    "hkust": "HKUST",
+    "micoair": "MicoAir",
+    "modalai": "ModalAI",
+    "mro": "mRo",
+    "nxp": "NXP",
+    "px4": "PX4",
+    "airmind": "AirMind",
+    "raspberrypi": "Raspberry Pi",
+    "siyi": "SIYI",
+    "sky-drones": "Sky-Drones",
+    "spracing": "SPRacing",
+    "thepeach": "ThePeach",
+    "uvify": "UVify",
+    "xc-fly": "XC-Fly",
+    "zeroone": "ZeroOne",
+}
+
+# The build every operator wants. PX4 ships each board several times over —
+# `_rover`, `_multicopter`, `_zenoh`, `_debug`, `_performance-test` and so on
+# are builds for developing PX4 itself, and on v1.17.0 they are 55 of the 150
+# targets. They stay in the catalogue (someone asked for one deliberately) but
+# the UI shows them only on request.
+DEFAULT_VARIANT = "default"
+
+# Targets that are not flight controllers. PX4 publishes firmware for the IO
+# coprocessor, CAN nodes and GNSS modules in the same release, under the same
+# `.px4` extension, and in a list headed "Board" they read as boards to flash
+# the aircraft with. Recognised from the target name only, and deliberately
+# narrow: a board wrongly called a peripheral is merely sorted late and
+# labelled, never hidden, but the reverse would be an invitation to flash the
+# IO firmware onto a flight controller.
+_PERIPHERAL_BOARDS = frozenset({"cannode", "dist", "h-flow"})
+_PERIPHERAL_PREFIXES = ("can-", "gnss-", "io-v")
+_PERIPHERAL_SUFFIXES = ("-gps", "-io")
+
+
+def is_peripheral_board(board: str) -> bool:
+    """True when the board token names a peripheral rather than an autopilot."""
+    token = str(board or "").lower()
+    return (token in _PERIPHERAL_BOARDS
+            or token.startswith(_PERIPHERAL_PREFIXES)
+            or token.endswith(_PERIPHERAL_SUFFIXES))
+
 
 # --------------------------------------------------------------------------
 # Board detection
@@ -201,6 +255,41 @@ def board_label(asset_name: str) -> str:
     return BOARD_LABELS.get(stem, stem)
 
 
+def describe_board(asset_name: str) -> dict[str, str]:
+    """Split a build target into the parts a human reads it by.
+
+    PX4 names every asset ``<vendor>_<board>_<variant>.px4`` — all 1240 assets
+    across the eight releases in the catalogue follow it. That is what turns a
+    flat list of 150 targets into something an operator can find their own
+    hardware in: grouped by vendor, named by board, with the developer variants
+    set aside.
+
+    Returns ``{vendor, board, variant, peripheral, title}``. A name that does
+    not follow the convention still comes back whole, under its own first
+    token, rather than being dropped — the parse is for presentation, never a
+    filter.
+    """
+    stem = asset_name[:-4] if asset_name.endswith(".px4") else str(asset_name or "")
+    parts = stem.split("_", 2)
+    if len(parts) == 3:
+        vendor, board, variant = parts
+    elif len(parts) == 2:
+        vendor, board, variant = parts[0], parts[1], DEFAULT_VARIANT
+    else:
+        vendor, board, variant = stem, stem, DEFAULT_VARIANT
+    known = BOARD_LABELS.get(stem)
+    return {
+        "vendor": VENDOR_LABELS.get(vendor.lower(), vendor.replace("-", " ").title()),
+        "board": board,
+        "variant": variant,
+        "peripheral": is_peripheral_board(board),
+        # The row's heading: the marketing name where we know it, otherwise the
+        # board token on its own — under a vendor heading, repeating the vendor
+        # in every row is noise, and the exact target name is shown regardless.
+        "title": known or board,
+    }
+
+
 def is_flashable_asset(name: str) -> bool:
     """True for a `.px4` image that is flight-controller firmware."""
     return name.endswith(".px4") and not name.endswith(NON_FIRMWARE_SUFFIXES)
@@ -306,6 +395,11 @@ class FirmwareCatalog:
         for release in releases:
             for board in release.get("boards", []):
                 board["cached"] = board.get("name") in cached_names
+                # Derived here rather than at parse time so a catalog.json
+                # written by an older Corvus gains the fields too — the cache
+                # is read straight back as the release list, and a field the
+                # UI groups by must never depend on when the file was written.
+                board.update(describe_board(str(board.get("name") or "")))
         return {
             "releases": releases,
             "cached": cached,

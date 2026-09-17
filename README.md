@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.43-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.43" />
+  <img src="https://img.shields.io/badge/Version-2026.09.44-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.44" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.10%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.10+" /></a>
   <img width="8" />
@@ -27,9 +27,9 @@
   <br>
   <img src="https://img.shields.io/badge/%F0%9F%A4%96-Vibe%20Coded-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded" />
   <img width="8" />
-  <img src="https://img.shields.io/badge/Lines%20of%20Code-61k%2B-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 61k+" />
+  <img src="https://img.shields.io/badge/Lines%20of%20Code-66k%2B-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 66k+" />
   <img width="8" />
-  <img src="https://img.shields.io/badge/Tests-51k%20lines%20%C2%B7%20116%20files-2EA043?style=for-the-badge" height="28" alt="Tests: 51k lines across 116 files" />
+  <img src="https://img.shields.io/badge/Tests-53k%20lines%20%C2%B7%20120%20files-2EA043?style=for-the-badge" height="28" alt="Tests: 53k lines across 120 files" />
   <br>
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-6E7681?style=for-the-badge" height="28" alt="Platform: macOS | Linux | Windows" />
   <img width="8" />
@@ -76,6 +76,7 @@
   - [The map and the flight HUD](#the-map-and-the-flight-hud)
   - [3D and the globe](#3d-and-the-globe)
   - [Offline maps](#offline-maps)
+  - [Mission planner](#mission-planner)
   - [Setup — motors, safety, parameters, calibration, tuning, firmware](#setup--motors-safety-parameters-calibration-tuning-firmware)
   - [Analysis — logs, Flight Review and Telemetry Review](#analysis--logs-flight-review-and-telemetry-review)
   - [The side workspace](#the-side-workspace)
@@ -191,10 +192,11 @@ Everything here is **built and working today**.
 | ⚡ **Ready fast** | On connect Corvus loads only flight telemetry. Parameters are fetched when *you* ask for them — so you are flying in seconds, not minutes | ✅ |
 | 🛩️ **Fly** | Live map, floating flight HUD, arm / takeoff / land / RTL, flight-mode selection, on-screen joystick and arrow-key control with adjustable key strength | ✅ |
 | 🗺️ **Navigate** | 4 map services with 12 layers, vehicle heading, home point, the flown track, and click-the-map to fly there or move home | ✅ |
+| 🧭 **Plan a mission** | An optional planning screen: draw a start point, a takeoff, waypoints, orbits and a landing on their own map, then read the whole flight as an altitude profile against the real terrain under it — and drag any point's height straight on that chart. Save missions to disk, upload to the aircraft, and fly only when you press the second button | ✅ |
 | 🌍 **See in 3D** | A spinnable globe when you zoom out, real terrain relief and extruded OpenStreetMap buildings when you zoom in, and the aircraft drawn at the altitude it is actually flying — or switch terrain and buildings off and keep just the camera tilt, for a slow link or a low battery | ✅ |
 | 📴 **Work offline** | Nothing loads from the internet. Download named map areas in advance and the whole app keeps working with no connection | ✅ |
 | 📡 **Connect** | Connects on its own to whatever is plugged in — flight controller on USB first, then telemetry radio, then the simulator port — plus serial, UDP and TCP by hand, a live port picker, saved recent connections, link-quality display and automatic reconnect | ✅ |
-| 🔧 **Set up** | Airframe drawn to scale — click a motor to wire, position or spin-test it; ESC protocol; parameter editor with import / export; guided sensor calibration, ESC calibration, PID tuning by hand or by in-flight autotune, and PX4 firmware flashing | ✅ |
+| 🔧 **Set up** | Airframe drawn to scale — click a motor to wire, position or spin-test it; ESC protocol; parameter editor with import / export; guided sensor calibration, ESC calibration, PID tuning by hand or by in-flight autotune, and PX4 firmware flashing — with every build target of a release laid out as a searchable list grouped by vendor, your own board detected and put first, and the developer builds folded away until you ask for them | ✅ |
 | 🛡️ **Set limits** | Maximum distance and height, the return-to-launch profile, and a failsafe action for every loss PX4 can detect — plus a distance sensor or optical-flow camera brought up by one switch, driver and estimator together | ✅ |
 | 📊 **Review flights** | Download the vehicle's logs and record the live stream, then read either on your own machine: Flight Review for a ULog, Telemetry Review for the recording that exists even when the ULog does not — including the radio link, which an onboard log cannot see | ✅ |
 | 🖥️ **Tools** | MAVLink console, SSH terminal to an onboard companion computer, and an extensible plugin system — the Vibration Monitor and the SSH Launcher ship with it, and dropping a folder in adds your own | ✅ |
@@ -703,6 +705,68 @@ lookups Corvus stops trying for 30 seconds, so cached tiles render at full speed
 and the rest simply stays blank rather than freezing the map. Walking back into
 coverage recovers on its own.
 
+### Mission planner
+
+**Off by default.** Turn it on with Settings → Appearance → **Pages**, and
+**MISSION** appears under HOME in the left rail. A station that is flown by
+hand never needs it, so it is not in anybody's way until it is asked for.
+
+The screen is three regions, and they are the same flight drawn three ways.
+
+**The map**, with a tool bar across the top left — the same bar as the flight
+actions on the Home tab, icon over caption — and the usual zoom, fit and layer
+controls on the rail at the top right. The layer switcher is the Home map's own,
+so it offers the same twelve layers under the same four services and the choice
+follows you between the two screens. Pick a tool and click:
+
+- **Start point** — where the flight begins. Every altitude in the plan is
+  measured from here, which is the same reference PX4 flies a mission in.
+- **Takeoff**, **Waypoint**, **Circle** (orbit a point a set number of times),
+  **Hold** (circle it for a set time), **Land**, and **Return** (which needs no
+  click — it names no place).
+
+Points are dragged to move them, right-click removes the last one, and Esc puts
+the tool rail back to the pointer. A **circle** draws its real radius as a ring
+on the map; select it and a grip appears on that ring — drag it to size the
+orbit, and pick which way round it is flown. (PX4 carries the turn direction as
+the sign of the loiter radius; Corvus keeps the radius a length and sets the
+sign on the way out, because a negative distance is not something anyone should
+have to type to turn the other way.)
+
+The plan is drawn in the same amber the **PLAN** button on the Home tab uses —
+a dashed route and numbered rings — so a mission you drew and a set of points
+you clicked read as the same kind of thing.
+
+**The list**, on the right, is the mission in order: reorder, delete, and edit
+any point's exact latitude, longitude, height, orbit radius or hold time by
+number. Above it, what the plan actually costs — item count, ground distance,
+estimated duration, the highest point, and the closest the route comes to the
+ground.
+
+**The altitude profile**, underneath, is the flight seen from the side: distance
+flown along the bottom, height above the start point up the side, and the real
+terrain under the route drawn beneath it, read from the same elevation tiles 3D
+mode uses (and cached with them, so it works offline). Every point of the plan
+is marked on it — **and you set each one's height by dragging it there.** The
+gap between the line and the ground is the clearance, measured rather than
+calculated in your head.
+
+The **offline area download** is on this screen too, working the same map and
+the same tile store as the Home tab's — planning is when you find out which
+ground you have no imagery for, so the fix belongs where you found it. An area
+downloaded here is an area the Home map already has; there is no second copy
+and nothing to keep in step.
+
+Missions are saved to disk as readable JSON (`~/.corvus/missions` by default),
+so one can be copied to another laptop or kept with the rest of a job's paperwork.
+
+**Nothing reaches the aircraft until you say so, and flying is a second
+decision.** *Upload to vehicle* writes the route and stops — the aircraft holds
+a mission it has not been told to run, which is what lets you upload from the
+tent and walk out to it. *Upload and fly* is the one that switches to MISSION,
+arms and takes off, and it asks first, with any warnings the plan raised in
+front of you.
+
 ### Setup — motors, safety, parameters, calibration, tuning, radio, firmware
 
 - **Motors** — your airframe, drawn. Every motor sits at its real distance from
@@ -850,6 +914,33 @@ coverage recovers on its own.
 - **Firmware** — flash PX4 firmware over a **direct USB connection only**.
   Refused over a telemetry radio or UDP/TCP, and refused while armed.
 
+  Picking the right image is the part that goes wrong, so the boards are a
+  list rather than a dropdown: a PX4 release ships around 150 build targets,
+  and a control that shows one of them at a time answers neither *"which
+  boards can I flash?"* nor *"which do I already have?"*. They are grouped by
+  vendor under their real spelling, named by the board rather than the target
+  string, and searchable by any of it — type `pixhawk`, `cube` or `v6x` and
+  all three land on the row you meant. The board Corvus detected on the USB
+  port leads the list, and its vendor's block is first. Images already on disk
+  are marked **downloaded** — those flash with no network at all — and a count
+  under the list says how many targets the filter is showing out of the
+  release's total, and how many of them you hold.
+
+  Two kinds of target are set aside rather than removed. PX4's **developer
+  builds** (`_rover`, `_multicopter`, `_debug` and the rest — roughly a third
+  of every release) are folded away behind one button, because none of them is
+  what an operator flashing an aircraft wants and all of them are reachable in
+  a click by whoever came for one. **Peripherals** — the IO coprocessor, CAN
+  nodes, GNSS modules, published in the same release with the same `.px4`
+  extension — are sorted last and labelled *peripheral*, never hidden: a board
+  wrongly called a peripheral is merely listed late, while the reverse would
+  be an invitation to write the IO firmware to a flight controller.
+
+  The release list itself is fetched from GitHub once and then read from disk
+  forever, which is right in the field and wrong the day PX4 publishes a new
+  version — so there is a **Refresh** next to it. It is the only control on
+  the page that needs the network on purpose.
+
 ### Analysis — logs, Flight Review and Telemetry Review
 
 - **Vehicle logs (ULog)** — browse the flight controller's SD card and download
@@ -932,6 +1023,8 @@ instantly and is saved.
   cruise, Shift is the dash. Neither touches the sticks, which always
   reach their own stops. They are input sources only — they never arm, change
   mode, or override a failsafe.
+- **Pages** — one switch, **off by default**, that adds **MISSION** under HOME
+  in the left rail. See [Mission planner](#mission-planner).
 - **SSH connections** — add, connect and remove saved hosts.
 - **Files** — where parameter exports, logs and downloads are written.
 - **Plugins** — what Corvus found, and a button that opens the folder you drop

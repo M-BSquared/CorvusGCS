@@ -204,13 +204,36 @@ Corvus.ui = (function () {
      on one line). The caption becomes a real <label for> when the control
      carries an id, so clicking it focuses the control; without an id it
      degrades to a plain <span> and the control's own aria-label does the
-     labelling. */
+     labelling.
+
+     `hint` and `info` are the same sentence in two places: printed under the
+     control, or folded into a hint icon beside the caption. A paragraph that
+     explains a policy rather than the next keystroke belongs in `info` — left
+     on the page it outweighs the setting it describes and pushes whatever
+     follows out of sight. `info` takes the text, or an infoHint options object
+     for a caller that wants its own title or placement. */
   function field(opts) {
     const o = opts || {};
     const el = document.createElement("div");
     el.className = "field" + (o.inline ? " field-inline" : "") +
                    (o.className ? " " + o.className : "");
-    if (o.label) el.appendChild(label(o.label, { htmlFor: o.control && o.control.id }));
+    if (o.label) {
+      const caption = label(o.label, { htmlFor: o.control && o.control.id });
+      if (o.info) {
+        /* Caption and icon share a wrapper so they stay one caption where the
+           field is a row (.field-switch): as separate children the icon would
+           be a third flex item and drift across to the control's side. */
+        const capRow = document.createElement("div");
+        capRow.className = "field-label-row";
+        capRow.appendChild(caption);
+        capRow.appendChild(infoHint(
+          typeof o.info === "string" ? { title: o.label, text: o.info } : o.info
+        ));
+        el.appendChild(capRow);
+      } else {
+        el.appendChild(caption);
+      }
+    }
     if (o.control) el.appendChild(o.control);
     if (o.hint) {
       const hint = document.createElement("span");
