@@ -226,9 +226,82 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -e
+          set -euo pipefail
           ls -la artifacts
-          gh release create "$GITHUB_REF_NAME" \
-            --title "Corvus GCS $GITHUB_REF_NAME" \
-            --generate-notes \
-            artifacts/*
+
+          # The release is created EMPTY first and each asset uploaded on its
+          # own. This used to be a single `gh release create ... artifacts/*`,
+          # which is atomic in the worst way: uploads.github.com answers 5xx
+          # often enough on assets this size (~250-330 MB each, ~840 MB the
+          # set) that one blip discards the whole release along with the
+          # uploads that had already succeeded, and the re-run starts again
+          # from zero bytes. On v2026.09.44 that failed three times running,
+          # each time on a different asset (502, 500, 500), while every build
+          # job passed and GitHub reported no incident.
+          #
+          # Draft until every asset is attached, so nobody is offered a release
+          # missing the platform they came for. Every step below is idempotent:
+          # a re-run adopts the draft a failed attempt left behind and
+          # re-uploads only what did not make it.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME already exists - resuming it"
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title "Corvus GCS $GITHUB_REF_NAME" \
+              --generate-notes \
+              --draft
+          fi
+
+          # One asset at a time, each retried on its own with a widening pause.
+          # --clobber replaces a half-written asset from an earlier attempt
+          # rather than failing because the name is taken.
+          upload() {
+            local file="$1" attempt
+            for attempt in 1 2 3 4 5; do
+              if gh release upload "$GITHUB_REF_NAME" "$file" --clobber; then
+                echo "uploaded $(basename "$file")"
+                return 0
+              fi
+              echo "attempt $attempt failed for $(basename "$file")" >&2
+              sleep $((attempt * 15))
+            done
+            echo "giving up on $(basename "$file") after 5 attempts" >&2
+            return 1
+          }
+
+          # What the release already holds, as "name<TAB>size". A re-run then
+          # re-uploads only what is absent or the wrong size: an asset a failed
+          # attempt left half-written has a size that does not match and is
+          # replaced, while an intact one is not sent up a second time. Without
+          # this a resume costs the full ~840 MB again to fix one file.
+          have="$(gh release view "$GITHUB_REF_NAME" --json assets \
+                    --jq '.assets[] | "\(.name)\t\(.size)"' || true)"
+
+          for f in artifacts/*; do
+            [ -f "$f" ] || continue
+            name="$(basename "$f")"
+            size="$(wc -c < "$f" | tr -d ' ')"
+            if printf '%s\n' "$have" | grep -Fxq "$name	$size"; then
+              echo "already on the release, intact: $name"
+              continue
+            fi
+            upload "$f"
+          done
+
+          # Refuse to publish half a release. These three files are what the
+          # three build jobs produced, so anything missing here means an upload
+          # reported success without taking.
+          for f in artifacts/*; do
+            [ -f "$f" ] || continue
+            name="$(basename "$f")"
+            if ! gh release view "$GITHUB_REF_NAME" --json assets \
+                 --jq '.assets[].name' | grep -Fxq "$name"; then
+              echo "asset missing from the release: $name" >&2
+              exit 1
+            fi
+          done
+
+          # Only now is it a release.
+          gh release edit "$GITHUB_REF_NAME" --draft=false
+          gh release view "$GITHUB_REF_NAME" --json assets \
+            --jq '.assets[] | "\(.name)  \(.size) bytes"'
