@@ -1534,6 +1534,16 @@ Corvus.map = (function () {
   // recomputing it on every one.
   const TERRAIN_SYNC_EPSILON_M = 2.0;
   const TERRAIN_SYNC_MIN_MS = 250;
+  // The zoom the camera-seeding elevation probe reads. Coarse on purpose:
+  // it only has to place a camera above the ground, the DEM query refines it
+  // once terrain is live, and a z12 pixel (about 40 m of ground) comes from a
+  // small tile that is very likely already cached.
+  const TERRAIN_PROBE_ZOOM = 12;
+  // A seed tile that never arrives must not hold the mode open.
+  // Bounded tightly because the tilt waits behind it: a cached tile answers in
+  // milliseconds, and a tile that is not coming must not hold the camera
+  // still long enough for the operator to notice the button did nothing.
+  const TERRAIN_PROBE_TIMEOUT_MS = 1500;
   // Attempts the settle poll makes before giving up — a few seconds' worth.
   const TERRAIN_SYNC_TRIES = 20;
   // Where the globe hands over to terrain. MapLibre's own globe is already
@@ -1582,7 +1592,16 @@ Corvus.map = (function () {
   // backend that does not serve one, which is what makes 3D degrade to a
   // plain tilt rather than break.
   let terrainSpec = null;
+  // Whether the terrain is attached right now. terrainWanted is the mode's
+  // INTENT, which is set the moment the operator asks and stays set across
+  // the elevation probe that runs before the attach — the two differ for
+  // those few milliseconds, and conflating them is how a second press starts
+  // a second attach.
   let terrainOn = false;
+  let terrainWanted = false;
+  // Bumped by anything that invalidates an attach in flight, so a probe that
+  // resolves late cannot switch terrain back on behind the operator.
+  let terrainGeneration = 0;
   // Whether the globe projection is the one showing. Driven by zoom, not by a
   // button — see applyProjectionForZoom.
   let globeOn = false;
@@ -1745,34 +1764,176 @@ Corvus.map = (function () {
    * the terrarium tiles are 256, so leaving it out halves every elevation and
    * quietly flattens the world.
    */
-  function enableTerrain() {
+  /**
+   * Bring terrain up, and call *onReady* once the camera has been placed.
+   *
+   * The callback exists because the order matters and is not obvious: the
+   * camera's ground height has to be set BEFORE the tilt, not during it.
+   * Writing the elevation into a running easeTo fights the animation, and
+   * what the operator sees is the map decline to tilt at all. So the caller
+   * hands its tilt over and it runs on the far side of the seed.
+   */
+  function enableTerrain(onReady) {
     const id = terrainSourceId();
-    if (!map || !started || !id || terrainOn) return false;
-    try {
-      if (!map.getSource(id)) {
-        map.addSource(id, {
-          type: "raster-dem",
-          tiles: [tileUrl(id)],
-          tileSize: 256,
-          maxzoom: terrainSpec.maxzoom,
-          encoding: terrainSpec.encoding || "terrarium",
-          attribution: terrainSpec.attribution,
-        });
+    const ready = () => { if (typeof onReady === "function") onReady(); };
+    if (!map || !started || !id || terrainWanted) return false;
+    terrainWanted = true;
+    // Claimed before the probe below, so a second press cannot start a second
+    // attach, and cancelled by a generation bump if 3D goes off meanwhile.
+    const generation = ++terrainGeneration;
+    primeCameraElevation().then((height) => {
+      if (generation !== terrainGeneration) return;   // switched off, or re-entered
+      attachTerrain(id, generation);
+      // AFTER the attach, never before: setTerrain resets the camera's centre
+      // elevation to zero as it binds — it re-derives that height from the
+      // terrain it is attaching, which at that instant knows nothing. A seed
+      // written first is therefore thrown away, and the camera goes back
+      // underground on the very call that was meant to save it.
+      if (height !== null && terrainOn) {
+        try { map.setCenterElevation(height); } catch (_error) { /* camera busy */ }
       }
+      ready();
+    });
+    return true;
+  }
+
+  /**
+   * Put the camera above the ground BEFORE the terrain arrives.
+   *
+   * This is the fix for the white map, and it is worth stating plainly
+   * because the failure is so odd to look at. MapLibre's camera focuses on
+   * sea level until it is told otherwise. Attach terrain over a valley floor
+   * at 600 m and the camera is now six hundred metres underground: nothing is
+   * in front of it, so nothing renders — and MapLibre will only report the
+   * ground height once it can SEE the ground, which it cannot. The map sits
+   * white and the only way out is to zoom until the camera clears the
+   * mountain, which is a thing an operator has to discover rather than a
+   * thing a ground station should do.
+   *
+   * So the height is read from the elevation tile directly, before terrain is
+   * attached: one tile, one pixel, decoded here. That breaks the circle —
+   * the camera starts above the ground, the ground is therefore visible, and
+   * everything MapLibre does from there works the way it is supposed to.
+   *
+   * Resolves to null when the tile cannot be had (offline over ground that
+   * was never downloaded). The camera then keeps its current elevation, which
+   * is the behaviour this replaced — no worse, and no longer the common case.
+   */
+  function primeCameraElevation() {
+    if (!map || typeof map.setCenterElevation !== "function") return Promise.resolve(null);
+    let centre;
+    try { centre = map.getCenter(); } catch (_error) { return Promise.resolve(null); }
+    if (!centre || !isFinite(centre.lng) || !isFinite(centre.lat)) return Promise.resolve(null);
+    return demElevationAt([centre.lng, centre.lat]);
+  }
+
+  /** Metres above sea level from one RGB-packed elevation pixel. */
+  function decodeDemPixel(r, g, b) {
+    const encoding = (terrainSpec && terrainSpec.encoding) || "terrarium";
+    const height = encoding === "mapbox"
+      ? -10000 + (r * 256 * 256 + g * 256 + b) * 0.1
+      : r * 256 + g + b / 256 - 32768;
+    return isFinite(height) ? height : null;
+  }
+
+  /**
+   * Ground height under *lngLat*, read from a single elevation tile.
+   *
+   * Deliberately independent of MapLibre: this is what the camera is seeded
+   * from, so it cannot be allowed to depend on the terrain being healthy —
+   * that is the circle it exists to break. The tile comes from the same
+   * backend cache as everything else, so it works offline exactly as far as
+   * 3D does, and a miss resolves null rather than throwing.
+   *
+   * A coarse zoom on purpose. This only has to place a camera, which the DEM
+   * query then refines to the metre once terrain is live; a z12 pixel is
+   * about forty metres of ground, it is a small tile, and it is the one most
+   * likely to be already cached.
+   */
+  function demElevationAt(lngLat) {
+    const id = terrainSourceId();
+    if (!id || typeof document === "undefined" || typeof Image === "undefined") {
+      return Promise.resolve(null);
+    }
+    const zoom = Math.min(TERRAIN_PROBE_ZOOM, terrainSpec.maxzoom);
+    const count = 1 << zoom;
+    const lat = Math.max(-85.05112878, Math.min(85.05112878, lngLat[1]));
+    const rad = (lat * Math.PI) / 180;
+    const fx = ((lngLat[0] + 180) / 360) * count;
+    const fy = ((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * count;
+    if (!isFinite(fx) || !isFinite(fy)) return Promise.resolve(null);
+    const x = Math.max(0, Math.min(count - 1, Math.floor(fx)));
+    const y = Math.max(0, Math.min(count - 1, Math.floor(fy)));
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
+      // A tile that never resolves must not hold 3D mode open: the map is
+      // still usable without the seed, only worse.
+      const timer = window.setTimeout(() => finish(null), TERRAIN_PROBE_TIMEOUT_MS);
+      const image = new Image();
+      image.onload = () => {
+        window.clearTimeout(timer);
+        try {
+          const size = image.naturalWidth || 256;
+          const px = Math.max(0, Math.min(size - 1, Math.floor((fx - x) * size)));
+          const py = Math.max(0, Math.min(size - 1, Math.floor((fy - y) * size)));
+          const canvas = document.createElement("canvas");
+          canvas.width = 1;
+          canvas.height = 1;
+          const ctx = canvas.getContext("2d", { willReadFrequently: true });
+          ctx.drawImage(image, px, py, 1, 1, 0, 0, 1, 1);
+          const data = ctx.getImageData(0, 0, 1, 1).data;
+          finish(decodeDemPixel(data[0], data[1], data[2]));
+        } catch (_error) {
+          finish(null);   // a canvas we may not read from is not a reason to fail
+        }
+      };
+      image.onerror = () => { window.clearTimeout(timer); finish(null); };
+      image.src = `/api/tiles/${id}/${zoom}/${x}/${y}.png`;
+    });
+  }
+
+  /**
+   * Put the DEM source and the terrain into the style.
+   *
+   * A FRESH source every time, not a reused one. MapLibre leaves a raster-dem
+   * source's tiles marked loaded across a setTerrain(null), so attaching
+   * terrain to that same source hands back a terrain whose own DEM cache is
+   * empty — and nothing refills it, because the tiles it would wait for have
+   * already arrived once and fire no further events. queryTerrainElevation
+   * then answers 0 forever: not null, which would read as "not yet", but a
+   * confident wrong 0 that is indistinguishable from sea level.
+   *
+   * Rebuilding the source is what makes the second press of the button behave
+   * like the first. It costs a loopback fetch against our own tile cache, not
+   * a download, and it works offline for the same reason.
+   */
+  function attachTerrain(id, generation) {
+    if (!map || !started || generation !== terrainGeneration || !terrainWanted) return;
+    try {
+      if (map.getSource(id)) map.removeSource(id);
+      map.addSource(id, {
+        type: "raster-dem",
+        tiles: [tileUrl(id)],
+        tileSize: 256,
+        maxzoom: terrainSpec.maxzoom,
+        encoding: terrainSpec.encoding || "terrarium",
+        attribution: terrainSpec.attribution,
+      });
       map.setTerrain({ source: id, exaggeration: TERRAIN_EXAGGERATION });
     } catch (error) {
       // A DEM that will not load is a flat 3D view, not a broken map.
       console.warn("Corvus: terrain unavailable", error);
-      return false;
+      terrainWanted = false;
+      return;
     }
     terrainOn = true;
     // From here on, DEM tiles landing are the cue to reconcile the camera's
-    // idea of the ground height with the real one — see syncTerrainElevation
-    // for why that is not optional.
+    // idea of the ground height with the real one — see syncTerrainElevation.
     terrainSyncAt = 0;
     map.on("data", onTerrainData);
     scheduleTerrainSync();
-    return true;
   }
 
   /**
@@ -1807,6 +1968,13 @@ Corvus.map = (function () {
     if (!centre || !isFinite(centre.lng) || !isFinite(centre.lat)) return false;
     const ground = terrainElevation([centre.lng, centre.lat]);
     if (ground === null) return false;   // the DEM under the centre has not arrived
+    // A literal zero is not an answer yet. A terrain with no DEM loaded under
+    // the centre reports 0 rather than null, which is exactly what the camera
+    // already believes — so taking it at face value declares success, stops
+    // asking, and leaves the aircraft's ground six hundred metres below the
+    // mountain it is on. Keeping it unsettled costs a few retries at genuine
+    // sea level and then leaves 0 standing, which is the right answer there.
+    if (ground === 0) return false;
     terrainSyncAt = Date.now();
     const current = Number(map.getCenterElevation());
     if (isFinite(current) && Math.abs(ground - current) < TERRAIN_SYNC_EPSILON_M) return true;
@@ -1963,10 +2131,21 @@ Corvus.map = (function () {
   /** Take terrain back out. The source stays in the style so re-entering 3D
    *  does not re-download every DEM tile the operator just looked at. */
   function disableTerrain() {
+    // The generation bump comes first and unconditionally: it cancels an
+    // attach that is still waiting on its elevation probe, which is the one
+    // way terrain could come back after being switched off.
+    terrainGeneration++;
+    terrainWanted = false;
     if (!map || !terrainOn) return;
     stopTerrainSync();
     map.off("data", onTerrainData);
+    // Order matters: MapLibre refuses to remove a source the terrain is still
+    // bound to, so the binding goes first.
     try { map.setTerrain(null); } catch (_error) { /* already gone */ }
+    const id = terrainSourceId();
+    try {
+      if (id && map.getSource(id)) map.removeSource(id);
+    } catch (_error) { /* something else is holding it; enableTerrain retries */ }
     terrainOn = false;
   }
 
@@ -2393,6 +2572,7 @@ Corvus.map = (function () {
     on = !!on;
     if (!map) return threeD;
     threeD = on;
+    let tiltHandled = false;
     if (on) {
       // Everything that touches the style waits for the style. The rail is
       // built before "load" (so the operator is never left without controls
@@ -2403,7 +2583,10 @@ Corvus.map = (function () {
         // terrain; entering it zoomed out to the country is the globe.
         globeOn = map.getZoom() < GLOBE_MAX_ZOOM;
         if (globeOn) setGlobe(true);
-        else enableTerrain();
+        // The tilt is handed to enableTerrain so it runs after the camera has
+        // been placed above the ground — see there. When there is no terrain
+        // to wait for, it happens immediately below instead.
+        else tiltHandled = enableTerrain(() => tiltTo(THREE_D_PITCH));
         setSky(true);
         addBuildingLayer();
         addVehicle3DLayer();
@@ -2420,7 +2603,7 @@ Corvus.map = (function () {
       // once("moveend") here: a 3D press cancelled before the tilt lands
       // leaves that listener registered forever, and an operator toggling the
       // button accumulates one per press.
-      tiltTo(THREE_D_PITCH);
+      if (!tiltHandled) tiltTo(THREE_D_PITCH);
     } else {
       hideVehicle3D();
       removeBuildingLayer();
@@ -2649,6 +2832,11 @@ Corvus.map = (function () {
     _buildingCellsIn: (box, centre) => buildingCellsIn(box, centre),
     // test hook: the globe/terrain handover rule, including its hysteresis.
     _wantsGlobe: (zoom, currentlyGlobe) => wantsGlobe(zoom, currentlyGlobe),
+    // test hook: the elevation-tile pixel decoder that seeds the camera. It
+    // is what keeps the map from going white over high ground, and it is
+    // plain arithmetic, so it is assertable without a canvas.
+    _decodeDemPixel: (r, g, b) => decodeDemPixel(r, g, b),
+    _setTerrainSpec: (spec) => { terrainSpec = spec; },
     _globeZooms: () => ({ max: GLOBE_MAX_ZOOM, band: GLOBE_ZOOM_BAND }),
     _buildingLimits: () => ({
       cellZoom: BUILDING_CELL_Z,

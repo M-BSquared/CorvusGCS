@@ -334,7 +334,55 @@ check("a zoom that is not a number changes nothing", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6. The mode's own surface
+// 6. The elevation pixel that keeps the map from going white
+// ---------------------------------------------------------------------------
+//
+// MapLibre's camera focuses on sea level until told otherwise, and it will
+// only report the ground height once it can SEE the ground. Attach terrain
+// over a 600 m valley and the camera is underground: nothing renders, and
+// nothing can tell it why — the map sits white until the operator happens to
+// zoom out far enough to clear the mountain.
+//
+// map.js breaks that circle by decoding one pixel of one elevation tile
+// itself, before terrain is attached. This is that decode. A wrong formula
+// here puts the camera in the wrong place, which is the same white map with
+// a different cause, so the packings are pinned against their definitions.
+
+check("terrarium decodes to metres above sea level", () => {
+  map._setTerrainSpec({ encoding: "terrarium", maxzoom: 15 });
+  // height = R * 256 + G + B / 256 - 32768, so the zero point is R=128.
+  assert.equal(map._decodeDemPixel(128, 0, 0), 0, "R=128 is sea level");
+  assert.equal(map._decodeDemPixel(128, 100, 0), 100);
+  assert.equal(map._decodeDemPixel(129, 0, 0), 256);
+  assert.equal(map._decodeDemPixel(128, 0, 128), 0.5, "the blue channel is the fraction");
+  // Below sea level has to come back negative, not wrap.
+  assert.equal(map._decodeDemPixel(127, 156, 0), -100);
+});
+
+check("a real summit decodes to a plausible height", () => {
+  map._setTerrainSpec({ encoding: "terrarium", maxzoom: 15 });
+  // Innsbruck's valley floor, the case that produced the white map.
+  const metres = map._decodeDemPixel(130, 62, 0);
+  assert.ok(metres > 570 && metres < 580, `expected ~574 m, got ${metres}`);
+});
+
+check("mapbox packing is decoded by its own formula", () => {
+  // A second DEM would arrive with a different encoding, and silently reading
+  // it as terrarium gives heights that are wrong by kilometres.
+  map._setTerrainSpec({ encoding: "mapbox", maxzoom: 15 });
+  assert.ok(Math.abs(map._decodeDemPixel(1, 134, 160) - 0) < 0.2, "mapbox zero point");
+  assert.ok(Math.abs(map._decodeDemPixel(1, 134, 170) - 1) < 0.2);
+});
+
+check("an unknown encoding falls back to terrarium rather than to NaN", () => {
+  map._setTerrainSpec({ encoding: undefined, maxzoom: 15 });
+  assert.equal(map._decodeDemPixel(128, 0, 0), 0);
+  map._setTerrainSpec(null);
+  assert.equal(map._decodeDemPixel(128, 0, 0), 0);
+});
+
+// ---------------------------------------------------------------------------
+// 7. The mode's own surface
 // ---------------------------------------------------------------------------
 
 check("3D exposes a state that starts off", () => {
