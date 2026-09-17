@@ -73,17 +73,25 @@
   justify-content: center;
   gap: 7px;
   position: relative;
-  border: none;
+  /* Transparent, not none: every variant then measures the same box. A border
+     only the secondary variant declared made it 2px taller than the primary
+     beside it in the same row, so a Connect/Cancel pair never lined up. The
+     variants below only recolour this edge. */
+  border: 1px solid transparent;
   border-radius: var(--radius-btn);
   background: transparent;
   cursor: pointer;
   font-family: var(--sans);
   font-weight: 600;
-  letter-spacing: 0.5px;
+  /* The popover title's tracking, not the wide 0.5px a control label used to
+     carry: a button and the sheet it opens are set in the same voice, and the
+     old spacing was the loudest thing separating them. */
+  letter-spacing: 0.1px;
   /* md is the default size; data-size overrides below. */
   font-size: 12px;
   padding: 10px 14px;
-  transition: background 130ms, transform 100ms cubic-bezier(0.2, 0.8, 0.2, 1),
+  transition: background 130ms, border-color 130ms,
+              transform 100ms cubic-bezier(0.2, 0.8, 0.2, 1),
               box-shadow 160ms;
   will-change: transform;
   user-select: none;
@@ -137,19 +145,31 @@
    The base .btn is layout-only (no bg); every visual variant is explicit so
    a bare <button class="btn"> is never half-styled. secondary is the
    helper default. */
-/* The default variant wears the subtle glass: a translucent fill, a hairline
-   of the contrast overlay, and a light blur — the flight-action bar's material
-   at button scale. Over an opaque page this reads as a slightly lifted tint
-   rather than a frosted slab, which is the honest result and the intent. */
+/* The default variant is .glass at button scale: the same 0.6 fill the menus
+   and popovers float on, a hairline of the contrast overlay, and a blur.
+   It reads as a frosted chip over the map and as a slightly lifted tint over
+   an opaque page — one material, two honest results, which is the point.
+
+   The fill is the glass channel rather than --panel-fill, which the cards
+   keep: a card is a surface things sit ON and carries more fill so a light
+   theme's near-white page does not swallow it, while a button standing on a
+   frosted sheet has to be made of the sheet. At 0.82 it was a solid white
+   chip on a menu you could see the ground through.
+
+   --blur-fine, not the sheets' 28px: on a 36px control the two are
+   indistinguishable and the heavy one only costs compositing (see the token's
+   own note in themes.css). The alpha does the work here, not the radius. */
 .btn[data-variant="secondary"] {
-  background: var(--panel-fill);
+  background: rgb(var(--glass-rgb) / 0.6);
   backdrop-filter: var(--blur-fine);
   -webkit-backdrop-filter: var(--blur-fine);
   color: var(--text-1);
   border: 1px solid var(--panel-hairline);
 }
+/* Hover thickens the material instead of jumping to the old near-solid 0.95,
+   which on a now-translucent button read as the frost switching off. */
 .btn[data-variant="secondary"]:hover {
-  background: var(--panel-fill-hover);
+  background: rgb(var(--glass-rgb) / 0.8);
   border-color: var(--panel-hairline-hover);
 }
 
@@ -188,12 +208,65 @@
 }
 .btn[data-variant="nav"]:hover { background: var(--nav-dim); }
 
+/* ----- The shared edge and elevation of a floating surface -----
+   A menu, a popover and a button are the same kind of object at three sizes:
+   a lit surface sitting above the page. The sheets say that with .glass — a
+   hairline of the contrast overlay plus a soft shadow — and the filled
+   buttons said it with neither, which is what made a dialog's actions read as
+   flat stickers under the popover that sent the operator to them. They take
+   the same hairline (the overlay at 8%, .glass's own alpha) and one step less
+   elevation: --shadow-soft is the app's small-surface depth, a rung below the
+   --shadow-glass the sheets float on.
+
+   ghost and nav are text buttons — no fill, so nothing to raise or outline;
+   they stay flat and only tint on hover. */
+.btn[data-variant="primary"],
+.btn[data-variant="danger"],
+.btn[data-variant="success"] {
+  border-color: rgb(var(--tint-rgb) / 0.08);
+}
+.btn[data-variant="secondary"],
+.btn[data-variant="primary"],
+.btn[data-variant="danger"],
+.btn[data-variant="success"] {
+  box-shadow: var(--shadow-soft);
+}
+/* The hover lift is 1px, so the shadow grows with it — the light source does
+   not move when the surface does. */
+.btn[data-variant="secondary"]:hover:not(:disabled):not(.is-busy),
+.btn[data-variant="primary"]:hover:not(:disabled):not(.is-busy),
+.btn[data-variant="danger"]:hover:not(:disabled):not(.is-busy),
+.btn[data-variant="success"]:hover:not(:disabled):not(.is-busy) {
+  box-shadow: var(--shadow-pop);
+}
+/* Pressed is against the page, not above it: the shadow goes as the 0.97
+   scale lands. It repeats the variant list rather than saying `.btn:active`,
+   because a press only ever happens under the pointer that is already
+   hovering, and the plain selector would lose that overlap to the hover rule
+   above it on specificity — the button would sink while its shadow grew. */
+.btn[data-variant="secondary"]:active:not(:disabled):not(.is-busy),
+.btn[data-variant="primary"]:active:not(:disabled):not(.is-busy),
+.btn[data-variant="danger"]:active:not(:disabled):not(.is-busy),
+.btn[data-variant="success"]:active:not(:disabled):not(.is-busy) {
+  box-shadow: none;
+}
+/* Dimmed and unavailable, so it does not float: a disabled button that still
+   cast a shadow looked like it was waiting to be pressed. */
+.btn:disabled,
+.btn.is-busy {
+  box-shadow: none;
+}
+
 /* ----- State classes ----- */
 /* .is-active: filled accent read for toggles (e.g. PLAN engaged). */
+/* The overlay hairline, not `transparent`: a toggle that engages becomes a
+   filled button and should keep the edge every other filled surface carries.
+   Clearing it was only ever about hiding the secondary variant's darker
+   --panel-hairline under the fill, and 8% of the overlay does that already. */
 .btn.is-active {
   background: var(--accent);
   color: var(--text-inverted);
-  border-color: transparent;
+  border-color: rgb(var(--tint-rgb) / 0.08);
 }
 .btn.is-active:hover { background: var(--accent-hover); }
 
@@ -201,7 +274,7 @@
 .btn.armed {
   background: var(--healthy);
   color: var(--text-inverted);
-  border-color: transparent;
+  border-color: rgb(var(--tint-rgb) / 0.08);
 }
 .btn.armed:hover { background: var(--healthy-bright); }
 
@@ -286,10 +359,18 @@
   }
 }
 
-/* Hook: when users reduce transparency, future glass/button variants should
-   frost here. No translucent .btn surfaces today, so nothing to override. */
+/* Reduced transparency: the secondary variant is a translucent surface, so it
+   frosts to a solid one exactly as .glass does — same substance, same
+   accommodation. The filled variants are opaque already. */
 @media (prefers-reduced-transparency: reduce) {
-  /* reserved for translucent .btn variants */
+  .btn[data-variant="secondary"] {
+    background: var(--surface-2);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .btn[data-variant="secondary"]:hover {
+    background: var(--surface-hover);
+  }
 }
 
 /* ===== Form fields — .field / .field-label / .field-select / .field-input =====

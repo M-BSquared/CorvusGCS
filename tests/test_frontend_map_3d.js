@@ -176,6 +176,11 @@ check("a non-finite altitude is treated as ground, not as NaN pixels", () => {
 // 3. vehicleDrawAltitude: which altitude the aircraft is drawn at
 // ---------------------------------------------------------------------------
 //
+// Metres above SEA LEVEL — the same datum the DEM, the autopilot's AMSL and
+// MapLibre 5's own rendering all use, which is why none of these need a
+// conversion. (MapLibre 4 drew relative to the terrain under the map centre,
+// and getting that wrong put the aircraft hundreds of pixels off.)
+//
 // Without a map there is no terrain, so terrainElevation() returns null for
 // every lookup — which is exactly the no-DEM branch of the preference order,
 // and the one that has to keep working when a region was never downloaded.
@@ -293,7 +298,43 @@ check("an inside-out viewport asks for nothing", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 5. The mode's own surface
+// 5. Globe or terrain: the handover rule
+// ---------------------------------------------------------------------------
+//
+// The two cannot both be on. MapLibre 5.24 answers queryTerrainElevation with
+// 0 under the globe projection, so a terrain-enabled globe tells the camera
+// the ground is at sea level — and over a 600 m valley floor that is a camera
+// underground and a map that renders nothing. The split is also simply right:
+// from orbit a 600 m hill is under a pixel, and a globe at street level is a
+// flat map with extra maths.
+
+check("far out is the globe, close in is terrain", () => {
+  const { max } = map._globeZooms();
+  assert.equal(map._wantsGlobe(2, false), true, "the world view is the globe");
+  assert.equal(map._wantsGlobe(max + 4, false), false, "the field view is terrain");
+});
+
+check("the handover has hysteresis, so a zoom on the threshold does not flap", () => {
+  const { max, band } = map._globeZooms();
+  // Sitting exactly on the nominal threshold: whatever is showing stays.
+  assert.equal(map._wantsGlobe(max, true), true, "globe stays globe at the line");
+  assert.equal(map._wantsGlobe(max, false), false, "terrain stays terrain at the line");
+  // And the band is real in both directions.
+  assert.equal(map._wantsGlobe(max + band - 0.01, true), true);
+  assert.equal(map._wantsGlobe(max + band + 0.01, true), false);
+  assert.equal(map._wantsGlobe(max - band - 0.01, false), true);
+  assert.equal(map._wantsGlobe(max - band + 0.01, false), false);
+});
+
+check("a zoom that is not a number changes nothing", () => {
+  // A transform mid-change is not a reason to tear down the world.
+  assert.equal(map._wantsGlobe(NaN, true), true);
+  assert.equal(map._wantsGlobe(NaN, false), false);
+  assert.equal(map._wantsGlobe(undefined, true), true);
+});
+
+// ---------------------------------------------------------------------------
+// 6. The mode's own surface
 // ---------------------------------------------------------------------------
 
 check("3D exposes a state that starts off", () => {

@@ -132,19 +132,32 @@ Corvus.rcTransmitter = (function () {
   const LAYOUT = {
     view: { w: 880, h: 650 },
 
+    /** The drawing's centre line. Every part of the shell is placed against
+     *  it and every bindable control has a mirror image across it, which is
+     *  both how a handset is actually built and the only way the two label
+     *  columns stay level with each other. Held here rather than open-coded
+     *  so the symmetry is checkable — see the test that walks it. */
+    centre: 440,
+
     /* --- the shell ---------------------------------------------------- */
-    body: "M 356 150 L 524 150 Q 552 150 574 163 L 690 219 Q 728 237 728 272 "
-      + "L 728 500 Q 728 536 700 554 L 636 592 Q 614 604 586 604 L 294 604 "
-      + "Q 266 604 244 592 L 180 554 Q 152 536 152 500 L 152 272 "
-      + "Q 152 237 190 219 L 306 163 Q 328 150 356 150 Z",
+    /** The flanks stand at 144 and 736 rather than 8 further in, because the
+     *  outermost switch on each shoulder swings its handle out over them: at
+     *  the down position SF's and SH's balls cleared the old outline entirely
+     *  and floated in the margin. The shell has to be wide enough to hold
+     *  every position of every control drawn on it, and that is the widest
+     *  thing on it. The two margins move out by the same 8 to keep their gap. */
+    body: "M 356 150 L 524 150 Q 552 150 574 163 L 690 219 Q 736 237 736 272 "
+      + "L 736 500 Q 736 536 700 554 L 636 592 Q 614 604 586 604 L 294 604 "
+      + "Q 266 604 244 592 L 180 554 Q 144 536 144 500 L 144 272 "
+      + "Q 144 237 190 219 L 306 163 Q 328 150 356 150 Z",
     /** The antenna stands up rather than folding across the case. A folded
      *  blade is the more characteristic silhouette, but it lies across the
      *  whole top of the drawing — which is exactly where the knobs' leader
      *  lines run, and a label you cannot follow to its control is worse than
      *  a less characteristic antenna. */
     antenna: {
-      mast: { x: 414, y: 72, w: 32, h: 56, rx: 11 },
-      hinge: { x: 408, y: 116, w: 44, h: 38, rx: 9 },
+      mast: { x: 424, y: 72, w: 32, h: 56, rx: 11 },
+      hinge: { x: 418, y: 116, w: 44, h: 38, rx: 9 },
     },
     brand: { x: 440, y: 196, label: "CORVUS" },
     chin: { x: 386, y: 604, w: 108, h: 18, rx: 7 },
@@ -158,8 +171,8 @@ Corvus.rcTransmitter = (function () {
      *  sends on rather than carrying one of its own, so there is nothing here
      *  to bind and nothing to light. */
     trims: [
-      { x: 418, y: 320, w: 22, h: 104, axis: "v" },
-      { x: 462, y: 320, w: 22, h: 104, axis: "v" },
+      { x: 407, y: 320, w: 22, h: 104, axis: "v" },
+      { x: 451, y: 320, w: 22, h: 104, axis: "v" },
       { x: 246, y: 468, w: 120, h: 22, axis: "h" },
       { x: 514, y: 468, w: 120, h: 22, axis: "h" },
     ],
@@ -178,7 +191,17 @@ Corvus.rcTransmitter = (function () {
        The switch nuts descend across each shoulder rather than sitting in a
        row: the handles all swing through the same arc, so a row would put each
        one's "down" position on top of its neighbour's nut. The stagger is what
-       keeps six switches legible at every position at once. */
+       keeps six switches legible at every position at once.
+
+       That stagger is one step repeated, not three placed by eye: 70 units
+       between nuts along a line at 23.4 degrees, laid out from SB and SC
+       outward. Stepped unevenly — 69 to the inner nut, 77 to the outer, and
+       the middle one 4 off the line between them — the row reads as a mistake
+       rather than as a row, which is what it did.
+
+       Each shoulder is the exact mirror of the other about `centre`, and the
+       leader lines are routed around the handles rather than the nuts moved
+       out from under them — see CALLOUT. */
     controls: [
       // Gimbal axes. Each gets its own callout because each is its own
       // channel; the gimbal itself would be ambiguous between the two.
@@ -187,40 +210,49 @@ Corvus.rcTransmitter = (function () {
         callout: { side: "left", y: 370, target: [222, 372] } },
       { id: "left_x", kind: "axis", gimbal: "left", axis: "x",
         label: "Left stick \u2194",
-        callout: { side: "left", y: 458, target: [306, 456] } },
+        callout: { side: "left", y: 456, target: [306, 456] } },
       { id: "right_y", kind: "axis", gimbal: "right", axis: "y",
         label: "Right stick \u2195",
         callout: { side: "right", y: 370, target: [658, 372] } },
       { id: "right_x", kind: "axis", gimbal: "right", axis: "x",
         label: "Right stick \u2194",
-        callout: { side: "right", y: 458, target: [574, 456] } },
+        callout: { side: "right", y: 456, target: [574, 456] } },
 
       // Shoulder switches, inboard to outboard. The outer one on each side is
       // the two-position one, which is the usual arrangement on handsets in
       // this class; every count is editable per control, because this is a
       // model of a radio and not a specification of one.
       { id: "SA", kind: "switch", positions: 3, side: "left",
-        cx: 334, cy: 214, lever: 44, label: "SA",
-        callout: { side: "left", y: 126, target: [334, 214] } },
+        cx: 334, cy: 212, lever: 44, label: "SA",
+        callout: { side: "left", y: 126, stub: 308, target: [334, 212] } },
       { id: "SB", kind: "switch", positions: 3, side: "left",
         cx: 270, cy: 240, lever: 44, label: "SB",
-        callout: { side: "left", y: 200, target: [270, 240] } },
+        callout: { side: "left", y: 200, stub: 244, target: [270, 240] } },
       { id: "SF", kind: "switch", positions: 2, side: "left",
-        cx: 200, cy: 272, lever: 44, label: "SF",
-        callout: { side: "left", y: 276, target: [200, 272] } },
+        cx: 206, cy: 268, lever: 44, label: "SF",
+        callout: { side: "left", y: 268, target: [206, 268] } },
       { id: "SD", kind: "switch", positions: 3, side: "right",
-        cx: 546, cy: 214, lever: 44, label: "SD",
-        callout: { side: "right", y: 126, target: [546, 214] } },
+        cx: 546, cy: 212, lever: 44, label: "SD",
+        callout: { side: "right", y: 126, stub: 572, target: [546, 212] } },
       { id: "SC", kind: "switch", positions: 3, side: "right",
         cx: 610, cy: 240, lever: 44, label: "SC",
-        callout: { side: "right", y: 200, target: [610, 240] } },
+        callout: { side: "right", y: 200, stub: 636, target: [610, 240] } },
       { id: "SH", kind: "switch", positions: 2, side: "right",
-        cx: 680, cy: 272, lever: 44, label: "SH",
-        callout: { side: "right", y: 276, target: [680, 272] } },
+        cx: 674, cy: 268, lever: 44, label: "SH",
+        callout: { side: "right", y: 268, target: [674, 268] } },
 
       // Knobs, inboard under the brand plate. Their labels hang over the top
       // of the drawing rather than joining a side column: from the margin the
       // leader would have to cross three switch handles to reach them.
+      //
+      // Each label sits just OUTBOARD of its knob and leans in to it. Further
+      // out, as they were, the two leaders reached back across the shoulders
+      // and crossed SA's and SD's — and a pair of leader lines that cross is
+      // a pair of labels the eye has to disentangle before it can read either
+      // one. Directly overhead, which is tidier still, the two readings
+      // ("CH11 · 1500 us") run into each other over the antenna. This is the
+      // position that clears the switch leaders on one side and the other
+      // knob's reading on the other.
       { id: "S1", kind: "knob", cx: 382, cy: 252, r: 21, label: "S1",
         callout: { side: "top-left", y: 80, target: [382, 252] } },
       { id: "S2", kind: "knob", cx: 498, cy: 252, r: 21, label: "S2",
@@ -230,12 +262,20 @@ Corvus.rcTransmitter = (function () {
 
   /** Where a callout's text sits, where its leader leaves it, and where its
    *  hit box starts. A `stub` of null is a label above the drawing, whose
-   *  leader drops straight out of the text instead of running along a rule. */
+   *  leader drops straight out of the text instead of running along a rule.
+   *
+   *  A control may override `stub` with one of its own. The column default is
+   *  the shortest rule that clears the margin, which is right for a label
+   *  whose control is the outermost thing on its row — but the inboard
+   *  switches sit behind two handles that stand 53 units proud of their nuts,
+   *  and a leader that turned at the column default would dive straight
+   *  through them. Those carry the rule further in, along their own row where
+   *  there is nothing, and turn once close to the nut. */
   const CALLOUT = {
-    left: { text: 136, stub: 176, anchor: "end", box: 12 },
-    right: { text: 744, stub: 704, anchor: "start", box: 740 },
-    "top-left": { text: 300, stub: null, anchor: "middle", box: 236 },
-    "top-right": { text: 580, stub: null, anchor: "middle", box: 516 },
+    left: { text: 128, stub: 176, anchor: "end", box: 8 },
+    right: { text: 752, stub: 704, anchor: "start", box: 744 },
+    "top-left": { text: 340, stub: null, anchor: "middle", box: 288, boxW: 104 },
+    "top-right": { text: 540, stub: null, anchor: "middle", box: 488, boxW: 104 },
   };
 
   /** Fast lookup for a control by id. */
@@ -772,11 +812,12 @@ Corvus.rcTransmitter = (function () {
       group.setAttribute("data-control", control.id);
 
       const tail = spec.target[0] + "," + spec.target[1];
+      const stub = spec.stub == null ? side.stub : spec.stub;
       group.appendChild(node("polyline", {
         class: "rc-tx-leader",
-        points: side.stub == null
+        points: stub == null
           ? side.text + "," + (spec.y + 22) + " " + tail
-          : side.text + "," + spec.y + " " + side.stub + "," + spec.y + " " + tail,
+          : side.text + "," + spec.y + " " + stub + "," + spec.y + " " + tail,
       }));
       group.appendChild(node("circle", {
         class: "rc-tx-leader-dot", cx: spec.target[0], cy: spec.target[1], r: 3.5,
@@ -792,7 +833,7 @@ Corvus.rcTransmitter = (function () {
       // pointer events at all, which is the whole point of having it.
       group.appendChild(node("rect", {
         class: "rc-tx-callout-hit", x: side.box, y: spec.y - 27,
-        width: 128, height: 46,
+        width: side.boxW || 128, height: 46,
       }));
 
       s.appendChild(group);

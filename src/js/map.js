@@ -175,9 +175,14 @@ Corvus.map = (function () {
   // fully offline once tiles are cached. Online, the backend fetches+caches
   // transparently, so the online experience is unchanged. The browser never
   // talks to the internet directly.
-  // MapLibre GL JS v4.7.1 is vendored locally at src/vendor/maplibre-gl.min.js
+  // MapLibre GL JS v5.24.0 is vendored locally at src/vendor/maplibre-gl.min.js
   // (offline fix: the field laptop has no internet, so the CDN load failed and
   // left #map empty). Keep this in sync with src/index.html and the vendor file.
+  //
+  // v5 rather than v4 for the globe, and for two v4 bugs it retires: rendered
+  // altitudes are measured from sea level instead of from the terrain under
+  // the map centre, and the camera no longer has to be told the ground height
+  // by hand (v4 left the zoom NaN doing it, which poisoned the transform).
 
   // The source catalogue is HYDRATED from GET /api/tiles/sources, which reads
   // corvus/tile_sources.py — the single registry. The frontend used to carry a
@@ -465,6 +470,8 @@ Corvus.map = (function () {
     set("path-glow", "line-color", track);
     set("path-casing", "line-color", casing);
     set("path-line", "line-color", track);
+    // The sky is literal colours too, and it exists only while 3D is on.
+    if (threeD) setSky(true);
   }
 
   function addRegionLayer() {
@@ -1516,10 +1523,9 @@ Corvus.map = (function () {
   //
   // Exaggeration is deliberately 1.0. Terrain is a clearance aid here, not
   // scenery: a hill drawn 1.5x too tall is a hill the operator misjudges.
-  // MapLibre 4.7's own ceiling, and deliberately not raised. Past 60 degrees
-  // its terrain renderer smears the mesh into vertical streaks — the cap is
-  // there for a reason, and a spectacular camera angle is not worth a map the
-  // operator cannot read.
+  // MapLibre's own ceiling, and deliberately not raised. A more spectacular
+  // camera angle is not worth arguing with the renderer's supported range in
+  // an application whose map is the instrument.
   const THREE_D_PITCH = 60;
   const TERRAIN_EXAGGERATION = 1.0;
   // Ground-height reconciliation (syncTerrainElevation). Below the epsilon the
@@ -1527,7 +1533,15 @@ Corvus.map = (function () {
   // invisible; the interval keeps a burst of arriving DEM tiles from
   // recomputing it on every one.
   const TERRAIN_SYNC_EPSILON_M = 2.0;
-  const TERRAIN_SYNC_MIN_MS = 200;
+  const TERRAIN_SYNC_MIN_MS = 250;
+  // Attempts the settle poll makes before giving up — a few seconds' worth.
+  const TERRAIN_SYNC_TRIES = 20;
+  // Where the globe hands over to terrain. MapLibre's own globe is already
+  // fading into Mercator across zoom 12-13, so switching at 12 happens while
+  // the sphere is visually flat — the operator sees a continuous zoom, not a
+  // mode change. The band is hysteresis for a zoom sitting on the threshold.
+  const GLOBE_MAX_ZOOM = 12;
+  const GLOBE_ZOOM_BAND = 0.5;
   // The slippy-grid zoom building cells are addressed on. Must match
   // corvus/buildings.CELL_ZOOM — the backend answers that zoom and nothing
   // else, because the cache is keyed by it.
@@ -1569,9 +1583,13 @@ Corvus.map = (function () {
   // plain tilt rather than break.
   let terrainSpec = null;
   let terrainOn = false;
+  // Whether the globe projection is the one showing. Driven by zoom, not by a
+  // button — see applyProjectionForZoom.
+  let globeOn = false;
   // When the ground height under the camera was last reconciled with the DEM.
   // See syncTerrainElevation.
   let terrainSyncAt = 0;
+  let terrainSyncTimer = null;
   let buildingSource = null;
   // "z/x/y" -> feature array. An empty array is a cell that is either genuinely
   // empty or still in flight; either way it must not be requested twice.
@@ -1604,6 +1622,22 @@ Corvus.map = (function () {
   // point, so a dead zone measured on the ground point would let the aircraft
   // leave the top of the screen while its shadow sat comfortably in the middle.
   let veh3dScreen = null;
+
+  /**
+   * The projection matrix out of a custom layer's render arguments.
+   *
+   * MapLibre 4 passed the matrix itself as the second argument; 5 passes an
+   * object carrying it (plus the shader prelude a real WebGL layer would
+   * need, which this one does not). Both shapes are accepted because the
+   * vendored bundle is pinned and a version bump must not silently stop
+   * drawing the aircraft — a wrong matrix is visible, a missing one is not.
+   */
+  function renderMatrix(args) {
+    if (!args) return null;
+    if (Array.isArray(args) || ArrayBuffer.isView(args)) return args;   // v4
+    const data = args.defaultProjectionData;
+    return (data && data.mainMatrix) || args.modelViewProjectionMatrix || null;
+  }
 
   /** Multiply column-major 4x4 *m* by vec4 *v*. MapLibre hands out gl-matrix
    *  matrices, which are column-major: element (row r, column c) is m[c*4+r]. */
@@ -1644,19 +1678,17 @@ Corvus.map = (function () {
   }
 
   /**
-   * Terrain height under *lngLat* in MapLibre's drawing frame, or null.
+   * Terrain height under *lngLat*, in metres above sea level, or null.
    *
-   * That frame's zero is NOT sea level: MapLibre 4 draws everything relative
-   * to the terrain height under the map CENTRE (it keeps that height in
-   * transform.elevation and subtracts it from the world it renders). This is
-   * verifiable rather than folklore — projecting a point at the height this
-   * returns lands exactly where map.project() puts it, and projecting it at
-   * its sea-level height does not.
+   * Everything about the aircraft's height is in this one datum — the DEM,
+   * the autopilot's AMSL, and what MapLibre draws — which is what makes the
+   * arithmetic in vehicleDrawAltitude as short as it is.
    *
-   * queryTerrainElevation answers in that same frame, so terrain heights and
-   * drawing heights are directly comparable and nothing has to be converted.
-   * The one value that does not arrive in this frame is the autopilot's AMSL,
-   * which vehicleDrawAltitude converts at the edge.
+   * MapLibre 4 was the awkward one: it drew relative to the terrain under the
+   * map CENTRE and answered this query in that same shifted frame. v5 moved
+   * both to sea level. Verified rather than assumed — projecting a point at
+   * the height this returns lands on the same pixel map.project() reports,
+   * and projecting it in the old frame does not.
    */
   function terrainElevation(lngLat) {
     if (!map || !lngLat || !terrainOn) return null;
@@ -1670,14 +1702,8 @@ Corvus.map = (function () {
     return (value == null || !isFinite(value)) ? null : value;
   }
 
-  /** The drawing frame's zero, as a height above sea level. */
-  function terrainDatum() {
-    const transform = map && map.transform;
-    return (transform && isFinite(transform.elevation)) ? transform.elevation : 0;
-  }
-
   /**
-   * The height to draw the aircraft at, in MapLibre's drawing frame.
+   * The height to draw the aircraft at, in metres above sea level.
    *
    * Preference order is an accuracy order, not a convenience one:
    *
@@ -1686,8 +1712,8 @@ Corvus.map = (function () {
    *     DEM at that same point puts the aircraft the right distance above the
    *     ground it took off from — the number the operator actually flies to,
    *     and the only one a hill under the aircraft cannot distort.
-   *  2. The autopilot's own AMSL, brought into the drawing frame. Correct in
-   *     principle, but a bare GNSS altitude carries metres of error, and
+   *  2. The autopilot's own AMSL. Same datum as the DEM, so nothing has to be
+   *     converted — but a bare GNSS altitude carries metres of error, and
    *     metres of error is a visible wobble.
    *  3. Terrain under the aircraft plus relative altitude, for a flight with
    *     no home fix. Wrong over a slope, but never by more than the slope,
@@ -1699,7 +1725,7 @@ Corvus.map = (function () {
     const hasAgl = isFinite(agl);
     const homeGround = terrainElevation(realFix(state && state.home));
     if (hasAgl && homeGround !== null) return homeGround + agl;
-    if (isFinite(amsl) && amsl !== 0) return amsl - terrainDatum();
+    if (isFinite(amsl) && amsl !== 0) return amsl;
     const ground = terrainElevation(realFix(state && state.position));
     return (ground === null ? 0 : ground) + (hasAgl ? agl : 0);
   }
@@ -1745,86 +1771,200 @@ Corvus.map = (function () {
     // for why that is not optional.
     terrainSyncAt = 0;
     map.on("data", onTerrainData);
+    scheduleTerrainSync();
     return true;
   }
 
   /**
    * Tell the camera how high the ground under it really is.
    *
-   * This is not polish — without it 3D mode BLANKS THE MAP anywhere above sea
-   * level, which is most places worth flying. MapLibre positions the camera as
-   * if the ground were at zero until it is told otherwise, so over a valley
-   * floor at 600 m the camera sits underground: nothing is in front of it, no
-   * tile computes as visible, and the map renders empty while insisting
-   * everything has loaded.
+   * Without this 3D mode BLANKS THE MAP anywhere above sea level, which is
+   * most places worth flying. MapLibre puts the camera's focus at zero until
+   * it is told otherwise, so over a valley floor at 600 m the camera looks at
+   * a point 600 m underground: the terrain is behind it, no tile computes as
+   * visible, and the map renders empty while insisting everything has loaded.
    *
-   * It writes transform.elevation and NOTHING else, deliberately. MapLibre's
-   * own correction for this — transform.recalculateZoom — preserves the
-   * camera's ALTITUDE instead of its zoom, so it drops the operator to street
-   * level; and when the camera turns out to be below the new ground it divides
-   * by a distance that is no longer positive and leaves the zoom NaN, which
-   * poisons the whole transform (getZoom, getBounds and every tile calculation
-   * come back NaN with it). Moving the ground is the correct half of that
-   * operation and the only half that is safe.
+   * setCenterElevation is MapLibre 5's own public answer to this, and taking
+   * it is most of why the map was moved to 5. The v4 equivalent had to be
+   * done by hand through internals: transform.elevation is getter-only in 5,
+   * and its recalculateZoom — MapLibre 4's own correction — preserved the
+   * camera's ALTITUDE rather than its zoom, dropping the operator to street
+   * level, and left the zoom NaN whenever the camera was below the new
+   * ground, which poisoned getBounds, getZoom and every tile calculation.
    *
-   * Runs for as long as 3D is on, not once: DEM tiles refine as they load, and
-   * a camera moved by anything that does not interpolate elevation (a follow
-   * jump, a programmatic setCenter) can drift back into the ground. Rate
-   * limited, and a no-op once the two agree.
+   * Runs for as long as 3D is on, not once: DEM tiles refine as they load,
+   * and a camera moved by something that does not interpolate elevation can
+   * drift. Rate limited, and a no-op once the two agree.
    */
   function syncTerrainElevation() {
-    if (!map || !terrainOn) return;
+    if (!map || !terrainOn) return false;
+    if (typeof map.setCenterElevation !== "function") return true;   // nothing to do
     // Never mid-animation: MapLibre interpolates the elevation itself across
     // an ease, and a write here would fight its next frame.
-    if (typeof map.isEasing === "function" && map.isEasing()) return;
-    const at = Date.now();
-    if (at - terrainSyncAt < TERRAIN_SYNC_MIN_MS) return;
-    const transform = map.transform;
-    if (!transform || !isFinite(transform.elevation)) return;
+    if (typeof map.isEasing === "function" && map.isEasing()) return false;
     let centre;
-    try { centre = map.getCenter(); } catch (_error) { return; }
-    if (!centre || !isFinite(centre.lng) || !isFinite(centre.lat)) return;
-    // queryTerrainElevation answers RELATIVE to the elevation the camera
-    // currently believes (see terrainElevation), so this IS the outstanding
-    // correction — no datum arithmetic, and nothing to get backwards.
-    const offset = terrainElevation([centre.lng, centre.lat]);
-    if (offset === null) return;   // the DEM under the centre has not arrived
-    terrainSyncAt = at;
-    if (Math.abs(offset) < TERRAIN_SYNC_EPSILON_M) return;   // already agreed
-    const corrected = transform.elevation + offset;
-    if (!isFinite(corrected)) return;
-    transform.elevation = corrected;
-    map.triggerRepaint();
+    try { centre = map.getCenter(); } catch (_error) { return false; }
+    if (!centre || !isFinite(centre.lng) || !isFinite(centre.lat)) return false;
+    const ground = terrainElevation([centre.lng, centre.lat]);
+    if (ground === null) return false;   // the DEM under the centre has not arrived
+    terrainSyncAt = Date.now();
+    const current = Number(map.getCenterElevation());
+    if (isFinite(current) && Math.abs(ground - current) < TERRAIN_SYNC_EPSILON_M) return true;
+    try {
+      map.setCenterElevation(ground);
+      return true;
+    } catch (_error) {
+      return false;   // a camera mid-change; the retry below tries again
+    }
+  }
+
+  /**
+   * Keep asking until the camera and the DEM agree, then stop.
+   *
+   * The events are not enough on their own. The ground height only becomes
+   * knowable once the terrain MESH is built, which is strictly after the last
+   * DEM tile's data event — so the final event can arrive a moment too early,
+   * find nothing to read, and be the last one there is. The camera is then
+   * left believing the ground is at sea level, which over a 600 m valley
+   * floor is the whole blank-map failure again, reached by a race instead of
+   * by a missing feature.
+   *
+   * A short bounded poll closes that window without pretending an event will
+   * come. It stops on the first agreement, and it stops regardless after a
+   * few seconds — a DEM that never loads (offline, uncached ground) must not
+   * leave a timer running for the rest of the flight.
+   */
+  function scheduleTerrainSync() {
+    if (terrainSyncTimer) window.clearTimeout(terrainSyncTimer);
+    terrainSyncTimer = null;
+    let tries = 0;
+    const attempt = () => {
+      terrainSyncTimer = null;
+      if (!terrainOn) return;
+      if (syncTerrainElevation()) return;
+      if (++tries >= TERRAIN_SYNC_TRIES) return;
+      terrainSyncTimer = window.setTimeout(attempt, TERRAIN_SYNC_MIN_MS);
+    };
+    attempt();
+  }
+
+  /** Stop the settle poll. Idempotent. */
+  function stopTerrainSync() {
+    if (terrainSyncTimer) window.clearTimeout(terrainSyncTimer);
+    terrainSyncTimer = null;
   }
 
   /** DEM tiles landing is the cue that the heights are worth asking for. */
   function onTerrainData(event) {
     if (!event || event.sourceId !== terrainSourceId()) return;
     if (event.sourceDataType === "metadata") return;
-    syncTerrainElevation();
+    scheduleTerrainSync();
   }
 
 
   /**
-   * Give the map a sky, or take it away.
+   * Give the map a sky and an atmosphere, or take them away.
    *
-   * At 68 degrees of pitch the horizon is on screen, and the ground has to
-   * stop against SOMETHING or the map reads as half-drawn. MapLibre 4.7 has
-   * no `sky` layer (it arrived in 5.0) — but it also draws nothing above the
-   * horizon, so the map container shows through there. A gradient on the
-   * container is therefore a real sky, not a trick: the theme owns its
-   * colours (see #map.three-d in main.css) and it costs no layer, no tiles
-   * and no frame time.
+   * At 60 degrees of pitch the horizon is on screen and the ground has to
+   * stop against SOMETHING, or the map reads as half-drawn rather than as
+   * distant. On the globe the same setting is what puts the blue rim around
+   * the Earth.
+   *
+   * Colours come from the theme: this map sits inside an application wearing
+   * one palette, and a photographic blue sky over the dark theme looks like a
+   * screenshot of a different program. The CSS class is kept alongside as the
+   * backstop for a MapLibre without setSky — it paints the container, which
+   * is what shows above the horizon when nothing else does.
    */
   function setSky(on) {
     const container = map && map.getContainer();
     if (container) container.classList.toggle("three-d", !!on);
+    if (!map || typeof map.setSky !== "function") return;
+    try {
+      map.setSky(on ? {
+        "sky-color": Corvus.ui.token("--surface-3", "#1C232C"),
+        "horizon-color": Corvus.ui.token("--surface-1", "#11161D"),
+        "fog-color": Corvus.ui.token("--bg", "#0B0E12"),
+        "sky-horizon-blend": 0.6,
+        "horizon-fog-blend": 0.6,
+        "fog-ground-blend": 0.05,
+        "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 0.8, 8, 0.4, 12, 0],
+      } : null);
+    } catch (_error) { /* no sky in this MapLibre: the CSS backstop stands */ }
+  }
+
+  /**
+   * The globe, and the plain flat map.
+   *
+   * Feature-detected. On a MapLibre without a globe the map stays flat, which
+   * is what it was before, rather than failing.
+   */
+  function setGlobe(on) {
+    if (!map || typeof map.setProjection !== "function") return false;
+    try {
+      map.setProjection({ type: on ? "globe" : "mercator" });
+      return true;
+    } catch (_error) {
+      return false;   // no globe in this MapLibre; the flat map still works
+    }
+  }
+
+  /**
+   * Choose the projection for the current zoom: globe far out, terrain close
+   * in, and nothing for the operator to press in between.
+   *
+   * This is how Google Earth behaves, and here it is also a necessity.
+   * MapLibre 5.24 answers queryTerrainElevation with 0 under the globe
+   * projection, so terrain and globe cannot both be on: the camera would be
+   * told the ground is at sea level, look at a point six hundred metres
+   * underground, and render nothing. The split costs nothing real, because
+   * the two are useful at opposite ends of the zoom range — from orbit a 600
+   * m hill is well under a pixel, and a globe at street level is a flat map
+   * with extra maths.
+   *
+   * The band is hysteresis: without it a zoom hovering on the threshold would
+   * tear the terrain down and build it back up on every wheel click.
+   */
+  /**
+   * Should the globe be showing at *zoom*, given that it *currentlyGlobe*?
+   *
+   * Pure, and split out for the same reason followAction is: the rule is the
+   * thing worth asserting, and it should not need a renderer to check. The
+   * band is hysteresis — the threshold sits further away in whichever
+   * direction would mean changing — so a zoom resting on the boundary does
+   * not tear the terrain down and build it back up on every wheel click.
+   *
+   * A zoom that is not a number keeps whatever is showing: a transform
+   * mid-change is not a reason to rebuild the world.
+   */
+  function wantsGlobe(zoom, currentlyGlobe) {
+    if (!isFinite(zoom)) return !!currentlyGlobe;
+    return zoom < GLOBE_MAX_ZOOM + (currentlyGlobe ? GLOBE_ZOOM_BAND : -GLOBE_ZOOM_BAND);
+  }
+
+  function applyProjectionForZoom() {
+    if (!map || !started || !threeD) return;
+    let zoom;
+    try { zoom = map.getZoom(); } catch (_error) { return; }
+    const wantGlobe = wantsGlobe(zoom, globeOn);
+    if (wantGlobe === globeOn) return;
+    globeOn = wantGlobe;
+    if (wantGlobe) {
+      // Terrain first: leaving it on under the globe is the blank map above.
+      disableTerrain();
+      setGlobe(true);
+    } else {
+      setGlobe(false);
+      enableTerrain();
+      scheduleTerrainSync();
+    }
   }
 
   /** Take terrain back out. The source stays in the style so re-entering 3D
    *  does not re-download every DEM tile the operator just looked at. */
   function disableTerrain() {
     if (!map || !terrainOn) return;
+    stopTerrainSync();
     map.off("data", onTerrainData);
     try { map.setTerrain(null); } catch (_error) { /* already gone */ }
     terrainOn = false;
@@ -2216,12 +2356,12 @@ Corvus.map = (function () {
         type: "custom",
         renderingMode: "3d",
         onAdd: () => {},
-        render: (_gl, matrix) => {
+        render: (_gl, args) => {
           // An exception thrown out of a custom layer's render aborts
           // MapLibre's whole frame — the map would stop drawing because a
           // marker could not be placed. Swallow it and leave the aircraft
           // where it was; the next frame tries again.
-          try { renderVehicle3D(matrix); } catch (_error) { /* one bad frame */ }
+          try { renderVehicle3D(renderMatrix(args)); } catch (_error) { /* one bad frame */ }
         },
       });
       veh3dLayerAdded = true;
@@ -2259,7 +2399,11 @@ Corvus.map = (function () {
       // during the first tile fetch), which means this can be pressed before
       // there is a style to add a source to; the "load" handler re-applies.
       if (started) {
-        enableTerrain();
+        // Which of the two the zoom calls for. Entering 3D over the field is
+        // terrain; entering it zoomed out to the country is the globe.
+        globeOn = map.getZoom() < GLOBE_MAX_ZOOM;
+        if (globeOn) setGlobe(true);
+        else enableTerrain();
         setSky(true);
         addBuildingLayer();
         addVehicle3DLayer();
@@ -2281,6 +2425,8 @@ Corvus.map = (function () {
       hideVehicle3D();
       removeBuildingLayer();
       setSky(false);
+      setGlobe(false);
+      globeOn = false;
       disableTerrain();
       // The 2D marker comes back only if the aircraft has actually reported a
       // position — the same rule renderVehicle applies, and the reason it is
@@ -2359,10 +2505,13 @@ Corvus.map = (function () {
     // interrupts a follow pan must not leave it stuck on.
     map.on("moveend", () => {
       followEasing = false;
-      // The camera landed somewhere new. Not every way it can get there
-      // interpolates the ground height on the way — a follow jump and a plain
-      // setCenter do not — so reconcile it here as well as on DEM tiles.
-      syncTerrainElevation();
+      // The camera landed somewhere new: it may have crossed the zoom where
+      // the globe hands over to terrain, and its ground height may be stale.
+      // Not every way the camera can move interpolates that height — a follow
+      // jump and a plain setCenter do not — so reconcile it here as well as
+      // on DEM tiles.
+      applyProjectionForZoom();
+      scheduleTerrainSync();
       // New ground came into view; ask the backend for its buildings. A no-op
       // outside 3D, and debounced, so a drag costs one pass over the grid.
       refreshBuildings();
@@ -2498,6 +2647,9 @@ Corvus.map = (function () {
     // {w,s,e,n} view around a centre asks for, in which order, and how many.
     // Mirrors the _followAction convention.
     _buildingCellsIn: (box, centre) => buildingCellsIn(box, centre),
+    // test hook: the globe/terrain handover rule, including its hysteresis.
+    _wantsGlobe: (zoom, currentlyGlobe) => wantsGlobe(zoom, currentlyGlobe),
+    _globeZooms: () => ({ max: GLOBE_MAX_ZOOM, band: GLOBE_ZOOM_BAND }),
     _buildingLimits: () => ({
       cellZoom: BUILDING_CELL_Z,
       maxCells: BUILDING_MAX_CELLS,

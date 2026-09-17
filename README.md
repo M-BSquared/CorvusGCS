@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.40-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.40" />
+  <img src="https://img.shields.io/badge/Version-2026.09.41-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.41" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.10%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.10+" /></a>
   <img width="8" />
@@ -74,7 +74,7 @@
   - [Who can reach the ground station](#who-can-reach-the-ground-station)
 - [Using Corvus](#using-corvus)
   - [The map and the flight HUD](#the-map-and-the-flight-hud)
-  - [3D](#3d)
+  - [3D and the globe](#3d-and-the-globe)
   - [Offline maps](#offline-maps)
   - [Setup — motors, safety, parameters, calibration, tuning, firmware](#setup--motors-safety-parameters-calibration-tuning-firmware)
   - [Analysis — logs, Flight Review and Telemetry Review](#analysis--logs-flight-review-and-telemetry-review)
@@ -105,9 +105,10 @@ manage: one window, one process, one clean shutdown.
 
 - **Flying and monitoring** — a large live map with the vehicle, its home point
   and its flown track, plus a floating flight-instrument HUD (compass, attitude
-  indicator, altitude, speeds, GPS) that stays visible while you fly. Tilt it
-  into 3D and the ground takes its real shape, buildings stand up, and the
-  aircraft flies above them at the height it is actually at.
+  indicator, altitude, speeds, GPS) that stays visible while you fly. Switch it
+  into 3D and you get a globe to spin when you zoom out, and when you zoom in,
+  ground with its real shape, buildings standing up, and the aircraft flying
+  above them at the height it is actually at.
 - **Preparing an aircraft** — motor wiring and ESC protocol on a drawing of your
   own airframe, parameters, sensor and ESC calibration, PID tuning, and
   firmware flashing, all from the same window.
@@ -190,7 +191,7 @@ Everything here is **built and working today**.
 | ⚡ **Ready fast** | On connect Corvus loads only flight telemetry. Parameters are fetched when *you* ask for them — so you are flying in seconds, not minutes | ✅ |
 | 🛩️ **Fly** | Live map, floating flight HUD, arm / takeoff / land / RTL, flight-mode selection, on-screen joystick and arrow-key control with adjustable key strength | ✅ |
 | 🗺️ **Navigate** | 4 map services with 12 layers, vehicle heading, home point, the flown track, and click-the-map to fly there or move home | ✅ |
-| ⛰️ **See in 3D** | Real terrain relief from an elevation model, extruded OpenStreetMap buildings, and the aircraft drawn at the altitude it is actually flying | ✅ |
+| 🌍 **See in 3D** | A spinnable globe when you zoom out, real terrain relief and extruded OpenStreetMap buildings when you zoom in, and the aircraft drawn at the altitude it is actually flying | ✅ |
 | 📴 **Work offline** | Nothing loads from the internet. Download named map areas in advance and the whole app keeps working with no connection | ✅ |
 | 📡 **Connect** | Connects on its own to whatever is plugged in — flight controller on USB first, then telemetry radio, then the simulator port — plus serial, UDP and TCP by hand, a live port picker, saved recent connections, link-quality display and automatic reconnect | ✅ |
 | 🔧 **Set up** | Airframe drawn to scale — click a motor to wire, position or spin-test it; ESC protocol; parameter editor with import / export; guided sensor calibration, ESC calibration, PID tuning by hand or by in-flight autotune, and PX4 firmware flashing | ✅ |
@@ -638,14 +639,21 @@ Where you put either window stays put: across restarts, across a trip to Setup
 or Options and back, and when the side workspace slides open — a window parked
 against the right edge travels in with it rather than disappearing behind it.
 
-### 3D
+### 3D and the globe
 
-The cube button on the map's control rail tilts the view — and gives the ground
-its real shape. Terrain comes from an elevation model, so hills are hills and a
-valley is a valley, drawn at true scale rather than exaggerated: what you are
-judging is clearance, and a hill drawn half again too tall is a hill you
-misjudge. Buildings are extruded from OpenStreetMap footprints at their tagged
-heights, so the things actually in your way are in your way on screen too.
+The cube button on the map's control rail turns the flat map into a world.
+
+Zoomed out you get **the globe** — the Earth as a sphere, with an atmosphere
+around its rim, that you can spin. Zoom in and it hands over to the close-up
+view with no mode to switch and nothing to press: from the whole planet down to
+the far end of the runway is one continuous movement.
+
+Close up, the ground has **its real shape**. Terrain comes from an elevation
+model, so hills are hills and a valley is a valley, drawn at true scale rather
+than exaggerated: what you are judging is clearance, and a hill drawn half again
+too tall is a hill you misjudge. **Buildings** are extruded from OpenStreetMap
+footprints at their tagged heights, so the things actually in your way are in
+your way on screen too.
 
 Your aircraft flies in that scene rather than sliding along the ground. It is
 drawn at the altitude it is really at, with a dashed line down to a shadow on

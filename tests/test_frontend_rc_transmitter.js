@@ -617,6 +617,67 @@ function testTheFunctionPanelIsOnlyOfferedForALearnedChannel() {
   assert.equal(calls[calls.length - 1].armed, true);
 }
 
+function testTheDrawingIsSymmetricAboutItsCentreLine() {
+  // A handset is symmetric, so a drawing of one that is not reads as a
+  // mistake before it reads as anything else — and the two label columns are
+  // only level with each other if the things they point at are. Every
+  // asymmetry this catches was in the drawing once: the antenna ten units
+  // left of the case, the trim pair eleven right of it.
+  const centre = TX.LAYOUT.centre;
+  const mirror = (x) => 2 * centre - x;
+  const near = (a, b, what) => assert.ok(Math.abs(a - b) < 0.51,
+    what + " is centred (" + a + " vs " + b + ")");
+
+  const { antenna, brand, chin, screen, modeText, nav, wheel, body } = TX.LAYOUT;
+  near(antenna.mast.x + antenna.mast.w / 2, centre, "the antenna mast");
+  near(antenna.hinge.x + antenna.hinge.w / 2, centre, "the antenna hinge");
+  near(brand.x, centre, "the wordmark");
+  near(chin.x + chin.w / 2, centre, "the chin");
+  near(screen.x + screen.w / 2, centre, "the screen");
+  near(modeText.x, centre, "the mode text");
+  near((nav.cx + wheel.cx) / 2, centre, "the menu pad and the wheel");
+
+  // The trims come in pairs — two upright between the gimbals, one under
+  // each — and each pair has to straddle the centre line.
+  const upright = TX.LAYOUT.trims.filter((t) => t.axis === "v")
+    .map((t) => t.x + t.w / 2).sort((a, b) => a - b);
+  assert.equal(upright.length, 2, "two upright trims");
+  near((upright[0] + upright[1]) / 2, centre, "the upright trim pair");
+
+  // Every x in the shell outline has its mirror image in the same outline.
+  const xs = String(body).match(/-?\d+(?:\.\d+)?/g)
+    .filter((_n, i) => i % 2 === 0).map(Number);
+  xs.forEach((x) => {
+    assert.ok(xs.some((other) => Math.abs(other - mirror(x)) < 0.51),
+      "the outline's " + x + " has a mirror at " + mirror(x));
+  });
+
+  // And every control on one side has a counterpart at its mirror image, in
+  // the same row of the opposite margin.
+  const by = {};
+  TX.LAYOUT.controls.forEach((c) => {
+    const x = c.kind === "axis"
+      ? TX.LAYOUT.gimbals.find((g) => g.id === c.gimbal).cx
+      : c.cx;
+    // Keyed by the row as well as the column, because a gimbal's two axes
+    // share its centre and are told apart by which margin row they label.
+    const key = Math.round(Math.min(x, mirror(x))) + "@" + c.callout.y;
+    (by[key] ||= []).push({ c, x });
+  });
+  Object.keys(by).forEach((key) => {
+    const pair = by[key];
+    assert.equal(pair.length, 2, "control at " + key + " is one of a pair");
+    near(pair[0].x, mirror(pair[1].x), pair[0].c.id + "/" + pair[1].c.id);
+    assert.equal(pair[0].c.callout.y, pair[1].c.callout.y,
+      pair[0].c.id + " and " + pair[1].c.id + " label on the same row");
+    near(pair[0].c.callout.target[0], mirror(pair[1].c.callout.target[0]),
+      pair[0].c.id + "'s leader lands opposite " + pair[1].c.id + "'s");
+    assert.equal(pair[0].c.callout.target[1], pair[1].c.callout.target[1],
+      pair[0].c.id + "'s leader lands level with " + pair[1].c.id + "'s");
+  });
+
+}
+
 /** A Corvus.ui.button by its visible label (the label lives in a child span). */
 function buttonByLabel(root, label) {
   return root.querySelectorAll("button").find((btn) => (btn.children || [])
@@ -639,6 +700,7 @@ function main() {
     testStickAxesComeFromTheVehicleMappingAndTheMode,
     testTheHandsetsOwnMenuButtonsAreNotBindable,
     testEveryBindableControlHasACalloutAndNoTwoShareARow,
+    testTheDrawingIsSymmetricAboutItsCentreLine,
     testTheHandleLeansFurtherForEveryPositionUp,
     testSelectingAControlOpensItsInspector,
     testAStickAxisIsReachedThroughItsMarginLabel,

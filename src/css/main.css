@@ -491,13 +491,14 @@ svg { display: block; }
 .main { flex: 1; position: relative; min-width: 0; background: var(--bg); }
 .map-view { position: absolute; inset: 0; }
 .map { position: absolute; inset: 0; }
-/* The sky, in 3D mode.
-   MapLibre 4 has no sky layer and draws nothing above the horizon, so the
-   container itself is what shows there — which means a gradient here IS the
-   sky, at no cost in layers, tiles or frame time. Themed rather than blue:
-   the map sits inside an app wearing one palette, and a photographic sky over
-   a dark UI looks like a screenshot of a different program. Only the part
-   above the horizon is ever visible; the terrain covers the rest. */
+/* The sky, in 3D mode — the backstop behind MapLibre's own.
+   map.js paints a real sky and atmosphere through setSky, which is what the
+   operator normally sees. This gradient is what shows if that is ever absent:
+   MapLibre draws nothing above the horizon, so the container itself is the
+   sky there, at no cost in layers, tiles or frame time. Themed rather than
+   blue in both cases — the map sits inside an app wearing one palette, and a
+   photographic sky over a dark UI looks like a screenshot of a different
+   program. */
 .map.three-d {
   background: linear-gradient(
     to bottom,
