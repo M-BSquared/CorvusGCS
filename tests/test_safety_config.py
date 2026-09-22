@@ -41,7 +41,6 @@ def _safe() -> dict[str, float]:
         "NAV_DLL_ACT": 0.0, "COM_DL_LOSS_T": 10.0,
         "COM_LOW_BAT_ACT": 3.0, "COM_POSCTL_NAVL": 0.0,
         "COM_DISARM_LAND": 2.0, "COM_DISARM_PRFLT": 10.0,
-        "BAT_LOW_THR": 0.15, "BAT_CRIT_THR": 0.07, "BAT_EMERGEN_THR": 0.05,
     }
 
 
@@ -76,7 +75,7 @@ def _with_flow(**overrides: float) -> dict[str, float]:
 
 def test_a_current_firmware_yields_every_safety_section() -> None:
     doc = safety_config.build(_safe())
-    assert set(_sections(doc)) == {"limits", "rtl", "failsafe", "battery"}
+    assert set(_sections(doc)) == {"limits", "rtl", "failsafe"}
     assert doc["received"] == len(_safe())
 
 
@@ -126,8 +125,8 @@ def test_a_parameter_the_firmware_lacks_is_simply_absent() -> None:
 
 
 def test_a_section_with_nothing_left_disappears_entirely() -> None:
-    values = {k: v for k, v in _safe().items() if not k.startswith("BAT_")}
-    assert "battery" not in _sections(safety_config.build(values))
+    values = {k: v for k, v in _safe().items() if not k.startswith("RTL_")}
+    assert "rtl" not in _sections(safety_config.build(values))
 
 
 def test_an_empty_readout_yields_no_sections_rather_than_a_crash() -> None:
@@ -302,7 +301,7 @@ def test_reading_every_parameter_at_once_never_raises() -> None:
     """A vehicle that answers for the whole superset must still build cleanly."""
     doc = safety_config.build({n: 1.0 for n in safety_config.param_names()})
     assert {s["id"] for s in doc["sections"]} == {
-        "limits", "rtl", "failsafe", "battery", "rangefinder", "flow",
+        "limits", "rtl", "failsafe", "rangefinder", "flow",
     }
 
 
@@ -461,7 +460,7 @@ def test_each_sensor_section_is_tagged_for_its_own_page() -> None:
         assert sections[sid]["group"] == "sensors"
         assert sections[sid]["icon"]
         assert sections[sid]["short"]
-    for sid in ("limits", "rtl", "failsafe", "battery"):
+    for sid in ("limits", "rtl", "failsafe"):
         assert "group" not in sections[sid]
 
 

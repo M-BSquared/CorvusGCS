@@ -41,6 +41,9 @@ _EXPECTED_GET = {
     "/api/mavlink/capabilities",
     "/api/mavlink/serial-ports",
     "/api/motors",
+    # The pack, how the autopilot measures it, and Corvus's own estimator
+    # settings — every BAT_/BATT_ parameter lives behind this one.
+    "/api/battery",
     "/api/params",
     "/api/rc",
     "/api/safety",

@@ -116,41 +116,6 @@ ROVER_FAILSAFE_ACTION_OPTIONS: list[dict[str, Any]] = [
     {"value": 5, "label": "Terminate"},
 ]
 
-BATTERY_ACTION_OPTIONS: dict[str, list[dict[str, Any]]] = {
-    "copter": [
-        {"value": 0, "label": "Nothing"},
-        {"value": 1, "label": "Land"},
-        {"value": 2, "label": "RTL"},
-        {"value": 3, "label": "SmartRTL, or RTL"},
-        {"value": 4, "label": "SmartRTL, or land"},
-        {"value": 5, "label": "Terminate"},
-        {"value": 6, "label": "Auto landing sequence, or RTL"},
-        {"value": 7, "label": "Brake, or land"},
-    ],
-    "plane": [
-        {"value": 0, "label": "Nothing"},
-        {"value": 1, "label": "RTL"},
-        {"value": 2, "label": "Land"},
-        {"value": 3, "label": "Terminate"},
-        {"value": 4, "label": "QLand"},
-        {"value": 6, "label": "Loiter, then QLand"},
-    ],
-    "rover": [
-        {"value": 0, "label": "Nothing"},
-        {"value": 1, "label": "RTL"},
-        {"value": 2, "label": "Hold"},
-        {"value": 3, "label": "SmartRTL, or RTL"},
-        {"value": 4, "label": "SmartRTL, or hold"},
-        {"value": 5, "label": "Terminate"},
-    ],
-}
-
-BATTERY_FS_SOURCE_OPTIONS: list[dict[str, Any]] = [
-    {"value": 0, "label": "Disabled"},
-    {"value": 1, "label": "Raw voltage"},
-    {"value": 2, "label": "Voltage compensated for current draw"},
-]
-
 EKF_FAILSAFE_ACTION_OPTIONS: list[dict[str, Any]] = [
     {"value": 0, "label": "Report only"},
     {"value": 1, "label": "Land"},
@@ -362,10 +327,6 @@ def param_names() -> list[str]:
         "FS_ACTION", "FS_TIMEOUT", "FS_CRASH_CHECK",
         # Arming and disarming
         "ARMING_CHECK", "ARMING_RUDDER", "DISARM_DELAY", "ARMING_REQUIRE",
-        # Battery
-        "BATT_LOW_VOLT", "BATT_CRT_VOLT", "BATT_LOW_MAH", "BATT_CRT_MAH",
-        "BATT_FS_LOW_ACT", "BATT_FS_CRT_ACT", "BATT_FS_VOLTSRC",
-        "BATT_LOW_TIMER", "BATT_ARM_VOLT", "BATT_ARM_MAH", "BATT_CAPACITY",
         # Estimator sources — the half of a sensor that is not the driver
         "EK3_SRC1_POSZ", "EK3_SRC1_VELXY", "EK3_SRC1_POSXY",
         *RANGEFINDER_DRIVER_PARAMS,
@@ -460,7 +421,9 @@ def _failsafe_section(values: dict[str, float], vehicle: str) -> dict[str, Any] 
         bitmask("FS_OPTIONS", "Failsafe exceptions", values, FS_OPTIONS_BITS,
                 hint="Each bit lets one activity carry on through a failsafe that "
                      "would otherwise interrupt it."),
-    ]), hint=f"What the {vehicle} does when it loses an input it was relying on.")
+    ]), hint=f"What the {vehicle} does when it loses an input it was relying on. "
+             "The battery failsafes are on the Battery & Power page, with the "
+             "levels that trigger them — every BATT_ parameter lives there.")
 
 
 def _arming_section(values: dict[str, float]) -> dict[str, Any] | None:
@@ -475,30 +438,6 @@ def _arming_section(values: dict[str, float]) -> dict[str, Any] | None:
                     "disarms itself. 0 never does."),
     ]), hint="What the vehicle checks before it will spin a motor, and when it "
              "gives up and disarms again.")
-
-
-def _battery_section(values: dict[str, float], vehicle: str) -> dict[str, Any] | None:
-    actions = BATTERY_ACTION_OPTIONS.get(vehicle, BATTERY_ACTION_OPTIONS["copter"])
-    return section("battery", "Battery", present([
-        number("BATT_CAPACITY", "Pack capacity", values, unit="mAh", step=50, min=0),
-        number("BATT_LOW_VOLT", "Low voltage", values, unit="V", step=0.1, min=0),
-        number("BATT_CRT_VOLT", "Critical voltage", values, unit="V", step=0.1, min=0),
-        number("BATT_LOW_MAH", "Low capacity remaining", values, unit="mAh",
-               step=50, min=0),
-        number("BATT_CRT_MAH", "Critical capacity remaining", values, unit="mAh",
-               step=50, min=0),
-        enum("BATT_FS_LOW_ACT", "Low battery action", values, actions),
-        enum("BATT_FS_CRT_ACT", "Critical battery action", values, actions),
-        enum("BATT_FS_VOLTSRC", "Voltage source", values, BATTERY_FS_SOURCE_OPTIONS,
-             hint="Compensated voltage subtracts the sag a high current draw causes, "
-                  "so a hard climb does not trigger a low-battery failsafe."),
-        number("BATT_LOW_TIMER", "Low voltage must persist for", values, unit="s",
-               step=1, min=0),
-        number("BATT_ARM_VOLT", "Minimum voltage to arm", values, unit="V",
-               step=0.1, min=0),
-        number("BATT_ARM_MAH", "Minimum capacity to arm", values, unit="mAh",
-               step=50, min=0),
-    ]), hint="The thresholds that trigger the battery failsafes above.")
 
 
 def _sensor_toggle(values: dict[str, float], *, label: str,
@@ -672,7 +611,6 @@ def build(values: dict[str, float],
         _rtl_section(values),
         _failsafe_section(values, vehicle),
         _arming_section(values),
-        _battery_section(values, vehicle),
         _rangefinder_section(values),
         _flow_section(values),
     ) if s is not None]

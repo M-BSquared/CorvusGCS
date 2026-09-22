@@ -1770,31 +1770,14 @@ svg { display: block; }
 .wp-clear-all:disabled, .wp-clear-all[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
 .wp-clear-all:disabled:hover, .wp-clear-all[aria-disabled="true"]:hover { background: transparent; color: var(--text-3); }
 .wp-list { max-height: 280px; overflow-y: auto; }
+/* One row of the board. The leading column — gutter, icon, severity mark — is
+   the shared notification anatomy from themes.css, so this row and a toast
+   (.ui-toast in components.css) line up on the same numbers. What is local to
+   the board is below it: the meta line, the read dimming, the dismiss button. */
 .wp-item {
-  /* The leading column, stated once because three rules have to agree on it:
-     where it starts, how wide the icon is, and how thick the mark under it
-     is. The gutter is narrower than the row's right padding on purpose — the
-     severity icon is the first thing the eye lands on and it earns the edge —
-     and the flex gap makes up the difference so the TEXT stays where it was. */
-  --wp-gutter: 9px;
-  --wp-icon: 20px;
-  --wp-mark: 3px;
-  /* Clearance around the rule: the same value against the icon it threads
-     through and against the row's own top and bottom, so the two segments sit
-     in the column with even air at every end rather than reaching for the
-     edges.
-     --wp-mark-fill is the share of the room BESIDE the icon that a segment
-     takes; the rest is the air at the row's edge. A share rather than a fixed
-     length, because neither extreme reads well: segments anchored to the
-     edges grew into long rails on a three-line notification, while a fixed
-     length that suited three lines was most of the room a one-liner had. A
-     share settles both at once — it comes out near 4px on a one-line
-     notification, 7px on two and 10px on three, so the mark grows with the
-     message without ever running away with it. */
-  --wp-mark-gap: 4px;
-  --wp-mark-fill: 0.38;
   position: relative;
-  display: flex; gap: 14px; padding: 10px 13px 10px var(--wp-gutter);
+  display: flex; gap: var(--notif-gap);
+  padding: var(--notif-pad-y) var(--notif-pad-right) var(--notif-pad-y) var(--notif-gutter);
   border-bottom: 1px solid var(--border-soft);
   align-items: flex-start;
   transition: opacity 200ms;
@@ -1819,26 +1802,26 @@ svg { display: block; }
   content: "";
   position: absolute;
   /* On the icon's own centre line. */
-  left: calc(var(--wp-gutter) + (var(--wp-icon) - var(--wp-mark)) / 2);
-  width: var(--wp-mark);
+  left: calc(var(--notif-gutter) + (var(--notif-icon) - var(--notif-mark)) / 2);
+  width: var(--notif-mark);
   border-radius: 999px;
   background: currentColor;
   opacity: 0;
   transition: opacity 200ms;
 }
-/* Each segment hangs off the icon's clearance and takes --wp-mark-fill of
+/* Each segment hangs off the icon's clearance and takes --notif-mark-fill of
    what is left between there and the row's edge; the remainder is the air
    that keeps it off that edge, so both scale with the message together. The
    percentages resolve against the row, and both are measured from its middle,
    which is where the icon is — so the two segments come out the same length
    however the message wraps. */
 .wp-item::before {
-  bottom: calc(50% + var(--wp-icon) / 2 + var(--wp-mark-gap));
-  height: calc((50% - var(--wp-icon) / 2 - var(--wp-mark-gap)) * var(--wp-mark-fill));
+  bottom: calc(50% + var(--notif-icon) / 2 + var(--notif-mark-gap));
+  height: calc((50% - var(--notif-icon) / 2 - var(--notif-mark-gap)) * var(--notif-mark-fill));
 }
 .wp-item::after {
-  top: calc(50% + var(--wp-icon) / 2 + var(--wp-mark-gap));
-  height: calc((50% - var(--wp-icon) / 2 - var(--wp-mark-gap)) * var(--wp-mark-fill));
+  top: calc(50% + var(--notif-icon) / 2 + var(--notif-mark-gap));
+  height: calc((50% - var(--notif-icon) / 2 - var(--notif-mark-gap)) * var(--notif-mark-fill));
 }
 .wp-item[data-level="info"]::before,
 .wp-item[data-level="info"]::after { color: var(--nav); opacity: 1; }
@@ -1851,27 +1834,37 @@ svg { display: block; }
 .wp-item.is-read::before, .wp-item.is-read::after { opacity: 0; }
 .wp-item.is-read { opacity: 0.55; }
 .wp-item.is-read:hover, .wp-item.is-read:focus-within { opacity: 1; }
+/* Marks off (Settings -> Notifications). `content: none` rather than
+   `opacity: 0`: the segments are gone, not merely invisible, so nothing is
+   left to fade in on a hover or a level change.
+   Nothing else in the row moves. The segments were absolutely positioned and
+   the icon is centred by .wp-icon's own align-self, so the icon stays exactly
+   where the marks used to meet it — the column simply loses its rule. */
+:root[data-notification-marks="off"] .wp-item::before,
+:root[data-notification-marks="off"] .wp-item::after { content: none; }
 @media (prefers-reduced-motion: reduce) {
   .wp-item, .wp-item::before, .wp-item::after { transition: none; }
 }
 .wp-icon {
-  width: var(--wp-icon); height: var(--wp-icon);
+  width: var(--notif-icon); height: var(--notif-icon);
   flex: 0 0 auto; display: grid; place-items: center;
   /* Centred in the row rather than on the first line of text: the rule is
      broken AT the icon, and a break at the top of a three-line notification
-     would leave one segment and a stub. */
+     would leave one segment and a stub. Centred with the marks off too — the
+     switch takes the rule away, not the layout it was drawn in. */
   align-self: center;
 }
 .wp-icon.warning { color: var(--warning); }
 .wp-icon.critical { color: var(--critical); }
 .wp-icon.info { color: var(--nav); }
-.wp-icon svg { width: 16px; height: 16px; }
+.wp-icon svg { width: var(--notif-icon-svg); height: var(--notif-icon-svg); }
 .wp-body { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.wp-msg { font-size: 12px; color: var(--text-1); line-height: 1.3; }
-.wp-meta { font-size: 10px; color: var(--text-3); }
-.wp-empty { padding: 22px; text-align: center; color: var(--text-3); font-size: 12px; }
+.wp-msg { font-size: var(--text-sm); color: var(--text-1); line-height: 1.3; }
+.wp-meta { font-size: var(--text-2xs); color: var(--text-3); }
+.wp-empty { padding: 22px; text-align: center; color: var(--text-3); font-size: var(--text-sm); }
 .wp-dismiss {
-  width: 24px; height: 24px; flex: 0 0 auto; display: grid; place-items: center;
+  width: var(--notif-dismiss); height: var(--notif-dismiss);
+  flex: 0 0 auto; display: grid; place-items: center;
   margin: -2px -4px -2px auto; border-radius: var(--radius-btn); color: var(--text-3);
 }
 .wp-dismiss:hover { color: var(--text-1); background: var(--surface-hover); }
@@ -2193,6 +2186,7 @@ svg { display: block; }
   .autotune-live-dot,
   .tune-tab,
   .link-kind,
+  .link-card-caret,
   .params-download-btn,
   .params-apply,
   .plan-panel,
@@ -2213,11 +2207,35 @@ svg { display: block; }
   border-radius: var(--radius); padding: 13px;
   display: flex; flex-direction: column; gap: 10px;
 }
+/* The title row is the card's fold. A connected station spends its time in
+   the status row and the telemetry above it, not in the dropdowns that opened
+   the link, so both cards fold to their title and leave the panel to what is
+   being read. Styled as a row rather than a button: it discloses, it does not
+   act. */
 .link-card-title {
   display: flex; align-items: center; gap: 8px;
+  width: 100%; text-align: left;
+  background: none; border: 0; padding: 0; margin: 0;
+  font-family: inherit;
   font-size: 12px; font-weight: 600; letter-spacing: 0.4px; color: var(--text-1);
 }
 .link-card-title i, .link-card-title svg { width: 15px; height: 15px; color: var(--accent); }
+button.link-card-title { cursor: pointer; }
+button.link-card-title:hover .link-card-caret { color: var(--text-1); }
+button.link-card-title:focus-visible {
+  outline: 2px solid var(--accent-bright); outline-offset: 3px; border-radius: 3px;
+}
+/* The chevron trails the row and turns when the card is shut, so a folded card
+   still advertises what is behind it. */
+.link-card-title .link-card-caret {
+  width: 14px; height: 14px; margin-left: auto; flex: 0 0 auto;
+  color: var(--text-3); transition: transform 130ms ease, color 130ms ease;
+}
+.link-card-title[aria-expanded="false"] .link-card-caret { transform: rotate(-90deg); }
+/* Nothing to collapse smoothly: the body is simply not there when shut, and
+   the card's own flex gap goes with it. */
+.link-card-body { display: flex; flex-direction: column; gap: 10px; }
+.link-card-body[hidden] { display: none; }
 /* Serial or network, one card, one Connect button below both. A segmented
    control rather than tabs: it picks what the button will do, which is a
    choice about this card, not navigation to somewhere else. */
@@ -3828,6 +3846,133 @@ svg { display: block; }
   .safety-extra-add { flex-direction: column; align-items: stretch; }
   .field-input.safety-extra-input { min-width: 0; }
 }
+
+/* ----- BATTERY & POWER -----
+   Two columns, and which one an operator is looking at says what they are
+   doing. The left is the pack as it is right now — the drawing and its numbers
+   — and it stays put; the right is everything that can be changed. A cell
+   count typed on the right lands in the drawing on the left immediately, which
+   is the only way to tell a correct count from a plausible one.
+
+   The pack column is sticky on a wide window for the same reason: the settings
+   are a long scroll and the reading is the thing being checked against. Below
+   1100px the two stack, pack first, because on a narrow window the reading is
+   still what the page is for. */
+/* auto-fit rather than a media query, because the width that matters is this
+   container's and not the window's: the right-hand panel is open on most field
+   laptops and takes a third of it, which a viewport breakpoint cannot see. Two
+   columns while 300px each will fit, one when they will not. */
+.battery-layout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.battery-live { display: flex; flex-direction: column; gap: 14px; }
+.battery-config { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.battery-card { display: flex; flex-direction: column; gap: 10px; }
+
+/* ----- the drawing -----
+   One fill across the whole pack, because that is what "remaining" means, with
+   the cells as dividers over it. A per-compartment fill would be a claim about
+   individual cells that a pack voltage cannot support — and when a smart
+   battery does report per-cell volts, those go in the labels underneath where
+   they can be read as the measurement they are. */
+/* Capped, and centred once the columns stack. Left uncapped it follows the
+   card's width, and on a stacked layout that is a battery drawn 400px tall —
+   a diagram is a diagram, not a poster. */
+.battery-figure {
+  width: 100%; max-width: 360px; height: auto;
+  display: block; margin: 0 auto; overflow: visible;
+}
+.battery-body {
+  fill: var(--surface-2); stroke: var(--text-3); stroke-width: 2;
+}
+.battery-terminal { fill: var(--text-3); }
+/* The cell seams are drawn in the card's own background rather than in a grey,
+   because they cross both halves of the gauge: a grey line reads on the empty
+   side and vanishes into the fill, which is exactly where the operator is
+   counting cells. Background-coloured, they read as the gaps between cells on
+   the filled side and as a faint seam on the empty one. */
+.battery-divider { stroke: var(--surface-1); stroke-width: 2.5; }
+
+/* The fill is the one element on this page that carries state colour, and it
+   carries the same thresholds the top bar does — an operator must never read
+   "green" here and "amber" two inches above. */
+.battery-fill { transition: width 220ms ease; }
+.battery-fill.healthy { fill: var(--healthy); opacity: 0.55; }
+.battery-fill.warning { fill: var(--warning); opacity: 0.55; }
+.battery-fill.critical { fill: var(--critical); opacity: 0.6; }
+.battery-fill.off { fill: var(--text-3); opacity: 0.25; }
+
+.battery-cell-label {
+  fill: var(--text-2); font-family: var(--mono); font-size: 9px;
+}
+.battery-percent-label {
+  fill: var(--text-1); font-family: var(--sans); font-size: 22px; font-weight: 700;
+}
+.battery-source-label {
+  fill: var(--text-3); font-family: var(--sans); font-size: 9.5px;
+  letter-spacing: 0.3px;
+}
+
+/* The failsafe levels, drawn on the pack rather than listed beside it: the
+   question they answer is "how much is left before something happens", and
+   that is a distance along this bar. */
+.battery-threshold { stroke: var(--critical); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.battery-threshold.low { stroke: var(--warning); }
+.battery-threshold-label {
+  fill: var(--text-3); font-family: var(--sans); font-size: 8.5px;
+  letter-spacing: 0.3px; text-transform: uppercase;
+}
+
+/* ----- the numbers under it ----- */
+.battery-readout { display: flex; flex-direction: column; }
+.battery-readout-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 5px 0; border-bottom: 1px solid var(--border-soft);
+}
+.battery-readout-row:last-child { border-bottom: none; }
+.battery-readout-label { font-size: 11.5px; color: var(--text-2); }
+.battery-readout-value {
+  font-family: var(--mono); font-size: 12px; color: var(--text-1);
+  text-align: right; min-width: 0;
+}
+.battery-readout-value.healthy { color: var(--healthy); }
+.battery-readout-value.warning { color: var(--warning); }
+.battery-readout-value.critical { color: var(--critical); }
+.battery-readout-value.off { color: var(--text-3); }
+
+/* The row that names the answer the operator is NOT flying by. Quiet, but
+   permanent: the whole argument for computing both is that they can be seen
+   disagreeing without switching a setting back and forth. */
+.battery-readout-row[data-readout="fc"] {
+  border-top: 1px solid var(--border-soft); margin-top: 4px; padding-top: 7px;
+}
+.battery-readout-row[data-readout="fc"] .battery-readout-value { color: var(--text-2); }
+
+/* ----- the estimator card -----
+   The one card on this page that is not a vehicle setting, so it reads as a
+   band rather than another form row — and it deliberately stays enabled while
+   the vehicle is armed. Refusing it would be the ground station refusing to
+   let somebody fix its own display in the one situation where the number
+   matters most. */
+.battery-estimate-switch {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 12px; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--border-soft);
+}
+.battery-estimate-label { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.battery-estimate-title { font-size: 13px; font-weight: 650; color: var(--text-1); }
+.battery-estimate-sub { font-size: 11.5px; color: var(--text-2); }
+
+/* Layout comes from .pform-* ; battery's own departure is the placeholder,
+   which carries the resolved value an empty field would otherwise hide. */
+.battery-field { grid-template-columns: minmax(140px, 230px) 1fr; }
+.field-input.battery-input { width: 150px; }
+.field-input.battery-input::placeholder { color: var(--text-3); font-style: italic; }
+.field-select.battery-select { min-width: 150px; max-width: 300px; }
+.battery-estimator-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* ===== CONSOLE =====
    One toolbar, then the stream, then the input. The panel used to carry a

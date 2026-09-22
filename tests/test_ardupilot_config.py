@@ -17,10 +17,12 @@ import pytest
 from pymavlink import mavutil as mv
 
 from corvus import (
+    ardupilot_battery,
     ardupilot_motors,
     ardupilot_rc,
     ardupilot_safety,
     ardupilot_tuning,
+    battery_config,
     motor_config,
     rc_config,
     safety_config,
@@ -29,6 +31,7 @@ from corvus import (
 
 MODULES = [
     (ardupilot_safety, safety_config),
+    (ardupilot_battery, battery_config),
     (ardupilot_tuning, tuning_config),
     (ardupilot_rc, rc_config),
     (ardupilot_motors, motor_config),
@@ -107,7 +110,7 @@ def _all_values(module) -> dict[str, float]:
 def test_safety_renders_the_sections_an_operator_needs_before_a_flight() -> None:
     payload = ardupilot_safety.build(_all_values(ardupilot_safety), [], "copter")
     ids = [s["id"] for s in payload["sections"]]
-    assert ids == ["limits", "rtl", "failsafe", "arming", "battery",
+    assert ids == ["limits", "rtl", "failsafe", "arming",
                    "rangefinder", "flow"]
     assert payload["stack"] == "ardupilot"
 

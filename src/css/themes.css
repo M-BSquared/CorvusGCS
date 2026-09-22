@@ -153,6 +153,40 @@
      belongs to may be inside one. */
   --z-dropdown: 150;
   --z-toast: 200;
+
+  /* --- Notifications ---
+     One notification has two homes: a row on the board (.wp-item, main.css)
+     and a toast (.ui-toast, components.css). They are the same object seen
+     twice — same levels, same icons, same colours — and they were built to two
+     different sets of numbers: a 20px icon in a 9px gutter on one, an 18px
+     icon in an 11px one on the other, a rule threaded through the icon here
+     and a flat inset edge there. Side by side — and they are, because the
+     toast stack drops below the notification popover when that is open — they
+     read as two components that happen to share a palette.
+
+     So the leading column is stated once, here, and both sheets consume it.
+     The tokens are the geometry of that column and nothing else: where it
+     starts, how wide the icon is, how thick the mark under it is, and the air
+     around both.
+
+     --notif-mark-fill is the share of the room BESIDE the icon that a mark
+     segment takes; the rest is air at the surface's edge. A share rather than
+     a fixed length, because neither extreme reads well: segments anchored to
+     the edges grew into long rails on a three-line notification, while a fixed
+     length that suited three lines was most of the room a one-liner had. A
+     share settles both at once — near 4px on a one-line notification, 7px on
+     two and 10px on three, so the mark grows with the message without ever
+     running away with it. */
+  --notif-gutter: 9px;
+  --notif-icon: 20px;
+  --notif-icon-svg: 16px;
+  --notif-gap: 14px;
+  --notif-pad-y: 10px;
+  --notif-pad-right: 13px;
+  --notif-mark: 3px;
+  --notif-mark-gap: 4px;
+  --notif-mark-fill: 0.38;
+  --notif-dismiss: 24px;
 }
 
 /* ===================================================================

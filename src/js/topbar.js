@@ -59,6 +59,16 @@ Corvus.topbar = (function () {
   // written as an attribute on <html> because the hiding itself is CSS — see
   // the .tb-dot rules in main.css.
   const DOTS_KEY = "corvus.topbarDots";
+  // Whether a notification draws its severity mark: the coloured bar above and
+  // below the level icon, on a board row and on a toast alike. ON unless the
+  // operator turns it off — it is what a notification looked like before there
+  // was a switch, and a setting must not quietly restyle an interface nobody
+  // asked to change. Same two mechanisms as the dots above: a localStorage
+  // cache so the first paint is right before the config lands, and an
+  // attribute on <html> because the hiding is CSS (the
+  // :root[data-notification-marks="off"] rules beside .wp-item in main.css and
+  // .ui-toast in components.css).
+  const MARKS_KEY = "corvus.notificationMarks";
   const localNotifications = new Map();
   const dismissedNotifications = new Set();
   const readNotifications = new Set();
@@ -316,6 +326,34 @@ Corvus.topbar = (function () {
     return changed;
   }
 
+  /**
+   * Where the percentage in the bar came from, and what the other answer says.
+   *
+   * Two readings of one pack disagree for good reasons — a capacity count
+   * seeded by a guess against a curve read under load — and the bar has room
+   * for exactly one number. Naming the source on hover is what stops the other
+   * one being invisible; both are on Setup -> Battery & Power, which is also
+   * where the choice is made.
+   */
+  function batteryTitle(state) {
+    if (!state.connected) return "";
+    const cells = Number(state.battery_cells) || 0;
+    const pack = cells > 0 ? `${cells}S pack` : "";
+    if (state.battery_source === "estimate") {
+      const reported = Number(state.battery_percent_fc);
+      const other = reported >= 0
+        ? `the autopilot reports ${Math.round(reported)}%`
+        : "the autopilot reports no estimate";
+      return [`Remaining read from the cell voltage${pack ? " of a " + pack : ""}`,
+              other].join(" — ");
+    }
+    const estimated = Number(state.battery_percent_est);
+    const other = estimated >= 0
+      ? `the cell voltage reads ${Math.round(estimated)}%`
+      : "no cell count, so there is no voltage reading";
+    return ["Remaining as the autopilot reports it", other].join(" — ");
+  }
+
   function blocks(state) {
     const conn = state.connected ? "healthy" : "critical";
     const ready = readiness(state);
@@ -323,6 +361,7 @@ Corvus.topbar = (function () {
       ? "healthy" : "off";
     const battPct = state.battery_percent || 0;
     const battCls = !state.connected ? "off" : battPct > 25 ? "healthy" : (battPct > 12 ? "warning" : "critical");
+    const batt = batteryTitle(state);
     const notifications = notificationSummary(state);
     const gpsSub = state.connected ? `(${state.gps_hdop > 0 && state.gps_hdop < 99 ? state.gps_hdop.toFixed(1) : "—"})` : "";
     const fw = vehicleFirmware(state);
@@ -333,7 +372,7 @@ Corvus.topbar = (function () {
       { key: "mode", label: "Mode", value: modeLabel(state), cls: "accent", priority: "high" },
       { key: "armed", label: "Status", value: ready.value, cls: ready.cls, dot: ready.cls, tone: ready.tone, title: ready.title, priority: "high" },
       { key: "gps", label: "GPS", value: state.connected ? (state.gps_fix || "NO GPS") : "—", sub: gpsSub, cls: gpsCls, dot: gpsCls, priority: "high" },
-      { key: "battery", label: "Battery", value: state.connected ? `${state.battery_voltage.toFixed(1)} V` : "—", sub: state.connected ? `${battPct}%` : "", cls: battCls, dot: battCls, priority: "high" },
+      { key: "battery", label: "Battery", value: state.connected ? `${state.battery_voltage.toFixed(1)} V` : "—", sub: state.connected ? `${battPct}%` : "", cls: battCls, dot: battCls, title: batt, priority: "high" },
       { key: "altitude", label: "Altitude", value: state.connected ? `${Math.round(state.altitude_amsl)}` : "—", sub: "m AMSL", priority: "mid" },
       { key: "groundspeed", label: "Groundspeed", value: state.connected ? `${state.groundspeed.toFixed(1)}` : "—", sub: "m/s", priority: "mid" },
       { key: "vspeed", label: "Vertical speed", value: state.connected ? `${state.vspeed >= 0 ? "+" : ""}${state.vspeed.toFixed(1)}` : "—", sub: "m/s", priority: "mid" },
@@ -382,6 +421,38 @@ Corvus.topbar = (function () {
     let v = false;
     try { v = localStorage.getItem(DOTS_KEY) === "1"; } catch (_e) {}
     return setStatusDots(v);
+  }
+
+  /**
+   * Show or hide the severity marks on every notification surface. Returns the
+   * state applied, so a caller can undo itself with the return value rather
+   * than its own copy.
+   *
+   * Written on <html>, not on the popover: a toast is mounted on <body> and
+   * has to obey the same switch, and the operator set this once for
+   * "notifications", not for one of the two places they appear.
+   */
+  function setNotificationMarks(on) {
+    const v = !!on;
+    try { document.documentElement.setAttribute("data-notification-marks", v ? "on" : "off"); } catch (_e) {}
+    try { localStorage.setItem(MARKS_KEY, v ? "1" : "0"); } catch (_e) {}
+    return v;
+  }
+
+  /** Whether the marks are currently drawn. */
+  function notificationMarks() {
+    try { return document.documentElement.getAttribute("data-notification-marks") !== "off"; }
+    catch (_e) { return true; }
+  }
+
+  /** Apply the locally cached choice (called before the config fetch lands).
+   *  Absent storage means ON, the opposite of the dots: no stored value is a
+   *  machine that has never touched the switch, and the marks are what a
+   *  notification has always looked like. */
+  function applySavedNotificationMarks() {
+    let v = true;
+    try { v = localStorage.getItem(MARKS_KEY) !== "0"; } catch (_e) {}
+    return setNotificationMarks(v);
   }
 
   function setCompanyLogo(name) {
@@ -880,6 +951,7 @@ Corvus.topbar = (function () {
     // dots the operator has turned off. The backend config overrides this the
     // moment it lands (app.js), exactly as it does for theme and scale.
     applySavedStatusDots();
+    applySavedNotificationMarks();
 
     Corvus.telemetry.subscribe(handleTelemetryState);
     warningsList.setAttribute("role", "list");
@@ -909,6 +981,8 @@ Corvus.topbar = (function () {
     setCompanyLogo,
     setStatusDots,
     statusDots,
+    setNotificationMarks,
+    notificationMarks,
     notifyError: showCmdError,
     beginCommand: (key) => commandDedupe.begin(key),
     succeedCommand: (attempt) => commandDedupe.succeeded(attempt),

@@ -349,6 +349,7 @@ require("../src/js/setup-control.js");
 require("../src/js/setup-tuning.js");
 require("../src/js/setup-motors.js");
 require("../src/js/setup-safety.js");
+require("../src/js/setup-battery.js");
 require("../src/js/setup-sik.js");
 require("../src/js/setup-parameters.js");
 require("../src/js/setup-firmware.js");
@@ -369,7 +370,7 @@ async function testTileGridRendersEveryTile() {
 
   const tiles = findByClass(container, "setup-tile");
   assert.deepEqual(tiles.map((t) => t.dataset.view),
-    ["calibration", "control", "tuning", "motors", "safety", "sik",
+    ["calibration", "control", "tuning", "motors", "safety", "battery", "sik",
      "parameters", "firmware"],
     "every Setup tile, in order");
 
@@ -379,7 +380,7 @@ async function testTileGridRendersEveryTile() {
   const titles = tiles.map((t) => findOneByClass(t, "tile-title").textContent);
   assert.deepEqual(titles,
     ["Calibration", "Radio Control", "PID Tuning", "Motors", "Safety & Sensors",
-     "Telemetry Radio", "Parameters", "Firmware"]);
+     "Battery & Power", "Telemetry Radio", "Parameters", "Firmware"]);
 }
 
 async function testClickTileSwapsToSubPageAndBackReturns() {

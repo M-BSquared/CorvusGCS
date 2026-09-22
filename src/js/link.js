@@ -23,6 +23,10 @@ window.Corvus = window.Corvus || {};
  *    reopens on the kind, port and baud that last worked.
  *  - PRESETS for the endpoints PX4 actually publishes, so the common cases are
  *    a click rather than a remembered string.
+ *  - A FOLD on each card. Once a link is up, the controls that opened it are
+ *    height between the operator and the status row; the title collapses the
+ *    card, and which cards are shut is remembered. Sharing starts folded: a
+ *    second station is the exception, not the setup every flight needs.
  *  - PORT AUTO-REFRESH when the tab is opened, because a radio plugged in
  *    after launch used to require finding the refresh button. A port that was
  *    there last time and is not there now stays on the list, named as absent:
@@ -40,6 +44,10 @@ window.Corvus = window.Corvus || {};
 Corvus.link = (function () {
   const RECENT_KEY = "corvus.link.recent";
   const MAX_RECENT = 5;
+  /* Which of the two cards the operator folded shut. Remembered because the
+     fold says how this station is used — one that shares its link on every
+     flight should not have to open that card again on every launch. */
+  const CARDS_KEY = "corvus.link.cards";
 
   /* The endpoints PX4 actually publishes, so the common cases are a click.
      Kept short on purpose — a preset list nobody reads is just noise.
@@ -720,6 +728,52 @@ Corvus.link = (function () {
     lastStatus = status;
   }
 
+  /* ---------------- the two cards fold ----------------
+     A connected station reads the status row and the telemetry above it, not
+     the dropdowns that opened the link. Both cards collapse to their title so
+     the panel can be given over to what is actually being watched.
+
+     A card marked `data-fold="shut"` in index.html starts folded — sharing the
+     link with a second station is the exception, and an operator who does it
+     opens the card once and is remembered from then on. */
+
+  /** Read the remembered folds. A card with no entry gets its markup default. */
+  function loadCardState() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(CARDS_KEY) || "{}");
+      return raw && typeof raw === "object" ? raw : {};
+    } catch (_e) { return {}; }
+  }
+
+  /** Wire every `.link-card[data-card]` title to its body, folds restored. */
+  function initCards() {
+    const cards = document.querySelectorAll(".link-card[data-card]");
+    const state = loadCardState();
+    Array.prototype.forEach.call(cards, (card) => {
+      const name = card.dataset.card;
+      const toggle = card.querySelector(".link-card-title");
+      const body = card.querySelector(".link-card-body");
+      if (!toggle || !body) return;
+      const apply = (open) => {
+        toggle.setAttribute("aria-expanded", open ? "true" : "false");
+        body.hidden = !open;
+      };
+      const remembered = state[name];
+      apply(typeof remembered === "boolean"
+        ? remembered
+        : card.dataset.fold !== "shut");
+      toggle.addEventListener("click", () => {
+        const open = toggle.getAttribute("aria-expanded") !== "true";
+        apply(open);
+        // Re-read rather than mutating a copy: it keeps one card's fold from
+        // overwriting whatever the other card wrote.
+        const next = loadCardState();
+        next[name] = open;
+        try { localStorage.setItem(CARDS_KEY, JSON.stringify(next)); } catch (_e) {}
+      });
+    });
+  }
+
   function init() {
     serialSelect = document.getElementById("linkSerialPort");
     baudSelect = document.getElementById("linkBaud");
@@ -743,6 +797,7 @@ Corvus.link = (function () {
     autoBadge = document.getElementById("linkAutoBadge");
     suggestionHost = document.getElementById("linkSuggestion");
 
+    initCards();
     loadRecent();
     renderRecent();
     renderPresets();

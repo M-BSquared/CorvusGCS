@@ -391,16 +391,30 @@ Corvus.sidenav = (function () {
     }
   }
 
+  // How many transcript lines the Logs page shows. The page is a glance at
+  // what the link has been saying, not a second console — the CONSOLE tab
+  // scrolls the whole buffer, and Export writes all of it.
+  const LOG_PREVIEW_LINES = 30;
+
+  /** The console transcript, as the Logs page reads it.
+   *
+   *  Straight from Corvus.panel's buffer rather than scraped back out of
+   *  #consoleOutput: the DOM holds only what the CONSOLE tab's filter lets
+   *  through, so a filter left behind in that tab used to shorten this page —
+   *  and would have shortened the export with it. */
+  function consoleTranscript() {
+    if (!Corvus.panel || typeof Corvus.panel.consoleText !== "function") return "";
+    return Corvus.panel.consoleText({ all: true });
+  }
+
   function renderLogsPage(container) {
     container.appendChild(pageHeader("Logs", "Flight logs and MAVLink message history"));
+
+    const transcript = consoleTranscript();
+    const all = transcript ? transcript.split("\n") : [];
     const card = Corvus.ui.card({});
-    const lines = document.querySelectorAll("#consoleOutput .con-line");
-    const recent = Array.from(lines).slice(-30).map((l) => {
-      const t = l.querySelector(".con-time")?.textContent || "";
-      const m = l.querySelector(".con-msg")?.textContent || "";
-      return `${t}  ${m}`;
-    });
-    if (recent.length === 0) {
+
+    if (all.length === 0) {
       card.appendChild(Corvus.ui.empty("No log entries yet."));
     } else {
       const pre = document.createElement("pre");
@@ -409,10 +423,87 @@ Corvus.sidenav = (function () {
       pre.style.color = "var(--text-2)";
       pre.style.lineHeight = "1.5";
       pre.style.whiteSpace = "pre-wrap";
-      pre.textContent = recent.join("\n");
+      pre.textContent = all.slice(-LOG_PREVIEW_LINES).join("\n");
       card.appendChild(pre);
     }
-    container.appendChild(Corvus.ui.section({ title: "Recent Console Output", body: card }));
+
+    // The note is where the written path lands — the one thing an operator
+    // needs after exporting is where the file went, and a log folder is not
+    // somewhere they can be assumed to know by heart.
+    const note = document.createElement("div");
+    note.className = "logs-status";
+    note.style.marginTop = "10px";
+
+    const exportBtn = Corvus.ui.button({
+      label: "Export log",
+      icon: "download",
+      variant: "primary",
+      size: "sm",
+      disabled: all.length === 0,
+      title: "Write the full console transcript to the log folder",
+      onClick: () => exportLogFile(exportBtn, note),
+    });
+
+    const copyBtn = Corvus.ui.button({
+      label: "Copy",
+      icon: "copy",
+      size: "sm",
+      disabled: all.length === 0,
+      title: "Copy the full console transcript to the clipboard",
+      onClick: () => copyLogText(note),
+    });
+
+    const actions = Corvus.ui.actions([exportBtn, copyBtn]);
+    actions.style.marginTop = "12px";
+    card.appendChild(actions);
+    card.appendChild(note);
+
+    const title = all.length > LOG_PREVIEW_LINES
+      ? `Console Output — last ${LOG_PREVIEW_LINES} of ${all.length} lines`
+      : "Recent Console Output";
+    container.appendChild(Corvus.ui.section({ title, body: card }));
+  }
+
+  /** Write the transcript to the log folder and report where it landed. */
+  function exportLogFile(btn, note) {
+    if (!Corvus.panel || typeof Corvus.panel.exportLog !== "function") return;
+    // Captured now: the answer is only worth showing while the operator is
+    // still standing on the page that asked the question.
+    const mine = navGeneration;
+    Corvus.ui.setBusy(btn, true);
+    note.classList.remove("err");
+    note.textContent = "Writing the log…";
+    Corvus.panel.exportLog().then((res) => {
+      if (mine !== navGeneration) return;
+      Corvus.ui.setBusy(btn, false);
+      note.textContent = `Written to ${(res && res.path) || "the log folder"}`;
+    }).catch((err) => {
+      if (mine !== navGeneration) return;
+      Corvus.ui.setBusy(btn, false);
+      note.classList.add("err");
+      note.textContent = (err && err.message) || "Could not write the log";
+    });
+  }
+
+  /** The same transcript, for pasting into a ticket rather than filing away. */
+  function copyLogText(note) {
+    const text = consoleTranscript();
+    if (!text) return;
+    const mine = navGeneration;
+    const done = (ok, msg) => {
+      if (mine !== navGeneration) return;
+      note.classList.toggle("err", !ok);
+      note.textContent = msg;
+    };
+    try {
+      navigator.clipboard.writeText(text).then(
+        () => done(true, "Copied to the clipboard."),
+        // Clipboard access is refused in some embeddings — Export still works
+        // there, so say which way out is left rather than just failing.
+        () => done(false, "Clipboard unavailable — use Export instead."));
+    } catch (_e) {
+      done(false, "Clipboard unavailable — use Export instead.");
+    }
   }
 
   function renderAnalysisPage(container) {
@@ -464,9 +555,11 @@ Corvus.sidenav = (function () {
     body.appendChild(pagesCard(cfg));
     body.appendChild(mapServiceCard(cfg, gen));
     body.appendChild(controlsCard(cfg));
-    // The top-bar dots and the Dock icon sit after Controls: both are small
-    // finishing touches on an interface the cards above it decide.
+    // The top-bar dots, the notification marks and the Dock icon sit after
+    // Controls: all three are small finishing touches on an interface the
+    // cards above them decide.
     body.appendChild(topBarCard(cfg));
+    body.appendChild(notificationsCard(cfg));
     body.appendChild(appIconCard(cfg));
     container.appendChild(Corvus.ui.section({ title: "Appearance", body }));
   }
@@ -681,6 +774,53 @@ Corvus.sidenav = (function () {
             "captions \u2014 green good, amber caution, red fault, grey " +
             "nothing to report. Off by default: the values already carry that " +
             "colour themselves. Turn it on to scan the bar by colour alone.",
+    }));
+    return card;
+  }
+
+  // The severity mark on a notification: the coloured bar above the level icon
+  // and the one below it, drawn down the leading column of a board row and of
+  // a toast alike.
+  //
+  // On by default, unlike every other switch in this section — it is what a
+  // notification has always looked like, and the switch exists to take it
+  // away, not to offer it. So this reads the config as "not false": a file
+  // that has never heard of the key leaves the marks alone.
+  //
+  // Turning them off removes the two segments and nothing else. The icon is
+  // centred by the row's own layout rather than by the marks around it, so it
+  // stays exactly where it was — the column loses its rule, not its alignment.
+  // That is the point of the switch: the severity is still stated, in the icon
+  // and its colour, just not underlined twice.
+  function notificationsCard(cfg) {
+    const card = Corvus.ui.card({ title: "Notifications" });
+    const on = !(cfg.ui && cfg.ui.notification_marks === false);
+    // The config is the authority and this card is rendered from it, so apply
+    // it here too rather than trusting the cached value app.js used before the
+    // fetch landed — the same contract as the top-bar dots above.
+    Corvus.topbar.setNotificationMarks(on);
+
+    const sw = Corvus.ui.toggle({
+      id: "settingsNotificationMarks",
+      value: on,
+      ariaLabel: "Severity marks",
+      onChange: (next) => {
+        Corvus.topbar.setNotificationMarks(next);
+        return postConfig({ ui: { notification_marks: next } }, { strict: true })
+          .catch((error) => {
+            Corvus.topbar.setNotificationMarks(!next);
+            throw error;
+          });
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Severity marks",
+      control: sw.el,
+      className: "field-switch",
+      hint: "The coloured bars above and below the level icon on a "
+        + "notification \u2014 blue for info, amber for a warning, red for a "
+        + "fault. Turn them off for a plainer board: the icon keeps its place "
+        + "and its colour, so the level is still there to read.",
     }));
     return card;
   }

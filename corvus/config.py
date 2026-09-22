@@ -64,6 +64,7 @@ _CONFIG_FIELD_ORDER: tuple[str, ...] = (
     "forwarding",
     "autoconnect",
     "updates",
+    "battery",
     "plugins",
 )
 
@@ -98,14 +99,22 @@ class CorvusConfig:
     ``key_gain`` for how much stick one held key is worth), and
     the interface size, desktop app icon and top bar (``{"scale": 1.25,
     "inverted_app_icon": false, "app_icon_backplate": false,
-    "topbar_status_dots": false, "mission_page": false}`` — the multiplier
+    "topbar_status_dots": false, "mission_page": false,
+    "notification_marks": true}`` — the multiplier
     the frontend puts on every length in the UI, which cut of the mark the
     Dock / taskbar gets, whether that mark sits on a filled backplate, whether
-    the top bar shows its per-block state dots, and whether the left rail
-    carries the Mission planner),
+    the top bar shows its per-block state dots, whether the left rail
+    carries the Mission planner, and whether a notification draws the severity
+    bar above and below its level icon — the last of which is the only one of
+    these that is on when the key is absent),
     and the update check
     (``{"check": true, "skipped": "2026.09.27"}`` — whether to look at the
-    GitHub releases at all, and the one release the operator dismissed).
+    GitHub releases at all, and the one release the operator dismissed),
+    and the battery estimator
+    (``{"estimate": false, "chemistry": "lipo", "cells": 0, ...}`` — whether
+    the remaining figure shown in the interface is the autopilot's own or
+    Corvus's own reading of the cell voltage, and the pack it is read against;
+    see ``corvus/battery.py``).
     ``plugins`` is the state each TOOLS-tab plugin saves for itself
     (``{"<plugin id>": {...}}``; see ``corvus/plugin_registry.py``).
 
@@ -141,6 +150,7 @@ class CorvusConfig:
     forwarding: dict[str, Any] | None = None
     autoconnect: dict[str, Any] | None = None
     updates: dict[str, Any] | None = None
+    battery: dict[str, Any] | None = None
     plugins: dict[str, Any] | None = None
 
     def apply_overrides(self, **kwargs: Any) -> CorvusConfig:
@@ -471,6 +481,15 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     unless asked for: a station flown by hand has no use for a route editor,
     and a rail entry that leads somewhere the operator never goes is one more
     thing to skip past in the field.
+
+    ``notification_marks`` draws the severity bar above and below the level
+    icon on a notification (a board row and a toast alike). This is the one
+    key here that is ON when absent, and the frontend reads it as "not false"
+    for that reason: the marks are what a notification has always looked like,
+    so a config file that has never been asked about them must not strip them.
+    Only an explicit ``false`` turns them off. The coercion is the same as for
+    the rest — a genuine boolean or nothing — which is what keeps a
+    hand-edited ``"false"`` from reading as off.
     """
     if not isinstance(raw, dict):
         return None
@@ -481,7 +500,7 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
         if scale == scale and scale not in (float("inf"), float("-inf")):  # not NaN / inf
             out["scale"] = min(max(scale, _UI_SCALE_MIN), _UI_SCALE_MAX)
     for key in ("inverted_app_icon", "app_icon_backplate", "topbar_status_dots",
-                "mission_page"):
+                "mission_page", "notification_marks"):
         if isinstance(raw.get(key), bool):
             out[key] = raw[key]
     return out or None
@@ -507,6 +526,18 @@ def _coerce_updates(raw: Any) -> dict[str, Any] | None:
     if isinstance(skipped, str) and parse_version(skipped) is not None:
         out["skipped"] = skipped.strip().removeprefix("v")
     return out or None
+
+
+def _coerce_battery(raw: Any) -> dict[str, Any] | None:
+    """Keep the battery estimator settings; bound every number.
+
+    The bounds live in :mod:`corvus.battery` with the arithmetic that consumes
+    them, because these values reach a path that runs on every telemetry frame
+    — a negative cell count read out of a hand-edited config file must not be
+    able to produce a percentage at all.
+    """
+    from .battery import coerce_settings
+    return coerce_settings(raw)
 
 
 def _coerce_plugins(raw: Any) -> dict[str, Any] | None:
@@ -592,6 +623,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
     autoconnect = _coerce_autoconnect(data.get("autoconnect"))
     ui = _coerce_ui(data.get("ui"))
     updates = _coerce_updates(data.get("updates"))
+    battery = _coerce_battery(data.get("battery"))
     plugins = _coerce_plugins(data.get("plugins"))
 
     return CorvusConfig(
@@ -614,6 +646,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         autoconnect=autoconnect,
         ui=ui,
         updates=updates,
+        battery=battery,
         plugins=plugins,
     )
 
@@ -648,7 +681,7 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
     """Serialize a CorvusConfig to a plain dict in stable key order.
 
     Omits ``None`` optional dict fields (``tile_sources``/``stream_rates``/
-    ``theme``/``map``/``branding``/``controls``/``ui``/``updates``/``plugins``) so the on-disk file stays
+    ``theme``/``map``/``branding``/``controls``/``ui``/``updates``/``battery``/``plugins``) so the on-disk file stays
     lean when nothing overrides
     them; an empty ``ssh_connections`` list is kept (it is real operator
     state, the absence of which still round-trips through ``[]``).
@@ -684,6 +717,8 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
         out["ui"] = dict(cfg.ui)
     if cfg.updates is not None:
         out["updates"] = dict(cfg.updates)
+    if cfg.battery is not None:
+        out["battery"] = dict(cfg.battery)
     if cfg.plugins is not None:
         out["plugins"] = {k: dict(v) for k, v in cfg.plugins.items()}
     # Stable key order for a readable on-disk diff.

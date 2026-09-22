@@ -192,6 +192,41 @@ def test_a_valid_cruise_speed_survives() -> None:
     assert cleaned is not None and cleaned["speed"] == 12.5
 
 
+@pytest.mark.parametrize("speed", [0.0, -5, 1000, "12", True])
+def test_an_out_of_range_speed_on_one_item_is_refused(speed: Any) -> None:
+    assert mission.validate_plan(plan(items=[
+        {"type": "waypoint", "lat": 48.0, "lon": 11.0, "alt": 20, "speed": speed},
+    ]))[0] is None
+
+
+def test_a_speed_pinned_on_one_item_survives_and_the_others_stay_absent() -> None:
+    """Absent is not zero and not a default: a point without a speed of its own
+    inherits the one in force, which no number on the item can express."""
+    cleaned, _error = mission.validate_plan(plan(items=[
+        {"type": "waypoint", "lat": 48.0, "lon": 11.0, "alt": 20, "speed": 4},
+        {"type": "waypoint", "lat": 48.1, "lon": 11.1, "alt": 20},
+    ]))
+
+    assert cleaned is not None
+    assert cleaned["items"][0]["speed"] == 4.0
+    assert "speed" not in cleaned["items"][1]
+
+
+def test_a_plan_is_refused_when_its_speed_changes_push_it_over_the_ceiling() -> None:
+    """The limit is what goes on the wire. Each pinned speed is a command of
+    its own, so a plan that fits the page can still overflow the vehicle."""
+    items = [
+        {"type": "waypoint", "lat": 48.0, "lon": 11.0, "alt": 20,
+         "speed": 5 + (index % 2)}
+        for index in range(mission.MISSION_MAX_ITEMS - 1)
+    ]
+
+    cleaned, error = mission.validate_plan({"items": items})
+
+    assert cleaned is None
+    assert str(mission.MISSION_MAX_ITEMS) in error
+
+
 def test_unknown_keys_are_dropped_rather_than_carried() -> None:
     cleaned, _error = mission.validate_plan(plan(
         items=[{"type": "waypoint", "lat": 48.0, "lon": 11.0, "alt": 20,
@@ -326,6 +361,55 @@ def test_no_speed_item_is_emitted_when_the_plan_pins_none() -> None:
     commands = [item["command"] for item in mission.plan_to_items(cleaned)]
 
     assert mission.MAV_CMD_DO_CHANGE_SPEED not in commands
+
+
+def test_a_speed_pinned_on_an_item_is_emitted_just_before_it() -> None:
+    """The speed is set on the leg INTO the point, so the change has to be
+    executed before the aircraft starts flying that leg."""
+    cleaned, _error = mission.validate_plan({"items": [
+        {"type": "waypoint", "lat": 48.0, "lon": 11.0, "alt": 20},
+        {"type": "waypoint", "lat": 48.1, "lon": 11.1, "alt": 20, "speed": 4},
+    ]})
+    assert cleaned is not None
+
+    first, change, second = mission.plan_to_items(cleaned)
+
+    assert first["command"] == mission.MAV_CMD_NAV_WAYPOINT
+    assert change["command"] == mission.MAV_CMD_DO_CHANGE_SPEED
+    assert change["params"][1] == 4.0
+    assert second["command"] == mission.MAV_CMD_NAV_WAYPOINT
+
+
+def test_a_pinned_speed_holds_until_another_item_changes_it() -> None:
+    """PX4 keeps flying at the last DO_CHANGE_SPEED it executed, so repeating
+    a speed that is already in force would spend a mission slot saying nothing.
+    """
+    cleaned, _error = mission.validate_plan(plan(speed=9, items=[
+        {"type": "waypoint", "lat": 48.0, "lon": 11.0, "alt": 20, "speed": 9},
+        {"type": "waypoint", "lat": 48.1, "lon": 11.1, "alt": 20, "speed": 4},
+        {"type": "waypoint", "lat": 48.2, "lon": 11.2, "alt": 20, "speed": 4},
+        {"type": "waypoint", "lat": 48.3, "lon": 11.3, "alt": 20, "speed": 9},
+    ]))
+    assert cleaned is not None
+
+    speeds = [item["params"][1] for item in mission.plan_to_items(cleaned)
+              if item["command"] == mission.MAV_CMD_DO_CHANGE_SPEED]
+
+    assert speeds == [9.0, 4.0, 9.0]
+
+
+def test_an_item_speed_is_emitted_even_when_the_plan_pins_none() -> None:
+    cleaned, _error = mission.validate_plan({"items": [
+        {"type": "waypoint", "lat": 48.0, "lon": 11.0, "alt": 20, "speed": 6},
+    ]})
+    assert cleaned is not None
+
+    change, waypoint = mission.plan_to_items(cleaned)
+
+    assert change["command"] == mission.MAV_CMD_DO_CHANGE_SPEED
+    assert change["params"][1] == 6.0
+    assert (change["lat"], change["lon"], change["alt"]) == (0.0, 0.0, 0.0)
+    assert waypoint["command"] == mission.MAV_CMD_NAV_WAYPOINT
 
 
 # ---------------------------------------------------------------------------

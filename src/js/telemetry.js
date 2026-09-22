@@ -34,6 +34,18 @@ Corvus.telemetry = (function () {
       battery_percent: 0,
       battery_voltage: 0,
       battery_current: 0,
+      // The two answers to "how much is left", and which one battery_percent
+      // above is carrying. -1 means nobody has said — an autopilot that
+      // publishes no estimate is not a flat pack. See corvus/battery.py.
+      battery_percent_fc: -1,
+      battery_percent_est: -1,
+      battery_source: "autopilot",
+      battery_cells: 0,
+      battery_cell_voltage: 0,
+      battery_cell_voltages: [],
+      battery_consumed_mah: 0,
+      battery_temperature: null,
+      battery_time_remaining: 0,
       gps_fix: "",
       gps_satellites: 0,
       gps_hdop: 99,

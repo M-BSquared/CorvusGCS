@@ -55,7 +55,6 @@ def _safety_values() -> dict[str, float]:
         "GF_MAX_HOR_DIST": 500.0, "GF_MAX_VER_DIST": 120.0, "GF_ACTION": 2.0,
         "RTL_RETURN_ALT": 60.0, "RTL_DESCEND_ALT": 30.0,
         "NAV_RCL_ACT": 2.0, "COM_LOW_BAT_ACT": 3.0,
-        "BAT_LOW_THR": 0.15,
         "SENS_EN_SF1XX": 6.0, "EKF2_RNG_CTRL": 1.0,
         "SENS_EN_PMW3901": 0.0, "EKF2_OF_CTRL": 0.0,
     }
@@ -73,7 +72,7 @@ def test_a_connected_vehicle_returns_the_rendered_sections() -> None:
     assert status == 200
     assert payload["connected"] is True
     assert [s["id"] for s in payload["sections"]] == [
-        "limits", "rtl", "failsafe", "battery", "rangefinder", "flow",
+        "limits", "rtl", "failsafe", "rangefinder", "flow",
     ]
     assert payload["received"] == len(_safety_values())
     assert _sections(payload)["rangefinder"]["toggle"]["enabled"] is True

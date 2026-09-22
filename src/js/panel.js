@@ -269,11 +269,76 @@ Corvus.panel = (function () {
     updateCount();
   }
 
+  /** One record as a transcript line: timestamp, level tag, message. */
+  function formatLine(r) {
+    return `${r.ts}  ${r.level ? "[" + r.level + "] " : ""}${r.text}`;
+  }
+
+  /**
+   * Records -> transcript text: the pure core under every way out of the
+   * console. `filter` is the substring the CONSOLE tab is showing through;
+   * `all` overrides it and takes the lot. Buffer-free and DOM-free on purpose,
+   * because the rule worth asserting — an export is never shortened by a
+   * filter the operator left in another tab — lives here.
+   */
+  function transcript(records, opts) {
+    const o = opts || {};
+    const q = o.filter == null ? "" : String(o.filter);
+    return (records || [])
+      .filter((r) => o.all || matchesFilter(r, q))
+      .map(formatLine)
+      .join("\n");
+  }
+
   /** The currently visible lines as plain text — what copy and save both use. */
   function visibleText() {
-    return lines.filter(passesFilter)
-      .map((r) => `${r.ts}  ${r.level ? "[" + r.level + "] " : ""}${r.text}`)
-      .join("\n");
+    return transcript(lines, { filter: filterText });
+  }
+
+  /**
+   * The console transcript as plain text.
+   *
+   * The filter is honoured by default, because that is what "the log" means
+   * standing in front of the CONSOLE tab: what is on screen. `{all: true}`
+   * asks for the whole buffer instead — what the Logs page exports, where a
+   * filter typed into a tab the operator has since left would silently
+   * shorten the file without anything on the page saying so.
+   */
+  function consoleText(opts) {
+    return transcript(lines, { all: !!(opts && opts.all), filter: filterText });
+  }
+
+  /** How many lines consoleText(opts) would write. */
+  function consoleLineCount(opts) {
+    const all = !!(opts && opts.all);
+    return lines.filter((r) => all || passesFilter(r)).length;
+  }
+
+  /**
+   * Write a transcript to the log folder and resolve with the backend's
+   * answer ({path, dir, filename}). Server-side rather than an <a download>
+   * for the reason the handler gives: the desktop build runs in QtWebEngine,
+   * which drops a download link on the floor. Rejects with a readable Error;
+   * where that is shown is the caller's business — the console prints it as a
+   * line, the Logs page puts it under the button.
+   */
+  function writeLogFile(text) {
+    if (!text) return Promise.reject(new Error("There is nothing to export yet."));
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    return Corvus.telemetry.requestJson("/api/console/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: `corvus-console_${stamp}.log`, text }),
+    });
+  }
+
+  /**
+   * Export the whole console buffer. The Logs page's Export button; kept here
+   * rather than there so both ways out of the console write the same file
+   * through the same route.
+   */
+  function exportLog() {
+    return writeLogFile(consoleText({ all: true }));
   }
 
   async function copyVisible() {
@@ -292,12 +357,7 @@ Corvus.panel = (function () {
   function saveLog() {
     const text = visibleText();
     if (!text) return;
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    Corvus.telemetry.requestJson("/api/console/save", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filename: `corvus-console_${stamp}.log`, text }),
-    }).then((res) => {
+    writeLogFile(text).then((res) => {
       addConsoleLine("success", `Console log written to ${res.path}`);
     }).catch((err) => {
       addConsoleLine("error", (err && err.message) || "Could not save the log");
@@ -1113,7 +1173,10 @@ Corvus.panel = (function () {
   return {
     init, toggle, addConsoleLine, addSSHConnection, editSSHConnection, showSSHTerminal, showTab,
     // Exposed for tests: the pure pieces, assertable without a DOM.
+    // The transcript, for screens outside the CONSOLE tab (the Logs page).
+    consoleText, consoleLineCount, exportLog,
     sshAddress,
+    transcript,
     matchesFilter,
     levelClass,
     normalizeCommand,

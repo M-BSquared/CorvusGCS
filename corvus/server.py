@@ -30,9 +30,10 @@ from email.utils import formatdate, parsedate_to_datetime
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import (
-    ardupilot_motors, ardupilot_rc, ardupilot_safety, ardupilot_tuning,
-    autopilot, geocode, mission, motor_config, rc_config, safety_config,
-    sik_config, sik_service, tile_sources, tuning_config,
+    ardupilot_battery, ardupilot_motors, ardupilot_rc, ardupilot_safety,
+    ardupilot_tuning, autopilot, battery, battery_config, geocode, mission,
+    motor_config, rc_config, safety_config, sik_config, sik_service,
+    tile_sources, tuning_config,
 )
 from .config import (
     CorvusConfig,
@@ -1580,6 +1581,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             merged["autoconnect"] = cfg.autoconnect
         if cfg.updates is not None:
             merged["updates"] = cfg.updates
+        if cfg.battery is not None:
+            merged["battery"] = cfg.battery
         if cfg.plugins is not None:
             merged["plugins"] = cfg.plugins
 
@@ -1588,7 +1591,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             "params_dir", "firmware_dir", "log_download_dir", "missions_dir",
             "tile_sources", "stream_rates", "ssh_connections",
             "theme", "map", "branding", "controls", "ui", "updates", "plugins",
-            "autoconnect",
+            "autoconnect", "battery",
         }
         # Real config keys that belong to their own endpoint. A client that
         # POSTs back a whole GET /api/config body carries them along, and
@@ -1671,6 +1674,14 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 merged["autoconnect"] = (
                     {**base, **value} if isinstance(base, dict) else dict(value)
                 )
+            elif key == "battery":
+                if not isinstance(value, dict):
+                    return None, "battery must be an object"
+                # Merged per key, like controls: the page saves one field at a
+                # time, and a POST naming only "cells" must not put the
+                # chemistry and the estimator switch back to their defaults.
+                base = merged.get("battery")
+                merged["battery"] = {**base, **value} if isinstance(base, dict) else dict(value)
             elif key == "plugins":
                 if not isinstance(value, dict):
                     return None, "plugins must be an object"
@@ -1758,10 +1769,28 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             cfg.ui = new_cfg.ui
             cfg.autoconnect = new_cfg.autoconnect
             cfg.updates = new_cfg.updates
+            cfg.battery = new_cfg.battery
             cfg.plugins = new_cfg.plugins
             self._save_live_config()
             self._refresh_autoconnect_session(cfg)
+            self._refresh_battery_settings(cfg)
             return to_public_dict(cfg), None
+
+    def _refresh_battery_settings(self, cfg: Any) -> None:
+        """Hand the bridge the battery estimator settings just persisted.
+
+        The estimate runs on the telemetry path, so a setting that only took
+        effect on the next launch would leave the operator watching a
+        percentage they had already corrected. Never raises: a settings save
+        must not 500 over the feature it is configuring.
+        """
+        bridge = self.mavlink
+        if bridge is None or not hasattr(bridge, "set_battery_settings"):
+            return
+        try:
+            bridge.set_battery_settings(getattr(cfg, "battery", None))
+        except Exception:  # noqa: BLE001 - never fail a config save over this
+            logger.exception("battery: could not apply the new estimator settings")
 
     def _refresh_autoconnect_session(self, cfg: Any) -> None:
         """Point the live auto-connect session at the toggles just persisted.
@@ -2196,11 +2225,13 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         autopilot.STACK_ARDUPILOT: {
             "motors": ardupilot_motors, "safety": ardupilot_safety,
             "tuning": ardupilot_tuning, "rc": ardupilot_rc,
+            "battery": ardupilot_battery,
         },
     }
     _DEFAULT_SCHEMAS: dict[str, Any] = {
         "motors": motor_config, "safety": safety_config,
         "tuning": tuning_config, "rc": rc_config,
+        "battery": battery_config,
     }
 
     def _schema(self, page: str) -> Any:
@@ -2343,6 +2374,68 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             **({"vehicle": autopilot.vehicle_class(self._vehicle_type_id())}
                if schema is ardupilot_tuning else {}),
         )
+        payload["connected"] = bool(values)
+        if not values:
+            payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
+        self._send_json(payload)
+
+    @route("GET", "/api/battery")
+    def _api_battery(self) -> None:
+        """Return the vehicle's battery configuration as a description.
+
+        Same shape and same contract as ``/api/safety``, ``/api/motors`` and
+        ``/api/tuning``: one batched read of the parameters
+        :mod:`corvus.battery_config` knows about, handed to that module to turn
+        into sections — the pack, how the autopilot measures it, and the levels
+        the low-battery failsafe reacts to.
+
+        Two things ride along that the other pages have no equivalent of:
+
+        ``pack`` is the normalised summary the page's battery diagram is drawn
+        from (cell count, the volts a cell holds full and empty, where the
+        thresholds fall), so the same drawing code serves a PX4 and an
+        ArduPilot aircraft.
+
+        ``settings`` is Corvus's *own* estimator configuration — which
+        remaining figure the interface shows and the pack it is read against.
+        It lives in the config file rather than on the vehicle because it is
+        not a vehicle setting: ArduPilot has no cell-count parameter at all,
+        and on either stack the choice of whose estimate to believe is the
+        operator's, not the autopilot's. It is written back through
+        ``POST /api/config`` under the same key.
+
+        Always 200 so the page can render a "not connected" state instead of an
+        error banner; ``connected`` says which it is.
+        """
+        schema = self._schema("battery")
+        stored = getattr(self.config, "battery", None)
+        settings = battery.settings(stored)
+        # Both, because they are different questions. ``settings`` is what the
+        # estimator actually runs on; ``configured`` is what the operator
+        # typed, where a 0 means "work it out" and has to keep meaning that
+        # when the form is drawn again.
+        configured = dict(stored) if isinstance(stored, dict) else {}
+        empty = {"connected": False, "sections": [], "received": 0,
+                 "pack": schema.pack_summary({}), "settings": settings,
+                 "configured": configured,
+                 "chemistries": battery.chemistry_options()}
+        if self.mavlink is None:
+            self._send_json(empty)
+            return
+        try:
+            values = self.mavlink.fetch_params(schema.param_names())
+        except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
+            logger.exception("battery parameter fetch failed")
+            self._send_json(dict(empty, error=str(exc)))
+            return
+        payload = schema.build(
+            values,
+            **({"vehicle": autopilot.vehicle_class(self._vehicle_type_id())}
+               if schema is ardupilot_battery else {}),
+        )
+        payload["settings"] = settings
+        payload["configured"] = configured
+        payload["chemistries"] = battery.chemistry_options()
         payload["connected"] = bool(values)
         if not values:
             payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
@@ -6259,6 +6352,10 @@ def create_server(
     # toggles live in it and the startup resolver needs them.
     cfg_path = config_path or default_config_path()
     config = load_config(cfg_path)
+
+    # The battery estimator runs on the telemetry path, so the bridge needs the
+    # operator's settings before the first frame rather than at the first save.
+    mavlink.set_battery_settings(config.battery)
 
     autoconnect_session = build_autoconnect_session(config)
     apply_startup_connection(

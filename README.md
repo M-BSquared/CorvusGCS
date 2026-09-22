@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.49-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.49" />
+  <img src="https://img.shields.io/badge/Version-2026.09.50-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.50" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -838,8 +838,9 @@ front of you.
   page: maximum distance and height from home and what happens at the limit,
   the return-to-launch profile (return and descend height, the climb cone, the
   loiter before landing), and a failsafe action for every loss the autopilot can detect —
-  RC, data link, position, battery, actuator — with the battery levels that
-  trigger them.
+  RC, data link, position, battery, actuator. The *levels* the battery action
+  reacts to are on the Battery & Power page below, with the rest of the pack, so
+  that one number has one place it is edited.
 - **Distance sensor and optical flow** — a **Sensors** card on the same page,
   because a ground lidar is what half those limits lean on. Each sensor is one
   tile that says whether it is up and what is feeding it, and opens onto its own
@@ -868,6 +869,35 @@ front of you.
   parameter and it joins the form, read in the same batch and written by the
   same path as everything else. The list is remembered per browser profile, so
   the row you added because *this* aircraft needs it is still there next time.
+- **Battery & Power** — the pack on one page, and the page is split the way the
+  job is: the aircraft on the left, everything you can change on the right. The
+  left is a battery drawn with the cells it actually has, filled to what is
+  left, each cell's voltage under it and the failsafe levels marked along the
+  bar, with the live numbers underneath — pack voltage, current, watts, mAh
+  used, temperature, and the spread between the best and worst cell, which is
+  the first thing a tired pack tells you. The right is what is configurable:
+  cells and capacity, the voltage a cell holds full and empty, the power
+  module's divider and amps-per-volt, and the levels the low-battery failsafe
+  fires at. Every `BAT_` parameter on PX4 and every `BATT_` one on ArduPilot
+  lives here — that prefix is the whole rule for what is on this page and what
+  is on Safety & Sensors — and a parameter your firmware does not carry is one
+  row fewer rather than an error.
+- **A second opinion on "how much is left"** — the percentage an autopilot
+  publishes is a capacity count that starts from a guess, so a pack flown,
+  charged to storage and flown again reads full on the second take-off;
+  ArduPilot publishes none at all unless a capacity is set. Corvus can read the
+  cell voltage against a real discharge curve instead — LiPo, Li-ion or
+  LiFePO₄, each with its own table, because 3.3 V a cell is a flat LiPo and a
+  nearly full LiFePO₄ — and correct it back to rest through the pack's internal
+  resistance, since a 6S pulling 60 A through 5 mΩ a cell reads 1.8 V low in a
+  climb. Neither reading is right in every case, so both are computed on every
+  frame and both are on screen: one switch chooses which one the top bar, the
+  map and the logs fly by, and the bar says on hover which one you are reading
+  and what the other one thinks. The cell count is worked out the moment the
+  battery is plugged in — the one moment that reading is unambiguous, since
+  19.8 V is a fresh 5S and a tired 6S — then held for the flight, or pinned by
+  hand. A smart or DroneCAN battery that reports its own cells is believed over
+  any of this, and its weakest cell is drawn where you can see it.
 - **Parameters** — the full set is downloaded only when you open this page (see
   [Fast to ready-for-flight](#fast-to-ready-for-flight)), with a live progress
   bar. Then you can edit any value; writes are confirmed by the aircraft and

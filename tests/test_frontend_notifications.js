@@ -161,6 +161,11 @@ global.document = {
   addEventListener: () => {},
   removeEventListener: () => {},
   activeElement: null,
+  // <html>. The display preferences that are CSS rather than markup — the
+  // caption dots, the notification severity marks — are attributes written
+  // here, so a stub without it turns those switches into silent no-ops (they
+  // are all wrapped in try/catch so a missing DOM never breaks the bar).
+  documentElement: makeEl("html"),
 };
 
 // Telemetry stub: the tests push snapshots by hand and record cleared warnings.
@@ -603,6 +608,70 @@ function testALostLinkOutranksEverything() {
   assert.ok(status().dot.includes("off"));
 }
 
+/* The severity marks — the coloured bar above the level icon and the one
+   below it — are a display preference, so they are an attribute on <html>
+   that both stylesheets read (.wp-item in main.css, .ui-toast in
+   components.css) rather than a class the board writes per row. These assert
+   the one rule that is easy to get backwards: ABSENT MEANS ON.
+
+   Every other UI switch in this app defaults off, because every other one
+   adds something. This one takes something away, and the thing it takes away
+   is what a notification looked like before the switch existed — so a machine
+   that has never touched it, and a config file that has never heard of it,
+   both have to come up with the marks still drawn. */
+function testSeverityMarksAreOnUntilSomethingSaysOtherwise() {
+  const root = document.documentElement;
+
+  // No stored value: on. This is the first run on a new machine, and the
+  // attribute has to say so explicitly — an unset attribute would leave the
+  // CSS to guess.
+  localStorage.getItem = () => null;
+  Corvus.topbar.setNotificationMarks(true);
+  root.removeAttribute("data-notification-marks");
+  assert.equal(Corvus.topbar.notificationMarks(), true,
+    "with no attribute at all the marks read as on, not off");
+
+  Corvus.topbar.setNotificationMarks(false);
+  assert.equal(root.getAttribute("data-notification-marks"), "off");
+  assert.equal(Corvus.topbar.notificationMarks(), false);
+
+  Corvus.topbar.setNotificationMarks(true);
+  assert.equal(root.getAttribute("data-notification-marks"), "on");
+  assert.equal(Corvus.topbar.notificationMarks(), true);
+
+  // The setter returns what it applied, which is what lets a failed config
+  // POST undo itself without keeping its own copy of the answer.
+  assert.equal(Corvus.topbar.setNotificationMarks(false), false);
+  assert.equal(Corvus.topbar.setNotificationMarks(1), true, "coerced, not passed through");
+  Corvus.topbar.setNotificationMarks(true);
+}
+
+/* The localStorage cache exists so the first paint is right before the config
+   fetch lands. Its default has to match the config's: "0" is off, and
+   anything else — including nothing at all — is on. Written as !== "0" rather
+   than === "1" for exactly that reason. */
+function testTheCachedChoiceDefaultsToOnNotToOff() {
+  const realGet = localStorage.getItem;
+  const seen = [];
+  const applySaved = (stored) => {
+    localStorage.getItem = (k) => { seen.push(k); return stored; };
+    // init() is what calls the private applier; drive it through the same
+    // door the app does rather than exporting it just for a test.
+    Corvus.topbar.init();
+    return Corvus.topbar.notificationMarks();
+  };
+
+  assert.equal(applySaved(null), true, "a machine that has never chosen keeps the marks");
+  assert.equal(applySaved("1"), true);
+  assert.equal(applySaved("0"), false, "only a stored 0 turns them off");
+  assert.equal(applySaved("nonsense"), true, "a corrupt value is not a reason to restyle the board");
+  assert.ok(seen.includes("corvus.notificationMarks"), "the cache is read under its own key");
+
+  localStorage.getItem = realGet;
+  Corvus.topbar.init();
+  Corvus.topbar.setNotificationMarks(true);
+}
+
 const tests = [
   // First, and only first: it is the one test that needs the module's
   // never-seen-a-snapshot state, which nothing can restore afterwards.
@@ -627,6 +696,8 @@ const tests = [
   testArmedOnTheGroundIsNotTheSameAsFlying,
   testAirborneFallsBackToHeightWhenTheFirmwareIsSilent,
   testALostLinkOutranksEverything,
+  testSeverityMarksAreOnUntilSomethingSaysOtherwise,
+  testTheCachedChoiceDefaultsToOnNotToOff,
 ];
 
 let failed = 0;

@@ -267,69 +267,77 @@
                    the fold as permanent dead weight. The switch opens on the
                    kind that was last connected, so the common case is no
                    switch at all. -->
-              <div class="link-card">
-                <div class="link-card-title">
+              <!-- Both cards fold away: once a link is up, the operator is
+                   reading the status row and the telemetry above it, and the
+                   dropdowns that opened the link are just height between them.
+                   The fold is remembered per card (see link.js). -->
+              <div class="link-card" data-card="new">
+                <button class="link-card-title" type="button" id="linkNewToggle"
+                  aria-expanded="true" aria-controls="linkNewBody">
                   <i data-lucide="plug"></i>
                   <span>New connection</span>
-                </div>
-                <div class="link-kinds" role="tablist" aria-label="Connection type">
-                  <button class="link-kind" id="linkKindSerial" type="button" role="tab"
-                    data-kind="serial" aria-selected="true" aria-controls="linkSerialFields">
-                    <i data-lucide="cable"></i>
-                    <span>Serial</span>
-                  </button>
-                  <button class="link-kind" id="linkKindNet" type="button" role="tab"
-                    data-kind="net" aria-selected="false" aria-controls="linkNetFields">
-                    <i data-lucide="network"></i>
-                    <span>UDP / TCP</span>
-                  </button>
-                </div>
-
-                <div class="link-kind-fields" id="linkSerialFields" role="tabpanel"
-                  aria-labelledby="linkKindSerial">
-                  <div class="link-field">
-                    <label class="link-field-label" for="linkSerialPort">Port</label>
-                    <div class="link-row">
-                      <select class="field-select field-input-mono link-select" id="linkSerialPort" autocomplete="off" aria-label="Serial port">
-                        <option value="">Select serial port…</option>
-                      </select>
-                      <button class="icon-btn" id="linkRefreshPorts" type="button"
-                        title="Refresh serial ports" aria-label="Refresh serial ports">
-                        <i data-lucide="refresh-cw"></i>
-                      </button>
-                    </div>
-                    <!-- Said here rather than only in the status row: the port
-                         is the thing that went missing, and this is where the
-                         operator is looking when they notice. -->
-                    <div class="link-hint link-hint-warn" id="linkPortHint" hidden></div>
-                  </div>
-                  <div class="link-field">
-                    <label class="link-field-label" for="linkBaud">Baud</label>
-                    <select class="field-select field-input-mono link-select" id="linkBaud" autocomplete="off" aria-label="Baud rate">
-                      <option value="9600">9600</option>
-                      <option value="19200">19200</option>
-                      <option value="38400">38400</option>
-                      <option value="57600" selected>57600 (SiK Radio v3)</option>
-                      <option value="115200">115200</option>
-                      <option value="230400">230400</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div class="link-kind-fields" id="linkNetFields" role="tabpanel"
-                  aria-labelledby="linkKindNet" hidden>
-                  <div class="link-field">
-                    <label class="link-field-label" for="linkCustomConn">Connection string</label>
-                    <input class="field-input field-input-mono link-input" id="linkCustomConn" type="text"
-                      placeholder="udp:0.0.0.0:14550" autocomplete="off" spellcheck="false" />
-                    <div class="link-presets" id="linkPresets"></div>
-                  </div>
-                </div>
-
-                <button class="btn link-connect" id="linkConnect" type="button" data-variant="primary" data-shape="block">
-                  <i data-lucide="plug"></i>
-                  <span>Connect</span>
+                  <i data-lucide="chevron-down" class="link-card-caret"></i>
                 </button>
+                <div class="link-card-body" id="linkNewBody">
+                  <div class="link-kinds" role="tablist" aria-label="Connection type">
+                    <button class="link-kind" id="linkKindSerial" type="button" role="tab"
+                      data-kind="serial" aria-selected="true" aria-controls="linkSerialFields">
+                      <i data-lucide="cable"></i>
+                      <span>Serial</span>
+                    </button>
+                    <button class="link-kind" id="linkKindNet" type="button" role="tab"
+                      data-kind="net" aria-selected="false" aria-controls="linkNetFields">
+                      <i data-lucide="network"></i>
+                      <span>UDP / TCP</span>
+                    </button>
+                  </div>
+
+                  <div class="link-kind-fields" id="linkSerialFields" role="tabpanel"
+                    aria-labelledby="linkKindSerial">
+                    <div class="link-field">
+                      <label class="link-field-label" for="linkSerialPort">Port</label>
+                      <div class="link-row">
+                        <select class="field-select field-input-mono link-select" id="linkSerialPort" autocomplete="off" aria-label="Serial port">
+                          <option value="">Select serial port…</option>
+                        </select>
+                        <button class="icon-btn" id="linkRefreshPorts" type="button"
+                          title="Refresh serial ports" aria-label="Refresh serial ports">
+                          <i data-lucide="refresh-cw"></i>
+                        </button>
+                      </div>
+                      <!-- Said here rather than only in the status row: the port
+                           is the thing that went missing, and this is where the
+                           operator is looking when they notice. -->
+                      <div class="link-hint link-hint-warn" id="linkPortHint" hidden></div>
+                    </div>
+                    <div class="link-field">
+                      <label class="link-field-label" for="linkBaud">Baud</label>
+                      <select class="field-select field-input-mono link-select" id="linkBaud" autocomplete="off" aria-label="Baud rate">
+                        <option value="9600">9600</option>
+                        <option value="19200">19200</option>
+                        <option value="38400">38400</option>
+                        <option value="57600" selected>57600 (SiK Radio v3)</option>
+                        <option value="115200">115200</option>
+                        <option value="230400">230400</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="link-kind-fields" id="linkNetFields" role="tabpanel"
+                    aria-labelledby="linkKindNet" hidden>
+                    <div class="link-field">
+                      <label class="link-field-label" for="linkCustomConn">Connection string</label>
+                      <input class="field-input field-input-mono link-input" id="linkCustomConn" type="text"
+                        placeholder="udp:0.0.0.0:14550" autocomplete="off" spellcheck="false" />
+                      <div class="link-presets" id="linkPresets"></div>
+                    </div>
+                  </div>
+
+                  <button class="btn link-connect" id="linkConnect" type="button" data-variant="primary" data-shape="block">
+                    <i data-lucide="plug"></i>
+                    <span>Connect</span>
+                  </button>
+                </div>
               </div>
 
               <!-- Sharing the one physical link. A serial port, a USB
@@ -339,37 +347,41 @@
                    it onto UDP; the second switch is separate because letting
                    another station command the aircraft is a safety decision,
                    not a convenience. -->
-              <div class="link-card">
-                <div class="link-card-title">
+              <div class="link-card" data-card="share" data-fold="shut">
+                <button class="link-card-title" type="button" id="linkShareToggle"
+                  aria-expanded="false" aria-controls="linkShareBody">
                   <i data-lucide="share-2"></i>
                   <span>Share with another station</span>
-                </div>
-                <label class="link-toggle">
-                  <input type="checkbox" id="fwdEnabled" />
-                  <span>Mirror this link over UDP</span>
-                </label>
-                <div class="link-field">
-                  <label class="link-field-label" for="fwdPort">Port the other station listens on</label>
-                  <input class="field-input field-input-mono link-input" id="fwdPort" type="number"
-                    min="1" max="65535" value="14550" autocomplete="off" />
-                  <div class="link-hint" id="fwdHint">
-                    14550 is the UDP link QGroundControl opens on its own —
-                    start it and it sees this aircraft.
+                  <i data-lucide="chevron-down" class="link-card-caret"></i>
+                </button>
+                <div class="link-card-body" id="linkShareBody" hidden>
+                  <label class="link-toggle">
+                    <input type="checkbox" id="fwdEnabled" />
+                    <span>Mirror this link over UDP</span>
+                  </label>
+                  <div class="link-field">
+                    <label class="link-field-label" for="fwdPort">Port the other station listens on</label>
+                    <input class="field-input field-input-mono link-input" id="fwdPort" type="number"
+                      min="1" max="65535" value="14550" autocomplete="off" />
+                    <div class="link-hint" id="fwdHint">
+                      14550 is the UDP link QGroundControl opens on its own —
+                      start it and it sees this aircraft.
+                    </div>
                   </div>
+                  <label class="link-toggle link-toggle-warn">
+                    <input type="checkbox" id="fwdAllowCommands" />
+                    <span>Let it command the aircraft</span>
+                  </label>
+                  <div class="link-hint link-hint-warn" id="fwdCommandWarning" hidden>
+                    Two stations will be able to arm and change the mode of this
+                    aircraft. Leave off to share telemetry only. Corvus transmits
+                    as MAVLink system 254 and QGroundControl as 255; if the other
+                    station is on 254 too, give it its own — PX4 counts sequence
+                    numbers per ID and reports loss that is not happening.
+                  </div>
+                  <div class="link-status-error" id="fwdError" hidden></div>
+                  <div class="link-hint" id="fwdStats" hidden></div>
                 </div>
-                <label class="link-toggle link-toggle-warn">
-                  <input type="checkbox" id="fwdAllowCommands" />
-                  <span>Let it command the aircraft</span>
-                </label>
-                <div class="link-hint link-hint-warn" id="fwdCommandWarning" hidden>
-                  Two stations will be able to arm and change the mode of this
-                  aircraft. Leave off to share telemetry only. Corvus transmits
-                  as MAVLink system 254 and QGroundControl as 255; if the other
-                  station is on 254 too, give it its own — PX4 counts sequence
-                  numbers per ID and reports loss that is not happening.
-                </div>
-                <div class="link-status-error" id="fwdError" hidden></div>
-                <div class="link-hint" id="fwdStats" hidden></div>
               </div>
             </div>
           </section>
@@ -517,6 +529,7 @@
 <script src="js/setup-tuning.js" defer></script>
 <script src="js/setup-motors.js" defer></script>
 <script src="js/setup-safety.js" defer></script>
+<script src="js/setup-battery.js" defer></script>
 <script src="js/setup-sik.js" defer></script>
 <script src="js/setup-parameters.js" defer></script>
 <script src="js/setup-firmware.js" defer></script>

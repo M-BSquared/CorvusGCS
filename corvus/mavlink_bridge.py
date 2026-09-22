@@ -28,6 +28,7 @@ from collections.abc import Callable
 from pymavlink import mavutil
 
 from . import autopilot as autopilot_dialect
+from . import battery as battery_math
 from . import mission as mission_plan
 from . import rc_config
 from .autopilot import (  # noqa: F401 - re-exported, see the tables below
@@ -828,6 +829,13 @@ class MavlinkBridge:
         # Last computed uplink score; kept so heartbeat-only links can leave
         # it at 0 and link_quality can fall back to heartbeat freshness.
         self._uplink_score: int = 0
+        # The operator's battery estimator settings, and the cell count they
+        # imply for the pack currently plugged in. The settings come from the
+        # config file via set_battery_settings; the count is latched per
+        # connection cycle (see _battery_fields).
+        self._battery_lock = threading.Lock()
+        self._battery_settings: dict[str, Any] = battery_math.settings(None)
+        self._battery_cells: int = 0
         self._params: dict[str, ParamEntry] = {}
         self._param_count: int = -1
         self._param_received: int = 0
@@ -1355,6 +1363,9 @@ class MavlinkBridge:
         self._degraded_warned = False
         self._radio_status_seen = False
         self._uplink_score = 0
+        # A new link may be a new aircraft with a different pack, so the
+        # latched cell count goes with the old connection.
+        self._forget_battery_cells()
         self._store.update(
             link_status="connecting",
             link_connection=self._conn_str,
@@ -1899,6 +1910,12 @@ class MavlinkBridge:
                 # 1 Hz even on a 57 kbps radio: the message is two bytes of
                 # payload, and it is what tells the bar the aircraft is flying.
                 m.MAVLINK_MSG_ID_EXTENDED_SYS_STATE: 1_000_000,  # 1 Hz
+                # 0.5 Hz: the pack's own detail — per-cell volts, consumed mAh,
+                # temperature. SYS_STATUS carries none of it, and on a smart or
+                # DroneCAN battery it is the difference between a pack voltage
+                # and knowing which cell is dragging the pack down. 41 bytes
+                # twice a minute of a 57 kbps budget.
+                m.MAVLINK_MSG_ID_BATTERY_STATUS: 2_000_000,   # 0.5 Hz
             }
         return {
             m.MAVLINK_MSG_ID_HEARTBEAT: 1_000_000,            # 1 Hz
@@ -1916,6 +1933,10 @@ class MavlinkBridge:
             # lose for the fix. Off the serial list still, where the radio's
             # 57 kbps buys attitude and position instead.
             m.MAVLINK_MSG_ID_RC_CHANNELS: 200_000,           # 5 Hz
+            # See the serial list: the pack detail SYS_STATUS has no room for.
+            # Asked for explicitly rather than left to the firmware's defaults,
+            # which publish it on some builds and not others.
+            m.MAVLINK_MSG_ID_BATTERY_STATUS: 1_000_000,      # 1 Hz
         }
 
     def _interruptible_sleep(self, seconds: float) -> None:
@@ -2464,12 +2485,13 @@ class MavlinkBridge:
         elif name == "SYS_STATUS":
             voltage = msg.voltage_battery / 1000.0 if msg.voltage_battery != 65535 else 0
             current = msg.current_battery / 100.0 if msg.current_battery != -1 else 0
+            reported = int(msg.battery_remaining) if msg.battery_remaining != -1 else -1
             self._store.update(
-                battery_voltage=round(voltage, 1),
-                battery_current=round(current, 1),
-                battery_percent=msg.battery_remaining if msg.battery_remaining != -1 else 0,
                 prearm_ok=_prearm_ok(msg),
+                **self._battery_fields(voltage, current, reported),
             )
+        elif name == "BATTERY_STATUS":
+            self._handle_battery_status(msg)
         elif name == "SYSTEM_TIME":
             # utcfromtimestamp is deprecated (and gone in a coming release);
             # more to the point it raises on an out-of-range value, and an
@@ -2564,6 +2586,134 @@ class MavlinkBridge:
             lon = msg.longitude / 1e7
             self._home_alt_amsl = msg.altitude / 1000.0
             self._store.update(home=[lon, lat])
+
+    # ------------------------------------------------------------------
+    # Battery
+    # ------------------------------------------------------------------
+
+    def set_battery_settings(self, raw: Any) -> dict[str, Any]:
+        """Install the operator's battery estimator settings; return them resolved.
+
+        Called at startup and again whenever the Battery & Power page saves.
+        The latched cell count is dropped with the old settings: a 6S typed in
+        place of an auto-detected 5S must take effect on the next frame, not on
+        the next connection.
+        """
+        resolved = battery_math.settings(raw)
+        with self._battery_lock:
+            self._battery_settings = resolved
+            self._battery_cells = 0
+        return resolved
+
+    def battery_settings(self) -> dict[str, Any]:
+        """The estimator settings currently in force, resolved against defaults."""
+        with self._battery_lock:
+            return dict(self._battery_settings)
+
+    def _forget_battery_cells(self) -> None:
+        """Drop the latched cell count (a new link may be a new pack)."""
+        with self._battery_lock:
+            self._battery_cells = 0
+
+    def _battery_fields(self, voltage: float, current: float,
+                        reported: int) -> dict[str, Any]:
+        """The battery half of a SYS_STATUS update, both answers included.
+
+        *reported* is the autopilot's own remaining percentage, or -1 when it
+        publishes none. The voltage estimate is computed alongside it on every
+        frame whether or not the operator has switched to it, because the page
+        shows both side by side and an operator deciding which to trust needs
+        to see them disagree.
+
+        The cell count is latched. It is detected from the pack voltage, and
+        that detection is only unambiguous on a pack that has just been plugged
+        in — 21.0 V is a fresh 5S and a tired 6S. Recomputing per frame would
+        let the count fall by one somewhere over the field, which moves the
+        percentage by thirty points in a single frame and does it while the
+        aircraft is flying. So the first reading of a connection decides, and
+        the count then only changes when the operator changes it.
+        """
+        with self._battery_lock:
+            resolved = dict(self._battery_settings)
+            latched = self._battery_cells
+        configured = int(resolved.get("cells") or 0)
+        if latched and not configured:
+            resolved["cells"] = latched
+
+        est = battery_math.estimate(voltage, current, resolved)
+        cells = int(est["cells"])
+        if cells and not latched and not configured:
+            with self._battery_lock:
+                # Only if nothing was latched meanwhile: two frames can race
+                # here, and the first one to answer is the one closest to plug-in.
+                if not self._battery_cells:
+                    self._battery_cells = cells
+
+        estimated = float(est["percent"])
+        use_estimate = bool(resolved.get("estimate")) and estimated >= 0
+        if use_estimate:
+            shown: float = round(estimated)
+        else:
+            shown = reported if reported >= 0 else 0
+
+        return {
+            "battery_voltage": round(voltage, 1),
+            "battery_current": round(current, 1),
+            "battery_percent": shown,
+            "battery_percent_fc": reported,
+            "battery_percent_est": estimated,
+            "battery_source": "estimate" if use_estimate else "autopilot",
+            "battery_cells": cells,
+            "battery_cell_voltage": float(est["cell_voltage"]),
+        }
+
+    def _handle_battery_status(self, msg: Any) -> None:
+        """Publish the detail SYS_STATUS has no room for.
+
+        BATTERY_STATUS is where a pack that actually knows something about
+        itself says so: per-cell voltages, how many mAh have left it, its
+        temperature, and how long the autopilot thinks it has. An analog power
+        module fills in almost none of that, which is the normal case and not
+        an error — every field here is published only when the message carries
+        a real value, so "not reported" stays distinguishable from zero.
+
+        Only the first battery is published. A second monitor overwriting the
+        first would make the top bar read whichever pack sent last.
+        """
+        if int(getattr(msg, "id", 0) or 0) != 0:
+            return
+
+        # UINT16_MAX marks a cell slot the pack does not use; 0 is the same
+        # thing in practice, since a cell at 0.000 V is a pack that is not on
+        # the aircraft any more.
+        cells: list[float] = []
+        for raw in list(getattr(msg, "voltages", []) or []):
+            value = int(raw)
+            if value in (0, 65535):
+                continue
+            cells.append(round(value / 1000.0, 3))
+        for raw in list(getattr(msg, "voltages_ext", []) or []):
+            value = int(raw)
+            if value in (0, 65535):
+                continue
+            cells.append(round(value / 1000.0, 3))
+
+        fields: dict[str, Any] = {"battery_cell_voltages": cells}
+
+        consumed = int(getattr(msg, "current_consumed", -1) or -1)
+        if consumed >= 0:
+            fields["battery_consumed_mah"] = float(consumed)
+
+        # INT16_MAX is the "unknown" marker; the unit is centidegrees.
+        temperature = int(getattr(msg, "temperature", 32767) or 0)
+        fields["battery_temperature"] = (
+            None if temperature == 32767 else round(temperature / 100.0, 1)
+        )
+
+        remaining = int(getattr(msg, "time_remaining", 0) or 0)
+        fields["battery_time_remaining"] = max(0, remaining)
+
+        self._store.update(**fields)
 
     # ------------------------------------------------------------------
     # Controller setpoints (PID tuning)

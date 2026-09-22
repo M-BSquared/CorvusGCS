@@ -10,8 +10,10 @@ Two kinds of section come out of :func:`build`:
 
 ``kind="fields"``
     A plain form — the flight envelope (maximum distance and height), the
-    return-to-launch profile, the failsafe action for every loss the autopilot
-    can detect, and the battery thresholds that trigger them.
+    return-to-launch profile, and the failsafe action for every loss the
+    autopilot can detect. The *levels* the low-battery action reacts to are not
+    here: every ``BAT_`` parameter belongs to :mod:`corvus.battery_config` and
+    the Battery & Power page, so one parameter has one control.
 
 ``kind="toggle"``
     A sensor that is *off* until the operator turns it on. Bringing a ground
@@ -476,8 +478,6 @@ def param_names() -> list[str]:
         "NAV_RCL_ACT", "COM_RC_LOSS_T", "NAV_DLL_ACT", "COM_DL_LOSS_T",
         "COM_LOW_BAT_ACT", "COM_POSCTL_NAVL", "COM_ACT_FAIL_ACT", "COM_QC_ACT",
         "COM_FAIL_ACT_T", "COM_DISARM_LAND", "COM_DISARM_PRFLT",
-        # Battery thresholds
-        "BAT_LOW_THR", "BAT_CRIT_THR", "BAT_EMERGEN_THR",
         # Rangefinder estimator + geometry
         "EKF2_RNG_CTRL", "EKF2_RNG_AID", "EKF2_HGT_REF", "EKF2_RNG_A_HMAX",
         "EKF2_RNG_A_VMAX", "EKF2_RNG_POS_Z", "EKF2_RNG_PITCH", "EKF2_RNG_DELAY",
@@ -633,23 +633,9 @@ def _failsafe_section(values: dict[str, float]) -> dict[str, Any] | None:
     return {
         "id": "failsafe", "title": "Failsafe actions", "kind": "fields", "fields": fields,
         "hint": "What the autopilot does on its own when something is lost. Every action "
-                "named Return flies the profile above.",
-    }
-
-
-def _battery_section(values: dict[str, float]) -> dict[str, Any] | None:
-    fields = _present([
-        _number("BAT_LOW_THR", "Low threshold", values, step=0.01, min=0, max=1,
-                hint="Remaining capacity, 0–1, at which the low-battery action fires."),
-        _number("BAT_CRIT_THR", "Critical threshold", values, step=0.01, min=0, max=1),
-        _number("BAT_EMERGEN_THR", "Emergency threshold", values, step=0.01, min=0, max=1),
-    ])
-    if not fields:
-        return None
-    return {
-        "id": "battery", "title": "Battery thresholds", "kind": "fields", "fields": fields,
-        "hint": "The levels the low-battery failsafe above reacts to, as a fraction of a "
-                "full pack.",
+                "named Return flies the profile above. The levels the low-battery "
+                "action reacts to are on the Battery & Power page — every BAT_ "
+                "parameter lives there.",
     }
 
 
@@ -1052,7 +1038,6 @@ def build(values: dict[str, float],
         _limits_section(values),
         _rtl_section(values),
         _failsafe_section(values),
-        _battery_section(values),
         _rangefinder_section(values),
         _flow_section(values),
     ) if s is not None]

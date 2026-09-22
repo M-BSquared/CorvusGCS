@@ -85,6 +85,9 @@ Corvus.mission = (function () {
 
   // One row per item type. `params` names the editable fields and their
   // bounds; the names are the contract with ITEM_SPECS in corvus/mission.py.
+  // A point's own SPEED is not in here, for the same reason it is not in
+  // ITEM_SPECS: it is not a parameter of the item but a command of its own on
+  // the wire, and it is optional in a way a param with a default cannot be.
   const TYPES = {
     takeoff: {
       label: "Takeoff", icon: "plane-takeoff", position: true, color: "healthy",
@@ -416,13 +419,54 @@ Corvus.mission = (function () {
     return total;
   }
 
-  /** Seconds the plan is likely to take, at *speed* (or the nominal cruise).
-   *  Timed holds are added on top — they are flight time the distance does
-   *  not account for. */
-  function routeDuration(list, start, speed) {
-    const mps = Number(speed) > 0 ? Number(speed) : NOMINAL_SPEED_MS;
-    let seconds = routeLength(list, start) / mps;
+  /** The speed each item is reached at, given the plan's own *speed* as the
+   *  starting one: a point that pins a speed changes it from there on, and
+   *  every point after it inherits that until another one says otherwise.
+   *  Mirrors how PX4 holds the last DO_CHANGE_SPEED it executed, which is
+   *  what corvus/mission.py emits. Keyed by item id. */
+  function speedByItem(list, speed) {
+    const out = new Map();
+    let current = Number(speed) > 0 ? Number(speed) : NOMINAL_SPEED_MS;
     (list || []).forEach((item) => {
+      if (Number(item.speed) > 0) current = Number(item.speed);
+      out.set(item.id, current);
+    });
+    return out;
+  }
+
+  /** The speed a point is reached at as the plan stands, or null when nothing
+   *  ahead of it pins one and the airframe's own default is what flies. */
+  function speedInto(item) {
+    if (!item) return null;
+    let current = planSpeed;
+    for (let i = 0; i < items.length; i += 1) {
+      if (items[i].speed != null) current = items[i].speed;
+      if (items[i].id === item.id) return current;
+    }
+    return current;
+  }
+
+  /** Seconds the plan is likely to take, at *speed* (or the nominal cruise)
+   *  and at whatever speeds single points pin along the way. Timed holds are
+   *  added on top — they are flight time the distance does not account for. */
+  function routeDuration(list, start, speed) {
+    const points = stations(list, start);
+    const speeds = speedByItem(list, speed);
+    const byId = new Map();
+    (list || []).forEach((item) => byId.set(item.id, item));
+    // Leg by leg rather than length-over-speed: with a speed pinned partway
+    // through, the two stop being the same number.
+    let seconds = 0;
+    for (let i = 1; i < points.length; i += 1) {
+      const mps = speeds.get(points[i].id) || NOMINAL_SPEED_MS;
+      seconds += (points[i].distance - points[i - 1].distance) / mps;
+    }
+    (list || []).forEach((item) => {
+      if (item.type === "loiter_turns") {
+        const mps = speeds.get(item.id) || NOMINAL_SPEED_MS;
+        seconds += 2 * Math.PI * (Number(item.radius) || 0)
+          * (Number(item.turns) || 0) / mps;
+      }
       if (item.type === "loiter_time") seconds += Number(item.seconds) || 0;
       if (item.type === "waypoint") seconds += Number(item.hold) || 0;
     });
@@ -511,6 +555,10 @@ Corvus.mission = (function () {
           out.alt = item.alt;
         }
         Object.keys(spec.params).forEach((key) => { out[key] = item[key]; });
+        // Only when the point pins one. Sending `null` would be a value the
+        // backend has to refuse, and sending 0 would be PX4's "no change"
+        // dressed up as a speed.
+        if (item.speed != null) out.speed = item.speed;
         return out;
       }),
     };
@@ -547,6 +595,11 @@ Corvus.mission = (function () {
         const rule = spec.params[key];
         item[key] = clampNumber(raw[key], rule.min, rule.max, rule.def);
       });
+      // Absent stays absent: a point with no speed of its own inherits the
+      // one in force, and clamping a missing field to a minimum would invent
+      // a 0.5 m/s crawl out of nothing.
+      item.speed = raw.speed == null
+        ? null : clampNumber(raw.speed, SPEED_MIN_MS, SPEED_MAX_MS, SPEED_MIN_MS);
       snapDirection(item);
       items.push(item);
     });
@@ -585,6 +638,9 @@ Corvus.mission = (function () {
       item.alt = type === "land" ? 0 : suggestedAltitude();
     }
     Object.keys(spec.params).forEach((key) => { item[key] = spec.params[key].def; });
+    // No speed of its own: a new point is flown at whatever the plan, or the
+    // point before it, already set.
+    item.speed = null;
     snapDirection(item);
     items.push(item);
     selectedId = item.id;
@@ -1176,13 +1232,18 @@ Corvus.mission = (function () {
         planSpeed = text ? clampNumber(text, SPEED_MIN_MS, SPEED_MAX_MS, SPEED_MIN_MS) : null;
         speedInput.value = planSpeed == null ? "" : planSpeed;
         renderSummary();
+        // The selected point's own speed box shows what it INHERITS as its
+        // placeholder, and this is what it inherits.
+        renderDetail();
       },
     });
 
     const planRow = document.createElement("div");
     planRow.className = "mission-plan-row";
     planRow.appendChild(Corvus.ui.field({ label: "Name", control: nameInput }));
-    planRow.appendChild(Corvus.ui.field({ label: "Speed (m/s)", control: speedInput }));
+    // "Start" because a point further down the plan may raise or lower it;
+    // this is the speed the mission begins at.
+    planRow.appendChild(Corvus.ui.field({ label: "Start speed (m/s)", control: speedInput }));
     side.appendChild(planRow);
 
     summaryEl = document.createElement("div");
@@ -2205,6 +2266,10 @@ Corvus.mission = (function () {
       parts.push(count);
     }
     if (item.type === "waypoint" && item.hold > 0) parts.push(`${Math.round(item.hold)} s`);
+    // Only where the speed CHANGES. Printing the inherited one on every row
+    // would put the same number down the whole list and hide the one row that
+    // is actually different.
+    if (item.speed != null) parts.push(`${formatAlt(item.speed)} m/s`);
     return parts.join(" · ");
   }
 
@@ -2519,6 +2584,8 @@ Corvus.mission = (function () {
       }
     }
 
+    detailEl.appendChild(speedField(item));
+
     // A radius and a direction this airframe will not fly are not shown as
     // fields the operator can set. Said once, under the item, rather than
     // leaving two dead controls to be filled in.
@@ -2548,6 +2615,43 @@ Corvus.mission = (function () {
         },
       }));
     });
+  }
+
+  /* How fast the leg INTO this point is flown, and from here on until another
+     point says otherwise — which is exactly what the DO_CHANGE_SPEED that
+     corvus/mission.py puts in front of it does on the aircraft.
+
+     Empty is the ABSENCE of a setting, not a zero: a 0 is a real PX4 value
+     meaning "no change", and a point that pins nothing has to keep inheriting
+     rather than commit the minimum. So this cannot be a numberField, whose
+     empty box falls back to the last stored number. The placeholder is the
+     speed the point is flown at as things stand, so an empty field still says
+     what will happen. */
+  function speedField(item) {
+    const inherited = speedInto(item);
+    const input = Corvus.ui.input({
+      type: "number",
+      value: item.speed == null ? "" : item.speed,
+      placeholder: inherited == null ? "airframe" : String(inherited),
+      min: SPEED_MIN_MS, max: SPEED_MAX_MS, step: 0.5,
+      mono: true,
+      ariaLabel: "Speed to this point in metres per second",
+      autocomplete: false,
+      onChange: (value) => {
+        const text = String(value).trim();
+        item.speed = text
+          ? clampNumber(text, SPEED_MIN_MS, SPEED_MAX_MS, SPEED_MIN_MS) : null;
+        input.value = item.speed == null ? "" : item.speed;
+        // The points after this one inherit the change, so their rows and the
+        // duration are both stale until this runs.
+        refreshPlan();
+        if (item.speed == null) {
+          const back = speedInto(item);
+          input.placeholder = back == null ? "airframe" : String(back);
+        }
+      },
+    });
+    return Corvus.ui.field({ label: "Speed (m/s)", control: input });
   }
 
   /** A field whose value is one of a short list rather than a number on a
@@ -3467,6 +3571,9 @@ Corvus.mission = (function () {
     _stations: stations,
     _routeLength: routeLength,
     _routeDuration: routeDuration,
+    // test hook: the inheritance a pinned speed sets up. Pure, and wrong in
+    // ways nothing throws over — the plan still uploads, at the wrong speed.
+    _speedByItem: speedByItem,
     _circleRing: circleRing,
     _clearances: clearances,
     _interpolateAt: interpolateAt,

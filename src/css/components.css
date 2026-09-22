@@ -1186,9 +1186,20 @@
    A transient sibling of the warnings popover, not a replacement for it: the
    notification board is a log of vehicle/flight state, kept until dismissed;
    a toast is a UI aside (a hint, a local confirmation) that says its piece
-   and clears itself. Same surface, same level colours and icons, so the two
-   read as one family — but stacked in its own column and never added to the
-   board underneath. */
+   and clears itself. Stacked in its own column and never added to the board
+   underneath.
+
+   It is built to the same anatomy as a board row (.wp-item in main.css) —
+   leading column, text, dismiss — on the shared --notif-* tokens, because the
+   two are regularly on screen together: the stack drops below the popover
+   when that is open, which puts a toast directly under a row it must not look
+   like a different component from. The severity mark is the same broken rule,
+   drawn by the same arithmetic, and the same settings switch turns it off in
+   both places.
+
+   The one difference is the text column: a row carries a message and a
+   timestamp, a toast carries a title and a message. Same skeleton, different
+   second line. */
 .ui-toast-stack {
   position: fixed; top: calc(var(--top-h) + 10px); right: 12px; z-index: var(--z-toast);
   width: min(320px, calc(100vw / var(--ui-scale, 1) - 24px));
@@ -1200,31 +1211,69 @@
 }
 .ui-toast {
   pointer-events: auto;
+  position: relative;
   border-radius: var(--radius);
   overflow: hidden;
+  display: flex; gap: var(--notif-gap);
+  padding: var(--notif-pad-y) var(--notif-pad-right) var(--notif-pad-y) var(--notif-gutter);
+  align-items: flex-start;
   transition: opacity 160ms, transform 160ms;
 }
-.ui-toast[data-level="info"] { box-shadow: inset 2px 0 0 var(--nav); }
-.ui-toast[data-level="warning"] { box-shadow: inset 2px 0 0 var(--warning); }
-.ui-toast[data-level="critical"] { box-shadow: inset 2px 0 0 var(--critical); }
+/* The severity mark: a segment above the icon, the icon, a segment below —
+   the same rule .wp-item draws, from the same tokens. It replaced an
+   `inset 2px 0 0` box-shadow down the full left edge, which is the flat
+   version of the rail the board had already moved away from. */
+.ui-toast::before,
+.ui-toast::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--notif-gutter) + (var(--notif-icon) - var(--notif-mark)) / 2);
+  width: var(--notif-mark);
+  border-radius: 999px;
+  background: currentColor;
+}
+.ui-toast::before {
+  bottom: calc(50% + var(--notif-icon) / 2 + var(--notif-mark-gap));
+  height: calc((50% - var(--notif-icon) / 2 - var(--notif-mark-gap)) * var(--notif-mark-fill));
+}
+.ui-toast::after {
+  top: calc(50% + var(--notif-icon) / 2 + var(--notif-mark-gap));
+  height: calc((50% - var(--notif-icon) / 2 - var(--notif-mark-gap)) * var(--notif-mark-fill));
+}
+.ui-toast[data-level="info"]::before, .ui-toast[data-level="info"]::after { color: var(--nav); }
+.ui-toast[data-level="warning"]::before, .ui-toast[data-level="warning"]::after { color: var(--warning); }
+.ui-toast[data-level="critical"]::before, .ui-toast[data-level="critical"]::after { color: var(--critical); }
+/* Marks off (Settings -> Notifications), exactly as on the board: the
+   segments go, the centred icon does not move. */
+:root[data-notification-marks="off"] .ui-toast::before,
+:root[data-notification-marks="off"] .ui-toast::after { content: none; }
 .ui-toast.is-leaving { opacity: 0; transform: translateY(-4px); }
 @media (prefers-reduced-motion: reduce) {
   .ui-toast { transition: none; }
 }
-.ui-toast-head { display: flex; align-items: center; gap: var(--space-8); padding: 10px 12px 0 11px; }
-.ui-toast-icon { width: 18px; height: 18px; flex: 0 0 auto; display: grid; place-items: center; }
-.ui-toast-icon svg { width: 15px; height: 15px; }
+.ui-toast-icon {
+  width: var(--notif-icon); height: var(--notif-icon);
+  flex: 0 0 auto; display: grid; place-items: center;
+  /* Centred on the card, not on the title: the rule is broken AT the icon,
+     and a break at the top of a three-line message would leave one segment
+     and a stub. */
+  align-self: center;
+}
+.ui-toast-icon svg { width: var(--notif-icon-svg); height: var(--notif-icon-svg); }
 .ui-toast-icon.info { color: var(--nav); }
 .ui-toast-icon.warning { color: var(--warning); }
 .ui-toast-icon.critical { color: var(--critical); }
-.ui-toast-title { flex: 1; font-size: var(--text-sm); font-weight: 600; letter-spacing: 0.4px; color: var(--text-1); }
+.ui-toast-text { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ui-toast-title { font-size: var(--text-sm); font-weight: 600; letter-spacing: 0.4px; color: var(--text-1); }
+.ui-toast-body { font-size: var(--text-sm); color: var(--text-2); line-height: 1.35; }
+.ui-toast-body:empty { display: none; }
 .ui-toast-close {
-  width: 22px; height: 22px; flex: 0 0 auto; display: grid; place-items: center;
-  margin: -3px -3px -3px 0; border-radius: var(--radius-btn); color: var(--text-3);
+  width: var(--notif-dismiss); height: var(--notif-dismiss);
+  flex: 0 0 auto; display: grid; place-items: center;
+  margin: -2px -4px -2px auto; border-radius: var(--radius-btn); color: var(--text-3);
 }
 .ui-toast-close:hover { color: var(--text-1); background: var(--surface-hover); }
-.ui-toast-close svg { width: 12px; height: 12px; }
-.ui-toast-body { font-size: var(--text-sm); color: var(--text-2); line-height: 1.35; padding: 6px 12px 11px 37px; }
+.ui-toast-close svg { width: 13px; height: 13px; }
 
 /* ===== Dark-theme corrections =====
    Two places cannot read a token: the chevron baked into the select's data:

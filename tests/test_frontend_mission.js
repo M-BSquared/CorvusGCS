@@ -645,6 +645,40 @@ function testRouteDurationIncludesHoldsAndTimedLoiters() {
     `a 30 s hold plus a 60 s loiter is 90 s of flight, got ${seconds}`);
 }
 
+function testAPinnedSpeedCarriesToThePointsAfterIt() {
+  // Mirrors PX4: a DO_CHANGE_SPEED holds until another one replaces it, so a
+  // speed set on point 2 is also what points 3 and 4 are flown at.
+  const items = [
+    { id: 1, type: "waypoint", lat: 48, lon: 11, alt: 30, speed: null },
+    { id: 2, type: "waypoint", lat: 48, lon: 11, alt: 30, speed: 4 },
+    { id: 3, type: "waypoint", lat: 48, lon: 11, alt: 30, speed: null },
+    { id: 4, type: "waypoint", lat: 48, lon: 11, alt: 30, speed: 12 },
+  ];
+  const speeds = mission._speedByItem(items, 9);
+  assert.deepStrictEqual([1, 2, 3, 4].map((id) => speeds.get(id)), [9, 4, 4, 12]);
+}
+
+function testAPointWithNoSpeedOfItsOwnInheritsThePlansStartSpeed() {
+  const items = [{ id: 1, type: "waypoint", lat: 48, lon: 11, alt: 30, speed: null }];
+  assert.strictEqual(mission._speedByItem(items, 7).get(1), 7);
+  // Nothing pinned anywhere: the estimate still needs a number, and it is the
+  // nominal cruise rather than a division by zero.
+  assert.ok(mission._speedByItem(items, null).get(1) > 0);
+}
+
+function testASlowLegIsTimedAtItsOwnSpeedRatherThanThePlans() {
+  // One kilometre out at 10 m/s, one kilometre on at 5 m/s: 100 s + 200 s.
+  // A length-over-speed estimate would call the whole thing 200 s.
+  const far = { lat: 48, lon: 11 };
+  const items = [
+    { id: 1, type: "waypoint", lat: 48.008993, lon: 11, alt: 30, hold: 0 },
+    { id: 2, type: "waypoint", lat: 48.017986, lon: 11, alt: 30, hold: 0, speed: 5 },
+  ];
+  const seconds = mission._routeDuration(items, far, 10);
+  assert.ok(Math.abs(seconds - 300) < 5,
+    `a 1 km leg at 10 m/s then 1 km at 5 m/s is ~300 s, got ${seconds}`);
+}
+
 function testCircleRingClosesAndIsRoughlyTheAskedRadius() {
   const ring = mission._circleRing({ lat: 48, lon: 11 }, 100, 32);
   assert.strictEqual(ring.length, 33, "a closed ring repeats its first point");
@@ -907,6 +941,36 @@ function testSetPlanAndGetPlanRoundTripWhatTheBackendValidates() {
   assert.ok(!("lat" in plan.items[2]), "a return carries no position");
 }
 
+function testAPointsOwnSpeedRoundTripsAndAnAbsentOneStaysAbsent() {
+  // `speed: null` is not something corvus/mission.py accepts — an absent
+  // speed is an absent KEY, because that is what "inherit" means on the wire.
+  mission.setPlan({
+    version: 1,
+    name: "Two speeds",
+    home: { lat: 48, lon: 11 },
+    items: [
+      { type: "waypoint", lat: 48, lon: 11, alt: 25, speed: 4 },
+      { type: "waypoint", lat: 48.01, lon: 11.01, alt: 25 },
+    ],
+  });
+  const plan = mission.getPlan();
+
+  assert.strictEqual(plan.items[0].speed, 4);
+  assert.ok(!("speed" in plan.items[1]),
+    "a point that pins no speed must not send one");
+}
+
+function testASpeedOutOfRangeIsClampedOnLoadRatherThanRefused() {
+  mission.setPlan({
+    version: 1,
+    name: "Too fast",
+    items: [{ type: "waypoint", lat: 48, lon: 11, alt: 25, speed: 999 }],
+  });
+
+  assert.strictEqual(mission.getPlan().items[0].speed,
+    mission._bounds.SPEED_MAX_MS);
+}
+
 function testAnOutOfRangeAltitudeIsClampedOnLoadRatherThanRefused() {
   // A plan file from a build with wider bounds must still open — with an
   // altitude the editor can represent, not with one it would upload.
@@ -1053,6 +1117,9 @@ const tests = [
   testStationsWithoutAHomeStillDrawTheItems,
   testRouteLengthAddsTheOrbitCircumference,
   testRouteDurationIncludesHoldsAndTimedLoiters,
+  testAPinnedSpeedCarriesToThePointsAfterIt,
+  testAPointWithNoSpeedOfItsOwnInheritsThePlansStartSpeed,
+  testASlowLegIsTimedAtItsOwnSpeedRatherThanThePlans,
   testCircleRingClosesAndIsRoughlyTheAskedRadius,
   testTheRingStartsDueEastOfItsCentre,
   testTerrariumDecodingMatchesTheKnownPacking,
@@ -1071,6 +1138,8 @@ const tests = [
   testARowIsAlreadyInItsOwnSlot,
   testRowsOfUnequalHeightAreMeasuredEachOnItsOwn,
   testSetPlanAndGetPlanRoundTripWhatTheBackendValidates,
+  testAPointsOwnSpeedRoundTripsAndAnAbsentOneStaysAbsent,
+  testASpeedOutOfRangeIsClampedOnLoadRatherThanRefused,
   testAnOutOfRangeAltitudeIsClampedOnLoadRatherThanRefused,
   testAnUnknownItemTypeIsDroppedOnLoad,
   testALandingLoadsOnTheGroundWhateverTheFileSays,

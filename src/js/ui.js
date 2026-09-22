@@ -1911,12 +1911,13 @@ Corvus.ui = (function () {
   }
 
   /*
-    Toast — a transient, self-dismissing notice in the app's own design
-    language (glass surface, level icon and colour, same palette as the
-    notification centre), for messages that are not vehicle/flight state and
-    so have no business sitting in that board (a UI hint like "double-click
-    to zoom back out"). Any part of the app can call this; it mounts its own
-    stack on <body> the first time it is used.
+    Toast — a transient, self-dismissing notice built to the same anatomy as a
+    row on the notification board (glass surface, leading column with the
+    level icon and its severity mark, then the text, then a dismiss), for
+    messages that are not vehicle/flight state and so have no business sitting
+    in that board (a UI hint like "double-click to zoom back out"). Any part of
+    the app can call this; it mounts its own stack on <body> the first time it
+    is used.
 
     opts: {level: "info" | "warning" | "critical", title, message, duration}
       level     picks the icon, accent colour and default title/duration.
@@ -1949,6 +1950,10 @@ Corvus.ui = (function () {
     const rect = popover.getBoundingClientRect();
     stack.style.top = rect.height > 0 ? Math.round(rect.bottom + 10) + "px" : "";
   }
+  /* The level's icon, default title and default lifetime. The icons are the
+     same three the notification board picks from (src/js/topbar.js) — a
+     warning may not be a triangle in one place and something else in the
+     other. */
   const TOAST_ICON = { info: "info", warning: "triangle-alert", critical: "octagon-alert" };
   const TOAST_TITLE = { info: "Info", warning: "Warning", critical: "Error" };
   const TOAST_DURATION = { info: 4500, warning: 6000, critical: 0 };
@@ -1962,25 +1967,33 @@ Corvus.ui = (function () {
     el.dataset.level = level;
     el.setAttribute("role", level === "critical" ? "alert" : "status");
 
-    const head = document.createElement("div");
-    head.className = "ui-toast-head";
+    /* Built as a board row is built — icon, text, dismiss as three children of
+       the card — rather than as a header strip with the message hanging under
+       it. That is what lets the severity mark be the same rule in both places:
+       it is drawn on the card and threaded through an icon centred on the
+       card, which only works if the icon is the card's own first column. */
     const iconWrap = document.createElement("div");
     iconWrap.className = "ui-toast-icon " + level;
-    iconWrap.appendChild(icon(TOAST_ICON[level], 15));
+    iconWrap.setAttribute("aria-hidden", "true");
+    iconWrap.appendChild(icon(TOAST_ICON[level], 16));
+
+    const text = document.createElement("div");
+    text.className = "ui-toast-text";
     const title = document.createElement("span");
     title.className = "ui-toast-title";
     title.textContent = o.title || TOAST_TITLE[level];
+    const body = document.createElement("div");
+    body.className = "ui-toast-body";
+    body.textContent = o.message == null ? "" : String(o.message);
+    text.append(title, body);
+
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "ui-toast-close";
     closeBtn.setAttribute("aria-label", "Dismiss");
-    closeBtn.appendChild(icon("x", 12));
-    head.append(iconWrap, title, closeBtn);
+    closeBtn.appendChild(icon("x", 13));
 
-    const body = document.createElement("div");
-    body.className = "ui-toast-body";
-    body.textContent = o.message == null ? "" : String(o.message);
-    el.append(head, body);
+    el.append(iconWrap, text, closeBtn);
 
     const host = toastHost();
     repositionToastStack(host);

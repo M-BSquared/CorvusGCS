@@ -171,9 +171,36 @@ class VehicleStateStore:
             # actually arrived, so the page can tell "commanded zero" apart
             # from "never told".
             "setpoints_live": False,
+            # What the interface shows, and where it came from. The autopilot's
+            # own remaining figure and Corvus's voltage estimate are kept side
+            # by side because they disagree for good reasons — a coulomb count
+            # seeded by a guess against a curve read under load — and the
+            # operator chooses which one they fly by (Setup -> Battery & Power).
+            # `battery_percent` always carries the chosen one, so every
+            # existing consumer keeps working without knowing any of this.
             "battery_percent": 0,
             "battery_voltage": 0.0,
             "battery_current": 0.0,
+            # -1, not 0: an autopilot that publishes no estimate and a pack
+            # that is genuinely flat are different facts, and only one of them
+            # is a reason to land.
+            "battery_percent_fc": -1,
+            "battery_percent_est": -1.0,
+            "battery_source": "autopilot",
+            # Resolved cell count and the volts one cell is holding. Latched
+            # per connection by the bridge rather than recomputed per frame —
+            # see MavlinkBridge._battery_fields for why.
+            "battery_cells": 0,
+            "battery_cell_voltage": 0.0,
+            # Per-cell volts from BATTERY_STATUS, when the pack reports them
+            # (smart and DroneCAN batteries do; an analog power module does
+            # not). Empty means nobody said, never "all cells are at zero".
+            "battery_cell_voltages": [],
+            "battery_consumed_mah": 0.0,
+            # None = not reported. 0 C is a real temperature.
+            "battery_temperature": None,
+            # Seconds the autopilot thinks are left, 0 = not reported.
+            "battery_time_remaining": 0,
             "gps_fix": "",
             "gps_satellites": 0,
             "gps_hdop": 99.0,

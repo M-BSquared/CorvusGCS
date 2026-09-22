@@ -412,6 +412,35 @@ def test_mission_page_is_off_unless_the_config_asks_for_it(tmp_path) -> None:
     assert load_config(str(p)).ui == {"mission_page": True}
 
 
+def test_notification_marks_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
+    """The one UI key that is ON when absent, so the coercion has to be exact.
+
+    The frontend reads this as "not false" (src/js/app.js), which means an
+    absent key leaves the severity marks drawn — the state every config file
+    written before the switch existed is in, and the state a notification has
+    always been in. That puts the whole weight of turning them OFF on the one
+    value ``False``, so everything that is not that value has to survive as
+    absent rather than as a falsy something: a hand-edited ``"false"`` must
+    not strip the marks off a board nobody asked to change.
+    """
+    assert load_config(str(tmp_path / "absent.json")).ui is None
+    p = tmp_path / "c.json"
+    # No file, no ui block, and a ui block about something else: all absent,
+    # which the frontend reads as on.
+    p.write_text(json.dumps({}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("notification_marks") is None
+    p.write_text(json.dumps({"ui": {"scale": 1.1}}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("notification_marks") is None
+    # A string is not a boolean — dropped, so the marks stay.
+    p.write_text(json.dumps({"ui": {"notification_marks": "false"}}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("notification_marks") is None
+    # Only a real False turns them off, and a real True round-trips too.
+    p.write_text(json.dumps({"ui": {"notification_marks": False}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"notification_marks": False}
+    p.write_text(json.dumps({"ui": {"notification_marks": True}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"notification_marks": True}
+
+
 def test_load_config_parses_app_icon_backplate(tmp_path) -> None:
     """The backplate is its own key, kept independently of the inversion."""
     p = tmp_path / "c.json"

@@ -10,6 +10,8 @@ Three jobs, deliberately separate:
 * :data:`ITEM_SPECS` states every item type once — its MAVLink command number,
   whether it carries a position, and which of the four command parameters its
   named fields land in. The frontend mirrors the *names*; this mirrors nothing.
+  A per-item ``speed`` is deliberately not among them: it is a command of its
+  own on the wire, not a parameter of the item it is set on.
 * :func:`validate_plan` is the only gate. It is reached from an HTTP endpoint,
   so it treats every value as hostile: wrong types, NaN, infinities, out-of-
   range coordinates and oversized lists all come back as a message rather than
@@ -61,8 +63,10 @@ MISSION_ALT_MAX_M = 1000.0
 MISSION_RADIUS_MIN_M = 1.0
 MISSION_RADIUS_MAX_M = 10000.0
 
-# Cruise speed, when the plan pins one. 0 is not "unset" here — it is a real
-# DO_CHANGE_SPEED value meaning "no change" — so an absent speed is None.
+# Cruise speed, when the plan pins one — and the same bounds for a speed
+# pinned on a single item, which is the speed the leg INTO that item is flown
+# at. 0 is not "unset" here — it is a real DO_CHANGE_SPEED value meaning "no
+# change" — so an absent speed is None rather than zero, at both levels.
 MISSION_SPEED_MIN_MS = 0.5
 MISSION_SPEED_MAX_MS = 100.0
 
@@ -262,6 +266,22 @@ def _validate_item(index: int, raw: Any) -> tuple[dict[str, Any] | None, str]:
     if kind in ORBIT_TYPES:
         item["direction"] = 1.0 if item["direction"] >= 0 else -1.0
 
+    # A speed pinned on ONE item: how fast the leg INTO it is flown. Not in
+    # ``params`` because it is not a parameter of this command at all — it
+    # becomes a DO_CHANGE_SPEED of its own, immediately ahead of the item, and
+    # :func:`plan_to_items` is where that happens. Absent means "carry on at
+    # whatever speed is already set", which is not a number and therefore
+    # cannot be given a default: the key simply stays off the item.
+    speed = raw.get("speed")
+    if speed is not None:
+        value = _bounded(speed, MISSION_SPEED_MIN_MS, MISSION_SPEED_MAX_MS)
+        if value is None:
+            return None, (
+                f"item {index} speed must be between {MISSION_SPEED_MIN_MS:g} "
+                f"and {MISSION_SPEED_MAX_MS:g} m/s"
+            )
+        item["speed"] = value
+
     return item, ""
 
 
@@ -323,7 +343,29 @@ def validate_plan(raw: Any) -> tuple[dict[str, Any] | None, str]:
             )
         plan["speed"] = value
 
+    # The ceiling is on what is UPLOADED, not on what was drawn. Every pinned
+    # speed becomes a command of its own, so a plan can sit under the limit on
+    # the page and go over it on the wire; counting the drawn items alone
+    # would let that through and fail at the aircraft instead.
+    wire = len(plan_to_items(plan))
+    if wire > MISSION_MAX_ITEMS:
+        return None, (
+            f"too many items ({wire} once the speed changes are counted); "
+            f"the maximum is {MISSION_MAX_ITEMS}"
+        )
+
     return plan, ""
+
+
+def _speed_item(speed: float) -> dict[str, Any]:
+    """One DO_CHANGE_SPEED, positionless, in the shape the uploader wants."""
+    return {
+        "command": MAV_CMD_DO_CHANGE_SPEED,
+        "lat": 0.0, "lon": 0.0, "alt": 0.0,
+        # param1 = 1 (ground speed), param2 = the speed, param3 = -1 (no
+        # throttle change). PX4 v1.16-v1.18 read exactly these.
+        "params": [1.0, float(speed), -1.0, 0.0],
+    }
 
 
 def plan_to_items(plan: dict[str, Any]) -> list[dict[str, Any]]:
@@ -333,24 +375,35 @@ def plan_to_items(plan: dict[str, Any]) -> list[dict[str, Any]]:
     Positionless items (RTL, the speed change) carry zeros for lat/lon/alt,
     which is what PX4 expects for a command that names no place.
 
-    A pinned cruise speed is emitted FIRST, as a DO_CHANGE_SPEED ahead of every
-    navigation item: PX4 applies it from the moment it is executed, so putting
-    it after the takeoff would leave the climb-out at the airframe default and
-    make the plan's own speed a half-truth.
+    SPEED is a command, not a field. PX4 holds whatever DO_CHANGE_SPEED it
+    last executed, so a speed is emitted ahead of the first item it applies to
+    and then simply persists:
+
+    * The plan's own cruise speed goes FIRST, ahead of every navigation item —
+      after the takeoff it would leave the climb-out at the airframe default
+      and make the plan's speed a half-truth.
+    * An item that pins a speed of its own gets one immediately before it, so
+      the change takes effect for the leg INTO that item, which is the leg the
+      operator set it on.
+
+    A pinned speed equal to the one already in force emits nothing: the
+    aircraft is flying at it, and a second identical command would only spend
+    a mission slot to say so.
     """
     items: list[dict[str, Any]] = []
+    current: float | None = None
 
     speed = plan.get("speed")
     if isinstance(speed, (int, float)) and not isinstance(speed, bool):
-        items.append({
-            "command": MAV_CMD_DO_CHANGE_SPEED,
-            "lat": 0.0, "lon": 0.0, "alt": 0.0,
-            # param1 = 1 (ground speed), param2 = the speed, param3 = -1
-            # (no throttle change). PX4 v1.16-v1.18 read exactly these.
-            "params": [1.0, float(speed), -1.0, 0.0],
-        })
+        current = float(speed)
+        items.append(_speed_item(current))
 
     for entry in plan.get("items", []):
+        pinned = entry.get("speed")
+        if (isinstance(pinned, (int, float)) and not isinstance(pinned, bool)
+                and float(pinned) != current):
+            current = float(pinned)
+            items.append(_speed_item(current))
         spec = ITEM_SPECS[entry["type"]]
         params = [0.0, 0.0, 0.0, 0.0]
         for field, rule in spec["params"].items():

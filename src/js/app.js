@@ -398,6 +398,13 @@ Corvus.app = (function () {
       // the control switches above: the backend is the authority, and an
       // absent key is the default (no dots), not the cached value.
       Corvus.topbar.setStatusDots(!!(cfg.ui && cfg.ui.topbar_status_dots));
+      // The severity marks on notifications. Read as "not false" rather than
+      // "is true", because this one defaults ON: an absent key is a config
+      // that has never been asked about the marks, and the answer for those is
+      // the marks a notification has always had — not a board this fetch
+      // quietly strips a rule off.
+      Corvus.topbar.setNotificationMarks(
+        !(cfg.ui && cfg.ui.notification_marks === false));
       // The optional Mission entry in the left rail. Off unless the config
       // asks for it, and asked for here rather than inside sidenav.init()
       // because the rail is built before this fetch can land — the rail
