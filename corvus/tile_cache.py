@@ -90,7 +90,7 @@ def default_cache_dir() -> str:
     """
     override = os.environ.get("CORVUS_TILE_CACHE_DIR") or ""
     if override.strip():
-        return os.path.expanduser(override.strip())
+        return os.path.normpath(os.path.expanduser(override.strip()))
     return corvus_path("tiles")
 
 

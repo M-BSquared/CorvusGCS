@@ -158,8 +158,17 @@ release_appimage:
     #   imagemagick     — without it the icon ships at whatever size the source
     #                     logo happens to be instead of 256x256.
     - >-
-      apt-get install -y ca-certificates python3 python3-pip python3-venv
+      apt-get install -y ca-certificates software-properties-common
       wget rsync squashfs-tools imagemagick libfuse2
+    # ubuntu:22.04's own python3 is 3.10; build-appimage.sh bundles whatever
+    # python3 is first on PATH and refuses anything below the 3.12 floor
+    # pyproject.toml declares, so deadsnakes' 3.12 has to become python3 here,
+    # not just be installed alongside it. Matches .github/workflows/build.yml,
+    # where actions/setup-python does the same job.
+    - add-apt-repository -y ppa:deadsnakes/ppa
+    - apt-get update -y
+    - apt-get install -y python3.12 python3.12-venv
+    - update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
     - chmod +x build-appimage.sh
     # Ensure a cache-restored appimagetool is executable (mode is usually
     # preserved, but this guards against runners that drop the x bit).

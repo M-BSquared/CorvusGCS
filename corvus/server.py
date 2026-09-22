@@ -671,7 +671,7 @@ def _tile_cache_dir(cfg: Any) -> str:
     """
     configured = getattr(cfg, "tile_cache_dir", "") or ""
     if configured.strip():
-        return os.path.expanduser(configured.strip())
+        return os.path.normpath(os.path.expanduser(configured.strip()))
     return default_cache_dir()
 
 

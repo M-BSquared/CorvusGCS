@@ -18,6 +18,7 @@ neither pymavlink nor paramiko, so they still run in a minimal environment.
 from __future__ import annotations
 
 import ast
+import json
 import os
 import pathlib
 from unittest.mock import MagicMock
@@ -215,8 +216,10 @@ def test_create_server_honours_configured_tile_cache_dir(tmp_path, monkeypatch):
 
     cfg_path = tmp_path / "config.json"
     cfg_path.write_text(
-        '{"mavlink_connection": "udp:127.0.0.1:9999", '
-        f'"tile_cache_dir": "{configured}"}}',
+        json.dumps({
+            "mavlink_connection": "udp:127.0.0.1:9999",
+            "tile_cache_dir": str(configured),
+        }),
         encoding="utf-8",
     )
 
