@@ -293,7 +293,7 @@ def test_a_class_mark_is_not_broadcast_without_the_classification_it_belongs_to(
 
 
 def test_the_system_timestamp_counts_from_2019_not_from_1970() -> None:
-    moment = datetime.datetime(2019, 1, 2, tzinfo=datetime.timezone.utc)
+    moment = datetime.datetime(2019, 1, 2, tzinfo=datetime.UTC)
 
     assert remote_id.system_timestamp(moment) == 86400
 

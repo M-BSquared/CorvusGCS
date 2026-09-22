@@ -166,7 +166,7 @@ DESCRIPTION_MAX = 23
 ALTITUDE_UNKNOWN = -1000.0
 
 # OPEN_DRONE_ID_SYSTEM.timestamp counts seconds from this epoch, not from 1970.
-ODID_EPOCH = datetime.datetime(2019, 1, 1, tzinfo=datetime.timezone.utc)
+ODID_EPOCH = datetime.datetime(2019, 1, 1, tzinfo=datetime.UTC)
 
 # ANSI/CTA-2063-A alphabet: digits and capitals, with I and O removed because
 # they are indistinguishable from 1 and 0 on a printed label.
@@ -557,9 +557,9 @@ def _fixed_bytes(text: str, length: int) -> bytes:
 
 def system_timestamp(now: datetime.datetime | None = None) -> int:
     """Seconds since the ODID epoch (2019-01-01 UTC), clamped to uint32."""
-    moment = now or datetime.datetime.now(datetime.timezone.utc)
+    moment = now or datetime.datetime.now(datetime.UTC)
     if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=datetime.timezone.utc)
+        moment = moment.replace(tzinfo=datetime.UTC)
     seconds = int((moment - ODID_EPOCH).total_seconds())
     return max(0, min(seconds, 0xFFFFFFFF))
 
