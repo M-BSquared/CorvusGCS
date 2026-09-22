@@ -320,8 +320,13 @@ jobs:
           have="$(gh release view "$GITHUB_REF_NAME" --json assets \
                     --jq '.assets[] | "\(.name)\t\(.size)"' || true)"
 
+          # The .lock beside each bundle is for whoever cuts the next release
+          # to pin against (download it from this job's own artifacts, copy it
+          # over requirements.lock) — not something an operator downloading
+          # the app needs to see next to the AppImage/.dmg/.zip.
           for f in artifacts/*; do
             [ -f "$f" ] || continue
+            case "$f" in *.lock) continue ;; esac
             name="$(basename "$f")"
             size="$(wc -c < "$f" | tr -d ' ')"
             if printf '%s\n' "$have" | grep -Fxq "$name	$size"; then
@@ -331,12 +336,13 @@ jobs:
             upload "$f"
           done
 
-          # Refuse to publish half a release. Everything under artifacts/ is
-          # what the three build jobs produced — the three bundles and the
-          # .lock beside each — so anything missing here means an upload
+          # Refuse to publish half a release. Everything under artifacts/
+          # other than the .lock files is what the three build jobs produced —
+          # the three bundles — so anything missing here means an upload
           # reported success without taking.
           for f in artifacts/*; do
             [ -f "$f" ] || continue
+            case "$f" in *.lock) continue ;; esac
             name="$(basename "$f")"
             if ! gh release view "$GITHUB_REF_NAME" --json assets \
                  --jq '.assets[].name' | grep -Fxq "$name"; then
