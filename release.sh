@@ -57,10 +57,10 @@ if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
     exit 1
 fi
 
+TAG_EXISTS=0
 if git rev-parse "$TAG" >/dev/null 2>&1; then
-    echo "release.sh: tag $TAG already exists locally — nothing to do for the tag." >&2
-    echo "If it never reached a remote, push it by hand: git push <remote> $TAG" >&2
-    exit 1
+    TAG_EXISTS=1
+    echo "--- tag $TAG already exists locally (from an earlier run) — reusing it"
 fi
 
 if (( VERIFY )); then
@@ -92,13 +92,29 @@ fi
 
 # Lightweight tag, matching every existing release tag in this repo (they are
 # plain commit refs, not annotated tag objects).
-git tag "$TAG"
-echo "--- tagged $TAG at $(git rev-parse --short "$TAG")"
+if (( ! TAG_EXISTS )); then
+    git tag "$TAG"
+    echo "--- tagged $TAG at $(git rev-parse --short "$TAG")"
+fi
 
+# Each remote is pushed independently and a failure on one (e.g. a remote
+# whose branch has diverged, which needs a human decision, not a force-push
+# from this script) does not stop the others — the summary at the end says
+# exactly which remotes still need attention.
+FAILED=""
 for remote in $REMOTES; do
     echo "--- pushing $BRANCH and $TAG to $remote"
-    git push "$remote" "$BRANCH"
-    git push "$remote" "$TAG"
+    if git push "$remote" "$BRANCH" && git push "$remote" "$TAG"; then
+        echo "--- $remote: done"
+    else
+        echo "--- $remote: FAILED (see above) — not force-pushing; resolve by hand" >&2
+        FAILED="$FAILED $remote"
+    fi
 done
+
+if [[ -n "$FAILED" ]]; then
+    echo "=== $TAG pushed, but failed for:$FAILED — fix and re-run ./release.sh ===" >&2
+    exit 1
+fi
 
 echo "=== $TAG pushed to every remote. CI will build and release it. ==="
