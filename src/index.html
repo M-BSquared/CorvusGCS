@@ -43,11 +43,32 @@
     var t = localStorage.getItem("corvus.theme");
     if (t) document.documentElement.setAttribute("data-theme", t);
   } catch (e) {}
+  var scale = 1;
   try {
     var s = parseFloat(localStorage.getItem("corvus.scale"));
     /* Bounds, not a step list: this runs before Corvus.scale exists, and its
        only job is to refuse a value that would paint an unusable interface. */
-    if (s >= 0.8 && s <= 1.5) document.documentElement.style.setProperty("--ui-scale", String(s));
+    if (s >= 0.8 && s <= 1.5) {
+      scale = s;
+      document.documentElement.style.setProperty("--ui-scale", String(s));
+    }
+  } catch (e) {}
+  try {
+    /* The responsive breakpoints (css/main.css, "RESPONSIVE"). They are
+       selectors rather than media queries because a media query cannot see
+       the interface scale, so the width they turn on has to be written here.
+       Corvus.scale.BREAKPOINTS owns the list and rewrites this attribute on
+       every scale and window change; this copy exists so the FIRST paint is
+       already at the right layout instead of flashing the widest one. */
+    var w = (document.documentElement.clientWidth || window.innerWidth || 0) / scale;
+    var vw = [];
+    if (w <= 1279) vw.push("max-1279");
+    if (w <= 959) vw.push("max-959");
+    if (w <= 900) vw.push("max-900");
+    if (w <= 720) vw.push("max-720");
+    if (w <= 600) vw.push("max-600");
+    if (w >= 760) vw.push("min-760");
+    document.documentElement.setAttribute("data-vw", vw.join(" "));
   } catch (e) {}
 })();
 </script>

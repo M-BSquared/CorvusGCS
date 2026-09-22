@@ -121,6 +121,10 @@ Corvus.theme = (function () {
   (map.js). A plain `resize` is dispatched alongside so anything that already
   reacts to a viewport change — the right panel's auto-collapse, MapLibre's
   own observer, Plotly — needs no new listener.
+
+  It also owns the responsive breakpoints, because it is the only thing that
+  knows the difference between the window and the room the app has. See
+  BREAKPOINTS below.
 */
 Corvus.scale = (function () {
   const KEY = "corvus.scale";
@@ -148,10 +152,59 @@ Corvus.scale = (function () {
     return Math.min(Math.max(n, MIN), MAX);
   }
 
+  /*
+    BREAKPOINTS — the responsive rules' condition, in the app's own pixels.
+
+    `zoom` is invisible to a media query: it measures the window, which stays
+    1440px wide however small the app's own pixels have become inside it. So
+    the width media queries in css/main.css became selectors guarded by this
+    attribute, and this is what writes it.
+
+    Each token names the media query it replaces, so a rule and its condition
+    still read the same way ("max-720" is `(max-width: 720px)`). A token is
+    present when the EFFECTIVE viewport — the window divided by the scale —
+    satisfies it, which at 100% is the window itself and therefore exactly
+    what the media queries did.
+
+    documentElement.clientWidth rather than innerWidth: that is the width a
+    media query would have measured, scrollbar excluded, and matching it is
+    the whole point.
+  */
+  const BREAKPOINTS = [
+    { token: "max-1279", test: (w) => w <= 1279 },
+    { token: "max-959",  test: (w) => w <= 959 },
+    { token: "max-900",  test: (w) => w <= 900 },
+    { token: "max-720",  test: (w) => w <= 720 },
+    { token: "max-600",  test: (w) => w <= 600 },
+    { token: "min-760",  test: (w) => w >= 760 },
+  ];
+
+  /** The viewport in the pixels the app lays out in: the window, unzoomed. */
+  function effectiveWidth(n) {
+    const root = document.documentElement;
+    const px = (root && root.clientWidth) || window.innerWidth || 0;
+    const scale = n > 0 ? n : 1;
+    return px / scale;
+  }
+
+  /** Write the breakpoint tokens for scale *n*. Guarded like every other
+   *  document write here: a browser that refuses the attribute leaves the
+   *  widest layout, never an unstyled one. */
+  function applyBreakpoints(n) {
+    try {
+      const width = effectiveWidth(n);
+      const tokens = BREAKPOINTS.filter((b) => b.test(width)).map((b) => b.token);
+      document.documentElement.setAttribute("data-vw", tokens.join(" "));
+    } catch (_e) {}
+  }
+
   /** Apply *v* to the document and cache it. Returns the value applied. */
   function setScale(v) {
     const n = normalize(v);
     try { document.documentElement.style.setProperty("--ui-scale", String(n)); } catch (_e) {}
+    // Before the events, not after: a listener that measures the layout must
+    // find the breakpoints already settled, or it measures the widest one.
+    applyBreakpoints(n);
     try { localStorage.setItem(KEY, String(n)); } catch (_e) {}
     try {
       window.dispatchEvent(new CustomEvent("corvus:scalechange", { detail: { scale: n } }));
@@ -159,6 +212,13 @@ Corvus.scale = (function () {
     } catch (_e) {}
     return n;
   }
+
+  /* A window resize moves the same line without the scale changing. Bound at
+     load rather than from init(), because the attribute is part of the
+     layout and must not wait for a page to be opened. */
+  try {
+    window.addEventListener("resize", () => { applyBreakpoints(get()); });
+  } catch (_e) {}
 
   /** Apply the locally cached scale (called before the config fetch lands). */
   function applySaved() {
@@ -190,7 +250,10 @@ Corvus.scale = (function () {
     return normalize(n);
   }
 
-  return { setScale, applySaved, get, normalize, fromConfig, STEPS, DEFAULT, MIN, MAX };
+  return {
+    setScale, applySaved, get, normalize, fromConfig,
+    STEPS, BREAKPOINTS, DEFAULT, MIN, MAX,
+  };
 })();
 
 Corvus.sidenav = (function () {

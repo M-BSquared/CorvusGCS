@@ -117,7 +117,19 @@ assert.deepEqual(
 // something the app knows and the library does not.
 //
 // Top-level only, because a rule inside an at-rule is conditional by
-// construction — that is the carve-out the responsive nav rules rely on.
+// construction.
+//
+// The responsive rules are the carve-out that relies on it, and since the
+// interface scale they now carry their condition in the selector instead: a
+// media query measures the window and cannot see the `zoom` the scale puts
+// on <body>, so the width breakpoints became `:where(:root[data-vw~="…"])`
+// guards that Corvus.scale keeps in step with the effective viewport (see
+// "RESPONSIVE" in main.css). That is the same kind of statement an @media
+// block made — conditional on something the app knows and the library does
+// not — written where the cascade can see it, so it earns the same carve-out
+// and nothing else does: the guard has to be the leading compound.
+const RESPONSIVE_GUARD = /^:where\(:root\[data-vw~="[\w-]+"\]\)\s/;
+
 function topLevelSelectors(css) {
   const text = stripComments(css);
   const out = [];
@@ -146,6 +158,7 @@ const definitions = [];
 for (const head of topLevelSelectors(mainCss)) {
   for (const sel of head.split(",")) {
     const trimmed = sel.trim();
+    if (RESPONSIVE_GUARD.test(trimmed)) continue;
     const named = [...trimmed.matchAll(/\.([\w-]+)/g)].map((m) => m[1]);
     if (!named.length) continue;
     if (named.every((c) => libClasses.has(c))) definitions.push(trimmed);

@@ -668,7 +668,7 @@ svg { display: block; }
    truncating it would not manage, and this is text there is no right to
    shorten. */
 .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-inner {
-  max-width: min(46ch, 40vw);
+  max-width: min(46ch, calc(40 * var(--vw)));
   letter-spacing: 0.01em;
 }
 .maplibregl-ctrl-attrib a { color: inherit; text-decoration: none; }
@@ -972,7 +972,7 @@ svg { display: block; }
               margin 160ms ease, border-color 130ms, box-shadow 130ms;
 }
 .map-search.is-open .map-search-field {
-  width: min(272px, 44vw); padding: 0 6px 0 9px;
+  width: min(272px, calc(44 * var(--vw))); padding: 0 6px 0 9px;
   margin-right: var(--map-rail-gap);
   border-color: var(--border); opacity: 1; pointer-events: auto;
 }
@@ -1018,8 +1018,8 @@ svg { display: block; }
 .map-search-results {
   position: absolute; top: calc(34px + var(--map-rail-gap));
   right: calc(34px + var(--map-rail-gap));
-  width: min(272px, 44vw);
-  max-height: 46vh; overflow-y: auto;
+  width: min(272px, calc(44 * var(--vw)));
+  max-height: calc(46 * var(--vh)); overflow-y: auto;
   display: flex; flex-direction: column;
   padding: 4px;
   border-radius: var(--radius);
@@ -1789,9 +1789,7 @@ svg { display: block; }
      floats over the app, and a panel whose top edge is the bar's bottom edge
      reads as part of the bar instead of as something that opened out of it. */
   position: fixed; top: calc(var(--top-h) + 10px); right: 12px; z-index: var(--z-toast);
-  /* vw is unscaled, so it is divided back into the scaled coordinate space
-     the rest of this rule is written in. */
-  width: min(320px, calc(100vw / var(--ui-scale, 1) - 24px));
+  width: min(320px, calc(100 * var(--vw) - 24px));
   border-radius: var(--radius);
   overflow: hidden;
   animation: corvus-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -2565,7 +2563,7 @@ button.link-card-title:focus-visible {
 /* Six positions is the whole sequence for both the accelerometer and the
    compass; one row of six keeps it readable as a sequence rather than a grid. */
 .calib-poses[hidden] { display: none; }
-@media (min-width: 760px) { .calib-poses { grid-template-columns: repeat(6, 1fr); } }
+:where(:root[data-vw~="min-760"]) .calib-poses { grid-template-columns: repeat(6, 1fr); }
 .calib-pose {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
   padding: 8px 6px 10px; position: relative; cursor: pointer;
@@ -2660,10 +2658,8 @@ button.link-card-title:focus-visible {
 .guidance-line.notice .guidance-level { color: var(--healthy); }
 .guidance-line.success .guidance-level { color: var(--healthy); }
 
-@media (max-width: 720px) {
-  .calib-stage { grid-template-columns: 1fr; }
-  .calib-stage-figure { max-width: 280px; margin: 0 auto; }
-}
+:where(:root[data-vw~="max-720"]) .calib-stage { grid-template-columns: 1fr; }
+:where(:root[data-vw~="max-720"]) .calib-stage-figure { max-width: 280px; margin: 0 auto; }
 
 /* ----- PID TUNING -----
    One tab per loop of the control cascade. The tab strip is the page's whole
@@ -2749,13 +2745,11 @@ button.link-card-title:focus-visible {
 .tune-gate[hidden], .tune-module-warning[hidden] { display: none; }
 .tune-autotune-actions { margin-top: 2px; }
 
-@media (max-width: 720px) {
-  /* Repeated for the same reason as Motors and Safety: the widened column
-     above is written after the .pform-field collapse, at the same
-     specificity. */
-  .tune-field { grid-template-columns: 1fr; }
-  .field-select.tune-select { max-width: none; }
-}
+/* Repeated for the same reason as Motors and Safety: the widened column
+   above is written after the .pform-field collapse, at the same
+   specificity. */
+:where(:root[data-vw~="max-720"]) .tune-field { grid-template-columns: 1fr; }
+:where(:root[data-vw~="max-720"]) .field-select.tune-select { max-width: none; }
 
 /* ----- PARAMETERS ----- */
 .params-card { display: flex; flex-direction: column; gap: 12px; }
@@ -2921,10 +2915,8 @@ button.link-card-title:focus-visible {
   margin-left: 0;
 }
 
-@media (max-width: 900px) {
-  .sik-columns { grid-template-columns: minmax(0, 1fr); }
-  .sik-port-row { grid-template-columns: minmax(0, 1fr); }
-}
+:where(:root[data-vw~="max-900"]) .sik-columns { grid-template-columns: minmax(0, 1fr); }
+:where(:root[data-vw~="max-900"]) .sik-port-row { grid-template-columns: minmax(0, 1fr); }
 
 /* ----- RTK GPS -----
    The page is a status display first and a form second, because in the normal
@@ -3550,56 +3542,72 @@ button.link-card-title:focus-visible {
 .rc-actions { margin-top: 4px; }
 .rc-status { padding-top: 6px; }
 
-@media (max-width: 720px) {
-  /* Repeated for the same reason as Motors and Safety: the widened column
-     above is written after the .pform-field collapse, at the same
-     specificity. */
-  .rc-field { grid-template-columns: 1fr; }
-  /* The note column is the first thing to go — the bar and the pulse are the
-     measurement; what the channel is bound to is on the form below. */
-  .rc-channel { grid-template-columns: 42px 1fr 62px; }
-  .rc-channel-note { display: none; }
-  .rc-modes { grid-template-columns: repeat(3, 1fr); }
-  /* The drawing keeps its aspect ratio and simply gets smaller; what has to
-     give is the tool row in its header, which would otherwise push the title
-     off the card. */
-  .rc-monitor-head { flex-wrap: wrap; }
-  .field-select.rc-tx-fn-select { min-width: 0; width: 100%; max-width: none; }
-}
+/* Repeated for the same reason as Motors and Safety: the widened column
+   above is written after the .pform-field collapse, at the same
+   specificity. */
+:where(:root[data-vw~="max-720"]) .rc-field { grid-template-columns: 1fr; }
+/* The note column is the first thing to go — the bar and the pulse are the
+   measurement; what the channel is bound to is on the form below. */
+:where(:root[data-vw~="max-720"]) .rc-channel { grid-template-columns: 42px 1fr 62px; }
+:where(:root[data-vw~="max-720"]) .rc-channel-note { display: none; }
+:where(:root[data-vw~="max-720"]) .rc-modes { grid-template-columns: repeat(3, 1fr); }
+/* The drawing keeps its aspect ratio and simply gets smaller; what has to
+   give is the tool row in its header, which would otherwise push the title
+   off the card. */
+:where(:root[data-vw~="max-720"]) .rc-monitor-head { flex-wrap: wrap; }
+:where(:root[data-vw~="max-720"]) .field-select.rc-tx-fn-select { min-width: 0; width: 100%; max-width: none; }
 
 /* Reduced transparency: make translucent/animated surfaces frostier (apple-design §14). */
 @media (prefers-reduced-transparency: reduce) {
   .autotune-live-dot { animation: none; }
 }
 
-/* ===== RESPONSIVE ===== */
-@media (max-width: 1279px) {
-  .tb-block { padding: 6px 9px; }
-  .tb-value { font-size: 14px; }
-  .nav-item .nav-label { display: none; }
-  .nav-item { padding: 12px 0; }
-  .flight-overlay { --hud-w: 290px; }
-}
-@media (max-width: 959px) {
-  :root { --panel-w: 320px; }
-  .right-panel:not(.collapsed) { width: var(--panel-w); }
-  .flight-overlay { --hud-w: 270px; bottom: 12px; right: 12px; }
-  .tb-block[data-priority="low"] { display: none; }
-  .joystick-pad { --js-size: 96px; --js-knob: 36px; --js-key: 30px; left: 12px; bottom: 12px; }
-}
-@media (max-width: 600px) {
-  .top-bar { height: 52px; padding: 0 6px; }
-  .tb-logo-sub { display: none; }
-  .tb-company-logo { height: 24px; max-width: 90px; padding-left: 8px; margin-left: 6px; }
-  .tb-block[data-priority="mid"] { display: none; }
-  .flight-overlay { --hud-w: 240px; }
-  .flight-overlay .instruments { grid-template-columns: 1fr; }
-  .nav-item .nav-label { display: none; }
-  .joystick-pad { --js-size: 84px; --js-knob: 32px; --js-key: 28px; padding: 4px 8px 8px; }
-  .js-surfaces { gap: 10px; }
-  .js-sticks { gap: 10px; }
-  .js-keys { gap: 8px; }
-}
+/* ===== RESPONSIVE =====
+
+   Why these are selectors and not `@media (max-width: …)`.
+
+   A media query measures the WINDOW, and the window is not the box this app
+   lays out in. The interface scale is a `zoom` on <body> (see --ui-scale),
+   and zoom is invisible to a media query: at 150% on a 1440px window the app
+   has 960px to work with, every media query still sees 1440, and none of the
+   rules below fired. The result was the widest layout crammed into two
+   thirds of the room — nav labels the rail could not afford, a 380px utility
+   panel, and a flight bar that ran out over the map's own search button.
+
+   So the condition moved to where the real width is known. Corvus.scale
+   writes <html data-vw="max-1279 max-959 …"> from window.innerWidth divided
+   by the scale — the EFFECTIVE viewport, in the pixels everything below
+   <body> is laid out in — and each guard below names the media query it
+   replaces. At 100% the tokens turn over at exactly the widths the @media
+   rules did, so nothing about the unscaled layout has moved.
+
+   :where() carries no specificity, so these weigh exactly what the rule
+   inside the @media block weighed and a tie is still settled by source
+   order — which several rules further up this file depend on and say so.
+   The one exception is the `:root` rule, which owns a token rather than
+   styling a box: it has to out-specify themes.css's default, so it takes the
+   attribute directly. */
+:where(:root[data-vw~="max-1279"]) .tb-block { padding: 6px 9px; }
+:where(:root[data-vw~="max-1279"]) .tb-value { font-size: 14px; }
+:where(:root[data-vw~="max-1279"]) .nav-item .nav-label { display: none; }
+:where(:root[data-vw~="max-1279"]) .nav-item { padding: 12px 0; }
+:where(:root[data-vw~="max-1279"]) .flight-overlay { --hud-w: 290px; }
+:root[data-vw~="max-959"] { --panel-w: 320px; }
+:where(:root[data-vw~="max-959"]) .right-panel:not(.collapsed) { width: var(--panel-w); }
+:where(:root[data-vw~="max-959"]) .flight-overlay { --hud-w: 270px; bottom: 12px; right: 12px; }
+:where(:root[data-vw~="max-959"]) .tb-block[data-priority="low"] { display: none; }
+:where(:root[data-vw~="max-959"]) .joystick-pad { --js-size: 96px; --js-knob: 36px; --js-key: 30px; left: 12px; bottom: 12px; }
+:where(:root[data-vw~="max-600"]) .top-bar { height: 52px; padding: 0 6px; }
+:where(:root[data-vw~="max-600"]) .tb-logo-sub { display: none; }
+:where(:root[data-vw~="max-600"]) .tb-company-logo { height: 24px; max-width: 90px; padding-left: 8px; margin-left: 6px; }
+:where(:root[data-vw~="max-600"]) .tb-block[data-priority="mid"] { display: none; }
+:where(:root[data-vw~="max-600"]) .flight-overlay { --hud-w: 240px; }
+:where(:root[data-vw~="max-600"]) .flight-overlay .instruments { grid-template-columns: 1fr; }
+:where(:root[data-vw~="max-600"]) .nav-item .nav-label { display: none; }
+:where(:root[data-vw~="max-600"]) .joystick-pad { --js-size: 84px; --js-knob: 32px; --js-key: 28px; padding: 4px 8px 8px; }
+:where(:root[data-vw~="max-600"]) .js-surfaces { gap: 10px; }
+:where(:root[data-vw~="max-600"]) .js-sticks { gap: 10px; }
+:where(:root[data-vw~="max-600"]) .js-keys { gap: 8px; }
 
 /* ===== Parameter Export/Import actions (setup-parameters) ===== */
 .params-actions { display: flex; align-items: center; gap: 10px; padding: 4px 0 8px; flex-wrap: wrap; }
@@ -3656,10 +3664,8 @@ button.link-card-title:focus-visible {
 .pform-bit input:disabled { cursor: not-allowed; }
 .pform-bit:has(input:disabled) { color: var(--text-3); cursor: not-allowed; }
 
-@media (max-width: 720px) {
-  .pform-field { grid-template-columns: 1fr; }
-  .pform-field-hint { grid-column: 1; }
-}
+:where(:root[data-vw~="max-720"]) .pform-field { grid-template-columns: 1fr; }
+:where(:root[data-vw~="max-720"]) .pform-field-hint { grid-column: 1; }
 
 /* ----- MOTORS -----
    Two halves. The airframe drawing is the page's centre of gravity, literally:
@@ -3785,12 +3791,10 @@ button.link-card-title:focus-visible {
    its labels are short ("X", "Spin", "Timer group 0"). */
 .motors-field { grid-template-columns: minmax(120px, 200px) 1fr; }
 
-@media (max-width: 720px) {
-  /* Repeated because .motors-field above is written after the .pform-field
-     collapse and would otherwise win it back at the same specificity. */
-  .motors-field { grid-template-columns: 1fr; }
-  .motors-assign { flex-direction: column; align-items: stretch; }
-}
+/* Repeated because .motors-field above is written after the .pform-field
+   collapse and would otherwise win it back at the same specificity. */
+:where(:root[data-vw~="max-720"]) .motors-field { grid-template-columns: 1fr; }
+:where(:root[data-vw~="max-720"]) .motors-assign { flex-direction: column; align-items: stretch; }
 
 /* ----- SAFETY & SENSORS -----
    Same schema-driven form as Motors, plus a sensor header: a switch that runs
@@ -3936,18 +3940,16 @@ button.link-card-title:focus-visible {
 .field-input.safety-extra-input { min-width: 200px; }
 .safety-extra-add .params-row-status { align-self: center; }
 
-@media (max-width: 720px) {
-  /* Repeated for the same reason as Motors: the widened column above is
-     written after the .pform-field collapse, at the same specificity. */
-  .safety-field { grid-template-columns: 1fr; }
-  .safety-sensor-picker { flex-direction: column; align-items: stretch; }
-  .field-select.safety-select { max-width: none; }
-  .field-select.safety-preset-select { min-width: 0; max-width: none; }
-  .safety-preset-write { grid-template-columns: 1fr auto; gap: 2px 10px; }
-  .safety-preset-write-why { grid-column: 1 / -1; }
-  .safety-extra-add { flex-direction: column; align-items: stretch; }
-  .field-input.safety-extra-input { min-width: 0; }
-}
+/* Repeated for the same reason as Motors: the widened column above is
+   written after the .pform-field collapse, at the same specificity. */
+:where(:root[data-vw~="max-720"]) .safety-field { grid-template-columns: 1fr; }
+:where(:root[data-vw~="max-720"]) .safety-sensor-picker { flex-direction: column; align-items: stretch; }
+:where(:root[data-vw~="max-720"]) .field-select.safety-select { max-width: none; }
+:where(:root[data-vw~="max-720"]) .field-select.safety-preset-select { min-width: 0; max-width: none; }
+:where(:root[data-vw~="max-720"]) .safety-preset-write { grid-template-columns: 1fr auto; gap: 2px 10px; }
+:where(:root[data-vw~="max-720"]) .safety-preset-write-why { grid-column: 1 / -1; }
+:where(:root[data-vw~="max-720"]) .safety-extra-add { flex-direction: column; align-items: stretch; }
+:where(:root[data-vw~="max-720"]) .field-input.safety-extra-input { min-width: 0; }
 
 /* ----- BATTERY & POWER -----
    Two columns, and which one an operator is looking at says what they are
@@ -4168,11 +4170,9 @@ button.link-card-title:focus-visible {
    it reads as an offer about that field rather than as an action on the card. */
 .btn.rid-suggest { grid-column: 2; justify-self: start; }
 
-@media (max-width: 720px) {
-  .btn.rid-suggest { grid-column: 1; }
-  .rid-status-row { grid-template-columns: auto 1fr; }
-  .rid-status-label { display: none; }
-}
+:where(:root[data-vw~="max-720"]) .btn.rid-suggest { grid-column: 1; }
+:where(:root[data-vw~="max-720"]) .rid-status-row { grid-template-columns: auto 1fr; }
+:where(:root[data-vw~="max-720"]) .rid-status-label { display: none; }
 
 /* ===== CONSOLE =====
    One toolbar, then the stream, then the input. The panel used to carry a
@@ -4843,7 +4843,7 @@ button.review-finding-head:focus-visible {
 /* Equal axes on a wide card leave a square track using a fraction of the
    width. Taller is the only lever that makes it bigger without distorting it,
    and the track is the plot people actually look at. */
-.review-plot[data-equal="1"] { height: min(460px, 70vh); }
+.review-plot[data-equal="1"] { height: min(460px, calc(70 * var(--vh))); }
 .review-note { font-size: 11px; line-height: 1.5; color: var(--text-3); }
 
 /* ----- Ground track: the same path over imagery -----
@@ -5399,34 +5399,30 @@ button.review-finding-head:focus-visible {
 .mission-profile-plot.is-dragging,
 .mission-profile-plot.is-dragging .nsewdrag { cursor: ns-resize; }
 
-@media (max-width: 1279px) {
-  .mission-page { --mission-side-w: 280px; --mission-profile-h: 210px; }
-  /* No caption rule here any more. It used to drop them at this width, which
-     is the wrong question asked of the wrong box: the bar's room is the map
-     COLUMN, and that changes when the right panel opens without the viewport
-     moving at all. fitTools measures the box itself. */
+:where(:root[data-vw~="max-1279"]) .mission-page { --mission-side-w: 280px; --mission-profile-h: 210px; }
+/* No caption rule here any more. It used to drop them at this width, which
+   is the wrong question asked of the wrong box: the bar's room is the map
+   COLUMN, and that changes when the right panel opens without the viewport
+   moving at all. fitTools measures the box itself. */
+/* Below this the three-region split stops working: the sidebar is narrower
+   than its own number fields. It moves under the profile instead, and the
+   page starts scrolling — three stacked regions cannot all fit a laptop
+   window, and a map squeezed to 180 px is not a map you can plan on. The
+   map keeps a floor of 320 px for exactly that reason. */
+:where(:root[data-vw~="max-959"]) .page-view[data-page="mission"] { overflow-y: auto; }
+:where(:root[data-vw~="max-959"]) .mission-page {
+  position: relative; inset: auto;
+  min-height: 100%;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(320px, calc(55 * var(--vh))) var(--mission-profile-h, 190px) auto;
 }
-@media (max-width: 959px) {
-  /* Below this the three-region split stops working: the sidebar is narrower
-     than its own number fields. It moves under the profile instead, and the
-     page starts scrolling — three stacked regions cannot all fit a laptop
-     window, and a map squeezed to 180 px is not a map you can plan on. The
-     map keeps a floor of 320 px for exactly that reason. */
-  .page-view[data-page="mission"] { overflow-y: auto; }
-  .mission-page {
-    position: relative; inset: auto;
-    min-height: 100%;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(320px, 55vh) var(--mission-profile-h, 190px) auto;
-  }
-  .mission-map-wrap { grid-row: 1; grid-column: 1; }
-  .mission-profile { grid-row: 2; grid-column: 1; }
-  .mission-side {
-    grid-row: 3; grid-column: 1;
-    border-left: none;
-    border-top: 1px solid var(--border);
-    overflow: visible;
-  }
-  .mission-list { max-height: 320px; }
-  .mission-detail { max-height: none; }
+:where(:root[data-vw~="max-959"]) .mission-map-wrap { grid-row: 1; grid-column: 1; }
+:where(:root[data-vw~="max-959"]) .mission-profile { grid-row: 2; grid-column: 1; }
+:where(:root[data-vw~="max-959"]) .mission-side {
+  grid-row: 3; grid-column: 1;
+  border-left: none;
+  border-top: 1px solid var(--border);
+  overflow: visible;
 }
+:where(:root[data-vw~="max-959"]) .mission-list { max-height: 320px; }
+:where(:root[data-vw~="max-959"]) .mission-detail { max-height: none; }

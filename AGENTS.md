@@ -75,6 +75,14 @@ all child processes (e.g. MAVLink bridges) and guarantees clean teardown.
   map. Telemetry is pushed from the backend; the frontend never polls for live
   data.
 - **Maps:** local tile cache (MBTiles/SQLite) for full offline field use.
+- **Vendored libraries** live in `src/vendor/` and are dropped in by hand. Two
+  of them are patched, both marked `CORVUS-ZOOM-PATCH` and both for the same
+  reason: they do their own hit-testing against a client rect, and neither can
+  see the CSS `zoom` the interface scale puts on `<body>`. Without the patches
+  every chart (`plotly-basic.min.js`) and every terminal selection
+  (`xterm.js`) answers the pointer in the wrong place above 100%. Replacing
+  either file drops its patch; `tests/test_frontend_vendor_zoom.js` fails when
+  that happens and prints the exact edit to re-apply.
 
 ## Platforms & packaging
 

@@ -1014,9 +1014,17 @@ Corvus.map = (function () {
    *
    * Observed rather than listened for: the map column is resized by things the
    * window knows nothing about — the right-hand panel opening, the left rail
-   * collapsing, the interface scale changing — and every one of them is a
-   * resize of this element. The window listener stays as the fallback for a
-   * browser without ResizeObserver.
+   * collapsing — and every one of them is a resize of this element.
+   *
+   * The window listener is NOT the ResizeObserver's fallback but its partner,
+   * and the interface scale is why. A `zoom` change resizes this element in
+   * its own pixels (a 990px map column becomes 510 at 150%) and fires no
+   * ResizeObserver callback at all — the observer reports the box in the very
+   * space the zoom just redefined, so nothing looks to it like a change. The
+   * bar therefore kept its widest row in a column half the width and lay over
+   * the map's search button. Corvus.scale dispatches a plain `resize` with
+   * every change, so listening for both covers a box that moved and a box
+   * whose pixels changed size under it.
    */
   function watchFlightBar(mapEl) {
     const bar = document.getElementById("flightActions");
@@ -1025,13 +1033,12 @@ Corvus.map = (function () {
     const fit = () => Corvus.ui.fitBar(bar, flightBarRoom(host, bar.parentNode));
     fitFlightBar = fit;
     fit();
+    window.addEventListener("resize", fit);
     if (host && typeof ResizeObserver === "function") {
       new ResizeObserver(fit).observe(host);
-    } else {
-      window.addEventListener("resize", fit);
     }
-    // The captions are what the measurement is about, and they change with the
-    // interface scale without anything being resized.
+    // The captions are what the measurement is about, and a theme with wider
+    // type changes them without anything being resized.
     if (Corvus.ui && typeof Corvus.ui.onThemeChange === "function") {
       Corvus.ui.onThemeChange(fit);
     }
@@ -1304,21 +1311,27 @@ Corvus.map = (function () {
    * Adding the button's inset back puts the space where it shows.
    *
    * Read fresh on every placement (Corvus.ui.menu re-reads a function), so
-   * the interface scale and any change to the rail's padding are simply
-   * accounted for rather than mirrored here as a number.
+   * any change to the rail's padding is simply accounted for rather than
+   * mirrored here as a number.
    */
   function railMenuGap() {
     return railGapOf(controlsEl);
   }
 
   /** The same measurement for any rail, so a second map's rail opens its
-   *  popovers at the same distance this one does. */
+   *  popovers at the same distance this one does.
+   *
+   *  Returned in UNSCALED pixels, because that is what Corvus.ui.menu places
+   *  in. The two client rects are scaled, so their difference is divided back
+   *  by the interface scale — an undivided inset is a gap that grows a second
+   *  time with the interface and pushes the surface off its own rail. */
   function railGapOf(rail) {
     const btn = rail && rail.querySelector(".mc-btn");
     if (!rail || !btn || typeof rail.getBoundingClientRect !== "function") {
       return MAP_RAIL_MENU_GAP;
     }
-    const inset = btn.getBoundingClientRect().left - rail.getBoundingClientRect().left;
+    const k = (Corvus.ui && typeof Corvus.ui.uiScale === "function") ? Corvus.ui.uiScale() : 1;
+    const inset = (btn.getBoundingClientRect().left - rail.getBoundingClientRect().left) / k;
     return MAP_RAIL_MENU_GAP + Math.max(0, inset);
   }
 

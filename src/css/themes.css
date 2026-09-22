@@ -121,6 +121,22 @@
      the settings slider offers live there, not here. */
   --ui-scale: 1;
 
+  /* --- Viewport units, corrected ---
+     `zoom` does not reach vw/vh. They stay a hundredth of the REAL window
+     whatever the interface size is, so `44vw` inside the zoomed <body> is
+     laid out as 44% of the window and then painted 1.5x wider than that: a
+     search field that was under half the screen at 100% covered two thirds
+     of it at 150%, and a `70vh` plot ran off the bottom of the window.
+
+     These two are the same fraction of the window as the raw units, measured
+     in the pixels everything below <body> is actually laid out in. Use them
+     wherever a length is a share of the window — `calc(44 * var(--vw))`,
+     `calc(46 * var(--vh))` — and never a bare vw/vh unit, which
+     tests/test_frontend_scale.js enforces. A length that is a share of a BOX
+     rather than of the window wants a percentage and neither of these. */
+  --vw: calc(1vw / var(--ui-scale, 1));
+  --vh: calc(1vh / var(--ui-scale, 1));
+
   /* --- Stacking order ---
      One ladder, stated once, because the alternative is what this replaced: a
      scatter of 10/11/12/15/20/30 across the stylesheet where the only way to

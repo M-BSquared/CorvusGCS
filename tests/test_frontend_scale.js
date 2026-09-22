@@ -337,4 +337,109 @@ assert.deepEqual(s.calls.change, []);
 reset();
 assert.doesNotThrow(() => Corvus.ui.slider({ steps: [] }));
 
+// ---------------------------------------------------------------------------
+// Corvus.scale — the responsive breakpoints
+// ---------------------------------------------------------------------------
+// The width media queries in css/main.css are selectors guarded by this
+// attribute, because `zoom` is invisible to a media query: at 150% on a
+// 1440px window the app has 960px and @media still reads 1440, so the narrow
+// layout never arrived and the flight bar ran out over the map's chrome.
+function tokensAt(windowWidth, scaleValue) {
+  docEl.clientWidth = windowWidth;
+  scale.setScale(scaleValue);
+  return (docEl.getAttribute("data-vw") || "").split(" ").filter(Boolean);
+}
+
+reset();
+assert.deepEqual(tokensAt(1440, 1), ["min-760"],
+  "a full-size window at 100% is the widest layout");
+assert.deepEqual(tokensAt(1440, 1.5), ["max-1279", "min-760"],
+  "the SAME window at 150% has 960px to lay out in, and reflows to it");
+assert.deepEqual(tokensAt(960, 1), ["max-1279", "min-760"],
+  "which is exactly a 960px window at 100% — the two must agree");
+
+// Every step the slider offers turns the breakpoints over at the width it
+// actually has, not at the window's.
+reset();
+docEl.clientWidth = 1280;
+scale.STEPS.forEach((step) => {
+  const effective = 1280 / step.value;
+  const tokens = tokensAt(1280, step.value);
+  assert.equal(tokens.includes("max-1279"), effective <= 1279,
+    `at ${step.label} a 1280px window lays out in ${Math.round(effective)}px`);
+  assert.equal(tokens.includes("min-760"), effective >= 760, `min-760 at ${step.label}`);
+});
+
+// The narrow end still resolves: nothing about the ladder is scale-specific.
+reset();
+assert.deepEqual(tokensAt(720, 1), ["max-1279", "max-959", "max-900", "max-720"]);
+assert.deepEqual(tokensAt(1080, 1.5), ["max-1279", "max-959", "max-900", "max-720"],
+  "1080 at 150% is 720 at 100%");
+
+// A document that reports no width must not throw or leave the attribute
+// stale — the app has to paint something.
+reset();
+docEl.clientWidth = 0;
+assert.doesNotThrow(() => scale.setScale(1));
+assert.equal(typeof docEl.getAttribute("data-vw"), "string");
+
+// ---------------------------------------------------------------------------
+// The stylesheets: nothing may reintroduce a window-measuring rule
+// ---------------------------------------------------------------------------
+// Both of these are silent failures at runtime — the app simply keeps the
+// wrong layout at any scale but 100% — so they are asserted against the
+// source instead.
+const fs = require("node:fs");
+const path = require("node:path");
+const cssDir = path.join(__dirname, "..", "src", "css");
+const sheets = ["themes.css", "components.css", "main.css"];
+const css = Object.fromEntries(
+  sheets.map((f) => [f, fs.readFileSync(path.join(cssDir, f), "utf8")])
+);
+const withoutComments = (text) => text.replace(/\/\*[\s\S]*?\*\//g, "");
+
+// 1. No width media query. It would measure the window and fire at the wrong
+//    interface size — which is the bug this attribute exists to fix.
+for (const [name, text] of Object.entries(css)) {
+  const found = withoutComments(text).match(/@media[^{]*\((?:max|min)-(?:width|device-width)\s*:/g) || [];
+  assert.deepEqual(found, [],
+    `${name}: a width media query cannot see the interface scale — guard the rule ` +
+    "with :where(:root[data-vw~=\"…\"]) instead (see RESPONSIVE in main.css)");
+}
+
+// 2. No bare vw/vh unit. `zoom` does not reach them either: 44vw inside the
+//    zoomed body is laid out as 44% of the window and then painted 1.5x
+//    wider than that. --vw / --vh in themes.css are the corrected ones.
+const VIEWPORT_UNIT = /(?:^|[\s(,:*/+-])\d*\.?\d+(vw|vh|vmin|vmax|dvw|dvh|svw|svh|lvw|lvh)\b/g;
+for (const [name, text] of Object.entries(css)) {
+  const body = withoutComments(text)
+    // the two token definitions ARE the corrected units
+    .replace(/--vw:[^;]+;/, "").replace(/--vh:[^;]+;/, "");
+  const found = [...body.matchAll(VIEWPORT_UNIT)].map((m) => m[0].trim());
+  assert.deepEqual(found, [],
+    `${name}: use calc(N * var(--vw)) / var(--vh) — a bare viewport unit ignores the ` +
+    "interface scale and overflows the window at anything above 100%");
+}
+
+// 3. Every data-vw token a stylesheet asks for is one Corvus.scale can write.
+//    A typo here disables a responsive rule and nothing says so.
+const known = new Set(scale.BREAKPOINTS.map((b) => b.token));
+assert.ok(known.size >= 5, "the breakpoint ladder is the source of truth");
+for (const [name, text] of Object.entries(css)) {
+  for (const m of text.matchAll(/data-vw~="([^"]+)"/g)) {
+    assert.ok(known.has(m[1]),
+      `${name}: data-vw~="${m[1]}" is not a token Corvus.scale writes ` +
+      `(have: ${[...known].join(", ")})`);
+  }
+}
+
+// 4. And every token the ladder writes is actually used, so a breakpoint
+//    cannot quietly outlive the rules it was added for.
+const usedTokens = new Set();
+for (const text of Object.values(css)) {
+  for (const m of text.matchAll(/data-vw~="([^"]+)"/g)) usedTokens.add(m[1]);
+}
+assert.deepEqual([...known].filter((t) => !usedTokens.has(t)), [],
+  "a breakpoint with no rule behind it is dead weight on every resize");
+
 console.log("test_frontend_scale.js: all assertions passed");

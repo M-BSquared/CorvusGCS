@@ -24,7 +24,8 @@ window.Corvus = window.Corvus || {};
     overlays    modal, popover, infoHint
     feedback    progress, message, toast, setBusy, setActive
     charts      token, plotlyTheme, chartColors, onThemeChange, attachZoomHint
-    helpers     clear, refreshIcons
+    helpers     clear, refreshIcons, uiScale (the interface-scale correction
+                every geometry read has to make — see its comment)
 
   Version is never referenced here — the HUD/About read it from
   GET /api/version, never from a JS literal.
@@ -455,12 +456,22 @@ Corvus.ui = (function () {
        when the list would not fit, and capped to the space it has so a long
        list scrolls instead of running off the screen. "left" is the same
        thing on the other axis, for a menu opened from a rail against the edge
-       of the window. */
+       of the window.
+
+       Every length below is UNSCALED — the space style.left writes in. The
+       trigger's rect and the window's size are both read in scaled pixels and
+       divided back into it (see uiScale), while el.offsetWidth/scrollHeight
+       are already unscaled and are used as they come. Without that division
+       the surface was placed at its scaled coordinates and the zoom scaled
+       them AGAIN: at 150% the map's layer menu opened 366px the wrong side of
+       its button. GAP and EDGE stay unscaled on purpose, so the gap under a
+       dropdown grows with the interface exactly like every other padding. */
     function placeByElement(trigger) {
       if (typeof trigger.getBoundingClientRect !== "function") return;
-      const r = trigger.getBoundingClientRect();
-      const vh = window.innerHeight || 800;
-      const vw = window.innerWidth || 1200;
+      const k = uiScale();
+      const r = unscaledRect(trigger, k);
+      const vh = (window.innerHeight || 800) / k;
+      const vw = (window.innerWidth || 1200) / k;
       /* How far the surface stands off its trigger. The default suits a list
          dropped under a control inside a panel, where the two read as one
          thing. A surface that hangs BESIDE a floating rail is a separate
@@ -1662,12 +1673,17 @@ Corvus.ui = (function () {
 
     /* Fixed, measured from the anchor: centred under it, flipped above when
        the space below cannot hold it, and clamped to the viewport so a hint
-       at the right edge of a card does not push the sheet off screen. */
+       at the right edge of a card does not push the sheet off screen.
+
+       In UNSCALED pixels throughout, for the reason placeByElement above
+       spells out: the anchor's rect and the window's size arrive scaled and
+       are divided back, el.offsetWidth/Height are already unscaled. */
     function place() {
       if (!opened || typeof anchor.getBoundingClientRect !== "function") return;
-      const r = anchor.getBoundingClientRect();
-      const vw = window.innerWidth || 1200;
-      const vh = window.innerHeight || 800;
+      const k = uiScale();
+      const r = unscaledRect(anchor, k);
+      const vw = (window.innerWidth || 1200) / k;
+      const vh = (window.innerHeight || 800) / k;
       const GAP = 8;
       const EDGE = 8;
       const h = el.offsetHeight || el.scrollHeight || 0;
@@ -1947,7 +1963,10 @@ Corvus.ui = (function () {
       stack.style.top = "";
       return;
     }
-    const rect = popover.getBoundingClientRect();
+    /* The board's rect comes back scaled and this `top` is written unscaled,
+       so at 150% an undivided bottom edge dropped the stack half a screen
+       below the board it was meant to clear. */
+    const rect = unscaledRect(popover, uiScale());
     stack.style.top = rect.height > 0 ? Math.round(rect.bottom + 10) + "px" : "";
   }
   /* The level's icon, default title and default lifetime. The icons are the
@@ -2153,6 +2172,56 @@ Corvus.ui = (function () {
 
   /* ===================== helpers ===================== */
 
+  /*
+    uiScale() — scaled pixels per unscaled pixel.
+
+    The interface-size control (Settings -> Appearance) puts a CSS `zoom` on
+    <body>, and that splits the DOM's geometry into two coordinate spaces that
+    look alike and are not:
+
+      SCALED    getBoundingClientRect(), pointer clientX/clientY,
+                window.innerWidth / innerHeight — the real window's pixels.
+      UNSCALED  style.left / top / width / maxHeight, offsetWidth / Height,
+                clientWidth / Height, scrollHeight — the pixels everything
+                below <body> is laid out in, which the zoom then multiplies.
+
+    A measurement taken in one and written into the other is multiplied (or
+    divided) by the scale a second time, which is what put the map's layer
+    menu a third of a screen away from the button that opened it at 150%.
+    Anything that mixes them divides by this; anything staying inside one
+    space needs it not at all.
+
+    Measured, never read from the --ui-scale token: the ratio of an element's
+    border box in the two spaces IS the cumulative zoom above it, so this
+    stays right if the token is renamed, unset, or the browser ignores `zoom`
+    altogether. <body> is the probe because it is where the zoom is declared
+    and it always has a box; its size also makes the rounding in offsetWidth
+    (an integer) negligible. Returns 1 when there is nothing to measure, which
+    is the answer at 100% anyway.
+  */
+  function uiScale() {
+    if (typeof document === "undefined" || !document.body) return 1;
+    const body = document.body;
+    if (typeof body.getBoundingClientRect !== "function") return 1;
+    const unscaled = body.offsetWidth;
+    if (!(unscaled > 0)) return 1;
+    const rect = body.getBoundingClientRect();
+    const k = rect && rect.width ? rect.width / unscaled : 1;
+    return (isFinite(k) && k > 0) ? k : 1;
+  }
+
+  /* A client rect divided back into the unscaled space `style.left` writes
+     in. The six numbers, not the DOMRect's own toJSON, because a caller reads
+     r.bottom and r.right as often as r.top and r.left. */
+  function unscaledRect(el, k) {
+    const r = el.getBoundingClientRect();
+    return {
+      top: r.top / k, left: r.left / k,
+      bottom: r.bottom / k, right: r.right / k,
+      width: r.width / k, height: r.height / k,
+    };
+  }
+
   /* Empty a container. Faster than innerHTML="" for large lists and, unlike
      it, cannot be handed markup by accident. */
   function clear(el) {
@@ -2265,5 +2334,6 @@ Corvus.ui = (function () {
     // helpers
     clear,
     refreshIcons,
+    uiScale,
   };
 })();

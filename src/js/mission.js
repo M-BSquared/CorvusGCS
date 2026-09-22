@@ -2324,6 +2324,31 @@ Corvus.mission = (function () {
     return slot;
   }
 
+  /**
+   * Scaled pixels per unscaled pixel — the interface-scale `zoom` on <body>.
+   *
+   * Everything a reorder does is measured in UNSCALED pixels, because the one
+   * thing it writes is a transform and transforms are unscaled. Client rects
+   * and pointer clientY are not: they come back multiplied by this, and a row
+   * dragged with them undivided travelled half again as far as the pointer at
+   * 150% and let go over the wrong neighbour. Corvus.ui owns the measurement
+   * (see its uiScale); the guard is for a host that loaded the planner
+   * without the component layer.
+   */
+  function pointerScale() {
+    return (Corvus.ui && typeof Corvus.ui.uiScale === "function") ? Corvus.ui.uiScale() : 1;
+  }
+
+  /** An element's client rect, divided back into unscaled pixels. */
+  function unscaledRect(el, k) {
+    const r = el.getBoundingClientRect();
+    return {
+      top: r.top / k, bottom: r.bottom / k,
+      left: r.left / k, right: r.right / k,
+      width: r.width / k, height: r.height / k,
+    };
+  }
+
   /** A press on a row. Arms a drag without starting one: a press that never
    *  travels is a click, and the click is how a row gets selected. */
   function armRowDrag(event, id, row) {
@@ -2347,11 +2372,16 @@ Corvus.mission = (function () {
     // stylesheet takes out of the browser's panning. Without that rule a plan
     // longer than the panel could be reordered but never read.
     if (event.pointerType === "touch" && !closestClass(event.target, ".mission-row-index")) return;
+    // One scale for the whole gesture, taken here: every Y below is in the
+    // unscaled pixels the transform is written in, never in the scaled ones
+    // the pointer reports.
+    const scale = pointerScale();
     rowDrag = {
       id, row,
       pointerId: event.pointerId,
-      startY: event.clientY,
-      clientY: event.clientY,
+      scale,
+      startY: event.clientY / scale,
+      clientY: event.clientY / scale,
       grab: 0,      // where in the row it was taken hold of
       shift: 0,     // the transform currently carrying it
       raf: 0,
@@ -2370,9 +2400,9 @@ Corvus.mission = (function () {
 
   function onRowPointerMove(event) {
     if (!rowDrag || event.pointerId !== rowDrag.pointerId) return;
-    rowDrag.clientY = event.clientY;
+    rowDrag.clientY = event.clientY / rowDrag.scale;
     if (!rowDrag.active) {
-      if (Math.abs(event.clientY - rowDrag.startY) < ROW_DRAG_SLOP_PX) return;
+      if (Math.abs(rowDrag.clientY - rowDrag.startY) < ROW_DRAG_SLOP_PX) return;
       beginRowDrag();
     }
     // Otherwise the gesture is also a text selection of every row it crosses.
@@ -2384,7 +2414,7 @@ Corvus.mission = (function () {
   function beginRowDrag() {
     const drag = rowDrag;
     drag.active = true;
-    drag.grab = drag.startY - drag.row.getBoundingClientRect().top;
+    drag.grab = drag.startY - unscaledRect(drag.row, drag.scale).top;
     // Captured on the LIST rather than the row. The row is re-inserted
     // between its neighbours as the drag goes on, and captured only once the
     // press is known to be a drag: a capture taken at pointerdown would
@@ -2412,7 +2442,7 @@ Corvus.mission = (function () {
     const rows = Array.prototype.slice.call(listEl.children);
     const at = rows.indexOf(row);
     if (at < 0) { endRowDrag(); return; }
-    const box = listEl.getBoundingClientRect();
+    const box = unscaledRect(listEl, drag.scale);
     const height = row.offsetHeight;
     // The row stays inside the panel however far past it the pointer goes:
     // going further is what scrolls the list, below.
@@ -2420,7 +2450,7 @@ Corvus.mission = (function () {
     const others = [];
     rows.forEach((el) => {
       if (el === row) return;
-      const rect = el.getBoundingClientRect();
+      const rect = unscaledRect(el, drag.scale);
       others.push({ el, top: rect.top, height: rect.height });
     });
     const slot = dropSlot(others, wanted + height / 2);
@@ -2428,7 +2458,7 @@ Corvus.mission = (function () {
       listEl.insertBefore(row, others[slot] ? others[slot].el : null);
       renumberRows();
     }
-    drag.shift += wanted - row.getBoundingClientRect().top;
+    drag.shift += wanted - unscaledRect(row, drag.scale).top;
     row.style.transform = `translateY(${Math.round(drag.shift)}px)`;
   }
 
@@ -2453,7 +2483,7 @@ Corvus.mission = (function () {
    *  coming to it. */
   function rowEdgeScroll() {
     if (!rowDrag || !rowDrag.active) return;
-    const box = listEl.getBoundingClientRect();
+    const box = unscaledRect(listEl, rowDrag.scale);
     const above = (box.top + ROW_EDGE_PX) - rowDrag.clientY;
     const below = rowDrag.clientY - (box.bottom - ROW_EDGE_PX);
     let step = 0;
@@ -3144,6 +3174,21 @@ Corvus.mission = (function () {
     };
   }
 
+  /**
+   * A pointer's position inside the plot, in the plot's own pixels.
+   *
+   * readGeometry() works in Plotly's layout space, which comes from
+   * clientWidth/clientHeight and is therefore UNSCALED, while both the
+   * element's rect and the pointer's clientX/Y arrive SCALED. Dividing both
+   * by *k* is what puts a pointer and the station it is over in the same
+   * space; without it every station sat 1.5x further right and lower than it
+   * was drawn at 150%, the grab radius never reached one, and a height could
+   * not be dragged at all.
+   */
+  function plotPoint(rect, clientX, clientY, k) {
+    return { px: (clientX - rect.left) / k, py: (clientY - rect.top) / k };
+  }
+
   /** Pixel -> altitude, clamped to what is currently drawable. Going higher
    *  than the frame is done by letting go and dragging again: the range grows
    *  with the data on every redraw. */
@@ -3160,10 +3205,9 @@ Corvus.mission = (function () {
 
   function onProfilePointerDown(event) {
     if (!profileGeom || event.button !== 0) return;
-    const bounds = profileEl.getBoundingClientRect();
-    const px = event.clientX - bounds.left;
-    const py = event.clientY - bounds.top;
-    const hit = hitTest(px, py);
+    const at = plotPoint(profileEl.getBoundingClientRect(),
+      event.clientX, event.clientY, pointerScale());
+    const hit = hitTest(at.px, at.py);
     if (!hit) return;
 
     selectedId = hit.id;
@@ -3202,8 +3246,9 @@ Corvus.mission = (function () {
 
   function onProfilePointerMove(event) {
     if (!dragState || !profileGeom) return;
-    const bounds = profileEl.getBoundingClientRect();
-    const altitude = toAltitude(profileGeom, event.clientY - bounds.top);
+    const at = plotPoint(profileEl.getBoundingClientRect(),
+      event.clientX, event.clientY, pointerScale());
+    const altitude = toAltitude(profileGeom, at.py);
     if (setAltitude(dragState.id, altitude) == null) return;
     // Restyle rather than redraw: a full react() on every pointer sample makes
     // the drag lag behind the pointer, and nothing but the two altitude traces
@@ -3581,6 +3626,9 @@ Corvus.mission = (function () {
     _profileRange: profileRange,
     _toPixel: toPixel,
     _toAltitude: toAltitude,
+    // test hook: the pointer -> plot conversion. Pure, and the one place the
+    // interface scale has to be divided back out of a drag.
+    _plotPoint: plotPoint,
     _clampNumber: clampNumber,
     // test hook: which slot a dragged row lands in. Pure, and silent when
     // wrong — the plan still uploads, in the wrong order.

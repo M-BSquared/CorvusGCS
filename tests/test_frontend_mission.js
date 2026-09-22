@@ -815,6 +815,40 @@ function testDraggingOffTheChartIsClampedToWhatIsDrawn() {
   assert.strictEqual(mission._toAltitude(GEOM, 5000), 0, "below the frame");
 }
 
+// The profile is drawn in Plotly's layout pixels, which the interface scale
+// leaves alone, and grabbed with a pointer, which it does not. Under-dividing
+// put every station further right and lower than it was drawn: at 150% the
+// grab radius reached nothing and a height could not be dragged at all.
+function testAPointerReachesTheStationItIsOverAtEveryInterfaceScale() {
+  // The plot sits 120px into the page; the station is at 1km / 40m.
+  const rect100 = { left: 120, top: 60 };
+  const station = mission._toPixel(GEOM, 1, 40);
+
+  [0.8, 1, 1.25, 1.5].forEach((k) => {
+    // Where the browser actually paints it: everything below <body> is
+    // multiplied by the zoom, the element's rect included.
+    const rect = { left: rect100.left * k, top: rect100.top * k };
+    const clientX = (rect100.left + station.px) * k;
+    const clientY = (rect100.top + station.py) * k;
+
+    const at = mission._plotPoint(rect, clientX, clientY, k);
+    assert.ok(Math.hypot(at.px - station.px, at.py - station.py) < 0.001,
+      `at ${k * 100}% the pointer lands on the station it is over`);
+    assert.ok(Math.abs(mission._toAltitude(GEOM, at.py) - 40) < 0.001,
+      `and reads back the height that is drawn there at ${k * 100}%`);
+  });
+}
+
+// The opposite mistake is as wrong as the original: a scale that is divided
+// out twice walks the drag the other way.
+function testTheScaleIsDividedOutExactlyOnce() {
+  const at = mission._plotPoint({ left: 100, top: 50 }, 300, 200, 2);
+  assert.deepStrictEqual(at, { px: 100, py: 75 },
+    "(300 - 100) / 2 and (200 - 50) / 2, in the plot's own pixels");
+  assert.deepStrictEqual(mission._plotPoint({ left: 100, top: 50 }, 300, 200, 1),
+    { px: 200, py: 150 }, "and at 100% it is the plain difference");
+}
+
 function testTheDrawnRangeAlwaysContainsEveryPointWithRoom() {
   const points = [
     { id: 1, type: "takeoff", distance: 0, alt: 0 },
@@ -1175,6 +1209,8 @@ const tests = [
   testPixelConversionPutsTheTopOfTheRangeAtTheTop,
   testAltitudeConversionIsThePixelConversionInverted,
   testDraggingOffTheChartIsClampedToWhatIsDrawn,
+  testAPointerReachesTheStationItIsOverAtEveryInterfaceScale,
+  testTheScaleIsDividedOutExactlyOnce,
   testTheDrawnRangeAlwaysContainsEveryPointWithRoom,
   testClampingRejectsJunkRatherThanProducingNaN,
   testARowDroppedOverATopHalfGoesAboveThatRow,
