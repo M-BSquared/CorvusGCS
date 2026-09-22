@@ -347,25 +347,68 @@ function testTheToolBarIsOneRowLikeTheHomeBar() {
     "can never grow back");
 }
 
-function testTheHomeBarStopsWhereTheMapsControlsBegin() {
-  // The bar outranks the map chrome (--z-map-panel over --z-map-chrome), so
-  // anything of it that reaches the rail's column buries the offline-download
-  // trigger, the place search and the end of the zoom rail under a surface
-  // with no press of its own. That is what an 800px window with the
-  // right-hand panel open used to look like.
-  const rules = topLevelRules(mainCss)
-    .filter((rule) => /^\.flight-actions$/.test(rule.selector.trim()));
-  assert.equal(rules.length, 1, "the Home flight bar must be declared exactly once");
-  assert.match(rules[0].body, /max-width:\s*calc\(100% - var\(--map-rail-inset\) - var\(--map-trigger-clear\)\)/,
-    "the Home flight bar must reserve the map's right-hand controls out of its own width");
-  // …and the planner's bar must NOT inherit that reservation: its parent is
-  // already exactly the room it has, so subtracting the rail again would
-  // subtract it twice.
-  const tools = topLevelRules(mainCss)
-    .filter((rule) => /^\.mission-tools$/.test(rule.selector.trim()));
-  assert.equal(tools.length, 1, "the planner's tool bar must be declared exactly once");
-  assert.match(tools[0].body, /max-width:\s*none/,
-    "the planner's bar must clear the Home bar's width cap — .mission-topleft is the cap");
+function testBothBarsAreMeasuredAgainstARoomAndNotThemselves() {
+  /* The reservation of the map's right-hand controls belongs to the box the
+     bar SITS IN, on both screens: .mission-topleft for the planner,
+     .map-topleft for the Home map. It used to be a max-width on the Home bar
+     itself, which reads like the same rule and is not — a capped bar cannot
+     keep its buttons. It squashes inside the cap, so the same caption is 8px
+     narrower there than on the planner, and when even the icon step will not
+     fit, its glass ends while the last buttons carry on past the edge.
+
+     A room measures; a bar keeps its size and steps down; and when even the
+     last step will not fit the room, it floats over the map's chrome in one
+     piece — which it may, outranking it (--z-map-panel over --z-map-chrome). */
+  const declaring = (selector) => {
+    const rules = topLevelRules(mainCss)
+      .filter((rule) => rule.selector.trim() === selector);
+    assert.equal(rules.length, 1, `${selector} must be declared exactly once`);
+    return rules[0].body;
+  };
+  const reservation = /width:\s*calc\(100% - var\(--map-rail-inset\) - var\(--map-trigger-clear\)\)/;
+  for (const room of [".map-topleft", ".mission-topleft"]) {
+    const body = declaring(room);
+    assert.match(body, reservation,
+      `${room} must be the room that stops where the map's controls begin`);
+    assert.ok(!/max-width:\s*calc/.test(body),
+      `${room} must carry a WIDTH — a max-width collapses to the bar and measures nothing`);
+    // Nothing is drawn in the room, and it is as wide as the map whether the
+    // bar fills it or not — so a drag beside the bar has to reach the map.
+    assert.match(body, /pointer-events:\s*none/,
+      `${room} must not take presses of its own`);
+  }
+  // And neither bar may cap itself: its room is the cap, and it has to be,
+  // since that is the box the fit is measured against.
+  for (const bar of [".flight-actions", ".mission-tools"]) {
+    assert.match(declaring(bar), /max-width:\s*none/,
+      `${bar} must leave the width to its room`);
+  }
+}
+
+function testTheTwoBarsButtonsAreTheSameSize() {
+  /* The bars are one control set on two screens, so a button has to be the
+     same object on both. It was not: the Home bar sits in a shrink-to-fit
+     absolute box and its TAKEOFF — the one caption wider than the shared 72px
+     — was squashed back to 72 by flex, wearing its word into its own padding,
+     while the planner's got the 80 it asks for. A squash is a third narrowing
+     step, silent and uneven, on top of the two the bars declare. */
+  const base = topLevelRules(mainCss)
+    .filter((rule) => /^\.fa-btn$/.test(rule.selector.trim()));
+  assert.equal(base.length, 1, ".fa-btn must be declared exactly once");
+  assert.match(base[0].body, /flex-shrink:\s*0/,
+    "a flight-bar button must keep the width its own word needs, on both maps");
+
+  /* There is no fourth step and no squash anywhere: what a bar does when even
+     icons will not fit its room is float over the map's chrome whole, the way
+     the planner's always has. A bar that gives up pixels instead comes apart —
+     uneven buttons first, then a glass surface that ends before its own last
+     button. */
+  const shrinkable = topLevelRules(mainCss)
+    .filter((rule) => /\.fa-btn/.test(rule.selector))
+    .filter((rule) => /flex-shrink:\s*[1-9]/.test(rule.body))
+    .map((rule) => rule.selector.trim());
+  assert.deepEqual(shrinkable, [],
+    "no step may hand the buttons back their flex-shrink:\n  " + shrinkable.join("\n  "));
 }
 
 function testOnlyAMultirotorHidesTheLoiterRadius() {
@@ -1095,7 +1138,8 @@ const tests = [
   testEveryToolHasACaptionToShow,
   testEveryPlaceableToolNamesARealItemType,
   testTheToolBarIsOneRowLikeTheHomeBar,
-  testTheHomeBarStopsWhereTheMapsControlsBegin,
+  testBothBarsAreMeasuredAgainstARoomAndNotThemselves,
+  testTheTwoBarsButtonsAreTheSameSize,
   testOnlyAMultirotorHidesTheLoiterRadius,
   testEveryHoveringTypeIsARotorcraft,
   testAHiddenRadiusIsStillSavedAndUploaded,

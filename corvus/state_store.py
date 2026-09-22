@@ -204,6 +204,22 @@ class VehicleStateStore:
             "gps_fix": "",
             "gps_satellites": 0,
             "gps_hdop": 99.0,
+            # The RTK base station, in the four scalars the whole app can read
+            # off the telemetry stream. Everything else about a base — which
+            # receiver, which port, how many corrections of which type — is a
+            # page's question and lives behind GET /api/rtk/status, because
+            # this dict is serialised on every frame and the RTK page is polled
+            # only while somebody is looking at it.
+            #
+            # `gps_fix` above already says RTK_FLOAT or RTK_FIXED once the
+            # corrections land. These say whether they are being *sent*, which
+            # is the half an operator can do something about: a base still
+            # surveying and a base whose cable fell out look identical from the
+            # aircraft's fix alone.
+            "rtk_state": "",
+            "rtk_source": "",
+            "rtk_accuracy": 0.0,
+            "rtk_progress": 0,
             "vibration_x": 0.0,
             "vibration_y": 0.0,
             "vibration_z": 0.0,

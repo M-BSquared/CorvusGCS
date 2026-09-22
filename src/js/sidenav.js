@@ -555,9 +555,10 @@ Corvus.sidenav = (function () {
     body.appendChild(pagesCard(cfg));
     body.appendChild(mapServiceCard(cfg, gen));
     body.appendChild(controlsCard(cfg));
-    // The top-bar dots, the notification marks and the Dock icon sit after
-    // Controls: all three are small finishing touches on an interface the
-    // cards above them decide.
+    // The flight bar, the top-bar dots, the notification marks and the Dock
+    // icon sit after Controls: all four are small finishing touches on an
+    // interface the cards above them decide.
+    body.appendChild(flightBarCard(cfg));
     body.appendChild(topBarCard(cfg));
     body.appendChild(notificationsCard(cfg));
     body.appendChild(appIconCard(cfg));
@@ -735,6 +736,57 @@ Corvus.sidenav = (function () {
     });
   }
 
+  // How the flight bar over the Home map answers to a narrow window.
+  //
+  // OFF is the bar as it is meant to look: full-size buttons and full
+  // captions, narrowing only when the row genuinely will not fit the room it
+  // has — the same rule, at the same size, as the planner's tool bar, which
+  // reaches that point sooner only because a 320px sidebar takes half of its
+  // window. Nothing about the switch changes what the bar looks like when
+  // there is room for it.
+  //
+  // On, the bar starts stepping down once the row would take more than half
+  // the map column: the words go to their own width first, then to icons.
+  // That is a trade of labels for map, which is a preference, so it is opt-in
+  // — an absent key leaves the bar full.
+  //
+  // The live bar is driven immediately and the persist is awaited, like every
+  // other switch in this section — a refused POST puts the bar back rather
+  // than leaving it narrowing on a config that says it should not.
+  function flightBarCard(cfg) {
+    const card = Corvus.ui.card({ title: "Flight bar" });
+    const on = !!((cfg.ui || {}).flight_bar_shrink);
+    // The config is the authority and this card is rendered from it, so apply
+    // it here too rather than trusting what app.js read before this fetch.
+    Corvus.map.setFlightBarShrink(on);
+
+    const sw = Corvus.ui.toggle({
+      id: "settingsFlightBarShrink",
+      value: on,
+      ariaLabel: "Shrink with the window",
+      onChange: (next) => {
+        Corvus.map.setFlightBarShrink(next);
+        return postConfig({ ui: { flight_bar_shrink: next } }, { strict: true })
+          .catch((error) => {
+            Corvus.map.setFlightBarShrink(!next);
+            throw error;
+          });
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Shrink with the window",
+      control: sw.el,
+      className: "field-switch",
+      hint: "Off, the bar keeps its full size and only narrows when the row "
+        + "will not fit \u2014 the same rule the Mission planner's tools are "
+        + "under. On, ARM, TAKEOFF, LAND, RTL and PLAN start narrowing as "
+        + "soon as the row would cover more than half the map: the buttons "
+        + "drop to the width of their own word first, then to icons alone. "
+        + "Trade the words for map only if you want to.",
+    }));
+    return card;
+  }
+
   // The small coloured dots beside the top bar's captions (VEHICLE, STATUS,
   // GPS, BATTERY). Off by default and deliberately so: each of those blocks
   // already paints its own value in the state colour, so the dot repeats what
@@ -782,19 +834,17 @@ Corvus.sidenav = (function () {
   // and the one below it, drawn down the leading column of a board row and of
   // a toast alike.
   //
-  // On by default, unlike every other switch in this section — it is what a
-  // notification has always looked like, and the switch exists to take it
-  // away, not to offer it. So this reads the config as "not false": a file
-  // that has never heard of the key leaves the marks alone.
+  // Off by default, like every other switch in this section — the icon and
+  // its colour already state the level, so the marks are an extra the
+  // operator opts into rather than something a config file has to strip away.
   //
-  // Turning them off removes the two segments and nothing else. The icon is
+  // Turning them on adds the two segments and nothing else. The icon is
   // centred by the row's own layout rather than by the marks around it, so it
-  // stays exactly where it was — the column loses its rule, not its alignment.
-  // That is the point of the switch: the severity is still stated, in the icon
-  // and its colour, just not underlined twice.
+  // stays exactly where it was — the column gains a rule, not a different
+  // alignment.
   function notificationsCard(cfg) {
     const card = Corvus.ui.card({ title: "Notifications" });
-    const on = !(cfg.ui && cfg.ui.notification_marks === false);
+    const on = !!(cfg.ui && cfg.ui.notification_marks);
     // The config is the authority and this card is rendered from it, so apply
     // it here too rather than trusting the cached value app.js used before the
     // fetch landed — the same contract as the top-bar dots above.
@@ -817,10 +867,10 @@ Corvus.sidenav = (function () {
       label: "Severity marks",
       control: sw.el,
       className: "field-switch",
-      hint: "The coloured bars above and below the level icon on a "
-        + "notification \u2014 blue for info, amber for a warning, red for a "
-        + "fault. Turn them off for a plainer board: the icon keeps its place "
-        + "and its colour, so the level is still there to read.",
+      hint: "Coloured bars above and below the level icon on a notification "
+        + "\u2014 blue for info, amber for a warning, red for a fault. Off "
+        + "by default \u2014 the icon already carries the level in its "
+        + "colour. Turn them on to underline it.",
     }));
     return card;
   }

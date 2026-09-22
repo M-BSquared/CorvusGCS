@@ -612,45 +612,42 @@ function testALostLinkOutranksEverything() {
    below it — are a display preference, so they are an attribute on <html>
    that both stylesheets read (.wp-item in main.css, .ui-toast in
    components.css) rather than a class the board writes per row. These assert
-   the one rule that is easy to get backwards: ABSENT MEANS ON.
-
-   Every other UI switch in this app defaults off, because every other one
-   adds something. This one takes something away, and the thing it takes away
-   is what a notification looked like before the switch existed — so a machine
-   that has never touched it, and a config file that has never heard of it,
-   both have to come up with the marks still drawn. */
-function testSeverityMarksAreOnUntilSomethingSaysOtherwise() {
+   the default: ABSENT MEANS OFF, like every other UI switch — the icon and
+   its colour already carry the level, so a machine that has never touched
+   the setting, and a config file that has never heard of it, both come up
+   with the marks undrawn. */
+function testSeverityMarksAreOffUntilSomethingSaysOtherwise() {
   const root = document.documentElement;
 
-  // No stored value: on. This is the first run on a new machine, and the
+  // No stored value: off. This is the first run on a new machine, and the
   // attribute has to say so explicitly — an unset attribute would leave the
   // CSS to guess.
   localStorage.getItem = () => null;
-  Corvus.topbar.setNotificationMarks(true);
-  root.removeAttribute("data-notification-marks");
-  assert.equal(Corvus.topbar.notificationMarks(), true,
-    "with no attribute at all the marks read as on, not off");
-
   Corvus.topbar.setNotificationMarks(false);
-  assert.equal(root.getAttribute("data-notification-marks"), "off");
-  assert.equal(Corvus.topbar.notificationMarks(), false);
+  root.removeAttribute("data-notification-marks");
+  assert.equal(Corvus.topbar.notificationMarks(), false,
+    "with no attribute at all the marks read as off, not on");
 
   Corvus.topbar.setNotificationMarks(true);
   assert.equal(root.getAttribute("data-notification-marks"), "on");
   assert.equal(Corvus.topbar.notificationMarks(), true);
 
+  Corvus.topbar.setNotificationMarks(false);
+  assert.equal(root.getAttribute("data-notification-marks"), "off");
+  assert.equal(Corvus.topbar.notificationMarks(), false);
+
   // The setter returns what it applied, which is what lets a failed config
   // POST undo itself without keeping its own copy of the answer.
-  assert.equal(Corvus.topbar.setNotificationMarks(false), false);
-  assert.equal(Corvus.topbar.setNotificationMarks(1), true, "coerced, not passed through");
-  Corvus.topbar.setNotificationMarks(true);
+  assert.equal(Corvus.topbar.setNotificationMarks(true), true);
+  assert.equal(Corvus.topbar.setNotificationMarks(0), false, "coerced, not passed through");
+  Corvus.topbar.setNotificationMarks(false);
 }
 
 /* The localStorage cache exists so the first paint is right before the config
-   fetch lands. Its default has to match the config's: "0" is off, and
-   anything else — including nothing at all — is on. Written as !== "0" rather
-   than === "1" for exactly that reason. */
-function testTheCachedChoiceDefaultsToOnNotToOff() {
+   fetch lands. Its default has to match the config's: "1" is on, and
+   anything else — including nothing at all — is off. Written as === "1" for
+   exactly that reason. */
+function testTheCachedChoiceDefaultsToOffNotToOn() {
   const realGet = localStorage.getItem;
   const seen = [];
   const applySaved = (stored) => {
@@ -661,15 +658,15 @@ function testTheCachedChoiceDefaultsToOnNotToOff() {
     return Corvus.topbar.notificationMarks();
   };
 
-  assert.equal(applySaved(null), true, "a machine that has never chosen keeps the marks");
-  assert.equal(applySaved("1"), true);
-  assert.equal(applySaved("0"), false, "only a stored 0 turns them off");
-  assert.equal(applySaved("nonsense"), true, "a corrupt value is not a reason to restyle the board");
+  assert.equal(applySaved(null), false, "a machine that has never chosen leaves the marks off");
+  assert.equal(applySaved("0"), false);
+  assert.equal(applySaved("1"), true, "only a stored 1 turns them on");
+  assert.equal(applySaved("nonsense"), false, "a corrupt value is not a reason to restyle the board");
   assert.ok(seen.includes("corvus.notificationMarks"), "the cache is read under its own key");
 
   localStorage.getItem = realGet;
   Corvus.topbar.init();
-  Corvus.topbar.setNotificationMarks(true);
+  Corvus.topbar.setNotificationMarks(false);
 }
 
 const tests = [
@@ -696,8 +693,8 @@ const tests = [
   testArmedOnTheGroundIsNotTheSameAsFlying,
   testAirborneFallsBackToHeightWhenTheFirmwareIsSilent,
   testALostLinkOutranksEverything,
-  testSeverityMarksAreOnUntilSomethingSaysOtherwise,
-  testTheCachedChoiceDefaultsToOnNotToOff,
+  testSeverityMarksAreOffUntilSomethingSaysOtherwise,
+  testTheCachedChoiceDefaultsToOffNotToOn,
 ];
 
 let failed = 0;

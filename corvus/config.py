@@ -66,6 +66,7 @@ _CONFIG_FIELD_ORDER: tuple[str, ...] = (
     "updates",
     "battery",
     "remote_id",
+    "rtk",
     "plugins",
 )
 
@@ -101,13 +102,13 @@ class CorvusConfig:
     the interface size, desktop app icon and top bar (``{"scale": 1.25,
     "inverted_app_icon": false, "app_icon_backplate": false,
     "topbar_status_dots": false, "mission_page": false,
-    "notification_marks": true}`` — the multiplier
+    "notification_marks": false, "flight_bar_shrink": false}`` — the multiplier
     the frontend puts on every length in the UI, which cut of the mark the
     Dock / taskbar gets, whether that mark sits on a filled backplate, whether
     the top bar shows its per-block state dots, whether the left rail
-    carries the Mission planner, and whether a notification draws the severity
-    bar above and below its level icon — the last of which is the only one of
-    these that is on when the key is absent),
+    carries the Mission planner, whether a notification draws the severity
+    bar above and below its level icon, and whether the Home flight bar starts
+    narrowing at half the map column rather than only when it must),
     and the update check
     (``{"check": true, "skipped": "2026.09.27"}`` — whether to look at the
     GitHub releases at all, and the one release the operator dismissed),
@@ -121,7 +122,15 @@ class CorvusConfig:
     "operator_id": {...}, "self_id": {...}, "system": {...}}`` — the serial
     number, the operator registration, the flight description and the EU
     classification, none of which is stored on the vehicle; see
-    ``corvus/remote_id.py``).
+    ``corvus/remote_id.py``),
+    and the RTK base station
+    (``{"enabled": true, "source": "usb", "mode": "survey",
+    "survey_accuracy": 2.0, "survey_duration": 180, "fixed": {...},
+    "ntrip": {...}}`` — where the corrections come from and, for a base on a
+    USB cable, how long it surveys and how well before it starts correcting;
+    see ``corvus/rtk.py``. ``enabled`` is true when the key is absent, which is
+    what makes a plugged-in base work on a station that has never been
+    configured).
     ``plugins`` is the state each TOOLS-tab plugin saves for itself
     (``{"<plugin id>": {...}}``; see ``corvus/plugin_registry.py``).
 
@@ -159,6 +168,7 @@ class CorvusConfig:
     updates: dict[str, Any] | None = None
     battery: dict[str, Any] | None = None
     remote_id: dict[str, Any] | None = None
+    rtk: dict[str, Any] | None = None
     plugins: dict[str, Any] | None = None
 
     def apply_overrides(self, **kwargs: Any) -> CorvusConfig:
@@ -491,13 +501,17 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     thing to skip past in the field.
 
     ``notification_marks`` draws the severity bar above and below the level
-    icon on a notification (a board row and a toast alike). This is the one
-    key here that is ON when absent, and the frontend reads it as "not false"
-    for that reason: the marks are what a notification has always looked like,
-    so a config file that has never been asked about them must not strip them.
-    Only an explicit ``false`` turns them off. The coercion is the same as for
-    the rest — a genuine boolean or nothing — which is what keeps a
-    hand-edited ``"false"`` from reading as off.
+    icon on a notification (a board row and a toast alike). Off unless asked
+    for, like ``mission_page`` and ``flight_bar_shrink``: the icon and its
+    colour already state the level, so the marks are an extra the operator
+    opts into rather than the default look of a notification.
+
+    ``flight_bar_shrink`` asks the Home map's flight bar to start giving up
+    its button rhythm and then its captions once the row would take more than
+    half the map column. Off unless asked for, like ``mission_page``: without
+    it the bar is full-size until the row genuinely will not fit — the same
+    rule, at the same size, as the Mission planner's tool bar — and trading
+    the labels for map earlier than that is a preference, not a default.
     """
     if not isinstance(raw, dict):
         return None
@@ -508,7 +522,7 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
         if scale == scale and scale not in (float("inf"), float("-inf")):  # not NaN / inf
             out["scale"] = min(max(scale, _UI_SCALE_MIN), _UI_SCALE_MAX)
     for key in ("inverted_app_icon", "app_icon_backplate", "topbar_status_dots",
-                "mission_page", "notification_marks"):
+                "mission_page", "notification_marks", "flight_bar_shrink"):
         if isinstance(raw.get(key), bool):
             out[key] = raw[key]
     return out or None
@@ -561,6 +575,27 @@ def _coerce_remote_id(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
     from .remote_id import settings
+    return settings(raw)
+
+
+def _coerce_rtk(raw: Any) -> dict[str, Any] | None:
+    """Keep the RTK settings; bound every field.
+
+    The bounds live in :mod:`corvus.rtk` with the message building that
+    consumes them, for the same reason the Remote ID ones do: what comes out
+    of here is written to a GNSS receiver and then believed by an autopilot,
+    so a survey accuracy of zero hand-edited into the config file has to be
+    corrected here rather than produce a base that declares itself valid
+    immediately.
+
+    ``None`` when the key is absent, and :func:`corvus.rtk.settings` supplies
+    the plug-and-play defaults at the point of use — so an old config file
+    written before RTK existed gets a working base station, not a disabled
+    one.
+    """
+    if not isinstance(raw, dict):
+        return None
+    from .rtk import settings
     return settings(raw)
 
 
@@ -649,6 +684,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
     updates = _coerce_updates(data.get("updates"))
     battery = _coerce_battery(data.get("battery"))
     remote_id = _coerce_remote_id(data.get("remote_id"))
+    rtk_cfg = _coerce_rtk(data.get("rtk"))
     plugins = _coerce_plugins(data.get("plugins"))
 
     return CorvusConfig(
@@ -673,6 +709,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         updates=updates,
         battery=battery,
         remote_id=remote_id,
+        rtk=rtk_cfg,
         plugins=plugins,
     )
 
@@ -752,6 +789,13 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
             k: (dict(v) if isinstance(v, dict) else v)
             for k, v in cfg.remote_id.items()
         }
+    if cfg.rtk is not None:
+        # Nested like remote_id: "fixed" and "ntrip" are sub-dicts a shallow
+        # copy would hand the caller to mutate.
+        out["rtk"] = {
+            k: (dict(v) if isinstance(v, dict) else v)
+            for k, v in cfg.rtk.items()
+        }
     if cfg.plugins is not None:
         out["plugins"] = {k: dict(v) for k, v in cfg.plugins.items()}
     # Stable key order for a readable on-disk diff.
@@ -821,6 +865,16 @@ def to_public_dict(cfg: CorvusConfig) -> dict[str, Any]:
     path, not a secret).
     """
     public = _config_to_dict(cfg)
+    # The NTRIP password is the second secret this file can hold, and it
+    # leaves by the same door: GET /api/config. Redacted here rather than at
+    # the RTK endpoint so there is one place where "what a response may carry"
+    # is decided, and a future caller of this function cannot miss it.
+    rtk_block = public.get("rtk")
+    if isinstance(rtk_block, dict) and isinstance(rtk_block.get("ntrip"), dict):
+        ntrip = dict(rtk_block["ntrip"])
+        ntrip["has_password"] = bool(ntrip.get("password"))
+        ntrip["password"] = ""
+        rtk_block["ntrip"] = ntrip
     redacted: list[dict[str, Any]] = []
     for entry in public.get("ssh_connections", []):
         if not isinstance(entry, dict):

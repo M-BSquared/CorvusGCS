@@ -968,15 +968,49 @@ Corvus.map = (function () {
     Corvus.ui.refreshIcons();
   }
 
+  /* OPTIONAL, and off unless Settings asks for it: how much of the map the
+     flight bar may take before it gives up the button rhythm and then the
+     captions. Half.
+
+     What the bar does by DEFAULT is not this — it is the planner's rule, and
+     the planner's rule is "fit": full-size buttons, full captions, until the
+     row genuinely will not fit the room it has, and only then the two steps
+     down. The two bars are the same control set at the same size under the
+     same measurement; the planner's simply reaches the steps sooner because
+     a 320px sidebar takes half of its window.
+
+     This share is the switch on top of that — the same two steps, reached
+     earlier, for an operator who would rather have the map than the words.
+     It is not the bar's normal size and must never become it. */
+  const FLIGHT_BAR_SHARE = 0.5;
+  /* Whether that share is the rule at all. OFF until the config says
+     otherwise, including before the config lands: the default is the full
+     bar, so a boot that never hears from /api/config leaves the bar at the
+     size it is supposed to be rather than at the size the switch would give
+     it. */
+  let flightBarShrink = false;
+  /* The live fit, published for setFlightBarShrink. A no-op until the bar
+     exists, so a Settings switch thrown at a half-built map does nothing
+     rather than throwing. */
+  let fitFlightBar = () => {};
+
   /**
    * Keep the flight bar inside the room the map column has.
    *
-   * The bar is capped in CSS at the first free x-offset left of the map's own
-   * controls (see .flight-actions), so its clientWidth already IS the room and
-   * fitBar only has to decide what to give up to fit in it: the shared 72px
-   * button width first, the captions after that. Corvus.ui.fitBar is the same
-   * function the planner's tool bar is narrowed by, so the two bars behave
-   * alike rather than agreeing by coincidence.
+   * Two rules, one measurement. By default the room is .map-topleft's — the
+   * box the bar sits in, which ends where the map's own controls begin. The
+   * bar itself has no width cap, so it keeps its buttons at their own size and
+   * simply steps down when the row will not fit that box; if even the icon
+   * step will not, it floats over the chrome in one piece rather than coming
+   * apart inside a cap. That is line for line the planner's rule (fitTools in
+   * js/mission.js measures .mission-topleft the same way), and Corvus.ui.fitBar
+   * is the planner's function, so the two bars behave alike rather than
+   * agreeing by coincidence.
+   *
+   * With the optional shrink on, the room is instead a share of the MAP's
+   * width (FLIGHT_BAR_SHARE). Either way it is a box OTHER than the bar that
+   * is measured, because a bar that has already narrowed measures narrow and
+   * would never widen again.
    *
    * Observed rather than listened for: the map column is resized by things the
    * window knows nothing about — the right-hand panel opening, the left rail
@@ -988,7 +1022,8 @@ Corvus.map = (function () {
     const bar = document.getElementById("flightActions");
     const host = mapEl && mapEl.parentNode;
     if (!bar) return;
-    const fit = () => Corvus.ui.fitBar(bar);
+    const fit = () => Corvus.ui.fitBar(bar, flightBarRoom(host, bar.parentNode));
+    fitFlightBar = fit;
     fit();
     if (host && typeof ResizeObserver === "function") {
       new ResizeObserver(fit).observe(host);
@@ -1000,6 +1035,30 @@ Corvus.map = (function () {
     if (Corvus.ui && typeof Corvus.ui.onThemeChange === "function") {
       Corvus.ui.onThemeChange(fit);
     }
+  }
+
+  /* The room to fit the bar into: .map-topleft's width, or a share of the map
+     column when the optional shrink is on. Never the bar's own width — that is
+     fitBar's fallback and it measures a bar that has already narrowed, which
+     is why the bar has no cap of its own any more.
+
+     A box that measures nothing (a hidden page, a map with no parent) returns
+     null rather than 0: a room of zero would pin the bar at icons forever, and
+     fitBar's fallback leaves a bar nobody can measure exactly as it is. */
+  function flightBarRoom(host, room) {
+    if (flightBarShrink) {
+      const map = host ? host.clientWidth : 0;
+      return map > 0 ? map * FLIGHT_BAR_SHARE : null;
+    }
+    const width = room ? room.clientWidth : 0;
+    return width > 0 ? width : null;
+  }
+
+  /* Settings' switch. Applies immediately — the operator watches the bar while
+     they throw it, which is the point of a switch about how the bar looks. */
+  function setFlightBarShrink(on) {
+    flightBarShrink = on !== false;
+    fitFlightBar();
   }
 
   /**
@@ -3728,6 +3787,18 @@ Corvus.map = (function () {
     getMap: () => map,
     isReady: () => started,
     setWaypointMode,
+    // The flight bar's OPTIONAL narrowing rule: whether it answers to a share
+    // of the map column (captions off early, as the window narrows) on top of
+    // the fit it always answers to. Off unless Settings asks; app.js applies
+    // the config's answer once that fetch lands.
+    setFlightBarShrink,
+    // test hook: the rule as pure arithmetic — the room a map column of a
+    // given width gives the bar (the second argument standing in for
+    // .map-topleft), or null for "nothing measurable here".
+    _flightBarRoom: (width, roomWidth) => flightBarRoom(
+      { clientWidth: width },
+      { clientWidth: roomWidth == null ? width : roomWidth },
+    ),
     // 3D mode: terrain relief, extruded buildings, and the aircraft drawn at
     // the altitude it is actually flying. Exposed so Settings (or a test) can
     // drive it without reaching through the control rail.

@@ -60,14 +60,13 @@ Corvus.topbar = (function () {
   // the .tb-dot rules in main.css.
   const DOTS_KEY = "corvus.topbarDots";
   // Whether a notification draws its severity mark: the coloured bar above and
-  // below the level icon, on a board row and on a toast alike. ON unless the
-  // operator turns it off — it is what a notification looked like before there
-  // was a switch, and a setting must not quietly restyle an interface nobody
-  // asked to change. Same two mechanisms as the dots above: a localStorage
-  // cache so the first paint is right before the config lands, and an
-  // attribute on <html> because the hiding is CSS (the
-  // :root[data-notification-marks="off"] rules beside .wp-item in main.css and
-  // .ui-toast in components.css).
+  // below the level icon, on a board row and on a toast alike. OFF unless the
+  // operator turns it on — the icon and its colour already state the level,
+  // so the marks are opt-in extra emphasis, not the default look. Same two
+  // mechanisms as the dots above: a localStorage cache so the first paint is
+  // right before the config lands, and an attribute on <html> because the
+  // hiding is CSS (the :root[data-notification-marks="off"] rules beside
+  // .wp-item in main.css and .ui-toast in components.css).
   const MARKS_KEY = "corvus.notificationMarks";
   const localNotifications = new Map();
   const dismissedNotifications = new Set();
@@ -441,17 +440,17 @@ Corvus.topbar = (function () {
 
   /** Whether the marks are currently drawn. */
   function notificationMarks() {
-    try { return document.documentElement.getAttribute("data-notification-marks") !== "off"; }
-    catch (_e) { return true; }
+    try { return document.documentElement.getAttribute("data-notification-marks") === "on"; }
+    catch (_e) { return false; }
   }
 
   /** Apply the locally cached choice (called before the config fetch lands).
-   *  Absent storage means ON, the opposite of the dots: no stored value is a
-   *  machine that has never touched the switch, and the marks are what a
-   *  notification has always looked like. */
+   *  Absent storage means OFF, same as the dots: no stored value is a
+   *  machine that has never touched the switch, and the icon's own colour
+   *  already carries the level without the marks drawn on top of it. */
   function applySavedNotificationMarks() {
-    let v = true;
-    try { v = localStorage.getItem(MARKS_KEY) !== "0"; } catch (_e) {}
+    let v = false;
+    try { v = localStorage.getItem(MARKS_KEY) === "1"; } catch (_e) {}
     return setNotificationMarks(v);
   }
 

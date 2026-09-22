@@ -33,6 +33,7 @@ from . import (
     ardupilot_battery, ardupilot_motors, ardupilot_rc, ardupilot_remote_id,
     ardupilot_safety, ardupilot_tuning, autopilot, battery, battery_config,
     geocode, mission, motor_config, rc_config, remote_id, remote_id_config,
+    rtk, rtk_service,
     safety_config, sik_config, sik_service, tile_sources, tuning_config,
 )
 from .config import (
@@ -757,6 +758,30 @@ def _build_sik_service(mavlink: Any, store: Any) -> Any:
         return None
 
 
+def _build_rtk_service(mavlink: Any, store: Any, config: Any) -> Any:
+    """Build the RTK base-station service, or None.
+
+    Built and *started* here, unlike the other services, because RTK is the
+    one whose default is to act: a base plugged in before the ground station
+    is opened has to be found without anybody asking, which means the search
+    has to be running before anybody could have asked. Everything that keeps
+    that safe is in :mod:`corvus.rtk_service` — it opens only a port whose USB
+    descriptor says GNSS receiver, and never the one the MAVLink bridge is on.
+
+    Disabled in the config file means constructed and not started, so the page
+    can still be opened and the switch turned back on without a restart.
+    """
+    try:
+        settings = rtk.settings(getattr(config, "rtk", None))
+        service = rtk_service.RtkService(mavlink, store, settings)
+        if settings.get("enabled"):
+            service.start()
+        return service
+    except Exception:  # noqa: BLE001 - never block server creation
+        logger.exception("RTK service unavailable; RTK endpoints disabled")
+        return None
+
+
 def _build_update_checker() -> Any:
     """Build the release-update checker, or None.
 
@@ -879,7 +904,7 @@ def stop_backend(server: Any, log: Any = None) -> None:
     bridge, so a tick that lands after ``mavlink.stop()`` starts the link the
     shutdown just closed.
 
-    Order: the services that borrow the MAVLink bridge (flash, SiK, logs,
+    Order: the services that borrow the MAVLink bridge (flash, SiK, RTK, logs,
     forwarder) first, so none of them is mid-operation when the bridge goes;
     then the auto-connect watcher, for the reason above; then the bridge
     itself (joins its threads, flushes the tlog); then SSH (joins reader
@@ -913,6 +938,18 @@ def stop_backend(server: Any, log: Any = None) -> None:
             sik.shutdown()
         except Exception:
             log.exception("SiK radio shutdown failed")
+    # The RTK service holds a serial port (or a caster socket) and a thread,
+    # and its teardown *writes* to that port to take the receiver back out of
+    # base mode. So it goes before the bridge, like the rest of them, and it
+    # goes while its port is still open — see RtkService.stop().
+    rtk_svc = getattr(server, "rtk", None)
+    if rtk_svc is not None:
+        try:
+            log.info("stopping RTK …")
+            rtk_svc.shutdown()
+            log.info("RTK stopped")
+        except Exception:
+            log.exception("RTK shutdown failed")
     # Log downloads hold a sink on the MAVLink bridge and a worker thread, so
     # they are stopped alongside flash — before the bridge itself goes away.
     logs = getattr(server, "logs", None)
@@ -1318,6 +1355,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     # parallel-built flash_service module is mid-edit or the handler is used in
     # a unit test that only sets mavlink/store).
     flash: Any = None
+    # RTK base station (corvus/rtk_service.py). None when the service could
+    # not be built; the endpoints then report that rather than 500.
+    rtk: Any = None
+
     # SiK telemetry-radio configuration (corvus/sik_service.py). None when not
     # wired, same as `flash`; the endpoints then report the service as absent
     # rather than 500.
@@ -4757,6 +4798,136 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             return
         self._sik_run(lambda: self.sik.reset(device, baud, target=which))
 
+    # ---- RTK base station ----
+    #
+    # Three endpoints, and only one of them acts on hardware. The split is the
+    # same one the rest of the app uses: a GET that a page may poll freely, and
+    # POSTs for the two things that restart a session — which costs a running
+    # survey, and is therefore never something a browser should be able to do
+    # by prefetching a link.
+    #
+    # The settings live in the config file rather than on the vehicle because
+    # none of them is a vehicle setting: where the corrections come from is a
+    # property of the ground station, and the aircraft is told nothing about it
+    # beyond the corrections themselves.
+
+    @route("GET", "/api/rtk/status")
+    def _api_rtk_status(self) -> None:
+        """What the base is doing, in one read.
+
+        Always 200 so the page can poll it: a service that could not be built
+        is reported as one that is off, with the reason on it, rather than as
+        an error the page has to render a banner for.
+        """
+        if self.rtk is None:
+            self._send_json({
+                "enabled": False,
+                "state": rtk_service.STATE_OFF,
+                "message": "RTK corrections are unavailable in this build",
+                "error": "", "warning": "",
+                "source": "usb", "mode": "survey", "device": "", "baud": 0,
+                "receiver": None, "receiver_label": "",
+                "survey": None, "survey_progress": 0,
+                "survey_target": {
+                    "accuracy": rtk.DEFAULT_SURVEY_ACCURACY_M,
+                    "duration": rtk.DEFAULT_SURVEY_DURATION_S,
+                },
+                "frames": 0, "frame_bytes": 0, "crc_errors": 0,
+                "source_age": None, "uptime": None, "messages": {},
+                "injected": {"bytes": 0, "messages": 0, "dropped": 0, "age": None},
+                "link_ready": False,
+                "vehicle": {"fix": "", "satellites": 0, "hdop": 0},
+                "ports": [],
+                "settings": rtk.defaults(),
+                "defaults": rtk.defaults(),
+            })
+            return
+        try:
+            self._send_json(self.rtk.status())
+        except Exception as exc:  # noqa: BLE001 - a status read must never 500
+            logger.exception("RTK status failed")
+            self._send_json({"ok": False, "error": f"RTK status failed: {exc}"}, 500)
+
+    @route("POST", "/api/rtk/settings")
+    def _api_rtk_settings(self, payload: dict) -> None:
+        """Replace the RTK settings, persist them, and restart the session.
+
+        The whole block is replaced rather than merged, because the page sends
+        the whole form and a merge cannot express "clear the NTRIP username".
+        The one exception is the NTRIP password: an empty one means "keep the
+        stored password", since the status endpoint never sent the real one to
+        the browser in the first place and a form round-trip would otherwise
+        blank it on every save.
+        """
+        if not isinstance(payload, dict):
+            self._send_json({"ok": False, "error": "settings must be an object"}, 400)
+            return
+        stored = rtk.settings(getattr(self.config, "rtk", None))
+        incoming = dict(payload)
+        ntrip_in = incoming.get("ntrip")
+        if isinstance(ntrip_in, dict) and not str(ntrip_in.get("password") or "").strip():
+            ntrip_in = dict(ntrip_in)
+            ntrip_in["password"] = stored.get("ntrip", {}).get("password", "")
+            incoming["ntrip"] = ntrip_in
+        resolved = rtk.settings(incoming)
+
+        # Refused before anything is stored, so a form that cannot work is not
+        # saved and then reported as broken on every restart.
+        if resolved["source"] == "ntrip":
+            problem = rtk.ntrip_problem(resolved["ntrip"])
+            if problem:
+                self._send_json({"ok": False, "error": problem}, 400)
+                return
+        if resolved["source"] == "usb" and resolved["mode"] == "fixed":
+            problem = rtk.fixed_position_problem(resolved["fixed"])
+            if problem:
+                self._send_json({"ok": False, "error": problem}, 400)
+                return
+
+        self.config.rtk = resolved
+        warning = ""
+        try:
+            save_config(self.config, self.config_path or default_config_path())
+        except Exception:  # noqa: BLE001 - it still runs this session
+            logger.exception("could not persist RTK config")
+            warning = "set for this session but not saved"
+
+        if self.rtk is None:
+            self._send_json({"ok": True, "warning": warning or
+                             "RTK corrections are unavailable in this build"})
+            return
+        try:
+            self.rtk.apply_settings(resolved)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("applying RTK settings failed")
+            self._send_json({"ok": False, "error": f"could not apply: {exc}"}, 500)
+            return
+        result = {"ok": True, "status": self.rtk.status()}
+        if warning:
+            result["warning"] = warning
+        self._send_json(result)
+
+    @route("POST", "/api/rtk/restart")
+    def _api_rtk_restart(self, payload: dict) -> None:
+        """Survey again from zero.
+
+        The answer to a base that converged somewhere it should not have — run
+        before the tripod was level, or with the antenna still under a roof.
+        POST because it throws away a completed survey, which on a fresh
+        session costs another three minutes.
+        """
+        del payload
+        if self.rtk is None:
+            self._send_json({"ok": False, "error": "RTK corrections are unavailable"}, 503)
+            return
+        try:
+            self.rtk.restart_survey()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("RTK restart failed")
+            self._send_json({"ok": False, "error": f"could not restart: {exc}"}, 500)
+            return
+        self._send_json({"ok": True, "status": self.rtk.status()})
+
     # ---- Second-station MAVLink forwarding ----
     @route("GET", "/api/forwarding")
     def _api_forwarding_status(self) -> None:
@@ -6224,6 +6395,16 @@ class CorvusServer(socketserver.ThreadingTCPServer):
                 sik.shutdown()
             except Exception:  # noqa: BLE001 - shutdown must not raise
                 logger.exception("SiK radio shutdown failed")
+        # The RTK service owns a port, a socket and a thread, and undoes its
+        # own configuration on the way out. Same reason as the radio service:
+        # a caller that only has the server must not be left with a thread
+        # that can reopen a serial port after shutdown() returned.
+        rtk_svc = getattr(self, "rtk", None)
+        if rtk_svc is not None:
+            try:
+                rtk_svc.shutdown()
+            except Exception:  # noqa: BLE001 - shutdown must not raise
+                logger.exception("RTK shutdown failed")
         # Log downloads hold a sink on the MAVLink bridge and a worker thread,
         # so they go with flash, before the bridge does.
         logs = getattr(self, "logs", None)
@@ -6560,6 +6741,11 @@ def create_server(
     sik = _build_sik_service(mavlink, store)
     CorvusHandler.sik = sik
 
+    # RTK corrections. Built through the shared builder like everything else,
+    # and started by it: the default is that a base plugged in is found.
+    rtk_svc = _build_rtk_service(mavlink, store, config)
+    CorvusHandler.rtk = rtk_svc
+
     # Flight-log service: on-board ULog download over MAVLink plus the local
     # tlog listing. Lazily imported for the same reason as the flash service.
     logs = _build_log_service(mavlink, config)
@@ -6585,6 +6771,7 @@ def create_server(
     server.config_path = cfg_path
     server.flash = flash
     server.sik = sik
+    server.rtk = rtk_svc
     server.logs = logs
     server.forwarder = forwarder
     server.updates = updates

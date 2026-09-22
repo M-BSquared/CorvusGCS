@@ -70,31 +70,39 @@
           <i data-lucide="download"></i>
         </button>
 
-        <div class="flight-actions glass" id="flightActions">
-          <button class="fa-btn arm" id="btnArm" title="Arm / Disarm">
-            <i data-lucide="power"></i>
-            <span>ARM</span>
-          </button>
-          <button class="fa-btn takeoff" id="btnTakeoff" title="Takeoff">
-            <i data-lucide="arrow-up"></i>
-            <span>TAKEOFF</span>
-          </button>
-          <button class="fa-btn land" id="btnLand" title="Land">
-            <i data-lucide="arrow-down"></i>
-            <span>LAND</span>
-          </button>
-          <button class="fa-btn rtl" id="btnRTL" title="Return to Launch">
-            <i data-lucide="home"></i>
-            <span>RTL</span>
-          </button>
-          <button class="fa-btn plan" id="btnPlan" title="Plan fly-to-points mission" disabled>
-            <i data-lucide="route"></i>
-            <span>PLAN</span>
-          </button>
-          <div class="fa-divider"></div>
-          <select class="field-select mode-selector" id="modeSelector" title="Flight Mode">
-            <option value="">SELECT MODE</option>
-          </select>
+        <!-- The bar's ROOM, not the bar: exactly the construction the planner's
+             tools are in (.mission-topleft), because the two are one control
+             set on two screens. This box is what the bar is measured against —
+             see fitBar in js/map.js — and the bar itself carries no width cap,
+             so it keeps its full-size buttons and steps down the way the
+             planner's does instead of squashing inside a cap. -->
+        <div class="map-topleft" id="flightBarRoom">
+          <div class="flight-actions glass" id="flightActions">
+            <button class="fa-btn arm" id="btnArm" title="Arm / Disarm">
+              <i data-lucide="power"></i>
+              <span>ARM</span>
+            </button>
+            <button class="fa-btn takeoff" id="btnTakeoff" title="Takeoff">
+              <i data-lucide="arrow-up"></i>
+              <span>TAKEOFF</span>
+            </button>
+            <button class="fa-btn land" id="btnLand" title="Land">
+              <i data-lucide="arrow-down"></i>
+              <span>LAND</span>
+            </button>
+            <button class="fa-btn rtl" id="btnRTL" title="Return to Launch">
+              <i data-lucide="home"></i>
+              <span>RTL</span>
+            </button>
+            <button class="fa-btn plan" id="btnPlan" title="Plan fly-to-points mission" disabled>
+              <i data-lucide="route"></i>
+              <span>PLAN</span>
+            </button>
+            <div class="fa-divider"></div>
+            <select class="field-select mode-selector" id="modeSelector" title="Flight Mode">
+              <option value="">SELECT MODE</option>
+            </select>
+          </div>
         </div>
 
         <div class="takeoff-panel glass" id="takeoffPanel" hidden>
@@ -531,6 +539,7 @@
 <script src="js/setup-safety.js" defer></script>
 <script src="js/setup-battery.js" defer></script>
 <script src="js/setup-sik.js" defer></script>
+<script src="js/setup-rtk.js" defer></script>
 <script src="js/setup-remoteid.js" defer></script>
 <script src="js/setup-parameters.js" defer></script>
 <script src="js/setup-firmware.js" defer></script>

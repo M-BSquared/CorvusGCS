@@ -76,6 +76,7 @@ _EXPECTED_GET = {
     "/api/firmware/status",
     "/api/firmware/catalog",
     "/api/sik/status",
+    "/api/rtk/status",
     "/api/logs/status",
     "/api/logs/review",
     "/api/logs/tlog-review",
@@ -151,6 +152,10 @@ _EXPECTED_POST = {
     "/api/sik/load",
     "/api/sik/save",
     "/api/sik/reset",
+    # RTK: both of these restart a correction session, which costs a running
+    # survey. Never behind a method a browser may prefetch or retry.
+    "/api/rtk/settings",
+    "/api/rtk/restart",
     "/api/warnings/clear",
     # The logo UPLOAD is not here on purpose: like /api/firmware/upload it
     # carries a raw octet-stream body and is dispatched ahead of the JSON
@@ -187,6 +192,45 @@ def test_registered_routes_resolve_to_handlers() -> None:
             assert hasattr(CorvusHandler, name), (
                 f"{method} {path} -> missing handler {name!r}"
             )
+
+
+def test_post_handlers_take_the_parsed_body() -> None:
+    """Every POST handler is called with the request body; it must accept one.
+
+    ``_handle_api_post`` dispatches as ``getattr(self, name)(payload)``, so a
+    handler declared ``def _api_x(self)`` raises TypeError on every request and
+    returns 500 — while the two tests above still report the route as present
+    and resolving, because it is. ``/api/rtk/restart`` shipped exactly that
+    way; this is the check that would have caught it.
+
+    GET handlers are the mirror image: they are called with no argument, so
+    they must not *require* one.
+    """
+    import inspect
+
+    for path, name in CorvusHandler._POST_ROUTES.items():
+        signature = inspect.signature(getattr(CorvusHandler, name))
+        required = [
+            p for p in list(signature.parameters.values())[1:]
+            if p.default is inspect.Parameter.empty
+            and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        ]
+        assert len(required) == 1, (
+            f"POST {path} -> {name}{signature} cannot be called as "
+            f"{name}(payload); the dispatcher passes the parsed body"
+        )
+
+    for path, name in CorvusHandler._GET_ROUTES.items():
+        signature = inspect.signature(getattr(CorvusHandler, name))
+        required = [
+            p for p in list(signature.parameters.values())[1:]
+            if p.default is inspect.Parameter.empty
+            and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        ]
+        assert not required, (
+            f"GET {path} -> {name}{signature} requires an argument the "
+            "dispatcher does not pass"
+        )
 
 
 def test_tile_path_param_regex_does_not_shadow_exact_routes() -> None:

@@ -209,7 +209,7 @@ def start_backend(port: int, mavlink_conn: str | None = None) -> tuple:
     The backend itself is ``corvus.server.create_server``, unchanged and
     entire. This function used to build one by hand instead: ninety lines
     that constructed the same store, bridge, ssh, config, auto-connect
-    session, tile resources, buildings, geocoder, flash, SiK, logs, forwarder
+    session, tile resources, buildings, geocoder, flash, SiK, RTK, logs, forwarder
     and update checker as browser mode, and then assigned each of them twice —
     once onto ``CorvusHandler``, once onto the server.
 

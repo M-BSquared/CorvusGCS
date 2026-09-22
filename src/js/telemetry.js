@@ -49,6 +49,13 @@ Corvus.telemetry = (function () {
       gps_fix: "",
       gps_satellites: 0,
       gps_hdop: 99,
+      // The RTK base station, as four scalars. gps_fix above says whether the
+      // aircraft HAS an RTK fix; these say whether corrections are being sent
+      // to it, which is the half an operator can act on. See corvus/rtk.py.
+      rtk_state: "",
+      rtk_source: "",
+      rtk_accuracy: 0,
+      rtk_progress: 0,
       uplink: 0,
       time: "",
       warnings: [],

@@ -372,7 +372,7 @@ async function testTileGridRendersEveryTile() {
   const tiles = findByClass(container, "setup-tile");
   assert.deepEqual(tiles.map((t) => t.dataset.view),
     ["calibration", "control", "tuning", "motors", "safety", "battery", "sik",
-     "remoteid", "parameters", "firmware"],
+     "rtk", "remoteid", "parameters", "firmware"],
     "every Setup tile, in order");
 
   // Tile titles are real text nodes. Setup tiles are Corvus.ui.tile instances
@@ -381,7 +381,8 @@ async function testTileGridRendersEveryTile() {
   const titles = tiles.map((t) => findOneByClass(t, "tile-title").textContent);
   assert.deepEqual(titles,
     ["Calibration", "Radio Control", "PID Tuning", "Motors", "Safety & Sensors",
-     "Battery & Power", "Telemetry Radio", "Remote ID", "Parameters", "Firmware"]);
+     "Battery & Power", "Telemetry Radio", "RTK GPS", "Remote ID", "Parameters",
+     "Firmware"]);
 }
 
 async function testClickTileSwapsToSubPageAndBackReturns() {

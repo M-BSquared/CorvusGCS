@@ -15,20 +15,23 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.53-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.53" />
+  <img src="https://img.shields.io/badge/Version-2026.09.54-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.54" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
   <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript" target="_blank"><img src="https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black" height="28" alt="JavaScript" /></a>
   <img width="8" />
+  <img src="https://img.shields.io/badge/%F0%9F%A4%96-Vibe%20Coded-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded" />
+  <img width="8" />
   <!-- <a href="https://github.com/ArduPilot/pymavlink" target="_blank"><img src="https://img.shields.io/badge/pymavlink-00A6E2?logoColor=white&style=for-the-badge" height="28" alt="pymavlink" /></a>
   <img width="8" /> -->
+  <br>
   <a href="https://px4.io/" target="_blank"><img src="https://img.shields.io/badge/PX4-v1.16%20%7C%201.17%20%7C%201.18-00C7B7?logoColor=white&style=for-the-badge" height="28" alt="PX4 v1.16 | 1.17 | 1.18" /></a>
   <img width="8" />
   <a href="https://ardupilot.org/" target="_blank"><img src="https://img.shields.io/badge/ArduPilot-4.3%20%E2%80%93%204.6-E62B1E?logoColor=white&style=for-the-badge" height="28" alt="ArduPilot 4.3 - 4.6" /></a>
   <br>
-  <img src="https://img.shields.io/badge/%F0%9F%A4%96-Vibe%20Coded-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded" />
-  <img width="8" />
+  <!-- <img src="https://img.shields.io/badge/%F0%9F%A4%96-Vibe%20Coded-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded" />
+  <img width="8" /> -->
   <img src="https://img.shields.io/badge/Lines%20of%20Code-82k%2B-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 82k+" />
   <img width="8" />
   <img src="https://img.shields.io/badge/Tests-62k%20lines%20%C2%B7%20141%20files-2EA043?style=for-the-badge" height="28" alt="Tests: 62k lines across 141 files" />
@@ -79,7 +82,7 @@
   - [3D and the globe](#3d-and-the-globe)
   - [Offline maps](#offline-maps)
   - [Mission planner](#mission-planner)
-  - [Setup — motors, safety, parameters, calibration, tuning, firmware](#setup--motors-safety-parameters-calibration-tuning-firmware)
+  - [Setup — motors, safety, parameters, calibration, tuning, radio, firmware](#setup--motors-safety-parameters-calibration-tuning-radio-firmware)
   - [Analysis — logs, Flight Review and Telemetry Review](#analysis--logs-flight-review-and-telemetry-review)
   - [The side workspace](#the-side-workspace)
   - [Settings](#settings)
@@ -199,6 +202,7 @@ Everything here is **built and working today**.
 | 🌍 **See in 3D** | A spinnable globe when you zoom out, real terrain relief and extruded OpenStreetMap buildings when you zoom in, and the aircraft drawn at the altitude it is actually flying — or switch terrain and buildings off and keep just the camera tilt, for a slow link or a low battery | ✅ |
 | 📴 **Work offline** | Nothing loads from the internet. Download named map areas in advance and the whole app keeps working with no connection | ✅ |
 | 📡 **Connect** | Connects on its own to whatever is plugged in — flight controller on USB first, then telemetry radio, then the simulator port — plus serial, UDP and TCP by hand, a live port picker, saved recent connections, link-quality display and automatic reconnect | ✅ |
+| 🛰️ **RTK GPS** | Plug a base station into this computer and Corvus finds it, surveys it in, and streams RTCM 3 corrections to the aircraft — no port to pick, no protocol to know. An NTRIP caster works the same way, over the network instead of a second receiver | ✅ |
 | 🔧 **Set up** | Airframe drawn to scale — click a motor to wire, position or spin-test it; ESC protocol; parameter editor with import / export; guided sensor calibration, ESC calibration, PID tuning by hand or by in-flight autotune, and firmware flashing for both stacks — with every build target of a release laid out as a searchable list grouped by vendor, your own board detected and put first, and the developer builds folded away until you ask for them | ✅ |
 | 🛡️ **Set limits** | Maximum distance and height, the return-to-launch profile, and a failsafe action for every loss the autopilot can detect — plus a distance sensor or optical-flow camera brought up by one switch, driver and estimator together | ✅ |
 | 📊 **Review flights** | Download the vehicle's logs and record the live stream, then read either on your own machine: Flight Review for a ULog, Telemetry Review for the recording that exists even when the ULog does not — including the radio link, which an onboard log cannot see | ✅ |
@@ -982,6 +986,26 @@ front of you.
   few seconds a session takes — Corvus stops the link itself and reconnects —
   and a radio on any other port does not touch the link at all. Refused while
   armed.
+- **RTK GPS** — centimetre positioning, set up by plugging it in. An RTK base
+  station connected to this computer is found on its own, surveyed, and put on
+  the link without the page being opened: Corvus recognises a GNSS receiver by
+  its USB descriptor, configures it as a base over UBX, waits out the
+  survey-in, then forwards its RTCM 3 corrections to the aircraft as
+  `GPS_RTCM_DATA`. The flight controller's own port is never a candidate, so
+  the telemetry link is never at risk. The defaults are QGroundControl's —
+  survey until the base knows its position to two metres, and for at least
+  three minutes — and both are editable, as is a base position you already know
+  from a surveyed mark, which skips the survey entirely. A receiver that
+  identifies itself is configured; one that does not, but is already streaming
+  corrections, is forwarded untouched, so a base set up in u-center or a make
+  Corvus has never heard of still works. Where a network is available, an NTRIP
+  caster is the other source and needs no second receiver. The page shows the
+  whole chain rather than one verdict — which receiver, on which port, how far
+  the survey has got and what is holding it up, how many corrections the base
+  produced, how many reached the aircraft, and the fix the aircraft ended up
+  with — because a base that is surveying, a base streaming into a link that is
+  down, and a base that is working are three different problems. The receiver
+  is put back out of base mode when Corvus lets go of it.
 - **Remote ID** — the identity the aircraft broadcasts about you and about
   itself, which is the one page here whose subject is not the vehicle. The
   serial number, the operator registration your authority issued, the flight
@@ -1173,6 +1197,14 @@ instantly and is saved.
   mode, or override a failsafe.
 - **Pages** — one switch, **off by default**, that adds **MISSION** under HOME
   in the left rail. See [Mission planner](#mission-planner).
+- **Flight bar** — one switch, **off by default**. Off, the **ARM / TAKEOFF /
+  LAND / RTL / PLAN** bar keeps its full size and narrows only when the row
+  genuinely will not fit — the same rule, at the same size, as the Mission
+  planner's tool bar, which reaches that point sooner only because its sidebar
+  takes half the window. On, the bar starts stepping down as soon as the row
+  would cover more than half the map: the buttons drop to the width of their
+  own word first, then to icons alone. It is measured on the map itself, so
+  opening the side panel narrows the bar just as shrinking the window does.
 - **SSH connections** — add, connect and remove saved hosts.
 - **Files** — where parameter exports, logs and downloads are written.
 - **Plugins** — what Corvus found, and a button that opens the folder you drop

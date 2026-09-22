@@ -272,21 +272,46 @@ svg { display: block; }
    Tesla/Apple aesthetic: a glassy bar holding icon-over-label chips with
    a per-action colour identity, instant press feedback, a pulsing busy ring
    while PX4 acknowledges, and a filled armed state with a soft glow. */
+/* The bar's ROOM, and the same box .mission-topleft is for the planner's
+   tools: it starts at the map's top-left corner and ends where the map's own
+   controls begin. A WIDTH, not a max-width, because this box is what fitBar
+   measures the bar against — a max-width would collapse to the bar's own
+   width and measure nothing.
+
+   The cap used to be on the BAR, which looked like the same rule and was not.
+   A capped bar cannot keep its buttons: the row squashes inside the cap, one
+   caption gets 8px less than the identical caption on the planner's bar, and
+   when even that is not enough the glass ends while the last buttons carry on
+   past its edge — three objects where the operator put one. The room measures,
+   the bar keeps its size, and the two screens are finally the same
+   construction and not just the same paint. */
+.map-topleft {
+  position: absolute;
+  top: var(--map-rail-inset); left: var(--map-rail-inset);
+  z-index: var(--z-map-panel);
+  display: flex; align-items: flex-start;
+  width: calc(100% - var(--map-rail-inset) - var(--map-trigger-clear));
+  /* The room is a MEASUREMENT, not a surface. It spans the map whether the bar
+     fills it or not, and a box that wide sitting over the map would eat every
+     drag that starts in the strip beside the bar — the map would simply stop
+     panning up there, for no reason the operator could see. Nothing is drawn
+     here, so nothing here takes a press; what it holds still does. */
+  pointer-events: none;
+}
+.map-topleft > * { pointer-events: auto; }
 .flight-actions {
-  position: absolute; top: 14px; left: 14px; z-index: var(--z-map-panel);
+  position: static;
   display: flex; align-items: center; gap: 7px;
   border-radius: var(--radius);
   padding: 7px;
-  /* The bar stops where the map's own controls begin. It did not, and it
-     outranks them (--z-map-panel over --z-map-chrome), so on a narrow map
-     column — an 800px window with the right-hand panel open is the ordinary
-     one — the bar ran straight over the offline-download trigger, the place
-     search and the far end of the zoom rail, and buried all three under a
-     surface with no press of its own. A max-width rather than a wrap: the
-     row stays a row and sheds its captions instead (see .is-tight /
-     .is-compact below), which is the rule the planner's bar has always been
-     under. */
-  max-width: calc(100% - var(--map-rail-inset) - var(--map-trigger-clear));
+  /* No cap of its own: the room above IS the cap, and it has to be, since
+     that is the box fitBar measures. What happens when even the icon step
+     will not fit that room is what happens on the planner — the bar keeps its
+     size and floats over the map's chrome, which it outranks (--z-map-panel
+     over --z-map-chrome). A control set the operator flies with, whole, on top
+     of a search button, beats a control set taken apart to spare it. */
+  flex: 0 0 auto;
+  max-width: none;
 }
 /* Two steps down, shared by both bars: the Home tab's flight actions and the
    planner's tools are the same control set on two screens, so they narrow the
@@ -308,6 +333,14 @@ svg { display: block; }
   position: relative;
   display: flex; flex-direction: column; align-items: center; gap: 3px;
   min-width: 72px; padding: 9px 14px;
+  /* A button is as wide as its own word needs, or 72px, and never less. The
+     narrowing of this bar is the two declared steps and nothing else — a flex
+     squash is a third one, silent and uneven, and it is what made the Home
+     bar differ from the planner's: the same TAKEOFF that gets 80px there was
+     handed 72 here and wore its caption into its own padding. What gives
+     under pressure is the mode select beside them, which has a word to lose
+     and a min-width to stop at. */
+  flex-shrink: 0;
   /* Squared with soft corners, not a pill: the same --radius-btn every other
      button in the app uses, so the flight bar doesn't read as a foreign
      control set sitting on the map. */
@@ -2893,6 +2926,75 @@ button.link-card-title:focus-visible {
   .sik-port-row { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* ----- RTK GPS -----
+   The page is a status display first and a form second, because in the normal
+   case there is nothing to configure: a base plugged in is found and surveyed
+   without the page being opened. So the top card carries the whole chain —
+   receiver, cable, corrections produced, corrections sent, the fix the
+   aircraft ended up with — and the form below it is only for the two things
+   that genuinely differ between operators. */
+.rtk-status-card,
+.rtk-settings-card { display: flex; flex-direction: column; gap: 12px; }
+
+.rtk-state-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* The state is a word, not a colour: a badge that only changed hue would be
+   unreadable to the operator this page is most often used by — one outdoors,
+   in sunlight, holding a transmitter. The colour is the second signal. */
+.rtk-state-badge {
+  padding: 3px 10px;
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.rtk-state-badge.ok { border-color: var(--healthy); color: var(--healthy); }
+.rtk-state-badge.err { border-color: var(--critical); color: var(--critical); }
+.rtk-state-badge.pending { border-color: var(--warning); color: var(--warning); }
+.rtk-state-text { color: var(--text-2); font-size: 13px; }
+
+.rtk-warning { font-size: 12px; color: var(--warning); }
+.rtk-warning.err { color: var(--critical); }
+.rtk-warning[hidden] { display: none; }
+
+.rtk-survey { display: flex; flex-direction: column; gap: 6px; }
+.rtk-survey[hidden] { display: none; }
+.rtk-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+/* Width only, so the bar animates on the compositor rather than on layout —
+   this redraws once a second for minutes at a time. */
+.rtk-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width 400ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rtk-progress-fill { transition: none; }
+}
+/* Tabular figures so the seconds and the accuracy do not jitter sideways as
+   they count, which is what makes a slow survey look stuck rather than slow. */
+.rtk-survey-text {
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.rtk-source-block,
+.rtk-sub-block { display: flex; flex-direction: column; gap: 12px; }
+.rtk-source-block[hidden],
+.rtk-sub-block[hidden] { display: none; }
+
+.rtk-input { max-width: 220px; font-variant-numeric: tabular-nums; }
+.rtk-save-status:empty { display: none; }
+
 /* ----- FIRMWARE ----- */
 /* Dedicated card class (mirrors .params-card's column layout) so the firmware
    page reads as its own surface, not a params reuse. */
@@ -4865,7 +4967,12 @@ button.review-finding-head:focus-visible {
      It ends where the download trigger begins, which is as far right as
      anything on this side of the map may go. */
   width: calc(100% - var(--map-rail-inset) - var(--map-trigger-clear));
+  /* And it takes no presses of its own, for the reason .map-topleft does not:
+     the room is as wide as the map whether the bar fills it or not, and a drag
+     started in the empty strip beside the bar belongs to the map under it. */
+  pointer-events: none;
 }
+.mission-topleft > * { pointer-events: auto; }
 .mission-tools {
   position: static;
   /* ONE ROW, like the Home flight bar's. It wrapped before, and that was the

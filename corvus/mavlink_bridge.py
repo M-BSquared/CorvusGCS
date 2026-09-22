@@ -32,6 +32,7 @@ from . import battery as battery_math
 from . import mission as mission_plan
 from . import rc_config
 from . import remote_id as remote_id_model
+from . import rtk
 from .autopilot import (  # noqa: F401 - re-exported, see the tables below
     PX4_AUTO_SUBMODE,
     PX4_AVAILABLE_MODES,
@@ -240,6 +241,33 @@ _BOOTLOADER_RE = re.compile(
     "|".join(re.escape(t) for t in _BOOTLOADER_TOKENS), re.IGNORECASE,
 )
 
+# An RTK base station is a serial port that must never be dialled as a link.
+# The distinction is not academic: a ZED-F9P on a USB lead enumerates as
+# /dev/ttyACM0 exactly like a Pixhawk does, so without this table auto-connect
+# would pick up the GPS receiver plugged in beside the aircraft, hold its port,
+# and wait for a heartbeat that a GNSS receiver has no way to send. 0x1546 is
+# u-blox's own vendor id and is never a flight controller; 0x152a is
+# Septentrio. The words are for the descriptors that carry a product name
+# instead of a recognised id.
+#
+# Closed-world, in the opposite direction from is_bootloader_port(): only a
+# positive match is treated as a base station, because the cost of the two
+# errors is again asymmetric. Refusing to auto-connect a real flight
+# controller because its descriptor said something unexpected is the worse
+# failure by a distance.
+_RTK_TOKENS: tuple[str, ...] = (
+    "vid:pid=1546",   # u-blox — F9P/M8P dev kits and the boards built on them
+    "vid:pid=152a",   # Septentrio
+    "u-blox",
+    "ublox",
+    "septentrio",
+    "zed-f9p",
+    "simplertk",
+)
+_RTK_RE = re.compile(
+    "|".join(re.escape(t) for t in _RTK_TOKENS), re.IGNORECASE,
+)
+
 # Devices that are a serial port to the kernel and never a vehicle link: the
 # pseudo-terminals a test harness or a terminal emulator creates, and the
 # phantom nodes _PHANTOM_TTY_RE already names. Auto-connect enumerates without
@@ -276,8 +304,20 @@ def is_bootloader_port(device: str, hwid: str = "", description: str = "") -> bo
     return bool(text.strip()) and bool(_BOOTLOADER_RE.search(text))
 
 
+def is_rtk_device(device: str, hwid: str = "", description: str = "") -> bool:
+    """Is this port an RTK GNSS receiver rather than something to fly?
+
+    Reads the descriptor only. The device *name* cannot answer this on any
+    platform — a receiver's USB CDC node is indistinguishable from a flight
+    controller's — which is the whole reason auto-connect used to dial one.
+    See :data:`_RTK_TOKENS` for why the match is closed-world.
+    """
+    text = f"{hwid or ''} {description or ''}"
+    return bool(text.strip()) and bool(_RTK_RE.search(text))
+
+
 def classify_hwid(hwid: str) -> str:
-    """'usb' / 'sik' / 'unknown' from a USB descriptor string.
+    """'usb' / 'sik' / 'rtk' / 'unknown' from a USB descriptor string.
 
     Bridge first: an FTDI descriptor may also carry a product string with a
     vendor name in it, and a bridge is never the flight controller. Unknown
@@ -286,6 +326,8 @@ def classify_hwid(hwid: str) -> str:
     """
     if not hwid or not hwid.strip():
         return "unknown"
+    if _RTK_RE.search(hwid):
+        return "rtk"
     if _USB_SERIAL_BRIDGE_RE.search(hwid):
         return "sik"
     if _PIXHAWK_BYID_RE.search(hwid):
@@ -294,7 +336,7 @@ def classify_hwid(hwid: str) -> str:
 
 
 def classify_serial_device(device: str, hwid: str = "", description: str = "") -> str:
-    """'usb' / 'sik' / 'unknown' for an enumerated serial port.
+    """'usb' / 'sik' / 'rtk' / 'unknown' for an enumerated serial port.
 
     The port-shaped half of :meth:`MavlinkBridge.transport`, factored out so a
     caller holding a ``list_serial_ports()`` row can classify it without
@@ -306,6 +348,11 @@ def classify_serial_device(device: str, hwid: str = "", description: str = "") -
     name = str(device or "").strip()
     if not name:
         return "unknown"
+    # Before the name is read, not after: a u-blox receiver's CDC node is a
+    # /dev/ttyACM* like any Pixhawk's, so a name-first order classifies every
+    # RTK base on Linux as a flight controller.
+    if is_rtk_device(name, hwid, description):
+        return "rtk"
     if _DIRECT_USB_ACM_RE.match(name):
         return "usb"
     if name.startswith("/dev/serial/by-id/") and _PIXHAWK_BYID_RE.search(name):
@@ -773,6 +820,18 @@ class MavlinkBridge:
         # Complement of _running: set by stop() so daemon workers can sleep via
         # _interruptible_sleep and wake immediately on shutdown (BUG 1, 12).
         self._stop_event = threading.Event()
+        # RTCM injection (corvus/rtk_service.py). The sequence number is
+        # per-link rather than per-source, because it is what a receiver uses
+        # to tell one correction's fragments from the next one's; two sources
+        # numbering independently down the same link would interleave into
+        # nonsense. Guarded by its own lock so a 1 Hz correction stream never
+        # waits behind a parameter download.
+        self._rtcm_lock = threading.Lock()
+        self._rtcm_sequence = 0
+        self._rtcm_bytes = 0
+        self._rtcm_messages = 0
+        self._rtcm_dropped = 0
+        self._rtcm_last_send = 0.0
         self._console_subs: list[Callable[[dict[str, Any]], None]] = []
         # Guards _console_subs: appended/removed by HTTP handler threads,
         # iterated by the receive thread on every STATUSTEXT.
@@ -3588,6 +3647,102 @@ class MavlinkBridge:
             except Exception as exc:
                 logger.error("send command failed: %s", exc)
                 return False
+
+    # ---- RTCM corrections ------------------------------------------------
+
+    def inject_rtcm(self, frame: bytes) -> bool:
+        """Put one RTCM 3 correction on the link as GPS_RTCM_DATA.
+
+        Called from the RTK service's reader thread at a few hertz for as long
+        as a base station is streaming. Three things about it are deliberate:
+
+        **It does not take the operation lock.** Every other send path here
+        serialises behind ``_operation_lock`` because it is a *transaction* —
+        a command awaiting its ACK, a parameter awaiting its echo. A
+        correction is neither: it is fire-and-forget, it arrives whether or
+        not anything else is in progress, and queueing it behind a mission
+        upload would stall the corrections for the length of the upload. Only
+        ``_send_lock`` is held, which is the same guarantee the heartbeat loop
+        works under.
+
+        **It never raises.** The caller is a reader thread whose other job is
+        the serial port; a throw here would end the RTK session over a link
+        that had merely gone away for a moment. A refusal is counted and
+        reported through :meth:`rtcm_stats` instead, which is what the page
+        shows.
+
+        **It drops rather than truncates.** A correction too long to express
+        in four fragments (see :func:`corvus.rtk.fragments`) is discarded
+        whole and counted, because a receiver that reassembles three quarters
+        of a message does not get three quarters of a fix — it gets a CRC
+        failure, having waited for the rest first.
+
+        Returns True when every fragment was written.
+        """
+        if not frame:
+            return False
+        if not self._connection_ready():
+            with self._rtcm_lock:
+                self._rtcm_dropped += 1
+            return False
+        with self._rtcm_lock:
+            sequence = self._rtcm_sequence
+            self._rtcm_sequence = (sequence + 1) & 0x1F
+        parts = rtk.fragments(frame, sequence)
+        if not parts:
+            with self._rtcm_lock:
+                self._rtcm_dropped += 1
+            logger.warning(
+                "RTCM message of %d bytes is too long for GPS_RTCM_DATA; dropped",
+                len(frame),
+            )
+            return False
+        try:
+            with self._send_lock:
+                conn = self._conn
+                if conn is None:
+                    raise RuntimeError("link closed")
+                for flags, chunk in parts:
+                    # The field is a fixed 180 bytes; the length is carried
+                    # separately, so the tail is padding and not data.
+                    conn.mav.gps_rtcm_data_send(
+                        flags, len(chunk),
+                        list(chunk) + [0] * (rtk.FRAGMENT_BYTES - len(chunk)),
+                    )
+        except Exception as exc:  # noqa: BLE001 - see the docstring
+            with self._rtcm_lock:
+                self._rtcm_dropped += 1
+            logger.debug("RTCM injection failed: %s", exc)
+            return False
+        with self._rtcm_lock:
+            self._rtcm_bytes += len(frame)
+            self._rtcm_messages += 1
+            self._rtcm_last_send = time.monotonic()
+        return True
+
+    def rtcm_stats(self) -> dict[str, Any]:
+        """What has actually reached the aircraft, for the RTK page.
+
+        Separate from what the base *produced*, which the service counts: a
+        base streaming happily into a link that is down is the failure this
+        pair of numbers exists to make visible.
+        """
+        with self._rtcm_lock:
+            last = self._rtcm_last_send
+            return {
+                "bytes": self._rtcm_bytes,
+                "messages": self._rtcm_messages,
+                "dropped": self._rtcm_dropped,
+                "age": (time.monotonic() - last) if last else None,
+            }
+
+    def forget_rtcm_session(self) -> None:
+        """Reset the injection counters when the correction source changes."""
+        with self._rtcm_lock:
+            self._rtcm_bytes = 0
+            self._rtcm_messages = 0
+            self._rtcm_dropped = 0
+            self._rtcm_last_send = 0.0
 
     def set_mode(self, mode: str) -> bool:
         """Change flight mode, ACK-confirmed.

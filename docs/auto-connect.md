@@ -43,6 +43,19 @@ Ports excluded before any rule sees them:
   protocol, not MAVLink, and the flasher is about to want the port
   (`is_bootloader_port`). Closed-world: only a positive descriptor match skips,
   so an unknown board is never starved.
+- **RTK base stations** — a GNSS receiver is a serial port that never sends a
+  heartbeat, and on Linux a u-blox ZED-F9P on a USB lead enumerates as a
+  `/dev/ttyACM*` node indistinguishable from a Pixhawk's. Without this the
+  ground station would dial the base station plugged in beside the aircraft,
+  hold its port, and wait for a heartbeat that cannot come — while the RTK
+  service found the device already taken. Recognised by USB descriptor only
+  (`is_rtk_device`: u-blox `1546`, Septentrio `152a`, plus product-name
+  tokens), and closed-world in the opposite direction from the bootloader
+  check: only a positive match is treated as a base, because refusing to
+  auto-connect a real flight controller is by far the worse error.
+  `classify_serial_device()` returns `rtk` for these, which is also what
+  `corvus/rtk_service.py` picks its candidates by — one table, so the two
+  cannot disagree about what is a receiver.
 
 With two candidates of the same kind, the pick is the first by device name —
 deterministic across launches, because connecting to a different aircraft

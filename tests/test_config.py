@@ -413,32 +413,57 @@ def test_mission_page_is_off_unless_the_config_asks_for_it(tmp_path) -> None:
 
 
 def test_notification_marks_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
-    """The one UI key that is ON when absent, so the coercion has to be exact.
+    """Off unless asked for, like the other UI switches, so the coercion has to be exact.
 
-    The frontend reads this as "not false" (src/js/app.js), which means an
-    absent key leaves the severity marks drawn — the state every config file
-    written before the switch existed is in, and the state a notification has
-    always been in. That puts the whole weight of turning them OFF on the one
-    value ``False``, so everything that is not that value has to survive as
-    absent rather than as a falsy something: a hand-edited ``"false"`` must
-    not strip the marks off a board nobody asked to change.
+    The frontend reads this as "is true" (src/js/app.js): an absent key
+    leaves the severity marks undrawn, and only an explicit ``True`` turns
+    them on. A hand-edited ``"true"``/``"false"`` string must not read as
+    either state.
     """
     assert load_config(str(tmp_path / "absent.json")).ui is None
     p = tmp_path / "c.json"
     # No file, no ui block, and a ui block about something else: all absent,
-    # which the frontend reads as on.
+    # which the frontend reads as off.
     p.write_text(json.dumps({}), encoding="utf-8")
     assert (load_config(str(p)).ui or {}).get("notification_marks") is None
     p.write_text(json.dumps({"ui": {"scale": 1.1}}), encoding="utf-8")
     assert (load_config(str(p)).ui or {}).get("notification_marks") is None
-    # A string is not a boolean — dropped, so the marks stay.
+    # A string is not a boolean — dropped, so the marks stay off.
     p.write_text(json.dumps({"ui": {"notification_marks": "false"}}), encoding="utf-8")
     assert (load_config(str(p)).ui or {}).get("notification_marks") is None
-    # Only a real False turns them off, and a real True round-trips too.
+    # Only a real True turns them on, and a real False round-trips too.
     p.write_text(json.dumps({"ui": {"notification_marks": False}}), encoding="utf-8")
     assert load_config(str(p)).ui == {"notification_marks": False}
     p.write_text(json.dumps({"ui": {"notification_marks": True}}), encoding="utf-8")
     assert load_config(str(p)).ui == {"notification_marks": True}
+
+
+def test_flight_bar_shrink_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
+    """Opt-in, like ``mission_page``, and a genuine boolean or nothing.
+
+    The frontend reads it as "is true" (src/js/app.js, src/js/sidenav.js), so
+    an absent key leaves the Home flight bar full-size — the same rule, at the
+    same size, as the Mission planner's tool bar. That puts the whole weight of
+    the early narrowing on the one value ``True``: a hand-edited ``"true"``
+    must not shrink a bar nobody asked to shrink.
+    """
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("flight_bar_shrink") is None
+    p.write_text(json.dumps({"ui": {"scale": 1.1}}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("flight_bar_shrink") is None
+    # A hand-edited string is not a boolean — dropped, so the bar stays full.
+    p.write_text(json.dumps({"ui": {"flight_bar_shrink": "true"}}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("flight_bar_shrink") is None
+    # Only a real True asks for it, and a real False round-trips too.
+    p.write_text(json.dumps({"ui": {"flight_bar_shrink": True}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"flight_bar_shrink": True}
+    p.write_text(json.dumps({"ui": {"flight_bar_shrink": False}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"flight_bar_shrink": False}
+    # And it is kept independently of the keys beside it.
+    p.write_text(json.dumps(
+        {"ui": {"flight_bar_shrink": False, "mission_page": True}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"flight_bar_shrink": False, "mission_page": True}
 
 
 def test_load_config_parses_app_icon_backplate(tmp_path) -> None:

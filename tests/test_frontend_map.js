@@ -607,7 +607,74 @@ function testAMissingBearingIsFlatNotBroken() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// The flight bar's narrowing rule (setFlightBarShrink / _flightBarRoom).
+// ---------------------------------------------------------------------------
+
+function testTheFlightBarIsMeasuredAgainstAShareOfTheMap() {
+  // What the switch does when it is on: half the map column, so the same two
+  // steps fitBar always applies are reached before the row runs out of room.
+  try {
+    Corvus.map.setFlightBarShrink(true);
+    assert.equal(Corvus.map._flightBarRoom(1000), 500);
+    assert.equal(Corvus.map._flightBarRoom(640), 320);
+    // A map column that measures nothing — a page not on screen, a map with no
+    // parent — is NOT a room of zero: that would pin the bar at icons forever.
+    assert.equal(Corvus.map._flightBarRoom(0), null);
+  } finally {
+    Corvus.map.setFlightBarShrink(false);
+  }
+}
+
+function testTheFlightBarIsFullSizeUntilTheSwitchIsThrown() {
+  // The default, and the whole point of it: the room is .map-topleft's — the
+  // box beside the map's controls — so the buttons keep their 72px rhythm and
+  // their captions until the row will not fit THAT. It is the planner's rule
+  // measured against the planner's kind of box. The share is what the Settings
+  // switch adds on top.
+  assert.equal(Corvus.map._flightBarRoom(1000, 830), 830,
+    "a bar nobody asked to shrink is measured against the room it sits in");
+  try {
+    Corvus.map.setFlightBarShrink(true);
+    assert.equal(Corvus.map._flightBarRoom(1000, 830), 500,
+      "the switch measures the MAP instead, so the steps come earlier");
+    Corvus.map.setFlightBarShrink(false);
+    assert.equal(Corvus.map._flightBarRoom(1000, 830), 830);
+  } finally {
+    Corvus.map.setFlightBarShrink(false);
+  }
+  // A room that measures nothing — a page off screen — is null, not 0: fitBar
+  // then leaves a bar nobody can measure exactly as it is, rather than pinning
+  // it at icons forever.
+  assert.equal(Corvus.map._flightBarRoom(0, 0), null);
+}
+
+function testTheFlightBarShrinkIsOffWhenTheConfigIsSilent() {
+  // Read as "is true" in both places that read it, because it is OPT-IN: a
+  // config that has never been asked leaves the bar at the size it is meant
+  // to be, and only an explicit true trades its labels for map.
+  const appJs = fs.readFileSync(
+    path.join(__dirname, "..", "src", "js", "app.js"), "utf-8");
+  assert.ok(/!!\(cfg\.ui && cfg\.ui\.flight_bar_shrink\)/.test(appJs),
+    "app.js must apply the config's answer as \"is true\"");
+  assert.ok(!/flight_bar_shrink === false/.test(appJs),
+    "and must not read it as \"not false\" — that would shrink an unasked bar");
+  const sidenavJs = fs.readFileSync(
+    path.join(__dirname, "..", "src", "js", "sidenav.js"), "utf-8");
+  assert.ok(/!!\(\(cfg\.ui \|\| \{\}\)\.flight_bar_shrink\)/.test(sidenavJs),
+    "the Settings switch must render from the same reading");
+  // And the switch must drive the live bar as well as the config, or the
+  // operator throws it and watches nothing happen until a reload.
+  assert.ok(/Corvus\.map\.setFlightBarShrink\(next\)/.test(sidenavJs),
+    "the Settings switch must apply to the live bar immediately");
+  assert.ok(/postConfig\(\{ ui: \{ flight_bar_shrink: next \} \}/.test(sidenavJs),
+    "and persist the one key it owns");
+}
+
 const tests = [
+  testTheFlightBarIsFullSizeUntilTheSwitchIsThrown,
+  testTheFlightBarIsMeasuredAgainstAShareOfTheMap,
+  testTheFlightBarShrinkIsOffWhenTheConfigIsSilent,
   testAPlannerThatWasNeverAimedHasNoViewOfItsOwn,
   testThePlannersOwnAimIsWhatItReopensOn,
   testAimingTheHomeMapAfterwardsWinsBack,

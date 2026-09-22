@@ -398,13 +398,18 @@ Corvus.app = (function () {
       // the control switches above: the backend is the authority, and an
       // absent key is the default (no dots), not the cached value.
       Corvus.topbar.setStatusDots(!!(cfg.ui && cfg.ui.topbar_status_dots));
-      // The severity marks on notifications. Read as "not false" rather than
-      // "is true", because this one defaults ON: an absent key is a config
-      // that has never been asked about the marks, and the answer for those is
-      // the marks a notification has always had — not a board this fetch
-      // quietly strips a rule off.
-      Corvus.topbar.setNotificationMarks(
-        !(cfg.ui && cfg.ui.notification_marks === false));
+      // The severity marks on notifications. Off unless the config says
+      // otherwise, like the control switches above: the icon and its colour
+      // already carry the level, so an absent key leaves the marks off rather
+      // than drawing a rule nobody asked for.
+      Corvus.topbar.setNotificationMarks(!!(cfg.ui && cfg.ui.notification_marks));
+      // The Home flight bar giving up its captions EARLY, against a share of
+      // the map rather than against the room it has. Off unless the config
+      // asks, like the control switches above: what the bar does by default is
+      // the planner's own rule — full size until the row will not fit — and a
+      // config that has never been asked must not shrink a bar nobody asked to
+      // shrink.
+      Corvus.map.setFlightBarShrink(!!(cfg.ui && cfg.ui.flight_bar_shrink));
       // The optional Mission entry in the left rail. Off unless the config
       // asks for it, and asked for here rather than inside sidenav.init()
       // because the rail is built before this fetch can land — the rail
