@@ -2,25 +2,40 @@
 window.Corvus = window.Corvus || {};
 
 /**
- * Corvus.calibProtocol — the PX4 calibration protocol, as a pure state machine.
+ * Corvus.calibProtocol — the calibration protocol, as a pure state machine.
  *
- * PX4 drives a calibration entirely over STATUSTEXT: it says which side it wants
- * next, when to hold still, how far along it is, and whether it finished or gave
- * up. A ground station that only fires MAV_CMD_PREFLIGHT_CALIBRATION and then
- * prints the raw log leaves the operator to decode "[cal] Rotate to a pending
- * side: back" themselves — which is where field calibrations go wrong.
+ * Both supported flight stacks drive a calibration over STATUSTEXT: they say
+ * which side they want next, when to hold still, how far along they are, and
+ * whether they finished or gave up. A ground station that only fires
+ * MAV_CMD_PREFLIGHT_CALIBRATION and then prints the raw log leaves the operator
+ * to decode "[cal] Rotate to a pending side: back" themselves — which is where
+ * field calibrations go wrong.
  *
  * So this module owns two things and no DOM:
  *   parseLine(text)     one STATUSTEXT line  -> a typed event (or null)
  *   createSession(type) those events         -> the state the wizard renders
  *
  * Keeping it free of DOM and of the network is what makes the parsing testable
- * against real PX4 transcripts (tests/test_calib_protocol.js) instead of against
- * a rendered page.
+ * against real transcripts (tests/test_calib_protocol.js) instead of against a
+ * rendered page.
  *
- * Message set verified against PX4 v1.16 / v1.17 / v1.18
- * (src/modules/commander/calibration_routines.cpp, accelerometer_calibration.cpp,
- * mag_calibration.cpp, airspeed_calibration.cpp, esc_calibration.cpp). Every
+ * The one structural difference between the stacks
+ * ------------------------------------------------
+ * PX4 *detects* each accelerometer position: hold the aircraft still and it
+ * decides the side is done. ArduPilot does not. It prints "Place vehicle level
+ * and press any key." and then waits — indefinitely — for
+ * MAV_CMD_ACCELCAL_VEHICLE_POS naming the position it just asked for. A wizard
+ * that only listens shows an ArduPilot operator a screen that says "place
+ * vehicle level" and never changes, which is exactly what Corvus used to do.
+ *
+ * That is the `place` event below: it carries the pose to draw *and* the token
+ * the backend needs for POST /api/calibrate/position, so the wizard can put a
+ * confirm button under the figure.
+ *
+ * Message sets verified against PX4 v1.16 / v1.17 / v1.18
+ * (calibration_routines.cpp, accelerometer_calibration.cpp, mag_calibration.cpp,
+ * airspeed_calibration.cpp, esc_calibration.cpp) and ArduPilot 4.3-4.6
+ * (AP_AccelCal.cpp, AP_Compass_Calibration.cpp, AP_InertialSensor.cpp). Every
  * pattern is matched loosely — a wording change across firmwares degrades to
  * "message shown verbatim, no state change", never to a wrong instruction.
  */
@@ -42,6 +57,35 @@ Corvus.calibProtocol = (function () {
     return SIDE_TO_POSE[String(word || "").toLowerCase()] || null;
   }
 
+  /* ArduPilot describes the ATTITUDE rather than the side facing down, and it
+     asks for the position in words rather than detecting it. Left of the arrow
+     is the wording from AP_AccelCal's "Place vehicle %s and press any key.";
+     right of it is our pose name. */
+  const PLACE_PHRASES = [
+    [/place vehicle level/, "level"],
+    [/place vehicle on its left side/, "left"],
+    [/place vehicle on its right side/, "right"],
+    [/place vehicle nose down/, "nose_down"],
+    [/place vehicle nose up/, "tail_down"],
+    [/place vehicle on its back/, "upside_down"],
+  ];
+
+  /* pose -> the token POST /api/calibrate/position takes, which the backend
+     turns into MAV_CMD_ACCELCAL_VEHICLE_POS's param1. Kept here because it is
+     the same mapping the phrases above encode, read the other way. */
+  const POSE_TO_POSITION = {
+    level: "level",
+    left: "left",
+    right: "right",
+    nose_down: "nosedown",
+    tail_down: "noseup",
+    upside_down: "back",
+  };
+
+  function positionFor(pose) {
+    return POSE_TO_POSITION[pose] || null;
+  }
+
   /**
    * Parse one STATUSTEXT line into a calibration event.
    * @param {string} raw
@@ -56,6 +100,15 @@ Corvus.calibProtocol = (function () {
     // happens to share the line.
     let m = low.match(/calibration\s+(?:was\s+)?cancell?ed/);
     if (m) return { kind: "cancelled", text };
+    // ArduPilot's own outcome wording. Checked before the generic patterns
+    // because "Calibration FAILED" carries no sensor name and would otherwise
+    // fall through to the note branch.
+    if (/calibration successful/.test(low)) {
+      return { kind: "done", sensor: "", text };
+    }
+    if (/calibration (?:failed|unsuccessful)/.test(low)) {
+      return { kind: "failed", sensor: "", text };
+    }
     // ESC calibration names itself in front of the verb, so it is matched
     // before the generic "calibration done" pattern swallows it.
     if (/esc calibration finished/.test(low)) return { kind: "done", sensor: "motor", text };
@@ -69,6 +122,17 @@ Corvus.calibProtocol = (function () {
 
     m = low.match(/progress\s*<?\s*(\d{1,3})/);
     if (m) return { kind: "progress", value: Math.max(0, Math.min(100, Number(m[1]))), text };
+
+    // ArduPilot's placement prompt. It is the one message in either protocol
+    // that needs an answer: the calibration does not advance until the ground
+    // station confirms the position, so this event carries the token that
+    // confirmation is sent with.
+    for (let i = 0; i < PLACE_PHRASES.length; i += 1) {
+      if (PLACE_PHRASES[i][0].test(low)) {
+        const pose = PLACE_PHRASES[i][1];
+        return { kind: "place", pose, position: positionFor(pose), text };
+      }
+    }
 
     // Per-side traffic. Ordered most specific first so "left side done" is not
     // read as a request to rotate to the left side.
@@ -125,6 +189,19 @@ Corvus.calibProtocol = (function () {
       return { kind: "prompt", action: "shield", text };
     }
 
+    // ArduPilot narrates the short calibrations without the [cal] prefix, so
+    // they would otherwise never reach the transcript or refresh the stall
+    // watchdog — which is what makes a working calibration look hung.
+    if (/calibrating (?:gyros|barometer|compass)/.test(low)) {
+      return { kind: "started", sensor: "", text };
+    }
+    if (/(?:gyro|barometer|compass)[^.]*calibration complete/.test(low)) {
+      return { kind: "done", sensor: "", text };
+    }
+    if (/(?:rotate|turn) (?:the )?vehicle (?:around|about)/.test(low)) {
+      return { kind: "rotate_around", pose: null, seconds: null, text };
+    }
+
     if (low.indexOf("[cal]") === 0 || /^\[cal\]/.test(low)) return { kind: "note", text };
     return null;
   }
@@ -141,16 +218,18 @@ Corvus.calibProtocol = (function () {
   const PROCEDURES = {
     accel: {
       type: "accel", label: "Accelerometer", icon: "move-3d",
-      summary: "Teaches PX4 where level is, on all three axes.",
+      summary: "Teaches the autopilot where level is, on all three axes.",
       duration: "2–3 min", danger: false, reboot: true,
       poses: ["level", "left", "right", "nose_down", "tail_down", "upside_down"],
       startPose: "level", spin: false,
-      brief: "PX4 asks for six positions in its own order. Hold each one still "
-        + "until it says the side is done, then move to the next one it names.",
+      brief: "The autopilot asks for six positions in its own order. Hold each "
+        + "one still until it says the side is done, then move to the next one "
+        + "it names. Some firmware detects the position itself; some waits for "
+        + "you to confirm it, and then a button appears.",
       prep: [
         "Work on a flat, stable surface with room to turn the aircraft over.",
-        "Hold each position steady — a wobble makes PX4 discard the side.",
-        "Move between positions briskly; PX4 only measures while you are still.",
+        "Hold each position steady — a wobble makes the autopilot discard the side.",
+        "Move between positions briskly; measurement only happens while you are still.",
       ],
     },
     compass: {
@@ -160,7 +239,8 @@ Corvus.calibProtocol = (function () {
       poses: ["level", "left", "right", "nose_down", "tail_down", "upside_down"],
       startPose: "level", spin: true,
       brief: "Same six positions as the accelerometer, but in each one you keep "
-        + "turning the aircraft around the vertical axis until PX4 is satisfied.",
+        + "turning the aircraft around the vertical axis until the autopilot is "
+        + "satisfied.",
       prep: [
         "Go outside, away from steel, cars, reinforced concrete and power lines.",
         "Take off your watch and phone — they carry magnets.",
@@ -187,7 +267,7 @@ Corvus.calibProtocol = (function () {
       brief: "Stand the aircraft still. Any movement at all invalidates it.",
       prep: [
         "Place it on a surface that does not vibrate.",
-        "Keep hands off until PX4 reports it is done.",
+        "Keep hands off until the autopilot reports it is done.",
       ],
     },
     baro: {
@@ -207,7 +287,7 @@ Corvus.calibProtocol = (function () {
       duration: "< 1 min", danger: false, reboot: false,
       poses: [], startPose: "level", spin: false, marker: "nose",
       brief: "Shield the pitot tube from any airflow, then blow into it once when "
-        + "PX4 asks — without touching it.",
+        + "the autopilot asks — without touching it.",
       prep: [
         "Cover the pitot tube from wind; do not block the opening.",
         "When asked, blow into the front of the tube from a short distance.",
@@ -223,7 +303,7 @@ Corvus.calibProtocol = (function () {
       prep: [
         "Remove ALL propellers. This is not optional.",
         "Disconnect the flight battery before you start.",
-        "Reconnect the battery only when PX4 asks you to.",
+        "Reconnect the battery only when the autopilot asks you to.",
       ],
     },
   };
@@ -274,6 +354,12 @@ Corvus.calibProtocol = (function () {
         pose: proc.startPose,
         spin: false,
         marker: proc.marker || null,
+        // Set only while the autopilot is waiting to be TOLD the aircraft is in
+        // the position it asked for — ArduPilot's accelerometer calibration and
+        // nothing else. `{pose, position}`: the attitude to draw, and the token
+        // POST /api/calibrate/position takes. Cleared by the next event, so a
+        // confirm button can never outlive the prompt that produced it.
+        confirm: null,
         sides,
         lastEventAt: 0,
         seenVehicleMessage: false,
@@ -286,6 +372,7 @@ Corvus.calibProtocol = (function () {
       state.headline = "Waiting for the autopilot to start the calibration…";
       state.detail = "";
       state.progress = null;
+      state.confirm = null;
       state.lastEventAt = now || 0;
       state.seenVehicleMessage = false;
     }
@@ -316,6 +403,10 @@ Corvus.calibProtocol = (function () {
       state.lastEventAt = now || 0;
       state.seenVehicleMessage = true;
       if (state.phase === "idle" || state.phase === "starting") state.phase = "running";
+      // Any new word from the autopilot supersedes an outstanding placement
+      // prompt. The `place` branch below sets it again; everything else clears
+      // it, so the confirm button cannot linger past the question it answers.
+      state.confirm = null;
 
       switch (ev.kind) {
         case "started":
@@ -370,6 +461,17 @@ Corvus.calibProtocol = (function () {
           }
           break;
         }
+        case "place":
+          activate(ev.pose);
+          state.spin = false;
+          state.headline = "Place the aircraft "
+            + Corvus.calibFigures.poseLabel(ev.pose).toLowerCase();
+          state.detail = Corvus.calibFigures.poseHint(ev.pose)
+            + " Then confirm — this autopilot waits to be told.";
+          state.confirm = ev.position
+            ? { pose: ev.pose, position: ev.position }
+            : null;
+          break;
         case "side_completed":
           markSide(ev.pose, "done");
           state.detail = Corvus.calibFigures.poseLabel(ev.pose) + " was already recorded.";
@@ -429,20 +531,41 @@ Corvus.calibProtocol = (function () {
       return true;
     }
 
-    /** Terminal state the operator (not PX4) caused. */
+    /** Terminal state the operator, not the autopilot, caused. */
     function finish(phase, headline, detail) {
       state.phase = phase;
       state.spin = false;
+      state.confirm = null;
       state.headline = headline;
       state.detail = detail || "";
+    }
+
+    /**
+     * The operator answered a placement prompt.
+     *
+     * Marks the side as measured and clears the prompt straight away rather
+     * than waiting for the autopilot's next line: ArduPilot measures for a
+     * second or two before it says anything, and a confirm button that stays
+     * live through that window gets pressed twice.
+     */
+    function confirmPlacement() {
+      if (!state.confirm) return false;
+      markSide(state.confirm.pose, "done");
+      state.confirm = null;
+      state.headline = "Hold still — measuring";
+      state.detail = "";
+      return true;
     }
 
     return {
       procedure: proc,
       getState: () => state,
-      begin, ingest, finish, reset,
+      begin, ingest, finish, reset, confirmPlacement,
     };
   }
 
-  return { PROCEDURES, ORDER, SIDE_TO_POSE, poseFor, parseLine, createSession };
+  return {
+    PROCEDURES, ORDER, SIDE_TO_POSE, POSE_TO_POSITION,
+    poseFor, positionFor, parseLine, createSession,
+  };
 })();

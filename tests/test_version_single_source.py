@@ -40,6 +40,11 @@ _CANONICAL_FILES = {
     pathlib.PurePosixPath("corvus/version.py"),
     pathlib.PurePosixPath("pyproject.toml"),
     pathlib.PurePosixPath("Plan.md"),
+    # Same category as Plan.md: an audit/findings doc quotes the version it
+    # was taken against ("a rebuild of v… six months from now"), which is
+    # prose about a release, not a literal something reads back as the
+    # version. Nothing ships from it.
+    pathlib.PurePosixPath("AUDIT_FINDINGS.md"),
     # README.md carries the version in its badge on purpose — a real number,
     # rewritten from VERSION by the pre-commit hook. It is checked separately
     # and more strictly by test_readme_version_badge_matches_the_version_file,

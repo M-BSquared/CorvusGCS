@@ -1,10 +1,18 @@
-"""PX4 firmware release catalogue and image cache.
+"""Firmware release catalogue and image cache, for both flight stacks.
 
-Picking a firmware file used to be the operator's problem: find the PX4
-release, work out which of the ~40 build targets matches the flight
-controller, download the ``.px4``, remember where it landed. This module moves
-that into the app — the operator picks a release and a board, and the backend
-resolves, downloads and caches the image.
+Picking a firmware file used to be the operator's problem: find the release,
+work out which of the ~40 build targets matches the flight controller, download
+the image, remember where it landed. This module moves that into the app — the
+operator picks a release and a board, and the backend resolves, downloads and
+caches the image.
+
+Two sources, one catalogue
+--------------------------
+PX4 publishes its builds as GitHub release assets; ArduPilot publishes its own
+under a path on its own server. The two are read differently — see
+:mod:`corvus.ardupilot_firmware` for the ArduPilot half — but they come out in
+one release list in one shape, so the Firmware page, the flash service and the
+board detection never have to know which stack a build came from.
 
 Offline contract
 ----------------
@@ -34,8 +42,10 @@ import threading
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
+from . import ardupilot_firmware
 from .paths import corvus_path
 from .version import get_version
 
@@ -52,6 +62,10 @@ ASSET_URL = "https://github.com/PX4/PX4-Autopilot/releases/download/{tag}/{name}
 ALLOWED_HOSTS = frozenset({"github.com", "objects.githubusercontent.com",
                            "api.github.com", "release-assets.githubusercontent.com"})
 CATALOG_FILE = "catalog.json"
+# ArduPilot's half, cached separately: the two are fetched independently and a
+# failure of one must not throw away the other's list, which is the whole point
+# of caching in an app that is expected to be offline.
+ARDUPILOT_CATALOG_FILE = "catalog-ardupilot.json"
 # Releases kept in the catalogue. PX4 has years of tags; the operator wants the
 # current one and a couple to roll back to, not the archive.
 MAX_RELEASES = 8
@@ -344,7 +358,7 @@ class FirmwareCatalog:
     def load_cached(self) -> list[dict[str, Any]]:
         """Releases from the on-disk cache; [] when there is no usable cache."""
         try:
-            with open(self._catalog_path(), "r", encoding="utf-8") as handle:
+            with open(self._catalog_path(), encoding="utf-8") as handle:
                 data = json.load(handle)
         except (OSError, ValueError):
             return []
@@ -380,19 +394,86 @@ class FirmwareCatalog:
             self._store_cached(releases)
         return releases, ""
 
-    def catalog(self, refresh: bool = False) -> dict[str, Any]:
-        """The catalogue as the API serves it.
+    # ------------------------------------------------------------------
+    # ArduPilot
+    # ------------------------------------------------------------------
 
-        ``refresh`` forces a network fetch; without it the cache is used when it
-        has anything, so opening the page offline is instant and silent.
+    def _ardupilot_path(self) -> str:
+        return os.path.join(self.dir, ARDUPILOT_CATALOG_FILE)
+
+    def load_cached_ardupilot(self) -> list[dict[str, Any]]:
+        """ArduPilot releases from the on-disk cache; [] when there is none."""
+        try:
+            with open(self._ardupilot_path(), encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            return []
+        releases = data.get("releases") if isinstance(data, dict) else None
+        return releases if isinstance(releases, list) else []
+
+    def _store_cached_ardupilot(self, releases: list[dict[str, Any]]) -> None:
+        try:
+            os.makedirs(self.dir, exist_ok=True)
+            path = self._ardupilot_path()
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as handle:
+                json.dump({"releases": releases}, handle)
+            os.replace(tmp, path)
+        except OSError:
+            logger.debug("could not cache the ArduPilot catalogue", exc_info=True)
+
+    def fetch_ardupilot(self) -> tuple[list[dict[str, Any]], str]:
+        """Fetch ArduPilot's release list. Returns ``(releases, error)``.
+
+        Same contract as :meth:`fetch`: on any failure the cached copy comes
+        back together with the error, so the page says "showing what is cached"
+        rather than going blank.
         """
-        error = ""
+        releases, error = ardupilot_firmware.fetch_releases()
+        if releases:
+            self._store_cached_ardupilot(releases)
+            return releases, error
+        return self.load_cached_ardupilot(), error
+
+    # ------------------------------------------------------------------
+    # The combined catalogue
+    # ------------------------------------------------------------------
+
+    def catalog(self, refresh: bool = False) -> dict[str, Any]:
+        """The catalogue as the API serves it — both stacks, one release list.
+
+        ``refresh`` forces a network fetch; without it the caches are used when
+        they have anything, so opening the page offline is instant and silent.
+
+        A failure on one stack's source is reported but never empties the
+        other's: a laptop that can reach GitHub and not ArduPilot's server, or
+        the reverse, should still be able to flash the half it can see.
+        """
+        errors: list[str] = []
         releases = [] if refresh else self.load_cached()
+        ardupilot = [] if refresh else self.load_cached_ardupilot()
+        # ArduPilot's list costs one request per vehicle and channel rather than
+        # the single JSON call GitHub answers with, so it is fetched on an
+        # explicit refresh and on a genuinely empty first run — never on an
+        # ordinary page open that a cache can already answer. Offline, that is
+        # the difference between an instant page and one that stalls on eight
+        # timeouts before drawing.
+        fetch_ardupilot = refresh or not (ardupilot or releases)
+
         if refresh or not releases:
             releases, error = self.fetch()
+            if error:
+                errors.append(error)
+
+        if fetch_ardupilot:
+            ardupilot, ap_error = self.fetch_ardupilot()
+            if ap_error:
+                errors.append(ap_error)
+
         cached = self.list_cached_images()
         cached_names = {entry["name"] for entry in cached}
         for release in releases:
+            release.setdefault("vendor", "px4")
             for board in release.get("boards", []):
                 board["cached"] = board.get("name") in cached_names
                 # Derived here rather than at parse time so a catalog.json
@@ -400,10 +481,18 @@ class FirmwareCatalog:
                 # is read straight back as the release list, and a field the
                 # UI groups by must never depend on when the file was written.
                 board.update(describe_board(str(board.get("name") or "")))
+        for release in ardupilot:
+            release.setdefault("vendor", "ardupilot")
+            for board in release.get("boards", []):
+                board["cached"] = board.get("name") in cached_names
+                board.update(
+                    ardupilot_firmware.describe_board(str(board.get("board") or "")))
         return {
-            "releases": releases,
+            # PX4 first: it is the primary target, and the list is long enough
+            # that whichever stack leads is the one an operator finds first.
+            "releases": list(releases) + list(ardupilot),
             "cached": cached,
-            "error": error,
+            "error": "; ".join(errors),
             "dir": self.dir,
         }
 
@@ -419,7 +508,7 @@ class FirmwareCatalog:
         except OSError:
             return out
         for name in names:
-            if not name.endswith(".px4"):
+            if not (name.endswith(".px4") or ardupilot_firmware.is_flashable_asset(name)):
                 continue
             path = os.path.join(self.dir, name)
             try:
@@ -432,9 +521,14 @@ class FirmwareCatalog:
     def resolve(self, release_tag: str, board_name: str) -> dict[str, Any] | None:
         """Find one board's asset in the catalogue. None when it is not there.
 
-        The flash request names a release and a board; the URL is looked up
-        here rather than accepted from the client.
+        The flash request names a release and a board; the URL is derived here
+        rather than accepted from the client. An ArduPilot tag carries its own
+        prefix, so the routing is a property of the request rather than a
+        search across both caches.
         """
+        if ardupilot_firmware.parse_tag(release_tag) is not None:
+            return ardupilot_firmware.resolve(
+                self.load_cached_ardupilot(), release_tag, board_name)
         for release in self.load_cached():
             if str(release.get("tag")) != str(release_tag):
                 continue
@@ -463,11 +557,19 @@ class FirmwareCatalog:
         failure — the caller turns that into the flash status message.
         """
         name = _safe_name(entry.get("name", ""))
-        if not name.endswith(".px4"):
-            raise ValueError("not a PX4 firmware image")
         url = str(entry.get("url", ""))
-        if not _host_allowed(url):
-            raise ValueError("firmware download refused: unexpected host")
+        # The extension and the host are checked together, not separately: a
+        # ``.px4`` may only come from GitHub and an ``.apj`` only from
+        # ArduPilot's own server, so neither source can be used to fetch the
+        # other's file type from somewhere it was never published.
+        if name.endswith(".px4"):
+            if not _host_allowed(url):
+                raise ValueError("firmware download refused: unexpected host")
+        elif ardupilot_firmware.is_flashable_asset(name):
+            if not ardupilot_firmware.host_allowed(url):
+                raise ValueError("firmware download refused: unexpected host")
+        else:
+            raise ValueError("not a firmware image (.px4 or .apj)")
 
         cached = self.cached_path(name)
         if cached:

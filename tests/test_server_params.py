@@ -761,7 +761,11 @@ def test_sse_params_cleans_up_listener_on_disconnect(monkeypatch: pytest.MonkeyP
     def boom(self: Any, timeout: float | None = None) -> Any:
         raise BrokenPipeError("client gone")
 
-    monkeypatch.setattr(server_module._BoundedSseBuffer, "get", boom)
+    # The stream loop blocks on _MultiplexSseBuffer.drain — one connection
+    # can now carry several topics, so that is the wait every SSE handler
+    # goes through. Patching it is how this test ends a loop that a real
+    # client would end by going away.
+    monkeypatch.setattr(server_module._MultiplexSseBuffer, "drain", boom)
 
     bridge = FakeParamBridge(
         param_status={"state": "downloading", "count": 50, "received": 10},
@@ -791,7 +795,11 @@ def test_sse_params_without_bridge_sends_idle_and_skips_listener(
     def boom(self: Any, timeout: float | None = None) -> Any:
         raise BrokenPipeError("client gone")
 
-    monkeypatch.setattr(server_module._BoundedSseBuffer, "get", boom)
+    # The stream loop blocks on _MultiplexSseBuffer.drain — one connection
+    # can now carry several topics, so that is the wait every SSE handler
+    # goes through. Patching it is how this test ends a loop that a real
+    # client would end by going away.
+    monkeypatch.setattr(server_module._MultiplexSseBuffer, "drain", boom)
 
     handler = object.__new__(CorvusHandler)
     handler.mavlink = None

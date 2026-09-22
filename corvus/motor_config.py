@@ -124,6 +124,19 @@ DSHOT_CONFIG_OPTIONS: list[dict[str, Any]] = [
 ]
 
 
+def motor_function_value(motor: int) -> float | None:
+    """The output-function value that means "this is Motor *motor*".
+
+    PX4 numbers them contiguously from MOTOR_FUNCTION_BASE. ArduPilot does not,
+    which is why the assign endpoint asks for the value instead of doing the
+    arithmetic itself — see :func:`corvus.ardupilot_motors.motor_function_value`.
+    """
+    number = int(motor)
+    if not 1 <= number <= MAX_MOTOR_FUNCTIONS:
+        return None
+    return float(MOTOR_FUNCTION_BASE + number)
+
+
 def function_param(bank_id: str, pin: int) -> str | None:
     """Name of the parameter that selects what output *pin* of *bank_id* drives."""
     for bank in BANKS:

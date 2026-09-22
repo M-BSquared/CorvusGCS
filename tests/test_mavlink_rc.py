@@ -10,7 +10,7 @@ payload, a receiver that reports no RSSI, and a link that dies mid-sweep.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Callable
+from collections.abc import Callable
 
 import pytest
 from pymavlink import mavutil

@@ -153,17 +153,62 @@ Corvus.setupCalibration = (function () {
       card.appendChild(body);
       card.appendChild(S.icon("chevron-right"));
 
+      const unsupported = S.el("div", "calib-card-desc calib-card-unsupported", "");
+      unsupported.hidden = true;
+      body.appendChild(unsupported);
+
       card.addEventListener("click", () => { if (!card.disabled) openWizard(type); });
       cards.appendChild(card);
-      return card;
+      return { type, card, unsupported };
     });
     sensorSection.appendChild(cards);
     el.appendChild(sensorSection);
 
-    const armedBanner = S.el("div", "params-banner setup-armed-banner");
+    const armedBanner = S.el("div", "params-banner setup-armed-banner calib-list-gate");
     armedBanner.hidden = true;
     armedBanner.textContent = "Cannot calibrate while armed — disarm first.";
     sensorSection.appendChild(armedBanner);
+
+    /* A calibration the connected stack does not run is greyed out with the
+       reason on the card, not hidden: an operator looking for "Motors / ESC"
+       on an ArduPilot aircraft needs to be told it is done through a parameter
+       there, not left to conclude Corvus lost the feature. */
+    let dead = false;
+    let supported = null;      // null = not answered yet, so nothing is gated
+    function applySupport() {
+      cardEls.forEach((entry) => {
+        const ok = supported === null || supported.indexOf(entry.type) !== -1;
+        entry.card.dataset.supported = ok ? "yes" : "no";
+        entry.unsupported.hidden = ok;
+        if (!ok) {
+          entry.unsupported.textContent =
+            "Not available on the connected autopilot.";
+        }
+      });
+    }
+
+    function refreshSupport() {
+      if (!Corvus.capabilities) return;
+      Corvus.capabilities.get().then((caps) => {
+        if (dead) return;
+        supported = (caps && Array.isArray(caps.calibrations) && caps.calibrations.length)
+          ? caps.calibrations : null;
+        applySupport();
+        paintArmed(lastArmed);
+      }).catch(() => {});
+    }
+
+    let lastArmed = false;
+    function paintArmed(armed) {
+      lastArmed = armed;
+      cardEls.forEach((entry) => {
+        const ok = supported === null || supported.indexOf(entry.type) !== -1;
+        entry.card.disabled = armed || !ok;
+      });
+    }
+
+    refreshSupport();
+    let lastStack = Corvus.capabilities ? Corvus.capabilities.stack() : "";
 
     return {
       el,
@@ -172,10 +217,18 @@ Corvus.setupCalibration = (function () {
         const connected = !!s.connected;
         linkChip.set(connected, connected ? "Link up" : "No link");
         armChip.set(!armed, armed ? "Armed" : "Disarmed");
-        cardEls.forEach((c) => { c.disabled = armed; });
+        paintArmed(armed);
         armedBanner.hidden = !armed;
+        // A different aircraft is a different feature set, and the capability
+        // document is cached per stack — so a change here is the one event
+        // that has to re-ask.
+        const nextStack = (s && s.autopilot_stack) || "";
+        if (nextStack !== lastStack) {
+          lastStack = nextStack;
+          refreshSupport();
+        }
       },
-      destroy() {},
+      destroy() { dead = true; },
     };
   }
 
@@ -246,7 +299,8 @@ Corvus.setupCalibration = (function () {
     el.appendChild(stage);
 
     // --- position strip ---------------------------------------------------
-    // Every position PX4 will ask for, drawn, with its own state. Before the
+    // Every position the autopilot will ask for, drawn, with its own state.
+    // Before the
     // start it doubles as a preview: clicking one shows it on the big figure,
     // so the whole sequence can be studied before the aircraft is picked up.
     const poseFigures = [];
@@ -290,7 +344,7 @@ Corvus.setupCalibration = (function () {
     if (proc.danger) prep.classList.add("calib-prep-danger");
     el.appendChild(prep);
 
-    // --- live PX4 transcript ---------------------------------------------
+    // --- live autopilot transcript ----------------------------------------
     const logCard = S.el("div", "page-card calib-log-card");
     const logTitle = S.el("div", "guidance-title");
     logTitle.appendChild(S.icon("info"));
@@ -309,6 +363,15 @@ Corvus.setupCalibration = (function () {
       icon: "play", label: "Start " + proc.label.toLowerCase() + " calibration",
       onClick: onStart,
     });
+    /* The step PX4 does not have. ArduPilot prints "Place vehicle level and
+       press any key." and then waits for MAV_CMD_ACCELCAL_VEHICLE_POS naming
+       that position — forever, if nobody sends it. This is that key. It is
+       shown only while the session is actually holding a prompt, so on a PX4
+       link it never appears. */
+    const confirmBtn = Corvus.ui.button({
+      variant: "primary", icon: "check", label: "In position — continue",
+      onClick: onConfirmPosition,
+    });
     const abortBtn = Corvus.ui.button({
       variant: "danger", icon: "octagon-x", label: "Abort calibration", onClick: onAbort,
     });
@@ -319,7 +382,7 @@ Corvus.setupCalibration = (function () {
       variant: "secondary", icon: "chevron-left", label: "Back to calibrations",
       onClick: () => navigateBack(),
     });
-    const actions = Corvus.ui.actions([startBtn, abortBtn, retryBtn, doneBtn]);
+    const actions = Corvus.ui.actions([startBtn, confirmBtn, abortBtn, retryBtn, doneBtn]);
     actions.classList.add("calib-actions");
     el.appendChild(actions);
 
@@ -374,6 +437,11 @@ Corvus.setupCalibration = (function () {
       const blocked = vehicle.armed || !vehicle.connected;
       startBtn.hidden = running || terminal;
       startBtn.disabled = busy || blocked;
+      confirmBtn.hidden = !(running && st.confirm);
+      confirmBtn.disabled = busy;
+      if (st.confirm) {
+        confirmBtn.textContent = "In position — continue";
+      }
       abortBtn.hidden = !running;
       abortBtn.disabled = busy;
       retryBtn.hidden = st.phase !== "failed" && st.phase !== "cancelled";
@@ -415,6 +483,11 @@ Corvus.setupCalibration = (function () {
         watchdog.hidden = false;
         watchdog.textContent = "The autopilot accepted the command but has not reported "
           + "anything yet. Check the link, or abort and try again.";
+      } else if (st.confirm) {
+        // Not a stall: the autopilot is waiting for the operator, and saying
+        // "no word for 40 s" here would blame the vehicle for the pause it
+        // asked for.
+        watchdog.hidden = true;
       } else if (st.seenVehicleMessage && quiet > STALL_TIMEOUT_MS) {
         watchdog.hidden = false;
         watchdog.textContent = "No word from the autopilot for "
@@ -498,6 +571,29 @@ Corvus.setupCalibration = (function () {
         session.finish("failed", "Could not start the calibration",
           (err && err.message) || "The vehicle rejected the command.");
         notify("critical", (err && err.message) || "Calibration could not be started");
+      } finally {
+        busy = false;
+        paint();
+      }
+    }
+
+    async function onConfirmPosition() {
+      const pending = session.getState().confirm;
+      if (!pending || busy) return;
+      busy = true;
+      paint();
+      try {
+        await Corvus.telemetry.postAction(
+          "/api/calibrate/position", { position: pending.position });
+        // Advance the session only once the vehicle has taken the answer.
+        // Moving the figure on before that would show the operator the next
+        // position while the autopilot was still asking for this one.
+        session.confirmPlacement();
+        appendLog("Confirmed: " + F.poseLabel(pending.pose), "info");
+      } catch (err) {
+        const message = (err && err.message) || "The vehicle did not take the position";
+        appendLog(message, "critical");
+        notify("warning", message);
       } finally {
         busy = false;
         paint();

@@ -1274,6 +1274,128 @@ async function testSetpointSeriesAreDrawnAsMarkersNotLines() {
   destroy();
 }
 
+async function testAFindingSaysWhereInTheFlightToLook() {
+  const { container, fake } = reset();
+  fake.setReview(Object.assign({}, REVIEW, {
+    findings: [
+      { level: "critical", text: "Motor 1 was commanded to full output for 8.0 s.",
+        t: 187.0, mode: "Position" },
+      { level: "warning", text: "The log ends mid-record." },
+    ],
+  }));
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "review");
+  fire(buttonByLabel(container, "Review"), "click");
+  await flush();
+  await flush();
+
+  const stamps = findByClass(container, "review-finding-time");
+  // A finding the backend could place carries the second of the flight; one it
+  // could not is left alone rather than given a made-up zero.
+  assert.equal(stamps.length, 1, "only the placed finding is stamped");
+  assert.equal(stamps[0].textContent, "3:07", "minutes and seconds, not raw seconds");
+  const modes = findByClass(container, "review-finding-mode");
+  assert.equal(modes[0].textContent, "Position");
+  destroy();
+}
+
+async function testFlightMessagesCarryTheSecondTheyWerePrintedAt() {
+  const { container, fake } = reset();
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "review");
+  fire(buttonByLabel(container, "Review"), "click");
+  await flush();
+  await flush();
+
+  // On the same clock as the plots and the mode strip, so the line that
+  // explains a flight can be found in the plot that shows it.
+  const times = findByClass(findByClass(container, "review-messages")[0], "guidance-time");
+  assert.deepEqual(times.map((el) => el.textContent), ["0:01", "0:02"]);
+  destroy();
+}
+
+async function testTheReasoningBehindAFindingWaitsForAClick() {
+  const { container, fake } = reset();
+  fake.setReview(Object.assign({}, REVIEW, {
+    findings: [{ level: "critical", text: "Motor 1 was pinned at full output",
+                 detail: "One motor at its limit alone is the mixer wanting to correct.",
+                 t: 12, mode: "Position" }],
+  }));
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "review");
+  fire(buttonByLabel(container, "Review"), "click");
+  await flush();
+  await flush();
+
+  // A dozen paragraphs stacked up is a wall the reader gives up on, so the
+  // page opens as claims and the reasoning is one click away.
+  const detail = findOneByClass(container, "review-finding-detail");
+  assert.equal(detail.hidden, true, "the explanation starts folded away");
+  const head = findOneByClass(container, "review-finding-head");
+  assert.equal(head.tagName, "BUTTON", "and it is reachable from the keyboard");
+  assert.equal(head.getAttribute("aria-expanded"), "false");
+
+  fire(head, "click");
+  assert.equal(detail.hidden, false, "opened");
+  assert.equal(head.getAttribute("aria-expanded"), "true");
+  fire(head, "click");
+  assert.equal(detail.hidden, true, "and closes again");
+  destroy();
+}
+
+async function testAFindingWithNothingBehindItIsNotAButton() {
+  const { container, fake } = reset();
+  fake.setReview(Object.assign({}, REVIEW, {
+    findings: [{ level: "ok", text: "Nothing flagged in this log" }],
+  }));
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "review");
+  fire(buttonByLabel(container, "Review"), "click");
+  await flush();
+  await flush();
+
+  assert.equal(findOneByClass(container, "review-finding-head").tagName, "SPAN",
+    "nothing to open, so nothing invites a press");
+  destroy();
+}
+
+async function testObservationsAreFoldedAwayBehindTheProblems() {
+  const { container, fake } = reset();
+  fake.setReview(Object.assign({}, REVIEW, {
+    findings: [
+      { level: "note", text: "The aircraft flew Return", detail: "why", t: 300 },
+      { level: "critical", text: "Accelerometer clipping", detail: "why", t: 10 },
+      { level: "note", text: "2 logging dropouts", detail: "why" },
+      { level: "warning", text: "Vibration peaked at 33 m/s²", detail: "why", t: 50 },
+    ],
+  }));
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "review");
+  fire(buttonByLabel(container, "Review"), "click");
+  await flush();
+  await flush();
+
+  // Problems first and in severity order; context is behind a fold so it does
+  // not stand between the reader and the things that need doing.
+  const rows = findByClass(container, "review-finding");
+  assert.deepEqual(rows.map((r) => r.dataset.level),
+    ["critical", "warning", "note", "note"]);
+  const notes = findOneByClass(container, "review-finding-notes");
+  assert.equal(notes.hidden, true);
+  const more = findOneByClass(container, "review-more");
+  assert.match(findOneByClass(more, "review-more-label").textContent,
+    /2 more observations/);
+
+  fire(more, "click");
+  assert.equal(notes.hidden, false, "and they are still one click away");
+  destroy();
+}
+
 async function testDestroyStopsPollingAndUnsubscribes() {
   const { container, fake } = reset();
   const destroy = Corvus.analysis.render(container);
@@ -1343,6 +1465,11 @@ async function run() {
     testTheGroundTrackGetsNoTimeBands,
     testTheModeStripNamesSpansAndTotalsTheTime,
     testSetpointSeriesAreDrawnAsMarkersNotLines,
+    testAFindingSaysWhereInTheFlightToLook,
+    testFlightMessagesCarryTheSecondTheyWerePrintedAt,
+    testTheReasoningBehindAFindingWaitsForAClick,
+    testAFindingWithNothingBehindItIsNotAButton,
+    testObservationsAreFoldedAwayBehindTheProblems,
     testDestroyStopsPollingAndUnsubscribes,
   ];
   for (const t of tests) {

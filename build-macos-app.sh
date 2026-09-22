@@ -20,14 +20,23 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSION="$(cat "$REPO_DIR/VERSION")"
 BUILD_DIR="$REPO_DIR/build"
-DIST_DIR="$REPO_DIR/dist"
+# Overridable because a checkout can sit somewhere a .app cannot be signed:
+# iCloud Drive, OneDrive and Dropbox re-apply com.apple.FinderInfo to
+# directories inside the bundle while the build runs, and codesign refuses a
+# bundle carrying it. Nothing can win that race in place, so the way out is to
+# build somewhere the sync agent is not:
+#   CORVUS_DIST=/tmp/corvus-dist ./build-macos-app.sh
+DIST_DIR="${CORVUS_DIST:-$REPO_DIR/dist}"
 APP_NAME="Corvus GCS"
 APP="$DIST_DIR/$APP_NAME.app"
 # Personal reverse-DNS, not the institution's: the bundle identifier is an
 # ownership claim macOS shows to the user, and it follows LICENSE.md.
 BUNDLE_ID="de.mbsquared.corvus.gcs"
 ARCH="$(uname -m)"
-DMG="$REPO_DIR/Corvus_GCS-${VERSION}-macOS-${ARCH}.dmg"
+# Artifacts go to dist/, which is gitignored — not to the repo root.
+# Two finished .dmg files (600 MB between them) were sitting in the
+# checkout from builds two weeks old, because this is where they landed.
+DMG="$DIST_DIR/Corvus_GCS-${VERSION}-macOS-${ARCH}.dmg"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
 
 MAKE_DMG=0
@@ -63,6 +72,26 @@ for tool in rsync install_name_tool otool codesign sips iconutil; do
     }
 done
 
+# Everything the bundle is assembled from, checked before anything is built.
+# This list used to be discovered one `cp` at a time, two hundred lines in: a
+# missing LICENSE.md stopped the build *after* the venv was created and the
+# wheels were downloaded, with `cp: ... No such file or directory` and no hint
+# of which step wanted it. A build that cannot succeed should say so in its
+# first second, and name the file.
+MISSING=""
+for required in \
+    VERSION requirements.txt LICENSE.md \
+    corvus src assets plugins assets/CorvusGCS_logo.png
+do
+    [ -e "$REPO_DIR/$required" ] || MISSING="$MISSING  $required"
+done
+if [ -n "$MISSING" ]; then
+    echo "ERROR: the bundle is assembled from files that are not in the repo:" >&2
+    for m in $MISSING; do echo "         $m" >&2; done
+    echo "       Restore them (git checkout -- <path>) and run this again." >&2
+    exit 1
+fi
+
 # ---- pick a framework CPython ----------------------------------------------
 # A .app needs a *framework* build: the interpreter re-execs through
 # Python.app/Contents/MacOS/Python (the GUI stub), which is what lets a Qt
@@ -73,7 +102,11 @@ py_ok() {  # <path> -> 0 if usable
     [ -x "$p" ] || return 1
     ARCH="$ARCH" "$p" - <<'PY' >/dev/null 2>&1 || return 1
 import os, platform, sys, sysconfig
-assert sys.version_info >= (3, 10), sys.version
+# 3.12 is the floor pyproject.toml declares and the version both CI
+# pipelines test. This used to accept 3.10, so the shipped .app could be
+# built on an interpreter older than the one anything was tested on --
+# "it passes CI" then said nothing about what operators run.
+assert sys.version_info >= (3, 12), sys.version
 assert sysconfig.get_config_var("PYTHONFRAMEWORK"), "not a framework build"
 assert "conda" not in sys.prefix.lower(), "conda interpreter"
 # The interpreter must run as the architecture we are building for. A
@@ -88,22 +121,25 @@ PY
 }
 
 if [ -n "$PYBIN" ]; then
-    py_ok "$PYBIN" || { echo "ERROR: $PYBIN is not a usable framework python >= 3.10" >&2; exit 1; }
+    py_ok "$PYBIN" || { echo "ERROR: $PYBIN is not a usable framework python >= 3.12" >&2; exit 1; }
 else
+    # 3.12 first because it is the version CI tests and environment.yml pins;
+    # newer ones are accepted after it. Nothing below 3.12 is listed, and
+    # py_ok would reject it anyway.
     for cand in \
         /Library/Frameworks/Python.framework/Versions/3.12/bin/python3 \
-        /Library/Frameworks/Python.framework/Versions/3.11/bin/python3 \
         /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 \
-        /opt/homebrew/bin/python3.12 /opt/homebrew/bin/python3.11 /opt/homebrew/bin/python3.13 \
-        /usr/local/bin/python3.12 /usr/local/bin/python3.11 /usr/local/bin/python3.13 \
+        /Library/Frameworks/Python.framework/Versions/3.14/bin/python3 \
+        /opt/homebrew/bin/python3.12 /opt/homebrew/bin/python3.13 /opt/homebrew/bin/python3.14 \
+        /usr/local/bin/python3.12 /usr/local/bin/python3.13 /usr/local/bin/python3.14 \
         "$(command -v python3 || true)"
     do
         if [ -n "$cand" ] && py_ok "$cand"; then PYBIN="$cand"; break; fi
     done
 fi
 [ -n "$PYBIN" ] || {
-    echo "ERROR: no framework CPython >= 3.10 found." >&2
-    echo "       Install one:  brew install python@3.11" >&2
+    echo "ERROR: no framework CPython >= 3.12 found." >&2
+    echo "       Install one:  brew install python@3.12" >&2
     echo "       or point at it: ./build-macos-app.sh --python /path/to/python3" >&2
     exit 1
 }
@@ -114,30 +150,34 @@ PY_FW_PREFIX="$("$PYBIN" -c 'import sysconfig; print(sysconfig.get_config_var("P
 PY_FW_DIR="$PY_FW_PREFIX/Python.framework/Versions/$PY_MM"
 echo ">>> Interpreter: $PYBIN (python $PY_MM, framework at $PY_FW_DIR)"
 
-# ---- runtime deps: kept in sync with environment.yml's pip: section ---------
-read -r -a RUNTIME_DEPS <<< "$(
-    "$PYBIN" - "$REPO_DIR/environment.yml" <<'PY'
-import re, sys
-fallback = ["pymavlink>=2.4", "paramiko>=3.0", "pyserial>=3.5",
-            "PyQt6>=6.6", "PyQt6-WebEngine>=6.6"]
-try:
-    lines = open(sys.argv[1]).read().splitlines()
-    out, inpip = [], False
-    for line in lines:
-        if re.match(r"\s*-\s*pip:\s*$", line):
-            inpip = True
-            continue
-        if inpip:
-            m = re.match(r"\s{6,}-\s*(\S+)\s*$", line)
-            if not m:
-                break
-            out.append(m.group(1))
-    print(" ".join(out or fallback))
-except OSError:
-    print(" ".join(fallback))
-PY
-)"
-echo ">>> Runtime deps: ${RUNTIME_DEPS[*]}"
+# ---- runtime deps -----------------------------------------------------------
+# requirements.txt, read as a file, by pip. This used to be a Python regex
+# that screen-scraped environment.yml's pip: block — `re.match(r"\\s{6,}-\\s*(\\S+)")`
+# against a YAML file it could not actually parse — with a hardcoded fallback
+# list for when that failed. It was the only build script that tried to stay
+# in sync, and it did so by guessing at a format.
+#
+# Which file, in order: $CORVUS_REQUIREMENTS, then requirements.lock if the
+# repo has one, then requirements.txt. The lock is what makes a release
+# rebuildable — requirements.txt states floors, so installing from it in six
+# months resolves to whatever is newest then, and the "same" tag produces a
+# different binary. Every build writes the set it actually installed to
+# dist/*.lock (below); promoting one of those to requirements.lock at tag time
+# is what pins the next rebuild to it.
+REQUIREMENTS="${CORVUS_REQUIREMENTS:-}"
+if [ -z "$REQUIREMENTS" ]; then
+    if [ -f "$REPO_DIR/requirements.lock" ]; then
+        REQUIREMENTS="$REPO_DIR/requirements.lock"
+    else
+        REQUIREMENTS="$REPO_DIR/requirements.txt"
+    fi
+fi
+if [ ! -f "$REQUIREMENTS" ]; then
+    echo "ERROR: missing $REQUIREMENTS" >&2
+    exit 1
+fi
+LOCK_OUT="$DIST_DIR/Corvus_GCS-${VERSION}-macOS-${ARCH}.lock"
+echo ">>> Runtime deps: -r $(basename "$REQUIREMENTS")"
 echo ""
 
 # ---- cleanup trap: drop a half-built bundle, keep logs + finished artifacts --
@@ -172,13 +212,27 @@ if ! "$PYROOT/bin/python3" -m pip install --upgrade pip >>"$PIP_LOG" 2>&1; then
     tail -n 20 "$PIP_LOG" >&2 || true
     exit 1
 fi
-echo ">>> Installing ${RUNTIME_DEPS[*]} ..."
-if ! "$PYROOT/bin/python3" -m pip install "${RUNTIME_DEPS[@]}" >>"$PIP_LOG" 2>&1; then
+echo ">>> Installing -r $(basename "$REQUIREMENTS") ..."
+if ! "$PYROOT/bin/python3" -m pip install -r "$REQUIREMENTS" >>"$PIP_LOG" 2>&1; then
     echo "ERROR: dependency install failed; log: $PIP_LOG" >&2
     tail -n 20 "$PIP_LOG" >&2 || true
     exit 1
 fi
 echo "    (deps install log: $PIP_LOG)"
+# What went into THIS bundle, exactly. Ships beside the artifact so a rebuild
+# six months from now can be told to resolve to the same versions:
+#   cp dist/Corvus_GCS-<version>-macOS-<arch>.lock requirements.lock
+mkdir -p "$DIST_DIR"
+{
+    echo "# Corvus GCS $VERSION — macOS $ARCH, python $PY_MM"
+    echo "# The resolved runtime set this artifact was built from."
+    echo "# Install with: pip install -r <this file>"
+    "$PYROOT/bin/python3" -m pip freeze --all --exclude-editable
+} > "$LOCK_OUT" 2>>"$PIP_LOG" || {
+    echo "WARNING: could not write $LOCK_OUT" >&2
+    rm -f "$LOCK_OUT"
+}
+if [ -f "$LOCK_OUT" ]; then echo "    (resolved set: $LOCK_OUT)"; fi
 
 # ---- 4. stdlib --------------------------------------------------------------
 # pyvenv.cfg `home =` points at the build host and breaks on another Mac.
@@ -211,6 +265,17 @@ OLD_REF="$(otool -L "$PYROOT/bin/python3" | awk 'NR>1 && $1 ~ /Python\.framework
 cp -L "$OLD_REF" "$FW_DST/Python"
 chmod u+w "$FW_DST/Python"
 rsync -a "$PY_FW_DIR/Resources/" "$FW_DST/Resources/"   # Python.app GUI stub
+
+# A framework is not a directory that happens to contain Versions/<x>: codesign
+# checks for the standard layout and rejects anything else with "bundle format
+# unrecognized, invalid, or unsuitable" — naming the subcomponent but not what
+# is wrong with it. Versions/Current and the two root symlinks pointing through
+# it are what make this a framework rather than a folder. Without them the
+# whole .app fails to sign and ships unsigned, which on another Mac is a worse
+# first launch than the ad-hoc signature this build is trying to give it.
+ln -sfn "$PY_MM" "$APP/Contents/Frameworks/Python.framework/Versions/Current"
+ln -sfn Versions/Current/Python "$APP/Contents/Frameworks/Python.framework/Python"
+ln -sfn Versions/Current/Resources "$APP/Contents/Frameworks/Python.framework/Resources"
 
 # Load-command paths in <binary> that genuinely live under the host framework.
 #
@@ -434,18 +499,61 @@ LAUNCH_EOF
 chmod 0755 "$APP/Contents/MacOS/corvus-gcs"
 
 # ---- 10. sign the bundle ----------------------------------------------------
+# Strip extended attributes first. codesign refuses a bundle carrying them —
+# "resource fork, Finder information, or similar detritus not allowed" — and
+# this bundle is assembled by rsync and cp from a working copy on a Mac, so it
+# arrives with thousands: com.apple.provenance on everything the OS has seen,
+# com.apple.macl on files an app was ever granted access to. Eight thousand of
+# them on a normal build, and every one is metadata about THIS machine that has
+# no business in a shipped artifact. They carry nothing the app needs.
+#
+# Without this the build ended on "WARNING: bundle signing failed" and produced
+# an unsigned .app, which on another Mac is a worse first launch than the
+# ad-hoc-signed one this is trying to make.
+# Only these two, not `xattr -cr`. codesign objects to exactly these; the
+# other attributes a macOS working copy carries (com.apple.provenance, and a
+# file provider's own) are system-managed, refuse to be removed, and make a
+# blanket clear fail per file without touching the ones that matter.
+echo ">>> Stripping Finder metadata ..."
+xattr -rd com.apple.FinderInfo "$APP" 2>/dev/null || true
+xattr -rd com.apple.ResourceFork "$APP" 2>/dev/null || true
+
 # Ad-hoc by default. Nested Mach-O files (Qt frameworks, the interpreter) keep
 # the signatures they were shipped/re-signed with; --deep would re-sign them
 # all and is both slow and deprecated, so only the bundle itself is signed.
 echo ">>> Signing bundle (identity: $CODESIGN_IDENTITY) ..."
+: > "$BUILD_DIR/codesign.log"   # one run per log, or a failure reads as four
 if ! codesign --force --sign "$CODESIGN_IDENTITY" "$APP" >>"$BUILD_DIR/codesign.log" 2>&1; then
     echo "WARNING: bundle signing failed; see $BUILD_DIR/codesign.log"
+    tail -n 5 "$BUILD_DIR/codesign.log" >&2 || true
+    # The one cause that is not a bug in this script, and is not obvious from
+    # codesign's own wording: a cloud-synced working copy. iCloud Drive,
+    # OneDrive and Dropbox re-apply com.apple.FinderInfo to directories inside
+    # dist/ while the build runs, so the strip above wins and then loses again
+    # a moment later. The tell is com.apple.fileprovider.* on the bundle.
+    # grep -c, not grep -q: this script runs under `set -o pipefail`, and a
+    # -q that exits on the first match SIGPIPEs xattr, so the pipeline reports
+    # failure exactly when the answer is yes — and the advice below never
+    # printed for the one person who needed it.
+    if [ "$(xattr -r "$APP" 2>/dev/null | grep -c 'com.apple.fileprovider' || true)" -gt 0 ]; then
+        echo "       This checkout is inside a cloud-synced folder (iCloud Drive," >&2
+        echo "       OneDrive, Dropbox), which re-applies Finder metadata to the" >&2
+        echo "       bundle faster than it can be stripped. Build somewhere the" >&2
+        echo "       sync agent is not:" >&2
+        echo "         CORVUS_DIST=/tmp/corvus-dist $(basename "${BASH_SOURCE[0]}")" >&2
+    fi
 fi
 
 # ---- 11. verify -------------------------------------------------------------
 if [ "$VERIFY" -eq 1 ]; then
     echo ">>> Verifying the bundled runtime ..."
+    # PYTHONDONTWRITEBYTECODE, because this step runs the bundled interpreter
+    # INSIDE the bundle that was just signed. Importing Qt and pymavlink writes
+    # __pycache__/*.pyc next to their sources, and a file added after signing
+    # breaks the seal: `codesign --verify` then lists a few hundred "file
+    # added" lines for an .app that had signed cleanly a second earlier.
     if ! env -u PYTHONPATH -u PYTHONHOME \
+            PYTHONDONTWRITEBYTECODE=1 \
             PYTHONHOME="$PYROOT" \
             PYTHONPATH="$APPROOT:$PYROOT/lib/python$PY_MM/site-packages" \
             "$PYROOT/bin/python3" - <<'PY'
@@ -498,6 +606,7 @@ SUCCESS=1
 # ---- 12. optional .dmg ------------------------------------------------------
 if [ "$MAKE_DMG" -eq 1 ]; then
     echo ">>> Building $DMG ..."
+    mkdir -p "$DIST_DIR"
     rm -f "$DMG"
     STAGE="$BUILD_DIR/dmg-stage"
     rm -rf "$STAGE"; mkdir -p "$STAGE"

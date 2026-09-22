@@ -155,7 +155,7 @@ class InstanceLock:
         caller must treat every field as a hint, not a fact.
         """
         try:
-            with open(self._path, "r", encoding="utf-8") as handle:
+            with open(self._path, encoding="utf-8") as handle:
                 data = json.loads(handle.read() or "{}")
         except (OSError, ValueError):
             return {}
@@ -175,7 +175,7 @@ class InstanceLock:
         except OSError as exc:  # noqa: BLE001 - teardown must always complete
             logger.debug("instance lock close failed: %s", exc)
 
-    def __enter__(self) -> "InstanceLock":
+    def __enter__(self) -> InstanceLock:
         self.acquire()
         return self
 

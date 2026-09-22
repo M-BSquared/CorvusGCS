@@ -22,12 +22,21 @@ import stat
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from pymavlink import mavutil
 
+from . import autopilot as autopilot_dialect
 from . import mission as mission_plan
 from . import rc_config
+from .autopilot import (  # noqa: F401 - re-exported, see the tables below
+    PX4_AUTO_SUBMODE,
+    PX4_AVAILABLE_MODES,
+    PX4_MAIN_MODE,
+    Dialect,
+    ModeCommand,
+)
 from .paths import corvus_path
 from .state_store import VehicleStateStore
 from .tlog import TlogWriter
@@ -81,42 +90,17 @@ MAV_RESULT_TEXT: dict[int, str] = {
     9: "UNSUPPORTED_FRAME", 10: "NOT_IN_CONTROL",
 }
 
-# PX4 main_mode values (bits 16-23 of custom_mode)
-PX4_MAIN_MODE: dict[int, str] = {
-    1: "MANUAL", 2: "ALTCTL", 3: "POSCTL", 4: "AUTO",
-    5: "ACRO", 6: "OFFBOARD", 7: "STABILIZED", 8: "RATTITUDE",
-}
-
-# PX4 AUTO sub_mode values (bits 24-31 of custom_mode when main_mode=4).
-# Prefix-less so state.mode matches PX4_AVAILABLE_MODES and the mode selector.
-PX4_AUTO_SUBMODE: dict[int, str] = {
-    1: "READY", 2: "TAKEOFF", 3: "LOITER",
-    4: "MISSION", 5: "RTL", 6: "LAND",
-    7: "RTGS", 8: "FOLLOWME",
-    9: "PRECLAND", 10: "VTOL_TAKEOFF",
-    11: "EXTERNAL1", 12: "EXTERNAL2", 13: "EXTERNAL3",
-    14: "EXTERNAL4", 15: "EXTERNAL5", 16: "EXTERNAL6",
-    17: "EXTERNAL7", 18: "EXTERNAL8",
-}
-
-PX4_AVAILABLE_MODES: list[str] = [
-    "MANUAL", "ALTCTL", "POSCTL", "STABILIZED", "ACRO", "RATTITUDE",
-    "LOITER", "MISSION", "RTL", "LAND", "TAKEOFF",
-    "OFFBOARD", "RTGS", "FOLLOWME",
-]
-
-# Built-in (base_mode, main_mode, sub_mode) tuples keyed by the fallback mode
-# names, mirroring pymavlink's px4_map. Used when mode_mapping() returns empty
-# so set_mode and get_available_modes stay consistent (BUG 9). PX4 sends these
-# exact base_mode values (216 = MAV_MODE_FLAG_CUSTOM_MODE_ENABLED is the
-# generic custom-mode flag; the per-mode base_mode below is what px4_map uses).
-PX4_FALLBACK_MODE_VALUES: dict[str, tuple[int, int, int]] = {
-    "MANUAL": (81, 1, 0), "ALTCTL": (81, 2, 0), "POSCTL": (81, 3, 0),
-    "STABILIZED": (81, 7, 0), "ACRO": (65, 5, 0), "RATTITUDE": (65, 8, 0),
-    "LOITER": (29, 4, 3), "MISSION": (29, 4, 4), "RTL": (29, 4, 5),
-    "LAND": (29, 4, 6), "TAKEOFF": (29, 4, 2), "OFFBOARD": (29, 6, 0),
-    "RTGS": (29, 4, 7), "FOLLOWME": (29, 4, 8),
-}
+# The flight-stack tables moved to corvus.autopilot when ArduPilot stopped
+# being a stack Corvus merely *named* and became one it flies. They are
+# re-exported here because this module was their home for a long time and the
+# names are load-bearing in tests and in the simulated vehicle.
+#
+# PX4_MAIN_MODE / PX4_AUTO_SUBMODE decode PX4's packed custom_mode;
+# PX4_AVAILABLE_MODES is the selector fallback; PX4_FALLBACK_MODE_VALUES is the
+# (base_mode, main_mode, sub_mode) table DO_SET_MODE wants.
+PX4_FALLBACK_MODE_VALUES: dict[str, tuple[int, int, int]] = dict(
+    autopilot_dialect.PX4_MODE_VALUES
+)
 
 TAKEOFF_ALTITUDE_MIN_M = 1.0
 # 120 m, not 50. The old ceiling was an arbitrary round number that refused
@@ -717,14 +701,14 @@ class _PriorityLock:
 
     # Routine use keeps the plain ``with lock:`` spelling every existing call
     # site already uses, so only the abort paths had to change.
-    def __enter__(self) -> "_PriorityLock":
+    def __enter__(self) -> _PriorityLock:
         self._acquire(priority=False)
         return self
 
     def __exit__(self, *exc: Any) -> None:
         self._release(registered=False)
 
-    def priority(self) -> "_PriorityLockAbort":
+    def priority(self) -> _PriorityLockAbort:
         """Context manager for a command that must not queue behind routine work."""
         return _PriorityLockAbort(self)
 
@@ -738,7 +722,7 @@ class _PriorityLockAbort:
         self._owner = owner
         self._registered = False
 
-    def __enter__(self) -> "_PriorityLockAbort":
+    def __enter__(self) -> _PriorityLockAbort:
         self._registered = self._owner._acquire(priority=True)
         return self
 
@@ -795,10 +779,28 @@ class MavlinkBridge:
         self._target_component: int = 1
         self._request_sent = False
         self._mode_mapping: set[str] = set()
-        self._mode_values: dict[str, Any] = {}
-        # Set when the autopilot reports modes in an encoding set_mode() cannot
-        # send (ArduPilot's flat custom_mode). See _build_mode_mapping().
+        self._mode_values: dict[str, ModeCommand] = {}
+        # Set when the autopilot reports modes in an encoding this session
+        # cannot send. Since the dialect layer landed that is only ever true
+        # for a stack Corvus does not recognise at all — PX4's packed words and
+        # ArduPilot's flat custom_mode are both sendable now.
         self._modes_unsupported = False
+        # Which flight stack is on the other end, and the MAV_TYPE its mode
+        # table is keyed by. Both are latched from the heartbeat at connect and
+        # refreshed from every heartbeat after it — nothing is sent before that
+        # happens. PX4 is the default only because it is the primary target and
+        # a bridge that has never seen a vehicle has to behave like *something*;
+        # the moment a real heartbeat lands, the vehicle's own answer wins.
+        self._dialect: Dialect = autopilot_dialect.dialect_for_stack(
+            autopilot_dialect.STACK_PX4
+        )
+        self._mav_type_id = 0
+        # The calibration currently running, because ArduPilot cancels a
+        # magnetometer fit with a different command than everything else.
+        self._active_calibration = ""
+        # The mode to go back to when an ArduPilot autotune is stopped, since
+        # there the tune is a flight mode rather than a command.
+        self._autotune_return_mode = ""
         self._pending_acks: dict[int, _PendingAck] = {}
         self._ack_lock = threading.Lock()
         # Two-tier: routine commands queue, abort commands overtake the queue.
@@ -1423,13 +1425,20 @@ class MavlinkBridge:
             logger.debug("could not pin mavutil target: %s", exc)
         vtype = MAV_TYPE_MAP.get(hb.type, f"TYPE_{hb.type}")
         autopilot = MAV_AUTOPILOT_MAP.get(hb.autopilot, f"AP_{hb.autopilot}")
+        # Before anything decodes a mode. The mode word means different things
+        # on different stacks, so reading it with the previous session's
+        # dialect is how a reconnect from a PX4 bench to an ArduPilot aircraft
+        # used to show PX4 mode names for the first second of the flight.
+        self._latch_dialect(hb.autopilot, hb.type)
         armed = bool(hb.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
         mode = self._decode_mode(hb)
-        logger.info("Heartbeat: %s / %s mode=%s (sys=%d comp=%d)", vtype, autopilot,
-                    mode, self._target_system, self._target_component)
+        logger.info("Heartbeat: %s / %s (%s) mode=%s (sys=%d comp=%d)",
+                    vtype, autopilot, self._dialect.label, mode,
+                    self._target_system, self._target_component)
         self._store.update(
             connected=True, vehicle_type=vtype, autopilot=autopilot,
             armed=armed, mode=mode, link_status="connected", link_error="",
+            autopilot_stack=self._dialect.stack,
         )
         self._store.heartbeat()
         self._build_mode_mapping()
@@ -1556,35 +1565,62 @@ class MavlinkBridge:
                 getattr(hb, "get_srcComponent", lambda: "?")(),
             )
 
-    def _decode_mode(self, hb: Any) -> str:
-        """Decode the PX4 custom mode layout used by PX4 v1.16-v1.18."""
+    def _latch_dialect(self, autopilot_id: Any, mav_type: Any) -> None:
+        """Pick the flight-stack dialect this link will be flown with.
+
+        Called from :meth:`_connect` and again from every HEARTBEAT, because a
+        vehicle behind mavlink-router can be swapped for a different one
+        without the socket ever closing. Rebuilding the mode table is deferred
+        to :meth:`_build_mode_mapping`; this only records what we are talking
+        to, which every decode below then reads.
+        """
         try:
-            custom = hb.custom_mode
-            main_mode = (custom >> 16) & 0xFF
-            sub_mode = (custom >> 24) & 0xFF
-            if main_mode == 4:
-                return PX4_AUTO_SUBMODE.get(sub_mode, f"SUBMODE_{sub_mode}")
-            return PX4_MAIN_MODE.get(main_mode, f"MODE_{custom}")
+            type_id = int(mav_type)
+        except (TypeError, ValueError):
+            type_id = 0
+        dialect = autopilot_dialect.dialect_for(autopilot_id)
+        changed = dialect is not self._dialect or type_id != self._mav_type_id
+        self._dialect = dialect
+        self._mav_type_id = type_id
+        if changed:
+            logger.info(
+                "Flight stack: %s (MAV_TYPE %s)", dialect.label, type_id,
+            )
+
+    def _decode_mode(self, hb: Any) -> str:
+        """HEARTBEAT -> the mode name, in the connected stack's own vocabulary.
+
+        PX4 packs a main mode and a sub mode into ``custom_mode``; ArduPilot
+        puts one flat number there and keeps a different table per vehicle.
+        Neither decoding is a superset of the other, so this delegates rather
+        than guessing — see :mod:`corvus.autopilot`.
+        """
+        try:
+            return self._dialect.decode_mode(
+                getattr(hb, "custom_mode", 0),
+                getattr(hb, "base_mode", 0),
+                getattr(hb, "type", self._mav_type_id),
+            )
         except Exception:
             return ""
 
     def _build_mode_mapping(self) -> None:
         """Latch the mode names this link can actually command.
 
-        pymavlink answers mode_mapping() in two different shapes, because the
-        flight stacks encode a mode differently. PX4 gets px4_map, whose values
-        are the ``(base_mode, main_mode, sub_mode)`` triples DO_SET_MODE wants.
-        Everything else gets a per-MAV_TYPE table — ArduPilot's copter, plane,
-        rover and sub tables — whose values are a single flat ``custom_mode``
-        integer. set_mode() can only send the triple, so a flat table is a list
-        of modes Corvus knows the name of and cannot select.
+        pymavlink answers ``mode_mapping()`` in two shapes, because the flight
+        stacks encode a mode differently: PX4 gets ``px4_map``, whose values are
+        the ``(base_mode, main_mode, sub_mode)`` triples DO_SET_MODE wants;
+        everything else gets a per-MAV_TYPE table whose values are a single flat
+        ``custom_mode`` integer.
 
-        Offering those names anyway is the failure worth avoiding: the selector
-        would fill with real ArduPilot modes and every one of them would come
-        back refused. So the shape decides. Usable triples are published;
-        a mapping in the other shape publishes nothing and sets
-        _modes_unsupported, which is what makes get_available_modes() return an
-        empty list instead of quietly handing an ArduPilot pilot PX4's modes.
+        Corvus used to publish the first shape and throw the second away, which
+        meant an ArduPilot pilot got an empty mode selector — the honest answer
+        at the time, because ``set_mode`` could only send the triple. It can now
+        send either, so the flat table is exactly what an ArduPilot vehicle
+        needs: ``MAV_MODE_FLAG_CUSTOM_MODE_ENABLED`` in param1 and the number in
+        param2. The dialect decides which reading applies, and a stack neither
+        dialect recognises still publishes nothing rather than somebody else's
+        modes.
         """
         self._modes_unsupported = False
         mapping: dict[str, Any] = {}
@@ -1592,34 +1628,27 @@ class MavlinkBridge:
             mapping = self._conn.mode_mapping() or {}
         except Exception as exc:
             logger.debug("mode_mapping error: %s", exc)
-        usable = {
-            name: value for name, value in mapping.items()
-            if isinstance(value, tuple) and len(value) >= 3
-        }
+        usable = self._dialect.adopt_live_mapping(mapping, self._mav_type_id)
         if usable:
             self._mode_mapping = set(usable)
             self._mode_values = dict(usable)
-            logger.info("Mode mapping: %s", sorted(usable))
+            logger.info("Mode mapping (%s): %s", self._dialect.label, sorted(usable))
             return
-        if mapping:
-            # A mapping exists but is not in the shape DO_SET_MODE takes here:
-            # a non-PX4 stack. Say so once, and offer nothing rather than
-            # something wrong.
-            self._mode_mapping = set()
-            self._mode_values = {}
+        # No live mapping this dialect can use. The built-in table is the
+        # fallback: for PX4 that is px4_map's own values (BUG 9, so set_mode and
+        # get_available_modes cannot disagree), for ArduPilot the per-vehicle
+        # table in corvus.autopilot, and for an unrecognised stack nothing at
+        # all — which is what sets _modes_unsupported.
+        builtin = self._dialect.mode_table(self._mav_type_id)
+        self._mode_values = dict(builtin)
+        self._mode_mapping = set()
+        if not builtin:
             self._modes_unsupported = True
             logger.info(
-                "mode mapping for this autopilot uses a flat custom_mode "
-                "(%d modes, e.g. %s) — mode selection is unavailable on this "
-                "link", len(mapping), ", ".join(sorted(mapping)[:3]),
+                "no mode table for this autopilot (%s, MAV_TYPE %s) — mode "
+                "selection is unavailable on this link",
+                self._dialect.label, self._mav_type_id,
             )
-            return
-        # Fallback (BUG 9): no live mode_mapping at all — populate _mode_values
-        # from the built-in px4_map so set_mode and get_available_modes stay
-        # consistent (the fallback list and the value table share the same
-        # names, including RTGS and FOLLOWME).
-        self._mode_mapping = set()
-        self._mode_values = dict(PX4_FALLBACK_MODE_VALUES)
 
     def _start_gcs_heartbeat(self) -> None:
         if self._hb_thread and self._hb_thread.is_alive():
@@ -1930,11 +1959,62 @@ class MavlinkBridge:
                 self._request_message_intervals()
             except Exception as exc:
                 logger.debug("deferred message intervals failed: %s", exc)
+            try:
+                self._check_gcs_authority()
+            except Exception as exc:
+                logger.debug("GCS authority check failed: %s", exc)
 
         self._intervals_thread = threading.Thread(
             target=_runner, name="mavlink-intervals", daemon=True,
         )
         self._intervals_thread.start()
+
+    # The parameter that decides whose sticks an ArduPilot vehicle listens to.
+    # ArduPilot renamed it in 4.5; both are asked for and the first answer wins.
+    _GCS_AUTHORITY_PARAMS: tuple[str, ...] = ("SYSID_MYGCS", "MAV_GCS_SYSID")
+
+    def _check_gcs_authority(self) -> None:
+        """Warn when this ArduPilot vehicle will ignore our stick input.
+
+        ArduPilot accepts ``MANUAL_CONTROL`` and ``RC_CHANNELS_OVERRIDE`` only
+        from the system id in ``SYSID_MYGCS`` (``MAV_GCS_SYSID`` from 4.5), and
+        it *silently drops* everything else — there is no NAK, no STATUSTEXT and
+        no ACK to miss. Corvus announces itself as system 254 rather than the
+        conventional 255, deliberately, so that it can share a link with
+        QGroundControl without the two fighting over one id. On a stock
+        ArduPilot vehicle that means the joystick does nothing at all, and does
+        it without a single sign that anything is wrong.
+
+        So it is checked once per connection and reported with the fix in it.
+        Corvus does not write the parameter itself: which ground station is
+        allowed to take an aircraft's sticks is the operator's decision, not a
+        thing to change behind their back.
+
+        PX4 has no equivalent gate — it accepts MANUAL_CONTROL from any GCS —
+        so this runs on an ArduPilot link only.
+        """
+        if self._dialect.stack != autopilot_dialect.STACK_ARDUPILOT:
+            return
+        if not self._connection_ready():
+            return
+        values = self.fetch_params(list(self._GCS_AUTHORITY_PARAMS), timeout=3.0)
+        name = next((n for n in self._GCS_AUTHORITY_PARAMS if n in values), "")
+        if not name:
+            # An ArduPilot that answers for neither is old enough or odd enough
+            # that guessing would be worse than saying nothing.
+            return
+        current = int(round(values[name]))
+        if current == GCS_SYSTEM_ID:
+            return
+        text = (
+            f"This vehicle only accepts stick input from ground station "
+            f"{current} ({name}), and Corvus is {GCS_SYSTEM_ID} — the joystick "
+            f"will be ignored until {name} is set to {GCS_SYSTEM_ID} in "
+            f"Parameters. Flight commands and mode changes are unaffected."
+        )
+        logger.info("%s", text)
+        self._console_publish("JOYSTICK", text, "warning")
+        self._store_update_warning(text, "warning")
 
     def _request_message_intervals(self) -> None:
         """Ask PX4 for per-message stream intervals (A5).
@@ -2133,15 +2213,29 @@ class MavlinkBridge:
 
     @staticmethod
     def _decode_git_hash(raw: Any) -> str:
-        """Decode AUTOPILOT_VERSION.flight_custom_version into a lowercase hex git hash.
+        """Decode AUTOPILOT_VERSION.flight_custom_version into a git hash.
 
-        PX4 packs the first 5 bytes of the git SHA-1 into the high bytes of a
-        little-endian uint64 (px4_update_git_header.py + mavlink_main.cpp
+        The two stacks fill the same eight bytes with two different things, and
+        neither says which:
+
+        **PX4** packs the first 5 bytes of the git SHA-1 into the high bytes of
+        a little-endian uint64 (px4_update_git_header.py + mavlink_main.cpp
         send_autopilot_capabilities), so the wire bytes for a stock build are
-        ``[0,0,0, g4, g3, g2, g1, g0]``. Reverse to big-endian, strip the NUL
-        padding, and hex-encode. Returns "" when the field is empty or all-zero.
-        Handles list/bytes/bytearray/str inputs (pymavlink yields a list of
-        ints for uint8_t[] arrays).
+        ``[0, 0, 0, g4, g3, g2, g1, g0]`` — raw bytes to be hex-encoded.
+
+        **ArduPilot** writes the hash as *text*: the ASCII characters of the
+        abbreviated SHA, straight into the field. Hex-encoding those a second
+        time turns "4a7b3c9d" into "3461376233633964", which is what the build
+        line on the status bar used to show for every ArduPilot vehicle.
+
+        So the format is sniffed rather than assumed: a field that is already
+        printable hex digits is the text, everything else is the packed
+        integer. Sniffing beats keying off the dialect here because the field is
+        self-describing and the stack is not always latched when this runs.
+
+        Returns "" when the field is empty or all-zero. Handles
+        list/bytes/bytearray/str inputs (pymavlink yields a list of ints for
+        uint8_t[] arrays).
         """
         if isinstance(raw, str):
             raw = raw.encode("latin-1", "replace")
@@ -2154,6 +2248,13 @@ class MavlinkBridge:
             raw = bytes(raw)
         else:
             return ""
+        trimmed = raw.strip(b"\x00")
+        if not trimmed:
+            return ""
+        # Already text: every byte is a hex digit, and there are enough of them
+        # to be a hash rather than a coincidence.
+        if len(trimmed) >= 6 and all(c in b"0123456789abcdefABCDEF" for c in trimmed):
+            return trimmed.decode("ascii").lower()
         if raw[:1] == b"\x00":
             raw = raw[::-1]
         return raw.rstrip(b"\x00").hex()
@@ -2307,9 +2408,16 @@ class MavlinkBridge:
             self._publish_heartbeat_jitter()
             vtype = MAV_TYPE_MAP.get(msg.type, f"TYPE_{msg.type}")
             autopilot = MAV_AUTOPILOT_MAP.get(msg.autopilot, f"AP_{msg.autopilot}")
+            # Behind a router the aircraft on the far end can be swapped
+            # without the socket closing, so the stack is re-read from every
+            # heartbeat rather than trusted from connect time.
+            self._latch_dialect(msg.autopilot, msg.type)
             armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
             mode = self._decode_mode(msg)
-            self._store.update(vehicle_type=vtype, autopilot=autopilot, armed=armed, mode=mode)
+            self._store.update(
+                vehicle_type=vtype, autopilot=autopilot, armed=armed, mode=mode,
+                autopilot_stack=self._dialect.stack,
+            )
             # A heartbeat recovers a degraded link; recompute quality. When no
             # RADIO_STATUS arrives (UDP SITL), quality is heartbeat-driven.
             self._publish_link_quality()
@@ -2371,7 +2479,7 @@ class MavlinkBridge:
             if msg.time_unix_usec:
                 try:
                     t = datetime.datetime.fromtimestamp(
-                        msg.time_unix_usec / 1e6, datetime.timezone.utc,
+                        msg.time_unix_usec / 1e6, datetime.UTC,
                     )
                 except (OverflowError, OSError, ValueError, TypeError):
                     logger.debug("SYSTEM_TIME out of range: %s", msg.time_unix_usec)
@@ -2614,13 +2722,14 @@ class MavlinkBridge:
         proxy). txbuf near 100 means the buffer is full (congested).
         rxerrors/fixed are cumulative counters from the radio — stored as-is.
         """
-        # Full RADIO_STATUS fields; rssi/noise/remnoise are parsed for
-        # completeness and future use (the uplink score uses remrssi + txbuf).
-        _rssi = float(getattr(msg, "rssi", 0))
+        # RADIO_STATUS also carries rssi, noise and remnoise. They are the
+        # *ground* radio's view; the uplink score wants the drone's, which is
+        # remrssi + txbuf. They used to be read into three throwaway locals
+        # "for completeness" — three getattr + float per RADIO_STATUS on the
+        # receive path, to build numbers nothing looked at. A sentence costs
+        # less and says the same thing.
         remrssi = float(getattr(msg, "remrssi", 0))
         txbuf = float(getattr(msg, "txbuf", 0))
-        _noise = float(getattr(msg, "noise", 0))
-        _remnoise = float(getattr(msg, "remnoise", 0))
         rxerrors = int(getattr(msg, "rxerrors", 0))
         fixed = int(getattr(msg, "fixed", 0))
         # 0/255 remrssi on SiK means no remote signal reading → unknown
@@ -2847,7 +2956,6 @@ class MavlinkBridge:
                 pending.event.set()
         # Wake a blocked fly_to_points uploader so shutdown cannot hang.
         with self._mission_lock:
-            items = self._mission_items
             self._mission_items = None
             pending = self._pending_mission_ack
             self._pending_mission_ack = None
@@ -2998,14 +3106,50 @@ class MavlinkBridge:
                 pass
 
     def get_available_modes(self) -> list[str]:
+        """The modes this vehicle can actually be commanded into.
+
+        Sorted names from the live mapping when there is one, the dialect's own
+        table when there is not, and an empty list for a stack neither dialect
+        recognises — never another stack's mode list, which is what used to
+        fill an ArduPilot selector with PX4 names.
+        """
         if self._mode_mapping:
             return sorted(self._mode_mapping)
         if self._modes_unsupported:
-            # A stack whose modes Corvus can read but not command. An empty
-            # list is the honest answer; PX4's list would be a lie about the
-            # aircraft on the other end. See _build_mode_mapping().
             return []
-        return PX4_AVAILABLE_MODES
+        # The dialect's own order, not sorted(_mode_values): PX4's list runs
+        # from the most manual mode to the most automatic, which is how an
+        # operator reads a mode selector, and alphabetising it would open with
+        # ACRO.
+        return self._dialect.available_modes(self._mav_type_id)
+
+    @property
+    def vehicle_type_id(self) -> int:
+        """The MAV_TYPE from the vehicle's heartbeat, 0 before one arrives.
+
+        The setup-page schemas need the number rather than the name: ArduPilot's
+        flight-mode numbering and half its parameter set depend on which
+        firmware family the airframe runs, and "QUADROTOR" does not sort into
+        that on its own.
+        """
+        return self._mav_type_id
+
+    @property
+    def stack(self) -> str:
+        """Which flight stack this link is talking to: see corvus.autopilot."""
+        return self._dialect.stack
+
+    def capabilities(self) -> dict[str, Any]:
+        """What the connected stack can do, for the UI to adapt to.
+
+        A button that is missing because the firmware has no such feature is a
+        far better answer than one that is offered and refused, and only this
+        layer knows which is which.
+        """
+        payload = self._dialect.capabilities(self._mav_type_id)
+        payload["modes"] = self.get_available_modes()
+        payload["vehicle_type"] = self._mav_type_id
+        return payload
 
     def get_last_command_error(self) -> str:
         """Return the most recent operator-facing command failure."""
@@ -3157,25 +3301,25 @@ class MavlinkBridge:
                 return self._command_failure("Mode change", -2)
             value = self._mode_values.get(mode)
             if not isinstance(value, tuple) or len(value) < 3:
-                # Two different failures used to share one message. "Unknown
-                # PX4 mode" is true when the name is not in the table; it is
-                # misleading when the autopilot is not PX4 at all and reports
-                # its modes as a flat custom_mode Corvus cannot yet send.
+                # Three different failures used to share one message, and two
+                # of them named PX4 at an aircraft that was not running it.
                 if self._modes_unsupported:
                     text = (
                         "Mode changes are not supported on this autopilot — "
-                        "Corvus can command PX4 modes only"
+                        "Corvus does not know how it encodes a mode"
                     )
                 else:
-                    text = f"Unknown or unsupported PX4 mode: {mode}"
+                    text = (
+                        f"Unknown or unsupported {self._dialect.label} mode: "
+                        f"{mode}"
+                    )
                 logger.error("%s", text)
                 self._set_command_error(text)
                 return False
-            base_mode, main_mode, sub_mode = value[:3]
-            nan = float("nan")
+            params = ModeCommand(*value[:3]).params()
             result = self._send_command_and_wait(
                 mavutil.mavlink.MAV_CMD_DO_SET_MODE,
-                [float(base_mode), float(main_mode), float(sub_mode), nan, nan, nan, nan],
+                params,
                 timeout=3.0,
                 retries=1,
             )
@@ -3311,8 +3455,108 @@ class MavlinkBridge:
             time.sleep(0.05)
         return self._takeoff_altitude_amsl(altitude_agl)
 
+    # How long a mode change is given to show up in telemetry before the
+    # command that depends on it is sent anyway. HEARTBEAT is 1 Hz on every
+    # link Corvus supports, so this is three of them on a lossy radio.
+    MODE_CONFIRM_S = 3.0
+
+    def _wait_for_mode(self, mode: str, timeout: float = MODE_CONFIRM_S) -> bool:
+        """Watch the store until the vehicle reports *mode*, or time out.
+
+        Sends nothing. ArduPilot refuses a guided takeoff outside GUIDED, and
+        it refuses it from the *old* mode if the command overtakes the mode
+        change on the wire — so the takeoff waits for the aircraft's own word
+        rather than for the DO_SET_MODE ack, which only says the command was
+        understood.
+        """
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self._stop_event.is_set() or not self._connection_ready():
+                return False
+            if self._store.get_snapshot().get("mode") == mode:
+                return True
+            time.sleep(0.05)
+        return self._store.get_snapshot().get("mode") == mode
+
+    def _enter_guided(self, action: str) -> bool:
+        """Put the vehicle in the mode a guided command needs, if it needs one.
+
+        PX4 switches itself and answers "" here, so this is a no-op on a PX4
+        link. ArduPilot has to be in GUIDED first, and a vehicle already in a
+        mode that accepts guided commands (GUIDED itself, or the AUTO_RTL /
+        TAKEOFF modes that are guided states in disguise) is left alone rather
+        than kicked out of it.
+        """
+        wanted = self._dialect.guided_mode(self._mav_type_id)
+        if not wanted:
+            return True
+        current = self._store.get_snapshot().get("mode") or ""
+        if current == wanted:
+            return True
+        if not self.set_mode(wanted):
+            existing = self.get_last_command_error()
+            self._set_command_error(
+                f"{action} needs {wanted} mode, which the vehicle refused"
+                + (f": {existing}" if existing else "")
+            )
+            return False
+        if not self._wait_for_mode(wanted):
+            # The vehicle ACCEPTED the mode change; its heartbeat has not caught
+            # up. Proceed rather than refuse — the command that follows is
+            # ack-confirmed on its own, and a refusal here would strand a
+            # takeoff on a slow link that was about to work.
+            self._console_publish(
+                "MODE",
+                f"{wanted} accepted but not yet confirmed in telemetry — "
+                f"continuing with {action.lower()}",
+                "warning",
+            )
+        return True
+
+    def _enter_mission_mode(self, action: str) -> bool:
+        """Switch to the mode that runs a stored mission.
+
+        PX4 calls it MISSION (its AUTO.MISSION sub-mode); ArduPilot calls it
+        AUTO. Hardcoding either name is how a mission upload that the vehicle
+        accepted was then followed by "Unknown or unsupported mode: MISSION".
+        """
+        mode = self._dialect.mission_mode
+        if not mode:
+            self._set_command_error(
+                f"{action}: Corvus does not know this autopilot's mission mode"
+            )
+            return False
+        if mode not in self._mode_values and self._mode_values:
+            # The live mapping is the authority when there is one — a vehicle
+            # that names its mission mode something else entirely says so here
+            # rather than after the command is refused.
+            self._set_command_error(
+                f"{action}: this vehicle does not offer a {mode} mode"
+            )
+            return False
+        return self.set_mode(mode)
+
     def takeoff(self, altitude_agl: float = 10.0) -> bool:
-        """Set a PX4 takeoff target in AGL metres, then arm after acceptance."""
+        """Command a guided takeoff to *altitude_agl* metres above the ground.
+
+        The two supported stacks want this staged in opposite orders, and the
+        altitude in different frames:
+
+        **PX4** accepts ``MAV_CMD_NAV_TAKEOFF`` from any mode, reads param7 as
+        an **AMSL** altitude, and switches itself into AUTO.TAKEOFF. Arming
+        comes afterwards, so a refused takeoff never leaves an armed aircraft
+        sitting on the ground.
+
+        **ArduPilot** reads param7 as an altitude **relative to home**, refuses
+        the command outside GUIDED, and refuses it while disarmed. So the order
+        inverts — mode, then arm, then takeoff — and this method disarms again
+        if the last step fails, because the inverted order is the one that *can*
+        leave an aircraft armed for no reason.
+
+        Sending PX4's payload to ArduPilot is not a cosmetic mismatch: a 10 m
+        takeoff becomes a request to climb to 10 m above sea level, which on
+        most of the world's land is a command to stay put.
+        """
         self._set_command_error("")
         if isinstance(altitude_agl, bool):
             self._set_command_error("Takeoff altitude must be a number")
@@ -3334,23 +3578,27 @@ class MavlinkBridge:
         if not self._connection_ready():
             return self._command_failure("Takeoff", -2)
         nan = float("nan")
+        plan = self._dialect.takeoff_plan(self._mav_type_id)
         # Resolved BEFORE the command lock is taken. Validation reads nothing
         # shared, and the reference wait below sends a single HOME request and
         # then watches the store for up to two seconds — so holding the lock
         # across it blocked every other command, including the abort commands,
         # while this one did nothing but read telemetry.
-        alt_amsl = self._takeoff_altitude_amsl(altitude_agl)
-        if alt_amsl is None:
-            # No altitude reference yet — usually because HOME_POSITION and
-            # GLOBAL_POSITION_INT simply have not arrived in the second
-            # since connect. Ask for home once and give the streams a
-            # moment rather than refusing on the spot.
-            alt_amsl = self._await_takeoff_reference(altitude_agl)
-        with self._operation_lock:
-            if not self._connection_ready():
-                # Re-checked: the wait above is not instantaneous, and the link
-                # may have gone in the meantime.
-                return self._command_failure("Takeoff", -2)
+        if plan.altitude_frame == "relative":
+            # ArduPilot flies param7 as metres above home, which is the number
+            # the operator typed. There is nothing to convert and therefore no
+            # altitude reference to wait for — the whole HOME_POSITION dance
+            # below exists only because PX4 wants AMSL.
+            takeoff_alt: float = altitude_agl
+            altitude_note = f"Requesting {altitude_agl:.0f} m above home"
+        else:
+            alt_amsl = self._takeoff_altitude_amsl(altitude_agl)
+            if alt_amsl is None:
+                # No altitude reference yet — usually because HOME_POSITION and
+                # GLOBAL_POSITION_INT simply have not arrived in the second
+                # since connect. Ask for home once and give the streams a
+                # moment rather than refusing on the spot.
+                alt_amsl = self._await_takeoff_reference(altitude_agl)
             if alt_amsl is None:
                 # Still nothing. param7 is left unspecified rather than
                 # invented: NaN is this protocol's "use your own default" (the
@@ -3373,24 +3621,68 @@ class MavlinkBridge:
                 logger.warning("%s", text)
                 self._console_publish("TAKEOFF", text, "warning")
                 self._store_update_warning(text, "warning")
+                altitude_note = ""
             else:
                 takeoff_alt = alt_amsl
-                self._console_publish(
-                    "TAKEOFF",
-                    f"Requesting {altitude_agl:.0f} m AGL ({alt_amsl:.1f} m AMSL)",
-                    "info",
+                altitude_note = (
+                    f"Requesting {altitude_agl:.0f} m AGL ({alt_amsl:.1f} m AMSL)"
                 )
-            result = self._send_command_and_wait(
-                mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-                [nan, nan, nan, nan, nan, nan, takeoff_alt],
-                timeout=5.0, retries=1,
-            )
-            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                return self._command_failure("Takeoff", result)
 
-            self._console_publish("TAKEOFF", "Takeoff target accepted; arming …", "info")
-            if not self.arm(True):
-                return False
+        # Also before the lock: the mode change ArduPilot needs first is itself
+        # an ack-confirmed command followed by a wait on telemetry, and holding
+        # the command lock across it would block the abort commands for as long
+        # as the vehicle took to answer.
+        if plan.order == "mode_arm_takeoff" and not self._enter_guided("Takeoff"):
+            return False
+
+        params = [plan.min_pitch_deg, nan, nan, nan, nan, nan, takeoff_alt]
+        with self._operation_lock:
+            if not self._connection_ready():
+                # Re-checked: the waits above are not instantaneous, and the
+                # link may have gone in the meantime.
+                return self._command_failure("Takeoff", -2)
+            if altitude_note:
+                self._console_publish("TAKEOFF", altitude_note, "info")
+
+            if plan.order == "takeoff_then_arm":
+                result = self._send_command_and_wait(
+                    mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+                    params, timeout=5.0, retries=1,
+                )
+                if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                    return self._command_failure("Takeoff", result)
+                self._console_publish(
+                    "TAKEOFF", "Takeoff target accepted; arming …", "info")
+                if not self.arm(True):
+                    return False
+            else:
+                # ArduPilot refuses NAV_TAKEOFF while disarmed, so arming comes
+                # first — and that is the order that can strand an armed
+                # aircraft on the ground, so a refused takeoff disarms again.
+                self._console_publish(
+                    "TAKEOFF", "Arming before takeoff …", "info")
+                if not self.arm(True):
+                    return False
+                result = self._send_command_and_wait(
+                    mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+                    params, timeout=5.0, retries=1,
+                )
+                if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                    failure = (
+                        f"Takeoff failed: "
+                        f"{MAV_RESULT_TEXT.get(result, f'RESULT_{result}')}"
+                    )
+                    self._console_publish(
+                        "TAKEOFF",
+                        "Takeoff refused after arming — disarming again",
+                        "warning",
+                    )
+                    self.arm(False)
+                    # After the disarm, which clears the last error itself.
+                    self._set_command_error(failure)
+                    self._console_publish("TAKEOFF", failure, "error")
+                    self._store_update_warning(failure, "critical")
+                    return False
             self._console_publish("TAKEOFF", "Takeoff accepted and vehicle armed", "success")
             return True
 
@@ -3598,6 +3890,54 @@ class MavlinkBridge:
             "x_f": float(lat), "y_f": float(lon), "z": float(alt),
         }
 
+    def _with_mission_home_slot(
+        self, specs: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Prepend the home slot ArduPilot reserves at mission sequence 0.
+
+        PX4 numbers mission items from 0. ArduPilot's AP_Mission keeps *home*
+        in slot 0 and the first real item in slot 1, and an upload that does
+        not account for that does not fail — the vehicle simply stores the
+        first item as a home position and flies a mission with its takeoff
+        missing. Which is exactly the sort of difference that only shows up on
+        the airfield.
+
+        The placeholder carries the home the vehicle has already told us about
+        when it has, and zeroes when it has not; ArduPilot overwrites slot 0
+        with its own home either way, so the values are a courtesy rather than
+        a command. A zero-item upload (the protocol's "clear") is passed
+        through untouched — a clear has no home slot to reserve.
+        """
+        if not specs or not self._dialect.mission_seq0_is_home:
+            return specs
+        snapshot = self._store.get_snapshot()
+        home = snapshot.get("home") or [0.0, 0.0]
+        try:
+            home_lat, home_lon = float(home[0]), float(home[1])
+        except (TypeError, ValueError, IndexError):
+            home_lat = home_lon = 0.0
+        home_alt = self._home_alt_amsl or 0.0
+        placeholder = self._build_mission_item_spec(
+            0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+            home_lat, home_lon, home_alt, 0.0, 0.0, 0.0, 0.0,
+            frame=mavutil.mavlink.MAV_FRAME_GLOBAL,
+        )
+        out = [placeholder]
+        for item in specs:
+            shifted = dict(item)
+            shifted["current"] = 0
+            out.append(shifted)
+        return out
+
+    def _mission_start_range(self, count: int) -> tuple[float, float]:
+        """The (first, last) item indices MAV_CMD_MISSION_START should carry.
+
+        *count* is how many items the planner produced, before the home slot.
+        On ArduPilot the real items start at 1, because slot 0 is home.
+        """
+        first = 1.0 if self._dialect.mission_seq0_is_home else 0.0
+        return first, first + max(0, count - 1)
+
     @staticmethod
     def _mission_ack_to_result(ack_type: int) -> int:
         """Map MAV_MISSION_RESULT to MAV_RESULT for "Fly to points failed: ..."."""
@@ -3652,8 +3992,10 @@ class MavlinkBridge:
                 ))
                 seq += 1
 
+            planned = len(items)
+            items = self._with_mission_home_slot(items)
             self._console_publish(
-                "GOTOPOINTS", f"Uploading {len(items)} mission item(s) …", "info",
+                "GOTOPOINTS", f"Uploading {planned} mission item(s) …", "info",
             )
             ack = self._upload_mission(items)
             if ack != mavutil.mavlink.MAV_MISSION_ACCEPTED:
@@ -3665,16 +4007,19 @@ class MavlinkBridge:
             )
             # param1 = first item index, param2 = last item index (unambiguous
             # across PX4 v1.16-v1.18; avoids the "0 = last item" convention).
+            # The pair is stack-dependent because ArduPilot's item 0 is home.
+            first, last = self._mission_start_range(planned)
             result = self._send_command_and_wait(
                 mavutil.mavlink.MAV_CMD_MISSION_START,
-                [0.0, float(len(items) - 1), nan, nan, nan, nan, nan],
+                [first, last, nan, nan, nan, nan, nan],
                 timeout=5.0, retries=1,
             )
             if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
                 return self._command_failure("Fly to points", result)
 
-            # AUTO.MISSION mode + arming starts the uploaded mission from item 0.
-            if not self.set_mode("MISSION"):
+            # The mission mode + arming starts the uploaded mission. PX4 calls
+            # it MISSION (AUTO.MISSION); ArduPilot calls it AUTO.
+            if not self._enter_mission_mode("Fly to points"):
                 return False
             if not self.arm(True):
                 return False
@@ -3736,7 +4081,7 @@ class MavlinkBridge:
             self._console_publish(
                 "MISSION", f"Uploading {len(specs)} mission item(s) …", "info",
             )
-            ack = self._upload_mission(specs)
+            ack = self._upload_mission(self._with_mission_home_slot(specs))
             if ack != mavutil.mavlink.MAV_MISSION_ACCEPTED:
                 result = ack if ack < 0 else self._mission_ack_to_result(ack)
                 return self._command_failure("Mission upload", result)
@@ -3759,14 +4104,15 @@ class MavlinkBridge:
             if not self._connection_ready():
                 return self._command_failure("Mission start", -2)
             nan = float("nan")
+            first, last = self._mission_start_range(count)
             result = self._send_command_and_wait(
                 mavutil.mavlink.MAV_CMD_MISSION_START,
-                [0.0, float(count - 1), nan, nan, nan, nan, nan],
+                [first, last, nan, nan, nan, nan, nan],
                 timeout=5.0, retries=1,
             )
             if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
                 return self._command_failure("Mission start", result)
-            if not self.set_mode("MISSION"):
+            if not self._enter_mission_mode("Mission start"):
                 return False
             if not self.arm(True):
                 return False
@@ -3998,7 +4344,7 @@ class MavlinkBridge:
             with self._param_lock:
                 self._param_set_pending[name] = pending
             try:
-                for attempt in range(3):
+                for _attempt in range(3):
                     if not self._connection_ready():
                         self._set_command_error("not connected")
                         return False
@@ -4505,58 +4851,75 @@ class MavlinkBridge:
     # Sensor calibration
     # ------------------------------------------------------------------
 
+    # The PX4 parameter slots, kept here because they were here first and the
+    # simulated vehicle and its tests read them by this name. The live command
+    # comes from the dialect — ArduPilot agrees on gyro/baro/accel and on
+    # nothing else, and runs its magnetometer fit from a different command
+    # entirely. See corvus.autopilot.
     _CALIBRATION_MAP: dict[str, list[float]] = {
-        # MAV_CMD_PREFLIGHT_CALIBRATION (241) — verified against PX4 v1.16,
-        # v1.17, v1.18 (Commander.cpp ~line 1430). Unset params are NaN; the
-        # selected one 1.0. Motor/ESC calibration (param7=1.0) verified across
-        # all three target versions.
-        "gyro":        [1.0, float("nan"), float("nan"), float("nan"), float("nan"), float("nan"), float("nan")],
-        "compass":     [float("nan"), 1.0, float("nan"), float("nan"), float("nan"), float("nan"), float("nan")],
-        "baro":        [float("nan"), float("nan"), 1.0, float("nan"), float("nan"), float("nan"), float("nan")],
-        "accel":      [float("nan"), float("nan"), float("nan"), float("nan"), 1.0, float("nan"), float("nan")],
-        "level":       [float("nan"), float("nan"), float("nan"), float("nan"), 2.0, float("nan"), float("nan")],
-        "accel_quick": [float("nan"), float("nan"), float("nan"), float("nan"), 4.0, float("nan"), float("nan")],
-        "airspeed":    [float("nan"), float("nan"), float("nan"), float("nan"), float("nan"), 1.0, float("nan")],
-        # motor/ESC calibration — props MUST be removed; motors spin at max PWM
-        "motor":       [float("nan"), float("nan"), float("nan"), float("nan"), float("nan"), float("nan"), 1.0],
+        name: plan.param_list()
+        for name, plan in autopilot_dialect.PX4Dialect._CALIBRATION.items()
+        if plan.ok
     }
 
-    def calibrate(self, sensor: str) -> bool:
-        """Start a PX4 sensor calibration via MAV_CMD_PREFLIGHT_CALIBRATION.
+    def available_calibrations(self) -> list[str]:
+        """The calibrations the connected stack can actually run."""
+        return sorted(
+            name for name, plan in self._dialect._CALIBRATION.items() if plan.ok
+        )
 
-        Calibration is interactive: the ACCEPTED ACK arrives quickly (PX4
-        starts a worker task); the operator then follows STATUSTEXT guidance
-        (compass rotation, accel positions, etc.) which flows through
-        ``_handle_statustext``.
+    def calibrate(self, sensor: str) -> bool:
+        """Start a sensor calibration on the connected autopilot.
+
+        Calibration is interactive: the ACCEPTED ack arrives quickly (the
+        firmware starts a worker), and the operator then follows the guidance
+        that flows through ``_handle_statustext``.
+
+        The command itself is the dialect's. PX4 runs every calibration through
+        ``MAV_CMD_PREFLIGHT_CALIBRATION`` and detects each accelerometer
+        position by itself; ArduPilot agrees about gyro, baro and the three
+        accelerometer forms, runs the compass from ``DO_START_MAG_CAL``, waits
+        to be *told* each accelerometer position (see
+        :meth:`accel_calibration_position`), and has no ESC calibration on the
+        MAVLink side at all.
         """
         with self._operation_lock:
             self._set_command_error("")
-            params = self._CALIBRATION_MAP.get(sensor)
-            if params is None:
-                self._set_command_error(f"unknown calibration: {sensor}")
+            plan = self._dialect.calibration(sensor)
+            if plan is None:
+                self._set_command_error(
+                    f"{self._dialect.label} has no {sensor} calibration"
+                    if sensor in autopilot_dialect.PX4Dialect._CALIBRATION
+                    else f"unknown calibration: {sensor}"
+                )
                 return False
-            # Defense-in-depth: refuse while armed (PX4 also rejects).
+            if not plan.ok:
+                self._set_command_error(plan.unsupported)
+                return False
+            # Defense-in-depth: refuse while armed (both stacks also reject).
             if self._store.get_snapshot().get("armed"):
                 self._set_command_error("cannot calibrate while armed")
                 return False
             if not self._connection_ready():
                 return self._command_failure(f"Calibrate {sensor}", -2)
             result = self._send_command_and_wait(
-                mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION,
-                params, timeout=5.0, retries=0,
+                plan.command, plan.param_list(), timeout=5.0, retries=0,
             )
             if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
                 return self._command_failure(f"Calibrate {sensor}", result)
+            self._active_calibration = sensor
             self._console_publish("CALIBRATE", f"{sensor} calibration started", "success")
             return True
 
     def cancel_calibration(self) -> bool:
-        """Abort a running calibration via MAV_CMD_PREFLIGHT_CALIBRATION (all 0).
+        """Abort whatever calibration is running.
 
-        PX4's Commander reads an all-zero PREFLIGHT_CALIBRATION as "cancel the
-        calibration currently in progress" — verified against v1.16, v1.17 and
-        v1.18. Without it, an operator who starts the wrong calibration, or one
-        that stalls waiting for a side it will never see, has no way out except
+        PX4's Commander reads an all-zero ``PREFLIGHT_CALIBRATION`` as "cancel
+        the calibration in progress" — verified against v1.16, v1.17 and v1.18.
+        ArduPilot needs its own ``DO_CANCEL_MAG_CAL`` for a magnetometer fit,
+        which is why the running calibration is remembered at all. Without
+        either, an operator who starts the wrong calibration, or one that
+        stalls waiting for a side it will never see, has no way out except
         power-cycling the autopilot.
 
         Deliberately not gated on the armed state: this only ever *stops* work
@@ -4567,13 +4930,45 @@ class MavlinkBridge:
             self._set_command_error("")
             if not self._connection_ready():
                 return self._command_failure("Cancel calibration", -2)
+            plan = self._dialect.cancel_calibration(self._active_calibration)
+            if not plan.ok:
+                self._set_command_error(plan.unsupported)
+                return False
             result = self._send_command_and_wait(
-                mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION,
-                [0.0] * 7, timeout=5.0, retries=0,
+                plan.command, plan.param_list(), timeout=5.0, retries=0,
             )
             if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
                 return self._command_failure("Cancel calibration", result)
+            self._active_calibration = ""
             self._console_publish("CALIBRATE", "calibration cancelled", "warning")
+            return True
+
+    def accel_calibration_position(self, position: str) -> bool:
+        """Tell the autopilot the aircraft is now in the position it asked for.
+
+        This is the step that has no PX4 equivalent. PX4 recognises each of the
+        six accelerometer orientations from the accelerometer itself and moves
+        on when it is satisfied; ArduPilot asks for a side over STATUSTEXT and
+        then waits for ``MAV_CMD_ACCELCAL_VEHICLE_POS`` before measuring, for
+        as long as it takes. A ground station that never sends it turns an
+        ArduPilot accelerometer calibration into a screen that says "place
+        vehicle level" and never changes.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            plan = self._dialect.accel_position(position)
+            if not plan.ok:
+                self._set_command_error(plan.unsupported)
+                return False
+            if not self._connection_ready():
+                return self._command_failure("Calibration position", -2)
+            result = self._send_command_and_wait(
+                plan.command, plan.param_list(), timeout=5.0, retries=0,
+            )
+            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                return self._command_failure("Calibration position", result)
+            self._console_publish(
+                "CALIBRATE", f"position confirmed: {position}", "info")
             return True
 
     # ------------------------------------------------------------------
@@ -4692,22 +5087,36 @@ class MavlinkBridge:
     }
 
     def autotune(self, axis: str = "all", enable: bool = True) -> bool:
-        """Start or stop the PX4 autotune via MAV_CMD_DO_AUTOTUNE_ENABLE (212).
+        """Start or stop the autotune, however the connected stack runs one.
 
-        param1 is 1 to start and 0 to stop; param2 is the axis selection, which
-        PX4 v1.16-v1.18 accept only as 0 ("all"). A successful start is
-        acknowledged with ACCEPTED or IN_PROGRESS.
+        **PX4** runs it as a command: ``MAV_CMD_DO_AUTOTUNE_ENABLE`` (212) with
+        param1 = 1 to start and 0 to stop, param2 the axis selection, which
+        v1.16-v1.18 accept only as 0 ("all"). A successful start is acknowledged
+        with ACCEPTED or IN_PROGRESS, and progress arrives as repeated ACKs.
 
-        Starting is gated on the vehicle being armed and airborne, because that
-        is what PX4 requires. Stopping is gated on nothing at all: an operator
-        who wants the injection to end is never told to satisfy a precondition
-        first, the same reasoning as :meth:`cancel_calibration`.
+        **ArduPilot** does not implement that command on Copter at all: its
+        autotune is a *flight mode*. So starting one is a mode change to
+        AUTOTUNE and stopping one is a mode change back to whatever the vehicle
+        was in — which is why the previous mode is remembered here. There is no
+        progress stream; ArduPilot narrates the tune over STATUSTEXT, which the
+        console already shows.
+
+        Starting is gated on the vehicle being armed and airborne, because both
+        stacks require it. Stopping is gated on nothing at all: an operator who
+        wants the tune to end is never told to satisfy a precondition first, the
+        same reasoning as :meth:`cancel_calibration`.
         """
+        if self._dialect.autotune_style == "mode":
+            return self._autotune_by_mode(enable)
         with self._operation_lock:
             self._set_command_error("")
             axis_val = self._AUTOTUNE_AXIS_MAP.get(axis)
             if axis_val is None:
                 self._set_command_error(f"unknown autotune axis: {axis}")
+                return False
+            plan = self._dialect.autotune_plan(self._mav_type_id, enable)
+            if not plan.ok:
+                self._set_command_error(plan.unsupported)
                 return False
             if enable:
                 problem = self._autotune_precondition()
@@ -4718,7 +5127,7 @@ class MavlinkBridge:
                 return self._command_failure(f"Autotune {axis}", -2)
             nan = float("nan")
             result = self._send_command_and_wait(
-                mavutil.mavlink.MAV_CMD_DO_AUTOTUNE_ENABLE,
+                plan.command,
                 [1.0 if enable else 0.0, axis_val, nan, nan, nan, nan, nan],
                 timeout=5.0, retries=0,
                 accept_in_progress=True,
@@ -4737,6 +5146,60 @@ class MavlinkBridge:
                 self._store.update(autotune_state="", autotune_progress=0)
                 self._console_publish("AUTOTUNE", "Autotune stopped", "warning")
             return True
+
+    def _autotune_by_mode(self, enable: bool) -> bool:
+        """ArduPilot's autotune: a flight mode, not a command.
+
+        Copter carries no handler for ``MAV_CMD_DO_AUTOTUNE_ENABLE``, so the
+        command Corvus used to send was answered with UNSUPPORTED and the tune
+        never ran. The mode that *is* the tune is AUTOTUNE on Copter and on
+        Plane; a quadplane's QAUTOTUNE is left to the operator, because which of
+        the two a quadplane wants depends on which half of the airframe is
+        being tuned.
+        """
+        mode = self._dialect.autotune_mode(self._mav_type_id)
+        if not mode:
+            self._set_command_error(
+                f"{self._dialect.label} has no autotune mode on this vehicle"
+            )
+            return False
+        if enable:
+            problem = self._autotune_precondition()
+            if problem:
+                self._set_command_error(problem)
+                return False
+            previous = self._store.get_snapshot().get("mode") or ""
+            if not self.set_mode(mode):
+                self._store.update(autotune_state="failed", autotune_progress=0)
+                return False
+            # Only after the switch is accepted, so a refused tune does not
+            # leave a return mode nobody is going to use.
+            self._autotune_return_mode = previous if previous != mode else ""
+            self._store.update(autotune_state="running", autotune_progress=0)
+            self._console_publish(
+                "AUTOTUNE",
+                f"{mode} engaged — ArduPilot narrates the tune over the console",
+                "success",
+            )
+            return True
+        # Stopping is leaving the mode. Falling back to LOITER rather than
+        # refusing matters: an operator pressing Stop is flying, and "I do not
+        # know what mode you were in" is not an answer they can use.
+        target = self._autotune_return_mode or ""
+        if target not in self._mode_values:
+            target = "LOITER" if "LOITER" in self._mode_values else ""
+        if not target:
+            self._set_command_error(
+                "no mode to return to — select one on the mode selector to "
+                "leave the autotune"
+            )
+            return False
+        if not self.set_mode(target):
+            return False
+        self._autotune_return_mode = ""
+        self._store.update(autotune_state="", autotune_progress=0)
+        self._console_publish("AUTOTUNE", f"Autotune left — now in {target}", "warning")
+        return True
 
     def _autotune_precondition(self) -> str:
         """Why the autotune cannot start right now, or "" when it can.
@@ -4928,8 +5391,15 @@ class MavlinkBridge:
         *x* is pitch (forward positive), *y* roll (right positive) and *r* yaw
         (clockwise positive), each in ``[-1, 1]``. *z* is thrust in ``[0, 1]``
         where 0.5 is the neutral hover detent PX4 expects from a spring-return
-        stick. Values outside those ranges are clamped rather than rejected —
-        a stick that overshoots by a rounding error must still fly.
+        stick; ArduPilot maps the same 0-1000 range onto the throttle channel's
+        1000-2000 us travel, so 0.5 is mid-stick there too. Values outside
+        those ranges are clamped rather than rejected — a stick that overshoots
+        by a rounding error must still fly.
+
+        Whether the vehicle *listens* is a separate question on ArduPilot,
+        which drops stick input from any system id but ``SYSID_MYGCS``. That is
+        checked once per connection and reported — see
+        :meth:`_check_gcs_authority`.
 
         Returns ``True`` when the frame reached the wire. ``False`` means
         disconnected or a send failure; the caller decides whether one lost
@@ -5154,6 +5624,17 @@ class MavlinkBridge:
         self._set_command_error("")
         if not isinstance(text, str):
             self._set_command_error("shell command must be text")
+            return False
+        if not self._dialect.supports_shell:
+            # ArduPilot has no NSH. SERIAL_CONTROL exists on its wire, but it
+            # is a passthrough to a *peripheral* port rather than a console, so
+            # sending a command here would open a terminal that can never
+            # answer — and on a board with something attached to that port, it
+            # would take the port away from whatever is using it.
+            self._set_command_error(
+                f"{self._dialect.label} has no MAVLink shell — the console is "
+                f"a PX4 feature (NSH over SERIAL_CONTROL)"
+            )
             return False
         with self._send_lock:
             conn = self._conn

@@ -4,6 +4,7 @@
 # Jobs:
 #   test        — pytest suite (python 3.12) on every push, PR, and tag.
 #   test-windows— the same suite on Windows; gates windows-app only.
+#   lint        — ruff over corvus/, serve.py and tests/.
 #   frontend    — the plain-node frontend assertions under tests/*.js.
 #   appimage    — Linux x86_64 AppImage via ./build.sh   (-> build-appimage.sh).
 #   macos-app   — macOS arm64 .app + .dmg via ./build.sh --dmg.
@@ -53,8 +54,7 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-          pip install pymavlink pyserial paramiko
+          pip install -r requirements-headless.txt -r requirements-dev.txt
       - name: pytest
         run: pytest -q tests
 
@@ -75,10 +75,32 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-          pip install pymavlink pyserial paramiko
+          pip install -r requirements-headless.txt -r requirements-dev.txt
       - name: pytest
         run: pytest -q tests
+
+  # --- lint ------------------------------------------------------------------
+  # Neither pipeline ran a linter, which is how six dead locals — an unused
+  # AppUserModelID that left the Windows taskbar showing the launcher's icon
+  # among them — sat in the tree unnoticed. ruff over corvus/ takes about a
+  # second. Scoped to the checks that catch real mistakes rather than style:
+  # pyflakes (F), unused imports, and a handful of bug-shaped rules. Runs on
+  # its own rather than gating the artifacts, because a lint finding is not a
+  # reason to stop shipping.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install lint dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: ruff
+        run: ruff check corvus serve.py tests
 
   # --- frontend assertions (no browser, no test runner) ----------------------
   frontend:
@@ -127,7 +149,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Corvus_GCS-${{ steps.ver.outputs.version }}-x86_64-AppImage
-          path: Corvus_GCS-*-x86_64.AppImage
+          # The .lock beside it is the exact resolved dependency set this
+          # AppImage was built from; requirements.txt only states floors, so
+          # it is the lock that makes a rebuild of this tag reproducible.
+          path: |
+            dist/Corvus_GCS-*-x86_64.AppImage
+            dist/Corvus_GCS-*-x86_64.lock
           if-no-files-found: error
           retention-days: 30
 
@@ -152,9 +179,12 @@ jobs:
         # architecture. Homebrew's is one, and its prefix differs per arch:
         # /opt/homebrew on Apple Silicon, /usr/local on Intel. The script's
         # candidate search covers both, so this only has to make sure one exists.
+        # 3.12, matching the test job, environment.yml and requires-python: this
+        # step used to install 3.11, so the artifact was packaged on a version
+        # nothing was ever tested against.
         run: |
-          if ! brew list --versions python@3.11 >/dev/null 2>&1; then
-            brew install python@3.11 || echo "brew install failed; relying on auto-detection"
+          if ! brew list --versions python@3.12 >/dev/null 2>&1; then
+            brew install python@3.12 || echo "brew install failed; relying on auto-detection"
           fi
       - name: Show the build architecture
         run: |
@@ -175,7 +205,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Corvus_GCS-${{ steps.ver.outputs.version }}-macOS-${{ steps.ver.outputs.arch }}
-          path: Corvus_GCS-*-macOS-*.dmg
+          # See the AppImage job: the .lock is what this artifact's
+          # dependencies actually resolved to.
+          path: |
+            dist/Corvus_GCS-*-macOS-*.dmg
+            dist/Corvus_GCS-*-macOS-*.lock
           if-no-files-found: error
           retention-days: 30
 
@@ -205,7 +239,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Corvus_GCS-${{ steps.ver.outputs.version }}-windows-x64
-          path: Corvus_GCS-*-windows-x64.zip
+          # See the AppImage job: the .lock is what this artifact's
+          # dependencies actually resolved to.
+          path: |
+            dist/Corvus_GCS-*-windows-x64.zip
+            dist/Corvus_GCS-*-windows-x64.lock
           if-no-files-found: error
           retention-days: 30
 
@@ -288,8 +326,9 @@ jobs:
             upload "$f"
           done
 
-          # Refuse to publish half a release. These three files are what the
-          # three build jobs produced, so anything missing here means an upload
+          # Refuse to publish half a release. Everything under artifacts/ is
+          # what the three build jobs produced — the three bundles and the
+          # .lock beside each — so anything missing here means an upload
           # reported success without taking.
           for f in artifacts/*; do
             [ -f "$f" ] || continue

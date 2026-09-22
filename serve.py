@@ -38,102 +38,13 @@ logger = logging.getLogger("corvus")
 def _stop_all(server) -> None:
     """Ordered, exception-safe backend teardown. Never raises.
 
-    Order matters: mavlink first (stop producing telemetry, join its
-    threads, flush the tlog), then ssh (join reader threads), then the
-    state store (forward-compat lifecycle hook), then the HTTP server +
-    tile caches (stop accepting requests, close SQLite handles last so no
-    in-flight handler touches a closed DB). Each step is independently
-    guarded so a failure in one cannot skip the rest.
+    The sequence lives in :func:`corvus.server.stop_backend` — it was
+    duplicated here and in corvus/app.py, character for character, and the
+    order in it is load-bearing. Kept as a named function because it is what
+    the signal handlers and the shutdown tests reach for.
     """
-    # Flash uses the MAVLink bridge (it stops/starts it), so cancel/join the
-    # uploader BEFORE tearing the bridge down.
-    flash = getattr(server, "flash", None)
-    if flash is not None:
-        try:
-            logger.info("stopping flash …")
-            flash.shutdown()
-            logger.info("flash stopped")
-        except Exception:
-            logger.exception("flash shutdown failed")
-    # The radio service may be holding the bridge's serial port and will
-    # restart the bridge when its session ends, so it is told to stop doing that
-    # in the same breath as flash and for the same reason.
-    sik = getattr(server, "sik", None)
-    if sik is not None:
-        try:
-            sik.shutdown()
-        except Exception:
-            logger.exception("SiK radio shutdown failed")
-    # Log downloads hold a sink on the MAVLink bridge and a worker thread, so
-    # they are stopped alongside flash — before the bridge itself goes away.
-    logs = getattr(server, "logs", None)
-    if logs is not None:
-        try:
-            logger.info("stopping log service …")
-            logs.shutdown()
-            logger.info("log service stopped")
-        except Exception:
-            logger.exception("log service shutdown failed")
-    # The forwarder holds a UDP socket, two daemon threads, and a sink on the
-    # bridge's receive path, so it is released before the bridge goes away.
-    forwarder = getattr(server, "forwarder", None)
-    if forwarder is not None:
-        try:
-            logger.info("stopping mavlink forwarding …")
-            mav = getattr(server, "mavlink", None)
-            if mav is not None:
-                mav.set_frame_sink(None)
-            forwarder.stop()
-            logger.info("mavlink forwarding stopped")
-        except Exception:
-            logger.exception("mavlink forwarder shutdown failed")
-    # The auto-connect watcher calls stop/set_connection/start on the bridge,
-    # so it is joined before the bridge goes away: a tick landing after
-    # mavlink.stop() would start the link the shutdown just closed.
-    from corvus.server import stop_autoconnect_watcher
-    stop_autoconnect_watcher(server)
-    mavlink = getattr(server, "mavlink", None)
-    if mavlink is not None:
-        try:
-            logger.info("stopping mavlink …")
-            mavlink.stop()
-            logger.info("mavlink stopped")
-        except Exception:
-            logger.exception("mavlink stop failed")
-    ssh = getattr(server, "ssh", None)
-    if ssh is not None:
-        try:
-            logger.info("stopping ssh …")
-            ssh.shutdown()
-            logger.info("ssh stopped")
-        except Exception:
-            logger.exception("ssh shutdown failed")
-    store = getattr(server, "store", None)
-    if store is not None:
-        try:
-            logger.info("stopping state store …")
-            store.shutdown()
-            logger.info("state store stopped")
-        except Exception:
-            logger.exception("state store shutdown failed")
-    try:
-        logger.info("stopping http server + tiles …")
-        server.shutdown()
-        logger.info("http server + tiles stopped")
-    except Exception:
-        logger.exception("http server shutdown failed")
-    # Defense-in-depth: shutdown() stops the serve loop but does not close
-    # the listening TCP socket. os._exit reclaims it in the live path, but an
-    # explicit close keeps the fd table clean on a graceful exit and lets the
-    # hermetic shutdown tests assert fileno==-1 without calling server_close
-    # themselves.
-    try:
-        logger.info("closing http socket …")
-        server.server_close()
-        logger.info("http socket closed")
-    except Exception:
-        logger.exception("http socket close failed")
-
+    from corvus.server import stop_backend
+    stop_backend(server, logger)
 
 def main() -> int:
     cfg = load_config()

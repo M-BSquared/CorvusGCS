@@ -8,22 +8,24 @@
 <h1 align="center">Corvus GCS (CGCS)</h1>
 
 <p align="center">
-  <em>A modern, offline-first Ground Control Station for PX4 autonomous aircraft —<br>
+  <em>A modern, offline-first Ground Control Station for PX4 and ArduPilot autonomous aircraft —<br>
   built for the field: a laptop, a telemetry radio, and no internet.<br>
   Loads only what it needs, so it is <strong>ready to fly in seconds, not minutes</strong>.</em>
 </p>
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.45-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.45" />
+  <img src="https://img.shields.io/badge/Version-2026.09.46-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.46" />
   <img width="8" />
-  <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.10%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.10+" /></a>
+  <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
   <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript" target="_blank"><img src="https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black" height="28" alt="JavaScript" /></a>
   <img width="8" />
   <!-- <a href="https://github.com/ArduPilot/pymavlink" target="_blank"><img src="https://img.shields.io/badge/pymavlink-00A6E2?logoColor=white&style=for-the-badge" height="28" alt="pymavlink" /></a>
   <img width="8" /> -->
   <a href="https://px4.io/" target="_blank"><img src="https://img.shields.io/badge/PX4-v1.16%20%7C%201.17%20%7C%201.18-00C7B7?logoColor=white&style=for-the-badge" height="28" alt="PX4 v1.16 | 1.17 | 1.18" /></a>
+  <img width="8" />
+  <a href="https://ardupilot.org/" target="_blank"><img src="https://img.shields.io/badge/ArduPilot-4.3%20%E2%80%93%204.6-E62B1E?logoColor=white&style=for-the-badge" height="28" alt="ArduPilot 4.3 - 4.6" /></a>
   <br>
   <img src="https://img.shields.io/badge/%F0%9F%A4%96-Vibe%20Coded-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded" />
   <img width="8" />
@@ -84,7 +86,7 @@
 - [Plugins](#plugins)
   - [Adding your own](#adding-your-own)
 - [Console commands](#console-commands)
-- [PX4 compatibility](#px4-compatibility)
+- [Flight-stack compatibility](#flight-stack-compatibility)
 - [Get involved](#get-involved)
 - [About / Origins](#about--origins)
 - [License](#license)
@@ -93,7 +95,8 @@
 
 ## What is Corvus GCS?
 
-**Corvus GCS is a ground control station for PX4-based autonomous aircraft.**
+**Corvus GCS is a ground control station for autonomous aircraft running PX4 or
+ArduPilot.**
 It is the software you have open on a laptop while an aircraft is in the air:
 it shows you where the vehicle is, what it is doing, and lets you talk to it —
 over a serial telemetry radio, UDP, or TCP.
@@ -142,7 +145,7 @@ manage: one window, one process, one clean shutdown.
 > away, with a live progress indicator and an editor that refuses writes while
 > armed.
 
-**Who it is for.** Anyone operating a PX4 aircraft who wants a ground station
+**Who it is for.** Anyone operating a PX4 or ArduPilot aircraft who wants a ground station
 that is small enough to read end-to-end, honest about what it is doing, and
 built around a field laptop rather than a desk. It is a working tool, not a
 demo — and because the codebase stays readable rather than sprawling, it is
@@ -172,7 +175,7 @@ badge — but under continuous human direction, review, and a test suite that is
 roughly four fifths the size of the application itself.
 
 The result is not a throwaway. The scope was chosen precisely because it is
-useful: a PX4 ground station is a genuine tool with genuine field requirements,
+useful: a ground station is a genuine tool with genuine field requirements,
 so the project stays honest. It can be used as it is, adapted for a different
 airframe or workflow, taken apart as a reference for MAVLink, offline tiling or
 SSE-based telemetry, or simply read as an example of what this way of working
@@ -196,8 +199,8 @@ Everything here is **built and working today**.
 | 🌍 **See in 3D** | A spinnable globe when you zoom out, real terrain relief and extruded OpenStreetMap buildings when you zoom in, and the aircraft drawn at the altitude it is actually flying — or switch terrain and buildings off and keep just the camera tilt, for a slow link or a low battery | ✅ |
 | 📴 **Work offline** | Nothing loads from the internet. Download named map areas in advance and the whole app keeps working with no connection | ✅ |
 | 📡 **Connect** | Connects on its own to whatever is plugged in — flight controller on USB first, then telemetry radio, then the simulator port — plus serial, UDP and TCP by hand, a live port picker, saved recent connections, link-quality display and automatic reconnect | ✅ |
-| 🔧 **Set up** | Airframe drawn to scale — click a motor to wire, position or spin-test it; ESC protocol; parameter editor with import / export; guided sensor calibration, ESC calibration, PID tuning by hand or by in-flight autotune, and PX4 firmware flashing — with every build target of a release laid out as a searchable list grouped by vendor, your own board detected and put first, and the developer builds folded away until you ask for them | ✅ |
-| 🛡️ **Set limits** | Maximum distance and height, the return-to-launch profile, and a failsafe action for every loss PX4 can detect — plus a distance sensor or optical-flow camera brought up by one switch, driver and estimator together | ✅ |
+| 🔧 **Set up** | Airframe drawn to scale — click a motor to wire, position or spin-test it; ESC protocol; parameter editor with import / export; guided sensor calibration, ESC calibration, PID tuning by hand or by in-flight autotune, and firmware flashing for both stacks — with every build target of a release laid out as a searchable list grouped by vendor, your own board detected and put first, and the developer builds folded away until you ask for them | ✅ |
+| 🛡️ **Set limits** | Maximum distance and height, the return-to-launch profile, and a failsafe action for every loss the autopilot can detect — plus a distance sensor or optical-flow camera brought up by one switch, driver and estimator together | ✅ |
 | 📊 **Review flights** | Download the vehicle's logs and record the live stream, then read either on your own machine: Flight Review for a ULog, Telemetry Review for the recording that exists even when the ULog does not — including the radio link, which an onboard log cannot see | ✅ |
 | 🖥️ **Tools** | MAVLink console, SSH terminal to an onboard companion computer, and an extensible plugin system — the Vibration Monitor and the SSH Launcher ship with it, and dropping a folder in adds your own | ✅ |
 | 🎨 **Personalise** | Six colour themes, interface scale from 80 % to 150 %, your own logo, an app-icon switch with an optional backplate — all saved between sessions | ✅ |
@@ -235,7 +238,7 @@ is something you point at instead of work out. Click a motor to wire, position o
 </p>
 
 <p align="center"><em><strong>Limits and failsafes.</strong> Maximum distance and height, the
-return-to-launch profile, and an action for every loss PX4 can detect. A distance sensor or
+return-to-launch profile, and an action for every loss the autopilot can detect. A distance sensor or
 optical-flow camera comes up with one switch — driver and estimator together.</em></p>
 
 <p align="center">
@@ -310,7 +313,7 @@ from the dropdown on the LINK tab and you never have to type one. Ports past
 
 ### From source
 
-Requires **Python 3.10+**. One command creates the environment and opens the app:
+Requires **Python 3.12+**. One command creates the environment and opens the app:
 
 ```bash
 ./run.sh
@@ -347,17 +350,28 @@ rather than a shell one. All three produce a self-contained bundle carrying a
 Python interpreter, Qt and every runtime dependency, named from the
 [`VERSION`](VERSION) file.
 
-**Linux** needs Ubuntu/Debian x86_64, `python3` (3.10+), `pip`, `wget` or
+**Linux** needs Ubuntu/Debian x86_64, `python3` (3.12+), `pip`, `wget` or
 `curl`, and ~1 GB of free disk. The first run downloads `appimagetool` and the
 Python wheels and caches them under `build/`.
 
 **macOS** needs the Xcode command line tools (`xcode-select --install`) and a
-**framework** CPython 3.10+ (Homebrew's `python@3.11` or a python.org install).
+**framework** CPython 3.12+ (Homebrew's `python@3.12` or a python.org install).
 A conda interpreter cannot be relocated into a bundle and is rejected with a
 clear error. The bundle is ad-hoc signed; set
 `CODESIGN_IDENTITY="Developer ID Application: ..."` to sign it properly.
 
-**Windows** needs a 64-bit python.org CPython 3.10+ on `PATH` (a conda
+Signing needs a checkout that is *not* inside a cloud-synced folder. iCloud
+Drive, OneDrive and Dropbox re-apply `com.apple.FinderInfo` to directories
+inside the bundle while the build runs, and `codesign` refuses a bundle
+carrying it — nothing can win that race in place. The build says so when it
+hits this, and the way out is to put the artifact somewhere the sync agent is
+not:
+
+```bash
+CORVUS_DIST=/tmp/corvus-dist ./build-macos-app.sh --dmg
+```
+
+**Windows** needs a 64-bit python.org CPython 3.12+ on `PATH` (a conda
 interpreter is rejected — its DLLs live outside the prefix and cannot be
 packaged) and ~2 GB of free disk for Qt. Unlike the other two the bundle is
 built with PyInstaller rather than a hand-relocated interpreter: Windows puts
@@ -653,7 +667,8 @@ one thing the button cannot say — **which** 3D it gives you:
 - **Off** is the camera tilt alone, over flat ground — and nothing downloaded
   that a flat map does not already download. This is the one to pick on a
   laptop that is low on battery, or on a link you would rather keep for
-  telemetry.
+  telemetry, and it is how the switch starts: the expensive picture is a
+  choice you make, not one you discover after the download.
 
 The switch chooses; it never turns 3D on by itself, so you can set it before
 you press the button. Both the switch and whether 3D was on come back the next
@@ -717,7 +732,27 @@ The screen is three regions, and they are the same flight drawn three ways.
 actions on the Home tab, icon over caption — and the usual zoom, fit and layer
 controls on the rail at the top right. The layer switcher is the Home map's own,
 so it offers the same twelve layers under the same four services and the choice
-follows you between the two screens. Pick a tool and click:
+follows you between the two screens.
+
+It also opens **where the Home map is looking**. Pan or zoom either map and the
+other one starts from that view the next time you open it, so the planner and
+the flight screen are never maps of two different places. Move the planner's
+map and it stays where you put it — the Home map is never dragged around behind
+your back, and only your own next move on Home changes what the planner opens
+on. Nothing moves the camera by itself: if the mission you were last editing
+happens to be somewhere else entirely, the planner says so and leaves the view
+alone, and the **fit** button on the rail frames the plan when you ask it to.
+
+Next to the offline-download button there is a **search**. Type a place name and
+it finds it (over OpenStreetMap's Nominatim, so that half needs a connection) —
+or type coordinates and it goes there with no network at all, in whatever
+notation you have them in: `48.0802, 11.6410`, `48,0802 11,6410`, `48.5N
+11.25E`, `48°04'48.8"N 11°38'27.5"E`. Areas you have already downloaded for
+offline use are matched by name too, and listed first, since those are named
+after exactly the places you fly from. Picking a result flies there and drops a
+mark; press the mark to take it off.
+
+Pick a tool and click:
 
 - **Start point** — where the flight begins. Every altitude in the plan is
   measured from here, which is the same reference PX4 flies a mission in.
@@ -795,13 +830,14 @@ front of you.
   timer group, plus the PWM endpoints. Reading the whole page costs about a
   hundred parameters, not the full set, so it opens in a second, and only what
   the connected firmware actually reports is shown — the page is honest across
-  PX4 versions rather than offering settings your board does not have. Every
+  firmware versions, and across both flight stacks, rather than offering
+  settings your board does not have. Every
   field is written back one at a time, confirmed by the aircraft, and the whole
   page is read-only while armed.
 - **Safety & Sensors** — the envelope the aircraft is allowed to use, in one
   page: maximum distance and height from home and what happens at the limit,
   the return-to-launch profile (return and descend height, the climb cone, the
-  loiter before landing), and a failsafe action for every loss PX4 can detect —
+  loiter before landing), and a failsafe action for every loss the autopilot can detect —
   RC, data link, position, battery, actuator — with the battery levels that
   trigger them.
 - **Distance sensor and optical flow** — a **Sensors** card on the same page,
@@ -822,13 +858,13 @@ front of you.
   lidar's accuracy implies). Every parameter it would write is listed with its
   value and its reason *before* anything is sent, a module this firmware cannot
   run says so in the row rather than failing once chosen, and a parameter your
-  PX4 version does not carry is named rather than silently skipped.
+  firmware does not carry is named rather than silently skipped.
 - **Custom, and your own parameters** — the first row of that dropdown writes
   nothing and leaves everything to you: the model picker (Lightware, Lidar-Lite,
   Benewake, PMW3901, DroneCAN and the rest, or a sensor arriving over MAVLink),
   the serial port if it needs one, and the settings that are genuinely
   per-airframe — mounting offset, height limits, quality gates. It also stops
-  pretending Corvus knows every setting your airframe needs: name any PX4
+  pretending Corvus knows every setting your airframe needs: name any
   parameter and it joins the form, read in the same batch and written by the
   same path as everything else. The list is remembered per browser profile, so
   the row you added because *this* aircraft needs it is still there next time.
@@ -838,9 +874,11 @@ front of you.
   **refused while armed**. *Export* and *Import* write and read a readable JSON
   file with the airframe and date in the name.
 - **Sensor calibration** — a guided wizard for compass, gyro, accelerometer,
-  level horizon, airspeed and baro. The aircraft is drawn in the position PX4 is
-  asking for, each orientation is ticked off as it completes, and a running
-  calibration can be cancelled on the vehicle.
+  level horizon, airspeed and baro. The aircraft is drawn in the position the
+  autopilot is asking for, each orientation is ticked off as it completes, and a
+  running calibration can be cancelled on the vehicle. PX4 recognises each
+  position by itself; ArduPilot asks to be told, so on an ArduPilot aircraft a
+  confirm button appears under the figure and the calibration waits for it.
 - **Motor / ESC calibration** — behind a safety confirmation, because motors
   spin at full PWM. **Remove the propellers first.** Refused while armed.
 - **Radio Control** — the transmitter in your hands, on one page, and drawn
@@ -857,17 +895,17 @@ front of you.
   the drawn sticks are where yours are. Underneath sit the live channel bars
   and the full configuration: which input the vehicle accepts and what it does
   when the transmitter goes quiet, the stick channels, the flight-mode switch
-  with its six positions, every other switch PX4 can bind, and the AUX
-  passthroughs. Next to every channel picker is **Detect**: press it, move the
+  with its six positions, every other switch the autopilot can bind, and the
+  auxiliary channels. Next to every channel picker is **Detect**: press it, move the
   switch, and Corvus binds the channel that moved. A channel bound to two
-  actions at once is flagged, because PX4 permits it and a kill switch sharing
-  the mode switch's channel fires on a mode change.
+  actions at once is flagged, because both stacks permit it and a kill switch
+  sharing the mode switch's channel fires on a mode change.
 - **Radio calibration** — a guided wizard, and on this page the wizard *is* the
-  calibration: PX4 has no autopilot-side RC procedure, so a ground station has
-  to watch the channels while you sweep every control and write the endpoints it
-  saw. Centre the sticks, sweep everything through its travel, then move one
+  calibration: neither stack has an autopilot-side RC procedure, so a ground
+  station has to watch the channels while you sweep every control and write the
+  endpoints it saw. Centre the sticks, sweep everything through its travel, then move one
   named stick at a time — the channel that answers is the one that gets bound,
-  and the direction it moved decides whether PX4 has to reverse it. Nothing is
+  and the direction it moved decides whether the channel has to be reversed. Nothing is
   written until you have seen the whole measurement, and a channel that never
   really moved is refused by name instead of being written as a stick that
   works like a switch. The drawn handset comes along for the ride: each step
@@ -885,12 +923,15 @@ front of you.
   own cannot tell a gain that is too low from one that is too high. Only the
   loops the connected firmware reports are shown, so a multicopter and a fixed
   wing each get their own.
-- **Autotune** — PX4 tunes the rate and attitude controllers together, **in
-  flight**: it injects steps and measures what comes back, so the vehicle has to
-  be armed and hovering. The page says that up front, states the preconditions
-  before you take off, refuses to send the command on the ground, and follows
-  PX4's own progress to a stop button that works throughout. PX4 v1.16–v1.18
-  expose no separate roll, pitch or yaw selection through this command.
+- **Autotune** — both stacks tune the rate and attitude controllers **in
+  flight**: the autopilot injects steps and measures what comes back, so the
+  vehicle has to be armed and hovering. The page says that up front, states the
+  preconditions before you take off, and refuses to start on the ground. On PX4
+  it is a command, and the page follows its progress to a stop button that works
+  throughout; PX4 v1.16–v1.18 expose no separate roll, pitch or yaw selection.
+  On ArduPilot the autotune *is* a flight mode, so starting it switches the
+  vehicle into AUTOTUNE, stopping it returns to the mode you were in, and the
+  autopilot narrates the run in the console.
 - **Telemetry Radio** — program a SiK radio pair the way Mission Planner's SiK
   Radio page does, without leaving Corvus. Pick the port, press Load, and both
   radios come back side by side: the one on your cable, and the one on the
@@ -911,7 +952,7 @@ front of you.
   few seconds a session takes — Corvus stops the link itself and reconnects —
   and a radio on any other port does not touch the link at all. Refused while
   armed.
-- **Firmware** — flash PX4 firmware over a **direct USB connection only**.
+- **Firmware** — flash PX4 or ArduPilot firmware over a **direct USB connection only**.
   Refused over a telemetry radio or UDP/TCP, and refused while armed.
 
   Picking the right image is the part that goes wrong, so the boards are a
@@ -955,6 +996,34 @@ front of you.
   with findings above the plots and the aircraft's own messages below, filtered
   by severity. **A log that never came through Corvus can be opened too**, from
   anywhere on your machine. Everything is parsed locally; nothing is uploaded.
+
+  The findings name the problem and say where to look. **Each is one line you
+  can scan, with the reasoning behind it one click away** — the explanations are
+  a paragraph each, and a dozen paragraphs stacked up is a wall that costs you
+  the one line that mattered. Problems come first in severity order; context
+  that is worth knowing but needs nothing done about it folds away under *"2
+  more observations"*. **Every finding carries the second of the flight it was
+  measured at and the mode being flown then**, and so does every line of the
+  aircraft's own message log, so a claim at the top of the page and the dip in
+  the plot that caused it line up.
+
+  Beyond the thresholds, the review reads the things a plot alone will not tell
+  you — a motor held at full output and for how long, how long the estimator
+  actually rejected a sensor rather than merely how high the innovation spiked,
+  in-flight position and heading resets, PX4's own failure detector firing, a
+  compass whose field strength rises and falls with the throttle (interference
+  in the power wiring, not a calibration to redo), and a rate loop ringing at a
+  named frequency and amplitude. Where the ESCs report RPM, they are plotted too
+  — commands say what was asked for, RPM says what happened.
+
+  It is equally careful about what it does **not** say, because one alarm about
+  something ordinary costs every other finding its credibility. A motor at its
+  limit is only reported when the others still had headroom — all of them
+  together is a hard climb, not a failure. An estimator reset counts only in the
+  air, since every counter ticks when the first GPS fix arrives on the ground.
+  Compass interference needs a physically believable swing before the wiring is
+  blamed. And a brief innovation spike is filed as an observation rather than a
+  warning, because it is only a problem when it lasts.
 - **Telemetry Review** — the same page, for a recording rather than a ULog.
   The ULog is the better log and, when you can get it, it is the one to read.
   This exists because you cannot always get it: the card was not fitted, the
@@ -970,7 +1039,14 @@ front of you.
   per-IMU data — those never leave the aircraft. And there is one thing a ULog
   can never have: **the link itself**. RADIO_STATUS, the drop counters and both
   ends' signal strength describe the radio between you and the aircraft, which
-  a log written on board has no way of knowing about.
+  a log written on board has no way of knowing about — including the stretches
+  where **the link went silent**, measured against the pace that recording
+  actually kept rather than a fixed threshold, so a slow radio is not reported
+  as a fault. A recording that **ends with the aircraft still armed** is said
+  first and plainly, because that is the log somebody reads when an aircraft did
+  not come home. The vehicle's own verdict is read too: the subsystems it
+  reported as configured but not healthy, and the glitches its estimator
+  flagged.
 
 ### The side workspace
 
@@ -1049,8 +1125,8 @@ Two ship with Corvus:
 
 - **Vibration Monitor** — a live graph of gyro coning, gyro high-frequency and
   accelerometer high-frequency vibration, with the cumulative clipping counters
-  beside it. It asks PX4 for a higher `VIBRATION` rate while it is open and puts
-  the default back when you close it.
+  beside it. It asks the autopilot for a higher `VIBRATION` rate while it is
+  open and puts the default back when you close it.
 - **SSH Launcher** — a shelf of buttons for the programs you start before a
   flight. Each one carries its own saved SSH connection, folder and command, so
   the mission script, the video pipeline and the log recorder are three presses
@@ -1182,14 +1258,67 @@ the link down, too.
 
 ---
 
-## PX4 compatibility
+## Flight-stack compatibility
 
-Primary target: **PX4 v1.16, v1.17, v1.18.** Corvus detects the firmware version
-on connect, loads the matching parameter schema, and degrades gracefully rather
-than crashing when something is missing — it refuses to send a command or write
-a parameter the connected firmware does not understand. All three versions are
-checked before any parameter, mode or flight-plan change is accepted. Older
-firmwares (v1.12–v1.15) work on a best-effort basis but are not the focus.
+Primary target: **PX4 v1.16, v1.17, v1.18.** Secondary target: **ArduPilot
+4.3–4.6** — Copter, Plane, Rover/Boat and Sub.
+
+Corvus reads the flight stack and the vehicle type out of the first heartbeat
+and behaves accordingly. It detects the firmware version on connect, loads the
+matching parameter schema, and degrades gracefully rather than crashing when
+something is missing — it refuses to send a command or write a parameter the
+connected firmware does not understand. Both stacks are checked before any
+parameter, mode or flight-plan change is accepted. Older PX4 firmwares
+(v1.12–v1.15) work on a best-effort basis but are not the focus.
+
+The two stacks are not the same aircraft with different words, and the places
+they differ are not cosmetic. A takeoff altitude in the wrong frame turns "ten
+metres up" into "ten metres above sea level"; a compass calibration sent in
+PX4's parameter slots is acknowledged by ArduPilot and starts nothing. Every
+one of those differences lives in one module rather than being spread across
+the app:
+
+| | PX4 | ArduPilot |
+| --- | --- | --- |
+| **Flight mode** | packed main/sub mode | one flat number, read against this airframe's own table |
+| **Takeoff** | command, then arm; altitude above sea level | GUIDED, arm, then command; altitude above home |
+| **Compass calibration** | `PREFLIGHT_CALIBRATION` | `DO_START_MAG_CAL`, with the GCS confirming each accelerometer position |
+| **Autotune** | a command with a progress stream | the AUTOTUNE flight mode |
+| **Mission** | items from 0, flown in `MISSION` | item 0 is home, flown in `AUTO` |
+| **On-board log** | ULog (`.ulg`) | DataFlash (`.bin`) |
+
+**What ArduPilot does not get.** Three things, and Corvus says so on the page
+rather than offering a button that fails:
+
+- **The MAVLink console.** ArduPilot has no NSH shell; the console's flight
+  commands still work, the shell verbs are hidden.
+- **ESC calibration.** ArduPilot does it by setting `ESC_CALIBRATION` and
+  rebooting with the throttle high, which is not something a ground station
+  should put behind a button.
+- **Flight-log analysis.** DataFlash `.bin` logs download normally and land in
+  the same folder, but the review page reads ULog only — it names the format and
+  points you at Mission Planner rather than failing obscurely. The tlog review,
+  which is recorded by Corvus itself, works on both.
+
+**One thing to set on the aircraft.** ArduPilot only accepts stick input from
+the ground station named in `SYSID_MYGCS` (`MAV_GCS_SYSID` from 4.5), and it
+drops everything else *silently*. Corvus announces itself as system **254**
+rather than the usual 255, deliberately, so it can share a link with
+QGroundControl without the two fighting over one id — which means the joystick
+does nothing on a stock ArduPilot vehicle. Corvus checks this on connect and
+says so, with the number to change; it does not write the parameter itself,
+because which ground station may take an aircraft's sticks is your decision.
+Flight commands, mode changes and everything else are unaffected.
+
+A second, smaller one: the PID tuning page's *commanded-vs-achieved* overlay
+needs the autopilot to stream its setpoints. ArduPilot streams the attitude and
+rate targets in any mode, but the position and velocity targets only in GUIDED,
+so those two charts stay empty in a manual hover. The gains themselves edit
+normally.
+
+Firmware flashing works for both: ArduPilot's `.apj` and PX4's `.px4` are the
+same container, and the release picker lists ArduPilot's stable and beta builds
+alongside PX4's.
 
 ---
 
@@ -1203,8 +1332,8 @@ you expected and what happened is enough. The same goes for features: if your
 workflow needs something Corvus does not do yet, say so. Wishes are not an
 imposition here, they are the most useful input there is.
 
-- **Found a bug?** Open an issue with the PX4 version, the connection type
-  (serial / UDP / TCP), and what you were doing.
+- **Found a bug?** Open an issue with the autopilot and firmware version, the
+  connection type (serial / UDP / TCP), and what you were doing.
 - **Want a feature?** Describe the operational problem rather than the solution
   — it usually leads somewhere better.
 - **Want to contribute code?** Pull requests are welcome. `AGENTS.md` documents

@@ -38,7 +38,13 @@ def _wait_until(predicate, timeout: float) -> bool:
 
 @pytest.mark.sitl
 def test_live_px4_sitl_connects_reports_identity_and_stops_cleanly() -> None:
-    """Opt-in smoke test against PX4 SITL; skipped when no simulator answers."""
+    """Opt-in smoke test against PX4 SITL.
+
+    Deselected from the default offline run (see ``pytest_collection_modifyitems``).
+    Once selected, a simulator that does not answer is a failure and not a
+    skip: ``CORVUS_SITL=1`` is someone stating a simulator is there, and a
+    silent skip would report a green run for a link that never came up.
+    """
     connection = os.environ.get(
         "CORVUS_SITL_CONNECTION", "udp:0.0.0.0:14550",
     )
@@ -47,8 +53,10 @@ def test_live_px4_sitl_connects_reports_identity_and_stops_cleanly() -> None:
     started = time.monotonic()
     bridge.start()
     try:
-        if not _wait_until(lambda: bool(store.get_snapshot()["connected"]), 15.0):
-            pytest.skip(f"no PX4 SITL heartbeat on {connection}")
+        assert _wait_until(lambda: bool(store.get_snapshot()["connected"]), 15.0), (
+            f"CORVUS_SITL=1 is set but no PX4 SITL heartbeat arrived on {connection}; "
+            "start a simulator or unset CORVUS_SITL"
+        )
 
         def ready() -> bool:
             snapshot = store.get_snapshot()

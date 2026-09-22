@@ -33,7 +33,7 @@ echo ""
 case "$OS" in
     Linux)
         SCRIPT="$REPO_DIR/build-appimage.sh"
-        ARTIFACT="$REPO_DIR/Corvus_GCS-${VERSION}-x86_64.AppImage"
+        ARTIFACT="$REPO_DIR/dist/Corvus_GCS-${VERSION}-x86_64.AppImage"
         # --dmg is macOS-only; the AppImage script rejects unknown args.
         ARGS=()
         for arg in "$@"; do

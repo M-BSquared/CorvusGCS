@@ -28,7 +28,8 @@ import os
 import re
 import threading
 import time
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
+from collections.abc import Callable
 
 if TYPE_CHECKING:  # avoid an import cycle at runtime
     from .mavlink_bridge import MavlinkBridge
@@ -98,7 +99,7 @@ class LogService:
 
     def __init__(
         self,
-        mavlink: "MavlinkBridge",
+        mavlink: MavlinkBridge,
         log_dir: Callable[[], str],
         tlog_dir: Callable[[], str] | None = None,
     ) -> None:
@@ -168,13 +169,35 @@ class LogService:
             "connected": bool(self.mavlink is not None and self.mavlink.is_connected()),
         }
 
-    def saved_logs(self) -> list[dict[str, Any]]:
-        """ULogs already in the download folder, newest first.
+    # The on-board log formats the two stacks write. The MAVLink transfer is
+    # identical — LOG_REQUEST_LIST, LOG_ENTRY, LOG_REQUEST_DATA, LOG_DATA — but
+    # the bytes that come back are not: PX4 writes a ULog and ArduPilot writes
+    # a DataFlash binary. Naming an ArduPilot log ``.ulg`` does not break the
+    # download; it breaks every tool the operator then opens it with, starting
+    # with Corvus's own review page.
+    LOG_SUFFIXES: tuple[str, ...] = (".ulg", ".bin")
 
-        The id is recovered from the ``log_<id>_<date>.ulg`` name this service
+    def _log_suffix(self) -> str:
+        """The file extension for logs pulled off the connected vehicle."""
+        capabilities = getattr(self.mavlink, "capabilities", None)
+        if callable(capabilities):
+            try:
+                suffix = str(capabilities().get("log_suffix") or "")
+            except Exception:  # noqa: BLE001 - naming must never fail a download
+                suffix = ""
+            if suffix in self.LOG_SUFFIXES:
+                return suffix
+        return ".ulg"
+
+    def saved_logs(self) -> list[dict[str, Any]]:
+        """On-board logs already in the download folder, newest first.
+
+        The id is recovered from the ``log_<id>_<date>.<ext>`` name this service
         writes; a file that does not follow it is still listed (an operator may
         have dropped one in) but carries no id, so it is never matched against
-        a log on the vehicle.
+        a log on the vehicle. Both extensions are listed whichever vehicle is
+        connected, because the folder outlives the connection — an operator who
+        flies a PX4 aircraft and an ArduPilot one sees both sets.
         """
         out: list[dict[str, Any]] = []
         directory = self._resolve_dir()
@@ -185,7 +208,7 @@ class LogService:
         except OSError:
             return out
         for name in names:
-            if not name.endswith(".ulg"):
+            if not name.endswith(self.LOG_SUFFIXES):
                 continue
             path = os.path.join(directory, name)
             try:
@@ -611,7 +634,12 @@ class LogService:
         return True, path
 
     def _filename(self, log_id: int, entry: dict[str, Any]) -> str:
-        """``log_<id>_<local date>.ulg`` — sortable, and readable a month later.
+        """``log_<id>_<local date>.<ext>`` — sortable, readable a month later.
+
+        The extension follows the connected stack: ``.ulg`` for PX4's ULog,
+        ``.bin`` for ArduPilot's DataFlash log. The transfer is the same
+        protocol either way, so only the name says which one landed — and a
+        DataFlash log under a ``.ulg`` name is a file no tool will open.
 
         The vehicle reports the log's time as UTC, and the name used to keep it
         that way. Nobody flies in UTC: the operator remembers the flight by the
@@ -629,7 +657,7 @@ class LogService:
                 stamp = time.strftime("_%Y-%m-%d_%H-%M", time.localtime(utc))
             except (ValueError, OSError):
                 stamp = ""
-        return _safe_component(f"log_{log_id:03d}{stamp}") + ".ulg"
+        return _safe_component(f"log_{log_id:03d}{stamp}") + self._log_suffix()
 
     # ------------------------------------------------------------------
     # Erase

@@ -337,6 +337,9 @@ function makeFakeTelemetry(opts = {}) {
 // ---------------------------------------------------------------------------
 // ui.js first: it defines Corvus.ui, the component layer every other
 // module builds its DOM with (index.html loads it in the same order).
+// The shared SSE stream: setup-parameters and setup-firmware get their
+// progress topics from it rather than opening connections of their own.
+require("../src/js/events.js");
 require("../src/js/ui.js");
 require("../src/js/setup-shared.js");
 require("../src/js/calib-figures.js");
@@ -1744,6 +1747,10 @@ async function testParametersDownloadFlowGating() {
   pageViewEl = container;
   clock = 1000;
   eventSources.length = 0;
+  // The shared stream (js/events.js) outlives one consumer by design, so
+  // each test starts it fresh — otherwise eventSources[0] is a connection
+  // the previous test opened.
+  Corvus.events.stop();
   intervalCbs.length = 0;
   clearedIds.clear();
 
@@ -1776,7 +1783,7 @@ async function testParametersDownloadFlowGating() {
       { name: "MC_ROLL_P", value: 6.5, type: 9 },
     ],
   });
-  sse.emit("progress", { state: "complete", received: 2, count: 2 });
+  sse.emit("params", { state: "complete", received: 2, count: 2 });
   await flushMicrotasks();   // finishDownload → requestJson → renderEditor
   await flushMicrotasks();
 
@@ -1798,6 +1805,10 @@ async function testParametersArmedGatingReadOnly() {
   pageViewEl = container;
   clock = 1000;
   eventSources.length = 0;
+  // The shared stream (js/events.js) outlives one consumer by design, so
+  // each test starts it fresh — otherwise eventSources[0] is a connection
+  // the previous test opened.
+  Corvus.events.stop();
   intervalCbs.length = 0;
 
   Corvus.setup.render(container);
@@ -1810,7 +1821,7 @@ async function testParametersArmedGatingReadOnly() {
     complete: true, received: 1, count: 1, state: "complete",
     params: [{ name: "MC_ROLL_P", value: 6.5, type: 9 }],
   });
-  eventSources[0].emit("progress", { state: "complete", received: 1, count: 1 });
+  eventSources[0].emit("params", { state: "complete", received: 1, count: 1 });
   await flushMicrotasks();
   await flushMicrotasks();
 
@@ -1846,6 +1857,10 @@ async function testParamSetAppliesValidValue() {
   pageViewEl = container;
   clock = 1000;
   eventSources.length = 0;
+  // The shared stream (js/events.js) outlives one consumer by design, so
+  // each test starts it fresh — otherwise eventSources[0] is a connection
+  // the previous test opened.
+  Corvus.events.stop();
   intervalCbs.length = 0;
 
   Corvus.setup.render(container);
@@ -1857,7 +1872,7 @@ async function testParamSetAppliesValidValue() {
     complete: true, received: 1, count: 1, state: "complete",
     params: [{ name: "MC_ROLL_P", value: 6.5, type: 9 }],
   });
-  eventSources[0].emit("progress", { state: "complete", received: 1, count: 1 });
+  eventSources[0].emit("params", { state: "complete", received: 1, count: 1 });
   await flushMicrotasks();
   await flushMicrotasks();
 
@@ -1892,6 +1907,10 @@ async function testParamSetRejectsNonNumeric() {
   pageViewEl = container;
   clock = 1000;
   eventSources.length = 0;
+  // The shared stream (js/events.js) outlives one consumer by design, so
+  // each test starts it fresh — otherwise eventSources[0] is a connection
+  // the previous test opened.
+  Corvus.events.stop();
   intervalCbs.length = 0;
 
   Corvus.setup.render(container);
@@ -1903,7 +1922,7 @@ async function testParamSetRejectsNonNumeric() {
     complete: true, received: 1, count: 1, state: "complete",
     params: [{ name: "MC_ROLL_P", value: 6.5, type: 9 }],
   });
-  eventSources[0].emit("progress", { state: "complete", received: 1, count: 1 });
+  eventSources[0].emit("params", { state: "complete", received: 1, count: 1 });
   await flushMicrotasks();
   await flushMicrotasks();
 
@@ -1932,6 +1951,10 @@ async function testParamSetFailureShowsError() {
   pageViewEl = container;
   clock = 1000;
   eventSources.length = 0;
+  // The shared stream (js/events.js) outlives one consumer by design, so
+  // each test starts it fresh — otherwise eventSources[0] is a connection
+  // the previous test opened.
+  Corvus.events.stop();
   intervalCbs.length = 0;
 
   Corvus.setup.render(container);
@@ -1943,7 +1966,7 @@ async function testParamSetFailureShowsError() {
     complete: true, received: 1, count: 1, state: "complete",
     params: [{ name: "MC_ROLL_P", value: 6.5, type: 9 }],
   });
-  eventSources[0].emit("progress", { state: "complete", received: 1, count: 1 });
+  eventSources[0].emit("params", { state: "complete", received: 1, count: 1 });
   await flushMicrotasks();
   await flushMicrotasks();
 
@@ -1972,6 +1995,10 @@ async function testParametersTeardownClosesSseAndPoll() {
   pageViewEl = container;
   clock = 1000;
   eventSources.length = 0;
+  // The shared stream (js/events.js) outlives one consumer by design, so
+  // each test starts it fresh — otherwise eventSources[0] is a connection
+  // the previous test opened.
+  Corvus.events.stop();
   intervalCbs.length = 0;
   clearedIds.clear();
 
@@ -1983,12 +2010,17 @@ async function testParametersTeardownClosesSseAndPoll() {
   assert.equal(eventSources.length, 1, "SSE open during download");
   const sse = eventSources[0];
   const pollId = intervalCbs[0].id;
-  assert.equal(sse.closed, false, "SSE open before teardown");
+  assert.ok(Corvus.events.listenerCount("params") > 0, "params watched before teardown");
   assert.equal(fake.unsubCalls, 1, "grid unsub fired on openView");
 
   // Leave the parameters sub-page (back) → teardown closes SSE, clears poll, unsubs.
   fire(findOneByClass(container, "setup-back"), "click");
-  assert.equal(sse.closed, true, "params-progress SSE closed on teardown");
+  // There is no per-consumer socket any more: console, params, firmware and
+  // tiles share one connection (js/events.js), which is the point. What
+  // this asserted — that a torn-down page stops being handed events — is
+  // the listener count reaching zero.
+  assert.equal(Corvus.events.listenerCount("params"), 0,
+    "params watcher released on teardown");
   assert.ok(clearedIds.has(pollId), "params poll timer cleared on teardown");
   assert.equal(fake.unsubCalls, 2, "grid + params unsub on back");
   assert.ok(findOneByClass(container, "setup-tiles"), "tile grid restored after back");
@@ -2002,6 +2034,10 @@ async function testParametersTeardownOnReRender() {
   pageViewEl = container;
   clock = 1000;
   eventSources.length = 0;
+  // The shared stream (js/events.js) outlives one consumer by design, so
+  // each test starts it fresh — otherwise eventSources[0] is a connection
+  // the previous test opened.
+  Corvus.events.stop();
   intervalCbs.length = 0;
 
   Corvus.setup.render(container);
@@ -2009,10 +2045,10 @@ async function testParametersTeardownOnReRender() {
   fire(findOneByClass(container, "params-download-btn"), "click");
   await flushMicrotasks();
   const sse = eventSources[0];
-  assert.equal(sse.closed, false);
+  assert.ok(Corvus.events.listenerCount("params") > 0);
 
   Corvus.setup.render(container);   // left-nav re-entry
-  assert.equal(sse.closed, true, "SSE closed on re-render");
+  assert.equal(Corvus.events.listenerCount("params"), 0, "params watcher released on re-render");
   assert.equal(fake.unsubCalls, 2, "unsub on re-render");
   assert.ok(findOneByClass(container, "setup-tiles"), "tiles restored on re-render");
 }
@@ -2042,6 +2078,10 @@ async function renderFirmware(opts = {}) {
   pageViewEl = container;
   resetFetch();
   eventSources.length = 0;
+  // The shared stream (js/events.js) outlives one consumer by design, so
+  // each test starts it fresh — otherwise eventSources[0] is a connection
+  // the previous test opened.
+  Corvus.events.stop();
   const navigateBack = opts.navigateBack || (() => {});
   const destroy = Corvus.setupFirmware.render(container, navigateBack);
   await flushMicrotasks(); // refreshStatus().then(applyStatus) resolves
@@ -2070,6 +2110,10 @@ function selectFirmwareFile(container, name) {
 async function performUpload(container) {
   resetFetch();
   eventSources.length = 0;
+  // The shared stream (js/events.js) outlives one consumer by design, so
+  // each test starts it fresh — otherwise eventSources[0] is a connection
+  // the previous test opened.
+  Corvus.events.stop();
   fire(findByClass(container, "params-download-btn")[0], "click");
   await flushMicrotasks();
   await flushMicrotasks();
@@ -2158,21 +2202,32 @@ function firmwareRelease(container) {
   return findByTag(container, "select")[0];
 }
 
-function firmwareBoardRows(container) {
-  return findByClass(container, "firmware-board-item");
+function selectByAriaLabel(container, label) {
+  return findByTag(container, "select").find((el) => el.getAttribute("aria-label") === label);
 }
 
-function firmwareFilter(container) {
-  return findByClass(container, "field-input")
-    .find((i) => /^Search by name/.test(i.placeholder || ""));
+function firmwareVendorSelect(container) {
+  return selectByAriaLabel(container, "Board manufacturer");
 }
 
-/** Click one board row by its target name. */
-function pickFirmwareBoard(container, name) {
-  const row = firmwareBoardRows(container).find((r) => r.dataset.name === name);
-  assert.ok(row, "board row present: " + name);
-  fire(row, "click");
-  return row;
+function firmwareBoardSelect(container) {
+  return selectByAriaLabel(container, "Flight controller board");
+}
+
+function optionValues(sel) { return (sel.children || []).map((o) => o.value); }
+function optionLabels(sel) { return (sel.children || []).map((o) => o.textContent); }
+
+/** Pick a board the way the page asks for it: manufacturer first, board second. */
+function pickFirmwareBoard(container, vendor, name) {
+  const vendorSel = firmwareVendorSelect(container);
+  assert.ok(optionValues(vendorSel).includes(vendor), "manufacturer on offer: " + vendor);
+  vendorSel.value = vendor;
+  fire(vendorSel, "change");
+  const boardSel = firmwareBoardSelect(container);
+  assert.ok(optionValues(boardSel).includes(name), "board on offer: " + name);
+  boardSel.value = name;
+  fire(boardSel, "change");
+  return boardSel;
 }
 
 async function testFirmwareCatalogDefaultsToTheNewestStableRelease() {
@@ -2183,27 +2238,43 @@ async function testFirmwareCatalogDefaultsToTheNewestStableRelease() {
   // how an operator flashes beta firmware onto an aircraft by accident.
   assert.equal(firmwareRelease(container).value, "v1.17.0",
     "newest stable release preselected");
-  const rows = firmwareBoardRows(container);
-  assert.ok(rows.length >= 2, "the release's boards are listed");
-  // Cached images flash with no network; the list has to say which ones those are.
-  const cached = rows.find((r) => r.dataset.name === "px4_fmu-v6x_default.px4");
-  assert.ok(cached.querySelector(".firmware-board-cached"), "a cached image is marked");
-  // The size is the other half of "what would this download".
-  assert.match(cached.querySelector(".firmware-board-size").textContent, /KB|MB/,
-    "the image size is shown");
-  assert.equal(cached.querySelector(".firmware-board-target").textContent,
-    "px4_fmu-v6x_default.px4", "the exact file is named");
+  // The release's manufacturers are what the picker opens on — the boards
+  // themselves are one dropdown further in.
+  const vendors = optionValues(firmwareVendorSelect(container));
+  assert.ok(vendors.includes("PX4") && vendors.includes("CubePilot"),
+    "the release's manufacturers are listed");
 }
 
-async function testFirmwareBoardsAreGroupedByVendor() {
+async function testFirmwareBoardsAreSplitByManufacturer() {
   const { container } = await renderFirmware({ catalog: FAKE_CATALOG });
   await flushMicrotasks();
 
-  // 150 targets per release is a list nobody reads top to bottom; the vendor
-  // heading is what makes finding your own hardware a scan rather than a hunt.
-  const groups = findByClass(container, "firmware-board-group").map((g) => g.textContent);
-  assert.deepEqual(groups, ["PX4", "CubePilot"], "one heading per vendor, PX4 first");
-  assert.equal(groups.length, new Set(groups).size, "a vendor heads exactly one block");
+  // 150 targets per release is a list nobody reads top to bottom. The vendor
+  // half of the target name is the half the operator already knows — it is
+  // printed on the board in their hand — so it is asked first, and what is
+  // left is the handful of boards that manufacturer makes.
+  const vendorSel = firmwareVendorSelect(container);
+  assert.deepEqual(optionValues(vendorSel), ["", "PX4", "CubePilot"],
+    "a placeholder, then one entry per manufacturer, PX4 first");
+  // How many boards are behind each entry, without opening it.
+  assert.match(optionLabels(vendorSel)[1], /PX4\s+\(2\)/, "the count comes with the name");
+
+  vendorSel.value = "CubePilot";
+  fire(vendorSel, "change");
+  assert.deepEqual(optionValues(firmwareBoardSelect(container)),
+    ["", "cubepilot_cubeorange_default.px4"],
+    "the board dropdown is that manufacturer's boards and nothing else");
+}
+
+async function testFirmwareBoardDropdownWaitsForAManufacturer() {
+  const { container } = await renderFirmware({ catalog: FAKE_CATALOG });
+  await flushMicrotasks();
+
+  // Right-hand dropdown before the left one is answered: not an empty list of
+  // 150 targets, but a control that says what it is waiting for.
+  const boardSel = firmwareBoardSelect(container);
+  assert.equal(boardSel.disabled, true, "no board list until a manufacturer is chosen");
+  assert.match(optionLabels(boardSel)[0], /manufacturer/i, "and it says why");
 }
 
 async function testFirmwareHidesDeveloperBuildsUntilAsked() {
@@ -2213,15 +2284,20 @@ async function testFirmwareHidesDeveloperBuildsUntilAsked() {
   // PX4 publishes each board several times over (_rover, _multicopter, _debug).
   // None of them is what an operator flashing an aircraft wants, and on
   // v1.17.0 they are 55 of the 150 targets.
-  let names = firmwareBoardRows(container).map((r) => r.dataset.name);
+  const vendorSel = firmwareVendorSelect(container);
+  vendorSel.value = "PX4";
+  fire(vendorSel, "change");
+  let names = optionValues(firmwareBoardSelect(container));
   assert.ok(!names.includes("px4_fmu-v6x_rover.px4"), "developer builds hidden by default");
   assert.ok(names.includes("px4_fmu-v6x_default.px4"), "the plain build is listed");
 
   const toggle = findOneByClass(container, "firmware-variant-btn");
   fire(toggle, "click");
-  names = firmwareBoardRows(container).map((r) => r.dataset.name);
+  names = optionValues(firmwareBoardSelect(container));
   assert.ok(names.includes("px4_fmu-v6x_rover.px4"), "and reachable on request");
   assert.equal(toggle._attrs["aria-pressed"], "true", "the switch says it is on");
+  // The manufacturer the operator was looking at survives the toggle.
+  assert.equal(firmwareVendorSelect(container).value, "PX4", "still under PX4");
 }
 
 async function testFirmwareMarksPeripheralsAndSortsThemLast() {
@@ -2229,15 +2305,20 @@ async function testFirmwareMarksPeripheralsAndSortsThemLast() {
   await flushMicrotasks();
 
   // PX4 ships IO, CAN-node and GNSS firmware in the same release. Flashing the
-  // IO image onto a flight controller is the accident this label prevents.
-  const rows = firmwareBoardRows(container);
-  const ioRow = rows.find((r) => r.dataset.name === "px4_io-v2_default.px4");
-  assert.ok(ioRow.querySelector(".firmware-board-peripheral"),
+  // IO image onto a flight controller is the accident this label prevents —
+  // and a closed dropdown shows the label and nothing else, so it has to be
+  // in the option itself.
+  const vendorSel = firmwareVendorSelect(container);
+  vendorSel.value = "PX4";
+  fire(vendorSel, "change");
+  const boardSel = firmwareBoardSelect(container);
+  const values = optionValues(boardSel);
+  const labels = optionLabels(boardSel);
+  assert.match(labels[values.indexOf("px4_io-v2_default.px4")], /peripheral/,
     "a non-autopilot target says so");
-  assert.ok(!rows.find((r) => r.dataset.name === "px4_fmu-v6x_default.px4")
-    .querySelector(".firmware-board-peripheral"), "an autopilot does not");
-  const px4 = rows.filter((r) => /^px4_/.test(r.dataset.name)).map((r) => r.dataset.name);
-  assert.equal(px4[px4.length - 1], "px4_io-v2_default.px4",
+  assert.ok(!/peripheral/.test(labels[values.indexOf("px4_fmu-v6x_default.px4")]),
+    "an autopilot does not");
+  assert.equal(values[values.length - 1], "px4_io-v2_default.px4",
     "peripherals sort behind the autopilots of their vendor");
 }
 
@@ -2249,45 +2330,61 @@ async function testFirmwareSelectsNothingUntilTheOperatorPicks() {
   });
   await flushMicrotasks();
 
-  // The old <select> adopted its first option, which armed "Download & Flash"
-  // with whatever sorted first — invisibly, because a dropdown shows one row.
-  assert.ok(!firmwareBoardRows(container).some((r) => r.className.includes("selected")),
-    "no board is chosen for the operator");
+  // A <select> adopts its first option the moment it is filled. The old single
+  // dropdown armed "Download & Flash" with whatever sorted first — on v1.17.0
+  // the PX4 IO coprocessor image — invisibly, because a dropdown shows one
+  // row. Both dropdowns here open on a placeholder, never on a board.
+  assert.equal(firmwareVendorSelect(container).value, "", "no manufacturer chosen for the operator");
+  assert.equal(firmwareBoardSelect(container).value, "", "and no board");
   const uploadBtn = findByClass(container, "params-download-btn")[0];
-  assert.equal(uploadBtn.disabled, true, "and nothing can be flashed yet");
+  assert.equal(uploadBtn.disabled, true, "so nothing can be flashed yet");
 
-  pickFirmwareBoard(container, "cubepilot_cubeorange_default.px4");
+  pickFirmwareBoard(container, "CubePilot", "cubepilot_cubeorange_default.px4");
   assert.equal(uploadBtn.disabled, false, "flash enabled once a board is picked");
 }
 
-async function testFirmwareBoardFilterNarrowsTheList() {
-  const { container } = await renderFirmware({ catalog: FAKE_CATALOG });
+async function testFirmwareChangingManufacturerDropsTheBoard() {
+  const { container } = await renderFirmware({
+    catalog: FAKE_CATALOG,
+    status: { can_flash: true, transport: "usb", state: "idle",
+      device: "/dev/ttyACM0", armed: false, progress: 0, message: "" },
+  });
   await flushMicrotasks();
 
-  assert.equal(firmwareBoardRows(container).length, 3, "the release's boards before filtering");
-  // PX4 ships ~150 targets per release, so search is the only way the list is
-  // usable at all — and it has to match the friendly name as well as the file.
-  const filter = firmwareFilter(container);
-  filter.value = "cube";
-  fire(filter, "input");
-  const names = firmwareBoardRows(container).map((r) => r.dataset.name);
-  assert.deepEqual(names, ["cubepilot_cubeorange_default.px4"], "filter narrows the list");
+  pickFirmwareBoard(container, "CubePilot", "cubepilot_cubeorange_default.px4");
+  const uploadBtn = findByClass(container, "params-download-btn")[0];
+  assert.equal(uploadBtn.disabled, false, "armed with the Cube Orange image");
+
+  const vendorSel = firmwareVendorSelect(container);
+  vendorSel.value = "PX4";
+  fire(vendorSel, "change");
+  // The Cube image is no longer on screen anywhere, so Flash must not still be
+  // pointed at it: a button aimed at something the operator cannot see is how
+  // the wrong firmware reaches an aircraft.
+  assert.equal(firmwareBoardSelect(container).value, "", "the board selection is dropped");
+  assert.equal(uploadBtn.disabled, true, "and the flash button disarms with it");
 }
 
-async function testFirmwareFilterNeverHidesTheChosenBoard() {
+async function testFirmwareDetailSaysWhatTheSelectedImageIs() {
   const { container } = await renderFirmware({ catalog: FAKE_CATALOG });
   await flushMicrotasks();
 
-  pickFirmwareBoard(container, "px4_fmu-v6x_default.px4");
-  const filter = firmwareFilter(container);
-  filter.value = "cube";
-  fire(filter, "input");
-  // Flash is still pointed at the 6X, so the row saying so must stay on
-  // screen: a picker that hides what the button is about to write to the
-  // aircraft is the one thing this control must never do.
-  const selected = firmwareBoardRows(container).filter((r) => r.className.includes("selected"));
-  assert.deepEqual(selected.map((r) => r.dataset.name), ["px4_fmu-v6x_default.px4"],
-    "the selected board survives a filter that excludes it");
+  // A closed dropdown shows one label; everything else about the image lives
+  // in the line under the pair. Without it "what would this download" — the
+  // question the page exists to answer — has no answer on screen at all.
+  assert.ok(findOneByClass(container, "firmware-board-detail").hidden,
+    "nothing to describe before a board is picked");
+
+  pickFirmwareBoard(container, "PX4", "px4_fmu-v6x_default.px4");
+  const detail = findOneByClass(container, "firmware-board-detail");
+  assert.ok(!detail.hidden, "the selected image is described");
+  assert.equal(detail.querySelector(".firmware-board-target").textContent,
+    "px4_fmu-v6x_default.px4", "the exact file is named");
+  assert.match(detail.querySelector(".firmware-board-size").textContent, /KB|MB/,
+    "the image size is shown");
+  // Cached images flash with no network: the difference between a 3-minute
+  // wait and none.
+  assert.ok(detail.querySelector(".firmware-board-cached"), "a cached image is marked");
 }
 
 async function testFirmwareRefreshAsksTheBackendToGoToTheNetwork() {
@@ -2308,7 +2405,7 @@ async function testFirmwareFlashPostsReleaseAndBoardNotAUrl() {
   await flushMicrotasks();
 
   const uploadBtn = findByClass(container, "params-download-btn")[0];
-  pickFirmwareBoard(container, "px4_fmu-v6x_default.px4");
+  pickFirmwareBoard(container, "PX4", "px4_fmu-v6x_default.px4");
   assert.equal(uploadBtn.disabled, false, "flash enabled once a board is selected");
   fire(uploadBtn, "click");
   await flushMicrotasks();
@@ -2376,10 +2473,10 @@ async function testFirmwareUploadCallsFetchAndOpensSse() {
   assert.ok(call.url.indexOf("/api/firmware/upload") === 0, "fetch targets the upload endpoint");
   assert.equal(call.opts.method, "POST", "upload is a POST");
   assert.ok(eventSources.length >= 1, "progress SSE opened after upload");
-  assert.ok(
-    eventSources[eventSources.length - 1].url.indexOf("/api/firmware/progress") === 0,
-    "SSE opened on the progress endpoint",
-  );
+  // One multiplexed stream, not a connection per page — see js/events.js.
+  const streamUrl = eventSources[eventSources.length - 1].url;
+  assert.ok(streamUrl.indexOf("/api/events?") === 0, "SSE opened on the shared stream");
+  assert.match(streamUrl, /firmware/, "and it asked for the firmware topic");
 }
 
 async function testFirmwareProgressSseUpdatesBar() {
@@ -2388,7 +2485,7 @@ async function testFirmwareProgressSseUpdatesBar() {
   const sse = await performUpload(container);
   assert.ok(sse, "SSE open after upload");
   const fill = findOneByClass(container, "progress-bar-fill");
-  sse.emit("progress", { state: "programming", percent: 42, message: "Programming…" });
+  sse.emit("firmware", { state: "programming", percent: 42, message: "Programming…" });
   assert.equal(fill.style.width, "42%", "progress bar fill width set from the SSE percent");
 }
 
@@ -2403,7 +2500,7 @@ async function testFirmwareDoneNotifiesInfo() {
     armed: false, progress: 100, message: "Firmware flashed successfully",
   });
   dispatched.length = 0;
-  sse.emit("progress", { state: "done", percent: 100, message: "Firmware flashed successfully" });
+  sse.emit("firmware", { state: "done", percent: 100, message: "Firmware flashed successfully" });
   await flushMicrotasks();
   await flushMicrotasks();
   const note = dispatched.find((e) => e.type === "corvus:notification");
@@ -2420,7 +2517,7 @@ async function testFirmwareFailedNotifiesCritical() {
     armed: false, progress: 50, message: "firmware CRC mismatch — not booting",
   });
   dispatched.length = 0;
-  sse.emit("progress", { state: "failed", percent: 50, message: "CRC mismatch" });
+  sse.emit("firmware", { state: "failed", percent: 50, message: "CRC mismatch" });
   await flushMicrotasks();
   await flushMicrotasks();
   const note = dispatched.find((e) => e.type === "corvus:notification");
@@ -2432,10 +2529,10 @@ async function testFirmwareDestroyClosesSseAndUnsubscribes() {
   const { container, destroy, fake } = await renderFirmware();
   selectFirmwareFile(container);
   const sse = await performUpload(container);
-  assert.equal(sse.closed, false, "SSE open before destroy");
+  assert.ok(Corvus.events.listenerCount("firmware") > 0, "firmware watched before destroy");
   const unsubBefore = fake.unsubCalls;
   destroy();
-  assert.equal(sse.closed, true, "SSE closed on destroy");
+  assert.equal(Corvus.events.listenerCount("firmware"), 0, "firmware watcher released on destroy");
   assert.equal(fake.unsubCalls, unsubBefore + 1, "telemetry unsub on destroy");
 }
 
@@ -2453,16 +2550,20 @@ async function testFirmwareBackCallsDestroyNoLeak() {
   pageViewEl = container;
   resetFetch();
   eventSources.length = 0;
+  // The shared stream (js/events.js) outlives one consumer by design, so
+  // each test starts it fresh — otherwise eventSources[0] is a connection
+  // the previous test opened.
+  Corvus.events.stop();
   Corvus.setup.render(container);
   openTile(container, "firmware");
   await flushMicrotasks();
   selectFirmwareFile(container);
   const sse = await performUpload(container);
-  assert.equal(sse.closed, false, "SSE open while on the firmware sub-page");
+  assert.ok(Corvus.events.listenerCount("firmware") > 0, "firmware watched on the sub-page");
   const unsubBefore = fake.unsubCalls;
   // Back → orchestrator teardown runs the firmware destroy, then re-renders grid.
   fire(findOneByClass(container, "setup-back"), "click");
-  assert.equal(sse.closed, true, "SSE closed on back (destroy ran)");
+  assert.equal(Corvus.events.listenerCount("firmware"), 0, "firmware watcher released on back");
   assert.equal(fake.unsubCalls, unsubBefore + 1, "firmware telemetry unsub on back");
   assert.ok(findOneByClass(container, "setup-tiles"), "tile grid restored after back");
 }
@@ -2568,12 +2669,13 @@ async function run() {
   await withReset(testFirmwareUsbGateDisablesUploadAndShowsBanner);
   await withReset(testFirmwareUsbAllowedHidesBannerAndEnablesUploadAfterFile);
   await withReset(testFirmwareCatalogDefaultsToTheNewestStableRelease);
-  await withReset(testFirmwareBoardsAreGroupedByVendor);
+  await withReset(testFirmwareBoardsAreSplitByManufacturer);
+  await withReset(testFirmwareBoardDropdownWaitsForAManufacturer);
   await withReset(testFirmwareHidesDeveloperBuildsUntilAsked);
   await withReset(testFirmwareMarksPeripheralsAndSortsThemLast);
   await withReset(testFirmwareSelectsNothingUntilTheOperatorPicks);
-  await withReset(testFirmwareBoardFilterNarrowsTheList);
-  await withReset(testFirmwareFilterNeverHidesTheChosenBoard);
+  await withReset(testFirmwareChangingManufacturerDropsTheBoard);
+  await withReset(testFirmwareDetailSaysWhatTheSelectedImageIs);
   await withReset(testFirmwareRefreshAsksTheBackendToGoToTheNetwork);
   await withReset(testFirmwareFlashPostsReleaseAndBoardNotAUrl);
   await withReset(testFirmwareCatalogOfflineKeepsThePageUsable);

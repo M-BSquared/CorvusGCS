@@ -130,7 +130,7 @@ class _Resp:
     def __init__(self, data: bytes) -> None:
         self._data = data
 
-    def __enter__(self) -> "_Resp":
+    def __enter__(self) -> _Resp:
         return self
 
     def __exit__(self, *exc) -> bool:

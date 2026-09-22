@@ -268,6 +268,9 @@ function makeFakeTelemetry(opts = {}) {
 // ---------------------------------------------------------------------------
 // ui.js first: it defines Corvus.ui, the component layer every other
 // module builds its DOM with (index.html loads it in the same order).
+// The shared SSE stream: setup-parameters and setup-firmware get their
+// progress topics from it rather than opening connections of their own.
+require("../src/js/events.js");
 require("../src/js/ui.js");
 require("../src/js/setup-shared.js");
 require("../src/js/setup-parameters.js");
@@ -282,6 +285,10 @@ async function testActionsBarRendersWithInitialState() {
   const container = makeEl("div");
   clock = 1000;
   eventSources.length = 0;
+  // The shared stream (js/events.js) outlives one consumer by design, so
+  // each test starts it fresh — otherwise eventSources[0] is a connection
+  // the previous test opened.
+  Corvus.events.stop();
   intervalCbs.length = 0;
   clearedIds.clear();
   dispatched.length = 0;
@@ -337,6 +344,10 @@ async function testExportOpensDialogAndSavesThroughBackend() {
   const container = makeEl("div");
   clock = 1000;
   eventSources.length = 0;
+  // The shared stream (js/events.js) outlives one consumer by design, so
+  // each test starts it fresh — otherwise eventSources[0] is a connection
+  // the previous test opened.
+  Corvus.events.stop();
   intervalCbs.length = 0;
   clearedIds.clear();
   dispatched.length = 0;
@@ -351,7 +362,7 @@ async function testExportOpensDialogAndSavesThroughBackend() {
 
   // Complete the download via the SSE progress event.
   const sse = eventSources[0];
-  sse.emit("progress", { state: "complete", received: 2, count: 2 });
+  sse.emit("params", { state: "complete", received: 2, count: 2 });
   await flushMicrotasks();   // finishDownload → requestJson(/api/params)
   await flushMicrotasks();   // renderEditor
 
@@ -439,6 +450,10 @@ async function testExportFailureKeepsDialogOpenWithReason() {
   const container = makeEl("div");
   clock = 1000;
   eventSources.length = 0;
+  // The shared stream (js/events.js) outlives one consumer by design, so
+  // each test starts it fresh — otherwise eventSources[0] is a connection
+  // the previous test opened.
+  Corvus.events.stop();
   intervalCbs.length = 0;
   clearedIds.clear();
   dispatched.length = 0;
@@ -447,7 +462,7 @@ async function testExportFailureKeepsDialogOpenWithReason() {
   await flushMicrotasks();
   fire(findOneByClass(container, "params-download-btn"), "click");
   await flushMicrotasks();
-  eventSources[0].emit("progress", { state: "complete", received: 1, count: 1 });
+  eventSources[0].emit("params", { state: "complete", received: 1, count: 1 });
   await flushMicrotasks();
   await flushMicrotasks();
 
@@ -486,6 +501,10 @@ async function testImportValidFileUploadsAndSummarises() {
   const container = makeEl("div");
   clock = 1000;
   eventSources.length = 0;
+  // The shared stream (js/events.js) outlives one consumer by design, so
+  // each test starts it fresh — otherwise eventSources[0] is a connection
+  // the previous test opened.
+  Corvus.events.stop();
   intervalCbs.length = 0;
   clearedIds.clear();
   dispatched.length = 0;
@@ -538,15 +557,20 @@ async function testImportValidFileUploadsAndSummarises() {
 
   // The upload SSE is the last EventSource created.
   const uploadSse = eventSources[eventSources.length - 1];
-  assert.equal(uploadSse.closed, false, "upload SSE open while uploading");
+  assert.ok(Corvus.events.listenerCount("params") > 0, "params watched while uploading");
   // Emit upload_complete → close SSE → fetch result → summarise.
-  uploadSse.emit("progress", { state: "upload_complete", count: 1, received: 1 });
+  uploadSse.emit("params", { state: "upload_complete", count: 1, received: 1 });
   await flushMicrotasks();   // finishUpload → requestJson(/api/params/upload/result)
   await flushMicrotasks();
 
   assert.ok(fake.requests.includes("/api/params/upload/result"),
     "GET /api/params/upload/result fetched after upload_complete");
-  assert.equal(uploadSse.closed, true, "upload SSE closed on upload_complete");
+  // There is no per-consumer socket any more: console, params, firmware and
+  // tiles share one connection (js/events.js), which is the point. What
+  // this asserted — that a torn-down page stops being handed events — is
+  // the listener count reaching zero.
+  assert.equal(Corvus.events.listenerCount("params"), 0,
+    "params watcher released on upload_complete");
   const status = findOneByClass(container, "params-actions-status");
   assert.ok(status.classList.contains("ok"), "summary status has ok class (failed===0)");
   assert.ok(/Uploaded 1 parameters/.test(status.textContent),
@@ -565,6 +589,10 @@ async function testImportInvalidJsonNotifiesAndDoesNotPost() {
   const container = makeEl("div");
   clock = 1000;
   eventSources.length = 0;
+  // The shared stream (js/events.js) outlives one consumer by design, so
+  // each test starts it fresh — otherwise eventSources[0] is a connection
+  // the previous test opened.
+  Corvus.events.stop();
   intervalCbs.length = 0;
   clearedIds.clear();
   dispatched.length = 0;
@@ -629,6 +657,10 @@ async function testArmedGatingDisablesImport() {
   const container = makeEl("div");
   clock = 1000;
   eventSources.length = 0;
+  // The shared stream (js/events.js) outlives one consumer by design, so
+  // each test starts it fresh — otherwise eventSources[0] is a connection
+  // the previous test opened.
+  Corvus.events.stop();
   intervalCbs.length = 0;
 
   const destroy = Corvus.setupParameters.render(container, () => {});
@@ -662,6 +694,10 @@ async function testDestroyClosesUploadSse() {
   const container = makeEl("div");
   clock = 1000;
   eventSources.length = 0;
+  // The shared stream (js/events.js) outlives one consumer by design, so
+  // each test starts it fresh — otherwise eventSources[0] is a connection
+  // the previous test opened.
+  Corvus.events.stop();
   intervalCbs.length = 0;
   clearedIds.clear();
   dispatched.length = 0;
@@ -690,10 +726,10 @@ async function testDestroyClosesUploadSse() {
   // The first EventSource is the download SSE (if any); the upload SSE is the
   // last one created. Identify it and confirm it is open before destroy().
   const uploadSse = eventSources[eventSources.length - 1];
-  assert.equal(uploadSse.closed, false, "upload SSE open before destroy");
+  assert.ok(Corvus.events.listenerCount("params") > 0, "params watched before destroy");
 
   destroy();
-  assert.equal(uploadSse.closed, true, "upload SSE closed by destroy");
+  assert.equal(Corvus.events.listenerCount("params"), 0, "params watcher released by destroy");
 }
 
 // ===========================================================================

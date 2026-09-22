@@ -102,7 +102,7 @@ class FakeVehicle:
             except OSError:
                 return
 
-    def start(self) -> "FakeVehicle":
+    def start(self) -> FakeVehicle:
         self._thread.start()
         return self
 

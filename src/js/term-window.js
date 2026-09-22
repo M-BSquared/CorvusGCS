@@ -399,9 +399,25 @@ Corvus.termWindows = (function () {
     rec.statusEl.classList.add("connected");
     rec.statusEl.lastChild.textContent = "CONNECTED";
 
-    if (!Corvus.sshTerm || !Corvus.sshTerm.available()) {
+    if (!Corvus.sshTerm) {
       rec.bodyEl.textContent =
         "Terminal component unavailable — the xterm bundle did not load.";
+      return;
+    }
+    // xterm is fetched on first use (js/lazy.js), so the first terminal of
+    // the session waits for ~300 KB. Say so rather than showing an empty
+    // frame, and come back through this same function once it is here — the
+    // isConnected check is the liveness test for a window the operator may
+    // well have closed while it was loading.
+    if (!Corvus.sshTerm.available()) {
+      rec.bodyEl.textContent = "Loading terminal…";
+      Corvus.sshTerm.ensure().then(() => {
+        if (rec.bodyEl && rec.bodyEl.isConnected) attachTerminal(rec, session, quiet);
+      }).catch(() => {
+        if (!rec.bodyEl) return;
+        rec.bodyEl.textContent =
+          "Terminal component unavailable — the xterm bundle did not load.";
+      });
       return;
     }
     rec.handle = Corvus.sshTerm.create(rec.bodyEl, session, {

@@ -33,6 +33,13 @@ window.removeEventListener = (t, cb) => {
   const i = list.indexOf(cb);
   if (i >= 0) list.splice(i, 1);
 };
+// api.notification dispatches corvus:notification for the topbar's board, so
+// the stub has to deliver it — without one, the call was silently swallowed by
+// the guard around it and the board half of a notification went untested.
+window.dispatchEvent = (event) => {
+  (windowListeners[event && event.type] || []).forEach((cb) => cb(event));
+  return true;
+};
 
 
 global.CustomEvent = class CustomEvent {
@@ -96,6 +103,7 @@ function makeEl(tag) {
   // `node.parentNode.removeChild(node)` removal idiom works under the stub —
   // Corvus.ui.modal.close() uses it to unmount a dialog.
   e.appendChild = (c) => { c.parentNode = e; e.children.push(c); return c; };
+  e.append = (...nodes) => { nodes.forEach((n) => e.appendChild(n)); };
   e.removeChild = (c) => { const i = e.children.indexOf(c); if (i >= 0) e.children.splice(i, 1); c.parentNode = null; return c; };
   e.insertBefore = (n, ref) => { const i = ref ? e.children.indexOf(ref) : e.children.length; if (i < 0) e.children.push(n); else e.children.splice(i, 0, n); return n; };
   Object.defineProperty(e, "firstChild", { get() { return e.children[0] || null; } });
@@ -152,6 +160,10 @@ head.appendChild = (el) => {
   return el;
 };
 
+// The toast stack mounts here, so the push half of api.notification is real
+// in these tests rather than swallowed by the guard around it.
+const body = makeEl("body");
+
 global.document = {
   createElement: makeEl,
   createTextNode: (t) => ({ nodeType: 3, textContent: String(t), _isText: true }),
@@ -159,6 +171,7 @@ global.document = {
   querySelectorAll: () => [],
   addEventListener: () => {},
   head,
+  body,
 };
 
 // The launcher asks before removing a button that is running something.
@@ -645,6 +658,51 @@ async function testPostJsonResolvesOnAFailureBody() {
   Corvus.plugins.close();
 }
 
+/** Every toast currently on screen, as {level, title, message}. */
+function toasts() {
+  return querySel(body.children, ".ui-toast").map((el) => ({
+    level: el.dataset.level,
+    title: (querySel(el.children, ".ui-toast-title")[0] || {}).textContent,
+    message: (querySel(el.children, ".ui-toast-body")[0] || {}).textContent,
+  }));
+}
+
+/** Dismiss them all, which also clears the timers they would close on — a
+ *  pending 6-second timer per warning would keep Node alive long after the
+ *  last assertion. */
+function dismissToasts() {
+  querySel(body.children, ".ui-toast-close").forEach((btn) => click(btn));
+}
+
+async function testNotificationIsPushedAtTheOperatorNotOnlyFiled() {
+  initWithResponses({});
+  dismissToasts();
+  const board = [];
+  const onBoard = (event) => board.push(event.detail);
+  window.addEventListener("corvus:notification", onBoard);
+
+  let api = null;
+  Corvus.plugins.register("t-notify", {
+    name: "Notifier", icon: "i", description: "d",
+    init(_el, a) { api = a; }, destroy() {},
+  });
+  Corvus.plugins.open("t-notify");
+  api.notification("warning", "It would not start");
+
+  // The board keeps it, as it always did — and now something actually says so
+  // on screen, instead of a badge in a corner nobody is looking at.
+  assert.deepEqual(board, [
+    { level: "warning", message: "Notifier — It would not start" },
+  ]);
+  assert.deepEqual(toasts(), [
+    { level: "warning", title: "Notifier", message: "It would not start" },
+  ], "the plugin's name titles the toast, so its message stays its own");
+
+  dismissToasts();
+  window.removeEventListener("corvus:notification", onBoard);
+  Corvus.plugins.close();
+}
+
 // ---------------------------------------------------------------------------
 // PART E: the bundled SSH Launcher plugin
 // ---------------------------------------------------------------------------
@@ -745,6 +803,7 @@ function mountLauncher(opts) {
   let settings = o.saved || {};
   const terminals = [];
   const termOpts = [];
+  const notes = [];
   const container = makeEl("div");
   mountedLaunchers.push(container);
   Corvus.pluginSshLauncher.init(container, {
@@ -789,10 +848,10 @@ function mountLauncher(opts) {
     saveSettings: (patch) => { settings = Object.assign({}, settings, patch); return Promise.resolve(settings); },
     terminal: (session, opts) => { terminals.push(session); termOpts.push(opts || null); return true; },
     console: () => {},
-    notification: () => {},
+    notification: (level, message) => { notes.push({ level, message }); },
   });
   return {
-    container, calls, connections, terminals, termOpts,
+    container, calls, connections, terminals, termOpts, notes,
     savedNow: () => settings,
     setSessions: (names) => { sessions = names.map((name) => ({ name, connected: true })); },
     /** Every /api/ssh/send body, in order. */
@@ -828,6 +887,16 @@ function mountLauncher(opts) {
     preview: () => querySel(container.children, ".sshl-preview")[0],
     status: () => querySel(container.children, ".ui-msg")[0],
     dots: () => querySel(container.children, ".sshl-dot"),
+    /** The warning triangles on the shelf, each with what its popover says —
+     *  a failure now belongs to the row that failed, not to a bar under the
+     *  whole shelf. */
+    failures: () => querySel(container.children, ".sshl-error").map((btn) => ({
+      btn,
+      ariaLabel: btn.getAttribute("aria-label"),
+      text: (btn.corvusPopover ? btn.corvusPopover.el.children : [])
+        .filter((c) => c.className.split(/\s+/).includes("ui-popover-text"))
+        .map((c) => c.textContent).join("\n"),
+    })),
   };
 }
 
@@ -995,11 +1064,45 @@ async function testSshLauncherTerminalButtonReportsAFailedConnect() {
   await flushMicrotasks();
   await flushMicrotasks();
 
-  assert.equal(h.status().textContent, "Start mission: Authentication failed");
+  // The reason sits on the row that failed, in the popover of its own warning
+  // triangle — not in a bar under a shelf that may be eight rows long.
+  const failures = h.failures();
+  assert.equal(failures.length, 1);
+  assert.equal(failures[0].text, "Authentication failed");
+  assert.equal(failures[0].ariaLabel, "Why Start mission did not run");
+  // And it is pushed at an operator who has already turned back to the
+  // aircraft: api.notification is a toast plus a line on the board.
+  assert.deepEqual(h.notes, [
+    { level: "warning", message: "Start mission: Authentication failed" },
+  ]);
   // One send: the probe that discovered there was no session. Nothing is typed
   // after the connect failed — there is nothing on the far end to type into.
   assert.equal(h.sends().length, 1);
   assert.equal(h.dots().length, 0, "and the row does not claim to be running");
+  Corvus.pluginSshLauncher.destroy(h.container);
+}
+
+async function testSshLauncherAFailureGoesWhenTheButtonWorksAgain() {
+  const h = mountLauncher({
+    saved: { buttons: [TERMINAL_BUTTON] },
+    connect: { ok: false, connected: false, error: "Authentication failed" },
+  });
+  await flushMicrotasks();
+  click(h.shelf()[0]);
+  await flushMicrotasks();
+  await flushMicrotasks();
+  assert.equal(h.failures().length, 1);
+
+  // Someone brought the machine back: the session is up, so the line goes
+  // straight into it and the press succeeds.
+  h.setSessions(["ssh-launcher/a"]);
+  click(h.shelf()[0]);
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  assert.equal(h.failures().length, 0,
+    "the triangle answered the previous press, not this one");
+  assert.equal(h.notes.length, 1, "and nothing new was pushed at the operator");
   Corvus.pluginSshLauncher.destroy(h.container);
 }
 
@@ -1188,7 +1291,11 @@ async function testSshLauncherRemovesAnIdleButtonWithoutAsking() {
 
   let asked = false;
   window.confirm = () => { asked = true; return true; };
-  click(h.tool("Remove Start mission"));
+  // Removing is in the button's own settings now: there is no trash can on the
+  // shelf to mis-tap beside a launch button.
+  assert.equal(h.tool("Remove Start mission"), undefined);
+  click(h.tool("Edit Start mission"));
+  click(h.byLabel("Delete")[0]);
   await flushMicrotasks();
 
   assert.equal(asked, false, "nothing is running, so nothing is at stake");
@@ -1206,14 +1313,19 @@ async function testSshLauncherRemovingARunningButtonAsksAndClosesItsTerminal() {
 
   // Refused: the button, and the program it is running, both stay.
   window.confirm = () => false;
-  click(h.tool("Remove Start mission"));
+  click(h.tool("Edit Start mission"));
+  click(h.byLabel("Delete")[0]);
   await flushMicrotasks();
+  assert.equal(h.byLabel("Delete").length, 1,
+    "declining the prompt leaves the editor open on the button");
+  click(h.byLabel("Cancel")[0]);
   assert.equal(h.shelf().length, 1, "declining the prompt keeps the button");
   assert.ok(!h.calls.some((c) => c.url === "/api/ssh/disconnect"));
 
   // Confirmed: the button goes, and so does the session only it could reach.
   window.confirm = () => true;
-  click(h.tool("Remove Start mission"));
+  click(h.tool("Edit Start mission"));
+  click(h.byLabel("Delete")[0]);
   await flushMicrotasks();
   assert.equal(h.shelf().length, 0);
   assert.deepEqual(h.calls.find((c) => c.url === "/api/ssh/disconnect").body,
@@ -1226,6 +1338,8 @@ async function testSshLauncherSaveIsBlockedWithoutACommand() {
   await flushMicrotasks();
   click(h.byLabel("Add button")[0]);
   const save = h.byLabel("Save")[0];
+  assert.equal(h.byLabel("Delete").length, 0,
+    "a button that does not exist yet has nothing to delete — Cancel drops it");
   assert.equal(save.disabled, true, "a button with nothing to run cannot be saved");
   typeInto(h.fields()[2], "./run.sh");
   assert.equal(save.disabled, false);
@@ -1244,8 +1358,11 @@ async function testSshLauncherShowsStderrOfAFailedBackgroundRun() {
   const out = querySel(h.container.children, ".sshl-output")[0];
   assert.equal(out.hidden, false, "the failure's output is shown");
   assert.ok(out.textContent.includes("not found"));
-  assert.equal(h.status().textContent, "Record logs: sh: ./record.sh: not found",
-    "the status line names the button that failed");
+  assert.deepEqual(h.failures().map((f) => f.text), ["sh: ./record.sh: not found"],
+    "the triangle on the row carries the reason");
+  assert.deepEqual(h.notes, [
+    { level: "warning", message: "Record logs: sh: ./record.sh: not found" },
+  ]);
   Corvus.pluginSshLauncher.destroy(h.container);
 }
 
@@ -1472,6 +1589,7 @@ async function run() {
   await testSaveSettingsCanReplace();
   await testGetSettingsIsAnIsolatedCopy();
   await testPostJsonResolvesOnAFailureBody();
+  await testNotificationIsPushedAtTheOperatorNotOnlyFiled();
 
   testSshLauncherRegistered();
   testSshLauncherPreviewLine();
@@ -1486,6 +1604,7 @@ async function run() {
   await testSshLauncherRendersOneButtonPerSavedEntry();
   await testSshLauncherTerminalButtonOpensASessionAndTypesTheLine();
   await testSshLauncherTerminalButtonReportsAFailedConnect();
+  await testSshLauncherAFailureGoesWhenTheButtonWorksAgain();
   await testSshLauncherBackgroundButtonUsesTheRunEndpoint();
   await testSshLauncherArrowIsOffUntilSomethingIsRunning();
   await testSshLauncherBackgroundButtonHasNoArrow();
@@ -1512,7 +1631,10 @@ async function run() {
   await testSshLauncherDestroyStopsThePollAndLateCallbacks();
 
   // Let the best-effort postAction microtasks (from destroy) drain so the
-  // process exits cleanly with no pending unhandled work.
+  // process exits cleanly with no pending unhandled work — and close the
+  // toasts the failure tests raised, whose auto-dismiss timers would otherwise
+  // hold the process open for another six seconds.
+  dismissToasts();
   await flushMicrotasks();
 
   console.log("frontend plugin tests passed");
@@ -1521,4 +1643,7 @@ async function run() {
 run().catch((error) => {
   console.error(error);
   process.exitCode = 1;
-}).finally(destroyLaunchers);   // a failed assertion must not leave a poll running
+}).finally(() => {
+  destroyLaunchers();   // a failed assertion must not leave a poll running
+  dismissToasts();      // nor a toast's auto-dismiss timer
+});

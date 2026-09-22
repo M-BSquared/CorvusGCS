@@ -21,7 +21,7 @@ import pytest
 from corvus.server import (
     CorvusHandler,
     CorvusServer,
-    _BoundedSseBuffer,
+    _MultiplexSseBuffer,
     _TileProgressBus,
 )
 from corvus.tile_cache import TileCache
@@ -179,7 +179,7 @@ def test_tiles_sources_returns_all_registered(tile_server) -> None:
     ids = {s["id"] for s in data["sources"]}
     assert ids == set(TILE_SOURCES)
     for s in data["sources"]:
-        assert {"id", "label", "maxzoom", "cached_count", "minzoom", "maxzoom"} <= set(s)
+        assert {"id", "label", "maxzoom", "cached_count", "minzoom"} <= set(s)
         assert s["cached_count"] == 0  # fresh caches
 
 
@@ -448,13 +448,18 @@ def test_sse_tiles_progress_emits_done_and_unsubscribes(monkeypatch) -> None:
 
     calls = {"n": 0}
 
-    def fake_get(self: _BoundedSseBuffer, timeout: float | None = None) -> Any:
+    # The stream loop blocks on _MultiplexSseBuffer.drain, which returns
+    # (topic, entry) pairs because one connection can now carry several
+    # topics. This endpoint asks for exactly one of them, "tiles".
+    def fake_drain(self: Any, timeout: float | None = None) -> Any:
         calls["n"] += 1
         if calls["n"] == 1:
-            return {"job_id": jid, "state": "done", "done": 10, "total": 10, "failed": 0}
+            return [("tiles", {
+                "job_id": jid, "state": "done", "done": 10, "total": 10, "failed": 0,
+            })]
         raise queue.Empty
 
-    monkeypatch.setattr(_BoundedSseBuffer, "get", fake_get)
+    monkeypatch.setattr(_MultiplexSseBuffer, "drain", fake_drain)
 
     handler._sse_tiles_progress()
 

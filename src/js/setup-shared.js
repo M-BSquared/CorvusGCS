@@ -242,7 +242,23 @@ Corvus.setupShared = (function () {
   function restoreControl(field, el) {
     if (field.kind === "sign") el.value = String(Number(field.value) < 0 ? -1 : 1);
     else if (field.kind === "enum") el.value = String(Math.round(Number(field.value)));
+    else if (field.kind === "bitmask") repaintBits(field, el);
     else el.value = formatNumber(field.value);
+  }
+
+  /**
+   * Put a bitmask control back in step with the value the vehicle still holds.
+   *
+   * The element is the wrapper the checkboxes live in, not an input, which is
+   * why this cannot share the `el.value =` path above.
+   */
+  function repaintBits(field, wrapper) {
+    const value = Number(field.value) || 0;
+    const boxes = wrapper.querySelectorAll ? wrapper.querySelectorAll("input") : [];
+    for (let i = 0; i < boxes.length; i += 1) {
+      const bit = Number(boxes[i].dataset.bit);
+      boxes[i].checked = (value & (1 << bit)) !== 0;
+    }
   }
 
   /**
@@ -295,6 +311,49 @@ Corvus.setupShared = (function () {
     const o = opts || {};
     const status = el("span", "params-row-status", "");
     let control;
+
+    if (field.kind === "bitmask") {
+      /* One parameter, several independent switches. ArduPilot leans on these
+         far more than PX4 does — FENCE_TYPE, FS_OPTIONS and ARMING_CHECK are
+         all bit fields — and rendering one as a number asks an operator to do
+         binary arithmetic on their aircraft's safety settings.
+
+         Every toggle writes the whole recomputed word, because that is what
+         PARAM_SET carries; bits the schema does not name are preserved, so a
+         firmware with a bit this build has never heard of does not lose it the
+         first time somebody ticks a box. */
+      control = el("div", pformClass(o.prefix, "bits"));
+      const boxes = [];
+      (field.bits || []).forEach((bit) => {
+        const label = el("label", pformClass(o.prefix, "bit"));
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.dataset.bit = String(bit.bit);
+        box.checked = ((Number(field.value) || 0) & (1 << bit.bit)) !== 0;
+        box.setAttribute("aria-label", `${bit.label} (${field.param} bit ${bit.bit})`);
+        label.appendChild(box);
+        label.appendChild(el("span", null, bit.label));
+        control.appendChild(label);
+        boxes.push(box);
+        box.addEventListener("change", () => {
+          let next = Number(field.value) || 0;
+          if (box.checked) next |= (1 << bit.bit);
+          else next &= ~(1 << bit.bit);
+          // >>> 0 so a bit-31 mask stays a positive number: JavaScript's
+          // bitwise operators work on signed 32-bit integers, and a negative
+          // value reaches the autopilot as a different mask entirely.
+          applyParam(state, field, control, status, next >>> 0, o.onApplied);
+        });
+      });
+      control.dataset.param = field.param || "";
+      // The wrapper has no `disabled` of its own, so the armed re-gate has to
+      // reach each checkbox: a bitmask left live while the vehicle is armed is
+      // a live write to ARMING_CHECK from an armed aircraft.
+      registerControl(state, control, () => {
+        boxes.forEach((box) => { box.disabled = state.armed; });
+      });
+      return { el: control, status };
+    }
 
     if (field.kind === "enum" || field.kind === "sign") {
       const value = field.kind === "sign"

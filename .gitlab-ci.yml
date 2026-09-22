@@ -3,6 +3,7 @@
 # -----------------------------------------------------------------------------
 # Stages:
 #   test    — pytest suite on every push and merge request (python:3.12).
+#   lint    — ruff over corvus/, serve.py and tests/.
 #   release — on a version tag (v?X.Y.Z or CalVer YYYY.M.P) build the Linux
 #             x86_64 AppImage via build-appimage.sh, expose it as a job
 #             artifact, and create a GitLab Release with the AppImage linked.
@@ -63,8 +64,7 @@ test:
       - .pip-cache/
   script:
     - python -m pip install --upgrade pip
-    - pip install -r requirements-dev.txt
-    - pip install pymavlink pyserial paramiko
+    - pip install -r requirements-headless.txt -r requirements-dev.txt
     # --junitxml so GitLab lists the failing test by name in the pipeline view
     # and the MR widget, instead of leaving a red job whose reason is buried in
     # the raw log.
@@ -76,6 +76,26 @@ test:
       - report-pytest.xml
     reports:
       junit: report-pytest.xml
+  allow_failure: false
+
+# --- Stage 1: lint -----------------------------------------------------------
+# Neither pipeline ran a linter, which is how six dead locals sat in the tree
+# unnoticed — including an AppUserModelID that was computed and thrown away,
+# leaving the Windows taskbar showing the launcher's icon instead of Corvus's.
+# ruff over corvus/ takes about a second. Scoped to the checks that catch real
+# mistakes rather than style. Its own job, not a gate on the release stage: a
+# lint finding is not a reason to stop shipping.
+lint:
+  stage: test
+  image: python:3.12
+  cache:
+    key: test-pip
+    paths:
+      - .pip-cache/
+  script:
+    - python -m pip install --upgrade pip
+    - pip install -r requirements-dev.txt
+    - ruff check corvus serve.py tests
   allow_failure: false
 
 # --- Stage 1: frontend tests -------------------------------------------------
@@ -150,7 +170,7 @@ release_appimage:
     - |
       set -e
       CORVUS_VERSION="$(cat VERSION)"
-      CORVUS_APPIMAGE="Corvus_GCS-${CORVUS_VERSION}-x86_64.AppImage"
+      CORVUS_APPIMAGE="dist/Corvus_GCS-${CORVUS_VERSION}-x86_64.AppImage"
       test -f "$CORVUS_APPIMAGE"
       {
         printf 'CORVUS_VERSION=%s\n' "$CORVUS_VERSION"
@@ -165,7 +185,12 @@ release_appimage:
     # job left nothing to diagnose from.
     when: always
     paths:
-      - Corvus_GCS-*-x86_64.AppImage
+      - dist/Corvus_GCS-*-x86_64.AppImage
+      # The exact resolved dependency set this AppImage was built from.
+      # requirements.txt states floors only, so it is this file that makes a
+      # rebuild of the same tag reproducible — copy it over requirements.lock
+      # to pin the next build to it.
+      - dist/Corvus_GCS-*-x86_64.lock
       - build/*.log
     expire_in: 30 days
     reports:

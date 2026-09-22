@@ -34,7 +34,8 @@ import importlib
 import pathlib
 import sys
 import time
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 import pytest
 from pymavlink import mavutil

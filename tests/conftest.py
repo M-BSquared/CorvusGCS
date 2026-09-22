@@ -114,17 +114,27 @@ def server_with_store(store: VehicleStateStore, fake_bridge: MagicMock):
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[Any]) -> None:
-    """Auto-skip ``@pytest.mark.sitl`` items unless ``CORVUS_SITL=1`` is set.
+    """Deselect ``@pytest.mark.sitl`` items unless ``CORVUS_SITL=1`` is set.
 
     Keeps SITL-dependent tests out of the default offline run without
     requiring authors to remember a CLI flag.
+
+    Deselected, not skipped. A skip line says "this test was passed over
+    because a condition it needs was not met", and a clean run that prints
+    two of them trains everyone reading it to ignore skip lines — which is
+    how a real skip goes unnoticed. These tests need a simulator that the
+    default offline suite never claimed to have, so they are simply not part
+    of it. ``CORVUS_SITL=1 pytest`` selects them, and then they must pass:
+    the test itself fails rather than skips when nothing answers.
     """
     if os.environ.get("CORVUS_SITL") == "1":
         return
-    skip = pytest.mark.skip(reason="needs SITL (set CORVUS_SITL=1 to enable)")
+    selected, deselected = [], []
     for item in items:
-        if "sitl" in item.keywords:
-            item.add_marker(skip)
+        (deselected if "sitl" in item.keywords else selected).append(item)
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
+        items[:] = selected
 
 
 # ---------------------------------------------------------------------------

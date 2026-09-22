@@ -42,6 +42,17 @@ def _no_cache() -> None:
     clear_cache()
 
 
+
+def _says(finding: dict) -> str:
+    """Everything a finding says — the headline and the reasoning behind it.
+
+    The two are separate fields because the page shows the headline and keeps
+    the reasoning a click away; a test asking whether the review *said*
+    something should not care which half it landed in.
+    """
+    return finding["text"] + " " + finding.get("detail", "")
+
+
 class _Recorder:
     """Builds a Corvus tlog the way TlogWriter does: header line, raw frames."""
 
@@ -69,9 +80,31 @@ class _Recorder:
             boot_ms, roll, pitch, yaw, 0.0, 0.0, 0.0))
 
     def sys_status(self, volts_mv: int = 16000, load: int = 250,
-                   drop: int = 0) -> None:
+                   drop: int = 0, enabled: int = 0, health: int = 0) -> None:
         self.send(mavutil.mavlink.MAVLink_sys_status_message(
-            0, 0, 0, load, volts_mv, 100, 80, drop, 0, 0, 0, 0, 0))
+            enabled, enabled, health, load, volts_mv, 100, 80, drop,
+            0, 0, 0, 0, 0))
+
+    def attitude_target(self, boot_ms: int, roll: float = 0.0,
+                        pitch: float = 0.0, yaw: float = 0.0,
+                        thrust: float = 0.5) -> None:
+        """What the controller was aiming at, as PX4 streams it: a quaternion."""
+        cr, sr = math.cos(roll / 2), math.sin(roll / 2)
+        cp, sp = math.cos(pitch / 2), math.sin(pitch / 2)
+        cy, sy = math.cos(yaw / 2), math.sin(yaw / 2)
+        q = [cr * cp * cy + sr * sp * sy, sr * cp * cy - cr * sp * sy,
+             cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy]
+        self.send(mavutil.mavlink.MAVLink_attitude_target_message(
+            boot_ms, 0, q, 0.0, 0.0, 0.0, thrust))
+
+    def nav_output(self, alt_error: float = 0.0, xtrack: float = 0.0,
+                   wp_dist: int = 0) -> None:
+        self.send(mavutil.mavlink.MAVLink_nav_controller_output_message(
+            0.0, 0.0, 0, 0, wp_dist, alt_error, 0.0, xtrack))
+
+    def estimator_status(self, flags: int = 0) -> None:
+        self.send(mavutil.mavlink.MAVLink_estimator_status_message(
+            0, flags, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
 
     def vibration(self, boot_us: int, vibe: float, clipping: int = 0) -> None:
         self.send(mavutil.mavlink.MAVLink_vibration_message(
@@ -112,6 +145,10 @@ def _a_flight(seconds: int = 30, hz: int = 5) -> _Recorder:
             rec.heartbeat()
             rec.sys_status()
             rec.gps()
+    # A healthy session ends with the aircraft disarmed on the ground. One that
+    # does not is itself a finding — the link was lost, or the station was shut
+    # down in flight — so a fixture standing in for a clean flight has to land.
+    rec.heartbeat(armed=False)
     return rec
 
 
@@ -212,8 +249,8 @@ def test_a_recording_with_no_timeline_says_so_rather_than_looking_clean() -> Non
     data = review_bytes(rec.blob(), "quiet.tlog")
     assert data["plots"] == []
     assert data["summary"]["frames"] == 100
-    text = data["findings"][0]["text"]
-    assert "no timeline" in text and "100 frames" in text
+    said = _says(data["findings"][0])
+    assert "no timeline" in said and "100 frames" in said
     assert not any(f["level"] == "ok" for f in data["findings"])
 
 
@@ -272,7 +309,7 @@ def test_the_aircrafts_own_error_messages_are_surfaced() -> None:
     data = review_bytes(rec.blob(), "msgs.tlog")
     levels = {m["level"] for m in data["messages"]}
     assert levels == {"error", "info"}
-    assert any("Preflight Fail: Compass" in f["text"] for f in data["findings"])
+    assert any("Preflight Fail: Compass" in _says(f) for f in data["findings"])
 
 
 def test_a_clean_recording_says_what_it_cannot_tell_you() -> None:
@@ -280,7 +317,7 @@ def test_a_clean_recording_says_what_it_cannot_tell_you() -> None:
     clean flight — the signals that ground an aircraft are not in it."""
     data = review_bytes(_a_flight().blob(), "clean.tlog")
     assert data["findings"][0]["level"] == "ok"
-    assert "ULog" in data["findings"][0]["text"]
+    assert "ULog" in _says(data["findings"][0])
 
 
 # ---------------------------------------------------------------------------
@@ -402,3 +439,253 @@ def test_the_frames_are_streamed_not_held_all_at_once() -> None:
     data = review_bytes(_a_flight().blob(), "streamed.tlog")
     assert data["summary"]["frames"] > 0
     assert data["plots"]
+
+
+# ---------------------------------------------------------------------------
+# What only a tlog knows
+# ---------------------------------------------------------------------------
+# A ULog is written on the aircraft and has no idea the ground station stopped
+# hearing it, or that the session ended with the aircraft still in the air.
+# Those are the two findings a recording exists to make, so they are the two
+# tested hardest.
+
+def test_a_silence_in_the_link_is_reported_rather_than_drawn_through() -> None:
+    """The plots run straight across a gap because nothing arrived, not because
+    nothing happened. Unsaid, a flat line there reads as a calm stretch."""
+    rec = _Recorder()
+    for step in range(150):
+        # 5 Hz throughout, except for ten seconds in the middle where the
+        # ground station heard nothing at all.
+        boot = 1000 + int(step * 200) + (10_000 if step >= 75 else 0)
+        rec.position(boot, 48.1, 11.5, 100.0)
+        if step % 5 == 0:
+            rec.heartbeat()
+    rec.heartbeat(armed=False)
+    findings = review_bytes(rec.blob(), "gap.tlog")["findings"]
+    gap = next(f for f in findings if "went quiet" in f["text"])
+    assert "the longest 10 s" in gap["text"]
+    assert gap["t"] == pytest.approx(15.0, abs=0.5)
+
+
+def test_a_slow_link_is_not_mistaken_for_a_link_full_of_gaps() -> None:
+    """A radio managing one frame every three seconds was never silent — that
+    is simply how fast it ran, and reporting it would report the stream rate as
+    a fault."""
+    rec = _Recorder()
+    for step in range(40):
+        rec.position(1000 + step * 3000, 48.1, 11.5, 100.0)
+        rec.heartbeat()
+    rec.heartbeat(armed=False)
+    findings = review_bytes(rec.blob(), "slow.tlog")["findings"]
+    assert all("went quiet" not in f["text"] for f in findings)
+
+
+def test_a_recording_that_ends_in_flight_says_so() -> None:
+    """This is the log somebody reads when an aircraft did not come back, and
+    the fact that it stops mid-flight is the first thing they need told."""
+    rec = _a_flight()
+    rec.heartbeat(armed=True)             # ...and then nothing more
+    findings = review_bytes(rec.blob(), "lost.tlog")["findings"]
+    assert any("still armed" in f["text"] for f in findings)
+
+
+def test_the_vehicles_own_verdict_on_a_sensor_outranks_anything_inferred() -> None:
+    """SYS_STATUS carries which subsystems are configured and which are
+    working. A disagreement is the autopilot saying a sensor failed — a
+    stronger statement than any threshold crossed in this file."""
+    rec = _Recorder()
+    mag, gps = 1 << 2, 1 << 5
+    for step in range(30):
+        rec.position(1000 + step * 200, 48.1, 11.5, 100.0)
+        if step % 5 == 0:
+            rec.heartbeat()
+            # Magnetometer configured but unhealthy from halfway through.
+            rec.sys_status(enabled=mag | gps,
+                           health=gps if step >= 15 else mag | gps)
+    rec.heartbeat(armed=False)
+    findings = review_bytes(rec.blob(), "sick.tlog")["findings"]
+    finding = next(f for f in findings if "as unhealthy" in f["text"])
+    assert finding["level"] == "critical"
+    assert "magnetometer" in finding["text"]
+    assert "GPS" not in _says(finding), "the healthy one is not accused"
+    assert finding["t"] == pytest.approx(3.0, abs=0.3)
+
+
+def test_an_estimator_glitch_flag_is_reported_as_the_estimate_moving() -> None:
+    rec = _Recorder()
+    for step in range(30):
+        rec.position(1000 + step * 200, 48.1, 11.5, 100.0)
+        if step == 20:
+            rec.estimator_status(flags=1 << 10)       # GPS glitch
+        if step % 5 == 0:
+            rec.heartbeat()
+    rec.heartbeat(armed=False)
+    findings = review_bytes(rec.blob(), "glitch.tlog")["findings"]
+    finding = next(f for f in findings if "GPS glitch" in f["text"])
+    assert finding["t"] == pytest.approx(4.0, abs=0.3)
+
+
+def test_a_reboot_mid_recording_is_named_rather_than_silently_stitched() -> None:
+    """The timeline is repaired so the plots keep running forwards. That repair
+    hides a real event, so it is stated instead of left to the reader."""
+    rec = _Recorder()
+    for step in range(20):
+        rec.position(30_000 + step * 200, 48.1, 11.5, 100.0)
+        rec.heartbeat()
+    for step in range(20):                  # boot clock starts again
+        rec.position(500 + step * 200, 48.1, 11.5, 100.0)
+        rec.heartbeat()
+    rec.heartbeat(armed=False)
+    findings = review_bytes(rec.blob(), "reboot.tlog")["findings"]
+    assert any("rebooted 1 time(s)" in f["text"] for f in findings)
+
+
+# ---------------------------------------------------------------------------
+# The setpoint the link happened to be carrying
+# ---------------------------------------------------------------------------
+
+def _a_flight_with_targets(roll_deg: float, setpoint_deg: float) -> _Recorder:
+    rec = _Recorder()
+    for step in range(200):
+        boot = 1000 + step * 100
+        rec.position(boot, 48.1, 11.5, 100.0)
+        rec.attitude(boot, roll=math.radians(roll_deg))
+        rec.attitude_target(boot, roll=math.radians(setpoint_deg))
+        if step % 10 == 0:
+            rec.heartbeat()
+    rec.heartbeat(armed=False)
+    return rec
+
+
+def test_attitude_is_drawn_against_its_setpoint_when_the_link_carried_one() -> None:
+    """One trace says what the aircraft did. Two say whether it did what it was
+    told, and that is a different and better question."""
+    data = review_bytes(_a_flight_with_targets(5.0, 5.0).blob(), "t.tlog")
+    attitude = next(p for p in data["plots"] if p["id"] == "attitude")
+    assert "Roll setpoint" in [s["name"] for s in attitude["series"]]
+
+
+def test_an_aircraft_that_cannot_hold_its_commanded_angle_is_called_out() -> None:
+    data = review_bytes(_a_flight_with_targets(5.0, 35.0).blob(), "t.tlog")
+    finding = next(f for f in data["findings"] if "missed its setpoint" in f["text"])
+    assert finding["level"] == "critical"
+    assert "Roll" in finding["text"]
+
+
+def test_an_aircraft_that_tracks_its_setpoint_is_left_alone() -> None:
+    data = review_bytes(_a_flight_with_targets(5.0, 6.0).blob(), "t.tlog")
+    assert all("setpoint" not in f["text"] for f in data["findings"])
+
+
+def test_navigation_error_is_plotted_only_where_the_navigator_reported_it() -> None:
+    """Absent on a manual flight and present on a mission — a page of empty
+    axes would suggest the aircraft was missing something it never had."""
+    plain = review_bytes(_a_flight().blob(), "plain.tlog")
+    assert not [p for p in plain["plots"] if p["id"] == "nav_error"]
+
+    rec = _a_flight()
+    for _ in range(20):
+        rec.nav_output(alt_error=1.5, xtrack=4.0, wp_dist=120)
+    data = review_bytes(rec.blob(), "mission.tlog")
+    plot = next(p for p in data["plots"] if p["id"] == "nav_error")
+    assert [s["name"] for s in plot["series"]] == [
+        "Cross-track error", "Altitude error"]
+    assert plot["group"] == "Flight"
+
+
+def test_the_health_plot_appears_only_when_something_was_unhealthy() -> None:
+    """A flat line at zero is a true statement and a wasted card — the all-clear
+    is already a sentence at the top of the page."""
+    clean = review_bytes(_a_flight().blob(), "clean.tlog")
+    assert not [p for p in clean["plots"] if p["id"] == "health"]
+
+    rec = _Recorder()
+    for step in range(30):
+        rec.position(1000 + step * 200, 48.1, 11.5, 100.0)
+        if step % 5 == 0:
+            rec.heartbeat()
+            rec.sys_status(enabled=1 << 2, health=0 if step >= 15 else 1 << 2)
+    rec.heartbeat(armed=False)
+    sick = review_bytes(rec.blob(), "sick.tlog")
+    assert [p for p in sick["plots"] if p["id"] == "health"]
+
+
+def test_a_finding_carries_the_second_and_the_mode_it_was_measured_in() -> None:
+    """The same oscillation means different things in Position and in Manual,
+    and a finding that does not say which leaves the reader to guess."""
+    rec = _a_flight()
+    rec.radio(rssi=120, remrssi=40)
+    data = review_bytes(rec.blob(), "rssi.tlog")
+    finding = next(f for f in data["findings"] if "RSSI" in f["text"])
+    assert isinstance(finding["t"], float)
+    assert finding["mode"] == "Mission"
+
+
+def test_a_recording_finding_is_a_headline_with_the_why_behind_it() -> None:
+    """The reasoning belongs behind the claim. A page of paragraphs costs the
+    reader the one line that mattered, so the shape is asserted rather than
+    left to review."""
+    rec = _a_flight()
+    rec.radio(rssi=120, remrssi=40)
+    for finding in review_bytes(rec.blob(), "r.tlog")["findings"]:
+        assert len(finding["text"]) <= 110, finding["text"]
+        assert not finding["text"].endswith(".")
+        assert finding.get("detail")
+
+
+def test_an_ordinary_return_is_context_rather_than_a_warning() -> None:
+    """Most flights end in Return. Ranking a pilot pressing a button alongside
+    a failed sensor is what makes a reader skim the whole list."""
+    rec = _Recorder()
+    for step in range(60):
+        boot = 1000 + step * 200
+        rec.position(boot, 48.1, 11.5, 100.0)
+        if step % 5 == 0:
+            rec.heartbeat(custom_mode=(4 << 16) | (5 << 24) if step >= 40
+                          else _MODE_POSITION)
+    rec.heartbeat(armed=False)
+    findings = review_bytes(rec.blob(), "rtl.tlog")["findings"]
+    returned = next(f for f in findings if "flew Return" in f["text"])
+    assert returned["level"] == "note"
+    assert findings[0]["level"] == "ok", "context alone still reads as clean"
+
+
+# ---------------------------------------------------------------------------
+# Mode names come from the stack the log itself names
+# ---------------------------------------------------------------------------
+
+def test_an_ardupilot_tlog_gets_ardupilots_mode_names() -> None:
+    """custom_mode 5 is Loiter on an ArduPilot copter. The strip used to read
+    "Mode 5", which is honest and useless."""
+    from types import SimpleNamespace
+
+    from corvus.tlog_review import _mode_name
+
+    copter = SimpleNamespace(custom_mode=5, autopilot=3, base_mode=1, type=2)
+    assert _mode_name(copter) == "Loiter"
+    # The same number on a plane is a different mode, so the vehicle type has
+    # to reach the decoder.
+    plane = SimpleNamespace(custom_mode=4, autopilot=3, base_mode=1, type=1)
+    assert _mode_name(plane) == "Acro"
+
+
+def test_a_px4_tlog_keeps_the_reviews_own_wording() -> None:
+    """PX4's names here are the review's, matching the ULog review so a band is
+    the same word whichever log it came from — "Return", not "RTL"."""
+    from types import SimpleNamespace
+
+    from corvus.tlog_review import _mode_name
+
+    rtl = SimpleNamespace(custom_mode=(4 << 16) | (5 << 24), autopilot=12,
+                          base_mode=29, type=2)
+    assert _mode_name(rtl) == "Return"
+
+
+def test_a_stack_no_dialect_covers_still_gets_a_bare_number() -> None:
+    """A confidently mislabelled band is worse than a number."""
+    from types import SimpleNamespace
+
+    from corvus.tlog_review import _mode_name
+
+    assert _mode_name(
+        SimpleNamespace(custom_mode=7, autopilot=9, base_mode=1, type=2)) == "Mode 7"

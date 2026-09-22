@@ -23,7 +23,6 @@ silently breaking the other source's path order.
 from __future__ import annotations
 
 import re
-import threading
 import urllib.request
 
 import pytest
@@ -145,7 +144,7 @@ class _FakeResp:
     def __init__(self, data: bytes) -> None:
         self._data = data
 
-    def __enter__(self) -> "_FakeResp":
+    def __enter__(self) -> _FakeResp:
         return self
 
     def __exit__(self, *exc) -> bool:
@@ -215,7 +214,7 @@ def test_server_fetch_unknown_source_returns_none(server_handler, monkeypatch) -
 
 
 class _FakeCache:
-    """Minimal cache stand-in: records put_tile calls; no SQLite."""
+    """Minimal cache stand-in: records written tiles; no SQLite."""
 
     def __init__(self) -> None:
         self.puts: list[tuple[int, int, int, bytes]] = []
@@ -223,17 +222,21 @@ class _FakeCache:
     def put_tile(self, z: int, x: int, y: int, blob: bytes) -> None:
         self.puts.append((z, x, y, blob))
 
+    def put_tiles(self, tiles) -> int:
+        rows = list(tiles)
+        self.puts.extend(rows)
+        return len(rows)
+
 
 def _make_download_job(template: str) -> dict:
-    """Build the minimal job dict TileDownloader._download_one reads."""
-    return {
-        "job_id": "t", "source": "t", "state": "running",
-        "done": 0, "total": 1, "failed": 0, "error": None,
-        "_cancel": threading.Event(),       # cleared -> not cancelled
-        "_template": template,
-        "_lock": threading.Lock(),
-        "_on_progress": None,
-    }
+    """The job dict TileDownloader._download_one reads.
+
+    Built by the downloader's own factory, not by a literal here: the literal
+    this replaced fell behind the module the first time a field was added to a
+    job, and failed a test that has no opinion about job internals.
+    """
+    from corvus.tile_downloader import new_job
+    return new_job("t", "t", 1, template=template)
 
 
 @pytest.fixture
@@ -257,6 +260,10 @@ def test_downloader_url_for_osm_template(downloader, monkeypatch) -> None:
     job = _make_download_job(TILE_SOURCES["osm"]["upstream"])
     dl._download_one(job, 3, 4, 5)
     assert recorded == ["https://tile.openstreetmap.org/3/4/5.png"]
+    # Writes are batched now (see TileDownloader._flush_pending), so the
+    # tile sits in the job's buffer until its batch goes out; flush it
+    # here the way the job's own teardown does.
+    dl._flush_pending(job)
     assert cache.puts and cache.puts[0][:3] == (3, 4, 5)
 
 

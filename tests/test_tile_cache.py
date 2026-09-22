@@ -6,7 +6,6 @@ persistence across close/reopen, and idempotent close.
 """
 from __future__ import annotations
 
-import os
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
@@ -165,3 +164,36 @@ def test_context_manager_closes_on_exit(tmp_path) -> None:
     reopened = TileCache(path)
     assert reopened.get_tile(8, 1, 1) == b"ctx"
     reopened.close()
+
+
+def test_the_cache_does_not_fsync_every_tile(tmp_path) -> None:
+    """WAL + synchronous=NORMAL: durable enough for regenerable data.
+
+    FULL (SQLite's default) fsyncs on every commit, and put_tile commits per
+    tile. NORMAL under WAL is the documented-safe alternative — a crash can
+    lose the last transactions, it cannot corrupt the file — which is the
+    right trade for tiles that can simply be fetched again.
+    """
+    cache = TileCache(str(tmp_path / "t.mbtiles"))
+    try:
+        journal = cache._conn.execute("PRAGMA journal_mode").fetchone()[0]
+        synchronous = cache._conn.execute("PRAGMA synchronous").fetchone()[0]
+        assert str(journal).lower() == "wal"
+        # 1 == NORMAL. 2 == FULL would mean an fsync per downloaded tile.
+        assert synchronous == 1, f"synchronous={synchronous}, expected 1 (NORMAL)"
+    finally:
+        cache.close()
+
+
+def test_tiles_survive_a_reopen_with_the_relaxed_sync(tmp_path) -> None:
+    """NORMAL is about fsync timing, not about losing a clean write."""
+    path = str(tmp_path / "t.mbtiles")
+    cache = TileCache(path)
+    cache.put_tile(7, 11, 5, b"tile-bytes")
+    cache.close()
+
+    reopened = TileCache(path)
+    try:
+        assert reopened.get_tile(7, 11, 5) == b"tile-bytes"
+    finally:
+        reopened.close()

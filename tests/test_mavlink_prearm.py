@@ -8,7 +8,6 @@ None (unknown), never a green light the vehicle did not give.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Callable
 
 from pymavlink import mavutil
 

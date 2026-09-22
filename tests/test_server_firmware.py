@@ -26,10 +26,8 @@ from corvus.firmware_uploader import (
     MAX_FIRMWARE_IMAGE_BYTES,
     _bl_crc32,
     parse_firmware,
-    BAD_SILICON,
     CHIP_ERASE,
     EOC,
-    FAILED,
     GET_CHIP,
     GET_CRC,
     GET_DEVICE,
@@ -42,7 +40,7 @@ from corvus.firmware_uploader import (
     REBOOT,
 )
 from corvus.flash_service import FlashService, NON_USB_GATE_MESSAGE
-from corvus.server import CorvusHandler
+from corvus.server import CorvusHandler, _MultiplexSseBuffer
 from corvus.state_store import VehicleStateStore
 
 
@@ -723,12 +721,16 @@ def test_sse_firmware_emits_initial_status_and_cleans_up_listener(monkeypatch: p
     h.send_header = lambda name, value: None  # type: ignore[method-assign]
     h.end_headers = lambda: None  # type: ignore[method-assign]
 
-    # Break the loop on the first queue.get (simulate client disconnect).
+    # Break the loop on the first wait (simulate client disconnect).
     # Patched at the class level, so the bound call passes the instance first.
     def boom(*args: Any, **kwargs: Any) -> Any:
         raise BrokenPipeError("client gone")
 
-    monkeypatch.setattr(queue.Queue, "get", boom)
+    # The stream loop blocks on _MultiplexSseBuffer.drain — one connection
+    # can now carry several topics, so that is the wait every SSE handler
+    # goes through, and firmware buffers FIFO in it rather than in a
+    # queue.Queue of its own.
+    monkeypatch.setattr(_MultiplexSseBuffer, "drain", boom)
 
     h._sse_firmware()
 
@@ -753,7 +755,7 @@ def test_sse_firmware_without_flash_skips_listener(monkeypatch: pytest.MonkeyPat
     def boom(*args: Any, **kwargs: Any) -> Any:
         raise BrokenPipeError("client gone")
 
-    monkeypatch.setattr(queue.Queue, "get", boom)
+    monkeypatch.setattr(_MultiplexSseBuffer, "drain", boom)
     h._sse_firmware()
     # No initial event (no flash service); no listener registration attempted.
     assert sent == []
@@ -774,17 +776,17 @@ def test_sse_firmware_emits_ping_keepalive(monkeypatch: pytest.MonkeyPatch) -> N
     h.send_header = lambda name, value: None  # type: ignore[method-assign]
     h.end_headers = lambda: None  # type: ignore[method-assign]
 
-    # First queue.get -> queue.Empty -> ping keepalive; second -> BrokenPipeError
+    # First wait -> queue.Empty -> ping keepalive; second -> BrokenPipeError
     # -> the outer except breaks the loop so the handler returns cleanly.
     states = iter(["empty", "pipe"])
 
-    def fake_get(self: Any, timeout: Any = None) -> Any:
+    def fake_drain(self: Any, timeout: Any = None) -> Any:
         s = next(states)
         if s == "empty":
             raise queue.Empty
         raise BrokenPipeError("client gone")
 
-    monkeypatch.setattr(queue.Queue, "get", fake_get)
+    monkeypatch.setattr(_MultiplexSseBuffer, "drain", fake_drain)
     h._sse_firmware()
 
     events = [e for e, _ in sent]

@@ -2175,6 +2175,31 @@ Corvus.ui = (function () {
     btn.classList.toggle("is-active", !!active);
   }
 
+  /* Keep a .flight-actions bar on ONE ROW inside the room it actually has.
+
+     Both bars in the application are this bar — the Home tab's flight actions
+     and the planner's tools — and both sit on a map column whose width is not
+     the window's: opening the right-hand panel narrows it without the window
+     moving a pixel, which is why the test is a measurement and never a
+     viewport media query.
+
+     Two steps down, in .flight-actions.is-tight / .is-compact: the shared
+     button width goes first, the captions only if that is still not enough.
+     Both are cleared before measuring, because a bar that has already been
+     narrowed measures narrow and would never widen again once it had shrunk
+     once.
+
+     `room` is the width to fit into; without one the bar's own client width is
+     used, which is what a bar capped by a max-width is already limited to. */
+  function fitBar(bar, room) {
+    if (!bar || !bar.classList) return;
+    bar.classList.remove("is-tight", "is-compact");
+    const space = room == null ? bar.clientWidth : room;
+    if (!(space > 0) || bar.scrollWidth <= space) return;
+    bar.classList.add("is-tight");
+    if (bar.scrollWidth > space) bar.classList.add("is-compact");
+  }
+
   return {
     // primitives
     icon,
@@ -2217,6 +2242,7 @@ Corvus.ui = (function () {
     toast,
     setBusy,
     setActive,
+    fitBar,
     // charts
     token,
     plotlyTheme,

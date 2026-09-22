@@ -36,6 +36,9 @@ _EXPECTED_GET = {
     "/api/plugins",
     "/api/mavlink/auto",
     "/api/mavlink/modes",
+    # What the connected flight stack can do, so the UI hides a control the
+    # vehicle would refuse rather than offering one that fails on press.
+    "/api/mavlink/capabilities",
     "/api/mavlink/serial-ports",
     "/api/motors",
     "/api/params",
@@ -47,10 +50,16 @@ _EXPECTED_GET = {
     "/api/params/export/target",
     "/api/telemetry",
     "/api/console/stream",
+    # The multiplexed stream: console, params, firmware and tiles down one
+    # connection, because a browser allows six per origin and the map wants
+    # that budget for tiles. The single-topic routes above and below stay as
+    # the published per-topic form.
+    "/api/events",
     "/api/tiles/sources",
     "/api/tiles/jobs",
     "/api/tiles/progress",
     "/api/tiles/regions",
+    "/api/geocode",
     "/api/mission/plans",
     "/api/config",
     "/api/firmware/status",
@@ -105,6 +114,9 @@ _EXPECTED_POST = {
     "/api/params/export",
     "/api/calibrate",
     "/api/calibrate/cancel",
+    # ArduPilot waits to be told each accelerometer position; PX4 recognises
+    # them itself and refuses this with an explanation. See corvus.autopilot.
+    "/api/calibrate/position",
     "/api/firmware/flash",
     "/api/logs/refresh",
     "/api/logs/download",

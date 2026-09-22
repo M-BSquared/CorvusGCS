@@ -471,43 +471,62 @@
   <div class="sr-only" id="notificationLive" role="status" aria-live="assertive" aria-atomic="true"></div>
 </div>
 
-<script src="vendor/maplibre-gl.min.js"></script>
-<script src="vendor/lucide.min.js"></script>
-<script src="vendor/plotly-basic.min.js"></script>
-<script src="vendor/xterm.js"></script>
-<script src="vendor/xterm-addon-fit.js"></script>
-<script src="js/ui.js"></script>
-<script src="js/credits.js"></script>
-<script src="js/telemetry.js"></script>
-<script src="js/notification_dedupe.js"></script>
-<script src="js/topbar.js"></script>
-<script src="js/map.js"></script>
-<script src="js/instruments.js"></script>
-<script src="js/hud-panel.js"></script>
-<script src="js/ssh-term.js"></script>
-<script src="js/term-window.js"></script>
-<script src="js/panel.js"></script>
-<script src="js/link.js"></script>
-<script src="js/plugins.js"></script>
-<script src="js/setup-shared.js"></script>
-<script src="js/calib-figures.js"></script>
-<script src="js/calib-protocol.js"></script>
-<script src="js/setup-calibration.js"></script>
-<script src="js/rc-transmitter.js"></script>
-<script src="js/setup-control.js"></script>
-<script src="js/setup-tuning.js"></script>
-<script src="js/setup-motors.js"></script>
-<script src="js/setup-safety.js"></script>
-<script src="js/setup-sik.js"></script>
-<script src="js/setup-parameters.js"></script>
-<script src="js/setup-firmware.js"></script>
-<script src="js/setup.js"></script>
-<script src="js/analysis.js"></script>
-<script src="js/mission.js"></script>
-<script src="js/sidenav.js"></script>
-<script src="js/joystick.js"></script>
-<script src="js/tiles.js"></script>
-<script src="js/update.js"></script>
-<script src="js/app.js"></script>
+<!-- Up front: what the first screen needs. maplibre IS the first paint, and
+     lucide swaps the icon placeholders on every screen including this one.
+     plotly-basic (1.0 MB) and xterm (~300 KB) are NOT here on purpose — they
+     belong to Analysis, Tuning, the mission profile and the SSH terminal, and
+     js/lazy.js fetches each the first time something actually draws with it.
+     A launch that stays on the map no longer reads, sends and parses 1.3 MB
+     to define globals nothing will call.
+
+     Every tag below carries `defer`, which is what stops the count being a
+     cost. Without it the parser halts at each one — fetch, execute, resume —
+     thirty-six times over, with maplibre's 1.0 MB somewhere in the queue, and
+     nothing in the document behind them is laid out until the last has run.
+     `defer` keeps the one guarantee this list depends on: deferred scripts
+     execute in document order, after parsing and before DOMContentLoaded. So
+     lazy.js is still defined before analysis.js asks for it, and app.js still
+     registers its DOMContentLoaded handler before that event fires. The
+     inline theme script in <head> stays eager deliberately — it has to run
+     before the stylesheets paint anything. -->
+<script src="vendor/maplibre-gl.min.js" defer></script>
+<script src="vendor/lucide.min.js" defer></script>
+<script src="js/lazy.js" defer></script>
+<script src="js/events.js" defer></script>
+<script src="js/ui.js" defer></script>
+<script src="js/credits.js" defer></script>
+<script src="js/telemetry.js" defer></script>
+<script src="js/capabilities.js" defer></script>
+<script src="js/notification_dedupe.js" defer></script>
+<script src="js/topbar.js" defer></script>
+<script src="js/map-search.js" defer></script>
+<script src="js/map.js" defer></script>
+<script src="js/instruments.js" defer></script>
+<script src="js/hud-panel.js" defer></script>
+<script src="js/ssh-term.js" defer></script>
+<script src="js/term-window.js" defer></script>
+<script src="js/panel.js" defer></script>
+<script src="js/link.js" defer></script>
+<script src="js/plugins.js" defer></script>
+<script src="js/setup-shared.js" defer></script>
+<script src="js/calib-figures.js" defer></script>
+<script src="js/calib-protocol.js" defer></script>
+<script src="js/setup-calibration.js" defer></script>
+<script src="js/rc-transmitter.js" defer></script>
+<script src="js/setup-control.js" defer></script>
+<script src="js/setup-tuning.js" defer></script>
+<script src="js/setup-motors.js" defer></script>
+<script src="js/setup-safety.js" defer></script>
+<script src="js/setup-sik.js" defer></script>
+<script src="js/setup-parameters.js" defer></script>
+<script src="js/setup-firmware.js" defer></script>
+<script src="js/setup.js" defer></script>
+<script src="js/analysis.js" defer></script>
+<script src="js/mission.js" defer></script>
+<script src="js/sidenav.js" defer></script>
+<script src="js/joystick.js" defer></script>
+<script src="js/tiles.js" defer></script>
+<script src="js/update.js" defer></script>
+<script src="js/app.js" defer></script>
 </body>
 </html>

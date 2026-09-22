@@ -4,11 +4,14 @@
  * Tests for Corvus.calibProtocol (src/js/calib-protocol.js) and the attitude
  * vocabulary in Corvus.calibFigures (src/js/calib-figures.js).
  *
- * This is the layer the calibration wizard trusts to turn PX4's own words into
- * an instruction, so it is tested against real PX4 transcripts rather than
- * against a rendered page. The transcripts below are the messages PX4 v1.16 /
- * v1.17 / v1.18 emit from calibration_routines.cpp, accelerometer_calibration.cpp,
- * mag_calibration.cpp, airspeed_calibration.cpp and esc_calibration.cpp.
+ * This is the layer the calibration wizard trusts to turn the autopilot's own
+ * words into an instruction, so it is tested against real transcripts rather
+ * than against a rendered page. The PX4 transcripts below are the messages
+ * v1.16 / v1.17 / v1.18 emit from calibration_routines.cpp,
+ * accelerometer_calibration.cpp, mag_calibration.cpp, airspeed_calibration.cpp
+ * and esc_calibration.cpp; the ArduPilot ones are AP_AccelCal's own prompts,
+ * which are the case with no PX4 equivalent — they have to be *answered*, and a
+ * wizard that only listens leaves the aircraft waiting forever.
  *
  * Run:
  *   node tests/test_calib_protocol.js
@@ -271,6 +274,117 @@ function testUnrecognisedCalLineRefreshesTheWatchdogWithoutMisleading() {
   assert.equal(st.detail, "[cal] some future wording nobody has seen");
 }
 
+/* ------------------------------------------------------------------ */
+/* ArduPilot                                                           */
+/* ------------------------------------------------------------------ */
+
+/* ArduPilot's accelerometer calibration does not detect the position it asked
+   for. It prints "Place vehicle level and press any key." and waits for
+   MAV_CMD_ACCELCAL_VEHICLE_POS — indefinitely, if nobody answers. A PX4-only
+   wizard therefore showed a screen that never changed. */
+const ARDUPILOT_ACCEL = [
+  "Place vehicle level and press any key.",
+  "Place vehicle on its LEFT side and press any key.",
+  "Place vehicle on its RIGHT side and press any key.",
+  "Place vehicle nose DOWN and press any key.",
+  "Place vehicle nose UP and press any key.",
+  "Place vehicle on its BACK and press any key.",
+];
+
+function testArdupilotPlacementPromptsCarryThePoseAndTheAnswer() {
+  const expected = [
+    ["level", "level"],
+    ["left", "left"],
+    ["right", "right"],
+    ["nose_down", "nosedown"],
+    ["tail_down", "noseup"],
+    ["upside_down", "back"],
+  ];
+  ARDUPILOT_ACCEL.forEach((line, i) => {
+    const ev = P.parseLine(line);
+    assert.equal(ev.kind, "place", line);
+    assert.equal(ev.pose, expected[i][0], line);
+    // The token the backend turns into MAV_CMD_ACCELCAL_VEHICLE_POS's param1.
+    assert.equal(ev.position, expected[i][1], line);
+  });
+}
+
+function testEveryDrawablePoseHasAnAnswerAndTheReverse() {
+  // A pose the wizard can draw but cannot confirm would be a dead end; a token
+  // with no pose would be a confirm button with nothing under it.
+  const poses = Object.keys(P.POSE_TO_POSITION).sort();
+  assert.deepEqual(poses, F.POSES.slice().sort());
+  const tokens = Object.values(P.POSE_TO_POSITION);
+  assert.equal(new Set(tokens).size, tokens.length, "every token is distinct");
+}
+
+function testAPlacementPromptAsksForAConfirmationAndThenClearsIt() {
+  const s = P.createSession("accel");
+  s.begin(1000);
+  s.ingest("Place vehicle on its RIGHT side and press any key.", 2000);
+  let st = s.getState();
+  assert.deepEqual(st.confirm, { pose: "right", position: "right" });
+  assert.equal(st.pose, "right", "the figure holds what was asked for");
+  assert.equal(st.sides.right, "active");
+
+  // Answering it marks the side and takes the button away, without waiting for
+  // the vehicle — ArduPilot measures for a second or two before it says
+  // anything, and a live button in that window gets pressed twice.
+  assert.equal(s.confirmPlacement(), true);
+  st = s.getState();
+  assert.equal(st.confirm, null);
+  assert.equal(st.sides.right, "done");
+  assert.equal(s.confirmPlacement(), false, "nothing left to confirm");
+}
+
+function testAnyOtherVehicleMessageSupersedesAnOutstandingPrompt() {
+  const s = P.createSession("accel");
+  s.begin(1000);
+  s.ingest("Place vehicle level and press any key.", 2000);
+  assert.ok(s.getState().confirm, "guard: the prompt is up");
+  s.ingest("[cal] progress <30", 3000);
+  assert.equal(s.getState().confirm, null, "the button cannot outlive its question");
+}
+
+function testArdupilotOutcomeWordingIsTerminal() {
+  const done = P.createSession("gyro");
+  done.begin(1000);
+  done.ingest("Calibration successful", 2000);
+  assert.equal(done.getState().phase, "done");
+
+  const failed = P.createSession("accel");
+  failed.begin(1000);
+  failed.ingest("Calibration FAILED", 2000);
+  assert.equal(failed.getState().phase, "failed");
+}
+
+function testArdupilotShortCalibrationsAreNarratedAtAll() {
+  // Without the [cal] prefix these lines used to be invisible, so a working
+  // gyro calibration looked hung until it finished.
+  const s = P.createSession("gyro");
+  s.begin(1000);
+  assert.equal(s.ingest("Calibrating gyros", 2000), true);
+  assert.equal(s.getState().phase, "running");
+  assert.equal(s.ingest("Gyro calibration complete", 3000), true);
+  assert.equal(s.getState().phase, "done");
+}
+
+function testThePx4TranscriptStillParsesUnchanged() {
+  // The ArduPilot patterns are additive. A PX4 session must behave exactly as
+  // it did before they were added.
+  const s = P.createSession("accel");
+  s.begin(1000);
+  feed(s, [
+    "[cal] calibration started: 2 accel",
+    "[cal] Hold still, measuring down side",
+    "[cal] down side done, rotate to a pending side",
+    "[cal] Rotate to a pending side: left, right",
+  ]);
+  const st = s.getState();
+  assert.equal(st.confirm, null, "PX4 never asks to be told a position");
+  assert.equal(st.sides.level, "done");
+}
+
 const tests = [
   testSideWordsMapToTheAttitudeTheyMean,
   testParsesRealPx4CalibrationLines,
@@ -286,6 +400,13 @@ const tests = [
   testResetReturnsToTheBriefing,
   testUnknownCalibrationTypeIsRejected,
   testUnrecognisedCalLineRefreshesTheWatchdogWithoutMisleading,
+  testArdupilotPlacementPromptsCarryThePoseAndTheAnswer,
+  testEveryDrawablePoseHasAnAnswerAndTheReverse,
+  testAPlacementPromptAsksForAConfirmationAndThenClearsIt,
+  testAnyOtherVehicleMessageSupersedesAnOutstandingPrompt,
+  testArdupilotOutcomeWordingIsTerminal,
+  testArdupilotShortCalibrationsAreNarratedAtAll,
+  testThePx4TranscriptStillParsesUnchanged,
 ];
 
 let failures = 0;

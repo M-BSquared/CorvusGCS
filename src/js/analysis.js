@@ -1059,13 +1059,7 @@ Corvus.analysis = (function () {
 
       // Findings before plots: the plots are the evidence, these are the two
       // sentences worth reading if you read nothing else.
-      ((data && data.findings) || []).forEach((f) => {
-        const row = S.el("div", "review-finding");
-        row.dataset.level = f.level || "ok";
-        row.appendChild(S.icon(f.level === "ok" ? "circle-check" : "triangle-alert"));
-        row.appendChild(S.el("span", null, f.text));
-        head.appendChild(row);
-      });
+      appendFindings(head, (data && data.findings) || []);
       out.appendChild(head);
 
       const plots = (data && data.plots) || [];
@@ -1109,6 +1103,84 @@ Corvus.analysis = (function () {
 
       appendMessages(out, (data && data.messages) || []);
       S.refreshIcons();
+    }
+
+    /** Severity order, and how much of a finding is shown before it is asked
+     *  for. A review that opens as a wall of paragraphs costs the reader the
+     *  one line that mattered, so each finding is a headline and the reasoning
+     *  behind it waits for a click. */
+    const FINDING_RANK = { critical: 0, warning: 1, ok: 2, note: 3 };
+
+    function appendFindings(head, findings) {
+      const ranked = findings.slice().sort((a, b) =>
+        (FINDING_RANK[a.level] === undefined ? 9 : FINDING_RANK[a.level])
+        - (FINDING_RANK[b.level] === undefined ? 9 : FINDING_RANK[b.level]));
+      // Notes are context, not problems: things the log shows and a reader may
+      // want, which do not belong in the way of the things that need doing.
+      const shown = ranked.filter((f) => f.level !== "note");
+      const notes = ranked.filter((f) => f.level === "note");
+
+      shown.forEach((f) => head.appendChild(findingRow(f)));
+      if (!notes.length) return;
+
+      const extra = S.el("div", "review-finding-notes");
+      const toggle = S.el("button", "review-more");
+      toggle.type = "button";
+      toggle.setAttribute("aria-expanded", "false");
+      toggle.appendChild(S.icon("chevron-right"));
+      toggle.appendChild(S.el("span", "review-more-label", notes.length === 1
+        ? "1 more observation" : notes.length + " more observations"));
+      toggle.addEventListener("click", () => {
+        const open = toggle.getAttribute("aria-expanded") === "true";
+        toggle.setAttribute("aria-expanded", open ? "false" : "true");
+        extra.hidden = open;
+      });
+      extra.hidden = true;
+      notes.forEach((f) => extra.appendChild(findingRow(f)));
+      head.appendChild(toggle);
+      head.appendChild(extra);
+      S.refreshIcons();
+    }
+
+    function findingRow(f) {
+      const row = S.el("div", "review-finding");
+      row.dataset.level = f.level || "ok";
+      row.appendChild(S.icon(f.level === "ok" ? "circle-check"
+        : (f.level === "note" ? "info" : "triangle-alert")));
+      const body = S.el("div", "review-finding-body");
+
+      // The headline is the claim; the detail is why it is a claim worth
+      // making. Only a finding that has one gets a control to open.
+      const line = S.el(f.detail ? "button" : "span", "review-finding-head");
+      line.appendChild(S.el("span", "review-finding-text", f.text));
+      // Where in the flight the evidence sits. Without it a finding is a claim
+      // to argue with; with it, it is a place on the timeline to go and look,
+      // in the mode that was being flown at the time.
+      if (typeof f.t === "number") {
+        line.appendChild(S.el("span", "review-finding-time", clock(f.t)));
+        if (f.mode) {
+          const chip = S.el("span", "review-finding-mode", f.mode);
+          chip.style.borderColor = modeColor(f.mode);
+          line.appendChild(chip);
+        }
+      }
+      body.appendChild(line);
+
+      if (f.detail) {
+        line.type = "button";
+        line.setAttribute("aria-expanded", "false");
+        line.appendChild(S.icon("chevron-down", 13));
+        const detail = S.el("div", "review-finding-detail", f.detail);
+        detail.hidden = true;
+        line.addEventListener("click", () => {
+          const open = line.getAttribute("aria-expanded") === "true";
+          line.setAttribute("aria-expanded", open ? "false" : "true");
+          detail.hidden = open;
+        });
+        body.appendChild(detail);
+      }
+      row.appendChild(body);
+      return row;
     }
 
     /** Seconds as m:ss — a 7-minute flight is unreadable in raw seconds. */
@@ -1201,6 +1273,11 @@ Corvus.analysis = (function () {
         }
         shown.forEach((m) => {
           const line = S.el("div", "guidance-line " + (m.level || "info"));
+          // On the same clock as the plots and the mode strip, so the line
+          // that explains a flight can be found in the plot that shows it.
+          if (typeof m.t === "number") {
+            line.appendChild(S.el("span", "guidance-time", clock(m.t)));
+          }
           line.appendChild(S.el("span", "guidance-level", m.level || "info"));
           line.appendChild(S.el("span", "guidance-msg", m.text || ""));
           list.appendChild(line);
@@ -1212,8 +1289,25 @@ Corvus.analysis = (function () {
     }
 
     function drawPlot(host, plot) {
-      if (typeof window === "undefined" || !window.Plotly) {
-        host.appendChild(S.el("div", "guidance-empty", "Plotting unavailable."));
+      if (typeof window === "undefined") return;
+      // Plotly is 1.0 MB and is fetched on first use (js/lazy.js). A review
+      // draws three dozen of these, so they share the one fetch; each says
+      // what it is waiting for rather than sitting blank, and each re-checks
+      // that its host is still in the document before drawing into it.
+      if (!window.Plotly) {
+        if (!Corvus.lazy || typeof Corvus.lazy.plotly !== "function") {
+          host.appendChild(S.el("div", "guidance-empty", "Plotting unavailable."));
+          return;
+        }
+        const note = S.el("div", "guidance-empty", "Loading charts…");
+        host.appendChild(note);
+        Corvus.lazy.plotly().then(() => {
+          if (!host.isConnected) return;
+          Corvus.ui.clear(host);
+          drawPlot(host, plot);
+        }).catch(() => {
+          note.textContent = "Plotting unavailable.";
+        });
         return;
       }
       const palette = Corvus.ui.chartColors();

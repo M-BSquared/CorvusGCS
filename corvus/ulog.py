@@ -21,11 +21,19 @@ from __future__ import annotations
 
 import logging
 import struct
-from typing import Any, BinaryIO, Iterable
+from typing import Any, BinaryIO
+from collections.abc import Iterable
 
 logger = logging.getLogger("corvus.ulog")
 
 MAGIC = b"ULog\x01\x12\x35"
+
+# ArduPilot's DataFlash logs come off the vehicle over the same MAVLink log
+# protocol and land in the same folder, so they reach this parser. They are a
+# completely different container — a self-describing stream of FMT records
+# introduced by 0xA3 0x95 — and "not a ULog file" is a true but useless thing
+# to tell an operator holding one. See :func:`read`.
+DATAFLASH_MAGIC = b"\xa3\x95"
 HEADER_BYTES = 16
 
 # Message types in the definitions and data sections.
@@ -321,6 +329,12 @@ def read(source: BinaryIO | bytes, topics: Iterable[str] | None = None) -> ULog:
     if len(blob) > MAX_FILE_BYTES:
         raise UlogError("log is too large to review")
     if len(blob) < HEADER_BYTES or blob[:7] != MAGIC:
+        if blob[:2] == DATAFLASH_MAGIC:
+            raise UlogError(
+                "this is an ArduPilot DataFlash log (.bin), not a PX4 ULog — "
+                "Corvus can download it but cannot yet analyse it. Open it in "
+                "Mission Planner or at plot.ardupilot.org."
+            )
         raise UlogError("not a ULog file")
 
     log = ULog()

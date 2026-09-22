@@ -12,7 +12,8 @@ import logging
 import threading
 import time
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 import pytest
 
@@ -402,7 +403,7 @@ def test_a_nonsense_system_time_does_not_abort_the_rest_of_the_frame() -> None:
 
 def test_a_valid_system_time_still_reaches_the_state() -> None:
     bridge = ready_bridge()
-    stamp = datetime.datetime(2026, 9, 10, 14, 30, 5, tzinfo=datetime.timezone.utc)
+    stamp = datetime.datetime(2026, 9, 10, 14, 30, 5, tzinfo=datetime.UTC)
     msg = FakeMessage(
         message_type="SYSTEM_TIME",
         time_unix_usec=int(stamp.timestamp() * 1e6),
@@ -600,7 +601,7 @@ def test_an_oversized_upstream_tile_is_discarded_not_cached(
     from corvus.server import TILE_UPSTREAM_MAX_BYTES, CorvusHandler, _UpstreamBreaker
 
     class _Resp:
-        def __enter__(self) -> "_Resp":
+        def __enter__(self) -> _Resp:
             return self
 
         def __exit__(self, *exc: object) -> bool:
@@ -629,7 +630,7 @@ def test_a_normal_sized_tile_still_comes_through(
     tile = b"\x89PNG\r\n\x1a\n" + b"\x00" * 20_000
 
     class _Resp:
-        def __enter__(self) -> "_Resp":
+        def __enter__(self) -> _Resp:
             return self
 
         def __exit__(self, *exc: object) -> bool:

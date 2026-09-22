@@ -7,10 +7,16 @@ build-backend = "setuptools.build_meta"
 # repo root consumed by corvus.version; it is never read from here.
 name = "corvus-gcs"
 version = "0.0.0"
-requires-python = ">=3.10"
+# 3.12: the version CI tests, environment.yml creates, and the three build
+# scripts ship. It used to be >=3.10 here, 3.11 in environment.yml and 3.12 in
+# both pipelines, so the tested, the developed and the shipped interpreter
+# could all be different ones.
+requires-python = ">=3.12"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0"]
+# Mirrors requirements-dev.txt for `pip install -e .[dev]`; that file is the
+# one CI and the build scripts read.
+dev = ["pytest>=7.0", "ruff>=0.5"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -27,3 +33,32 @@ markers = [
     "sitl: marks tests requiring a live PX4 SITL connection",
     "frontend: marks tests for the JS frontend (currently run via node, but declare the marker for future)",
 ]
+
+[tool.ruff]
+# The two pipelines run `ruff check corvus serve.py tests`. This section is
+# what "clean" means, and it is deliberately narrow: the point of adding a
+# linter to a codebase this size is to catch mistakes, not to start a
+# reformatting argument. Line length is not enforced at all.
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+# F  — pyflakes: the dead locals and unused imports that motivated this.
+# E9 — syntax and IO errors ruff can find without running anything.
+# B  — flake8-bugbear: mutable default arguments, loop-variable capture in a
+#      closure, `except` that swallows a bare Exception used as control flow.
+# UP — pyupgrade, limited to what py312 makes unambiguous.
+select = ["F", "E9", "B", "UP"]
+ignore = [
+    # `except Exception:` with a logged traceback is the house pattern for
+    # "this must never take the process down", used deliberately in every
+    # builder and every teardown step. It is not an accident to flag.
+    "B904",
+    # Zip without strict= is fine where the lengths are established above it.
+    "B905",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert on the shapes they build; a few of them rebuild a module's
+# constants on purpose, which bugbear reads as a redefinition.
+"tests/*" = ["B011", "B017"]

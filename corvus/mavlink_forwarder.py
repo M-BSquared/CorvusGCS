@@ -67,7 +67,8 @@ import logging
 import socket
 import threading
 import time
-from typing import Any, Callable, Iterable
+from typing import Any
+from collections.abc import Callable, Iterable
 
 logger = logging.getLogger("corvus.forward")
 
@@ -500,7 +501,7 @@ class MavlinkForwarder:
                 break
             try:
                 data, addr = sock.recvfrom(65535)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 if self._stop.is_set():

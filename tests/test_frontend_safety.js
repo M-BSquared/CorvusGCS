@@ -154,6 +154,41 @@ function control(container, param) {
     .filter((e) => e.tagName === "SELECT" || e.tagName === "INPUT")[0];
 }
 
+/**
+ * A page carrying one bit field.
+ *
+ * Its own document rather than an extra field on the shared one: the overview
+ * assertions count the fields they were written for, and a bitmask is an
+ * ArduPilot shape — FENCE_TYPE, FS_OPTIONS, ARMING_CHECK — that the PX4 schema
+ * never produces.
+ */
+function bitmaskDoc(value) {
+  const doc = safetyDoc();
+  doc.sections = [{
+    id: "limits", title: "Flight limits", kind: "fields",
+    hint: "The envelope the vehicle is not allowed to leave.",
+    fields: [{
+      param: "FENCE_TYPE", label: "What the fence limits", kind: "bitmask",
+      value: value === undefined ? 3 : value,
+      bits: [
+        { bit: 0, label: "Maximum altitude" },
+        { bit: 1, label: "Circle around home" },
+        { bit: 2, label: "Polygon" },
+        { bit: 8, label: "Something newer than this build" },
+      ],
+    }],
+  }];
+  return doc;
+}
+
+/** The checkbox for one bit of a bitmask field. */
+function bit(container, param, number) {
+  const wrapper = findByDataset(container, "param", param)
+    .filter((e) => e.tagName === "DIV")[0];
+  return wrapper.querySelectorAll("input")
+    .filter((b) => b.dataset.bit === String(number))[0];
+}
+
 // ---------------------------------------------------------------------------
 // Fake telemetry with spies. `subscribe` captures the callback (does NOT
 // auto-fire — tests drive it via getSubCb) and returns an unsub spy.
@@ -442,6 +477,69 @@ async function testAFailedReadIsReportedNotThrown() {
   const status = findOneByClass(container, "params-actions-status");
   assert.ok(status.className.includes("err"), "the read failure is shown");
   assert.match(status.textContent, /link died/);
+}
+
+async function testABitmaskRendersOneSwitchPerNamedBit() {
+  const { container } = await openWith(bitmaskDoc());
+  const wrapper = findByDataset(container, "param", "FENCE_TYPE")
+    .filter((e) => e.tagName === "DIV")[0];
+  const boxes = wrapper.querySelectorAll("input");
+  assert.equal(boxes.length, 4, "one control per named bit, not a number field");
+  assert.equal(bit(container, "FENCE_TYPE", 0).checked, true);
+  assert.equal(bit(container, "FENCE_TYPE", 1).checked, true);
+  assert.equal(bit(container, "FENCE_TYPE", 2).checked, false);
+}
+
+async function testTickingABitWritesTheWholeRecomputedWord() {
+  const { container, fake } = await openWith(bitmaskDoc());
+  const box = bit(container, "FENCE_TYPE", 2);
+  box.checked = true;
+  fire(box, "change");
+  await flushMicrotasks();
+  assert.deepEqual(fake.writes(), [{ name: "FENCE_TYPE", value: 7 }],
+    "PARAM_SET carries the word, not the bit");
+}
+
+async function testClearingABitLeavesTheOthersAlone() {
+  const { container, fake } = await openWith(bitmaskDoc());
+  const box = bit(container, "FENCE_TYPE", 0);
+  box.checked = false;
+  fire(box, "change");
+  await flushMicrotasks();
+  assert.deepEqual(fake.writes(), [{ name: "FENCE_TYPE", value: 2 }]);
+}
+
+async function testABitThisBuildDoesNotNameIsNeverLost() {
+  // The vehicle holds bit 4, which the schema above does not list. Ticking a
+  // bit it does list must not drop the one it does not — a firmware with a
+  // newer flag would lose it the first time somebody touched the field.
+  const { container, fake } = await openWith(bitmaskDoc(3 | (1 << 4)));
+  const box = bit(container, "FENCE_TYPE", 2);
+  box.checked = true;
+  fire(box, "change");
+  await flushMicrotasks();
+  assert.deepEqual(fake.writes(), [{ name: "FENCE_TYPE", value: 7 | (1 << 4) }]);
+}
+
+async function testARefusedBitmaskWriteRestoresEveryBox() {
+  const { container, fake } = await openWith(bitmaskDoc(), { rejectFrom: 1 });
+  const box = bit(container, "FENCE_TYPE", 2);
+  box.checked = true;
+  fire(box, "change");
+  await flushMicrotasks();
+  assert.equal(bit(container, "FENCE_TYPE", 2).checked, false,
+    "a box left ticked that the vehicle never accepted is a lie about the aircraft");
+  assert.equal(bit(container, "FENCE_TYPE", 0).checked, true, "and the rest are untouched");
+  assert.ok(fake.writes().length === 1);
+}
+
+async function testAnArmedVehicleDisablesEveryBitOfABitmask() {
+  const { container, fake } = await openWith(bitmaskDoc());
+  fake.getSubCb()({ connected: true, armed: true });
+  assert.equal(bit(container, "FENCE_TYPE", 0).disabled, true,
+    "a live write to a safety bitmask from an armed aircraft");
+  fake.getSubCb()({ connected: true, armed: false });
+  assert.equal(bit(container, "FENCE_TYPE", 0).disabled, false);
 }
 
 async function testAFieldWriteGoesThroughTheParameterEndpoint() {
@@ -1224,6 +1322,12 @@ async function main() {
     testANumberFieldRejectsGarbageBeforeItReachesTheAircraft,
     testAValueOutsideTheSchemaBoundsIsRefused,
     testARefusedFieldWriteRestoresTheControl,
+    testABitmaskRendersOneSwitchPerNamedBit,
+    testTickingABitWritesTheWholeRecomputedWord,
+    testClearingABitLeavesTheOthersAlone,
+    testABitThisBuildDoesNotNameIsNeverLost,
+    testARefusedBitmaskWriteRestoresEveryBox,
+    testAnArmedVehicleDisablesEveryBitOfABitmask,
     testTheSensorHeaderShowsTheStateAndThePickers,
     testThePortPickerFollowsTheSelectedDriver,
     testEnablingASensorWritesTheWholeChain,

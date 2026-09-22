@@ -97,6 +97,19 @@ function makeEl(tag) {
     if (node === e) return true;
     return e.children.some((c) => c._isEl && c.contains(node));
   };
+  // Real DOM property: true while the element is still attached to the
+  // document. It is what every on-demand load re-checks before drawing into
+  // an element the operator may have closed while the bundle was in flight.
+  Object.defineProperty(e, "isConnected", {
+    get() {
+      let cur = e;
+      while (cur) {
+        if (cur === body) return true;
+        cur = cur.parentNode;
+      }
+      return false;
+    },
+  });
   e.closest = (sel) => {
     const want = sel.replace(/^\./, "");
     let cur = e;
@@ -143,6 +156,11 @@ function fire(el, type, event) {
 const terms = [];
 Corvus.sshTerm = {
   available: () => sshTermAvailable,
+  // xterm is fetched on first use now, so the module asks for it rather than
+  // giving up when it is not already there. The default here is the pessimistic
+  // case — the bundle is genuinely missing — so every existing test keeps
+  // exercising the "say so" path unless it opts into a successful load.
+  ensure: () => sshTermEnsure(),
   create(container, conn, opts) {
     const handle = {
       conn, container, opts,
@@ -157,6 +175,7 @@ Corvus.sshTerm = {
   },
 };
 let sshTermAvailable = true;
+let sshTermEnsure = () => Promise.reject(new Error("xterm bundle missing"));
 
 // POST /api/ssh/disconnect is the only network the module does.
 const posts = [];
@@ -215,7 +234,9 @@ function reset() {
   VIEW = { width: 1400, height: 900 };
   SCALE = 1;
   sshTermAvailable = true;
+  sshTermEnsure = () => Promise.reject(new Error("xterm bundle missing"));
 }
+
 
 const SESSION_A = { name: "ssh-launcher/a", title: "Start mission", host: "10.0.0.7", port: 22, username: "pilot" };
 const SESSION_B = { name: "ssh-launcher/b", title: "Video", host: "10.0.0.2", port: 22, username: "ops" };
@@ -491,14 +512,51 @@ function testASessionWithoutANameIsRefused() {
   assert.equal(tw.count(), 0);
 }
 
-function testAMissingXtermBundleStillGivesAWindowThatSaysSo() {
+async function testAMissingXtermBundleStillGivesAWindowThatSaysSo() {
   reset();
   sshTermAvailable = false;
   assert.equal(tw.open(SESSION_A), true);
   const frame = frameOf(SESSION_A.title);
+  // xterm is fetched on demand, so the window says what it is waiting for
+  // first — an empty black box is the one thing it must never be.
+  assert.match(partOf(frame, "term-win-body").textContent, /Loading terminal/,
+    "the frame says what it is waiting for");
+  await flush();
   assert.match(partOf(frame, "term-win-body").textContent, /xterm bundle/,
-    "the frame explains itself rather than showing an empty black box");
+    "and explains itself when the bundle really cannot be fetched");
   assert.equal(terms.length, 0);
+}
+
+async function testTheTerminalAttachesOnceTheLazyBundleArrives() {
+  reset();
+  // The first terminal of a session: xterm is not loaded yet, and the fetch
+  // succeeds. The window has to come back and attach by itself — this is the
+  // path every SSH terminal now takes on first use.
+  sshTermAvailable = false;
+  sshTermEnsure = () => { sshTermAvailable = true; return Promise.resolve(true); };
+
+  assert.equal(tw.open(SESSION_A), true);
+  const frame = frameOf(SESSION_A.title);
+  assert.match(partOf(frame, "term-win-body").textContent, /Loading terminal/);
+  assert.equal(terms.length, 0, "nothing is created before the bundle is here");
+
+  await flush();
+  assert.equal(terms.length, 1, "the window attached itself once xterm arrived");
+  assert.equal(terms[0].disposed, false);
+}
+
+async function testALoadThatFinishesAfterTheWindowClosedDrawsNothing() {
+  reset();
+  sshTermAvailable = false;
+  let release;
+  sshTermEnsure = () => new Promise((resolve) => { release = () => { sshTermAvailable = true; resolve(true); }; });
+
+  assert.equal(tw.open(SESSION_A), true);
+  tw.closeAll();
+  release();
+  await flush();
+  assert.equal(terms.length, 0,
+    "a bundle that arrives after the operator closed the window must not attach");
 }
 
 const tests = [
@@ -521,6 +579,8 @@ const tests = [
   testAShrinkingWindowPullsTerminalsBackIntoView,
   testASessionWithoutANameIsRefused,
   testAMissingXtermBundleStillGivesAWindowThatSaysSo,
+  testTheTerminalAttachesOnceTheLazyBundleArrives,
+  testALoadThatFinishesAfterTheWindowClosedDrawsNothing,
 ];
 
 (async () => {

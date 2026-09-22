@@ -23,7 +23,6 @@ tests/test_server_config.py and tests/test_server_firmware.py.
 """
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pytest

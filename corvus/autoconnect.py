@@ -38,7 +38,8 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any
+from collections.abc import Callable, Iterable, Sequence
 
 from .mavlink_bridge import (
     MavlinkBridge,
@@ -113,7 +114,7 @@ class PortInfo:
     kind: str = "unknown"
 
     @classmethod
-    def from_row(cls, row: dict) -> "PortInfo":
+    def from_row(cls, row: dict) -> PortInfo:
         """Build from a ``list_serial_ports()`` dict, classifying as it goes."""
         device = str(row.get("device", "") or "")
         description = str(row.get("description", "") or "")

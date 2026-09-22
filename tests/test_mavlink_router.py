@@ -360,7 +360,6 @@ def test_connect_pins_mavutils_target_to_the_aircraft_corvus_chose(bridge, monke
     the two disagreeing means Corvus commands one node and reads another's
     modes.
     """
-    from pymavlink import mavutil as mv
     from corvus import mavlink_bridge as mb
 
     mapping_read_for: list[int] = []

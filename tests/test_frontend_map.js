@@ -194,6 +194,40 @@ function testSourceTextEnablesAttributionControl() {
   );
 }
 
+function testTheCreditIsTheImagerysAndNotTheRenderersToo() {
+  // MapLibre's own default options carry a customAttribution linking its
+  // homepage, so every map showed the tile credit joined to the word MapLibre
+  // by a pipe. Only the first of those is a credit for something ON the map;
+  // the renderer is credited in Settings > About > Credits, with its version
+  // and its licence, which is where a library belongs and where the BSD-3
+  // notice actually has to live.
+  const src = fs.readFileSync(path.join(__dirname, "..", "src", "js", "map.js"), "utf-8");
+  assert.ok(
+    /customAttribution:\s*\[\]/.test(src),
+    "map.js must pass an empty customAttribution — MapLibre adds its own credit " +
+    "whenever the options object is left out entirely",
+  );
+  assert.ok(
+    /addControl\(new maplibregl\.AttributionControl\(ATTRIBUTION_OPTIONS\)/.test(src),
+    "and the control must be built with those options rather than bare",
+  );
+  // Both maps, one argument: the planner reads this back rather than keeping
+  // its own copy of it.
+  const missionSrc = fs.readFileSync(
+    path.join(__dirname, "..", "src", "js", "mission.js"), "utf-8");
+  assert.ok(
+    /Corvus\.map\.attributionOptions\(\)/.test(missionSrc),
+    "the Mission map must take the credit's options from map.js",
+  );
+  // The imagery credit itself is not suppressible from here and must not be:
+  // it is a condition of the tiles being on screen at all, and it arrives on
+  // each source's own attribution field.
+  assert.ok(
+    !/customAttribution:\s*\[[^\]]/.test(src),
+    "nothing may be smuggled back into the credit from the frontend",
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Centre-on-vehicle: what counts as somewhere to centre.
 //
@@ -493,7 +527,93 @@ function testHomeMarkerIgnoresAMalformedHome() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// The view the two maps share.
+// ---------------------------------------------------------------------------
+// One piece of ground, two maps over it. The rule is that the Mission planner
+// opens on the view the operator last AIMED, on whichever of the two they
+// aimed it — and that "aimed" means a hand on the map, never the aircraft
+// dragging the Home camera along behind it.
+//
+// Pure bookkeeping, so it is assertable with no MapLibre in the room: without
+// a Home map, missionOpenView() can only ever answer from what the planner
+// reported, which is exactly the half this checks.
+
+function withFreshSharedView(body) {
+  Corvus.map._resetSharedView();
+  try { body(); } finally { Corvus.map._resetSharedView(); }
+}
+
+function testAPlannerThatWasNeverAimedHasNoViewOfItsOwn() {
+  withFreshSharedView(() => {
+    // No Home map in Node, and nothing reported by the planner, so there is
+    // nothing to open on — the planner falls back to the aircraft itself.
+    assert.equal(Corvus.map.missionOpenView(), null);
+  });
+}
+
+function testThePlannersOwnAimIsWhatItReopensOn() {
+  withFreshSharedView(() => {
+    Corvus.map.noteMissionView({ center: [11.5, 48.7], zoom: 16.5, bearing: 30 });
+    assert.deepEqual(Corvus.map.missionOpenView(),
+                     { center: [11.5, 48.7], zoom: 16.5, bearing: 30 });
+  });
+}
+
+function testAimingTheHomeMapAfterwardsWinsBack() {
+  withFreshSharedView(() => {
+    Corvus.map.noteMissionView({ center: [11.5, 48.7], zoom: 16, bearing: 0 });
+    Corvus.map._noteHomeAim();
+    // The operator moved the Home map more recently, so that is the view they
+    // last chose — and with no Home map in Node there is nothing to read it
+    // from, which is the honest answer rather than a stale one.
+    assert.equal(Corvus.map.missionOpenView(), null);
+  });
+}
+
+function testTheReportedViewIsACopyNotTheStore() {
+  withFreshSharedView(() => {
+    const centre = [11.5, 48.7];
+    Corvus.map.noteMissionView({ center: centre, zoom: 16, bearing: 0 });
+    centre[0] = 0;
+    assert.equal(Corvus.map.missionOpenView().center[0], 11.5);
+    const read = Corvus.map.missionOpenView();
+    read.center[1] = 0;
+    assert.equal(Corvus.map.missionOpenView().center[1], 48.7);
+  });
+}
+
+function testAnUnusableViewIsIgnoredRatherThanStored() {
+  withFreshSharedView(() => {
+    [
+      null,
+      {},
+      { center: [11.5], zoom: 16 },
+      { center: ["x", "y"], zoom: 16 },
+      { center: [11.5, 48.7] },
+      { center: [11.5, 48.7], zoom: NaN },
+    ].forEach((bad) => {
+      Corvus.map.noteMissionView(bad);
+      assert.equal(Corvus.map.missionOpenView(), null,
+        `${JSON.stringify(bad)} must not become the view the planner opens on`);
+    });
+  });
+}
+
+function testAMissingBearingIsFlatNotBroken() {
+  withFreshSharedView(() => {
+    Corvus.map.noteMissionView({ center: [11.5, 48.7], zoom: 14 });
+    assert.equal(Corvus.map.missionOpenView().bearing, 0);
+  });
+}
+
 const tests = [
+  testAPlannerThatWasNeverAimedHasNoViewOfItsOwn,
+  testThePlannersOwnAimIsWhatItReopensOn,
+  testAimingTheHomeMapAfterwardsWinsBack,
+  testTheReportedViewIsACopyNotTheStore,
+  testAnUnusableViewIsIgnoredRatherThanStored,
+  testAMissingBearingIsFlatNotBroken,
   testHomeMarkerHiddenBeforeAnyHomeIsReported,
   testHomeMarkerHiddenWithoutTelemetryAtAll,
   testHomeMarkerAppearsOnAReportedHome,
@@ -505,6 +625,7 @@ const tests = [
   testSetBaseLayerRejectsUnknownSources,
   testSourceTextDoesNotMirrorTheRegistry,
   testSourceTextEnablesAttributionControl,
+  testTheCreditIsTheImagerysAndNotTheRenderersToo,
   testRealFixAcceptsAGenuinePosition,
   testRealFixRejectsTheNoFixDefault,
   testRealFixRejectsMalformedPositions,

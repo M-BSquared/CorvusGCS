@@ -104,7 +104,13 @@ def test_telemetry_sse_buffer_coalesces_to_latest_state() -> None:
     assert buffer.get(timeout=0.01) == {"sequence": 3}
 
 
-def test_console_sse_buffer_is_bounded_coalesced_and_prioritizes_errors() -> None:
+def test_console_sse_buffer_is_bounded_and_coalesced_without_reordering() -> None:
+    """An error does not jump the queue.
+
+    Urgency decides what survives a full buffer, not what is delivered first.
+    The buffer still bounds and de-duplicates; it just hands the entries over
+    in the order the vehicle sent them.
+    """
     buffer = _BoundedSseBuffer(3)
     repeated = {"name": "INFO", "text": "same", "level": "info"}
     buffer.put_console(repeated)
@@ -114,7 +120,24 @@ def test_console_sse_buffer_is_bounded_coalesced_and_prioritizes_errors() -> Non
     buffer.put_console({"name": "ACK", "text": "denied", "level": "error"})
 
     assert buffer.qsize() == 3
-    assert buffer.get(timeout=0.01) == {"name": "ACK", "text": "denied", "level": "error"}
+    assert buffer.get(timeout=0.01)["text"] == "same", "the error overtook earlier traffic"
+
+
+def test_console_sse_buffer_keeps_cause_before_effect() -> None:
+    """The line that explains a failure must not arrive after it.
+
+    This is the whole reason the console is worth reading back: an error
+    delivered ahead of the state change that caused it tells the operator a
+    story that did not happen.
+    """
+    buffer = _BoundedSseBuffer(8)
+    buffer.put_console({"name": "EKF2", "text": "switching to GPS", "level": "info"})
+    buffer.put_console({"name": "EKF2", "text": "GPS fusion failed", "level": "error"})
+    buffer.put_console({"name": "EKF2", "text": "reverting to baro", "level": "warning"})
+
+    assert [buffer.get(timeout=0.01)["text"] for _ in range(3)] == [
+        "switching to GPS", "GPS fusion failed", "reverting to baro",
+    ]
 
 
 def test_console_sse_buffer_does_not_evict_errors_for_low_priority_traffic() -> None:

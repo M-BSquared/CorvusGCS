@@ -37,7 +37,8 @@ import threading
 import time
 import zipfile
 import zlib
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from .mavlink_bridge import MavlinkBridge, is_windows_com_port
 

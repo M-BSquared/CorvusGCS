@@ -13,7 +13,10 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSION="$(cat "$REPO_DIR/VERSION")"
 BUILD_DIR="$REPO_DIR/build"
 APPDIR="$BUILD_DIR/AppDir"
-OUTPUT="$REPO_DIR/Corvus_GCS-${VERSION}-x86_64.AppImage"
+# Artifacts go to dist/, which is gitignored — not to the repo root.
+# Two finished .dmg files (600 MB between them) were sitting in the
+# checkout from builds two weeks old, because this is where they landed.
+OUTPUT="$REPO_DIR/dist/Corvus_GCS-${VERSION}-x86_64.AppImage"
 
 # ---- preflight --------------------------------------------------------------
 echo "=== CORVUS GCS — AppImage build ==="
@@ -27,14 +30,35 @@ command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 not found" >&2; exi
 
 PY_MAJOR="$(python3 -c 'import sys; print(sys.version_info.major)')"
 PY_MINOR="$(python3 -c 'import sys; print(sys.version_info.minor)')"
-if [ "$PY_MAJOR" -lt 3 ] || { [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 10 ]; }; then
-    echo "ERROR: Python >= 3.10 required, found $PY_MAJOR.$PY_MINOR" >&2
+# 3.12 is the floor pyproject.toml declares and the version both CI pipelines
+# test. This used to accept 3.10, so the shipped AppImage could be built on an
+# interpreter older than anything the suite had ever run against.
+if [ "$PY_MAJOR" -lt 3 ] || { [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 12 ]; }; then
+    echo "ERROR: Python >= 3.12 required, found $PY_MAJOR.$PY_MINOR" >&2
     exit 1
 fi
 PY_MM="${PY_MAJOR}.${PY_MINOR}"
 
 if [ "$(uname -m)" != "x86_64" ]; then
     echo "ERROR: this build targets x86_64; host arch is $(uname -m)" >&2
+    exit 1
+fi
+
+# Everything the AppDir is assembled from, checked before anything is built.
+# A missing LICENSE.md used to stop the build at its `cp`, long after the
+# interpreter had been downloaded and the wheels installed, with no hint of
+# which step wanted it. Name the file, in the first second.
+MISSING=""
+for required in \
+    VERSION requirements.txt LICENSE.md \
+    corvus src assets plugins assets/CorvusGCS_logo.png
+do
+    [ -e "$REPO_DIR/$required" ] || MISSING="$MISSING  $required"
+done
+if [ -n "$MISSING" ]; then
+    echo "ERROR: the AppImage is assembled from files that are not in the repo:" >&2
+    for m in $MISSING; do echo "         $m" >&2; done
+    echo "       Restore them (git checkout -- <path>) and run this again." >&2
     exit 1
 fi
 
@@ -105,13 +129,51 @@ if ! "$APPDIR/usr/bin/python3" -m pip install --upgrade pip >>"$PIP_LOG" 2>&1; t
     echo "ERROR: pip self-upgrade failed; log: $PIP_LOG" >&2
     exit 1
 fi
-echo ">>> Installing pymavlink paramiko pyserial PyQt6 PyQt6-WebEngine ..."
+# requirements.txt, not a hand-written list: this script used to install the
+# five runtime packages with NO version floors, so the Linux artifact could be
+# built against a pymavlink older than the >=2.4 the code needs and nothing
+# would catch it until the field.
+#
+# Which file, in order: $CORVUS_REQUIREMENTS, then requirements.lock if the
+# repo has one, then requirements.txt. The lock is what makes a release
+# rebuildable — requirements.txt states floors, so installing from it in six
+# months resolves to whatever is newest then. Every build writes the set it
+# actually installed to dist/*.lock; promoting one to requirements.lock at tag
+# time pins the next rebuild to it.
+REQUIREMENTS="${CORVUS_REQUIREMENTS:-}"
+if [ -z "$REQUIREMENTS" ]; then
+    if [ -f "$REPO_DIR/requirements.lock" ]; then
+        REQUIREMENTS="$REPO_DIR/requirements.lock"
+    else
+        REQUIREMENTS="$REPO_DIR/requirements.txt"
+    fi
+fi
+if [ ! -f "$REQUIREMENTS" ]; then
+    echo "ERROR: missing $REQUIREMENTS" >&2
+    exit 1
+fi
+LOCK_OUT="$REPO_DIR/dist/Corvus_GCS-${VERSION}-x86_64.lock"
+echo ">>> Installing runtime deps from $(basename "$REQUIREMENTS") ..."
 if ! "$APPDIR/usr/bin/python3" -m pip install \
-        pymavlink paramiko pyserial PyQt6 PyQt6-WebEngine >>"$PIP_LOG" 2>&1; then
+        -r "$REQUIREMENTS" >>"$PIP_LOG" 2>&1; then
     echo "ERROR: dependency install failed; log: $PIP_LOG" >&2
     exit 1
 fi
 echo "    (deps install log: $PIP_LOG)"
+# What went into THIS AppImage, exactly. Ships beside the artifact so a
+# rebuild can be told to resolve to the same versions:
+#   cp dist/Corvus_GCS-<version>-x86_64.lock requirements.lock
+mkdir -p "$REPO_DIR/dist"
+{
+    echo "# Corvus GCS $VERSION — Linux x86_64, python $PY_MM"
+    echo "# The resolved runtime set this artifact was built from."
+    echo "# Install with: pip install -r <this file>"
+    "$APPDIR/usr/bin/python3" -m pip freeze --all --exclude-editable
+} > "$LOCK_OUT" 2>>"$PIP_LOG" || {
+    echo "WARNING: could not write $LOCK_OUT" >&2
+    rm -f "$LOCK_OUT"
+}
+if [ -f "$LOCK_OUT" ]; then echo "    (resolved set: $LOCK_OUT)"; fi
 
 # ---- 4. copy app code into AppDir root -------------------------------------
 # corvus/version.py does parent.parent/VERSION; corvus/server.py + app.py do

@@ -9,7 +9,8 @@ Usage:
     python3 corvus/app.py [port] [mavlink_connection]
 
 Chromium rendering flags are set to handle environments where GBM/EGL
-is not available (falls back to Vulkan or software rendering).
+is not available (falls back to Vulkan on Linux, or to software rendering
+anywhere) — see :func:`chromium_flags`.
 """
 from __future__ import annotations
 
@@ -24,16 +25,55 @@ import time
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 WEB_DIR = os.path.join(REPO_ROOT, "src")
-os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", " ".join([
-    "--enable-features=Vulkan",
-    "--use-vulkan",
-    "--ignore-gpu-blocklist",
-    "--enable-unsafe-swiftshader",
-    "--disable-gpu-sandbox",
-    "--disable-software-rasterizer",
-    "--enable-webgl",
-    "--force-fieldtrials=GPUHardwareRendering/Default",
-]))
+def chromium_flags(platform: str = sys.platform) -> list[str]:
+    """QtWebEngine's Chromium switches for this platform.
+
+    Pure and parameterised so the platform branch is assertable without the
+    platform — these decide whether the window paints at all on a field
+    laptop, and "it works on mine" is not a test.
+
+    What is here and why:
+
+    * ``--ignore-gpu-blocklist`` — Chromium blocklists a lot of the embedded
+      and virtualised GPUs this app actually runs on. Being on the list is
+      not the same as being broken, and the fallbacks below cover it when it
+      is.
+    * ``--enable-unsafe-swiftshader`` — the software GL fallback. "unsafe" is
+      Chromium's word for "not GPU-accelerated", not a security switch. This
+      is what keeps MapLibre initialising on a machine with no usable driver:
+      a VM, a remote session, an old laptop with a broken EGL stack.
+    * ``--enable-webgl`` — MapLibre is WebGL; without it there is no map.
+    * Vulkan, on Linux only. macOS has no Vulkan (Qt renders through Metal)
+      and Windows goes through ANGLE/D3D, so asking for it there is at best a
+      no-op and at worst a wasted GPU init on every launch.
+    * ``--disable-gpu-sandbox``, on Linux only. The GPU process sandbox is a
+      real boundary, and this frontend is the thing that loads operator-
+      supplied plugins out of ``~/.corvus/plugins`` — so it is not a boundary
+      to give up everywhere by default. It is here because it is the flag
+      that makes the GPU stacks above come up on the Linux systems this app
+      is deployed to (container, VM, odd driver, no GBM/EGL). On macOS and
+      Windows the sandbox works and there is nothing to buy by dropping it,
+      so those platforms keep it.
+
+    Any of this can be replaced outright: the whole list is applied with
+    ``setdefault``, so an operator who exports ``QTWEBENGINE_CHROMIUM_FLAGS``
+    gets exactly what they asked for and none of the above.
+
+    Deliberately absent: ``--disable-software-rasterizer``, which used to sit
+    two lines under ``--enable-unsafe-swiftshader`` and turn it off again —
+    SwiftShader *is* the software rasterizer, so the pair asked for opposite
+    things and the machine that needed the fallback most is the one that lost
+    it. Also absent: ``--force-fieldtrials=GPUHardwareRendering/Default``,
+    which names no real Chromium field trial and did nothing.
+    """
+    flags = ["--ignore-gpu-blocklist"]
+    if platform.startswith("linux"):
+        flags += ["--enable-features=Vulkan", "--use-vulkan", "--disable-gpu-sandbox"]
+    flags += ["--enable-unsafe-swiftshader", "--enable-webgl"]
+    return flags
+
+
+os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", " ".join(chromium_flags()))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,11 +90,7 @@ from corvus.instance_lock import (
     allow_multi,
     describe_peer,
 )
-from corvus.mavlink_bridge import MavlinkBridge
 from corvus.paths import corvus_path
-from corvus.plugin_registry import ensure_user_plugins_dir
-from corvus.ssh_bridge import SshBridge
-from corvus.state_store import VehicleStateStore
 from corvus.version import get_version
 
 
@@ -70,7 +106,12 @@ def _report_startup_failure(text: str, detail: str) -> None:
     """
     try:
         from PyQt6.QtWidgets import QApplication, QMessageBox
+        # Bound, not discarded: the QApplication has to outlive box.exec().
+        # Naming it also gets the dialog a real application name instead of
+        # the interpreter's, which is what the title bar and the macOS menu
+        # bar read — this window is the only thing the operator will see.
         app = QApplication.instance() or QApplication(sys.argv)
+        app.setApplicationName("CORVUS GCS")
         box = QMessageBox()
         box.setIcon(QMessageBox.Icon.Information)
         box.setWindowTitle("CORVUS GCS")
@@ -164,140 +205,37 @@ def start_backend(port: int, mavlink_conn: str | None = None) -> tuple:
     Returns ``(server, mavlink, ssh)``. The server may be listening on a
     *different* port than *port* — see :func:`corvus.server.bind_server`; read
     it back from ``server.server_address[1]``.
+
+    The backend itself is ``corvus.server.create_server``, unchanged and
+    entire. This function used to build one by hand instead: ninety lines
+    that constructed the same store, bridge, ssh, config, auto-connect
+    session, tile resources, buildings, geocoder, flash, SiK, logs, forwarder
+    and update checker as browser mode, and then assigned each of them twice —
+    once onto ``CorvusHandler``, once onto the server.
+
+    It is worth being precise about what that cost, because it was not
+    hypothetical. Every service had to be added in four places or it silently
+    did not exist in one of the two modes, and twice it was not: the packaged
+    app shipped an Analysis page that could not list a single ULog, and a
+    Firmware page that listed no PX4 release. Both of those were this
+    function's copy falling behind, and neither failed a test — the feature
+    simply was not there in the build operators run.
+
+    So there is one backend now, and the desktop app's only remaining job is
+    to serve it from a thread of its own: the Qt event loop owns this one.
     """
-    from corvus.server import (
-        CorvusHandler, _build_forwarder, _build_log_service,
-        _build_building_service, _build_tile_resources, apply_startup_connection, bind_server,
-        build_autoconnect_session, start_autoconnect_watcher,
-        DEFAULT_MAVLINK_CONNECTION,
-    )
-    from corvus.tile_cache import default_cache_dir
+    from corvus.server import create_server
 
-    store = VehicleStateStore()
-    mavlink = MavlinkBridge(store, DEFAULT_MAVLINK_CONNECTION)
-    ssh = SshBridge()
-
-    # Operator config: the desktop app reads the same config file browser mode
-    # does, so /api/config and the tile cache dir honor the operator override.
-    # Set these on the class BEFORE constructing the server so every handler
-    # shares the one live config object (per-request instance attrs would not
-    # persist, leaving the next request reading a stale/default value).
-    # Loaded before the bridge is pointed anywhere, because the auto-connect
-    # toggles live in it and the startup resolver reads them.
-    cfg = load_config()
-    cfg_path = default_config_path()
-    CorvusHandler.config = cfg
-    CorvusHandler.config_path = cfg_path
-
-    # Same resolution browser mode makes: a flight controller on a USB cable
-    # beats the string the config file is holding, an unusable string from
-    # either source starts on the default rather than into a reconnect loop
-    # that can never succeed.
-    autoconnect_session = build_autoconnect_session(cfg)
-    apply_startup_connection(
-        mavlink, mavlink_conn,
-        configured=cfg.mavlink_connection,
-        session=autoconnect_session,
-        store=store,
-    )
-
-    CorvusHandler.store = store
-    CorvusHandler.mavlink = mavlink
-    CorvusHandler.ssh = ssh
-    CorvusHandler.autoconnect_session = autoconnect_session
-
-    # Tile resources: built through the SAME helper create_server() uses so
-    # offline maps work in the desktop app too (POST /api/tiles/download,
-    # /api/tiles/sources cached_count, local MBTiles caching). Without this
-    # the desktop app's tile endpoints 503 and tiles never cache locally.
-    # Honor the operator config override for the cache dir.
-    cache_dir = cfg.tile_cache_dir or default_cache_dir()
-    tile_caches, tile_progress_bus, tile_downloader, tile_breaker = \
-        _build_tile_resources(cache_dir)
-    CorvusHandler.tile_caches = tile_caches
-    CorvusHandler.tile_downloader = tile_downloader
-    CorvusHandler.tile_progress_bus = tile_progress_bus
-    CorvusHandler.tile_breaker = tile_breaker
-    # 3D mode's building footprints. Built here as well as in create_server so
-    # the desktop app and browser mode offer the same map (the reason
-    # _build_tile_resources is shared), and None-safe when it cannot be built.
-    CorvusHandler.buildings = _build_building_service(cache_dir)
-
-    # Same as create_server(): make sure ~/.corvus/plugins exists (with its
-    # README) so the folder Settings points at is there before it is opened.
-    ensure_user_plugins_dir()
-
-    # Firmware-flash service (direct USB only). Wired on the independently-
-    # built server so the desktop app supports flashing too.
-    flash = None
-    try:
-        from corvus.flash_service import FlashService
-        flash = FlashService(mavlink, store)
-    except Exception:
-        logger.exception("flash service unavailable")
-    CorvusHandler.flash = flash
-
-    # SiK telemetry-radio configuration. Like flash, it borrows the serial port
-    # from the MAVLink bridge for the length of a session, so it needs the same
-    # bridge handle and the same armed gate from the store.
-    sik = None
-    try:
-        from corvus.sik_service import SikService
-        sik = SikService(mavlink, store)
-    except Exception:
-        logger.exception("SiK radio service unavailable")
-    CorvusHandler.sik = sik
-
-    # Flight-log service: on-board ULog download over MAVLink plus the local
-    # tlog listing. Built through the same helper create_server() uses — the
-    # desktop app used to skip it entirely, which left every packaged build
-    # with an Analysis page that could not list or download a single ULog.
-    logs = _build_log_service(mavlink, cfg)
-    CorvusHandler.logs = logs
-
-    # Second-station MAVLink forwarding, so QGroundControl can share the one
-    # physical link. Off unless the operator turned it on in the config.
-    forwarder = _build_forwarder(mavlink, cfg)
-    CorvusHandler.forwarder = forwarder
-
-    # Update check against the GitHub releases, wired on the independently-
-    # built desktop server so the app prompts there too. Constructed only; the
-    # first network call happens when the frontend asks.
-    updates = None
-    try:
-        from corvus.update_check import UpdateChecker
-        updates = UpdateChecker()
-    except Exception:
-        logger.exception("update checker unavailable")
-    CorvusHandler.updates = updates
-
-    server = bind_server(port, CorvusHandler)
-    server.mavlink = mavlink
-    server.ssh = ssh
-    server.store = store
-    server.config = cfg
-    server.config_path = cfg_path
-    server.flash = flash
-    server.sik = sik
-    server.logs = logs
-    server.forwarder = forwarder
-    server.updates = updates
-    # Mirror tile resources onto the server instance so CorvusServer.shutdown()
-    # closes the caches and stops the downloader (no leaked SQLite handles).
-    server.tile_caches = tile_caches
-    server.tile_downloader = tile_downloader
-    server.buildings = CorvusHandler.buildings
-    server.autoconnect_session = autoconnect_session
-    mavlink.start()
-    # After mavlink.start(), never before — see create_server() for why.
-    server.autoconnect = start_autoconnect_watcher(mavlink, store, autoconnect_session)
-
+    server = create_server(port=port, mavlink_conn=mavlink_conn)
+    # serve_forever blocks; the desktop app's main thread belongs to Qt.
+    # Daemon, because the teardown path (_stop_all -> server.shutdown) is what
+    # stops this loop, and a hung request must never keep the process alive
+    # after the window is gone.
     backend_thread = threading.Thread(
         target=server.serve_forever, name="corvus-backend", daemon=True,
     )
     backend_thread.start()
-    return server, mavlink, ssh
-
+    return server, server.mavlink, server.ssh
 
 def app_icon_inverted(cfg) -> bool:
     """Whether the operator asked for the inverted cut of the mark.
@@ -434,105 +372,40 @@ def build_app_icon(inverted: bool, backplate: bool):
 def _stop_all(server) -> None:
     """Ordered, exception-safe backend teardown. Never raises.
 
-    Mirrors serve.py: mavlink (stop telemetry, join threads, flush tlog),
-    ssh (join reader threads), state store (forward-compat lifecycle hook),
-    then the HTTP server + tile caches (stop accepting requests, close
-    SQLite handles last). Each step is independently guarded so a failure
-    in one cannot skip the rest.
+    The sequence lives in :func:`corvus.server.stop_backend`, shared with
+    serve.py. This used to be a character-for-character copy of that file's
+    function, with a docstring that said so.
     """
-    # Flash uses the MAVLink bridge (it stops/starts it), so cancel/join the
-    # uploader BEFORE tearing the bridge down.
-    flash = getattr(server, "flash", None)
-    if flash is not None:
-        try:
-            logger.info("stopping flash …")
-            flash.shutdown()
-            logger.info("flash stopped")
-        except Exception:
-            logger.exception("flash shutdown failed")
-    # The radio service may be holding the bridge's serial port and will
-    # restart the bridge when its session ends, so it is told to stop doing that
-    # in the same breath as flash and for the same reason.
-    sik = getattr(server, "sik", None)
-    if sik is not None:
-        try:
-            sik.shutdown()
-        except Exception:
-            logger.exception("SiK radio shutdown failed")
-    # Log downloads hold a sink on the MAVLink bridge and a worker thread, so
-    # they are stopped alongside flash — before the bridge itself goes away.
-    logs = getattr(server, "logs", None)
-    if logs is not None:
-        try:
-            logger.info("stopping log service …")
-            logs.shutdown()
-            logger.info("log service stopped")
-        except Exception:
-            logger.exception("log service shutdown failed")
-    # The forwarder holds a UDP socket, two daemon threads, and a sink on the
-    # bridge's receive path, so it is released before the bridge goes away.
-    forwarder = getattr(server, "forwarder", None)
-    if forwarder is not None:
-        try:
-            logger.info("stopping mavlink forwarding …")
-            mav = getattr(server, "mavlink", None)
-            if mav is not None:
-                mav.set_frame_sink(None)
-            forwarder.stop()
-            logger.info("mavlink forwarding stopped")
-        except Exception:
-            logger.exception("mavlink forwarder shutdown failed")
-    # The auto-connect watcher calls stop/set_connection/start on the bridge,
-    # so it is joined before the bridge goes away: a tick landing after
-    # mavlink.stop() would start the link the shutdown just closed.
-    from corvus.server import stop_autoconnect_watcher
-    stop_autoconnect_watcher(server)
-    mavlink = getattr(server, "mavlink", None)
-    if mavlink is not None:
-        try:
-            logger.info("stopping mavlink …")
-            mavlink.stop()
-            logger.info("mavlink stopped")
-        except Exception:
-            logger.exception("mavlink stop failed")
-    ssh = getattr(server, "ssh", None)
-    if ssh is not None:
-        try:
-            logger.info("stopping ssh …")
-            ssh.shutdown()
-            logger.info("ssh stopped")
-        except Exception:
-            logger.exception("ssh shutdown failed")
-    store = getattr(server, "store", None)
-    if store is not None:
-        try:
-            logger.info("stopping state store …")
-            store.shutdown()
-            logger.info("state store stopped")
-        except Exception:
-            logger.exception("state store shutdown failed")
+    from corvus.server import stop_backend
+    stop_backend(server, logger)
+
+def set_windows_app_id(app_id: str) -> bool:
+    """Tell Windows this process is its own application. No-op elsewhere.
+
+    Without an explicit AppUserModelID, Windows groups the window under
+    whatever launched it — the host Python, or the packaged launcher — and
+    shows *that* icon in the taskbar and the alt-tab list. Which undoes the
+    ``.ico`` ``build-windows.ps1`` goes to the trouble of cutting, and undoes
+    :mod:`corvus.desktop_icon` on the one platform it does not otherwise
+    cover.
+
+    The value was already being computed and thrown away; this is the line
+    that was missing. Returns whether the id was actually set, so the caller
+    (and a test) can tell "not Windows" from "Windows said no".
+    """
+    if os.name != "nt":
+        return False
     try:
-        logger.info("stopping http server + tiles …")
-        server.shutdown()
-        logger.info("http server + tiles stopped")
-    except Exception:
-        logger.exception("http server shutdown failed")
-    # Defense-in-depth: shutdown() stops the serve loop but does not close
-    # the listening TCP socket. os._exit reclaims it in the live path, but an
-    # explicit close keeps the fd table clean on a graceful exit and lets the
-    # hermetic shutdown tests assert fileno==-1 without calling server_close
-    # themselves.
-    try:
-        logger.info("closing http socket …")
-        server.server_close()
-        logger.info("http socket closed")
-    except Exception:
-        logger.exception("http socket close failed")
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+    except Exception:  # noqa: BLE001 - a taskbar icon is never worth a failed launch
+        logger.debug("could not set the Windows app id", exc_info=True)
+        return False
+    return True
 
 
 def main() -> int:
-    from PyQt6.QtCore import QUrl, Qt
-    from PyQt6.QtGui import QGuiApplication
+    from PyQt6.QtCore import QUrl
     from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
     from PyQt6.QtWebEngineWidgets import QWebEngineView
     from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
@@ -607,7 +480,9 @@ def main() -> int:
     port = server.server_address[1]
     lock.write_port(port)
 
-    app_id = f"corvus.gcs.{get_version()}"
+    # Set before the QApplication, because Windows binds a window to whatever
+    # the AppUserModelID was when the window was created.
+    set_windows_app_id(f"corvus.gcs.{get_version()}")
     app = QApplication(sys.argv)
     app.setApplicationName("CORVUS GCS")
     app.setApplicationDisplayName("CORVUS GCS")

@@ -79,6 +79,14 @@ const NOT_OWNED = new Set([
   // layout they belong to. Listed here only so the default is still checked.
   // (.nav-item itself IS owned — it is what navItem() writes unconditionally.)
   "glass",        // .glass is the shared material, defined in components.css anyway
+  // fitBar() measures a bar the CALLER built — .flight-actions, on the Home
+  // map and in the planner — and puts one of two narrowing states on it. What
+  // those states do to a button is the map chrome's business and lives beside
+  // .flight-actions in main.css; the library owns only the decision of which
+  // one applies. Defining them here would mean components.css reaching into
+  // .fa-btn, which is the boundary this file exists to defend, backwards.
+  "is-tight",
+  "is-compact",
 ]);
 
 // ---------------------------------------------------------------------------

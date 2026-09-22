@@ -293,7 +293,7 @@ def test_download_refuses_a_host_outside_the_allow_list(tmp_path: pathlib.Path) 
 
 def test_download_refuses_a_non_firmware_name(tmp_path: pathlib.Path) -> None:
     catalog = FirmwareCatalog(str(tmp_path))
-    with pytest.raises(ValueError, match="not a PX4 firmware image"):
+    with pytest.raises(ValueError, match="not a firmware image"):
         catalog.download({"name": "x.exe", "url": asset_url("v1", "x.exe")})
 
 

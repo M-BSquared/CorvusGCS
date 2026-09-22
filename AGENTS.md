@@ -18,8 +18,10 @@ agents.
   enforces invariants, owns the release `VERSION` bump, and commits completed
   work. Writes no product code except the `VERSION` file.
 - `backend` — Vehicle State Store, HTTP/SSE, version endpoint, process
-  supervisor, PX4 schema registry.
-- `mavlink` — MAVLink v1/v2, autopilot comms, version-aware parameter schema.
+  supervisor, per-stack schema registry.
+- `mavlink` — MAVLink v1/v2, autopilot comms, version-aware parameter schema,
+  and the flight-stack dialect layer (`corvus/autopilot.py`) that keeps PX4 and
+  ArduPilot differences in one place.
 - `gui` — web UI, desktop app wrapper, lifecycle/shutdown path.
 - `map` — map engine, GIS transforms, offline tile cache, DEM.
 - `perf` — frame-rate/latency optimization, leak hunting.
@@ -45,11 +47,11 @@ agents.
 ## Product
 
 **Corvus GCS** (Ground Control Station) is a modern, offline-capable ground
-station for PX4-based autonomous aircraft. It is a Python backend plus a web
-frontend served from a local HTTP server and wrapped as a standalone desktop
-app. The field use case is the driving constraint: it must run on a laptop with
-no internet, talk to a PX4 autopilot over serial/UDP/TCP, and never leak
-processes, sockets, or file handles on exit.
+station for autonomous aircraft running **PX4 or ArduPilot**. It is a Python
+backend plus a web frontend served from a local HTTP server and wrapped as a
+standalone desktop app. The field use case is the driving constraint: it must
+run on a laptop with no internet, talk to an autopilot over serial/UDP/TCP, and
+never leak processes, sockets, or file handles on exit.
 
 ### Architecture, in one paragraph
 
@@ -67,7 +69,8 @@ all child processes (e.g. MAVLink bridges) and guarantees clean teardown.
   `collections.deque`, `pathlib`, `json`, `struct`). Add a third-party dependency
   only when the stdlib genuinely cannot do the job, and justify it.
 - **MAVLink:** pymavlink is the expected MAVLink library. Keep wire-format
-  parsing and parameter handling version-aware (see PX4 target below).
+  parsing and parameter handling version- *and* stack-aware (see the
+  compatibility target below).
 - **Frontend:** vanilla JS / small framework, MapLibre GL JS or Leaflet for the
   map. Telemetry is pushed from the backend; the frontend never polls for live
   data.
@@ -84,9 +87,9 @@ the current host and fails loudly rather than pretending to cross-build.
 
 | Platform | Script | Artifact | Notes |
 | --- | --- | --- | --- |
-| Linux x86_64 | `./build.sh` -> `build-appimage.sh` | `Corvus_GCS-<version>-x86_64.AppImage` | `appimagetool`, bundled CPython + Qt |
-| macOS (arm64 / x86_64) | `./build.sh --dmg` -> `build-macos-app.sh` | `dist/Corvus GCS.app` (+ `Corvus_GCS-<version>-macOS-<arch>.dmg`) | relocatable framework CPython, ad-hoc codesigned |
-| Windows x64 | `.\build-windows.ps1 [-Zip]` | `dist\Corvus GCS\` (+ `Corvus_GCS-<version>-windows-x64.zip`) | PyInstaller, not a hand-relocated interpreter; `./build.sh` from a Windows shell points here rather than cross-building |
+| Linux x86_64 | `./build.sh` -> `build-appimage.sh` | `dist/Corvus_GCS-<version>-x86_64.AppImage` | `appimagetool`, bundled CPython + Qt |
+| macOS (arm64 / x86_64) | `./build.sh --dmg` -> `build-macos-app.sh` | `dist/Corvus GCS.app` (+ `dist/Corvus_GCS-<version>-macOS-<arch>.dmg`) | relocatable framework CPython, ad-hoc codesigned |
+| Windows x64 | `.\build-windows.ps1 [-Zip]` | `dist\Corvus GCS\` (+ `dist\Corvus_GCS-<version>-windows-x64.zip`) | PyInstaller, not a hand-relocated interpreter; `./build.sh` from a Windows shell points here rather than cross-building |
 
 Both CI pipelines call the same `./build.sh`: `.gitlab-ci.yml` (primary, on
 `git.unibw.de`, Linux only — no macOS or Windows runner) and
@@ -196,13 +199,14 @@ fails any review where a component hardcodes a version literal instead of
 reading the canonical source. See the *Version control* section of each
 agent for its specific responsibilities.
 
-## PX4 compatibility target
+## Flight-stack compatibility target
 
-The primary target is **PX4 v1.16, v1.17, and v1.18.** Everything the MAVLink
+The primary target is **PX4 v1.16, v1.17, and v1.18.** The secondary target is
+**ArduPilot 4.3–4.6** (Copter, Plane, Rover/Boat, Sub). Everything the MAVLink
 and backend agents do with parameters, flight modes, and commands must be
-verified against these three versions. Older firmwares (v1.12–v1.15) are
-supported on a best-effort basis via fallback tables, but they are *not* the
-focus and must never block a fix for the three target versions.
+verified against both. Older firmwares (PX4 v1.12–v1.15) are supported on a
+best-effort basis via fallback tables, but they are *not* the focus and must
+never block a fix for the target versions.
 
 - Parameter names, types, and existence differ across firmware versions
   (renames, splits, removals in `COM_ARM_*`, `MPC_*`, `MC_*`, `NAV_*`, etc.).
@@ -212,8 +216,44 @@ focus and must never block a fix for the three target versions.
 - Never send a `MAV_CMD` or set a parameter that the connected firmware does
   not understand. The backend must refuse to dispatch a command/param write
   that is not in the loaded schema for the detected version.
-- The three target versions are the regression set: any parameter/mode/flight-
-  plan change is checked against 1.16, 1.17, and 1.18 before it is accepted.
+- The target versions are the regression set: any parameter/mode/flight-plan
+  change is checked against PX4 1.16, 1.17 and 1.18, and against ArduPilot,
+  before it is accepted.
+
+### The dialect layer (mandatory)
+
+`corvus/autopilot.py` is the **one** place that knows which stack is on the
+other end and what that changes. Nothing else branches on `MAV_AUTOPILOT` — the
+bridge, the HTTP layer and the frontend ask it. A second place that decides
+"is this PX4?" is a review failure, because the failure mode of every one of
+these differences is a silent wrong answer rather than an error:
+
+| | PX4 | ArduPilot |
+| --- | --- | --- |
+| Flight mode | packed `main_mode`/`sub_mode` in `custom_mode` | one flat number, per-vehicle table (4 is GUIDED on a copter, ACRO on a plane) |
+| `NAV_TAKEOFF` param7 | altitude **AMSL** | altitude **relative to home** |
+| Takeoff order | command, then arm | GUIDED, arm, then command (and disarm again if it is refused) |
+| Compass calibration | `PREFLIGHT_CALIBRATION` param2 | `DO_START_MAG_CAL` |
+| Accelerometer positions | detected by the firmware | confirmed by the GCS with `ACCELCAL_VEHICLE_POS` |
+| ESC calibration | `PREFLIGHT_CALIBRATION` param7 | `ESC_CALIBRATION` parameter + reboot (not offered) |
+| Autotune | `DO_AUTOTUNE_ENABLE` | the AUTOTUNE flight mode |
+| Mission item 0 | the first item | home |
+| Mission mode | `MISSION` | `AUTO` |
+| MAVLink shell | NSH over `SERIAL_CONTROL` | none |
+| On-board log | ULog (`.ulg`) | DataFlash (`.bin`) |
+
+Parameter **names** are not in that module: they belong to the page that
+renders them. Each setup page has a schema per stack —
+`safety_config`/`ardupilot_safety`, `tuning_config`/`ardupilot_tuning`,
+`rc_config`/`ardupilot_rc`, `motor_config`/`ardupilot_motors` — with the same
+output shape, so the frontend cannot tell which stack built a page. The HTTP
+layer picks one from the connected stack; PX4's are the default, including for
+a stack neither dialect recognises.
+
+A capability that a stack lacks is **reported, not hidden**: `GET
+/api/mavlink/capabilities` carries the flags, and a control that cannot work is
+greyed with the reason on it. "Not available on this autopilot" is an answer an
+operator can act on; a missing button is not.
 
 ## Process lifecycle & cleanup (mandatory)
 

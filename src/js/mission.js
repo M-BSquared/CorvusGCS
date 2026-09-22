@@ -249,6 +249,9 @@ Corvus.mission = (function () {
 
   const EARTH_RADIUS_M = 6371008.8;
   const DEFAULT_CENTER = [11.640969, 48.080217];   // same fallback as the Home map
+  // Only reached when there is no Home map to take a view from — see
+  // openingView. Close enough to place a takeoff point on a building.
+  const FALLBACK_ZOOM = 15;
   // How many points the terrain profile is sampled at. Enough to show a ridge
   // between two waypoints, few enough that one plan is a handful of tiles.
   const PROFILE_SAMPLES = 240;
@@ -301,8 +304,18 @@ Corvus.mission = (function () {
   let groundToken = 0;     // guards a slow sample pass against a newer edit
   let homeElevation = null;
 
+  // The built page, kept between visits — see render/suspend/resume below.
+  // Null before the first entry and after a teardown; anything else means the
+  // page is only put down, not gone.
+  let pageEl = null;
+  let mapWrapEl = null;
+
   let profileGeom = null;  // pixel geometry of the last profile draw
   let dragState = null;
+  // The list row being carried to a new place in the plan, or null. Nothing
+  // to do with dragState above, which is the profile chart's altitude drag:
+  // the two can never be in flight at once and they share nothing.
+  let rowDrag = null;
   let resizeHandler = null;
   let toolsObserver = null;
   let themeUnsub = null;
@@ -310,6 +323,19 @@ Corvus.mission = (function () {
   // Cached rather than read per draw: this decides what the panel and the map
   // show, and telemetry arrives many times a second.
   let hovers = false;
+  // True while a move the OPERATOR started is in flight, so only those are
+  // reported back as the view this map was left in.
+  let aiming = false;
+  // True while the status line is the "your plan is somewhere else" notice,
+  // so a pan back onto the plan can take it down again without clearing a
+  // message somebody else put there.
+  let offscreenNotice = false;
+  // Place search (see "Place search" below) — a Corvus.mapSearch handle, not
+  // the box's own state: that lives in the component both maps share.
+  let searchBox = null;
+  // True whenever the page is not the one on screen — suspended as well as
+  // torn down. Every async continuation in this module checks it before
+  // writing into the DOM or the map, and both exits set it for that reason.
   let destroyed = false;
 
   // =====================================================================
@@ -591,8 +617,18 @@ Corvus.mission = (function () {
 
   function moveItem(id, delta) {
     const index = items.findIndex((item) => item.id === id);
-    const target = index + delta;
-    if (index < 0 || target < 0 || target >= items.length) return;
+    if (index < 0) return;
+    moveItemTo(id, index + delta);
+  }
+
+  /** Lift one item out of the list and drop it at *target*, an index in the
+   *  list as it will be afterwards. A target off either end is refused rather
+   *  than clamped: both callers already know how long the list is, and a
+   *  silent clamp would turn a chevron at the end into a move. */
+  function moveItemTo(id, target) {
+    const index = items.findIndex((item) => item.id === id);
+    if (index < 0 || target === index) return;
+    if (target < 0 || target >= items.length) return;
     const [moved] = items.splice(index, 1);
     items.splice(target, 0, moved);
   }
@@ -612,6 +648,10 @@ Corvus.mission = (function () {
    *  the operator may have left the page and taken the line with them. */
   function say(text, kind) {
     if (destroyed || !status) return;
+    // Whatever is on the line now, it is no longer the "your plan is over
+    // there" notice — so the pan that would clear that notice must not clear
+    // somebody else's message instead.
+    offscreenNotice = false;
     if (text == null) status.hide();
     else status.show(text, kind);
   }
@@ -626,16 +666,39 @@ Corvus.mission = (function () {
   // Rendering — the page
   // =====================================================================
 
+  /* Entering the page.
+
+     The planner is built ONCE and then kept. Leaving it SUSPENDS the page —
+     its listeners, its subscriptions, its hold on the offline-map dialog —
+     and coming back re-attaches the very same element, with the same MapLibre
+     map, the same loaded style, the same tiles in it and the same decoded DEM
+     behind the altitude profile.
+
+     It used to be built and destroyed on every visit, and that cost most of a
+     second of blank map each time: a GL context, a style, a dozen tile
+     requests and a re-sampled terrain, all to show ground the operator was
+     already looking at on the Home tab. The planner is a page you flip to and
+     from constantly while drawing a route, so that was paid over and over.
+
+     What resume() has to do instead is catch up with everything that could
+     have changed while the page was away — its size, the base layer, and
+     where the operator has since aimed the other map. */
   function render(container) {
-    // Idempotent entry, like Corvus.setup: a left-nav re-entry must not leave
-    // the previous map, markers and chart alive behind the new ones.
+    if (pageEl && map) { resume(container); return; }
+    // Not a resume. Anything an earlier, half-built page left behind goes
+    // before a new one is put up, the same idempotent entry Corvus.setup has.
     teardown();
+    build(container);
+  }
+
+  function build(container) {
     destroyed = false;
 
     const page = document.createElement("div");
     page.className = "mission-page";
 
     const mapWrap = document.createElement("div");
+    mapWrapEl = mapWrap;
     mapWrap.className = "mission-map-wrap";
     mapEl = document.createElement("div");
     mapEl.className = "mission-map";
@@ -678,14 +741,60 @@ Corvus.mission = (function () {
     profileWrap.append(profileHead, profileEl);
     page.appendChild(profileWrap);
 
+    pageEl = page;
     container.appendChild(page);
 
     buildTools();
     buildMapControls(controls);
     buildCornerControls(mapWrap);
+    buildSearch(mapWrap);
     initMap();
     wireProfileDragging();
+    arm();
 
+    loadLastPlan();
+    refreshAll();
+    Corvus.ui.refreshIcons();
+  }
+
+  /** Coming back to a page that was only put down.
+   *
+   *  Everything expensive is still here, so this is only the catching up: the
+   *  container had no size while the page was off screen, the base layer is
+   *  chosen for the whole app on the Home map, and the two maps are never
+   *  maps of two different places. A jump to a view this map is already at
+   *  costs nothing and loads no tile, which is the whole point of keeping it.
+   */
+  function resume(container) {
+    container.appendChild(pageEl);
+    destroyed = false;
+    arm();
+    map.resize();
+    fitTools();
+    resizeProfile();
+    const layer = baseLayerId();
+    if (layer !== activeLayerId) applyBaseLayer(layer);
+    const opening = openingView();
+    if (opening && Array.isArray(opening.center)) {
+      map.jumpTo({
+        center: opening.center,
+        zoom: opening.zoom,
+        bearing: opening.bearing || 0,
+      });
+    }
+    // The plan is whatever the operator left on screen, unsaved edits and
+    // all. loadLastPlan() is a first-entry thing: re-reading yesterday's file
+    // here would throw away the route they walked away from for ten seconds.
+    refreshAll();
+    notePlanOffscreen();
+    Corvus.ui.refreshIcons();
+  }
+
+  /** Wire the page to the things outside it: the window's size, the map
+   *  column's size, the theme, the airframe and the keyboard. Called on every
+   *  entry and undone by disarm() on every exit — a page nobody is looking at
+   *  must not be redrawing itself behind the one that is. */
+  function arm() {
     resizeHandler = () => {
       if (map) map.resize();
       fitTools();
@@ -695,12 +804,14 @@ Corvus.mission = (function () {
     // The map column changes width without the window doing anything — the
     // right panel opens, the left rail collapses — and the bar has to answer
     // to the box it is in rather than to the window it is in.
-    if (typeof ResizeObserver === "function") {
+    if (typeof ResizeObserver === "function" && mapWrapEl) {
       toolsObserver = new ResizeObserver(() => fitTools());
-      toolsObserver.observe(mapWrap);
+      toolsObserver.observe(mapWrapEl);
     }
     // Plotly holds resolved colour strings, so a theme switch has to redraw
     // the chart — the same contract every other chart in the app is under.
+    // A theme changed while the page was suspended is caught by the redraw
+    // resume() does anyway.
     themeUnsub = Corvus.ui.onThemeChange(() => drawProfile());
     // The airframe decides whether a loiter radius is a thing that gets flown,
     // and it can arrive, change or go away while the page is open. Only a
@@ -714,39 +825,87 @@ Corvus.mission = (function () {
         refreshAll();
       });
     }
-
-    loadLastPlan();
-    refreshAll();
-    Corvus.ui.refreshIcons();
+    // On the DOCUMENT so Escape leaves a placement tool from anywhere on the
+    // page — which is also why it cannot stay on while another page is up.
+    document.addEventListener("keydown", onKey, true);
   }
 
-  function teardown() {
-    destroyed = true;
+  /** arm()'s mirror. Shared by suspend and teardown. */
+  function disarm() {
     if (resizeHandler) window.removeEventListener("resize", resizeHandler);
     resizeHandler = null;
     if (toolsObserver) { toolsObserver.disconnect(); toolsObserver = null; }
-    // Registered on the DOCUMENT so Escape leaves a placement tool from
-    // anywhere on the page; it has to come off with the page.
-    document.removeEventListener("keydown", onKey, true);
-    if (layerMenuHandle) { layerMenuHandle.close(false); layerMenuHandle = null; }
-    controlsEl = null;
-    tilesTriggerEl = null;
-    clearPlanEl = null;
-    pendingLayer = null;
     if (typeof themeUnsub === "function") themeUnsub();
     themeUnsub = null;
     if (typeof vehicleUnsub === "function") vehicleUnsub();
     vehicleUnsub = null;
+    document.removeEventListener("keydown", onKey, true);
+  }
+
+  /** Which base layer the app is on. Chosen once, on the Home map, for both
+   *  of them. */
+  function baseLayerId() {
+    return (Corvus.map && typeof Corvus.map.getBaseLayer === "function")
+      ? (Corvus.map.getBaseLayer() || "satellite") : "satellite";
+  }
+
+  /** Tell Plotly the chart has a size again: its own responsive handler had
+   *  nothing to measure while the page was off screen. Before the redraw,
+   *  never after — the geometry the altitude drag hit-tests against is read
+   *  back out of the drawn chart. */
+  function resizeProfile() {
+    if (!profileEl || !window.Plotly || !window.Plotly.Plots) return;
+    try { window.Plotly.Plots.resize(profileEl); } catch (_error) { /* never drawn */ }
+  }
+
+  /** Leaving the page.
+   *
+   *  The DOM, the map, the markers and the decoded terrain all stay; what goes
+   *  is everything that would go on acting on a page the operator is not
+   *  looking at, and everything transient that must not come back mid-gesture
+   *  when they return. resume() puts it all back. */
+  function suspend() {
+    destroyed = true;
+    disarm();
+    if (layerMenuHandle) { layerMenuHandle.close(false); layerMenuHandle = null; }
+    // Two gestures that the page is being taken out from under.
     endDrag();
+    endRowDrag();
+    // The box registers a capture listener on the DOCUMENT while it is open,
+    // for the same reason the key handler in disarm() has to come off.
+    if (searchBox && typeof searchBox.setOpen === "function") searchBox.setOpen(false);
+    aiming = false;
+    offscreenNotice = false;
+    // A terrain sample that lands after this belongs to the page as it was.
+    groundToken += 1;
+    // The dialog frames and downloads whatever map is on screen, and that is
+    // the Home map again.
+    if (Corvus.tiles && typeof Corvus.tiles.useMap === "function") Corvus.tiles.useMap(null);
+  }
+
+  /** Destroying the page for good: the GL context, the chart, the markers and
+   *  the cached terrain all go with it.
+   *
+   *  A nav-away is a suspend, not this. What is left for teardown is the page
+   *  leaving the app altogether — Settings turning the planner off — and the
+   *  rebuild after a half-built entry. It starts by suspending, so there is
+   *  one list of what has to be let go of and not two. */
+  function teardown() {
+    suspend();
+    pendingLayer = null;
+    controlsEl = null;
+    tilesTriggerEl = null;
+    clearPlanEl = null;
+    // The box owns its pending lookup, its pin and a capture listener on the
+    // DOCUMENT; suspend only closes it, and a page that is not coming back
+    // has no use for the rest.
+    if (searchBox) { searchBox.destroy(); searchBox = null; }
     markers.forEach((marker) => marker.remove());
     markers = [];
     if (homeMarker) { homeMarker.remove(); homeMarker = null; }
     if (radiusHandle) { radiusHandle.remove(); radiusHandle = null; }
     regionMarkers.forEach((marker) => marker.remove());
     regionMarkers = [];
-    // The dialog holds an adapter built around a map that is about to be
-    // removed; the Home map is the one left standing.
-    if (Corvus.tiles && typeof Corvus.tiles.useMap === "function") Corvus.tiles.useMap(null);
     if (profileEl && window.Plotly && typeof window.Plotly.purge === "function") {
       try { window.Plotly.purge(profileEl); } catch (_error) { /* never drawn */ }
     }
@@ -761,7 +920,9 @@ Corvus.mission = (function () {
     profileGeom = null;
     terrainTiles = new Map();
     ground = null;
-    groundToken += 1;
+    if (pageEl && pageEl.remove) pageEl.remove();
+    pageEl = null;
+    mapWrapEl = null;
     mapEl = profileEl = listEl = detailEl = summaryEl = issuesEl = toolsEl = null;
     status = null;
   }
@@ -828,15 +989,12 @@ Corvus.mission = (function () {
    */
   function fitTools() {
     if (!toolsEl || !toolsEl.parentNode) return;
-    // Cleared before measuring: a bar that has already been narrowed measures
-    // narrow, and would never widen again once it had shrunk once.
-    toolsEl.classList.remove("is-tight", "is-compact");
-    const room = toolsEl.parentNode.clientWidth;
-    if (!(room > 0) || toolsEl.scrollWidth <= room) return;
-    // Give up the shared button width first, the captions only if that is
-    // still not enough.
-    toolsEl.classList.add("is-tight");
-    if (toolsEl.scrollWidth > room) toolsEl.classList.add("is-compact");
+    // Corvus.ui.fitBar, which the Home flight bar is fitted by too: the two
+    // bars are the same control set on two screens and they have to narrow
+    // the same way, which they cannot be relied on to do from two copies of
+    // the rule. The room is .mission-topleft's, not the bar's own — this bar
+    // has no width cap of its own because its parent IS the cap.
+    Corvus.ui.fitBar(toolsEl, toolsEl.parentNode.clientWidth);
   }
 
   function setTool(next) {
@@ -1097,18 +1255,27 @@ Corvus.mission = (function () {
   // =====================================================================
 
   function initMap() {
-    const layer = (Corvus.map && typeof Corvus.map.getBaseLayer === "function")
-      ? (Corvus.map.getBaseLayer() || "satellite") : "satellite";
+    const layer = baseLayerId();
     activeLayerId = layer;
+    const opening = openingView();
     map = new maplibregl.Map({
       container: mapEl,
-      center: initialCentre(),
-      zoom: 15,
+      center: opening.center,
+      zoom: opening.zoom,
+      bearing: opening.bearing || 0,
       style: rasterStyle(layer, layerSpec(layer)),
       attributionControl: false,
       keyboard: false,
     });
-    map.addControl(new maplibregl.AttributionControl(), "bottom-left");
+    // The same credit the Home map shows, on the same argument — map.js owns
+    // it (see ATTRIBUTION_OPTIONS there). The fallback is not a second copy of
+    // that argument, only the empty list that keeps MapLibre's default credit
+    // out of a build where map.js did not load.
+    map.addControl(new maplibregl.AttributionControl(
+      (Corvus.map && typeof Corvus.map.attributionOptions === "function")
+        ? Corvus.map.attributionOptions()
+        : { compact: true, customAttribution: [] },
+    ), "bottom-left");
 
     map.on("load", () => {
       if (destroyed) return;
@@ -1119,7 +1286,27 @@ Corvus.mission = (function () {
       setRegions(regions);
       loadRegions();
       drawMap();
-      if (items.length || home) fitMission();
+      // NOT a fit any more. The map opens on the view the operator last
+      // aimed (openingView), and framing the plan over the top of that would
+      // undo it — which is how re-entering the planner used to throw away
+      // where you had been looking, and how it came to be showing different
+      // ground from the Home map. A plan that is nowhere on screen is said
+      // out loud instead.
+      notePlanOffscreen();
+    });
+    // A move the OPERATOR started is them choosing where this map looks, and
+    // that choice is what the planner reopens on. Keyed on the move carrying
+    // an originalEvent, exactly as the Home map's follow-break is: our own
+    // easeTo/fitBounds and the rail's zoom buttons carry none, so a fit to
+    // the plan never counts as an aim. A place the operator SEARCHED for
+    // does — it is also programmatic, and so it is reported by the search
+    // box's onGo rather than seen here.
+    map.on("movestart", (event) => { aiming = !!(event && event.originalEvent); });
+    map.on("moveend", () => {
+      clearOffscreenNotice();
+      if (!aiming) return;
+      aiming = false;
+      noteAim();
     });
     map.on("zoom", applyPointScale);
     map.on("click", onMapClick);
@@ -1150,8 +1337,6 @@ Corvus.mission = (function () {
       // bootstrap maxzoom and attribution can be re-applied with its real ones.
       applyBaseLayer(activeLayerId);
     }).catch(() => {});
-
-    document.addEventListener("keydown", onKey, true);
   }
 
   function onKey(event) {
@@ -1160,6 +1345,21 @@ Corvus.mission = (function () {
     // registered on the document AFTER this one and in the same phase, so
     // without this guard Escape would disarm the tool behind it as well.
     if (document.querySelector(".modal-overlay")) return;
+    // A row in the air owns Escape before any tool does: letting go of it is
+    // the only way out of a drag that leaves the plan as it was.
+    if (event.key === "Escape" && rowDrag) {
+      event.preventDefault();
+      onRowPointerCancel();
+      return;
+    }
+    if (event.key === "Escape" && searchBox && searchBox.isOpen()) {
+      // The search box owns Escape while it is open — the input's own handler
+      // takes it when the caret is in the field, and this is the case where
+      // the operator opened the box and then clicked the map.
+      event.preventDefault();
+      searchBox.setOpen(false);
+      return;
+    }
     if (event.key === "Escape" && tool !== "select") {
       event.preventDefault();
       setTool("select");
@@ -1184,15 +1384,38 @@ Corvus.mission = (function () {
       el.isContentEditable === true;
   }
 
-  /** Where the map opens: the aircraft if it has a fix, else the operating
-   *  site — never a saved plan's home, which is applied by fitMission once
-   *  the style is up. */
-  function initialCentre() {
+  /** Where this map opens.
+   *
+   *  The Home map owns that answer (see "The view the two maps share" in
+   *  map.js): the planner opens on the view the operator last aimed, on
+   *  either map, so the two screens are never maps of two different places.
+   *  What is left here is only the fallback for when there is no Home map to
+   *  ask — a test, or a build where map.js failed to load — and it is the old
+   *  rule: the aircraft if it has a fix, else the operating site.
+   */
+  function openingView() {
+    const shared = (Corvus.map && typeof Corvus.map.missionOpenView === "function")
+      ? Corvus.map.missionOpenView() : null;
+    if (shared && Array.isArray(shared.center)) return shared;
     const state = Corvus.telemetry && Corvus.telemetry.getState();
-    if (state && state.position && state.position[0] && state.position[1]) {
-      return [state.position[0], state.position[1]];
-    }
-    return DEFAULT_CENTER;
+    const centre = (state && state.position && state.position[0] && state.position[1])
+      ? [state.position[0], state.position[1]]
+      : DEFAULT_CENTER;
+    return { center: centre, zoom: FALLBACK_ZOOM, bearing: 0 };
+  }
+
+  /** Tell the Home map where the operator left this one, so leaving the page
+   *  and coming back returns to it. Only ever called for a move the operator
+   *  started — see the movestart handler in initMap. */
+  function noteAim() {
+    if (!map || !Corvus.map || typeof Corvus.map.noteMissionView !== "function") return;
+    const centre = map.getCenter();
+    if (!centre) return;
+    Corvus.map.noteMissionView({
+      center: [centre.lng, centre.lat],
+      zoom: map.getZoom(),
+      bearing: map.getBearing(),
+    });
   }
 
   /** A one-raster style pointed at the backend tile proxy, so this map is as
@@ -1711,15 +1934,15 @@ Corvus.mission = (function () {
     orbitSource.setData({ type: "FeatureCollection", features });
   }
 
-  /* Frame the whole plan, orbits included.
+  /** The plan's bounding box as {w,s,e,n}, or null when nothing is drawn.
+
      An orbit is a circle, not a point: a box drawn around its CENTRE leaves
      the ring hanging off the edge of the view, which is the part of it the
      operator actually drew. So each station is widened by its own radius
      before the box is taken. */
-  function fitMission() {
-    if (!map) return;
+  function planBounds() {
     const points = stations(items, home);
-    if (!points.length) return;
+    if (!points.length) return null;
     const byId = {};
     items.forEach((item) => { byId[item.id] = item; });
 
@@ -1734,14 +1957,72 @@ Corvus.mission = (function () {
       south = Math.min(south, station.lat - dLat);
       north = Math.max(north, station.lat + dLat);
     });
+    if (![west, south, east, north].every(isFinite)) return null;
+    return { w: west, s: south, e: east, n: north };
+  }
 
+  /** Do two {w,s,e,n} boxes share any ground at all? */
+  function boxesOverlap(a, b) {
+    if (!a || !b) return false;
+    return a.w <= b.e && b.w <= a.e && a.s <= b.n && b.s <= a.n;
+  }
+
+  /* Frame the whole plan. */
+  function fitMission() {
+    if (!map) return;
+    const box = planBounds();
+    if (!box) return;
     // One point with no radius is a box of zero size, which fitBounds answers
     // with its maximum zoom. Centre on it instead.
-    if (east - west < 1e-9 && north - south < 1e-9) {
-      map.easeTo({ center: [west, south], zoom: 16, duration: 500 });
+    if (box.e - box.w < 1e-9 && box.n - box.s < 1e-9) {
+      map.easeTo({ center: [box.w, box.s], zoom: 16, duration: 500 });
       return;
     }
-    map.fitBounds([[west, south], [east, north]], { padding: 80, duration: 600, maxZoom: 18 });
+    map.fitBounds([[box.w, box.s], [box.e, box.n]],
+                  { padding: 80, duration: 600, maxZoom: 18 });
+  }
+
+  /** Say so when the plan is nowhere on screen — and say it, never fix it.
+
+     This is the one case the shared view gets wrong on its own: a mission
+     drawn at the last site, reopened at this one, sits entirely outside the
+     view the map was handed. The old behaviour was to frame it, which is how
+     the planner ended up showing somewhere else from the map next door
+     — the exact thing the shared view exists to stop. So the camera is left
+     alone and the sidebar points at the button that moves it, which keeps
+     every camera move in this planner something the operator asked for. */
+  function notePlanOffscreen() {
+    if (!map || !mapReady) return;
+    const plan = planBounds();
+    if (!plan) return;
+    let view = null;
+    try {
+      const bounds = map.getBounds();
+      view = {
+        w: bounds.getWest(), s: bounds.getSouth(),
+        e: bounds.getEast(), n: bounds.getNorth(),
+      };
+    } catch (_error) { return; }   // no canvas yet; nothing to compare against
+    if (boxesOverlap(plan, view)) return;
+    say(`${planName} is outside this view — use Fit to frame it.`, "warn");
+    offscreenNotice = true;
+  }
+
+  /** Take the notice back down once the plan is on screen again, however it
+   *  got there. A status line that still says "outside this view" while the
+   *  route is in the middle of the map is worse than no line at all. */
+  function clearOffscreenNotice() {
+    if (!offscreenNotice || !map || !mapReady) return;
+    const plan = planBounds();
+    let view = null;
+    try {
+      const bounds = map.getBounds();
+      view = {
+        w: bounds.getWest(), s: bounds.getSouth(),
+        e: bounds.getEast(), n: bounds.getNorth(),
+      };
+    } catch (_error) { return; }
+    if (!plan || boxesOverlap(plan, view)) say(null);
   }
 
   function goToVehicle() {
@@ -1751,6 +2032,34 @@ Corvus.mission = (function () {
       return;
     }
     map.easeTo({ center: [state.position[0], state.position[1]], zoom: 16, duration: 600 });
+  }
+
+  // =====================================================================
+  // Place search
+  //
+  // Corvus.mapSearch (js/map-search.js), the same control the Home map
+  // mounts. It was 450 lines here and nowhere else, which made "fly to this
+  // place by name" a thing the planner could do and the map next door could
+  // not — so it moved out whole, and what is left is the two answers this
+  // page owes it: which map, and which downloaded areas.
+  //
+  // onGo is the one thing the two hosts answer differently, and only because
+  // the Home map has a follow mode to break. Here a chosen place is simply
+  // the operator aiming this map, which is what the planner reopens on: they
+  // typed where they wanted to be looking, more deliberately than the wheel
+  // nudge that already counts as an aim.
+  // =====================================================================
+
+  function buildSearch(mapWrap) {
+    searchBox = Corvus.mapSearch.create({
+      container: mapWrap,
+      map: () => map,
+      regions: () => regions,
+      // On moveend, not now: the fly-to has only just been STARTED and the
+      // camera is still over the ground the operator is leaving, so reading
+      // the centre here would record the view they searched their way out of.
+      onGo: () => { if (map) map.once("moveend", noteAim); },
+    });
   }
 
   // =====================================================================
@@ -1811,6 +2120,10 @@ Corvus.mission = (function () {
 
   function renderList() {
     if (!listEl) return;
+    // A rebuild takes the grabbed row out of the DOM from under the pointer.
+    // Nothing is committed until the drop, so the drag is simply abandoned
+    // and the list comes back in the order the plan is actually in.
+    endRowDrag();
     Corvus.ui.clear(listEl);
     if (!items.length) {
       listEl.appendChild(Corvus.ui.empty("Nothing planned yet."));
@@ -1829,6 +2142,9 @@ Corvus.mission = (function () {
       const index = document.createElement("span");
       index.className = "mission-row-index";
       index.textContent = spec.position ? String(number) : "•";
+      // The one part of the row a finger can grab (see the reordering
+      // section below), so it is the one part that says the row moves.
+      index.title = "Drag to reorder";
       const icon = Corvus.ui.icon(spec.icon, 13);
       icon.classList.add("mission-row-icon");
       const label = document.createElement("span");
@@ -1856,6 +2172,7 @@ Corvus.mission = (function () {
       row.appendChild(tools);
 
       row.addEventListener("click", () => { selectedId = item.id; refreshSelection(); });
+      row.addEventListener("pointerdown", (event) => armRowDrag(event, item.id, row));
       row.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
@@ -1895,6 +2212,242 @@ Corvus.mission = (function () {
     const n = Number(value) || 0;
     return Number.isInteger(n) ? String(n) : n.toFixed(1);
   }
+
+  // ---- dragging a row to a new place in the plan -----------------------
+
+  /* The order of the list IS the order it is flown, and the only way to
+     change it was the pair of chevrons on the row: one step per click, four
+     clicks to move a waypoint past three others, and no sight of where it is
+     going while you do it.
+
+     Pointer events rather than HTML5 drag-and-drop. That API cannot be driven
+     by a finger at all, its drag image is the browser's rather than the row's,
+     and its drop target is whatever happens to be under the cursor rather
+     than a position between two rows.
+
+     Nothing reaches `items` until the pointer is let go. What moves during
+     the drag is the DOM: the grabbed row is re-inserted between its
+     neighbours as it passes them, and carried under the cursor by a
+     transform — the one way of moving it that the layout the next slot is
+     measured against does not see. So a rebuild of the list at any moment
+     (an airframe change, an opened file) costs nothing but the gesture, and
+     a cancel is a plain renderList(). */
+
+  // How far the pointer travels before a press stops being the click that
+  // selects the row and becomes a drag.
+  const ROW_DRAG_SLOP_PX = 4;
+  // The band at each end of the list that scrolls it while a drag is held
+  // against it, and how fast: pixels of scroll per frame per pixel in.
+  const ROW_EDGE_PX = 24;
+  const ROW_EDGE_SPEED = 0.45;
+
+  /**
+   * Which slot a row dropped with its middle at *centre* lands in.
+   *
+   * *others* is every OTHER row, in layout order, as `{top, height}` boxes in
+   * the same coordinates as *centre*; the answer is how many of them the
+   * dropped row now belongs after, which is its index in the list it is being
+   * put back into.
+   *
+   * Pure, and the half of the drag that can be wrong without anything
+   * throwing: a row that lands one slot off is a plan flown in the wrong
+   * order, and it looks exactly like a plan flown in the right one.
+   */
+  function dropSlot(others, centre) {
+    let slot = 0;
+    others.forEach((box) => { if (box.top + box.height / 2 < centre) slot += 1; });
+    return slot;
+  }
+
+  /** A press on a row. Arms a drag without starting one: a press that never
+   *  travels is a click, and the click is how a row gets selected. */
+  function armRowDrag(event, id, row) {
+    if (rowDrag) {
+      // A second pointer on the list while a row is already in the air. The
+      // first one owns the gesture: the DOM is mid-reorder and `items` is
+      // not, so a second drag would read its drop slot off a list that no
+      // longer says what the plan says.
+      if (rowDrag.active) return;
+      // An armed press whose pointer left the list before it travelled far
+      // enough to be a drag. Nothing was touched, so it is simply replaced.
+      endRowDrag();
+    }
+    if (items.length < 2) return;
+    if (event.button != null && event.button !== 0) return;
+    // The per-row buttons are targets in their own right; a press on one is
+    // a press on it, not a grab of the row underneath.
+    if (closestClass(event.target, ".mission-row-tools")) return;
+    // A finger dragged down the list scrolls it, so on a touch screen the
+    // index cell is the only handle — it is the one part of the row the
+    // stylesheet takes out of the browser's panning. Without that rule a plan
+    // longer than the panel could be reordered but never read.
+    if (event.pointerType === "touch" && !closestClass(event.target, ".mission-row-index")) return;
+    rowDrag = {
+      id, row,
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      clientY: event.clientY,
+      grab: 0,      // where in the row it was taken hold of
+      shift: 0,     // the transform currently carrying it
+      raf: 0,
+      active: false,
+    };
+    listEl.addEventListener("pointermove", onRowPointerMove);
+    listEl.addEventListener("pointerup", onRowPointerUp);
+    listEl.addEventListener("pointercancel", onRowPointerCancel);
+  }
+
+  /** `Element.closest`, minus the assumption that there is an element. */
+  function closestClass(node, selector) {
+    const el = node && node.nodeType === 1 ? node : null;
+    return !!(el && typeof el.closest === "function" && el.closest(selector));
+  }
+
+  function onRowPointerMove(event) {
+    if (!rowDrag || event.pointerId !== rowDrag.pointerId) return;
+    rowDrag.clientY = event.clientY;
+    if (!rowDrag.active) {
+      if (Math.abs(event.clientY - rowDrag.startY) < ROW_DRAG_SLOP_PX) return;
+      beginRowDrag();
+    }
+    // Otherwise the gesture is also a text selection of every row it crosses.
+    event.preventDefault();
+    placeRow();
+  }
+
+  /** The press has travelled: it is a drag. */
+  function beginRowDrag() {
+    const drag = rowDrag;
+    drag.active = true;
+    drag.grab = drag.startY - drag.row.getBoundingClientRect().top;
+    // Captured on the LIST rather than the row. The row is re-inserted
+    // between its neighbours as the drag goes on, and captured only once the
+    // press is known to be a drag: a capture taken at pointerdown would
+    // retarget the click that a plain press ends in, and selecting a row by
+    // clicking it would quietly stop working.
+    try { listEl.setPointerCapture(drag.pointerId); } catch (_error) { /* older browsers */ }
+    listEl.classList.add("is-reordering");
+    drag.row.classList.add("is-dragging");
+    drag.raf = window.requestAnimationFrame(rowEdgeScroll);
+  }
+
+  /** Put the grabbed row where the pointer has it, and let the rows it has
+   *  passed close up behind it.
+   *
+   *  Measured off the live layout on every sample rather than from a geometry
+   *  taken at the start: the list scrolls under the drag and the other rows
+   *  move as the slot changes, so anything captured up front is wrong after
+   *  the first of those. The row's own offset is re-derived the same way:
+   *  its rect carries the transform, so the transform is added back to
+   *  whatever is needed to reach the pointer rather than accumulated blind.
+   */
+  function placeRow() {
+    const drag = rowDrag;
+    const row = drag.row;
+    const rows = Array.prototype.slice.call(listEl.children);
+    const at = rows.indexOf(row);
+    if (at < 0) { endRowDrag(); return; }
+    const box = listEl.getBoundingClientRect();
+    const height = row.offsetHeight;
+    // The row stays inside the panel however far past it the pointer goes:
+    // going further is what scrolls the list, below.
+    const wanted = clampNumber(drag.clientY - drag.grab, box.top, box.bottom - height, box.top);
+    const others = [];
+    rows.forEach((el) => {
+      if (el === row) return;
+      const rect = el.getBoundingClientRect();
+      others.push({ el, top: rect.top, height: rect.height });
+    });
+    const slot = dropSlot(others, wanted + height / 2);
+    if (slot !== at) {
+      listEl.insertBefore(row, others[slot] ? others[slot].el : null);
+      renumberRows();
+    }
+    drag.shift += wanted - row.getBoundingClientRect().top;
+    row.style.transform = `translateY(${Math.round(drag.shift)}px)`;
+  }
+
+  /** Renumber the rows in place. The number is a row's position among the
+   *  items that have one, so a row dragged past a waypoint has changed both
+   *  — and the cheap way of saying so, renderList(), would take the grabbed
+   *  row out from under the pointer. */
+  function renumberRows() {
+    let number = 0;
+    Array.prototype.forEach.call(listEl.children, (row) => {
+      const spec = TYPES[row.dataset.kind];
+      const placed = !!(spec && spec.position);
+      if (placed) number += 1;
+      const cell = row.querySelector(".mission-row-index");
+      if (cell) cell.textContent = placed ? String(number) : "•";
+    });
+  }
+
+  /** Scroll the list while the drag is held against one of its ends. On a
+   *  frame timer of its own rather than on pointermove, because a pointer
+   *  parked in the band sends no more samples and the list has to keep
+   *  coming to it. */
+  function rowEdgeScroll() {
+    if (!rowDrag || !rowDrag.active) return;
+    const box = listEl.getBoundingClientRect();
+    const above = (box.top + ROW_EDGE_PX) - rowDrag.clientY;
+    const below = rowDrag.clientY - (box.bottom - ROW_EDGE_PX);
+    let step = 0;
+    if (above > 0) step = -above * ROW_EDGE_SPEED;
+    else if (below > 0) step = below * ROW_EDGE_SPEED;
+    if (step) {
+      const was = listEl.scrollTop;
+      listEl.scrollTop = was + step;
+      // Only if it actually moved: at either end of the list it does not, and
+      // replacing the row costs a layout each frame for nothing.
+      if (listEl.scrollTop !== was) placeRow();
+    }
+    if (rowDrag) rowDrag.raf = window.requestAnimationFrame(rowEdgeScroll);
+  }
+
+  function onRowPointerUp(event) {
+    if (!rowDrag || event.pointerId !== rowDrag.pointerId) return;
+    const drag = rowDrag;
+    const slot = drag.active
+      ? Array.prototype.indexOf.call(listEl.children, drag.row) : -1;
+    endRowDrag();
+    // A press that never travelled. Nothing moved, and the row's own click
+    // handler is about to select it as it always has.
+    if (slot < 0) return;
+    moveItemTo(drag.id, slot);
+    // The item just moved is the one worth looking at, on the map and in the
+    // panel under the list.
+    selectedId = drag.id;
+    refreshAll();
+  }
+
+  /** The drag is off: a cancelled pointer, or Escape. Nothing was committed,
+   *  so the plan's own order is what comes back. */
+  function onRowPointerCancel() {
+    if (!rowDrag) return;
+    endRowDrag();
+    renderList();
+    Corvus.ui.refreshIcons();
+  }
+
+  /** Take the drag apart, committing nothing. The drop, the cancel and every
+   *  rebuild of the list come through here; only the drop goes on to move the
+   *  item. */
+  function endRowDrag() {
+    const drag = rowDrag;
+    if (!drag) return;
+    rowDrag = null;
+    if (drag.raf) window.cancelAnimationFrame(drag.raf);
+    if (listEl) {
+      try { listEl.releasePointerCapture(drag.pointerId); } catch (_error) { /* never captured */ }
+      listEl.removeEventListener("pointermove", onRowPointerMove);
+      listEl.removeEventListener("pointerup", onRowPointerUp);
+      listEl.removeEventListener("pointercancel", onRowPointerCancel);
+      listEl.classList.remove("is-reordering");
+    }
+    drag.row.classList.remove("is-dragging");
+    drag.row.style.transform = "";
+  }
+
 
   function renderDetail() {
     if (!detailEl) return;
@@ -2300,7 +2853,18 @@ Corvus.mission = (function () {
    * exact.
    */
   function drawProfile() {
-    if (!profileEl || !window.Plotly || destroyed) return;
+    if (!profileEl || destroyed) return;
+    // Plotly is 1.0 MB and is fetched on first use (js/lazy.js). Come back
+    // through this same function once it is here; `destroyed` is re-checked
+    // because the operator can leave the page while it loads, and this is the
+    // one chart that can be asked to draw on every plan edit.
+    if (!window.Plotly) {
+      if (!Corvus.lazy || typeof Corvus.lazy.plotly !== "function") return;
+      Corvus.lazy.plotly()
+        .then(() => { if (!destroyed && profileEl) drawProfile(); })
+        .catch((err) => console.error("altitude profile unavailable:", err));
+      return;
+    }
     const points = stations(items, home);
     const theme = Corvus.ui.plotlyTheme();
     const colors = Corvus.ui.chartColors();
@@ -2810,7 +3374,12 @@ Corvus.mission = (function () {
       fromPlan(res.plan);
       rememberLastPlan(res.name || name);
       refreshAll();
-      fitMission();
+      // An Open the operator clicked is them asking for THAT mission, so it
+      // is framed. The page reopening yesterday's plan by itself asked for
+      // nothing and must not move a view the operator chose — it says where
+      // the plan is instead.
+      if (quiet) notePlanOffscreen();
+      else fitMission();
       if (!quiet) say(`Opened ${res.name || name}.`, "ok");
     }).catch((error) => {
       if (!quiet) say(error.message || "Could not open that mission.", "err");
@@ -2882,12 +3451,19 @@ Corvus.mission = (function () {
 
   return {
     render,
+    // Leaving the page for another one. Keeps the map; see render() above for
+    // why. teardown() is the destroyer, for the page leaving the app.
+    suspend,
     teardown,
     // Read by Settings and by tests; never a second copy of the state.
     getPlan: toPlan,
     setPlan: (plan) => { fromPlan(plan); refreshAll(); },
     // test hooks: the pure geometry, assertable without a map or a browser.
     _distanceM: distanceM,
+    // test hook: the box overlap the reopen rule turns on. Pure, and wrong in
+    // ways nothing throws over. The search box's own pure halves moved out
+    // with it and are asserted against Corvus.mapSearch.
+    _boxesOverlap: boxesOverlap,
     _stations: stations,
     _routeLength: routeLength,
     _routeDuration: routeDuration,
@@ -2899,6 +3475,9 @@ Corvus.mission = (function () {
     _toPixel: toPixel,
     _toAltitude: toAltitude,
     _clampNumber: clampNumber,
+    // test hook: which slot a dragged row lands in. Pure, and silent when
+    // wrong — the plan still uploads, in the wrong order.
+    _dropSlot: dropSlot,
     _pointScaleFor: pointScaleFor,
     _hoverTypes: HOVER_TYPES,
     _vehicleHovers: vehicleHovers,

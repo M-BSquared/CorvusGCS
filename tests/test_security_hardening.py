@@ -30,6 +30,7 @@ from corvus.server import (
     DEFAULT_BIND_HOST,
     REMOTE_ORIGIN_ENV,
     _cors_allowed_origin,
+    _host_header_allowed,
     bind_host,
 )
 
@@ -450,3 +451,273 @@ def test_a_failed_interactive_ssh_connect_closes_its_client(monkeypatch) -> None
 
     assert session.connect() is False
     assert client.closed is True
+
+
+# ---------------------------------------------------------------------------
+# Host header: the half of DNS rebinding the CSRF guard cannot see
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("host", [
+    "localhost", "localhost:8000",
+    "127.0.0.1", "127.0.0.1:8000",
+    "[::1]", "[::1]:8000",
+])
+def test_a_loopback_host_is_answered(host: str) -> None:
+    assert _host_header_allowed(host) is True
+
+
+@pytest.mark.parametrize("host", [
+    "evil.example", "evil.example:8000",
+    "127.0.0.1.evil.example", "localhost.evil.example:8000",
+    "10.0.0.5:8000",
+])
+def test_a_host_this_server_is_not_is_refused(host: str) -> None:
+    """The name in the URL bar is the one thing the rebinder cannot forge."""
+    assert _host_header_allowed(host) is False
+
+
+def test_a_missing_host_is_not_a_rebinding_attack() -> None:
+    """HTTP/1.0 clients omit it; a browser never does, and rebinding is a browser."""
+    assert _host_header_allowed("") is True
+    assert _host_header_allowed(None) is True
+    assert _host_header_allowed("   ") is True
+
+
+def test_a_malformed_host_is_refused() -> None:
+    assert _host_header_allowed("localhost:not-a-port") is False
+    assert _host_header_allowed(":::::") is False
+    assert _host_header_allowed("a" * 300) is False
+
+
+def test_the_configured_remote_origin_is_also_a_host_this_server_answers_to(monkeypatch) -> None:
+    monkeypatch.setenv(REMOTE_ORIGIN_ENV, "https://control.example:8443")
+    assert _host_header_allowed("control.example:8443") is True
+    assert _host_header_allowed("control.example") is True
+    assert _host_header_allowed("other.example") is False
+
+
+def test_a_wider_bind_accepts_any_host(monkeypatch) -> None:
+    """``CORVUS_BIND`` is the operator opting into a LAN name we cannot enumerate.
+
+    That mode already warns it has no authentication; refusing the LAN name
+    would break a supported setup to harden a case already accepted.
+    """
+    monkeypatch.setenv(BIND_HOST_ENV, "0.0.0.0")
+    assert _host_header_allowed("192.168.1.50:8000") is True
+    assert _host_header_allowed("gcs.lan") is True
+
+
+def _request_with_host(
+    server: Any, method: str, path: str, host_header: str, body: bytes | None = None,
+) -> tuple[int, bytes]:
+    """One request whose Host says something other than what we connected to."""
+    host, port = server.server_address[0], server.server_address[1]
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    try:
+        headers = {"Host": host_header}
+        if body is not None:
+            headers["Content-Type"] = "text/plain"
+            headers["Content-Length"] = str(len(body))
+        conn.request(method, path, body=body, headers=headers)
+        response = conn.getresponse()
+        return response.status, response.read()
+    finally:
+        conn.close()
+
+
+def test_a_rebound_page_cannot_arm_the_vehicle(
+    server_with_store: Any, fake_bridge: MagicMock,
+) -> None:
+    """The attack the CSRF guard passes: no Origin, same-origin per the browser.
+
+    Every check in ``_mutating_request_allowed`` is satisfied — this is the
+    request that used to reach ``/api/mavlink/arm``.
+    """
+    status, raw = _request_with_host(
+        server_with_store, "POST", "/api/mavlink/arm", "evil.example:8000", b'{"arm":true}',
+    )
+    assert status == 403
+    assert json.loads(raw).get("ok") is not True
+    fake_bridge.arm.assert_not_called()
+
+
+def test_a_rebound_page_cannot_read_the_ssh_credentials(server_with_store: Any) -> None:
+    """The check covers reads too: /api/config lists hosts, users and key paths."""
+    status, _raw = _request_with_host(
+        server_with_store, "GET", "/api/config", "evil.example:8000",
+    )
+    assert status == 403
+
+
+def test_the_ui_itself_is_unaffected(server_with_store: Any, fake_bridge: MagicMock) -> None:
+    """The window is opened at loopback, so it keeps working."""
+    fake_bridge.arm.return_value = True
+    status, raw = _request_with_host(
+        server_with_store, "POST", "/api/mavlink/arm", "127.0.0.1:8000", b'{"arm":true}',
+    )
+    assert status == 200
+    assert json.loads(raw) == {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Static assets: percent-decoding, and the containment that makes it safe
+# ---------------------------------------------------------------------------
+
+def _get_raw(server: Any, path: str) -> tuple[int, bytes]:
+    """A GET with the path sent exactly as written, encoding and all."""
+    host, port = server.server_address[0], server.server_address[1]
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    try:
+        conn.request("GET", path)
+        response = conn.getresponse()
+        return response.status, response.read()
+    finally:
+        conn.close()
+
+
+def test_a_percent_encoded_asset_name_is_decoded(server_with_store: Any, tmp_path, monkeypatch) -> None:
+    """A URL path is an encoded form; "%20" in it means a space in the name."""
+    from corvus import server as server_module
+
+    asset = tmp_path / "my file.js"
+    asset.write_bytes(b"// hello\n")
+    monkeypatch.setattr(server_module, "WEB_DIR", tmp_path)
+
+    status, body = _get_raw(server_with_store, "/my%20file.js")
+    assert status == 200
+    assert body == b"// hello\n"
+
+
+@pytest.mark.parametrize("path", [
+    "/../../../etc/passwd",
+    "/%2e%2e%2f%2e%2e%2f%2e%2e%2fetc/passwd",
+    "/..%2f..%2f..%2fetc/passwd",
+    "/%2e%2e/%2e%2e/etc/passwd",
+])
+def test_decoding_does_not_open_a_traversal(server_with_store: Any, tmp_path, monkeypatch, path: str) -> None:
+    """Decoding is what makes "%2e%2e%2f" mean "../" — containment is what stops it.
+
+    The check is resolve() + relative_to(WEB_DIR), which collapses the
+    traversal before deciding, so an encoded climb is refused exactly like a
+    plain one.
+    """
+    from corvus import server as server_module
+
+    (tmp_path / "index.html").write_bytes(b"<!doctype html>")
+    monkeypatch.setattr(server_module, "WEB_DIR", tmp_path)
+
+    status, body = _get_raw(server_with_store, path)
+    assert status in (403, 404), body
+    assert b"root:" not in body
+
+
+def test_a_decoded_nul_byte_is_refused_not_a_traceback(server_with_store: Any, tmp_path, monkeypatch) -> None:
+    """pathlib refuses an embedded NUL; that must be a 403, not a 500."""
+    from corvus import server as server_module
+
+    monkeypatch.setattr(server_module, "WEB_DIR", tmp_path)
+    status, _body = _get_raw(server_with_store, "/index%00.html")
+    assert status in (403, 404)
+
+
+# ---------------------------------------------------------------------------
+# Static assets: conditional requests
+# ---------------------------------------------------------------------------
+
+def _conditional_get(
+    server: Any, path: str, headers: dict[str, str],
+) -> tuple[int, bytes, dict[str, str]]:
+    host, port = server.server_address[0], server.server_address[1]
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    try:
+        conn.request("GET", path, headers=headers)
+        response = conn.getresponse()
+        body = response.read()
+        return response.status, body, {k.lower(): v for k, v in response.getheaders()}
+    finally:
+        conn.close()
+
+
+def test_an_asset_carries_validators(server_with_store: Any, tmp_path, monkeypatch) -> None:
+    """Without these, "no-cache" can only ever mean a full re-send."""
+    from corvus import server as server_module
+
+    (tmp_path / "app.js").write_bytes(b"console.log(1);\n")
+    monkeypatch.setattr(server_module, "WEB_DIR", tmp_path)
+
+    status, body, headers = _conditional_get(server_with_store, "/app.js", {})
+    assert status == 200
+    assert body == b"console.log(1);\n"
+    assert headers.get("etag")
+    assert headers.get("last-modified")
+    # Still revalidated every time: a plugin asset edited on disk has to show
+    # up on the next reload, which is what this header is here for.
+    assert headers.get("cache-control") == "no-cache"
+
+
+def test_an_unchanged_asset_comes_back_304_with_no_body(
+    server_with_store: Any, tmp_path, monkeypatch,
+) -> None:
+    from corvus import server as server_module
+
+    (tmp_path / "big.js").write_bytes(b"x" * 100_000)
+    monkeypatch.setattr(server_module, "WEB_DIR", tmp_path)
+
+    status, body, headers = _conditional_get(server_with_store, "/big.js", {})
+    assert status == 200 and len(body) == 100_000
+
+    status, body, _ = _conditional_get(
+        server_with_store, "/big.js", {"If-None-Match": headers["etag"]})
+    assert status == 304
+    assert body == b""
+
+
+def test_an_edited_asset_is_sent_again(server_with_store: Any, tmp_path, monkeypatch) -> None:
+    """The point of keeping "no-cache": an edit on disk must reach the browser."""
+    from corvus import server as server_module
+
+    asset = tmp_path / "plugin.js"
+    asset.write_bytes(b"old")
+    monkeypatch.setattr(server_module, "WEB_DIR", tmp_path)
+    _status, _body, headers = _conditional_get(server_with_store, "/plugin.js", {})
+    stale_etag = headers["etag"]
+
+    asset.write_bytes(b"new content, same second")
+    status, body, fresh = _conditional_get(
+        server_with_store, "/plugin.js", {"If-None-Match": stale_etag})
+    assert status == 200
+    assert body == b"new content, same second"
+    assert fresh["etag"] != stale_etag, (
+        "two writes in the same second produced the same tag; the size and "
+        "nanosecond mtime in the ETag are what stop that"
+    )
+
+
+def test_if_modified_since_is_honoured_when_there_is_no_etag(
+    server_with_store: Any, tmp_path, monkeypatch,
+) -> None:
+    from corvus import server as server_module
+
+    (tmp_path / "a.css").write_bytes(b"body{}")
+    monkeypatch.setattr(server_module, "WEB_DIR", tmp_path)
+    _status, _body, headers = _conditional_get(server_with_store, "/a.css", {})
+
+    status, _body, _ = _conditional_get(
+        server_with_store, "/a.css", {"If-Modified-Since": headers["last-modified"]})
+    assert status == 304
+
+
+def test_a_malformed_conditional_header_just_sends_the_file(
+    server_with_store: Any, tmp_path, monkeypatch,
+) -> None:
+    """A header off the wire is never trusted to parse."""
+    from corvus import server as server_module
+
+    (tmp_path / "a.css").write_bytes(b"body{}")
+    monkeypatch.setattr(server_module, "WEB_DIR", tmp_path)
+
+    for bad in ("not-a-date", "", "Tue, 99 Zzz 9999 99:99:99 GMT"):
+        status, body, _ = _conditional_get(
+            server_with_store, "/a.css", {"If-Modified-Since": bad})
+        assert status == 200, bad
+        assert body == b"body{}"

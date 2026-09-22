@@ -21,7 +21,8 @@ import logging
 import os
 import threading
 import time
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 import paramiko
 
@@ -91,7 +92,7 @@ class _RememberAndWarnPolicy(paramiko.AutoAddPolicy):
         super().missing_host_key(client, hostname, key)
 
 
-def _new_client() -> "paramiko.SSHClient":
+def _new_client() -> paramiko.SSHClient:
     """An SSHClient with host keys loaded and the configured missing-key policy."""
     client = paramiko.SSHClient()
     try:

@@ -59,14 +59,16 @@ Corvus.setupParameters = (function () {
     // that cannot see this closure.
     const state = {
       params: [],          // the editable list (only once complete)
-      eventSource: null,   // the /api/params/progress SSE
+      eventSource: null,   // the ONE /api/params/progress SSE (see watchProgress)
+      progressSubs: null,  // who is watching it; the stream closes with the last
       pollTimer: null,     // the ~1 s GET /api/params fallback
       unsub: null,          // telemetry subscription (armed gating)
       rendered: false,
       exportBtn,           // enabled once the full param set is loaded
       importBtn,           // armed-gated; disabled during upload
       actionsStatus,
-      uploadEventSource: null,   // the /api/params/progress SSE for an import
+      downloadUnwatch: null,     // release the download view's watch
+      uploadUnwatch: null,       // release an import's watch
       uploading: false,
     };
 
@@ -92,9 +94,10 @@ Corvus.setupParameters = (function () {
 
     function destroy() {
       if (state.unsub) { try { state.unsub(); } catch (_e) {} state.unsub = null; }
-      if (state.eventSource) { try { state.eventSource.close(); } catch (_e) {} state.eventSource = null; }
+      state.downloadUnwatch = null;
+      state.uploadUnwatch = null;
+      closeProgressStream(state);
       if (state.pollTimer) { try { window.clearInterval(state.pollTimer); } catch (_e) {} state.pollTimer = null; }
-      if (state.uploadEventSource) { try { state.uploadEventSource.close(); } catch (_e) {} state.uploadEventSource = null; }
     }
 
     return destroy;
@@ -283,30 +286,72 @@ Corvus.setupParameters = (function () {
     state.uploading = true;
     state.importBtn.disabled = true;
     setStatus(state, "pending", `Uploading 0 / ${total} parameters…`);
-    try {
-      state.uploadEventSource = new EventSource("/api/params/progress");
-      state.uploadEventSource.addEventListener("progress", (e) => {
-        try {
-          const d = JSON.parse(e.data);
-          if (d.state === "upload_complete") {
-            closeUploadSse(state);
-            finishUpload(state);
-          } else {
-            setStatus(state, "pending",
-              `Uploading ${d.received || 0} / ${d.count || 0} parameters…`);
+    state.uploadUnwatch = watchProgress(state, (d) => {
+      if (d.state === "upload_complete") {
+        closeUploadSse(state);
+        finishUpload(state);
+      } else {
+        setStatus(state, "pending",
+          `Uploading ${d.received || 0} / ${d.count || 0} parameters…`);
+      }
+    });
+  }
+
+  /**
+   * Parameter progress for this card, shared by everything that watches it.
+   *
+   * This used to be two EventSource objects on the SAME url — one for the
+   * download view, one for an import — and that is a connection the rest of
+   * the app cannot have. A browser caps concurrent HTTP/1.1 requests per
+   * origin at six, and this application could hold five SSE streams open at
+   * once, leaving the map fetching its tiles one at a time at exactly the
+   * moment (pre-flight setup, with a download running) the operator is
+   * busiest. The refcount below fixed the double connection; js/events.js
+   * then put this topic on the shared stream, which fixed the other four.
+   *
+   * Returns an unsubscribe. The topic stops being delivered here when the
+   * last watcher lets go.
+   */
+  function watchProgress(state, handler) {
+    if (!state.progressSubs) state.progressSubs = new Set();
+    state.progressSubs.add(handler);
+    if (!state.eventSource) {
+      // The shared /api/events stream (js/events.js), not an EventSource of
+      // this card's own: the connection budget is six per origin and this
+      // endpoint is one of four that now travel together. Both consumers here
+      // have their own fallback — the download has a ~1 s poll, the upload has
+      // GET /api/params/upload/result — so a dropped stream is not an error
+      // either of them has to act on.
+      state.eventSource = Corvus.events.subscribe("params", (data) => {
+        // Guarded per subscriber: one throwing watcher must not stop the
+        // other from seeing the event that ends its wait.
+        state.progressSubs.forEach((fn) => {
+          try { fn(data); } catch (err) {
+            console.error("params progress watcher failed:", err);
           }
-        } catch (_e) { /* keep waiting — the upload_complete event will arrive */ }
+        });
       });
-      state.uploadEventSource.addEventListener("ping", () => {});
-      state.uploadEventSource.onerror = () => { /* keep waiting; user may retry */ };
-    } catch (_e) { /* no EventSource — finishUpload can still fetch the result */ }
+    }
+    return function () {
+      if (!state.progressSubs) return;
+      state.progressSubs.delete(handler);
+      if (!state.progressSubs.size) closeProgressStream(state);
+    };
+  }
+
+  function closeProgressStream(state) {
+    if (state.eventSource) {
+      // An unsubscribe from the shared stream, not a socket close: the topic
+      // stays on the connection (see js/events.js on why topics are sticky),
+      // but nothing is delivered here any more.
+      try { state.eventSource(); } catch (_e) {}
+      state.eventSource = null;
+    }
+    if (state.progressSubs) state.progressSubs.clear();
   }
 
   function closeUploadSse(state) {
-    if (state.uploadEventSource) {
-      try { state.uploadEventSource.close(); } catch (_e) {}
-      state.uploadEventSource = null;
-    }
+    if (state.uploadUnwatch) { state.uploadUnwatch(); state.uploadUnwatch = null; }
   }
 
   /** Fetch the final upload result and summarise written/failed counts. */
@@ -423,19 +468,11 @@ Corvus.setupParameters = (function () {
       else label.textContent = "Requesting parameter list…";
     }
 
-    // Primary: SSE progress stream.
-    try {
-      state.eventSource = new EventSource("/api/params/progress");
-      state.eventSource.addEventListener("progress", (e) => {
-        try {
-          const d = JSON.parse(e.data);
-          setProgress(d.received || 0, d.count || 0);
-          if (d.state === "complete") finishDownload(card, state);
-        } catch (_err) { /* keep the poll fallback as the safety net */ }
-      });
-      state.eventSource.addEventListener("ping", () => {});
-      state.eventSource.onerror = () => { /* poll fallback covers this */ };
-    } catch (_err) { /* no EventSource — poll fallback covers this */ }
+    // Primary: the shared SSE progress stream.
+    state.downloadUnwatch = watchProgress(state, (d) => {
+      setProgress(d.received || 0, d.count || 0);
+      if (d.state === "complete") finishDownload(card, state);
+    });
 
     // Safety-net poll of the config status (NOT telemetry). ~1 s cadence.
     state.pollTimer = window.setInterval(() => {
@@ -448,7 +485,7 @@ Corvus.setupParameters = (function () {
 
   /** Phase 3: download complete -> fetch the full set and render the editor. */
   function finishDownload(card, state) {
-    if (state.eventSource) { try { state.eventSource.close(); } catch (_e) {} state.eventSource = null; }
+    if (state.downloadUnwatch) { state.downloadUnwatch(); state.downloadUnwatch = null; }
     if (state.pollTimer) { try { window.clearInterval(state.pollTimer); } catch (_e) {} state.pollTimer = null; }
     if (state.rendered) return;   // guard against SSE + poll both firing
 

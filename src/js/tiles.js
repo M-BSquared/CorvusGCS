@@ -74,7 +74,7 @@ Corvus.tiles = (function () {
   let terrainSources = [];
   let regions = [];    // last /api/tiles/regions result
   let captured = null; // {w,s,e,n,zoom} captured from the map at open/recapture
-  let es = null;       // active EventSource for the running job
+  let es = null;       // unsubscribe from the shared stream, while a job runs
   let jobId = null;    // id of the running job (for cancel / re-attach)
   let jobState = null; // last known state of that job
   let dialog = null;   // Corvus.ui.modal handle while the dialog is open
@@ -682,19 +682,20 @@ Corvus.tiles = (function () {
 
   function openProgress(id) {
     closeEventSource();
-    const url = `/api/tiles/progress?id=${encodeURIComponent(id)}`;
-    es = new EventSource(url);
-    es.addEventListener("progress", (ev) => {
-      let data;
-      try { data = JSON.parse(ev.data); } catch (_) { return; }
-      onProgress(data);
+    // The shared /api/events stream (js/events.js): a browser allows six
+    // connections per origin, and this page is precisely the one that wants
+    // the rest of them for tiles. `followJob` points the "tiles" topic at this
+    // download — it is the one part of the stream's URL that changes, so a new
+    // job does reconnect, which costs nothing because tile progress coalesces.
+    Corvus.events.followJob(id);
+    const offProgress = Corvus.events.subscribe("tiles", onProgress);
+    const offError = Corvus.events.subscribe("error", () => {
+      // The stream reconnects on its own; on a hard failure the progress event
+      // carries state "failed". This is only for a stream that dies without a
+      // terminal event, so the operator is not left looking at 0 %.
+      if (jobState === "running") failStart("Progress stream closed");
     });
-    es.addEventListener("error", () => {
-      // EventSource auto-reconnects; on a hard failure the progress event will
-      // carry state "failed". If the stream dies without a terminal event,
-      // surface a soft error so the operator is not left looking at 0%.
-      if (es && es.readyState === EventSource.CLOSED) failStart("Progress stream closed");
-    });
+    es = function () { offProgress(); offError(); };
   }
 
   function onProgress(data) {
@@ -754,7 +755,11 @@ Corvus.tiles = (function () {
   }
 
   function closeEventSource() {
-    if (es) { try { es.close(); } catch (_) {} es = null; }
+    // `es` is an unsubscribe from the shared stream, not a socket. The topic
+    // itself stays on the connection (see js/events.js on sticky topics);
+    // dropping the job is what stops the server following it.
+    if (es) { try { es(); } catch (_) {} es = null; }
+    if (Corvus.events) Corvus.events.followJob(null);
   }
 
   function showMsg(text, kind) { if (dom.msg) dom.msg.show(text, kind); }

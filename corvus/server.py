@@ -24,12 +24,15 @@ import threading
 import time
 import urllib.request
 from pathlib import Path
-from typing import Any, Callable
-from urllib.parse import parse_qs, urlparse
+from typing import Any
+from collections.abc import Callable
+from email.utils import formatdate, parsedate_to_datetime
+from urllib.parse import parse_qs, unquote, urlparse
 
 from . import (
-    mission, motor_config, rc_config, safety_config, sik_config, sik_service,
-    tile_sources, tuning_config,
+    ardupilot_motors, ardupilot_rc, ardupilot_safety, ardupilot_tuning,
+    autopilot, geocode, mission, motor_config, rc_config, safety_config,
+    sik_config, sik_service, tile_sources, tuning_config,
 )
 from .config import (
     CorvusConfig,
@@ -185,7 +188,10 @@ def _cors_allowed_origin(origin: Any) -> str:
     try:
         parsed = urlparse(origin)
         host = parsed.hostname or ""
-        parsed.port
+        # Accessing it IS the validation: urlsplit defers parsing the port
+        # until it is read, and a bad one raises here rather than handing back
+        # a clean hostname.
+        parsed.port  # noqa: B018 - evaluated for the ValueError, not the value
     except ValueError:
         return ""
     if parsed.scheme not in ("http", "https"):
@@ -196,6 +202,67 @@ def _cors_allowed_origin(origin: Any) -> str:
         return ""
     configured = (os.environ.get(REMOTE_ORIGIN_ENV) or "").strip()
     return origin if host in _CORS_LOOPBACK_HOSTS or origin == configured else ""
+
+
+def _host_header_allowed(host_header: Any) -> bool:
+    """Is the ``Host`` on this request one this server actually answers to?
+
+    This is the defence the CSRF guard cannot provide. A page on
+    ``http://evil.example`` whose DNS is re-pointed at 127.0.0.1 after it
+    loads makes requests the *browser* considers same-origin: no ``Origin``
+    header, ``Sec-Fetch-Site: same-origin``. Every check in
+    ``_mutating_request_allowed`` passes, and the request reaches
+    ``/api/mavlink/arm``. The one thing the attacker cannot forge is the
+    ``Host``, because the browser fills it in from the name in the URL bar —
+    and that name is never ``localhost``.
+
+    Applied to reads as well as writes: ``GET /api/config`` hands back SSH
+    hostnames, usernames and key paths.
+
+    What is allowed:
+
+    * the loopback names, which is what the UI is opened as;
+    * the host of an explicitly configured ``CORVUS_ALLOWED_ORIGIN``;
+    * anything at all when the operator has opted this server onto a wider
+      interface with ``CORVUS_BIND``. That mode is already documented as
+      having no authentication, the legitimate client then reaches it under
+      some LAN name this process cannot enumerate, and refusing those would
+      break a supported configuration to harden a case the operator has
+      already accepted.
+
+    A request with no ``Host`` at all is allowed: HTTP/1.0 clients and some
+    tooling omit it, and a rebinding attack never can — it is a browser, and
+    browsers always send one.
+    """
+    if (os.environ.get(BIND_HOST_ENV) or "").strip() not in ("", DEFAULT_BIND_HOST):
+        return True
+    if not isinstance(host_header, str) or not host_header.strip():
+        return True
+    if len(host_header) > 256:
+        return False
+    try:
+        # Parsed as an authority so "[::1]:8000" and "127.0.0.1:8000" both
+        # give up their hostname rather than being split by hand on ":".
+        parsed = urlparse(f"//{host_header.strip()}")
+        hostname = (parsed.hostname or "").strip()
+        # Touched for its side effect, exactly as _cors_allowed_origin does:
+        # the port is only validated when it is read, and "localhost:junk"
+        # would otherwise hand back a clean "localhost".
+        parsed.port  # noqa: B018 - evaluated for the ValueError, not the value
+    except ValueError:
+        return False
+    if not hostname:
+        return False
+    if hostname in _CORS_LOOPBACK_HOSTS:
+        return True
+    configured = (os.environ.get(REMOTE_ORIGIN_ENV) or "").strip()
+    if configured:
+        try:
+            if hostname == (urlparse(configured).hostname or "").strip():
+                return True
+        except ValueError:
+            return False
+    return False
 
 
 # Route registry: the @route decorator tags handler methods while the
@@ -215,10 +282,14 @@ def route(http_method: str, path: str):
 
 
 class _BoundedSseBuffer:
-    def __init__(self, capacity: int) -> None:
+    def __init__(self, capacity: int, condition: threading.Condition | None = None) -> None:
         self._capacity = max(1, int(capacity))
         self._items: collections.deque[Any] = collections.deque()
-        self._condition = threading.Condition()
+        # Normally its own condition. _MultiplexSseBuffer passes a shared one so
+        # several topic buffers can wake the same reader thread; threading's
+        # Condition is built on an RLock, so a drain that already holds it may
+        # re-enter these methods.
+        self._condition = condition if condition is not None else threading.Condition()
 
     def put_latest(self, item: Any) -> None:
         with self._condition:
@@ -249,10 +320,13 @@ class _BoundedSseBuffer:
                     self._items.pop()
                 else:
                     del self._items[drop_index]
-            if urgent:
-                self._items.appendleft(entry)
-            else:
-                self._items.append(entry)
+            # Always append, never appendleft. Urgency decides what survives
+            # a full buffer (the eviction scan above), never what is delivered
+            # first: the console is how someone reconstructs what the autopilot
+            # did and in what order, and an error that overtakes the
+            # informational line explaining it — "EKF2 switching to GPS"
+            # arriving after the failure it caused — inverts cause and effect.
+            self._items.append(entry)
             self._condition.notify()
 
     def put_fifo(self, item: Any) -> None:
@@ -273,9 +347,57 @@ class _BoundedSseBuffer:
                 self._condition.wait(remaining)
             return self._items.popleft()
 
+    def drain(self) -> list[Any]:
+        """Take everything buffered, in order, without waiting."""
+        with self._condition:
+            items = list(self._items)
+            self._items.clear()
+            return items
+
     def qsize(self) -> int:
         with self._condition:
             return len(self._items)
+
+
+class _MultiplexSseBuffer:
+    """Several named topic buffers behind one condition, one reader thread.
+
+    Exists so one HTTP connection can carry several event streams. Each topic
+    keeps its OWN buffer, so each keeps its own drop policy — params and tiles
+    coalesce to the latest, the console evicts by urgency, firmware keeps every
+    step — which a single shared queue would have flattened into one.
+    """
+
+    def __init__(self) -> None:
+        self._condition = threading.Condition()
+        self._buffers: dict[str, _BoundedSseBuffer] = {}
+
+    def topic(self, name: str, capacity: int) -> _BoundedSseBuffer:
+        """Add a topic buffer and return it, for a listener to write into."""
+        buf = _BoundedSseBuffer(capacity, condition=self._condition)
+        with self._condition:
+            self._buffers[name] = buf
+        return buf
+
+    def drain(self, timeout: float) -> list[tuple[str, Any]]:
+        """Block for up to *timeout* and return ``[(topic, item), ...]``.
+
+        Raises :class:`queue.Empty` if nothing arrived, which is the caller's
+        cue to send a keep-alive ping and re-check whether the server is
+        stopping — the same contract :meth:`_BoundedSseBuffer.get` has.
+        """
+        deadline = time.monotonic() + timeout
+        with self._condition:
+            while True:
+                out: list[tuple[str, Any]] = []
+                for name, buf in self._buffers.items():
+                    out.extend((name, item) for item in buf.drain())
+                if out:
+                    return out
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise queue.Empty
+                self._condition.wait(remaining)
 
 
 class _UpstreamBreaker:
@@ -492,9 +614,24 @@ def _build_building_service(cache_dir: str) -> Any:
         return None
 
 
+def _build_geocoder() -> Any:
+    """Construct the place-search service, or None.
+
+    Shared by both entry points for the same reason ``_build_tile_resources``
+    is: the desktop app and browser mode must offer the same map. Holds no
+    thread, socket or file handle at rest, so nothing here has to be torn down
+    on the shutdown path.
+    """
+    try:
+        return geocode.Geocoder(user_agent=f"CorvusGCS/{get_version()}")
+    except Exception:  # noqa: BLE001 - never block launch over a search box
+        logger.exception("place search unavailable; /api/geocode disabled")
+        return None
+
+
 def _build_tile_resources(
     cache_dir: str,
-) -> tuple[dict[str, TileCache], "_TileProgressBus", Any, "_UpstreamBreaker"]:
+) -> tuple[dict[str, TileCache], _TileProgressBus, Any, _UpstreamBreaker]:
     """Build the tile caches, progress bus, downloader pool, and fill breaker.
 
     Shared by ``create_server`` (browser mode) and ``corvus.app.start_backend``
@@ -516,6 +653,26 @@ def _build_tile_resources(
     tile_downloader = _build_tile_downloader(tile_caches)
     tile_breaker = _UpstreamBreaker()
     return tile_caches, tile_progress_bus, tile_downloader, tile_breaker
+
+
+def _tile_cache_dir(cfg: Any) -> str:
+    """Directory the per-source ``.mbtiles`` caches live in.
+
+    Same "empty string means the built-in default" convention as the params,
+    tlog and firmware directories — and, like them, ``expanduser``'d: a
+    ``~/tiles`` typed into the Settings page used to be taken literally, which
+    created a directory actually named ``~`` next to wherever the app happened
+    to be launched from, and left the operator looking for tiles that were
+    downloaded somewhere they would never think to look.
+
+    Shared by both entry points so browser mode and the desktop app resolve
+    the operator's override identically; two modes reading different
+    ``.mbtiles`` files means an area downloaded in one is missing in the other.
+    """
+    configured = getattr(cfg, "tile_cache_dir", "") or ""
+    if configured.strip():
+        return os.path.expanduser(configured.strip())
+    return default_cache_dir()
 
 
 def _params_export_dir(cfg: Any) -> str:
@@ -560,6 +717,57 @@ def _build_log_service(mavlink: Any, config: Any) -> Any:
         )
     except Exception:  # noqa: BLE001 - never block server creation
         logger.exception("log service unavailable; log endpoints disabled")
+        return None
+
+
+def _build_flash_service(mavlink: Any, store: Any, config: Any) -> Any:
+    """Build the firmware-flash service, or None if it cannot be constructed.
+
+    Shared by ``create_server`` (browser mode) and ``corvus.app.start_backend``
+    (desktop mode) for the same reason ``_build_log_service`` is, and after the
+    same bug: the desktop app built a ``FlashService`` with no catalogue, so
+    every packaged build shipped a Firmware page that listed no PX4 release and
+    no board, and answered "firmware catalogue unavailable" to any flash — the
+    release flow was only ever reachable in browser mode.
+
+    Imported lazily so the server still builds while ``flash_service`` or
+    ``firmware_catalog`` is mid-edit.
+    """
+    try:
+        from .firmware_catalog import FirmwareCatalog
+        from .flash_service import FlashService
+        return FlashService(mavlink, store, catalog=FirmwareCatalog(_firmware_dir(config)))
+    except Exception:  # noqa: BLE001 - never block server creation
+        logger.exception("flash service unavailable; firmware endpoints disabled")
+        return None
+
+
+def _build_sik_service(mavlink: Any, store: Any) -> Any:
+    """Build the SiK telemetry-radio service, or None.
+
+    Borrows the bridge's serial port for the length of an AT session, so it
+    holds the same two handles the flash service does and is torn down on the
+    same path — which is also why both launchers must build it the same way.
+    """
+    try:
+        return sik_service.SikService(mavlink, store)
+    except Exception:  # noqa: BLE001 - never block server creation
+        logger.exception("SiK radio service unavailable; radio endpoints disabled")
+        return None
+
+
+def _build_update_checker() -> Any:
+    """Build the release-update checker, or None.
+
+    Constructed only — it touches the network the first time the frontend
+    asks, never at startup. Shared so the packaged app prompts for updates on
+    exactly the terms browser mode does.
+    """
+    try:
+        from .update_check import UpdateChecker
+        return UpdateChecker()
+    except Exception:  # noqa: BLE001 - never block server creation
+        logger.exception("update checker unavailable; update endpoints disabled")
         return None
 
 
@@ -656,6 +864,122 @@ def stop_autoconnect_watcher(server: Any) -> None:
         logger.info("autoconnect watcher stopped")
     except Exception:  # noqa: BLE001 - teardown never raises
         logger.exception("autoconnect watcher stop failed")
+
+
+def stop_backend(server: Any, log: Any = None) -> None:
+    """Ordered, exception-safe backend teardown. Never raises.
+
+    THE shutdown sequence, for every launcher. It used to be a 98-line
+    function duplicated character-for-character in ``serve.py`` and
+    ``corvus/app.py`` — same nine steps, same comments, differing only in the
+    docstring, with app.py's saying "Mirrors serve.py". Nothing enforced the
+    mirror, and the order is load-bearing in ways that are invisible from a
+    diff: the auto-connect watcher calls stop/set_connection/start on the
+    bridge, so a tick that lands after ``mavlink.stop()`` starts the link the
+    shutdown just closed.
+
+    Order: the services that borrow the MAVLink bridge (flash, SiK, logs,
+    forwarder) first, so none of them is mid-operation when the bridge goes;
+    then the auto-connect watcher, for the reason above; then the bridge
+    itself (joins its threads, flushes the tlog); then SSH (joins reader
+    threads); then the state store; then the HTTP server and the tile caches,
+    whose SQLite handles close last so no in-flight handler touches a closed
+    database. Every step is guarded on its own, so a failure in one cannot
+    skip the rest.
+
+    *log* is the caller's logger, so a teardown still reports itself under
+    the launcher the operator actually started — ``corvus.serve`` or
+    ``corvus.app`` — rather than under this module.
+    """
+    if log is None:
+        log = logger
+    # Flash uses the MAVLink bridge (it stops/starts it), so cancel/join the
+    # uploader BEFORE tearing the bridge down.
+    flash = getattr(server, "flash", None)
+    if flash is not None:
+        try:
+            log.info("stopping flash …")
+            flash.shutdown()
+            log.info("flash stopped")
+        except Exception:
+            log.exception("flash shutdown failed")
+    # The radio service may be holding the bridge's serial port and will
+    # restart the bridge when its session ends, so it is told to stop doing that
+    # in the same breath as flash and for the same reason.
+    sik = getattr(server, "sik", None)
+    if sik is not None:
+        try:
+            sik.shutdown()
+        except Exception:
+            log.exception("SiK radio shutdown failed")
+    # Log downloads hold a sink on the MAVLink bridge and a worker thread, so
+    # they are stopped alongside flash — before the bridge itself goes away.
+    logs = getattr(server, "logs", None)
+    if logs is not None:
+        try:
+            log.info("stopping log service …")
+            logs.shutdown()
+            log.info("log service stopped")
+        except Exception:
+            log.exception("log service shutdown failed")
+    # The forwarder holds a UDP socket, two daemon threads, and a sink on the
+    # bridge's receive path, so it is released before the bridge goes away.
+    forwarder = getattr(server, "forwarder", None)
+    if forwarder is not None:
+        try:
+            log.info("stopping mavlink forwarding …")
+            mav = getattr(server, "mavlink", None)
+            if mav is not None:
+                mav.set_frame_sink(None)
+            forwarder.stop()
+            log.info("mavlink forwarding stopped")
+        except Exception:
+            log.exception("mavlink forwarder shutdown failed")
+    # The auto-connect watcher calls stop/set_connection/start on the bridge,
+    # so it is joined before the bridge goes away: a tick landing after
+    # mavlink.stop() would start the link the shutdown just closed.
+    stop_autoconnect_watcher(server)
+    mavlink = getattr(server, "mavlink", None)
+    if mavlink is not None:
+        try:
+            log.info("stopping mavlink …")
+            mavlink.stop()
+            log.info("mavlink stopped")
+        except Exception:
+            log.exception("mavlink stop failed")
+    ssh = getattr(server, "ssh", None)
+    if ssh is not None:
+        try:
+            log.info("stopping ssh …")
+            ssh.shutdown()
+            log.info("ssh stopped")
+        except Exception:
+            log.exception("ssh shutdown failed")
+    store = getattr(server, "store", None)
+    if store is not None:
+        try:
+            log.info("stopping state store …")
+            store.shutdown()
+            log.info("state store stopped")
+        except Exception:
+            log.exception("state store shutdown failed")
+    try:
+        log.info("stopping http server + tiles …")
+        server.shutdown()
+        log.info("http server + tiles stopped")
+    except Exception:
+        log.exception("http server shutdown failed")
+    # Defense-in-depth: shutdown() stops the serve loop but does not close
+    # the listening TCP socket. os._exit reclaims it in the live path, but an
+    # explicit close keeps the fd table clean on a graceful exit and lets the
+    # hermetic shutdown tests assert fileno==-1 without calling server_close
+    # themselves.
+    try:
+        log.info("closing http socket …")
+        server.server_close()
+        log.info("http socket closed")
+    except Exception:
+        log.exception("http socket close failed")
 
 
 def _firmware_dir(cfg: Any) -> str:
@@ -839,6 +1163,38 @@ def _delete_region_tiles(cache: Any, region: dict) -> int:
     return cache.delete_tiles(doomed) if doomed else 0
 
 
+def _int_or(raw: Any, fallback: int) -> int:
+    """A query parameter as an int, or the fallback. Never raises."""
+    try:
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _parse_near(raw: Any) -> geocode.Near | None:
+    """``"<lon>,<lat>"`` from a query string, or None.
+
+    Returns a :class:`geocode.Near`, which names the order the wire format
+    already uses, so the lon/lat pair cannot be read the wrong way round
+    downstream.
+
+    Only ever a ranking hint, so anything unparseable is dropped silently
+    rather than failing the search it was meant to improve.
+    """
+    parts = str(raw or "").split(",")
+    if len(parts) != 2:
+        return None
+    try:
+        lon, lat = float(parts[0]), float(parts[1])
+    except ValueError:
+        return None
+    if not math.isfinite(lon) or not math.isfinite(lat):
+        return None
+    if not -180.0 <= lon <= 180.0 or not -90.0 <= lat <= 90.0:
+        return None
+    return geocode.Near(lon, lat)
+
+
 def _validate_tile_bounds(bounds: Any) -> tuple[str | None, tuple[float, float, float, float] | None]:
     """Validate a ``{w,s,e,n}`` bounds object.
 
@@ -982,12 +1338,16 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     # parallel-built tile_downloader module is mid-edit).
     tile_caches: dict[str, TileCache] | None = None
     # Shared across handler threads: one breaker per process, not per request.
-    tile_breaker: "_UpstreamBreaker | None" = None
+    tile_breaker: _UpstreamBreaker | None = None
     tile_downloader: Any = None
     tile_progress_bus: _TileProgressBus | None = None
     # OSM building footprints for 3D mode. None when the module could not be
     # built; the route then answers an empty FeatureCollection.
     buildings: Any = None
+    # Place search over Nominatim (corvus/geocode.py). None when it could not
+    # be built; /api/geocode then says so and the map's search box falls back
+    # to the coordinate parsing it does itself.
+    geocoder: Any = None
     # Plugin roots. None means "the real ones" (~/.corvus/plugins and the
     # bundled <repo>/plugins); the tests point them at a tmp_path so a scan
     # never reads the developer's own plugin folder.
@@ -1060,6 +1420,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         """
         self._response_started = False
         try:
+            if not self._host_header_allowed():
+                return
             dispatch()
         except self._PEER_GONE_ERRORS as exc:
             logger.debug("client gone during %s: %s", self.path, exc)
@@ -1073,6 +1435,22 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "internal server error"}, 500)
             except CLIENT_GONE_ERRORS:
                 self.close_connection = True
+
+    def _host_header_allowed(self) -> bool:
+        """Reject a request addressed to a name this server does not answer to.
+
+        Sits in ``_guarded`` so it covers reads as well as writes — see
+        :func:`_host_header_allowed` for what the check is for. Answers 403
+        and closes the connection, the same way the cross-site guard does.
+        """
+        headers = getattr(self, "headers", None)
+        host = headers.get("Host", "") if headers is not None else ""
+        if _host_header_allowed(host):
+            return True
+        logger.warning("rejected request for Host %r on %s", host, self.path)
+        self.close_connection = True
+        self._send_json({"ok": False, "error": "host not allowed"}, 403)
+        return False
 
     def _send_cors(self) -> None:
         """Emit this response's CORS headers: a loopback origin, or nothing.
@@ -1110,7 +1488,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         return stopping is not None and stopping.is_set()
 
     def _send_sse(self, event: str, data: str) -> None:
-        self.wfile.write(f"event: {event}\ndata: {data}\n\n".encode("utf-8"))
+        self.wfile.write(f"event: {event}\ndata: {data}\n\n".encode())
         self.wfile.flush()
 
     def _send_sse_bytes(self, event: str, data: bytes) -> None:
@@ -1157,7 +1535,9 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         """Return the live config as a redacted dict (passwords stripped)."""
         try:
             return to_public_dict(self._live_config())
-        except Exception as exc:  # noqa: BLE001 - GET /api/config must never 500
+        except Exception:  # noqa: BLE001 - GET /api/config must never 500
+            # logger.exception already carries the traceback; the bound name
+            # was never read.
             logger.exception("public config build failed; returning defaults")
             return {}
 
@@ -1525,6 +1905,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self._send_json({
             "product": "Corvus GCS",
             "version": get_version(),
+            # Kept under its PX4 name because the shape of this response is
+            # pinned; the value is whatever firmware answered, PX4 or
+            # ArduPilot. Which stack that is rides on /api/state and
+            # /api/mavlink/capabilities.
             "px4_profile": px4_profile,
         })
 
@@ -1742,6 +2126,24 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         else:
             self._send_json({"modes": []})
 
+    @route("GET", "/api/mavlink/capabilities")
+    def _api_mavlink_capabilities(self) -> None:
+        """What the connected flight stack can do.
+
+        The frontend uses this to stop offering controls the vehicle would
+        refuse — the MAVLink console on a stack with no shell, ESC calibration
+        on a stack that does it through a parameter, an autotune button that
+        starts a mode rather than a command. A missing control with a reason is
+        a better answer than one that fails on press.
+        """
+        if self.mavlink:
+            self._send_json(self.mavlink.capabilities())
+            return
+        self._send_json(
+            autopilot.dialect_for_stack(autopilot.STACK_GENERIC).capabilities()
+            | {"modes": [], "vehicle_type": 0}
+        )
+
     @route("GET", "/api/mavlink/serial-ports")
     def _api_mavlink_serial_ports(self) -> None:
         """Enumerate serial ports for the connection manager UI.
@@ -1784,6 +2186,45 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             "params": params,
         })
 
+    # Which parameter schema the setup pages are built from. The four pages —
+    # motors, safety, tuning, radio — are each a list of *parameter names*, and
+    # not one PX4 name exists on an ArduPilot vehicle. Choosing the wrong module
+    # does not error; the vehicle answers for nothing and the page comes up
+    # empty, which is how an ArduPilot operator used to get a blank Safety page
+    # rather than their own failsafes.
+    _SCHEMAS: dict[str, dict[str, Any]] = {
+        autopilot.STACK_ARDUPILOT: {
+            "motors": ardupilot_motors, "safety": ardupilot_safety,
+            "tuning": ardupilot_tuning, "rc": ardupilot_rc,
+        },
+    }
+    _DEFAULT_SCHEMAS: dict[str, Any] = {
+        "motors": motor_config, "safety": safety_config,
+        "tuning": tuning_config, "rc": rc_config,
+    }
+
+    def _schema(self, page: str) -> Any:
+        """The schema module for *page* on the stack currently connected.
+
+        PX4's modules are the default, and a stack Corvus does not recognise
+        gets them too: they are the primary target, and a page built from a
+        superset the vehicle answers for none of is the same empty page an
+        unknown stack would get from any other choice.
+        """
+        stack = ""
+        if self.mavlink is not None:
+            # getattr, not attribute access: a plugin or a test may hand the
+            # server a bridge-shaped object that predates the dialect layer, and
+            # the setup pages must still render for it rather than 500.
+            stack = getattr(self.mavlink, "stack", "")
+        elif self.store is not None:
+            stack = self.store.get_snapshot().get("autopilot_stack") or ""
+        return self._SCHEMAS.get(stack, self._DEFAULT_SCHEMAS)[page]
+
+    def _vehicle_type_id(self) -> int:
+        """The MAV_TYPE the schemas key their per-airframe tables off."""
+        return int(getattr(self.mavlink, "vehicle_type_id", 0) or 0)
+
     @route("GET", "/api/motors")
     def _api_motors(self) -> None:
         """Return the vehicle's motor configuration as a renderable description.
@@ -1798,21 +2239,22 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         Always 200 so the page can render a "not connected" state instead of an
         error banner; ``connected`` says which it is.
         """
+        schema = self._schema("motors")
         if self.mavlink is None:
-            payload = motor_config.build({})
+            payload = schema.build({})
             payload["connected"] = False
             self._send_json(payload)
             return
         try:
-            values = self.mavlink.fetch_params(motor_config.param_names())
+            values = self.mavlink.fetch_params(schema.param_names())
         except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
             logger.exception("motor parameter fetch failed")
-            payload = motor_config.build({})
+            payload = schema.build({})
             payload["connected"] = False
             payload["error"] = str(exc)
             self._send_json(payload)
             return
-        payload = motor_config.build(values)
+        payload = schema.build(values)
         payload["connected"] = bool(values)
         if not values:
             payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
@@ -1838,8 +2280,9 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         Always 200 so the page can render a "not connected" state instead of an
         error banner; ``connected`` says which it is.
         """
+        schema = self._schema("safety")
         query = parse_qs(urlparse(self.path).query)
-        extra = safety_config.normalise_extra(
+        extra = schema.normalise_extra(
             [n for value in query.get("extra", []) for n in value.split(",")])
         if self.mavlink is None:
             self._send_json({
@@ -1847,7 +2290,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             })
             return
         try:
-            values = self.mavlink.fetch_params(safety_config.param_names() + extra)
+            values = self.mavlink.fetch_params(schema.param_names() + extra)
         except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
             logger.exception("safety parameter fetch failed")
             self._send_json({
@@ -1855,7 +2298,11 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 "error": str(exc),
             })
             return
-        payload = safety_config.build(values, extra)
+        payload = schema.build(
+            values, extra,
+            **({"vehicle": autopilot.vehicle_class(self._vehicle_type_id())}
+               if schema is ardupilot_safety else {}),
+        )
         payload["connected"] = bool(values)
         if not values:
             payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
@@ -1879,18 +2326,23 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         Always 200 so the page can render a "not connected" state instead of an
         error banner; ``connected`` says which it is.
         """
+        schema = self._schema("tuning")
         if self.mavlink is None:
             self._send_json({"connected": False, "groups": [], "received": 0})
             return
         try:
-            values = self.mavlink.fetch_params(tuning_config.param_names())
+            values = self.mavlink.fetch_params(schema.param_names())
         except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
             logger.exception("tuning parameter fetch failed")
             self._send_json({
                 "connected": False, "groups": [], "received": 0, "error": str(exc),
             })
             return
-        payload = tuning_config.build(values)
+        payload = schema.build(
+            values,
+            **({"vehicle": autopilot.vehicle_class(self._vehicle_type_id())}
+               if schema is ardupilot_tuning else {}),
+        )
         payload["connected"] = bool(values)
         if not values:
             payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
@@ -1920,23 +2372,28 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         Always 200 so the page can render a "not connected" state instead of an
         error banner; ``connected`` says which it is.
         """
+        schema = self._schema("rc")
         empty = {"connected": False, "sections": [], "assignments": {},
-                 "channel_limit": rc_config.MAX_CHANNELS, "received": 0}
+                 "channel_limit": schema.MAX_CHANNELS, "received": 0}
         if self.mavlink is None:
             self._send_json(empty)
             return
-        channels = rc_config.MAX_CHANNELS
+        channels = schema.MAX_CHANNELS
         if self.store is not None:
             reported = self.store.get_snapshot().get("rc_channel_count") or 0
-            if isinstance(reported, int) and 0 < reported <= rc_config.MAX_CHANNELS:
+            if isinstance(reported, int) and 0 < reported <= schema.MAX_CHANNELS:
                 channels = reported
         try:
-            values = self.mavlink.fetch_params(rc_config.param_names())
+            values = self.mavlink.fetch_params(schema.param_names())
         except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
             logger.exception("RC parameter fetch failed")
             self._send_json(dict(empty, error=str(exc)))
             return
-        payload = rc_config.build(values, channels)
+        payload = schema.build(
+            values, channels,
+            **({"vehicle_type": self._vehicle_type_id()}
+               if schema is ardupilot_rc else {}),
+        )
         payload["connected"] = bool(values)
         if not values:
             payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
@@ -3341,10 +3798,14 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         Body: ``{motor: 1-16, bank: "MAIN"|"AUX"|"CAN", pin: n}`` to assign, or
         ``{motor: n, output: null}`` to unassign.
         """
+        schema = self._schema("motors")
         motor = payload.get("motor")
         if isinstance(motor, bool) or not isinstance(motor, int) or not (
-                1 <= motor <= motor_config.MAX_MOTOR_FUNCTIONS):
-            self._send_json({"ok": False, "error": "motor must be between 1 and 16"}, 400)
+                1 <= motor <= schema.MAX_MOTOR_FUNCTIONS):
+            self._send_json({
+                "ok": False,
+                "error": f"motor must be between 1 and {schema.MAX_MOTOR_FUNCTIONS}",
+            }, 400)
             return
 
         unassign = payload.get("output", False) is None
@@ -3356,7 +3817,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             if not isinstance(bank, str) or isinstance(pin, bool) or not isinstance(pin, int):
                 self._send_json({"ok": False, "error": "bank and pin are required"}, 400)
                 return
-            target_param = motor_config.function_param(bank, pin)
+            target_param = schema.function_param(bank, pin)
             if target_param is None:
                 self._send_json({"ok": False, "error": f"unknown output {bank} {pin}"}, 400)
                 return
@@ -3367,7 +3828,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             return
 
         values = self.mavlink.fetch_params(
-            [e for e in motor_config.param_names() if "_FUNC" in e])
+            [e for e in schema.param_names() if "_FUNC" in e])
         if not values:
             error = self.mavlink.get_last_command_error() or "no output parameters received"
             self._send_json({"ok": False, "error": error}, 503)
@@ -3377,7 +3838,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 {"ok": False, "error": f"this board has no output {target_label}"}, 400)
             return
 
-        entries = motor_config.outputs(values)
+        entries = schema.outputs(values)
         source = next((e for e in entries if e["motor"] == motor), None)
         if target_param is not None and source is not None and source["param"] == target_param:
             self._send_json({"ok": True, "writes": [], "note": "already assigned"})
@@ -3409,10 +3870,17 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             # Source first: a motor briefly on no pin is a safer transient than
             # one briefly on two.
             if source is not None:
-                vacated = 0.0 if displaced is None else float(
-                    motor_config.MOTOR_FUNCTION_BASE + displaced)
-                writes.append((source["param"], vacated))
-            writes.append((target_param, float(motor_config.MOTOR_FUNCTION_BASE + motor)))
+                vacated = (0.0 if displaced is None
+                           else schema.motor_function_value(displaced))
+                writes.append((source["param"], float(vacated or 0.0)))
+            claimed = schema.motor_function_value(motor)
+            if claimed is None:
+                self._send_json({
+                    "ok": False,
+                    "error": f"this autopilot has no output function for Motor {motor}",
+                }, 400)
+                return
+            writes.append((target_param, float(claimed)))
 
         applied: list[dict[str, Any]] = []
         for name, value in writes:
@@ -3496,6 +3964,30 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             status = 503 if "not connected" in error else 409
             self._send_json({"ok": False, "error": error}, status)
 
+    @route("POST", "/api/calibrate/position")
+    def _api_calibrate_position(self, payload: dict) -> None:
+        """Confirm the aircraft is in the position the autopilot asked for.
+
+        PX4 recognises each of the six accelerometer orientations by itself, so
+        on a PX4 link this is refused with an explanation rather than sent.
+        ArduPilot waits to be told, indefinitely, which is why the endpoint
+        exists at all.
+        """
+        raw = payload.get("position", "")
+        position = raw.strip().lower() if isinstance(raw, str) else ""
+        if position not in autopilot.ACCELCAL_POSITIONS:
+            self._send_json({"ok": False, "error": "unknown position"}, 400)
+            return
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        if self.mavlink.accel_calibration_position(position):
+            self._send_json({"ok": True})
+            return
+        error = self.mavlink.get_last_command_error() or "position failed"
+        status = 503 if "not connected" in error else 409
+        self._send_json({"ok": False, "error": error}, status)
+
     @route("POST", "/api/calibrate/cancel")
     def _api_calibrate_cancel(self, payload: dict) -> None:
         """Abort the calibration currently running on the vehicle."""
@@ -3512,19 +4004,20 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
     @route("POST", "/api/autotune")
     def _api_autotune(self, payload: dict) -> None:
-        """Start or stop the PX4 autotune.
+        """Start or stop the autotune, however the connected stack runs one.
 
         ``{"axis": "all"}`` starts it; ``{"axis": "all", "enabled": false}``
         stops one that is running. Starting is refused unless the vehicle is
-        armed and airborne — the autotune injects steps into the rate
-        controller and PX4 will only run it in flight.
+        armed and airborne — the tune injects steps into the rate controller
+        and neither stack will run it on the ground. PX4 runs it as a command;
+        ArduPilot runs it as a flight mode, which the bridge handles.
         """
         raw = payload.get("axis", "")
         axis = raw.strip().lower() if isinstance(raw, str) else ""
         if axis not in AUTOTUNE_AXES:
             self._send_json({
                 "ok": False,
-                "error": "PX4 supports full autotune only; use axis 'all'",
+                "error": "full autotune only; use axis 'all'",
             }, 400)
             return
         enabled = payload.get("enabled", True)
@@ -3656,26 +4149,30 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     def _api_rc_calibrate(self, payload: dict) -> None:
         """Write a measured RC calibration to the vehicle.
 
-        PX4 has no autopilot-side RC calibration: unlike the accelerometer, the
-        whole procedure belongs to the ground station, which watches
-        RC_CHANNELS while the operator sweeps every control and then writes the
-        endpoints it saw. This is the write half. The measuring half is the
-        wizard in ``setup-control.js``; what arrives here is its result:
+        Neither PX4 nor ArduPilot has an autopilot-side RC calibration: unlike
+        the accelerometer, the whole procedure belongs to the ground station,
+        which watches RC_CHANNELS while the operator sweeps every control and
+        then writes the endpoints it saw. This is the write half. The measuring
+        half is the wizard in ``setup-control.js``; what arrives here is its
+        result:
 
         ``{channels: [{channel, min, max, trim, reversed}], count, mapping}``,
         where ``mapping`` is the stick assignment the wizard learned by asking
         for one named stick at a time and watching which channel answered.
 
-        Validation lives in :func:`corvus.rc_config.calibration_writes` and is
-        all-or-nothing on purpose — a rejected measurement leaves the vehicle
-        exactly as it was, because a half-written endpoint set looks calibrated
-        and is not. A write that fails part-way is reported with the parameters
+        Validation lives in the connected stack's ``calibration_writes`` — the
+        two differ on where the reversal goes (``RC<n>_REV`` on PX4, a 0/1
+        ``RC<n>_REVERSED`` on ArduPilot) and on whether there is a channel-count
+        parameter at all — and is all-or-nothing on purpose: a rejected
+        measurement leaves the vehicle exactly as it was, because a half-written
+        endpoint set looks calibrated and is not. A write that fails part-way is reported with the parameters
         that did land, so the operator knows the radio is now inconsistent and
         must run the wizard again rather than fly it.
 
         Refused while armed by the bridge's own parameter gate; refused here
         first so the reason names the page rather than a parameter.
         """
+        schema = self._schema("rc")
         if self.mavlink is None:
             self._send_json({"ok": False, "error": "not connected"}, 503)
             return
@@ -3692,14 +4189,14 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # The known-parameter set is what makes this version-tolerant: a write
         # to an RC<n>_REV a firmware does not have is dropped rather than sent
         # and reported as a failure the operator cannot act on.
-        known = set(self.mavlink.fetch_params(rc_config.param_names()))
+        known = set(self.mavlink.fetch_params(schema.param_names()))
         if not known:
             error = self.mavlink.get_last_command_error() or "no parameters received"
             self._send_json({"ok": False, "error": error}, 503)
             return
 
         try:
-            writes = rc_config.calibration_writes(
+            writes = schema.calibration_writes(
                 payload.get("channels"), count, known, payload.get("mapping"))
         except rc_config.CalibrationError as exc:
             self._send_json({"ok": False, "error": str(exc)}, 400)
@@ -4221,7 +4718,11 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         if os.path.commonpath([directory, target]) != directory:
             self._send_json({"ok": False, "error": "unknown log file"}, 400)
             return
-        if not target.endswith(".ulg") or not os.path.isfile(target):
+        # .bin is accepted here and refused by the parser with a sentence that
+        # says what the file actually is. "Unknown log file" for a log Corvus
+        # downloaded itself, under a name it chose itself, is the worst of both.
+        suffixes = getattr(self.logs, "LOG_SUFFIXES", (".ulg",))
+        if not target.endswith(suffixes) or not os.path.isfile(target):
             self._send_json({"ok": False, "error": "unknown log file"}, 404)
             return
         try:
@@ -4406,6 +4907,179 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self._send_json({"ok": True, "dir": path})
 
     # ---- SSE endpoints ----
+    # ---- SSE topics -------------------------------------------------------
+    # One definition per topic: what it subscribes to, what its first payload
+    # is, and how it buffers. Both the single-topic endpoints below and the
+    # multiplexed /api/events stream drive from these, so "what subscribing to
+    # params means" is written down once. Splitting that across a per-endpoint
+    # copy and a multiplexed copy is the divergence ARCH-1 is about.
+    #
+    # Each binder takes the buffer to fill and returns (unbind, initial) where
+    # *initial* is the payload to send immediately, or None for a topic that
+    # has nothing to say until something happens.
+
+    def _bind_console(self, buf: _BoundedSseBuffer, job_id: str | None = None):
+        if not self.mavlink:
+            return (lambda: None), None
+        listener = buf.put_console
+        self.mavlink.add_console_sub(listener)
+        return (lambda: self.mavlink.remove_console_sub(listener)), None
+
+    def _bind_params(self, buf: _BoundedSseBuffer, job_id: str | None = None):
+        if not self.mavlink:
+            return (lambda: None), {"state": "idle", "count": 0, "received": 0}
+        listener = buf.put_latest
+        self.mavlink.add_param_listener(listener)
+        status = self.mavlink.param_status()
+        initial = _sanitize({
+            "state": status["state"],
+            "count": status["count"],
+            "received": status["received"],
+        })
+        return (lambda: self.mavlink.remove_param_listener(listener)), initial
+
+    def _bind_firmware(self, buf: _BoundedSseBuffer, job_id: str | None = None):
+        if self.flash is None:
+            return (lambda: None), None
+        listener = buf.put_fifo
+        self.flash.add_listener(listener)
+        st = self.flash.status()
+        initial = _sanitize({
+            "state": st["state"], "percent": st["progress"], "message": st["message"],
+        })
+        return (lambda: self.flash.remove_listener(listener)), initial
+
+    def _bind_tiles(self, buf: _BoundedSseBuffer, job_id: str | None = None):
+        # The only topic that is per-object rather than per-server: it follows
+        # one download job, and without an id there is nothing to follow.
+        if not job_id or self.tile_downloader is None or self.tile_progress_bus is None:
+            return (lambda: None), None
+        status = self.tile_downloader.status(job_id)
+        if status is None:
+            return (lambda: None), None
+        listener = buf.put_latest
+        self.tile_progress_bus.subscribe(job_id, listener)
+        return (
+            lambda: self.tile_progress_bus.unsubscribe(job_id, listener),
+            _sanitize(status),
+        )
+
+    @property
+    def _sse_topics(self) -> dict:
+        """topic -> (binder, buffer capacity, payload shaper)."""
+        return {
+            "console": (self._bind_console, CONSOLE_SSE_CAPACITY, lambda e: e),
+            "params": (self._bind_params, PARAMS_SSE_CAPACITY, lambda e: {
+                "state": e["state"], "count": e["count"], "received": e["received"],
+            }),
+            "firmware": (self._bind_firmware, FIRMWARE_SSE_CAPACITY, lambda e: _sanitize({
+                "state": e.get("state"),
+                "percent": e.get("percent"),
+                "message": e.get("message"),
+            })),
+            "tiles": (self._bind_tiles, TILES_PROGRESS_SSE_CAPACITY, _sanitize),
+        }
+
+    _SSE_TERMINAL_STATES = ("done", "cancelled", "failed")
+
+    def _serve_sse_topics(
+        self,
+        wanted: dict[str, str],
+        job_id: str | None = None,
+        close_on: tuple[str, ...] = (),
+    ) -> None:
+        """Stream *wanted* (topic -> SSE event name) down one connection.
+
+        The whole point of the multiplexed form: a browser caps concurrent
+        HTTP/1.1 requests per origin at six, and this app could hold five
+        event streams open while the map still wanted that budget for tiles.
+        A viewport is dozens of tiles, and they queue one at a time behind the
+        streams at exactly the moment — pre-flight setup with a region
+        downloading — the operator is busiest.
+
+        Every topic keeps its own buffer and drop policy; only the socket is
+        shared. A topic whose service is absent binds to nothing and simply
+        never fires, which is why an unavailable service degrades to a quiet
+        stream rather than a failed request.
+
+        *close_on* names topics that finish: once one of them reports a
+        terminal state the whole stream ends. That is right for a connection
+        opened to watch a single job and wrong for a multiplexed one, where a
+        finished download must not take the console down with it.
+        """
+        table = self._sse_topics
+        mux = _MultiplexSseBuffer()
+        unbinds: list = []
+        initials: list[tuple[str, Any]] = []
+        for topic in wanted:
+            binder, capacity, _shape = table[topic]
+            buf = mux.topic(topic, capacity)
+            unbind, initial = binder(buf, job_id)
+            unbinds.append(unbind)
+            if initial is not None:
+                initials.append((topic, initial))
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self._send_cors()
+        self.end_headers()
+        try:
+            for topic, initial in initials:
+                self._send_sse(wanted[topic], json.dumps(initial))
+            while True:
+                try:
+                    finished = False
+                    for topic, entry in mux.drain(timeout=15):
+                        _binder, _capacity, shape = table[topic]
+                        self._send_sse(wanted[topic], json.dumps(shape(entry)))
+                        if topic in close_on and isinstance(entry, dict):
+                            finished = entry.get("state") in self._SSE_TERMINAL_STATES
+                    if finished:
+                        break
+                except queue.Empty:
+                    if self._sse_stopping():
+                        break
+                    self._send_sse("ping", "{}")
+        except CLIENT_GONE_ERRORS:
+            pass
+        finally:
+            for unbind in unbinds:
+                try:
+                    unbind()
+                except Exception:  # noqa: BLE001 - teardown must not raise
+                    logger.exception("SSE topic unbind failed")
+
+    @route("GET", "/api/events")
+    def _sse_events(self) -> None:
+        """One stream carrying any of console, params, firmware and tiles.
+
+        ``?topics=console,params`` selects them; ``?job=<id>`` is the download
+        job the ``tiles`` topic follows. Unknown names are ignored rather than
+        rejected, so a newer frontend asking an older backend for a topic it
+        has never heard of gets the rest of what it asked for instead of a
+        400 and no stream at all.
+
+        Each topic arrives under its own event name, which is what lets one
+        connection replace four: the single-topic endpoints all call theirs
+        ``progress``, and three ``progress`` streams down one socket would be
+        indistinguishable.
+
+        Telemetry is deliberately NOT here. It is the 50 Hz path with its own
+        version-keyed snapshot cache, it is open for the whole session, and it
+        is the one stream whose stutter an operator would read as the aircraft
+        misbehaving. SSH keeps its own for the same reason in reverse: it is
+        per-session, high-volume, and ends when its shell does.
+        """
+        params = parse_qs(urlparse(self.path).query)
+        asked = [t.strip() for t in (params.get("topics", [""])[0] or "").split(",")]
+        table = self._sse_topics
+        wanted = {t: t for t in asked if t in table}
+        if not wanted:
+            self._send_json({"error": "no known topics requested"}, 400)
+            return
+        self._serve_sse_topics(wanted, job_id=params.get("job", [None])[0])
+
     @route("GET", "/api/telemetry")
     def _sse_telemetry(self) -> None:
         self.send_response(200)
@@ -4443,70 +5117,25 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
     @route("GET", "/api/console/stream")
     def _sse_console(self) -> None:
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self._send_cors()
-        self.end_headers()
-        q = _BoundedSseBuffer(CONSOLE_SSE_CAPACITY)
-        listener = q.put_console
-        if self.mavlink:
-            self.mavlink.add_console_sub(listener)
-        try:
-            while True:
-                try:
-                    entry = q.get(timeout=15)
-                    self._send_sse("message", json.dumps(entry))
-                except queue.Empty:
-                    if self._sse_stopping():
-                        break
-                    self._send_sse("ping", "{}")
-        except CLIENT_GONE_ERRORS:
-            pass
-        finally:
-            if self.mavlink:
-                self.mavlink.remove_console_sub(listener)
+        """STATUSTEXT as its own stream, under the event name ``message``.
+
+        The frontend uses ``/api/events?topics=console`` instead, to stay
+        inside the browser's six-connection budget. This endpoint remains
+        because it is a published HTTP API a plugin or an external tool may
+        hold — and because it costs nothing now that it is the same topic
+        binding the multiplexed stream uses, under a different event name.
+        """
+        self._serve_sse_topics({"console": "message"})
 
     @route("GET", "/api/params/progress")
     def _sse_params(self) -> None:
-        """SSE stream of parameter-download progress (latest-wins, coalesced)."""
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self._send_cors()
-        self.end_headers()
-        q = _BoundedSseBuffer(PARAMS_SSE_CAPACITY)
-        listener = q.put_latest
-        try:
-            if self.mavlink:
-                self.mavlink.add_param_listener(listener)
-                status = self.mavlink.param_status()
-            else:
-                status = {"state": "idle", "count": 0, "received": 0}
-            self._send_sse("progress", json.dumps(_sanitize({
-                "state": status["state"],
-                "count": status["count"],
-                "received": status["received"],
-            })))
-            while True:
-                try:
-                    entry = q.get(timeout=15)
-                    self._send_sse("progress", json.dumps({
-                        "state": entry["state"],
-                        "count": entry["count"],
-                        "received": entry["received"],
-                    }))
-                except queue.Empty:
-                    if self._sse_stopping():
-                        break
-                    self._send_sse("ping", "{}")
-        except CLIENT_GONE_ERRORS:
-            pass
-        finally:
-            if self.mavlink:
-                self.mavlink.remove_param_listener(listener)
+        """Parameter-download progress as its own stream (latest-wins).
+
+        See :meth:`_sse_console`: the frontend uses
+        ``/api/events?topics=params``; this stays as the published
+        single-topic form, over the same binding.
+        """
+        self._serve_sse_topics({"params": "progress"})
 
     @route("GET", "/api/ssh/stream")
     def _sse_ssh_stream(self) -> None:
@@ -4584,46 +5213,57 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
     @route("GET", "/api/firmware/progress")
     def _sse_firmware(self) -> None:
-        """SSE stream of flash progress (every event delivered; low-rate).
+        """Flash progress as its own stream — every step, none coalesced.
 
-        Uses an unbounded ``queue.Queue`` (not the coalescing bounded buffer) so
-        every erase/program/verify step reaches the client — flashing is
-        low-rate and each step matters to the operator.
+        Erase/program/verify each matter to whoever is watching a bootloader
+        write, so this topic buffers FIFO rather than latest-wins. See
+        :meth:`_sse_console`: the frontend uses
+        ``/api/events?topics=firmware`` over the same binding.
         """
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self._send_cors()
-        self.end_headers()
-        q: queue.Queue = queue.Queue()
-        listener = q.put
+        self._serve_sse_topics({"firmware": "progress"})
+
+    # ---- Place search ----
+    @route("GET", "/api/geocode")
+    def _api_geocode(self) -> None:
+        """Places matching ``?q=``, for the map's search box.
+
+        Always 200 with ``{ok, results, error}``. The distinction that matters
+        to the operator is not HTTP's: "found nothing" and "could not look"
+        are both ordinary outcomes in the field, and the box says something
+        different for each. A status code would collapse them into one red
+        line — and the frontend answers a coordinate pair itself, without ever
+        asking here, so this endpoint being unreachable is not the search
+        being unavailable.
+
+        ``?near=<lon>,<lat>`` biases the ranking toward the map's centre. It
+        is a preference, never a filter: a search for somewhere far away still
+        finds it.
+        """
+        params = parse_qs(urlparse(self.path).query)
+        query = (params.get("q", [""])[0] or "").strip()
+        if not query:
+            self._send_json({"ok": False, "results": [], "error": "q is required"}, 400)
+            return
+        if self.geocoder is None:
+            self._send_json({
+                "ok": False, "results": [],
+                "error": "Place search is not available in this build.",
+            })
+            return
+        limit = _int_or(params.get("limit", [None])[0], geocode.DEFAULT_RESULTS)
+        near = _parse_near(params.get("near", [""])[0])
         try:
-            if self.flash is not None:
-                self.flash.add_listener(listener)
-                st = self.flash.status()
-                self._send_sse("progress", json.dumps(_sanitize({
-                    "state": st["state"],
-                    "percent": st["progress"],
-                    "message": st["message"],
-                })))
-            while True:
-                try:
-                    entry = q.get(timeout=15)
-                    self._send_sse("progress", json.dumps(_sanitize({
-                        "state": entry.get("state"),
-                        "percent": entry.get("percent"),
-                        "message": entry.get("message"),
-                    })))
-                except queue.Empty:
-                    if self._sse_stopping():
-                        break
-                    self._send_sse("ping", "{}")
-        except CLIENT_GONE_ERRORS:
-            pass
-        finally:
-            if self.flash is not None:
-                self.flash.remove_listener(listener)
+            results = self.geocoder.search(query, limit=limit, near=near)
+        except geocode.GeocodeError as exc:
+            self._send_json({"ok": False, "results": [], "error": str(exc)})
+            return
+        except Exception:  # noqa: BLE001 - a search must never 500 the app
+            logger.exception("place search failed for %r", query)
+            self._send_json({
+                "ok": False, "results": [], "error": "The place search failed.",
+            })
+            return
+        self._send_json({"ok": True, "results": results, "error": ""})
 
     # ---- Tile cache / download / serve ----
     @route("GET", "/api/tiles/sources")
@@ -4959,34 +5599,15 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         if status is None:
             self._send_json({"error": "unknown job"}, 404)
             return
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self._send_cors()
-        self.end_headers()
-        q = _BoundedSseBuffer(TILES_PROGRESS_SSE_CAPACITY)
-        listener = q.put_latest
-        try:
-            if self.tile_progress_bus is not None:
-                self.tile_progress_bus.subscribe(job_id, listener)
-            self._send_sse("progress", json.dumps(_sanitize(status)))
-            while True:
-                try:
-                    entry = q.get(timeout=15)
-                    self._send_sse("progress", json.dumps(_sanitize(entry)))
-                    state = entry.get("state") if isinstance(entry, dict) else None
-                    if state in ("done", "cancelled", "failed"):
-                        break
-                except queue.Empty:
-                    if self._sse_stopping():
-                        break
-                    self._send_sse("ping", "{}")
-        except CLIENT_GONE_ERRORS:
-            pass
-        finally:
-            if self.tile_progress_bus is not None:
-                self.tile_progress_bus.unsubscribe(job_id, listener)
+        # The validation above is what this endpoint adds over the bare topic:
+        # a missing, unknown or unservable job is a 4xx/5xx answer, and a
+        # stream cannot express one once its headers have gone out. The
+        # multiplexed form has no equivalent — there a bad job id simply never
+        # fires, which is the right failure for one topic among several.
+        del status  # re-read by the topic binder, which owns the subscription
+        self._serve_sse_topics(
+            {"tiles": "progress"}, job_id=job_id, close_on=("tiles",),
+        )
 
     def _api_tiles_serve(self, source: str, z: int, x: int, y: int) -> None:
         """Serve a cached tile, transparently fetching+ caching from upstream.
@@ -5142,10 +5763,22 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     def _serve_static(self, path: str) -> None:
         if path == "/":
             path = "/index.html"
-        file_path = (WEB_DIR / path.lstrip("/")).resolve()
+        # Percent-decoded first: a URL path is an encoded form, so without
+        # this "/js/my%20file.js" looks for a file literally named
+        # "my%20file.js" and 404s. No asset that ships today needs it — this
+        # is for whoever adds the first plugin asset with a space in its name.
+        #
+        # Decoding is what makes "%2e%2e%2f" mean "../", so it is only safe
+        # because of the containment check below: resolve() collapses the
+        # traversal and relative_to() is what refuses anything that climbed
+        # out of WEB_DIR. Decode, then join, then resolve, then check — in
+        # that order.
         try:
+            file_path = (WEB_DIR / unquote(path).lstrip("/")).resolve()
             file_path.relative_to(WEB_DIR)
         except ValueError:
+            # relative_to on an escapee, or a decoded NUL byte that pathlib
+            # refuses outright. Neither is a path under WEB_DIR.
             self._send_json({"error": "forbidden"}, 403)
             return
         if not file_path.is_file():
@@ -5154,13 +5787,74 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         ctype, _ = mimetypes.guess_type(str(file_path))
         if ctype is None:
             ctype = "application/octet-stream"
+        # Validators, so the browser can ask "still the same?" instead of
+        # being handed the whole file again. src/ is ~4.8 MB and index.html
+        # pulls 38 blocking scripts, including maplibre (1.0 MB), plotly
+        # (1.0 MB), lucide and xterm — all of it was read off disk, written
+        # to the socket and re-parsed on every launch and every reload,
+        # because "no-cache" without a validator means "revalidate against
+        # nothing", which can only ever be a full re-send.
+        #
+        # Cache-Control stays "no-cache": still revalidated every time, which
+        # is what makes a plugin asset edited on disk show up on reload. Only
+        # the body stops crossing the wire when nothing changed.
+        try:
+            stat = file_path.stat()
+        except OSError:
+            self._send_json({"error": "not found"}, 404)
+            return
+        etag = f'"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
+        last_modified = formatdate(stat.st_mtime, usegmt=True)
+        if self._static_is_unchanged(etag, stat.st_mtime):
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Last-Modified", last_modified)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            return
         body = file_path.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-cache")
+        self.send_header("ETag", etag)
+        self.send_header("Last-Modified", last_modified)
         self.end_headers()
         self.wfile.write(body)
+
+    def _static_is_unchanged(self, etag: str, mtime: float) -> bool:
+        """Does the client already hold this exact version of the file?
+
+        ``If-None-Match`` wins outright when present, per RFC 9110: it is the
+        strong validator, and a client that sent both is asking to be judged
+        on the ETag. Only when there is no ETag does the date get a say —
+        and then at one-second resolution, which is why the ETag carries
+        nanoseconds and the size: a file rewritten twice within the same
+        second is a different file and has a different tag.
+        """
+        headers = getattr(self, "headers", None)
+        if headers is None:
+            return False
+        if_none_match = (headers.get("If-None-Match") or "").strip()
+        if if_none_match:
+            # A comma-separated list, and each entry may carry the weak
+            # prefix. Compared weakly, which is what a GET is allowed to do.
+            candidates = [
+                part.strip()[2:] if part.strip().startswith("W/") else part.strip()
+                for part in if_none_match.split(",")
+            ]
+            return "*" in candidates or etag in candidates
+        if_modified_since = (headers.get("If-Modified-Since") or "").strip()
+        if if_modified_since:
+            try:
+                since = parsedate_to_datetime(if_modified_since).timestamp()
+            except (TypeError, ValueError, OverflowError):
+                return False
+            # int(): HTTP dates have no sub-second part, so a file written
+            # 0.4 s after the timestamp the client holds must still count as
+            # newer once truncated.
+            return int(mtime) <= int(since)
+        return False
 
 
 # Wire @route declarations collected during the CorvusHandler class body onto
@@ -5233,7 +5927,7 @@ class CorvusServer(socketserver.ThreadingTCPServer):
         logger.exception("error serving %s", client_address)
 
     def shutdown(self) -> None:
-        """Stop the HTTP loop and release every tile resource.
+        """Stop the HTTP loop, the MAVLink-borrowing services, and the caches.
 
         Download workers are stopped first so they are not mid-write to the
         caches; the HTTP serve loop is then stopped; caches are closed last so
@@ -5278,6 +5972,25 @@ class CorvusServer(socketserver.ThreadingTCPServer):
                 flash.shutdown()
             except Exception:  # noqa: BLE001 - shutdown must not raise
                 logger.exception("flash service shutdown failed")
+        # The radio service can be holding the bridge's serial port for an AT
+        # session and restarts the bridge when that session ends. Same reason
+        # the forwarder is here: serve.py and the desktop app both stop it,
+        # but a caller that only has the server must not be left with a
+        # service that can re-open the serial link after shutdown() returned.
+        sik = getattr(self, "sik", None)
+        if sik is not None:
+            try:
+                sik.shutdown()
+            except Exception:  # noqa: BLE001 - shutdown must not raise
+                logger.exception("SiK radio shutdown failed")
+        # Log downloads hold a sink on the MAVLink bridge and a worker thread,
+        # so they go with flash, before the bridge does.
+        logs = getattr(self, "logs", None)
+        if logs is not None:
+            try:
+                logs.shutdown()
+            except Exception:  # noqa: BLE001 - shutdown must not raise
+                logger.exception("log service shutdown failed")
         try:
             super().shutdown()
         except Exception:  # noqa: BLE001 - shutdown must not raise
@@ -5356,7 +6069,7 @@ def bind_server(
     host: str | None = None,
     span: int = PORT_SEARCH_SPAN,
     server_cls: type | None = None,
-) -> "CorvusServer":
+) -> CorvusServer:
     """Return a server actually listening on *port*, or the next free one.
 
     This replaces the "probe a port with a throwaway socket, close it, then
@@ -5560,9 +6273,14 @@ def create_server(
     # imply per-source downloaders; _TileDownloaderPool presents them as one.
     # Built through the shared _build_tile_resources helper so the desktop app
     # (app.start_backend) and browser mode (create_server) never diverge.
+    # Honor the operator's tile_cache_dir exactly as the desktop app does: an
+    # override that only takes in one mode points the two modes at different
+    # .mbtiles files, so an area downloaded in one is missing in the other.
+    cache_dir = _tile_cache_dir(config)
     tile_caches, tile_progress_bus, tile_downloader, tile_breaker = \
-        _build_tile_resources(default_cache_dir())
-    buildings = _build_building_service(default_cache_dir())
+        _build_tile_resources(cache_dir)
+    buildings = _build_building_service(cache_dir)
+    geocoder = _build_geocoder()
 
     CorvusHandler.store = store
     CorvusHandler.mavlink = mavlink
@@ -5575,31 +6293,21 @@ def create_server(
     CorvusHandler.tile_progress_bus = tile_progress_bus
     CorvusHandler.tile_breaker = tile_breaker
     CorvusHandler.buildings = buildings
+    CorvusHandler.geocoder = geocoder
 
     # Create ~/.corvus/plugins (with its README) at startup rather than only
     # when Settings opens it, so an operator who was told "drop it in the
     # plugins folder" finds one already there. Never raises.
     ensure_user_plugins_dir()
 
-    # Firmware-flash service (direct USB only). Imported lazily so the server
-    # still builds if a parallel edit to flash_service is mid-flight.
-    flash: Any = None
-    try:
-        from .firmware_catalog import FirmwareCatalog
-        from .flash_service import FlashService
-        flash = FlashService(mavlink, store, catalog=FirmwareCatalog(_firmware_dir(config)))
-    except Exception:  # noqa: BLE001 - never block server creation
-        logger.exception("flash service unavailable; firmware endpoints disabled")
+    # Firmware-flash service (direct USB only), built through the shared
+    # helper the desktop app uses so neither mode ends up without a catalogue.
+    flash = _build_flash_service(mavlink, store, config)
     CorvusHandler.flash = flash
 
-    # SiK telemetry-radio configuration. Borrows the bridge's serial port for
-    # the length of an AT session, so it holds the same two handles the flash
-    # service does and is torn down on the same path.
-    sik: Any = None
-    try:
-        sik = sik_service.SikService(mavlink, store)
-    except Exception:  # noqa: BLE001 - never block server creation
-        logger.exception("SiK radio service unavailable; radio endpoints disabled")
+    # SiK telemetry-radio configuration, through the shared builder so the
+    # desktop app gets the same radio page this one does.
+    sik = _build_sik_service(mavlink, store)
     CorvusHandler.sik = sik
 
     # Flight-log service: on-board ULog download over MAVLink plus the local
@@ -5612,14 +6320,8 @@ def create_server(
     forwarder = _build_forwarder(mavlink, config)
     CorvusHandler.forwarder = forwarder
 
-    # Update check against the GitHub releases. Constructed only — it touches
-    # the network the first time the frontend asks, never at startup.
-    updates: Any = None
-    try:
-        from .update_check import UpdateChecker
-        updates = UpdateChecker()
-    except Exception:  # noqa: BLE001 - never block server creation
-        logger.exception("update checker unavailable; update endpoints disabled")
+    # Update check against the GitHub releases, through the shared builder.
+    updates = _build_update_checker()
     CorvusHandler.updates = updates
 
     # bind_server, not a bare constructor: a port that is already taken moves
@@ -5639,6 +6341,7 @@ def create_server(
     server.tile_caches = tile_caches
     server.tile_downloader = tile_downloader
     server.buildings = buildings
+    server.geocoder = geocoder
     server.autoconnect_session = autoconnect_session
     mavlink.start()
     # After mavlink.start(), never before: the resolver above already decided

@@ -25,7 +25,8 @@ import math
 import os
 import threading
 from collections import OrderedDict
-from typing import Any, Callable, Iterable
+from typing import Any
+from collections.abc import Callable, Iterable
 
 from .ulog import ULog, read
 
@@ -1171,6 +1172,76 @@ def _plot_gps_velocity(log: ULog) -> dict | None:
                       "test ratios.")
 
 
+def _plot_rate_error(log: ULog) -> dict | None:
+    """Demanded rate minus measured rate, all three axes together.
+
+    The per-axis plots draw the pair, and a pair that very nearly overlaps
+    hides the only thing being asked about: the gap between them. Subtracted,
+    the gap *is* the trace. Flat is tuned; a standing offset is saturation or
+    trim; fast ringing about zero is a rate loop arguing with itself.
+
+    The setpoint is held, not interpolated — the controller ran at 250 Hz
+    against a setpoint published at 50, and the last value it was given is what
+    it was actually trying to achieve.
+    """
+    topic = _first_topic(log, ("vehicle_angular_velocity", "sensor_combined"))
+    setpoint = _first_topic(log, ("vehicle_rates_setpoint",))
+    if topic is None or setpoint is None:
+        return None
+    field = "xyz" if topic == "vehicle_angular_velocity" else "gyro_rad"
+    series = []
+    for index, axis in enumerate(("roll", "pitch", "yaw")):
+        times, measured = _raw_component(log, topic, field, index,
+                                         scale=180.0 / math.pi)
+        found = _first_field(log, setpoint, (axis,))
+        if not times or found is None:
+            continue
+        sp_t, sp_v = _raw(log, setpoint, found, scale=180.0 / math.pi)
+        if len(sp_v) < 2:
+            continue
+        held = _align(times, sp_t, sp_v)
+        column = [held[i] - measured[i] if held[i] == held[i] else float("nan")
+                  for i in range(len(measured))]
+        out_t, out_v = _decimate(times, column)
+        series.append({"name": f"{axis.capitalize()} error",
+                       "x": [round(t, 3) for t in out_t],
+                       "y": [None if v != v else round(v, 5) for v in out_v]})
+    return _plot("rate_error", "Rate tracking error", "deg/s", series,
+                 group="Control",
+                 note="Setpoint minus measured, so zero is perfect. A trace "
+                      "that sits off zero means the aircraft could not deliver "
+                      "what was asked; one that buzzes about zero means the "
+                      "gains are chasing noise.")
+
+
+def _plot_esc(log: ULog) -> dict | None:
+    """RPM the ESCs report back, on the airframes that have telemetry.
+
+    Motor *commands* only say what was asked for. This says what happened, and
+    the difference is where a failing motor, a damaged propeller or a bent arm
+    shows up first: four motors given the same command in a level hover should
+    report very nearly the same RPM.
+    """
+    if not log.has("esc_status"):
+        return None
+    counts = log.series("esc_status", "esc_count", 0)
+    width = max(0, min(8, int(counts[0]) if counts else 8))
+    series = []
+    for index in range(width):
+        times, column = _raw(log, "esc_status", f"esc[{index}].esc_rpm")
+        if not column or max(column) <= 0:
+            continue
+        out_t, out_v = _decimate(times, column)
+        series.append({"name": f"ESC {index + 1}",
+                       "x": [round(t, 3) for t in out_t],
+                       "y": [round(v, 1) for v in out_v]})
+    return _plot("esc", "ESC RPM", "rpm", series, group="Airframe",
+                 note="Reported by the ESCs, not commanded. One motor "
+                      "consistently faster than its neighbours is carrying "
+                      "more of the airframe; one that drops out and returns is "
+                      "a motor or an ESC on its way out.")
+
+
 # ---------------------------------------------------------------------------
 # Flight modes
 # ---------------------------------------------------------------------------
@@ -1278,43 +1349,736 @@ def _armed_spans(log: ULog) -> list[dict[str, float]]:
 
 
 # ---------------------------------------------------------------------------
+# Measuring, rather than eyeballing
+# ---------------------------------------------------------------------------
+# Everything below reads the RAW columns, never the plotted ones. Decimation
+# here keeps the extreme sample of each bucket, which is honest about how high
+# a signal went and a lie about how long it stayed there: one spike becomes a
+# whole bucket. A finding that says "for 8 seconds" has to have counted real
+# samples.
+
+
+def _raw(log: ULog, topic: str, field: str, multi_id: int = 0,
+         scale: float = 1.0) -> tuple[list[float], list[float]]:
+    """Undecimated ``(times, values)`` for one field, in seconds and floats."""
+    values = log.series(topic, field, multi_id)
+    if not values:
+        return [], []
+    times = _time_axis(log, topic, multi_id)
+    span = min(len(times), len(values))
+    out_t: list[float] = []
+    out_v: list[float] = []
+    for index in range(span):
+        try:
+            number = float(values[index])
+        except (TypeError, ValueError):
+            continue
+        if number != number:
+            continue
+        out_t.append(times[index])
+        out_v.append(number * scale)
+    return out_t, out_v
+
+
+def _raw_component(log: ULog, topic: str, field: str, index: int,
+                   multi_id: int = 0, scale: float = 1.0) -> tuple[list[float], list[float]]:
+    """One component of an array field, undecimated."""
+    values = log.series(topic, field, multi_id)
+    if not values or not isinstance(values[0], list):
+        return [], []
+    times = _time_axis(log, topic, multi_id)
+    span = min(len(times), len(values))
+    out_t: list[float] = []
+    out_v: list[float] = []
+    for row_index in range(span):
+        row = values[row_index]
+        if index >= len(row):
+            continue
+        try:
+            number = float(row[index])
+        except (TypeError, ValueError):
+            continue
+        if number != number:
+            continue
+        out_t.append(times[row_index])
+        out_v.append(number * scale)
+    return out_t, out_v
+
+
+def _sample_dt(times: list[float]) -> float:
+    """Mean spacing of a time column, or 0 when there is not enough of one."""
+    if len(times) < 2:
+        return 0.0
+    span = times[-1] - times[0]
+    return span / (len(times) - 1) if span > 0 else 0.0
+
+
+def _time_above(times: list[float], values: list[float], threshold: float,
+                below: bool = False) -> tuple[float, float | None, float]:
+    """``(seconds past the threshold, when it first was, the worst value)``.
+
+    Seconds are accumulated per sample interval rather than counted as samples,
+    so a signal logged at 5 Hz and one logged at 500 Hz report the same number
+    for the same event. That is the whole reason this is worth stating: a peak
+    says how bad it got, and only a duration says whether it mattered.
+    """
+    total = 0.0
+    first: float | None = None
+    worst = float("-inf") if not below else float("inf")
+    dt = _sample_dt(times)
+    for index, value in enumerate(values):
+        past = value < threshold if below else value > threshold
+        if not past:
+            continue
+        if first is None:
+            first = times[index]
+        worst = min(worst, value) if below else max(worst, value)
+        step = (times[index + 1] - times[index]) if index + 1 < len(times) else dt
+        total += max(0.0, min(step, 1.0))
+    if first is None:
+        return 0.0, None, 0.0
+    return total, first, worst
+
+
+def _within(times: list[float], values: list[float],
+            spans: list[dict[str, float]]) -> tuple[list[float], list[float]]:
+    """The part of a signal that falls inside *spans* — normally armed flight.
+
+    A review that measures tracking error or oscillation over the whole file
+    measures the bench test at the start of it too, and a motor twitching on a
+    workbench is not a finding about the flight.
+    """
+    if not spans:
+        return times, values
+    out_t: list[float] = []
+    out_v: list[float] = []
+    index = 0
+    for span in spans:
+        while index < len(times) and times[index] < span["start"]:
+            index += 1
+        while index < len(times) and times[index] <= span["end"]:
+            out_t.append(times[index])
+            out_v.append(values[index])
+            index += 1
+    return out_t, out_v
+
+
+def _align(times: list[float], other_t: list[float],
+           other_v: list[float]) -> list[float]:
+    """Sample ``(other_t, other_v)`` at *times*, holding the last known value.
+
+    Two PX4 topics are never on the same clock: attitude runs at 250 Hz and its
+    setpoint at 50, so subtracting them index by index would compare a sample
+    with whatever setpoint happened to share its position in a shorter list.
+    Zero-order hold is what the controller itself saw — the last setpoint it
+    was given — so the difference is the real tracking error and not an
+    artefact of two sample rates.
+    """
+    out: list[float] = []
+    cursor = 0
+    last = float("nan")
+    for moment in times:
+        while cursor < len(other_t) and other_t[cursor] <= moment:
+            last = other_v[cursor]
+            cursor += 1
+        out.append(last)
+    return out
+
+
+def _percentile(values: list[float], fraction: float) -> float:
+    """A percentile of *values*, used instead of the maximum.
+
+    One sample at the wrong microsecond is not a finding. The 95th percentile
+    of a tracking error is the level the aircraft actually lived at, which is
+    what decides whether anything needs doing.
+    """
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    position = max(0, min(len(ordered) - 1,
+                          int(round(fraction * (len(ordered) - 1)))))
+    return ordered[position]
+
+
+def _correlate(a: list[float], b: list[float]) -> float | None:
+    """Pearson correlation of two aligned columns, or None when meaningless."""
+    pairs = [(x, y) for x, y in zip(a, b)
+             if x == x and y == y]
+    if len(pairs) < 50:
+        return None
+    n = float(len(pairs))
+    mean_a = sum(p[0] for p in pairs) / n
+    mean_b = sum(p[1] for p in pairs) / n
+    var_a = sum((p[0] - mean_a) ** 2 for p in pairs)
+    var_b = sum((p[1] - mean_b) ** 2 for p in pairs)
+    if var_a <= 0 or var_b <= 0:
+        return None
+    covariance = sum((p[0] - mean_a) * (p[1] - mean_b) for p in pairs)
+    return covariance / math.sqrt(var_a * var_b)
+
+
+def _oscillation(times: list[float], values: list[float]) -> tuple[float, float] | None:
+    """``(amplitude in the signal's own unit, frequency in Hz)``, or None.
+
+    The fast component of a signal is what a badly tuned rate loop adds to it:
+    the aircraft's actual motion is slow — a second or more per cycle — and a
+    ringing D term is tens of hertz. Subtracting a short moving average leaves
+    exactly that fast part, its RMS is how large the ringing is, and its zero
+    crossings are how quickly it rings.
+
+    Refuses to answer below 50 Hz of data. Telemetry-rate attitude aliases a
+    20 Hz oscillation into something that looks like a slow wobble, and a
+    confident frequency read off aliased samples is worse than no answer.
+
+    The amplitude is a floor rather than an exact figure: subtracting a moving
+    average leaves part of the slower components behind, so a ring near the
+    bottom of the detectable band reads smaller than it is. Erring that way is
+    the right direction — it understates rather than invents.
+    """
+    if len(values) < 200:
+        return None
+    dt = _sample_dt(times)
+    if dt <= 0:
+        return None
+    rate = 1.0 / dt
+    if rate < 50.0 or times[-1] - times[0] < 2.0:
+        return None
+    window = int(round(0.15 * rate)) | 1          # odd, so it has a centre
+    if window < 3 or window >= len(values):
+        return None
+    half = window // 2
+    running = sum(values[:window])
+    ac: list[float] = []
+    for centre in range(half, len(values) - half):
+        ac.append(values[centre] - running / window)
+        leaving = centre - half
+        entering = centre + half + 1
+        if entering < len(values):
+            running += values[entering] - values[leaving]
+    if len(ac) < 100:
+        return None
+    rms = math.sqrt(sum(v * v for v in ac) / len(ac))
+    crossings = sum(1 for i in range(1, len(ac))
+                    if (ac[i - 1] < 0) != (ac[i] < 0))
+    seconds = (len(ac) - 1) * dt
+    if seconds <= 0:
+        return None
+    return rms, crossings / (2.0 * seconds)
+
+
+def _mode_at(modes: list[dict[str, Any]], when: float | None) -> str:
+    """Which flight mode was active at *when*.
+
+    Half-open on purpose. One span's end is the next one's start, and a finding
+    about the moment a mode was entered — the switch into Return — reads as
+    happening in the mode being left if the boundary belongs to both.
+    """
+    if when is None:
+        return ""
+    for span in modes:
+        if span["start"] <= when < span["end"]:
+            return str(span["mode"])
+    return str(modes[-1]["mode"]) if modes and when >= modes[-1]["end"] else ""
+
+
+def _finding(level: str, text: str, when: float | None = None,
+             modes: list[dict[str, Any]] | None = None,
+             detail: str = "") -> dict[str, Any]:
+    """One finding: a headline, and the explanation behind it.
+
+    The split is what keeps a page of findings readable. Every one of these
+    needs a paragraph to be useful and none of them needs it *immediately* —
+    a dozen paragraphs stacked up is a wall nobody reads past the second of,
+    and the reader loses the one line that mattered. So the claim is one line
+    and the reasoning is a click away.
+
+    The time is the difference between a review and a verdict: "vibration
+    peaked at 48" is a number to argue with, and "48 at 4:12, in Position" is
+    a place to look.
+    """
+    out: dict[str, Any] = {"level": level, "text": text}
+    if detail:
+        out["detail"] = detail
+    if when is not None:
+        out["t"] = round(when, 1)
+        mode = _mode_at(modes or [], when)
+        if mode:
+            out["mode"] = mode
+    return out
+
+
+def _peak_of(plot: dict | None) -> tuple[str, float, float | None]:
+    """``(series name, peak, when)`` across every series of a plot."""
+    if not plot:
+        return "", 0.0, None
+    name, peak, when = "", float("-inf"), None
+    for series in plot["series"]:
+        for index, value in enumerate(series["y"]):
+            if value is None or value <= peak:
+                continue
+            peak, name = value, series["name"]
+            when = series["x"][index] if index < len(series["x"]) else None
+    return (name, peak, when) if peak > float("-inf") else ("", 0.0, None)
+
+
+# ---------------------------------------------------------------------------
+# Detectors — the specific problems this review knows how to name
+# ---------------------------------------------------------------------------
+
+# A normalised motor command this close to 1.0 is the mixer asking a motor for
+# everything it has and being told no.
+_SATURATED = 0.95
+# Below this it is a gust, not a finding.
+_SATURATION_S = 0.5
+# A motor under this still has room to give, so a neighbour at its limit
+# is an imbalance rather than an aircraft asked for everything it had.
+_HEADROOM = 0.8
+
+
+def _longest(spans: list[dict[str, float]]) -> list[dict[str, float]]:
+    """The single longest span, or nothing. Used where a measurement needs an
+    evenly sampled stretch and stitching two flights together would fake one."""
+    if not spans:
+        return []
+    return [max(spans, key=lambda s: s["end"] - s["start"])]
+
+
+def _saturated_motor(log: ULog, armed: list[dict[str, float]]) -> tuple[str, float, float] | None:
+    """The motor that spent longest at its limit *while the others had not*.
+
+    Differential saturation only, and that qualification is the whole value of
+    the finding. Every motor at its limit together is a pilot asking for full
+    throttle — a climb, not a fault — and reporting a hard climb as a critical
+    problem is precisely how a review teaches its reader to stop reading
+    findings. One motor pinned while its neighbours still have headroom is the
+    opposite: the mixer wanted to correct and could not.
+
+    Only ``actuator_motors`` is read, never the older ``actuator_outputs``:
+    there, channel 5 at 2000 µs is as likely to be a flap servo at full
+    deflection as a motor in trouble, and a review that cries motor failure at
+    a fixed wing's aileron is a review nobody trusts twice.
+    """
+    if not log.has("actuator_motors"):
+        return None
+    values = log.series("actuator_motors", "control", 0)
+    if not values or not isinstance(values[0], list):
+        return None
+    width = min(8, len(values[0]))
+    if width < 3:
+        return None            # nothing to compare a pinned motor against
+    times = _time_axis(log, "actuator_motors", 0)
+    span = min(len(times), len(values))
+    # One 0/1 column per motor: 1 where that motor is at its limit and at least
+    # one other is not. Counted in seconds afterwards, like every other duration.
+    flags = [[0.0] * span for _ in range(width)]
+    for index in range(span):
+        row = values[index]
+        if len(row) < width:
+            continue
+        try:
+            outputs = [float(row[i]) for i in range(width)]
+        except (TypeError, ValueError):
+            continue
+        if min(outputs) > _HEADROOM:
+            continue           # everything is high: the aircraft was climbing
+        for motor, value in enumerate(outputs):
+            if value >= _SATURATED:
+                flags[motor][index] = 1.0
+    worst: tuple[str, float, float] | None = None
+    for motor in range(width):
+        when, column = _within(times[:span], flags[motor], armed)
+        seconds, first, _ = _time_above(when, column, 0.5)
+        if seconds >= _SATURATION_S and (worst is None or seconds > worst[1]):
+            worst = (f"Motor {motor + 1}", seconds, first or 0.0)
+    return worst
+
+
+# PX4's estimator bumps a counter every time it discards its own answer and
+# starts again from a measurement. Each bump is a step in the estimate — and
+# therefore in what the controller was flying towards.
+_RESET_COUNTERS = (
+    ("xy_reset_counter", "horizontal position"),
+    ("z_reset_counter", "height"),
+    ("vxy_reset_counter", "horizontal velocity"),
+    ("heading_reset_counter", "heading"),
+)
+
+
+def _estimator_resets(log: ULog,
+                      armed: list[dict[str, float]]) -> list[tuple[str, int, float]]:
+    """``(what was reset, how many times, when it first happened)``, armed only.
+
+    An estimator that resets on the ground is an estimator starting up: the
+    first GPS fix arrives, the filter throws away its dead-reckoned guess and
+    takes the measurement, and every counter in the topic ticks. That is the
+    system working. Counting it produced four separate alarms about a perfectly
+    ordinary boot, which is worse than counting nothing — after the ground is
+    excluded, what is left is the estimator changing its mind in flight.
+    """
+    out: list[tuple[str, int, float]] = []
+    for field, label in _RESET_COUNTERS:
+        times, values = _within(*_raw(log, "vehicle_local_position", field), armed)
+        if len(values) < 2:
+            continue
+        count = 0
+        first: float | None = None
+        for index in range(1, len(values)):
+            # The counters are uint8 and wrap; the STEP is the event, and a
+            # step of 200 is a wrap read backwards rather than 200 resets.
+            step = (int(values[index]) - int(values[index - 1])) % 256
+            if 0 < step < 32:
+                count += step
+                if first is None:
+                    first = times[index]
+        if count:
+            out.append((label, count, first or 0.0))
+    return out
+
+
+# vehicle_status.failure_detector_status, as PX4 packs it. These are the
+# autopilot's own conclusions about its airframe, which is a different and
+# stronger thing than a number crossing a threshold in this file.
+_FAILURE_BITS = (
+    (1, "roll exceeded its limit"),
+    (2, "pitch exceeded its limit"),
+    (4, "altitude ran away"),
+    (8, "an external failure trigger fired"),
+    (16, "an ESC failed to arm"),
+    (32, "the battery failed"),
+    (64, "a propeller is imbalanced"),
+    (128, "a motor stopped responding"),
+)
+
+
+def _failure_detector(log: ULog) -> tuple[list[str], float | None]:
+    """What PX4's own failure detector flagged, and when it first did."""
+    times, values = _raw(log, "vehicle_status", "failure_detector_status")
+    flagged: list[str] = []
+    first: float | None = None
+    for index, value in enumerate(values):
+        bits = int(value)
+        if not bits:
+            continue
+        if first is None:
+            first = times[index]
+        for mask, label in _FAILURE_BITS:
+            if bits & mask and label not in flagged:
+                flagged.append(label)
+    return flagged, first
+
+
+def _failsafe(log: ULog) -> tuple[float, float | None]:
+    """``(seconds in failsafe, when it started)``."""
+    times, values = _raw(log, "vehicle_status", "failsafe")
+    return _time_above(times, values, 0.5)[:2]
+
+
+def _attitude_error(log: ULog, axis: str,
+                    armed: list[dict[str, float]]) -> tuple[float, float, float | None] | None:
+    """``(typical error, peak error, when the peak was)`` in degrees.
+
+    "Typical" is the 95th percentile rather than the mean or the maximum: a
+    mean is dragged to nothing by the hover, and a maximum is one sample at the
+    moment a stick moved. The 95th is the level the aircraft actually lived at.
+    """
+    euler = _euler(log)
+    setpoint_topic = _first_topic(log, ("vehicle_attitude_setpoint",))
+    if euler is None or setpoint_topic is None:
+        return None
+    topic, roll, pitch, yaw = euler
+    column = {"roll": roll, "pitch": pitch, "yaw": yaw}[axis]
+    times = _time_axis(log, topic, 0)
+    span = min(len(times), len(column))
+    field = _first_field(log, setpoint_topic, (f"{axis}_body", axis))
+    if field is None or span < 50:
+        return None
+    sp_t, sp_v = _raw(log, setpoint_topic, field, scale=180.0 / math.pi)
+    if len(sp_v) < 10:
+        return None
+    times, column = _within(times[:span], column[:span], armed)
+    if len(times) < 50:
+        return None
+    held = _align(times, sp_t, sp_v)
+    errors: list[float] = []
+    peak, peak_at = 0.0, None
+    for index, value in enumerate(column):
+        target = held[index]
+        if target != target or value != value:
+            continue
+        error = abs(value - target)
+        errors.append(error)
+        if error > peak:
+            peak, peak_at = error, times[index]
+    if len(errors) < 50:
+        return None
+    return _percentile(errors, 0.95), peak, peak_at
+
+
+def _rate_oscillation(log: ULog, axis: str,
+                      armed: list[dict[str, float]]) -> tuple[float, float] | None:
+    """Amplitude (deg/s) and frequency (Hz) of ringing on one rate axis."""
+    index = {"roll": 0, "pitch": 1, "yaw": 2}[axis]
+    topic = _first_topic(log, ("vehicle_angular_velocity", "sensor_combined"))
+    if topic is None:
+        return None
+    field = "xyz" if topic == "vehicle_angular_velocity" else "gyro_rad"
+    times, column = _raw_component(log, topic, field, index, scale=180.0 / math.pi)
+    times, column = _within(times, column, _longest(armed))
+    return _oscillation(times, column)
+
+
+def _thrust_column(log: ULog) -> tuple[list[float], list[float]]:
+    """Collective thrust demand, undecimated — the thing other signals are
+    tested against for a common cause."""
+    topic = _first_topic(log, ("vehicle_thrust_setpoint", "actuator_controls_0"))
+    if topic is None:
+        return [], []
+    if topic == "vehicle_thrust_setpoint":
+        times, values = _raw_component(log, topic, "xyz", 2)
+        return times, [abs(v) for v in values]
+    return _raw_component(log, topic, "control", 3)
+
+
+def _mag_norm(log: ULog) -> tuple[list[float], list[float]]:
+    """Magnetic field strength, undecimated."""
+    topic = _first_topic(log, ("vehicle_magnetometer", "sensor_mag"))
+    if topic is None:
+        return [], []
+    values = log.series(topic, "magnetometer_ga", 0)
+    times = _time_axis(log, topic, 0)
+    if values and isinstance(values[0], list) and len(values[0]) >= 3:
+        span = min(len(times), len(values))
+        return times[:span], [
+            math.sqrt(sum(float(c) ** 2 for c in values[i][:3])) for i in range(span)
+        ]
+    xs = log.series(topic, "x", 0)
+    ys = log.series(topic, "y", 0)
+    zs = log.series(topic, "z", 0)
+    if not (xs and ys and zs):
+        return [], []
+    span = min(len(times), len(xs), len(ys), len(zs))
+    return times[:span], [
+        math.sqrt(float(xs[i]) ** 2 + float(ys[i]) ** 2 + float(zs[i]) ** 2)
+        for i in range(span)
+    ]
+
+
+def _tracks_thrust(log: ULog, times: list[float], values: list[float],
+                   armed: list[dict[str, float]]) -> float | None:
+    """How closely a signal follows the throttle, or None when it cannot be asked.
+
+    Correlation is what separates two findings that look identical on a plot:
+    vibration that rises with throttle is the rotating parts, and vibration
+    that does not is the mounting. Guessing at that from two graphs side by
+    side is exactly the guess a reviewer gets wrong.
+    """
+    thrust_t, thrust_v = _thrust_column(log)
+    if len(thrust_v) < 50:
+        return None
+    times, values = _within(times, values, armed)
+    if len(times) < 50:
+        return None
+    held = _align(times, thrust_t, thrust_v)
+    finite = [v for v in held if v == v]
+    # A throttle that never moved cannot explain anything moving with it.
+    if len(finite) < 50 or max(finite) - min(finite) < 0.2:
+        return None
+    return _correlate(values, held)
+
+
+# Modes PX4 selects for itself when something has gone wrong. Reaching one is
+# not proof of a failsafe — a pilot can ask for Return — but it is always worth
+# saying, because the reason is then one line away in the messages.
+_RECOVERY_MODES = ("Return", "Descend", "Termination", "Precision land")
+
+
+# ---------------------------------------------------------------------------
 # Findings
 # ---------------------------------------------------------------------------
 
-def _findings(log: ULog, plots: list[dict]) -> list[dict[str, str]]:
-    """The few sentences worth reading before the plots.
+def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
+              armed: list[dict[str, float]]) -> list[dict[str, Any]]:
+    """The few lines worth reading before the plots.
 
     Only things that are actually derivable from this log — no scoring, no
     grades. A review that invents a verdict is worse than one that points at
     the plot and lets the operator look.
+
+    Two rules keep this list short enough to be read at all. Each finding is a
+    headline with its reasoning behind it rather than a paragraph on the page,
+    and nothing appears that the log does not clearly support: a threshold on
+    its own is not evidence, so a motor at its limit has to be at its limit
+    *alone*, an estimator reset has to happen in the air, and a compass has to
+    swing by a believable amount before the wiring is blamed for it.
+
+    Each finding carries the second of the flight it was measured at and the
+    mode flown then, because "vibration peaked at 48" is a number to argue with
+    and "48 at 4:12, in Position" is a place to look.
     """
-    out: list[dict[str, str]] = []
+    out: list[dict[str, Any]] = []
     by_id = {p["id"]: p for p in plots}
+
+    def add(level: str, text: str, detail: str = "",
+            when: float | None = None) -> None:
+        out.append(_finding(level, text, when, modes, detail))
+
+    # PX4's own conclusion about its airframe comes first. It is a stronger
+    # statement than anything derived here: the autopilot decided, in flight,
+    # that something had broken.
+    flagged, flagged_at = _failure_detector(log)
+    if flagged:
+        add("critical",
+            "PX4's failure detector fired: " + ", ".join(flagged),
+            "That is the autopilot's own verdict on the airframe, reached in "
+            "flight from more than this log holds — not a threshold crossed in "
+            "this file. Whatever else is on this page, start here.",
+            flagged_at)
+
+    saturated = _saturated_motor(log, armed)
+    if saturated:
+        name, seconds, when = saturated
+        add("critical",
+            f"{name} was pinned at full output for {seconds:.1f} s while the "
+            "others still had headroom",
+            "One motor at its limit alone is the mixer wanting to correct and "
+            "having nothing left to correct with — the aircraft was flying "
+            "without control authority on that corner. Look for a heavy or "
+            "bent airframe, a failing motor, or too little thrust margin for "
+            "the weight. (Every motor at its limit together would just be a "
+            "hard climb, and is not reported.)",
+            when)
 
     clipping = by_id.get("clipping")
     if clipping:
-        total = 0.0
-        for s in clipping["series"]:
-            finite = [v for v in s["y"] if v is not None]
-            if finite:
-                total = max(total, max(finite))
+        _, total, when = _peak_of(clipping)
         if total > 0:
-            out.append({"level": "critical", "text":
-                        f"Accelerometer clipping occurred ({int(total)} samples). "
-                        "The IMU saturated — treat the attitude and position "
-                        "estimates in this log with suspicion."})
+            add("critical",
+                f"Accelerometer clipping — {int(total)} samples",
+                "The IMU saturated, so for those samples it reported a limit "
+                "rather than a measurement. Treat the attitude and position "
+                "estimates in this log with suspicion, and soften the "
+                "flight-controller mounting before trusting the next one.",
+                when)
+
+    vibration = by_id.get("vibration")
+    if vibration:
+        _, worst, when = _peak_of(vibration)
+        # Whether it rides on the throttle decides where to look, and that is a
+        # different answer from how bad it got.
+        cause = ""
+        vibe_t, vibe_v = _raw(log, "vehicle_imu_status", "accel_vibration_metric")
+        follows = _tracks_thrust(log, vibe_t, vibe_v, armed)
+        if follows is not None and follows >= 0.5:
+            cause = (f" It rises and falls with the throttle (correlation "
+                     f"{follows:.2f}), which points at the propellers and "
+                     "motors rather than at how the controller is mounted.")
+        elif follows is not None and follows < 0.2:
+            cause = (" It does not follow the throttle, so the mounting or a "
+                     "loose airframe is a likelier cause than the rotating "
+                     "parts.")
+        if worst >= 60.0:
+            add("critical", f"Vibration peaked at {worst:.0f} m/s²",
+                "Above about 60 the estimator itself starts to suffer. Check "
+                "propellers, motor bearings and the flight-controller "
+                "mounting." + cause, when)
+        elif worst >= 30.0:
+            add("warning", f"Vibration peaked at {worst:.0f} m/s²",
+                "Usable, but past the 30 PX4 treats as the point to act on. "
+                "Worth watching rather than grounding the aircraft for." + cause,
+                when)
+
+    failsafe_s, failsafe_at = _failsafe(log)
+    if failsafe_s >= 0.5:
+        add("warning", f"In failsafe for {failsafe_s:.0f} s",
+            "What the aircraft did about it is the mode strip above; why it "
+            "happened is in the messages below.", failsafe_at)
 
     ekf = by_id.get("ekf")
     if ekf:
-        worst_name, worst = "", 0.0
-        for s in ekf["series"]:
-            finite = [v for v in s["y"] if v is not None]
-            if finite and max(finite) > worst:
-                worst, worst_name = max(finite), s["name"]
+        worst_name, worst, when = _peak_of(ekf)
         if worst >= 1.0:
-            out.append({"level": "warning", "text":
-                        f"{worst_name} innovations reached {worst:.2f} — above "
-                        "1.0 the estimator was rejecting that sensor."})
+            # How LONG the estimator disbelieved a sensor is the finding; the
+            # peak alone cannot tell a bump in the road from a dead compass.
+            field = {"Magnetometer": "mag_test_ratio", "Velocity": "vel_test_ratio",
+                     "Position": "pos_test_ratio", "Height": "hgt_test_ratio",
+                     "Airspeed": "tas_test_ratio"}.get(worst_name)
+            seconds = 0.0
+            if field:
+                times, values = _raw(log, "estimator_status", field)
+                seconds, first, _ = _time_above(times, values, 1.0)
+                when = first if first is not None else when
+            if seconds >= 1.0:
+                add("warning",
+                    f"{worst_name} innovations reached {worst:.2f} and stayed "
+                    f"above 1.0 for {seconds:.1f} s",
+                    "Above 1.0 the estimator is rejecting that sensor "
+                    "outright. Held that long, it was flying without it — "
+                    "read the altitude and velocity comparisons in the "
+                    "Estimator section to see what it used instead.", when)
+            else:
+                add("note",
+                    f"{worst_name} innovations touched {worst:.2f} briefly",
+                    "Above 1.0 the estimator momentarily rejected that sensor. "
+                    "A brief excursion is normal — noted rather than flagged "
+                    "because it is only a problem when it lasts.", when)
+
+    resets = _estimator_resets(log, armed)
+    if resets:
+        # One line, not one per counter. The four counters move together on the
+        # same event, and four near-identical paragraphs about a single
+        # estimator hiccup was the clearest way this page became unreadable.
+        total = sum(count for _, count, _ in resets)
+        first = min(when for _, _, when in resets)
+        parts = ", ".join(f"{label} {count}×" for label, count, _ in resets)
+        add("warning",
+            f"The estimator reset its state {total} time(s) in flight",
+            f"Which: {parts}. A reset is a step in the estimate and therefore "
+            "in what the controller was flying towards — the track and "
+            "position plots jump there because the aircraft's idea of where it "
+            "was jumped, not because it moved. GPS being re-accepted after a "
+            "glitch is the usual cause.", first)
+
+    gps_t, gps_v = _raw(log, _first_topic(log, ("vehicle_gps_position", "sensor_gps")) or "",
+                        "fix_type")
+    if gps_v and armed:
+        in_air_t, in_air_v = _within(gps_t, gps_v, armed)
+        lost, lost_at, _ = _time_above(in_air_t, in_air_v, 3.0, below=True)
+        if lost >= 1.0:
+            add("warning", f"GPS below a 3-D fix for {lost:.0f} s while armed",
+                "Position and ground speed across that stretch are dead "
+                "reckoning, however smooth the line on the plot looks.",
+                lost_at)
+
+    for axis in ("roll", "pitch"):
+        measured = _attitude_error(log, axis, armed)
+        if measured is None:
+            continue
+        typical, peak, when = measured
+        if typical >= 20.0:
+            add("critical",
+                f"{axis.capitalize()} missed its setpoint by {typical:.0f}° or "
+                f"more for most of the flight",
+                f"Peak {peak:.0f}°. An aircraft that cannot hold the angle it "
+                "is given is short of control authority, not short of tuning — "
+                "read the motor outputs before touching a gain.", when)
+        elif typical >= 10.0:
+            add("warning",
+                f"{axis.capitalize()} tracked its setpoint to about {typical:.0f}°",
+                f"Peak {peak:.0f}°. Not alarming on its own; worth a look at "
+                "the attitude plot before the next flight.", when)
+
+    for axis in ("roll", "pitch", "yaw"):
+        ringing = _rate_oscillation(log, axis, armed)
+        if ringing is None:
+            continue
+        amplitude, frequency = ringing
+        if amplitude >= 12.0 and frequency >= 6.0:
+            add("warning",
+                f"The {axis} rate rings at about {frequency:.0f} Hz "
+                f"({amplitude:.0f} deg/s)",
+                "Oscillation that fast is the rate loop arguing with itself "
+                "rather than the aircraft moving. The D gain for that axis is "
+                "the usual cause; vibration reaching the gyro is the other.")
 
     actuators = by_id.get("actuators")
     if actuators and actuators.get("unit") != "normalised":
@@ -1330,74 +2094,167 @@ def _findings(log: ULog, plots: list[dict]) -> list[dict[str, str]]:
             spread = max(averages) - min(averages)
             if spread > 80.0:      # µs, on a ~1000 µs band
                 worst = max(peaks, key=lambda p: p[2])[0]
-                out.append({"level": "warning", "text":
-                            f"Motor outputs are uneven — {worst} ran "
-                            f"{spread:.0f} µs above the lowest one on average. "
-                            "That is an airframe imbalance, not a tuning one."})
+                add("warning",
+                    f"Motor outputs are uneven — {worst} ran {spread:.0f} µs "
+                    "above the lowest on average",
+                    "One corner working harder than the others across a whole "
+                    "flight is an airframe imbalance, not a tuning one: a bent "
+                    "arm, a heavy corner, a mistrimmed propeller.")
 
-    vibration = by_id.get("vibration")
-    if vibration:
-        worst = 0.0
-        for s in vibration["series"]:
-            finite = [v for v in s["y"] if v is not None]
-            if finite:
-                worst = max(worst, max(finite))
-        if worst >= 60.0:
-            out.append({"level": "critical", "text":
-                        f"Vibration peaked at {worst:.0f} m/s². Above about 60 "
-                        "the estimator starts to suffer — check props, motors "
-                        "and the flight-controller mounting."})
-        elif worst >= 30.0:
-            out.append({"level": "warning", "text":
-                        f"Vibration peaked at {worst:.0f} m/s² — usable, but "
-                        "worth watching."})
+    _magnetic_finding(log, armed, add)
 
     rc = by_id.get("rc")
     if rc:
         lost = next((s for s in rc["series"] if "lost" in s["name"].lower()), None)
         if lost:
-            finite = [v for v in lost["y"] if v is not None]
-            if finite and max(finite) >= 1:
-                out.append({"level": "warning", "text":
-                            "The RC link reported a signal loss during this "
-                            "flight — the next one may hit the failsafe."})
+            when = next((lost["x"][i] for i, v in enumerate(lost["y"])
+                         if v is not None and v >= 1), None)
+            if when is not None:
+                add("warning", "The RC link reported a signal loss in flight",
+                    "It recovered — the flight continued — but the next one "
+                    "may reach the failsafe instead.", when)
 
-    battery = by_id.get("battery")
-    if battery:
-        voltage = next((s for s in battery["series"] if s["name"] == "Voltage"), None)
-        if voltage:
-            finite = [v for v in voltage["y"] if v is not None and v > 1.0]
-            if finite:
-                sag = max(finite) - min(finite)
-                if sag > 3.0:
-                    out.append({"level": "warning", "text":
-                                f"Pack voltage sagged {sag:.1f} V between rest "
-                                "and load. A pack that dives like that is near "
-                                "the end of its useful life."})
+    _battery_findings(log, by_id, add)
+
+    cpu_t, cpu_v = _raw(log, "cpuload", "load", scale=100.0)
+    if cpu_v:
+        heavy, heavy_at, worst = _time_above(cpu_t, cpu_v, 90.0)
+        if heavy >= 1.0:
+            add("warning",
+                f"CPU held above 90% for {heavy:.0f} s (peak {worst:.0f}%)",
+                "At that load PX4 starts missing control-loop deadlines. Turn "
+                "down a logging or telemetry stream rate before the next "
+                "flight.", heavy_at)
 
     if log.dropouts:
         total_ms = sum(d.get("duration_ms", 0) for d in log.dropouts)
-        out.append({"level": "warning", "text":
-                    f"{len(log.dropouts)} logging dropout(s), {total_ms} ms total. "
-                    "The gaps are missing data, not quiet flight."})
+        # A few milliseconds lost to a slow SD card is housekeeping; half a
+        # second of it is a hole in the evidence.
+        add("warning" if total_ms >= 500 else "note",
+            f"{len(log.dropouts)} logging dropout(s), {total_ms} ms total",
+            "The logger could not keep up with the card. Those gaps are "
+            "missing data rather than quiet flight, so a flat stretch there "
+            "says nothing about the aircraft.")
 
     if log.truncated:
-        out.append({"level": "warning", "text":
-                    "The log ends mid-record — the aircraft lost power before "
-                    "the file was closed. Everything up to the cut is shown."})
+        add("warning", "The log ends mid-record",
+            "The aircraft lost power before the file was closed — a crash, a "
+            "battery pulled, or a brownout. Everything up to the cut is shown.")
 
     errors = [m for m in log.messages if m["level"] in ("emergency", "alert", "critical", "error")]
     if errors:
-        out.append({"level": "warning", "text":
-                    f"{len(errors)} error-level message(s) in the flight log — "
-                    "see the messages below."})
+        add("warning",
+            f"{len(errors)} error-level message(s) in the flight log",
+            "The aircraft's own commentary, in full at the bottom of this "
+            "page. It is usually the shortest route to why a flight went the "
+            "way it did.")
 
-    if not out:
-        out.append({"level": "ok", "text":
-                    "Nothing flagged: no clipping, no EKF rejection, no "
-                    "logging dropouts, no RC loss and no motor imbalance in "
-                    "this log."})
+    recovery = next((m for m in modes if m["mode"] in _RECOVERY_MODES), None)
+    if recovery and failsafe_s < 0.5:
+        # A note, not a warning: a pilot pressing Return is an ordinary end to
+        # an ordinary flight, and only the messages can say which this was.
+        add("note", f"The aircraft flew {recovery['mode']}",
+            "PX4 also selects that for itself on a failsafe. Nothing else in "
+            "this log says a failsafe fired, so if the pilot did not ask for "
+            "it, the reason is in the messages below.", recovery["start"])
+
+    if not any(f["level"] in ("critical", "warning") for f in out):
+        out.insert(0, _finding("ok",
+                               "Nothing flagged in this log",
+                               None, modes,
+                               "No clipping, no sustained EKF rejection, no "
+                               "motor imbalance, no RC loss and no in-flight "
+                               "estimator reset. Anything listed below this is "
+                               "context rather than a problem."))
     return out
+
+
+def _magnetic_finding(log: ULog, armed: list[dict[str, float]],
+                      add: Callable[..., None]) -> None:
+    """Compass interference, but only where the numbers are believable.
+
+    The swing is measured between the 5th and 95th percentile rather than
+    between the extremes. One dropped sample near zero turns a min/max spread
+    into a claim that the field swung by twice its own value, which is not
+    physically possible for a magnetometer on an aircraft — and a finding that
+    prints an impossible number is a finding the reader stops believing, along
+    with every other finding on the page.
+    """
+    times, values = _mag_norm(log)
+    finite = sorted(v for v in values if v > 0)
+    if len(finite) < 50:
+        return
+    middle = _percentile(finite, 0.5)
+    if middle <= 0:
+        return
+    swing = (_percentile(finite, 0.95) - _percentile(finite, 0.05)) / middle
+    # Under 5% there is nothing to explain. Over 60% this is not a compass in
+    # flight — a sensor swap, a unit mix-up, a dropout — and blaming the
+    # aircraft's wiring for it would be wrong.
+    if not 0.05 <= swing <= 0.6:
+        return
+    follows = _tracks_thrust(log, times, values, armed)
+    if follows is None or follows < 0.5:
+        return
+    add("warning",
+        f"Compass field strength moves with the throttle (correlation "
+        f"{follows:.2f})",
+        f"It swings {swing * 100:.0f}% of its own value across the flight. "
+        "That is current from the power wiring reaching the magnetometer: it "
+        "biases heading exactly when the aircraft is working hardest, and it "
+        "is why a compass calibration does not hold. The fix is routing and "
+        "distance, not another calibration.")
+
+
+def _battery_findings(log: ULog, by_id: dict[str, dict],
+                      add: Callable[..., None]) -> None:
+    """What the pack did, in the two ways it can go wrong.
+
+    Sag is about the pack's health; the per-cell floor is about whether this
+    flight damaged it. They are separate findings because they have separate
+    answers — one retires a battery, the other shortens the next flight.
+    """
+    battery = by_id.get("battery")
+    if not battery:
+        return
+    voltage = next((s for s in battery["series"] if s["name"] == "Voltage"), None)
+    if not voltage:
+        return
+    finite = [(v, voltage["x"][i]) for i, v in enumerate(voltage["y"])
+              if v is not None and v > 1.0]
+    if not finite:
+        return
+    top = max(finite)[0]
+    floor, floor_at = min(finite)
+    sag = top - floor
+    if sag > 3.0:
+        add("warning", f"Pack voltage sagged {sag:.1f} V under load",
+            "The gap between resting and loaded voltage is internal "
+            "resistance, and a pack that dives this far is near the end of "
+            "its useful life.", floor_at)
+
+    # Cell count from the logged value where PX4 has one, and otherwise from
+    # the HIGHEST voltage seen: a lithium cell cannot exceed about 4.25 V, so
+    # the peak over that is a firm lower bound. Dividing the sagged voltage by
+    # a nominal 3.8 instead reads a sagging 4S as a healthy 3S — backwards,
+    # and it hides the one battery finding that matters.
+    logged = [int(v) for v in log.series("battery_status", "cell_count", 0) if v]
+    cells = logged[0] if logged else max(1, math.ceil(top / 4.25))
+    per_cell = floor / cells
+    if per_cell < 3.3:
+        add("critical",
+            f"The pack reached {floor:.1f} V — {per_cell:.2f} V per cell "
+            f"across {cells}",
+            "That is into the range that permanently costs a lithium pack "
+            "capacity. If it only touched it under load and recovered after "
+            "landing, the damage is smaller — but the next flight should be "
+            "shorter either way.", floor_at)
+    elif per_cell < 3.5:
+        add("warning",
+            f"The pack reached {floor:.1f} V ({per_cell:.2f} V per cell)",
+            "Read it against the current plot: under load a pack recovers, "
+            "and the number that decides the next flight is where it settles "
+            "after landing.", floor_at)
 
 
 # ---------------------------------------------------------------------------
@@ -1411,9 +2268,9 @@ _PLOTTERS = (
     # Control — what was asked of it, per axis
     _plot_manual_control, _plot_att_roll, _plot_rate_roll,
     _plot_att_pitch, _plot_rate_pitch, _plot_att_yaw, _plot_rate_yaw,
-    _plot_thrust,
+    _plot_rate_error, _plot_thrust,
     # Airframe
-    _plot_actuators,
+    _plot_actuators, _plot_esc,
     # Estimator
     _plot_ekf, _plot_altitude_sources, _plot_gps_velocity, _plot_bias,
     # Sensors
@@ -1429,6 +2286,7 @@ GROUP_ORDER = ("Flight", "Control", "Airframe", "Estimator", "Sensors", "System"
 # Only these topics are decoded. A log holds a hundred; a review reads a dozen.
 REVIEW_TOPICS = (
     "actuator_motors", "actuator_outputs", "actuator_controls_0",
+    "esc_status",
     "vehicle_imu_status", "sensor_accel_status", "sensor_combined",
     "estimator_status", "estimator_sensor_bias",
     "vehicle_attitude", "control_state", "vehicle_attitude_setpoint",
@@ -1443,6 +2301,26 @@ REVIEW_TOPICS = (
     "input_rc", "rc_channels", "airspeed", "distance_sensor",
     "wind", "wind_estimate", "vehicle_air_data", "sensor_baro",
 )
+
+
+def _timed_messages(log: ULog) -> list[dict[str, Any]]:
+    """The flight's own commentary, placed on the same clock as the plots.
+
+    The parser hands these back with the raw log timestamp PX4 wrote, which is
+    microseconds on an arbitrary epoch. Left that way, a message can be read
+    but never *located*: the one line that explains the flight sits next to a
+    number that has nothing to do with the second of the flight it happened in.
+    """
+    base = _log_start(log)
+    out = []
+    for message in log.messages[-300:]:
+        try:
+            when = max(0.0, (float(message["t"]) - base) / 1e6)
+        except (TypeError, ValueError, KeyError):
+            when = 0.0
+        out.append({"t": round(when, 2), "level": message["level"],
+                    "text": message["text"]})
+    return out
 
 
 def review(log: ULog, name: str = "") -> dict[str, Any]:
@@ -1482,11 +2360,11 @@ def review(log: ULog, name: str = "") -> dict[str, Any]:
         # different things in Position and in Manual.
         "modes": modes,
         "armed": armed,
-        "findings": _findings(log, plots),
+        "findings": _findings(log, plots, modes, armed),
         "plots": plots,
         # The tail of the flight's own commentary. Capped: an aircraft that
         # spent a flight complaining can produce thousands.
-        "messages": log.messages[-300:],
+        "messages": _timed_messages(log),
     }
 
 
@@ -1499,7 +2377,7 @@ def review(log: ULog, name: str = "") -> dict[str, Any]:
 # used is to open one log, go back, and open it (or the one next to it) again.
 # Two entries cover that without holding a folder's worth of flights in memory.
 _CACHE_ENTRIES = 2
-_cache: "OrderedDict[tuple, dict[str, Any]]" = OrderedDict()
+_cache: OrderedDict[tuple, dict[str, Any]] = OrderedDict()
 _cache_lock = threading.Lock()
 
 

@@ -180,7 +180,7 @@ class _FakeResponse:
     def read(self, size: int | None = None) -> bytes:
         return self._body if size is None else self._body[:size]
 
-    def __enter__(self) -> "_FakeResponse":
+    def __enter__(self) -> _FakeResponse:
         return self
 
     def __exit__(self, *_args: Any) -> bool:

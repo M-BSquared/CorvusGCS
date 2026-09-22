@@ -456,7 +456,7 @@ def read_plan(directory: str, name: str) -> dict[str, Any] | None:
     if not safe:
         return None
     try:
-        with open(_plan_path(directory, safe), "r", encoding="utf-8") as handle:
+        with open(_plan_path(directory, safe), encoding="utf-8") as handle:
             data = json.load(handle)
     except (OSError, ValueError) as exc:
         logger.warning("could not read mission %r: %s", safe, exc)

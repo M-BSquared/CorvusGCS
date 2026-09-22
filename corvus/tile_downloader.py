@@ -23,7 +23,7 @@ import urllib.error
 import urllib.request
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, Iterator, Optional
+from collections.abc import Callable, Iterator
 
 from corvus import tile_sources
 from corvus.tile_cache import TileCache
@@ -32,6 +32,56 @@ from corvus.tile_cache import TileCache
 MAX_TILES_PER_JOB = 50_000
 _FETCH_TIMEOUT = 15.0      # seconds per upstream tile request
 _SUBMIT_PAUSE = 0.05       # seconds between task submissions — be respectful
+# Fetched tiles are written to the cache in batches of this many, in one
+# transaction each (TileCache.put_tiles). A region job is capped at 50 000
+# tiles; writing them one commit at a time made the SQLite write, not the
+# network, the dominant cost of a download on a field laptop's disk.
+_WRITE_BATCH = 256
+# ...but a batch also waits no longer than this before going out, so a small
+# job, a slow link and the tail of a big job all still report progress while
+# they are happening. Progress is only counted once a batch has landed, which
+# is what keeps "downloaded" meaning "on disk".
+_WRITE_BATCH_SECONDS = 1.0
+
+
+def new_job(
+    job_id: str,
+    source: str,
+    total: int,
+    ranges: list | None = None,
+    template: str = "",
+    on_progress: Callable[[dict], None] | None = None,
+) -> dict:
+    """Build a download job.
+
+    One definition of the shape, because there was more than one: the tests
+    hand-rolled their own literal, and it fell behind the moment the worker
+    started buffering writes (``_pending``) — a ``KeyError`` in a test that
+    was about URL templates and had no opinion about any of this. A job is
+    a plain dict rather than a class because the snapshot the HTTP layer
+    serializes is a subset of these very keys; the underscore-prefixed ones
+    are internal and never leave the module.
+    """
+    return {
+        "job_id": job_id,
+        "source": source,
+        "state": "running",
+        "done": 0,
+        "total": total,
+        "failed": 0,
+        "error": None,
+        "_cancel": threading.Event(),
+        "_ranges": ranges if ranges is not None else [],
+        "_template": template,
+        "_on_progress": on_progress,
+        "_lock": threading.Lock(),
+        "_executor": None,
+        "_thread": None,
+        # Tiles fetched but not yet committed, and when the oldest of them was
+        # added. Both are guarded by "_lock".
+        "_pending": [],
+        "_pending_since": 0.0,
+    }
 
 
 def lon_to_x(lon: float, z: int) -> int:
@@ -132,7 +182,7 @@ class TileDownloader:
         bounds: tuple,
         minzoom: int,
         maxzoom: int,
-        on_progress: Optional[Callable[[dict], None]] = None,
+        on_progress: Callable[[dict], None] | None = None,
     ) -> str:
         """Schedule a download job. Returns the job id (uuid4 hex).
 
@@ -158,22 +208,9 @@ class TileDownloader:
             )
             return job_id
 
-        job: dict = {
-            "job_id": job_id,
-            "source": source,
-            "state": "running",
-            "done": 0,
-            "total": total,
-            "failed": 0,
-            "error": None,
-            "_cancel": threading.Event(),
-            "_ranges": ranges,
-            "_template": upstream_url_template,
-            "_on_progress": on_progress,
-            "_lock": threading.Lock(),
-            "_executor": None,
-            "_thread": None,
-        }
+        job = new_job(
+            job_id, source, total, ranges, upstream_url_template, on_progress,
+        )
         thread = threading.Thread(
             target=self._run, args=(job,),
             name=f"tile-dl-{job_id[:8]}", daemon=True,
@@ -196,7 +233,7 @@ class TileDownloader:
             cancel.set()
         return True
 
-    def status(self, job_id: str) -> Optional[dict]:
+    def status(self, job_id: str) -> dict | None:
         """Return a snapshot of the job's public state, or None if unknown."""
         with self._jobs_lock:
             job = self._jobs.get(job_id)
@@ -260,7 +297,7 @@ class TileDownloader:
             "error": job.get("error"),
         }
 
-    def _fire_progress(self, job: dict, on_progress: Optional[Callable[[dict], None]]) -> None:
+    def _fire_progress(self, job: dict, on_progress: Callable[[dict], None] | None) -> None:
         if on_progress is None:
             return
         try:
@@ -273,7 +310,7 @@ class TileDownloader:
         if cancel.is_set() or self._stop_event.is_set():
             return
         url = tile_sources.build_tile_url(job["_template"], z, x, y)
-        blob: Optional[bytes] = None
+        blob: bytes | None = None
         for attempt in range(2):  # one retry on transient network errors
             try:
                 with urllib.request.urlopen(url, timeout=_FETCH_TIMEOUT) as resp:
@@ -282,17 +319,58 @@ class TileDownloader:
             except (urllib.error.URLError, TimeoutError, OSError):
                 if attempt == 1 or cancel.is_set() or self._stop_event.is_set():
                     break
-        if blob is not None:
-            try:
-                self._cache.put_tile(z, x, y, blob)
-            except Exception:
-                blob = None  # cache write failure counts as a failed tile
-        with job["_lock"]:
-            if blob is not None:
-                job["done"] += 1
-            else:
+        if blob is None:
+            with job["_lock"]:
                 job["failed"] += 1
+            self._fire_progress(job, job["_on_progress"])
+            return
+        # Buffer, then flush a full (or old enough) batch in one transaction.
+        # The counters do not move here: a tile is "done" when it is in the
+        # database, not when it is in this list, which is what stops a crash
+        # mid-download from having reported tiles it did not keep.
+        now = time.monotonic()
+        with job["_lock"]:
+            pending = job["_pending"]
+            if not pending:
+                job["_pending_since"] = now
+            pending.append((z, x, y, blob))
+            due = (
+                len(pending) >= _WRITE_BATCH
+                or now - job["_pending_since"] >= _WRITE_BATCH_SECONDS
+            )
+        if due:
+            self._flush_pending(job)
+
+    def _flush_pending(self, job: dict) -> int:
+        """Commit whatever this job has buffered, and count it. Never raises.
+
+        Returns the number of tiles written. A whole batch succeeds or fails
+        together: that is coarser than the per-tile accounting it replaced,
+        and it is the honest reading of it, because these rows go to SQLite in
+        one transaction and it either kept all of them or none.
+
+        The counters move here rather than at fetch time, so "done" keeps
+        meaning "on disk". Another worker may append between the take and the
+        write; that only makes the batch bigger.
+        """
+        with job["_lock"]:
+            batch = job["_pending"]
+            job["_pending"] = []
+            job["_pending_since"] = 0.0
+        if not batch:
+            return 0
+        try:
+            self._cache.put_tiles(batch)
+        except Exception:
+            with job["_lock"]:
+                job["failed"] += len(batch)
+            written = 0
+        else:
+            with job["_lock"]:
+                job["done"] += len(batch)
+            written = len(batch)
         self._fire_progress(job, job["_on_progress"])
+        return written
 
     def _run(self, job: dict) -> None:
         cancel = job["_cancel"]
@@ -333,6 +411,11 @@ class TileDownloader:
                 executor.shutdown(wait=wait, cancel_futures=True)
             except Exception:
                 pass
+            # Everything fetched but not yet committed goes in before the job
+            # is called finished — including on a cancel, where those tiles are
+            # already paid for and throwing them away would make the next run
+            # fetch them again.
+            self._flush_pending(job)
             with lock:
                 if job["state"] == "running":
                     job["state"] = "cancelled" if (cancel.is_set() or self._stop_event.is_set()) else "done"

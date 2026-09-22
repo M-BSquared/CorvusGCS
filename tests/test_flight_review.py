@@ -41,6 +41,16 @@ def _plot(result: dict, plot_id: str) -> dict | None:
     return next((p for p in result["plots"] if p["id"] == plot_id), None)
 
 
+def _says(finding: dict) -> str:
+    """Everything a finding says — the headline and the reasoning behind it.
+
+    The two are separate fields because the page shows the headline and keeps
+    the reasoning a click away; a test asking whether the review *said*
+    something should not care which half it landed in.
+    """
+    return finding["text"] + " " + finding.get("detail", "")
+
+
 # ---------------------------------------------------------------------------
 # Decimation
 # ---------------------------------------------------------------------------
@@ -664,7 +674,7 @@ def test_an_imbalanced_airframe_is_named_as_such() -> None:
     findings = review(read(blob), "x.ulg")["findings"]
     imbalance = next(f for f in findings if "uneven" in f["text"])
     assert "Output 1" in imbalance["text"]
-    assert "airframe imbalance" in imbalance["text"]
+    assert "airframe imbalance" in _says(imbalance)
 
 
 def test_high_vibration_is_graded_not_just_reported() -> None:
@@ -807,3 +817,502 @@ def test_the_cache_does_not_grow_without_bound(tmp_path) -> None:
         flight_review.review_file(str(path))
     assert len(flight_review._cache) <= flight_review._CACHE_ENTRIES
     flight_review.clear_cache()
+
+
+# ---------------------------------------------------------------------------
+# Measuring rather than eyeballing
+# ---------------------------------------------------------------------------
+# The helpers below are what separates "it got bad" from "it was bad for eight
+# seconds, in Position, starting at 4:12". They read the raw columns, never the
+# plotted ones, and each of these tests is about one way that distinction is
+# easy to get wrong.
+
+def test_duration_is_measured_in_seconds_not_in_samples() -> None:
+    """The same event logged at 5 Hz and at 500 Hz has to report the same
+    length. Counting samples would call one of them a hundred times worse."""
+    from corvus.flight_review import _time_above
+
+    slow_t = [i * 0.2 for i in range(50)]
+    fast_t = [i * 0.002 for i in range(5000)]
+    slow = [2.0 if 10 <= i < 20 else 0.0 for i in range(50)]
+    fast = [2.0 if 1000 <= i < 2000 else 0.0 for i in range(5000)]
+
+    slow_s, slow_first, slow_worst = _time_above(slow_t, slow, 1.0)
+    fast_s, fast_first, _ = _time_above(fast_t, fast, 1.0)
+    assert slow_s == pytest.approx(2.0, abs=0.25)
+    assert fast_s == pytest.approx(2.0, abs=0.25)
+    assert slow_first == pytest.approx(2.0)
+    assert fast_first == pytest.approx(2.0)
+    assert slow_worst == 2.0
+
+
+def test_a_setpoint_is_held_between_its_own_samples_not_interpolated() -> None:
+    """The controller ran at 250 Hz against a setpoint published at 50. What it
+    was actually trying to achieve is the last value it was given, so lining
+    the two up index by index would invent a tracking error that never was."""
+    from corvus.flight_review import _align
+
+    held = _align([0.0, 0.5, 1.0, 1.5, 2.0], [0.0, 1.0, 2.0], [10.0, 20.0, 30.0])
+    assert held == [10.0, 10.0, 20.0, 20.0, 30.0]
+
+
+def test_a_signal_before_its_first_setpoint_has_no_error_to_report() -> None:
+    from corvus.flight_review import _align
+
+    held = _align([0.0, 1.0], [0.5], [7.0])
+    assert held[0] != held[0], "NaN, so the difference is skipped rather than faked"
+    assert held[1] == 7.0
+
+
+def test_oscillation_refuses_to_answer_from_telemetry_rate_data() -> None:
+    """A 20 Hz ring sampled at 10 Hz aliases into something that looks like a
+    slow wobble, and a confident frequency read off that is worse than none."""
+    from corvus.flight_review import _oscillation
+
+    times = [i * 0.1 for i in range(400)]
+    values = [20.0 * math.sin(2 * math.pi * 20.0 * t) for t in times]
+    assert _oscillation(times, values) is None
+
+
+def test_oscillation_finds_the_fast_component_under_a_slow_manoeuvre() -> None:
+    """The aircraft's own motion is slow and the ringing is not. Subtracting a
+    short moving average is what tells a rolling turn from a D term chattering
+    on top of one."""
+    from corvus.flight_review import _oscillation
+
+    times = [i * 0.004 for i in range(1000)]          # 250 Hz, 4 s
+    values = [60.0 * math.sin(2 * math.pi * 0.25 * t)     # the manoeuvre
+              + 20.0 * math.sin(2 * math.pi * 18.0 * t)   # the ringing
+              for t in times]
+    measured = _oscillation(times, values)
+    assert measured is not None
+    amplitude, frequency = measured
+    assert amplitude == pytest.approx(20.0 / math.sqrt(2), rel=0.25)
+    assert frequency == pytest.approx(18.0, rel=0.15)
+    assert amplitude < 60.0, "the slow manoeuvre is not counted as ringing"
+
+
+# ---------------------------------------------------------------------------
+# Findings, anchored in the flight
+# ---------------------------------------------------------------------------
+
+def _timed_log(nav_state: int = 2) -> bytes:
+    """A log with a mode to place findings in and a motor stuck at full."""
+    rows = [_row(2, struct.pack("<QBB", 0, 2, nav_state))]
+    for index in range(80):
+        rows.append(_row(1, struct.pack(
+            "<Q4f", index * 100_000, 0.99, 0.40, 0.41, 0.40)))
+    return _build(
+        _fmt("actuator_motors:uint64_t timestamp;float[4] control;"),
+        _fmt("vehicle_status:uint64_t timestamp;uint8_t arming_state;uint8_t nav_state;"),
+        _add(1, "actuator_motors"),
+        _add(2, "vehicle_status"),
+        *rows,
+        _row(2, struct.pack("<QBB", 8_000_000, 2, nav_state)),
+    )
+
+
+def test_a_finding_says_where_in_the_flight_to_look() -> None:
+    """A number is something to argue with; a number with a second and a mode
+    on it is a place on the timeline to go and look."""
+    result = review(read(_timed_log()), "x.ulg")
+    finding = next(f for f in result["findings"] if "full output" in f["text"])
+    assert finding["t"] == 0.0
+    assert finding["mode"] == "Position", "the mode flown when it happened"
+
+
+def test_a_motor_held_at_its_limit_is_named_with_how_long_it_was_there() -> None:
+    """At the limit the mixer has nothing left to correct with. How long that
+    lasted is the difference between a gust and an aircraft that cannot fly."""
+    result = review(read(_timed_log()), "x.ulg")
+    finding = next(f for f in result["findings"] if "full output" in f["text"])
+    assert finding["level"] == "critical"
+    assert "Motor 1" in finding["text"]
+    assert "8.0 s" in finding["text"]
+
+
+def test_a_brief_touch_of_the_limit_is_not_a_finding() -> None:
+    """Every aircraft clips its outputs in a gust. Reporting that would bury
+    the log where a motor really did run out."""
+    rows = [_row(1, struct.pack("<Q4f", index * 100_000,
+                                0.99 if index < 3 else 0.4, 0.4, 0.4, 0.4))
+            for index in range(80)]
+    blob = _build(
+        _fmt("actuator_motors:uint64_t timestamp;float[4] control;"),
+        _add(1, "actuator_motors"), *rows)
+    findings = review(read(blob), "x.ulg")["findings"]
+    assert all("full output" not in f["text"] for f in findings)
+
+
+def test_an_innovation_finding_says_how_long_the_sensor_was_rejected() -> None:
+    """A spike over 1.0 is a bump in the road. Three seconds over it is the
+    estimator having stopped believing a sensor, and only the duration tells
+    those two apart."""
+    rows = [_row(1, struct.pack("<Qf", index * 100_000,
+                                1.5 if 10 <= index < 40 else 0.2))
+            for index in range(60)]
+    blob = _build(
+        _fmt("estimator_status:uint64_t timestamp;float hgt_test_ratio;"),
+        _add(1, "estimator_status"), *rows)
+    finding = next(f for f in review(read(blob), "x.ulg")["findings"]
+                   if "innovations reached" in f["text"])
+    assert "stayed above 1.0 for 3.0 s" in finding["text"]
+    assert finding["t"] == pytest.approx(1.0), "and when it started"
+
+
+def test_a_momentary_innovation_spike_is_reported_as_normal() -> None:
+    rows = [_row(1, struct.pack("<Qf", index * 100_000,
+                                1.5 if index == 10 else 0.2))
+            for index in range(60)]
+    blob = _build(
+        _fmt("estimator_status:uint64_t timestamp;float hgt_test_ratio;"),
+        _add(1, "estimator_status"), *rows)
+    finding = next(f for f in review(read(blob), "x.ulg")["findings"]
+                   if "innovations touched" in f["text"])
+    # A note, not a warning: it is only a problem when it lasts.
+    assert finding["level"] == "note"
+    assert "only a problem when it lasts" in _says(finding)
+
+
+def test_estimator_resets_are_counted_from_the_counter_not_its_value() -> None:
+    """The counters are uint8 and wrap. A step of 200 is a wrap read backwards,
+    not two hundred resets."""
+    values = [0, 0, 1, 1, 2, 254, 255, 0]      # two real resets, then a wrap
+    rows = [_row(1, struct.pack("<QfB", index * 500_000, 1.0, value))
+            for index, value in enumerate(values)]
+    blob = _build(
+        _fmt("vehicle_local_position:uint64_t timestamp;float x;uint8_t xy_reset_counter;"),
+        _add(1, "vehicle_local_position"), *rows)
+    finding = next(f for f in review(read(blob), "x.ulg")["findings"]
+                   if "reset its state" in f["text"])
+    # 0->1 and 1->2 are resets; 2->254 is +252 and rejected as a wrap read
+    # backwards; 254->255 and 255->0 are two more, the second across the wrap.
+    assert "4 time(s)" in finding["text"]
+    assert "horizontal position 4×" in _says(finding)
+    assert finding["t"] == pytest.approx(1.0)
+
+
+def test_px4s_own_failure_detector_is_reported_before_anything_inferred() -> None:
+    """The autopilot deciding in flight that a propeller is imbalanced is a
+    stronger statement than any threshold crossed in this file, and it belongs
+    at the top of the page rather than buried under derived numbers."""
+    blob = _build(
+        _fmt("vehicle_status:uint64_t timestamp;uint8_t arming_state;uint8_t failure_detector_status;"),
+        _add(1, "vehicle_status"),
+        _row(1, struct.pack("<QBB", 0, 2, 0)),
+        _row(1, struct.pack("<QBB", 2_000_000, 2, 64 | 128)),
+    )
+    findings = review(read(blob), "x.ulg")["findings"]
+    assert findings[0]["level"] == "critical"
+    assert "a propeller is imbalanced" in findings[0]["text"]
+    assert "a motor stopped responding" in findings[0]["text"]
+    assert "own verdict on the airframe" in _says(findings[0])
+    assert findings[0]["t"] == pytest.approx(2.0)
+
+
+def _mag_and_thrust(coupled: bool) -> bytes:
+    rows = []
+    for index in range(200):
+        phase = math.sin(index * 0.1)
+        thrust = 0.5 + 0.3 * phase
+        field = 0.45 + (0.05 * phase if coupled else 0.05 * math.cos(index * 0.37))
+        rows.append(_row(1, struct.pack("<Q3f", index * 50_000, field, 0.0, 0.0)))
+        rows.append(_row(2, struct.pack("<Q3f", index * 50_000, 0.0, 0.0, -thrust)))
+    return _build(
+        _fmt("vehicle_magnetometer:uint64_t timestamp;float[3] magnetometer_ga;"),
+        _fmt("vehicle_thrust_setpoint:uint64_t timestamp;float[3] xyz;"),
+        _add(1, "vehicle_magnetometer"), _add(2, "vehicle_thrust_setpoint"),
+        *rows,
+    )
+
+
+def test_a_compass_that_moves_with_the_throttle_is_named_as_interference() -> None:
+    """Two plots side by side leave the reader to eyeball a correlation, and
+    this is exactly the one they get wrong: the repair is wiring, not a
+    recalibration, and nothing on either plot says so."""
+    findings = review(read(_mag_and_thrust(coupled=True)), "x.ulg")["findings"]
+    finding = next(f for f in findings if "Compass field strength" in f["text"])
+    assert "correlation" in finding["text"]
+    assert "power wiring" in _says(finding)
+
+
+def test_a_compass_that_merely_wanders_is_not_blamed_on_the_wiring() -> None:
+    findings = review(read(_mag_and_thrust(coupled=False)), "x.ulg")["findings"]
+    assert all("Compass field strength" not in f["text"] for f in findings)
+
+
+def test_a_ringing_rate_loop_is_named_with_its_frequency() -> None:
+    """The plot shows a thick line. The finding says 18 Hz and 14 deg/s, which
+    is the difference between "looks noisy" and a D gain to turn down."""
+    rows = []
+    for index in range(1000):
+        t = index * 0.004                                   # 250 Hz
+        ring = math.radians(20.0) * math.sin(2 * math.pi * 18.0 * t)
+        rows.append(_row(1, struct.pack("<Q3f", int(t * 1e6), ring, 0.0, 0.0)))
+    blob = _build(
+        _fmt("vehicle_angular_velocity:uint64_t timestamp;float[3] xyz;"),
+        _add(1, "vehicle_angular_velocity"), *rows)
+    finding = next(f for f in review(read(blob), "x.ulg")["findings"]
+                   if "rate rings" in f["text"])
+    assert "roll" in finding["text"]
+    assert "18 Hz" in finding["text"]
+
+
+def test_a_processor_out_of_headroom_is_a_finding_a_busy_one_is_not() -> None:
+    quiet = [_row(1, struct.pack("<Qff", i * 200_000, 0.55, 0.4)) for i in range(40)]
+    busy = [_row(1, struct.pack("<Qff", i * 200_000,
+                                0.95 if i >= 10 else 0.5, 0.4)) for i in range(40)]
+    fmt = (_fmt("cpuload:uint64_t timestamp;float load;float ram_usage;"),
+           _add(1, "cpuload"))
+    assert all("CPU held above" not in f["text"]
+               for f in review(read(_build(*fmt, *quiet)), "x.ulg")["findings"])
+    finding = next(f for f in review(read(_build(*fmt, *busy)), "x.ulg")["findings"]
+                   if "CPU held above" in f["text"])
+    assert "peak 95%" in finding["text"]
+
+
+def test_a_pack_taken_below_its_cell_floor_is_a_separate_finding_from_sag() -> None:
+    """Sag retires a battery; a cell floor shortens the next flight. They have
+    different answers, so they are different sentences."""
+    rows = [_row(1, struct.pack("<Qf", i * 200_000, 16.6 - i * 0.2)) for i in range(20)]
+    blob = _build(
+        _fmt("battery_status:uint64_t timestamp;float voltage_filtered_v;"),
+        _add(1, "battery_status"), *rows)
+    findings = review(read(blob), "x.ulg")["findings"]
+    floor = next(f for f in findings if "per cell" in f["text"])
+    assert floor["level"] == "critical"
+    assert "across 4" in floor["text"], "cell count from the peak, not the sag"
+    assert any("sagged" in f["text"] for f in findings)
+
+
+def test_gps_lost_while_armed_is_reported_and_on_the_ground_is_not() -> None:
+    """A receiver hunting for satellites on the bench is not a finding. The
+    same thing in the air is every position plot running on dead reckoning."""
+    def log(bad: range) -> bytes:
+        rows = []
+        for index in range(40):
+            rows.append(_row(1, struct.pack("<QB", index * 500_000,
+                                            1 if index in bad else 3)))
+            # Armed from index 10 onwards — five seconds into the recording.
+            rows.append(_row(2, struct.pack("<QBB", index * 500_000,
+                                            2 if index >= 10 else 1, 2)))
+        return _build(
+            _fmt("vehicle_gps_position:uint64_t timestamp;uint8_t fix_type;"),
+            _fmt("vehicle_status:uint64_t timestamp;uint8_t arming_state;uint8_t nav_state;"),
+            _add(1, "vehicle_gps_position"), _add(2, "vehicle_status"), *rows)
+
+    airborne = review(read(log(range(20, 30))), "x.ulg")["findings"]
+    lost = next(f for f in airborne if "below a 3-D fix" in f["text"])
+    assert "5 s" in lost["text"]
+    assert lost["t"] == pytest.approx(10.0)
+
+    on_the_ground = review(read(log(range(0, 8))), "x.ulg")["findings"]
+    grounded = [f for f in on_the_ground if "below a 3-D fix" in f["text"]]
+    assert grounded == [], "before arming it is a receiver warming up"
+
+
+def test_a_flight_message_is_placed_on_the_same_clock_as_the_plots() -> None:
+    """PX4 writes these with the raw log timestamp. Left that way, the one line
+    that explains a flight sits next to a number with nothing to do with the
+    second it happened in."""
+    blob = _build(
+        _fmt("cpuload:uint64_t timestamp;float load;float ram_usage;"),
+        _add(1, "cpuload"),
+        _row(1, struct.pack("<Qff", 1_000_000, 0.3, 0.4)),
+        _msg("L", bytes([3]) + struct.pack("<Q", 5_000_000) + b"Critical battery"),
+        _row(1, struct.pack("<Qff", 9_000_000, 0.3, 0.4)),
+    )
+    messages = review(read(blob), "x.ulg")["messages"]
+    assert messages[0]["t"] == pytest.approx(4.0)
+    assert messages[0]["text"] == "Critical battery"
+
+
+# ---------------------------------------------------------------------------
+# The plots the new findings are read against
+# ---------------------------------------------------------------------------
+
+def test_the_rate_error_plot_subtracts_rather_than_overlaying() -> None:
+    """Two traces that nearly overlap hide the only thing being asked about.
+    Subtracted, the gap between them is the trace."""
+    rows = []
+    for index in range(40):
+        stamp = index * 100_000
+        rows.append(_row(1, struct.pack("<Q3f", stamp, math.radians(10.0), 0.0, 0.0)))
+        rows.append(_row(2, struct.pack("<Qfff", stamp, math.radians(30.0), 0.0, 0.0)))
+    blob = _build(
+        _fmt("vehicle_angular_velocity:uint64_t timestamp;float[3] xyz;"),
+        _fmt("vehicle_rates_setpoint:uint64_t timestamp;float roll;float pitch;float yaw;"),
+        _add(1, "vehicle_angular_velocity"), _add(2, "vehicle_rates_setpoint"), *rows)
+    plot = _plot(review(read(blob), "x.ulg"), "rate_error")
+    assert plot is not None
+    roll = next(s for s in plot["series"] if s["name"] == "Roll error")
+    assert roll["y"][-1] == pytest.approx(20.0, abs=0.01), "demanded minus measured"
+
+
+def test_the_rate_error_plot_is_absent_without_a_setpoint_to_subtract() -> None:
+    rows = [_row(1, struct.pack("<Q3f", i * 100_000, 0.1, 0.0, 0.0)) for i in range(10)]
+    blob = _build(
+        _fmt("vehicle_angular_velocity:uint64_t timestamp;float[3] xyz;"),
+        _add(1, "vehicle_angular_velocity"), *rows)
+    assert _plot(review(read(blob), "x.ulg"), "rate_error") is None
+
+
+def test_esc_rpm_is_drawn_for_the_channels_the_esc_count_declares() -> None:
+    """Motor commands say what was asked for; RPM says what happened, and the
+    gap between the two is where a failing motor shows up first."""
+    rows = [
+        _row(1, struct.pack("<QB2i", index * 100_000, 2, 5000, 5400))
+        for index in range(20)
+    ]
+    blob = _build(
+        _fmt("esc_report:int32_t esc_rpm;"),
+        _fmt("esc_status:uint64_t timestamp;uint8_t esc_count;esc_report[2] esc;"),
+        _add(1, "esc_status"), *rows)
+    plot = _plot(review(read(blob), "x.ulg"), "esc")
+    assert plot is not None
+    assert [s["name"] for s in plot["series"]] == ["ESC 1", "ESC 2"]
+    assert plot["group"] == "Airframe"
+
+
+def test_a_mode_boundary_belongs_to_the_mode_being_entered() -> None:
+    """One span's end is the next one's start. A finding about the moment the
+    aircraft switched to Return reads as happening in Mission if the boundary
+    belongs to both — which is the one second where it matters most."""
+    from corvus.flight_review import _mode_at
+
+    modes = [{"mode": "Mission", "start": 0.0, "end": 40.0},
+             {"mode": "Return", "start": 40.0, "end": 60.0}]
+    assert _mode_at(modes, 39.9) == "Mission"
+    assert _mode_at(modes, 40.0) == "Return"
+    assert _mode_at(modes, 60.0) == "Return", "the last span owns its own end"
+    assert _mode_at(modes, None) == ""
+
+
+# ---------------------------------------------------------------------------
+# Restraint: what must NOT appear
+# ---------------------------------------------------------------------------
+# A page of findings is only worth reading if its reader believes every line on
+# it. One alarm about an ordinary boot, or one impossible number, costs the
+# other nine their credibility — so these are about the things the review is
+# now careful enough not to say.
+
+def _motors(rows: list[tuple[float, ...]]) -> bytes:
+    body = [_row(1, struct.pack("<Q4f", index * 100_000, *row))
+            for index, row in enumerate(rows)]
+    return _build(_fmt("actuator_motors:uint64_t timestamp;float[4] control;"),
+                  _add(1, "actuator_motors"), *body)
+
+
+def test_every_motor_at_its_limit_together_is_a_climb_not_a_failure() -> None:
+    """A pilot holding full throttle pins all four. Calling that a critical
+    loss of control authority is how a review teaches its reader to stop
+    reading findings."""
+    blob = _motors([(0.99, 0.99, 0.99, 0.99)] * 80)
+    findings = review(read(blob), "x.ulg")["findings"]
+    assert all("pinned at full output" not in f["text"] for f in findings)
+
+
+def test_one_motor_at_its_limit_while_the_others_are_not_is_the_finding() -> None:
+    blob = _motors([(0.99, 0.5, 0.5, 0.5)] * 80)
+    finding = next(f for f in review(read(blob), "x.ulg")["findings"]
+                   if "pinned at full output" in f["text"])
+    assert finding["level"] == "critical"
+    assert "still had headroom" in finding["text"]
+
+
+def test_an_estimator_settling_on_the_ground_is_not_four_alarms() -> None:
+    """Every counter ticks when the first GPS fix arrives and the filter takes
+    the measurement over its dead-reckoned guess. That is the system working,
+    and it used to produce four near-identical warnings about a normal boot."""
+    fields = ("xy_reset_counter", "z_reset_counter", "vxy_reset_counter",
+              "heading_reset_counter")
+    rows = []
+    for index in range(40):
+        # Armed from index 20; every counter bumps once at index 5, on the
+        # ground, and nothing resets afterwards.
+        bumped = 1 if index >= 5 else 0
+        rows.append(_row(1, struct.pack("<Qf4B", index * 500_000, 1.0, *([bumped] * 4))))
+        rows.append(_row(2, struct.pack("<QBB", index * 500_000,
+                                        2 if index >= 20 else 1, 2)))
+    blob = _build(
+        _fmt("vehicle_local_position:uint64_t timestamp;float x;"
+             + "".join(f"uint8_t {f};" for f in fields)),
+        _fmt("vehicle_status:uint64_t timestamp;uint8_t arming_state;uint8_t nav_state;"),
+        _add(1, "vehicle_local_position"), _add(2, "vehicle_status"), *rows)
+    findings = review(read(blob), "x.ulg")["findings"]
+    assert all("reset its state" not in f["text"] for f in findings)
+
+
+def test_resets_in_flight_are_one_finding_not_one_per_counter() -> None:
+    """The counters move together on a single estimator event. Four paragraphs
+    about one hiccup is the clearest way this page became unreadable."""
+    fields = ("xy_reset_counter", "z_reset_counter", "vxy_reset_counter",
+              "heading_reset_counter")
+    rows = []
+    for index in range(40):
+        bumped = 1 if index >= 30 else 0            # in flight
+        rows.append(_row(1, struct.pack("<Qf4B", index * 500_000, 1.0, *([bumped] * 4))))
+        rows.append(_row(2, struct.pack("<QBB", index * 500_000,
+                                        2 if index >= 20 else 1, 2)))
+    blob = _build(
+        _fmt("vehicle_local_position:uint64_t timestamp;float x;"
+             + "".join(f"uint8_t {f};" for f in fields)),
+        _fmt("vehicle_status:uint64_t timestamp;uint8_t arming_state;uint8_t nav_state;"),
+        _add(1, "vehicle_local_position"), _add(2, "vehicle_status"), *rows)
+    resets = [f for f in review(read(blob), "x.ulg")["findings"]
+              if "reset its state" in f["text"]]
+    assert len(resets) == 1, "one line, with the breakdown behind it"
+    assert "4 time(s)" in resets[0]["text"]
+    assert "heading 1×" in _says(resets[0])
+
+
+def test_an_impossible_compass_swing_is_not_blamed_on_the_wiring() -> None:
+    """One dropped sample near zero turns a min/max spread into a claim that
+    the field swung by twice its own value. No magnetometer on an aircraft does
+    that, and a finding printing an impossible number costs every other finding
+    on the page its credibility."""
+    rows = []
+    for index in range(200):
+        phase = math.sin(index * 0.1)
+        thrust = 0.5 + 0.3 * phase
+        field = 0.45 + 0.05 * phase
+        if index % 17 == 0:
+            field = 0.0001                 # a dropout, not a measurement
+        rows.append(_row(1, struct.pack("<Q3f", index * 50_000, field, 0.0, 0.0)))
+        rows.append(_row(2, struct.pack("<Q3f", index * 50_000, 0.0, 0.0, -thrust)))
+    blob = _build(
+        _fmt("vehicle_magnetometer:uint64_t timestamp;float[3] magnetometer_ga;"),
+        _fmt("vehicle_thrust_setpoint:uint64_t timestamp;float[3] xyz;"),
+        _add(1, "vehicle_magnetometer"), _add(2, "vehicle_thrust_setpoint"), *rows)
+    findings = review(read(blob), "x.ulg")["findings"]
+    interference = [f for f in findings if "Compass field strength" in f["text"]]
+    assert interference == [], "the dropouts are not a 200% swing"
+
+
+def test_context_is_a_note_and_a_problem_is_a_warning() -> None:
+    """Return is how most flights end. Ranking a pilot pressing a button with
+    a motor failure is what makes a reader skim the whole list."""
+    rows = []
+    for index in range(40):
+        nav = 5 if index >= 30 else 2          # Position, then Return
+        rows.append(_row(1, struct.pack("<QBB", index * 500_000, 2, nav)))
+    blob = _build(
+        _fmt("vehicle_status:uint64_t timestamp;uint8_t arming_state;uint8_t nav_state;"),
+        _add(1, "vehicle_status"), *rows)
+    findings = review(read(blob), "x.ulg")["findings"]
+    returned = next(f for f in findings if "flew Return" in f["text"])
+    assert returned["level"] == "note"
+    # A log whose only remark is context still reads as a clean flight.
+    assert findings[0]["level"] == "ok"
+
+
+def test_every_finding_is_a_headline_short_enough_to_scan() -> None:
+    """The reasoning belongs behind the claim, not in front of it. This is the
+    property that keeps a full page of findings readable, so it is asserted
+    rather than left to review."""
+    result = review(read(_timed_log()), "x.ulg")
+    assert len(result["findings"]) >= 1
+    for finding in result["findings"]:
+        assert len(finding["text"]) <= 110, finding["text"]
+        assert not finding["text"].endswith("."), "a headline, not a sentence"
+        assert finding.get("detail"), "and the why is still there, behind it"

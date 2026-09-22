@@ -143,7 +143,7 @@ class CorvusConfig:
     updates: dict[str, Any] | None = None
     plugins: dict[str, Any] | None = None
 
-    def apply_overrides(self, **kwargs: Any) -> "CorvusConfig":
+    def apply_overrides(self, **kwargs: Any) -> CorvusConfig:
         """Return a copy with non-None kwargs overriding matching fields.
 
         Used so CLI args beat the config file: only fields that are actually

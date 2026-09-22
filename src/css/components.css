@@ -919,6 +919,15 @@
 /* Stretch makes every child share the width equally (a two-button confirm
    row); without it buttons keep their intrinsic width. */
 .ui-actions-stretch > .btn { flex: 1; }
+/* A field has no padding of its own (unlike .page-row), so a button row
+   right below one — Settings -> Updates' Check now, under the switch and its
+   hint — would otherwise sit flush against the caption above it. Matches the
+   12px Corvus.ui.card({ actions }) already uses for the same relationship. */
+.field + .ui-actions { margin-top: 12px; }
+/* Same gap below the buttons, before a result message (Check now's "up to
+   date" / error line) — without it the message touches the button it reports
+   on. */
+.ui-actions + .ui-msg { margin-top: 10px; }
 
 /* ===== .tile — large clickable tile (Setup grid, Plugins grid) =====
    apple-design: lift on hover, scale on press, keyboard focus ring,

@@ -408,7 +408,7 @@ def test_whole_datagrams_leave_no_reassembly_state_behind() -> None:
 
 def test_a_half_frame_is_kept_only_while_its_endpoint_is_still_talking() -> None:
     fwd = _forwarder(listen_port=0)
-    fwd._rx_buf = {("10.0.0.%d" % i, 14550): b"\xfe" for i in range(3)}
+    fwd._rx_buf = {(f"10.0.0.{i}", 14550): b"\xfe" for i in range(3)}
     fwd._peers = {("10.0.0.1", 14550): time.monotonic()}
 
     fwd._drop_stale_rx_buffers()
@@ -535,11 +535,17 @@ def test_wildcard_listener_injects_only_from_a_configured_station() -> None:
 # Who gets subscribed to the aircraft's telemetry
 # ---------------------------------------------------------------------------
 
-def test_a_datagram_that_is_not_mavlink_does_not_subscribe_its_sender() -> None:
+def test_plain_http_noise_does_not_subscribe_its_sender() -> None:
     """A learned peer receives the whole stream at whatever rate the aircraft
     sends it. A port scan, another program's stale socket, or a broadcast
     picked up once listen_host is widened past loopback must not be able to
-    sign itself up for that with one stray packet."""
+    sign itself up for that with one stray packet.
+
+    (Renamed: this shared a name with the trailing-0xFD test below, so Python
+    bound only the later definition and THIS test never ran. Nothing failed —
+    it simply was not there. It is the kind of thing only a linter finds,
+    which is why both pipelines run one now.)
+    """
     port = _free_port()
     fwd = _forwarder(listen_port=port)
     assert fwd.start() is True

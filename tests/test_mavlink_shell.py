@@ -22,7 +22,8 @@ from __future__ import annotations
 import threading
 import time
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 from unittest.mock import MagicMock
 
 import pytest
@@ -30,7 +31,7 @@ from pymavlink import mavutil
 
 from corvus.mavlink_bridge import MavlinkBridge
 from corvus.state_store import VehicleStateStore
-from corvus.server import CorvusHandler, _BoundedSseBuffer
+from corvus.server import CorvusHandler, _BoundedSseBuffer, _MultiplexSseBuffer
 
 
 # ---------------------------------------------------------------------------
@@ -251,8 +252,8 @@ def test_handle_serial_control_reassembles_utf8_split_across_router_datagrams() 
     assert bridge.send_shell_command("listener temperature")
     bridge._conn.mav.serial_sends.clear()
 
-    encoded = "listener: Temperatur 21 °C\n".encode("utf-8")
-    degree = encoded.index("°".encode("utf-8"))
+    encoded = "listener: Temperatur 21 °C\n".encode()
+    degree = encoded.index("°".encode())
     bridge._handle_serial_control(shell_reply(encoded[:degree + 1]))
     bridge._handle_serial_control(shell_reply(encoded[degree + 1:]))
 
@@ -448,7 +449,7 @@ def test_stop_shell_discards_partial_multibyte_decoder_state() -> None:
     bridge = ready_bridge()
     bridge._conn = FakeShellConn()
     records = _subscribe(bridge)
-    encoded = "°".encode("utf-8")
+    encoded = "°".encode()
     assert bridge.send_shell_command("listener temperature")
     bridge._conn.mav.serial_sends.clear()
 
@@ -794,7 +795,11 @@ def test_console_sse_disconnect_removes_bridge_listener(
     def disconnected(self: Any, timeout: float | None = None) -> Any:
         raise BrokenPipeError("client gone")
 
-    monkeypatch.setattr(_BoundedSseBuffer, "get", disconnected)
+    # The stream loop blocks on _MultiplexSseBuffer.drain — one connection
+    # can now carry several topics, so that is the wait every SSE handler
+    # goes through. Patching it is how this test ends a loop that a real
+    # client would end by going away.
+    monkeypatch.setattr(_MultiplexSseBuffer, "drain", disconnected)
 
     handler._sse_console()
 

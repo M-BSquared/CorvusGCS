@@ -34,8 +34,8 @@
   white-space: nowrap;
 }
 
-/* Open-terminal, edit and remove: present, but never competing with the launch
-   button. They come up to full strength on hover or keyboard focus. */
+/* Open-terminal and edit: present, but never competing with the launch button.
+   They come up to full strength on hover or keyboard focus. */
 .sshl-row-tools {
   display: flex;
   gap: 2px;
@@ -65,6 +65,16 @@
 /* Nothing running means nothing to open; the button says why in its tooltip
    rather than leading somewhere empty. */
 .sshl-open:disabled { opacity: 0.35; cursor: default; }
+
+/* Why the last press failed, beside the button that failed: the app's own hint
+   icon in the critical colour, holding the message in its popover. The row it
+   is on stops fading — a failure is not a tool that waits to be hovered — and
+   the launch button, being the flexible item in the row, gives up exactly this
+   much width for it without a rule of its own. */
+.sshl-error { color: var(--critical); }
+.sshl-error:hover,
+.sshl-error[data-popover-open="true"] { color: var(--critical-bright); }
+.sshl-failed .sshl-row-tools { opacity: 1; }
 
 /* The connection typed in for a button that has none saved yet. Inset and
    hairlined so six fields read as one answer to the Connection question above

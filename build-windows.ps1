@@ -40,12 +40,28 @@ $AppName = "Corvus GCS"
 $BuildDir = Join-Path $RepoDir "build\windows"
 $DistDir = Join-Path $RepoDir "dist"
 $AppDir = Join-Path $DistDir $AppName
-$Zipfile = Join-Path $RepoDir "Corvus_GCS-$Version-windows-x64.zip"
+# Artifacts go to dist\, which is gitignored, not to the repo root.
+$Zipfile = Join-Path $RepoDir "dist\Corvus_GCS-$Version-windows-x64.zip"
 
 Write-Host "=== CORVUS GCS - Windows build ==="
 Write-Host "Version: $Version  (read from VERSION)"
 Write-Host "Host:    $([System.Environment]::OSVersion.VersionString) $env:PROCESSOR_ARCHITECTURE"
 Write-Host ""
+
+# Everything the bundle is assembled from, checked before anything is built.
+# The other two build scripts used to discover a missing file one `cp` at a
+# time, hundreds of lines in and after the whole dependency install; naming it
+# in the first second is cheaper for everyone.
+$Missing = @()
+foreach ($required in @(
+    "VERSION", "requirements.txt", "LICENSE.md",
+    "corvus", "src", "assets", "plugins", "assets\CorvusGCS_logo.png")) {
+    if (-not (Test-Path (Join-Path $RepoDir $required))) { $Missing += $required }
+}
+if ($Missing.Count -gt 0) {
+    throw ("the bundle is assembled from files that are not in the repo: " +
+           ($Missing -join ", ") + " - restore them (git checkout -- <path>) and run this again.")
+}
 
 # ---- 1. interpreter ---------------------------------------------------------
 # A conda interpreter cannot be packaged reliably (its DLLs live outside the
@@ -55,7 +71,7 @@ if (-not $Python) {
     $Python = (Get-Command python -ErrorAction SilentlyContinue).Source
 }
 if (-not $Python) {
-    throw "No python.exe found. Install Python 3.10+ from python.org, or pass -Python <path>."
+    throw "No python.exe found. Install Python 3.12+ from python.org, or pass -Python <path>."
 }
 $pyInfo = & $Python -c @"
 import sys, json
@@ -71,6 +87,13 @@ if ($pyInfo.conda) {
 }
 if ($pyInfo.bits -ne 64) {
     throw "$Python is 32-bit. Corvus ships x64 only; install the 64-bit python.org build."
+}
+# 3.12 is the floor pyproject.toml declares and the version both CI pipelines
+# test. Nothing checked this before, so the shipped .exe could be built on an
+# interpreter older than anything the suite had ever run against.
+$pyParts = $pyInfo.version.Split(".")
+if ([int]$pyParts[0] -lt 3 -or ([int]$pyParts[0] -eq 3 -and [int]$pyParts[1] -lt 12)) {
+    throw "$Python is Python $($pyInfo.version); Corvus requires >= 3.12. Install it from python.org, or pass -Python <path>."
 }
 Write-Host ">>> Interpreter: $Python (Python $($pyInfo.version), x64)"
 
@@ -89,16 +112,49 @@ if (-not (Test-Path $VenvPy)) {
     }
 }
 
-$Deps = @("pymavlink>=2.4", "paramiko>=3.0", "pyserial>=3.5",
-          "PyQt6>=6.6", "PyQt6-WebEngine>=6.6", "pyinstaller>=6.3")
-Write-Host ">>> Installing $($Deps -join ' ') ..."
+# The runtime list comes from requirements.txt, which every other installer
+# also reads; only the build-time packager is named here, because it is not a
+# runtime dependency and does not belong in that file.
+#
+# Which file, in order: $env:CORVUS_REQUIREMENTS, then requirements.lock if the
+# repo has one, then requirements.txt. The lock is what makes a release
+# rebuildable - requirements.txt states floors, so installing from it in six
+# months resolves to whatever is newest then. Every build writes the set it
+# actually installed to dist\*.lock; promoting one to requirements.lock at tag
+# time pins the next rebuild to it.
+$Requirements = $env:CORVUS_REQUIREMENTS
+if (-not $Requirements) {
+    $RepoLock = Join-Path $RepoDir "requirements.lock"
+    $Requirements = if (Test-Path $RepoLock) { $RepoLock } else { Join-Path $RepoDir "requirements.txt" }
+}
+if (-not (Test-Path $Requirements)) { throw "missing $Requirements" }
+$LockOut = Join-Path $DistDir "Corvus_GCS-$Version-windows-x64.lock"
+$BuildDeps = @("pyinstaller>=6.3")
+Write-Host ">>> Installing -r $(Split-Path -Leaf $Requirements) plus $($BuildDeps -join ' ') ..."
 $PipLog = Join-Path $BuildDir "pip.log"
 & $VenvPy -m pip install --upgrade pip *>> $PipLog
-& $VenvPy -m pip install @Deps *>> $PipLog
+& $VenvPy -m pip install -r $Requirements *>> $PipLog
+if ($LASTEXITCODE -eq 0) { & $VenvPy -m pip install @BuildDeps *>> $PipLog }
 if ($LASTEXITCODE -ne 0) {
     Write-Host "--- last 40 lines of $PipLog ---"
     Get-Content $PipLog -Tail 40
     throw "dependency install failed"
+}
+
+# What went into THIS bundle, exactly. Ships beside the artifact so a rebuild
+# can be told to resolve to the same versions:
+#   copy dist\Corvus_GCS-<version>-windows-x64.lock requirements.lock
+New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
+$Frozen = & $VenvPy -m pip freeze --all --exclude-editable
+if ($LASTEXITCODE -eq 0) {
+    @(
+        "# Corvus GCS $Version - Windows x64, python $($pyInfo.version)",
+        "# The resolved runtime set this artifact was built from.",
+        "# Install with: pip install -r <this file>"
+    ) + $Frozen | Set-Content -Path $LockOut -Encoding UTF8
+    Write-Host "    resolved set: $LockOut"
+} else {
+    Write-Host "WARNING: could not write $LockOut"
 }
 
 # ---- 3. icon ----------------------------------------------------------------
@@ -180,6 +236,11 @@ $PyiArgs = @(
     "--specpath", $BuildDir,
     "--paths", $RepoDir,
     "--add-data", "$(Join-Path $RepoDir 'VERSION');.",
+    # The Sustainable Use License requires that anyone who receives a copy of
+    # the software also receives a copy of its terms. The .app and the AppImage
+    # have always shipped it; this bundle did not, which made the Windows
+    # artifact the one that did not satisfy its own licence.
+    "--add-data", "$(Join-Path $RepoDir 'LICENSE.md');.",
     "--add-data", "$(Join-Path $RepoDir 'src');src",
     "--add-data", "$(Join-Path $RepoDir 'assets');assets",
     # The plugins that ship with Corvus. plugin_registry.py resolves this root
@@ -207,7 +268,7 @@ if (-not (Test-Path $Exe)) { throw "expected $Exe, which PyInstaller did not pro
 # It runs against the bundled interpreter payload, not the build venv.
 if (-not $NoVerify) {
     Write-Host ">>> Verifying the bundle ..."
-    foreach ($needed in @("VERSION", "src\index.html", "assets", "plugins")) {
+    foreach ($needed in @("VERSION", "LICENSE.md", "src\index.html", "assets", "plugins")) {
         $p = Join-Path $AppDir "_internal\$needed"
         if (-not (Test-Path $p)) { throw "bundle is missing $needed (looked at $p)" }
     }
@@ -215,7 +276,7 @@ if (-not $NoVerify) {
     if ($stamped -ne $Version) {
         throw "bundled VERSION is '$stamped', expected '$Version'"
     }
-    Write-Host "    payload     : VERSION, src\, assets\, plugins\ present and in sync"
+    Write-Host "    payload     : VERSION, LICENSE.md, src\, assets\, plugins\ present and in sync"
 }
 
 # ---- 7. zip -----------------------------------------------------------------

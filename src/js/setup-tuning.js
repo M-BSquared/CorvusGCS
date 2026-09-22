@@ -352,8 +352,19 @@ Corvus.setupTuning = (function () {
      async rejection, so the returned promise is caught too, and a chart whose
      set has already been purged is never redrawn in the first place. */
   function redraw(state, entry) {
-    if (typeof window === "undefined" || typeof window.Plotly === "undefined") return;
+    if (typeof window === "undefined") return;
     if (!state.charts || entry.dead) return;
+    // Plotly is fetched on first use (js/lazy.js). This runs at ~10 Hz off
+    // live telemetry, so the guard has to be the cheap synchronous one and
+    // the re-entry has to re-check `entry.dead`: a tab switch purges the
+    // chart and drops the element while the bundle is still in flight.
+    if (typeof window.Plotly === "undefined") {
+      if (!Corvus.lazy || typeof Corvus.lazy.plotly !== "function") return;
+      Corvus.lazy.plotly()
+        .then(() => { if (state.charts && !entry.dead) redraw(state, entry); })
+        .catch((err) => console.error("tuning charts unavailable:", err));
+      return;
+    }
     try {
       const pending = window.Plotly.react(entry.chart, traces(state, entry),
         S.plotlyLayout(entry.spec.unit || ""), state.charts.config);

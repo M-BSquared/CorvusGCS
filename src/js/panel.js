@@ -35,23 +35,28 @@ Corvus.panel = (function () {
   /* The command surface, in one place: used by the "?" listing, by Tab
      completion, and by the placeholder. Mirrors what
      CorvusHandler._api_console_command accepts — SHELL_COMMANDS included,
-     which are forwarded verbatim to the PX4 NSH shell. */
+     which are forwarded verbatim to the PX4 NSH shell.
+
+     `px4: true` marks the ones that ARE that shell. ArduPilot has no NSH, so on
+     an ArduPilot link those verbs are refused by the bridge with a sentence
+     saying why; they are also dropped from the "?" listing and from Tab
+     completion, so nobody is invited to type one. */
   const COMMANDS = [
-    { name: "arm", args: "", help: "Arm the vehicle (refused unless PX4 is happy)" },
+    { name: "arm", args: "", help: "Arm the vehicle (refused unless the autopilot is happy)" },
     { name: "disarm", args: "", help: "Disarm the vehicle" },
     { name: "mode", args: "<MODE>", help: "Set flight mode, e.g. mode HOLD" },
     { name: "takeoff", args: "[ALT]", help: "Take off to ALT metres AGL (default 10)" },
     { name: "land", args: "", help: "Land at the current position" },
     { name: "rtl", args: "", help: "Return to launch" },
-    { name: "listener", args: "<topic>", help: "Stream a uORB topic, e.g. listener sensor_combined" },
-    { name: "top", args: "", help: "PX4 task/CPU listing" },
-    { name: "free", args: "", help: "Free memory" },
-    { name: "dmesg", args: "", help: "PX4 boot/kernel log" },
-    { name: "tasks", args: "", help: "Running tasks" },
-    { name: "perf", args: "", help: "Performance counters" },
-    { name: "boot_log", args: "", help: "Boot log" },
-    { name: "hrt", args: "", help: "High-resolution timer info" },
-    { name: "shell", args: "<cmd>", help: "Send a raw NSH command (case preserved)" },
+    { name: "listener", args: "<topic>", help: "Stream a uORB topic, e.g. listener sensor_combined", px4: true },
+    { name: "top", args: "", help: "PX4 task/CPU listing", px4: true },
+    { name: "free", args: "", help: "Free memory", px4: true },
+    { name: "dmesg", args: "", help: "PX4 boot/kernel log", px4: true },
+    { name: "tasks", args: "", help: "Running tasks", px4: true },
+    { name: "perf", args: "", help: "Performance counters", px4: true },
+    { name: "boot_log", args: "", help: "Boot log", px4: true },
+    { name: "hrt", args: "", help: "High-resolution timer info", px4: true },
+    { name: "shell", args: "<cmd>", help: "Send a raw NSH command (case preserved)", px4: true },
     { name: "help", args: "", help: "Ask the backend what it accepts" },
   ];
 
@@ -318,11 +323,26 @@ Corvus.panel = (function () {
     return verb + " " + rest.replace(/\s+/g, " ");
   }
 
+  /**
+   * The commands this link can actually run.
+   *
+   * The NSH verbs are PX4's console, and ArduPilot has no console at all — so
+   * on an ArduPilot link they are dropped rather than completed and listed.
+   * Unknown (nothing connected, or the capability document not fetched yet) is
+   * "offer everything": the bridge refuses with a reason either way, and a
+   * console that hides commands because a fetch was slow is its own bug.
+   */
+  function availableCommands() {
+    const caps = Corvus.capabilities ? Corvus.capabilities.peek() : null;
+    if (!caps || caps.shell !== false) return COMMANDS;
+    return COMMANDS.filter((c) => !c.px4);
+  }
+
   /** Commands whose name starts with the current token. */
   function completionsFor(text) {
     const head = text.split(/\s+/)[0].toLowerCase();
     if (!head) return [];
-    return COMMANDS.filter((c) => c.name.startsWith(head) && c.name !== head);
+    return availableCommands().filter((c) => c.name.startsWith(head) && c.name !== head);
   }
 
   function showHint(text) {
@@ -348,11 +368,16 @@ Corvus.panel = (function () {
   /** Print the command list into the console itself, where it can be scrolled
    *  back to — unlike a tooltip. */
   function printCommandList() {
+    const available = availableCommands();
     addConsoleLine("info", "Commands:");
-    COMMANDS.forEach((c) => {
+    available.forEach((c) => {
       const sig = c.args ? `${c.name} ${c.args}` : c.name;
       addConsoleLine("", `  ${sig.padEnd(18)}${c.help}`);
     });
+    if (available.length !== COMMANDS.length) {
+      addConsoleLine("info",
+        "The NSH commands are hidden: this autopilot has no MAVLink shell.");
+    }
   }
 
   /** Clear the console — buffer and DOM. Clearing only the DOM would let the
@@ -675,9 +700,26 @@ Corvus.panel = (function () {
     sshContent.appendChild(card);
     Corvus.ui.refreshIcons();
 
-    if (!Corvus.sshTerm || !Corvus.sshTerm.available()) {
+    if (!Corvus.sshTerm) {
       termHost.textContent =
         "Terminal component unavailable — the xterm bundle did not load.";
+      return;
+    }
+    // First terminal of the session: xterm is fetched on demand (js/lazy.js).
+    // Say what is happening, then re-render once it is here. termHost is
+    // rebuilt by this function on every render, so isConnected is what tells
+    // us the card we started on is still the one on screen — if the operator
+    // has moved on, the load simply finishes and nothing is drawn.
+    if (!Corvus.sshTerm.available()) {
+      termHost.textContent = "Loading terminal…";
+      Corvus.sshTerm.ensure().then(() => {
+        if (termHost.isConnected) renderSSHTerminal(conn, errorMsg);
+      }).catch(() => {
+        if (termHost.isConnected) {
+          termHost.textContent =
+            "Terminal component unavailable — the xterm bundle did not load.";
+        }
+      });
       return;
     }
 

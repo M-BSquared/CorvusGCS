@@ -119,6 +119,41 @@ async function run() {
   global.fetch = async () => ({ ok: true, status: 200, json: async () => { throw new Error("bad json"); } });
   await rejectsWith(Corvus.telemetry.requestJson("/state"), /Invalid response/);
 
+  // A throwing subscriber must cost only itself. Set.forEach does not catch,
+  // so an unguarded loop stops at the first thrower and every panel added
+  // after it freezes on its last value — live-looking numbers that are not.
+  {
+    const quiet = console.error;
+    console.error = () => {};
+    try {
+      let seen = 0;
+      const unsubThrower = Corvus.telemetry.subscribe(() => {
+        throw new Error("panel is broken");
+      });
+      const unsubCounter = Corvus.telemetry.subscribe(() => { seen += 1; });
+      const before = seen;
+
+      secondSource.emit("state", JSON.stringify({ connected: true, heading: 42, warnings: [] }));
+      flushAnimationFrame();
+      assert.equal(seen, before + 1, "a throwing subscriber must not stop the ones after it");
+
+      secondSource.emit("state", JSON.stringify({ connected: true, heading: 43, warnings: [] }));
+      flushAnimationFrame();
+      assert.equal(seen, before + 2, "and must not stop them on the next frame either");
+
+      // subscribe()'s immediate seed call is guarded too: a plugin that throws
+      // on its first frame must not raise inside whoever registered it.
+      assert.doesNotThrow(() => {
+        Corvus.telemetry.subscribe(() => { throw new Error("broken on seed"); })();
+      }, "subscribe() must not propagate a subscriber's first-call throw");
+
+      unsubThrower();
+      unsubCounter();
+    } finally {
+      console.error = quiet;
+    }
+  }
+
   console.log("frontend telemetry tests passed");
 }
 

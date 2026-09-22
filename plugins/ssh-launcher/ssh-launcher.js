@@ -56,7 +56,16 @@ window.Corvus = window.Corvus || {};
  * Two views, never both: the SHELF (the buttons plus Add) and the EDITOR (one
  * button's fields). Editing is a mode rather than an expanding row because the
  * panel is narrow and a form beside a list of buttons in ~360px reads as
- * neither.
+ * neither. Removing a button is the last thing in that editor, between Save
+ * and Cancel: a trash can beside the launch button was a mis-tap away from
+ * deleting a button and killing the program it was running.
+ *
+ * When a press does not run, the reason lands in three places and each answers
+ * a different question. A toast and a line on the notification board
+ * (api.notification) answer "did that work?" for an operator who pressed the
+ * button and turned back to the aircraft. A warning triangle in the row, with
+ * the message in its popover, answers "which one, and what did it say?" for as
+ * long as the shelf is open, and goes as soon as that button is pressed again.
  *
  * This file is also the worked example the plugin folder's README points at:
  * a manifest, one script, one stylesheet, `Corvus.plugins.register` at the
@@ -313,6 +322,7 @@ Corvus.pluginSshLauncher = (function () {
     let connectionsError = "";   // why the list is empty, when it is
     let editing = null;          // the button being edited, or null on the shelf
     let live = {};               // session name -> true, from /api/ssh/sessions
+    let errors = Object.create(null);  // button id -> why its last press failed
     let pollTimer = null;
     let cancelled = false;       // set by destroy(); gates every late callback
 
@@ -323,10 +333,36 @@ Corvus.pluginSshLauncher = (function () {
     output.className = "sshl-output";
     output.hidden = true;
 
+    // The message bar goes ABOVE the shelf. Below it, it sat under the Add
+    // button — past the end of the list, where an operator who had just
+    // pressed a button at the top of an eight-row shelf never looked.
+    containerEl.appendChild(status.el);
     containerEl.appendChild(shelfEl);
     containerEl.appendChild(editorEl);
-    containerEl.appendChild(status.el);
     containerEl.appendChild(output);
+
+    // ---- what went wrong, and which button it went wrong for --------------
+
+    /**
+     * Remember why a button's last press failed, and show it on that button.
+     *
+     * A launch failure used to be one red bar under the whole shelf, which
+     * said what happened but not to which of eight rows — and it was pushed
+     * further out of sight with every button added. It belongs on the row
+     * that owns it.
+     *
+     * @param {Object} entry the button that failed
+     * @param {string} text  the reason, as the operator should read it
+     */
+    function setError(entry, text) {
+      errors[entry.id] = String(text || "It failed.");
+      if (editing === null) renderShelf();
+    }
+
+    /** Drop a button's failure — it is about to be tried again, or it worked. */
+    function clearError(entry) {
+      if (entry && entry.id) delete errors[entry.id];
+    }
 
     // ---- persistence ------------------------------------------------------
 
@@ -426,12 +462,15 @@ Corvus.pluginSshLauncher = (function () {
       startPolling();
     }
 
-    /** One row: the launch button, the arrow into its terminal, edit, remove. */
+    /** One row: the launch button, why it last failed, the arrow into its
+     *  terminal, and the way into its settings. */
     function shelfRow(entry) {
       const row = document.createElement("div");
       row.className = "sshl-row";
       const running = !!live[sessionName(entry)];
       if (running) row.classList.add("sshl-running");
+      const failure = errors[entry.id];
+      if (failure) row.classList.add("sshl-failed");
 
       const launchBtn = ui.button({
         variant: "primary",
@@ -452,6 +491,21 @@ Corvus.pluginSshLauncher = (function () {
 
       const tools = document.createElement("div");
       tools.className = "sshl-row-tools";
+
+      // Why the last press failed, on the row that pressed it. Nearest the
+      // button because it is that button's answer; the launch button gives up
+      // the width for it without being told, being the flexible item in the
+      // row. The sheet holds the whole message, which is nearly always longer
+      // than a row of this panel is wide.
+      if (failure) {
+        tools.appendChild(ui.infoHint({
+          icon: "triangle-alert",
+          className: "sshl-error",
+          title: entry.label,
+          text: failure,
+          ariaLabel: `Why ${entry.label} did not run`,
+        }));
+      }
 
       // A live dot beside the arrow, on the card's own surface rather than on
       // the filled launch button where a semantic green would fight the accent.
@@ -481,15 +535,15 @@ Corvus.pluginSshLauncher = (function () {
         tools.appendChild(openBtn);
       }
 
+      // No remove here any more. A trash can one pixel from a launch button —
+      // on a shelf pressed with the aircraft already on the pad — is a mis-tap
+      // that deletes a button and kills what it is running. Removing is in the
+      // button's own settings now, beside Save and Cancel, which is where the
+      // operator already is when they have decided they are done with it.
       tools.appendChild(ui.iconButton("pencil", {
         ariaLabel: `Edit ${entry.label}`,
         title: "Edit",
         onClick: () => renderEditor(Object.assign({}, entry), false),
-      }));
-      tools.appendChild(ui.iconButton("trash-2", {
-        ariaLabel: `Remove ${entry.label}`,
-        title: running ? "Remove — this also stops what it is running" : "Remove",
-        onClick: () => remove(entry, running),
       }));
 
       row.appendChild(launchBtn);
@@ -718,7 +772,20 @@ Corvus.pluginSshLauncher = (function () {
         label: "Cancel",
         onClick: () => renderShelf(),
       });
-      card.appendChild(ui.actions([saveBtn, cancelBtn]));
+
+      // Removing a button is the last thing its settings can do, so it is the
+      // last thing in its settings — between the two answers to "am I done
+      // here", where it is deliberate, rather than as a trash can beside the
+      // launch button, where it was a mis-tap. A new button has nothing to
+      // delete: Cancel already throws it away.
+      const deleteBtn = isNew ? null : ui.button({
+        variant: "danger",
+        icon: "trash-2",
+        label: "Delete",
+        title: "Remove this button",
+        onClick: () => remove(draft, !!live[sessionName(draft)]),
+      });
+      card.appendChild(ui.actions([saveBtn, deleteBtn, cancelBtn]));
 
       function paintPreview() {
         const target = targetName();
@@ -776,6 +843,10 @@ Corvus.pluginSshLauncher = (function () {
       status.hide();
       output.hidden = true;
       output.textContent = "";
+      // The press being answered is this one: whatever the last one failed
+      // with is history, and a warning triangle left over from it would be
+      // read as this press's answer.
+      clearError(entry);
       ui.setBusy(btn, true);
       const done = () => { if (!cancelled) ui.setBusy(btn, false); };
       if (entry.mode === MODE_BACKGROUND) launchDetached(entry).finally(done);
@@ -813,9 +884,24 @@ Corvus.pluginSshLauncher = (function () {
         })
         .catch((error) => {
           if (cancelled) return null;
-          status.show(error.message || "Could not reach the backend", "err");
+          failed(entry, error.message || "Could not reach the backend");
           return null;
         });
+    }
+
+    /**
+     * A button did not run: put the reason on the button, and push it at the
+     * operator as well.
+     *
+     * Both, because they answer different questions. The toast and the
+     * notification board answer "did that work?" for someone who has already
+     * looked away — which is what pressing a launch button and turning back to
+     * the aircraft is. The triangle on the row answers "which one, and what
+     * did it say?" for as long as the shelf is open.
+     */
+    function failed(entry, detail) {
+      setError(entry, detail);
+      api.notification("warning", `${entry.label}: ${detail}`);
     }
 
     /** Open this button's session, then type the line into it. */
@@ -825,9 +911,7 @@ Corvus.pluginSshLauncher = (function () {
         .then((res) => {
           if (cancelled) return null;
           if (!(res && res.ok && res.connected)) {
-            const detail = (res && res.error) || "Could not open the terminal";
-            status.show(`${entry.label}: ${detail}`, "err");
-            api.notification("warning", `SSH Launcher — ${entry.label}: ${detail}`);
+            failed(entry, (res && res.error) || "Could not open the terminal");
             return null;
           }
           return api.postJson("/api/ssh/send", { name: session, data: line + "\n" })
@@ -871,7 +955,8 @@ Corvus.pluginSshLauncher = (function () {
       }).then((res) => {
         if (cancelled) return;
         const summary = resultSummary(res);
-        status.show(`${entry.label}: ${summary.text}`, summary.kind);
+        if (summary.kind === "err") failed(entry, summary.text);
+        else status.show(`${entry.label}: ${summary.text}`, summary.kind);
         const body = [res.stdout, res.stderr]
           .map((part) => String(part || "").trim())
           .filter(Boolean)
@@ -883,10 +968,9 @@ Corvus.pluginSshLauncher = (function () {
           output.hidden = false;
         }
         api.console(`ssh-launcher: ${res.command || entry.command}`, res.ok ? "success" : "error");
-        if (!res.ok) api.notification("warning", `SSH Launcher — ${entry.label}: ${summary.text}`);
       }).catch((error) => {
         if (cancelled) return;
-        status.show(error.message || "Could not reach the backend", "err");
+        failed(entry, error.message || "Could not reach the backend");
       });
     }
 
@@ -904,6 +988,7 @@ Corvus.pluginSshLauncher = (function () {
         `Remove "${entry.label}"?\n\nIts session will be closed, ` +
         `which stops what it is running.`)) return;
       buttons = buttons.filter((b) => b.id !== entry.id);
+      clearError(entry);
       persist();
       if (running) {
         const session = sessionName(entry);
@@ -934,7 +1019,7 @@ Corvus.pluginSshLauncher = (function () {
       }, { reattach: !!reattach, existingOnly: !!existingOnly });
       // "No window" is the normal answer for a launch, and only a failure when
       // the operator actually asked for one.
-      if (!shown && !existingOnly) status.show("The terminal window could not be opened.", "warn");
+      if (!shown && !existingOnly) failed(entry, "Its terminal window could not be opened.");
     }
 
     // ---- boot ---------------------------------------------------------------

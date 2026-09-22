@@ -24,14 +24,13 @@ from __future__ import annotations
 
 import http.client
 import json
-import os
 import stat
 import threading
 from typing import Any
 
 import pytest
 
-from corvus.config import CorvusConfig, load_config, to_public_dict
+from corvus.config import CorvusConfig, load_config
 from corvus.server import CorvusHandler, CorvusServer
 
 from conftest import posix_permissions

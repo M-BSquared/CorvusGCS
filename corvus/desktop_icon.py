@@ -52,7 +52,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.parse
-from typing import Callable, Iterable
+from collections.abc import Callable, Iterable
 
 logger = logging.getLogger("corvus.desktop_icon")
 
@@ -178,7 +178,7 @@ def integrated_icon_names(appimage: str, env=None) -> list[str]:
                 continue
             path = os.path.join(directory, name)
             try:
-                with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                with open(path, encoding="utf-8", errors="replace") as fh:
                     text = fh.read()
             except OSError:
                 continue

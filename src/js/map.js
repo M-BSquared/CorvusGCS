@@ -118,6 +118,87 @@ Corvus.map = (function () {
   // each queue another one. Cleared on moveend.
   let followEasing = false;
   let controlsEl = null;
+  // The place search, the same Corvus.mapSearch the planner mounts. This map
+  // lives for the whole session, so the handle is only ever built once.
+  let searchBox = null;
+
+  // ---- The view the two maps share ------------------------------------
+  //
+  // There are two maps in this application and one piece of ground under
+  // them. An operator who pans the Home map to tomorrow's site and then opens
+  // the planner expects to be looking at that site — not at a second map with
+  // its own idea of where "here" is. The planner opened on the aircraft, or
+  // on a hardcoded fallback, or on whatever a reopened plan happened to fit,
+  // which is three ways of showing a different place from the map next door.
+  //
+  // The rule, in one sentence: THE MISSION MAP OPENS ON THE VIEW YOU LAST
+  // AIMED, on whichever of the two maps you aimed it.
+  //
+  // So the Home map records WHEN the operator last aimed it — a drag, a
+  // wheel, the crosshair button, never a follow pan, because that is the
+  // aircraft moving rather than the operator looking — and the Mission map
+  // records where AND when. The more recent of the two is what the planner
+  // opens on, which is what makes "move Home, then open Mission" land where
+  // you were looking and "move Mission, leave, come back" land where you left
+  // it.
+  //
+  // Nothing here ever moves the Home map. It stays alive and untouched behind
+  // the planner, so returning to it shows the view it was left in — a planner
+  // that wrote back into it would move the ground under the operator while
+  // they were not looking at it.
+  // A counter rather than a clock: two aims in the same millisecond are
+  // ordinary (a wheel event lands inside a drag), a tie between them has no
+  // right answer, and a laptop that syncs its clock mid-flight must not be
+  // able to reorder them.
+  let aimSeq = 0;
+  let homeAimSeq = 0;       // operator-driven Home moves only
+  let missionAimed = null;  // {center, zoom, bearing, seq} from the planner
+
+  /** The Home map was just aimed BY THE OPERATOR. */
+  function noteHomeAim() {
+    homeAimSeq = ++aimSeq;
+  }
+
+  /** Where the operator left the Mission map, reported by mission.js after a
+   *  move IT started. A programmatic fit, a fly-to or a search result is not
+   *  an aim — the operator asked for a thing, not for a view. */
+  function noteMissionView(view) {
+    const v = view || {};
+    const centre = Array.isArray(v.center) ? v.center.map(Number) : null;
+    const zoom = Number(v.zoom);
+    if (!centre || centre.length !== 2 || !centre.every(isFinite) || !isFinite(zoom)) return;
+    const bearing = Number(v.bearing);
+    missionAimed = {
+      center: centre,
+      zoom,
+      bearing: isFinite(bearing) ? bearing : 0,
+      seq: ++aimSeq,
+    };
+  }
+
+  /** The camera the Mission map opens on, or null when there is no Home map
+   *  to take one from (Node, or before init).
+   *
+   *  Pitch is deliberately not carried across: the planner draws a route on
+   *  flat ground and a tilted plan is harder to place points on, whatever the
+   *  Home map happens to be doing in 3D. */
+  function missionOpenView() {
+    if (missionAimed && missionAimed.seq > homeAimSeq) {
+      return {
+        center: missionAimed.center.slice(),
+        zoom: missionAimed.zoom,
+        bearing: missionAimed.bearing,
+      };
+    }
+    if (!map) return null;
+    const centre = map.getCenter();
+    if (!centre || !isFinite(centre.lng) || !isFinite(centre.lat)) return null;
+    return {
+      center: [centre.lng, centre.lat],
+      zoom: map.getZoom(),
+      bearing: map.getBearing(),
+    };
+  }
 
   // Waypoint planning ("Punktabflug") state — operator-clicked route points,
   // their parallel DOM markers, the dashed plan-line source, and the
@@ -174,6 +255,30 @@ Corvus.map = (function () {
   // Neubiberg. [lng, lat] — MapLibre's order, the reverse of how coordinates
   // are usually written down.
   const DEFAULT_CENTER = [11.640969, 48.080217];
+
+  /**
+   * What the credit in the map's corner says, on both maps.
+   *
+   * Passing an options object at all is the point. MapLibre's default one
+   * carries `customAttribution: '<a …>MapLibre</a>'`, so every map in the
+   * application rendered the imagery credit, a pipe, and the word MapLibre —
+   * a joined pair in which only the first half is a credit for anything ON
+   * the map. The second is a credit for the renderer, and this application
+   * already gives it properly: Settings > About > Credits lists MapLibre GL
+   * JS by name, version, licence and URL (js/credits.js), which is where a
+   * library belongs and where the BSD-3 notice actually has to live. Two
+   * credits in the corner of a photograph, one of them redundant with a
+   * dialog, is the caption reading worse for no gain.
+   *
+   * The imagery credit stays, on every layer, always: that is the one that is
+   * a condition of the tiles being on screen at all, and it comes from each
+   * source's own `attribution` (corvus/tile_sources.py). Nothing here can
+   * suppress it, and nothing should try.
+   *
+   * `compact: true` is MapLibre's own default and is restated because it is
+   * no longer inherited from the default object we stopped using.
+   */
+  const ATTRIBUTION_OPTIONS = { compact: true, customAttribution: [] };
   // All tile traffic routes through the backend serve endpoint so the map works
   // fully offline once tiles are cached. Online, the backend fetches+caches
   // transparently, so the online experience is unchanged. The browser never
@@ -864,6 +969,70 @@ Corvus.map = (function () {
   }
 
   /**
+   * Keep the flight bar inside the room the map column has.
+   *
+   * The bar is capped in CSS at the first free x-offset left of the map's own
+   * controls (see .flight-actions), so its clientWidth already IS the room and
+   * fitBar only has to decide what to give up to fit in it: the shared 72px
+   * button width first, the captions after that. Corvus.ui.fitBar is the same
+   * function the planner's tool bar is narrowed by, so the two bars behave
+   * alike rather than agreeing by coincidence.
+   *
+   * Observed rather than listened for: the map column is resized by things the
+   * window knows nothing about — the right-hand panel opening, the left rail
+   * collapsing, the interface scale changing — and every one of them is a
+   * resize of this element. The window listener stays as the fallback for a
+   * browser without ResizeObserver.
+   */
+  function watchFlightBar(mapEl) {
+    const bar = document.getElementById("flightActions");
+    const host = mapEl && mapEl.parentNode;
+    if (!bar) return;
+    const fit = () => Corvus.ui.fitBar(bar);
+    fit();
+    if (host && typeof ResizeObserver === "function") {
+      new ResizeObserver(fit).observe(host);
+    } else {
+      window.addEventListener("resize", fit);
+    }
+    // The captions are what the measurement is about, and they change with the
+    // interface scale without anything being resized.
+    if (Corvus.ui && typeof Corvus.ui.onThemeChange === "function") {
+      Corvus.ui.onThemeChange(fit);
+    }
+  }
+
+  /**
+   * The place search, in the rail's row, left of the offline-download
+   * trigger — the same control in the same corner as the planner's, because
+   * it is Corvus.mapSearch (js/map-search.js) and there is only one of it.
+   *
+   * It existed on the Mission map alone, which made "go to the next site by
+   * name" something the operator could do while planning and not while
+   * flying, on two screens showing the same ground. The offline half matters
+   * more here than there, if anything: a coordinate pair out of a briefing is
+   * how a field laptop with no network is told where to look.
+   *
+   * Mounted on the VIEW rather than on the map container, beside the
+   * download trigger, so a press in the field is not also a press on the map.
+   */
+  function buildSearch(mapEl) {
+    const host = mapEl && mapEl.parentNode;
+    if (!host || !Corvus.mapSearch) return;
+    searchBox = Corvus.mapSearch.create({
+      container: host,
+      map: () => map,
+      regions: () => regions,
+      // Searching for a place is the operator saying "look here instead",
+      // which is exactly what dragging the map says — so it stops the
+      // aircraft pulling the view back, and it is the view the planner opens
+      // on. Neither follows from the fly-to itself: that is programmatic and
+      // carries no originalEvent, so the movestart handler cannot see it.
+      onGo: () => { setFollow(false); noteHomeAim(); },
+    });
+  }
+
+  /**
    * The layer switcher, as the app's dropdown.
    *
    * It used to be a panel in index.html positioned with a top offset
@@ -1225,6 +1394,10 @@ Corvus.map = (function () {
     }
     if (animate) map.easeTo({ center: target, duration: 600 });
     else map.setCenter(target);
+    // Pressing the crosshair IS aiming the map, as much as dragging it is —
+    // so the planner opens on the aircraft after it, rather than on wherever
+    // the operator had been looking before.
+    noteHomeAim();
     // Centring is also how the operator says "follow this again" — the button
     // that recovers the aircraft would otherwise hand back a view that stops
     // tracking it the moment it moves.
@@ -1665,6 +1838,16 @@ Corvus.map = (function () {
   function onPlanningKey(e) {
     if (!waypointMode) return;
     if (e.key === "Escape" || e.key === "Esc") {
+      // An open search box owns Escape first, the same rule the planner is
+      // under: the operator is closing the thing in front of them, not
+      // disarming the tool behind it. Its own input takes the key while the
+      // caret is in the field; this is the case where they opened the box and
+      // then clicked the map.
+      if (searchBox && searchBox.isOpen()) {
+        if (e.preventDefault) e.preventDefault();
+        searchBox.setOpen(false);
+        return;
+      }
       if (e.preventDefault) e.preventDefault();
       setWaypointMode(false);
     }
@@ -1957,7 +2140,10 @@ Corvus.map = (function () {
   const THREE_D_SIMPLE = "simple";
   const THREE_D_FULL = "full";
   const THREE_D_OFF = "off";
-  let threeDDetail = THREE_D_FULL;
+  // Simple is where an operator starts. The expensive mode is a choice they
+  // make, not one they discover after a field laptop has spent a radio link
+  // on elevation tiles and Overpass round trips they never asked for.
+  let threeDDetail = THREE_D_SIMPLE;
   // The DEM descriptor from GET /api/tiles/sources ({id, encoding, maxzoom,
   // attribution}). Null until the catalogue lands — and stays null on a
   // backend that does not serve one, which is what makes 3D degrade to a
@@ -3224,7 +3410,7 @@ Corvus.map = (function () {
   }
 
   /** The old boolean door onto the mode: on means whichever 3D was last
-   *  chosen, which is the full one until the operator says otherwise. */
+   *  chosen, which is the simple one until the operator says otherwise. */
   function set3D(on) {
     if (!map) return threeD;
     return applyThreeD(!!on);
@@ -3391,7 +3577,7 @@ Corvus.map = (function () {
     // the corner nothing else competes for. Bottom-right is where the control
     // rail and the HUD live, so it goes bottom-left, with the clear-track button
     // stacked above it (see .track-clear in main.css).
-    map.addControl(new maplibregl.AttributionControl(), "bottom-left");
+    map.addControl(new maplibregl.AttributionControl(ATTRIBUTION_OPTIONS), "bottom-left");
 
     // Controls are built NOW, not on "load". MapLibre fires "load" only once the
     // style AND its first tiles have resolved, so building the rail there left
@@ -3402,6 +3588,8 @@ Corvus.map = (function () {
     // already defers its own work until `started`.
     buildControls(controlsEl);
     buildTrackControl(mapEl);
+    buildSearch(mapEl);
+    watchFlightBar(mapEl);
     // Pure DOM, like the rail and the clear-track button, so it is built
     // before "load" for the same reason they are: nothing about it needs a
     // resolved style, and the elements stay hidden until 3D asks for them.
@@ -3430,7 +3618,13 @@ Corvus.map = (function () {
     // zooming is something you do WHILE watching the aircraft.
     map.on("movestart", (e) => {
       const source = e && e.originalEvent;
-      if (!source || source.type === "wheel") return;
+      if (!source) return;
+      // Whatever it turns out to be, an input event on this map is the
+      // operator aiming it, and that is what the planner opens on — a wheel
+      // included, which is a change of view even though it is not a change of
+      // subject and so does not stop the follow.
+      noteHomeAim();
+      if (source.type === "wheel") return;
       setFollow(false);
     });
     // Clears the in-flight guard whoever moved the map — a user drag that
@@ -3569,6 +3763,13 @@ Corvus.map = (function () {
     // maxzoom and attribution. A second map building its own raster source
     // needs those, and the catalogue is fetched once, here.
     layerSpec: specFor,
+    // What the credit in the corner says, so the second map says the same
+    // thing rather than keeping its own copy of the argument.
+    attributionOptions: () => ATTRIBUTION_OPTIONS,
+    // The shared view (see "The view the two maps share"): where the Mission
+    // planner opens, and how it reports back where the operator left it.
+    missionOpenView,
+    noteMissionView,
     // Downloaded-area overlay, driven by the offline-map dialog.
     clearTrack,
     getTrack: () => pathCoords.map((c) => c.slice()),
@@ -3586,6 +3787,11 @@ Corvus.map = (function () {
     // "jump" for a vehicle at (px, py) in a width x height viewport.
     _followAction: followAction,
     _bootstrap: () => BOOTSTRAP,
+    // test hooks: the shared-view rule as pure bookkeeping — which of the two
+    // maps was aimed last — assertable without either map existing.
+    _noteHomeAim: noteHomeAim,
+    _sharedViewState: () => ({ homeAimSeq, missionAimed }),
+    _resetSharedView: () => { aimSeq = 0; homeAimSeq = 0; missionAimed = null; },
     // test hooks: the pure 3D maths — a column-major 4x4 times a vec4, and
     // the altitude preference chain — assertable without WebGL or a DEM.
     _transformVec4: transformVec4,

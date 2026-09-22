@@ -95,7 +95,7 @@ Corvus.setupSik = (function () {
 
     // --- Port card --------------------------------------------------------
     const portSection = S.el("div", "page-section");
-    const portCard = S.el("div", "page-card");
+    const portCard = S.el("div", "page-card sik-port-card");
     portCard.appendChild(S.sectionTitle("Radio port"));
 
     const portDesc = S.el("div", "params-desc");

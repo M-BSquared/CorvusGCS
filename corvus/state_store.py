@@ -30,7 +30,8 @@ import logging
 import math
 import threading
 import time
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 logger = logging.getLogger("corvus.state_store")
 
@@ -119,7 +120,16 @@ class VehicleStateStore:
             "armed": False,
             "vehicle_type": "",
             "autopilot": "",
+            # Which dialect the bridge is flying this vehicle with — "px4",
+            # "ardupilot" or "generic". `autopilot` above is the raw
+            # MAV_AUTOPILOT name and names ~20 stacks; this is the far smaller
+            # set the app actually behaves differently for, and it is what the
+            # frontend branches on. See corvus.autopilot.
+            "autopilot_stack": "",
             "mode": "",
+            # Autopilot firmware version, whichever stack it came from. The key
+            # kept its PX4 name because it is on the wire to the frontend and in
+            # /api/version; the value is ArduPilot's on an ArduPilot vehicle.
             "px4_version": "",
             "px4_version_detail": "",
             "position": [0.0, 0.0],

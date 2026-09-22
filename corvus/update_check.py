@@ -178,7 +178,7 @@ class UpdateChecker:
     def load_cached(self) -> dict[str, Any]:
         """The last stored check result; ``{}`` when there is no usable cache."""
         try:
-            with open(self._cache_path(), "r", encoding="utf-8") as handle:
+            with open(self._cache_path(), encoding="utf-8") as handle:
                 data = json.load(handle)
         except (OSError, ValueError):
             return {}

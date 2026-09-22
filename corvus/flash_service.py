@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
+from collections.abc import Callable
 
 from .firmware_catalog import FirmwareCatalog
 from .firmware_uploader import FirmwareUploader, parse_firmware
@@ -56,9 +57,9 @@ class FlashService:
 
     def __init__(
         self,
-        mavlink: "MavlinkBridge",
-        store: "VehicleStateStore",
-        catalog: "FirmwareCatalog | None" = None,
+        mavlink: MavlinkBridge,
+        store: VehicleStateStore,
+        catalog: FirmwareCatalog | None = None,
     ) -> None:
         self.mavlink = mavlink
         self._store = store

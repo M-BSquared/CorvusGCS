@@ -32,11 +32,19 @@ window.Corvus = window.Corvus || {};
  *                                 "" (plain), "cmd", "success", "warning",
  *                                 "error", "nav", "info". Unrecognised/missing
  *                                 levels default to "" (plain).
- *   notification(level, message)  Surface a local notification in the warnings
- *                                 popover via the corvus:notification window
- *                                 event (the topbar already listens for it).
- *                                 `level` is "info" | "warning" | "critical";
- *                                 default "info". Best-effort + guarded.
+ *   notification(level, message)  Say something to the operator, in both the
+ *                                 places it belongs: a toast over whatever
+ *                                 they are looking at, and a line on the
+ *                                 notification board (the corvus:notification
+ *                                 window event the topbar listens for), which
+ *                                 is where it stays once the toast has gone.
+ *                                 The toast is titled with the plugin's name
+ *                                 and the board line is prefixed with it, so
+ *                                 a plugin writes its own message and nothing
+ *                                 else. `level` is "info" | "warning" |
+ *                                 "critical"; default "info" — a "critical"
+ *                                 toast stays up until it is dismissed.
+ *                                 Best-effort + guarded.
  *   modes() {() => Promise<string[]>}
  *                                 The connected firmware's flight-mode list
  *                                 (GET /api/mavlink/modes). Cached for the
@@ -84,7 +92,9 @@ window.Corvus = window.Corvus || {};
  *                                 than keeping a password.
  *
  * getSettings/saveSettings are bound to the plugin they were handed to, so a
- * plugin cannot read or overwrite another's settings by accident.
+ * plugin cannot read or overwrite another's settings by accident, and
+ * notification is bound the same way so a message carries the name of the
+ * plugin that sent it without that plugin having to write it out.
  *
  * All feedback helpers are frontend-only: they never fork the server.
  *
@@ -344,20 +354,49 @@ Corvus.plugins = (function () {
   }
 
   /**
-   * Surface a local notification in the warnings popover by dispatching the
-   * corvus:notification window event the topbar already listens for. Best-effort
-   * and guarded: a missing topbar / event target never throws into a plugin.
+   * Tell the operator something, in both the places it belongs: a toast over
+   * whatever they are looking at, and a line on the notification board (the
+   * corvus:notification window event the topbar listens for).
+   *
+   * The board alone was not enough, which is what this fixes. A plugin's
+   * warning is nearly always the answer to something the operator just
+   * pressed — a launch button whose terminal would not open — and the board
+   * answers it with a badge in a corner that says nothing until it is opened.
+   * Only a critical unfolds the popover by itself, so everything below that
+   * landed silently. The toast is the answer arriving where the question was
+   * asked; the board is where it stays afterwards.
+   *
+   * The plugin's name is the toast's title and the board line's prefix, so a
+   * plugin writes only what it has to say and the operator still learns who
+   * said it. `id` is null for the shared, unbound api (see apiFor).
+   *
+   * Best-effort and guarded on both halves, separately: a missing toast layer
+   * must not cost the board line, and neither may throw into a plugin.
+   *
+   * @param {string|null} id  the plugin this was called on behalf of
    * @param {string} [level] "info" | "warning" | "critical"; default "info".
    * @param {*} message     Message text (coerced to string).
    */
-  function pluginNotification(level, message) {
+  function pluginNotification(id, level, message) {
     const lv = (level === "warning" || level === "critical") ? level : "info";
+    const spec = id ? registry.get(id) : null;
+    const name = spec ? spec.name : "";
+    const text = String(message);
     try {
       window.dispatchEvent(new CustomEvent("corvus:notification", {
-        detail: { level: lv, message: String(message) },
+        detail: { level: lv, message: name ? `${name} — ${text}` : text },
       }));
     } catch (_e) {
       // No topbar / no event target — never crash a plugin.
+    }
+    try {
+      if (window.Corvus && Corvus.ui && typeof Corvus.ui.toast === "function") {
+        // Undefined, not "": toast() falls back to the level's own title
+        // ("Warning" / "Error") when a plugin has no name to put there.
+        Corvus.ui.toast({ level: lv, title: name || undefined, message: text });
+      }
+    } catch (_e) {
+      // A missing/broken toast layer must never crash a plugin either.
     }
   }
 
@@ -424,6 +463,7 @@ Corvus.plugins = (function () {
     const scoped = Object.create(api);
     scoped.getSettings = () => getSettingsFor(id);
     scoped.saveSettings = (patch, replace) => saveSettingsFor(id, patch, replace);
+    scoped.notification = (level, message) => pluginNotification(id, level, message);
     return scoped;
   }
 
@@ -507,7 +547,9 @@ Corvus.plugins = (function () {
       reducedMotion: () => !!(typeof window !== "undefined" && window.matchMedia
         && window.matchMedia("(prefers-reduced-motion: reduce)").matches),
       console: pluginConsole,
-      notification: pluginNotification,
+      // Overwritten per plugin by apiFor() so the message carries a name; the
+      // unbound one still works, it just speaks anonymously.
+      notification: (level, message) => pluginNotification(null, level, message),
       modes: pluginModes,
       terminal: pluginTerminal,
       postJson: pluginPostJson,

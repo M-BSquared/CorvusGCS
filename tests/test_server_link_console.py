@@ -16,7 +16,6 @@ Hermetic: a fake bridge, temp directories, no network and no vehicle.
 """
 from __future__ import annotations
 
-import json
 import os
 
 import pytest

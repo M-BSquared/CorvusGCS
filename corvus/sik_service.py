@@ -48,7 +48,8 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
+from collections.abc import Callable
 
 from . import sik_config
 from .mavlink_bridge import classify_serial_device, is_windows_com_port
@@ -283,8 +284,8 @@ class SikService:
     not the individual reads.
     """
 
-    def __init__(self, mavlink: "MavlinkBridge | None",
-                 store: "VehicleStateStore | None" = None) -> None:
+    def __init__(self, mavlink: MavlinkBridge | None,
+                 store: VehicleStateStore | None = None) -> None:
         self.mavlink = mavlink
         self._store = store
         self._lock = threading.Lock()

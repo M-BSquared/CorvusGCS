@@ -330,13 +330,42 @@ function testTheToolBarIsOneRowLikeTheHomeBar() {
   wraps.forEach((value) => assert.strictEqual(value, "nowrap",
     "the planner's tool bar must stay on one row, as the Home flight bar does"));
 
-  assert.ok(/toolsEl\.scrollWidth > room/.test(missionJs),
+  // The narrowing itself is Corvus.ui.fitBar, which the Home flight bar is
+  // also put through — one rule for two bars that have to behave alike,
+  // rather than two copies that agree until one of them is edited.
+  const uiJs = fs.readFileSync(
+    path.join(__dirname, "..", "src", "js", "ui.js"), "utf-8");
+  assert.ok(/Corvus\.ui\.fitBar\(toolsEl, toolsEl\.parentNode\.clientWidth\)/.test(missionJs),
+    "the planner's bar must be narrowed by the shared helper, against the box " +
+    "its parent gives it");
+  assert.ok(/bar\.scrollWidth <= space/.test(uiJs),
     "and whether the captions fit must be MEASURED against the bar's own box. " +
     "A viewport media query asks the wrong question: the bar's room is the map " +
     "column, which changes when the right panel opens without the window moving.");
-  assert.ok(/classList\.remove\("is-tight", "is-compact"\)/.test(missionJs),
+  assert.ok(/classList\.remove\("is-tight", "is-compact"\)/.test(uiJs),
     "the measurement must start from the full bar, or one that has shrunk once " +
     "can never grow back");
+}
+
+function testTheHomeBarStopsWhereTheMapsControlsBegin() {
+  // The bar outranks the map chrome (--z-map-panel over --z-map-chrome), so
+  // anything of it that reaches the rail's column buries the offline-download
+  // trigger, the place search and the end of the zoom rail under a surface
+  // with no press of its own. That is what an 800px window with the
+  // right-hand panel open used to look like.
+  const rules = topLevelRules(mainCss)
+    .filter((rule) => /^\.flight-actions$/.test(rule.selector.trim()));
+  assert.equal(rules.length, 1, "the Home flight bar must be declared exactly once");
+  assert.match(rules[0].body, /max-width:\s*calc\(100% - var\(--map-rail-inset\) - var\(--map-trigger-clear\)\)/,
+    "the Home flight bar must reserve the map's right-hand controls out of its own width");
+  // …and the planner's bar must NOT inherit that reservation: its parent is
+  // already exactly the room it has, so subtracting the rail again would
+  // subtract it twice.
+  const tools = topLevelRules(mainCss)
+    .filter((rule) => /^\.mission-tools$/.test(rule.selector.trim()));
+  assert.equal(tools.length, 1, "the planner's tool bar must be declared exactly once");
+  assert.match(tools[0].body, /max-width:\s*none/,
+    "the planner's bar must clear the Home bar's width cap — .mission-topleft is the cap");
 }
 
 function testOnlyAMultirotorHidesTheLoiterRadius() {
@@ -727,6 +756,131 @@ function testClampingRejectsJunkRatherThanProducingNaN() {
 }
 
 // ---------------------------------------------------------------------------
+// Dragging a row to a new place in the list
+// ---------------------------------------------------------------------------
+// The list's order is the order the plan is flown, and the drag that changes
+// it answers one question per pointer sample: which slot is the row over? The
+// slot is worked out from the boxes of the OTHER rows, so it is a pure
+// function and it is asserted here — a row that lands one place off produces
+// a plan that uploads cleanly and flies the wrong route.
+
+// Six rows of 24px with the 2px gap the stylesheet puts between them, as they
+// are laid out with one of their number lifted out.
+const ROWS = (count) => {
+  const boxes = [];
+  for (let i = 0; i < count; i += 1) boxes.push({ top: i * 26, height: 24 });
+  return boxes;
+};
+
+function testARowDroppedOverATopHalfGoesAboveThatRow() {
+  const others = ROWS(5);
+  // Middle of the dragged row just above the middle of the third row (top 52,
+  // middle 64): it belongs before it, at index 2.
+  assert.strictEqual(mission._dropSlot(others, 63), 2);
+  // And just below that middle, after it.
+  assert.strictEqual(mission._dropSlot(others, 65), 3);
+}
+
+function testARowDraggedPastEitherEndStopsAtTheEnd() {
+  const others = ROWS(5);
+  assert.strictEqual(mission._dropSlot(others, -400), 0, "above the list");
+  assert.strictEqual(mission._dropSlot(others, 4000), others.length,
+    "below the last row, which is the last slot there is");
+}
+
+function testARowIsAlreadyInItsOwnSlot() {
+  // The dragged row is not among the boxes, so the slot it came from is the
+  // one it is over while it has not moved: rows 0..4 with the second lifted
+  // out leaves boxes at 0, 26, 52, 78, and its own middle is at 26 + 12.
+  const others = [
+    { top: 0, height: 24 }, { top: 26, height: 24 },
+    { top: 52, height: 24 }, { top: 78, height: 24 },
+  ];
+  assert.strictEqual(mission._dropSlot(others, 38), 1);
+}
+
+function testRowsOfUnequalHeightAreMeasuredEachOnItsOwn() {
+  // Nothing promises the rows are the same height — a long value wraps — so
+  // the crossing point is each row's own middle, not a multiple of one.
+  const others = [{ top: 0, height: 60 }, { top: 62, height: 20 }];
+  assert.strictEqual(mission._dropSlot(others, 29), 0);
+  assert.strictEqual(mission._dropSlot(others, 31), 1);
+  assert.strictEqual(mission._dropSlot(others, 73), 2);
+}
+
+// ---------------------------------------------------------------------------
+// Leaving the page puts it down; it does not throw it away
+// ---------------------------------------------------------------------------
+// The planner owns a second MapLibre map, and building one costs a GL context,
+// a style, a dozen tile requests and a re-sampled terrain — the best part of a
+// second of blank map. It used to pay that on every entry, on a page the
+// operator flips to and from constantly while drawing a route. Now the page is
+// built once and suspended on the way out.
+//
+// Both halves of that are invisible at runtime: a planner that is destroyed on
+// exit still works, only slowly, and a planner that is suspended but keeps its
+// listeners still works, only it answers the keyboard from the wrong page. So
+// the contract is asserted against the source, the same way the document
+// listeners below are.
+
+const missionSource = fs.readFileSync(
+  path.join(__dirname, "..", "src", "js", "mission.js"), "utf8");
+const sidenavSource = fs.readFileSync(
+  path.join(__dirname, "..", "src", "js", "sidenav.js"), "utf8");
+
+/** One function's body, from `function <name>(` to the closing brace in the
+ *  first column of its indentation. Crude, and enough: the two functions read
+ *  here are plain module-level declarations. */
+function bodyOf(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  assert.ok(start >= 0, `${name}() not found — has it been renamed?`);
+  const end = source.indexOf("\n  }\n", start);
+  assert.ok(end > start, `${name}() has no end brace at module indentation`);
+  return source.slice(start, end);
+}
+
+function testLeavingThePlannerSuspendsItRatherThanRebuildingIt() {
+  assert.match(missionSource, /^\s*suspend,$/m,
+    "Corvus.mission must expose suspend() — it is what a nav-away calls");
+  assert.match(sidenavSource, /Corvus\.mission\.suspend\(\)/,
+    "the left-nav exit from Mission must suspend the page, not tear it down");
+  // The destroyer is still reachable, for the page leaving the rail.
+  assert.match(sidenavSource, /Corvus\.mission\.teardown\(\)/,
+    "teardown() must still be called where the planner leaves the app");
+}
+
+function testOnlyTeardownLetsGoOfTheMap() {
+  const suspendBody = bodyOf(missionSource, "suspend");
+  assert.ok(!/map\.remove\(\)/.test(suspendBody),
+    "suspend() must keep the map — releasing it is what made re-entry slow");
+  assert.ok(!/terrainTiles = new Map\(\)/.test(suspendBody),
+    "suspend() must keep the decoded terrain; re-sampling it is the other half");
+  const teardownBody = bodyOf(missionSource, "teardown");
+  assert.match(teardownBody, /map\.remove\(\)/,
+    "teardown() must still release the GL context");
+  assert.match(teardownBody, /suspend\(\);/,
+    "teardown() goes through suspend() so there is one list of what is let go");
+}
+
+function testEveryWindowListenerIsAlsoRemoved() {
+  // The same leak as the document listeners, and the one the suspend/resume
+  // split makes easy to get wrong: arm() is called on every entry, so a
+  // listener disarm() forgets is added again on each one.
+  const added = new Set();
+  const removed = new Set();
+  const pattern = /window\.(add|remove)EventListener\(\s*"([^"]+)"\s*,\s*([A-Za-z0-9_$]+)/g;
+  let match;
+  while ((match = pattern.exec(missionSource)) !== null) {
+    (match[1] === "add" ? added : removed).add(`${match[2]}:${match[3]}`);
+  }
+  assert.ok(added.size, "no window listeners found — did the pattern stop matching?");
+  for (const key of added) {
+    assert.ok(removed.has(key),
+      `window listener ${key} is added but never removed; every entry adds another`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // The plan, round-tripped
 // ---------------------------------------------------------------------------
 
@@ -816,8 +970,54 @@ function testALandingLoadsOnTheGroundWhateverTheFileSays() {
 }
 
 // ---------------------------------------------------------------------------
+// The reopen rule: a plan is framed only when none of it is on screen.
+// ---------------------------------------------------------------------------
+
+function testABoxOverlapIsTrueForAnySharedGround() {
+  const view = { w: 11.0, s: 48.0, e: 12.0, n: 49.0 };
+  assert.equal(mission._boxesOverlap({ w: 11.4, s: 48.4, e: 11.6, n: 48.6 }, view), true,
+    "a plan inside the view overlaps it");
+  assert.equal(mission._boxesOverlap({ w: 10.5, s: 47.5, e: 11.2, n: 48.2 }, view), true,
+    "a plan half off the edge is still partly visible");
+  assert.equal(mission._boxesOverlap({ w: 12.0, s: 49.0, e: 13.0, n: 50.0 }, view), true,
+    "touching at a corner counts as visible rather than as a jump");
+  assert.equal(mission._boxesOverlap({ w: 2.0, s: 48.0, e: 3.0, n: 49.0 }, view), false,
+    "a plan at the last site is not on this screen");
+  assert.equal(mission._boxesOverlap(null, view), false);
+  assert.equal(mission._boxesOverlap({ w: 1, s: 1, e: 2, n: 2 }, null), false);
+}
+
+
+// ---------------------------------------------------------------------------
+// Document-level listeners have to come off with the page.
+// ---------------------------------------------------------------------------
+// This module registers a capture-phase listener on the DOCUMENT for the
+// placement tool's Escape. The map is rendered and torn down every time the
+// operator changes page, so a listener that is added and never removed
+// accumulates one live handler per visit, each holding this closure and the
+// map it captured. (The search box's own listener is asserted where the box
+// lives, in tests/test_frontend_map_search.js.)
+
+function testEveryDocumentListenerIsAlsoRemoved() {
+  const source = fs.readFileSync(
+    path.join(__dirname, "..", "src", "js", "mission.js"), "utf8");
+  const added = new Set();
+  const removed = new Set();
+  const pattern = /document\.(add|remove)EventListener\(\s*"([^"]+)"\s*,\s*([A-Za-z0-9_$]+)/g;
+  let match;
+  while ((match = pattern.exec(source)) !== null) {
+    (match[1] === "add" ? added : removed).add(`${match[2]}:${match[3]}`);
+  }
+  assert.ok(added.size, "no document listeners found — did the pattern stop matching?");
+  for (const key of added) {
+    assert.ok(removed.has(key),
+      `document listener ${key} is added but never removed; it leaks on teardown`);
+  }
+}
+
 
 const tests = [
+  testABoxOverlapIsTrueForAnySharedGround,
   testItemTypesMatchThePythonModel,
   testEachTypesFieldNamesMatchThePythonModel,
   testBoundsMatchThePythonModel,
@@ -831,6 +1031,7 @@ const tests = [
   testEveryToolHasACaptionToShow,
   testEveryPlaceableToolNamesARealItemType,
   testTheToolBarIsOneRowLikeTheHomeBar,
+  testTheHomeBarStopsWhereTheMapsControlsBegin,
   testOnlyAMultirotorHidesTheLoiterRadius,
   testEveryHoveringTypeIsARotorcraft,
   testAHiddenRadiusIsStillSavedAndUploaded,
@@ -865,6 +1066,10 @@ const tests = [
   testDraggingOffTheChartIsClampedToWhatIsDrawn,
   testTheDrawnRangeAlwaysContainsEveryPointWithRoom,
   testClampingRejectsJunkRatherThanProducingNaN,
+  testARowDroppedOverATopHalfGoesAboveThatRow,
+  testARowDraggedPastEitherEndStopsAtTheEnd,
+  testARowIsAlreadyInItsOwnSlot,
+  testRowsOfUnequalHeightAreMeasuredEachOnItsOwn,
   testSetPlanAndGetPlanRoundTripWhatTheBackendValidates,
   testAnOutOfRangeAltitudeIsClampedOnLoadRatherThanRefused,
   testAnUnknownItemTypeIsDroppedOnLoad,
@@ -872,6 +1077,10 @@ const tests = [
   testAPlanThatCannotBeFlownInOrderSaysSo,
   testTwoTakeoffsAreCalledOut,
   testAPlanInOrderIsNotComplainedAbout,
+  testEveryDocumentListenerIsAlsoRemoved,
+  testLeavingThePlannerSuspendsItRatherThanRebuildingIt,
+  testOnlyTeardownLetsGoOfTheMap,
+  testEveryWindowListenerIsAlsoRemoved,
 ];
 
 let failed = 0;

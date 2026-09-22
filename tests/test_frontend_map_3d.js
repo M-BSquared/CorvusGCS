@@ -534,13 +534,13 @@ check("the chosen 3D is remembered while 3D is off", () => {
   // The rail's button turns the mode the operator last picked back on. Asking
   // for "off" must not throw that choice away, or every operator who prefers
   // the cheap mode gets handed the expensive one on their next press.
-  assert.equal(map._threeDDetail(), "full", "terrain & buildings is the default");
-  map.set3DMode("simple");
-  assert.equal(map._threeDDetail(), "simple");
-  map.set3DMode("off");
-  assert.equal(map._threeDDetail(), "simple", "off is not a third preference");
+  assert.equal(map._threeDDetail(), "simple", "the cheap 3D is the default");
   map.set3DMode("full");
   assert.equal(map._threeDDetail(), "full");
+  map.set3DMode("off");
+  assert.equal(map._threeDDetail(), "full", "off is not a third preference");
+  map.set3DMode("simple");
+  assert.equal(map._threeDDetail(), "simple");
   // A mode nobody recognises is "off", so it must not be remembered either.
   map.set3DMode("simple");
   map.set3DMode("photoreal");

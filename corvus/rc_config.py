@@ -495,6 +495,12 @@ def _validate_channel(entry: Any) -> dict[str, Any]:
     }
 
 
+# Public alias: what makes a measured channel implausible is a fact about
+# receivers, not about firmware, so corvus.ardupilot_rc shares this validator
+# rather than keeping a second copy that could drift from it.
+validate_channel = _validate_channel
+
+
 # The RC_MAP_* parameters the calibration wizard is allowed to write. The
 # wizard learns these from the stick the operator was asked to move, which is
 # the only mapping it has any evidence for; a kill switch is bound by hand.

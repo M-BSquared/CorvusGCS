@@ -10,7 +10,7 @@ import math
 import threading
 import time
 from types import SimpleNamespace
-from typing import Callable
+from collections.abc import Callable
 
 import pytest
 from pymavlink import mavutil

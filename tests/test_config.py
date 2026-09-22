@@ -390,6 +390,28 @@ def test_load_config_inverted_app_icon_non_bool_dropped(tmp_path) -> None:
     assert load_config(str(p)).ui is None
 
 
+def test_mission_page_is_off_unless_the_config_asks_for_it(tmp_path) -> None:
+    """A station nobody configured does not carry the Mission planner.
+
+    The rail entry is a whole second screen — its own map, its own altitude
+    chart — and a station flown by hand never opens it. Nothing here may turn
+    it on by saying nothing: no file, a file with no ``ui``, and a file whose
+    ``ui`` is about something else all have to leave it off.
+    """
+    assert load_config(str(tmp_path / "absent.json")).ui is None
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("mission_page") is None
+    p.write_text(json.dumps({"ui": {"scale": 1.1}}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("mission_page") is None
+    # A hand-edited string is not a boolean either.
+    p.write_text(json.dumps({"ui": {"mission_page": "true"}}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("mission_page") is None
+    # And on only when the config genuinely says so.
+    p.write_text(json.dumps({"ui": {"mission_page": True}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"mission_page": True}
+
+
 def test_load_config_parses_app_icon_backplate(tmp_path) -> None:
     """The backplate is its own key, kept independently of the inversion."""
     p = tmp_path / "c.json"

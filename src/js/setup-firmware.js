@@ -22,10 +22,12 @@ window.Corvus = window.Corvus || {};
  *                                   cached,error,dir}
  *                                  vendor/variant/title are derived from the
  *                                  `<vendor>_<board>_<variant>.px4` target
- *                                  name by the backend; they are what the
- *                                  board list groups, filters and labels by.
+ *                                  name by the backend; the vendor is the
+ *                                  left dropdown, the title is the right one,
+ *                                  and the variant decides what the developer
+ *                                  builds switch hides.
  *   POST /api/firmware/flash       {release,board} -> downloads then flashes
- *   POST /api/firmware/upload     raw .px4/.bin body
+ *   POST /api/firmware/upload     raw .px4/.apj/.bin body
  *                                  (Content-Type: application/octet-stream),
  *                                  ?name=<filename> -> {ok,state} | {ok:false,error}
  *   GET  /api/firmware/progress    SSE: progress {state,percent,message} + ping
@@ -71,7 +73,7 @@ Corvus.setupFirmware = (function () {
 
     // --- Connection card --------------------------------------------------
     const linkSection = S.el("div", "page-section");
-    const linkCard = S.el("div", "page-card");
+    const linkCard = S.el("div", "page-card firmware-link-card");
     linkCard.appendChild(S.sectionTitle("Connection"));
 
     const transportRow = S.infoRow("Transport", "—");
@@ -152,9 +154,24 @@ Corvus.setupFirmware = (function () {
       label: "Release", control: releaseRow,
     }));
 
-    const boardFilter = Corvus.ui.input({
-      placeholder: "Search by name, e.g. pixhawk, cube, v6x…",
-      ariaLabel: "Filter the board list",
+    // Two dropdowns, not one list of 150 rows. A target name is
+    // `<vendor>_<board>_<variant>`, and the operator knows the vendor half of
+    // it before they open the page — it is printed on the board in their hand.
+    // So they answer that first, and the second dropdown is then the handful
+    // of boards that manufacturer makes rather than the whole release. Neither
+    // list is a scroll, neither needs a search box, and the pair reads as the
+    // one question it is: which board is this.
+    const vendorField = Corvus.ui.select({
+      className: "firmware-vendor-select",
+      ariaLabel: "Board manufacturer",
+      options: [{ value: "", label: "Loading manufacturers…" }],
+      disabled: true,
+    });
+    const boardField = Corvus.ui.select({
+      className: "firmware-board-select",
+      ariaLabel: "Flight controller board",
+      options: [{ value: "", label: "Pick a manufacturer first" }],
+      disabled: true,
     });
     // Developer builds are off by default, not hidden: they are half the
     // targets and none of them are what an operator flashing their aircraft
@@ -170,26 +187,27 @@ Corvus.setupFirmware = (function () {
       },
     });
     variantBtn.setAttribute("aria-pressed", "false");
-    const boardTools = S.el("div", "firmware-board-tools");
-    boardTools.appendChild(boardFilter);
-    boardTools.appendChild(variantBtn);
+    const boardRow = S.el("div", "firmware-board-row");
+    boardRow.appendChild(vendorField);
+    boardRow.appendChild(boardField);
+    boardRow.appendChild(variantBtn);
 
-    // The list itself, rather than a <select>: PX4 ships 150 targets per
-    // release and a dropdown shows one of them at a time, so "which boards can
-    // I flash, and which of those do I already have" — the two questions this
-    // page exists to answer — were both a click away and out of sight.
-    const boardList = S.el("div", "firmware-board-list");
-    boardList.setAttribute("role", "radiogroup");
-    boardList.setAttribute("aria-label", "Flight controller board");
+    // What a dropdown costs and this line buys back: a closed <select> shows
+    // one label, so everything the old rows carried — the exact file, its
+    // size, whether it is already downloaded, whether it is an autopilot at
+    // all — lives here, under the pair, about the board actually selected.
+    const boardDetail = S.el("div", "firmware-board-detail");
+    boardDetail.hidden = true;
     const boardCount = S.el("div", "firmware-board-count");
 
     const boardBox = S.el("div", "firmware-board");
-    boardBox.appendChild(boardTools);
-    boardBox.appendChild(boardList);
+    boardBox.appendChild(boardRow);
+    boardBox.appendChild(boardDetail);
     boardBox.appendChild(boardCount);
     catalogBox.appendChild(Corvus.ui.field({
       label: "Board", control: boardBox,
-      hint: "PX4 ships one image per flight-controller target — pick the one your board is.",
+      hint: "PX4 ships one image per flight-controller target — pick your "
+        + "manufacturer, then the board it made.",
     }));
 
     const detectedNote = S.el("div", "firmware-detected");
@@ -204,9 +222,11 @@ Corvus.setupFirmware = (function () {
     const fileRow = S.el("div", "firmware-file-row");
     const fileInput = document.createElement("input");
     fileInput.type = "file";
-    fileInput.accept = ".px4,.bin";
+    // .apj is ArduPilot's extension for the same container PX4 calls .px4 —
+    // JSON, base64, zlib — so the uploader takes one without a change.
+    fileInput.accept = ".px4,.apj,.bin";
     fileInput.className = "field-input firmware-file-input";
-    fileInput.setAttribute("aria-label", "Select PX4 firmware file");
+    fileInput.setAttribute("aria-label", "Select a firmware file");
     const filename = S.el("span", "firmware-filename", "No file selected");
     fileRow.appendChild(fileInput);
     fileRow.appendChild(filename);
@@ -272,14 +292,15 @@ Corvus.setupFirmware = (function () {
     // --- State ------------------------------------------------------------
     const state = {
       status: null,         // last /api/firmware/status payload
-      eventSource: null,    // the /api/firmware/progress SSE
+      eventSource: null,    // unsubscribe from the shared "firmware" topic
       unsub: null,          // telemetry subscription
       abort: null,          // AbortController for the in-flight upload
       file: null,           // the selected File
-      source: "catalog",    // "catalog" (download) | "file" (local .px4/.bin)
+      source: "catalog",    // "catalog" (download) | "file" (local .px4/.apj/.bin)
       catalog: null,        // last /api/firmware/catalog payload
       releases: [],         // releases from the catalogue
       boards: [],           // boards of the selected release (unfiltered)
+      vendor: "",           // manufacturer shown in the left dropdown ("" = none)
       board: "",            // target name of the selected board ("" = none)
       showVariants: false,  // include PX4's non-default developer builds
       detected: null,       // {name,label,source} board the backend recognised
@@ -354,32 +375,42 @@ Corvus.setupFirmware = (function () {
       return kb >= 1024 ? (kb / 1024).toFixed(1) + " MB" : Math.round(kb) + " KB";
     }
 
-    /** Everything the filter should search: the friendly name, the target, the
-     *  vendor. An operator types "pixhawk", "cube" or "v6x" — all three have to
-     *  land on the same row. */
-    function boardHaystack(b) {
-      return [b.label, b.title, b.name, b.vendor, b.board]
-        .filter(Boolean).join(" ").toLowerCase();
-    }
-
-    /** The boards to show: the filter, and developer builds only on request. */
+    /** The boards worth offering: developer builds only on request, and
+     *  whatever is selected right now stays reachable whatever else changes —
+     *  a picker that silently drops what the Flash button is about to write to
+     *  the aircraft is the one thing this control must never do. */
     function visibleBoards() {
-      const needle = String(boardFilter.value || "").trim().toLowerCase();
       return state.boards.filter((b) => {
-        // The selected board always stays visible, whatever the filter says —
-        // a list that silently drops what the Flash button is about to write
-        // to the aircraft is the one thing this control must not do.
         if (b.name === state.board) return true;
-        if (!state.showVariants && (b.variant || "default") !== "default") return false;
-        return !needle || boardHaystack(b).includes(needle);
+        return state.showVariants || (b.variant || "default") === "default";
       }).sort(compareBoards);
     }
 
+    /** A board with no vendor in its target name still has to live somewhere. */
+    function vendorOf(b) {
+      return (b && b.vendor) || "Other";
+    }
+
+    /** The manufacturers on offer, in the order compareBoards already puts
+     *  their boards in: the detected board's vendor, then PX4, then the rest
+     *  alphabetically. */
+    function visibleVendors() {
+      const seen = [];
+      visibleBoards().forEach((b) => {
+        const v = vendorOf(b);
+        if (seen.indexOf(v) < 0) seen.push(v);
+      });
+      return seen;
+    }
+
+    function boardsOfVendor(vendor) {
+      return visibleBoards().filter((b) => vendorOf(b) === vendor);
+    }
+
     /** Display order. The backend sorts named targets to the front, which is
-     *  right for a flat list and wrong for a grouped one — it split every
-     *  vendor into a named half and a raw half, so each heading appeared
-     *  twice. Here a vendor is one block: the detected board's vendor leads,
-     *  then PX4's own reference boards, then the rest alphabetically. */
+     *  right for a flat list and wrong for a grouped one. Here a vendor is one
+     *  block: the detected board's vendor leads, then PX4's own reference
+     *  boards, then the rest alphabetically. */
     function compareBoards(a, b) {
       const av = a.vendor || "", bv = b.vendor || "";
       if (av !== bv) return vendorRank(av) - vendorRank(bv) || av.localeCompare(bv);
@@ -400,107 +431,137 @@ Corvus.setupFirmware = (function () {
       return vendor === "PX4" ? 1 : 2;
     }
 
-    /** One row: what the board is called, which file it is, how big, and
-     *  whether it is already on this machine. */
-    function boardRow(b) {
-      const item = S.el("button", "firmware-board-item");
-      item.type = "button";
-      item.dataset.name = b.name;
-      item.setAttribute("role", "radio");
-      const head = S.el("div", "firmware-board-head");
-      head.appendChild(S.el("span", "firmware-board-name", b.title || b.label || b.name));
-      if ((b.variant || "default") !== "default") {
-        head.appendChild(S.el("span", "firmware-board-variant", b.variant));
+    /** One option in the board dropdown. The two things that decide whether a
+     *  target is the right one to flash — that it is a developer build, that
+     *  it is not an autopilot at all — are said in the label itself, because a
+     *  closed <select> shows the label and nothing else. */
+    function boardOptionLabel(b) {
+      let label = b.title || b.label || b.name;
+      if ((b.variant || "default") !== "default") label += "  ·  " + b.variant;
+      if (b.peripheral) label += "  ·  peripheral";
+      if (b.cached) label += "  ·  downloaded";
+      return label;
+    }
+
+    /** Fill the manufacturer dropdown, then the board one under it. */
+    function renderVendors() {
+      if (!state.boards.length) {
+        Corvus.ui.setOptions(vendorField,
+          [{ value: "", label: "Pick a release first" }], "");
+        vendorField.disabled = true;
+        state.vendor = "";
+      } else {
+        const vendors = visibleVendors();
+        const wanted = vendors.indexOf(state.vendor) >= 0 ? state.vendor : "";
+        Corvus.ui.setOptions(vendorField,
+          [{ value: "", label: "Select manufacturer…" }].concat(vendors.map((v) => ({
+            value: v, label: v + "  (" + boardsOfVendor(v).length + ")",
+          }))), wanted);
+        vendorField.disabled = false;
+        state.vendor = vendorField.value;
       }
-      // PX4 publishes IO, CAN-node and GNSS firmware in the same release. They
-      // are legitimate downloads, but they are not the aircraft's autopilot,
-      // and an unlabelled row in a list headed "Board" is how one gets flashed
-      // onto one.
-      if (b.peripheral) {
-        head.appendChild(S.el("span", "firmware-board-peripheral", "peripheral"));
+      renderBoardOptions();
+    }
+
+    /** Fill the board dropdown from the chosen manufacturer.
+     *
+     *  A <select> adopts its first option the moment it is filled, so the
+     *  first option is a placeholder and never a board: the old single
+     *  dropdown armed "Download & Flash" with whatever sorted first — on
+     *  v1.17.0 the PX4 IO coprocessor image — invisibly, because a dropdown
+     *  shows one row. Nothing here is flashable until somebody picks it. */
+    function renderBoardOptions() {
+      if (!state.vendor) {
+        Corvus.ui.setOptions(boardField, [{
+          value: "",
+          label: state.boards.length
+            ? "Pick a manufacturer first"
+            : "No boards to choose from",
+        }], "");
+        boardField.disabled = true;
+      } else {
+        const list = boardsOfVendor(state.vendor);
+        const wanted = list.some((b) => b.name === state.board) ? state.board : "";
+        Corvus.ui.setOptions(boardField,
+          [{ value: "", label: "Select board…" }].concat(list.map((b) => ({
+            value: b.name, label: boardOptionLabel(b),
+          }))), wanted);
+        boardField.disabled = false;
       }
-      // Cached images flash with no network at all, so say which ones those
-      // are — that is the difference between a 3-minute wait and none.
-      if (b.cached) head.appendChild(S.el("span", "firmware-board-cached", "downloaded"));
-      item.appendChild(head);
+      selectBoard(boardField.value);
+      renderBoardCount();
+    }
+
+    /** Rebuild both dropdowns from the selected release.
+     *
+     *  Only ever land on a board somebody chose: the operator's own pick, or
+     *  the one detected on the USB port. Anything else and the release
+     *  dropdown quietly re-aims the Flash button. */
+    function renderBoards() {
+      const wanted = preferredBoard();
+      const match = wanted && visibleBoards().find((b) => b.name === wanted);
+      state.board = match ? match.name : "";
+      if (match) state.vendor = vendorOf(match);
+      renderVendors();
+    }
+
+    /** What the selected image actually is: the exact file, its size, and the
+     *  two warnings a label alone cannot carry. */
+    function renderBoardDetail() {
+      const b = state.board
+        && state.boards.find((x) => x.name === state.board);
+      if (!b) {
+        boardDetail.hidden = true;
+        Corvus.ui.clear(boardDetail);
+        return;
+      }
+      boardDetail.hidden = false;
+      Corvus.ui.clear(boardDetail);
       const meta = S.el("div", "firmware-board-meta");
       meta.appendChild(S.el("span", "firmware-board-target", b.name));
       const size = formatSize(b.size);
       if (size) meta.appendChild(S.el("span", "firmware-board-size", size));
-      item.appendChild(meta);
-      item.addEventListener("click", () => {
-        // Once the operator picks, detection stops moving the selection under
-        // them.
-        state.boardTouched = true;
-        selectBoard(b.name);
-      });
-      return item;
-    }
-
-    /** Fill the board list from the selected release, grouped by vendor. */
-    function renderBoards() {
-      const matches = visibleBoards();
-      Corvus.ui.clear(boardList);
-      if (!state.boards.length) {
-        boardList.appendChild(S.el("div", "firmware-board-empty",
-          "Pick a release to see the boards it ships images for."));
-      } else if (!matches.length) {
-        boardList.appendChild(S.el("div", "firmware-board-empty",
-          "No board matches \u201c" + boardFilter.value.trim() + "\u201d."
-          + (state.showVariants ? "" : " Developer builds are hidden.")));
+      boardDetail.appendChild(meta);
+      const chips = S.el("div", "firmware-board-chips");
+      if ((b.variant || "default") !== "default") {
+        chips.appendChild(S.el("span", "firmware-board-variant", b.variant));
       }
-      // Grouped by vendor, in the order the boards already arrive in (named
-      // targets first), so the common hardware heads the list and a vendor is
-      // one heading to scan for rather than 150 rows to read.
-      let vendor = null;
-      matches.forEach((b) => {
-        const group = b.vendor || "Other";
-        if (group !== vendor) {
-          vendor = group;
-          boardList.appendChild(S.el("div", "firmware-board-group", group));
-        }
-        boardList.appendChild(boardRow(b));
-      });
-      // Only ever land on a board somebody chose: the operator's own pick, or
-      // the one detected on the USB port. The old dropdown adopted its first
-      // option, which on v1.17.0 armed "Download & Flash" with the PX4 IO
-      // coprocessor image — invisibly, because a <select> shows one row.
-      const wanted = preferredBoard();
-      selectBoard(matches.some((b) => b.name === wanted) ? wanted : "");
-      renderBoardCount(matches.length);
+      // PX4 publishes IO, CAN-node and GNSS firmware in the same release. They
+      // are legitimate downloads, but they are not the aircraft's autopilot,
+      // and an unlabelled choice under a heading reading "Board" is how one
+      // gets flashed onto one.
+      if (b.peripheral) {
+        chips.appendChild(S.el("span", "firmware-board-peripheral", "peripheral"));
+      }
+      // Cached images flash with no network at all, so say which ones those
+      // are — that is the difference between a 3-minute wait and none.
+      if (b.cached) chips.appendChild(S.el("span", "firmware-board-cached", "downloaded"));
+      if (chips.children.length) boardDetail.appendChild(chips);
     }
 
-    /** "95 of 150 targets · 1 already downloaded" — the answer to "what can I
-     *  get from here", which the dropdown never showed. */
-    function renderBoardCount(shown) {
+    /** "150 targets from 24 manufacturers · 1 already downloaded" — the answer
+     *  to "what can I get from here", which neither dropdown can show. */
+    function renderBoardCount() {
       if (!state.boards.length) {
         boardCount.textContent = "";
         return;
       }
+      const shown = visibleBoards().length;
+      const vendors = visibleVendors().length;
       const downloaded = state.boards.filter((b) => b.cached).length;
-      const parts = [shown === state.boards.length
+      const parts = [(shown === state.boards.length
         ? state.boards.length + " targets"
-        : shown + " of " + state.boards.length + " targets"];
+        : shown + " of " + state.boards.length + " targets")
+        + " from " + vendors + (vendors === 1 ? " manufacturer" : " manufacturers")];
       if (downloaded) parts.push(downloaded + " already downloaded");
       boardCount.textContent = parts.join(" \u00b7 ");
     }
 
-    /** Mark one row as the selection and tell the gate about it. */
+    /** Adopt a board as the selection and tell the gate about it. */
     function selectBoard(name) {
       state.board = name || "";
-      let active = null;
-      boardList.querySelectorAll(".firmware-board-item").forEach((item) => {
-        const on = item.dataset.name === state.board;
-        item.classList.toggle("selected", on);
-        item.setAttribute("aria-checked", on ? "true" : "false");
-        /* Roving tabindex: the group is one tab stop, not 150. */
-        item.tabIndex = on ? 0 : -1;
-        if (on) active = item;
-      });
-      if (!active) {
-        const first = boardList.querySelector(".firmware-board-item");
-        if (first) first.tabIndex = 0;
-      }
+      if (boardField.value !== state.board) boardField.value = state.board;
+      renderBoardDetail();
       recomputeUploadGate();
     }
 
@@ -560,6 +621,7 @@ Corvus.setupFirmware = (function () {
           releaseField.disabled = true;
           state.boards = [];
           state.board = "";
+          state.vendor = "";
           renderBoards();
           // Say what to do about it. The list lives on GitHub and this is the
           // one page that fetches it, so "press Refresh once you have
@@ -581,9 +643,14 @@ Corvus.setupFirmware = (function () {
         const known = state.releases.some((r) => r.tag === releaseField.value);
         const stable = state.releases.find((r) => !r.prerelease) || state.releases[0];
         const wanted = known ? releaseField.value : stable.tag;
+        // The label is the release's own name when it has one, not its tag:
+        // PX4 tags read "v1.17.0", but an ArduPilot "tag" is a path
+        // ("ardupilot:Copter/stable") that exists to route the flash request
+        // and was never meant to be read by anyone.
         Corvus.ui.setOptions(releaseField, state.releases.map((r) => ({
           value: r.tag,
-          label: r.tag + (r.prerelease ? "  ·  pre-release" : ""),
+          label: (r.vendor === "ardupilot" ? (r.name || r.tag) : r.tag)
+            + (r.prerelease ? "  ·  pre-release" : ""),
         })), wanted);
         selectRelease(releaseField.value);
         catalogNote.textContent = data.error
@@ -601,7 +668,19 @@ Corvus.setupFirmware = (function () {
     }
 
     releaseField.addEventListener("change", () => selectRelease(releaseField.value));
-    boardFilter.addEventListener("input", renderBoards);
+    // Changing manufacturer drops the board: the one selected belongs to the
+    // vendor that is no longer shown, and a Flash button still pointed at it
+    // is aimed at something the operator can no longer see.
+    vendorField.addEventListener("change", () => {
+      state.vendor = vendorField.value;
+      state.board = "";
+      renderBoardOptions();
+    });
+    boardField.addEventListener("change", () => {
+      // Once the operator picks, detection stops moving the selection under them.
+      state.boardTouched = true;
+      selectBoard(boardField.value);
+    });
 
     /** Replace the .page-row-value child of an infoRow element with new text. */
     function setRowValue(row, text) {
@@ -825,33 +904,32 @@ Corvus.setupFirmware = (function () {
 
     function openProgressSse() {
       if (state.eventSource) {
-        try { state.eventSource.close(); } catch (_e) {}
+        try { state.eventSource(); } catch (_e) {}
       }
-      try {
-        state.eventSource = new EventSource("/api/firmware/progress");
-        state.eventSource.addEventListener("progress", (e) => {
-          try {
-            const d = JSON.parse(e.data);
-            const pct = Math.max(0, Math.min(100, Math.round(d.percent || 0)));
-            fill.style.width = pct + "%";
-            label.textContent = pct + "% · " + (d.message || d.state || "");
-            if (d.message) appendLog(d.message, d.state);
-            // Drive Cancel visibility from the SSE state (the live source
-            // during flashing) so the button tracks the backend precisely.
-            cancelBtn.hidden = d.state !== "flashing" && d.state !== "downloading";
-            // Terminal event: refetch the authoritative status so the gate +
-            // banners reflect the result, and applyStatus fires the notification.
-            if (d.state === "done" || d.state === "failed" || d.state === "cancelled") {
-              // A finished download leaves a new cached image; re-read the
-              // catalogue so the board list says so.
-              if (d.state === "done" && state.source === "catalog") loadCatalog(false);
-              refreshStatus();
-            }
-          } catch (_err) { /* keep the SSE open on a malformed event */ }
-        });
-        state.eventSource.addEventListener("ping", () => {});
-        state.eventSource.onerror = () => { /* keep the SSE open; backend closes it */ };
-      } catch (_err) { /* no EventSource — the status refetch covers terminal states */ }
+      // The shared /api/events stream (js/events.js), not a connection of this
+      // page's own — a browser allows six per origin and the map wants them
+      // for tiles. Nothing else changes: the payload is the same object the
+      // /api/firmware/progress endpoint sends, and a dropped stream is still
+      // covered by the status refetch below.
+      state.eventSource = Corvus.events.subscribe("firmware", (d) => {
+        try {
+          const pct = Math.max(0, Math.min(100, Math.round(d.percent || 0)));
+          fill.style.width = pct + "%";
+          label.textContent = pct + "% · " + (d.message || d.state || "");
+          if (d.message) appendLog(d.message, d.state);
+          // Drive Cancel visibility from the stream's state (the live source
+          // during flashing) so the button tracks the backend precisely.
+          cancelBtn.hidden = d.state !== "flashing" && d.state !== "downloading";
+          // Terminal event: refetch the authoritative status so the gate +
+          // banners reflect the result, and applyStatus fires the notification.
+          if (d.state === "done" || d.state === "failed" || d.state === "cancelled") {
+            // A finished download leaves a new cached image; re-read the
+            // catalogue so the board list says so.
+            if (d.state === "done" && state.source === "catalog") loadCatalog(false);
+            refreshStatus();
+          }
+        } catch (_err) { /* keep the stream open on a malformed event */ }
+      });
     }
 
     async function onCancel() {
@@ -876,7 +954,7 @@ Corvus.setupFirmware = (function () {
       if (destroyed) return;
       destroyed = true;
       if (state.unsub) { try { state.unsub(); } catch (_e) {} state.unsub = null; }
-      if (state.eventSource) { try { state.eventSource.close(); } catch (_e) {} state.eventSource = null; }
+      if (state.eventSource) { try { state.eventSource(); } catch (_e) {} state.eventSource = null; }
       if (state.abort) { try { state.abort.abort(); } catch (_e) {} state.abort = null; }
     }
 

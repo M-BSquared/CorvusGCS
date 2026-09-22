@@ -33,10 +33,33 @@ Corvus.sshTerm = (function () {
   // continuously; the remote pty only needs the size it lands on.
   const RESIZE_DEBOUNCE_MS = 120;
 
-  /** Whether the vendored xterm bundles actually loaded. */
+  /** Whether the vendored xterm bundles are loaded RIGHT NOW.
+   *
+   *  Synchronous and side-effect free on purpose: xterm is fetched on demand
+   *  (see js/lazy.js), and a caller that only wants to know whether there is
+   *  anything to tear down must not trigger a 300 KB download on its way
+   *  out. Callers that want a terminal call `ensure()` instead. */
   function available() {
     return typeof window.Terminal === "function" &&
       !!(window.FitAddon && window.FitAddon.FitAddon);
+  }
+
+  /** The xterm bundles, fetched if this is the first terminal of the session.
+   *
+   *  Resolves once `available()` is true; rejects if the bundle could not be
+   *  fetched, which on an offline laptop with a half-written install is a
+   *  real outcome and not an exception. Lives here rather than at the two
+   *  call sites (the SSH panel and the floating terminal window) so both get
+   *  the same behaviour and the same one-fetch-per-session guarantee. */
+  function ensure() {
+    if (available()) return Promise.resolve(true);
+    if (!Corvus.lazy || typeof Corvus.lazy.terminal !== "function") {
+      return Promise.reject(new Error("lazy loader unavailable"));
+    }
+    return Corvus.lazy.terminal().then(() => {
+      if (!available()) throw new Error("xterm loaded but did not define its globals");
+      return true;
+    });
   }
 
   /* xterm paints into a canvas and takes literal colour strings, so like the
@@ -226,5 +249,5 @@ Corvus.sshTerm = (function () {
     };
   }
 
-  return { available, create, themeFromTokens };
+  return { available, ensure, create, themeFromTokens };
 })();

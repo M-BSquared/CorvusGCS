@@ -270,8 +270,10 @@ def test_and_the_operator_is_told_what_that_port_costs(monkeypatch):
     for conn in ("udp:0.0.0.0:14540", "udpin:0.0.0.0:14540"):
         lines: list[str] = []
         b = bridge(conn)
+        # sink=lines binds THIS iteration's list at definition time; a bare
+        # closure over `lines` reads whatever the name holds when it fires.
         monkeypatch.setattr(b, "_console_publish",
-                            lambda n, t, lvl: lines.append(t))
+                            lambda n, t, lvl, sink=lines: sink.append(t))
         b._warn_if_onboard_port()
         assert any("14550" in t for t in lines), f"{conn} warned and named the way out"
 

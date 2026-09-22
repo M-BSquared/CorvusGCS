@@ -51,7 +51,15 @@ Corvus.telemetry = (function () {
     const schedule = window.requestAnimationFrame || ((callback) => window.setTimeout(callback, 0));
     schedule(() => {
       notifyScheduled = false;
-      subscribers.forEach((fn) => fn(state));
+      // Guarded exactly like publishConsoleEntry below. Set.forEach does not
+      // catch, so one throwing subscriber used to abort the loop and leave
+      // every panel registered after it frozen on its last value — for this
+      // frame and every frame after, because the same one throws every time.
+      // Stale instruments that still look live is the worst failure a ground
+      // station has; a broken panel must cost only itself.
+      subscribers.forEach((fn) => {
+        try { fn(state); } catch (err) { console.error("telemetry subscriber failed:", err); }
+      });
     });
   }
 
@@ -121,42 +129,35 @@ Corvus.telemetry = (function () {
     if (consoleSource) return;
     const generation = ++consoleGeneration;
     consoleInterrupted = false;
-    consoleSource = new EventSource("/api/console/stream");
-    consoleSource.addEventListener("open", () => {
+    // The shared /api/events stream (js/events.js), not a connection of its
+    // own. The reference counting below still decides who is delivered to; the
+    // connection is one of three the whole app now holds instead of six.
+    const offMessage = Corvus.events.subscribe("console", (entry) => {
       if (generation !== consoleGeneration) return;
+      if (!entry || entry.name === "ping") return;
       if (consoleInterrupted) {
+        consoleInterrupted = false;
         publishConsoleEntry({
           name: "GCS", level: "success", text: "Console stream reconnected.",
         });
-        consoleInterrupted = false;
       }
-    });
-    consoleSource.addEventListener("message", (e) => {
-      if (generation !== consoleGeneration) return;
-      let entry;
-      try {
-        entry = JSON.parse(e.data);
-      } catch (err) {
-        console.error("console SSE parse:", err);
-        return;
-      }
-      if (!entry || entry.name === "ping") return;
       publishConsoleEntry(entry);
     });
-    consoleSource.onerror = () => {
+    const offError = Corvus.events.subscribe("error", () => {
       if (generation !== consoleGeneration || consoleInterrupted) return;
       consoleInterrupted = true;
       publishConsoleEntry({
         name: "GCS", level: "warning",
         text: "Console stream interrupted; reconnecting…",
       });
-    };
+    });
+    consoleSource = function () { offMessage(); offError(); };
   }
 
   function closeConsoleStream() {
     if (!consoleSource) return;
     consoleGeneration++;
-    consoleSource.close();
+    consoleSource();
     consoleSource = null;
     consoleInterrupted = false;
   }
@@ -185,7 +186,12 @@ Corvus.telemetry = (function () {
 
   function subscribe(fn) {
     subscribers.add(fn);
-    if (state) fn(state);
+    // The immediate first call is guarded too: a plugin that throws on its
+    // own seed frame would otherwise raise inside whoever called subscribe(),
+    // taking down that caller's setup instead of just its own.
+    if (state) {
+      try { fn(state); } catch (err) { console.error("telemetry subscriber failed:", err); }
+    }
     return () => subscribers.delete(fn);
   }
 
@@ -236,11 +242,11 @@ Corvus.telemetry = (function () {
     return postAction("/api/mavlink/connect", { connection: conn });
   }
 
-  /* Close both streams the moment the page goes away.
+  /* Close every stream the moment the page goes away.
      The browser tears an EventSource down on unload by itself, so this is not
      a leak fix — it is a timing one. The socket is only released when the OS
-     gets round to it, and this app already runs telemetry, console, params,
-     tiles and firmware streams against a six-per-origin HTTP/1.1 cap: on a
+     gets round to it, and this app runs telemetry, the shared /api/events
+     stream and an SSH shell against a six-per-origin HTTP/1.1 cap: on a
      reload the new page can find the budget still held by the old one's
      connections. pagehide rather than beforeunload, because beforeunload does
      not fire on a mobile/background tab teardown and pagehide does. */
@@ -248,6 +254,9 @@ Corvus.telemetry = (function () {
     connectionGeneration++;
     if (eventSource) { try { eventSource.close(); } catch (_e) {} eventSource = null; }
     closeConsoleStream();
+    // The shared stream outlives any one consumer's unsubscribe by design, so
+    // it is closed here explicitly rather than by the refcount.
+    if (window.Corvus && Corvus.events) { try { Corvus.events.stop(); } catch (_e) {} }
   }
 
   if (typeof window !== "undefined" && window.addEventListener) {

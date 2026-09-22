@@ -1,1 +1,13 @@
+# Development and CI tooling only — deliberately no `-r requirements.txt`, so
+# the CI test jobs can pair this with requirements-headless.txt and skip Qt.
+#
+# A full desktop dev environment:
+#     pip install -r requirements.txt -r requirements-dev.txt
+# What CI installs:
+#     pip install -r requirements-headless.txt -r requirements-dev.txt
+
+# The test suite.
 pytest>=7.0
+# The linter both pipelines run. Not a runtime dependency, so it is not in
+# requirements.txt.
+ruff>=0.5

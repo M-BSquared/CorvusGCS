@@ -3,12 +3,14 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.11
+  # 3.12 is what CI tests and what the build scripts target. One version
+  # across dev, CI and the shipped artifact, so "it passes CI" means "it runs
+  # on what we ship".
+  - python=3.12
   - pip
-  - pytest>=7.0
   - pip:
-      - pymavlink>=2.4
-      - paramiko>=3.0
-      - pyserial>=3.5
-      - PyQt6>=6.6
-      - PyQt6-WebEngine>=6.6
+      # The one runtime list, shared with all three build scripts (and, via
+      # requirements-headless.txt, with both CI pipelines). Do not add
+      # packages here — add them to requirements.txt.
+      - -r requirements.txt
+      - -r requirements-dev.txt

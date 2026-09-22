@@ -30,7 +30,7 @@ class _FakeResp:
     def __init__(self, data: bytes) -> None:
         self._data = data
 
-    def __enter__(self) -> "_FakeResp":
+    def __enter__(self) -> _FakeResp:
         return self
 
     def __exit__(self, *exc) -> bool:
@@ -114,8 +114,8 @@ def test_tile_count_small_bounds_matches_reference() -> None:
     bounds = (8.0, 47.0, 9.0, 48.0)
     z = 12
     expected = 0
-    for x in range(lon_to_x(8.0, z), lon_to_x(9.0, z) + 1):
-        for y in range(lat_to_y(48.0, z), lat_to_y(47.0, z) + 1):
+    for _x in range(lon_to_x(8.0, z), lon_to_x(9.0, z) + 1):
+        for _y in range(lat_to_y(48.0, z), lat_to_y(47.0, z) + 1):
             expected += 1
     assert tile_count(bounds, z, z) == expected
     assert expected > 1, "bounds spans more than one tile at z=12"
@@ -166,9 +166,20 @@ def test_on_progress_callback_invoked_with_snapshots(cache, stub_urlopen) -> Non
     jid = dl.start("satellite", "https://up/{z}/{x}/{y}.png", bounds, 1, 1,
                    on_progress=snapshots.append)
     assert _wait_until(lambda: dl.status(jid)["state"] == "done")
-    assert len(snapshots) >= 4, "progress fired at least once per tile"
+    # Per BATCH, not per tile. Cache writes are committed in batches of
+    # _WRITE_BATCH (or after _WRITE_BATCH_SECONDS, whichever comes first) and
+    # the counters move when a batch lands, so four tiles fetched inside one
+    # second are one progress event, not four. That is the point: a 50 000-tile
+    # region used to fire fifty thousand of these at the SSE stream, one per
+    # serialized commit.
+    assert snapshots, "progress never fired"
     assert snapshots[-1]["state"] == "done"
     assert snapshots[-1]["done"] == 4
+    # Whatever the granularity, the count never goes backwards and never
+    # overshoots — that is what the UI's bar actually depends on.
+    counts = [s["done"] for s in snapshots]
+    assert counts == sorted(counts), f"progress went backwards: {counts}"
+    assert max(counts) == 4
     dl.shutdown()
 
 
@@ -297,4 +308,49 @@ def test_shutdown_joins_threads_and_is_idempotent(cache, stub_urlopen) -> None:
     assert _wait_until(lambda: not thread.is_alive(), timeout=3.0), "orchestrator joined"
     # Idempotent — a second call is a no-op and must not raise.
     dl.shutdown()
+    dl.shutdown()
+
+
+# ===========================================================================
+# Batched cache writes — one transaction per batch, not per tile
+# ===========================================================================
+
+def test_tiles_are_committed_in_batches_not_one_at_a_time(cache, stub_urlopen) -> None:
+    """A whole job's tiles reach the cache in far fewer commits than tiles.
+
+    This is the shape of the fix, not an incidental detail: a region job is
+    capped at MAX_TILES_PER_JOB (50 000) tiles and used to pay one SQLite
+    transaction — and, before synchronous=NORMAL, one fsync — for every one of
+    them, through a single lock shared by three workers. On a field laptop's
+    disk that was the dominant cost of downloading a region, well above the
+    network it was waiting on.
+
+    Asserted as "many tiles, few writes" rather than an exact count, because
+    the batch boundary depends on _WRITE_BATCH_SECONDS and on how fast the
+    machine running this fetches.
+    """
+    commits: list[int] = []
+    real_put_tiles = cache.put_tiles
+
+    def counting_put_tiles(tiles):
+        rows = list(tiles)
+        commits.append(len(rows))
+        return real_put_tiles(rows)
+
+    cache.put_tiles = counting_put_tiles
+    dl = TileDownloader(cache, max_workers=3)
+    bounds = (-180.0, -85.0, 180.0, 85.0)
+    jid = dl.start("satellite", "https://up/{z}/{x}/{y}.png", bounds, 1, 2)
+    assert _wait_until(lambda: dl.status(jid)["state"] == "done")
+    st = dl.status(jid)
+
+    tiles = st["total"]
+    assert tiles == 20, "4 tiles at z=1 plus 16 at z=2"
+    assert st["done"] == tiles
+    assert st["failed"] == 0
+    # Every tile landed, and the counters only ever claimed tiles that did.
+    assert cache.stats()["count"] == tiles
+    assert sum(commits) == tiles
+    assert len(commits) < tiles, (
+        f"{tiles} tiles took {len(commits)} commits — batching is not happening")
     dl.shutdown()

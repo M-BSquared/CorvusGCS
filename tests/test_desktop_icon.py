@@ -296,19 +296,38 @@ def test_appimage_env_pointing_nowhere_is_ignored(tmp_path) -> None:
     assert desktop_icon.appimage_path(env) is None
 
 
-@pytest.mark.skipif(sys.platform.startswith("linux"),
-                    reason="the gate only bites off Linux")
-def test_other_platforms_never_report_an_appimage(tmp_path) -> None:
+# The gate itself is four lines of branch logic over ``sys.platform``, not
+# platform behaviour: nothing in it touches an API that only one OS has. Gating
+# these two on the host would mean each branch is only ever covered on the
+# machine it was written on — the Linux side never runs on a developer's Mac,
+# the non-Linux side never runs in Linux CI, and neither is exercised on both.
+# Patching ``sys.platform`` runs both branches everywhere instead. The tests
+# that genuinely need POSIX path semantics keep their ``_posix_paths`` gate.
+
+@pytest.mark.parametrize("platform", ["darwin", "win32"])
+def test_other_platforms_never_report_an_appimage(tmp_path, monkeypatch, platform) -> None:
     """macOS keeps its signed .icns and Windows its embedded .ico."""
+    monkeypatch.setattr(sys, "platform", platform)
     env = {"APPIMAGE": _appimage(tmp_path)}
     assert desktop_icon.appimage_path(env) is None
 
 
-@pytest.mark.skipif(not sys.platform.startswith("linux"),
-                    reason="only Linux resolves $APPIMAGE")
-def test_linux_resolves_the_appimage_env(tmp_path) -> None:
+def test_linux_resolves_the_appimage_env(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(sys, "platform", "linux")
     img = _appimage(tmp_path)
     assert desktop_icon.appimage_path({"APPIMAGE": img}) == os.path.realpath(img)
+
+
+def test_linux_ignores_an_appimage_env_pointing_at_nothing(tmp_path, monkeypatch) -> None:
+    """The isfile() check is the Linux branch's, so it needs the Linux branch.
+
+    Off Linux the function returns None before ever looking at the path, so
+    the existing unpatched test passes for the wrong reason on this host.
+    """
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert desktop_icon.appimage_path({"APPIMAGE": str(tmp_path / "gone.AppImage")}) is None
+    assert desktop_icon.appimage_path({"APPIMAGE": ""}) is None
+    assert desktop_icon.appimage_path({}) is None
 
 
 def test_sync_without_an_appimage_touches_nothing(tmp_path) -> None:

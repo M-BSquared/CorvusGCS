@@ -89,7 +89,13 @@ def backend(tmp_path, monkeypatch):
     monkeypatch.setattr(MavlinkBridge, "_request_message_intervals", lambda self: None)
     monkeypatch.setattr(MavlinkBridge, "_request_version", lambda self: None)
 
-    server = srv.create_server(port=0, mavlink_conn="udp:127.0.0.1:9999")
+    # config_path at a file that does not exist -> defaults, so the developer's
+    # own ~/.corvus/config.json cannot point this fixture's tile caches at the
+    # real cache dir (create_server honours cfg.tile_cache_dir over the default).
+    server = srv.create_server(
+        port=0, mavlink_conn="udp:127.0.0.1:9999",
+        config_path=str(tmp_path / "config.json"),
+    )
     http_thread = threading.Thread(
         target=server.serve_forever, name="corvus-path-http", daemon=True,
         kwargs={"poll_interval": 0.05},
@@ -264,3 +270,53 @@ def test_app_stop_all_continues_when_a_step_raises(backend) -> None:
 
     http_thread.join(timeout=2)
     assert not server.mavlink._thread.is_alive()
+
+
+# ---------------------------------------------------------------------------
+# CorvusServer.shutdown() releases the services that borrow the bridge
+# ---------------------------------------------------------------------------
+
+def test_server_shutdown_stops_every_service_that_holds_the_bridge(backend):
+    """``shutdown()`` alone must release the serial port and the log worker.
+
+    The two shipping launchers stop these in ``_stop_all``, so this is about
+    the third caller: an embedder, or a test. A SiK session still open when
+    the server goes down re-opens the serial link after shutdown() returned,
+    on a bridge that is being torn down.
+    """
+    server, http_thread = backend
+    stopped = []
+
+    class _Service:
+        def __init__(self, label):
+            self.label = label
+
+        def shutdown(self):
+            stopped.append(self.label)
+
+    server.sik = _Service("sik")
+    server.logs = _Service("logs")
+
+    server.shutdown()
+    assert stopped == ["sik", "logs"]
+
+
+def test_server_shutdown_survives_a_service_that_raises(backend, caplog):
+    """One failing teardown must not skip the ones after it."""
+    server, http_thread = backend
+    stopped = []
+
+    class _Angry:
+        def shutdown(self):
+            raise RuntimeError("serial port is wedged")
+
+    class _Fine:
+        def shutdown(self):
+            stopped.append("logs")
+
+    server.sik = _Angry()
+    server.logs = _Fine()
+
+    server.shutdown()
+    assert stopped == ["logs"], "a raising sik shutdown skipped the log service"
+    assert "SiK radio shutdown failed" in caplog.text

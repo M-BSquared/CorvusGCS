@@ -21,7 +21,7 @@ import pathlib
 import sqlite3
 import threading
 import time
-from typing import Iterable
+from collections.abc import Iterable
 
 from .paths import corvus_path
 
@@ -83,8 +83,15 @@ def default_cache_dir() -> str:
     directory is created elsewhere (lazily, by whoever first opens a cache
     there via mkdir(parents=True, exist_ok=True)), mirroring
     mavlink_bridge.default_log_dir; this helper only reports the path.
+
+    ``expanduser``'d for the same reason server._tile_cache_dir does it to the
+    config value: the env var carries whatever the operator typed, and a
+    literal "~/tiles" would otherwise become a directory named "~".
     """
-    return os.environ.get("CORVUS_TILE_CACHE_DIR") or corvus_path("tiles")
+    override = os.environ.get("CORVUS_TILE_CACHE_DIR") or ""
+    if override.strip():
+        return os.path.expanduser(override.strip())
+    return corvus_path("tiles")
 
 
 class TileCache:
@@ -112,6 +119,18 @@ class TileCache:
     def _init_schema(self) -> None:
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
+            # NORMAL, not SQLite's default FULL. Under WAL these are the two
+            # documented-safe settings: NORMAL stops fsyncing on every commit
+            # and fsyncs at checkpoint instead, so a crash or a power cut can
+            # lose the last few transactions but CANNOT corrupt the database.
+            #
+            # That trade is right for this file specifically. Every row in it
+            # is a tile that can be fetched again, the downloader already
+            # skips what is present so it resumes by itself, and a region
+            # download commits once per tile — up to MAX_TILES_PER_JOB of
+            # them, on the SD card or slow SSD of a field laptop, which is
+            # where an fsync per tile actually costs something.
+            self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS metadata (name TEXT, value TEXT)"
             )
@@ -183,6 +202,43 @@ class TileCache:
                 (z, x, row_num, blob),
             )
             self._conn.commit()
+
+    def put_tiles(self, tiles: Iterable[tuple[int, int, int, bytes]]) -> int:
+        """Insert or replace many XYZ ``(z, x, y, blob)`` tiles in ONE commit.
+
+        Returns the number of tiles written; empty blobs are skipped, exactly
+        as :meth:`put_tile` skips them.
+
+        This exists for the offline downloader. ``put_tile`` commits per tile,
+        and a region job is capped at ``MAX_TILES_PER_JOB`` (50 000) tiles
+        fetched by three workers through this one lock — so that path paid
+        fifty thousand serialized transactions to write one region.
+        ``synchronous=NORMAL`` (see :meth:`_init_schema`) already took the
+        fsync out of each of them; this takes out the other 99.6 %, the
+        per-transaction WAL frames and lock round-trips, by writing 256 at a
+        time.
+
+        Raising rather than swallowing is deliberate: the caller counts a tile
+        as downloaded only once this has returned, so a failed batch is
+        reported as failed tiles rather than as progress that did not happen.
+        """
+        if self._closed:
+            return 0
+        rows = [
+            (z, x, xyz_to_tms(z, y), blob)
+            for z, x, y, blob in tiles
+            if blob
+        ]
+        if not rows:
+            return 0
+        with self._lock:
+            self._conn.executemany(
+                "INSERT OR REPLACE INTO tiles "
+                "(zoom_level, tile_column, tile_row, tile_data) VALUES (?,?,?,?)",
+                rows,
+            )
+            self._conn.commit()
+        return len(rows)
 
     def has_tile(self, z: int, x: int, y: int) -> bool:
         """Return True if a tile for XYZ (z,x,y) is present in the cache."""
@@ -295,7 +351,7 @@ class TileCache:
             self._conn.commit()
             return cur.rowcount > 0
 
-    def delete_tiles(self, tiles: "Iterable[tuple[int, int, int]]") -> int:
+    def delete_tiles(self, tiles: Iterable[tuple[int, int, int]]) -> int:
         """Delete the given XYZ ``(z, x, y)`` tiles. Returns the rows removed.
 
         Deleted in one transaction so a half-deleted region can never be left
@@ -390,7 +446,7 @@ class TileCache:
             except Exception:
                 pass
 
-    def __enter__(self) -> "TileCache":
+    def __enter__(self) -> TileCache:
         return self
 
     def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:

@@ -234,8 +234,16 @@ Corvus.sidenav = (function () {
     missionEnabled = next;
     if (!leftNav) return missionEnabled;
     // Leave the page BEFORE the rail loses its button, so switchTo still finds
-    // the entry it is deactivating and the planner's teardown still runs.
-    if (!missionEnabled && activeNav === "mission") switchTo("home");
+    // the entry it is deactivating and the planner is put down in order.
+    if (!missionEnabled && activeNav === "mission") {
+      switchTo("home");
+      // And then really let it go: switchTo only suspends, which is right for
+      // a page the operator can walk back into, and this one no longer has a
+      // way in.
+      if (Corvus.mission && typeof Corvus.mission.teardown === "function") {
+        Corvus.mission.teardown();
+      }
+    }
     renderLeftNav();
     return missionEnabled;
   }
@@ -301,12 +309,19 @@ Corvus.sidenav = (function () {
         Corvus.setup && typeof Corvus.setup.teardown === "function") {
       Corvus.setup.teardown();
     }
-    // Same for the Mission planner: it owns a second MapLibre map, a Plotly
-    // profile and a window resize listener, none of which belong to a page the
-    // operator has left. BEFORE pageView is repurposed, like Setup above.
-    if (prev === "mission" && navId !== "mission" &&
-        Corvus.mission && typeof Corvus.mission.teardown === "function") {
-      Corvus.mission.teardown();
+    // The Mission planner is only PUT DOWN, not torn down. It owns a second
+    // MapLibre map, a Plotly profile and two subscriptions; the subscriptions
+    // and the listeners have no business running behind a page the operator
+    // has left, but the map costs the best part of a second to rebuild — a
+    // GL context, a style, a dozen tiles, a re-sampled terrain — and the
+    // planner is a page you flip to and from constantly while drawing a
+    // route. suspend() takes it off the air and keeps it; teardown() is the
+    // destroyer, called where the page leaves the rail (setMissionEnabled)
+    // and kept here as the fallback for a build without the split. BEFORE
+    // pageView is repurposed, like Setup above.
+    if (prev === "mission" && navId !== "mission" && Corvus.mission) {
+      if (typeof Corvus.mission.suspend === "function") Corvus.mission.suspend();
+      else if (typeof Corvus.mission.teardown === "function") Corvus.mission.teardown();
     }
     // Same for the Analysis page's log downloader, on every left-nav exit.
     if (typeof analysisDestroy === "function") {
@@ -838,16 +853,24 @@ Corvus.sidenav = (function () {
       if (file) uploadLogo(file);
     });
 
+    // Filename and buttons stand BESIDE the preview rather than under it. The
+    // preview is 60px of tile that would otherwise have empty card to its
+    // right while the two buttons took a row of their own below: one setting,
+    // three stacked lines. Everything that is about this one image now fits in
+    // the height the image already occupies.
+    const side = document.createElement("div");
+    side.className = "brand-logo-side";
+    side.append(name, Corvus.ui.actions([chooseBtn, removeBtn]));
+
     const row = document.createElement("div");
     row.className = "brand-logo-row";
-    row.append(preview, name, fileInput);
+    row.append(preview, side, fileInput);
     card.appendChild(Corvus.ui.field({
       label: "Top-right logo",
       control: row,
       hint: "Optional PNG at the top right of the status bar; the Corvus mark " +
             "keeps the left. Transparent artwork works best, max 4 MB.",
     }));
-    card.appendChild(Corvus.ui.actions([chooseBtn, removeBtn]));
     card.appendChild(status.el);
     showLogo(configured);
     return card;
@@ -1265,6 +1288,27 @@ Corvus.sidenav = (function () {
       },
     });
 
+    // Path and button are one field: the button is what the path is FOR, and
+    // parked in its own action row below the hint it read as a third, separate
+    // thing. Built here rather than at the two call sites so the fallback path
+    // (no /api/plugins) offers exactly the same field, only with the default
+    // location in it.
+    function folderField(dir) {
+      const line = document.createElement("div");
+      line.className = "settings-path-row";
+      line.appendChild(pathLine(dir));
+      line.appendChild(openBtn);
+      return Corvus.ui.field({
+        className: "settings-plugin-dir",
+        label: "Plugin folder",
+        control: line,
+        hint: "One folder per plugin, each with a plugin.json. Corvus loads " +
+              "them on the next start, so restart after copying one in. The " +
+              "folder's own README.md describes the format, and the plugins " +
+              "that ship with Corvus are worked examples.",
+      });
+    }
+
     Corvus.telemetry.requestJson("/api/plugins").then((data) => {
       if (gen !== undefined && gen !== navGeneration) return;
       const plugins = (data && Array.isArray(data.plugins)) ? data.plugins : [];
@@ -1280,21 +1324,17 @@ Corvus.sidenav = (function () {
           list.appendChild(pluginRow(p.name || p.id, where + version, p.description));
         });
       }
-      list.appendChild(Corvus.ui.field({
-        label: "Plugin folder",
-        control: pathLine((data && data.user_dir) || "~/.corvus/plugins"),
-        hint: "One folder per plugin, each with a plugin.json. Corvus loads " +
-              "them on the next start, so restart after copying one in. The " +
-              "folder's own README.md describes the format, and the plugins " +
-              "that ship with Corvus are worked examples.",
-      }));
+      list.appendChild(folderField((data && data.user_dir) || "~/.corvus/plugins"));
       Corvus.ui.refreshIcons();
     }).catch(() => {
       if (gen !== undefined && gen !== navGeneration) return;
       list.appendChild(Corvus.ui.empty("Plugin list unavailable."));
+      // The folder is still where it always was, and opening it is still the
+      // one thing to do here — the button must not vanish with the list.
+      list.appendChild(folderField("~/.corvus/plugins"));
+      Corvus.ui.refreshIcons();
     });
 
-    card.appendChild(Corvus.ui.actions(openBtn));
     card.appendChild(status.el);
     container.appendChild(Corvus.ui.section({ title: "Plugins", body: card }));
   }

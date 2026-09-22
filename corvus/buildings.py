@@ -61,7 +61,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Iterable
+from typing import Any
+from collections.abc import Iterable
 
 logger = logging.getLogger("corvus.buildings")
 
@@ -427,7 +428,7 @@ class BuildingService:
         self.url = url
         self.timeout = timeout
         self.user_agent = user_agent
-        self._queue: "queue.Queue[tuple[int, int, int] | None]" = queue.Queue(
+        self._queue: queue.Queue[tuple[int, int, int] | None] = queue.Queue(
             maxsize=FETCH_QUEUE_DEPTH)
         self._lock = threading.Lock()
         self._queued: set[tuple[int, int, int]] = set()

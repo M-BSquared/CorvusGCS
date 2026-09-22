@@ -98,7 +98,12 @@ def backend_server(tmp_path, monkeypatch):
     monkeypatch.setattr(MavlinkBridge, "_request_message_intervals", lambda self: None)
     monkeypatch.setattr(MavlinkBridge, "_request_version", lambda self: None)
 
-    server = srv.create_server(port=0, mavlink_conn="udp:127.0.0.1:9999")
+    # Defaults, not the developer's ~/.corvus/config.json: create_server
+    # honours cfg.tile_cache_dir, which would otherwise beat the redirect above.
+    server = srv.create_server(
+        port=0, mavlink_conn="udp:127.0.0.1:9999",
+        config_path=str(tmp_path / "config.json"),
+    )
     http_thread = threading.Thread(
         target=server.serve_forever, name="corvus-reg-http", daemon=True,
         kwargs={"poll_interval": 0.05},

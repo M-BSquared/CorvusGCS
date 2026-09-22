@@ -16,7 +16,8 @@ Mirrors the fakes in tests/test_mavlink_takeoff.py.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 import pytest
 from pymavlink import mavutil

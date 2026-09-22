@@ -18,11 +18,9 @@ from __future__ import annotations
 
 import json
 import pathlib
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from pymavlink import mavutil
 
 from corvus import config as config_mod
 from corvus.mavlink_bridge import MavlinkBridge

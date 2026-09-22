@@ -1,0 +1,34 @@
+# Corvus GCS runtime dependencies — the single source of truth.
+#
+# Every installer reads THIS file (or requirements-headless.txt, which it
+# includes): environment.yml, both CI pipelines, and all three build scripts
+# (AppImage, macOS .app, Windows .exe). The list used to exist in five places
+# in three formats — two of them with no version floors at all, and one a
+# regex that screen-scraped environment.yml's pip: block. The Linux artifact
+# was the one that mattered: built with no floors, it could be produced
+# against a pymavlink older than the >=2.4 the code needs, and nothing would
+# catch it until the field.
+#
+# Floors, not pins, on purpose: this states what the code requires.
+#
+# Pins live in requirements.lock, which is NOT this file and is not normally
+# in the repo. Every build writes the set it actually resolved to beside its
+# artifact — dist/Corvus_GCS-<version>-<platform>.lock — and each of the three
+# build scripts installs from requirements.lock in preference to this file
+# when one is present (override either with $CORVUS_REQUIREMENTS). So pinning
+# a release is one copy:
+#
+#     cp dist/Corvus_GCS-2026.09.45-macOS-arm64.lock requirements.lock
+#
+# and a rebuild of that tag resolves to the same versions instead of to
+# whatever is newest on the day. The locks are per platform and per Python
+# version because the resolved set is: a single cross-platform pin would be a
+# fiction.
+
+-r requirements-headless.txt
+
+# The desktop app's window and its embedded Chromium. Not needed by browser
+# mode or by the test suite — see requirements-headless.txt — but every
+# packaged build depends on them.
+PyQt6>=6.6
+PyQt6-WebEngine>=6.6

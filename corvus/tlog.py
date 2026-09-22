@@ -117,7 +117,7 @@ class TlogWriter:
                 except Exception:
                     pass
 
-    def __enter__(self) -> "TlogWriter":
+    def __enter__(self) -> TlogWriter:
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -193,7 +193,7 @@ class TlogWriter:
             "product": "Corvus GCS",
             "version": get_version(),
             "conn": self._conn_str,
-            "started_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "started_at": datetime.datetime.now(datetime.UTC).isoformat(),
             "format": "mavlink-raw",
         }
         return _MAGIC + json.dumps(meta).encode("utf-8") + b"\n"
