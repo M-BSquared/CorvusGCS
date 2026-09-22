@@ -351,6 +351,7 @@ require("../src/js/setup-motors.js");
 require("../src/js/setup-safety.js");
 require("../src/js/setup-battery.js");
 require("../src/js/setup-sik.js");
+require("../src/js/setup-remoteid.js");
 require("../src/js/setup-parameters.js");
 require("../src/js/setup-firmware.js");
 require("../src/js/setup.js");
@@ -371,7 +372,7 @@ async function testTileGridRendersEveryTile() {
   const tiles = findByClass(container, "setup-tile");
   assert.deepEqual(tiles.map((t) => t.dataset.view),
     ["calibration", "control", "tuning", "motors", "safety", "battery", "sik",
-     "parameters", "firmware"],
+     "remoteid", "parameters", "firmware"],
     "every Setup tile, in order");
 
   // Tile titles are real text nodes. Setup tiles are Corvus.ui.tile instances
@@ -380,7 +381,7 @@ async function testTileGridRendersEveryTile() {
   const titles = tiles.map((t) => findOneByClass(t, "tile-title").textContent);
   assert.deepEqual(titles,
     ["Calibration", "Radio Control", "PID Tuning", "Motors", "Safety & Sensors",
-     "Battery & Power", "Telemetry Radio", "Parameters", "Firmware"]);
+     "Battery & Power", "Telemetry Radio", "Remote ID", "Parameters", "Firmware"]);
 }
 
 async function testClickTileSwapsToSubPageAndBackReturns() {

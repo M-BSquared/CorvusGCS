@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.50-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.50" />
+  <img src="https://img.shields.io/badge/Version-2026.09.51-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.51" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -29,9 +29,9 @@
   <br>
   <img src="https://img.shields.io/badge/%F0%9F%A4%96-Vibe%20Coded-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded" />
   <img width="8" />
-  <img src="https://img.shields.io/badge/Lines%20of%20Code-66k%2B-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 66k+" />
+  <img src="https://img.shields.io/badge/Lines%20of%20Code-82k%2B-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 82k+" />
   <img width="8" />
-  <img src="https://img.shields.io/badge/Tests-53k%20lines%20%C2%B7%20120%20files-2EA043?style=for-the-badge" height="28" alt="Tests: 53k lines across 120 files" />
+  <img src="https://img.shields.io/badge/Tests-62k%20lines%20%C2%B7%20141%20files-2EA043?style=for-the-badge" height="28" alt="Tests: 62k lines across 141 files" />
   <br>
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-6E7681?style=for-the-badge" height="28" alt="Platform: macOS | Linux | Windows" />
   <img width="8" />
@@ -982,6 +982,38 @@ front of you.
   few seconds a session takes — Corvus stops the link itself and reconnects —
   and a radio on any other port does not touch the link at all. Refused while
   armed.
+- **Remote ID** — the identity the aircraft broadcasts about you and about
+  itself, which is the one page here whose subject is not the vehicle. The
+  serial number, the operator registration your authority issued, the flight
+  description and the EU class mark are not stored on the aircraft and no
+  parameter holds them: they live in the ground station and are pushed down the
+  link once a second, and both PX4 and ArduPilot stop arming when that stream
+  stops. So this is a pre-flight page, not a one-off setup page.
+
+  It has a switch, and it starts off — an aircraft broadcasting a blank or
+  half-filled identity has made a *false* filing, not a small one. Fill in
+  **Basic ID** (the airframe's serial number, checked live against the
+  ANSI/CTA-2063-A format that is the usual reason a filing is rejected),
+  **Operator ID** (your registration; if you paste the whole EU number the page
+  tells you the last three characters are the secret half and are never
+  broadcast), **Self ID** (a line about what this flight is, and the switch that
+  says *emergency* while the aircraft is still in the air), **EU vehicle info**
+  (operational category, the C0–C6 class mark, and the operational volume for a
+  Specific-category flight) and the **operator position** — the take-off point,
+  or a fixed one you type, with a button that takes the aircraft's own position
+  since you are normally standing next to it.
+
+  Pick your region and the page lists what that region's published broadcast
+  format asks for and does not have — the FAA's Part 89 and the EU's
+  EN 4709-002 want different things, and it says which. Those are advisory:
+  nothing is refused, because an aircraft flown under an exemption is not
+  misconfigured. A live panel says whether the link can carry the messages at
+  all (they are MAVLink 2 only), whether they are actually going out, and the
+  arm verdict the aircraft sent back. The aircraft's own Remote ID settings —
+  ArduPilot's `DID_` family, PX4's `COM_ARM_ODID` — are at the bottom of the
+  same page. The identity stays editable while armed, because a wrong serial
+  number on a live aircraft has to be fixable; the vehicle's parameters do not.
+  None of it is legal advice, and Corvus certifies nothing.
 - **Firmware** — flash PX4 or ArduPilot firmware over a **direct USB connection only**.
   Refused over a telemetry radio or UDP/TCP, and refused while armed.
 
@@ -1045,6 +1077,16 @@ front of you.
   in the power wiring, not a calibration to redo), and a rate loop ringing at a
   named frequency and amplitude. Where the ESCs report RPM, they are plotted too
   — commands say what was asked for, RPM says what happened.
+
+  The ground track has **two readings, and a switch in its corner between
+  them**. *Chart* is metres north over metres east on equal axes, which is what
+  makes the gap between the estimate and the projected GPS measurable.
+  *Satellite* lays the same path over the map imagery, at the place it was
+  actually flown — the field, the runway, the treeline the turn was flown
+  around — through the same tile cache the map pages use, so it works offline
+  wherever those tiles were downloaded. A flight with no global reference
+  (indoors, or no fix) has no origin to place on the Earth, and offers no
+  switch rather than a guess.
 
   It is equally careful about what it does **not** say, because one alarm about
   something ordinary costs every other finding its credibility. A motor at its

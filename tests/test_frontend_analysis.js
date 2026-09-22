@@ -58,6 +58,8 @@ function makeEl(tag) {
     className: "", textContent: "", children: [], dataset: {}, style: {},
     type: "", hidden: false, disabled: false, value: "", checked: false,
     placeholder: "", id: "", _attrs: {}, _listeners: {}, _isEl: true, parentNode: null,
+    // The map's load handler re-checks that its host is still in the page.
+    isConnected: true,
   };
   let _html = "";
   Object.defineProperty(e, "innerHTML", {
@@ -100,6 +102,34 @@ window.Plotly = {
   reactCalls: [], purgeCalls: [],
   react(gd, data, layout, config) { this.reactCalls.push({ gd, data, layout, config }); },
   purge(gd) { this.purgeCalls.push(gd); },
+};
+
+/* Enough MapLibre for the ground track's satellite view: what it was built
+   with, what it was told to draw, and whether it was torn down. The load
+   handler fires synchronously — the page's own code re-checks its host either
+   way, and a test that has to wait for a fake event is a test about the
+   fake. */
+window.maplibregl = {
+  maps: [],
+  Map: class {
+    constructor(opts) {
+      this.opts = opts; this.sources = {}; this.layers = [];
+      this.controls = []; this.removed = false; this.resizes = 0;
+      window.maplibregl.maps.push(this);
+    }
+    addControl(control, position) { this.controls.push({ control, position }); return this; }
+    on(event, cb) { if (event === "load") cb(); }
+    addSource(id, spec) { this.sources[id] = spec; }
+    addLayer(spec) { this.layers.push(spec); }
+    resize() { this.resizes += 1; }
+    remove() { this.removed = true; }
+  },
+  LngLatBounds: class {
+    constructor() { this.points = []; }
+    extend(c) { this.points.push(c); return this; }
+  },
+  AttributionControl: class { constructor(options) { this.options = options; } },
+  NavigationControl: class { constructor(options) { this.options = options; } },
 };
 
 global.document = {
@@ -1222,6 +1252,132 @@ async function testTheGroundTrackGetsNoTimeBands() {
   destroy();
 }
 
+/* A track the backend could place on the Earth: the same plot, plus the
+   origin its metres are measured from. */
+const TRACK_PLOT = {
+  id: "track", title: "Ground track", unit: "m", group: "Flight",
+  xlabel: "East (m)", ylabel: "North (m)", equal: true,
+  origin: { lat: 48.0785, lon: 11.6461 },
+  series: [
+    { name: "GPS (projected)", x: [0, 100], y: [0, 0] },
+    { name: "Estimated", x: [0, 0], y: [0, 100] },
+    { name: "Commanded position", x: [50], y: [50], draw: "markers" },
+  ],
+};
+
+/** One option of a plot's chart/satellite switch, by its visible label. */
+function viewOption(root, label) {
+  return findByClass(root, "review-view-opt").find((b) =>
+    (b.children || []).some((c) => (c.textContent || "") === label)) || null;
+}
+
+async function openTrackReview(plot) {
+  const { container, fake } = reset();
+  fake.setReview(Object.assign({}, REVIEW, { groups: ["Flight"], plots: [plot] }));
+  window.maplibregl.maps.length = 0;
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "review");
+  fire(buttonByLabel(container, "Review"), "click");
+  await flush();
+  await flush();
+  return { container, destroy };
+}
+
+async function testTheGroundTrackCanBeReadOverImagery() {
+  const { container, destroy } = await openTrackReview(TRACK_PLOT);
+
+  const chartOpt = viewOption(container, "Chart");
+  const mapOpt = viewOption(container, "Satellite");
+  assert.ok(chartOpt && mapOpt, "the track offers both readings");
+  assert.equal(chartOpt.getAttribute("aria-selected"), "true",
+    "metres against equal axes is still the primary reading");
+  assert.equal(window.maplibregl.maps.length, 0,
+    "and a WebGL context is not spent on a view nobody opened");
+
+  fire(mapOpt, "click");
+  assert.equal(findOneByClass(container, "review-plot").hidden, true,
+    "the chart gives up the space rather than stacking under the map");
+  assert.equal(window.maplibregl.maps.length, 1, "one map, built on the press");
+  const map = window.maplibregl.maps[0];
+  // Through the app's own tile proxy, like every other map in Corvus: the
+  // field laptop has no internet and the imagery it does have is cached here.
+  assert.deepEqual(map.opts.style.sources.base.tiles,
+    ["/api/tiles/satellite/{z}/{x}/{y}.png"]);
+  assert.ok(map.opts.bounds.points.length >= 4, "framed on the track flown");
+  // The map sits mid-page. A wheel that zoomed it would trap a reader who was
+  // only scrolling past this plot on the way to the next one.
+  assert.equal(map.opts.cooperativeGestures, true);
+
+  // Each line series gets a dark casing under a coloured core — a single
+  // stroke disappears over a ploughed field — and the commanded points stay
+  // points, exactly as they do on the chart.
+  const kinds = map.layers.map((l) => l.type);
+  assert.deepEqual(kinds, ["line", "line", "line", "line", "circle"]);
+  const gps = map.sources["track-0"].data.geometry;
+  assert.equal(gps.type, "LineString");
+  // 100 m east of the origin, and nowhere else: the inverse of the backend's
+  // projection, not a flat-earth guess at it.
+  const [lon, lat] = gps.coordinates[1];
+  assert.ok(Math.abs(lat - 48.0785) < 1e-6, "due east stays on its latitude");
+  assert.ok(Math.abs((lon - 11.6461) - 0.001343) < 2e-5,
+    "and 100 m east at this latitude is 0.00134 degrees of longitude");
+  assert.equal(map.sources["track-2"].data.geometry.type, "MultiPoint");
+
+  // The map has no Plotly legend, so the card states the key itself.
+  const key = findOneByClass(container, "review-track-key");
+  assert.deepEqual((key.children || []).map((c) =>
+    (c.children || []).map((x) => x.textContent).join("")),
+  ["GPS (projected)", "Estimated", "Commanded position"]);
+
+  fire(chartOpt, "click");
+  assert.equal(findOneByClass(container, "review-plot").hidden, false,
+    "and the chart comes back");
+  destroy();
+}
+
+async function testATrackWithNoGlobalReferenceOffersNoMap() {
+  const bare = Object.assign({}, TRACK_PLOT);
+  delete bare.origin;
+  const { container, destroy } = await openTrackReview(bare);
+  // Flown indoors, or without a fix: the estimator never had an origin, and
+  // metres from an unknown point cannot be put on the Earth.
+  assert.equal(viewOption(container, "Satellite"), null);
+  assert.equal(window.maplibregl.maps.length, 0);
+  destroy();
+}
+
+async function testTheTrackMapIsTornDownWithTheReview() {
+  const { container, destroy } = await openTrackReview(TRACK_PLOT);
+  fire(viewOption(container, "Satellite"), "click");
+  const map = window.maplibregl.maps[0];
+  destroy();
+  // A browser hands out about sixteen WebGL contexts. Dropping the DOM alone
+  // leaks one per review opened, until the imagery simply stops appearing.
+  assert.equal(map.removed, true, "the map goes with the review");
+}
+
+async function testPlotLegendsAreBigEnoughToRead() {
+  const { container } = reset();
+  window.Plotly.reactCalls.length = 0;
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "review");
+  fire(buttonByLabel(container, "Review"), "click");
+  await flush();
+  await flush();
+
+  window.Plotly.reactCalls.forEach((call) => {
+    // Which line is which is the legend's whole job, and at 9 px it was a row
+    // of colours with unreadable names beside them.
+    assert.ok(call.layout.legend.font.size >= 12, "legible legend text");
+    // And it needs room under the axis title to sit in, or it is drawn off
+    // the bottom of the graph.
+    assert.ok(call.layout.margin.b >= 56, "room under the axis for it");
+  });
+  destroy();
+}
+
 async function testTheModeStripNamesSpansAndTotalsTheTime() {
   const { container } = reset();
   const destroy = Corvus.analysis.render(container);
@@ -1463,6 +1619,10 @@ async function run() {
     testFlightModesAreShownAsAStripAndDrawnBehindEveryTimePlot,
     testEveryBandNamesItsModeInThePlot,
     testTheGroundTrackGetsNoTimeBands,
+    testTheGroundTrackCanBeReadOverImagery,
+    testATrackWithNoGlobalReferenceOffersNoMap,
+    testTheTrackMapIsTornDownWithTheReview,
+    testPlotLegendsAreBigEnoughToRead,
     testTheModeStripNamesSpansAndTotalsTheTime,
     testSetpointSeriesAreDrawnAsMarkersNotLines,
     testAFindingSaysWhereInTheFlightToLook,

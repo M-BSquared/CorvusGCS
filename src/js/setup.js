@@ -5,9 +5,9 @@ window.Corvus = window.Corvus || {};
  * Corvus.setup — the Setup page (left-nav "SETUP").
  *
  * Thin orchestrator: renders the tile grid (Calibration, Radio Control, PID
- * Tuning, Motors, Safety & Sensors, Battery & Power, Telemetry Radio,
- * Parameters, Firmware) plus a compact Vehicle Info card, and routes to the
- * sub-pages. The actual page content lives in its own file:
+ * Tuning, Motors, Safety & Sensors, Battery & Power, Telemetry Radio, Remote
+ * ID, Parameters, Firmware) plus a compact Vehicle Info card, and routes to
+ * the sub-pages. The actual page content lives in its own file:
  *   - setup-calibration.js  (Corvus.setupCalibration)
  *   - setup-control.js      (Corvus.setupControl)
  *   - setup-tuning.js       (Corvus.setupTuning)
@@ -15,6 +15,7 @@ window.Corvus = window.Corvus || {};
  *   - setup-safety.js       (Corvus.setupSafety)
  *   - setup-battery.js      (Corvus.setupBattery)
  *   - setup-sik.js          (Corvus.setupSik)
+ *   - setup-remoteid.js     (Corvus.setupRemoteId)
  *   - setup-parameters.js   (Corvus.setupParameters)
  *   - setup-firmware.js     (Corvus.setupFirmware)
  * Shared helpers live in setup-shared.js (Corvus.setupShared).
@@ -31,7 +32,7 @@ Corvus.setup = (function () {
 
   // Active view of the Setup page: "tiles" (the grid) | "calibration" |
   // "control" | "tuning" | "motors" | "safety" | "battery" | "sik" |
-  // "parameters" | "firmware".
+  // "remoteid" | "parameters" | "firmware".
   let activeView = "tiles";
 
   // Teardown handle for the currently-rendered view. `render` calls this before
@@ -104,9 +105,9 @@ Corvus.setup = (function () {
     container.appendChild(infoCard);
 
     // Tile grid: Calibration + Radio Control + PID Tuning + Motors +
-    // Safety & Sensors + Battery & Power + Telemetry Radio + Parameters +
-    // Firmware. Keyboard-focusable buttons so the whole tile is reachable and
-    // announces as a control.
+    // Safety & Sensors + Battery & Power + Telemetry Radio + Remote ID +
+    // Parameters + Firmware. Keyboard-focusable buttons so the whole tile is
+    // reachable and announces as a control.
     const grid = S.el("div", "setup-tiles");
     grid.appendChild(makeTile("calibration", "sliders-horizontal", "Calibration",
       "Guided sensor calibration: accelerometer, compass, gyro, level and ESCs."));
@@ -123,6 +124,9 @@ Corvus.setup = (function () {
       + "which reading of it the interface shows."));
     grid.appendChild(makeTile("sik", "radio-tower", "Telemetry Radio",
       "Program a SiK radio pair: network ID, air rate, transmit power and band."));
+    grid.appendChild(makeTile("remoteid", "id-card", "Remote ID",
+      "The identity the aircraft broadcasts about you and itself: serial "
+      + "number, operator registration, flight description and EU class."));
     grid.appendChild(makeTile("parameters", "list", "Parameters",
       "Download all PX4 parameters on demand, then edit any value."));
     grid.appendChild(makeTile("firmware", "cpu", "Firmware",
@@ -172,7 +176,7 @@ Corvus.setup = (function () {
   /** Swap the container to a sub-page. Tears the grid down first. */
   function openView(viewId) {
     if (["calibration", "control", "tuning", "motors", "safety", "battery",
-         "sik", "parameters", "firmware"].indexOf(viewId) < 0) return;
+         "sik", "remoteid", "parameters", "firmware"].indexOf(viewId) < 0) return;
     teardown();
     activeView = viewId;
     const container = document.getElementById("pageView");
@@ -201,6 +205,8 @@ Corvus.setup = (function () {
       activeDestroy = Corvus.setupBattery.render(container, navigateBack);
     } else if (viewId === "sik") {
       activeDestroy = Corvus.setupSik.render(container, navigateBack);
+    } else if (viewId === "remoteid") {
+      activeDestroy = Corvus.setupRemoteId.render(container, navigateBack);
     } else if (viewId === "parameters") {
       activeDestroy = Corvus.setupParameters.render(container, navigateBack);
     } else { // firmware

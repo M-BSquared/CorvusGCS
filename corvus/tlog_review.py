@@ -709,6 +709,10 @@ def _track(rec: _Recording) -> dict | None:
     return _plot(
         "track", "Ground track", "m", series, "Flight",
         equal=True, xlabel="East (m)", ylabel="North (m)",
+        # The first fix in degrees, so the frontend can undo this projection
+        # and draw the same track over imagery. Same contract as the ULog
+        # review's track — one renderer reads both.
+        origin={"lat": round(origin[0], 7), "lon": round(origin[1], 7)},
         note="Metres east and north of the first fix. Telemetry rate, so the "
              "line is the path flown sampled a few times a second — not every "
              "metre of it.",

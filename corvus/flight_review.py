@@ -603,13 +603,19 @@ class _Projection:
     plot exists to show.
     """
 
-    __slots__ = ("_sin_lat", "_cos_lat", "_lon")
+    __slots__ = ("_sin_lat", "_cos_lat", "_lon", "lat_deg", "lon_deg")
 
     def __init__(self, ref_lat_deg: float, ref_lon_deg: float) -> None:
         lat = math.radians(ref_lat_deg)
         self._sin_lat = math.sin(lat)
         self._cos_lat = math.cos(lat)
         self._lon = math.radians(ref_lon_deg)
+        # Kept in degrees as well, because the frontend draws this same track
+        # over imagery and has to undo the projection to do it. Sending the
+        # reference point is what makes that possible without a second copy of
+        # every path in lat/lon.
+        self.lat_deg = float(ref_lat_deg)
+        self.lon_deg = float(ref_lon_deg)
 
     def project(self, lat_deg: float, lon_deg: float) -> tuple[float, float]:
         """(north, east) in metres from the origin."""
@@ -823,9 +829,17 @@ def _plot_track(log: ULog) -> dict | None:
     else:
         note += (" This flight had no global reference, so there is no GPS "
                  "track to compare against.")
+    extra: dict[str, Any] = {}
+    if projection is not None:
+        # Where (0, 0) actually is. With it the frontend can undo the
+        # projection point by point and lay the same track over imagery; the
+        # metre grid stays the primary reading, and the map is the answer to
+        # "where was this?", which no local frame can give.
+        extra["origin"] = {"lat": round(projection.lat_deg, 7),
+                           "lon": round(projection.lon_deg, 7)}
     return _plot("track", "Ground track", "m", series,
                  group="Flight", xlabel="East (m)", ylabel="North (m)",
-                 equal=True, note=note)
+                 equal=True, note=note, **extra)
 
 
 def _plot_velocity(log: ULog) -> dict | None:

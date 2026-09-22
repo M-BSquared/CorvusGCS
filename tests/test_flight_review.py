@@ -332,6 +332,22 @@ def test_a_flight_without_a_global_reference_gets_no_gps_track() -> None:
     assert "no global reference" in plot["note"]
 
 
+def test_the_track_carries_the_point_its_metres_are_measured_from() -> None:
+    """East and north of *what* — without the origin in degrees, the frontend
+    cannot lay this track over imagery, and "where was this flown?" has no
+    answer in the review at all."""
+    plot = _plot(review(read(_flown()), "x.ulg"), "track")
+    assert plot["origin"] == {"lat": pytest.approx(REF_LAT),
+                              "lon": pytest.approx(REF_LON)}
+
+
+def test_a_track_with_no_global_reference_states_no_origin() -> None:
+    """Rather than a plausible-looking zero: 0/0 is a point in the Atlantic,
+    and a track drawn there is worse than one the map cannot place."""
+    plot = _plot(review(read(_flown(global_ref=False)), "x.ulg"), "track")
+    assert "origin" not in plot
+
+
 def test_fixes_without_a_3d_lock_are_left_out() -> None:
     """A 2D or dead-reckoned fix has no business anchoring a track."""
     assert "GPS (projected)" not in _track_series(_flown(fix_type=2))

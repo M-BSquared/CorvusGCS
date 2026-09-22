@@ -45,6 +45,14 @@ _EXPECTED_GET = {
     # settings — every BAT_/BATT_ parameter lives behind this one.
     "/api/battery",
     "/api/params",
+    # The identity this station broadcasts for the aircraft — Basic ID,
+    # Operator ID, Self ID, EU classification — plus the vehicle's own DID_/
+    # COM_ARM_ODID parameters and what the live broadcast is doing.
+    "/api/remoteid",
+    # Polled while the page is open, so it touches no MAVLink: a parameter read
+    # on a reconnecting link can sit behind the bridge's operation lock, and
+    # polled ones pile up against the browser's six-connection limit.
+    "/api/remoteid/status",
     "/api/rc",
     "/api/safety",
     "/api/tuning",

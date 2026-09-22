@@ -3974,6 +3974,104 @@ button.link-card-title:focus-visible {
 .field-select.battery-select { min-width: 150px; max-width: 300px; }
 .battery-estimator-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
+/* ===== REMOTE ID =====
+   A stack, not two columns. The page reads top to bottom as one act — turn the
+   broadcast on, see what is going out, see what is still missing, fill it in —
+   and a side-by-side layout would put the checklist beside the fields it is
+   about rather than above them, which is the wrong way round for something
+   worked through in order.
+
+   The four identity cards below do sit in a grid, because they are four
+   independent forms of three or four rows each and stacking them made the page
+   a scroll with nothing on either side of it. auto-fit rather than a media
+   query, for the same reason the battery layout uses one: the width that
+   decides is this container's, and the right-hand panel is open on most field
+   laptops.
+
+   440px is the minimum because it is what a two-column form actually needs,
+   not a guess at a comfortable card. Below it the label column takes its full
+   230px, the control and its hint share whatever is left, and the hint —
+   several lines of why the field matters — ends up a 120px ribbon down the
+   side of the card. One wide column beats two unreadable ones. */
+.rid-stack { display: flex; flex-direction: column; gap: 14px; }
+.rid-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.rid-card { display: flex; flex-direction: column; gap: 10px; }
+
+/* The master switch, in the same shape as the battery estimator's — this is
+   the one control on the page with a consequence rather than a value. */
+.rid-switch-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 12px; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--border-soft);
+}
+.rid-switch-label { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rid-switch-title { font-size: 13px; font-weight: 650; color: var(--text-1); }
+.rid-switch-sub { font-size: 11.5px; color: var(--text-2); }
+
+/* What the broadcast is doing: three rows, each a dot, a fixed label column and
+   a sentence. The label column is fixed so the three sentences start on one
+   vertical line — the rows are read as a group, and a ragged left edge makes
+   scanning them for the one that is wrong slower than it needs to be. */
+.rid-status-rows { display: flex; flex-direction: column; gap: 7px; }
+.rid-status-row {
+  display: grid; grid-template-columns: auto 74px 1fr;
+  align-items: center; gap: 9px;
+}
+.rid-status-label { font-size: 12px; color: var(--text-2); }
+.rid-status-text { font-size: 12.5px; color: var(--text-1); min-width: 0; }
+
+/* The findings list. Errors and warnings differ by icon colour only: they are
+   the same kind of thing at different weights, and a red panel behind half of
+   a pre-flight checklist reads as breakage rather than as work remaining. */
+.rid-checks { display: flex; flex-direction: column; gap: 6px; }
+.rid-check {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 12.5px; color: var(--text-1); line-height: 1.45;
+}
+.rid-check svg { width: 14px; height: 14px; flex: none; margin-top: 2px; }
+.rid-check-error svg { color: var(--critical); }
+.rid-check-warning svg { color: var(--warning); }
+.rid-check-ok svg { color: var(--healthy); }
+.rid-check-text { min-width: 0; }
+
+/* Layout comes from .pform-* ; Remote ID's own departures are a narrower label
+   column and a text field that has to hold twenty characters of serial number
+   without scrolling. Narrower rather than wider, unlike the other pages: these
+   labels are short phrases, and the column they sit in is inside a card that
+   is already sharing the page with another one.
+
+   minmax(0, 1fr) on the control column rather than a bare 1fr: 1fr floors at
+   the content's minimum size, so a long placeholder or an unbroken serial
+   number pushes the track wider than the card and the row overflows. */
+.rid-field { grid-template-columns: minmax(110px, 175px) minmax(0, 1fr); }
+.field-input.rid-input { width: 100%; max-width: 260px; }
+.field-input.rid-input::placeholder { color: var(--text-3); font-style: italic; }
+.field-select.rid-select { min-width: 150px; max-width: 320px; }
+
+/* The character counter sits with the field rather than under it: every one of
+   these lengths is a hard cap in the message format, so how much room is left
+   is part of typing the value, not a footnote to it. */
+.rid-counter {
+  font-size: 11px; color: var(--text-3);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+.rid-card-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* The suggestion sits under the control it would fill, in the hint column, so
+   it reads as an offer about that field rather than as an action on the card. */
+.btn.rid-suggest { grid-column: 2; justify-self: start; }
+
+@media (max-width: 720px) {
+  .btn.rid-suggest { grid-column: 1; }
+  .rid-status-row { grid-template-columns: auto 1fr; }
+  .rid-status-label { display: none; }
+}
+
 /* ===== CONSOLE =====
    One toolbar, then the stream, then the input. The panel used to carry a
    title row (duplicating the tab above it) plus five icon buttons plus a
@@ -4629,12 +4727,60 @@ button.review-finding-head:focus-visible {
 .review-group-count { font-size: 10.5px; color: var(--text-3); }
 
 .review-plot-card { display: flex; flex-direction: column; gap: 8px; }
-.review-plot { width: 100%; height: 240px; }
+/* The title on the left, and on the one plot that has two views, the switch
+   between them on the right. */
+.review-plot-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+}
+/* 268 rather than 240: the legend under the axis is readable now, and it is
+   the bottom margin that grew — without this the drawing area shrank by the
+   height of the legend it gained. */
+.review-plot { width: 100%; height: 268px; }
+.review-plot[hidden] { display: none; }
 /* Equal axes on a wide card leave a square track using a fraction of the
    width. Taller is the only lever that makes it bigger without distorting it,
    and the track is the plot people actually look at. */
 .review-plot[data-equal="1"] { height: min(460px, 70vh); }
 .review-note { font-size: 11px; line-height: 1.5; color: var(--text-3); }
+
+/* ----- Ground track: the same path over imagery -----
+   A segmented control, not tabs: it chooses how to read ONE plot, and the
+   card it sits in is where that choice applies. Built on .link-kinds' metrics
+   so the app has one segmented surface rather than two that nearly match. */
+.review-view-seg {
+  display: flex; gap: 3px; padding: 3px;
+  background: var(--panel-fill); border: 1px solid var(--panel-hairline);
+  border-radius: var(--radius-btn);
+}
+.review-view-opt {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px;
+  border: 0; border-radius: calc(var(--radius-btn) - 2px);
+  background: transparent; color: var(--text-3);
+  font-family: inherit; font-size: 11px; font-weight: 600; letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: background 130ms ease, color 130ms ease;
+}
+.review-view-opt i, .review-view-opt svg { width: 13px; height: 13px; }
+.review-view-opt:hover { color: var(--text-1); }
+.review-view-opt[aria-selected="true"] { background: var(--surface-1); color: var(--text-1); }
+.review-view-opt[aria-selected="true"] i,
+.review-view-opt[aria-selected="true"] svg { color: var(--accent); }
+.review-view-opt:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: -2px; }
+
+.review-track { display: flex; flex-direction: column; gap: 8px; }
+.review-track[hidden] { display: none; }
+/* Clipped, because MapLibre's canvas has square corners of its own and would
+   otherwise sit past the card's. */
+.review-track-map {
+  position: relative; overflow: hidden;
+  border: 1px solid var(--border-soft); border-radius: var(--radius-btn);
+  background: var(--surface-2);
+}
+/* The Plotly legend does not come with the map, so the key is stated here in
+   the same colours and the same order. */
+.review-track-key { padding-top: 2px; }
 .review-messages { max-height: 320px; }
 .logs-head .field-select { max-width: 190px; }
 

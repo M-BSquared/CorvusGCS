@@ -173,6 +173,16 @@ def test_a_recording_becomes_the_same_payload_shape_a_ulog_does() -> None:
         assert any(p["group"] == group for p in data["plots"])
 
 
+def test_the_ground_track_carries_the_fix_it_was_projected_about() -> None:
+    """The track is metres east and north of the first fix, and without that
+    fix in degrees the frontend cannot lay it back over imagery — which is the
+    only way a review answers "where was this flown?"."""
+    data = review_bytes(_a_flight().blob(), "session.tlog")
+    track = next(p for p in data["plots"] if p["id"] == "track")
+    assert track["origin"]["lat"] == pytest.approx(48.1, abs=1e-4)
+    assert track["origin"]["lon"] == pytest.approx(11.5, abs=1e-4)
+
+
 def test_the_timeline_is_reconstructed_from_the_frames() -> None:
     """Corvus writes raw frames with no receive timestamp of its own, so time
     has to come out of the frames. 30 s of samples must read as 30 s."""

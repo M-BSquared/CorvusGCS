@@ -65,6 +65,7 @@ _CONFIG_FIELD_ORDER: tuple[str, ...] = (
     "autoconnect",
     "updates",
     "battery",
+    "remote_id",
     "plugins",
 )
 
@@ -114,7 +115,13 @@ class CorvusConfig:
     (``{"estimate": false, "chemistry": "lipo", "cells": 0, ...}`` — whether
     the remaining figure shown in the interface is the autopilot's own or
     Corvus's own reading of the cell voltage, and the pack it is read against;
-    see ``corvus/battery.py``).
+    see ``corvus/battery.py``),
+    and the Remote ID identity this station broadcasts for its aircraft
+    (``{"enabled": false, "region": "eu", "basic_id": {...},
+    "operator_id": {...}, "self_id": {...}, "system": {...}}`` — the serial
+    number, the operator registration, the flight description and the EU
+    classification, none of which is stored on the vehicle; see
+    ``corvus/remote_id.py``).
     ``plugins`` is the state each TOOLS-tab plugin saves for itself
     (``{"<plugin id>": {...}}``; see ``corvus/plugin_registry.py``).
 
@@ -151,6 +158,7 @@ class CorvusConfig:
     autoconnect: dict[str, Any] | None = None
     updates: dict[str, Any] | None = None
     battery: dict[str, Any] | None = None
+    remote_id: dict[str, Any] | None = None
     plugins: dict[str, Any] | None = None
 
     def apply_overrides(self, **kwargs: Any) -> CorvusConfig:
@@ -540,6 +548,22 @@ def _coerce_battery(raw: Any) -> dict[str, Any] | None:
     return coerce_settings(raw)
 
 
+def _coerce_remote_id(raw: Any) -> dict[str, Any] | None:
+    """Keep the Remote ID identity; bound every field.
+
+    The bounds live in :mod:`corvus.remote_id` with the message building that
+    consumes them, for the same reason the battery ones live with the
+    arithmetic: what comes out of here is transmitted to anyone with a
+    receiver, so a 40-character serial number hand-edited into the config file
+    must be cut before it reaches an encoder that would silently take the
+    first 20 and shift everything after it.
+    """
+    if not isinstance(raw, dict):
+        return None
+    from .remote_id import settings
+    return settings(raw)
+
+
 def _coerce_plugins(raw: Any) -> dict[str, Any] | None:
     """Keep the per-plugin settings objects; drop everything else.
 
@@ -624,6 +648,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
     ui = _coerce_ui(data.get("ui"))
     updates = _coerce_updates(data.get("updates"))
     battery = _coerce_battery(data.get("battery"))
+    remote_id = _coerce_remote_id(data.get("remote_id"))
     plugins = _coerce_plugins(data.get("plugins"))
 
     return CorvusConfig(
@@ -647,6 +672,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         ui=ui,
         updates=updates,
         battery=battery,
+        remote_id=remote_id,
         plugins=plugins,
     )
 
@@ -719,6 +745,13 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
         out["updates"] = dict(cfg.updates)
     if cfg.battery is not None:
         out["battery"] = dict(cfg.battery)
+    if cfg.remote_id is not None:
+        # Nested one level deeper than the others, so a shallow dict() would
+        # hand the caller the stored sub-dicts to mutate.
+        out["remote_id"] = {
+            k: (dict(v) if isinstance(v, dict) else v)
+            for k, v in cfg.remote_id.items()
+        }
     if cfg.plugins is not None:
         out["plugins"] = {k: dict(v) for k, v in cfg.plugins.items()}
     # Stable key order for a readable on-disk diff.

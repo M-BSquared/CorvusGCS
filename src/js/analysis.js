@@ -879,6 +879,14 @@ Corvus.analysis = (function () {
         ui.observer = null;
         ui.pending = null;
       }
+      // A satellite view holds a WebGL context and a live tile fetch, and the
+      // browser hands out about sixteen contexts in total: a review left open
+      // and reopened would stop drawing imagery long before it stopped
+      // drawing charts.
+      if (ui.maps) {
+        ui.maps.forEach((m) => { try { m.remove(); } catch (_e) {} });
+        ui.maps = [];
+      }
       if (!ui.drawn) return;
       if (typeof window !== "undefined" && window.Plotly) {
         ui.drawn.forEach((node) => {
@@ -1197,12 +1205,20 @@ Corvus.analysis = (function () {
 
     function appendPlot(out, plot) {
       const card = S.el("div", "page-card review-plot-card");
-      card.appendChild(S.sectionTitle(plot.title));
+      const head = S.el("div", "review-plot-head");
+      head.appendChild(S.sectionTitle(plot.title));
+      card.appendChild(head);
       const host = S.el("div", "review-plot");
       // Equal-axis plots are given more height: the aspect ratio is fixed, so
       // height is the only way to make the track larger without distorting it.
       if (plot.equal) host.dataset.equal = "1";
       card.appendChild(host);
+      // The ground track is the one plot that answers a question about the
+      // WORLD rather than about the aircraft, and metres east of an origin
+      // nobody surveyed cannot answer it. When the backend sends the origin
+      // the same path is offered over imagery — the field, the runway, the
+      // treeline the turn was flown around.
+      if (mappable(plot)) card.appendChild(trackMapView(head, host, plot));
       if (plot.note) card.appendChild(S.el("div", "review-note", plot.note));
       out.appendChild(card);
       // Drawn when it comes into view. A full review is three dozen Plotly
@@ -1331,9 +1347,15 @@ Corvus.analysis = (function () {
         return trace;
       });
       const layout = Object.assign({}, S.plotlyLayout(plot.unit || ""), {
-        margin: { l: 52, r: 12, t: 6, b: 34 },
+        // The bottom margin holds the axis title AND the legend under it: the
+        // legend is the key to which line is which, and at 9 px it was a row
+        // of colours nobody could read the names beside.
+        margin: { l: 52, r: 12, t: 6, b: 62 },
         showlegend: true,
-        legend: { orientation: "h", y: -0.25, font: { size: 9 } },
+        legend: {
+          orientation: "h", y: -0.2, yanchor: "top",
+          font: { size: 12 }, itemsizing: "constant",
+        },
       });
       // Not every plot is against time: the ground track is north over east.
       if (plot.xlabel) {
@@ -1410,6 +1432,307 @@ Corvus.analysis = (function () {
       } catch (err) {
         console.error("flight review plot failed:", err);
       }
+    }
+
+    /* ------------- the ground track over imagery ------------- */
+
+    /* WGS-84 mean radius. The same constant the backend projected with, and it
+       has to be: this undoes that projection point by point, and a different
+       radius would slide the whole track a few metres off the ground it was
+       flown over. */
+    const EARTH_RADIUS_M = 6371000;
+
+    /** Can this plot be laid over imagery?
+     *
+     *  Only a track, and only one the backend gave an origin for — metres east
+     *  of an unknown point cannot be placed on the Earth. A log flown without
+     *  a global reference legitimately has no origin, and that is the case
+     *  this returns false for rather than guessing one. */
+    function mappable(plot) {
+      return !!(plot && plot.origin
+        && typeof plot.origin.lat === "number"
+        && typeof plot.origin.lon === "number"
+        && typeof window !== "undefined"
+        && window.maplibregl);
+    }
+
+    /** One local-frame point, back on the globe.
+     *
+     *  The inverse of the backend's azimuthal equidistant projection about the
+     *  origin — not a flat-earth approximation of it, so the track drawn here
+     *  is the track the estimator flew and not one a kilometre of easting has
+     *  quietly sheared. */
+    function toLngLat(origin, east, north) {
+      const e = Number(east);
+      const n = Number(north);
+      if (!isFinite(e) || !isFinite(n)) return null;
+      const lat0 = (origin.lat * Math.PI) / 180;
+      const lon0 = (origin.lon * Math.PI) / 180;
+      const distance = Math.sqrt(e * e + n * n);
+      if (!(distance > 1e-6)) return [origin.lon, origin.lat];
+      const c = distance / EARTH_RADIUS_M;
+      const sinC = Math.sin(c);
+      const cosC = Math.cos(c);
+      const sinLat0 = Math.sin(lat0);
+      const cosLat0 = Math.cos(lat0);
+      const lat = Math.asin(cosC * sinLat0 + (n * sinC * cosLat0) / distance);
+      const lon = lon0 + Math.atan2(e * sinC,
+        distance * cosLat0 * cosC - n * sinC * sinLat0);
+      return [(lon * 180) / Math.PI, (lat * 180) / Math.PI];
+    }
+
+    /** The plot's series as map paths, in the colours the chart drew them in.
+     *  Same palette, same order — the two views of one plot must not disagree
+     *  about which line is the estimate. */
+    function trackPaths(plot) {
+      const palette = Corvus.ui.chartColors();
+      const order = ["nav", "healthy", "warning", "critical", "accent"];
+      const paths = [];
+      (plot.series || []).forEach((s, index) => {
+        const span = Math.min((s.x || []).length, (s.y || []).length);
+        const coords = [];
+        for (let i = 0; i < span; i++) {
+          const point = toLngLat(plot.origin, s.x[i], s.y[i]);
+          if (point) coords.push(point);
+        }
+        if (!coords.length) return;
+        paths.push({
+          name: s.name,
+          color: palette[order[index % order.length]],
+          coords,
+          points: s.draw === "markers",
+        });
+      });
+      return paths;
+    }
+
+    /** One layer's descriptor out of the catalogue the Home map hydrated.
+     *  There is one of those in the app; a second copy here would be a second
+     *  thing to keep in step with corvus/tile_sources.py. */
+    function layerSpecFor(id) {
+      return (id && Corvus.map && typeof Corvus.map.layerSpec === "function")
+        ? Corvus.map.layerSpec(id) : null;
+    }
+
+    /** Which base layer this view opens on.
+     *
+     *  The operator's own choice when that is already imagery — the same
+     *  ground they look at everywhere else in the app, and the tiles most
+     *  likely to be in the offline cache. When it is a street map, the same
+     *  provider's satellite layer instead, because a street map is not what
+     *  this button promised. */
+    function imageryLayer() {
+      const current = (Corvus.map && typeof Corvus.map.getBaseLayer === "function")
+        ? Corvus.map.getBaseLayer() : null;
+      const spec = layerSpecFor(current);
+      if (spec && (spec.style === "satellite" || spec.style === "hybrid")) {
+        return current;
+      }
+      const provider = spec && spec.provider;
+      const candidate = (provider && provider !== "esri" && provider !== "osm")
+        ? provider + "_satellite" : "satellite";
+      // layerSpec falls back to the bootstrap descriptor for an id it does not
+      // know, so the id coming back is how an unknown one is told apart.
+      const alt = layerSpecFor(candidate);
+      return (alt && alt.id === candidate) ? candidate : "satellite";
+    }
+
+    /** A one-raster style pointed at the backend tile proxy, so this map is as
+     *  offline-capable as the Home one — the browser never reaches upstream. */
+    function rasterStyle(layerId, spec) {
+      return {
+        version: 8,
+        sources: {
+          base: {
+            type: "raster",
+            tiles: ["/api/tiles/" + layerId + "/{z}/{x}/{y}.png"],
+            tileSize: 256,
+            maxzoom: (spec && spec.maxzoom) || 19,
+            attribution: (spec && spec.attribution) || "",
+          },
+        },
+        layers: [{ id: "base", type: "raster", source: "base" }],
+      };
+    }
+
+    /**
+     * The chart / satellite switch, and the map it switches to.
+     *
+     * The chart stays the primary reading: metres east and north against equal
+     * axes is what makes an estimator error measurable, and imagery cannot do
+     * that. What imagery does is answer "where was this?", which the local
+     * frame cannot — so the two are one plot with two views rather than two
+     * plots, and the switch sits in the card's own head.
+     *
+     * The map is built on the first press, not with the card: it is a WebGL
+     * context and a tile fetch, and a review the reader never switches should
+     * cost neither.
+     */
+    function trackMapView(head, chartHost, plot) {
+      const wrap = S.el("div", "review-track");
+      wrap.hidden = true;
+      const mapHost = S.el("div", "review-plot review-track-map");
+      mapHost.dataset.equal = "1";
+      wrap.appendChild(mapHost);
+      // The map has no Plotly legend, and a track drawn without one is four
+      // anonymous lines. Same colours, same order, stated in the card.
+      const key = S.el("div", "review-mode-key review-track-key");
+      wrap.appendChild(key);
+
+      const seg = S.el("div", "review-view-seg");
+      const chartBtn = viewOption("Chart", "chart-spline");
+      const mapBtn = viewOption("Satellite", "satellite");
+      seg.appendChild(chartBtn);
+      seg.appendChild(mapBtn);
+
+      function select(showMap) {
+        chartBtn.setAttribute("aria-selected", showMap ? "false" : "true");
+        mapBtn.setAttribute("aria-selected", showMap ? "true" : "false");
+        wrap.hidden = !showMap;
+        chartHost.hidden = showMap;
+        if (showMap) showTrackMap(mapHost, key, plot);
+        // Plotly measured a hidden div as zero while the map was up; its own
+        // responsive handler never fires on an unhide, so the chart has to be
+        // told it has a size again.
+        else resizeChart(chartHost);
+      }
+      chartBtn.addEventListener("click", () => select(false));
+      mapBtn.addEventListener("click", () => select(true));
+      select(false);
+      head.appendChild(seg);
+      return wrap;
+    }
+
+    function viewOption(label, iconName) {
+      const btn = S.el("button", "review-view-opt");
+      btn.type = "button";
+      btn.setAttribute("aria-selected", "false");
+      btn.appendChild(S.icon(iconName, 13));
+      btn.appendChild(S.el("span", "", label));
+      return btn;
+    }
+
+    function resizeChart(host) {
+      if (typeof window === "undefined" || !window.Plotly || !window.Plotly.Plots) return;
+      try { window.Plotly.Plots.resize(host); } catch (_e) { /* never drawn */ }
+    }
+
+    /** Build the map on first show; on every later show, only re-measure it —
+     *  a map that was hidden has been sized to nothing. */
+    function showTrackMap(mapHost, key, plot) {
+      if (mapHost.dataset.built === "1") {
+        if (mapHost.trackMap) {
+          try { mapHost.trackMap.resize(); } catch (_e) {}
+        }
+        return;
+      }
+      mapHost.dataset.built = "1";
+      const paths = trackPaths(plot);
+      if (!paths.length) {
+        mapHost.appendChild(S.el("div", "guidance-empty",
+          "This track has no points that can be placed on a map."));
+        return;
+      }
+      paths.forEach((path) => {
+        const chip = S.el("span", "review-mode-chip");
+        const dot = S.el("span", "review-mode-dot");
+        dot.style.background = path.color;
+        chip.appendChild(dot);
+        chip.appendChild(S.el("span", "", path.name));
+        key.appendChild(chip);
+      });
+
+      const layerId = imageryLayer();
+      const spec = layerSpecFor(layerId);
+      const bounds = new window.maplibregl.LngLatBounds();
+      paths.forEach((path) => path.coords.forEach((c) => bounds.extend(c)));
+      let map;
+      try {
+        map = new window.maplibregl.Map({
+          container: mapHost,
+          style: rasterStyle(layerId, spec),
+          bounds,
+          // A track is a few hundred metres across and maxZoom would otherwise
+          // put the camera past the deepest tile the provider serves, which is
+          // a blurred upscale of imagery that exists at the zoom below it.
+          fitBoundsOptions: { padding: 36, maxZoom: Math.min(18,
+            (spec && spec.maxzoom) || 19) },
+          attributionControl: false,
+          keyboard: false,
+          // The map sits in the middle of a page people scroll through. A
+          // wheel that zooms it instead of scrolling past it traps the reader
+          // on one plot, so zooming asks for the modifier and says so.
+          cooperativeGestures: true,
+        });
+      } catch (err) {
+        console.error("track map failed:", err);
+        mapHost.appendChild(S.el("div", "guidance-empty",
+          "The map could not be opened on this machine."));
+        return;
+      }
+      // The credit the imagery is served under, worded as the Home map words
+      // it — the same tiles, so the same attribution.
+      try {
+        map.addControl(new window.maplibregl.AttributionControl(
+          (Corvus.map && typeof Corvus.map.attributionOptions === "function")
+            ? Corvus.map.attributionOptions()
+            : { compact: true, customAttribution: [] },
+        ), "bottom-left");
+        map.addControl(new window.maplibregl.NavigationControl(
+          { showCompass: false }), "top-right");
+      } catch (_e) { /* a control is not worth losing the map over */ }
+      map.on("load", () => {
+        if (!mapHost.isConnected) return;
+        addTrackLayers(map, paths);
+      });
+      mapHost.trackMap = map;
+      // Purged with the review. A MapLibre map holds a WebGL context, and a
+      // browser hands out about sixteen of them: dropping the DOM alone would
+      // leak one per review opened until the imagery stopped appearing.
+      if (ui && ui.kind === "review") {
+        ui.maps = ui.maps || [];
+        ui.maps.push(map);
+      }
+    }
+
+    /** Every series on the imagery: a dark casing under a coloured core, the
+     *  road-map trick the Home track uses. A single stroke is legible on grass
+     *  and invisible over a ploughed field, and this plot is read over exactly
+     *  that kind of mixed ground. */
+    function addTrackLayers(map, paths) {
+      paths.forEach((path, index) => {
+        const id = "track-" + index;
+        map.addSource(id, {
+          type: "geojson",
+          data: {
+            type: "Feature",
+            properties: {},
+            geometry: path.points
+              ? { type: "MultiPoint", coordinates: path.coords }
+              : { type: "LineString", coordinates: path.coords },
+          },
+        });
+        if (path.points) {
+          map.addLayer({
+            id: id + "-points", source: id, type: "circle",
+            paint: {
+              "circle-radius": 4.5, "circle-color": path.color,
+              "circle-stroke-width": 1.5, "circle-stroke-color": "#0B0F14",
+            },
+          });
+          return;
+        }
+        map.addLayer({
+          id: id + "-casing", source: id, type: "line",
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: { "line-color": "#0B0F14", "line-width": 5, "line-opacity": 0.55 },
+        });
+        map.addLayer({
+          id: id + "-line", source: id, type: "line",
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: { "line-color": path.color, "line-width": 2.4, "line-opacity": 0.95 },
+        });
+      });
     }
 
     /* ---------------- shared ---------------- */

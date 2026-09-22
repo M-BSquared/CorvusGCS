@@ -30,10 +30,10 @@ from email.utils import formatdate, parsedate_to_datetime
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import (
-    ardupilot_battery, ardupilot_motors, ardupilot_rc, ardupilot_safety,
-    ardupilot_tuning, autopilot, battery, battery_config, geocode, mission,
-    motor_config, rc_config, safety_config, sik_config, sik_service,
-    tile_sources, tuning_config,
+    ardupilot_battery, ardupilot_motors, ardupilot_rc, ardupilot_remote_id,
+    ardupilot_safety, ardupilot_tuning, autopilot, battery, battery_config,
+    geocode, mission, motor_config, rc_config, remote_id, remote_id_config,
+    safety_config, sik_config, sik_service, tile_sources, tuning_config,
 )
 from .config import (
     CorvusConfig,
@@ -1583,6 +1583,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             merged["updates"] = cfg.updates
         if cfg.battery is not None:
             merged["battery"] = cfg.battery
+        if cfg.remote_id is not None:
+            merged["remote_id"] = cfg.remote_id
         if cfg.plugins is not None:
             merged["plugins"] = cfg.plugins
 
@@ -1591,7 +1593,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             "params_dir", "firmware_dir", "log_download_dir", "missions_dir",
             "tile_sources", "stream_rates", "ssh_connections",
             "theme", "map", "branding", "controls", "ui", "updates", "plugins",
-            "autoconnect", "battery",
+            "autoconnect", "battery", "remote_id",
         }
         # Real config keys that belong to their own endpoint. A client that
         # POSTs back a whole GET /api/config body carries them along, and
@@ -1682,6 +1684,26 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 # chemistry and the estimator switch back to their defaults.
                 base = merged.get("battery")
                 merged["battery"] = {**base, **value} if isinstance(base, dict) else dict(value)
+            elif key == "remote_id":
+                if not isinstance(value, dict):
+                    return None, "remote_id must be an object"
+                # Merged one level deep, because the page saves one card at a
+                # time: a POST carrying only "basic_id" must not clear the
+                # operator registration the operator typed into the card above
+                # it. Deeper than that is _coerce_remote_id's job — every leaf
+                # is re-coerced from the merge below.
+                base = merged.get("remote_id")
+                if isinstance(base, dict):
+                    nested = dict(base)
+                    for sub_key, sub_value in value.items():
+                        if (isinstance(sub_value, dict)
+                                and isinstance(nested.get(sub_key), dict)):
+                            nested[sub_key] = {**nested[sub_key], **sub_value}
+                        else:
+                            nested[sub_key] = sub_value
+                    merged["remote_id"] = nested
+                else:
+                    merged["remote_id"] = dict(value)
             elif key == "plugins":
                 if not isinstance(value, dict):
                     return None, "plugins must be an object"
@@ -1746,8 +1768,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # replacing it would set a per-request instance attribute that dies
         # with the handler, leaving the next request reading a stale value.
         #
-        # In place means the seventeen assignments below are seventeen separate
-        # visible states. Under the lock they are one: no concurrent save can
+        # In place means every assignment below is its own visible state.
+        # Under the lock they are one: no concurrent save can
         # serialize the object between two of them (which wrote a file that was
         # part old config and part new), and no second updater can interleave
         # its own assignments with these.
@@ -1770,10 +1792,12 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             cfg.autoconnect = new_cfg.autoconnect
             cfg.updates = new_cfg.updates
             cfg.battery = new_cfg.battery
+            cfg.remote_id = new_cfg.remote_id
             cfg.plugins = new_cfg.plugins
             self._save_live_config()
             self._refresh_autoconnect_session(cfg)
             self._refresh_battery_settings(cfg)
+            self._refresh_remote_id(cfg)
             return to_public_dict(cfg), None
 
     def _refresh_battery_settings(self, cfg: Any) -> None:
@@ -1791,6 +1815,23 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             bridge.set_battery_settings(getattr(cfg, "battery", None))
         except Exception:  # noqa: BLE001 - never fail a config save over this
             logger.exception("battery: could not apply the new estimator settings")
+
+    def _refresh_remote_id(self, cfg: Any) -> None:
+        """Hand the bridge the Remote ID identity just persisted.
+
+        It has to take effect now rather than on the next launch, and for a
+        sharper reason than the battery estimator's: an operator who has just
+        corrected a mistyped serial number is standing next to an aircraft that
+        is still broadcasting the old one to everyone in range. Never raises: a
+        settings save must not 500 over the feature it is configuring.
+        """
+        bridge = self.mavlink
+        if bridge is None or not hasattr(bridge, "set_remote_id"):
+            return
+        try:
+            bridge.set_remote_id(getattr(cfg, "remote_id", None))
+        except Exception:  # noqa: BLE001 - never fail a config save over this
+            logger.exception("remote id: could not apply the new identity")
 
     def _refresh_autoconnect_session(self, cfg: Any) -> None:
         """Point the live auto-connect session at the toggles just persisted.
@@ -2215,8 +2256,9 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             "params": params,
         })
 
-    # Which parameter schema the setup pages are built from. The four pages —
-    # motors, safety, tuning, radio — are each a list of *parameter names*, and
+    # Which parameter schema the setup pages are built from. The pages —
+    # motors, safety, tuning, radio, battery, Remote ID — are each a list of
+    # *parameter names*, and
     # not one PX4 name exists on an ArduPilot vehicle. Choosing the wrong module
     # does not error; the vehicle answers for nothing and the page comes up
     # empty, which is how an ArduPilot operator used to get a blank Safety page
@@ -2225,13 +2267,13 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         autopilot.STACK_ARDUPILOT: {
             "motors": ardupilot_motors, "safety": ardupilot_safety,
             "tuning": ardupilot_tuning, "rc": ardupilot_rc,
-            "battery": ardupilot_battery,
+            "battery": ardupilot_battery, "remote_id": ardupilot_remote_id,
         },
     }
     _DEFAULT_SCHEMAS: dict[str, Any] = {
         "motors": motor_config, "safety": safety_config,
         "tuning": tuning_config, "rc": rc_config,
-        "battery": battery_config,
+        "battery": battery_config, "remote_id": remote_id_config,
     }
 
     def _schema(self, page: str) -> Any:
@@ -2439,6 +2481,112 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         payload["connected"] = bool(values)
         if not values:
             payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
+        self._send_json(payload)
+
+    @route("GET", "/api/remoteid")
+    def _api_remote_id(self) -> None:
+        """Return the Remote ID page: the identity, the rules, and the vehicle.
+
+        This is the one setup page whose subject is not the aircraft. The
+        serial number, the operator registration, the flight description and
+        the EU classification are the *operator's* and are not stored on the
+        vehicle at all — they are broadcast to it over the link once a second
+        by whichever station is flying it (see :mod:`corvus.remote_id`). So the
+        response carries three separate things rather than one set of sections:
+
+        ``identity`` / ``configured``
+            What Corvus broadcasts, resolved and as-typed. Written back through
+            ``POST /api/config`` under the same key, like the battery
+            estimator's settings.
+
+        ``findings`` / ``schema``
+            What each region's broadcast format asks for that this identity
+            does not have, and the option tables the form is drawn from. The
+            findings are advisory by design: an aircraft flown under a national
+            exemption is not misconfigured, and a page that refused to save
+            would be wrong about it.
+
+        ``sections`` / ``status``
+            The vehicle's own Remote ID parameters, read in one batch like
+            every other setup page, and what the live broadcast is doing —
+            whether the link can carry the messages at all, whether they are
+            going out, and the arm verdict the aircraft sent back.
+
+        Always 200 so the page can render a "not connected" state instead of an
+        error banner; ``connected`` says which it is. The identity half renders
+        either way — it is configured on the ground, often before the aircraft
+        is powered.
+        """
+        schema = self._schema("remote_id")
+        stored = getattr(self.config, "remote_id", None)
+        identity = remote_id.settings(stored)
+        configured = dict(stored) if isinstance(stored, dict) else {}
+        base: dict[str, Any] = {
+            "connected": False, "sections": [], "received": 0,
+            "identity": identity,
+            "configured": configured,
+            "schema": remote_id.schema(),
+            "findings": remote_id.findings(identity),
+            "status": {"enabled": bool(identity["enabled"]), "supported": False,
+                       "broadcasting": False, "last_sent_age": None,
+                       "error": "", "arm_status": None},
+            "suggested_ua_type": 0,
+        }
+        if self.mavlink is None:
+            self._send_json(base)
+            return
+        if hasattr(self.mavlink, "remote_id_status"):
+            try:
+                base["status"] = self.mavlink.remote_id_status()
+            except Exception:  # noqa: BLE001 - status must never 500 the page
+                logger.exception("remote id status failed")
+        # What the airframe looks like, offered as a suggestion for the UA type.
+        # Never written on the operator's behalf: what an aircraft *is* and what
+        # it was *registered as* are two different facts, and only the second
+        # one is the one a regulator reads.
+        base["suggested_ua_type"] = remote_id.ua_type_for_vehicle(self._vehicle_type_id())
+        try:
+            values = self.mavlink.fetch_params(schema.param_names())
+        except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
+            logger.exception("remote id parameter fetch failed")
+            self._send_json(dict(base, error=str(exc)))
+            return
+        payload = dict(base, **schema.build(values))
+        payload["connected"] = bool(values)
+        if not values:
+            payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
+        self._send_json(payload)
+
+    @route("GET", "/api/remoteid/status")
+    def _api_remote_id_status(self) -> None:
+        """Return only what the Remote ID broadcast is doing right now.
+
+        Split out of ``/api/remoteid`` because the page polls it. That endpoint
+        reads the vehicle's parameters, and a parameter read on a link that is
+        reconnecting can sit for tens of seconds behind the bridge's operation
+        lock — polled every few seconds, those pile up against the browser's
+        six-connection-per-origin limit and starve the map and every other
+        fetch on the page. This one touches no MAVLink at all: it reads three
+        fields the bridge already holds in memory and returns.
+
+        The findings ride along because they are derived from the stored
+        identity alone, so the page can keep its checklist in step with a save
+        without asking for the schema and the parameters a second time.
+        """
+        stored = getattr(self.config, "remote_id", None)
+        identity = remote_id.settings(stored)
+        payload: dict[str, Any] = {
+            "identity": identity,
+            "findings": remote_id.findings(identity),
+            "status": {"enabled": bool(identity["enabled"]), "supported": False,
+                       "broadcasting": False, "last_sent_age": None,
+                       "error": "", "arm_status": None},
+        }
+        if self.mavlink is not None and hasattr(self.mavlink, "remote_id_status"):
+            try:
+                payload["status"] = self.mavlink.remote_id_status()
+            except Exception:  # noqa: BLE001 - a poll must never 500 the page
+                logger.exception("remote id status failed")
         self._send_json(payload)
 
     @route("GET", "/api/rc")
@@ -6356,6 +6504,11 @@ def create_server(
     # The battery estimator runs on the telemetry path, so the bridge needs the
     # operator's settings before the first frame rather than at the first save.
     mavlink.set_battery_settings(config.battery)
+    # And the Remote ID identity before the first heartbeat, for a stricter
+    # reason: an aircraft that connects and starts broadcasting a *default*
+    # identity for the seconds until somebody opens the settings page has
+    # broadcast a false one, which is worse than having broadcast nothing.
+    mavlink.set_remote_id(config.remote_id)
 
     autoconnect_session = build_autoconnect_session(config)
     apply_startup_connection(
