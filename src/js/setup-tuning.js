@@ -74,7 +74,7 @@ Corvus.setupTuning = (function () {
     const page = S.el("div", "setup-page tune-page");
     page.appendChild(S.backButton(navigateBack));
     page.appendChild(S.pageHeader("PID Tuning",
-      "The control cascade, one loop at a time — by hand or by autotune"));
+      "The control cascade, one loop at a time, by hand or by autotune"));
 
     // Readiness strip: what each action needs, stated before it is attempted.
     // Autotune and a gain edit want opposite states, which is exactly why both
@@ -92,13 +92,16 @@ Corvus.setupTuning = (function () {
     });
     const actionsStatus = S.el("div", "params-actions-status");
     actions.appendChild(reloadBtn);
+    // Placed once the state exists: the button reads it.
+    const checkSlot = S.el("span", "tune-check-slot");
+    actions.appendChild(checkSlot);
     actions.appendChild(actionsStatus);
     page.appendChild(actions);
 
     const banner = S.el("div", "params-banner");
     banner.hidden = true;
     banner.textContent =
-      "Gains are read-only while armed — land and disarm to change them. "
+      "Gains are read-only while armed. Land and disarm to change them. "
       + "The autotune is the opposite: it only runs in flight.";
     page.appendChild(banner);
 
@@ -123,7 +126,12 @@ Corvus.setupTuning = (function () {
       linkChip, flightChip,
       reduced: S.reducedMotion(),
       startMs: Date.now(),
+      // Check values (setupShared): the description it reads the field list
+      // from, what the operator set until a check confirms it, and the last
+      // check's outcome until the next one.
+      doc: null, wanted: {}, check: null, checking: false,
     };
+    checkSlot.appendChild(S.checkButton(state, CHECK));
 
     applyVehicle(state, Corvus.telemetry && Corvus.telemetry.getState());
     paintReady(state);
@@ -138,7 +146,10 @@ Corvus.setupTuning = (function () {
     // slower or absent, which the charts show honestly.
     setStream(true);
 
-    reloadBtn.addEventListener("click", () => load(state));
+    reloadBtn.addEventListener("click", () => {
+      state.check = null;
+      load(state);
+    });
     load(state);
 
     function setStream(enabled) {
@@ -192,13 +203,23 @@ Corvus.setupTuning = (function () {
   /* Load + render                                                       */
   /* ================================================================== */
 
-  function load(state) {
+  // Check values: the shared read back, redrawn by a fresh load().
+  const CHECK = {
+    prefix: "tune",
+    reload: (state) => load(state, true),
+    setStatus: (state, cls, text) => S.setActionsStatus(state.actionsStatus, cls, text),
+  };
+
+  /** `fresh` reads every gain from the vehicle rather than the cache. */
+  function load(state, fresh) {
     if (state.loading) return Promise.resolve();
     state.loading = true;
     state.reloadBtn.disabled = true;
+    S.recheckButton(state, CHECK);
     S.setActionsStatus(state.actionsStatus, "pending", "Reading tuning parameters…");
-    return Corvus.telemetry.requestJson("/api/tuning").then((doc) => {
+    return Corvus.telemetry.requestJson(fresh ? "/api/tuning?fresh=1" : "/api/tuning").then((doc) => {
       if (state.destroyed) return;
+      state.doc = doc || {};
       renderGroups(state, doc || {});
       if (!doc || !doc.connected) {
         S.setActionsStatus(state.actionsStatus, "err",
@@ -208,6 +229,7 @@ Corvus.setupTuning = (function () {
       }
     }).catch((err) => {
       if (state.destroyed) return;
+      state.doc = {};
       renderGroups(state, {});
       S.setActionsStatus(state.actionsStatus, "err",
         (err && err.message) || "Could not read the tuning parameters");
@@ -215,6 +237,7 @@ Corvus.setupTuning = (function () {
       if (state.destroyed) return;
       state.loading = false;
       state.reloadBtn.disabled = false;
+      S.recheckButton(state, CHECK);
     });
   }
 
@@ -272,6 +295,7 @@ Corvus.setupTuning = (function () {
       tab.setAttribute("aria-selected", active ? "true" : "false");
     });
 
+    if (state.check) state.host.appendChild(S.checkCard(state.check, "tune"));
     if (group.hint) state.host.appendChild(S.el("div", "tune-hint", group.hint));
     if (group.kind === "autotune") state.host.appendChild(buildAutotune(state, group));
     if (group.charts && group.charts.length) {
@@ -506,7 +530,7 @@ Corvus.setupTuning = (function () {
     // operator standing in a field nothing they can act on.
     let text = "";
     if (!state.connected) {
-      text = "No link to the vehicle — connect before autotuning.";
+      text = "No link to the vehicle. Connect before autotuning.";
     } else if (!state.armed) {
       text = "The autotune runs in flight. Arm the vehicle and take off first.";
     } else if (state.landed === 1) {

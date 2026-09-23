@@ -50,7 +50,7 @@ fi
 # which step wanted it. Name the file, in the first second.
 MISSING=""
 for required in \
-    VERSION requirements.txt LICENSE.md \
+    VERSION pyproject.toml LICENSE.md \
     corvus src assets plugins assets/CorvusGCS_logo.png
 do
     [ -e "$REPO_DIR/$required" ] || MISSING="$MISSING  $required"
@@ -120,7 +120,7 @@ else
     echo "WARNING: libpython${PY_MM}.so.1.0 not found at $PY_LIBDIR (host likely static-libpython)"
 fi
 
-# ---- 3. pip-install deps (the env from environment.yml, minus conda) --------
+# ---- 3. pip-install deps (pyproject.toml's `app` group) ---------------------
 PIP_LOG="$BUILD_DIR/pip-install.log"
 mkdir -p "$BUILD_DIR"
 : > "$PIP_LOG"
@@ -129,33 +129,36 @@ if ! "$APPDIR/usr/bin/python3" -m pip install --upgrade pip >>"$PIP_LOG" 2>&1; t
     echo "ERROR: pip self-upgrade failed; log: $PIP_LOG" >&2
     exit 1
 fi
-# requirements.txt, not a hand-written list: this script used to install the
-# five runtime packages with NO version floors, so the Linux artifact could be
-# built against a pymavlink older than the >=2.4 the code needs and nothing
-# would catch it until the field.
+# pyproject.toml's `app` group, not a hand-written list: this script used to
+# install the five runtime packages with NO version floors, so the Linux
+# artifact could be built against a pymavlink older than the >=2.4 the code
+# needs and nothing would catch it until the field.
 #
-# Which file, in order: $CORVUS_REQUIREMENTS, then requirements.lock if the
-# repo has one, then requirements.txt. The lock is what makes a release
-# rebuildable — requirements.txt states floors, so installing from it in six
-# months resolves to whatever is newest then. Every build writes the set it
-# actually installed to dist/*.lock; promoting one to requirements.lock at tag
-# time pins the next rebuild to it.
+# Which source, in order: $CORVUS_REQUIREMENTS, then requirements.lock if the
+# repo has one, then the `app` group. The lock is what makes a release
+# rebuildable — the group states floors, so installing from it in six months
+# resolves to whatever is newest then. Every build writes the set it actually
+# installed to dist/*.lock; promoting one to requirements.lock at tag time
+# pins the next rebuild to it.
 REQUIREMENTS="${CORVUS_REQUIREMENTS:-}"
-if [ -z "$REQUIREMENTS" ]; then
-    if [ -f "$REPO_DIR/requirements.lock" ]; then
-        REQUIREMENTS="$REPO_DIR/requirements.lock"
-    else
-        REQUIREMENTS="$REPO_DIR/requirements.txt"
-    fi
+if [ -z "$REQUIREMENTS" ] && [ -f "$REPO_DIR/requirements.lock" ]; then
+    REQUIREMENTS="$REPO_DIR/requirements.lock"
 fi
-if [ ! -f "$REQUIREMENTS" ]; then
-    echo "ERROR: missing $REQUIREMENTS" >&2
-    exit 1
+if [ -n "$REQUIREMENTS" ]; then
+    if [ ! -f "$REQUIREMENTS" ]; then
+        echo "ERROR: missing $REQUIREMENTS" >&2
+        exit 1
+    fi
+    DEPS_ARGS=(-r "$REQUIREMENTS")
+    DEPS_LABEL="$(basename "$REQUIREMENTS")"
+else
+    DEPS_ARGS=(--group "$REPO_DIR/pyproject.toml:app")
+    DEPS_LABEL="pyproject.toml [app]"
 fi
 LOCK_OUT="$REPO_DIR/dist/Corvus_GCS-${VERSION}-x86_64.lock"
-echo ">>> Installing runtime deps from $(basename "$REQUIREMENTS") ..."
+echo ">>> Installing runtime deps from $DEPS_LABEL ..."
 if ! "$APPDIR/usr/bin/python3" -m pip install \
-        -r "$REQUIREMENTS" >>"$PIP_LOG" 2>&1; then
+        "${DEPS_ARGS[@]}" >>"$PIP_LOG" 2>&1; then
     echo "ERROR: dependency install failed; log: $PIP_LOG" >&2
     exit 1
 fi

@@ -66,7 +66,7 @@ Corvus.credits = (function () {
     {
       name: "JetBrains Mono",
       license: "SIL Open Font License 1.1",
-      role: "Monospace typeface — telemetry values, console, coordinates.",
+      role: "Monospace typeface for telemetry values, console, coordinates.",
       url: "https://www.jetbrains.com/lp/mono/",
     },
   ];
@@ -105,7 +105,7 @@ Corvus.credits = (function () {
     {
       name: "pytest",
       license: "MIT",
-      role: "Test runner (development only — not shipped).",
+      role: "Test runner (development only, not shipped).",
       url: "https://pytest.org/",
     },
   ];
@@ -120,7 +120,7 @@ Corvus.credits = (function () {
     // This panel names the licence of every component it lists, so leaving the
     // product's own licence off it was the one gap. The file it points at ships
     // inside the bundle, so this is a claim the operator can actually check.
-    license: "Sustainable Use License 1.0 — see LICENSE.md in the application "
+    license: "Sustainable Use License 1.0. See LICENSE.md in the application "
              + "folder: internal business, non-commercial and personal use; "
              + "not for resale.",
   };
@@ -201,7 +201,7 @@ Corvus.credits = (function () {
         }));
       });
     }).catch(() => {
-      pending.textContent = "Map attributions unavailable — the backend did not respond.";
+      pending.textContent = "Map attributions unavailable. The backend did not respond.";
     });
 
     return sec;
@@ -253,7 +253,7 @@ Corvus.credits = (function () {
     footer.className = "credits-footer";
     footer.textContent =
       "Every library and font above is vendored under src/vendor/ and loaded " +
-      "from disk — the interface requests nothing from the internet. Map tiles " +
+      "from disk. The interface requests nothing from the internet. Map tiles " +
       "are fetched by the backend and cached for offline use.";
     frag.appendChild(footer);
 

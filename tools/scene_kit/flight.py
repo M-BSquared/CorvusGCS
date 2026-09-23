@@ -27,6 +27,9 @@ from typing import Callable, Iterable
 # default map centre (src/js/map.js). [lat, lon] here — the human order; the
 # map's [lng, lat] conversion happens where it talks to MapLibre.
 NEUBIBERG = (48.080217, 11.640969)
+# The short hop across the Neubiberg campus used for the plugin picture.
+CAMPUS_HOP_START = (48.075484, 11.641796)
+CAMPUS_HOP_END = (48.076423, 11.644330)
 
 EARTH_R = 6378137.0
 G = 9.80665
@@ -151,6 +154,31 @@ def out_and_back(home: tuple[float, float] = NEUBIBERG, distance: float = 400.0,
     ], speed=14.0, loop=True)
 
 
+def swoop(home: tuple[float, float] = CAMPUS_HOP_START,
+          end: Iterable[float] = CAMPUS_HOP_END, bulge: float = 35.0,
+          alt: float = 40.0, speed: float = 6.0, points: int = 24) -> Path:
+    """From *home* to *end* along a gentle curve, flown once and held there.
+
+    The curve is a quadratic Bezier whose control point sits *bulge* metres
+    to the left of the straight line; a negative *bulge* swings it right.
+    """
+    end = tuple(end)
+    mn, me = _metres_per_degree(home[0])
+    dn = (end[0] - home[0]) * mn
+    de = (end[1] - home[1]) * me
+    length = math.hypot(dn, de) or 1.0
+    cn = dn / 2 + 2 * bulge * de / length
+    ce = de / 2 - 2 * bulge * dn / length
+    pts = []
+    for i in range(points + 1):
+        u = i / points
+        north = 2 * (1 - u) * u * cn + u * u * dn
+        east = 2 * (1 - u) * u * ce + u * u * de
+        lat, lon = _offset(home, north, east)
+        pts.append(Point(lat, lon, alt))
+    return Path("swoop", pts, speed=speed, loop=False)
+
+
 def waypoints(coords: Iterable[Iterable[float]], speed: float = 10.0,
               loop: bool = True) -> Path:
     """A path from explicit ``[lat, lon, alt]`` triples — for a real sortie."""
@@ -165,6 +193,7 @@ PATHS: dict[str, Callable[..., Path]] = {
     "survey": survey,
     "figure_eight": figure_eight,
     "out_and_back": out_and_back,
+    "swoop": swoop,
 }
 
 
@@ -254,6 +283,21 @@ class FlightModel:
         a, b, length = self._legs[-1]
         return a, b, 1.0
 
+    def leg_at(self, t: float) -> int:
+        """Which leg of the path is being flown *t* seconds in: 0 is the first.
+
+        The climb counts as the approach to the first point, so this is also
+        "the point being flown to, minus one" for a mission's MISSION_CURRENT.
+        """
+        if t < self.takeoff_time or not self._legs:
+            return -1
+        remaining = ((t - self.takeoff_time) * max(0.1, self.path.speed)) % max(1e-6, self._length)
+        for index, (_a, _b, length) in enumerate(self._legs):
+            if remaining <= length:
+                return index
+            remaining -= length
+        return len(self._legs) - 1
+
     # -- the model --------------------------------------------------------
 
     def sample(self, t: float) -> Fix:
@@ -276,6 +320,11 @@ class FlightModel:
             )
 
         flown = (t - self.takeoff_time) * self.path.speed
+        # A path that does not loop is flown once, then held at its end.
+        arrived = not self.path.loop and flown >= self._length
+        if arrived:
+            flown = self._length * (1 - 1e-9)
+        speed = 0.0 if arrived else self.path.speed
         a, b, frac = self._at_distance(flown)
         lat = a.lat + (b.lat - a.lat) * frac
         lon = a.lon + (b.lon - a.lon) * frac
@@ -286,21 +335,21 @@ class FlightModel:
         # from now against the heading now. A multirotor banks into its turn
         # like anything else, and a track drawn with the HUD level through a
         # 90-degree corner is the detail that gives a staged screenshot away.
-        ahead_a, ahead_b, _ = self._at_distance(flown + self.path.speed)
+        ahead_a, ahead_b, _ = self._at_distance(flown + speed)
         turn = _angle_diff(self._bearing(ahead_a, ahead_b), heading)
-        roll = math.atan((math.radians(turn) * self.path.speed) / G)
+        roll = math.atan((math.radians(turn) * speed) / G)
         climb = (b.alt - a.alt) / max(1.0, self.path.speed)
 
         rad = math.radians(heading)
         return Fix(
             lat=lat, lon=lon, alt_agl=round(alt, 2), heading=heading,
-            ground_speed=self.path.speed, climb=round(climb, 2),
+            ground_speed=speed, climb=round(climb, 2),
             roll=round(max(-0.6, min(0.6, roll)), 4),
             # Nose down into the airflow, harder the faster it is going.
-            pitch=round(-math.radians(2 + self.path.speed * 0.6), 4),
+            pitch=round(-math.radians(2 + speed * 0.6), 4),
             yaw=math.radians(heading),
-            vx=round(self.path.speed * math.cos(rad), 2),
-            vy=round(self.path.speed * math.sin(rad), 2),
+            vx=round(speed * math.cos(rad), 2),
+            vy=round(speed * math.sin(rad), 2),
             vz=round(-climb, 2),
             phase="cruise",
         )

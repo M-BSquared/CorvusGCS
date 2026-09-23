@@ -50,7 +50,7 @@ echo "Branch:  $BRANCH"
 # HEAD) without ever having been committed to the version it claims to be.
 # Untracked files are not part of any build script's copy list (they take
 # corvus/, src/, assets/ and VERSION by name) and are ignored here on purpose
-# — a root-level working note like AUDIT_FINDINGS.md must not block a release.
+# — an untracked root-level working note must not block a release.
 if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
     echo "release.sh: tracked files have uncommitted changes — commit or stash first" >&2
     git status --short --untracked-files=no >&2
@@ -64,10 +64,14 @@ if git rev-parse "$TAG" >/dev/null 2>&1; then
 fi
 
 if (( VERIFY )); then
+    # The dev venv run.sh creates carries pytest and ruff; a checkout that
+    # never ran it falls back to whatever python3 is on PATH.
+    PY="$REPO_DIR/.venv/bin/python"
+    [[ -x "$PY" ]] || PY=python3
     echo "--- pytest"
-    python3 -m pytest -q
+    "$PY" -m pytest -q
     echo "--- ruff"
-    ruff check corvus serve.py tests
+    "$PY" -m ruff check corvus serve.py tests
     echo "--- frontend"
     for f in tests/*.js; do
         node "$f"

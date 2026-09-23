@@ -90,6 +90,9 @@ Corvus.setupMotors = (function () {
     });
     const actionsStatus = S.el("div", "params-actions-status");
     actions.appendChild(reloadBtn);
+    // Placed once the state exists: the button reads it.
+    const checkSlot = S.el("span", "motors-check-slot");
+    actions.appendChild(checkSlot);
     actions.appendChild(actionsStatus);
     page.appendChild(actions);
 
@@ -114,7 +117,11 @@ Corvus.setupMotors = (function () {
       testing: 0,              // motor currently spinning, 0 = none
       testTimer: null,
       nodes: {},               // motor number -> diagram node, for live marking
+      // Check values (setupShared): what the operator set until a check
+      // confirms it, and the last check's outcome until the next one.
+      wanted: {}, check: null, checking: false,
     };
+    checkSlot.appendChild(S.checkButton(state, CHECK));
 
     const cur = Corvus.telemetry && Corvus.telemetry.getState();
     applyArmed(state, !!(cur && cur.armed));
@@ -123,7 +130,10 @@ Corvus.setupMotors = (function () {
       state.unsub = Corvus.telemetry.subscribe((s) => applyArmed(state, !!(s && s.armed)));
     }
 
-    reloadBtn.addEventListener("click", () => load(state));
+    reloadBtn.addEventListener("click", () => {
+      state.check = null;
+      load(state);
+    });
     load(state);
 
     return function destroy() {
@@ -139,13 +149,24 @@ Corvus.setupMotors = (function () {
     };
   }
 
-  /** Fetch the configuration and rebuild every card from the response. */
-  function load(state) {
-    if (state.loading) return;
+  // Check values: the shared read back, redrawn by a fresh load().
+  const CHECK = {
+    prefix: "motors",
+    reload: (state) => load(state, true),
+    setStatus: (state, cls, text) => setStatus(state, cls, text),
+  };
+
+  /**
+   * Fetch the configuration and rebuild every card from the response.
+   * `fresh` reads every value from the vehicle rather than the cache.
+   */
+  function load(state, fresh) {
+    if (state.loading) return Promise.resolve();
     state.loading = true;
     state.reloadBtn.disabled = true;
+    S.recheckButton(state, CHECK);
     setStatus(state, "pending", "Reading motor configuration…");
-    Corvus.telemetry.requestJson("/api/motors").then((doc) => {
+    return Corvus.telemetry.requestJson(fresh ? "/api/motors?fresh=1" : "/api/motors").then((doc) => {
       if (state.destroyed) return;
       state.doc = doc || {};
       renderCards(state);
@@ -164,6 +185,7 @@ Corvus.setupMotors = (function () {
       if (state.destroyed) return;
       state.loading = false;
       state.reloadBtn.disabled = false;
+      S.recheckButton(state, CHECK);
     });
   }
 
@@ -190,6 +212,7 @@ Corvus.setupMotors = (function () {
       state.selected = motors.length ? motors[0].number : 0;
     }
 
+    if (state.check) state.host.appendChild(S.checkCard(state.check, "motors"));
     if (motors.length) {
       state.host.appendChild(airframeCard(state, doc, motors));
       state.host.appendChild(motorCard(state, doc, motors));
@@ -238,13 +261,13 @@ Corvus.setupMotors = (function () {
         // Millimetres is the finest anyone measures an arm to; the raw float
         // carries a dozen digits of noise that say nothing.
         ? `Outer ring ${(Math.round(span * 1000) / 1000)} m from the centre of gravity`
-        : "No motor positions set — motors shown evenly spaced"));
+        : "No motor positions set, motors shown evenly spaced"));
     // PX4 stores no wingspan, hull length or rotor diameter, so the body behind
     // the motors is a schematic of the airframe *class*. Only the motors are
     // measured, and saying so is the difference between a diagram and a lie.
     if ((doc.airframe_family || "multirotor") !== "multirotor") {
       legend.appendChild(S.el("span", "motors-legend-item",
-        `${doc.airframe_label || "Airframe"} outline is schematic — motor positions are to scale`));
+        `${doc.airframe_label || "Airframe"} outline is schematic; motor positions are to scale`));
     }
     legend.appendChild(S.el("span", "motors-legend-item",
       "Click a motor to select it"));
@@ -679,6 +702,15 @@ Corvus.setupMotors = (function () {
       body.appendChild(S.el("div", "field-hint",
         "This firmware reports no position parameters for this motor."));
     }
+    // The limits of the pin the motor is on. PX4 keeps them per pin, so they
+    // follow the motor to whichever output it is assigned.
+    const limits = motor.output_fields || [];
+    if (motor.output && limits.length) {
+      const head = S.el("div", "motors-panel-head motors-output-head");
+      head.appendChild(S.el("span", "motors-panel-sub", `Output limits of ${motor.output.label}`));
+      body.appendChild(head);
+      body.appendChild(fieldGrid(state, limits));
+    }
     S.refreshIcons();
   }
 
@@ -743,7 +775,7 @@ Corvus.setupMotors = (function () {
       const busy = !mine && out.function !== "Disabled";
       options.push({
         value: String(out.pin),
-        label: busy ? `${out.label} — ${out.function}` : out.label,
+        label: busy ? `${out.label} (${out.function})` : out.label,
       });
     });
     return options;
@@ -929,6 +961,7 @@ Corvus.setupMotors = (function () {
   /** Write CA_ROTOR_COUNT from the Add / Remove buttons, then re-read. */
   async function setMotorCount(state, count, btn, status) {
     if (state.armed) return;
+    state.wanted.CA_ROTOR_COUNT = count;
     btn.disabled = true;
     setFieldStatus(status, "pending", `setting motor count to ${count}`);
     try {

@@ -17,6 +17,8 @@ Corvus.telemetry = (function () {
       // Autopilot preflight verdict: true = would arm, false = refusing,
       // null = this firmware does not report it. See topbar readiness().
       prearm_ok: null,
+      // Why not, when it is false (the last preflight report's reasons).
+      prearm_reasons: [],
       vehicle_type: "",
       autopilot: "",
       mode: "",

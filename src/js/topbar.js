@@ -181,9 +181,10 @@ Corvus.topbar = (function () {
    *              here drawn in the attention colour.
    *   READY      the autopilot's own preflight check passes: arming would be
    *              accepted right now
-   *   NOT READY  the autopilot refuses to arm; the reason is a PX4
-   *              "Preflight Fail" STATUSTEXT, so it is already in the
-   *              notification centre next door
+   *   NOT READY  the autopilot refuses to arm. The reasons of its last
+   *              preflight report (PX4's "Preflight Fail:", ArduPilot's
+   *              "PreArm:" lines, which the backend asks for when the vehicle
+   *              has not said) are counted beside it and listed on hover
    *   STANDBY    firmware that does not publish MAV_SYS_STATUS_PREARM_CHECK,
    *              or nothing received yet. We know the switch is off and
    *              nothing more, so we claim nothing more — READY here would be
@@ -194,13 +195,13 @@ Corvus.topbar = (function () {
     if (!state.connected) return { value: "—", cls: "off", tone: "none", title: "No link to a vehicle" };
     if (state.armed) {
       if (isAirborne(state)) {
-        return { value: "FLYING", cls: "nav", tone: "flying", title: "Airborne — motors are live" };
+        return { value: "FLYING", cls: "nav", tone: "flying", title: "Airborne, motors are live" };
       }
       return {
         value: "ARMED",
         cls: "armed",
         tone: "armed",
-        title: "Armed on the ground — propellers are live",
+        title: "Armed on the ground, propellers are live",
       };
     }
     if (state.prearm_ok === true) {
@@ -208,15 +209,21 @@ Corvus.topbar = (function () {
         value: "READY",
         cls: "healthy",
         tone: "ready",
-        title: "Preflight checks pass — the vehicle would accept an arm command",
+        title: "Preflight checks pass. The vehicle would accept an arm command",
       };
     }
     if (state.prearm_ok === false) {
+      const reasons = Array.isArray(state.prearm_reasons)
+        ? state.prearm_reasons.filter((r) => typeof r === "string" && r) : [];
       return {
         value: "NOT READY",
         cls: "warning",
         tone: "notready",
-        title: "The autopilot is refusing to arm — see the notifications for the failing check",
+        sub: reasons.length ? `${reasons.length} check${reasons.length === 1 ? "" : "s"}` : "",
+        title: reasons.length
+          ? "The autopilot is refusing to arm:\n" + reasons.map((r) => "• " + r).join("\n")
+          : "The autopilot is refusing to arm. It has not said why yet; "
+            + "the reason arrives in the notifications",
       };
     }
     return {
@@ -344,13 +351,13 @@ Corvus.topbar = (function () {
         ? `the autopilot reports ${Math.round(reported)}%`
         : "the autopilot reports no estimate";
       return [`Remaining read from the cell voltage${pack ? " of a " + pack : ""}`,
-              other].join(" — ");
+              other].join("; ");
     }
     const estimated = Number(state.battery_percent_est);
     const other = estimated >= 0
       ? `the cell voltage reads ${Math.round(estimated)}%`
       : "no cell count, so there is no voltage reading";
-    return ["Remaining as the autopilot reports it", other].join(" — ");
+    return ["Remaining as the autopilot reports it", other].join("; ");
   }
 
   function blocks(state) {
@@ -369,7 +376,7 @@ Corvus.topbar = (function () {
       { type: "logo" },
       { key: "vehicle", label: "Vehicle", value: vehicleLabel(state), cls: state.connected ? "" : "critical", dot: conn, sub: fw.text, subCls: fw.cls, title: fw.title, priority: "high" },
       { key: "mode", label: "Mode", value: modeLabel(state), cls: "accent", priority: "high" },
-      { key: "armed", label: "Status", value: ready.value, cls: ready.cls, dot: ready.cls, tone: ready.tone, title: ready.title, priority: "high" },
+      { key: "armed", label: "Status", value: ready.value, sub: ready.sub || "", cls: ready.cls, dot: ready.cls, tone: ready.tone, title: ready.title, priority: "high" },
       { key: "gps", label: "GPS", value: state.connected ? (state.gps_fix || "NO GPS") : "—", sub: gpsSub, cls: gpsCls, dot: gpsCls, priority: "high" },
       { key: "battery", label: "Battery", value: state.connected ? `${state.battery_voltage.toFixed(1)} V` : "—", sub: state.connected ? `${battPct}%` : "", cls: battCls, dot: battCls, title: batt, priority: "high" },
       { key: "altitude", label: "Altitude", value: state.connected ? `${Math.round(state.altitude_amsl)}` : "—", sub: "m AMSL", priority: "mid" },

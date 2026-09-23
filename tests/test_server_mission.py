@@ -54,6 +54,9 @@ def handler(bridge: FakeBridge | None,
             missions_dir: str = "") -> tuple[CorvusHandler, list[tuple[dict, int]]]:
     obj = object.__new__(CorvusHandler)
     obj.mavlink = bridge  # type: ignore[assignment]
+    # Pinned: another test module may leave a class-level store behind, and
+    # the upload's answer carries the mission revision whenever there is one.
+    obj.store = None  # type: ignore[assignment]
     obj.config = CorvusConfig(missions_dir=missions_dir)
     obj.config_path = ""
     responses: list[tuple[dict, int]] = []
@@ -288,3 +291,68 @@ def test_a_traversal_name_is_sanitized_before_it_reaches_the_disk(tmp_path: Any)
 
     assert responses[-1][0]["name"] == "escape"
     assert [p.name for p in tmp_path.iterdir()] == ["escape.json"]
+
+
+# ---------------------------------------------------------------------------
+# download
+# ---------------------------------------------------------------------------
+
+class DownloadingBridge(FakeBridge):
+    def __init__(self, result: dict[str, Any] | None, error: str = "") -> None:
+        super().__init__(error=error)
+        self.result = result
+        self.downloads = 0
+
+    def download_mission(self) -> dict[str, Any] | None:
+        self.downloads += 1
+        return self.result
+
+
+def test_download_returns_the_plan_and_what_could_not_be_drawn() -> None:
+    read = mission.items_to_plan([
+        {"command": mission.MAV_CMD_NAV_WAYPOINT, "frame": 3, "lat": 48.1, "lon": 11.6,
+         "alt": 30, "params": [0, 0, 0, None]},
+        {"command": 183, "frame": 2, "lat": 0, "lon": 0, "alt": 0, "params": [9, 1500, 0, 0]},
+    ])
+    bridge = DownloadingBridge(dict(read, items=[], count=2, revision=3))
+    h, responses = handler(bridge)
+
+    h._api_mission_download({})
+
+    payload, status = responses[0]
+    assert status == 200 and payload["ok"] is True
+    assert [i["type"] for i in payload["plan"]["items"]] == ["waypoint"]
+    assert payload["skipped"][0]["command"] == 183
+    assert payload["revision"] == 3
+
+
+def test_a_download_the_vehicle_did_not_answer_is_the_vehicles_fault() -> None:
+    bridge = DownloadingBridge(None, error="the vehicle did not answer the mission request")
+    h, responses = handler(bridge)
+    h._api_mission_download({})
+    assert responses == [({"ok": False,
+                           "error": "the vehicle did not answer the mission request"}, 409)]
+
+
+def test_a_download_on_a_dead_link_says_so() -> None:
+    bridge = DownloadingBridge(None, error="Mission download failed: DISCONNECTED")
+    h, responses = handler(bridge)
+    h._api_mission_download({})
+    assert responses[0][1] == 503
+
+
+def test_a_download_without_a_link_is_503() -> None:
+    h, responses = handler(None)
+    h._api_mission_download({})
+    assert responses == [({"ok": False, "error": "not connected"}, 503)]
+
+
+def test_an_upload_says_which_state_of_the_vehicles_mission_it_is() -> None:
+    """The page follows progress only while the vehicle holds this plan."""
+    from corvus.state_store import VehicleStateStore
+
+    h, responses = handler(FakeBridge())
+    h.store = VehicleStateStore()  # type: ignore[assignment]
+    h.store.update(mission_revision=7)
+    h._api_mission_upload({"plan": plan()})
+    assert responses[0][0]["revision"] == 7

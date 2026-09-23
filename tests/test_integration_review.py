@@ -292,7 +292,7 @@ def test_no_hardcoded_version_literal_outside_canonical_source() -> None:
     version = _version_from_file()
     assert version, "VERSION file is empty"
     exclusions = {"corvus/version.py"}        # the only Python source allowed to name it
-    skip_dir_parts = {".opencode", ".git", "__pycache__", ".pytest_cache", "node_modules"}
+    skip_dir_parts = {".opencode", ".git", "__pycache__", ".pytest_cache", "node_modules", ".venv"}
     extensions = {".py", ".js", ".html", ".css"}
     offenders: list[str] = []
     for path in _REPO_ROOT.rglob("*"):

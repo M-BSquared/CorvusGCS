@@ -29,8 +29,11 @@ class FakeMessage(SimpleNamespace):
 
 
 class FakeMav:
+    def __init__(self) -> None:
+        self.commands: list[tuple] = []
+
     def command_long_send(self, *args: float) -> None:
-        pass
+        self.commands.append(args)
 
 
 class FakeConnection:
@@ -134,3 +137,93 @@ def test_disconnect_clears_readiness() -> None:
     assert store.get_snapshot()["prearm_ok"] is True
     store.set_disconnected()
     assert store.get_snapshot()["prearm_ok"] is None
+
+
+
+# ---------------------------------------------------------------------------
+# Why it is not ready
+# ---------------------------------------------------------------------------
+
+NOT_READY = dict(enabled=PREARM | GYRO, health=GYRO)
+READY = dict(enabled=PREARM | GYRO, health=PREARM | GYRO)
+RUN_PREARM_CHECKS = mavutil.mavlink.MAV_CMD_RUN_PREARM_CHECKS
+
+
+def statustext(text: str, severity: int = 2) -> FakeMessage:
+    return FakeMessage(message_type="STATUSTEXT", text=text, severity=severity, id=0,
+                       chunk_seq=0)
+
+
+def reasons(bridge: MavlinkBridge) -> list[str]:
+    return bridge._store.get_snapshot()["prearm_reasons"]
+
+
+def asked(bridge: MavlinkBridge) -> int:
+    return sum(1 for c in bridge._conn.mav.commands if int(c[2]) == RUN_PREARM_CHECKS)
+
+
+def test_px4s_preflight_fail_lines_are_the_reasons() -> None:
+    bridge = ready_bridge()
+    bridge._dispatch(statustext("Preflight Fail: Accel 0 uncalibrated\t"))
+    bridge._dispatch(statustext("Preflight Fail: No valid data from Compass 0"))
+    bridge._dispatch(statustext("Preflight Fail: Accel 0 uncalibrated"))
+    bridge._dispatch(statustext("Takeoff detected"))
+    assert reasons(bridge) == ["Accel 0 uncalibrated", "No valid data from Compass 0"]
+
+
+def test_a_new_report_replaces_the_last_one(monkeypatch) -> None:
+    import corvus.mavlink_bridge as bridge_module
+
+    clock = [100.0]
+    monkeypatch.setattr(bridge_module.time, "monotonic", lambda: clock[0])
+    bridge = ready_bridge()
+    bridge._dispatch(statustext("Preflight Fail: Accel 0 uncalibrated"))
+    clock[0] += 10.0
+    bridge._dispatch(statustext("Preflight Fail: GPS fix too low"))
+    assert reasons(bridge) == ["GPS fix too low"]
+
+
+def test_ardupilots_prearm_lines_are_read_on_an_ardupilot_link() -> None:
+    bridge = ready_bridge()
+    bridge._latch_dialect(mavutil.mavlink.MAV_AUTOPILOT_ARDUPILOTMEGA,
+                          mavutil.mavlink.MAV_TYPE_QUADROTOR)
+    bridge._dispatch(statustext("PreArm: Compass not calibrated"))
+    bridge._dispatch(statustext("Preflight Fail: not ArduPilot wording"))
+    assert reasons(bridge) == ["Compass not calibrated"]
+
+
+def test_a_vehicle_that_says_not_ready_without_a_reason_is_asked_once() -> None:
+    bridge = ready_bridge()
+    bridge._dispatch(sys_status(**NOT_READY))
+    bridge._dispatch(sys_status(**NOT_READY))
+    assert asked(bridge) == 1, "throttled, not once per SYS_STATUS"
+
+
+def test_a_vehicle_that_already_said_why_is_not_asked() -> None:
+    bridge = ready_bridge()
+    bridge._dispatch(statustext("Preflight Fail: Accel 0 uncalibrated"))
+    bridge._dispatch(sys_status(**NOT_READY))
+    assert asked(bridge) == 0
+
+
+def test_a_ready_or_armed_vehicle_has_no_reasons_left() -> None:
+    bridge = ready_bridge()
+    bridge._dispatch(statustext("Preflight Fail: Accel 0 uncalibrated"))
+    bridge._dispatch(sys_status(**READY))
+    assert reasons(bridge) == []
+    assert asked(bridge) == 0, "a ready vehicle is never asked"
+
+    bridge._dispatch(statustext("Preflight Fail: Accel 0 uncalibrated"))
+    bridge._dispatch(FakeMessage(
+        message_type="HEARTBEAT", type=mavutil.mavlink.MAV_TYPE_QUADROTOR,
+        autopilot=mavutil.mavlink.MAV_AUTOPILOT_PX4,
+        base_mode=mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED, custom_mode=0,
+        system_status=4))
+    assert reasons(bridge) == []
+
+
+def test_a_dead_link_takes_its_reasons_with_it() -> None:
+    bridge = ready_bridge()
+    bridge._dispatch(statustext("Preflight Fail: Accel 0 uncalibrated"))
+    bridge._store.set_disconnected()
+    assert reasons(bridge) == []

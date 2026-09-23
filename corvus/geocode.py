@@ -320,7 +320,7 @@ class Geocoder:
             raise GeocodeError("No connection to the place-search service.")
         wait = self._reserve()
         if wait > MAX_WAIT_S:
-            raise GeocodeError("Place search is busy — try that again.")
+            raise GeocodeError("Place search is busy. Try that again.")
         if wait > 0:
             time.sleep(wait)
         payload = self._fetch(build_query(text, limit, near))

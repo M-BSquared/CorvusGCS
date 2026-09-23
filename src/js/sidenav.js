@@ -522,7 +522,7 @@ Corvus.sidenav = (function () {
     card.appendChild(note);
 
     const title = all.length > LOG_PREVIEW_LINES
-      ? `Console Output — last ${LOG_PREVIEW_LINES} of ${all.length} lines`
+      ? `Console Output: last ${LOG_PREVIEW_LINES} of ${all.length} lines`
       : "Recent Console Output";
     container.appendChild(Corvus.ui.section({ title, body: card }));
   }
@@ -563,9 +563,9 @@ Corvus.sidenav = (function () {
         () => done(true, "Copied to the clipboard."),
         // Clipboard access is refused in some embeddings — Export still works
         // there, so say which way out is left rather than just failing.
-        () => done(false, "Clipboard unavailable — use Export instead."));
+        () => done(false, "Clipboard unavailable. Use Export instead."));
     } catch (_e) {
-      done(false, "Clipboard unavailable — use Export instead.");
+      done(false, "Clipboard unavailable. Use Export instead.");
     }
   }
 
@@ -664,7 +664,7 @@ Corvus.sidenav = (function () {
       hint: "Adds MISSION under HOME in the left rail: a planning map with " +
             "takeoff, waypoints, orbits and landing, and an altitude profile " +
             "of the whole flight you can drag each point's height on. " +
-            "Missions are drawn, saved and uploaded there — nothing is " +
+            "Missions are drawn, saved and uploaded there. Nothing is " +
             "sent to the aircraft until you press Upload.",
     }));
     return card;
@@ -698,8 +698,8 @@ Corvus.sidenav = (function () {
       label: "Arrow keys",
       apply: "setKeysEnabled",
       value: !!(cfg.controls && cfg.controls.arrow_keys),
-      hint: "Flies pitch and roll from the arrow keys — on screen and on your " +
-            "own keyboard — at the strength set below.",
+      hint: "Flies pitch and roll from the arrow keys (on screen and on your " +
+            "own keyboard) at the strength set below.",
     }));
     card.appendChild(controlSwitch({
       id: "settingsWasdKeys",
@@ -710,7 +710,7 @@ Corvus.sidenav = (function () {
       hint: "The other half: W/S are thrust, A/D are yaw, at the same " +
             "strength; a released thrust key returns to the hover detent. " +
             "Any of these controls reach the aircraft only with " +
-            "COM_RC_IN_MODE 1 or 3 and a mode that flies from the sticks. " +
+            "COM_RC_IN_MODE 1, 2 or 3 and a mode that flies from the sticks. " +
             "Off by default.",
     }));
     card.appendChild(keyStrengthField(cfg));
@@ -755,12 +755,12 @@ Corvus.sidenav = (function () {
     });
 
     return Corvus.ui.field({
-      label: "Key strength — arrow keys and WASD",
+      label: "Key strength: arrow keys and WASD",
       control: control.el,
       className: "field-ruled",
       hint: "How far a held arrow or W/A/S/D key pushes the stick, as a share " +
             "of full travel. Hold Shift for twice that while it is down. Keys " +
-            "only — the sticks always reach their own stops. 50% is the default.",
+            "only. The sticks always reach their own stops. 50% is the default.",
     });
   }
 
@@ -841,7 +841,7 @@ Corvus.sidenav = (function () {
       control: sw.el,
       className: "field-switch",
       hint: "Off, the bar keeps its full size and only narrows when the row "
-        + "will not fit \u2014 the same rule the Mission planner's tools are "
+        + "will not fit, the same rule the Mission planner's tools are "
         + "under. On, ARM, TAKEOFF, LAND, RTL and PLAN start narrowing as "
         + "soon as the row would cover more than half the map: the buttons "
         + "drop to the width of their own word first, then to icons alone. "
@@ -886,7 +886,7 @@ Corvus.sidenav = (function () {
       control: sw.el,
       className: "field-switch",
       hint: "Adds a state dot after the VEHICLE, STATUS, GPS and BATTERY " +
-            "captions \u2014 green good, amber caution, red fault, grey " +
+            "captions: green good, amber caution, red fault, grey " +
             "nothing to report. Off by default: the values already carry that " +
             "colour themselves. Turn it on to scan the bar by colour alone.",
     }));
@@ -930,9 +930,9 @@ Corvus.sidenav = (function () {
       label: "Severity marks",
       control: sw.el,
       className: "field-switch",
-      hint: "Coloured bars above and below the level icon on a notification "
-        + "\u2014 blue for info, amber for a warning, red for a fault. Off "
-        + "by default \u2014 the icon already carries the level in its "
+      hint: "Coloured bars above and below the level icon on a notification"
+        + ": blue for info, amber for a warning, red for a fault. Off "
+        + "by default. The icon already carries the level in its "
         + "colour. Turn them on to underline it.",
     }));
     return card;
@@ -964,7 +964,7 @@ Corvus.sidenav = (function () {
       control: inverted.el,
       className: "field-switch",
       hint: "Uses the black mark instead of the white one for the Dock " +
-            "(macOS) or taskbar (Linux) icon \u2014 better on a light dock. " +
+            "(macOS) or taskbar (Linux) icon, better on a light dock. " +
             "Applies within a second, and changes nothing else.",
     }));
 
@@ -978,8 +978,8 @@ Corvus.sidenav = (function () {
       label: "Icon backplate",
       control: backplate.el,
       className: "field-switch",
-      hint: "Draws the mark on a filled rounded square \u2014 dark behind the " +
-            "white mark, white behind the black one \u2014 so it stays visible " +
+      hint: "Draws the mark on a filled rounded square (dark behind the " +
+            "white mark, white behind the black one) so it stays visible " +
             "against a dock of any shade.",
     }));
 
@@ -990,7 +990,7 @@ Corvus.sidenav = (function () {
     // $HOME: the launcher entry a desktop integrator installed, and the
     // freedesktop thumbnail the file manager paints on the .AppImage itself.
     const scope = Corvus.ui.empty(
-      "Finder and the Start menu keep the icon the build shipped \u2014 it " +
+      "Finder and the Start menu keep the icon the build shipped, because it " +
       "lives inside the signed bundle. On Linux the applications grid and " +
       "the .AppImage\u2019s own thumbnail follow."
     );
@@ -1177,7 +1177,7 @@ Corvus.sidenav = (function () {
     const card = Corvus.ui.card({ title: "Interface size" });
     card.appendChild(Corvus.ui.field({
       control: control.el,
-      hint: "Scales the whole interface on this machine — text, icons, bars " +
+      hint: "Scales the whole interface on this machine: text, icons, bars " +
             "and panels. Larger reads better on a bright field laptop. " +
             "100% is the default.",
     }));
@@ -1195,26 +1195,39 @@ Corvus.sidenav = (function () {
     const desc = Corvus.ui.empty("Loading map services\u2026");
     card.appendChild(desc);
 
-    Corvus.telemetry.requestJson("/api/tiles/sources").then((data) => {
-      if (gen !== undefined && gen !== navGeneration) return;
-      const providers = (data && data.providers) || [];
-      const sources = (data && data.sources) || [];
-      if (!providers.length) {
-        desc.textContent = "No map services available.";
-        return;
-      }
-      card.removeChild(desc);
-      card.appendChild(buildMapServicePicker(providers, sources, cfg, data.default_provider));
-      Corvus.ui.refreshIcons();
-    }).catch(() => {
-      if (gen !== undefined && gen !== navGeneration) return;
-      desc.textContent = "Could not load map services.";
-    });
+    // Rebuilt in place rather than re-rendered through the page: the API keys
+    // dialog changes which services work, and the operator should come back
+    // from it to a card that already says so. `gen` still gates it, so a
+    // navigation away mid-fetch cannot append into a repurposed pageView.
+    function load(host) {
+      Corvus.telemetry.requestJson("/api/tiles/sources").then((data) => {
+        if (gen !== undefined && gen !== navGeneration) return;
+        const providers = (data && data.providers) || [];
+        const sources = (data && data.sources) || [];
+        Corvus.ui.clear(host);
+        if (!providers.length) {
+          host.appendChild(Corvus.ui.empty("No map services available."));
+          return;
+        }
+        host.appendChild(buildMapServicePicker(
+          providers, sources, cfg, data.default_provider, () => load(host)));
+        Corvus.ui.refreshIcons();
+      }).catch(() => {
+        if (gen !== undefined && gen !== navGeneration) return;
+        Corvus.ui.clear(host).appendChild(
+          Corvus.ui.empty("Could not load map services."));
+      });
+    }
 
+    card.removeChild(desc);
+    const host = document.createElement("div");
+    host.appendChild(desc);
+    card.appendChild(host);
+    load(host);
     return card;
   }
 
-  function buildMapServicePicker(providers, sources, cfg, fallbackProvider) {
+  function buildMapServicePicker(providers, sources, cfg, fallbackProvider, onReload) {
     const wrap = document.createElement("div");
     wrap.className = "settings-map-service";
     const byId = {};
@@ -1316,16 +1329,201 @@ Corvus.sidenav = (function () {
 
     renderLayerField(activeProvider, activeLayerId);
     note.textContent = describeCache(activeLayerId);
+
+    // API keys. Only offered when this build actually has a keyed service, so
+    // the button never opens an empty dialog.
+    const keyed = providers.filter((p) => p.token_required);
+    if (keyed.length) {
+      const keysBtn = Corvus.ui.button({
+        variant: "secondary",
+        shape: "block",
+        icon: "key-round",
+        label: "API KEYS",
+        onClick: () => openMapTokenDialog(keyed, onReload),
+      });
+      keysBtn.className += " settings-map-keys";
+      wrap.appendChild(keysBtn);
+      const missing = keyed.filter((p) => !p.token_set).length;
+      const keysNote = Corvus.ui.empty(
+        missing === 0
+          ? "Every keyed map service has a key."
+          : `${missing === keyed.length ? keyed.length : missing} map ` +
+            `${missing === 1 ? "service needs" : "services need"} an API key ` +
+            "before they can show anything.");
+      keysNote.className = "field-hint settings-map-keys-note";
+      wrap.appendChild(keysNote);
+    }
     return wrap;
   }
 
   /** One-line summary of what a service offers: its layer count, plus how many
-   *  of those layers already have tiles on disk (what matters in the field). */
+   *  of those layers already have tiles on disk (what matters in the field).
+   *
+   *  A keyed service with no key says so instead, and says it first: the layer
+   *  count is true but useless, because none of them will draw. The card stays
+   *  selectable — "this needs a key" is something the operator can act on, a
+   *  service that quietly vanished from the list is not. */
   function describeProvider(prov, byId) {
     const ids = prov.sources || [];
+    if (prov.token_required && !prov.token_set) return "Needs an API key";
     const cached = ids.filter((id) => byId[id] && (byId[id].cached_count || 0) > 0).length;
     const layers = ids.length === 1 ? "1 layer" : `${ids.length} layers`;
     return cached > 0 ? `${layers} \u00b7 ${cached} cached` : layers;
+  }
+
+  /* The API keys dialog: one row per keyed map service.
+   *
+   * The key is a credential, and the shape of this dialog follows from that
+   * rather than from convenience. It is never read back — GET /api/config does
+   * not carry it and neither does anything else — so a service that already
+   * has one shows an empty field with "a key is saved" beside it, not the key
+   * in a password box the browser would then remember. Saving an empty field
+   * is therefore a no-op rather than a clear; REMOVE is the way to clear one,
+   * because deleting a working key by tabbing past a field is not a mistake an
+   * operator should be able to make in the field.
+   *
+   * The sign-up URL is printed, not linked: the desktop build runs inside
+   * QtWebEngine, where an external link goes nowhere at all (the same reason
+   * the credits dialog prints its URLs).
+   */
+  function openMapTokenDialog(keyed, onSaved) {
+    const body = document.createDocumentFragment();
+    const intro = Corvus.ui.empty(
+      "Some map services need an API key from the provider. The key is stored " +
+      "on this machine only, is sent to the provider by Corvus rather than by " +
+      "the browser, and is never shown again once saved.");
+    intro.className = "field-hint";
+    body.appendChild(intro);
+
+    const rows = keyed.map((prov) => mapTokenRow(prov));
+    rows.forEach((row) => body.appendChild(row.el));
+
+    const error = Corvus.ui.message();
+    body.appendChild(error.el);
+
+    const closeBtn = Corvus.ui.button({
+      variant: "secondary", label: "CLOSE", onClick: () => dialog.close(),
+    });
+    const saveBtn = Corvus.ui.button({
+      variant: "primary", icon: "save", label: "SAVE KEYS", onClick: submit,
+    });
+
+    const dialog = Corvus.ui.modal({
+      title: "Map service API keys",
+      size: "md",
+      body,
+      actions: [closeBtn, saveBtn],
+      onClose: () => { if (changed && typeof onSaved === "function") onSaved(); },
+    });
+    dialog.open();
+
+    let changed = false;
+
+    function mapTokenRow(prov) {
+      const meta = prov.token || {};
+      const el = document.createElement("div");
+      el.className = "settings-map-token";
+
+      const control = Corvus.ui.input({
+        id: "mapToken_" + prov.id,
+        type: "password",
+        placeholder: prov.token_set ? "A key is saved. Type to replace it"
+                                    : "Paste the key here",
+        ariaLabel: meta.label || (prov.label + " API key"),
+        mono: true,
+        autocomplete: false,
+        spellcheck: false,
+      });
+      el.appendChild(Corvus.ui.field({
+        label: meta.label || (prov.label + " API key"),
+        control,
+        hint: `${meta.help || ""} Get one at ${meta.signup || ""}`.trim(),
+      }));
+
+      const state = Corvus.ui.empty("");
+      state.className = "settings-map-token-state";
+      const remove = Corvus.ui.button({
+        variant: "secondary", size: "sm", label: "REMOVE",
+      });
+      const actions = document.createElement("div");
+      actions.className = "settings-map-token-actions";
+      actions.appendChild(state);
+      actions.appendChild(remove);
+      el.appendChild(actions);
+
+      let saved = !!prov.token_set;
+      function paint() {
+        state.textContent = saved ? "Key saved" : "No key";
+        state.classList.toggle("is-set", saved);
+        remove.disabled = !saved;
+        control.placeholder = saved ? "A key is saved. Type to replace it"
+                                    : "Paste the key here";
+      }
+      paint();
+
+      remove.addEventListener("click", async () => {
+        if (!saved) return;
+        remove.disabled = true;
+        const res = await postToken(prov.id, "");
+        if (!res.ok) { error.show(res.error, "err"); paint(); return; }
+        error.hide();
+        saved = false;
+        control.value = "";
+        changed = true;
+        paint();
+      });
+
+      return {
+        el,
+        id: prov.id,
+        label: prov.label,
+        value: () => (control.value || "").trim(),
+        clearInput: () => { control.value = ""; },
+        markSaved: () => { saved = true; paint(); },
+        focus: () => control.focus(),
+      };
+    }
+
+    async function postToken(provider, token) {
+      try {
+        const res = await fetch("/api/tiles/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider, token }),
+        }).then((r) => r.json());
+        if (res && res.ok) return { ok: true };
+        return { ok: false, error: (res && res.error) || "Could not save the key." };
+      } catch (err) {
+        return { ok: false, error: (err && err.message) || "Could not save the key." };
+      }
+    }
+
+    async function submit() {
+      // Only the rows the operator actually typed into. An empty field means
+      // "leave this one alone", never "clear it".
+      const pending = rows.filter((row) => row.value());
+      if (!pending.length) { dialog.close(); return; }
+      saveBtn.disabled = true;
+      error.hide();
+      const failures = [];
+      for (const row of pending) {
+        const res = await postToken(row.id, row.value());
+        if (res.ok) {
+          changed = true;
+          row.clearInput();
+          row.markSaved();
+        } else {
+          failures.push(`${row.label}: ${res.error}`);
+        }
+      }
+      saveBtn.disabled = false;
+      // The dialog stays open on a failure, with the message next to the field
+      // that produced it — a rejected key is almost always a bad paste, and
+      // closing would leave the operator to find their way back here to learn
+      // that nothing was stored.
+      if (failures.length) { error.show(failures.join(" \u00b7 "), "err"); return; }
+      dialog.close();
+    }
   }
 
   // --- Section B: SSH Connections (saved-connection manager) ---
@@ -1381,7 +1579,7 @@ Corvus.sidenav = (function () {
     r.className = "settings-ssh-row";
     const info = document.createElement("span");
     info.className = "settings-ssh-info";
-    info.textContent = `${c.name} — ${c.host}:${c.port} (${c.username})`;
+    info.textContent = `${c.name} · ${c.host}:${c.port} (${c.username})`;
     r.appendChild(info);
     const actions = document.createElement("div");
     actions.className = "settings-ssh-actions";
@@ -1690,7 +1888,7 @@ Corvus.sidenav = (function () {
             "GitHub and shows a notice when a newer one exists. Nothing is " +
             "downloaded and nothing is sent about this machine beyond the " +
             "request itself. The check never runs while the vehicle is armed, " +
-            "and with no internet it fails silently — Corvus never needs the " +
+            "and with no internet it fails silently. Corvus never needs the " +
             "network to fly.",
     }));
 

@@ -24,6 +24,8 @@ Verified against PX4 v1.16/v1.17/v1.18 and ArduPilot 4.3-4.6
 """
 from __future__ import annotations
 
+import math
+import struct
 from dataclasses import dataclass
 from typing import Any, NamedTuple
 
@@ -303,9 +305,15 @@ _NAN = float("nan")
 
 
 def _cal(*params: float) -> CommandPlan:
-    """A PREFLIGHT_CALIBRATION plan, padded to seven params."""
+    """A PREFLIGHT_CALIBRATION plan, padded to seven params.
+
+    Unused slots are 0, which is what the message defines as "no calibration"
+    and what QGC sends. They used to be NaN, which PX4's Commander casts with
+    ``(int)``: undefined in C++, INT_MIN on x86 SITL and 0 on ARM, so the same
+    command meant different things on the simulator and on the aircraft.
+    """
     values = list(params)
-    values.extend([_NAN] * (7 - len(values)))
+    values.extend([0.0] * (7 - len(values)))
     return CommandPlan(
         command=mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION,
         params=tuple(values[:7]),
@@ -333,6 +341,106 @@ ACCELCAL_POSITIONS: dict[str, int] = {
     "level": 1, "left": 2, "right": 3,
     "nosedown": 4, "noseup": 5, "back": 6,
 }
+
+
+# ---------------------------------------------------------------------------
+# Parameter value encoding
+# ---------------------------------------------------------------------------
+#
+# PARAM_VALUE and PARAM_SET carry every value in one float32 field, and the two
+# stacks disagree about how an integer parameter gets into it. ArduPilot casts
+# (the integer 4 travels as 4.0). PX4 copies the integer's four bytes into the
+# float unchanged, so 4 travels as 5.6e-45 and -1 as a NaN. Reading PX4 the
+# ArduPilot way shows every integer parameter as 0; writing it the ArduPilot way
+# stores 1082130432 in BAT1_N_CELLS while the echo still reads back as "4.0",
+# so the write even looks confirmed.
+
+PARAM_ENCODING_BYTEWISE = "bytewise"
+PARAM_ENCODING_C_CAST = "c_cast"
+
+# MAV_PARAM_TYPE -> (struct code, low, high) for the integer types. REAL32 and
+# the 64-bit types are not here: the first needs no conversion and the others
+# do not fit the field at all.
+_PARAM_INT_TYPES: dict[int, tuple[str, int, int]] = {
+    1: ("<B", 0, 0xFF),
+    2: ("<b", -0x80, 0x7F),
+    3: ("<H", 0, 0xFFFF),
+    4: ("<h", -0x8000, 0x7FFF),
+    5: ("<I", 0, 0xFFFFFFFF),
+    6: ("<i", -0x80000000, 0x7FFFFFFF),
+}
+
+
+def param_type_is_integer(param_type: Any) -> bool:
+    """Is *param_type* one of the MAV_PARAM_TYPE integer types?"""
+    try:
+        return int(param_type) in _PARAM_INT_TYPES
+    except (TypeError, ValueError):
+        return False
+
+
+def decode_param_value(
+    value: float, param_type: int, encoding: str, raw: bytes | None = None,
+) -> float:
+    """The parameter's real value from the float32 field it travelled in.
+
+    *raw* is the field's four bytes off the wire when the caller has them. They
+    are preferred over *value* because a float that is a NaN bit pattern does
+    not survive the trip through a Python float intact, and on PX4 every
+    integer from -8388607 to -4194305 is one of those.
+    """
+    spec = _PARAM_INT_TYPES.get(int(param_type))
+    if spec is None or encoding != PARAM_ENCODING_BYTEWISE:
+        return float(value)
+    if raw is None or len(raw) < 4:
+        raw = struct.pack("<f", float(value))
+    code = spec[0]
+    return float(struct.unpack_from(code, raw[:struct.calcsize(code)])[0])
+
+
+def encode_param_value(value: float, param_type: int, encoding: str) -> float:
+    """The float32 to put in PARAM_SET so the vehicle stores *value*.
+
+    Raises ValueError for a value the parameter cannot hold (a fraction or an
+    out of range number for an integer), and for the few integers whose byte
+    pattern is a signalling NaN: pymavlink packs the field through a Python
+    float, which quietens that NaN and would change the number on the way out.
+    """
+    spec = _PARAM_INT_TYPES.get(int(param_type))
+    if spec is None:
+        return float(value)
+    number = float(value)
+    if not math.isfinite(number) or number != int(number):
+        raise ValueError("this parameter takes whole numbers only")
+    code, low, high = spec
+    whole = int(number)
+    if not low <= whole <= high:
+        raise ValueError(f"this parameter takes values from {low} to {high}")
+    if encoding != PARAM_ENCODING_BYTEWISE:
+        return number
+    packed = struct.pack(code, whole).ljust(4, b"\x00")
+    bits = struct.unpack("<I", packed)[0]
+    if (bits >> 23) & 0xFF == 0xFF and bits & 0x7FFFFF and not bits & 0x400000:
+        raise ValueError("this value cannot be sent exactly over MAVLink")
+    return struct.unpack("<f", packed)[0]
+
+
+def param_values_match(param_type: int, got: float, wanted: float) -> bool:
+    """Does the vehicle hold *wanted*? Exact for integers, float32 exact otherwise.
+
+    Tighter than the echo check in ``set_param`` on purpose: this answers "was
+    it applied", and a float parameter holds exactly the float32 it was sent,
+    so anything beyond float32 rounding is a different value.
+    """
+    if not (math.isfinite(got) and math.isfinite(wanted)):
+        return False
+    if param_type_is_integer(param_type):
+        return int(round(got)) == int(round(wanted))
+    try:
+        as_sent = struct.unpack("<f", struct.pack("<f", wanted))[0]
+    except OverflowError:
+        return False
+    return abs(got - as_sent) <= 1e-6 * max(1.0, abs(as_sent))
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +474,21 @@ class Dialect:
     mission_seq0_is_home: bool = False
     # The flight mode that runs an uploaded mission.
     mission_mode: str = "MISSION"
+    # How an integer parameter travels in the float32 field. See the
+    # "Parameter value encoding" section above.
+    param_encoding: str = PARAM_ENCODING_BYTEWISE
+    # The STATUSTEXT a failing preflight check is reported in starts with one
+    # of these, and the reason follows. PX4 v1.16 to v1.18 report the arming
+    # checks as events, and still send this text beside every one of them
+    # (HealthAndArmingChecks.cpp, the "LEGACY" pass), whenever the report runs.
+    prearm_prefixes: tuple[str, ...] = ("Preflight Fail: ",)
+
+    def prearm_failure(self, text: str) -> str | None:
+        """The reason in a failing preflight check's STATUSTEXT, or None."""
+        for prefix in self.prearm_prefixes:
+            if text.startswith(prefix):
+                return text[len(prefix):].strip() or None
+        return None
 
     # --- modes ---------------------------------------------------------
 
@@ -441,7 +564,7 @@ class Dialect:
 
     def accel_position(self, position: str) -> CommandPlan:
         return CommandPlan(unsupported=(
-            "PX4 detects each calibration position on its own — there is "
+            "PX4 detects each calibration position on its own. There is "
             "nothing for the ground station to confirm"
         ))
 
@@ -485,17 +608,17 @@ class PX4Dialect(Dialect):
 
     _CALIBRATION: dict[str, CommandPlan] = {
         # MAV_CMD_PREFLIGHT_CALIBRATION (241), verified against v1.16-v1.18
-        # (Commander.cpp). Unset params are NaN; the selected one carries the
+        # (Commander.cpp). Unset params are 0; the selected one carries the
         # value PX4 switches on.
         "gyro":        _cal(1.0),
-        "compass":     _cal(_NAN, 1.0),
-        "baro":        _cal(_NAN, _NAN, 1.0),
-        "accel":       _cal(_NAN, _NAN, _NAN, _NAN, 1.0),
-        "level":       _cal(_NAN, _NAN, _NAN, _NAN, 2.0),
-        "accel_quick": _cal(_NAN, _NAN, _NAN, _NAN, 4.0),
-        "airspeed":    _cal(_NAN, _NAN, _NAN, _NAN, _NAN, 1.0),
+        "compass":     _cal(0.0, 1.0),
+        "baro":        _cal(0.0, 0.0, 1.0),
+        "accel":       _cal(0.0, 0.0, 0.0, 0.0, 1.0),
+        "level":       _cal(0.0, 0.0, 0.0, 0.0, 2.0),
+        "accel_quick": _cal(0.0, 0.0, 0.0, 0.0, 4.0),
+        "airspeed":    _cal(0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
         # Motor/ESC calibration — props MUST be off; motors run to full PWM.
-        "motor":       _cal(_NAN, _NAN, _NAN, _NAN, _NAN, _NAN, 1.0),
+        "motor":       _cal(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
     }
 
 
@@ -520,6 +643,10 @@ class ArduPilotDialect(Dialect):
     firmware_vendor = "ardupilot"
     mission_seq0_is_home = True
     mission_mode = "AUTO"
+    param_encoding = PARAM_ENCODING_C_CAST
+    # ArduPilot only ever reports in text: "PreArm: ..." for a check, and
+    # "Arm: ..." for the reason an arm command was refused.
+    prearm_prefixes = ("PreArm: ", "Arm: ")
 
     # --- modes ---------------------------------------------------------
 
@@ -612,13 +739,13 @@ class ArduPilotDialect(Dialect):
         # (param1), baro (param3) and the three accelerometer forms (param5 =
         # 1 full / 2 level trim / 4 simple), and on nothing else.
         "gyro":        _cal(1.0),
-        "baro":        _cal(_NAN, _NAN, 1.0),
-        "accel":       _cal(_NAN, _NAN, _NAN, _NAN, 1.0),
-        "level":       _cal(_NAN, _NAN, _NAN, _NAN, 2.0),
-        "accel_quick": _cal(_NAN, _NAN, _NAN, _NAN, 4.0),
+        "baro":        _cal(0.0, 0.0, 1.0),
+        "accel":       _cal(0.0, 0.0, 0.0, 0.0, 1.0),
+        "level":       _cal(0.0, 0.0, 0.0, 0.0, 2.0),
+        "accel_quick": _cal(0.0, 0.0, 0.0, 0.0, 4.0),
         # Airspeed rides on the same ground-pressure calibration as the baro;
         # there is no separate param6 switch the way PX4 has one.
-        "airspeed":    _cal(_NAN, _NAN, 1.0),
+        "airspeed":    _cal(0.0, 0.0, 1.0),
         # The compass is the real divergence. PX4's param2 means nothing to
         # ArduPilot, which runs an onboard spherical fit started by its own
         # command: param1 = 0 (every compass), param2 = 0 (no retry-on-fail),
@@ -630,7 +757,7 @@ class ArduPilotDialect(Dialect):
         ),
         "motor": CommandPlan(unsupported=(
             "ArduPilot calibrates ESCs by setting ESC_CALIBRATION to 3 and "
-            "rebooting with the throttle high — it is not a MAVLink command, "
+            "rebooting with the throttle high. It is not a MAVLink command, "
             "so Corvus will not do it behind a button"
         )),
     }
@@ -704,6 +831,11 @@ class GenericDialect(Dialect):
     log_format = "unknown"
     log_suffix = ".log"
     firmware_vendor = ""
+    # common.xml's own default: the value is cast. An autopilot that packs
+    # bytewise says so in AUTOPILOT_VERSION, and the bridge honours that.
+    param_encoding = PARAM_ENCODING_C_CAST
+    # Either wording: text is all there is to go on.
+    prearm_prefixes = ("Preflight Fail: ", "PreArm: ")
 
     def decode_mode(self, custom_mode: int, base_mode: int, mav_type: int) -> str:
         try:
@@ -726,9 +858,9 @@ class GenericDialect(Dialect):
     _CALIBRATION: dict[str, CommandPlan] = {
         # Only the parameter positions common.xml itself documents.
         "gyro":  _cal(1.0),
-        "baro":  _cal(_NAN, _NAN, 1.0),
-        "accel": _cal(_NAN, _NAN, _NAN, _NAN, 1.0),
-        "level": _cal(_NAN, _NAN, _NAN, _NAN, 2.0),
+        "baro":  _cal(0.0, 0.0, 1.0),
+        "accel": _cal(0.0, 0.0, 0.0, 0.0, 1.0),
+        "level": _cal(0.0, 0.0, 0.0, 0.0, 2.0),
     }
 
     def autotune_plan(self, mav_type: int, enable: bool) -> CommandPlan:

@@ -120,9 +120,9 @@ _OFF_ON: list[dict[str, Any]] = [
 ]
 
 _MAVLINK_MODES: list[dict[str, Any]] = [
-    {"value": 0, "label": "Raw serial — no MAVLink framing"},
+    {"value": 0, "label": "Raw serial, no MAVLink framing"},
     {"value": 1, "label": "MAVLink framing and RSSI reporting"},
-    {"value": 2, "label": "Low latency — prioritise RC override packets"},
+    {"value": 2, "label": "Low latency: prioritise RC override packets"},
 ]
 
 _RTSCTS_MODES: list[dict[str, Any]] = [
@@ -165,7 +165,7 @@ REGISTERS: list[dict[str, Any]] = [
         "name": "SERIAL_SPEED", "label": "Baud rate",
         "kind": "enum", "options": _baud_enum(),
         "hint": "The speed of the wire between this radio and whatever it is plugged "
-                "into — the ground station here, the autopilot's telemetry port at the "
+                "into: the ground station here, the autopilot's telemetry port at the "
                 "far end. It does not have to match the other radio, but it does have "
                 "to match what is on the other end of its own cable.",
     },
@@ -189,7 +189,7 @@ REGISTERS: list[dict[str, Any]] = [
         "name": "TXPOWER", "label": "Transmit power",
         "kind": "enum", "options": _enum(TX_POWERS),
         "hint": "Check this against the limit where you are flying, and remember that "
-                "the limit is on radiated power — antenna gain counts towards it. The "
+                "the limit is on radiated power, and antenna gain counts towards it. The "
                 "default of 20 dBm is inside the US and Australian 915 MHz allowance "
                 "with an antenna below 10 dBi.",
     },
@@ -219,7 +219,7 @@ REGISTERS: list[dict[str, Any]] = [
         "kind": "number", "unit": "kHz", "min": 240000, "max": 1000000, "step": 1000,
         "advanced": True,
         "hint": "The bottom of the band the radio hops within. A 433 MHz radio accepts "
-                "414000–454000 and a 900 MHz one 895000–935000; what you may actually "
+                "414000 to 454000 and a 900 MHz one 895000 to 935000; what you may actually "
                 "use inside that is set by your national regulator.",
     },
     {
@@ -240,7 +240,7 @@ REGISTERS: list[dict[str, Any]] = [
         "name": "DUTY_CYCLE", "label": "Duty cycle",
         "kind": "number", "unit": "%", "min": 0, "max": 100, "step": 1, "advanced": True,
         "hint": "The share of the time this radio is allowed to transmit. 100 unless "
-                "your regulator trades duty cycle for band or power — Europe's 433 MHz "
+                "your regulator trades duty cycle for band or power. Europe's 433 MHz "
                 "allowance below 10% is the usual reason. Zero makes the radio "
                 "receive-only.",
     },

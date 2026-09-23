@@ -99,6 +99,15 @@ class FakeParamBridge:
     def get_last_command_error(self) -> str:
         return self.error
 
+    verify_answer: dict | None = None
+    verify_calls: list[tuple[list[dict], list[str]]] | None = None
+
+    def verify_params(self, targets: list[dict], names: list[str] | None = None) -> dict | None:
+        if self.verify_calls is None:
+            self.verify_calls = []
+        self.verify_calls.append((targets, list(names or [])))
+        return self.verify_answer
+
 
 def _handler_with_bridge(
     bridge: Any,
@@ -835,3 +844,62 @@ def test_state_store_update_body_rates_flows_into_snapshot() -> None:
     assert snap["rollspeed"] == 12.5
     assert snap["pitchspeed"] == -3.0
     assert snap["yawspeed"] == 0.5
+
+
+# ---------------------------------------------------------------------------
+# /api/params/verify: the "Check values" read-back
+# ---------------------------------------------------------------------------
+
+def test_params_verify_hands_the_clean_request_to_the_bridge() -> None:
+    bridge = FakeParamBridge()
+    bridge.verify_answer = {
+        "results": [{"name": "BAT1_N_CELLS", "wanted": 4.0, "before": 6.0,
+                     "after": 4.0, "rewritten": True, "ok": True, "error": ""}],
+        "values": {"BAT1_N_CELLS": 4.0}, "missing": [],
+        "confirmed": 1, "failed": 0, "all_confirmed": True,
+    }
+    handler, responses = _handler_with_bridge(bridge)
+    handler._api_params_verify({
+        "params": [{"name": "BAT1_N_CELLS", "value": 4}], "names": ["BAT1_V_EMPTY"],
+    })
+    assert bridge.verify_calls == [([{"name": "BAT1_N_CELLS", "value": 4.0}], ["BAT1_V_EMPTY"])]
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["ok"] is True and payload["all_confirmed"] is True
+
+
+def test_params_verify_answers_ok_even_when_a_value_did_not_stick() -> None:
+    """ok means the check ran; all_confirmed is the verdict the page reads."""
+    bridge = FakeParamBridge()
+    bridge.verify_answer = {"results": [], "values": {}, "missing": [],
+                            "confirmed": 0, "failed": 1, "all_confirmed": False}
+    handler, responses = _handler_with_bridge(bridge)
+    handler._api_params_verify({"params": [{"name": "A", "value": 1}]})
+    assert responses[0][1] == 200
+    assert responses[0][0]["all_confirmed"] is False
+
+
+@pytest.mark.parametrize("payload", [
+    {"params": "BAT1_N_CELLS"},
+    {"params": [], "names": "BAT1_N_CELLS"},
+    {"params": [{"name": "A", "value": True}]},
+    {"params": [{"name": "", "value": 1}]},
+    {"params": [], "names": [""]},
+])
+def test_params_verify_rejects_a_malformed_request(payload: dict) -> None:
+    bridge = FakeParamBridge()
+    handler, responses = _handler_with_bridge(bridge)
+    handler._api_params_verify(payload)
+    assert responses[0][1] == 400
+    assert bridge.verify_calls is None
+
+
+def test_params_verify_without_a_link_returns_503() -> None:
+    handler, responses = _handler_without_bridge()
+    handler._api_params_verify({"params": []})
+    assert responses[0][1] == 503
+
+    bridge = FakeParamBridge(error="not connected")
+    handler, responses = _handler_with_bridge(bridge)
+    handler._api_params_verify({"params": [{"name": "A", "value": 1}]})
+    assert responses[0][1] == 503

@@ -61,7 +61,7 @@ Corvus.link = (function () {
     {
       label: "SITL / GCS UDP",
       conn: "udp:0.0.0.0:14550",
-      note: "Waits on the usual ground-station port. Start here — SITL and most telemetry radios send to it by default.",
+      note: "Waits on the usual ground-station port. Start here. SITL and most telemetry radios send to it by default.",
     },
     // 14540 is PX4's onboard link — the one MAVSDK and MAVROS bind. Listed
     // second, and labelled for what actually lives there, because taking it
@@ -69,7 +69,7 @@ Corvus.link = (function () {
     {
       label: "PX4 onboard UDP",
       conn: "udp:0.0.0.0:14540",
-      note: "PX4's companion-computer port. MAVROS and MAVSDK bind it too — taking it can leave them without telemetry.",
+      note: "PX4's companion-computer port. MAVROS and MAVSDK bind it too, and taking it can leave them without telemetry.",
     },
     // A mavlink-router UdpEndpoint in Server mode binds and waits for the
     // station to speak first, so this one dials out rather than listening.
@@ -89,7 +89,7 @@ Corvus.link = (function () {
     {
       label: "ArduPilot SITL",
       conn: "tcp:127.0.0.1:5760",
-      note: "ArduPilot's simulator on this machine. PX4 SITL serves no TCP — use the UDP rows above for it.",
+      note: "ArduPilot's simulator on this machine. PX4 SITL serves no TCP. Use the UDP rows above for it.",
     },
   ];
 
@@ -149,7 +149,7 @@ Corvus.link = (function () {
   function portOptionText(port) {
     const device = (port && port.device) || "";
     const description = (port && port.description) || "";
-    return description ? `${device}  \u2014  ${description}` : device;
+    return description ? `${device} (${description})` : device;
   }
 
   /** Pure: map a link_status to a {label, dot} using the semantic palette. */
@@ -228,12 +228,12 @@ Corvus.link = (function () {
     },
     "udp-fallback": {
       short: "UDP",
-      title: "No flight controller or radio found — listening on the"
+      title: "No flight controller or radio found. Listening on the"
         + " ground-station UDP port, which is where a simulator publishes.",
     },
     "configured": {
       short: "SAVED",
-      title: "No flight controller or radio found — using the connection saved"
+      title: "No flight controller or radio found. Using the connection saved"
         + " in the config file.",
     },
     "cli": {
@@ -242,7 +242,7 @@ Corvus.link = (function () {
     },
     "default-invalid-fallback": {
       short: "DEFAULT",
-      title: "The configured connection could not be used — started on the"
+      title: "The configured connection could not be used. Started on the"
         + " built-in default instead.",
     },
   };
@@ -252,7 +252,7 @@ Corvus.link = (function () {
   function suggestionText(suggestion) {
     const s = suggestion || {};
     const kind = s.kind === "sik" ? "telemetry radio" : "flight controller";
-    return `${s.device || "A device"} \u2014 ${kind} plugged in just now.`;
+    return `${s.device || "A device"}: ${kind} plugged in just now.`;
   }
 
   /* One row, offered and never taken: Connect sends the same string the serial
@@ -493,7 +493,7 @@ Corvus.link = (function () {
       missingDevices = [];
       if (current && !ports.some((prt) => prt.device === current)) {
         missingDevices = [current];
-        opts.push({ value: current, text: `${current}  \u2014  not connected` });
+        opts.push({ value: current, text: `${current} (not connected)` });
       }
       setSelectOptions(serialSelect, opts);
       // Auto-select the first port when exactly one real port is available
@@ -874,7 +874,7 @@ Corvus.link = (function () {
     const s = status || {};
     const where = `${s.host || "127.0.0.1"}:${s.port || 14550}`;
     if (!s.running) {
-      return `Mirrors this link to ${where} — the UDP link QGroundControl`
+      return `Mirrors this link to ${where}, the UDP link QGroundControl`
         + " opens on its own.";
     }
     // Both stations transmitting under one MAVLink system id makes the
@@ -882,7 +882,7 @@ Corvus.link = (function () {
     // the operator is already looking rather than only in the log.
     if (s.sysid_conflict) {
       return "The other station is using Corvus' MAVLink system ID (254). Give"
-        + " it its own — in QGroundControl, Application Settings → MAVLink →"
+        + " it its own. In QGroundControl: Application Settings → MAVLink →"
         + " Ground Station system ID.";
     }
     // A station is being fed telemetry and refused commands. That pair is
@@ -895,7 +895,7 @@ Corvus.link = (function () {
     const refused = s.commands_refused || 0;
     if (refused) {
       const who = (s.commands_refused_from || [])[0];
-      return `${refused} command(s) refused${who ? ` from ${who}` : ""} — that`
+      return `${refused} command(s) refused${who ? ` from ${who}` : ""}. That`
         + " address is not in the endpoint list, so it receives telemetry but"
         + " cannot command. Add it to forwarding.endpoints to let it.";
     }
@@ -904,7 +904,7 @@ Corvus.link = (function () {
       ? ` Corvus answers on ${s.listen_host || "127.0.0.1"}:${s.listen_port}.`
       : "";
     if (!peers) {
-      return `Mirroring to ${where} — nothing has answered yet.` + back;
+      return `Mirroring to ${where}. Nothing has answered yet.` + back;
     }
     return `${peers} station(s) connected; mirroring to ${where}.` + back;
   }

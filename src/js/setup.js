@@ -78,7 +78,7 @@ Corvus.setup = (function () {
     container.appendChild(S.pageHeader("Setup", "Vehicle configuration and calibration"));
 
     // Compact Vehicle Info card stays at the top of the grid so the operator
-    // still sees which autopilot and firmware they are configuring (kept lean).
+    // still sees which vehicle and firmware they are configuring (kept lean).
     const state = (Corvus.telemetry && Corvus.telemetry.getState()) || {};
     const infoCard = S.el("div", "page-card setup-vehicle-info");
     infoCard.appendChild(S.sectionTitle("Vehicle Info"));
@@ -93,9 +93,8 @@ Corvus.setup = (function () {
     // both permanently, on every page. Repeating them here bought nothing and
     // pushed the identity rows the card exists for further down.
     const rowDefs = [
-      { key: "autopilot",    label: "Autopilot",    value: state.autopilot    || "—" },
       { key: "vehicle_type", label: "Vehicle Type", value: state.vehicle_type || "—" },
-      { key: "px4_version",  label: "Firmware Version", value: state.px4_version || "—" },
+      { key: "px4_version",  label: "Firmware",     value: firmwareText(state) },
     ];
     const rowValues = {};
     for (const def of rowDefs) {
@@ -132,6 +131,7 @@ Corvus.setup = (function () {
       "Download all PX4 parameters on demand, then edit any value."));
     grid.appendChild(makeTile("firmware", "cpu", "Firmware",
       "Flash PX4 firmware over a direct USB connection only."));
+    grid.appendChild(makeVideoTile());
     container.appendChild(grid);
 
     // Subscribe to telemetry so the Vehicle Info rows update live. The firmware version
@@ -143,9 +143,8 @@ Corvus.setup = (function () {
       gridUnsub = Corvus.telemetry.subscribe((s) => {
         if (!s) return;
         const next = {
-          autopilot:    s.autopilot    || "—",
           vehicle_type: s.vehicle_type || "—",
-          px4_version:  s.px4_version  || "—",
+          px4_version:  firmwareText(s),
         };
         for (const key of Object.keys(next)) {
           const span = rowValues[key];
@@ -155,6 +154,12 @@ Corvus.setup = (function () {
     }
 
     S.refreshIcons();
+  }
+
+  /** Flight stack and version in one value, e.g. "PX4 v1.18.0" or "ArduPilot v4.5.7". */
+  function firmwareText(s) {
+    const text = [s.autopilot, s.px4_version].filter(Boolean).join(" ");
+    return text || "—";
   }
 
   /**
@@ -171,6 +176,22 @@ Corvus.setup = (function () {
       onClick: () => openView(viewId),
     });
     btn.dataset.view = viewId;
+    return btn;
+  }
+
+  /**
+   * The Video tile has no sub-page yet, so it is disabled rather than
+   * hidden: an operator can see that a capability is planned instead of
+   * wondering why it is missing.
+   */
+  function makeVideoTile() {
+    const btn = Corvus.ui.tile({
+      className: "setup-tile",
+      icon: "video",
+      title: "Video",
+      desc: "RTSP support coming soon.",
+    });
+    btn.disabled = true;
     return btn;
   }
 

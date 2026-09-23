@@ -128,6 +128,7 @@ svg { display: block; }
   font-variant-numeric: tabular-nums;
 }
 .tb-value .sub { font-size: 11px; color: var(--text-2); font-weight: 500; }
+.tb-value .sub:empty { display: none; }
 .tb-value .sub.undetected { color: var(--text-3); }
 /* Hidden unless the operator asks for them in Settings > Appearance > Top
    bar, which writes data-topbar-dots on <html> (Corvus.topbar.setStatusDots).
@@ -170,24 +171,12 @@ svg { display: block; }
    NOT READY deliberately gets no pill: it is the absence of a clearance, not
    an active state, and giving it the same weight is how a bar ends up amber
    from end to end. */
-.tb-block[data-tone] {
-  background: var(--surface-2);
-  box-shadow: inset 0 0 0 1px var(--border-soft);
-}
-.tb-block[data-tone="ready"] {
-  background: var(--healthy-dark);
-  box-shadow: inset 0 0 0 1px var(--healthy);
-}
-.tb-block[data-tone="flying"] {
-  background: var(--nav-dark);
-  box-shadow: inset 0 0 0 1px var(--nav);
-}
-.tb-block[data-tone="armed"] {
-  background: var(--warning-dark);
-  box-shadow: inset 0 0 0 1px var(--warning);
-}
+.tb-block[data-tone] { background: var(--surface-2); }
+.tb-block[data-tone="ready"] { background: var(--healthy-dark); }
+.tb-block[data-tone="flying"] { background: var(--nav-dark); }
+.tb-block[data-tone="armed"] { background: var(--warning-dark); }
 .tb-block[data-tone="notready"],
-.tb-block[data-tone="none"] { background: none; box-shadow: none; }
+.tb-block[data-tone="none"] { background: none; }
 .tb-block[data-tone]:hover { background: var(--surface-hover); }
 .tb-block[data-tone="ready"]:hover { background: var(--healthy-dark); }
 .tb-block[data-tone="flying"]:hover { background: var(--nav-dark); }
@@ -542,6 +531,30 @@ svg { display: block; }
 .settings-map-service > .settings-map-layer:empty + .field-hint { margin-top: 14px; }
 /* The note is the layer field's own footnote — it keeps hugging the select. */
 .settings-map-service > .settings-map-layer:not(:empty) + .field-hint { margin-top: 6px; }
+/* The API keys button is a separate subject from the layer above it, and it
+   is the last thing in the card, so it gets the same break the plugin folder
+   field gets rather than reading as another control of the same picker. */
+.settings-map-keys { margin-top: var(--space-14); }
+.settings-map-keys-note { display: block; margin-top: 6px; }
+
+/* One keyed map service in the API keys dialog: the field, then the saved
+   state and the REMOVE button on a row of their own under it. Separated by a
+   rule rather than by spacing alone — several services stacked read as one
+   long form otherwise, and the operator is looking for the one row that
+   belongs to the provider page they just copied a key from. */
+.settings-map-token { padding: 12px 0; border-bottom: 1px solid var(--border-soft); }
+.settings-map-token:last-of-type { border-bottom: none; }
+.settings-map-token-actions {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-10); margin-top: 8px;
+}
+/* "No key" is a fact, not a fault: it is the state of a service the operator
+   has simply not set up, so it reads in the muted text colour and only turns
+   accented once there is something to report. */
+.settings-map-token-state {
+  font-size: var(--text-sm); color: var(--text-3);
+}
+.settings-map-token-state.is-set { color: var(--accent); }
 
 /* A path Corvus decided on, shown so it can be read and copied. Monospace like
    every other path in the UI, and allowed to wrap: a home directory on Windows
@@ -640,11 +653,9 @@ svg { display: block; }
   color: var(--text-2);
   transition: background 160ms ease, color 160ms ease;
 }
-/* Readable on hover, and readable whenever the credit is actually open. This
-   was keyed to :focus-within, but the toggle is a <summary> and a summary keeps
-   focus after the click that opened it — so the pill stayed lit until the user
-   happened to click somewhere else on the map. */
-.maplibregl-ctrl-bottom-left > .maplibregl-ctrl.maplibregl-ctrl-attrib:hover,
+/* Readable whenever the credit is actually open. Keyed only to the open state,
+   not :hover: the credit is a click-to-reveal detail, not a mouseover
+   tooltip, so passing over the pill must not pop the text open on its own. */
 .maplibregl-ctrl-bottom-left
   > .maplibregl-ctrl.maplibregl-ctrl-attrib.maplibregl-compact-show {
   background: var(--surface-hover);
@@ -1315,12 +1326,12 @@ svg { display: block; }
   width: 22px; height: 22px;
   display: grid; place-items: center;
   border-radius: 6px;
-  background: rgb(var(--glass-rgb) / 0.5);
+  background: rgb(var(--glass-rgb) / 0.75);
   backdrop-filter: var(--blur-fine);
   -webkit-backdrop-filter: var(--blur-fine);
-  border: 1px solid rgb(var(--tint-rgb) / 0.06);
-  color: var(--text-3);
-  opacity: 0.45;
+  border: 1px solid rgb(var(--tint-rgb) / 0.12);
+  color: var(--text-2);
+  opacity: 0.85;
   transition: opacity 140ms, color 140ms, background 140ms;
 }
 .track-clear:hover {
@@ -3769,6 +3780,7 @@ button.link-card-title:focus-visible {
 .motors-panel-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .motors-panel-title { font-size: 14px; font-weight: 700; color: var(--text-1); }
 .motors-panel-sub { font-size: 11.5px; color: var(--text-3); }
+.motors-output-head { padding-top: 10px; border-top: 1px solid var(--border-soft); }
 .motors-assign {
   display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
   padding-bottom: 10px; border-bottom: 1px solid var(--border-soft);
@@ -3975,6 +3987,23 @@ button.link-card-title:focus-visible {
 .battery-live { display: flex; flex-direction: column; gap: 14px; }
 .battery-config { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .battery-card { display: flex; flex-direction: column; gap: 10px; }
+
+/* "Check values" (setupShared.checkCard, on every setup page that writes
+   fields): what the operator set against what the vehicle holds now. */
+.check-card { display: flex; flex-direction: column; gap: 10px; }
+.check-summary { font-size: 12px; color: var(--text-2); }
+.check-summary.ok { color: var(--healthy); }
+.check-summary.err { color: var(--critical); }
+.check-rows { display: flex; flex-direction: column; }
+.check-row {
+  display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 1.4fr);
+  gap: 8px; align-items: baseline; padding: 5px 0;
+  border-bottom: 1px solid var(--border-soft); font-size: 11.5px;
+}
+.check-head { color: var(--text-3); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.3px; }
+.check-param, .check-value { font-family: var(--mono); overflow-wrap: anywhere; }
+.check-row.ok .check-outcome { color: var(--healthy); }
+.check-row.err .check-outcome { color: var(--critical); }
 
 /* ----- the drawing -----
    One fill across the whole pack, because that is what "remaining" means, with
@@ -5138,6 +5167,17 @@ button.review-finding-head:focus-visible {
               0 0 14px color-mix(in srgb, var(--plan) 70%, transparent);
 }
 
+/* The mission being flown (Corvus.mission's progress): the point the vehicle
+   is on its way to, and the ones it has passed, in the app's "going well"
+   colour so they read apart from the selection. */
+.mission-point.is-current {
+  --mp-scale: calc(var(--mission-point-scale, 1) * 1.12);
+  box-shadow: 0 0 0 calc(1.5px * var(--mp-scale)) var(--plan-ink),
+              0 0 0 calc(4px * var(--mp-scale)) color-mix(in srgb, var(--healthy) 80%, transparent),
+              0 0 14px color-mix(in srgb, var(--healthy) 70%, transparent);
+}
+.mission-point.is-done { opacity: 0.55; }
+
 /* The grip that sizes a selected orbit. Small and square so it is not mistaken
    for a waypoint, and on the ring rather than beside it. It grows with the
    marks for the same reason they do. */
@@ -5252,6 +5292,20 @@ button.review-finding-head:focus-visible {
   border-color: color-mix(in srgb, var(--nav) 50%, var(--border));
 }
 .mission-row:focus-visible { outline: 2px solid var(--nav); outline-offset: -2px; }
+.mission-row.is-current { box-shadow: inset 3px 0 0 var(--healthy); }
+.mission-row.is-done .mission-row-label,
+.mission-row.is-done .mission-row-value { color: var(--text-3); }
+
+/* What the vehicle is doing with the plan, or that it holds another one. */
+.mission-vehicle {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 7px 9px; border-radius: var(--radius-btn);
+  border: 1px solid var(--border); background: var(--surface-2);
+  font-size: 12px; color: var(--text-2);
+}
+.mission-vehicle[data-level="live"] { border-color: color-mix(in srgb, var(--healthy) 55%, var(--border)); }
+.mission-vehicle[data-level="warn"] { border-color: color-mix(in srgb, var(--warning) 55%, var(--border)); }
+.mission-vehicle-text { flex: 1 1 12em; min-width: 0; }
 .mission-row-index {
   font-family: var(--mono); font-size: 10.5px; color: var(--text-3);
   text-align: right; font-variant-numeric: tabular-nums;

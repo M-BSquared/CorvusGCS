@@ -155,7 +155,7 @@ Corvus.setupRtk = (function () {
     const intro = S.el("div", "params-desc");
     intro.textContent =
       "Corvus looks for an RTK receiver on this computer by itself and starts " +
-      "correcting as soon as one is plugged in — nothing here needs changing " +
+      "correcting as soon as one is plugged in. Nothing here needs changing " +
       "for that. The flight controller's own port is never used, so the " +
       "aircraft's telemetry link is never at risk.";
     settingsCard.appendChild(intro);
@@ -245,7 +245,7 @@ Corvus.setupRtk = (function () {
       ["latitude", "Latitude", "°", "Decimal degrees."],
       ["longitude", "Longitude", "°", "Decimal degrees."],
       ["altitude", "Height", "m",
-       "Height above the ellipsoid, not above sea level — a survey record " +
+       "Height above the ellipsoid, not above sea level. A survey record " +
        "usually gives one or the other, and in most of Europe they differ by " +
        "tens of metres."],
       ["accuracy", "How well it is known", "m", "The accuracy of the mark itself."],
@@ -384,7 +384,7 @@ Corvus.setupRtk = (function () {
       const survey = data.survey || {};
       const target = data.survey_target || {};
       if (survey.valid && !survey.active) {
-        return `Survey complete — the base knows its position to ${fmt(survey.accuracy)} m.`;
+        return `Survey complete: the base knows its position to ${fmt(survey.accuracy)} m.`;
       }
       const parts = [`${pct}%`];
       parts.push(`${Math.round(survey.duration || 0)} s of ${target.duration || 0} s`);

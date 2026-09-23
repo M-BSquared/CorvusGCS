@@ -393,8 +393,8 @@
                     <input class="field-input field-input-mono link-input" id="fwdPort" type="number"
                       min="1" max="65535" value="14550" autocomplete="off" />
                     <div class="link-hint" id="fwdHint">
-                      14550 is the UDP link QGroundControl opens on its own —
-                      start it and it sees this aircraft.
+                      14550 is the UDP link QGroundControl opens on its own.
+                      Start it and it sees this aircraft.
                     </div>
                   </div>
                   <label class="link-toggle link-toggle-warn">
@@ -405,7 +405,7 @@
                     Two stations will be able to arm and change the mode of this
                     aircraft. Leave off to share telemetry only. Corvus transmits
                     as MAVLink system 254 and QGroundControl as 255; if the other
-                    station is on 254 too, give it its own — PX4 counts sequence
+                    station is on 254 too, give it its own. PX4 counts sequence
                     numbers per ID and reports loss that is not happening.
                   </div>
                   <div class="link-status-error" id="fwdError" hidden></div>
@@ -457,7 +457,7 @@
 
             <div class="console-input-row">
               <span class="console-prompt">&gt;&gt;</span>
-              <input type="text" id="consoleInput" class="console-input" placeholder="Command — Tab completes, ↑ history, ? for help" autocomplete="off" spellcheck="false" />
+              <input type="text" id="consoleInput" class="console-input" placeholder="Command (Tab completes, ↑ history, ? for help)" autocomplete="off" spellcheck="false" />
               <button class="btn console-send" id="consoleSend" title="Send" data-variant="primary" data-shape="round">
                 <i data-lucide="send"></i>
               </button>

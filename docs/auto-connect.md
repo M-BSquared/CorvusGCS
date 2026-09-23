@@ -1,4 +1,4 @@
-# Auto-connect — interface reference
+# Auto-connect: interface reference
 
 What Corvus GCS connects to when nobody tells it, and the contract anything
 building on that behaviour can rely on.
@@ -22,13 +22,13 @@ produces one wins:
 | 1 | Command-line argument | `cli` | `serve.py <port> <connection>` or `corvus/app.py <port> <connection>`. Only a person types this, so it outranks hardware. An unusable value falls through rather than failing the launch. |
 | 2 | Direct USB flight controller | `usb-direct` | A CDC ACM node, or a `/dev/serial/by-id/` name matching a Pixhawk-class vendor. Dialled as `serial:<device>:57600`. |
 | 3 | SiK telemetry radio | `sik` | A USB-to-serial bridge (FTDI / CP210x / CH340). Same string shape. |
-| 4 | Configured connection | `configured` | `mavlink_connection` from `~/.corvus/config.json`. Honoured **verbatim** — including a stale `14540`, which is warned about and never rewritten. |
+| 4 | Configured connection | `configured` | `mavlink_connection` from `~/.corvus/config.json`. Honoured **verbatim**, including a stale `14540`, which is warned about and never rewritten. |
 | 5 | UDP fallback | `udp-fallback` | `udp:0.0.0.0:14550`. The ground-station port, which is where PX4 SITL publishes. |
 | 6 | Built-in default | `default-invalid-fallback` | Reached only when everything above is absent or rejected by `validate_connection`. Uses `DEFAULT_MAVLINK_CONNECTION`. |
 
 Rules 2 and 3 are skipped when their config toggle is off; rule 5 likewise.
-Both launchers pass `None` — not the config value — when no command-line
-argument was given, so rule 1 cannot shadow rules 2–4.
+Both launchers pass `None` (not the config value) when no command-line
+argument was given, so rule 1 cannot shadow rules 2 to 4.
 
 **Ports are never opened to classify them.** Enumeration is
 `MavlinkBridge.list_serial_ports()`, a `pyserial` describe plus a `/dev` glob.
@@ -37,27 +37,27 @@ flasher uses, so the two cannot disagree about what is a flight controller.
 
 Ports excluded before any rule sees them:
 
-- **Phantoms** — `/dev/ttyS*`, the two macOS nodes that exist whether or not
+- **Phantoms**: `/dev/ttyS*`, the two macOS nodes that exist whether or not
   anything is plugged in, and pseudo-terminals (`is_phantom_device`).
-- **Bootloaders** — a board in DFU / PX4 bootloader mode speaks the bootloader
+- **Bootloaders**: a board in DFU / PX4 bootloader mode speaks the bootloader
   protocol, not MAVLink, and the flasher is about to want the port
   (`is_bootloader_port`). Closed-world: only a positive descriptor match skips,
   so an unknown board is never starved.
-- **RTK base stations** — a GNSS receiver is a serial port that never sends a
+- **RTK base stations**: a GNSS receiver is a serial port that never sends a
   heartbeat, and on Linux a u-blox ZED-F9P on a USB lead enumerates as a
   `/dev/ttyACM*` node indistinguishable from a Pixhawk's. Without this the
   ground station would dial the base station plugged in beside the aircraft,
-  hold its port, and wait for a heartbeat that cannot come — while the RTK
+  hold its port, and wait for a heartbeat that cannot come, while the RTK
   service found the device already taken. Recognised by USB descriptor only
   (`is_rtk_device`: u-blox `1546`, Septentrio `152a`, plus product-name
   tokens), and closed-world in the opposite direction from the bootloader
   check: only a positive match is treated as a base, because refusing to
   auto-connect a real flight controller is by far the worse error.
   `classify_serial_device()` returns `rtk` for these, which is also what
-  `corvus/rtk_service.py` picks its candidates by — one table, so the two
+  `corvus/rtk_service.py` picks its candidates by: one table, so the two
   cannot disagree about what is a receiver.
 
-With two candidates of the same kind, the pick is the first by device name —
+With two candidates of the same kind, the pick is the first by device name,
 deterministic across launches, because connecting to a different aircraft
 depending on USB enumeration order is not acceptable.
 
@@ -77,8 +77,8 @@ Each tick:
 | `manual_override` set | nothing |
 | Bridge not running | nothing |
 | No serial candidate | clear any suggestion; reset the dial latch |
-| `link_status` in `disconnected`/`reconnecting` **and** heartbeat older than 8 s | **dial** — `stop` → `validate` → `set_connection` → `start`, once per device appearance |
-| anything else (connected, or degraded with a fresh heartbeat) | **suggest** — publish `link_suggestion`, never touch the link |
+| `link_status` in `disconnected`/`reconnecting` **and** heartbeat older than 8 s | **dial**: `stop` → `validate` → `set_connection` → `start`, once per device appearance |
+| anything else (connected, or degraded with a fresh heartbeat) | **suggest**: publish `link_suggestion`, never touch the link |
 
 The dial is the identical sequence `POST /api/mavlink/connect` performs, so the
 exclusive serial `flock`, the tlog rotation and the forwarder frame sink behave
@@ -91,7 +91,7 @@ an operator who unplugs a cable and plugs it back in is asking again.
 
 ## 3. State-store fields (pushed over the existing SSE stream)
 
-No new socket and no polling — both fields ride `/api/telemetry` beside
+No new socket and no polling. Both fields ride `/api/telemetry` beside
 `link_status`, and both are in `IMMEDIATE_KEYS`, so a transition is not
 delayed by the 30 Hz coalesce window.
 
@@ -151,24 +151,24 @@ Read-only. Decides nothing, dials nothing.
 
 Always `200`.
 
-### `POST /api/mavlink/connect` — changed
+### `POST /api/mavlink/connect` (changed)
 
 On success it additionally sets `manual_override = true` for the process,
 clears `link_suggestion`, and sets `link_auto.reason` to `manual`. Status codes
 and the validate-before-teardown order are unchanged; a connection the bridge
 rejected sets nothing, because a rejected string is a typo, not a choice.
 
-### `POST /api/mavlink/disconnect` — changed
+### `POST /api/mavlink/disconnect` (changed)
 
 Idempotent stop as before, and additionally takes the manual override and
 clears `link_suggestion`. "Leave it closed" has to mean closed: nothing dials
 the link back open behind an operator who freed the radio. The way back is
 another connect, or a restart.
 
-### `POST /api/config` — changed
+### `POST /api/config` (changed)
 
 Persists the `autoconnect` block and refreshes the live watcher's toggles. It
-**does not dial** — the same invariant `mavlink_connection` has always had on
+**does not dial**, the same invariant `mavlink_connection` has always had on
 this endpoint.
 
 ---
@@ -211,7 +211,7 @@ These are guarantees, not current behaviour that might drift:
 - **It never opens a port to find out what is behind it.**
 - **It never synthesises a `udpout:` or a TCP string.** The fallback is always
   the single `udp:` listen string; dial-out forms are operator-chosen only.
-- **It never auto-picks PX4's onboard range** (`14540`–`14549`). An explicitly
+- **It never auto-picks PX4's onboard range** (`14540` to `14549`). An explicitly
   configured port there is honoured and warned about, never rewritten.
 - **It adds one thread and no sockets.**
 
@@ -224,9 +224,9 @@ These are guarantees, not current behaviour that might drift:
 | `tests/test_autoconnect.py` | The policy: resolution order, the never-steal matrix, bootloader and phantom exclusion, dedupe and dial latches, the config block, the reason enum, the HTTP surface. |
 | `tests/test_autoconnect_live.py` | The plumbing, on real sockets against a real MAVLink heartbeat source: connect-without-a-click, scanning with nothing present, loss and recovery, a disconnect that stays disconnected, forwarder-sink survival, no leaked threads. |
 
-The serial half — USB and SiK priority against real hardware — needs a flight
+The serial half (USB and SiK priority against real hardware) needs a flight
 controller on a cable and is covered by the policy tests against the real
 classifier. The PX4-specific behaviour layered on top of the link (version
 triple, parameter schema, stream intervals) is covered by the version,
-parameter and stream-fallback suites; the plan's L1–L6 Gazebo smoke is still
+parameter and stream-fallback suites; the plan's L1 to L6 Gazebo smoke is still
 the only thing that exercises all of it end to end.

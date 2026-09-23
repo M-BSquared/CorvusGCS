@@ -42,10 +42,14 @@ from .param_fields import enum, number, option_label, present, section
 
 # BAT1_SOURCE: where the measurement comes from at all. An operator who has
 # wired a power module but left this on ESCs gets no voltage, which reads on
-# every page as an aircraft with a flat battery.
+# every page as an aircraft with a flat battery. The values are PX4's
+# (src/lib/battery/module.yaml, v1.16 to v1.18): -1 is the default of the
+# second and third instance, and "External" means BATTERY_STATUS arriving
+# over MAVLink, not a second analog input.
 SOURCE_OPTIONS: list[dict[str, Any]] = [
-    {"value": 0, "label": "Power module"},
-    {"value": 1, "label": "External (ADC)"},
+    {"value": -1, "label": "Disabled"},
+    {"value": 0, "label": "Power module (analog)"},
+    {"value": 1, "label": "External, over MAVLink"},
     {"value": 2, "label": "ESCs"},
 ]
 
@@ -69,7 +73,7 @@ def _pack_fields(prefix: str, values: dict[str, float]) -> list[dict[str, Any]]:
                     "can only ever be a voltage reading."),
         number(f"{prefix}_V_CHARGED", "Full cell voltage", values, unit="V",
                step=0.01, min=0, max=5,
-               hint="Resting voltage of one fully charged cell — 4.05 V is the "
+               hint="Resting voltage of one fully charged cell. 4.05 V is the "
                     "PX4 default for LiPo, 4.2 V is the charger's."),
         number(f"{prefix}_V_EMPTY", "Empty cell voltage", values, unit="V",
                step=0.01, min=0, max=5,

@@ -50,7 +50,7 @@ def _rate_axis(prefix: str, axis: str) -> list[FieldRow]:
          "The main gain: how hard the controller reacts to a rate error. Raise it "
          "until the aircraft feels crisp, back off at the first sign of a twitch."),
         (f"{prefix}_I", f"{axis} rate I", "",
-         "Removes steady error — a persistent lean from an off-centre payload or "
+         "Removes steady error: a persistent lean from an off-centre payload or "
          "a bent arm. On ArduPilot this normally tracks P."),
         (f"{prefix}_D", f"{axis} rate D", "",
          "Damps the response. Too much amplifies motor and frame noise into heat."),
@@ -65,7 +65,7 @@ def _rate_axis(prefix: str, axis: str) -> list[FieldRow]:
          "Low-pass on the rate error. Lowering it calms a noisy airframe at the "
          "cost of response."),
         (f"{prefix}_FLTD", f"{axis} derivative filter", "Hz",
-         "Low-pass on the D term specifically — the usual first thing to lower "
+         "Low-pass on the D term specifically, and the usual first thing to lower "
          "when a tune makes the motors hot."),
         (f"{prefix}_SMAX", f"{axis} slew limit", "",
          "Caps how fast the output may move, which is ArduPilot's own guard "
@@ -95,7 +95,7 @@ COPTER_ATTITUDE_SECTIONS: SectionTable = [
     ]),
     ("limits", "Acceleration limits", [
         ("ATC_ACCEL_R_MAX", "Maximum roll acceleration", "cdeg/s/s",
-         "Centidegrees per second squared — ArduPilot's own unit."),
+         "Centidegrees per second squared, ArduPilot's own unit."),
         ("ATC_ACCEL_P_MAX", "Maximum pitch acceleration", "cdeg/s/s", ""),
         ("ATC_ACCEL_Y_MAX", "Maximum yaw acceleration", "cdeg/s/s", ""),
         ("ATC_SLEW_YAW", "Yaw slew rate", "cdeg/s",
@@ -191,7 +191,7 @@ PLANE_RATE_SECTIONS: SectionTable = [
 PLANE_ATTITUDE_SECTIONS: SectionTable = [
     ("limits", "Attitude limits", [
         ("LIM_ROLL_CD", "Maximum bank angle", "cdeg",
-         "Centidegrees — ArduPilot's own unit. 4500 is 45°."),
+         "Centidegrees, ArduPilot's own unit. 4500 is 45°."),
         ("LIM_PITCH_MAX", "Maximum pitch up", "cdeg", ""),
         ("LIM_PITCH_MIN", "Maximum pitch down", "cdeg", ""),
         ("ACRO_ROLL_RATE", "Acro roll rate", "deg/s", ""),
@@ -305,13 +305,13 @@ PLANE_AUTOTUNE_FIELDS: list[FieldRow] = [
 ]
 
 COPTER_AUTOTUNE_STEPS: list[str] = [
-    "Fly somewhere open and calm — the tune needs room to drift and is thrown "
+    "Fly somewhere open and calm. The tune needs room to drift and is thrown "
     "off by wind.",
     "Take off and hold a stable hover in Loiter or AltHold, 5-10 m up.",
     "Start the tune. Corvus switches the vehicle into AUTOTUNE mode; ArduPilot "
     "takes the sticks from there.",
     "Let go of the sticks. Expect visible twitching, one axis at a time, for "
-    "several minutes — nudging a stick pauses the tune, it does not break it.",
+    "several minutes. Nudging a stick pauses the tune, it does not break it.",
     "When ArduPilot reports the tune is complete, land with the throttle down "
     "and leave the mode switch in AUTOTUNE to keep the new gains, then disarm.",
     "Switching out of AUTOTUNE before landing discards the result; test the "
@@ -324,7 +324,7 @@ PLANE_AUTOTUNE_STEPS: list[str] = [
     "Start the tune. Corvus switches the vehicle into AUTOTUNE mode.",
     "Fly it: the plane tunes from your own stick inputs, so give it full "
     "aileron and elevator rolls and pitches for a few minutes.",
-    "Switch out of AUTOTUNE when the response feels right — the gains are "
+    "Switch out of AUTOTUNE when the response feels right. The gains are "
     "saved as they are learned.",
 ]
 
@@ -386,8 +386,8 @@ def _rate_group(values: dict[str, float]) -> dict[str, Any] | None:
     return _group(
         "rate", "Rate Controller",
         "The innermost loop: it turns a rate setpoint into control output, and "
-        "it is the loop responsible for how the aircraft feels. Tune it first — "
-        "every outer loop is built on top of it, and this is the one the "
+        "it is the loop responsible for how the aircraft feels. Tune it first, "
+        "because every outer loop is built on top of it, and this is the one the "
         "autotune tunes.",
         sections, RATE_CHARTS,
     )
@@ -409,7 +409,7 @@ def _velocity_group(values: dict[str, float]) -> dict[str, Any] | None:
     return _group(
         "velocity", "Velocity Controller",
         "Turns a velocity demand into an attitude and a throttle. Multicopter "
-        "only — a fixed wing does this through TECS instead.",
+        "only. A fixed wing does this through TECS instead.",
         _sections(COPTER_VELOCITY_SECTIONS, values), VELOCITY_CHARTS,
     )
 

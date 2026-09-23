@@ -117,6 +117,33 @@ def test_build_returns_the_documented_sections() -> None:
     assert _section(doc, "channels")["kind"] == "channels"
 
 
+def _input_mode_field(doc: dict[str, Any]) -> dict[str, Any]:
+    return next(f for f in _section(doc, "input")["fields"]
+                if f["param"] == "COM_RC_IN_MODE")
+
+
+def test_input_mode_labels_match_px4() -> None:
+    """3 keeps the first source and 4 disables sticks, on v1.16 to v1.18.
+
+    The two were once swapped: an operator who picked "disabled" got "keep
+    the first", which still flies from a transmitter.
+    """
+    labels = {int(o["value"]): o["label"] for o in _input_mode_field(
+        rc_config.build(_values(), 8))["options"]}
+    assert set(labels) == {0, 1, 2, 3, 4}
+    assert "keep the first" in labels[3]
+    assert labels[4] == "Stick input disabled"
+    assert "fall back" in labels[2]
+
+
+def test_a_v117_priority_input_mode_is_named_only_when_held() -> None:
+    held = _input_mode_field(rc_config.build(_values(COM_RC_IN_MODE=6.0), 8))
+    values = [int(o["value"]) for o in held["options"]]
+    assert values == [0, 1, 2, 3, 4, 6]
+    assert held["options"][-1]["label"].startswith("Priority: joystick 1")
+    assert not any("Unknown" in o["label"] for o in held["options"])
+
+
 def test_a_firmware_without_a_parameter_loses_one_field_not_the_page() -> None:
     values = _values()
     del values["RC_MAP_KILL_SW"]

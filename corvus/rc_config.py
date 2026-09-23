@@ -63,19 +63,30 @@ REV_REVERSED = -1.0
 # ---------------------------------------------------------------------------
 
 # COM_RC_IN_MODE — which input the vehicle accepts. Worth naming precisely: the
-# difference between "RC and Joystick" and "Stick input disabled" is whether a
-# transmitter can take an autonomous flight back.
+# difference between "keep the first" and "Stick input disabled" is whether a
+# transmitter can take an autonomous flight back. 0 to 4 mean the same on PX4
+# v1.16, v1.17 and v1.18 (commander_params.c / commander_params.yaml).
 RC_IN_MODE_OPTIONS: list[dict[str, Any]] = [
     {"value": 0, "label": "RC transmitter only"},
     {"value": 1, "label": "Joystick only"},
-    {"value": 2, "label": "RC and joystick, whichever is present"},
-    {"value": 3, "label": "Stick input disabled"},
-    {"value": 4, "label": "Stick input with fallback to the other"},
+    {"value": 2, "label": "RC or joystick, fall back to the other"},
+    {"value": 3, "label": "RC or joystick, keep the first until reboot"},
+    {"value": 4, "label": "Stick input disabled"},
+]
+
+# The source priorities v1.17 added. Not offered, because v1.16 has no such
+# values and the schema cannot tell the two apart by which parameters answer;
+# named only when the vehicle already holds one, so it reads as what it is.
+RC_IN_MODE_PRIORITY_OPTIONS: list[dict[str, Any]] = [
+    {"value": 5, "label": "Priority: RC, joystick 1, joystick 2"},
+    {"value": 6, "label": "Priority: joystick 1, joystick 2, RC"},
+    {"value": 7, "label": "Priority: RC, joystick 2, joystick 1"},
+    {"value": 8, "label": "Priority: joystick 2, joystick 1, RC"},
 ]
 
 # NAV_RCL_ACT — what happens when the transmitter stops being heard.
 RC_LOSS_ACTION_OPTIONS: list[dict[str, Any]] = [
-    {"value": 0, "label": "Disabled — keep flying"},
+    {"value": 0, "label": "Disabled, keep flying"},
     {"value": 1, "label": "Hold position"},
     {"value": 2, "label": "Return to launch"},
     {"value": 3, "label": "Land at the current position"},
@@ -322,9 +333,17 @@ def _section(section_id: str, title: str, hint: str,
 # Sections
 # ---------------------------------------------------------------------------
 
+def _rc_in_mode_options(values: dict[str, float]) -> list[dict[str, Any]]:
+    held = values.get("COM_RC_IN_MODE")
+    if held is None:
+        return RC_IN_MODE_OPTIONS
+    extra = [o for o in RC_IN_MODE_PRIORITY_OPTIONS if o["value"] == int(round(held))]
+    return RC_IN_MODE_OPTIONS + extra
+
+
 def _input_section(values: dict[str, float]) -> dict[str, Any] | None:
     fields = _present([
-        _enum("COM_RC_IN_MODE", "Accepted input", values, RC_IN_MODE_OPTIONS,
+        _enum("COM_RC_IN_MODE", "Accepted input", values, _rc_in_mode_options(values),
               hint="Which manual input the vehicle listens to at all."),
         _enum("NAV_RCL_ACT", "Action on RC loss", values, RC_LOSS_ACTION_OPTIONS,
               hint="What the vehicle does when the transmitter goes unheard for "
@@ -480,7 +499,7 @@ def _validate_channel(entry: Any) -> dict[str, Any]:
             )
     if maximum - minimum < MIN_TRAVEL_US:
         raise CalibrationError(
-            f"channel {channel} moved only {maximum - minimum} us — move every "
+            f"channel {channel} moved only {maximum - minimum} us. Move every "
             f"stick and switch through its full travel and measure again"
         )
     if not minimum <= trim <= maximum:

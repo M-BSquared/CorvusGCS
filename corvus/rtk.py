@@ -942,7 +942,7 @@ def fixed_position_problem(fixed: dict[str, Any]) -> str:
     lat = float(fixed.get("latitude") or 0.0)
     lon = float(fixed.get("longitude") or 0.0)
     if abs(lat) < 1e-9 and abs(lon) < 1e-9:
-        return "the fixed base position is still 0, 0 — enter the surveyed mark first"
+        return "the fixed base position is still 0, 0. Enter the surveyed mark first"
     if not -90.0 <= lat <= 90.0 or not -180.0 <= lon <= 180.0:
         return "the fixed base position is outside the range of a coordinate"
     return ""

@@ -159,12 +159,12 @@ Corvus.calibFigures = (function () {
   };
 
   const POSE_HINT = {
-    level: "Wings level, nose forward — flat on the surface.",
+    level: "Wings level, nose forward, flat on the surface.",
     nose_down: "Stand it on its nose, tail straight up.",
     tail_down: "Stand it on its tail, nose straight up.",
     left: "Roll it onto its left wing.",
     right: "Roll it onto its right wing.",
-    upside_down: "Turn it over — belly up, nose still forward.",
+    upside_down: "Turn it over: belly up, nose still forward.",
   };
 
   function poseLabel(pose) {

@@ -92,7 +92,7 @@ Corvus.setupFirmware = (function () {
     // but the live telemetry armed flag is the authoritative real-time signal).
     const armedBanner = S.el("div", "params-banner");
     armedBanner.hidden = true;
-    armedBanner.textContent = "Cannot flash while armed — disarm first.";
+    armedBanner.textContent = "Cannot flash while armed. Disarm first.";
     linkCard.appendChild(armedBanner);
 
     linkSection.appendChild(linkCard);
@@ -206,7 +206,7 @@ Corvus.setupFirmware = (function () {
     boardBox.appendChild(boardCount);
     catalogBox.appendChild(Corvus.ui.field({
       label: "Board", control: boardBox,
-      hint: "PX4 ships one image per flight-controller target — pick your "
+      hint: "PX4 ships one image per flight-controller target. Pick your "
         + "manufacturer, then the board it made.",
     }));
 
@@ -628,9 +628,9 @@ Corvus.setupFirmware = (function () {
           // internet" is the whole recovery — and the local-file path is still
           // open to a laptop that will never have any.
           catalogNote.textContent = ((data && data.error)
-            ? data.error + " — "
-            : "No PX4 releases downloaded yet — ")
-            + "press Refresh once this machine is online, or flash a local "
+            ? data.error + ". "
+            : "No PX4 releases downloaded yet. ")
+            + "Press Refresh once this machine is online, or flash a local "
             + ".px4 file instead.";
           catalogNote.classList.add("err");
           return;
@@ -654,7 +654,7 @@ Corvus.setupFirmware = (function () {
         })), wanted);
         selectRelease(releaseField.value);
         catalogNote.textContent = data.error
-          ? data.error + " — showing the cached release list."
+          ? data.error + ". Showing the cached release list."
           : "Images are cached in " + (data.dir || "the firmware folder")
             + ", so a repeat flash needs no network.";
         catalogNote.classList.toggle("err", !!data.error);

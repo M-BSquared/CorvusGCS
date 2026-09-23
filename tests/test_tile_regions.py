@@ -213,6 +213,44 @@ def test_deleting_the_only_area_reclaims_everything(cache) -> None:
     assert _delete_region_tiles(cache, cache.get_region("only")) == len(tiles)
 
 
+def test_tile_cover_answers_exactly_the_tiles_enumerate_yields() -> None:
+    """The delete now asks this instead of expanding the other areas, so the
+    two must agree tile for tile — including one step outside every edge."""
+    from corvus.tile_downloader import tile_cover
+
+    area = ((INNER["w"], INNER["s"], INNER["e"], INNER["n"]), 11, 14)
+    tiles = set(enumerate_tiles(*area))
+    covers = tile_cover(*area)
+    probes = {
+        (z, x + dx, y + dy)
+        for z, x, y in tiles for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+    } | {(10, 0, 0), (15, 0, 0)}
+    for tile in probes:
+        assert covers(tile) == (tile in tiles), tile
+
+
+def test_deleting_an_area_expands_only_that_area(cache, monkeypatch) -> None:
+    """Every other area used to be expanded into a set of up to 50 000 tiles
+    and thrown away, once per area, to delete one."""
+    import corvus.tile_downloader as td
+
+    expanded: list[tuple] = []
+    real = td.enumerate_tiles
+
+    def spy(bounds, minzoom, maxzoom):
+        expanded.append((bounds, minzoom, maxzoom))
+        return real(bounds, minzoom, maxzoom)
+
+    monkeypatch.setattr(td, "enumerate_tiles", spy)
+    cache.add_region(_region("wide", **WIDE, minzoom=12, maxzoom=16))
+    cache.add_region(_region("far", **FAR, minzoom=12, maxzoom=12))
+    cache.add_region(_region("inner", **INNER, minzoom=12, maxzoom=13))
+    far_tiles = _fill(cache, FAR, 12, 12)
+
+    assert _delete_region_tiles(cache, cache.get_region("far")) == len(far_tiles)
+    assert expanded == [((FAR["w"], FAR["s"], FAR["e"], FAR["n"]), 12, 12)]
+
+
 # ---------------------------------------------------------------------------
 # 3. Naming helpers
 # ---------------------------------------------------------------------------
@@ -245,7 +283,9 @@ class _FakeDownloader:
         self.jobs: dict[str, Any] = {}
         self._n = 0
 
-    def start(self, source, upstream, bounds, minzoom, maxzoom, on_progress=None) -> str:
+    def start(self, source, upstream, bounds, minzoom, maxzoom,
+              on_progress=None, token="") -> str:
+        self.last_token = token
         self._n += 1
         jid = f"job-{self._n}"
         self.jobs[jid] = {

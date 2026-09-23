@@ -331,7 +331,7 @@ def read(source: BinaryIO | bytes, topics: Iterable[str] | None = None) -> ULog:
     if len(blob) < HEADER_BYTES or blob[:7] != MAGIC:
         if blob[:2] == DATAFLASH_MAGIC:
             raise UlogError(
-                "this is an ArduPilot DataFlash log (.bin), not a PX4 ULog — "
+                "this is an ArduPilot DataFlash log (.bin), not a PX4 ULog. "
                 "Corvus can download it but cannot yet analyse it. Open it in "
                 "Mission Planner or at plot.ardupilot.org."
             )

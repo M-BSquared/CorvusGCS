@@ -38,14 +38,27 @@ Corvus.setupParameters = (function () {
     const actions = S.el("div", "params-actions");
     const exportBtn = makeActionButton("download", "Export");
     const importBtn = makeActionButton("upload", "Import");
+    // SYS_AUTOSTART, SENS_EN_*, SER_* and the like are read at boot. After a
+    // reboot the rows on screen are the old boot's, so the page goes back to
+    // the download prompt rather than keep showing them.
+    const rebootBtn = S.rebootButton({ size: "sm", mount: page, onRebooted: () => {
+      if (state.destroyed) return;
+      state.params = [];
+      state.rendered = false;
+      card._editorView = null;
+      exportBtn.disabled = true;
+      renderDownloadPrompt(card, state);
+    } });
     const actionsStatus = S.el("div", "params-actions-status");
     actions.appendChild(exportBtn);
     actions.appendChild(importBtn);
+    actions.appendChild(rebootBtn);
     actions.appendChild(actionsStatus);
     page.appendChild(actions);
     exportBtn.disabled = true;   // enabled once params are loaded
     const cur = Corvus.telemetry && Corvus.telemetry.getState();
     importBtn.disabled = !!(cur && cur.armed);
+    rebootBtn.disabled = !!(cur && cur.armed);
 
     const section = S.el("div", "page-section");
     const card = S.el("div", "page-card params-card");
@@ -70,6 +83,8 @@ Corvus.setupParameters = (function () {
       downloadUnwatch: null,     // release the download view's watch
       uploadUnwatch: null,       // release an import's watch
       uploading: false,
+      card,                // the editor redraws into it after an import
+      destroyed: false,
     };
 
     // Phase 1: show the Download button (do NOT auto-download — lean + on-demand).
@@ -83,6 +98,7 @@ Corvus.setupParameters = (function () {
       state.unsub = Corvus.telemetry.subscribe((s) => {
         if (card._editorView) applyArmedToEditor(card._editorView, !!(s && s.armed));
         if (!state.uploading) importBtn.disabled = !!(s && s.armed);
+        rebootBtn.disabled = !!(s && s.armed);
       });
     }
 
@@ -93,6 +109,7 @@ Corvus.setupParameters = (function () {
     importBtn.addEventListener("click", () => importParams(state));
 
     function destroy() {
+      state.destroyed = true;
       if (state.unsub) { try { state.unsub(); } catch (_e) {} state.unsub = null; }
       state.downloadUnwatch = null;
       state.uploadUnwatch = null;
@@ -387,6 +404,30 @@ Corvus.setupParameters = (function () {
     state.uploading = false;
     const s = Corvus.telemetry && Corvus.telemetry.getState();
     state.importBtn.disabled = !!(s && s.armed);
+    if (state.rendered) refreshEditor(state);
+  }
+
+  /**
+   * Redraw an open editor from the vehicle's set after an import.
+   *
+   * The confirmed writes went into the backend's copy, so the rows on screen
+   * are the values from before the upload, and an Export now would write
+   * those. The filter the operator typed survives the redraw.
+   */
+  function refreshEditor(state) {
+    Corvus.telemetry.requestJson("/api/params").then((d) => {
+      if (state.destroyed || !d || !d.complete || !Array.isArray(d.params)) return;
+      const view = state.card && state.card._editorView;
+      const filter = view ? view.search.value : "";
+      state.params = d.params.slice().sort(byName);
+      renderEditor(state.card, state);
+      const fresh = state.card._editorView;
+      if (filter && fresh) {
+        fresh.search.value = filter;
+        fresh.filter = filter.trim().toLowerCase();
+        renderRows(state, fresh);
+      }
+    }).catch(() => { /* the rows stay as they were; Download reads them again */ });
   }
 
   /** Apply the status class + text to the actions status line. */
@@ -572,7 +613,7 @@ Corvus.setupParameters = (function () {
     });
     if (filtered.length > CAP) {
       view.listHost.appendChild(S.el("div", "params-more",
-        `Showing ${CAP} of ${filtered.length} — refine the search to see more.`));
+        `Showing ${CAP} of ${filtered.length}. Refine the search to see more.`));
     }
     view.count.textContent = `${filtered.length} parameter${filtered.length === 1 ? "" : "s"}`;
   }

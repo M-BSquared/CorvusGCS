@@ -551,6 +551,26 @@ function testStatusReportsTheAutopilotsOwnPreflightVerdict() {
   assert.ok(status().cls.includes("warning"), "a refused preflight is not a neutral state");
 }
 
+function testNotReadyNamesTheChecksThatFailed() {
+  const ui = mount();
+  settle(ui);
+  const sub = () => byId.topBar.querySelector('[data-block="armed"]').querySelector(".sub");
+
+  push({ armed: false, prearm_ok: false, prearm_reasons: [] });
+  assert.equal(sub().textContent, "", "no reason yet, so nothing is counted");
+  assert.match(status().title, /has not said why yet/);
+
+  push({ armed: false, prearm_ok: false,
+         prearm_reasons: ["Accel 0 uncalibrated", "No valid data from Compass 0"] });
+  assert.equal(sub().textContent, "2 checks");
+  assert.equal(status().title,
+    "The autopilot is refusing to arm:\n• Accel 0 uncalibrated\n• No valid data from Compass 0");
+
+  push({ armed: false, prearm_ok: true, prearm_reasons: [] });
+  assert.equal(status().text, "READY");
+  assert.equal(sub().textContent, "", "a ready vehicle carries no count");
+}
+
 function testStatusNeverInventsReadinessTheVehicleDidNotReport() {
   const ui = mount();
   settle(ui);
@@ -689,6 +709,7 @@ const tests = [
   testARejectedCommandIsNotDeletedByATimer,
   testTheTitleSaysHowManyAreNew,
   testStatusReportsTheAutopilotsOwnPreflightVerdict,
+  testNotReadyNamesTheChecksThatFailed,
   testStatusNeverInventsReadinessTheVehicleDidNotReport,
   testArmedOnTheGroundIsNotTheSameAsFlying,
   testAirborneFallsBackToHeightWhenTheFirmwareIsSilent,

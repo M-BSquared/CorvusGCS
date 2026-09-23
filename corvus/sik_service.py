@@ -52,7 +52,7 @@ from typing import Any, TYPE_CHECKING
 from collections.abc import Callable
 
 from . import sik_config
-from .mavlink_bridge import classify_serial_device, is_windows_com_port
+from .serial_ports import classify_serial_device, is_windows_com_port
 
 if TYPE_CHECKING:  # avoid an import cycle at runtime
     from .mavlink_bridge import MavlinkBridge
@@ -90,7 +90,7 @@ REBOOT_S = 2.0
 # Gate messages, kept as constants so the HTTP layer and the tests agree on the
 # exact wording the operator sees.
 ARMED_MESSAGE = (
-    "Radio configuration is refused while the vehicle is armed — a radio in "
+    "Radio configuration is refused while the vehicle is armed. A radio in "
     "command mode is not relaying telemetry."
 )
 BUSY_MESSAGE = "A radio configuration session is already running."
@@ -506,8 +506,8 @@ class SikService:
             local = session.read_radio(remote=False)
             if local is None:
                 raise SikError(
-                    "the radio answered the escape but reported no settings — "
-                    "its firmware may not support ATI5."
+                    "the radio answered the escape but reported no settings. "
+                    "Its firmware may not support ATI5."
                 )
             remote = session.read_radio(remote=True) if include_remote else None
             return {

@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Corvus GCS: Ground Control Station for PX4 and ArduPilot</title>
+<meta name="description" content="Corvus GCS is an offline-first ground control station for PX4 and ArduPilot aircraft: live map and flight HUD, mission planning against real terrain, 3D view, vehicle setup and built-in flight-log review. macOS, Linux and Windows.">
+<link rel="canonical" href="https://m-bsquared.github.io/CorvusGCS/">
+
+<meta name="theme-color" content="#0B0E12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="dark light">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Corvus GCS">
+<meta property="og:title" content="Corvus GCS: Ground Control Station for PX4 and ArduPilot">
+<meta property="og:description" content="Plan, monitor and control autonomous flight from one modern interface. Offline-first, ready to fly in seconds, for macOS, Linux and Windows.">
+<meta property="og:url" content="https://m-bsquared.github.io/CorvusGCS/">
+<meta property="og:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Corvus GCS interface: a live satellite map with the flown track, the flight bar and the connection panel.">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Corvus GCS: Ground Control Station for PX4 and ArduPilot">
+<meta name="twitter:description" content="Plan, monitor and control autonomous flight from one modern interface. Offline-first, ready to fly in seconds.">
+<meta name="twitter:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
+
+<link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+
+<link rel="preload" as="font" type="font/woff2" href="assets/fonts/Inter-latin.woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+
+<!-- The stored theme is applied before the first paint, so a visitor who chose
+     light does not see the dark page flash first. Everything else is deferred. -->
+<script>
+  /* Marks the page as scripted, so the fade-in on scroll only ever hides
+     content that something is going to reveal again. */
+  document.documentElement.classList.add('js');
+  try {
+    var t = localStorage.getItem('corvus-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+</script>
+<script src="script.js" defer></script>
+</head>
+
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<!-- Icon sprite. The geometry is Lucide v0.544.0 (ISC), the same set the
+     application draws its interface with, taken from src/vendor/lucide.min.js
+     so an icon here is the icon there. Inlined rather than referenced as an
+     external file so <use> works in every browser and costs no extra request. -->
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <g id="i-route"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></g>
+    <g id="i-activity"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></g>
+    <g id="i-cube"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></g>
+    <g id="i-cpu"><path d="M12 20v2"/><path d="M12 2v2"/><path d="M17 20v2"/><path d="M17 2v2"/><path d="M2 12h2"/><path d="M2 17h2"/><path d="M2 7h2"/><path d="M20 12h2"/><path d="M20 17h2"/><path d="M20 7h2"/><path d="M7 20v2"/><path d="M7 2v2"/><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></g>
+    <g id="i-zap"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></g>
+    <g id="i-offline"><path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07"/></g>
+    <g id="i-sliders"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></g>
+    <g id="i-chart"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></g>
+    <g id="i-shield"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></g>
+    <g id="i-gamepad"><line x1="6" x2="10" y1="11" y2="11"/><line x1="8" x2="8" y1="9" y2="13"/><line x1="15" x2="15.01" y1="12" y2="12"/><line x1="18" x2="18.01" y1="10" y2="10"/><path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"/></g>
+    <g id="i-link"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></g>
+    <g id="i-download"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></g>
+    <g id="i-book"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></g>
+    <g id="i-external"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></g>
+    <g id="i-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></g>
+    <g id="i-moon"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></g>
+    <g id="i-menu"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></g>
+    <g id="i-close"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></g>
+    <g id="i-prev"><path d="m15 18-6-6 6-6"/></g>
+    <g id="i-next"><path d="m9 18 6-6-6-6"/></g>
+    <g id="i-satellite"><path d="M4 10a7.31 7.31 0 0 0 10 10Z"/><path d="m9 15 3-3"/><path d="M17 13a6 6 0 0 0-6-6"/><path d="M21 13A10 10 0 0 0 11 3"/></g>
+    <g id="i-layers"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></g>
+    <g id="i-terminal"><path d="M12 19h8"/><path d="m4 17 6-6-6-6"/></g>
+    <g id="i-monitor"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></g>
+    <g id="i-scale"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></g>
+    <!-- The one mark Lucide does not ship: Lucide dropped brand icons in v0.429. -->
+    <g id="i-github" fill="currentColor" stroke="none" transform="scale(1.5)"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></g>
+  </defs>
+</svg>
+
+<header class="site-header" id="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="#top" aria-label="Corvus GCS, back to top">
+      <span class="brand-mark" role="img" aria-hidden="true"></span>
+      <span class="brand-text">
+        <span class="brand-name">Corvus GCS</span>
+        <span class="brand-sub">Ground Control</span>
+      </span>
+    </a>
+
+    <nav class="site-nav" id="site-nav" aria-label="Main">
+      <ul class="nav-list">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#screenshots">Screenshots</a></li>
+        <li><a href="#technical">Technical</a></li>
+        <li><a href="#why">Why</a></li>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS#readme" target="_blank" rel="noopener">Documentation</a></li>
+        <li><a class="nav-github" href="https://github.com/M-BSquared/CorvusGCS" target="_blank" rel="noopener">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-github"></use></svg>GitHub</a></li>
+      </ul>
+    </nav>
+
+    <div class="header-actions">
+      <button class="icon-btn theme-toggle" id="theme-toggle" type="button" aria-label="Switch to the light theme" aria-pressed="false">
+        <svg class="icon icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-sun"></use></svg>
+        <svg class="icon icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-moon"></use></svg>
+      </button>
+      <button class="icon-btn nav-toggle" id="nav-toggle" type="button" aria-label="Open the menu" aria-expanded="false" aria-controls="site-nav">
+        <svg class="icon icon-open" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-menu"></use></svg>
+        <svg class="icon icon-shut" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <span id="top"></span>
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <div class="backdrop" aria-hidden="true">
+      <span class="backdrop-grid"></span>
+      <span class="backdrop-topo"></span>
+      <span class="backdrop-glow"></span>
+    </div>
+
+    <div class="wrap hero-inner">
+      <div class="hero-copy">
+        <p class="eyebrow">Offline-first ground control station</p>
+        <h1>Command every mission with confidence.</h1>
+        <p class="lead">
+          Plan, monitor and control autonomous flight from one modern interface.
+          Built for the field: a laptop, a telemetry radio, and no internet.
+        </p>
+
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="https://github.com/M-BSquared/CorvusGCS/releases/latest" target="_blank" rel="noopener">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-download"></use></svg>
+            Download Corvus GCS
+          </a>
+          <a class="btn btn-ghost" href="https://github.com/M-BSquared/CorvusGCS" target="_blank" rel="noopener">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-github"></use></svg>
+            View on GitHub
+          </a>
+        </div>
+
+        <p class="platform-line">
+          macOS <span aria-hidden="true">·</span> Linux <span aria-hidden="true">·</span> Windows
+          <span aria-hidden="true">·</span> <span class="mono">PX4 &amp; ArduPilot</span>
+        </p>
+      </div>
+
+      <div class="hero-shot">
+        <figure class="app-window" id="hero-window">
+          <div class="app-window-bar" aria-hidden="true">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          </div>
+          <img src="assets/images/flight-dark.jpg" width="1600" height="1000" fetchpriority="high" decoding="async"
+               alt="The Corvus GCS window: a satellite map with the home point, the flown track and the aircraft, the flight bar with arm, take-off, land and return-to-launch, the instrument panel showing heading and attitude, and the connection panel on the right.">
+        </figure>
+      </div>
+    </div>
+
+    <!-- ===================== CAPABILITY BAR ===================== -->
+    <div class="wrap">
+      <ul class="capabilities">
+        <li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-route"></use></svg><span>Mission planning</span></li>
+        <li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-activity"></use></svg><span>Live telemetry</span></li>
+        <li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-cube"></use></svg><span>3D terrain</span></li>
+        <li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-cpu"></use></svg><span>PX4 &amp; ArduPilot</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ===================== FEATURES ===================== -->
+  <section class="section" id="features" aria-labelledby="features-title">
+    <div class="wrap">
+      <header class="section-head reveal">
+        <p class="eyebrow">Features</p>
+        <h2 id="features-title">Everything you need for autonomous flight.</h2>
+        <p class="section-sub">Every one of these is built and working today.</p>
+      </header>
+
+      <div class="card-grid">
+        <article class="card reveal">
+          <span class="card-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-zap"></use></svg></span>
+          <h3>Ready in seconds</h3>
+          <p>On connect Corvus streams only what flying needs: position, attitude, GPS, battery and link health. The full parameter set is loaded when you open the Parameters page.</p>
+        </article>
+
+        <article class="card reveal">
+          <span class="card-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-route"></use></svg></span>
+          <h3>Plan precisely</h3>
+          <p>Draw a take-off, waypoints, orbits and a landing on their own map, then read the whole flight as an altitude profile against the terrain under it. Save to disk, upload to the aircraft, fly on a second press.</p>
+        </article>
+
+        <article class="card reveal">
+          <span class="card-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-cube"></use></svg></span>
+          <h3>See it in 3D</h3>
+          <p>A spinnable globe when you zoom out; ground with its real shape and extruded OpenStreetMap buildings when you zoom in. The aircraft is drawn at the altitude it is actually flying.</p>
+        </article>
+
+        <article class="card reveal">
+          <span class="card-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-offline"></use></svg></span>
+          <h3>Work offline</h3>
+          <p>The interface loads nothing from the internet, and map tiles go into a local store as you use them. Download named regions ahead of time, elevation included, and the whole app keeps working with no connection.</p>
+        </article>
+
+        <article class="card reveal">
+          <span class="card-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-sliders"></use></svg></span>
+          <h3>Set up the aircraft</h3>
+          <p>Your airframe drawn to scale, every motor at its real distance from the centre of gravity. Click one to wire, position or bench-test it. Parameters, guided calibration, PID tuning and firmware flashing sit beside it.</p>
+        </article>
+
+        <article class="card reveal">
+          <span class="card-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-chart"></use></svg></span>
+          <h3>Review every flight</h3>
+          <p>Download the vehicle's ULog files over MAVLink and read them in the built-in Flight Review, on your own machine. Telemetry that Corvus recorded itself reviews the same way, radio link included.</p>
+        </article>
+      </div>
+
+      <aside class="note reveal">
+        <span class="note-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-shield"></use></svg></span>
+        <p>
+          <strong>Safety is built in.</strong> Parameter writes, motor tests, firmware flashing and ESC
+          calibration are all refused while the aircraft is armed, and the on-screen controls never arm,
+          change mode, or override a failsafe. A refused write is never shown as applied.
+        </p>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ===================== SCREENSHOTS ===================== -->
+  <section class="section section-alt" id="screenshots" aria-labelledby="screenshots-title">
+    <div class="wrap">
+      <header class="section-head reveal">
+        <p class="eyebrow">Screenshots</p>
+        <h2 id="screenshots-title">The real interface, driven by real MAVLink.</h2>
+        <p class="section-sub">Select a screenshot to view it full size.</p>
+      </header>
+
+      <div class="gallery" id="gallery">
+        <figure class="shot shot-lead reveal">
+          <button class="shot-btn" type="button"
+                  data-full="assets/images/map.jpg"
+                  data-caption="Collapse the side panel and the whole window becomes the operational picture: vehicle, heading, home point and the flown track.">
+            <img src="assets/images/map.jpg" width="1600" height="1000" loading="lazy" decoding="async"
+                 alt="The map filling the whole Corvus GCS window with the side panel collapsed, showing the vehicle, its heading, the home point, the flown track and the floating instrument panel.">
+            <span class="shot-zoom" aria-hidden="true">View</span>
+          </button>
+          <figcaption><strong>The map is the interface.</strong> Collapse the side panel and the whole window becomes the operational picture, with the instrument panel wherever you put it.</figcaption>
+        </figure>
+
+        <figure class="shot reveal">
+          <button class="shot-btn" type="button"
+                  data-full="assets/images/motors.jpg"
+                  data-caption="Every motor at its real distance from the centre of gravity, with its output pin and spin direction.">
+            <img src="assets/images/motors.jpg" width="1600" height="1000" loading="lazy" decoding="async"
+                 alt="The Motors setup page: a quadrotor airframe drawn to scale with numbered motors, their MAIN output pins and spin-direction arrows.">
+            <span class="shot-zoom" aria-hidden="true">View</span>
+          </button>
+          <figcaption><strong>Your airframe, drawn.</strong> Every motor at its real distance from the centre of gravity, with its output pin and spin direction.</figcaption>
+        </figure>
+
+        <figure class="shot reveal">
+          <button class="shot-btn" type="button"
+                  data-full="assets/images/calibration.jpg"
+                  data-caption="Each accelerometer position is shown as a drawing. Hold the aircraft the way the bird is held.">
+            <img src="assets/images/calibration.jpg" width="1600" height="1000" loading="lazy" decoding="async"
+                 alt="The accelerometer calibration page, with the aircraft drawn in each of the six orientations PX4 asks for and the completed ones ticked off.">
+            <span class="shot-zoom" aria-hidden="true">View</span>
+          </button>
+          <figcaption><strong>Guided calibration.</strong> Each position is shown as a drawing. Hold the aircraft the way the bird is held.</figcaption>
+        </figure>
+
+        <figure class="shot reveal">
+          <button class="shot-btn" type="button"
+                  data-full="assets/images/analysis.jpg"
+                  data-caption="Vehicle logs, recorded telemetry and the built-in Flight Review, all on your own machine.">
+            <img src="assets/images/analysis.jpg" width="1600" height="1000" loading="lazy" decoding="async"
+                 alt="The Analysis page listing current telemetry values and the three log sources: vehicle ULogs, recorded tlogs and the built-in Flight Review.">
+            <span class="shot-zoom" aria-hidden="true">View</span>
+          </button>
+          <figcaption><strong>Afterwards.</strong> Vehicle logs, recorded telemetry and the built-in Flight Review. Nothing is uploaded anywhere.</figcaption>
+        </figure>
+
+        <figure class="shot reveal">
+          <button class="shot-btn" type="button"
+                  data-full="assets/images/console.jpg"
+                  data-caption="A MAVLink console, an SSH terminal and a plugin slot, right next to the map.">
+            <img src="assets/images/console.jpg" width="1600" height="1000" loading="lazy" decoding="async"
+                 alt="The MAVLink console open in the right-hand workspace next to the live map, listing timestamped messages with a command field underneath.">
+            <span class="shot-zoom" aria-hidden="true">View</span>
+          </button>
+          <figcaption><strong>The side workspace.</strong> A MAVLink console, an SSH terminal for a companion computer, and a plugin slot, right next to the map.</figcaption>
+        </figure>
+      </div>
+
+      <p class="fineprint reveal">
+        Every screenshot is the real interface driven by real MAVLink: telemetry, parameters and the flown
+        track all arrive over the wire. The aircraft producing them is simulated, not airborne, and the
+        imagery is the Neubiberg test site. Light and dark shots are two of the six themes that ship.
+      </p>
+    </div>
+  </section>
+
+  <!-- ===================== TECHNICAL ===================== -->
+  <section class="section" id="technical" aria-labelledby="technical-title">
+    <div class="wrap">
+      <header class="section-head reveal">
+        <p class="eyebrow">Technical</p>
+        <h2 id="technical-title">What it talks to, and what it runs on.</h2>
+        <p class="section-sub">A Python backend and a web frontend in one standalone desktop application. No server to deploy, no browser tab to manage.</p>
+      </header>
+
+      <div class="spec-wrap reveal">
+        <table class="spec">
+          <caption class="visually-hidden">Corvus GCS technical specifications</caption>
+          <tbody>
+            <tr>
+              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-cpu"></use></svg>Autopilots</th>
+              <td>PX4 <span class="mono">v1.16 · v1.17 · v1.18</span> as the primary target; ArduPilot <span class="mono">4.3 to 4.6</span> for Copter, Plane, Rover/Boat and Sub.</td>
+            </tr>
+            <tr>
+              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-link"></use></svg>Links</th>
+              <td>MAVLink over a serial telemetry radio, UDP or TCP. A USB flight controller, a SiK radio or the ground-station UDP port is found and taken automatically at launch, with link-quality display and automatic reconnect.</td>
+            </tr>
+            <tr>
+              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-satellite"></use></svg>RTK GPS</th>
+              <td>A base station plugged into the same computer is detected and surveyed in, and RTCM 3 corrections stream to the aircraft. An NTRIP caster works the same way over the network.</td>
+            </tr>
+            <tr>
+              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-layers"></use></svg>Maps &amp; 3D</th>
+              <td>MapLibre GL JS with 6 map services with 20 layers (two of them on your own API key), terrain relief and extruded OpenStreetMap buildings. Tiles are cached to a local offline store, and named regions can be downloaded in advance with their elevation.</td>
+            </tr>
+            <tr>
+              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-chart"></use></svg>Flight logs</th>
+              <td>ULog <span class="mono">.ulg</span> download and review in the built-in Flight Review; ArduPilot DataFlash <span class="mono">.bin</span> downloads but is not parsed. Corvus's own telemetry recording reviews on both stacks.</td>
+            </tr>
+            <tr>
+              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-gamepad"></use></svg>Tools</th>
+              <td>MAVLink console, SSH terminal to a companion computer, and a plugin folder. The Vibration Monitor and the SSH Launcher are included.</td>
+            </tr>
+            <tr>
+              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-monitor"></use></svg>Platforms</th>
+              <td>macOS on Apple Silicon <span class="mono">.dmg</span>, Linux x86_64 <span class="mono">.AppImage</span>, Windows x64 <span class="mono">.zip</span>. Nothing else to install: Python, Qt and every dependency are inside.</td>
+            </tr>
+            <tr>
+              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-terminal"></use></svg>From source</th>
+              <td>Python 3.12+ and one command, <span class="mono">./run.sh</span>. The frontend is plain HTML, CSS and JavaScript; the desktop shell is PyQt6.</td>
+            </tr>
+            <tr>
+              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-scale"></use></svg>License</th>
+              <td>Sustainable Use License 1.0 (<em>fair-code</em>). The source is open to read, modify and build on, for internal, personal and non-commercial use, but not to resell.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section-cta reveal">
+        <a class="btn btn-primary" href="https://github.com/M-BSquared/CorvusGCS#readme" target="_blank" rel="noopener">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-book"></use></svg>
+          Read the documentation
+        </a>
+        <a class="btn btn-quiet" href="https://github.com/M-BSquared/CorvusGCS/blob/master/docs/auto-connect.md" target="_blank" rel="noopener">
+          Auto-connect reference
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-external"></use></svg>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== WHY ===================== -->
+  <section class="section section-alt section-compact" id="why" aria-labelledby="why-title">
+    <div class="wrap story-grid">
+      <div class="story reveal">
+        <p class="eyebrow">Why I built this</p>
+        <h2 id="why-title">The ground stations I used did not quite fit.</h2>
+        <p>
+          They did the job, but they got in the way. They load every parameter before you can
+          do anything, feel slow on a field laptop, and leave log review to separate tools. I
+          wanted a station that is ready in seconds, fetches parameters only when I open them,
+          has a flight reviewer built in, and gets the small details right, in simulation as
+          much as on a real aircraft. And because no station covers every setup, you can write
+          your own plugins and extend it yourself.
+        </p>
+        <p class="story-note">
+          In my day-to-day work as a PhD researcher there is very little room for
+          AI-assisted, &ldquo;vibe-coded&rdquo; development, because the setting simply does not
+          allow for it. That method is nonetheless becoming a real part of how software
+          gets built, and the only honest way to find out where it works, where it
+          breaks, and how to direct it well is to use it seriously on something
+          non-trivial.
+        </p>
+      </div>
+      <figure class="story-shot reveal">
+        <div class="app-window">
+          <div class="app-window-bar" aria-hidden="true">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          </div>
+          <img src="assets/images/plugins.jpg" width="1600" height="1000" loading="lazy" decoding="async"
+               alt="The map with a curved flown track across a field, the instrument panel, and the Vibration Monitor plugin in the side workspace charting gyro and accelerometer vibration live.">
+        </div>
+        <figcaption>The Vibration Monitor, a plugin, running live beside the map.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ===================== DOWNLOAD ===================== -->
+  <section class="section download" id="download" aria-labelledby="download-title">
+    <div class="backdrop" aria-hidden="true">
+      <span class="backdrop-grid"></span>
+      <span class="backdrop-topo"></span>
+    </div>
+    <div class="wrap">
+      <div class="download-panel reveal">
+        <p class="eyebrow">Download</p>
+        <h2 id="download-title">Ready for your next mission?</h2>
+        <p class="lead">Download the latest Corvus GCS release or explore the source code on GitHub.</p>
+
+        <p class="release-line" id="release-line" data-fallback="Releases are published on GitHub.">
+          Releases are published on GitHub.
+        </p>
+
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="https://github.com/M-BSquared/CorvusGCS/releases/latest" target="_blank" rel="noopener">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-download"></use></svg>
+            Download latest release
+          </a>
+          <a class="btn btn-ghost" href="https://github.com/M-BSquared/CorvusGCS" target="_blank" rel="noopener">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-github"></use></svg>
+            Browse source code
+          </a>
+        </div>
+
+        <ul class="platforms">
+          <li>
+            <span class="platform-name">macOS</span>
+            <span class="platform-meta mono">Apple Silicon · .dmg</span>
+            <span class="platform-note">Not notarized. Open it with right-click → Open the first time.</span>
+          </li>
+          <li>
+            <span class="platform-name">Linux</span>
+            <span class="platform-meta mono">x86_64 · .AppImage</span>
+            <span class="platform-note">Mark it executable and run it. No system Python or Qt needed.</span>
+          </li>
+          <li>
+            <span class="platform-name">Windows</span>
+            <span class="platform-meta mono">x64 · .zip</span>
+            <span class="platform-note">Unzip anywhere and run it. Unsigned, so SmartScreen asks once.</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap footer-inner">
+    <div class="footer-brand">
+      <a class="brand" href="#top" aria-label="Corvus GCS, back to top">
+        <span class="brand-mark" role="img" aria-hidden="true"></span>
+        <span class="brand-text">
+          <span class="brand-name">Corvus GCS</span>
+          <span class="brand-sub">Ground Control</span>
+        </span>
+      </a>
+      <p>An offline-first ground control station for PX4 and ArduPilot autonomous aircraft. Built for the field: a laptop, a telemetry radio, and no internet.</p>
+    </div>
+
+    <nav class="footer-links" aria-label="Project">
+      <h2>Project</h2>
+      <ul>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS" target="_blank" rel="noopener">Repository</a></li>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS/releases" target="_blank" rel="noopener">Releases</a></li>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS/issues" target="_blank" rel="noopener">Issues</a></li>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS/blob/master/LICENSE.md" target="_blank" rel="noopener">License</a></li>
+      </ul>
+    </nav>
+
+    <nav class="footer-links" aria-label="Documentation">
+      <h2>Read</h2>
+      <ul>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS#readme" target="_blank" rel="noopener">Documentation</a></li>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS#flight-stack-compatibility" target="_blank" rel="noopener">Flight-stack compatibility</a></li>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS#plugins" target="_blank" rel="noopener">Plugins</a></li>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS#get-involved" target="_blank" rel="noopener">Get involved</a></li>
+      </ul>
+    </nav>
+  </div>
+
+  <!-- The partnership, stated in full rather than as a line of small print.
+       The institution's mark is shown in its own colours and never recoloured to
+       suit a theme, so on the dark theme it sits on a light plate, exactly as
+       it does in the application's Credits dialog. -->
+  <section class="wrap footer-credit" aria-labelledby="credit-title">
+    <div class="footer-credit-text">
+      <h2 id="credit-title">Developed with</h2>
+      <p>
+        Corvus GCS is designed, built and maintained by <strong>Maximilian Böck</strong>.
+        It is developed <strong>with the Universität der Bundeswehr München</strong>
+        (University of the German Federal Armed Forces, Munich), in the context of the
+        work at <strong>Chair LRT 1.1 of Prof. Dr. Matthias Gerdts</strong>.
+      </p>
+      <p>
+        It is built with AI assistance, under my direction and review, and backed by a large
+        test suite. It is meant for real field use.
+        <a href="#why">Why I built it</a>
+      </p>
+    </div>
+    <div class="footer-credit-mark">
+      <img class="orgmark" src="assets/images/unibw-logo.svg" width="441" height="85"
+           loading="lazy" decoding="async"
+           alt="Universität der Bundeswehr München">
+    </div>
+  </section>
+
+  <div class="wrap footer-base">
+    <p class="copyright">&copy; <span id="year">2026</span> Maximilian Böck</p>
+    <p class="footer-meta">
+      Source available under the Sustainable Use License 1.0 (<em>fair-code</em>):
+      open to read, modify and build on, but not to resell.
+    </p>
+  </div>
+</footer>
+
+<!-- ===================== LIGHTBOX ===================== -->
+<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-labelledby="lightbox-caption" hidden>
+  <div class="lightbox-backdrop" data-close></div>
+  <div class="lightbox-panel">
+    <!-- A transparent 1x1 until a screenshot is chosen: an empty src would
+         resolve to this page and fetch it a second time. -->
+    <img id="lightbox-image" alt=""
+         src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==">
+    <p class="lightbox-caption" id="lightbox-caption"></p>
+    <div class="lightbox-controls">
+      <button class="icon-btn" type="button" id="lightbox-prev" aria-label="Previous screenshot">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-prev"></use></svg>
+      </button>
+      <span class="lightbox-count mono" id="lightbox-count"></span>
+      <button class="icon-btn" type="button" id="lightbox-next" aria-label="Next screenshot">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg>
+      </button>
+    </div>
+    <button class="icon-btn lightbox-close" type="button" id="lightbox-close" aria-label="Close the screenshot viewer" data-close>
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+    </button>
+  </div>
+</div>
+
+</body>
+</html>

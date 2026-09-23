@@ -122,6 +122,13 @@ def navigate_js(scene: Scene) -> str:
             "if (tab) tab.click();",
             "await w(300);",
         ]
+        if scene.tab == "future" and scene.plugin:
+            lines += [
+                "const card = [...document.querySelectorAll('button')].find("
+                f"(b) => (b.textContent || '').includes({json.dumps(scene.plugin)})); "
+                "if (card) card.click();",
+                "await w(500);",
+            ]
     lines.append("return (q('#pageView') && !q('#pageView').hidden) "
                  "? 'page: ' + document.body.dataset.page : 'map view';")
     body = " ".join(lines)

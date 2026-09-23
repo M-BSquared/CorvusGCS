@@ -51,6 +51,7 @@ def new_job(
     ranges: list | None = None,
     template: str = "",
     on_progress: Callable[[dict], None] | None = None,
+    token: str = "",
 ) -> dict:
     """Build a download job.
 
@@ -73,6 +74,10 @@ def new_job(
         "_cancel": threading.Event(),
         "_ranges": ranges if ranges is not None else [],
         "_template": template,
+        # The API key for a keyed service, or "". Underscore-prefixed like the
+        # rest of the internals, and deliberately absent from ``_snapshot`` —
+        # the job's public state is serialized straight to the browser.
+        "_token": token,
         "_on_progress": on_progress,
         "_lock": threading.Lock(),
         "_executor": None,
@@ -155,6 +160,26 @@ def enumerate_tiles(
                 yield z, x, y
 
 
+def tile_cover(
+    bounds: tuple, minzoom: int, maxzoom: int
+) -> Callable[[tuple[int, int, int]], bool]:
+    """A predicate: is ``(z, x, y)`` one of the tiles :func:`enumerate_tiles` yields?
+
+    The same tile set, answered from the per-zoom ranges instead of being
+    materialized — a membership test costs a dict lookup whatever the size of
+    the area.
+    """
+    ranges, _ = _ranges_for_bounds(bounds, minzoom, maxzoom)
+    by_zoom = {z: (x_min, x_max, y_min, y_max) for z, x_min, x_max, y_min, y_max in ranges}
+
+    def covers(tile: tuple[int, int, int]) -> bool:
+        z, x, y = tile
+        span = by_zoom.get(z)
+        return span is not None and span[0] <= x <= span[1] and span[2] <= y <= span[3]
+
+    return covers
+
+
 class TileDownloader:
     """Resumable, cancellable, rate-limited tile fetcher.
 
@@ -183,11 +208,14 @@ class TileDownloader:
         minzoom: int,
         maxzoom: int,
         on_progress: Callable[[dict], None] | None = None,
+        token: str = "",
     ) -> str:
         """Schedule a download job. Returns the job id (uuid4 hex).
 
         Bounds is ``(w, s, e, n)`` in WGS84 degrees. *upstream_url_template*
-        uses ``{z}/{x}/{y}`` (slippy order). A job whose tile set exceeds
+        uses ``{z}/{x}/{y}`` (slippy order). *token* is the operator's API key
+        for a keyed service, substituted into ``{k}`` per request and kept off
+        every public snapshot. A job whose tile set exceeds
         :data:`MAX_TILES_PER_JOB`, is empty, or cannot be enumerated is recorded
         in state ``"failed"`` and its id returned (never raises) so the HTTP
         endpoint can surface the error.
@@ -210,6 +238,7 @@ class TileDownloader:
 
         job = new_job(
             job_id, source, total, ranges, upstream_url_template, on_progress,
+            token,
         )
         thread = threading.Thread(
             target=self._run, args=(job,),
@@ -309,7 +338,8 @@ class TileDownloader:
         cancel = job["_cancel"]
         if cancel.is_set() or self._stop_event.is_set():
             return
-        url = tile_sources.build_tile_url(job["_template"], z, x, y)
+        url = tile_sources.build_tile_url(
+            job["_template"], z, x, y, job.get("_token", ""))
         blob: bytes | None = None
         for attempt in range(2):  # one retry on transient network errors
             try:

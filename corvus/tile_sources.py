@@ -49,6 +49,33 @@ substitutes at fetch time:
     Server shard for providers that publish numbered mirrors. Derived
     deterministically from (x, y) so the same tile always resolves to the
     same URL (cache-friendly, and test-stable).
+``{k}``
+    The operator's API key for a keyed service (see *Keyed services* below).
+    Percent-encoded at substitution time, so a key pasted with a stray
+    character cannot alter the rest of the URL.
+
+Keyed services
+--------------
+A provider carrying a ``token`` block serves nothing without an API key the
+operator supplies. That key is a credential: it is stored server-side in
+``~/.corvus/config.json`` (0600), it is substituted into the upstream URL
+inside this process, and it never reaches the browser — the frontend only ever
+asks this server for ``/api/tiles/<id>/<z>/<x>/<y>.png``, which is the same
+route every other source uses. ``GET /api/config`` does not carry it either;
+the UI learns only whether one is set.
+
+The ``token`` block says what the operator needs to know to get a key and
+nothing about the key itself:
+
+``label``
+    What the service calls it, so the field in the dialog matches the page the
+    operator copied it from ("API key", "access token").
+``signup``
+    Where to get one. Printed as text, not linked: the desktop build runs in
+    QtWebEngine, where an external link goes nowhere (same reason the credits
+    dialog prints its URLs).
+``help``
+    One line on what the key buys.
 
 Both production URL builders — ``CorvusHandler._fetch_upstream_tile`` (the
 online cache-fill) and ``TileDownloader._download_one`` (the pre-download
@@ -63,10 +90,18 @@ their own SDKs/APIs. They are registered because the operator asked for
 them; using them in a deployed product needs a proper licensed key (Google
 Maps Tile API / Bing Maps Key) swapped into the template first.
 
+The MapTiler and Mapbox entries are the licensed answer to that: both publish
+plain XYZ raster endpoints, both are used here exactly as their terms
+describe, and both are keyed — which is why they appear only once the operator
+has put a key in. Higher-resolution imagery and a rate limit that belongs to
+the operator rather than to a shared public endpoint is what the key buys.
+
 stdlib only.
 """
 from __future__ import annotations
 
+import re
+import urllib.parse
 from typing import Any
 
 # The flat source registry. ``provider`` and ``style`` classify each entry for
@@ -156,6 +191,79 @@ TILE_SOURCES: dict[str, dict[str, Any]] = {
         "attribution": "© Google",
     },
 
+    # ---- MapTiler (keyed; see "Keyed services" in the module docstring) ----
+    # 256-px raster endpoints rather than the vector styles: everything
+    # downstream of here — the MBTiles cache, the offline downloader, the
+    # region maths — is built on 256-px raster XYZ tiles, and a vector source
+    # would be a second pipeline rather than a second provider.
+    "maptiler_satellite": {
+        "label": "Satellite",
+        "provider": "maptiler",
+        "style": "satellite",
+        "upstream": "https://api.maptiler.com/tiles/satellite-v2/{z}/{x}/{y}.jpg?key={k}",
+        "maxzoom": 20,
+        "attribution": "© MapTiler, © OpenStreetMap contributors",
+    },
+    "maptiler_streets": {
+        "label": "Streets",
+        "provider": "maptiler",
+        "style": "streets",
+        "upstream": "https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key={k}",
+        "maxzoom": 20,
+        "attribution": "© MapTiler, © OpenStreetMap contributors",
+    },
+    "maptiler_hybrid": {
+        "label": "Hybrid",
+        "provider": "maptiler",
+        "style": "hybrid",
+        "upstream": "https://api.maptiler.com/maps/hybrid/256/{z}/{x}/{y}.jpg?key={k}",
+        "maxzoom": 20,
+        "attribution": "© MapTiler, © OpenStreetMap contributors",
+    },
+    "maptiler_topo": {
+        "label": "Topographic",
+        "provider": "maptiler",
+        "style": "topo",
+        "upstream": "https://api.maptiler.com/maps/topo-v2/256/{z}/{x}/{y}.png?key={k}",
+        "maxzoom": 20,
+        "attribution": "© MapTiler, © OpenStreetMap contributors",
+    },
+
+    # ---- Mapbox (keyed; see "Keyed services" in the module docstring) ----
+    # The raster tile APIs, 256 px, for the same reason MapTiler's are.
+    "mapbox_satellite": {
+        "label": "Satellite",
+        "provider": "mapbox",
+        "style": "satellite",
+        "upstream": "https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}.jpg90?access_token={k}",
+        "maxzoom": 20,
+        "attribution": "© Mapbox, © Maxar",
+    },
+    "mapbox_streets": {
+        "label": "Streets",
+        "provider": "mapbox",
+        "style": "streets",
+        "upstream": "https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}?access_token={k}",
+        "maxzoom": 20,
+        "attribution": "© Mapbox, © OpenStreetMap contributors",
+    },
+    "mapbox_hybrid": {
+        "label": "Hybrid",
+        "provider": "mapbox",
+        "style": "hybrid",
+        "upstream": "https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/256/{z}/{x}/{y}?access_token={k}",
+        "maxzoom": 20,
+        "attribution": "© Mapbox, © Maxar, © OpenStreetMap contributors",
+    },
+    "mapbox_topo": {
+        "label": "Outdoors",
+        "provider": "mapbox",
+        "style": "topo",
+        "upstream": "https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/256/{z}/{x}/{y}?access_token={k}",
+        "maxzoom": 20,
+        "attribution": "© Mapbox, © OpenStreetMap contributors",
+    },
+
     # ---- Bing / Virtual Earth (quadkey addressing, see {q} above) ----
     "bing_satellite": {
         "label": "Satellite",
@@ -201,7 +309,7 @@ TERRAIN_SOURCES: dict[str, dict[str, Any]] = {
         "encoding": "terrarium",
         "upstream": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
         "maxzoom": 15,
-        "attribution": "Elevation: AWS Terrain Tiles \u2014 SRTM, USGS NED, and national datasets",
+        "attribution": "Elevation: AWS Terrain Tiles: SRTM, USGS NED, and national datasets",
     },
 }
 
@@ -227,6 +335,35 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     "bing": {
         "label": "Bing",
         "sources": ["bing_satellite", "bing_streets", "bing_hybrid"],
+    },
+    # Keyed services. ``token`` is what makes a provider keyed; its presence is
+    # the only test anything performs (see :func:`token_meta`), so adding a
+    # third keyed service is a block here and nothing else.
+    "maptiler": {
+        "label": "MapTiler",
+        "sources": [
+            "maptiler_satellite", "maptiler_streets",
+            "maptiler_hybrid", "maptiler_topo",
+        ],
+        "token": {
+            "label": "MapTiler API key",
+            "signup": "https://cloud.maptiler.com/account/keys/",
+            "help": "Licensed satellite and street tiles, on the operator's "
+                    "own quota rather than a shared public endpoint.",
+        },
+    },
+    "mapbox": {
+        "label": "Mapbox",
+        "sources": [
+            "mapbox_satellite", "mapbox_streets",
+            "mapbox_hybrid", "mapbox_topo",
+        ],
+        "token": {
+            "label": "Mapbox access token",
+            "signup": "https://account.mapbox.com/access-tokens/",
+            "help": "Maxar satellite imagery and Mapbox street cartography. "
+                    "A public (pk.*) token is what this needs.",
+        },
     },
 }
 
@@ -295,24 +432,99 @@ def server_shard(x: int, y: int, count: int = 4) -> str:
     return str((x + y) % count)
 
 
-def build_tile_url(template: str, z: int, x: int, y: int) -> str:
+def build_tile_url(template: str, z: int, x: int, y: int, token: str = "") -> str:
     """Substitute the tile placeholders in *template* for tile (z, x, y).
 
     The single URL builder shared by the server's online cache-fill and the
-    offline downloader, so a change to the token set can never apply to one
-    path and not the other. ``{q}`` and ``{s}`` are computed first because
+    offline downloader, so a change to the placeholder set can never apply to
+    one path and not the other. ``{q}`` and ``{s}`` are computed first because
     their replacements are digit strings that contain no braces, which keeps
     the remaining ``{z}``/``{y}``/``{x}`` substitutions order-agnostic.
+
+    ``{k}`` is the operator's API key, and it is the one substitution whose
+    value did not come from this file. It is percent-encoded with an empty
+    safe set, so a key pasted with a stray ``&`` or ``#`` — or with something
+    worse in it — becomes one opaque query value rather than extra URL
+    structure. It is substituted LAST, after the placeholders whose values this
+    module computes, so an encoded key can never contain a brace that the
+    earlier passes would then have interpreted.
     """
     url = template
     if "{q}" in url:
         url = url.replace("{q}", quadkey(z, x, y))
     if "{s}" in url:
         url = url.replace("{s}", server_shard(x, y))
-    return (url
-            .replace("{z}", str(z))
-            .replace("{y}", str(y))
-            .replace("{x}", str(x)))
+    url = (url
+           .replace("{z}", str(z))
+           .replace("{y}", str(y))
+           .replace("{x}", str(x)))
+    if "{k}" in url:
+        url = url.replace("{k}", urllib.parse.quote(str(token or ""), safe=""))
+    return url
+
+
+# The query parameter names a key travels under, derived from the templates
+# rather than listed by hand: a keyed service added above brings its own
+# parameter name with it, and :func:`redact_url` must not need a second edit to
+# keep that service's key out of the logs.
+_TOKEN_QUERY_PARAMS: frozenset[str] = frozenset(
+    match.group(1)
+    for entry in TILE_SOURCES.values()
+    for match in re.finditer(r"[?&]([A-Za-z0-9_.\-]+)=\{k\}", entry["upstream"])
+)
+
+
+def redact_url(url: str) -> str:
+    """*url* with any API key blanked, for a log line.
+
+    Every upstream failure is logged with the URL that failed, which is the
+    only way to debug a tile that will not load — and for a keyed service that
+    URL carries the operator's credential. Logs are copied into bug reports;
+    this is what keeps the key out of them.
+    """
+    text = str(url or "")
+    for param in _TOKEN_QUERY_PARAMS:
+        marker = param + "="
+        start = text.find(marker)
+        while start != -1:
+            head = start + len(marker)
+            end = len(text)
+            for sep in ("&", "#"):
+                hit = text.find(sep, head)
+                if hit != -1:
+                    end = min(end, hit)
+            text = text[:head] + "REDACTED" + text[end:]
+            start = text.find(marker, head + len("REDACTED"))
+    return text
+
+
+def token_meta(provider_id: str) -> dict[str, str] | None:
+    """The ``token`` block for *provider_id*, or None when it needs no key.
+
+    Carrying a block IS being keyed — there is no separate flag to keep in
+    step with it.
+    """
+    prov = PROVIDERS.get(provider_id)
+    if prov is None:
+        return None
+    meta = prov.get("token")
+    return dict(meta) if isinstance(meta, dict) else None
+
+
+def keyed_providers() -> list[str]:
+    """Provider ids that need an operator-supplied key, in registry order."""
+    return [pid for pid in PROVIDERS if token_meta(pid) is not None]
+
+
+def needs_token(source_id: str) -> bool:
+    """Does serving *source_id* require a key the operator has to supply?
+
+    Answered from the provider rather than from the template so a source whose
+    URL happens not to carry ``{k}`` still counts as keyed if its service is —
+    the question callers are really asking is "will this 401 without a key".
+    """
+    provider = provider_of(source_id)
+    return provider is not None and token_meta(provider) is not None
 
 
 def all_sources() -> dict[str, dict[str, Any]]:
@@ -381,9 +593,19 @@ def list_sources() -> list[dict]:
 
 
 def list_providers() -> list[dict]:
-    """Return ``[{id, label, sources: [...]}, ...]`` for the service picker."""
+    """Return ``[{id, label, sources, token}, ...]`` for the service picker.
+
+    ``token`` is the metadata block for a keyed service or None — never the
+    key. Whether one is actually stored is the server's answer to give, since
+    only it can see the config file.
+    """
     return [
-        {"id": pid, "label": p["label"], "sources": list(p["sources"])}
+        {
+            "id": pid,
+            "label": p["label"],
+            "sources": list(p["sources"]),
+            "token": token_meta(pid),
+        }
         for pid, p in PROVIDERS.items()
     ]
 
@@ -417,3 +639,13 @@ def resolve_source(provider_id: str, style: str | None = None) -> str | None:
             if TILE_SOURCES[sid]["style"] == style:
                 return sid
     return ids[0]
+
+# A keyed provider that forgot the placeholder would fetch its tiles without
+# the key and get a wall of 401s that looks exactly like "no internet"; an
+# unkeyed one that carried it would build a URL with an empty key in it. The
+# template and the provider block have to agree, both ways.
+assert all(
+    ("{k}" in TILE_SOURCES[sid]["upstream"]) == (token_meta(pid) is not None)
+    for pid, prov in PROVIDERS.items()
+    for sid in prov["sources"]
+), "a {k} placeholder and a provider token block must imply each other"

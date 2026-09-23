@@ -348,17 +348,27 @@ def test_every_source_belongs_to_exactly_one_provider() -> None:
 
 
 def test_expected_providers_are_registered() -> None:
-    assert set(tile_sources.PROVIDERS) == {"esri", "osm", "google", "bing"}
+    assert set(tile_sources.PROVIDERS) == {
+        "esri", "osm", "google", "bing", "maptiler", "mapbox"}
     assert tile_sources.DEFAULT_PROVIDER in tile_sources.PROVIDERS
+    # The default must never be a keyed one: a fresh install has no keys, and
+    # a station that opens onto a blank map has no way to tell "no imagery
+    # here" from "this build is broken".
+    assert tile_sources.token_meta(tile_sources.DEFAULT_PROVIDER) is None
 
 
 def test_list_providers_shape() -> None:
     provs = tile_sources.list_providers()
     assert [p["id"] for p in provs] == list(tile_sources.PROVIDERS)
     for p in provs:
-        assert set(p) == {"id", "label", "sources"}
+        assert set(p) == {"id", "label", "sources", "token"}
         assert p["label"].strip()
         assert p["sources"] == tile_sources.PROVIDERS[p["id"]]["sources"]
+        # ``token`` is the metadata an operator needs to go and get a key —
+        # never a key, and never a place one could end up.
+        if p["token"] is not None:
+            assert set(p["token"]) == {"label", "signup", "help"}
+            assert all(str(v).strip() for v in p["token"].values())
 
 
 def test_list_providers_returns_a_copy() -> None:

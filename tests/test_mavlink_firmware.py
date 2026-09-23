@@ -242,3 +242,65 @@ def test_reboot_refused_when_disconnected() -> None:
     bridge._conn = FakeConnection()
     assert bridge.reboot_to_bootloader() is False
     assert bridge._conn.mav.commands == []
+
+
+# ---------------------------------------------------------------------------
+# reboot_autopilot(): the plain restart behind "Reboot autopilot"
+# ---------------------------------------------------------------------------
+
+def test_a_plain_reboot_sends_param1_1_and_leaves_the_companion_alone() -> None:
+    """param1 = 1 reboots the autopilot on PX4 v1.16 to v1.18 and ArduPilot."""
+    bridge = ready_bridge()
+
+    def on_send(args: tuple) -> None:
+        bridge._dispatch(ack(int(args[2]), mavutil.mavlink.MAV_RESULT_ACCEPTED))
+
+    bridge._conn = FakeConnection(on_send)
+
+    assert bridge.reboot_autopilot() is True
+    assert len(bridge._conn.mav.commands) == 1
+    sent = bridge._conn.mav.commands[0]
+    assert int(sent[2]) == mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN
+    assert sent[4] == pytest.approx(1.0)
+    assert list(sent[5:11]) == [0.0] * 6, "0, not NaN: the companion is told to do nothing"
+
+
+def test_a_plain_reboot_is_refused_while_armed_before_anything_is_sent() -> None:
+    bridge = ready_bridge()
+    bridge._store.update(armed=True)
+    bridge._conn = FakeConnection()
+    assert bridge.reboot_autopilot() is False
+    assert bridge._conn.mav.commands == []
+    assert "armed" in bridge.get_last_command_error()
+
+
+def test_an_accepted_reboot_drops_the_parameter_cache() -> None:
+    """Whatever the reboot applies (SYS_AUTOSTART above all) is not in the cache."""
+    bridge = ready_bridge()
+    bridge._dispatch(FakeMessage(
+        message_type="PARAM_VALUE", param_id=b"SYS_AUTOSTART", param_value=4001.0,
+        param_type=mavutil.mavlink.MAV_PARAM_TYPE_REAL32, param_index=0, param_count=1))
+    assert bridge.param_status()["state"] == "complete"
+
+    def on_send(args: tuple) -> None:
+        bridge._dispatch(ack(int(args[2]), mavutil.mavlink.MAV_RESULT_ACCEPTED))
+
+    bridge._conn = FakeConnection(on_send)
+    assert bridge.reboot_autopilot() is True
+    assert bridge.param_status()["state"] == "idle"
+    assert bridge.get_params() == []
+
+
+def test_a_denied_reboot_keeps_the_cache_and_says_why() -> None:
+    bridge = ready_bridge()
+    bridge._dispatch(FakeMessage(
+        message_type="PARAM_VALUE", param_id=b"SYS_AUTOSTART", param_value=4001.0,
+        param_type=mavutil.mavlink.MAV_PARAM_TYPE_REAL32, param_index=0, param_count=1))
+
+    def on_send(args: tuple) -> None:
+        bridge._dispatch(ack(int(args[2]), mavutil.mavlink.MAV_RESULT_DENIED))
+
+    bridge._conn = FakeConnection(on_send)
+    assert bridge.reboot_autopilot() is False
+    assert "DENIED" in bridge.get_last_command_error()
+    assert bridge.param_status()["state"] == "complete"

@@ -6,6 +6,8 @@ and the full-autotune wire contract shared by PX4 v1.16-v1.18.
 """
 from __future__ import annotations
 
+from typing import Any
+
 import math
 import threading
 import time
@@ -550,10 +552,11 @@ def test_calibrate_sends_correct_params_on_accepted(
     # param_index+4 because command_long_send args are:
     # (sys, comp, cmd, confirmation, p1..p7) → p1 is at offset 4.
     assert cmd[4 + param_index] == pytest.approx(expected_value)
-    # All other params should be NaN.
+    # All other params are 0, the message's own "no calibration" (and what
+    # QGC sends). NaN reached PX4's (int) casts, which differ by platform.
     for i in range(7):
         if i != param_index:
-            assert math.isnan(cmd[4 + i])
+            assert cmd[4 + i] == 0.0
 
 
 def test_calibrate_unknown_sensor_returns_false() -> None:
@@ -939,19 +942,101 @@ def test_start_param_upload_starts_worker_and_sets_uploading(
         {"name": "B", "value": 2.0},
     ]) is True
     assert bridge._param_download_state == "uploading"
-    assert bridge._param_count == 2
-    assert bridge._param_received == 0
+    assert bridge.param_status() == {"state": "uploading", "count": 2, "received": 0}
 
     gate.set()
     bridge._param_upload_thread.join(timeout=5)
     assert not bridge._param_upload_thread.is_alive()
 
-    assert bridge._param_download_state == "upload_complete"
-    assert bridge._param_received == 2
+    # The cache was not a complete download, so the set is idle again.
+    assert bridge._param_download_state == "idle"
     result = bridge.get_param_upload_result()
+    assert result["state"] == "upload_complete"
     assert result["written"] == 2
     assert result["failed"] == 0
     assert result["errors"] == []
+
+
+def _upload_bridge(monkeypatch: pytest.MonkeyPatch, count: int) -> Any:
+    """A bridge that echoes every PARAM_SET as the vehicle would, with *count*."""
+    bridge = ready_bridge()
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    bridge._running.set()
+    events: list[dict] = []
+    bridge.add_param_listener(events.append)
+    bridge._upload_events = events  # type: ignore[attr-defined]
+
+    def on_send(args: tuple) -> None:
+        if args[0] != "param_set":
+            return
+        name = args[3].decode("utf-8")
+        bridge._dispatch(param_value(name, args[4], ptype=args[5], index=-1, count=count))
+
+    bridge._conn.mav.on_send = on_send
+    return bridge
+
+
+def test_a_complete_set_stays_complete_and_current_after_an_upload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The editor must not come back empty after a parameter file upload."""
+    bridge = _upload_bridge(monkeypatch, count=3)
+    for index, name in enumerate(("A", "B", "C")):
+        bridge._dispatch(param_value(name, 0.0, index=index, count=3))
+    assert bridge._param_download_state == "complete"
+
+    assert bridge.start_param_upload([{"name": "A", "value": 1.0},
+                                      {"name": "C", "value": 3.0}]) is True
+    bridge._param_upload_thread.join(timeout=5)
+
+    assert bridge.param_status() == {"state": "complete", "count": 3, "received": 3}
+    assert {p["name"]: p["value"] for p in bridge.get_params()} == {
+        "A": 1.0, "B": 0.0, "C": 3.0}
+    assert bridge._upload_events[-1]["state"] == "upload_complete"
+
+
+def test_upload_progress_counts_the_file_not_the_vehicle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each echo carries the vehicle's total; progress must still read n of 2."""
+    bridge = _upload_bridge(monkeypatch, count=1400)
+    bridge._dispatch(param_value("A", 0.0, index=0, count=1400))
+    bridge._dispatch(param_value("B", 0.0, index=1, count=1400))
+
+    assert bridge.start_param_upload([{"name": "A", "value": 1.0},
+                                      {"name": "B", "value": 2.0}]) is True
+    bridge._param_upload_thread.join(timeout=5)
+
+    during = [e for e in bridge._upload_events if e["state"] == "uploading"]
+    assert during, "progress was published"
+    assert all(e["count"] == 2 for e in during)
+    assert [e["received"] for e in during if "type" not in e] == [1, 2]
+    assert bridge._upload_events[-1] == {"state": "upload_complete", "count": 2, "received": 2}
+
+
+def test_a_whole_file_upload_onto_an_empty_cache_is_not_declared_a_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every echo is new to the cache; none may flip the state to complete."""
+    bridge = _upload_bridge(monkeypatch, count=2)
+    mav = bridge._conn.mav
+    original = mav.param_request_read_send
+
+    def answering(target_system, target_component, name, index):
+        original(target_system, target_component, name, index)
+        bridge._dispatch(param_value(name.decode(), 0.0, index=-1, count=2))
+
+    mav.param_request_read_send = answering
+    states: list[str] = []
+    bridge.add_param_listener(lambda e: states.append(e["state"]))
+
+    assert bridge.start_param_upload([{"name": "A", "value": 1.0},
+                                      {"name": "B", "value": 2.0}]) is True
+    bridge._param_upload_thread.join(timeout=5)
+
+    assert "complete" not in states[:-1]
+    assert states[-1] == "upload_complete"
+    assert bridge.get_param_upload_result()["written"] == 2
 
 
 def test_start_param_upload_refuses_if_armed(

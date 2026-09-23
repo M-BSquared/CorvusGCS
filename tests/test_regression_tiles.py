@@ -89,11 +89,13 @@ class _RealDownloaderPool:
             for sid, cache in caches.items()
         }
 
-    def start(self, source, upstream, bounds, minzoom, maxzoom, on_progress=None) -> str:
+    def start(self, source, upstream, bounds, minzoom, maxzoom,
+              on_progress=None, token="") -> str:
         dl = self._downloaders.get(source)
         if dl is None:
             raise ValueError(f"no downloader for source {source!r}")
-        return dl.start(source, upstream, bounds, minzoom, maxzoom, on_progress=on_progress)
+        return dl.start(source, upstream, bounds, minzoom, maxzoom,
+                        on_progress=on_progress, token=token)
 
     def cancel(self, job_id: str) -> bool:
         return any(dl.cancel(job_id) for dl in self._downloaders.values())
@@ -154,8 +156,11 @@ def test_tiles_sources_returns_all_registered_ids(tile_server) -> None:
     data = json.loads(body)
     ids = {s["id"] for s in data["sources"]}
     assert ids == set(TILE_SOURCES)
-    # The four map services the Appearance settings offer must all be reachable.
-    assert {s["provider"] for s in data["sources"]} == {"esri", "osm", "google", "bing"}
+    # Every map service the Settings page offers must be reachable — the four
+    # that need nothing, and the keyed ones, which are listed whether or not a
+    # key is stored so the operator can see what adding one would buy.
+    assert {s["provider"] for s in data["sources"]} == {
+        "esri", "osm", "google", "bing", "maptiler", "mapbox"}
     # Each source entry carries what the frontend needs: identity, the provider
     # grouping, the credit string (the frontend no longer mirrors it), and the
     # cache stats.
@@ -164,7 +169,14 @@ def test_tiles_sources_returns_all_registered_ids(tile_server) -> None:
                 "attribution", "cached_count"} <= set(s)
     # The response also carries the provider grouping itself, which drives the
     # map-service picker.
-    assert {p["id"] for p in data["providers"]} == {"esri", "osm", "google", "bing"}
+    assert {p["id"] for p in data["providers"]} == {
+        "esri", "osm", "google", "bing", "maptiler", "mapbox"}
+    # A keyed service says so, and says whether the operator has given it a
+    # key. It never carries the key itself — see test_map_tokens.py.
+    by_id = {p["id"]: p for p in data["providers"]}
+    assert by_id["esri"]["token_required"] is False
+    assert by_id["maptiler"]["token_required"] is True
+    assert by_id["maptiler"]["token_set"] is False
     assert data["default_provider"] in {p["id"] for p in data["providers"]}
 
 

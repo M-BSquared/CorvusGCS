@@ -322,14 +322,14 @@ def serial_number_problem(value: str) -> str:
     if not text:
         return "no serial number"
     if len(text) < 6:
-        return ("too short — a CTA-2063-A serial is a 4-character manufacturer "
+        return ("too short: a CTA-2063-A serial is a 4-character manufacturer "
                 "code, a length character, then the serial itself")
     if len(text) > UAS_ID_MAX:
         return f"longer than the {UAS_ID_MAX} characters the message carries"
     bad = sorted({c for c in text if c not in _CTA_ALPHABET})
     if bad:
         return ("uses " + ", ".join(repr(c) for c in bad)
-                + " — CTA-2063-A allows digits and capitals only, without I or O")
+                + ". CTA-2063-A allows digits and capitals only, without I or O")
     length_code = text[4]
     if length_code not in _CTA_LENGTH_CODES:
         return (f"the 5th character is the length code and must be 1-9 or A-F, "
@@ -364,7 +364,7 @@ def eu_operator_id_problem(value: str) -> str:
     stripped = text.replace("-", "")
     if len(stripped) > 16:
         return ("the last characters look like the secret part of your "
-                "registration — only the first 16 are broadcast, and the rest "
+                "registration. Only the first 16 are broadcast, and the rest "
                 "must not be")
     if len(stripped) < 16:
         return (f"{len(stripped)} characters; an EU operator registration is 16, "

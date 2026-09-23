@@ -121,8 +121,8 @@ def _host_key_hint(exc: Exception) -> str:
     return (
         f"{exc}\n"
         f"The key this host presented is not the one recorded for it. Either "
-        f"the companion computer was reinstalled — remove its line from "
-        f"{known_hosts_path()} and connect again — or something else is "
+        f"the companion computer was reinstalled (remove its line from "
+        f"{known_hosts_path()} and connect again), or something else is "
         f"answering on that address."
     )
 

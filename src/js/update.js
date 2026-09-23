@@ -148,7 +148,7 @@ Corvus.update = (function () {
           /* No browser on the box (or none the backend could launch): the
              link is still useful, so put it on the clipboard instead. */
           return copyLink(status.url).then(
-            () => built.note.show("No browser available — link copied to the clipboard.", "warn"),
+            () => built.note.show("No browser available. Link copied to the clipboard.", "warn"),
             () => built.note.show("No browser available. The release page is shown above.", "warn"),
           );
         }).catch(() => {
@@ -165,7 +165,7 @@ Corvus.update = (function () {
       label: "Copy link",
       onClick: () => copyLink(status.url).then(
         () => built.note.show("Link copied to the clipboard.", "ok"),
-        () => built.note.show("Could not copy — the link is shown above.", "warn"),
+        () => built.note.show("Could not copy. The link is shown above.", "warn"),
       ),
     });
 

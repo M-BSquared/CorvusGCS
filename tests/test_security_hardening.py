@@ -721,3 +721,131 @@ def test_a_malformed_conditional_header_just_sends_the_file(
             server_with_store, "/a.css", {"If-Modified-Since": bad})
         assert status == 200, bad
         assert body == b"body{}"
+
+
+# ---------------------------------------------------------------------------
+# Response hardening headers
+#
+# The fourth open door: the UI is a local page that can arm an aircraft, and
+# the browser was told nothing about what that page is allowed to do. One
+# injected script could read GET /api/config and POST /api/mavlink/arm, and —
+# the part a CSP actually stops — send what it found to a host of its choosing.
+# ---------------------------------------------------------------------------
+
+def test_every_response_carries_the_hardening_headers(server_with_store: Any) -> None:
+    """Not just the HTML: a JSON body and a static asset alike."""
+    from corvus.server import CONTENT_SECURITY_POLICY
+
+    for path in ("/api/version", "/api/state"):
+        response = _get(server_with_store, path, None)
+        response.read()
+        assert response.getheader("Content-Security-Policy") == CONTENT_SECURITY_POLICY, path
+        assert response.getheader("X-Content-Type-Options") == "nosniff", path
+        assert response.getheader("X-Frame-Options") == "DENY", path
+        assert response.getheader("Referrer-Policy") == "no-referrer", path
+
+
+def test_the_policy_pins_the_page_to_this_server(server_with_store: Any) -> None:
+    """``connect-src 'self'`` is what keeps an injection from phoning home.
+
+    Each of these is load-bearing rather than boilerplate: without
+    ``connect-src`` a script in the page can POST the telemetry, the SSH
+    credentials and the map service keys anywhere; without ``frame-ancestors``
+    another page can embed the UI and clickjack ARM; ``object-src`` and
+    ``base-uri`` close the two classic ways a script gets re-introduced.
+    """
+    from corvus.server import CONTENT_SECURITY_POLICY
+
+    directives = {
+        part.strip().split(" ")[0]: part.strip()
+        for part in CONTENT_SECURITY_POLICY.split(";")
+    }
+    assert directives["default-src"] == "default-src 'self'"
+    assert directives["connect-src"] == "connect-src 'self'"
+    assert directives["frame-ancestors"] == "frame-ancestors 'none'"
+    assert directives["object-src"] == "object-src 'none'"
+    assert directives["base-uri"] == "base-uri 'none'"
+    assert directives["form-action"] == "form-action 'none'"
+    # MapLibre builds its tile worker from a blob URL; without this there is
+    # no map at all, which is why the exception is written down rather than
+    # discovered by an operator in the field.
+    assert "blob:" in directives["worker-src"]
+    # 'unsafe-eval' is NOT here, and stays out: nothing the app ships needs it
+    # (checked against MapLibre, Plotly and xterm), and it is the single
+    # directive that would give a string-to-code path back.
+    assert "'unsafe-eval'" not in CONTENT_SECURITY_POLICY
+
+
+def test_a_route_that_sets_its_own_header_is_not_overridden(
+    server_with_store: Any, tmp_path, monkeypatch,
+) -> None:
+    """The headers are defaults from one choke point, not a second opinion."""
+    from corvus import server as server_module
+
+    (tmp_path / "a.css").write_bytes(b"body{}")
+    monkeypatch.setattr(server_module, "WEB_DIR", tmp_path)
+    response = _get(server_with_store, "/a.css", None)
+    response.read()
+    # The route's own Content-Type survived alongside the added headers, and
+    # nothing was emitted twice.
+    assert response.getheader("Content-Type") == "text/css"
+    assert len(response.headers.get_all("Content-Security-Policy") or []) == 1
+    assert len(response.headers.get_all("X-Content-Type-Options") or []) == 1
+
+
+def test_a_304_is_hardened_too(server_with_store: Any, tmp_path, monkeypatch) -> None:
+    """The revalidation path writes its own header block and must not skip them."""
+    from corvus import server as server_module
+
+    (tmp_path / "a.css").write_bytes(b"body{}")
+    monkeypatch.setattr(server_module, "WEB_DIR", tmp_path)
+    _status, _body, headers = _conditional_get(server_with_store, "/a.css", {})
+    status, _body, fresh = _conditional_get(
+        server_with_store, "/a.css", {"If-None-Match": headers["etag"]})
+    assert status == 304
+    assert fresh["x-content-type-options"] == "nosniff"
+
+
+def test_the_app_loads_nothing_from_off_this_machine() -> None:
+    """The policy is only honest while the page stays self-contained.
+
+    An offline field station has no business fetching a CDN script or a remote
+    font, and the moment one is added ``default-src 'self'`` breaks the app
+    rather than the app quietly breaking the promise. This pins the contract
+    so the failure is caught here instead of on a laptop with no internet.
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parent.parent / "src"
+    pattern = re.compile(r"""(?:src|href)\s*=\s*["']https?://""", re.I)
+    offenders = [
+        str(path.relative_to(root))
+        for path in list(root.glob("*.html")) + list(root.glob("css/*.css"))
+        if pattern.search(path.read_text(encoding="utf-8", errors="replace"))
+    ]
+    assert offenders == [], f"remote asset references: {offenders}"
+
+
+def test_a_second_request_on_one_connection_is_hardened_too(server_with_store: Any) -> None:
+    """A keep-alive connection serves many responses through one handler.
+
+    The per-response bookkeeping is reset in ``send_response`` rather than
+    after the write for exactly this: state left behind by the first response
+    would make the second skip its headers, and nothing about the page would
+    look different.
+    """
+    from corvus.server import CONTENT_SECURITY_POLICY
+
+    host, port = server_with_store.server_address[0], server_with_store.server_address[1]
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    try:
+        for attempt in range(3):
+            conn.request("GET", "/api/version")
+            response = conn.getresponse()
+            response.read()
+            assert response.getheader("Content-Security-Policy") == \
+                CONTENT_SECURITY_POLICY, f"request {attempt}"
+            assert response.getheader("X-Content-Type-Options") == "nosniff", attempt
+    finally:
+        conn.close()

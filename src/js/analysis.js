@@ -117,7 +117,7 @@ Corvus.analysis = (function () {
   const ULOG_SORT_OPTIONS = SORT_OPTIONS.concat(
     [{ value: "id-desc", label: "Log number" }]);
   const TLOG_SORT_OPTIONS = SORT_OPTIONS.concat(
-    [{ value: "name-asc", label: "Name (A–Z)" }]);
+    [{ value: "name-asc", label: "Name (A to Z)" }]);
 
   function readSort(kind, fallback, allowed) {
     let value = "";
@@ -388,13 +388,13 @@ Corvus.analysis = (function () {
         desc: "The MAVLink stream Corvus recorded on this laptop.",
         chevron: true, onClick: () => setView("tlog"),
       });
-      tlogTile.title = "Every session Corvus recorded — each one can be "
+      tlogTile.title = "Every session Corvus recorded. Each one can be "
         + "plotted as a Telemetry Review";
       tlogTile.dataset.view = "tlog";
       const reviewTile = Corvus.ui.tile({
         className: "logs-tile", icon: "activity",
         title: "Flight Review",
-        desc: "Plot a downloaded ULog — motors, clipping, EKF, battery.",
+        desc: "Plot a downloaded ULog: motors, clipping, EKF, battery.",
         chevron: true, onClick: () => setView("review"),
       });
       reviewTile.dataset.view = "review";
@@ -418,8 +418,8 @@ Corvus.analysis = (function () {
           ? "Connect to the vehicle to read its logs."
           : (n ? n + " log(s) on the vehicle"
                  + (have ? ", " + have + " already in the folder" : "")
-                 + (busy(s) ? " — download running" : "")
-               : "Not read yet — open to ask the vehicle.");
+                 + (busy(s) ? ", download running" : "")
+               : "Not read yet. Open to ask the vehicle.");
       }
       const tlogDesc = ui.tlogTile.querySelector(".tile-desc");
       if (tlogDesc) {
@@ -464,7 +464,7 @@ Corvus.analysis = (function () {
 
       const linkBanner = S.el("div", "params-banner");
       linkBanner.hidden = true;
-      linkBanner.textContent = "No link to the vehicle — connect to read its logs.";
+      linkBanner.textContent = "No link to the vehicle. Connect to read its logs.";
       card.appendChild(linkBanner);
 
       const selectRow = S.el("div", "logs-select-row");
@@ -545,7 +545,7 @@ Corvus.analysis = (function () {
       const items = sortedLogs();
       if (!items.length) {
         list.appendChild(S.el("div", "guidance-empty",
-          "No logs read yet — press “Read from vehicle”."));
+          "No logs read yet. Press “Read from vehicle”."));
         paintSelection();
         return;
       }
@@ -606,7 +606,7 @@ Corvus.analysis = (function () {
       if (!ui || ui.kind !== "ulog") return;
       const n = selected.size;
       ui.selectionCount.textContent = n
-        ? n + " selected — they download one after another"
+        ? n + " selected. They download one after another."
         : "";
       gate();
     }
@@ -648,7 +648,7 @@ Corvus.analysis = (function () {
       card.appendChild(head);
       const desc = S.el("div", "params-desc");
       desc.textContent =
-        "Every session Corvus recorded from the MAVLink stream — already on "
+        "Every session Corvus recorded from the MAVLink stream, already on "
         + "disk, nothing to download. Review reads one as plots, the same way "
         + "a ULog is read. Times are when the recording opened, on this "
         + "computer's clock.";
@@ -726,7 +726,7 @@ Corvus.analysis = (function () {
       const desc = S.el("div", "params-desc");
       desc.textContent =
         "What Corvus heard over the link, plotted. Lower rate than a ULog and "
-        + "without motor or per-IMU data — but it exists for every session, "
+        + "without motor or per-IMU data, but it exists for every session, "
         + "including the ones where the ULog never came off the aircraft, and "
         + "it is the only log that can show the radio link itself.";
       pickCard.appendChild(desc);
@@ -763,7 +763,7 @@ Corvus.analysis = (function () {
       const desc = S.el("div", "params-desc");
       desc.textContent =
         "Pick a downloaded ULog, or open one from anywhere on this computer. "
-        + "Corvus reads it locally — nothing leaves this machine — and plots "
+        + "Corvus reads it locally (nothing leaves this machine) and plots "
         + "the handful of things that decide whether a flight was healthy.";
       pickCard.appendChild(desc);
 
@@ -917,7 +917,7 @@ Corvus.analysis = (function () {
       // leaving an empty one — arriving from a log row, the empty page is the
       // first thing the shortcut shows.
       ui.out.appendChild(S.el("div", "page-card review-loading",
-        "Reading " + label + " — this takes a moment for a long flight."));
+        "Reading " + label + ". This takes a moment for a long flight."));
       try {
         const data = await fetcher();
         // A second pick while the first was still parsing: the answer that
@@ -1023,7 +1023,7 @@ Corvus.analysis = (function () {
           const seg = S.el("div", "review-mode-seg");
           seg.style.flexGrow = String(width);
           seg.style.background = modeColor(m.mode);
-          seg.title = m.mode + "  " + clock(m.start) + " – " + clock(m.end)
+          seg.title = m.mode + "  " + clock(m.start) + " to " + clock(m.end)
             + "  (" + width.toFixed(0) + " s)";
           // Name the span in place when it is wide enough to read; the key
           // below covers the slivers.
@@ -1822,7 +1822,7 @@ Corvus.analysis = (function () {
         dirNote.classList.remove("err");
         dirNote.textContent = res.warning
           ? res.warning
-          : "Saved — logs go to " + (res.dir || value) + ".";
+          : "Saved. Logs go to " + (res.dir || value) + ".";
         poll();
       } catch (err) {
         dirNote.classList.add("err");

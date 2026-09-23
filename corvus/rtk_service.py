@@ -62,7 +62,7 @@ from typing import Any
 from collections.abc import Callable
 
 from . import rtk
-from .mavlink_bridge import is_phantom_device, is_rtk_device
+from .serial_ports import is_phantom_device, is_rtk_device
 
 logger = logging.getLogger("corvus.rtk")
 
@@ -511,14 +511,14 @@ class RtkService:
             device = pinned
             if self._link_device() == pinned:
                 raise RtkError(
-                    "that port is the vehicle's telemetry link — pick another, "
+                    "that port is the vehicle's telemetry link. Pick another, "
                     "or let Corvus find the base station itself"
                 )
         else:
             if not candidates:
                 self._publish(
                     STATE_SEARCHING,
-                    "Looking for a base station — plug an RTK GNSS receiver into this computer",
+                    "Looking for a base station. Plug an RTK GNSS receiver into this computer",
                 )
                 return None
             device = candidates[0]["device"]
@@ -683,8 +683,8 @@ class RtkService:
             now = time.monotonic()
             if not frames and now > deadline_quiet:
                 raise RtkError(
-                    f"{transport.label} produced no corrections — "
-                    "check that the base station has power and a clear view of the sky"
+                    f"{transport.label} produced no corrections. "
+                    "Check that the base station has power and a clear view of the sky"
                 )
             if frames and last and now - last > SOURCE_SILENCE_S:
                 raise RtkError(
@@ -729,7 +729,7 @@ class RtkService:
         # which _await_survey_stopped has already done; resending them is
         # harmless and keeps the two paths one call each.
         self._write_all(transport, frames)
-        self._publish(STATE_SURVEYING, "Surveying — the base is learning where it is")
+        self._publish(STATE_SURVEYING, "Surveying: the base is learning where it is")
         self._await_survey_complete(transport, ubx, framer, settings)
         self._activate(transport, modern, msm7)
         self._publish(STATE_ACTIVE, "The survey is complete and corrections are flowing")

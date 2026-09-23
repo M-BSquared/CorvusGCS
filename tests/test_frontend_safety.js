@@ -265,7 +265,7 @@ function defaultPresets() {
       id: "benewake-tfmini-s", label: "Benewake TFmini-S", vendor: "Benewake",
       model: "TFmini-S", bus: "UART", serial: true, supported: true,
       unsupported: "", driver: "SENS_TFMINI_CFG", active: false, reboot: true,
-      summary: "0.1–12 m time-of-flight rangefinder.",
+      summary: "0.1 to 12 m time-of-flight rangefinder.",
       note: "Leave the module in UART mode.",
       writes: [
         { param: "SENS_TFMINI_CFG", value: null, port: true,
@@ -413,6 +413,62 @@ function addExtraParam(container, name) {
 // ===========================================================================
 // PART A — the schema-driven form
 // ===========================================================================
+
+async function testCheckValuesConfirmsWhatWasSetAndRedrawsFromTheVehicle() {
+  const { container, fake, destroy } = await openWith(safetyDoc());
+  const check = findOneByClass(container, "safety-check");
+  assert.ok(check, "the page offers Check values");
+  assert.equal(check.disabled, false, "enabled once the page has read the vehicle");
+
+  const input = control(container, "GF_MAX_HOR_DIST");
+  input.value = "750";
+  fire(input, "change");
+  await flushMicrotasks();
+
+  fake.telemetry.postAction = (url, payload) => {
+    fake.postCalls.push({ url, payload });
+    if (url !== "/api/params/verify") return Promise.resolve({ ok: true });
+    return Promise.resolve({
+      ok: true, values: { GF_MAX_HOR_DIST: 750 }, missing: [],
+      results: [{ name: "GF_MAX_HOR_DIST", wanted: 750, before: 500, after: 750,
+        rewritten: true, ok: true, error: "" }],
+    });
+  };
+  fire(findOneByClass(container, "safety-check"), "click");
+  for (let i = 0; i < 4; i += 1) await flushMicrotasks();
+
+  const verify = fake.postCalls.filter((c) => c.url === "/api/params/verify");
+  assert.equal(verify.length, 1);
+  assert.deepEqual(verify[0].payload.params, [{ name: "GF_MAX_HOR_DIST", value: 750 }]);
+  assert.ok(verify[0].payload.names.includes("GF_ACTION"), "the whole page is read back");
+  assert.ok(!verify[0].payload.names.includes("SENS_EN_SF1XX"),
+    "a driver the page only offers is not asked for, it is not a field");
+  assert.ok(fake.requests.includes("/api/safety?fresh=1"), "the redraw asks the vehicle");
+  const card = findOneByClass(container, "safety-check-card");
+  assert.ok(card, "the outcome is shown above the sections");
+  assert.match(findOneByClass(card, "check-outcome").textContent, /written again, confirmed/);
+  const row = findByDataset(container, "param", "GF_MAX_HOR_DIST")
+    .filter((e) => /pform-field/.test(e.className))[0];
+  assert.match(row.querySelector(".params-row-status").textContent, /written again, confirmed/);
+  destroy();
+}
+
+async function testASensorChainIsCheckedLikeAField() {
+  const { container, fake, destroy } = await openWith(safetyDoc());
+  enterSensor(container, "rangefinder");
+  await flushMicrotasks();
+  fire(findOneByClass(container, "safety-sensor-switch"), "click");
+  for (let i = 0; i < 4; i += 1) await flushMicrotasks();
+  const written = fake.writes().map((w) => w.name);
+  assert.ok(written.length, "the switch wrote its chain");
+
+  fire(findOneByClass(container, "safety-check"), "click");
+  await flushMicrotasks();
+  const verify = fake.postCalls.filter((c) => c.url === "/api/params/verify")[0];
+  assert.deepEqual(verify.payload.params.map((p) => p.name), written,
+    "every write of the chain is kept for the check");
+  destroy();
+}
 
 async function testRendersEverySectionFromTheSchema() {
   const { container, fake } = await openWith(safetyDoc());
@@ -658,7 +714,7 @@ async function testEnablingASensorWritesTheWholeChain() {
   ], "driver first, then the estimator");
 
   const note = dispatched.filter((e) => e.type === "corvus:notification").pop();
-  assert.match(note.detail.message, /reboot/, "the operator is told a reboot is needed");
+  assert.match(note.detail.message, /reboot/i, "the operator is told a reboot is needed");
   assert.equal(fake.requests.filter((u) => u === "/api/safety").length, 2,
     "the page re-reads itself after the chain");
 }
@@ -878,7 +934,7 @@ async function testTheHardwareDropdownLeadsWithCustomAndWritesNothingOnSelection
   // and a dropdown is read one row at a time.
   const labels = optionsOf(select).map((o) => o.label);
   assert.match(labels[0], /^Custom/);
-  assert.match(labels[1], /Holybro H-Flow — DroneCAN · 19006/);
+  assert.match(labels[1], /Holybro H-Flow · DroneCAN · 19006/);
   assert.match(labels[3], /not supported by PX4/,
     "a module this firmware cannot run says so before it is chosen");
 
@@ -894,7 +950,7 @@ async function testADropdownRowSaysWhenItsDriverIsAlreadyRunning() {
   const { container } = await openSensorPage(safetyDoc(undefined, presets));
 
   const select = findOneByClass(container, "safety-preset-select");
-  assert.match(optionsOf(select)[2].label, /Benewake TFmini-S — UART · TFmini-S {2}\(in use\)/);
+  assert.match(optionsOf(select)[2].label, /Benewake TFmini-S · UART · TFmini-S {2}\(in use\)/);
   assert.ok(!/in use/.test(optionsOf(select)[1].label),
     "and the ones that are not stay quiet");
 }
@@ -934,7 +990,7 @@ async function testApplyingAPresetWritesItsWholeChain() {
   ], "the driver half first, the estimator last");
 
   const note = dispatched.filter((e) => e.type === "corvus:notification").pop();
-  assert.match(note.detail.message, /reboot/, "the operator is told a reboot is needed");
+  assert.match(note.detail.message, /reboot/i, "the operator is told a reboot is needed");
   assert.ok(fake.requests.filter((u) => u === "/api/safety").length >= 2,
     "the page re-reads itself afterwards");
 }
@@ -1314,6 +1370,8 @@ async function testALateResponseAfterTeardownIsIgnored() {
 // ---------------------------------------------------------------------------
 async function main() {
   const tests = [
+    testCheckValuesConfirmsWhatWasSetAndRedrawsFromTheVehicle,
+    testASensorChainIsCheckedLikeAField,
     testRendersEverySectionFromTheSchema,
     testEveryFormPartCarriesTheSharedBaseClass,
     testDisconnectedRendersAnExplanationNotAnError,

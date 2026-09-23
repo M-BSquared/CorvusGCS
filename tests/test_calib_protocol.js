@@ -185,6 +185,36 @@ function testAccelerometerSessionTracksEachSide() {
   assert.match(st.detail, /Reboot/, "accelerometer calibration needs a reboot to take effect");
 }
 
+function testTheStartAckNeverRewindsASessionTheAutopilotAlreadyStarted() {
+  // The first [cal] lines reach the page over SSE before POST /api/calibrate
+  // resolves, and launch() calls begin() again on the ACK. That second call
+  // must not put the wizard back to "Waiting for the autopilot to start".
+  const s = P.createSession("baro");
+  assert.equal(s.begin(1000), true);
+  feed(s, ["[cal] calibration started: 2 baro"]);
+  assert.equal(s.begin(9000), false, "the ACK arrives after the vehicle spoke");
+  let st = s.getState();
+  assert.equal(st.phase, "running");
+  assert.equal(st.seenVehicleMessage, true);
+  assert.notEqual(st.lastEventAt, 9000, "the start timer is not re-armed");
+
+  // A fast calibration that already finished stays finished.
+  const done = P.createSession("level");
+  done.begin(1000);
+  feed(done, ["[cal] calibration started: 2 level", "[cal] calibration done: level"]);
+  assert.equal(done.begin(9000), false);
+  st = done.getState();
+  assert.equal(st.phase, "done");
+  assert.equal(st.headline, "Calibration complete");
+
+  // Still silent at the ACK: the start timer counts from the ACK.
+  const quiet = P.createSession("gyro");
+  quiet.begin(1000);
+  assert.equal(quiet.begin(4000), true);
+  assert.equal(quiet.getState().phase, "starting");
+  assert.equal(quiet.getState().lastEventAt, 4000);
+}
+
 function testPendingListNeverReactivatesAFinishedSide() {
   const s = P.createSession("accel");
   s.begin(1000);
@@ -393,6 +423,7 @@ const tests = [
   testNonCalibrationTrafficIsIgnored,
   testEveryProcedureIsCompleteAndDrawable,
   testAccelerometerSessionTracksEachSide,
+  testTheStartAckNeverRewindsASessionTheAutopilotAlreadyStarted,
   testPendingListNeverReactivatesAFinishedSide,
   testCompassSessionSpinsOnRotationRequests,
   testOperatorPromptsBecomeActions,

@@ -98,12 +98,26 @@ LINK_LOSS_ACTION_OPTIONS: list[dict[str, Any]] = [
     {"value": 6, "label": "Disarm"},
 ]
 
+# PX4 v1.16 to v1.18 document 0, 2 and 3. 1 ("Return") is deprecated but still
+# obeyed (failsafe.cpp): it keeps returning at the emergency level, where 3
+# lands. So it is not offered, and named for what it does when a vehicle
+# still holds it.
 LOW_BATTERY_ACTION_OPTIONS: list[dict[str, Any]] = [
     {"value": 0, "label": "Warning only"},
-    {"value": 1, "label": "Return"},
     {"value": 2, "label": "Land"},
     {"value": 3, "label": "Return at critical, land at emergency"},
 ]
+LOW_BATTERY_ACTION_DEPRECATED: dict[str, Any] = {
+    "value": 1, "label": "Return, even at emergency (deprecated)",
+}
+
+
+def _low_battery_options(values: dict[str, float]) -> list[dict[str, Any]]:
+    held = values.get("COM_LOW_BAT_ACT")
+    if held is not None and int(round(held)) == LOW_BATTERY_ACTION_DEPRECATED["value"]:
+        return [LOW_BATTERY_ACTION_OPTIONS[0], LOW_BATTERY_ACTION_DEPRECATED,
+                *LOW_BATTERY_ACTION_OPTIONS[1:]]
+    return LOW_BATTERY_ACTION_OPTIONS
 
 POSITION_LOSS_ACTION_OPTIONS: list[dict[str, Any]] = [
     {"value": 0, "label": "Altitude or Manual"},
@@ -287,10 +301,10 @@ SENSOR_PRESETS: list[dict[str, Any]] = [
         "provides": ["flow", "range"],
         "driver_id": {"flow": "UAVCAN_SUB_FLOW:1", "range": "UAVCAN_SUB_RNG:1"},
         "summary": "PAA3905E1 optical flow and an AFBR-S50LV85D distance sensor on one "
-                   "board, 0.08–30 m, over a single CAN cable.",
+                   "board, 0.08 to 30 m, over a single CAN cable.",
         "note": "A DroneCAN node rather than a local driver: the autopilot subscribes to "
                 "the messages it publishes, which is why the CAN stack itself has to be "
-                "running. Wire it to a CAN port — this module has no UART mode.",
+                "running. Wire it to a CAN port. This module has no UART mode.",
         "params": [
             (CAN_ENABLE_PARAM, CAN_ENABLE_VALUE,
              "Run the DroneCAN stack and configure sensor nodes automatically"),
@@ -299,7 +313,7 @@ SENSOR_PRESETS: list[dict[str, Any]] = [
             ("UAVCAN_RNG_MIN", 0.08, "Shortest distance the module reports"),
             ("UAVCAN_RNG_MAX", 30.0, "Longest distance the module reports"),
             ("SENS_FLOW_ROT", 0.0,
-             "Mounted with the connector aft — change it if the board is turned"),
+             "Mounted with the connector aft. Change it if the board is turned"),
             ("SENS_FLOW_MINHGT", 0.08, "Below this height the flow reading is not used"),
             ("SENS_FLOW_MAXHGT", 25.0, "Above it the ground is too far to track"),
             ("SENS_FLOW_MAXR", 7.4, "Fastest angular rate the PAA3905E1 can follow"),
@@ -317,14 +331,14 @@ SENSOR_PRESETS: list[dict[str, Any]] = [
         "model": "3901-L0X",
         "bus": "UART (MSP v2)",
         "provides": ["flow", "range"],
-        "summary": "PMW3901 optical flow and a VL53L0X lidar, 0.08–2 m, on one UART "
+        "summary": "PMW3901 optical flow and a VL53L0X lidar, 0.08 to 2 m, on one UART "
                    "speaking MSP v2.",
         # Listed rather than hidden on purpose: an operator who owns this module
         # needs to be told why it cannot work here, not left to conclude the
         # wiring is wrong.
         "supported": False,
         "unsupported": "PX4 has no MSP sensor input. The module speaks MSP v2, which INAV "
-                       "(2.3+) and ArduPilot (4.1+) read and PX4 does not — no parameter "
+                       "(2.3+) and ArduPilot (4.1+) read and PX4 does not. No parameter "
                        "on this page can make its flow or distance data reach the "
                        "estimator. For PX4, use a SPI PMW3901 board or a DroneCAN module.",
         "params": [],
@@ -368,23 +382,23 @@ def _benewake_serial_preset(pid: str, label: str, model: str, *, span: str,
 SENSOR_PRESETS += [
     _benewake_serial_preset(
         "benewake-tfmini-s", "Benewake TFmini-S", "TFmini-S",
-        span="0.1–12 m", accuracy="±6 cm", hmax=7.0, noise=0.06,
+        span="0.1 to 12 m", accuracy="±6 cm", hmax=7.0, noise=0.06,
         note="Leave the module in its UART mode; PX4's driver does not read its I2C "
-             "mode. Any free serial port will do — the baud rate is fixed in the "
+             "mode. Any free serial port will do. The baud rate is fixed in the "
              "driver, so there is nothing else to set.",
     ),
     _benewake_serial_preset(
         "benewake-tfmini-plus", "Benewake TFmini Plus", "TFmini Plus",
-        span="0.1–12 m", accuracy="±5 cm", hmax=7.0, noise=0.05,
+        span="0.1 to 12 m", accuracy="±5 cm", hmax=7.0, noise=0.05,
         note="Same driver and the same fixed baud rate as the TFmini-S, with a "
              "slightly tighter short-range accuracy. Leave it in UART mode.",
     ),
     _benewake_serial_preset(
         "benewake-tf03", "Benewake TF03", "TF03",
-        span="0.1–180 m", accuracy="±10 cm", hmax=10.0, noise=0.1,
+        span="0.1 to 180 m", accuracy="±10 cm", hmax=10.0, noise=0.1,
         note="PX4 documents this driver for the TFmini family; the TF03 ships the same "
              "9-byte Benewake frame at 115200 baud, so it comes up on the same serial "
-             "port parameter. Its CAN mode is not read by PX4 — keep the module in UART "
+             "port parameter. Its CAN mode is not read by PX4. Keep the module in UART "
              "mode. The range aid stays capped near the ground whatever the 180 m reach: "
              "height from a lidar is only trustworthy over terrain it can actually see.",
     ),
@@ -614,7 +628,7 @@ def _failsafe_section(values: dict[str, float]) -> dict[str, Any] | None:
         _number("COM_RC_LOSS_T", "RC loss timeout", values, unit="s", step=0.1, min=0),
         _enum("NAV_DLL_ACT", "Data link loss", values, LINK_LOSS_ACTION_OPTIONS),
         _number("COM_DL_LOSS_T", "Data link loss timeout", values, unit="s", step=1, min=0),
-        _enum("COM_LOW_BAT_ACT", "Low battery", values, LOW_BATTERY_ACTION_OPTIONS),
+        _enum("COM_LOW_BAT_ACT", "Low battery", values, _low_battery_options(values)),
         _enum("COM_POSCTL_NAVL", "Position loss", values, POSITION_LOSS_ACTION_OPTIONS,
               hint="Fallback when the position estimate is lost in Position mode."),
         _enum("COM_ACT_FAIL_ACT", "Actuator failure", values, ACTUATOR_FAILURE_ACTION_OPTIONS),
@@ -634,7 +648,7 @@ def _failsafe_section(values: dict[str, float]) -> dict[str, Any] | None:
         "id": "failsafe", "title": "Failsafe actions", "kind": "fields", "fields": fields,
         "hint": "What the autopilot does on its own when something is lost. Every action "
                 "named Return flies the profile above. The levels the low-battery "
-                "action reacts to are on the Battery & Power page — every BAT_ "
+                "action reacts to are on the Battery & Power page. Every BAT_ "
                 "parameter lives there.",
     }
 
@@ -797,7 +811,7 @@ def _sensor_toggle(values: dict[str, float], *, label: str,
     if active is not None:
         detail = str(active["label"])
     elif fusion_on:
-        detail = "No local driver — expecting the sensor over MAVLink"
+        detail = "No local driver, expecting the sensor over MAVLink"
     else:
         detail = "No driver enabled"
     if fusion is not None:
@@ -954,7 +968,7 @@ def _rangefinder_section(values: dict[str, float]) -> dict[str, Any] | None:
         "toggle": toggle, "fields": fields,
         "presets": _presets_for("range", values),
         "hint": "A downward lidar or sonar. Switching it on starts the driver and tells the "
-                "estimator to fuse it — doing only one of the two is the usual reason a "
+                "estimator to fuse it. Doing only one of the two is the usual reason a "
                 "rangefinder reads perfectly and changes nothing.",
     }
 

@@ -163,6 +163,16 @@ def test_a_current_px4_firmware_yields_the_pack_the_sensing_and_the_levels() -> 
     assert doc["received"] == len(_px4())
 
 
+def test_a_disabled_battery_source_reads_as_disabled_not_unknown() -> None:
+    """-1 is PX4's own value (v1.16 to v1.18) and the default of BAT2_SOURCE."""
+    field = _fields(_sections(battery_config.build(_px4() | {"BAT1_SOURCE": -1.0}))["sensing"])
+    options = {o["value"]: o["label"] for o in field["BAT1_SOURCE"]["options"]}
+    assert options[-1] == "Disabled"
+    assert not any("Unknown" in label for label in options.values())
+    assert "MAVLink" in options[1], "External is BATTERY_STATUS, not an ADC"
+    assert battery_config.build(_px4() | {"BAT1_SOURCE": -1.0})["pack"]["source"] == "Disabled"
+
+
 def test_the_pre_multi_battery_names_serve_a_firmware_that_still_has_them() -> None:
     """BAT_N_CELLS and BAT1_N_CELLS never coexist, so exactly one set survives."""
     legacy = {"BAT_N_CELLS": 4.0, "BAT_V_CHARGED": 4.05, "BAT_V_EMPTY": 3.5}

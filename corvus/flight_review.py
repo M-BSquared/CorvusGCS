@@ -222,13 +222,13 @@ def _plot_actuators(log: ULog) -> dict | None:
             series.append(_series_from_column(log, topic, column, f"Output {index + 1}"))
         unit = "µs"
     note = ("A motor sitting at its limit while the others do not is an "
-            "imbalance — check the airframe, not the tuning.")
+            "imbalance. Check the airframe, not the tuning.")
     # A flat plot is still an answer, and a missing one is not: "the motors
     # never ran" is exactly what you need to know about a log that has no
     # flight in it.
     flat = all(len({y for y in s["y"] if y is not None}) <= 1 for s in series if s)
     if series and flat:
-        note = "The outputs never changed — the motors did not run in this log."
+        note = "The outputs never changed. The motors did not run in this log."
     return _plot("actuators", "Motor outputs", unit, series, note=note,
     group="Airframe")
 
@@ -266,7 +266,7 @@ def _plot_clipping(log: ULog) -> dict | None:
                        "y": [round(y, 1) for y in v]})
     return _plot("clipping", "Accelerometer clipping", "clipped samples (cumulative)",
                  series,
-                 note="Any rise at all means the accelerometer saturated — "
+                 note="Any rise at all means the accelerometer saturated. "
                       "soften the flight-controller mounting before trusting "
                       "the rest of this log.",
                       group="Sensors")
@@ -990,7 +990,7 @@ def _plot_wind(log: ULog) -> dict | None:
     return _plot("wind", "Estimated wind", "m/s",
                  [_series_from_column(log, topic, speed, "Wind speed")],
                  group="Flight",
-                 note="Estimated, not measured — but a climbing estimate "
+                 note="Estimated, not measured, but a climbing estimate "
                       "explains a lot of otherwise puzzling tracking error.")
 
 
@@ -1087,7 +1087,7 @@ def _plot_altitude_sources(log: ULog) -> dict | None:
                  note="The three sources should track each other. GPS stepping "
                       "away is a fix problem; the barometer drifting away is "
                       "weather or prop wash reaching the sensor. The fused "
-                      "estimate sitting away from its setpoint is neither — "
+                      "estimate sitting away from its setpoint is neither. "
                       "that is the controller.")
 
 
@@ -1119,7 +1119,7 @@ def _plot_gps_accuracy(log: ULog) -> dict | None:
                  group="Sensors",
                  note="This is what the receiver claims, not what it achieved. "
                       "A value that climbs while the satellite count holds is "
-                      "usually multipath — read it with the noise plot below.")
+                      "usually multipath. Read it with the noise plot below.")
 
 
 def _plot_gps_noise(log: ULog) -> dict | None:
@@ -1154,7 +1154,7 @@ def _plot_baro(log: ULog) -> dict | None:
         series.append(_series(log, topic, temperature, "Sensor temperature"))
     return _plot("baro", "Barometer", "m / °C", series, group="Sensors",
                  note="Barometric altitude drifts with temperature and with air "
-                      "moving over the sensor — a reading that walks while the "
+                      "moving over the sensor. A reading that walks while the "
                       "aircraft sits still is the sensor, not the aircraft.")
 
 
@@ -1182,7 +1182,7 @@ def _plot_gps_velocity(log: ULog) -> dict | None:
     return _plot("gps_velocity", "Horizontal velocity: GPS vs estimate", "m/s",
                  series, group="Estimator",
                  note="A persistent gap between the two is the estimator "
-                      "distrusting GPS — cross-read it against the innovation "
+                      "distrusting GPS. Cross-read it against the innovation "
                       "test ratios.")
 
 
@@ -1944,7 +1944,7 @@ def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
         add("critical",
             "PX4's failure detector fired: " + ", ".join(flagged),
             "That is the autopilot's own verdict on the airframe, reached in "
-            "flight from more than this log holds — not a threshold crossed in "
+            "flight from more than this log holds, not a threshold crossed in "
             "this file. Whatever else is on this page, start here.",
             flagged_at)
 
@@ -1955,7 +1955,7 @@ def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
             f"{name} was pinned at full output for {seconds:.1f} s while the "
             "others still had headroom",
             "One motor at its limit alone is the mixer wanting to correct and "
-            "having nothing left to correct with — the aircraft was flying "
+            "having nothing left to correct with. The aircraft was flying "
             "without control authority on that corner. Look for a heavy or "
             "bent airframe, a failing motor, or too little thrust margin for "
             "the weight. (Every motor at its limit together would just be a "
@@ -1967,7 +1967,7 @@ def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
         _, total, when = _peak_of(clipping)
         if total > 0:
             add("critical",
-                f"Accelerometer clipping — {int(total)} samples",
+                f"Accelerometer clipping: {int(total)} samples",
                 "The IMU saturated, so for those samples it reported a limit "
                 "rather than a measurement. Treat the attitude and position "
                 "estimates in this log with suspicion, and soften the "
@@ -2026,14 +2026,14 @@ def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
                     f"{worst_name} innovations reached {worst:.2f} and stayed "
                     f"above 1.0 for {seconds:.1f} s",
                     "Above 1.0 the estimator is rejecting that sensor "
-                    "outright. Held that long, it was flying without it — "
+                    "outright. Held that long, it was flying without it. "
                     "read the altitude and velocity comparisons in the "
                     "Estimator section to see what it used instead.", when)
             else:
                 add("note",
                     f"{worst_name} innovations touched {worst:.2f} briefly",
                     "Above 1.0 the estimator momentarily rejected that sensor. "
-                    "A brief excursion is normal — noted rather than flagged "
+                    "A brief excursion is normal. It is noted rather than flagged "
                     "because it is only a problem when it lasts.", when)
 
     resets = _estimator_resets(log, armed)
@@ -2047,7 +2047,7 @@ def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
         add("warning",
             f"The estimator reset its state {total} time(s) in flight",
             f"Which: {parts}. A reset is a step in the estimate and therefore "
-            "in what the controller was flying towards — the track and "
+            "in what the controller was flying towards. The track and "
             "position plots jump there because the aircraft's idea of where it "
             "was jumped, not because it moved. GPS being re-accepted after a "
             "glitch is the usual cause.", first)
@@ -2073,7 +2073,7 @@ def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
                 f"{axis.capitalize()} missed its setpoint by {typical:.0f}° or "
                 f"more for most of the flight",
                 f"Peak {peak:.0f}°. An aircraft that cannot hold the angle it "
-                "is given is short of control authority, not short of tuning — "
+                "is given is short of control authority, not short of tuning. "
                 "read the motor outputs before touching a gain.", when)
         elif typical >= 10.0:
             add("warning",
@@ -2109,7 +2109,7 @@ def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
             if spread > 80.0:      # µs, on a ~1000 µs band
                 worst = max(peaks, key=lambda p: p[2])[0]
                 add("warning",
-                    f"Motor outputs are uneven — {worst} ran {spread:.0f} µs "
+                    f"Motor outputs are uneven: {worst} ran {spread:.0f} µs "
                     "above the lowest on average",
                     "One corner working harder than the others across a whole "
                     "flight is an airframe imbalance, not a tuning one: a bent "
@@ -2125,7 +2125,7 @@ def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
                          if v is not None and v >= 1), None)
             if when is not None:
                 add("warning", "The RC link reported a signal loss in flight",
-                    "It recovered — the flight continued — but the next one "
+                    "It recovered and the flight continued, but the next one "
                     "may reach the failsafe instead.", when)
 
     _battery_findings(log, by_id, add)
@@ -2152,7 +2152,7 @@ def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
 
     if log.truncated:
         add("warning", "The log ends mid-record",
-            "The aircraft lost power before the file was closed — a crash, a "
+            "The aircraft lost power before the file was closed: a crash, a "
             "battery pulled, or a brownout. Everything up to the cut is shown.")
 
     errors = [m for m in log.messages if m["level"] in ("emergency", "alert", "critical", "error")]
@@ -2257,11 +2257,11 @@ def _battery_findings(log: ULog, by_id: dict[str, dict],
     per_cell = floor / cells
     if per_cell < 3.3:
         add("critical",
-            f"The pack reached {floor:.1f} V — {per_cell:.2f} V per cell "
-            f"across {cells}",
+            f"The pack reached {floor:.1f} V ({per_cell:.2f} V per cell "
+            f"across {cells})",
             "That is into the range that permanently costs a lithium pack "
             "capacity. If it only touched it under load and recovered after "
-            "landing, the damage is smaller — but the next flight should be "
+            "landing, the damage is smaller, but the next flight should be "
             "shorter either way.", floor_at)
     elif per_cell < 3.5:
         add("warning",

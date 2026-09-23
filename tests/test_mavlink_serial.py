@@ -189,6 +189,36 @@ def test_stream_rates_high_for_udp() -> None:
     assert rates[mavutil.mavlink.MAV_DATA_STREAM_RC_CHANNELS] == 5
 
 
+def test_a_usb_cable_gets_the_udp_rates_and_budget_not_the_radio_ones() -> None:
+    """Direct USB is megabits; only a radio needs the 57 kbps throttle."""
+    usb = MavlinkBridge(VehicleStateStore(), "serial:/dev/ttyACM0:115200")
+    radio = MavlinkBridge(VehicleStateStore(), "serial:/dev/ttyUSB0:57600")
+    udp = MavlinkBridge(VehicleStateStore(), "udp:0.0.0.0:14550")
+    assert usb.transport() == "usb" and usb._is_slow_link() is False
+    assert radio._is_slow_link() is True
+    assert udp._is_slow_link() is False
+
+    assert usb._stream_rates() == udp._stream_rates()
+    assert usb._message_intervals() == udp._message_intervals()
+    assert radio._stream_rates()[mavutil.mavlink.MAV_DATA_STREAM_EXTRA1] == 10
+    assert usb._param_download_budget_s() == udp._param_download_budget_s() == 30.0
+    assert radio._param_download_budget_s() == 180.0
+
+
+def test_an_unidentified_serial_port_is_treated_as_a_radio() -> None:
+    """Guessing fast on a radio saturates it; guessing slow on USB only waits."""
+    bridge = MavlinkBridge(VehicleStateStore(), "serial:/dev/ttyS3:57600")
+    assert bridge.transport() == "unknown"
+    assert bridge._is_slow_link() is True
+
+
+def test_the_slow_link_answer_follows_a_changed_connection() -> None:
+    bridge = MavlinkBridge(VehicleStateStore(), "serial:/dev/ttyUSB0:57600")
+    assert bridge._is_slow_link() is True
+    bridge._conn_str = "serial:/dev/ttyACM0:115200"
+    assert bridge._is_slow_link() is False
+
+
 def test_request_streams_skips_zero_rate_streams_for_serial() -> None:
     store = VehicleStateStore()
     bridge = MavlinkBridge(store, "serial:/dev/ttyUSB0:57600")

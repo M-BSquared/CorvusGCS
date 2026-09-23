@@ -226,8 +226,8 @@ Corvus.setupControl = (function () {
     el.appendChild(list);
 
     const empty = S.el("div", "rc-monitor-empty",
-      "No channel data. Switch the transmitter on and bind the receiver — "
-      + "the bars appear as soon as RC_CHANNELS arrives.");
+      "No channel data. Switch the transmitter on and bind the receiver. "
+      + "The bars appear as soon as RC_CHANNELS arrives.");
     el.appendChild(empty);
 
     const rows = {};
@@ -384,7 +384,7 @@ Corvus.setupControl = (function () {
       tools.appendChild(Corvus.ui.button({
         variant: "ghost", size: "sm", icon: "eraser", label: "Forget controls",
         ariaLabel: "Forget every learned control",
-        title: "Drop every control this browser learned — for a new transmitter",
+        title: "Drop every control this browser learned, for a new transmitter",
         onClick: () => { widget.forgetAll(); widget.update(last); },
       }));
     }
@@ -519,6 +519,7 @@ Corvus.setupControl = (function () {
    */
   function writeMapping(state, field, channel) {
     if (state.armed) return;
+    state.wanted[field.param] = channel;
     setStatus(state, "pending", "Writing " + field.param + "…");
     Corvus.telemetry.postAction("/api/params/set", {
       name: field.param, value: channel,
@@ -552,6 +553,9 @@ Corvus.setupControl = (function () {
     const actionsStatus = S.el("div", "params-actions-status");
     actions.appendChild(calibrateBtn);
     actions.appendChild(reloadBtn);
+    // Placed once the state exists: the button reads it.
+    const checkSlot = S.el("span", "rc-check-slot");
+    actions.appendChild(checkSlot);
     actions.appendChild(actionsStatus);
     el.appendChild(actions);
 
@@ -578,13 +582,20 @@ Corvus.setupControl = (function () {
       // telemetry push rather than rebuilt: the mode-slot highlight and the
       // per-channel "current" readout in the calibration table.
       modeSlots: null, channelRows: {},
+      // Check values (setupShared): what the operator set until a check
+      // confirms it, and the last check's outcome until the next one.
+      wanted: {}, check: null, checking: false,
     };
+    checkSlot.appendChild(S.checkButton(state, CHECK));
 
     calibrateBtn.addEventListener("click", () => {
       if (state.armed) return;
       openWizard(state.doc);
     });
-    reloadBtn.addEventListener("click", () => load(state));
+    reloadBtn.addEventListener("click", () => {
+      state.check = null;
+      load(state);
+    });
     registerControl(state, calibrateBtn);
     registerControl(state, reloadBtn, () => { reloadBtn.disabled = state.loading; });
     transmitter.setFunctionRenderer(
@@ -613,12 +624,44 @@ Corvus.setupControl = (function () {
     S.setActionsStatus(state.actionsStatus, cls, text);
   }
 
-  function load(state) {
+  // Check values: the shared read back, redrawn by a fresh load(). The
+  // channel table's rows are fields of their own (RC1_MIN and so on), so the
+  // default field walk would miss them.
+  const CHECK = {
+    prefix: "rc",
+    names: (state) => {
+      const names = S.fieldParams(state.doc);
+      channelParams(state.doc).forEach((n) => { if (names.indexOf(n) < 0) names.push(n); });
+      return names;
+    },
+    reload: (state) => load(state, true),
+    setStatus: (state, cls, text) => setStatus(state, cls, text),
+  };
+
+  /** RC<n>_MIN, _MAX, _TRIM, _DZ and _REV of every row in the channel table. */
+  function channelParams(doc) {
+    const names = [];
+    ((doc && doc.sections) || []).forEach((section) => {
+      if (section.kind !== "channels") return;
+      (section.rows || []).forEach((row) => {
+        const params = row.params || {};
+        Object.keys(params).forEach((key) => {
+          if (key === "rev" && !row.has_rev) return;
+          if (params[key]) names.push(params[key]);
+        });
+      });
+    });
+    return names;
+  }
+
+  /** `fresh` reads every value from the vehicle rather than the cache. */
+  function load(state, fresh) {
     if (state.loading) return Promise.resolve();
     state.loading = true;
     S.recheckAll(state);
+    S.recheckButton(state, CHECK);
     setStatus(state, "pending", "Reading radio configuration…");
-    return Corvus.telemetry.requestJson("/api/rc").then((doc) => {
+    return Corvus.telemetry.requestJson(fresh ? "/api/rc?fresh=1" : "/api/rc").then((doc) => {
       if (state.destroyed) return;
       state.doc = doc || {};
       renderSections(state, state.doc);
@@ -636,6 +679,7 @@ Corvus.setupControl = (function () {
       if (state.destroyed) return;
       state.loading = false;
       S.recheckAll(state);
+      S.recheckButton(state, CHECK);
     });
   }
 
@@ -690,6 +734,7 @@ Corvus.setupControl = (function () {
 
     const duplicates = duplicateChannels(doc);
 
+    if (state.check) state.host.appendChild(S.checkCard(state.check, "rc"));
     sections.forEach((section) => {
       const card = S.el("div", "page-card rc-card");
       card.dataset.section = section.id || "";
@@ -1178,8 +1223,8 @@ Corvus.setupControl = (function () {
       const blocked = vehicle.armed || !vehicle.connected;
       banner.hidden = !blocked;
       banner.textContent = vehicle.armed
-        ? "Cannot calibrate the radio while armed — disarm first."
-        : "No link to the vehicle — connect before calibrating.";
+        ? "Cannot calibrate the radio while armed. Disarm first."
+        : "No link to the vehicle. Connect before calibrating.";
 
       review.hidden = step !== "review";
       hint.hidden = true;
@@ -1189,7 +1234,7 @@ Corvus.setupControl = (function () {
       if (step === "intro") {
         headline.textContent = "Before you start";
         detail.textContent = "Propellers off. Battery disconnected or the vehicle "
-          + "on a bench. Transmitter switched on and the receiver bound — the "
+          + "on a bench. Transmitter switched on and the receiver bound. The "
           + "channel bars below must be moving when you wiggle a stick. Every "
           + "endpoint this wizard writes comes from what it sees there.";
       } else if (step === "centre") {
@@ -1418,7 +1463,7 @@ Corvus.setupControl = (function () {
         if (!found) return;
         if (bound[found.channel]) clash = "Channel " + found.channel + " was measured "
           + "for both " + bound[found.channel] + " and " + stick.label
-          + " — one of those sticks did not move when it was asked to.";
+          + ". One of those sticks did not move when it was asked to.";
         bound[found.channel] = stick.label;
       });
       const missing = STICKS.filter((s) => !measurement.sticks[s.id]).map((s) => s.label);

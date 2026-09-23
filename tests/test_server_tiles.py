@@ -70,7 +70,9 @@ class FakeTileDownloader:
         minzoom: int,
         maxzoom: int,
         on_progress: Any = None,
+        token: str = "",
     ) -> str:
+        self.last_token = token
         self._counter += 1
         jid = f"job-{self._counter}"
         self._jobs[jid] = {

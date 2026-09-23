@@ -140,11 +140,19 @@ def is_flashable_asset(name: str) -> bool:
 
 
 def host_allowed(url: str) -> bool:
+    """Is *url* an https URL on a host firmware is actually published from?
+
+    The scheme is checked with the host, not left to the caller. A firmware
+    image is executed by the flight controller, and ``http://`` on a hostname
+    from this allow-list is still a plaintext download that anyone on the path
+    can replace — the allow-list would say yes to it while proving nothing.
+    """
     try:
-        host = (urllib.parse.urlparse(url).hostname or "").lower()
+        parsed = urllib.parse.urlparse(url)
+        host = (parsed.hostname or "").lower()
     except ValueError:
         return False
-    return host in ALLOWED_HOSTS
+    return parsed.scheme == "https" and host in ALLOWED_HOSTS
 
 
 def parse_index(html: str) -> list[str]:
@@ -289,7 +297,7 @@ def fetch_releases() -> tuple[list[dict[str, Any]], str]:
                 continue
             releases.append({
                 "tag": release_tag(vehicle, channel),
-                "name": f"{label} — {channel_label}",
+                "name": f"{label} ({channel_label})",
                 "prerelease": prerelease,
                 "vendor": "ardupilot",
                 "published": "",

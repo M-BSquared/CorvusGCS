@@ -274,6 +274,10 @@ class VehicleStateStore:
             # and the UI must fall back to the plain armed state rather than
             # invent a clearance the vehicle never gave.
             "prearm_ok": None,
+            # Why not, when prearm_ok is False: the reasons of the vehicle's
+            # last preflight report, without the "Preflight Fail:" / "PreArm:"
+            # prefix. Empty means none has arrived, not that nothing is wrong.
+            "prearm_reasons": [],
             # MAV_LANDED_STATE from EXTENDED_SYS_STATE: 0 UNDEFINED,
             # 1 ON_GROUND, 2 IN_AIR, 3 TAKEOFF, 4 LANDING. The autopilot's own
             # answer to "is it flying", which is not derivable from the armed
@@ -292,6 +296,23 @@ class VehicleStateStore:
             "autotune_state": "",
             "autotune_progress": 0,
             "mission": [],
+            # The mission on the vehicle, as MISSION_CURRENT and
+            # MISSION_ITEM_REACHED report it. Numbered the way the plan numbers
+            # items: ArduPilot's home slot is not counted. -1 is "not reported".
+            # "" or no_mission / not_started / active / paused / complete.
+            "mission_state": "",
+            "mission_seq": -1,
+            "mission_reached": -1,
+            "mission_total": -1,
+            # Whether Corvus knows what those items are (it uploaded or read
+            # them on this link), and which item of ITS plan the two numbers
+            # above are: -1 when it does not know. The revision moves whenever
+            # that knowledge changes, so the Mission page can tell whether the
+            # plan on its screen is still the one on the aircraft.
+            "mission_known": False,
+            "mission_revision": 0,
+            "mission_item": -1,
+            "mission_reached_item": -1,
         }
         self._history: dict[str, collections.deque] = {
             "altitude": collections.deque(maxlen=history_len),
@@ -493,6 +514,7 @@ class VehicleStateStore:
             # Readiness belongs to the link that just died; keeping the last
             # "READY" would leave a stale clearance on the bar.
             self._data["prearm_ok"] = None
+            self._data["prearm_reasons"] = []
             # Same reasoning: whether it was flying belonged to the link that
             # just died. Holding "IN_AIR" would leave the bar saying FLYING
             # over a vehicle nobody can see any more.
@@ -504,6 +526,10 @@ class VehicleStateStore:
             if self._data["autotune_state"] == "running":
                 self._data["autotune_state"] = "failed"
             self._data["setpoints_live"] = False
+            # Whether the mission is being flown is the dead link's news too;
+            # what the mission IS stays known, since a link drop changes
+            # nothing on the vehicle.
+            self._data["mission_state"] = ""
             # The channel bars belonged to the dead link too. Leaving them live
             # would let a calibration keep measuring the last frame that ever
             # arrived and write it to the vehicle as an endpoint.

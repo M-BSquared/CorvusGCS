@@ -82,7 +82,7 @@ def build(values: dict[str, float]) -> dict[str, Any]:
     fields = present([
         enum("DID_ENABLE", "Remote ID", values, ON_OFF_OPTIONS,
              hint="Starts the Remote ID driver. It needs a reboot, and on its own it "
-                  "broadcasts nothing — the transmitter's port has to be set below."),
+                  "broadcasts nothing. The transmitter's port has to be set below."),
         enum("DID_MAVPORT", "Transmitter serial port", values, MAVPORT_OPTIONS,
              hint="The MAVLink serial port a serial Remote ID module is wired to. "
                   "Disabled here with the driver enabled is the usual reason an "
@@ -102,7 +102,7 @@ def build(values: dict[str, float]) -> dict[str, Any]:
         section("vehicle", "On the aircraft", fields,
                 "ArduPilot's Remote ID driver and the transmitter it talks to. The "
                 "serial number, the operator registration and the class are not stored "
-                "here — they are sent from this ground station over the link, and the "
+                "here. They are sent from this ground station over the link, and the "
                 "aircraft will not arm once they stop arriving."),
     ) if s is not None]
     return {"sections": sections, "received": len(values)}

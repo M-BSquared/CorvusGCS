@@ -299,7 +299,10 @@ async function testActionsBarRendersWithInitialState() {
   const actions = findOneByClass(container, "params-actions");
   assert.ok(actions, "params-actions bar present");
   const btns = findByClass(actions, "btn");
-  assert.equal(btns.length, 2, "exactly two action buttons (Export + Import)");
+  assert.equal(btns.length, 3, "Export, Import and Reboot autopilot");
+  const reboot = findOneByClass(actions, "reboot-autopilot");
+  assert.ok(reboot, "the reboot action lives beside Import");
+  assert.equal(reboot.disabled, false, "Reboot enabled when disarmed");
   const exportBtn = findByDataset(actions, "lucide", "download")[0]
     || btns.find((b) => b.children.some((c) => c._attrs && c._attrs["data-lucide"] === "download"));
   const importBtn = findByDataset(actions, "lucide", "upload")[0]
@@ -579,6 +582,133 @@ async function testImportValidFileUploadsAndSummarises() {
   destroy();
 }
 
+// An import into an open editor redraws its rows from the vehicle's set:
+// before, the rows kept the pre-upload values and an Export wrote those back.
+async function testAnImportRedrawsAnOpenEditorWithTheNewValues() {
+  const fake = makeFakeTelemetry({
+    state: { armed: false, connected: true },
+    uploadResultResponse: { written: 1, failed: 0, errors: [] },
+    paramsResponse: {
+      complete: true, received: 2, count: 2, state: "complete",
+      params: [
+        { name: "MC_ROLL_P", value: 6, type: 9 },
+        { name: "FW_ACRO_LIM", value: 1, type: 9 },
+      ],
+    },
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  clock = 1000;
+  eventSources.length = 0;
+  Corvus.events.stop();
+  intervalCbs.length = 0;
+  clearedIds.clear();
+  dispatched.length = 0;
+
+  const destroy = Corvus.setupParameters.render(container, () => {});
+  await flushMicrotasks();
+  fire(findOneByClass(container, "params-download-btn"), "click");
+  await flushMicrotasks();
+  eventSources[0].emit("params", { state: "complete", received: 2, count: 2 });
+  await flushMicrotasks();
+  await flushMicrotasks();
+  const search = findOneByClass(container, "params-search");
+  search.value = "MC_";
+  fire(search, "input");
+
+  const actions = findOneByClass(container, "params-actions");
+  const importBtn = findByClass(actions, "btn").find((b) =>
+    b.children.some((c) => c._attrs && c._attrs["data-lucide"] === "upload"));
+  const fakeFile = {
+    name: "params.json",
+    text() { return Promise.resolve(JSON.stringify({
+      product: "Corvus GCS", params: [{ name: "MC_ROLL_P", value: 7 }],
+    })); },
+  };
+  const origCreate = document.createElement;
+  let capturedInput = null;
+  document.createElement = function (tag) {
+    const el = origCreate(tag);
+    if (String(tag).toLowerCase() === "input") { el.files = [fakeFile]; capturedInput = el; }
+    return el;
+  };
+  try { fire(importBtn, "click"); } finally { document.createElement = origCreate; }
+  fire(capturedInput, "change");
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  fake.setParamsResponse({
+    complete: true, received: 2, count: 2, state: "complete",
+    params: [
+      { name: "MC_ROLL_P", value: 7, type: 9 },
+      { name: "FW_ACRO_LIM", value: 1, type: 9 },
+    ],
+  });
+  const before = fake.requests.filter((u) => u === "/api/params").length;
+  eventSources[eventSources.length - 1].emit("params",
+    { state: "upload_complete", count: 1, received: 1 });
+  for (let i = 0; i < 4; i += 1) await flushMicrotasks();
+
+  assert.ok(fake.requests.filter((u) => u === "/api/params").length > before,
+    "the set is read again once the upload has finished");
+  const rows = findByClass(container, "params-row");
+  assert.deepEqual(rows.map((r) => r.dataset.name), ["MC_ROLL_P"],
+    "the filter the operator typed survives the redraw");
+  assert.equal(findOneByClass(rows[0], "params-value").value, "7",
+    "the row shows the value the upload wrote");
+
+  destroy();
+}
+
+// Reboot autopilot: asks first, posts the reboot, and drops the rows of the
+// old boot for the download prompt.
+async function testRebootAsksThenReturnsToTheDownloadPrompt() {
+  const fake = makeFakeTelemetry({
+    state: { armed: false, connected: true },
+    paramsResponse: {
+      complete: true, received: 1, count: 1, state: "complete",
+      params: [{ name: "SYS_AUTOSTART", value: 4001, type: 6 }],
+    },
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  clock = 1000;
+  eventSources.length = 0;
+  Corvus.events.stop();
+  intervalCbs.length = 0;
+  clearedIds.clear();
+  dispatched.length = 0;
+
+  const destroy = Corvus.setupParameters.render(container, () => {});
+  await flushMicrotasks();
+  fire(findOneByClass(container, "params-download-btn"), "click");
+  await flushMicrotasks();
+  eventSources[0].emit("params", { state: "complete", received: 1, count: 1 });
+  await flushMicrotasks();
+  await flushMicrotasks();
+  assert.equal(findByClass(container, "params-row").length, 1, "editor open");
+
+  const reboot = findOneByClass(container, "reboot-autopilot");
+  fire(reboot, "click");
+  assert.equal(fake.postCalls.filter((c) => c.url === "/api/mavlink/reboot").length, 0,
+    "nothing is sent before the operator confirms");
+  const dialog = findOneByClass(container, "modal");
+  assert.ok(dialog, "a confirmation opens");
+  const confirm = findByClass(findOneByClass(dialog, "modal-actions"), "btn")
+    .find((b) => b.getAttribute("data-variant") === "primary");
+  fire(confirm, "click");
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  assert.equal(fake.postCalls.filter((c) => c.url === "/api/mavlink/reboot").length, 1);
+  assert.equal(findByClass(container, "params-row").length, 0, "the old boot's rows are gone");
+  assert.ok(findOneByClass(container, "params-download-btn"), "back to the download prompt");
+
+  fake.getSubCb()({ armed: true, connected: true });
+  assert.equal(reboot.disabled, true, "no reboot offered while armed");
+  destroy();
+}
+
 // ===========================================================================
 // Test 4 — Import invalid JSON / missing params → notify critical, no
 // postAction call.
@@ -740,6 +870,8 @@ async function run() {
   await testExportOpensDialogAndSavesThroughBackend();
   await testExportFailureKeepsDialogOpenWithReason();
   await testImportValidFileUploadsAndSummarises();
+  await testAnImportRedrawsAnOpenEditorWithTheNewValues();
+  await testRebootAsksThenReturnsToTheDownloadPrompt();
   await testImportInvalidJsonNotifiesAndDoesNotPost();
   await testArmedGatingDisablesImport();
   await testDestroyClosesUploadSse();

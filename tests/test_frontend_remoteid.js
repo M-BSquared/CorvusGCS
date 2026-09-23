@@ -602,6 +602,40 @@ test("the vehicle card is the only place a parameter name appears", async () => 
   });
 });
 
+test("Check values reads back the vehicle's parameters and never the identity", async () => {
+  const { fake, container } = await mount({
+    replies: { "/api/remoteid?fresh=1": payload() },
+  });
+  const check = container.querySelector(".rid-check");
+  assert.ok(check && !check.disabled, "offered once the vehicle has answered");
+
+  const param = container.querySelector(".rid-vehicle-card")
+    .querySelector('.pform-select[data-param="COM_ARM_ODID"]');
+  param.value = "2";
+  fire(param, "change");
+  await flush();
+
+  fake.telemetry.postAction = (url, body) => {
+    fake.requests.push({ url, method: "POST", body });
+    if (url !== "/api/params/verify") return Promise.resolve({ ok: true });
+    return Promise.resolve({
+      ok: true, values: { COM_ARM_ODID: 2 }, missing: [],
+      results: [{ name: "COM_ARM_ODID", wanted: 2, before: 1, after: 2,
+        rewritten: false, ok: true, error: "" }],
+    });
+  };
+  fire(container.querySelector(".rid-check"), "click");
+  for (let i = 0; i < 4; i += 1) await flush();
+
+  const verify = fake.requests.filter((r) => r.url === "/api/params/verify")[0];
+  assert.deepEqual(verify.body, {
+    params: [{ name: "COM_ARM_ODID", value: 2 }], names: ["COM_ARM_ODID"],
+  }, "the serial number and the operator ID are Corvus's, not the vehicle's");
+  assert.ok(fake.requests.some((r) => r.url === "/api/remoteid?fresh=1"),
+    "the redraw asks the vehicle");
+  assert.ok(container.querySelector(".rid-check-card"), "the outcome is shown");
+});
+
 test("arming freezes the vehicle parameters and leaves the identity alone", async () => {
   const { fake, container } = await mount();
   fake.getSubCb()({ armed: true, connected: true, position: [0, 0] });

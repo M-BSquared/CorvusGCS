@@ -118,6 +118,106 @@ def test_protocol_offers_dshot_oneshot_and_pwm_rates() -> None:
     assert "DShot600" in labels and "OneShot" in labels and "PWM 400 Hz" in labels
 
 
+def test_the_dshot_numbers_are_px4s() -> None:
+    """-5 is DShot150 and -3 DShot600 on v1.16, v1.17 and v1.18.
+
+    They were once shifted by one speed, so a timer PX4 drives at DShot300
+    read as DShot600, and there is no DShot1200 to offer at all.
+    """
+    field = _fields(_sections(motor_config.build(_quad()))["protocol_main"])["PWM_MAIN_TIM0"]
+    by_value = {o["value"]: o["label"] for o in field["options"]}
+    assert by_value[-5] == "DShot150"
+    assert by_value[-4] == "DShot300"
+    assert by_value[-3] == "DShot600"
+    assert by_value[-1] == "OneShot"
+    assert -2 not in by_value
+    assert "DShot1200" not in by_value.values()
+
+
+def test_bidirectional_dshot_is_named_only_when_a_timer_holds_it() -> None:
+    plain = _fields(_sections(motor_config.build(_quad()))["protocol_main"])["PWM_MAIN_TIM0"]
+    assert all(o["value"] >= -5 for o in plain["options"])
+
+    held = _fields(_sections(motor_config.build(_quad(PWM_MAIN_TIM0=-6.0)))["protocol_main"])
+    options = held["PWM_MAIN_TIM0"]["options"]
+    assert options[-1] == {"value": -6, "label": "Bidirectional DShot600"}
+
+
+def test_the_dshot_minimum_is_offered_when_the_firmware_has_it() -> None:
+    field = _fields(_sections(motor_config.build(_quad(DSHOT_MIN=0.055)))["protocol_main"])
+    assert field["DSHOT_MIN"]["value"] == 0.055
+    assert field["DSHOT_MIN"]["max"] == 1
+
+
+# ---- per-channel output limits (control allocation, v1.14+) ----
+
+def test_the_limits_are_read_only_for_the_pins_that_drive_a_motor() -> None:
+    names = motor_config.output_param_names(_quad(PWM_MAIN_FUNC5=201.0))
+    assert names == [
+        f"PWM_MAIN_{suffix}{pin}"
+        for pin in range(1, 5) for suffix in ("MIN", "MAX", "DIS", "FAIL")
+    ], "motors only: the servo on MAIN 5 is not asked for"
+
+
+def test_a_motor_carries_the_limits_of_its_own_pin() -> None:
+    doc = motor_config.build(_quad(
+        PWM_MAIN_FUNC1=102.0, PWM_MAIN_FUNC2=101.0,
+        PWM_MAIN_MIN2=1100.0, PWM_MAIN_MAX2=1950.0, PWM_MAIN_DIS2=900.0,
+        PWM_MAIN_FAIL2=-1.0, PWM_MAIN_MIN1=1050.0,
+    ))
+    motor1 = doc["motors"][0]
+    assert motor1["output"]["label"] == "MAIN 2"
+    fields = {f["param"]: f for f in motor1["output_fields"]}
+    assert list(fields) == ["PWM_MAIN_MIN2", "PWM_MAIN_MAX2", "PWM_MAIN_DIS2", "PWM_MAIN_FAIL2"]
+    assert fields["PWM_MAIN_MIN2"]["value"] == 1100.0
+    assert fields["PWM_MAIN_MIN2"]["unit"] == "us"
+    assert fields["PWM_MAIN_FAIL2"]["min"] == -1
+    assert {f["param"] for f in doc["motors"][1]["output_fields"]} == {"PWM_MAIN_MIN1"}
+
+
+def test_a_motor_on_no_pin_has_no_limits() -> None:
+    doc = motor_config.build(_quad(PWM_MAIN_FUNC2=0.0, PWM_MAIN_MIN2=1100.0))
+    assert doc["motors"][1]["output_fields"] == []
+
+
+def test_dronecan_escs_have_no_disarmed_value() -> None:
+    names = motor_config.output_param_names(_quad(PWM_MAIN_FUNC1=0.0, UAVCAN_EC_FUNC1=101.0))
+    assert [n for n in names if n.startswith("UAVCAN")] == [
+        "UAVCAN_EC_MIN1", "UAVCAN_EC_MAX1", "UAVCAN_EC_FAIL1",
+    ]
+
+
+# ---- Gazebo SITL ----
+
+def _gz_x500() -> dict[str, float]:
+    """What gz_x500 answers: its ESCs are SIM_GZ_EC_*, it has no PWM header."""
+    values = {k: v for k, v in _quad().items() if not k.startswith("PWM_")}
+    for pin in range(1, 9):
+        values[f"SIM_GZ_EC_FUNC{pin}"] = float(100 + pin) if pin <= 4 else 0.0
+    values["SIM_GZ_EC_MIN1"] = 0.0
+    values["SIM_GZ_EC_MAX1"] = 1000.0
+    values["SIM_GZ_EC_DIS1"] = 0.0
+    return values
+
+
+def test_a_gazebo_airframe_shows_its_simulated_escs() -> None:
+    doc = motor_config.build(_gz_x500())
+    assert [b["id"] for b in doc["banks"]] == ["SIM"]
+    assert [m["output"]["label"] for m in doc["motors"]] == [
+        "Simulation 1", "Simulation 2", "Simulation 3", "Simulation 4",
+    ]
+    fields = {f["param"]: f for f in doc["motors"][0]["output_fields"]}
+    assert set(fields) == {"SIM_GZ_EC_MIN1", "SIM_GZ_EC_MAX1", "SIM_GZ_EC_DIS1"}
+    assert "unit" not in fields["SIM_GZ_EC_MAX1"], "a simulated ESC takes 0 to 1000, not us"
+    assert fields["SIM_GZ_EC_MAX1"]["max"] == 1000
+
+
+def test_a_simulated_motor_can_be_reassigned() -> None:
+    assert motor_config.function_param("SIM", 3) == "SIM_GZ_EC_FUNC3"
+    assert motor_config.function_param("SIM", 16) == "SIM_GZ_EC_FUNC16"
+    assert motor_config.function_param("SIM", 17) is None
+
+
 # ---- the pin-first -> motor-first inversion ----
 
 def test_each_motor_reports_the_output_pin_that_drives_it() -> None:
@@ -291,6 +391,18 @@ def test_param_names_covers_every_field_the_schema_can_emit() -> None:
         assert field["param"] in unique, f"{field['param']} is never requested"
     for entry in doc["outputs"]:
         assert entry["param"] in unique
+
+
+def test_every_limit_field_is_named_by_the_second_read() -> None:
+    """The limits come from output_param_names, not param_names."""
+    values = {n: 0.0 for n in motor_config.param_names()}
+    values |= {"CA_ROTOR_COUNT": 4.0, "PWM_MAIN_FUNC1": 101.0, "PWM_AUX_FUNC2": 102.0,
+               "UAVCAN_EC_FUNC3": 103.0, "SIM_GZ_EC_FUNC4": 104.0}
+    second = motor_config.output_param_names(values)
+    assert len(second) == len(set(second))
+    doc = motor_config.build(values | {n: 1.0 for n in second})
+    emitted = [f["param"] for m in doc["motors"] for f in m["output_fields"]]
+    assert sorted(emitted) == sorted(second)
 
 
 # ---- the drawing: which airframe, and which way each rotor pushes ----

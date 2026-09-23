@@ -233,7 +233,7 @@ def build(values: dict[str, float], vehicle: str = "copter") -> dict[str, Any]:
     sections: list[dict[str, Any] | None] = [
         section("pack", "Pack", _pack_fields("BATT", values),
                 hint="What is plugged in, and what reads it. ArduPilot has no "
-                     "cell count of its own — Corvus keeps one below, for the "
+                     "cell count of its own. Corvus keeps one below, for the "
                      "estimate and the diagram."),
         section("sensing", "Measurement", _sensing_fields("BATT", values),
                 hint="Calibrate the multiplier against a meter before trusting "

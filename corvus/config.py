@@ -15,9 +15,11 @@ Design rules (mandated by AGENTS.md):
 - Unknown keys are ignored; known keys are type-coerced where reasonable.
 
 ``save_config`` writes the file **atomically** with mode 0o600 because the
-file may carry SSH passwords. ``to_public_dict`` is the single redaction
-point: it strips ``password`` from every ``ssh_connections`` entry so no
-HTTP response ever echoes a secret back.
+file carries secrets: SSH passwords, the NTRIP password, and the map service
+API keys. ``to_public_dict`` is the single redaction point: it strips
+``password`` from every ``ssh_connections`` entry, blanks the NTRIP password,
+and drops ``map_tokens`` outright, so no HTTP response ever echoes a secret
+back.
 
 stdlib only.
 """
@@ -58,6 +60,7 @@ _CONFIG_FIELD_ORDER: tuple[str, ...] = (
     "ssh_connections",
     "theme",
     "map",
+    "map_tokens",
     "branding",
     "controls",
     "ui",
@@ -160,6 +163,7 @@ class CorvusConfig:
     ssh_connections: list[dict[str, Any]] = dataclasses.field(default_factory=list)
     theme: dict[str, Any] | None = None
     map: dict[str, Any] | None = None
+    map_tokens: dict[str, str] | None = None
     branding: dict[str, Any] | None = None
     controls: dict[str, Any] | None = None
     ui: dict[str, Any] | None = None
@@ -309,6 +313,58 @@ def _coerce_map(raw: Any) -> dict[str, Any] | None:
         raw, ("base_layer", "provider", "three_d", "three_d_detail"))
 
 
+# An API key goes into a URL query value, and it is typed (or pasted) by hand.
+# Anything outside this set is either a paste accident — a trailing newline, a
+# surrounding quote, the whole "key=abc" line — or an attempt to smuggle URL
+# structure into the template. Mapbox tokens are dot-separated base64url, so
+# the set has to cover that; nothing here needs a space, an ampersand or a
+# control character.
+_MAP_TOKEN_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyz"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "0123456789"
+    "._~-"
+)
+# Long enough for a Mapbox pk.* token (~90 chars) with room to spare, short
+# enough that a pasted file is refused rather than stored.
+MAX_MAP_TOKEN_CHARS = 512
+
+
+def _coerce_map_tokens(raw: Any) -> dict[str, str] | None:
+    """Keep the ``{provider id: api key}`` map service credentials; else None.
+
+    These are secrets — see :func:`to_public_dict`, which drops them — so the
+    coercion is strict rather than forgiving: a key with a character that
+    cannot appear in one is dropped whole, not trimmed into something that
+    would then be sent to an upstream. An empty value means "no key for this
+    service" and is dropped, which is what makes clearing a key a plain write.
+
+    Provider ids are not validated against the registry here: an id this build
+    does not know is simply a key for a service it does not serve, and
+    deleting it would lose the operator's credential on a downgrade.
+    """
+    if not isinstance(raw, dict):
+        return None
+    out: dict[str, str] = {}
+    for provider, value in raw.items():
+        if not isinstance(provider, str) or not provider:
+            continue
+        if not isinstance(value, str):
+            continue
+        token = value.strip()
+        if not token:
+            continue
+        if len(token) > MAX_MAP_TOKEN_CHARS:
+            logger.warning("config: map_tokens.%s is implausibly long; dropped", provider)
+            continue
+        if not set(token) <= _MAP_TOKEN_CHARS:
+            logger.warning("config: map_tokens.%s has characters an API key "
+                           "cannot contain; dropped", provider)
+            continue
+        out[provider] = token
+    return out or None
+
+
 def _coerce_branding(raw: Any) -> dict[str, Any] | None:
     """Keep the string-valued ``logo`` branding key; else None.
 
@@ -450,7 +506,7 @@ def _coerce_autoconnect(raw: Any) -> dict[str, Any] | None:
             out[key] = value
         elif value is not None:
             logger.warning(
-                "config: autoconnect.%s must be true or false, not %r — using %s",
+                "config: autoconnect.%s must be true or false, not %r, using %s",
                 key, value, DEFAULT_AUTOCONNECT[key],
             )
     return out or None
@@ -676,6 +732,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
     ssh_connections = _coerce_ssh_connections(data.get("ssh_connections"))
     theme = _coerce_theme(data.get("theme"))
     map_cfg = _coerce_map(data.get("map"))
+    map_tokens = _coerce_map_tokens(data.get("map_tokens"))
     branding = _coerce_branding(data.get("branding"))
     controls = _coerce_controls(data.get("controls"))
     forwarding = _coerce_forwarding(data.get("forwarding"))
@@ -701,6 +758,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         ssh_connections=ssh_connections,
         theme=theme,
         map=map_cfg,
+        map_tokens=map_tokens,
         branding=branding,
         controls=controls,
         forwarding=forwarding,
@@ -768,6 +826,8 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
         out["theme"] = dict(cfg.theme)
     if cfg.map is not None:
         out["map"] = dict(cfg.map)
+    if cfg.map_tokens is not None:
+        out["map_tokens"] = dict(cfg.map_tokens)
     if cfg.branding is not None:
         out["branding"] = dict(cfg.branding)
     if cfg.controls is not None:
@@ -865,6 +925,12 @@ def to_public_dict(cfg: CorvusConfig) -> dict[str, Any]:
     path, not a secret).
     """
     public = _config_to_dict(cfg)
+    # Map service API keys leave by the same door SSH passwords do, so they are
+    # stopped at the same one. Dropped rather than blanked: unlike the NTRIP
+    # password there is no field for the UI to render — the tiles are proxied
+    # by this process, so the browser has no use for the key and no reason to
+    # know more than whether one is set, which GET /api/tiles/sources says.
+    public.pop("map_tokens", None)
     # The NTRIP password is the second secret this file can hold, and it
     # leaves by the same door: GET /api/config. Redacted here rather than at
     # the RTK endpoint so there is one place where "what a response may carry"

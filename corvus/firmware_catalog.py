@@ -323,11 +323,19 @@ def _safe_name(name: str) -> str:
 
 
 def _host_allowed(url: str) -> bool:
+    """Is *url* an https URL on a host firmware is actually published from?
+
+    The scheme is checked with the host, not left to the caller. A firmware
+    image is executed by the flight controller, and ``http://`` on a hostname
+    from this allow-list is still a plaintext download that anyone on the path
+    can replace — the allow-list would say yes to it while proving nothing.
+    """
     try:
-        host = (urllib.parse.urlparse(url).hostname or "").lower()
+        parsed = urllib.parse.urlparse(url)
+        host = (parsed.hostname or "").lower()
     except ValueError:
         return False
-    return host in ALLOWED_HOSTS
+    return parsed.scheme == "https" and host in ALLOWED_HOSTS
 
 
 def _request(url: str) -> urllib.request.Request:

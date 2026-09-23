@@ -34,17 +34,14 @@ _CALVER_RE = re.compile(r"^\d{4}\.\d+\.\d+$")
 # Files that are allowed to name the version literally. VERSION is the
 # canonical source; corvus/version.py reads it; pyproject.toml carries a
 # deliberate "0.0.0" tooling placeholder (excluded so it is not flagged);
-# Plan.md is a planning doc that may reference target versions.
+# PLAN.md is the planning doc, which may quote the version a finding was
+# taken against — prose about a release, not a literal something reads back
+# as the version. Nothing ships from it.
 _CANONICAL_FILES = {
     pathlib.PurePosixPath("VERSION"),
     pathlib.PurePosixPath("corvus/version.py"),
     pathlib.PurePosixPath("pyproject.toml"),
-    pathlib.PurePosixPath("Plan.md"),
-    # Same category as Plan.md: an audit/findings doc quotes the version it
-    # was taken against ("a rebuild of v… six months from now"), which is
-    # prose about a release, not a literal something reads back as the
-    # version. Nothing ships from it.
-    pathlib.PurePosixPath("AUDIT_FINDINGS.md"),
+    pathlib.PurePosixPath("PLAN.md"),
     # README.md carries the version in its badge on purpose — a real number,
     # rewritten from VERSION by the pre-commit hook. It is checked separately
     # and more strictly by test_readme_version_badge_matches_the_version_file,
@@ -52,12 +49,14 @@ _CANONICAL_FILES = {
     pathlib.PurePosixPath("README.md"),
 }
 
-# Directories never scanned: build artifacts, VCS, caches, agent docs, and
-# the node tooling dir. The AppImage at the repo root is binary and has no
-# scanned extension, so it is skipped by the suffix filter below regardless.
+# Directories never scanned: build artifacts, VCS, caches, agent docs, the
+# node tooling dir, and the dev venv run.sh creates (third-party packages such
+# as certifi carry zero-padded CalVer strings of their own). The AppImage at
+# the repo root is binary and has no scanned extension, so it is skipped by
+# the suffix filter below regardless.
 _SKIP_DIR_PARTS = {
     ".git", "__pycache__", ".pytest_cache", "node_modules",
-    "build", ".opencode",
+    "build", ".opencode", ".venv",
 }
 
 _SCANNED_EXTS = {".py", ".js", ".html", ".css", ".md"}
@@ -127,7 +126,7 @@ def test_api_version_endpoint_shape(server_with_store) -> None:
 # ---------------------------------------------------------------------------
 # 4. Grep-scan: no hardcoded version literal outside the canonical sources
 #    across .py/.js/.html/.css/.md (excludes VERSION, corvus/version.py,
-#    pyproject.toml, Plan.md, build/, .git/, __pycache__/).
+#    pyproject.toml, PLAN.md, build/, .git/, __pycache__/, .venv/).
 # ---------------------------------------------------------------------------
 
 def test_no_hardcoded_version_literal_outside_canonical_sources() -> None:

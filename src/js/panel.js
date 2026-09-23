@@ -350,7 +350,7 @@ Corvus.panel = (function () {
     } catch (_e) {
       // Clipboard access is refused in some embeddings; say so rather than
       // failing silently and leaving the operator to wonder.
-      addConsoleLine("error", "Clipboard unavailable — use Save instead.");
+      addConsoleLine("error", "Clipboard unavailable. Use Save instead.");
     }
   }
 
@@ -419,7 +419,7 @@ Corvus.panel = (function () {
     if (matches.length === 1) {
       const c = matches[0];
       input.value = c.name + (c.args ? " " : "");
-      showHint(c.args ? `${c.name} ${c.args} — ${c.help}` : c.help);
+      showHint(c.args ? `${c.name} ${c.args}: ${c.help}` : c.help);
       return;
     }
     showHint(matches.map((c) => c.name).join("  "));
@@ -491,7 +491,7 @@ Corvus.panel = (function () {
       } else if (res.error) {
         addConsoleLine("error", res.error);
       } else if (res.shell) {
-        addConsoleLine("info", "Shell command sent — output streaming…");
+        addConsoleLine("info", "Shell command sent, output streaming…");
       } else if (res.ok) {
         addConsoleLine("success", `Command sent: ${v}`);
       }
@@ -508,7 +508,7 @@ Corvus.panel = (function () {
   function initConsole() {
     loadHistory();
     setPaused(false);
-    addConsoleLine("", "Corvus GCS — MAVLink console.");
+    addConsoleLine("", "Corvus GCS MAVLink console.");
     addConsoleLine("", "Listening for live MAVLink messages …");
     addConsoleLine("", "Type \"?\" for the command list, Tab to complete.");
     connectConsoleSSE();
@@ -762,7 +762,7 @@ Corvus.panel = (function () {
 
     if (!Corvus.sshTerm) {
       termHost.textContent =
-        "Terminal component unavailable — the xterm bundle did not load.";
+        "Terminal component unavailable. The xterm bundle did not load.";
       return;
     }
     // First terminal of the session: xterm is fetched on demand (js/lazy.js).
@@ -777,7 +777,7 @@ Corvus.panel = (function () {
       }).catch(() => {
         if (termHost.isConnected) {
           termHost.textContent =
-            "Terminal component unavailable — the xterm bundle did not load.";
+            "Terminal component unavailable. The xterm bundle did not load.";
         }
       });
       return;
@@ -865,7 +865,7 @@ Corvus.panel = (function () {
         value: c.username || (conn ? "" : "corvus") },
       { key: "password", label: "Password", type: "password", mono: true,
         placeholder: conn ? "leave blank to keep the current password"
-                           : "optional — use key file" },
+                           : "optional, or use a key file" },
       { key: "key_path", label: "Key file", mono: true,
         placeholder: "/home/user/.ssh/id_rsa", value: c.key_path || "" },
     ];
@@ -1134,7 +1134,7 @@ Corvus.panel = (function () {
     input.addEventListener("input", () => {
       const head = input.value.trim().split(/\s+/)[0].toLowerCase();
       const exact = COMMANDS.find((c) => c.name === head);
-      if (exact) showHint(exact.args ? `${exact.name} ${exact.args} — ${exact.help}` : exact.help);
+      if (exact) showHint(exact.args ? `${exact.name} ${exact.args}: ${exact.help}` : exact.help);
       else showHint("");
     });
 

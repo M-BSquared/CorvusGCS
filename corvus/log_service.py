@@ -513,7 +513,7 @@ class LogService:
             failed = [c for c in self._completed if not c["ok"]]
         if self._cancel.is_set():
             self._set("cancelled", self._percent,
-                      f"Cancelled — {len(done)} log(s) saved")
+                      f"Cancelled, {len(done)} log(s) saved")
         elif failed:
             self._set("failed", 100,
                       f"{len(done)} saved, {len(failed)} failed")
@@ -593,7 +593,7 @@ class LogService:
                     last_progress = time.monotonic()
                     total = size or 1
                     self._set("downloading", int(offset * 100 / total),
-                              f"{name} — {offset // 1024}/{size // 1024} KB"
+                              f"{name}: {offset // 1024}/{size // 1024} KB"
                               + (f" (+{remaining} queued)" if remaining else ""))
                     continue
                 stalls += 1

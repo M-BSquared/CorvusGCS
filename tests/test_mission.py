@@ -261,7 +261,21 @@ def test_each_named_field_lands_in_its_documented_parameter_slot() -> None:
     assert hold["command"] == mission.MAV_CMD_NAV_LOITER_TIME
     assert hold["params"] == [45.0, 0.0, 60.0, 0.0], "seconds in p1, radius in p3"
     assert waypoint["command"] == mission.MAV_CMD_NAV_WAYPOINT
-    assert waypoint["params"] == [10.0, 5.0, 0.0, 0.0], "hold in p1, accept radius in p2"
+    assert waypoint["params"][:3] == [10.0, 5.0, 0.0], "hold in p1, accept radius in p2"
+    assert math.isnan(waypoint["params"][3]), "no yaw asked for: 0 would mean face north"
+
+
+def test_takeoff_waypoint_and_land_ask_for_no_heading() -> None:
+    """param4 of NAV_TAKEOFF, NAV_WAYPOINT and NAV_LAND is a yaw on PX4, and
+    NaN is "use the heading mode". A 0 there turned the aircraft north."""
+    cleaned, _error = mission.validate_plan({"items": [
+        {"type": "takeoff", "lat": 48.0, "lon": 11.0, "alt": 20},
+        {"type": "waypoint", "lat": 48.1, "lon": 11.1, "alt": 30},
+        {"type": "land", "lat": 48.2, "lon": 11.2, "alt": 0},
+    ]})
+    assert cleaned is not None
+    for item in mission.plan_to_items(cleaned):
+        assert math.isnan(item["params"][3]), item["command"]
 
 
 def test_the_turn_direction_is_carried_as_the_sign_of_the_radius() -> None:
@@ -527,3 +541,102 @@ def test_write_plan_falls_back_to_the_plans_own_name(tmp_path: Any) -> None:
 def test_missions_dir_defaults_under_the_corvus_home() -> None:
     assert mission.missions_dir("").endswith(os.path.join(".corvus", "missions"))
     assert mission.missions_dir("/pinned") == "/pinned"
+
+
+# ---------------------------------------------------------------------------
+# items_to_plan: a mission read off the vehicle, back into a plan
+# ---------------------------------------------------------------------------
+
+def _nav(command: int, lat: float = 48.1, lon: float = 11.6, alt: float = 30.0,
+         params: list[Any] | None = None, frame: int = 3) -> dict[str, Any]:
+    return {"command": command, "frame": frame, "lat": lat, "lon": lon, "alt": alt,
+            "params": params if params is not None else [0.0, 0.0, 0.0, None]}
+
+
+def test_an_item_above_sea_level_is_read_as_height_above_home() -> None:
+    out = mission.items_to_plan([_nav(mission.MAV_CMD_NAV_WAYPOINT, alt=545.0, frame=0)],
+                                home_alt_amsl=515.0)
+    assert out["plan"]["items"][0]["alt"] == 30.0
+
+
+def test_an_item_above_sea_level_with_no_home_altitude_is_skipped_and_said() -> None:
+    out = mission.items_to_plan([_nav(mission.MAV_CMD_NAV_WAYPOINT, frame=5)])
+    assert out["plan"]["items"] == []
+    assert "sea level" in out["skipped"][0]["reason"]
+    assert out["plan_index"] == [None]
+
+
+def test_an_altitude_above_terrain_is_not_passed_off_as_one_above_home() -> None:
+    out = mission.items_to_plan([_nav(mission.MAV_CMD_NAV_WAYPOINT, frame=10)])
+    assert out["plan"]["items"] == []
+    assert "terrain" in out["skipped"][0]["reason"]
+
+
+def test_a_command_the_planner_does_not_draw_is_named_not_dropped() -> None:
+    out = mission.items_to_plan([
+        _nav(mission.MAV_CMD_NAV_WAYPOINT),
+        {"command": 183, "frame": 2, "lat": 0, "lon": 0, "alt": 0,
+         "params": [9, 1500, 0, 0]},                      # DO_SET_SERVO
+        _nav(mission.MAV_CMD_NAV_LAND, alt=0.0),
+    ])
+    assert [i["type"] for i in out["plan"]["items"]] == ["waypoint", "land"]
+    assert out["skipped"] == [{"seq": 1, "command": 183,
+                               "reason": "command 183 is not one the planner draws"}]
+    assert out["plan_index"] == [0, None, 1]
+
+
+def test_a_value_outside_the_planners_range_is_held_and_reported() -> None:
+    out = mission.items_to_plan([_nav(mission.MAV_CMD_NAV_WAYPOINT,
+                                      params=[7200.0, 0.0, 0.0, None])])
+    assert out["plan"]["items"][0]["hold"] == mission.MISSION_HOLD_MAX_S
+    assert out["adjusted"][0]["field"] == "hold"
+
+
+def test_a_speed_change_that_changes_nothing_is_not_a_speed() -> None:
+    """-1 and 0 are DO_CHANGE_SPEED's "no change"."""
+    out = mission.items_to_plan([
+        {"command": mission.MAV_CMD_DO_CHANGE_SPEED, "frame": 2, "lat": 0, "lon": 0,
+         "alt": 0, "params": [1.0, -1.0, -1.0, 0.0]},
+        _nav(mission.MAV_CMD_NAV_WAYPOINT),
+    ])
+    assert "speed" not in out["plan"]
+    assert "speed" not in out["plan"]["items"][0]
+    assert out["plan_index"] == [0, 0]
+
+
+def test_an_orbit_reads_its_direction_from_the_sign_of_the_radius() -> None:
+    out = mission.items_to_plan([_nav(mission.MAV_CMD_NAV_LOITER_TIME,
+                                      params=[20.0, 0.0, -45.0, None])])
+    item = out["plan"]["items"][0]
+    assert (item["seconds"], item["radius"], item["direction"]) == (20.0, 45.0, -1.0)
+
+
+def test_a_landing_with_no_place_is_drawn_where_the_last_point_was() -> None:
+    out = mission.items_to_plan([
+        _nav(mission.MAV_CMD_NAV_WAYPOINT, lat=48.2, lon=11.7),
+        _nav(mission.MAV_CMD_NAV_LAND, lat=0.0, lon=0.0, alt=0.0),
+    ])
+    land = out["plan"]["items"][1]
+    assert (land["lat"], land["lon"], land["alt"]) == (48.2, 11.7, 0.0)
+    assert out["adjusted"][0]["field"] == "position"
+
+
+def test_every_item_a_plan_can_hold_survives_the_round_trip() -> None:
+    plan, _error = mission.validate_plan({"speed": 6, "items": [
+        {"type": "takeoff", "lat": 48.0, "lon": 11.0, "alt": 20, "pitch": 12},
+        {"type": "waypoint", "lat": 48.1, "lon": 11.1, "alt": 30, "hold": 4,
+         "accept_radius": 3, "speed": 9},
+        {"type": "loiter_turns", "lat": 48.2, "lon": 11.2, "alt": 30, "turns": 1.5,
+         "radius": 70, "direction": -1},
+        {"type": "loiter_time", "lat": 48.3, "lon": 11.3, "alt": 35, "seconds": 40,
+         "radius": 55},
+        {"type": "land", "lat": 48.4, "lon": 11.4},
+        {"type": "rtl"},
+    ]})
+    assert plan is not None
+    wire = [dict(item, frame=2 if item["command"] == mission.MAV_CMD_DO_CHANGE_SPEED else 3)
+            for item in mission.plan_to_items(plan)]
+    out = mission.items_to_plan(wire)
+    assert out["plan"]["items"] == plan["items"]
+    assert out["plan"]["speed"] == plan["speed"]
+    assert out["plan_index"] == [item["item"] for item in mission.plan_to_items(plan)]

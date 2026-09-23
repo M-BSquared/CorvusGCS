@@ -219,7 +219,7 @@ Corvus.calibProtocol = (function () {
     accel: {
       type: "accel", label: "Accelerometer", icon: "move-3d",
       summary: "Teaches the autopilot where level is, on all three axes.",
-      duration: "2–3 min", danger: false, reboot: true,
+      duration: "2 to 3 min", danger: false, reboot: true,
       poses: ["level", "left", "right", "nose_down", "tail_down", "upside_down"],
       startPose: "level", spin: false,
       brief: "The autopilot asks for six positions in its own order. Hold each "
@@ -228,14 +228,14 @@ Corvus.calibProtocol = (function () {
         + "you to confirm it, and then a button appears.",
       prep: [
         "Work on a flat, stable surface with room to turn the aircraft over.",
-        "Hold each position steady — a wobble makes the autopilot discard the side.",
+        "Hold each position steady. A wobble makes the autopilot discard the side.",
         "Move between positions briskly; measurement only happens while you are still.",
       ],
     },
     compass: {
       type: "compass", label: "Compass", icon: "compass",
       summary: "Maps the magnetometer's iron distortion.",
-      duration: "3–5 min", danger: false, reboot: true,
+      duration: "3 to 5 min", danger: false, reboot: true,
       poses: ["level", "left", "right", "nose_down", "tail_down", "upside_down"],
       startPose: "level", spin: true,
       brief: "Same six positions as the accelerometer, but in each one you keep "
@@ -243,7 +243,7 @@ Corvus.calibProtocol = (function () {
         + "satisfied.",
       prep: [
         "Go outside, away from steel, cars, reinforced concrete and power lines.",
-        "Take off your watch and phone — they carry magnets.",
+        "Take off your watch and phone, since they carry magnets.",
         "Turn smoothly, about one rotation every four seconds.",
       ],
     },
@@ -277,7 +277,7 @@ Corvus.calibProtocol = (function () {
       poses: [], startPose: "level", spin: false,
       brief: "Leave the aircraft still, out of wind and away from propwash.",
       prep: [
-        "Indoors or in still air — a gust shifts the reading.",
+        "Indoors or in still air. A gust shifts the reading.",
         "Do not cover or blow across the sensor port.",
       ],
     },
@@ -287,17 +287,17 @@ Corvus.calibProtocol = (function () {
       duration: "< 1 min", danger: false, reboot: false,
       poses: [], startPose: "level", spin: false, marker: "nose",
       brief: "Shield the pitot tube from any airflow, then blow into it once when "
-        + "the autopilot asks — without touching it.",
+        + "the autopilot asks, without touching it.",
       prep: [
         "Cover the pitot tube from wind; do not block the opening.",
         "When asked, blow into the front of the tube from a short distance.",
-        "Never touch the tube — the tip bends and the calibration is worthless.",
+        "Never touch the tube. The tip bends and the calibration is worthless.",
       ],
     },
     motor: {
       type: "motor", label: "Motors / ESC", icon: "fan",
       summary: "Teaches the ESCs the throttle end points.",
-      duration: "1–2 min", danger: true, reboot: false,
+      duration: "1 to 2 min", danger: true, reboot: false,
       poses: [], startPose: "level", spin: false,
       brief: "The ESCs learn maximum and minimum throttle. Motors will spin.",
       prep: [
@@ -317,7 +317,7 @@ Corvus.calibProtocol = (function () {
   const ACTION_TEXT = {
     battery_on: "Connect the flight battery now.",
     battery_off: "Disconnect the flight battery.",
-    blow: "Blow into the front of the pitot tube — do not touch it.",
+    blow: "Blow into the front of the pitot tube. Do not touch it.",
     shield: "Shield the pitot tube from wind.",
   };
 
@@ -366,15 +366,24 @@ Corvus.calibProtocol = (function () {
       };
     }
 
-    /** Called once the vehicle has ACKed the start command. */
+    /**
+     * Called as the start command goes out, and again once the vehicle has
+     * ACKed it. The first `[cal]` lines often arrive over SSE before the ACK
+     * does (UDP SITL above all), and a fast baro or level calibration can
+     * even have finished by then, so a session the autopilot has already
+     * spoken in is left where it is.
+     * @returns {boolean} true when the session moved to (or stayed) "starting"
+     */
     function begin(now) {
+      if (state.seenVehicleMessage) return false;
+      if (state.phase !== "idle" && state.phase !== "starting") return false;
       state.phase = "starting";
       state.headline = "Waiting for the autopilot to start the calibration…";
       state.detail = "";
       state.progress = null;
       state.confirm = null;
       state.lastEventAt = now || 0;
-      state.seenVehicleMessage = false;
+      return true;
     }
 
     function markSide(pose, value) {
@@ -420,7 +429,7 @@ Corvus.calibProtocol = (function () {
         case "measure":
           activate(ev.pose);
           state.spin = false;
-          state.headline = "Hold still — measuring";
+          state.headline = "Hold still, measuring";
           state.detail = Corvus.calibFigures.poseLabel(ev.pose);
           break;
         case "rotate_around":
@@ -428,7 +437,7 @@ Corvus.calibProtocol = (function () {
           state.spin = true;
           state.headline = "Keep rotating";
           state.detail = ev.seconds
-            ? "Around the vertical axis — about " + ev.seconds + " s to go"
+            ? "Around the vertical axis, about " + ev.seconds + " s to go"
             : "Turn the aircraft around the vertical axis";
           break;
         case "detected":
@@ -455,7 +464,7 @@ Corvus.calibProtocol = (function () {
           if (next) {
             activate(next);
             state.detail = "Next: " + Corvus.calibFigures.poseLabel(next).toLowerCase()
-              + " — " + Corvus.calibFigures.poseHint(next);
+              + ". " + Corvus.calibFigures.poseHint(next);
           } else {
             state.detail = "Rotate to a position that is still pending.";
           }
@@ -467,7 +476,7 @@ Corvus.calibProtocol = (function () {
           state.headline = "Place the aircraft "
             + Corvus.calibFigures.poseLabel(ev.pose).toLowerCase();
           state.detail = Corvus.calibFigures.poseHint(ev.pose)
-            + " Then confirm — this autopilot waits to be told.";
+            + " Then confirm. This autopilot waits to be told.";
           state.confirm = ev.position
             ? { pose: ev.pose, position: ev.position }
             : null;
@@ -552,7 +561,7 @@ Corvus.calibProtocol = (function () {
       if (!state.confirm) return false;
       markSide(state.confirm.pose, "done");
       state.confirm = null;
-      state.headline = "Hold still — measuring";
+      state.headline = "Hold still, measuring";
       state.detail = "";
       return true;
     }

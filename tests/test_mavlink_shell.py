@@ -782,6 +782,21 @@ def test_console_sse_buffer_preserves_repeated_listener_lines() -> None:
     assert q.get(timeout=0) == entry
 
 
+def test_console_sse_buffer_delivers_an_error_after_the_lines_before_it() -> None:
+    """An error used to be put at the front of the queue, so the line that
+    explained it arrived after it and the console read effect before cause."""
+    q = _BoundedSseBuffer(8)
+    lines = [
+        {"name": "STATUSTEXT", "text": "EKF2 switching to GPS", "level": "info"},
+        {"name": "STATUSTEXT", "text": "GPS glitch", "level": "warning"},
+        {"name": "STATUSTEXT", "text": "Failsafe: position lost", "level": "error"},
+    ]
+    for line in lines:
+        q.put_console(line)
+
+    assert [q.get(timeout=0) for _ in lines] == lines
+
+
 def test_console_sse_disconnect_removes_bridge_listener(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

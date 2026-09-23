@@ -40,9 +40,11 @@ concurrency:
 
 jobs:
   # --- pytest ----------------------------------------------------------------
-  # Installs only the runtime deps the non-GUI unit tests import at module load
-  # (corvus.server pulls pymavlink + paramiko; mavlink_bridge uses pyserial
-  # lazily). PyQt6 is intentionally NOT installed — no headless test imports Qt.
+  # pyproject.toml's `test` group: the headless runtime deps the non-GUI unit
+  # tests import at module load (corvus.server pulls pymavlink + paramiko;
+  # mavlink_bridge uses pyserial lazily) plus pytest. PyQt6 is intentionally
+  # NOT installed — no headless test imports Qt. `--group` needs pip >= 25.1,
+  # hence the upgrade before it.
   test:
     runs-on: ubuntu-latest
     steps:
@@ -51,10 +53,11 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
+          cache-dependency-path: pyproject.toml
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-headless.txt -r requirements-dev.txt
+          pip install --group test
       - name: pytest
         run: pytest -q tests
 
@@ -72,10 +75,11 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
+          cache-dependency-path: pyproject.toml
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-headless.txt -r requirements-dev.txt
+          pip install --group test
       - name: pytest
         run: pytest -q tests
 
@@ -95,10 +99,11 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
+          cache-dependency-path: pyproject.toml
       - name: Install lint dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          pip install --group lint
       - name: ruff
         run: ruff check corvus serve.py tests
 
@@ -155,7 +160,7 @@ jobs:
         with:
           name: Corvus_GCS-${{ steps.ver.outputs.version }}-x86_64-AppImage
           # The .lock beside it is the exact resolved dependency set this
-          # AppImage was built from; requirements.txt only states floors, so
+          # AppImage was built from; pyproject.toml only states floors, so
           # it is the lock that makes a rebuild of this tag reproducible.
           path: |
             dist/Corvus_GCS-*-x86_64.AppImage
@@ -184,7 +189,7 @@ jobs:
         # architecture. Homebrew's is one, and its prefix differs per arch:
         # /opt/homebrew on Apple Silicon, /usr/local on Intel. The script's
         # candidate search covers both, so this only has to make sure one exists.
-        # 3.12, matching the test job, environment.yml and requires-python: this
+        # 3.12, matching the test job, run.sh and requires-python: this
         # step used to install 3.11, so the artifact was packaged on a version
         # nothing was ever tested against.
         run: |
@@ -230,10 +235,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Pillow, for the .ico
-        # Optional in the script (it builds with the default icon without it),
-        # installed here so release artifacts always carry the mark.
-        run: python -m pip install --disable-pip-version-check Pillow
       - name: Build the Windows app
         shell: pwsh
         run: .\build-windows.ps1 -Zip -Python (Get-Command python).Source

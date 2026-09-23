@@ -615,3 +615,49 @@ def test_no_version_literal_in_the_update_module() -> None:
     ]
     assert not offenders, f"version literal(s) in code: {offenders}"
     assert "get_version" in path.read_text()
+
+
+# ---------------------------------------------------------------------------
+# The cache file is not a source of URLs
+# ---------------------------------------------------------------------------
+
+def test_a_tampered_cache_cannot_name_its_own_release_page(tmp_path) -> None:
+    """The URL is rebuilt from the tag on the way OUT, not only on the way in.
+
+    ``_pick_latest`` derived the URL correctly and then ``_status`` handed back
+    whatever ``url`` the stored object happened to carry — so the invariant
+    this module documents held for a fresh fetch and not for the cached answer
+    every offline launch reads. ``POST /api/update/open`` passes that string to
+    the operator's system browser, which makes ~/.corvus/update.json a place to
+    plant a link.
+    """
+    (tmp_path / "update.json").write_text(json.dumps({
+        "checked_at": 1,
+        "latest": {
+            "tag": "v2000.10.02",
+            "version": "2000.10.02",
+            "name": "Update",
+            "url": "https://evil.example/pwn",
+        },
+        "error": "",
+    }))
+    status = UpdateChecker(str(tmp_path)).cached_status()
+    assert status["url"] == \
+        "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2000.10.02"
+    assert "evil.example" not in json.dumps(status)
+
+
+def test_a_cache_with_a_junk_tag_falls_back_to_the_releases_index(tmp_path) -> None:
+    """An unusable tag is never interpolated into a URL; it loses the link."""
+    for tag in ("../../../etc", "v1 onmouseover=x", "javascript:alert(1)", ""):
+        (tmp_path / "update.json").write_text(json.dumps({
+            "checked_at": 1,
+            "latest": {"tag": tag, "version": "2000.10.02", "name": "x"},
+            "error": "",
+        }))
+        status = UpdateChecker(str(tmp_path)).cached_status()
+        assert status["url"] == RELEASES_PAGE_URL, tag
+
+
+def test_no_cache_at_all_still_points_at_the_releases_page(tmp_path) -> None:
+    assert UpdateChecker(str(tmp_path)).cached_status()["url"] == RELEASES_PAGE_URL

@@ -1,4 +1,7 @@
-"""The candidate gaps from `MAVLINK_CONNECTION_AUDIT.md` §8.2, checked.
+"""The candidate gaps (a)-(i) from the MAVLink connection audit, checked.
+
+The audit itself is summarized in ``PLAN.md`` (section 3); its full text is
+in git history.
 
 An audit that ends in a list of "verify this" items is only half finished. Most
 of that list turned out to describe behaviour that is correct and deliberate —

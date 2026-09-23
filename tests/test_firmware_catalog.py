@@ -405,3 +405,32 @@ def test_a_cancelled_download_raises_rather_than_flashing_a_partial_image(
     with pytest.raises(ValueError, match="cancelled"):
         catalog.download(entry, cancel=cancel)
     assert not (tmp_path / "px4_fmu-v6x_default.px4").exists(), "nothing partial cached"
+
+
+# ---------------------------------------------------------------------------
+# The download allow-list covers the scheme, not only the host
+# ---------------------------------------------------------------------------
+
+def test_a_firmware_download_must_be_https() -> None:
+    """A bare host check says yes to plaintext, which proves nothing.
+
+    The bytes this fetches are flashed onto a flight controller. An allow-list
+    that accepts ``http://github.com/...`` lets anyone on the path between the
+    laptop and the release swap the image, and the check still passes.
+    """
+    from corvus.firmware_catalog import _host_allowed
+
+    assert _host_allowed("https://github.com/PX4/PX4-Autopilot/releases/x.px4")
+    assert not _host_allowed("http://github.com/PX4/PX4-Autopilot/releases/x.px4")
+    assert not _host_allowed("ftp://github.com/x.px4")
+    assert not _host_allowed("file:///etc/passwd")
+    assert not _host_allowed("https://evil.example/x.px4")
+    assert not _host_allowed("")
+
+
+def test_an_ardupilot_download_must_be_https() -> None:
+    from corvus.ardupilot_firmware import host_allowed
+
+    assert host_allowed("https://firmware.ardupilot.org/Copter/stable/x/arducopter.apj")
+    assert not host_allowed("http://firmware.ardupilot.org/Copter/stable/x/arducopter.apj")
+    assert not host_allowed("https://evil.example/arducopter.apj")

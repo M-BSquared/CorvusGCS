@@ -7,16 +7,67 @@ build-backend = "setuptools.build_meta"
 # repo root consumed by corvus.version; it is never read from here.
 name = "corvus-gcs"
 version = "0.0.0"
-# 3.12: the version CI tests, environment.yml creates, and the three build
-# scripts ship. It used to be >=3.10 here, 3.11 in environment.yml and 3.12 in
-# both pipelines, so the tested, the developed and the shipped interpreter
+# 3.12: the version CI tests, run.sh creates the dev venv with, and the three
+# build scripts ship. It used to be >=3.10 here, 3.11 in a conda file and 3.12
+# in both pipelines, so the tested, the developed and the shipped interpreter
 # could all be different ones.
 requires-python = ">=3.12"
 
-[project.optional-dependencies]
-# Mirrors requirements-dev.txt for `pip install -e .[dev]`; that file is the
-# one CI and the build scripts read.
-dev = ["pytest>=7.0", "ruff>=0.5"]
+# Every Python package Corvus installs, anywhere, is named in this table and
+# nowhere else: the dev venv (run.sh), both CI pipelines and all three build
+# scripts read it with `pip install --group <file>:<group>` (pip >= 25.1; every
+# installer upgrades pip in its fresh venv first). It replaces environment.yml
+# and three requirements*.txt files that used to restate the same list.
+#
+# Floors, not pins, on purpose: this states what the code requires. Pins live
+# in requirements.lock, which is generated, not written, and not normally in
+# the repo — every build writes the set it resolved to beside its artifact
+# (dist/Corvus_GCS-<version>-<platform>.lock), and each build script installs
+# from requirements.lock in preference to this table when one is present
+# (override either with $CORVUS_REQUIREMENTS). Pinning a release is one copy:
+#
+#     cp dist/Corvus_GCS-<version>-macOS-arm64.lock requirements.lock
+[dependency-groups]
+# What browser mode (serve.py) and the whole test suite need at runtime —
+# everything except the desktop window. CI runs the suite without Qt on
+# purpose: no headless test imports it, and ~100 MB of Chromium per test job
+# buys nothing.
+headless = [
+    # MAVLink protocol + dialects. 2.4 is the floor for the message set the
+    # bridge and the forwarder use.
+    "pymavlink>=2.4",
+    # SSH to the companion computer.
+    "paramiko>=3.0",
+    # The serial transport under MAVLink, and the firmware uploader's own use
+    # of the bootloader device.
+    "pyserial>=3.5",
+]
+# The desktop app: what every packaged build ships.
+app = [
+    { include-group = "headless" },
+    "PyQt6>=6.6",
+    "PyQt6-WebEngine>=6.6",
+]
+# The CI test jobs.
+test = [
+    { include-group = "headless" },
+    "pytest>=7.0",
+]
+# The linter both pipelines run.
+lint = ["ruff>=0.5"]
+# The local development venv that run.sh creates: the app, the suite and the
+# linter in one place.
+dev = [
+    { include-group = "app" },
+    { include-group = "test" },
+    { include-group = "lint" },
+]
+# Build-time only, for build-windows.ps1's build venv: the packager, and
+# Pillow to cut the .ico from the logo. Never shipped as a runtime dependency.
+package-windows = [
+    "pyinstaller>=6.3",
+    "Pillow>=10.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

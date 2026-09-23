@@ -954,6 +954,16 @@
 }
 .tile:active { transform: translateY(0) scale(0.99); }
 .tile:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+.tile:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.tile:disabled:hover {
+  background: var(--panel-fill);
+  border-color: var(--panel-hairline);
+  transform: none;
+  box-shadow: none;
+}
 
 .tile-icon {
   border-radius: var(--radius-btn);

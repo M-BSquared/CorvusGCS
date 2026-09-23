@@ -112,6 +112,23 @@ def test_rc_and_data_link_loss_share_one_action_set() -> None:
     assert rc == dll == [0, 1, 2, 3, 5, 6]
 
 
+def test_the_deprecated_low_battery_return_is_not_offered() -> None:
+    """PX4 v1.16 to v1.18 document 0, 2 and 3 only."""
+    failsafe = _fields(_sections(safety_config.build(
+        _safe() | {"COM_LOW_BAT_ACT": 3.0}))["failsafe"])
+    assert [int(o["value"]) for o in failsafe["COM_LOW_BAT_ACT"]["options"]] == [0, 2, 3]
+
+
+def test_a_vehicle_still_on_the_deprecated_return_sees_what_it_does() -> None:
+    """PX4 still obeys 1: it returns even at the emergency level."""
+    failsafe = _fields(_sections(safety_config.build(
+        _safe() | {"COM_LOW_BAT_ACT": 1.0}))["failsafe"])
+    options = failsafe["COM_LOW_BAT_ACT"]["options"]
+    assert [int(o["value"]) for o in options] == [0, 1, 2, 3]
+    assert "deprecated" in options[1]["label"]
+    assert not any("Unknown" in o["label"] for o in options)
+
+
 # ---- version tolerance ----
 
 def test_a_parameter_the_firmware_lacks_is_simply_absent() -> None:

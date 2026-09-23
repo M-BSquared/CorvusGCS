@@ -462,7 +462,7 @@ def main() -> int:
     if multi_instance:
         logger.warning("starting a SECOND CORVUS GCS instance (%s=1). The "
                        "serial link, the forwarder port and the config file "
-                       "are not shareable — point this one at its own link.",
+                       "are not shareable. Point this one at its own link.",
                        ALLOW_MULTI_ENV)
 
     logger.info("Starting backend on port %d (MAVLink: %s)", port,
@@ -595,7 +595,7 @@ def main() -> int:
                 return
             shutting_down.set()
 
-        logger.info("Shutting down — stopping all connections …")
+        logger.info("Shutting down, stopping all connections …")
         _stop_all(server)
 
         # Bounded exit watchdog. The Qt event loop normally returns cleanly
@@ -644,7 +644,7 @@ def main() -> int:
     timer.timeout.connect(sync_app_icon)
 
     window.show()
-    logger.info("CORVUS GCS v%s — standalone window ready", get_version())
+    logger.info("CORVUS GCS v%s: standalone window ready", get_version())
     ret = app.exec()
     shutdown()  # belt-and-suspenders if aboutToQuit did not fire
     return ret

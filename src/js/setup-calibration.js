@@ -166,7 +166,7 @@ Corvus.setupCalibration = (function () {
 
     const armedBanner = S.el("div", "params-banner setup-armed-banner calib-list-gate");
     armedBanner.hidden = true;
-    armedBanner.textContent = "Cannot calibrate while armed — disarm first.";
+    armedBanner.textContent = "Cannot calibrate while armed. Disarm first.";
     sensorSection.appendChild(armedBanner);
 
     /* A calibration the connected stack does not run is greyed out with the
@@ -369,7 +369,7 @@ Corvus.setupCalibration = (function () {
        shown only while the session is actually holding a prompt, so on a PX4
        link it never appears. */
     const confirmBtn = Corvus.ui.button({
-      variant: "primary", icon: "check", label: "In position — continue",
+      variant: "primary", icon: "check", label: "In position, continue",
       onClick: onConfirmPosition,
     });
     const abortBtn = Corvus.ui.button({
@@ -382,7 +382,11 @@ Corvus.setupCalibration = (function () {
       variant: "secondary", icon: "chevron-left", label: "Back to calibrations",
       onClick: () => navigateBack(),
     });
-    const actions = Corvus.ui.actions([startBtn, confirmBtn, abortBtn, retryBtn, doneBtn]);
+    // The accelerometer and compass results are read at boot; the wizard that
+    // says so offers the reboot rather than sending the operator to find one.
+    const rebootBtn = S.rebootButton({ mount: el });
+    const actions = Corvus.ui.actions(
+      [startBtn, confirmBtn, abortBtn, retryBtn, rebootBtn, doneBtn]);
     actions.classList.add("calib-actions");
     el.appendChild(actions);
 
@@ -440,18 +444,20 @@ Corvus.setupCalibration = (function () {
       confirmBtn.hidden = !(running && st.confirm);
       confirmBtn.disabled = busy;
       if (st.confirm) {
-        confirmBtn.textContent = "In position — continue";
+        confirmBtn.textContent = "In position, continue";
       }
       abortBtn.hidden = !running;
       abortBtn.disabled = busy;
       retryBtn.hidden = st.phase !== "failed" && st.phase !== "cancelled";
       retryBtn.disabled = busy || blocked;
       doneBtn.hidden = !terminal;
+      rebootBtn.hidden = !(st.phase === "done" && proc.reboot);
+      rebootBtn.disabled = busy || blocked;
 
       banner.hidden = !(vehicle.armed || !vehicle.connected) || running;
       banner.textContent = vehicle.armed
-        ? "Cannot calibrate while armed — disarm first."
-        : "No link to the vehicle — connect before calibrating.";
+        ? "Cannot calibrate while armed. Disarm first."
+        : "No link to the vehicle. Connect before calibrating.";
       el.dataset.phase = st.phase;
     }
 
@@ -492,7 +498,7 @@ Corvus.setupCalibration = (function () {
         watchdog.hidden = false;
         watchdog.textContent = "No word from the autopilot for "
           + Math.round(quiet / 1000) + " s. It is probably still waiting for a "
-          + "position — or abort and start over.";
+          + "position, or abort and start over.";
       } else {
         watchdog.hidden = true;
       }
@@ -565,12 +571,24 @@ Corvus.setupCalibration = (function () {
       paint();
       try {
         await Corvus.telemetry.postAction("/api/calibrate", { type: proc.type });
+        // Restarts the start timer only if the autopilot is still silent: its
+        // first lines may have beaten the ACK here, and the whole calibration
+        // may already be over.
         session.begin(now());
-        startWatchdog();
+        if (!isTerminal(session.getState().phase)) startWatchdog();
       } catch (err) {
-        session.finish("failed", "Could not start the calibration",
-          (err && err.message) || "The vehicle rejected the command.");
-        notify("critical", (err && err.message) || "Calibration could not be started");
+        const message = (err && err.message) || "The vehicle rejected the command.";
+        const phase = session.getState().phase;
+        if (phase === "running") {
+          // The vehicle is already narrating a calibration, so the command
+          // took even though its ACK did not reach us. Its own lines decide
+          // how this ends.
+          appendLog(message, "warning");
+          startWatchdog();
+        } else if (!isTerminal(phase)) {
+          session.finish("failed", "Could not start the calibration", message);
+          notify("critical", (err && err.message) || "Calibration could not be started");
+        }
       } finally {
         busy = false;
         paint();

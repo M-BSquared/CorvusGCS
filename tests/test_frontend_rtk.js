@@ -315,7 +315,7 @@ test("a running survey shows what is still holding it up", async () => {
      whether it is the clock or the sky. */
   const { container } = await mount(statusPayload({
     state: "surveying",
-    message: "Surveying — the base is learning where it is",
+    message: "Surveying: the base is learning where it is",
     survey: { duration: 45, accuracy: 6.5, observations: 45, valid: false, active: true },
     survey_progress: 25,
   }));
@@ -331,13 +331,13 @@ test("a running survey shows what is still holding it up", async () => {
 test("a finished survey reports the accuracy it converged on", async () => {
   const { container } = await mount();
   assert.match(role(container, "survey-text").textContent,
-    /Survey complete — the base knows its position to 1.2 m/);
+    /Survey complete: the base knows its position to 1.2 m/);
 });
 
 test("nothing found yet is a state, not an error", async () => {
   const { container } = await mount(statusPayload({
     state: "searching",
-    message: "Looking for a base station — plug an RTK GNSS receiver into this computer",
+    message: "Looking for a base station. Plug an RTK GNSS receiver into this computer",
     receiver: null, receiver_label: "", device: "", baud: 0,
     survey: null, survey_progress: 0, frames: 0,
     injected: { bytes: 0, messages: 0, dropped: 0, age: null },
@@ -356,7 +356,7 @@ test("an error is shown as an error", async () => {
   const { container } = await mount(statusPayload({
     state: "error",
     message: "/dev/ttyACM9 produced no corrections",
-    error: "/dev/ttyACM9 produced no corrections — check that the base station has power",
+    error: "/dev/ttyACM9 produced no corrections. Check that the base station has power",
   }));
 
   assert.ok(role(container, "state").className.includes("err"));

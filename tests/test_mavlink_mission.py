@@ -156,6 +156,34 @@ def test_an_accepted_upload_sends_every_item_in_order() -> None:
     ]
 
 
+def test_an_upload_remembers_which_plan_item_each_vehicle_item_is() -> None:
+    """So MISSION_CURRENT can be drawn as a leg of the plan on screen."""
+    bridge = ready_bridge()
+    answer_the_handshake(bridge)
+    plan, _error = mission.validate_plan({"speed": 7, "items": [
+        {"type": "waypoint", "lat": 48.0, "lon": 11.0, "alt": 30},
+        {"type": "rtl"},
+    ]})
+    assert plan is not None
+    before = bridge._store.get_snapshot()["mission_revision"]
+
+    assert bridge.upload_mission_plan(mission.plan_to_items(plan))
+
+    snap = bridge._store.get_snapshot()
+    assert snap["mission_known"] is True
+    assert snap["mission_total"] == 3
+    assert snap["mission_revision"] == before + 1
+    assert bridge._vehicle_mission_index == [0, 0, 1]
+
+
+def test_a_refused_upload_changes_nothing_corvus_knows() -> None:
+    bridge = ready_bridge()
+    answer_the_handshake(bridge, ack_type=mavutil.mavlink.MAV_MISSION_DENIED)
+    before = bridge._store.get_snapshot()["mission_revision"]
+    assert not bridge.upload_mission_plan(sample_items())
+    assert bridge._store.get_snapshot()["mission_revision"] == before
+
+
 def test_an_upload_never_arms_or_changes_mode() -> None:
     """The whole reason upload and start are two methods."""
     bridge = ready_bridge()

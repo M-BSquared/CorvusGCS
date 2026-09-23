@@ -268,7 +268,7 @@ POSITION_CHARTS: list[dict[str, Any]] = [
 AUTOTUNE_STEPS: list[str] = [
     "Fly somewhere open, with room to drift, and keep a hand on the sticks.",
     "Take off and hold a stable hover in Position or Altitude mode, 3-10 m up.",
-    "Start the tune and let go of the sticks — the autopilot injects its own "
+    "Start the tune and let go of the sticks. The autopilot injects its own "
     "steps and needs a clean response to measure.",
     "Expect roughly a minute of visible twitching, one axis at a time.",
     "Land and disarm to apply the gains, then test them gently before flying "
@@ -431,8 +431,8 @@ def _rate_group(values: dict[str, float]) -> dict[str, Any] | None:
     return _group(
         "rate", "Rate Controller",
         "The innermost loop: it turns a rate setpoint into motor torque, and it "
-        "is the loop responsible for how the aircraft feels. Tune it first — "
-        "every outer loop is built on top of it, and this is the one the "
+        "is the loop responsible for how the aircraft feels. Tune it first, "
+        "because every outer loop is built on top of it, and this is the one the "
         "autotune tunes.",
         sections, MC_RATE_CHARTS,
     )
@@ -454,7 +454,7 @@ def _velocity_group(values: dict[str, float]) -> dict[str, Any] | None:
         "velocity", "Velocity Controller",
         "Holds a commanded speed. This is the loop behind a hover that drifts in "
         "wind or an altitude that sags as the battery does. PX4 has no autotune "
-        "for it — these gains are set by hand.",
+        "for it. These gains are set by hand.",
         _sections(MC_VELOCITY_SECTIONS, values), VELOCITY_CHARTS,
     )
 

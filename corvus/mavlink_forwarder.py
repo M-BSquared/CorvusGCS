@@ -359,7 +359,7 @@ class MavlinkForwarder:
             note = ""
             if fallback:
                 note = (
-                    f"port {self._listen_port} was busy — listening on "
+                    f"port {self._listen_port} was busy, listening on "
                     f"{bound[0]}:{bound[1]} instead"
                 )
                 logger.warning("MAVLink forwarding: %s", note)
@@ -599,7 +599,7 @@ class MavlinkForwarder:
             return
         self._refused_peers.add(addr)
         logger.warning(
-            "refusing to forward commands from %s:%d — commanding is allowed only "
+            "refusing to forward commands from %s:%d. Commanding is allowed only "
             "from the configured endpoints (%s). Add it to the forwarding "
             "endpoint list if this station should be able to command the aircraft.",
             addr[0], addr[1],
@@ -620,7 +620,7 @@ class MavlinkForwarder:
         self._sysid_conflict = True
         logger.warning(
             "the other station is transmitting as MAVLink system %d, the same id "
-            "Corvus uses — give it its own (QGroundControl: Application Settings "
+            "Corvus uses. Give it its own (QGroundControl: Application Settings "
             "→ MAVLink → Ground Station system ID)",
             _CORVUS_SYSTEM_ID,
         )

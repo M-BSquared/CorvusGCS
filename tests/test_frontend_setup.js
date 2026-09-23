@@ -285,6 +285,7 @@ function makeFakeTelemetry(opts = {}) {
   const postCalls = [];
   const requests = [];
   let subCb = null;
+  let consoleCb = null;
   let unsubCalls = 0;
   const unsub = () => { unsubCalls++; };
   let paramsResponse = opts.paramsResponse || { complete: false, received: 0, count: 0, params: [] };
@@ -317,12 +318,14 @@ function makeFakeTelemetry(opts = {}) {
       return Promise.resolve(paramsResponse);
     },
     subscribe(fn) { subCb = fn; return unsub; },
+    subscribeConsole(fn) { consoleCb = fn; return () => { consoleCb = null; }; },
     getState() { return state; },
   };
   return {
     telemetry, postCalls, requests,
     get unsubCalls() { return unsubCalls; },
     getSubCb: () => subCb,
+    emitConsole(entry) { if (consoleCb) consoleCb(entry); },
     setParamsResponse(r) { paramsResponse = r; },
     setResponse(prefix, r) { urlResponses[prefix] = r; },
     setState(s) { state = s; },
@@ -369,7 +372,13 @@ async function testTileGridRendersEveryTile() {
 
   Corvus.setup.render(container);
 
-  const tiles = findByClass(container, "setup-tile");
+  const all = findByClass(container, "setup-tile");
+  // The Video tile has no sub-page yet: shown, disabled, and routed nowhere.
+  const video = all[all.length - 1];
+  assert.equal(findOneByClass(video, "tile-title").textContent, "Video");
+  assert.equal(video.disabled, true, "a planned page is shown disabled, not hidden");
+  assert.equal(video.dataset.view, undefined);
+  const tiles = all.slice(0, -1);
   assert.deepEqual(tiles.map((t) => t.dataset.view),
     ["calibration", "control", "tuning", "motors", "safety", "battery", "sik",
      "rtk", "remoteid", "parameters", "firmware"],
@@ -512,8 +521,8 @@ async function testVehicleInfoUpdatesLive() {
   // Initial: every Vehicle Info row reflects the empty/disconnected snapshot.
   assert.equal(findByDataset(container, "infoKey", "px4_version")[0].textContent, "—",
     "PX4 Version row initially shows —");
-  assert.equal(findByDataset(container, "infoKey", "autopilot")[0].textContent, "—",
-    "Autopilot row initially shows —");
+  assert.equal(findByDataset(container, "infoKey", "autopilot").length, 0,
+    "no Autopilot row: the stack name is part of the Firmware row");
   assert.equal(findByDataset(container, "infoKey", "connected").length, 0,
     "no Connected row — the top bar already carries the link state");
   assert.equal(findByDataset(container, "infoKey", "armed").length, 0,
@@ -524,10 +533,8 @@ async function testVehicleInfoUpdatesLive() {
     connected: true, armed: false,
     autopilot: "PX4", vehicle_type: "Standard", px4_version: "v1.18.0",
   });
-  assert.equal(findByDataset(container, "infoKey", "px4_version")[0].textContent, "v1.18.0",
-    "PX4 Version row updated to v1.18.0");
-  assert.equal(findByDataset(container, "infoKey", "autopilot")[0].textContent, "PX4",
-    "Autopilot row updated to PX4");
+  assert.equal(findByDataset(container, "infoKey", "px4_version")[0].textContent, "PX4 v1.18.0",
+    "Firmware row shows the stack followed by the version");
   assert.equal(findByDataset(container, "infoKey", "vehicle_type")[0].textContent, "Standard",
     "Vehicle Type row updated to Standard");
   assert.equal(findByDataset(container, "infoKey", "connected").length, 0,
@@ -590,9 +597,9 @@ function motorsDoc(overrides) {
         min: 0, max: 12, hint: "Number of rotors in the geometry." },
     ],
     sections: [{
-      id: "protocol_main", title: "Output protocol — MAIN",
+      id: "protocol_main", title: "Output protocol: MAIN",
       fields: [{ param: "PWM_MAIN_TIM0", label: "Timer group 0", kind: "enum", value: 400,
-        options: [{ value: -4, label: "DShot600" }, { value: 400, label: "PWM 400 Hz" }] }],
+        options: [{ value: -3, label: "DShot600" }, { value: 400, label: "PWM 400 Hz" }] }],
     }],
   }, overrides || {});
 }
@@ -849,10 +856,74 @@ async function testAPinAlreadyDrivingSomethingSaysSoInTheList() {
 
   const [, pin] = findByTag(findOneByClass(container, "motors-assign"), "select");
   const labels = findByTag(pin, "option").map((o) => o.textContent);
-  assert.ok(labels.includes("MAIN 2 — Motor 2"),
+  assert.ok(labels.includes("MAIN 2 (Motor 2)"),
     "a taken pin names what is on it, so a swap is a decision not a surprise");
   assert.ok(labels.includes("MAIN 1"), "the motor's own pin is not marked as taken");
   assert.ok(labels.includes("MAIN 5"), "a free pin is offered plainly");
+}
+
+async function testMotorsCheckValuesConfirmsAnOutputLimitAndRedrawsFresh() {
+  const fake = makeFakeTelemetry({
+    postAction: (url) => Promise.resolve(url === "/api/params/verify"
+      ? verifiedAgain("PWM_MAIN_MIN1", 1100, 1000) : { ok: true }),
+  });
+  const doc = motorsDoc();
+  doc.motors[0].output_fields = [
+    { param: "PWM_MAIN_MIN1", label: "Minimum", kind: "number", value: 1000, unit: "us" },
+  ];
+  const container = await openMotors(fake, doc);
+  const check = findOneByClass(container, "motors-check");
+  assert.ok(check && !check.disabled, "Check values is offered once the motors are read");
+
+  const input = findByDataset(findOneByClass(container, "motors-panel"), "param", "PWM_MAIN_MIN1")
+    .filter((e) => e.tagName === "INPUT")[0];
+  input.value = "1100";
+  fire(input, "change");
+  await flushMicrotasks();
+
+  fire(check, "click");
+  for (let i = 0; i < 4; i += 1) await flushMicrotasks();
+
+  const verify = fake.postCalls.find((c) => c.url === "/api/params/verify");
+  assert.deepEqual(verify.payload.params, [{ name: "PWM_MAIN_MIN1", value: 1100 }]);
+  assert.ok(verify.payload.names.includes("CA_AIRFRAME") && verify.payload.names.includes("PWM_MAIN_TIM0"),
+    "the airframe, the motors and the protocol are all read back");
+  assert.ok(fake.requests.includes("/api/motors?fresh=1"), "the redraw asks the vehicle");
+  assert.ok(findOneByClass(container, "motors-check-card"), "the outcome is shown");
+}
+
+async function testTheMotorCountIsKeptForTheCheck() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+  const add = buttonByLabel(container, "Add motor");
+  assert.ok(add, "the airframe card offers another motor");
+  fire(add, "click");
+  await flushMicrotasks();
+  fire(findOneByClass(container, "motors-check"), "click");
+  await flushMicrotasks();
+  const verify = fake.postCalls.find((c) => c.url === "/api/params/verify");
+  assert.deepEqual(verify.payload.params, [{ name: "CA_ROTOR_COUNT", value: 5 }]);
+}
+
+async function testTheSelectedMotorShowsTheLimitsOfItsOwnPin() {
+  const fake = makeFakeTelemetry();
+  const doc = motorsDoc();
+  doc.motors[0].output_fields = [
+    { param: "PWM_MAIN_MIN1", label: "Minimum", kind: "number", value: 1100, unit: "us" },
+    { param: "PWM_MAIN_DIS1", label: "Disarmed", kind: "number", value: 900, unit: "us" },
+  ];
+  const container = await openMotors(fake, doc);
+
+  const panel = findOneByClass(container, "motors-panel");
+  const head = findOneByClass(panel, "motors-output-head");
+  assert.ok(head, "a motor on a pin with limits gets its own limits block");
+  assert.equal(textOf(head), "Output limits of MAIN 1");
+  const params = findByDataset(panel, "param", "PWM_MAIN_MIN1");
+  assert.ok(params.length, "the per-pin minimum is an editable field");
+
+  // Motor 2 has no limits in this doc: no empty heading is drawn for it.
+  fire(motorNode(container, 2), "click");
+  assert.equal(findOneByClass(findOneByClass(container, "motors-panel"), "motors-output-head"), null);
 }
 
 async function testUnassigningAMotorPostsANullOutput() {
@@ -1283,6 +1354,45 @@ async function testCalibrationCardsCoverEveryProcedure() {
   assert.ok(findOneByClass(container, "calib-stage"), "wizard stage rendered");
 }
 
+async function testCalibrationLinesThatBeatTheAckAreNotRewound() {
+  // UDP SITL delivers the first [cal] lines, and a fast calibration's last
+  // one, before POST /api/calibrate resolves. The wizard used to fall back to
+  // "Waiting for the autopilot to start" on the ACK and sit there.
+  let release = null;
+  const fake = makeFakeTelemetry({
+    state: { armed: false, connected: true, warnings: [] },
+    postAction: (url) => (url === "/api/calibrate"
+      ? new Promise((resolve) => { release = () => resolve({ ok: true }); })
+      : Promise.resolve({ ok: true })),
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  pageViewEl = container;
+  clock = 1000;
+
+  Corvus.setup.render(container);
+  openTile(container, "calibration");
+  const baro = findByClass(findOneByClass(container, "calib-cards"), "calib-card")
+    .filter((c) => c.dataset.type === "baro")[0];
+  fire(baro, "click");
+  await flushMicrotasks();
+  const wizard = findOneByClass(container, "calib-wizard-view");
+  fake.getSubCb()({ armed: false, connected: true, warnings: [] });
+  fire(buttonByLabel(wizard, "Start"), "click");
+  await flushMicrotasks();
+  assert.equal(wizard.dataset.phase, "starting");
+
+  fake.emitConsole({ name: "STATUSTEXT", text: "[cal] calibration started: 2 baro" });
+  fake.emitConsole({ name: "STATUSTEXT", text: "[cal] calibration done: baro" });
+  assert.equal(wizard.dataset.phase, "done");
+
+  release();
+  await flushMicrotasks();
+  await flushMicrotasks();
+  assert.equal(wizard.dataset.phase, "done", "the late ACK leaves a finished calibration finished");
+  assert.equal(findOneByClass(wizard, "calib-watchdog").hidden, true);
+}
+
 async function testCalibrationArmedGating() {
   const fake = makeFakeTelemetry({ state: { armed: false, connected: true, warnings: [] } });
   Corvus.telemetry = fake.telemetry;
@@ -1448,6 +1558,43 @@ async function testEveryLoopIsEditableByHandNotJustAutotuned() {
   const call = fake.postCalls.find((c) => c.url === "/api/params/set");
   assert.deepEqual(call.payload, { name: "MPC_XY_VEL_P_ACC", value: 2.4 },
     "a hand-set gain is written through the shared parameter endpoint");
+}
+
+/** A verify answer confirming `name` after writing it again. */
+function verifiedAgain(name, wanted, before) {
+  return {
+    ok: true, values: { [name]: wanted }, missing: [],
+    results: [{ name, wanted, before, after: wanted, rewritten: true, ok: true, error: "" }],
+  };
+}
+
+async function testTuningCheckValuesConfirmsAGainAndRedrawsFresh() {
+  const fake = makeFakeTelemetry({
+    state: DISARMED,
+    postAction: (url) => Promise.resolve(url === "/api/params/verify"
+      ? verifiedAgain("MPC_XY_VEL_P_ACC", 2.4, 1.8) : { ok: true }),
+  });
+  const container = await openTuning(fake);
+  const check = findOneByClass(container, "tune-check");
+  assert.ok(check && !check.disabled, "Check values is offered once the gains are read");
+
+  fire(findByClass(container, "tune-tab")[1], "click");
+  const input = findByClass(container, "tune-input")[0];
+  input.value = "2.4";
+  fire(input, "change");
+  await flushMicrotasks();
+
+  fire(check, "click");
+  for (let i = 0; i < 4; i += 1) await flushMicrotasks();
+
+  const verify = fake.postCalls.find((c) => c.url === "/api/params/verify");
+  assert.deepEqual(verify.payload.params, [{ name: "MPC_XY_VEL_P_ACC", value: 2.4 }]);
+  assert.ok(verify.payload.names.includes("MC_ROLLRATE_P"),
+    "every loop is read back, not only the tab on screen");
+  assert.ok(fake.requests.includes("/api/tuning?fresh=1"), "the redraw asks the vehicle");
+  assert.ok(findOneByClass(container, "tune-check-card"), "the outcome is shown");
+  assert.equal(findByClass(container, "tune-tab").filter((t) => t.className.includes("active"))[0]
+    .dataset.group, "velocity", "the operator stays on the loop they were checking");
 }
 
 async function testSwitchingTabsSwapsTheFieldsAndTheCharts() {
@@ -2517,7 +2664,7 @@ async function testFirmwareFailedNotifiesCritical() {
   const sse = await performUpload(container);
   fake.setParamsResponse({
     can_flash: false, transport: "usb", state: "failed", device: "/dev/ttyACM0",
-    armed: false, progress: 50, message: "firmware CRC mismatch — not booting",
+    armed: false, progress: 50, message: "firmware CRC mismatch, not booting",
   });
   dispatched.length = 0;
   sse.emit("firmware", { state: "failed", percent: 50, message: "CRC mismatch" });
@@ -2618,6 +2765,9 @@ async function run() {
   await withReset(testAssigningTheSelectedMotorPostsBankAndPin);
   await withReset(testTheOutputBankCanBeChangedToAux);
   await withReset(testAPinAlreadyDrivingSomethingSaysSoInTheList);
+  await withReset(testTheSelectedMotorShowsTheLimitsOfItsOwnPin);
+  await withReset(testMotorsCheckValuesConfirmsAnOutputLimitAndRedrawsFresh);
+  await withReset(testTheMotorCountIsKeptForTheCheck);
   await withReset(testUnassigningAMotorPostsANullOutput);
   await withReset(testARefusedAssignmentIsReportedAndNotShownAsApplied);
   await withReset(testTheMotorTestRefusesToArmWithoutThePropellerAcknowledgement);
@@ -2635,10 +2785,12 @@ async function run() {
   await withReset(testMotorsTeardownReleasesTheSubscription);
 
   await withReset(testCalibrationCardsCoverEveryProcedure);
+  await withReset(testCalibrationLinesThatBeatTheAckAreNotRewound);
   await withReset(testCalibrationArmedGating);
   await withReset(testReadinessStripReflectsLinkAndArmedState);
 
   await withReset(testTuningRendersOneTabPerControlLoop);
+  await withReset(testTuningCheckValuesConfirmsAGainAndRedrawsFresh);
   await withReset(testEveryLoopIsEditableByHandNotJustAutotuned);
   await withReset(testSwitchingTabsSwapsTheFieldsAndTheCharts);
   await withReset(testAutotuneIsOfferedInFlightNotOnTheGround);

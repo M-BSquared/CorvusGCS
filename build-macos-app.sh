@@ -80,7 +80,7 @@ done
 # first second, and name the file.
 MISSING=""
 for required in \
-    VERSION requirements.txt LICENSE.md \
+    VERSION pyproject.toml LICENSE.md \
     corvus src assets plugins assets/CorvusGCS_logo.png
 do
     [ -e "$REPO_DIR/$required" ] || MISSING="$MISSING  $required"
@@ -123,7 +123,7 @@ PY
 if [ -n "$PYBIN" ]; then
     py_ok "$PYBIN" || { echo "ERROR: $PYBIN is not a usable framework python >= 3.12" >&2; exit 1; }
 else
-    # 3.12 first because it is the version CI tests and environment.yml pins;
+    # 3.12 first because it is the version CI tests and run.sh prefers;
     # newer ones are accepted after it. Nothing below 3.12 is listed, and
     # py_ok would reject it anyway.
     for cand in \
@@ -151,33 +151,36 @@ PY_FW_DIR="$PY_FW_PREFIX/Python.framework/Versions/$PY_MM"
 echo ">>> Interpreter: $PYBIN (python $PY_MM, framework at $PY_FW_DIR)"
 
 # ---- runtime deps -----------------------------------------------------------
-# requirements.txt, read as a file, by pip. This used to be a Python regex
-# that screen-scraped environment.yml's pip: block — `re.match(r"\\s{6,}-\\s*(\\S+)")`
-# against a YAML file it could not actually parse — with a hardcoded fallback
-# list for when that failed. It was the only build script that tried to stay
-# in sync, and it did so by guessing at a format.
+# pyproject.toml's `app` group, read by pip itself. This used to be a Python
+# regex that screen-scraped a conda environment file's pip: block — against a
+# YAML file it could not actually parse — with a hardcoded fallback list for
+# when that failed. It was the only build script that tried to stay in sync,
+# and it did so by guessing at a format.
 #
-# Which file, in order: $CORVUS_REQUIREMENTS, then requirements.lock if the
-# repo has one, then requirements.txt. The lock is what makes a release
-# rebuildable — requirements.txt states floors, so installing from it in six
-# months resolves to whatever is newest then, and the "same" tag produces a
-# different binary. Every build writes the set it actually installed to
-# dist/*.lock (below); promoting one of those to requirements.lock at tag time
-# is what pins the next rebuild to it.
+# Which source, in order: $CORVUS_REQUIREMENTS, then requirements.lock if the
+# repo has one, then the `app` group. The lock is what makes a release
+# rebuildable — the group states floors, so installing from it in six months
+# resolves to whatever is newest then, and the "same" tag produces a different
+# binary. Every build writes the set it actually installed to dist/*.lock
+# (below); promoting one of those to requirements.lock at tag time is what
+# pins the next rebuild to it.
 REQUIREMENTS="${CORVUS_REQUIREMENTS:-}"
-if [ -z "$REQUIREMENTS" ]; then
-    if [ -f "$REPO_DIR/requirements.lock" ]; then
-        REQUIREMENTS="$REPO_DIR/requirements.lock"
-    else
-        REQUIREMENTS="$REPO_DIR/requirements.txt"
-    fi
+if [ -z "$REQUIREMENTS" ] && [ -f "$REPO_DIR/requirements.lock" ]; then
+    REQUIREMENTS="$REPO_DIR/requirements.lock"
 fi
-if [ ! -f "$REQUIREMENTS" ]; then
-    echo "ERROR: missing $REQUIREMENTS" >&2
-    exit 1
+if [ -n "$REQUIREMENTS" ]; then
+    if [ ! -f "$REQUIREMENTS" ]; then
+        echo "ERROR: missing $REQUIREMENTS" >&2
+        exit 1
+    fi
+    DEPS_ARGS=(-r "$REQUIREMENTS")
+    DEPS_LABEL="$(basename "$REQUIREMENTS")"
+else
+    DEPS_ARGS=(--group "$REPO_DIR/pyproject.toml:app")
+    DEPS_LABEL="pyproject.toml [app]"
 fi
 LOCK_OUT="$DIST_DIR/Corvus_GCS-${VERSION}-macOS-${ARCH}.lock"
-echo ">>> Runtime deps: -r $(basename "$REQUIREMENTS")"
+echo ">>> Runtime deps: $DEPS_LABEL"
 echo ""
 
 # ---- cleanup trap: drop a half-built bundle, keep logs + finished artifacts --
@@ -212,8 +215,8 @@ if ! "$PYROOT/bin/python3" -m pip install --upgrade pip >>"$PIP_LOG" 2>&1; then
     tail -n 20 "$PIP_LOG" >&2 || true
     exit 1
 fi
-echo ">>> Installing -r $(basename "$REQUIREMENTS") ..."
-if ! "$PYROOT/bin/python3" -m pip install -r "$REQUIREMENTS" >>"$PIP_LOG" 2>&1; then
+echo ">>> Installing $DEPS_LABEL ..."
+if ! "$PYROOT/bin/python3" -m pip install "${DEPS_ARGS[@]}" >>"$PIP_LOG" 2>&1; then
     echo "ERROR: dependency install failed; log: $PIP_LOG" >&2
     tail -n 20 "$PIP_LOG" >&2 || true
     exit 1

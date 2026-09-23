@@ -714,7 +714,7 @@ def _track(rec: _Recording) -> dict | None:
         # review's track — one renderer reads both.
         origin={"lat": round(origin[0], 7), "lon": round(origin[1], 7)},
         note="Metres east and north of the first fix. Telemetry rate, so the "
-             "line is the path flown sampled a few times a second — not every "
+             "line is the path flown sampled a few times a second, not every "
              "metre of it.",
     )
 
@@ -838,7 +838,7 @@ def _build_plots(rec: _Recording) -> list[dict]:
             rec.series("radio_rssi", "Local RSSI"),
             rec.series("radio_remrssi", "Remote RSSI"),
             rec.series("radio_noise", "Noise floor"),
-        ], "Link", note="Reported by the radio modem, not the autopilot — "
+        ], "Link", note="Reported by the radio modem, not the autopilot. "
                         "this is the link between the two ends of the flight."),
         _plot("link_loss", "Dropped telemetry", "%", [
             rec.series("drop_rate", "Drop rate"),
@@ -994,7 +994,7 @@ def _findings(rec: _Recording) -> list[dict[str, Any]]:
     clipped = max(((_extreme(rec, n) or (0.0, 0.0)) for n in ("clip_0", "clip_1", "clip_2")),
                   key=lambda pair: pair[0])
     if clipped[0] > 0:
-        add("critical", f"Accelerometer clipping — {int(clipped[0])} samples",
+        add("critical", f"Accelerometer clipping: {int(clipped[0])} samples",
             "The IMU saturated, so the estimator was working from readings "
             "that were a limit rather than a measurement.", clipped[1])
 
@@ -1014,7 +1014,7 @@ def _findings(rec: _Recording) -> list[dict[str, Any]]:
                      "parts.")
         if vibe >= 30:
             add("critical", f"Vibration peaked at {vibe:.0f} m/s²",
-                "Well past the 30 PX4 treats as unflyable — check propellers, "
+                "Well past the 30 PX4 treats as unflyable. Check propellers, "
                 "motor bearings and the controller mounting." + cause, vibe_at)
         else:
             add("warning", f"Vibration peaked at {vibe:.0f} m/s²",
@@ -1030,15 +1030,15 @@ def _findings(rec: _Recording) -> list[dict[str, Any]]:
             f"{longest[1]:.0f} s",
             f"{total:.0f} s of silence in total. Every plot runs straight "
             "across those stretches because nothing arrived, not because "
-            "nothing happened — this is the one thing a log written on the "
+            "nothing happened. This is the one thing a log written on the "
             "aircraft cannot tell you.", longest[0])
 
     if rec.reboots:
         add("warning",
             f"The autopilot rebooted {len(rec.reboots)} time(s) mid-recording",
             "The timeline is stitched back together so the plots keep running "
-            "forwards, but everything the vehicle held in memory — estimator "
-            "state, mission progress, armed state — started again there.",
+            "forwards, but everything the vehicle held in memory (estimator "
+            "state, mission progress, armed state) started again there.",
             rec.reboots[0])
 
     for label, when in sorted(rec.ekf_events.items(), key=lambda kv: kv[1]):
@@ -1078,7 +1078,7 @@ def _findings(rec: _Recording) -> list[dict[str, Any]]:
     if rssi is not None and rssi[0] < 60:
         add("warning", f"Remote radio RSSI fell to {rssi[0]:.0f}",
             "Below about 60 the modem is close to losing the link. Read it "
-            "against the ground track — it is usually distance or an antenna "
+            "against the ground track. It is usually distance or an antenna "
             "pointing the wrong way.", rssi[1])
 
     fix_t = list(rec.xs.get("gps_fix") or [])
@@ -1105,8 +1105,8 @@ def _findings(rec: _Recording) -> list[dict[str, Any]]:
         per_cell = volts / cells
         if per_cell < 3.3:
             add("critical",
-                f"Battery reached {volts:.1f} V — {per_cell:.2f} V per cell "
-                f"across {cells}",
+                f"Battery reached {volts:.1f} V ({per_cell:.2f} V per cell "
+                f"across {cells})",
                 "Into the range that permanently costs a lithium pack "
                 "capacity. The next flight should be shorter.", volts_at)
         elif per_cell < 3.5:

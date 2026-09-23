@@ -152,3 +152,42 @@ def test_console_sse_buffer_does_not_evict_errors_for_low_priority_traffic() -> 
     assert {buffer.get(timeout=0.01)["text"], buffer.get(timeout=0.01)["text"]} == {
         "denied", "critical"
     }
+
+
+class FakeRebootBridge:
+    def __init__(self, result: bool, error: str = "") -> None:
+        self.result = result
+        self.error = error
+        self.calls = 0
+
+    def reboot_autopilot(self) -> bool:
+        self.calls += 1
+        return self.result
+
+    def get_last_command_error(self) -> str:
+        return self.error
+
+
+def test_reboot_api_passes_an_accepted_reboot_through() -> None:
+    bridge = FakeRebootBridge(True)
+    handler, responses = handler_with_bridge(bridge)  # type: ignore[arg-type]
+    handler._api_mavlink_reboot({})
+    assert bridge.calls == 1
+    assert responses == [({"ok": True}, 200)]
+
+
+@pytest.mark.parametrize("error, status", [
+    ("cannot reboot while armed", 409),
+    ("Reboot failed: DENIED", 409),
+    ("Reboot failed: DISCONNECTED", 503),
+])
+def test_reboot_api_names_the_refusal(error: str, status: int) -> None:
+    handler, responses = handler_with_bridge(FakeRebootBridge(False, error))  # type: ignore[arg-type]
+    handler._api_mavlink_reboot({})
+    assert responses == [({"ok": False, "error": error}, status)]
+
+
+def test_reboot_api_without_a_link_is_503() -> None:
+    handler, responses = handler_with_bridge(None)  # type: ignore[arg-type]
+    handler._api_mavlink_reboot({})
+    assert responses == [({"ok": False, "error": "not connected"}, 503)]

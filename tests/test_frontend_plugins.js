@@ -371,6 +371,12 @@ function testThrottleRedrawsAtMostOncePerWindow() {
   clock = 1000 + Corvus.pluginVibration.REDRAW_MIN_MS;
   cb({ vibration_x: 99, vibration_y: 0, vibration_z: 0, clipping_0: 0, clipping_1: 0, clipping_2: 0 });
   assert.equal(plot.reactCalls.length, 2, "one redraw after the throttle window elapses");
+  // Plotly.react skips data it has already seen, so each draw needs new arrays.
+  const [first, second] = plot.reactCalls;
+  assert.notStrictEqual(second.data[0].x, first.data[0].x, "each redraw hands Plotly a fresh x array");
+  assert.notStrictEqual(second.data[2].y, first.data[2].y, "each redraw hands Plotly a fresh y array");
+  assert.equal(first.data[0].x.length, 0, "an earlier draw's arrays are not mutated afterwards");
+  assert.ok(second.data[0].x.length > 0, "the new draw carries the buffered points");
 
   // Many more rapid updates at the new clock → no further redraw.
   for (let i = 0; i < 50; i++) {
@@ -445,6 +451,44 @@ function testPlotlyMissingFallbackDoesNotSubscribe() {
 
   // destroy must be safe even though init bailed early.
   assert.doesNotThrow(() => Corvus.pluginVibration.destroy(container));
+}
+
+async function testPlotlyIsLoadedOnDemandBeforeMounting() {
+  delete window.Plotly;
+  const plot = fakePlotly();
+  let loads = 0;
+  Corvus.lazy = { plotly: () => { loads += 1; window.Plotly = plot; return Promise.resolve(plot); } };
+  const api = makeVibApi();
+  const container = makeEl("div");
+
+  Corvus.pluginVibration.init(container, api);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(loads, 1, "the plugin asks the app to load Plotly");
+  assert.ok(container.innerHTML.indexOf("Plotly not available") < 0,
+    "no missing-Plotly message once the loader delivered it");
+  assert.ok(typeof api.api.cb === "function", "subscribed once Plotly arrived");
+
+  Corvus.pluginVibration.destroy(container);
+  delete Corvus.lazy;
+  delete window.Plotly;
+}
+
+async function testDestroyWhilePlotlyLoadsNeverMounts() {
+  delete window.Plotly;
+  let release;
+  Corvus.lazy = { plotly: () => new Promise((r) => { release = r; }) };
+  const api = makeVibApi();
+  const container = makeEl("div");
+
+  Corvus.pluginVibration.init(container, api);
+  Corvus.pluginVibration.destroy(container);
+  window.Plotly = fakePlotly();
+  release(window.Plotly);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(api.api.cb, null, "a plugin closed during the load does not subscribe");
+
+  delete Corvus.lazy;
+  delete window.Plotly;
 }
 
 function testRegisteredVibrationPlugin() {
@@ -692,7 +736,7 @@ async function testNotificationIsPushedAtTheOperatorNotOnlyFiled() {
   // The board keeps it, as it always did — and now something actually says so
   // on screen, instead of a badge in a corner nobody is looking at.
   assert.deepEqual(board, [
-    { level: "warning", message: "Notifier — It would not start" },
+    { level: "warning", message: "Notifier: It would not start" },
   ]);
   assert.deepEqual(toasts(), [
     { level: "warning", title: "Notifier", message: "It would not start" },
@@ -1576,6 +1620,8 @@ async function run() {
   testReducedMotionZeroDurationTransition();
   testNonReducedMotionHasNoZeroTransition();
   testPlotlyMissingFallbackDoesNotSubscribe();
+  await testPlotlyIsLoadedOnDemandBeforeMounting();
+  await testDestroyWhilePlotlyLoadsNeverMounts();
   testRegisteredVibrationPlugin();
 
   await testLoadInstalledAppendsScriptsAndStyles();

@@ -124,10 +124,10 @@ EKF_FAILSAFE_ACTION_OPTIONS: list[dict[str, Any]] = [
 ]
 
 EKF_FAILSAFE_THRESHOLD_OPTIONS: list[dict[str, Any]] = [
-    {"value": 0, "label": "0.0 — off"},
-    {"value": 1, "label": "0.6 — strict"},
-    {"value": 2, "label": "0.8 — default"},
-    {"value": 3, "label": "1.0 — relaxed"},
+    {"value": 0, "label": "0.0 (off)"},
+    {"value": 1, "label": "0.6 (strict)"},
+    {"value": 2, "label": "0.8 (default)"},
+    {"value": 3, "label": "1.0 (relaxed)"},
 ]
 
 FS_OPTIONS_BITS: list[dict[str, Any]] = [
@@ -365,7 +365,7 @@ def _fence_section(values: dict[str, float], vehicle: str) -> dict[str, Any] | N
 def _rtl_section(values: dict[str, float]) -> dict[str, Any] | None:
     return section("rtl", "Return to Launch", present([
         number("RTL_ALT", "Return altitude", values, unit="cm", step=100, min=0,
-               hint="Centimetres above home — ArduPilot's own unit. 1500 is 15 m. "
+               hint="Centimetres above home, ArduPilot's own unit. 1500 is 15 m. "
                     "0 returns at the current altitude."),
         number("RTL_ALT_FINAL", "Final altitude", values, unit="cm", step=100,
                hint="Altitude it holds at home before landing. 0 lands."),
@@ -423,7 +423,7 @@ def _failsafe_section(values: dict[str, float], vehicle: str) -> dict[str, Any] 
                      "would otherwise interrupt it."),
     ]), hint=f"What the {vehicle} does when it loses an input it was relying on. "
              "The battery failsafes are on the Battery & Power page, with the "
-             "levels that trigger them — every BATT_ parameter lives there.")
+             "levels that trigger them. Every BATT_ parameter lives there.")
 
 
 def _arming_section(values: dict[str, float]) -> dict[str, Any] | None:
@@ -541,7 +541,7 @@ def _rangefinder_section(values: dict[str, float]) -> dict[str, Any] | None:
             ]),
         ]),
         "hint": "Switching it on starts the driver and points the estimator's height "
-                "source at it — doing only one of the two is the usual reason a "
+                "source at it. Doing only one of the two is the usual reason a "
                 "rangefinder reads perfectly and changes nothing.",
     }
 
@@ -563,7 +563,7 @@ def _flow_section(values: dict[str, float]) -> dict[str, Any] | None:
         "presets": [],
         "fields": present([
             number("FLOW_ORIENT_YAW", "Mounting yaw", values, unit="cdeg", step=100,
-                   hint="Centidegrees — ArduPilot's own unit. 0 is the sensor's "
+                   hint="Centidegrees, ArduPilot's own unit. 0 is the sensor's "
                         "forward axis aligned with the aircraft's."),
             number("FLOW_POS_X", "Mounting offset, X", values, unit="m", step=0.01),
             number("FLOW_POS_Y", "Mounting offset, Y", values, unit="m", step=0.01),

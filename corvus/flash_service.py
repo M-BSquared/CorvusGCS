@@ -221,7 +221,7 @@ class FlashService:
             def on_progress(done: int, total: int) -> None:
                 percent = int(done * 100 / total) if total > 0 else 0
                 self._set("downloading", min(99, percent),
-                          f"Downloading {name} — {done // 1024} KB")
+                          f"Downloading {name}: {done // 1024} KB")
 
             raw = self.catalog.download(
                 entry, on_progress=None if cached else on_progress, cancel=self._cancel,
@@ -270,7 +270,7 @@ class FlashService:
         uploader: FirmwareUploader | None = None
         try:
             if not self.mavlink.reboot_to_bootloader():
-                self._set("failed", 0, "Reboot to bootloader rejected — is the vehicle armed?")
+                self._set("failed", 0, "Reboot to bootloader rejected. Is the vehicle armed?")
                 return
             # Release the bridge so the uploader can own the serial device.
             try:

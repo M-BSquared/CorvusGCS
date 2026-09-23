@@ -272,7 +272,15 @@ class UpdateChecker:
             "latest": release.get("version", ""),
             "update_available": is_newer(release.get("version"), current),
             "name": release.get("name", ""),
-            "url": release.get("url") or RELEASES_PAGE_URL,
+            # Rebuilt from the tag on the way out, never read back from the
+            # stored object — which is what the module docstring has always
+            # promised and this line used to break. The cache is an ordinary
+            # file in ~/.corvus; anything that can write there could otherwise
+            # put its own URL in front of POST /api/update/open, which hands it
+            # to the operator's system browser. _release_page validates the tag
+            # and falls back to the releases index, so the worst a tampered
+            # cache can now do is name a different tag in this repository.
+            "url": _release_page(str(release.get("tag") or "")),
             "published": release.get("published", ""),
             "notes": release.get("notes", ""),
             "assets": release.get("assets", []),

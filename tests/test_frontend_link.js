@@ -185,7 +185,7 @@ function testPortOptionText() {
   const link = Corvus.link;
   assert.equal(
     link.portOptionText({ device: "/dev/ttyUSB0", description: "Holybro SiK Telemetry Radio V3", hwid: "x" }),
-    "/dev/ttyUSB0  \u2014  Holybro SiK Telemetry Radio V3",
+    "/dev/ttyUSB0 (Holybro SiK Telemetry Radio V3)",
   );
   // Falls back to device only when description is empty.
   assert.equal(link.portOptionText({ device: "/dev/ttyACM0", description: "", hwid: "" }), "/dev/ttyACM0");

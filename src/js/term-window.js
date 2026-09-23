@@ -194,7 +194,7 @@ Corvus.termWindows = (function () {
     const el = document.createElement("div");
     el.className = "term-win";
     el.setAttribute("role", "dialog");
-    el.setAttribute("aria-label", `Terminal — ${rec.title}`);
+    el.setAttribute("aria-label", `Terminal: ${rec.title}`);
 
     const bar = document.createElement("div");
     bar.className = "term-win-bar";
@@ -237,13 +237,13 @@ Corvus.termWindows = (function () {
     tools.appendChild(ui.iconButton("power", {
       size: 13,
       className: "icon-btn term-win-disconnect",
-      title: "Disconnect — this stops what is running",
+      title: "Disconnect. This stops what is running",
       ariaLabel: "Disconnect the session",
       onClick: () => disconnect(rec),
     }));
     tools.appendChild(ui.iconButton("x", {
       size: 13,
-      title: "Close the window — what is running keeps running",
+      title: "Close the window. What is running keeps running",
       ariaLabel: "Close the terminal window",
       onClick: () => close(rec.name),
     }));
@@ -401,7 +401,7 @@ Corvus.termWindows = (function () {
 
     if (!Corvus.sshTerm) {
       rec.bodyEl.textContent =
-        "Terminal component unavailable — the xterm bundle did not load.";
+        "Terminal component unavailable. The xterm bundle did not load.";
       return;
     }
     // xterm is fetched on first use (js/lazy.js), so the first terminal of
@@ -416,7 +416,7 @@ Corvus.termWindows = (function () {
       }).catch(() => {
         if (!rec.bodyEl) return;
         rec.bodyEl.textContent =
-          "Terminal component unavailable — the xterm bundle did not load.";
+          "Terminal component unavailable. The xterm bundle did not load.";
       });
       return;
     }

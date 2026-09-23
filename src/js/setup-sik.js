@@ -69,7 +69,7 @@ Corvus.setupSik = (function () {
   const COLUMNS_INTRO =
     "Left is the radio on the cable in front of you, normally the ground " +
     "station's. Right is the one at the other end of the link, reached over the " +
-    "air through the near one — it needs power at both ends and a solid green " +
+    "air through the near one. It needs power at both ends and a solid green " +
     "LED on both radios.";
 
   function render(container, navigateBack) {
@@ -184,7 +184,7 @@ Corvus.setupSik = (function () {
     function recomputeGate() {
       const armedNow = isArmed();
       const reason = armedNow
-        ? "Radio configuration is refused while the vehicle is armed — a radio in " +
+        ? "Radio configuration is refused while the vehicle is armed. A radio in " +
           "command mode is not relaying telemetry."
         : (status && !status.can_configure ? (status.blocked_reason || "") : "");
       gateBanner.hidden = !reason;
@@ -247,7 +247,7 @@ Corvus.setupSik = (function () {
         if (p.description) marks.push(p.description);
         return {
           value: p.device,
-          label: marks.length ? `${p.device} — ${marks.join(", ")}` : p.device,
+          label: marks.length ? `${p.device} (${marks.join(", ")})` : p.device,
         };
       });
       const preferred = previous
@@ -307,7 +307,7 @@ Corvus.setupSik = (function () {
 
     async function doLoad() {
       if (busy || !portSelect.value) return;
-      setBusy(true, "Entering command mode — this takes a few seconds…");
+      setBusy(true, "Entering command mode. This takes a few seconds…");
       try {
         const body = target();
         body.remote = remoteToggle.value !== "0";
@@ -652,7 +652,7 @@ Corvus.setupSik = (function () {
       }
       updateSaveState();
       statusMsg.show(
-        "Staged in the remote column. Press Save to write them — the remote radio " +
+        "Staged in the remote column. Press Save to write them. The remote radio " +
         "is written first, before this one.", "");
     }
 

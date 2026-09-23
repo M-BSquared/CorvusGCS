@@ -51,10 +51,11 @@ stages:
 
 # --- Stage 1: test -----------------------------------------------------------
 # No job-level rules: runs on every pipeline the workflow allows (branch pushes,
-# tag pushes, and merge requests). Lightweight: installs only the runtime
-# deps the non-GUI unit tests import at module load (corvus.server pulls
-# pymavlink + paramiko; mavlink_bridge uses pyserial lazily). PyQt6 is
-# intentionally NOT installed — no headless test imports Qt.
+# tag pushes, and merge requests). Lightweight: pyproject.toml's `test` group
+# installs only the runtime deps the non-GUI unit tests import at module load
+# (corvus.server pulls pymavlink + paramiko; mavlink_bridge uses pyserial
+# lazily) plus pytest. PyQt6 is intentionally NOT installed — no headless test
+# imports Qt.
 test:
   stage: test
   image: python:3.12
@@ -64,7 +65,8 @@ test:
       - .pip-cache/
   script:
     - python -m pip install --upgrade pip
-    - pip install -r requirements-headless.txt -r requirements-dev.txt
+    # pyproject.toml's `test` group; `--group` needs the pip >= 25.1 above.
+    - pip install --group test
     # --junitxml so GitLab lists the failing test by name in the pipeline view
     # and the MR widget, instead of leaving a red job whose reason is buried in
     # the raw log.
@@ -94,7 +96,7 @@ lint:
       - .pip-cache/
   script:
     - python -m pip install --upgrade pip
-    - pip install -r requirements-dev.txt
+    - pip install --group lint
     - ruff check corvus serve.py tests
   allow_failure: false
 
@@ -196,7 +198,7 @@ release_appimage:
     paths:
       - dist/Corvus_GCS-*-x86_64.AppImage
       # The exact resolved dependency set this AppImage was built from.
-      # requirements.txt states floors only, so it is this file that makes a
+      # pyproject.toml states floors only, so it is this file that makes a
       # rebuild of the same tag reproducible — copy it over requirements.lock
       # to pin the next build to it.
       - dist/Corvus_GCS-*-x86_64.lock

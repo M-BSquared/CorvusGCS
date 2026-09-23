@@ -75,6 +75,9 @@ Corvus.setupSafety = (function () {
       // this browser profile once, so a page reload does not lose the row
       // somebody added because their airframe needs it.
       extra: readExtra(),
+      // Check values (setupShared): what the operator set until a check
+      // confirms it, and the last check's outcome until the next one.
+      wanted: {}, check: null, checking: false,
     };
 
     const cur = Corvus.telemetry && Corvus.telemetry.getState();
@@ -139,10 +142,15 @@ Corvus.setupSafety = (function () {
       variant: "primary", size: "sm", icon: "refresh-cw", label: "Reload",
       className: "safety-reload",
     });
-    reloadBtn.disabled = state.loading;
-    reloadBtn.addEventListener("click", () => load(state));
+    reloadBtn.disabled = state.loading || state.checking;
+    reloadBtn.addEventListener("click", () => {
+      state.check = null;
+      load(state);
+    });
+    const checkBtn = S.checkButton(state, CHECK);
     const actionsStatus = S.el("div", "params-actions-status");
     actions.appendChild(reloadBtn);
+    actions.appendChild(checkBtn);
     actions.appendChild(actionsStatus);
     page.appendChild(actions);
 
@@ -161,6 +169,7 @@ Corvus.setupSafety = (function () {
     state.host = host;
     S.setActionsStatus(actionsStatus, state.status.cls, state.status.text);
 
+    if (state.check) host.appendChild(S.checkCard(state.check, "safety"));
     if (section) renderSensorView(state, section);
     else renderOverview(state);
 
@@ -179,19 +188,32 @@ Corvus.setupSafety = (function () {
   }
 
   /** The read, carrying whatever parameters the operator added by name. */
-  function safetyUrl(state) {
+  function safetyUrl(state, fresh) {
+    const query = [];
     const extra = allExtraNames(state);
-    if (!extra.length) return "/api/safety";
-    return "/api/safety?extra=" + encodeURIComponent(extra.join(","));
+    if (extra.length) query.push("extra=" + encodeURIComponent(extra.join(",")));
+    if (fresh) query.push("fresh=1");
+    return "/api/safety" + (query.length ? "?" + query.join("&") : "");
   }
 
-  /** Fetch the configuration and rebuild the active view from the response. */
-  function load(state) {
+  // Check values: the shared read back, redrawn by a fresh load().
+  const CHECK = {
+    prefix: "safety",
+    reload: (state) => load(state, true),
+    setStatus: (state, cls, text) => setStatus(state, cls, text),
+  };
+
+  /**
+   * Fetch the configuration and rebuild the active view from the response.
+   * `fresh` reads every value from the vehicle rather than the cache.
+   */
+  function load(state, fresh) {
     if (state.loading) return Promise.resolve();
     state.loading = true;
     if (state.reloadBtn) state.reloadBtn.disabled = true;
+    if (state.checkBtn) state.checkBtn.disabled = true;
     setStatus(state, "pending", "Reading safety configuration…");
-    return Corvus.telemetry.requestJson(safetyUrl(state)).then((doc) => {
+    return Corvus.telemetry.requestJson(safetyUrl(state, fresh)).then((doc) => {
       if (state.destroyed) return;
       state.doc = doc || {};
       pruneExtra(state);
@@ -455,11 +477,11 @@ Corvus.setupSafety = (function () {
     const card = S.el("div", "page-card safety-card safety-preset-card");
     card.appendChild(S.sectionTitle("Hardware"));
     card.appendChild(S.el("div", "field-hint",
-      "Pick the module you actually fitted and Corvus writes its whole setup — driver, "
+      "Pick the module you actually fitted and Corvus writes its whole setup: driver, "
       + "estimator, and the numbers from its datasheet. Custom writes nothing: the "
       + "parameters below are yours, and you can add any others this airframe needs."));
 
-    const options = [{ value: CUSTOM_PRESET, label: "Custom — set the parameters yourself" }]
+    const options = [{ value: CUSTOM_PRESET, label: "Custom: set the parameters yourself" }]
       .concat(presets.map((p) => ({ value: p.id, label: presetOptionLabel(p) })));
 
     const chosen = presetChoice(state, section);
@@ -498,7 +520,7 @@ Corvus.setupSafety = (function () {
    */
   function presetOptionLabel(preset) {
     const parts = [preset.bus, preset.model].filter(Boolean).join(" · ");
-    let label = preset.label + (parts ? " — " + parts : "");
+    let label = preset.label + (parts ? " · " + parts : "");
     if (!preset.supported) label += "  (not supported by PX4)";
     else if (preset.active) label += "  (in use)";
     return label;
@@ -563,7 +585,7 @@ Corvus.setupSafety = (function () {
     if (preset.missing && preset.missing.length) {
       const note = S.el("div", "safety-preset-missing",
         "This firmware does not carry " + preset.missing.join(", ")
-        + " — those are skipped, the rest is written.");
+        + ". Those are skipped, the rest is written.");
       host.appendChild(note);
     }
 
@@ -694,7 +716,7 @@ Corvus.setupSafety = (function () {
     const sid = String(section.id);
     host.appendChild(S.el("p", "safety-preset-note",
       "Nothing is written until you change a field. If this airframe needs a parameter "
-      + "the page does not show, name it below and it joins the form — read with "
+      + "the page does not show, name it below and it joins the form, read with "
       + "everything else, written the same way."));
 
     const values = extraValues(state);
@@ -779,7 +801,7 @@ Corvus.setupSafety = (function () {
   function extraProblem(state, sectionId, name) {
     if (!name) return "type a parameter name";
     if (!EXTRA_NAME_RE.test(name)) {
-      return "not a parameter name — letters, digits and _, up to 16 characters";
+      return "not a parameter name: letters, digits and _, up to 16 characters";
     }
     if (extraNames(state, sectionId).indexOf(name) >= 0) return "already added";
     const rendered = renderedParams(state);
@@ -852,7 +874,7 @@ Corvus.setupSafety = (function () {
 
     setPresetStatus(state, status, "pending", "applying…");
     try {
-      await runWrites(writes);
+      await runWrites(state, writes);
     } catch (err) {
       const msg = (err && err.message) || "write failed";
       setPresetStatus(state, status, "err", msg);
@@ -862,7 +884,7 @@ Corvus.setupSafety = (function () {
     }
     setPresetStatus(state, status, "ok", "applied");
     notify("info", preset.reboot
-      ? `${preset.label} written — reboot the autopilot for the driver to start`
+      ? `${preset.label} written. Reboot the autopilot for the driver to start`
       : `${preset.label} written`);
     load(state);
   }
@@ -909,7 +931,7 @@ Corvus.setupSafety = (function () {
 
     setFieldStatus(status, "pending", on ? "enabling…" : "disabling…");
     try {
-      await runWrites(writes);
+      await runWrites(state, writes);
     } catch (err) {
       const msg = (err && err.message) || "write failed";
       setFieldStatus(status, "err", msg);
@@ -922,16 +944,20 @@ Corvus.setupSafety = (function () {
     setFieldStatus(status, "ok", on ? "enabled" : "disabled");
     if (t.reboot) {
       notify("info",
-        `${t.label} written — reboot the autopilot for the driver to start`);
+        `${t.label} written. Reboot the autopilot for the driver to start`);
     }
     // The chain changes which fields the schema emits, so the page re-reads
     // itself instead of showing a stale layout.
     load(state);
   }
 
-  /** One write at a time, stopping at the first refusal. */
-  async function runWrites(writes) {
+  /**
+   * One write at a time, stopping at the first refusal. Each is kept as
+   * wanted, like a field's, so Check values can confirm the whole chain.
+   */
+  async function runWrites(state, writes) {
     for (const write of writes) {
+      state.wanted[write.name] = write.value;
       await Corvus.telemetry.postAction("/api/params/set", write);
     }
   }

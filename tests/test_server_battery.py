@@ -39,9 +39,12 @@ class FakeBridge:
         self.error = error
         self.raises = raises
         self.requested: list[list[str]] = []
+        self.fresh: list[bool] = []
 
-    def fetch_params(self, names: list[str], timeout: float = 4.0) -> dict[str, float]:
+    def fetch_params(self, names: list[str], timeout: float = 4.0,
+                     **kwargs: Any) -> dict[str, float]:
         self.requested.append(list(names))
+        self.fresh.append(bool(kwargs.get("fresh")))
         if self.raises is not None:
             raise self.raises
         return {n: v for n, v in self.values.items() if n in set(names)}
@@ -92,6 +95,22 @@ def test_the_read_asks_for_the_whole_schema_in_one_batch() -> None:
 
     assert len(bridge.requested) == 1
     assert bridge.requested[0] == battery_config.param_names()
+
+
+def test_the_page_can_ask_for_what_the_vehicle_holds_rather_than_the_cache() -> None:
+    """?fresh=1 is what the page's Reload and Check values ask for: a value
+    another station changed must not be shown as it was an hour ago."""
+    bridge = FakeBridge(_values())
+    handler, responses = _handler(bridge)
+    handler.path = "/api/battery?fresh=1"  # type: ignore[assignment]
+    handler._api_battery()
+    assert bridge.fresh == [True]
+    assert responses[0][0]["connected"] is True
+
+    plain = FakeBridge(_values())
+    handler, _responses = _handler(plain)
+    handler._api_battery()
+    assert plain.fresh == [False], "and a plain read keeps the old call shape"
 
 
 def test_the_diagram_gets_its_numbers_whether_or_not_a_vehicle_answered() -> None:

@@ -140,7 +140,7 @@ BANKS: list[dict[str, Any]] = [
     {"id": "SERVO", "label": "Output", "prefix": "SERVO",
      "pins": MAX_SERVO_OUTPUTS,
      "hint": "ArduPilot numbers every output on the board in one run, so there "
-             "is no separate MAIN and AUX here — SERVO9 is usually the first "
+             "is no separate MAIN and AUX here. SERVO9 is usually the first "
              "AUX pin on a Pixhawk."},
 ]
 
@@ -293,7 +293,7 @@ def build(values: dict[str, float]) -> dict[str, Any]:
              hint="Which layout the firmware mixes for. Changing it redefines "
                   "what Motor 3 means and takes effect after a reboot."),
         enum("FRAME_TYPE", "Frame type", values, FRAME_TYPE_OPTIONS, reload=True,
-             hint="The arrangement within the class — X or Plus on a quad."),
+             hint="The arrangement within the class: X or Plus on a quad."),
     ])
 
     sections: list[dict[str, Any]] = []
@@ -318,7 +318,7 @@ def build(values: dict[str, float]) -> dict[str, Any]:
         number("MOT_SPIN_ARM", "Spin when armed", values, step=0.01, min=0, max=1,
                hint="Throttle, 0-1, that the motors turn at the moment the "
                     "vehicle arms. Just enough that every motor is visibly "
-                    "turning — this is a safety cue as much as a setting."),
+                    "turning. This is a safety cue as much as a setting."),
         number("MOT_SPIN_MIN", "Minimum flight throttle", values,
                step=0.01, min=0, max=1,
                hint="The lowest throttle used in flight. Must be above the "

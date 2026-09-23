@@ -41,12 +41,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from collections.abc import Callable, Iterable, Sequence
 
-from .mavlink_bridge import (
-    MavlinkBridge,
-    classify_serial_device,
-    is_bootloader_port,
-    is_phantom_device,
-)
+from .mavlink_bridge import MavlinkBridge
+from .serial_ports import classify_serial_device, is_bootloader_port, is_phantom_device
 
 logger = logging.getLogger(__name__)
 

@@ -54,7 +54,7 @@ Write-Host ""
 # in the first second is cheaper for everyone.
 $Missing = @()
 foreach ($required in @(
-    "VERSION", "requirements.txt", "LICENSE.md",
+    "VERSION", "pyproject.toml", "LICENSE.md",
     "corvus", "src", "assets", "plugins", "assets\CorvusGCS_logo.png")) {
     if (-not (Test-Path (Join-Path $RepoDir $required))) { $Missing += $required }
 }
@@ -112,29 +112,43 @@ if (-not (Test-Path $VenvPy)) {
     }
 }
 
-# The runtime list comes from requirements.txt, which every other installer
-# also reads; only the build-time packager is named here, because it is not a
-# runtime dependency and does not belong in that file.
+# The runtime list is pyproject.toml's `app` group, which every other
+# installer also reads. The build-time tools - PyInstaller, and Pillow to cut
+# the .ico - are its `package-windows` group: named in the same file, never
+# shipped as a runtime dependency. Pillow used to be installed by CI into the
+# host interpreter, which the icon step below never runs, so no release
+# artifact ever carried the mark.
 #
-# Which file, in order: $env:CORVUS_REQUIREMENTS, then requirements.lock if the
-# repo has one, then requirements.txt. The lock is what makes a release
-# rebuildable - requirements.txt states floors, so installing from it in six
-# months resolves to whatever is newest then. Every build writes the set it
-# actually installed to dist\*.lock; promoting one to requirements.lock at tag
-# time pins the next rebuild to it.
+# Which runtime source, in order: $env:CORVUS_REQUIREMENTS, then
+# requirements.lock if the repo has one, then the `app` group. The lock is
+# what makes a release rebuildable - the group states floors, so installing
+# from it in six months resolves to whatever is newest then. Every build
+# writes the set it actually installed to dist\*.lock; promoting one to
+# requirements.lock at tag time pins the next rebuild to it.
+#
+# "${Pyproject}:app", braced: unbraced, PowerShell would read "$Pyproject:app"
+# as a scope-qualified variable named app and pass pip an empty string.
+$Pyproject = Join-Path $RepoDir "pyproject.toml"
 $Requirements = $env:CORVUS_REQUIREMENTS
 if (-not $Requirements) {
     $RepoLock = Join-Path $RepoDir "requirements.lock"
-    $Requirements = if (Test-Path $RepoLock) { $RepoLock } else { Join-Path $RepoDir "requirements.txt" }
+    if (Test-Path $RepoLock) { $Requirements = $RepoLock }
 }
-if (-not (Test-Path $Requirements)) { throw "missing $Requirements" }
+if ($Requirements) {
+    if (-not (Test-Path $Requirements)) { throw "missing $Requirements" }
+    $DepsArgs = @("-r", $Requirements)
+    $DepsLabel = Split-Path -Leaf $Requirements
+} else {
+    $DepsArgs = @("--group", "${Pyproject}:app")
+    $DepsLabel = "pyproject.toml [app]"
+}
 $LockOut = Join-Path $DistDir "Corvus_GCS-$Version-windows-x64.lock"
-$BuildDeps = @("pyinstaller>=6.3")
-Write-Host ">>> Installing -r $(Split-Path -Leaf $Requirements) plus $($BuildDeps -join ' ') ..."
+Write-Host ">>> Installing $DepsLabel plus pyproject.toml [package-windows] ..."
 $PipLog = Join-Path $BuildDir "pip.log"
+# pip >= 25.1 is what reads [dependency-groups]; a fresh venv ships older.
 & $VenvPy -m pip install --upgrade pip *>> $PipLog
-& $VenvPy -m pip install -r $Requirements *>> $PipLog
-if ($LASTEXITCODE -eq 0) { & $VenvPy -m pip install @BuildDeps *>> $PipLog }
+if ($LASTEXITCODE -eq 0) { & $VenvPy -m pip install @DepsArgs *>> $PipLog }
+if ($LASTEXITCODE -eq 0) { & $VenvPy -m pip install --group "${Pyproject}:package-windows" *>> $PipLog }
 if ($LASTEXITCODE -ne 0) {
     Write-Host "--- last 40 lines of $PipLog ---"
     Get-Content $PipLog -Tail 40
@@ -160,7 +174,7 @@ if ($LASTEXITCODE -eq 0) {
 # ---- 3. icon ----------------------------------------------------------------
 # Optional on purpose: a missing icon is a cosmetic loss, and failing the whole
 # release build over one is the wrong trade. Uses a checked-in .ico when there
-# is one, else renders from the PNG when Pillow is available.
+# is one, else renders from the PNG with the build venv's Pillow.
 $Ico = Join-Path $RepoDir "assets\corvus-gcs.ico"
 if (-not (Test-Path $Ico)) {
     $Png = Join-Path $RepoDir "assets\CorvusGCS_logo.png"

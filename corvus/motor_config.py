@@ -25,6 +25,11 @@ a parameter that is absent must never break the page):
 * Both the modern per-timer protocol parameters (``PWM_MAIN_TIM*``, v1.14+
   control allocation) and the legacy ``DSHOT_CONFIG`` are candidates, so the
   page is correct on whichever the connected firmware exposes.
+* The same for output limits: control allocation keeps them per channel
+  (``PWM_MAIN_MIN1``, ``PWM_MAIN_DIS1``...), older firmware kept one global
+  ``PWM_MAIN_MIN``. The per-channel ones are read only for the pins that
+  drive a motor (:func:`output_param_names`), so a quad asks for sixteen
+  names rather than a hundred.
 * An enum value the schema does not know is preserved verbatim as an extra
   "Unknown (n)" option rather than being snapped to the first choice. Writing a
   silently-changed airframe or output function to a real aircraft would be far
@@ -48,15 +53,39 @@ SERVO_FUNCTION_BASE = 200
 TIMER_GROUPS = 4
 
 # The output banks a motor can be wired to. "MAIN" and "AUX" are the FMU and IO
-# PWM headers; "CAN" is DroneCAN ESCs, which a board without them never answers
-# for and which therefore simply never appears.
+# PWM headers; "CAN" is DroneCAN ESCs and "SIM" the ESCs of Gazebo SITL, which
+# is where a simulated airframe's motors live (``SIM_GZ_EC_FUNC1``, not
+# ``PWM_MAIN_FUNC1``). A board without a bank never answers for it, so it
+# simply never appears.
+#
+# ``limits`` are the per-channel standard parameters PX4's actuator generator
+# gives each bank (``<prefix>_<suffix><pin>``) with their ranges from the
+# bank's module.yaml. DroneCAN ESCs have no disarmed value. The unit is a pulse
+# width only on the PWM headers; the other two are raw ESC commands.
+_PWM_LIMITS: list[dict[str, Any]] = [
+    {"suffix": "MIN", "label": "Minimum", "min": 800, "max": 1400},
+    {"suffix": "MAX", "label": "Maximum", "min": 1600, "max": 2200},
+    {"suffix": "DIS", "label": "Disarmed", "min": 800, "max": 2200},
+    {"suffix": "FAIL", "label": "Failsafe", "min": -1, "max": 2200},
+]
 BANKS: list[dict[str, Any]] = [
     {"id": "MAIN", "label": "MAIN", "prefix": "PWM_MAIN", "pins": 16,
-     "hint": "FMU PWM header"},
+     "hint": "FMU PWM header", "unit": "us", "limits": _PWM_LIMITS},
     {"id": "AUX", "label": "AUX", "prefix": "PWM_AUX", "pins": 8,
-     "hint": "IO / AUX PWM header"},
+     "hint": "IO / AUX PWM header", "unit": "us", "limits": _PWM_LIMITS},
     {"id": "CAN", "label": "DroneCAN", "prefix": "UAVCAN_EC", "pins": 8,
-     "hint": "DroneCAN ESC index"},
+     "hint": "DroneCAN ESC index", "unit": "", "limits": [
+         {"suffix": "MIN", "label": "Minimum", "min": 0, "max": 8191},
+         {"suffix": "MAX", "label": "Maximum", "min": 0, "max": 8191},
+         {"suffix": "FAIL", "label": "Failsafe", "min": -1, "max": 8191},
+     ]},
+    {"id": "SIM", "label": "Simulation", "prefix": "SIM_GZ_EC", "pins": 16,
+     "hint": "Gazebo SITL ESC", "unit": "", "limits": [
+         {"suffix": "MIN", "label": "Minimum", "min": 0, "max": 1000},
+         {"suffix": "MAX", "label": "Maximum", "min": 0, "max": 1000},
+         {"suffix": "DIS", "label": "Disarmed", "min": 0, "max": 1000},
+         {"suffix": "FAIL", "label": "Failsafe", "min": -1, "max": 1000},
+     ]},
 ]
 
 # The drawing family each CA_AIRFRAME value belongs to. The Motors page draws
@@ -100,17 +129,27 @@ AIRFRAME_OPTIONS: list[dict[str, Any]] = [
 ]
 
 # PWM_MAIN_TIMn / PWM_AUX_TIMn — negative values select a digital protocol,
-# positive values are a plain PWM rate in Hz.
+# positive values are a plain PWM rate in Hz. The numbers are PX4's
+# (src/drivers/pwm_out/module.yaml, the same on v1.16, v1.17 and v1.18): the
+# slowest DShot has the most negative value, and there is no DShot1200.
 PROTOCOL_OPTIONS: list[dict[str, Any]] = [
-    {"value": -5, "label": "DShot1200"},
-    {"value": -4, "label": "DShot600"},
-    {"value": -3, "label": "DShot300"},
-    {"value": -2, "label": "DShot150"},
+    {"value": -5, "label": "DShot150"},
+    {"value": -4, "label": "DShot300"},
+    {"value": -3, "label": "DShot600"},
     {"value": -1, "label": "OneShot"},
     {"value": 50, "label": "PWM 50 Hz"},
     {"value": 100, "label": "PWM 100 Hz"},
     {"value": 200, "label": "PWM 200 Hz"},
     {"value": 400, "label": "PWM 400 Hz"},
+]
+
+# Bidirectional DShot, v1.18 only. Not offered, since v1.16 and v1.17 have no
+# such values and the page cannot tell the versions apart by what answers;
+# named when a timer already holds one.
+BIDIR_PROTOCOL_OPTIONS: list[dict[str, Any]] = [
+    {"value": -8, "label": "Bidirectional DShot150"},
+    {"value": -7, "label": "Bidirectional DShot300"},
+    {"value": -6, "label": "Bidirectional DShot600"},
 ]
 
 # DSHOT_CONFIG — the pre-control-allocation way to pick DShot, kept as a
@@ -189,8 +228,50 @@ def param_names() -> list[str]:
         for i in range(TIMER_GROUPS):
             names.append(f"PWM_{suffix}_TIM{i}")
         names += [f"PWM_{suffix}_MIN", f"PWM_{suffix}_MAX", f"PWM_{suffix}_DISARM"]
-    names.append("DSHOT_CONFIG")
+    names += ["DSHOT_CONFIG", "DSHOT_MIN"]
     return names
+
+
+def output_param_names(values: dict[str, float]) -> list[str]:
+    """The per-channel limits of every pin that drives a motor.
+
+    The second read of the Motors page, made once the first has said which
+    pins are wired. Asking for the limits of all 48 pins up front would triple
+    the burst, and on a telemetry radio most of it would be for pins nothing
+    is plugged into.
+    """
+    names: list[str] = []
+    for entry in outputs(values):
+        if entry["motor"] is None:
+            continue
+        bank = _bank(entry["bank"])
+        for limit in bank["limits"]:
+            names.append(f"{bank['prefix']}_{limit['suffix']}{entry['pin']}")
+    return names
+
+
+def _bank(bank_id: str) -> dict[str, Any]:
+    return next(b for b in BANKS if b["id"] == bank_id)
+
+
+def _output_fields(values: dict[str, float],
+                   entry: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """The limits of the pin a motor is wired to, as far as the vehicle has them."""
+    if entry is None:
+        return []
+    bank = _bank(entry["bank"])
+    fields: list[dict[str, Any]] = []
+    for limit in bank["limits"]:
+        extra: dict[str, Any] = {"step": 1, "min": limit["min"], "max": limit["max"]}
+        if bank["unit"]:
+            extra["unit"] = bank["unit"]
+        if limit["suffix"] == "FAIL":
+            extra["hint"] = "-1 keeps the default for the output's function."
+        field = _number(f"{bank['prefix']}_{limit['suffix']}{entry['pin']}",
+                        limit["label"], values, **extra)
+        if field is not None:
+            fields.append(field)
+    return fields
 
 
 def _enum_options(options: list[dict[str, Any]], value: float) -> list[dict[str, Any]]:
@@ -361,6 +442,7 @@ def _motors(values: dict[str, float],
             "thrust": axis["kind"] if axis else None,
             "spin": None if km is None else ("CW" if km < 0 else "CCW"),
             "fields": fields,
+            "output_fields": _output_fields(values, assigned),
             "output": None if assigned is None else {
                 "bank": assigned["bank"], "pin": assigned["pin"],
                 "param": assigned["param"], "label": assigned["label"],
@@ -369,13 +451,24 @@ def _motors(values: dict[str, float],
     return motors
 
 
+def _protocol_options(values: dict[str, float], name: str) -> list[dict[str, Any]]:
+    held = values.get(name)
+    if held is None:
+        return PROTOCOL_OPTIONS
+    return PROTOCOL_OPTIONS + [
+        o for o in BIDIR_PROTOCOL_OPTIONS if o["value"] == int(round(held))]
+
+
 def _protocol(values: dict[str, float], bank: str) -> list[dict[str, Any]]:
     """Output protocol + endpoints for one bank (DShot / OneShot / PWM rate)."""
     fields = []
     for i in range(TIMER_GROUPS):
-        field = _enum(f"PWM_{bank}_TIM{i}", f"Timer group {i}", values, PROTOCOL_OPTIONS)
+        name = f"PWM_{bank}_TIM{i}"
+        field = _enum(name, f"Timer group {i}", values, _protocol_options(values, name))
         if field is not None:
             fields.append(field)
+    # One limit for the whole bank: firmware before control allocation only.
+    # From v1.14 the limits are per pin and shown on the motor they drive.
     for suffix, label in (("MIN", "PWM minimum"), ("MAX", "PWM maximum"),
                           ("DISARM", "PWM disarmed")):
         field = _number(f"PWM_{bank}_{suffix}", label, values, unit="us", step=1)
@@ -404,8 +497,10 @@ def build(values: dict[str, float]) -> dict[str, Any]:
     ``airframe_family``  which silhouette to draw: multirotor, wing, vtol,
                   rover or helicopter.
     ``motors``    one entry per motor: position, spin, per-motor parameter
-                  fields, and the output it is wired to. Drives the airframe
-                  diagram and the click-to-select detail panel.
+                  fields, the output it is wired to and that output's limits
+                  (``output_fields``, present once :func:`output_param_names`
+                  has been read too). Drives the airframe diagram and the
+                  click-to-select detail panel.
     ``outputs``   every output pin that exists, and what it currently drives.
     ``banks``     the output banks this board actually has.
     """
@@ -432,9 +527,16 @@ def build(values: dict[str, float]) -> dict[str, Any]:
                   hint="Legacy DShot selector. Newer firmware uses the timer groups above.")
     if dshot is not None:
         main_protocol.append(dshot)
+    dshot_min = _number("DSHOT_MIN", "DShot minimum output", values,
+                        step=0.01, min=0, max=1,
+                        hint="The lowest command a DShot ESC gets while armed, as a "
+                             "fraction of full. High enough that every motor keeps "
+                             "turning.")
+    if dshot_min is not None:
+        main_protocol.append(dshot_min)
     if main_protocol:
         sections.append({
-            "id": "protocol_main", "title": "Output protocol — MAIN",
+            "id": "protocol_main", "title": "Output protocol: MAIN",
             "fields": main_protocol,
             "hint": "Timer groups are shared by several outputs. A protocol change takes "
                     "effect after a reboot of the autopilot.",
@@ -442,7 +544,7 @@ def build(values: dict[str, float]) -> dict[str, Any]:
     aux_protocol = _protocol(values, "AUX")
     if aux_protocol:
         sections.append({
-            "id": "protocol_aux", "title": "Output protocol — AUX",
+            "id": "protocol_aux", "title": "Output protocol: AUX",
             "fields": aux_protocol,
         })
 

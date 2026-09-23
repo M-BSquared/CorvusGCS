@@ -105,6 +105,23 @@ def test_px4_modes_come_from_the_live_mapping(bridge: MavlinkBridge) -> None:
     assert bridge._mode_values["MANUAL"] == mv.px4_map["MANUAL"]
 
 
+def test_the_live_px4_modes_keep_the_dialects_order(bridge: MavlinkBridge) -> None:
+    """Manual first, automatic last: an alphabetical list opened with ACRO."""
+    _with_mapping(bridge, dict(mv.px4_map))
+    offered = bridge.get_available_modes()
+    assert offered[0] == "MANUAL"
+    known = [m for m in PX4_AVAILABLE_MODES if m in mv.px4_map]
+    assert offered[:len(known)] == known
+    assert offered[len(known):] == sorted(set(mv.px4_map) - set(known))
+
+
+def test_a_live_mode_the_dialect_does_not_know_is_still_offered(
+    bridge: MavlinkBridge,
+) -> None:
+    _with_mapping(bridge, dict(mv.px4_map, ZZ_CUSTOM=mv.px4_map["MANUAL"]))
+    assert bridge.get_available_modes()[-1] == "ZZ_CUSTOM"
+
+
 def test_a_missing_mapping_still_falls_back_to_px4(bridge: MavlinkBridge) -> None:
     """BUG 9's fallback: PX4 is the target, and a link that answers nothing
     must not leave the selector empty."""

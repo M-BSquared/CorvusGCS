@@ -40,7 +40,8 @@ import zlib
 from typing import Any
 from collections.abc import Callable
 
-from .mavlink_bridge import MavlinkBridge, is_windows_com_port
+from .mavlink_bridge import MavlinkBridge
+from .serial_ports import is_windows_com_port
 
 logger = logging.getLogger("corvus.firmware")
 
@@ -603,8 +604,8 @@ class FirmwareUploader:
         verify = self._verify(image)
         if verify is not True:
             message = (
-                "firmware CRC mismatch — not booting" if verify is False
-                else "firmware CRC verification unavailable — not booting"
+                "firmware CRC mismatch, not booting" if verify is False
+                else "firmware CRC verification unavailable, not booting"
             )
             self._set("failed", self._percent, message)
             return False

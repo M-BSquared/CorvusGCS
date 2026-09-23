@@ -341,6 +341,18 @@ Corvus.mission = (function () {
   // writing into the DOM or the map, and both exits set it for that reason.
   let destroyed = false;
 
+  // What the vehicle is flying, as far as it is THIS plan. `synced` is the
+  // backend's mission revision when this plan was put on (or read off) the
+  // aircraft, with the plan as it was then. An edit, or another station's
+  // upload, ends the claim: a leg is never highlighted on a route the
+  // aircraft is not flying.
+  let synced = null;          // {revision, key} | null
+  let progress = null;        // {item, reached, state} | null
+  let vehicleMission = null;  // the mission fields of the last telemetry frame
+  let vehicleSig = "";        // ...serialised, so an unchanged frame costs nothing
+  let vehicleEl = null;
+  let legSource = null;
+
   // =====================================================================
   // Pure geometry — no DOM, no map. Exported as test hooks at the bottom.
   // =====================================================================
@@ -873,10 +885,15 @@ Corvus.mission = (function () {
     // and it can arrive, change or go away while the page is open. Only a
     // CHANGE redraws: the state itself lands on every telemetry frame.
     hovers = vehicleHovers();
+    if (Corvus.telemetry && typeof Corvus.telemetry.getState === "function") {
+      onVehicleMission(Corvus.telemetry.getState());
+    }
     if (Corvus.telemetry && typeof Corvus.telemetry.subscribe === "function") {
-      vehicleUnsub = Corvus.telemetry.subscribe(() => {
+      vehicleUnsub = Corvus.telemetry.subscribe((frame) => {
+        if (destroyed) return;
+        onVehicleMission(frame);
         const next = vehicleHovers();
-        if (next === hovers || destroyed) return;
+        if (next === hovers) return;
         hovers = next;
         refreshAll();
       });
@@ -972,6 +989,9 @@ Corvus.mission = (function () {
     mapReady = false;
     routeSource = null;
     orbitSource = null;
+    legSource = null;
+    vehicleEl = null;
+    vehicleSig = "";
     regionSource = null;
     profileGeom = null;
     terrainTiles = new Map();
@@ -1250,6 +1270,13 @@ Corvus.mission = (function () {
     summaryEl.className = "mission-summary";
     side.appendChild(summaryEl);
 
+    // The vehicle's side of it: which leg is being flown, or that the
+    // aircraft holds a mission that is not the one on screen.
+    vehicleEl = document.createElement("div");
+    vehicleEl.className = "mission-vehicle";
+    vehicleEl.hidden = true;
+    side.appendChild(vehicleEl);
+
     // What is wrong with the plan, while it is being drawn rather than at the
     // moment of upload. These used to appear only in the confirm dialog, which
     // is the last place a route still worth changing gets read.
@@ -1302,9 +1329,15 @@ Corvus.mission = (function () {
 
     const fileRow = document.createElement("div");
     fileRow.className = "mission-file-row";
+    const read = Corvus.ui.button({
+      variant: "secondary", size: "sm", icon: "download", label: "From vehicle",
+      className: "mission-read", onClick: () => readFromVehicle(read),
+    });
+    read.title = "Read the mission the vehicle holds into the planner";
     fileRow.append(
       Corvus.ui.button({ variant: "secondary", size: "sm", icon: "save", label: "Save", onClick: () => savePlan() }),
       Corvus.ui.button({ variant: "secondary", size: "sm", icon: "folder-open", label: "Open", onClick: () => openPlanDialog() }),
+      read,
       Corvus.ui.button({ variant: "ghost", size: "sm", icon: "file-plus", label: "New", onClick: () => confirmClear() }),
     );
     wrap.appendChild(fileRow);
@@ -1626,6 +1659,22 @@ Corvus.mission = (function () {
     });
     routeSource = map.getSource("mission-route");
     orbitSource = map.getSource("mission-orbit");
+
+    // The leg being flown, over the route, in the colour the app uses for
+    // "going well". Empty unless the vehicle is flying THIS plan.
+    map.addSource("mission-leg", { type: "geojson", data: emptyLine() });
+    map.addLayer({
+      id: "mission-leg-line",
+      source: "mission-leg",
+      type: "line",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": token("--healthy", "#45D483"),
+        "line-width": widthByZoom(PLAN_LINE_W + 1),
+      },
+    });
+    legSource = map.getSource("mission-leg");
+    drawLeg();
   }
 
   /* What is already on the disk, drawn where it is.
@@ -1672,7 +1721,7 @@ Corvus.mission = (function () {
     meta.className = "region-label-meta";
     meta.textContent = region.state === "running"
       ? "downloading\u2026"
-      : `z${region.minzoom}\u2013${region.maxzoom}`;
+      : `z${region.minzoom} to ${region.maxzoom}`;
     element.append(name, meta);
     return element;
   }
@@ -1905,7 +1954,7 @@ Corvus.mission = (function () {
   function buildHomeMarker() {
     const element = document.createElement("div");
     element.className = "home-marker mission-home";
-    element.title = "Start point — every altitude in the plan is measured from here. "
+    element.title = "Start point. Every altitude in the plan is measured from here. "
       + "Drag to move, right-click to remove";
     element.innerHTML =
       '<svg class="h-body" viewBox="0 0 32 32" aria-hidden="true">' +
@@ -1939,7 +1988,7 @@ Corvus.mission = (function () {
     element.dataset.kind = item.type;
     element.dataset.id = String(item.id);
     if (item.id === selectedId) element.classList.add("is-selected");
-    element.title = `${number}. ${spec.label} — drag to move, right-click to delete`;
+    element.title = `${number}. ${spec.label}: drag to move, right-click to delete`;
     const label = document.createElement("span");
     label.className = "wp-marker-num";
     label.textContent = String(number);
@@ -2065,7 +2114,7 @@ Corvus.mission = (function () {
       };
     } catch (_error) { return; }   // no canvas yet; nothing to compare against
     if (boxesOverlap(plan, view)) return;
-    say(`${planName} is outside this view — use Fit to frame it.`, "warn");
+    say(`${planName} is outside this view. Use Fit to frame it.`, "warn");
     offscreenNotice = true;
   }
 
@@ -2158,6 +2207,8 @@ Corvus.mission = (function () {
     updateClearButton();
     sampleGround();
     drawProfile();
+    // An edit may be what ends "this is the plan on the vehicle".
+    applyProgress();
     Corvus.ui.refreshIcons();
   }
 
@@ -2174,6 +2225,7 @@ Corvus.mission = (function () {
     // selection moves it or takes it off the map.
     drawRadiusHandle();
     renderList();
+    markProgress();
     renderDetail();
     drawProfile();
     Corvus.ui.refreshIcons();
@@ -2197,6 +2249,7 @@ Corvus.mission = (function () {
       const row = document.createElement("div");
       row.className = "mission-row";
       row.dataset.kind = item.type;
+      row.dataset.id = String(item.id);
       if (item.id === selectedId) row.classList.add("is-selected");
       row.tabIndex = 0;
 
@@ -3323,7 +3376,7 @@ Corvus.mission = (function () {
       list.push(`The plan has ${takeoffs} takeoffs; only the first one climbs.`);
     }
     if (takeoffs === 1 && items[0].type !== "takeoff") {
-      list.push("The takeoff is not the first item — the aircraft flies to it before climbing.");
+      list.push("The takeoff is not the first item. The aircraft flies to it before climbing.");
     }
     const ends = items.findIndex((item) => item.type === "land" || item.type === "rtl");
     if (ends >= 0 && ends < items.length - 1) {
@@ -3347,7 +3400,7 @@ Corvus.mission = (function () {
 
   function uploadPlan(andFly, button) {
     if (!items.length) {
-      say("Nothing to upload — the mission is empty.", "warn");
+      say("Nothing to upload. The mission is empty.", "warn");
       return;
     }
     const warnings = problems().filter((line) => line !== "The mission is empty.");
@@ -3397,8 +3450,9 @@ Corvus.mission = (function () {
       body: JSON.stringify({ plan: toPlan(), start: !!andFly }),
     }).then((res) => {
       const count = (res && res.items) || 0;
+      if (!destroyed) syncWith(res && res.revision);
       say(andFly
-        ? `Mission started — ${count} items on the vehicle.`
+        ? `Mission started: ${count} items on the vehicle.`
         : `${count} items on the vehicle. Start it from the flight modes when ready.`, "ok");
     }).catch((error) => {
       say(error.message || "The vehicle refused the mission.", "err");
@@ -3407,9 +3461,233 @@ Corvus.mission = (function () {
     });
   }
 
+  // =====================================================================
+  // The mission on the vehicle
+  // =====================================================================
+
+  /** The plan as it goes on the wire, for "is this still what was synced". */
+  function planKey() {
+    const plan = toPlan();
+    return JSON.stringify({ items: plan.items, speed: plan.speed == null ? null : plan.speed });
+  }
+
+  /** This plan is now what the vehicle holds, at the backend's `revision`. */
+  function syncWith(revision) {
+    synced = typeof revision === "number" ? { revision, key: planKey() } : null;
+    applyProgress();
+  }
+
+  function numberOr(value, fallback) {
+    return typeof value === "number" && isFinite(value) ? value : fallback;
+  }
+
+  /** A telemetry frame's mission fields; everything is redrawn only on a change. */
+  function onVehicleMission(frame) {
+    if (!frame) return;
+    const next = {
+      connected: !!frame.connected,
+      state: typeof frame.mission_state === "string" ? frame.mission_state : "",
+      total: numberOr(frame.mission_total, -1),
+      known: !!frame.mission_known,
+      revision: numberOr(frame.mission_revision, 0),
+      item: numberOr(frame.mission_item, -1),
+      reached: numberOr(frame.mission_reached_item, -1),
+    };
+    const sig = JSON.stringify(next);
+    if (sig === vehicleSig) return;
+    vehicleSig = sig;
+    vehicleMission = next;
+    applyProgress();
+  }
+
+  function isSynced() {
+    const v = vehicleMission;
+    return !!(v && synced && v.known && v.revision === synced.revision);
+  }
+
+  function currentProgress() {
+    if (!isSynced() || planKey() !== synced.key) return null;
+    const v = vehicleMission;
+    return { item: v.item, reached: v.reached, state: v.state };
+  }
+
+  /** The plan item being flown to, or -1 when nothing is. */
+  function currentIndex() {
+    if (!progress) return -1;
+    if (["not_started", "complete", "no_mission"].indexOf(progress.state) >= 0) return -1;
+    return progress.item;
+  }
+
+  function applyProgress() {
+    if (destroyed) return;
+    progress = currentProgress();
+    markProgress();
+    drawLeg();
+    renderVehicle();
+  }
+
+  /** The current point and the ones already flown, on the map and in the list. */
+  function markProgress() {
+    const current = currentIndex();
+    let doneBefore = -1;
+    if (progress) {
+      if (progress.state === "complete") doneBefore = items.length;
+      else if (progress.state !== "not_started") doneBefore = progress.item;
+    }
+    const classes = {};
+    items.forEach((item, index) => {
+      classes[String(item.id)] = { current: index === current, done: index < doneBefore };
+    });
+    [mapEl && mapEl.querySelectorAll(".mission-point"),
+     listEl && listEl.querySelectorAll(".mission-row")].forEach((nodes) => {
+      Array.prototype.forEach.call(nodes || [], (node) => {
+        const mark = classes[node.dataset.id] || { current: false, done: false };
+        node.classList.toggle("is-current", mark.current);
+        node.classList.toggle("is-done", mark.done);
+      });
+    });
+  }
+
+  /** From the point before the current one (or home) to the current one. */
+  function drawLeg() {
+    if (!legSource) return;
+    const index = currentIndex();
+    let coordinates = [];
+    const target = index >= 0 ? items[index] : null;
+    if (target) {
+      let from = null;
+      for (let i = index - 1; i >= 0 && !from; i -= 1) {
+        if (TYPES[items[i].type].position) from = items[i];
+      }
+      from = from || home;
+      const to = TYPES[target.type].position ? target : home;
+      if (from && to) coordinates = [[from.lon, from.lat], [to.lon, to.lat]];
+    }
+    legSource.setData({
+      type: "Feature", properties: {},
+      geometry: { type: "LineString", coordinates },
+    });
+  }
+
+  /** "3. Waypoint", numbered as the list numbers it. */
+  function itemLabel(index) {
+    const item = items[index];
+    if (!item) return "";
+    const spec = TYPES[item.type];
+    if (!spec.position) return spec.label;
+    let number = 0;
+    for (let i = 0; i <= index; i += 1) if (TYPES[items[i].type].position) number += 1;
+    return `${number}. ${spec.label}`;
+  }
+
+  function renderVehicle() {
+    if (!vehicleEl) return;
+    Corvus.ui.clear(vehicleEl);
+    const v = vehicleMission;
+    let text = "";
+    let level = "";
+    let offerRead = false;
+    if (!v || !v.connected) {
+      text = "";
+    } else if (progress) {
+      level = "live";
+      const index = currentIndex();
+      if (progress.state === "complete") text = "The vehicle has flown this mission to the end.";
+      else if (progress.state === "not_started") text = "This plan is on the vehicle, not started yet.";
+      else if (progress.state === "paused") text = `Paused. Next: ${itemLabel(progress.item)}.`;
+      else if (index >= 0 && !TYPES[items[index].type].position) text = "Returning to launch.";
+      else if (index >= 0) text = `Flying to ${itemLabel(index)}.`;
+      else text = "This plan is on the vehicle.";
+    } else if (isSynced()) {
+      level = "warn";
+      text = "Changed since it was put on the vehicle. Upload to fly this version.";
+    } else if (v.total > 0) {
+      level = "warn";
+      text = `The vehicle holds a mission of ${v.total} item${v.total === 1 ? "" : "s"} `
+        + "that is not this plan.";
+      offerRead = true;
+    }
+    vehicleEl.hidden = !text;
+    if (!text) return;
+    vehicleEl.dataset.level = level;
+    const line = document.createElement("span");
+    line.className = "mission-vehicle-text";
+    line.textContent = text;
+    vehicleEl.appendChild(line);
+    if (offerRead) {
+      const read = Corvus.ui.button({
+        variant: "secondary", size: "sm", icon: "download", label: "Read it",
+        onClick: () => readFromVehicle(read),
+      });
+      vehicleEl.appendChild(read);
+      Corvus.ui.refreshIcons();
+    }
+  }
+
+  /** Replace the plan on screen with the vehicle's, asking first if that loses one. */
+  function readFromVehicle(button) {
+    const go = () => fetchVehicleMission(button);
+    if (!items.length) { go(); return; }
+    let dialog = null;
+    const cancel = Corvus.ui.button({
+      variant: "secondary", label: "Keep this plan", onClick: () => dialog.close(),
+    });
+    const confirm = Corvus.ui.button({
+      variant: "primary", icon: "download", label: "Replace it",
+      onClick: () => { dialog.close(); go(); },
+    });
+    dialog = Corvus.ui.modal({
+      title: "Read the mission from the vehicle?",
+      body: `${planName} on screen is replaced by the mission the vehicle holds. `
+        + "What is saved is not touched.",
+      actions: [cancel, confirm],
+    });
+    dialog.open();
+    Corvus.ui.refreshIcons();
+  }
+
+  function fetchVehicleMission(button) {
+    say("Reading the mission from the vehicle…");
+    if (button) Corvus.ui.setBusy(button, true);
+    Corvus.telemetry.requestJson("/api/mission/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    }).then((res) => {
+      if (destroyed) return;
+      if (!res || !res.plan) {
+        say((res && res.error) || "The vehicle's mission cannot be shown as a plan.", "err");
+        return;
+      }
+      fromPlan(res.plan);
+      refreshAll();
+      syncWith(res.revision);
+      if (items.length) fitMission();
+      const skipped = res.skipped || [];
+      const adjusted = res.adjusted || [];
+      let text = res.count
+        ? `Read ${res.count} item${res.count === 1 ? "" : "s"} from the vehicle.`
+        : "The vehicle holds no mission.";
+      if (skipped.length) {
+        text += ` ${skipped.length} cannot be drawn here (${skipped[0].reason}`
+          + (skipped.length > 1 ? ", and more" : "") + "). "
+          + "Uploading this plan would take them off the vehicle.";
+      }
+      if (adjusted.length) {
+        text += ` ${adjusted.length} value${adjusted.length === 1 ? " was" : "s were"} `
+          + "changed to fit the planner.";
+      }
+      say(text, skipped.length || adjusted.length ? "warn" : "ok");
+    }).catch((error) => {
+      say(error.message || "Could not read the mission from the vehicle.", "err");
+    }).finally(() => {
+      if (!destroyed && button) Corvus.ui.setBusy(button, false);
+    });
+  }
+
   function savePlan() {
     if (!items.length) {
-      say("Nothing to save — the mission is empty.", "warn");
+      say("Nothing to save. The mission is empty.", "warn");
       return;
     }
     say("Saving…");
@@ -3636,6 +3914,13 @@ Corvus.mission = (function () {
     _pointScaleFor: pointScaleFor,
     _hoverTypes: HOVER_TYPES,
     _vehicleHovers: vehicleHovers,
+    // test hooks: "is the vehicle flying THIS plan, and where". Wrong in the
+    // worst way nothing throws over: a leg highlighted on a route the
+    // aircraft is not flying.
+    _syncWith: syncWith,
+    _onVehicleMission: onVehicleMission,
+    _progress: () => progress,
+    _currentIndex: currentIndex,
     _widthByZoom: widthByZoom,
     _problems: problems,
     // The live chart geometry and the grab test that reads it. Exported

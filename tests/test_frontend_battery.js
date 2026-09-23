@@ -188,6 +188,11 @@ function makeFakeTelemetry(opts = {}) {
   const telemetry = {
     postAction(url, payload) {
       postCalls.push({ url, payload });
+      if (url === "/api/params/verify") {
+        if (opts.verifyError) return Promise.reject(new Error(opts.verifyError));
+        const answer = typeof opts.verify === "function" ? opts.verify(payload) : opts.verify;
+        return Promise.resolve(Object.assign({ ok: true }, answer || {}));
+      }
       if (opts.writeError) return Promise.reject(new Error(opts.writeError));
       return Promise.resolve({ ok: true });
     },
@@ -214,6 +219,7 @@ function makeFakeTelemetry(opts = {}) {
     setDoc(next) { doc = next; },
     setState(s) { state = s; },
     writes() { return postCalls.filter((c) => c.url === "/api/params/set").map((c) => c.payload); },
+    checks() { return postCalls.filter((c) => c.url === "/api/params/verify").map((c) => c.payload); },
   };
 }
 
@@ -579,6 +585,153 @@ async function testAVehicleFieldWritesThroughTheSharedParameterEndpoint() {
   assert.deepEqual(fake.writes(), [{ name: "BAT1_N_CELLS", value: 12 }]);
 }
 
+
+// ===========================================================================
+// Check values
+// ===========================================================================
+
+/** A verify answer in the backend's shape, for the names in `rows`. */
+function verifyAnswer(rows, values) {
+  const failed = rows.filter((r) => !r.ok).length;
+  return {
+    results: rows, values: values || {}, missing: [],
+    confirmed: rows.length - failed, failed, all_confirmed: failed === 0,
+  };
+}
+
+function checkButton(container) { return findOneByClass(container, "battery-check"); }
+
+async function clickCheck(container) {
+  fire(checkButton(container), "click");
+  await flushMicrotasks();
+  await flushMicrotasks();
+}
+
+async function testTheCheckSendsWhatWasSetAndReadsBackTheWholePage() {
+  const { container, fake } = await mount({ verify: verifyAnswer([]) });
+  const input = control(container, "BAT1_N_CELLS");
+  input.value = "12";
+  fire(input, "change");
+  await flushMicrotasks();
+
+  await clickCheck(container);
+
+  assert.deepEqual(fake.checks(), [{
+    params: [{ name: "BAT1_N_CELLS", value: 12 }],
+    names: ["BAT1_N_CELLS", "BAT1_V_EMPTY", "BAT1_SOURCE"],
+  }]);
+}
+
+async function testARefusedWriteIsStillCheckedSoItCanBeWrittenAgain() {
+  /* A refused field snaps back to what the vehicle holds, so the control no
+     longer shows what the operator wanted. The check must still know. */
+  const { container, fake } = await mount({ writeError: "not confirmed", verify: verifyAnswer([]) });
+  const input = control(container, "BAT1_N_CELLS");
+  input.value = "12";
+  fire(input, "change");
+  await flushMicrotasks();
+  assert.equal(control(container, "BAT1_N_CELLS").value, "6", "the refused field snapped back");
+
+  await clickCheck(container);
+
+  assert.deepEqual(fake.checks()[0].params, [{ name: "BAT1_N_CELLS", value: 12 }]);
+}
+
+async function testAfterTheCheckTheFieldsShowWhatTheVehicleHolds() {
+  const doc = batteryDoc();
+  const fake = makeFakeTelemetry({
+    doc,
+    verify: verifyAnswer([{ name: "BAT1_N_CELLS", wanted: 12, before: 6, after: 12,
+      rewritten: true, ok: true, error: "" }], { BAT1_N_CELLS: 12 }),
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  Corvus.setupBattery.render(container, () => {});
+  await flushMicrotasks();
+  const input = control(container, "BAT1_N_CELLS");
+  input.value = "12";
+  fire(input, "change");
+  await flushMicrotasks();
+
+  const after = batteryDoc();
+  after.sections[0].fields[0].value = 12;
+  fake.setDoc(after);
+  await clickCheck(container);
+
+  assert.equal(control(container, "BAT1_N_CELLS").value, "12",
+    "the page is redrawn from a fresh read, not from what was typed");
+  assert.ok(fake.requests.filter((r) => r.url === "/api/battery?fresh=1").length >= 2,
+    "the redraw asks the vehicle, not the cache");
+  const card = findOneByClass(container, "battery-check-card");
+  assert.ok(card, "the outcome is shown");
+  assert.match(findOneByClass(card, "battery-check-outcome").textContent, /written again, confirmed/);
+  assert.match(findOneByClass(container, "params-actions-status").textContent,
+    /BAT1_N_CELLS is on the vehicle\. It had to be written again/);
+}
+
+async function testAValueThatDidNotStickIsNamedInItsRowAndKeptForTheNextCheck() {
+  let calls = 0;
+  const { container, fake } = await mount({
+    verify: () => {
+      calls += 1;
+      return verifyAnswer([{ name: "BAT1_N_CELLS", wanted: 12, before: 6, after: 6,
+        rewritten: true, ok: false, error: "the vehicle kept a different value" }],
+        { BAT1_N_CELLS: 6 });
+    },
+  });
+  const input = control(container, "BAT1_N_CELLS");
+  input.value = "12";
+  fire(input, "change");
+  await flushMicrotasks();
+
+  await clickCheck(container);
+
+  const row = findByDataset(container, "param", "BAT1_N_CELLS")
+    .filter((e) => /pform-field/.test(e.className))[0];
+  assert.match(row.querySelector(".params-row-status").textContent, /wanted 12, vehicle holds 6/);
+  const status = findOneByClass(container, "params-actions-status");
+  assert.match(status.textContent, /BAT1_N_CELLS is not on the vehicle/);
+  assert.match(status.className, /err/);
+
+  await clickCheck(container);
+  assert.equal(calls, 2);
+  assert.deepEqual(fake.checks()[1].params, [{ name: "BAT1_N_CELLS", value: 12 }],
+    "an unconfirmed change is checked again next time");
+}
+
+async function testAConfirmedChangeIsNotCheckedAgain() {
+  const { container, fake } = await mount({
+    verify: (payload) => verifyAnswer(payload.params.map((p) => ({
+      name: p.name, wanted: p.value, before: p.value, after: p.value,
+      rewritten: false, ok: true, error: "" }))),
+  });
+  const input = control(container, "BAT1_N_CELLS");
+  input.value = "12";
+  fire(input, "change");
+  await flushMicrotasks();
+
+  await clickCheck(container);
+  await clickCheck(container);
+
+  assert.deepEqual(fake.checks()[1].params, [], "once confirmed, the change is done");
+  assert.match(findOneByClass(container, "params-actions-status").textContent,
+    /No changes to confirm/);
+}
+
+async function testACheckThatCannotRunSaysSo() {
+  const { container } = await mount({ verifyError: "not connected" });
+  await clickCheck(container);
+  const status = findOneByClass(container, "params-actions-status");
+  assert.match(status.textContent, /not connected/);
+  assert.match(status.className, /err/);
+}
+
+async function testThereIsNothingToCheckWithoutAVehicle() {
+  const doc = batteryDoc({ connected: false, sections: [], error: "no heartbeat" });
+  const { container } = await mount({ doc });
+  assert.equal(checkButton(container).disabled, true);
+}
+
 // ===========================================================================
 // Lifecycle
 // ===========================================================================
@@ -643,6 +796,13 @@ async function main() {
     testARefusedSaveIsReportedAndNotShownAsApplied,
     testArmedGatingStopsTheVehiclesOwnParametersOnly,
     testAVehicleFieldWritesThroughTheSharedParameterEndpoint,
+    testTheCheckSendsWhatWasSetAndReadsBackTheWholePage,
+    testARefusedWriteIsStillCheckedSoItCanBeWrittenAgain,
+    testAfterTheCheckTheFieldsShowWhatTheVehicleHolds,
+    testAValueThatDidNotStickIsNamedInItsRowAndKeptForTheNextCheck,
+    testAConfirmedChangeIsNotCheckedAgain,
+    testACheckThatCannotRunSaysSo,
+    testThereIsNothingToCheckWithoutAVehicle,
     testADisconnectedVehicleStillOffersTheEstimator,
     testTeardownReleasesTheSubscription,
     testALateResponseAfterTeardownIsIgnored,

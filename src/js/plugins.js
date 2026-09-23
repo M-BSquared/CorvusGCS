@@ -384,7 +384,7 @@ Corvus.plugins = (function () {
     const text = String(message);
     try {
       window.dispatchEvent(new CustomEvent("corvus:notification", {
-        detail: { level: lv, message: name ? `${name} — ${text}` : text },
+        detail: { level: lv, message: name ? `${name}: ${text}` : text },
       }));
     } catch (_e) {
       // No topbar / no event target — never crash a plugin.

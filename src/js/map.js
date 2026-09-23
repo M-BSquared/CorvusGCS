@@ -646,7 +646,7 @@ Corvus.map = (function () {
     meta.className = "region-label-meta";
     meta.textContent = region.state === "running"
       ? "downloading\u2026"
-      : `z${region.minzoom}\u2013${region.maxzoom}`;
+      : `z${region.minzoom} to ${region.maxzoom}`;
     el.appendChild(meta);
     return el;
   }
@@ -1269,7 +1269,7 @@ Corvus.map = (function () {
       control: threeDPicker.el,
       className: "field-switch",
       hint: "Elevation relief, extruded buildings and the globe. Off is the "
-        + "camera tilt alone, over flat ground \u2014 and nothing downloaded "
+        + "camera tilt alone, over flat ground, and nothing downloaded "
         + "that a flat map does not already download.",
     });
     surface.appendChild(field);
@@ -1348,9 +1348,14 @@ Corvus.map = (function () {
     head.textContent = "Map layers";
     surface.appendChild(head);
 
-    // Fall back to a single ungrouped group before the catalogue arrives.
+    // Fall back to a single ungrouped group before the catalogue arrives. A
+    // keyed service (MapTiler, Mapbox) with no saved key yet is left out here
+    // rather than listed greyed out: those live tiles will not load without a
+    // key, so offering them from the switcher just leads to a blank map. The
+    // key is still asked for in Settings, where "Needs an API key" is the
+    // right message to show.
     const groups = providers.length
-      ? providers
+      ? providers.filter((g) => !g.token_required || g.token_set)
       : [{ id: BOOTSTRAP.provider, label: "", sources: [BOOTSTRAP_LAYER] }];
 
     // One picker across all groups so exactly one layer is ever marked active;
@@ -1458,8 +1463,8 @@ Corvus.map = (function () {
     const target = (s.connected && realFix(s.position)) || realFix(s.home);
     if (!target) {
       const why = !s.connected
-        ? "No vehicle connected — nothing to centre on."
-        : "Waiting for a GPS fix — no position to centre on yet.";
+        ? "No vehicle connected. Nothing to centre on."
+        : "Waiting for a GPS fix. No position to centre on yet.";
       window.dispatchEvent(new CustomEvent("corvus:notification",
         { detail: { level: "info", message: why } }));
       return false;
@@ -3650,6 +3655,36 @@ Corvus.map = (function () {
     // rail and the HUD live, so it goes bottom-left, with the clear-track button
     // stacked above it (see .track-clear in main.css).
     map.addControl(new maplibregl.AttributionControl(ATTRIBUTION_OPTIONS), "bottom-left");
+    // MapLibre's own onAdd opens the credit the moment `compact: true` is set
+    // explicit (as opposed to width-triggered compact, which starts closed):
+    // it adds "maplibregl-compact-show" and a native <details open>. The
+    // satellite style's raster source attaches its attribution a tick later
+    // than addControl returns, and MapLibre reruns the exact same "first
+    // open" branch the moment that text arrives (it was skipped once because
+    // the control briefly carried "maplibregl-attrib-empty"), which reopens
+    // it even after an immediate one-shot collapse. Watch the class instead,
+    // and collapse every reopen that MapLibre triggers on its own, while
+    // leaving one that followed a click on the toggle button alone.
+    const attribEl = mapEl.querySelector(".maplibregl-ctrl-attrib");
+    if (attribEl) {
+      let userToggled = false;
+      const toggleButton = attribEl.querySelector(".maplibregl-ctrl-attrib-button");
+      if (toggleButton) {
+        toggleButton.addEventListener("click", () => { userToggled = true; });
+      }
+      const collapseIfAuto = () => {
+        if (userToggled) { userToggled = false; return; }
+        if (attribEl.classList.contains("maplibregl-compact-show")) {
+          attribEl.classList.remove("maplibregl-compact-show");
+          attribEl.removeAttribute("open");
+        }
+      };
+      collapseIfAuto();
+      new MutationObserver(collapseIfAuto).observe(attribEl, {
+        attributes: true,
+        attributeFilter: ["class", "open"],
+      });
+    }
 
     // Controls are built NOW, not on "load". MapLibre fires "load" only once the
     // style AND its first tiles have resolved, so building the rail there left

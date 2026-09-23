@@ -15,7 +15,8 @@ someone who flies, not a simulator — PX4 SITL exists and is better at that.
 Scope, deliberately:
 
 * **Answers** the parameter protocol (full list burst and single reads), the
-  command protocol, the mission upload handshake, and the log list/download.
+  command protocol, the mission upload and download handshakes, and the log
+  list/download.
 * **Streams** position, attitude, HUD, GPS, battery, RC, vibration and the
   status text a flight produces.
 * **Refuses nothing** it should refuse: an arm command while a calibration runs
@@ -33,6 +34,7 @@ from __future__ import annotations
 import math
 import os
 import random
+import struct
 import threading
 import time
 from dataclasses import dataclass, field
@@ -190,6 +192,7 @@ class VehicleOptions:
         "VIBRATION": 2.0,
         "SYSTEM_TIME": 1.0,
         "HOME_POSITION": 0.2,
+        "MISSION_CURRENT": 1.0,
         "ALTITUDE": 0.0,
     })
 
@@ -227,6 +230,10 @@ class SimVehicle:
         self.calibration_step_seconds = self.opts.calibration_step_seconds
         self._mission: list[tuple[float, float, float]] = []
         self._mission_expect = 0
+        # Every uploaded item as it arrived, so a download gives it back
+        # unchanged, and the item number of each point the flown path visits.
+        self._mission_items: list[tuple[Any, ...]] = []
+        self._mission_point_seq: list[int] = []
         # Extra one-off messages the RX thread hands to the TX thread, so
         # everything on the wire is written by one thread and cannot interleave.
         self._pending: list[Callable[[], None]] = []
@@ -314,18 +321,24 @@ class SimVehicle:
             "VIBRATION": self._send_vibration,
             "SYSTEM_TIME": self._send_system_time,
             "HOME_POSITION": self._send_home,
+            "MISSION_CURRENT": self._send_mission_current,
         }
         chatter = sorted(self.opts.chatter, key=lambda c: c[0])
         chatter_at = 0
 
         while not self._stop.is_set():
             now = self.elapsed
+            # The schedule runs on its own clock, not on the flight's: adopting
+            # an uploaded mission restarts the flight clock, and a schedule
+            # keyed to it held every stream (the heartbeat too) until the new
+            # flight caught up with the old one, so the link dropped.
+            tick = time.monotonic()
             for name, sender in senders.items():
                 hz = float(self.opts.rates.get(name, 0.0) or 0.0)
                 if hz <= 0:
                     continue
-                if now >= next_due.get(name, 0.0):
-                    next_due[name] = now + 1.0 / hz
+                if tick >= next_due.get(name, 0.0):
+                    next_due[name] = tick + 1.0 / hz
                     sender()
             # Scripted console traffic, in flight order.
             while chatter_at < len(chatter) and chatter[chatter_at][0] <= now:
@@ -532,7 +545,9 @@ class SimVehicle:
             self._collect_mission_item(msg)
         elif kind == "MISSION_REQUEST_LIST":
             self._send(self._conn.mav.mission_count_send,
-                       msg.get_srcSystem(), msg.get_srcComponent(), len(self._mission))
+                       msg.get_srcSystem(), msg.get_srcComponent(), len(self._mission_items))
+        elif kind in ("MISSION_REQUEST_INT", "MISSION_REQUEST"):
+            self._answer_mission_request(msg)
         elif kind == "LOG_REQUEST_LIST":
             self._answer_log_list(msg)
         elif kind == "LOG_REQUEST_DATA":
@@ -546,12 +561,19 @@ class SimVehicle:
     # -- parameters -------------------------------------------------------
 
     def _param_wire(self, name: str) -> tuple[bytes, float, int]:
-        """(id, value, MAV_PARAM_TYPE) for *name*, typed the way Python has it."""
+        """(id, value, MAV_PARAM_TYPE) for *name*, typed the way Python has it.
+
+        Integers go out the way PX4 sends them: the int32's four bytes copied
+        into the float field, not the number cast to a float. Casting is what
+        ArduPilot does, and a simulator that cast hid for a long time that
+        Corvus read every PX4 integer parameter wrong.
+        """
         value = self.params[name]
         if isinstance(value, bool):
             value = int(value)
         if isinstance(value, int):
-            return name.encode("ascii")[:16], float(value), mavlink2.MAV_PARAM_TYPE_INT32
+            bytewise = struct.unpack("<f", struct.pack("<i", value))[0]
+            return name.encode("ascii")[:16], bytewise, mavlink2.MAV_PARAM_TYPE_INT32
         return name.encode("ascii")[:16], float(value), mavlink2.MAV_PARAM_TYPE_REAL32
 
     def _send_param(self, name: str, index: int) -> None:
@@ -604,7 +626,10 @@ class SimVehicle:
             self._on_event(f"refused {name} while armed")
             return
         value = float(msg.param_value)
-        self.params[name] = int(value) if isinstance(self.params.get(name), int) else value
+        if isinstance(self.params.get(name), int):
+            self.params[name] = struct.unpack("<i", struct.pack("<f", value))[0]
+        else:
+            self.params[name] = value
         self._send_param(name, list(self.params).index(name))
         self._on_event(f"{name} = {self.params[name]}")
 
@@ -681,6 +706,8 @@ class SimVehicle:
 
     def _begin_mission_upload(self, msg: Any) -> None:
         self._mission = []
+        self._mission_items = []
+        self._mission_point_seq = []
         self._mission_expect = int(msg.count)
         if self._mission_expect <= 0:
             self._send(self._conn.mav.mission_ack_send,
@@ -693,6 +720,10 @@ class SimVehicle:
     def _collect_mission_item(self, msg: Any) -> None:
         seq = int(msg.seq)
         self._mission.append((msg.x / 1e7, msg.y / 1e7, float(msg.z)))
+        self._mission_items.append((
+            int(msg.frame), int(msg.command), float(msg.param1), float(msg.param2),
+            float(msg.param3), float(msg.param4), int(msg.x), int(msg.y), float(msg.z),
+        ))
         if seq + 1 < self._mission_expect:
             self._send(self._conn.mav.mission_request_int_send,
                        msg.get_srcSystem(), msg.get_srcComponent(), seq + 1)
@@ -712,14 +743,47 @@ class SimVehicle:
         picture: the aircraft has to actually go there, or the screenshot shows
         a plan line and a vehicle ignoring it.
         """
-        points = [p for p in self._mission if abs(p[0]) > 0.0001 or abs(p[1]) > 0.0001]
+        placed = [(seq, p) for seq, p in enumerate(self._mission)
+                  if abs(p[0]) > 0.0001 or abs(p[1]) > 0.0001]
+        points = [p for _seq, p in placed]
         if len(points) < 2:
             return
+        self._mission_point_seq = [seq for seq, _p in placed]
         path = flight_mod.waypoints([(lat, lon, alt or 50.0) for lat, lon, alt in points],
                                     speed=self.model.path.speed, loop=True)
         self.model = flight_mod.FlightModel(path, home=self.model.home, takeoff_time=0.0)
         self._t0 = time.monotonic()
         self.mode = "MISSION"
+
+    def _answer_mission_request(self, msg: Any) -> None:
+        """One item of a download, exactly as it was uploaded."""
+        seq = int(msg.seq)
+        if not 0 <= seq < len(self._mission_items):
+            return
+        frame, command, p1, p2, p3, p4, x, y, z = self._mission_items[seq]
+        self._send(self._conn.mav.mission_item_int_send,
+                   msg.get_srcSystem(), msg.get_srcComponent(), seq, frame, command,
+                   0, 1, p1, p2, p3, p4, x, y, z)
+
+    def _send_mission_current(self) -> None:
+        """Which item is being flown to, the way PX4 reports it about once a second.
+
+        The flown path visits the mission's points in order, so the leg being
+        flown names the point ahead; the item number is that point's.
+        """
+        if not self._mission_items:
+            self._send(self._conn.mav.mission_current_send,
+                       0, 65535, 1, 0)                     # MISSION_STATE_NO_MISSION
+            return
+        seq = 0
+        if self._mission_point_seq:
+            leg = self.model.leg_at(self.elapsed)
+            ahead = (leg + 1) % len(self._mission_point_seq)
+            seq = self._mission_point_seq[ahead]
+        flying = self.armed and self.mode == "MISSION"
+        state = 3 if flying else (4 if self.armed else 2)   # ACTIVE / PAUSED / NOT_STARTED
+        self._send(self._conn.mav.mission_current_send,
+                   seq, len(self._mission_items), state, 1 if flying else 0)
 
     # -- logs -------------------------------------------------------------
 

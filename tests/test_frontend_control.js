@@ -337,6 +337,29 @@ async function testReadsTheSchemaAndRaisesTheChannelRate() {
     "Stick channels", "Flight mode switch", "Switches", "Channel calibration"]);
 }
 
+async function testCheckValuesReadsBackTheFormsAndTheChannelTable() {
+  const { container, fake } = await openWith(rcDoc());
+  const check = findOneByClass(container, "rc-check");
+  assert.ok(check && !check.disabled, "Check values is offered once the radio setup is read");
+
+  const input = findByDataset(container, "param", "COM_RC_LOSS_T")
+    .filter((e) => e.tagName === "INPUT")[0];
+  input.value = "1.5";
+  fire(input, "change");
+  await flushMicrotasks();
+
+  fire(check, "click");
+  for (let i = 0; i < 4; i += 1) await flushMicrotasks();
+
+  const verify = fake.postCalls.find((c) => c.url === "/api/params/verify");
+  assert.deepEqual(verify.payload.params, [{ name: "COM_RC_LOSS_T", value: 1.5 }]);
+  ["COM_RC_IN_MODE", "RC_MAP_ROLL", "COM_FLTMODE1", "RC1_MIN", "RC2_REV"].forEach((n) => {
+    assert.ok(verify.payload.names.includes(n), n + " is read back");
+  });
+  assert.ok(fake.requests.includes("/api/rc?fresh=1"), "the redraw asks the vehicle");
+  assert.ok(findOneByClass(container, "rc-check-card"), "the outcome is shown");
+}
+
 async function testChannelBarsFollowTheTelemetry() {
   const { container, fake } = await openWith(rcDoc());
 
@@ -762,6 +785,7 @@ async function testStartOverForgetsTheWholeMeasurement() {
 async function main() {
   const tests = [
     testReadsTheSchemaAndRaisesTheChannelRate,
+    testCheckValuesReadsBackTheFormsAndTheChannelTable,
     testChannelBarsFollowTheTelemetry,
     testAChannelTheReceiverStopsDeliveringIsRemoved,
     testEachBarSaysWhatItsChannelIsBoundTo,

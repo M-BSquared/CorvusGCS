@@ -99,6 +99,10 @@ Corvus.setupRemoteId = (function () {
       status: { cls: "", text: "" },
       live: null,
       poll: null,
+      // Check values (setupShared), for the vehicle's own parameters only:
+      // what the operator set until a check confirms it, and the last
+      // check's outcome until the next one.
+      wanted: {}, check: null, checking: false,
     };
 
     const cur = Corvus.telemetry && Corvus.telemetry.getState();
@@ -142,12 +146,24 @@ Corvus.setupRemoteId = (function () {
   // Loading and polling
   // -------------------------------------------------------------------------
 
-  function load(state) {
+  // Check values: the shared read back, redrawn by a fresh load(). Only the
+  // vehicle sections: the identity above them is Corvus's own, saved to the
+  // config file, and there is nothing on the vehicle to read it back from.
+  const CHECK = {
+    prefix: "rid",
+    names: (state) => S.fieldParams((state.doc && state.doc.sections) || []),
+    reload: (state) => load(state, true),
+    setStatus: (state, cls, text) => setStatus(state, cls, text),
+  };
+
+  /** `fresh` reads the vehicle's parameters from it rather than the cache. */
+  function load(state, fresh) {
     if (state.loading) return Promise.resolve();
     state.loading = true;
     if (state.reloadBtn) state.reloadBtn.disabled = true;
+    if (state.checkBtn) state.checkBtn.disabled = true;
     setStatus(state, "pending", "Reading Remote ID configuration…");
-    return Corvus.telemetry.requestJson("/api/remoteid").then((doc) => {
+    return Corvus.telemetry.requestJson(fresh ? "/api/remoteid?fresh=1" : "/api/remoteid").then((doc) => {
       if (state.destroyed) return;
       state.doc = doc || {};
       state.identity = cloneIdentity((doc && doc.identity) || EMPTY_IDENTITY);
@@ -157,8 +173,8 @@ Corvus.setupRemoteId = (function () {
         // and the whole top half of this page works with nothing connected.
         state.status = {
           cls: "", text: (doc && doc.error)
-            ? `Vehicle settings unavailable — ${doc.error}`
-            : "No vehicle connected — the identity below is still editable",
+            ? `Vehicle settings unavailable: ${doc.error}`
+            : "No vehicle connected. The identity below is still editable",
         };
       } else {
         state.status = { cls: "ok", text: `${doc.received} vehicle parameters read` };
@@ -236,10 +252,15 @@ Corvus.setupRemoteId = (function () {
       variant: "primary", size: "sm", icon: "refresh-cw", label: "Reload",
       className: "rid-reload",
     });
-    reloadBtn.disabled = state.loading;
-    reloadBtn.addEventListener("click", () => load(state));
+    reloadBtn.disabled = state.loading || state.checking;
+    reloadBtn.addEventListener("click", () => {
+      state.check = null;
+      load(state);
+    });
+    const checkBtn = S.checkButton(state, CHECK);
     const actionsStatus = S.el("div", "params-actions-status");
     actions.appendChild(reloadBtn);
+    actions.appendChild(checkBtn);
     actions.appendChild(actionsStatus);
     page.appendChild(actions);
 
@@ -273,6 +294,7 @@ Corvus.setupRemoteId = (function () {
     host.appendChild(grid);
 
     host.appendChild(classificationCard(state));
+    if (state.check) host.appendChild(S.checkCard(state.check, "rid"));
     renderVehicleSections(state, host);
 
     applyArmed(state, state.armed);
@@ -315,7 +337,7 @@ Corvus.setupRemoteId = (function () {
       "With this on, Corvus sends the identity below to the aircraft once a "
       + "second for as long as it is connected. The aircraft passes it to its "
       + "Remote ID transmitter, and stops arming when the stream stops. Off, "
-      + "nothing is sent at all — which is the right setting until the details "
+      + "nothing is sent at all, which is the right setting until the details "
       + "below are the ones on your registration."));
 
     const head = S.el("div", "rid-switch-row");
@@ -359,18 +381,18 @@ Corvus.setupRemoteId = (function () {
 
     list.appendChild(statusRow("link", "Link",
       live.supported
-        ? "MAVLink 2 — the Remote ID messages can be carried"
-        : "MAVLink 1, or no vehicle — Remote ID needs MAVLink 2",
+        ? "MAVLink 2: the Remote ID messages can be carried"
+        : "MAVLink 1, or no vehicle. Remote ID needs MAVLink 2",
       live.supported ? "healthy" : "off"));
 
     let sendingText;
     let sendingLevel;
     if (!live.enabled) {
-      sendingText = "Off — nothing is being sent";
+      sendingText = "Off, nothing is being sent";
       sendingLevel = "off";
     } else if (live.broadcasting) {
       sendingText = live.last_sent_age != null
-        ? `Sending — last message ${live.last_sent_age} s ago`
+        ? `Sending, last message ${live.last_sent_age} s ago`
         : "Sending";
       sendingLevel = "healthy";
     } else {
@@ -424,7 +446,7 @@ Corvus.setupRemoteId = (function () {
     card.appendChild(S.el("div", "field-hint",
       "Measured against " + ((picked && picked.label) || "the selected region")
       + ". This is a reading of the published broadcast format, not legal "
-      + "advice and not a certification — the filing is yours."));
+      + "advice and not a certification. The filing is yours."));
 
     const findings = (state.doc && state.doc.findings) || [];
     if (!findings.length) {
@@ -457,11 +479,11 @@ Corvus.setupRemoteId = (function () {
   function basicIdCard(state) {
     const card = S.el("div", "page-card rid-card rid-basic-card");
     card.dataset.section = "basic_id";
-    card.appendChild(S.sectionTitle("Basic ID — the aircraft"));
+    card.appendChild(S.sectionTitle("Basic ID: the aircraft"));
     card.appendChild(S.el("div", "field-hint",
       "What identifies the airframe. Under both the FAA's and the EU's rules "
       + "this is normally the manufacturer's serial number in ANSI/CTA-2063-A "
-      + "form — four characters of manufacturer code, one character saying how "
+      + "form: four characters of manufacturer code, one character saying how "
       + "long the rest is, then the serial. It is on the airframe's label, not "
       + "in its parameters."));
 
@@ -536,13 +558,13 @@ Corvus.setupRemoteId = (function () {
   function operatorIdCard(state) {
     const card = S.el("div", "page-card rid-card rid-operator-card");
     card.dataset.section = "operator_id";
-    card.appendChild(S.sectionTitle("Operator ID — you"));
+    card.appendChild(S.sectionTitle("Operator ID: you"));
     card.appendChild(S.el("div", "field-hint",
       "The registration number your authority issued to you as an operator, "
       + "which is not the same as the aircraft's. In the EU it is the 16 "
       + "characters that start with your country code. The three characters "
       + "after them are the secret half of your registration and are never "
-      + "broadcast — do not type them here."));
+      + "broadcast. Do not type them here."));
 
     const grid = S.el("div", "pform-grid rid-grid-fields");
     grid.appendChild(selectRow(state, {
@@ -563,7 +585,7 @@ Corvus.setupRemoteId = (function () {
   function selfIdCard(state) {
     const card = S.el("div", "page-card rid-card rid-self-card");
     card.dataset.section = "self_id";
-    card.appendChild(S.sectionTitle("Self ID — the flight"));
+    card.appendChild(S.sectionTitle("Self ID: the flight"));
     card.appendChild(S.el("div", "field-hint",
       "A free line about what this flight is, broadcast alongside the two IDs. "
       + "It is what somebody on the ground reads when they wonder why an "
@@ -616,7 +638,7 @@ Corvus.setupRemoteId = (function () {
         unit: "m", step: 1, min: -1000, max: 31767, unknown: ALTITUDE_UNKNOWN,
         placeholder: "not declared",
         hint: "WGS-84 height, not height above ground. Leave it empty when you "
-              + "do not know it — the broadcast has a value that means exactly "
+              + "do not know it. The broadcast has a value that means exactly "
               + "that, and a guessed number does not.",
       }));
     }
@@ -688,7 +710,7 @@ Corvus.setupRemoteId = (function () {
       grid.appendChild(selectRow(state, {
         key: "category_eu", path: ["system"], label: "Operational category",
         options: options(state, "categories_eu", []),
-        hint: "Open, Specific or Certified — the category the flight is "
+        hint: "Open, Specific or Certified: the category the flight is "
               + "authorised under, not the aircraft's own class.",
       }));
       grid.appendChild(selectRow(state, {
@@ -777,7 +799,7 @@ Corvus.setupRemoteId = (function () {
       ariaLabel: spec.label,
       options: (spec.options || []).map((o) => ({
         value: o.value,
-        label: o.disabled && o.reason ? `${o.label} — ${o.reason}` : o.label,
+        label: o.disabled && o.reason ? `${o.label} (${o.reason})` : o.label,
         disabled: !!o.disabled,
       })),
       value: spec.stringValue ? String(current) : Number(current),

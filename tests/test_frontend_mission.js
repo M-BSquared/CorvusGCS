@@ -411,6 +411,49 @@ function testTheTwoBarsButtonsAreTheSameSize() {
     "no step may hand the buttons back their flex-shrink:\n  " + shrinkable.join("\n  "));
 }
 
+function testProgressIsClaimedOnlyWhileTheVehicleHoldsThisPlan() {
+  const plan = {
+    name: "Flown",
+    items: [
+      { type: "waypoint", lat: 48.0, lon: 11.0, alt: 30 },
+      { type: "waypoint", lat: 48.1, lon: 11.1, alt: 30 },
+      { type: "rtl" },
+    ],
+  };
+  const frame = (over) => Object.assign({
+    connected: true, mission_known: true, mission_revision: 4, mission_total: 3,
+    mission_item: 1, mission_reached_item: 0, mission_state: "active",
+  }, over || {});
+  mission.setPlan(plan);
+  mission._onVehicleMission(frame());
+  assert.equal(mission._progress(), null, "nothing claimed before this plan is on the vehicle");
+
+  mission._syncWith(4);
+  assert.deepEqual(mission._progress(), { item: 1, reached: 0, state: "active" });
+  assert.equal(mission._currentIndex(), 1);
+
+  mission._onVehicleMission(frame({ mission_state: "complete" }));
+  assert.equal(mission._currentIndex(), -1, "a finished mission has no leg being flown");
+
+  mission._onVehicleMission(frame({ mission_revision: 5, mission_known: false, mission_item: -1 }));
+  assert.equal(mission._progress(), null, "another station replaced the mission");
+
+  mission._onVehicleMission(frame({ mission_revision: 6 }));
+  mission._syncWith(6);
+  assert.ok(mission._progress(), "synced again");
+  const edited = JSON.parse(JSON.stringify(plan));
+  edited.items[1].alt = 45;
+  mission.setPlan(edited);
+  mission._onVehicleMission(frame({ mission_revision: 6, mission_item: 2 }));
+  assert.equal(mission._progress(), null, "an edited plan is no longer the one being flown");
+
+  mission.setPlan(plan);
+  assert.ok(mission._progress(), "the same plan again is the same plan");
+  mission._syncWith(undefined);
+  assert.equal(mission._progress(), null);
+  mission.setPlan({ items: [] });
+}
+
 function testOnlyAMultirotorHidesTheLoiterRadius() {
   /* A loiter radius is the circle an aircraft that cannot hover flies in order
      to stay at a point. Hiding it from an airframe that DOES fly it would take
@@ -1174,6 +1217,7 @@ const tests = [
   testTheToolBarIsOneRowLikeTheHomeBar,
   testBothBarsAreMeasuredAgainstARoomAndNotThemselves,
   testTheTwoBarsButtonsAreTheSameSize,
+  testProgressIsClaimedOnlyWhileTheVehicleHoldsThisPlan,
   testOnlyAMultirotorHidesTheLoiterRadius,
   testEveryHoveringTypeIsARotorcraft,
   testAHiddenRadiusIsStillSavedAndUploaded,

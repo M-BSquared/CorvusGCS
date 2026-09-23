@@ -91,7 +91,8 @@ MAV_CMD_DO_CHANGE_SPEED = 178
 # ``params`` maps a plan field onto the MAVLink command parameter that carries
 # it, plus the bounds and the default used when the field is absent. ``position``
 # says whether the item owns a lat/lon/alt; ``rtl`` is the only one that does
-# not, because "come home" names no place on the map.
+# not, because "come home" names no place on the map. ``yaw_slot`` is the
+# parameter PX4 reads as a heading, which is sent as NaN (no heading asked for).
 #
 # The field NAMES are the contract with src/js/mission.js. The parameter
 # SLOTS are the contract with PX4 v1.16-v1.18, where all six commands below
@@ -100,6 +101,7 @@ ITEM_SPECS: dict[str, dict[str, Any]] = {
     "takeoff": {
         "command": MAV_CMD_NAV_TAKEOFF,
         "position": True,
+        "yaw_slot": 4,
         "label": "Takeoff",
         "params": {
             # Fixed-wing climb-out pitch. Zero means "use the airframe's own",
@@ -110,6 +112,7 @@ ITEM_SPECS: dict[str, dict[str, Any]] = {
     "waypoint": {
         "command": MAV_CMD_NAV_WAYPOINT,
         "position": True,
+        "yaw_slot": 4,
         "label": "Waypoint",
         "params": {
             "hold": {"slot": 1, "min": 0.0, "max": MISSION_HOLD_MAX_S, "default": 0.0},
@@ -148,6 +151,7 @@ ITEM_SPECS: dict[str, dict[str, Any]] = {
     "land": {
         "command": MAV_CMD_NAV_LAND,
         "position": True,
+        "yaw_slot": 4,
         "label": "Land",
         "params": {},
     },
@@ -357,7 +361,7 @@ def validate_plan(raw: Any) -> tuple[dict[str, Any] | None, str]:
     return plan, ""
 
 
-def _speed_item(speed: float) -> dict[str, Any]:
+def _speed_item(speed: float, item: int) -> dict[str, Any]:
     """One DO_CHANGE_SPEED, positionless, in the shape the uploader wants."""
     return {
         "command": MAV_CMD_DO_CHANGE_SPEED,
@@ -365,15 +369,19 @@ def _speed_item(speed: float) -> dict[str, Any]:
         # param1 = 1 (ground speed), param2 = the speed, param3 = -1 (no
         # throttle change). PX4 v1.16-v1.18 read exactly these.
         "params": [1.0, float(speed), -1.0, 0.0],
+        "item": item,
     }
 
 
 def plan_to_items(plan: dict[str, Any]) -> list[dict[str, Any]]:
     """Lower a validated plan to flat, wire-shaped mission items.
 
-    Each entry is ``{"command", "lat", "lon", "alt", "params": [p1..p4]}``.
-    Positionless items (RTL, the speed change) carry zeros for lat/lon/alt,
-    which is what PX4 expects for a command that names no place.
+    Each entry is ``{"command", "lat", "lon", "alt", "params": [p1..p4],
+    "item"}``. Positionless items (RTL, the speed change) carry zeros for
+    lat/lon/alt, which is what PX4 expects for a command that names no place.
+    ``item`` is the index of the plan item the entry belongs to: a speed change
+    belongs to the item it is flown into. The uploader does not send it; it is
+    how the vehicle's MISSION_CURRENT is read back as a place in the plan.
 
     SPEED is a command, not a field. PX4 holds whatever DO_CHANGE_SPEED it
     last executed, so a speed is emitted ahead of the first item it applies to
@@ -396,16 +404,20 @@ def plan_to_items(plan: dict[str, Any]) -> list[dict[str, Any]]:
     speed = plan.get("speed")
     if isinstance(speed, (int, float)) and not isinstance(speed, bool):
         current = float(speed)
-        items.append(_speed_item(current))
+        items.append(_speed_item(current, 0))
 
-    for entry in plan.get("items", []):
+    for index, entry in enumerate(plan.get("items", [])):
         pinned = entry.get("speed")
         if (isinstance(pinned, (int, float)) and not isinstance(pinned, bool)
                 and float(pinned) != current):
             current = float(pinned)
-            items.append(_speed_item(current))
+            items.append(_speed_item(current, index))
         spec = ITEM_SPECS[entry["type"]]
         params = [0.0, 0.0, 0.0, 0.0]
+        # The yaw slot is NaN, "keep the airframe's heading behaviour". 0 is a
+        # real yaw, north, and PX4 turns the aircraft to face it.
+        if spec.get("yaw_slot"):
+            params[spec["yaw_slot"] - 1] = float("nan")
         for field, rule in spec["params"].items():
             if rule["slot"] is None:
                 continue
@@ -420,9 +432,188 @@ def plan_to_items(plan: dict[str, Any]) -> list[dict[str, Any]]:
             "lon": float(entry.get("lon", 0.0)),
             "alt": float(entry.get("alt", 0.0)),
             "params": params,
+            "item": index,
         })
 
     return items
+
+
+# MAV_FRAME values a downloaded item can carry its altitude in. Relative to
+# home is the plan's own frame; above sea level converts once home's altitude
+# is known; above terrain has no single answer without the ground under it.
+_FRAMES_RELATIVE = frozenset({3, 6})         # GLOBAL_RELATIVE_ALT(_INT)
+_FRAMES_AMSL = frozenset({0, 5})             # GLOBAL(_INT)
+_FRAMES_TERRAIN = frozenset({10, 11})        # GLOBAL_TERRAIN_ALT(_INT)
+
+_TYPE_OF_COMMAND: dict[int, str] = {spec["command"]: name for name, spec in ITEM_SPECS.items()}
+
+
+def _param(values: list[Any], slot: int) -> float | None:
+    """One command parameter as a finite float, or None (absent or NaN)."""
+    if not 1 <= slot <= len(values):
+        return None
+    return _finite(values[slot - 1])
+
+
+def items_to_plan(
+    items: list[dict[str, Any]],
+    home: dict[str, float] | None = None,
+    home_alt_amsl: float | None = None,
+    name: str = "Vehicle mission",
+) -> dict[str, Any]:
+    """Read a mission downloaded from the vehicle back into a plan.
+
+    *items* are the vehicle's, numbered as the plan numbers them (ArduPilot's
+    home slot already removed), each ``{"command", "frame", "lat", "lon",
+    "alt", "params"}``. *home* (``{"lat", "lon"}``) stands in for a takeoff or
+    landing that names no place, and *home_alt_amsl* converts an item written
+    above sea level into the plan's height above home.
+
+    Returns ``{"plan", "plan_index", "skipped", "adjusted", "error"}``:
+
+    ``plan``
+        A validated plan, or None when even the representable part is not one
+        (``error`` says why).
+    ``plan_index``
+        One entry per vehicle item: the plan item it became, or None. This is
+        how MISSION_CURRENT is shown as a place in the plan.
+    ``skipped``
+        Items the planner has no way to draw, with the reason: a command it
+        does not know, or an altitude above terrain. Not dropped quietly: an
+        upload of the plan replaces the whole mission on the vehicle, these
+        included, and the operator has to know that before pressing it.
+    ``adjusted``
+        Values the planner had to change to hold them (a takeoff with no
+        position, a hold longer than the planner allows).
+
+    Speed changes are folded back the way :func:`plan_to_items` wrote them:
+    one ahead of every navigation item is the plan's speed, one between items
+    is the speed of the item after it.
+    """
+    plan_items: list[dict[str, Any]] = []
+    plan_index: list[int | None] = []
+    skipped: list[dict[str, Any]] = []
+    adjusted: list[dict[str, Any]] = []
+    plan_speed: float | None = None
+    pending_speed: float | None = None
+    # Speed items waiting for the navigation item they belong to.
+    pending_slots: list[int] = []
+    last_position: tuple[float, float] | None = None
+
+    for seq, raw in enumerate(items or []):
+        plan_index.append(None)
+        try:
+            command = int(raw.get("command"))
+        except (TypeError, ValueError):
+            skipped.append({"seq": seq, "command": None, "reason": "no command"})
+            continue
+        values = list(raw.get("params") or [])
+
+        if command == MAV_CMD_DO_CHANGE_SPEED:
+            speed = _param(values, 2)
+            if speed is None or speed <= 0:
+                # -1 and 0 are "no change": nothing for the plan to hold.
+                pending_slots.append(seq)
+                continue
+            speed = min(max(speed, MISSION_SPEED_MIN_MS), MISSION_SPEED_MAX_MS)
+            if not plan_items and plan_speed is None and pending_speed is None:
+                plan_speed = speed
+            else:
+                pending_speed = speed
+            pending_slots.append(seq)
+            continue
+
+        kind = _TYPE_OF_COMMAND.get(command)
+        if kind is None:
+            skipped.append({"seq": seq, "command": command,
+                            "reason": f"command {command} is not one the planner draws"})
+            continue
+        spec = ITEM_SPECS[kind]
+        entry: dict[str, Any] = {"type": kind}
+
+        if spec["position"]:
+            frame = int(raw.get("frame", 3) or 0)
+            lat = _finite(raw.get("lat"))
+            lon = _finite(raw.get("lon"))
+            if lat is None or lon is None or (lat == 0.0 and lon == 0.0):
+                # "Here": a takeoff or a landing written without a place, the
+                # way ArduPilot plans them. The plan needs a point to draw.
+                fallback = last_position or (
+                    (float(home["lat"]), float(home["lon"])) if home else None)
+                if fallback is None:
+                    skipped.append({"seq": seq, "command": command,
+                                    "reason": "no position, and no home to put it at"})
+                    continue
+                lat, lon = fallback
+                adjusted.append({"seq": seq, "field": "position",
+                                 "reason": "the vehicle's item names no place; drawn at "
+                                           + ("the previous point" if last_position else "home")})
+            alt = _finite(raw.get("alt")) or 0.0
+            if frame in _FRAMES_TERRAIN:
+                skipped.append({"seq": seq, "command": command,
+                                "reason": "its altitude is above terrain, not above home"})
+                continue
+            if frame in _FRAMES_AMSL:
+                if home_alt_amsl is None:
+                    skipped.append({"seq": seq, "command": command,
+                                    "reason": "its altitude is above sea level and "
+                                              "home's is not known yet"})
+                    continue
+                alt -= float(home_alt_amsl)
+            elif frame not in _FRAMES_RELATIVE:
+                skipped.append({"seq": seq, "command": command,
+                                "reason": f"frame {frame} is not a map position"})
+                continue
+            if kind != "land":
+                bounded = min(max(alt, MISSION_ALT_MIN_M), MISSION_ALT_MAX_M)
+                if bounded != alt:
+                    adjusted.append({"seq": seq, "field": "alt",
+                                     "reason": f"{alt:.0f} m is outside the planner's range"})
+                entry["alt"] = bounded
+            else:
+                entry["alt"] = 0.0
+            entry["lat"], entry["lon"] = lat, lon
+            last_position = (lat, lon)
+
+        for field, rule in spec["params"].items():
+            if rule["slot"] is None:
+                continue
+            value = _param(values, rule["slot"])
+            if value is None:
+                continue
+            if kind in ORBIT_TYPES and field == "radius":
+                entry["direction"] = -1.0 if value < 0 else 1.0
+                value = abs(value)
+                if value == 0.0:
+                    # 0 is "the airframe's own radius" on the vehicle; the
+                    # planner has no such value, so its default stands in.
+                    continue
+            bounded = min(max(value, rule["min"]), rule["max"])
+            if bounded != value:
+                adjusted.append({"seq": seq, "field": field,
+                                 "reason": f"{value:g} is outside the planner's range"})
+            entry[field] = bounded
+
+        if pending_speed is not None:
+            entry["speed"] = pending_speed
+            pending_speed = None
+        index = len(plan_items)
+        plan_items.append(entry)
+        plan_index[seq] = index
+        for slot in pending_slots:
+            plan_index[slot] = index
+        pending_slots = []
+
+    raw_plan: dict[str, Any] = {"name": name, "items": plan_items}
+    if home:
+        raw_plan["home"] = {"lat": home["lat"], "lon": home["lon"]}
+    if plan_speed is not None:
+        raw_plan["speed"] = plan_speed
+    plan, error = validate_plan(raw_plan)
+    return {
+        "plan": plan, "plan_index": plan_index,
+        "skipped": skipped, "adjusted": adjusted, "error": error,
+    }
 
 
 def leg_distance_m(a: dict[str, Any], b: dict[str, Any]) -> float:

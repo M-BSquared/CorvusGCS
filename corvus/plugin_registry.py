@@ -96,7 +96,7 @@ Each script registers the plugin when it loads:
     });
 
 `api` is documented at the top of `src/js/plugins.js`. The plugins shipped in
-the application's own `plugins/` folder are complete worked examples —
+the application's own `plugins/` folder are complete worked examples:
 `ssh-launcher` for a form, saved settings, a backend call and a terminal,
 `vibration` for a live chart on the telemetry stream. Copy one and start from
 there.

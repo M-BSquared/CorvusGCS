@@ -282,11 +282,25 @@ logs.
 - **Language:** all agent output, code comments, docstrings, and
   documentation are in **English**. (This replaces the earlier German
   convention.)
+- **No dashes in prose (mandatory).** User-facing text never uses an em dash
+  (`—`), and never uses an en dash or a hyphen as a dash between words. That
+  covers UI strings, messages the operator sees, the README, the website and
+  the docs. Use a full stop, comma, colon or parentheses instead, and write
+  number ranges with "to" ("2 to 3 min"). A lone `—` standing in for a missing
+  value in a data cell is not prose and stays. Keep the tone plain and
+  direct, not marketing copy.
 - **Comments:** do not add comments unless asked. When you do, keep them
   short and explain *why*, not *what*.
 - **Typing:** Python code uses type annotations; public functions carry
   docstrings.
-- **Dependencies:** stdlib first. Justify any third-party add.
+- **Dependencies:** stdlib first. Justify any third-party add. Every Python
+  package — runtime, test, lint and build tooling — is named in
+  `pyproject.toml`'s `[dependency-groups]` (`headless`, `app`, `test`, `lint`,
+  `dev`, `package-windows`) and nowhere else; every installer reads it with
+  `pip install --group`. No `requirements*.txt`, no conda environment file —
+  `tests/test_packaging_single_source.py` fails if one comes back.
+  (`requirements.lock` is the one exception, and it is generated, never
+  written: a build's resolved set, promoted to pin a release rebuild.)
 - **Testing:** `pytest` for unit/integration tests. MAVLink parsers, the
   state store, and HTTP/SSE endpoints must have tests.
 - **Attribution (mandatory wording).** Corvus GCS is developed **with** the
@@ -346,10 +360,10 @@ Rules that keep the chain honest:
 ## Commands
 
 ```
-python3 -m pytest -q            # test suite (the gate for every change)
-./run.sh                        # conda env create/update + launch desktop app
-./launch.sh                     # launch in an existing conda env
-python3 serve.py                # backend only, UI in a normal browser
+./run.sh                        # create/update .venv from pyproject.toml + launch desktop app
+.venv/bin/python -m pytest -q   # test suite (the gate for every change)
+.venv/bin/python -m ruff check corvus serve.py tests   # lint, as both pipelines run it
+.venv/bin/python serve.py       # backend only, UI in a normal browser
 ./build.sh [--dmg]              # artifact for the current host (dispatches below)
 ./build-appimage.sh             # Linux artifact  (x86_64)
 ./build-macos-app.sh [--dmg]    # macOS artifact  (arm64 / x86_64)

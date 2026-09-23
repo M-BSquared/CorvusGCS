@@ -894,7 +894,7 @@ Corvus.rcTransmitter = (function () {
     const legend = el("div", "rc-tx-legend");
     if (interactive) {
       legend.appendChild(el("span", "rc-tx-legend-text",
-        "Click a control — on the drawing or on its label — to see the channel "
+        "Click a control, on the drawing or on its label, to see the channel "
         + "it sends on, or to teach it one."));
       root.appendChild(legend);
     }
@@ -1163,7 +1163,7 @@ Corvus.rcTransmitter = (function () {
             ? ROLE_LABEL[role] + " is on channel " + channel + " ("
               + ROLE_PARAM[role] + "). Change it in Stick channels below, or "
               + "re-run the calibration."
-            : ROLE_LABEL[role] + " is unassigned — " + ROLE_PARAM[role]
+            : ROLE_LABEL[role] + " is unassigned: " + ROLE_PARAM[role]
               + " is 0. Run the radio calibration, or set it in Stick "
               + "channels below."));
         return;
@@ -1228,7 +1228,7 @@ Corvus.rcTransmitter = (function () {
       } else if (!channel) {
         body.appendChild(el("div", "rc-tx-inspector-note",
           "Press Learn, then move this control through its full travel. The "
-          + "channel that moves is the one it sends on — once that is known, "
+          + "channel that moves is the one it sends on. Once that is known, "
           + "you can give the channel a function."));
       }
 

@@ -21,7 +21,7 @@ window.Corvus = window.Corvus || {};
   All three are off by default, and all three are INPUT SOURCES and nothing
   else: they arm nothing, change no mode, and cannot override a failsafe.
   Whether the autopilot acts on them at all is the vehicle's decision
-  (COM_RC_IN_MODE 1 or 3, and a mode that flies from the sticks) — the GCS
+  (COM_RC_IN_MODE 1, 2 or 3, and a mode that flies from the sticks) — the GCS
   deliberately does not set that parameter on the operator's behalf.
 
   Axis mapping is the transmitter's, because that is what PX4 receives:

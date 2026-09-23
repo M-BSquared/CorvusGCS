@@ -253,7 +253,7 @@ Corvus.tiles = (function () {
     body.appendChild(Corvus.ui.field({
       label: "Area name",
       control: nameInput,
-      hint: "Optional — defaults to the area's centre coordinates.",
+      hint: "Optional. Defaults to the area's centre coordinates.",
     }));
 
     // Captured bounds + recapture
@@ -483,7 +483,7 @@ Corvus.tiles = (function () {
 
   function regionMeta(region) {
     const parts = [sourceLabelById(region.source)];
-    parts.push(`z${region.minzoom}–${region.maxzoom}`);
+    parts.push(`z${region.minzoom} to ${region.maxzoom}`);
     parts.push(region.state === "running"
       ? "downloading…"
       : `${fmtCount(region.tile_count || 0)} tiles`);
@@ -521,7 +521,7 @@ Corvus.tiles = (function () {
       body: JSON.stringify({ source: region.source, id: region.id, delete_tiles: true }),
     }).then((res) => {
       const freed = (res && res.removed_tiles) || 0;
-      showMsg(`Deleted "${region.name}" — ${fmtCount(freed)} tiles removed.`, "ok");
+      showMsg(`Deleted "${region.name}": ${fmtCount(freed)} tiles removed.`, "ok");
       return loadRegions();
     }).catch((err) => showMsg((err && err.message) || "Delete failed", "err"));
   }
@@ -636,7 +636,7 @@ Corvus.tiles = (function () {
     }
     dom.estVal.textContent = `≈ ${fmtCount(count)} tiles`;
     dom.estSub.textContent = `~ ${fmtSize(count * AVG_TILE_KB)}`;
-    if (count > BIG_JOB_TILES) showMsg("Very large region — consider a smaller zoom range.", "warn");
+    if (count > BIG_JOB_TILES) showMsg("Very large region. Consider a smaller zoom range.", "warn");
     else if (!dom.dlBtn.classList.contains("is-busy")) hideMsg();
   }
 

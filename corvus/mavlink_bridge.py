@@ -6,32 +6,41 @@ message names to the console subscribers. Runs on a daemon thread.
 
 Sends GCS heartbeats at 1 Hz so the autopilot recognizes us as a ground
 control station and allows arming and mode changes.
+
+This module is the link itself: connect, receive, dispatch, the command
+transaction, and the flight commands. The protocols that ride on it live in
+their own modules and are mixed into :class:`MavlinkBridge`:
+
+======================================  ====================================
+:mod:`corvus.mavlink_params`            parameter download, read, write, verify
+:mod:`corvus.mavlink_missions`          fly to points, planned missions
+:mod:`corvus.mavlink_setup`             calibration, motor test, autotune
+:mod:`corvus.mavlink_shell`             the PX4 NSH shell
+:mod:`corvus.mavlink_telemetry`         battery, setpoints, RC, link quality
+:mod:`corvus.mavlink_remote_id`         the Remote ID broadcast
+======================================  ====================================
+
+Helpers with no bridge state are plain modules: :mod:`corvus.serial_ports`,
+:mod:`corvus.mavlink_signing`, :mod:`corvus.priority_lock` and
+:mod:`corvus.mavlink_common`. Every name that used to be defined here is still
+importable from here.
 """
 from __future__ import annotations
 
-import codecs
-import collections
 import datetime
 import errno
 import logging
 import math
 import os
 import random
-import re
-import stat
 import threading
 import time
-from dataclasses import dataclass, field
 from typing import Any
 from collections.abc import Callable
 
 from pymavlink import mavutil
 
 from . import autopilot as autopilot_dialect
-from . import battery as battery_math
-from . import mission as mission_plan
-from . import rc_config
-from . import remote_id as remote_id_model
 from . import rtk
 from .autopilot import (  # noqa: F401 - re-exported, see the tables below
     PX4_AUTO_SUBMODE,
@@ -40,7 +49,65 @@ from .autopilot import (  # noqa: F401 - re-exported, see the tables below
     Dialect,
     ModeCommand,
 )
+from .mavlink_common import (  # noqa: F401 - re-exported
+    MAV_RESULT_TEXT,
+    TAKEOFF_ALTITUDE_MAX_M,
+    TAKEOFF_ALTITUDE_MIN_M,
+    _PendingAck,
+)
+from .mavlink_missions import (  # noqa: F401 - re-exported
+    FLY_TO_MAX_POINTS,
+    MISSION_DO_FRAME,
+    MISSION_UPLOAD_MAX_S,
+    MISSION_UPLOAD_QUIET_S,
+    MissionProtocolMixin,
+)
+from .mavlink_params import (  # noqa: F401 - re-exported
+    PARAM_CACHE_MAX_ENTRIES,
+    PARAM_DOWNLOAD_INACTIVITY_S,
+    PARAM_DOWNLOAD_MAX_ROUNDS,
+    PARAM_DOWNLOAD_TIMEOUT_S,
+    PARAM_DOWNLOAD_TIMEOUT_S_SERIAL,
+    PARAM_RETRANSMIT_GAP_S_SERIAL,
+    PARAM_RETRANSMIT_GAP_S_UDP,
+    PARAM_RETRANSMIT_MAX_PER_ROUND_SERIAL,
+    PARAM_RETRANSMIT_MAX_PER_ROUND_UDP,
+    PARAM_VERIFY_MAX_NAMES,
+    PARAM_VERIFY_REWRITES,
+    PARAM_WATCHDOG_TICK_S,
+    _CAP_PARAM_ENCODE_BYTEWISE,
+    _CAP_PARAM_ENCODE_C_CAST,
+    ParamEntry,
+    ParamProtocolMixin,
+)
+from .mavlink_remote_id import RemoteIdMixin
+from .mavlink_setup import VehicleSetupMixin
+from .mavlink_shell import SHELL_LINE_MAX_CHARS, ShellMixin  # noqa: F401 - re-exported
+from .mavlink_signing import (  # noqa: F401 - re-exported
+    MAVLINK_SIGNING_KEY_FILE_ENV,
+    _allow_unsigned_signed_link,
+    _load_signing_key,
+)
+from .mavlink_telemetry import (  # noqa: F401 - re-exported
+    TelemetryMixin,
+    _quaternion_to_euler_deg,
+    _rc_rssi_percent,
+)
 from .paths import corvus_path
+from .priority_lock import _PriorityLock, _PriorityLockAbort  # noqa: F401 - re-exported
+from .serial_ports import (  # noqa: F401 - re-exported
+    _DIRECT_USB_ACM_RE,
+    _MACOS_SERIAL_RE,
+    _PHANTOM_TTY_RE,
+    _PIXHAWK_BYID_RE,
+    _SIK_RADIO_RE,
+    classify_hwid,
+    classify_serial_device,
+    is_bootloader_port,
+    is_phantom_device,
+    is_rtk_device,
+    is_windows_com_port,
+)
 from .state_store import VehicleStateStore
 from .tlog import TlogWriter
 
@@ -85,14 +152,6 @@ GPS_FIX_MAP: dict[int, str] = {
     4: "DGPS", 5: "RTK_FLOAT", 6: "RTK_FIXED", 7: "STATIC", 8: "PPP",
 }
 
-MAV_RESULT_TEXT: dict[int, str] = {
-    -2: "DISCONNECTED", -1: "ACK_TIMEOUT",
-    0: "ACCEPTED", 1: "TEMPORARILY_REJECTED", 2: "DENIED",
-    3: "UNSUPPORTED", 4: "FAILED", 5: "IN_PROGRESS",
-    6: "CANCELLED", 7: "COMMAND_LONG_ONLY", 8: "COMMAND_INT_ONLY",
-    9: "UNSUPPORTED_FRAME", 10: "NOT_IN_CONTROL",
-}
-
 # The flight-stack tables moved to corvus.autopilot when ArduPilot stopped
 # being a stack Corvus merely *named* and became one it flies. They are
 # re-exported here because this module was their home for a long time and the
@@ -105,59 +164,6 @@ PX4_FALLBACK_MODE_VALUES: dict[str, tuple[int, int, int]] = dict(
     autopilot_dialect.PX4_MODE_VALUES
 )
 
-TAKEOFF_ALTITUDE_MIN_M = 1.0
-# 120 m, not 50. The old ceiling was an arbitrary round number that refused
-# perfectly ordinary survey and inspection heights; 120 m AGL is the actual
-# operational ceiling most crews fly to — it is the EU open-category limit and
-# matches the equivalent rule in the UK, and is the same number PX4's own
-# defaults are written around. A GCS should stop at the number the rules stop
-# at, not at one somebody picked because it sounded cautious.
-#
-# The takeoff slider in src/index.html carries the same maximum; a test pins
-# the two together so they cannot drift.
-TAKEOFF_ALTITUDE_MAX_M = 120.0
-
-# Waypoints one "fly to points" request may carry.
-#
-# There was no bound at all, and the mission upload waits
-# 2 s per item while holding the lock every other command takes — so a request
-# carrying a few thousand points parked arm, land and RTL behind it for hours.
-# A route an operator clicks onto a map is tens of points; 255 is far past
-# anything hand-planned and still bounds the upload to something an operator
-# can wait out.
-FLY_TO_MAX_POINTS = 255
-
-# corvus/mission.py states each planner item's MAV_CMD as a frozen literal so
-# it stays importable without pymavlink. This is where that claim is checked:
-# a mismatch is a wire-format bug, and it fails at import rather than uploading
-# a mission whose "circle" turns out to be some other command entirely.
-_MISSION_CMD_NAMES: dict[str, str] = {
-    "takeoff": "MAV_CMD_NAV_TAKEOFF",
-    "waypoint": "MAV_CMD_NAV_WAYPOINT",
-    "loiter_turns": "MAV_CMD_NAV_LOITER_TURNS",
-    "loiter_time": "MAV_CMD_NAV_LOITER_TIME",
-    "land": "MAV_CMD_NAV_LAND",
-    "rtl": "MAV_CMD_NAV_RETURN_TO_LAUNCH",
-}
-assert set(_MISSION_CMD_NAMES) == set(mission_plan.COMMAND_OF), \
-    "mission.py item types and the MAV_CMD name table disagree"
-for _kind, _name in _MISSION_CMD_NAMES.items():
-    assert mission_plan.COMMAND_OF[_kind] == getattr(mavutil.mavlink, _name), \
-        f"mission.py MAV_CMD for {_kind} disagrees with pymavlink"
-assert mission_plan.MAV_CMD_DO_CHANGE_SPEED == mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED
-
-# Non-navigation mission items (DO_CHANGE_SPEED) travel in MAV_FRAME_MISSION:
-# they name no place, and PX4's feasibility checker reads the frame of every
-# item it walks.
-MISSION_DO_FRAME = mavutil.mavlink.MAV_FRAME_MISSION
-# How long the upload waits with no MISSION_REQUEST and no MISSION_ACK before
-# calling it lost. PX4 requests items back to back, so a gap this long means
-# the vehicle has stopped asking — a dropped MISSION_COUNT, or a mission
-# rejected without an ACK. Generous enough for a 57 kbps radio mid-burst.
-MISSION_UPLOAD_QUIET_S = 10.0
-# Absolute ceiling on one upload, whatever the item count.
-MISSION_UPLOAD_MAX_S = 120.0
-
 HEARTBEAT_TIMEOUT_S = 5.0
 STATUSTEXT_CHUNK_BYTES = 50
 STATUSTEXT_CHUNK_TIMEOUT_S = 10.0
@@ -167,211 +173,6 @@ STATUSTEXT_CHUNK_TIMEOUT_S = 10.0
 # router carries plenty of all three. A cap keeps a link that is misbehaving
 # from growing the table without limit on the receive thread.
 STATUSTEXT_MAX_PARTIALS = 64
-# Serial nodes that are never an autopilot or a radio, and that bury the one
-# that is. /dev/ttyS* are the Linux 8250 platform ports (always phantom on a
-# field laptop); the two macOS entries are present on every Mac whether or not
-# anything is plugged in — the Bluetooth one in particular sits at the top of
-# an alphabetical list, which is where the operator looks first.
-_PHANTOM_TTY_RE = re.compile(
-    r"^/dev/ttyS[0-9]+$"
-    r"|^/dev/(?:cu|tty)\.Bluetooth-Incoming-Port$"
-    r"|^/dev/(?:cu|tty)\.debug-console$"
-)
-
-# Firmware-Flash transport classification. A CDC ACM node is a DIRECT USB link
-# to a Pixhawk-class flight controller (flashable); a /dev/ttyUSB* node is a
-# USB-to-serial adapter (SiK radio, NOT flashable). _BYID_TOKENS are the
-# Pixhawk/STM32 vendor identifiers that appear in /dev/serial/by-id/ names and
-# pyserial hwid strings (26AC = Pixhawk vendor ID, 0483 = STMicro STM32).
-_DIRECT_USB_ACM_RE = re.compile(r"^/dev/ttyACM[0-9]+$")
-_SIK_RADIO_RE = re.compile(r"^/dev/ttyUSB[0-9]+$")
-_BYID_TOKENS: tuple[str, ...] = (
-    "px4", "pixhawk", "fmu",
-    "3d_robotics", "3d robotics",
-    "hex_proficnc", "arducy", "mro",
-    "hex ",
-    "usb vid:pid=26ac", "usb vid:pid=0483",
-)
-_PIXHAWK_BYID_RE = re.compile(
-    "|".join(re.escape(t) for t in _BYID_TOKENS), re.IGNORECASE,
-)
-
-# Windows names every serial port the same way, so the port name carries no
-# information at all: COM7 is a Pixhawk, a SiK radio or a Bluetooth pairing
-# with equal probability. The identity is in the USB descriptor pyserial
-# reports as ``hwid`` instead, which is why the classification below looks the
-# port up rather than reading its name.
-_WINDOWS_COM_RE = re.compile(r"^(?:\\\\\.\\)?COM[0-9]+$", re.IGNORECASE)
-# macOS names a USB serial node after the driver that claimed it, not after the
-# class of device behind it: a Pixhawk on a USB cable comes up as
-# /dev/cu.usbmodem14201 and a SiK radio as /dev/cu.usbserial-0001 or
-# /dev/cu.SLAB_USBtoUART, and neither shape is one Linux ever produces. So the
-# name is as uninformative here as a Windows COM number, and is resolved the
-# same way: by asking the USB descriptor. Without this every macOS serial port
-# classified as "unknown", which refused firmware flashing over a USB cable on
-# the one platform Corvus ships a .dmg for. ("cu" is the call-out node, the one
-# to open; "tty" is matched too because an operator may well type it.)
-_MACOS_SERIAL_RE = re.compile(r"^/dev/(?:cu|tty)\..+$")
-# The USB-to-serial bridges a SiK Telemetry Radio (and its clones) is built on.
-# These are adapters: whatever is behind them, it is not a flashable FMU.
-_USB_SERIAL_BRIDGE_TOKENS: tuple[str, ...] = (
-    "vid:pid=0403",   # FTDI FT232 — Holybro/3DR SiK V2 and V3
-    "vid:pid=10c4",   # Silicon Labs CP210x — the common SiK clone bridge
-    "vid:pid=1a86",   # WCH CH340/CH341
-    "vid:pid=067b",   # Prolific PL2303
-)
-_USB_SERIAL_BRIDGE_RE = re.compile(
-    "|".join(re.escape(t) for t in _USB_SERIAL_BRIDGE_TOKENS), re.IGNORECASE,
-)
-
-# A board sitting in its USB bootloader enumerates as a serial port like any
-# other, but it is not a link: it speaks the PX4 bootloader protocol (see
-# corvus/firmware_uploader.py), not MAVLink, and opening it would hold the
-# device the flasher is about to claim. 26AC:0011 is the PX4 BL FMU descriptor,
-# 0483:DF11 is STM32 DFU; the words are what the descriptor strings say when
-# the ids do not.
-_BOOTLOADER_TOKENS: tuple[str, ...] = (
-    "vid:pid=26ac:0011",
-    "vid:pid=0483:df11",
-    "bl fmu",
-    "bootloader",
-    "dfu",
-)
-_BOOTLOADER_RE = re.compile(
-    "|".join(re.escape(t) for t in _BOOTLOADER_TOKENS), re.IGNORECASE,
-)
-
-# An RTK base station is a serial port that must never be dialled as a link.
-# The distinction is not academic: a ZED-F9P on a USB lead enumerates as
-# /dev/ttyACM0 exactly like a Pixhawk does, so without this table auto-connect
-# would pick up the GPS receiver plugged in beside the aircraft, hold its port,
-# and wait for a heartbeat that a GNSS receiver has no way to send. 0x1546 is
-# u-blox's own vendor id and is never a flight controller; 0x152a is
-# Septentrio. The words are for the descriptors that carry a product name
-# instead of a recognised id.
-#
-# Closed-world, in the opposite direction from is_bootloader_port(): only a
-# positive match is treated as a base station, because the cost of the two
-# errors is again asymmetric. Refusing to auto-connect a real flight
-# controller because its descriptor said something unexpected is the worse
-# failure by a distance.
-_RTK_TOKENS: tuple[str, ...] = (
-    "vid:pid=1546",   # u-blox — F9P/M8P dev kits and the boards built on them
-    "vid:pid=152a",   # Septentrio
-    "u-blox",
-    "ublox",
-    "septentrio",
-    "zed-f9p",
-    "simplertk",
-)
-_RTK_RE = re.compile(
-    "|".join(re.escape(t) for t in _RTK_TOKENS), re.IGNORECASE,
-)
-
-# Devices that are a serial port to the kernel and never a vehicle link: the
-# pseudo-terminals a test harness or a terminal emulator creates, and the
-# phantom nodes _PHANTOM_TTY_RE already names. Auto-connect enumerates without
-# an operator watching, so it has to refuse these by itself.
-_PTY_DEVICE_RE = re.compile(r"^/dev/(?:pts/[0-9]+|ptyp?[0-9a-z]+|ttyp[0-9a-z]+)$")
-
-
-def is_phantom_device(device: str) -> bool:
-    """Is *device* a serial node that is never a vehicle link?
-
-    The 8250 platform ports and the two macOS entries that exist whether or not
-    anything is plugged in (:data:`_PHANTOM_TTY_RE`), plus pseudo-terminals.
-    Shared with :meth:`MavlinkBridge.list_serial_ports` so the enumeration the
-    operator sees and the one auto-connect picks from agree on what is real.
-    """
-    name = str(device or "").strip()
-    if not name:
-        return True
-    return bool(_PHANTOM_TTY_RE.match(name) or _PTY_DEVICE_RE.match(name))
-
-
-def is_bootloader_port(device: str, hwid: str = "", description: str = "") -> bool:
-    """Is this port a flight controller sitting in its USB bootloader?
-
-    Closed-world on purpose: only a positive match counts. An unknown
-    descriptor is treated as a normal flight controller, because the cost of
-    the two errors is not symmetric — skipping a real FC leaves an operator
-    with a ground station that will not connect to the aircraft in front of
-    them, while dialling a bootloader costs one failed connect attempt that the
-    reconnect loop already handles. The device name carries no bootloader
-    marking on any platform, so this reads the descriptor only.
-    """
-    text = f"{hwid or ''} {description or ''}"
-    return bool(text.strip()) and bool(_BOOTLOADER_RE.search(text))
-
-
-def is_rtk_device(device: str, hwid: str = "", description: str = "") -> bool:
-    """Is this port an RTK GNSS receiver rather than something to fly?
-
-    Reads the descriptor only. The device *name* cannot answer this on any
-    platform — a receiver's USB CDC node is indistinguishable from a flight
-    controller's — which is the whole reason auto-connect used to dial one.
-    See :data:`_RTK_TOKENS` for why the match is closed-world.
-    """
-    text = f"{hwid or ''} {description or ''}"
-    return bool(text.strip()) and bool(_RTK_RE.search(text))
-
-
-def classify_hwid(hwid: str) -> str:
-    """'usb' / 'sik' / 'rtk' / 'unknown' from a USB descriptor string.
-
-    Bridge first: an FTDI descriptor may also carry a product string with a
-    vendor name in it, and a bridge is never the flight controller. Unknown
-    wins ties — see :meth:`MavlinkBridge._classify_by_descriptor` for why
-    guessing permissively here would offer to flash firmware down a radio.
-    """
-    if not hwid or not hwid.strip():
-        return "unknown"
-    if _RTK_RE.search(hwid):
-        return "rtk"
-    if _USB_SERIAL_BRIDGE_RE.search(hwid):
-        return "sik"
-    if _PIXHAWK_BYID_RE.search(hwid):
-        return "usb"
-    return "unknown"
-
-
-def classify_serial_device(device: str, hwid: str = "", description: str = "") -> str:
-    """'usb' / 'sik' / 'rtk' / 'unknown' for an enumerated serial port.
-
-    The port-shaped half of :meth:`MavlinkBridge.transport`, factored out so a
-    caller holding a ``list_serial_ports()`` row can classify it without
-    building a connection string and without a second enumeration pass. Linux
-    device names carry the answer; Windows COM numbers and macOS ``/dev/cu.*``
-    nodes do not, so those fall through to the descriptor the caller already
-    has.
-    """
-    name = str(device or "").strip()
-    if not name:
-        return "unknown"
-    # Before the name is read, not after: a u-blox receiver's CDC node is a
-    # /dev/ttyACM* like any Pixhawk's, so a name-first order classifies every
-    # RTK base on Linux as a flight controller.
-    if is_rtk_device(name, hwid, description):
-        return "rtk"
-    if _DIRECT_USB_ACM_RE.match(name):
-        return "usb"
-    if name.startswith("/dev/serial/by-id/") and _PIXHAWK_BYID_RE.search(name):
-        return "usb"
-    if _SIK_RADIO_RE.match(name):
-        return "sik"
-    if is_windows_com_port(name) or _MACOS_SERIAL_RE.match(name):
-        return classify_hwid(f"{hwid or ''} {description or ''}")
-    return "unknown"
-
-
-def is_windows_com_port(device: str) -> bool:
-    """Is *device* a Windows COM port name (``COM7``, ``\\\\.\\COM12``)?
-
-    Matched by shape rather than by ``os.name`` so the classification can be
-    exercised from a test on any host — and so a COM name typed into the
-    connection field on Linux is still recognised for what it is.
-    """
-    return bool(_WINDOWS_COM_RE.match(str(device or "").strip()))
 
 # Two-tier heartbeat staleness (A3). WARN marks the link degraded (socket
 # stays open, parsing continues); DROP tears it down and reconnects. Serial
@@ -394,19 +195,6 @@ RECONNECT_CAP_S = 8.0
 RECONNECT_JITTER = 0.25
 RECONNECT_MIN_S = 0.1
 
-# SiK radio RSSI is a 0-255 relative scale; ~150 strong, ~40 weak. Used to
-# map RADIO_STATUS.remrssi (the drone's signal as seen by the radio) to 0-100.
-_SIK_RSSI_STRONG = 150.0
-_SIK_RSSI_WEAK = 40.0
-
-# The NSH shell reassembles 70-byte chunks into lines, so a "line" is only
-# bounded by the vehicle sending a newline. `dd`-ing a binary to the console,
-# or a firmware that streams without one, would otherwise grow the buffer for
-# as long as the shell stays open — on the receive thread. At the cap the
-# buffer is flushed as a line of its own, which keeps the output visible
-# instead of silently discarding it.
-SHELL_LINE_MAX_CHARS = 8192
-
 # A distinct GCS system id keeps Corvus COMMAND_ACK and SERIAL_CONTROL replies
 # separate from QGroundControl (which normally uses system 255) when both share
 # a vehicle through mavlink-router or the built-in raw-frame forwarder.
@@ -416,70 +204,26 @@ GCS_COMPONENT_ID = mavutil.mavlink.MAV_COMP_ID_MISSIONPLANNER
 # How long _connect waits for the aircraft to introduce itself.
 HEARTBEAT_WAIT_S = 10.0
 
+# How far SYSTEM_TIME.time_boot_ms has to step backwards to mean the vehicle
+# rebooted rather than that two UDP frames arrived out of order.
+VEHICLE_REBOOT_BACKSTEP_MS = 5000
+
+# The autopilot sends one preflight report's lines back to back; a line after
+# a gap this long starts the next report rather than adding to the last one.
+PREARM_REPORT_GAP_S = 2.0
+# How often a vehicle that says "not ready" without saying why is asked to
+# report again (MAV_CMD_RUN_PREARM_CHECKS). PX4 reports on its own only when
+# a result changes, so a station that connects afterwards hears nothing.
+PREARM_REPORT_REQUEST_EVERY_S = 30.0
+# Reasons kept for one report. PX4 has ~70 checks; a report this long is a
+# bench aircraft with nothing connected, and the first lines are the point.
+PREARM_REASONS_MAX = 20
+
 # Consecutive unanswered SET_MESSAGE_INTERVAL requests that end the connect-time
 # batch. Each one costs two ACK timeouts and holds _operation_lock for both, so
 # a link that answers none of them used to park every operator command behind
 # the whole list.
 INTERVAL_REQUEST_SILENT_LIMIT = 3
-
-MAVLINK_SIGNING_KEY_FILE_ENV = "CORVUS_MAVLINK_SIGNING_KEY_FILE"
-_SIGNING_UNSIGNED_MESSAGE_IDS = frozenset({
-    mavutil.mavlink.MAVLINK_MSG_ID_RADIO_STATUS,
-    mavutil.mavlink.MAVLINK_MSG_ID_ADSB_VEHICLE,
-    mavutil.mavlink.MAVLINK_MSG_ID_COLLISION,
-})
-
-
-def _load_signing_key() -> bytes | None:
-    """Load an opt-in MAVLink 2 signing key from an owner-only file.
-
-    O_BINARY is not optional on Windows, where a descriptor opened without it
-    is a TEXT-mode descriptor: reads stop at the first 0x1A (DOS end-of-file)
-    and CRLF pairs collapse to LF. A signing key is 32 bytes of entropy, so
-    roughly one key in eight contains an 0x1A somewhere — and what the
-    operator then sees is not a corrupted key, it is "MAVLink signing key must
-    be 32 raw bytes or 64 hex characters" about a file that is exactly 32
-    bytes long. The flag is guarded because only Windows defines it.
-    """
-    path = (os.environ.get(MAVLINK_SIGNING_KEY_FILE_ENV) or "").strip()
-    if not path:
-        return None
-    flags = os.O_RDONLY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    if hasattr(os, "O_BINARY"):
-        flags |= os.O_BINARY
-    fd = os.open(path, flags)
-    try:
-        info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode):
-            raise ValueError("MAVLink signing key path is not a regular file")
-        if os.name != "nt":
-            if info.st_mode & 0o077:
-                raise PermissionError("MAVLink signing key file must have mode 0600")
-            if hasattr(os, "getuid") and info.st_uid != os.getuid():
-                raise PermissionError("MAVLink signing key file must be owned by this user")
-        data = os.read(fd, 129)
-    finally:
-        os.close(fd)
-    stripped = data.strip()
-    if len(data) == 32:
-        key = data
-    elif len(stripped) == 64:
-        try:
-            key = bytes.fromhex(stripped.decode("ascii"))
-        except (UnicodeError, ValueError) as exc:
-            raise ValueError("MAVLink signing key must be 32 raw bytes or 64 hex characters") from exc
-    else:
-        raise ValueError("MAVLink signing key must be 32 raw bytes or 64 hex characters")
-    if not any(key):
-        raise ValueError("MAVLink signing key must not be all zero")
-    return key
-
-
-def _allow_unsigned_signed_link(_mav: Any, msg_id: int) -> bool:
-    """Allow only PX4's non-command safety telemetry on a signed link."""
-    return int(msg_id) in _SIGNING_UNSIGNED_MESSAGE_IDS
 
 
 # MAV_TYPEs that are peripherals rather than aircraft. A node announcing one
@@ -559,42 +303,6 @@ def _is_vehicle_heartbeat(hb: Any) -> bool:
     except (TypeError, ValueError):
         return True
 
-# Lossy-link parameter-download recovery (BUG 5). After the PARAM_VALUE burst
-# settles, re-request missing indices (bounded rounds), then give up to a
-# terminal "incomplete" state so the editor is never stuck at complete:false.
-PARAM_DOWNLOAD_INACTIVITY_S = 1.0
-PARAM_DOWNLOAD_MAX_ROUNDS = 3
-PARAM_DOWNLOAD_TIMEOUT_S = 30.0
-# The same budget over a telemetry radio. PX4 exposes on the order of 1400
-# parameters, and a PARAM_VALUE is 25 bytes on the wire: the burst alone is
-# ~35 kB, which at 57 kbps cannot finish inside 30 s even before the radio
-# shares the link with attitude and position. The old single ceiling therefore
-# marked every serial download "incomplete" at 30 s while it was still
-# arriving normally — a timeout reporting nothing but its own tightness.
-PARAM_DOWNLOAD_TIMEOUT_S_SERIAL = 180.0
-PARAM_WATCHDOG_TICK_S = 0.5
-# Retransmit pacing. The watchdog re-requests the PARAM_VALUEs a lossy link
-# lost, and it used to ask for every one of them back to back. On the link
-# where that actually happens — a 57 kbps SiK radio, which is the whole reason
-# a parameter goes missing — several hundred PARAM_REQUEST_READs is a solid
-# block of uplink, and the vehicle answers each one. The radio saturates, the
-# GCS heartbeat behind it cannot get out on time, and the recovery makes the
-# loss it is recovering from worse.
-#
-# So a round is bounded and paced: at most this many requests, spaced far
-# enough apart that the replies interleave with telemetry instead of competing
-# with it. Whatever is still missing is picked up by the next round — the
-# rounds are what the retransmit budget was always expressed in.
-PARAM_RETRANSMIT_MAX_PER_ROUND_SERIAL = 120
-PARAM_RETRANSMIT_MAX_PER_ROUND_UDP = 250
-PARAM_RETRANSMIT_GAP_S_SERIAL = 0.02
-PARAM_RETRANSMIT_GAP_S_UDP = 0.002
-# PX4 currently exposes far fewer parameters than this on every supported
-# target.  The bound protects the retransmit watchdog from an invalid or
-# hostile PARAM_VALUE count causing tens of thousands of requests and a large
-# in-memory cache on a shared UDP link.
-PARAM_CACHE_MAX_ENTRIES = 10_000
-
 
 # Flight readiness, straight from the autopilot. PX4 mirrors its preflight
 # checks into the MAV_SYS_STATUS_PREARM_CHECK bit of SYS_STATUS: present/enabled
@@ -615,187 +323,14 @@ def _prearm_ok(msg) -> bool | None:
     return bool(health & _PREARM_BIT)
 
 
-def _rc_rssi_percent(value: Any) -> int:
-    """RC_CHANNELS.rssi -> 0-100, or -1 when the receiver does not report it.
-
-    MAVLink reserves 255 for "unknown". Below that the field is ambiguous in
-    practice: PX4 publishes a percentage, while several receivers publish the
-    raw 0-254 scale the message was originally specified with. A value above
-    100 can only be the second, so it is scaled; anything at or below 100 is
-    already the percentage it claims to be. Guessing either way beats showing a
-    254 % link.
-    """
-    try:
-        rssi = int(value)
-    except (TypeError, ValueError):
-        return -1
-    if rssi < 0 or rssi >= 255:
-        return -1
-    if rssi <= 100:
-        return rssi
-    return max(0, min(100, round(rssi * 100 / 254)))
-
-
-def _quaternion_to_euler_deg(w: float, x: float, y: float, z: float) -> tuple[float, float, float]:
-    """Convert a MAVLink attitude quaternion to roll/pitch/yaw in degrees.
-
-    Same convention as the ATTITUDE message this is plotted against (NED body
-    frame, roll about the nose axis) so a setpoint trace and a response trace
-    share one scale. Pitch is clamped before ``asin`` because a quaternion that
-    arrives fractionally un-normalised over a lossy link would otherwise raise
-    on a value a hair outside [-1, 1].
-    """
-    sinr_cosp = 2.0 * (w * x + y * z)
-    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
-    roll = math.atan2(sinr_cosp, cosr_cosp)
-    sinp = max(-1.0, min(1.0, 2.0 * (w * y - z * x)))
-    pitch = math.asin(sinp)
-    siny_cosp = 2.0 * (w * z + x * y)
-    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
-    yaw = math.atan2(siny_cosp, cosy_cosp)
-    return math.degrees(roll), math.degrees(pitch), math.degrees(yaw)
-
-
-class _PriorityLock:
-    """A re-entrant lock that serves abort commands ahead of routine work.
-
-    Every operator command is serialised through one lock, which is what keeps
-    a command's send and its ACK from interleaving with another's. The cost of
-    that is a queue, and a queue does not care what is in it: an operator
-    reaching for RTL while a parameter upload is running waited behind every
-    remaining write, because a plain lock hands off in whatever order threads
-    happen to arrive. The one command that must not wait was the one waiting.
-
-    So there are two tiers. While any abort is waiting or running, routine
-    acquirers stand aside; an abort therefore waits for at most the single
-    operation already in progress, never for the queue behind it.
-
-    Standing aside has to be re-checked rather than decided once on the way
-    in, and that is the whole subtlety here. A routine thread that has already
-    passed the gate and parked on the mutex is committed — an abort arriving
-    afterwards would join the queue *behind* it and every other parked thread,
-    which is exactly the behaviour this class exists to prevent. So routine
-    acquirers never park: they poll, re-reading the gate each time, and a
-    routine thread that wins the mutex in the instant an abort registers hands
-    it straight back.
-
-    Re-entrant, because the command paths nest (``takeoff`` calls ``arm``,
-    everything calls ``_send_command_and_wait``). A thread that already holds
-    the lock bypasses the gate entirely: making it stand aside for a waiting
-    abort would deadlock, since that abort is waiting for the lock this thread
-    is holding. Depth is tracked per thread because ``RLock`` does not expose
-    ownership.
-    """
-
-    # How long a routine acquirer parks on the mutex before re-reading the
-    # gate. Short enough that an abort is never held up by much more than the
-    # operation already running; long enough that waiting costs no real CPU.
-    _POLL_S = 0.02
-
-    def __init__(self) -> None:
-        self._lock = threading.RLock()
-        self._turnstile = threading.Condition()
-        self._aborts_waiting = 0
-        self._local = threading.local()
-
-    def _acquire(self, priority: bool) -> bool:
-        """Take the lock. Returns whether this call registered an abort.
-
-        The return value matters for nesting: an abort nested inside an
-        operation this thread already holds must not register a second time,
-        or the release would decrement a count it never incremented.
-        """
-        if getattr(self._local, "depth", 0) > 0:
-            # Already ours. Never consult the gate — anything waiting on it is
-            # waiting for this thread.
-            self._lock.acquire()
-            self._local.depth += 1
-            return False
-        registered = False
-        if priority:
-            with self._turnstile:
-                self._aborts_waiting += 1
-            registered = True
-            try:
-                self._lock.acquire()
-            except BaseException:
-                self._unregister()
-                raise
-        else:
-            while True:
-                with self._turnstile:
-                    while self._aborts_waiting:
-                        self._turnstile.wait()
-                if not self._lock.acquire(timeout=self._POLL_S):
-                    continue
-                with self._turnstile:
-                    if not self._aborts_waiting:
-                        break
-                # An abort registered while we were taking the mutex. It is
-                # already blocked on it, so give it back rather than run ahead.
-                self._lock.release()
-        self._local.depth = getattr(self._local, "depth", 0) + 1
-        return registered
-
-    def _release(self, registered: bool) -> None:
-        self._local.depth = getattr(self._local, "depth", 1) - 1
-        self._lock.release()
-        if registered:
-            self._unregister()
-
-    def _unregister(self) -> None:
-        with self._turnstile:
-            self._aborts_waiting -= 1
-            self._turnstile.notify_all()
-
-    # Routine use keeps the plain ``with lock:`` spelling every existing call
-    # site already uses, so only the abort paths had to change.
-    def __enter__(self) -> _PriorityLock:
-        self._acquire(priority=False)
-        return self
-
-    def __exit__(self, *exc: Any) -> None:
-        self._release(registered=False)
-
-    def priority(self) -> _PriorityLockAbort:
-        """Context manager for a command that must not queue behind routine work."""
-        return _PriorityLockAbort(self)
-
-
-class _PriorityLockAbort:
-    """The abort half of :class:`_PriorityLock`; see :meth:`_PriorityLock.priority`."""
-
-    __slots__ = ("_owner", "_registered")
-
-    def __init__(self, owner: _PriorityLock) -> None:
-        self._owner = owner
-        self._registered = False
-
-    def __enter__(self) -> _PriorityLockAbort:
-        self._registered = self._owner._acquire(priority=True)
-        return self
-
-    def __exit__(self, *exc: Any) -> None:
-        self._owner._release(self._registered)
-
-
-@dataclass
-class _PendingAck:
-    event: threading.Event = field(default_factory=threading.Event)
-    result: int | None = None
-    accept_in_progress: bool = False
-
-
-@dataclass
-class ParamEntry:
-    name: str
-    value: float
-    type: int        # MAV_PARAM_TYPE_* from the PARAM_VALUE message
-    index: int
-    count: int
-
-
-class MavlinkBridge:
+class MavlinkBridge(
+    ParamProtocolMixin,
+    MissionProtocolMixin,
+    VehicleSetupMixin,
+    ShellMixin,
+    TelemetryMixin,
+    RemoteIdMixin,
+):
     """MAVLink connection manager running on a background thread."""
 
     def __init__(
@@ -856,12 +391,6 @@ class MavlinkBridge:
             autopilot_dialect.STACK_PX4
         )
         self._mav_type_id = 0
-        # The calibration currently running, because ArduPilot cancels a
-        # magnetometer fit with a different command than everything else.
-        self._active_calibration = ""
-        # The mode to go back to when an ArduPilot autotune is stopped, since
-        # there the tune is a flight mode rather than a command.
-        self._autotune_return_mode = ""
         self._pending_acks: dict[int, _PendingAck] = {}
         self._ack_lock = threading.Lock()
         # Two-tier: routine commands queue, abort commands overtake the queue.
@@ -881,71 +410,21 @@ class MavlinkBridge:
         self._position_home_alt_amsl: float | None = None
         self._command_context = threading.local()
         self._reconnect_attempt: int = 1
-        # Heartbeat inter-arrival timestamps for jitter (A1); rolling window.
-        self._hb_times: collections.deque[float] = collections.deque(maxlen=30)
-        # Per-connection-cycle flags (A3): warn-once guard and radio presence.
+        # Per-connection-cycle warn-once guard for a late heartbeat (A3).
         self._degraded_warned: bool = False
-        self._radio_status_seen: bool = False
-        # Last computed uplink score; kept so heartbeat-only links can leave
-        # it at 0 and link_quality can fall back to heartbeat freshness.
-        self._uplink_score: int = 0
-        # The operator's battery estimator settings, and the cell count they
-        # imply for the pack currently plugged in. The settings come from the
-        # config file via set_battery_settings; the count is latched per
-        # connection cycle (see _battery_fields).
-        self._battery_lock = threading.Lock()
-        self._battery_settings: dict[str, Any] = battery_math.settings(None)
-        self._battery_cells: int = 0
-        # The Remote ID identity this station broadcasts for the aircraft, and
-        # what has come back about it. The identity arrives from the config file
-        # via set_remote_id; the rest is per-connection-cycle. `_remote_id_arm`
-        # is None until the vehicle actually reports an ODID arm status — a
-        # stack that never sends one and one that is happy are different facts.
-        self._remote_id_lock = threading.Lock()
-        self._remote_id: dict[str, Any] = remote_id_model.defaults()
-        self._remote_id_sent_at: float = 0.0
-        self._remote_id_error: str = ""
-        self._remote_id_arm: dict[str, Any] | None = None
-        self._params: dict[str, ParamEntry] = {}
-        self._param_count: int = -1
-        self._param_received: int = 0
-        self._param_download_state: str = "idle"
-        self._param_seen_indices: set[int] = set()
-        # Lossy-link download recovery (BUG 5): the watchdog re-requests lost
-        # PARAM_VALUEs once the burst settles, then flips to a terminal
-        # "incomplete" so the editor never waits forever at complete:false.
-        self._param_download_started_at: float = 0.0
-        self._param_retransmit_round: int = 0
-        self._param_last_value_at: float = 0.0
-        self._param_watchdog_thread: threading.Thread | None = None
-        self._param_lock = threading.Lock()
-        self._param_listeners: list[Callable[[dict[str, Any]], None]] = []
-        self._param_set_pending: dict[str, _PendingAck] = {}
-        # Background batch-upload state. The worker thread owns the loop; the
-        # fields are touched under _param_lock so the SSE/HTTP readers see a
-        # consistent snapshot. _param_upload_failed is reset per start_param_upload
-        # and copied out into _param_upload_result at completion.
-        self._param_upload_thread: threading.Thread | None = None
-        self._param_upload_cancel = threading.Event()
-        self._param_upload_failed: list[dict[str, Any]] = []
-        self._param_upload_result: dict[str, Any] = {}
-        # Mission-upload handshake state (set only during fly_to_points). The
-        # receive thread reads _mission_items on MISSION_REQUEST_INT and wakes
-        # _pending_mission_ack on MISSION_ACK; _mission_lock guards both.
-        self._mission_lock = threading.Lock()
-        self._mission_items: list[dict[str, Any]] | None = None
-        self._pending_mission_ack: _PendingAck | None = None
-        # When the vehicle last asked for an item. The upload watches this so a
-        # stalled handshake ends in seconds rather than sitting out a budget
-        # scaled to the item count.
-        self._mission_last_request: float = 0.0
-        # NSH debug-shell state and UTF-8-safe line reassembly.
-        self._shell_lock = threading.RLock()
-        self._shell_buffer: str = ""
-        self._shell_decoder: Any = codecs.getincrementaldecoder("utf-8")(
-            errors="replace",
-        )
-        self._shell_active: bool = False
+        # The vehicle's uptime at the last SYSTEM_TIME; see _note_boot_time.
+        self._last_boot_ms: int | None = None
+        # Why the vehicle will not arm: the last preflight report's reasons.
+        self._prearm_reasons: list[str] = []
+        self._prearm_reason_at = 0.0
+        self._prearm_requested_at = 0.0
+        # Each protocol owns its own state; see the mixin modules.
+        self._init_param_state()
+        self._init_mission_state()
+        self._init_setup_state()
+        self._init_shell_state()
+        self._init_telemetry_state()
+        self._init_remote_id_state()
 
     # Accepted MAVLink connection-string prefixes (BUG 2). set_connection()
     # rejects anything else so a non-str/empty/garbage JSON value cannot reach
@@ -1084,6 +563,26 @@ class MavlinkBridge:
     def _is_serial(self) -> bool:
         """True when the configured connection is a serial (UART/USB) link."""
         return self._conn_str.startswith("serial:")
+
+    def _is_slow_link(self) -> bool:
+        """True for a serial link that is not a USB cable into the autopilot.
+
+        What the stream rates and the parameter budget key off. A USB CDC link
+        to the flight controller carries megabits and is throttled like UDP;
+        a radio, and any serial port Corvus cannot identify, is treated as a
+        57 kbps SiK link, because guessing fast on a radio saturates it.
+        Cached per connection string: on macOS and Windows the answer comes
+        from enumerating the serial ports, which the parameter watchdog would
+        otherwise repeat on every pass.
+        """
+        if not self._is_serial():
+            return False
+        cached = getattr(self, "_slow_link_for", None)
+        if cached is not None and cached[0] == self._conn_str:
+            return cached[1]
+        slow = self.transport() != "usb"
+        self._slow_link_for = (self._conn_str, slow)
+        return slow
 
     def _parse_serial(self, conn_str: str) -> tuple[str, int]:
         """Strip a ``serial:`` prefix and return ``(device, baud)``.
@@ -1346,7 +845,7 @@ class MavlinkBridge:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             message = (
-                f"{device} is in use by another program — close the other "
+                f"{device} is in use by another program. Close the other "
                 f"ground station and reconnect"
             )
             logger.error("%s", message)
@@ -1405,7 +904,7 @@ class MavlinkBridge:
         if not port.isdigit() or int(port) not in self._ONBOARD_PORTS:
             return
         text = (
-            f"Connected on port {port} — PX4's onboard link, which MAVROS and "
+            f"Connected on port {port}, PX4's onboard link, which MAVROS and "
             f"MAVSDK bind. If a companion process needs it, move Corvus to "
             f"udp:0.0.0.0:14550 (the ground station port) instead."
         )
@@ -1417,6 +916,10 @@ class MavlinkBridge:
         self._reset_shell_state()
         self._reset_parameter_cache()
         self._request_sent = False
+        self._param_encoding_declared = ""
+        self._last_boot_ms = None
+        self._clear_prearm_reasons()
+        self._prearm_requested_at = 0.0
         self._home_alt_amsl = None
         self._position_home_alt_amsl = None
         # And forget the DISPLAYED home with it. The bridge already dropped
@@ -1439,6 +942,12 @@ class MavlinkBridge:
         # Same reasoning for Remote ID: the arm status and the "we are sending"
         # timestamp both describe the link that just went away.
         self._forget_remote_id_session()
+        # A new link may be a new aircraft, and even the same one may have had
+        # its mission replaced while nobody was listening.
+        self._forget_vehicle_mission()
+        self._vehicle_mission_id = None
+        self._store.update(mission_state="", mission_seq=-1, mission_reached=-1,
+                           mission_total=-1)
         self._store.update(
             link_status="connecting",
             link_connection=self._conn_str,
@@ -1474,8 +983,8 @@ class MavlinkBridge:
                 # fix is to pick a different one, which the message should say.
                 message = (
                     f"{self._conn_str}: port already in use by another program "
-                    f"(QGroundControl, MAVROS/MAVSDK or a second Corvus) — "
-                    f"close it or connect on a different port"
+                    f"(QGroundControl, MAVROS/MAVSDK or a second Corvus). "
+                    f"Close it or connect on a different port"
                 )
                 self._store.update(link_error=message)
                 raise ConnectionError(message) from exc
@@ -1485,6 +994,13 @@ class MavlinkBridge:
         else:
             self._warn_if_onboard_port()
         self._apply_signing()
+        # Speak first, then listen. A far end that waits to hear from a station
+        # before it sends anything (a mavlink-router server endpoint, SITL in a
+        # VM reached with udpout:, a USB board with SYS_USB_AUTO = 1) and a
+        # station that waits for the vehicle first would each wait for the
+        # other until the heartbeat wait below gave up, on every reconnect.
+        self._send_gcs_heartbeat(self._conn)
+        self._start_gcs_heartbeat()
         logger.info("Waiting for heartbeat …")
         hb = self._wait_vehicle_heartbeat(HEARTBEAT_WAIT_S)
         if hb is None:
@@ -1546,7 +1062,6 @@ class MavlinkBridge:
             self._request_streams()
         self._request_version()
         self._request_home()
-        self._start_gcs_heartbeat()
         # Start a fresh tlog for this flight session. Gated on _running so the
         # direct-_connect() unit tests (which never start() the bridge) do not
         # open files or spawn writer threads in ~/.corvus/logs; in production
@@ -1729,7 +1244,7 @@ class MavlinkBridge:
         if not builtin:
             self._modes_unsupported = True
             logger.info(
-                "no mode table for this autopilot (%s, MAV_TYPE %s) — mode "
+                "no mode table for this autopilot (%s, MAV_TYPE %s), so mode "
                 "selection is unavailable on this link",
                 self._dialect.label, self._mav_type_id,
             )
@@ -1739,6 +1254,28 @@ class MavlinkBridge:
             return
         self._hb_thread = threading.Thread(target=self._gcs_hb_loop, name="gcs-hb", daemon=True)
         self._hb_thread.start()
+
+    def _send_gcs_heartbeat(self, conn: Any) -> bool:
+        """Send one GCS heartbeat on *conn* now. Never raises.
+
+        A binding UDP socket that has not heard from anybody yet has nowhere to
+        send to; pymavlink drops the frame, which is the right outcome there.
+        """
+        if conn is None:
+            return False
+        try:
+            with self._send_lock:
+                if conn is not self._conn:
+                    return False
+                conn.mav.heartbeat_send(
+                    mavutil.mavlink.MAV_TYPE_GCS,
+                    mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                    0, 0, 0,
+                )
+            return True
+        except Exception as exc:  # noqa: BLE001 - a first frame that fails is retried at 1 Hz
+            logger.debug("GCS heartbeat send failed: %s", exc)
+            return False
 
     def _gcs_hb_loop(self) -> None:
         # Runs while _running is set regardless of link_status: a degraded
@@ -1750,6 +1287,9 @@ class MavlinkBridge:
             if not conn:
                 self._interruptible_sleep(1)
                 continue
+            # Read outside the send lock. The heartbeat starts before the
+            # vehicle is found; the Remote ID identity is addressed to it.
+            vehicle_known = bool(self._store.get_snapshot().get("connected"))
             try:
                 with self._send_lock:
                     # Re-check under the lock: stop()/reconnect can clear
@@ -1769,7 +1309,8 @@ class MavlinkBridge:
                     # loop's cadence and exactly its lifetime — and a second
                     # 1 Hz worker would be a second thing to join on shutdown
                     # (AGENTS.md: every thread the change introduces is torn down).
-                    self._send_remote_id(conn)
+                    if vehicle_known:
+                        self._send_remote_id(conn)
             except Exception:
                 # A reconnect swaps/closes the socket under this persistent
                 # worker. Stay alive so the next connection gets heartbeats
@@ -1911,7 +1452,7 @@ class MavlinkBridge:
         return True
 
     def _stream_rates(self) -> dict[int, int]:
-        """Per-stream REQUEST_DATA_STREAM rates, throttled on serial links.
+        """Per-stream REQUEST_DATA_STREAM rates, throttled on radio links.
 
         A SiK Telemetry Radio V3 tunnels MAVLink over a ~57 kbps serial link,
         so the default 50 Hz attitude/RC streams would saturate it. Keep
@@ -1919,7 +1460,7 @@ class MavlinkBridge:
         reason this path exists at all. PX4 ignores the message entirely, so
         these rates only ever reach a non-PX4 stack.
         """
-        if self._is_serial():
+        if self._is_slow_link():
             return {
                 mavutil.mavlink.MAV_DATA_STREAM_POSITION: 5,
                 mavutil.mavlink.MAV_DATA_STREAM_EXTRA1: 10,
@@ -1969,12 +1510,12 @@ class MavlinkBridge:
 
         Modern PX4 (v1.16-v1.18) rate-control, and the only mechanism PX4 has
         ever answered; REQUEST_DATA_STREAM (above) is the fallback for stacks
-        that do not, which in practice means ArduPilot. Serial links are
-        throttled to fit a 57 kbps SiK radio. VIBRATION is on-demand only (not
-        listed here).
+        that do not, which in practice means ArduPilot. Radio links are
+        throttled to fit a 57 kbps SiK radio; a USB cable is not. VIBRATION
+        is on-demand only (not listed here).
         """
         m = mavutil.mavlink
-        if self._is_serial():
+        if self._is_slow_link():
             return {
                 m.MAVLINK_MSG_ID_ATTITUDE: 100000,            # 10 Hz
                 m.MAVLINK_MSG_ID_GLOBAL_POSITION_INT: 200000,  # 5 Hz
@@ -2109,7 +1650,7 @@ class MavlinkBridge:
             return
         text = (
             f"This vehicle only accepts stick input from ground station "
-            f"{current} ({name}), and Corvus is {GCS_SYSTEM_ID} — the joystick "
+            f"{current} ({name}), and Corvus is {GCS_SYSTEM_ID}, so the joystick "
             f"will be ignored until {name} is set to {GCS_SYSTEM_ID} in "
             f"Parameters. Flight commands and mode changes are unaffected."
         )
@@ -2153,7 +1694,7 @@ class MavlinkBridge:
                 return
             if result == mavutil.mavlink.MAV_RESULT_UNSUPPORTED:
                 logger.info(
-                    "SET_MESSAGE_INTERVAL unsupported (msg %d) — falling back "
+                    "SET_MESSAGE_INTERVAL unsupported (msg %d), falling back "
                     "to REQUEST_DATA_STREAM for this connection", msg_id,
                 )
                 self._request_streams()
@@ -2170,7 +1711,7 @@ class MavlinkBridge:
                 # remaining messages would only prove the same thing again.
                 if silent >= INTERVAL_REQUEST_SILENT_LIMIT:
                     logger.info(
-                        "no COMMAND_ACK for %d interval requests — leaving the "
+                        "no COMMAND_ACK for %d interval requests, leaving the "
                         "rest to REQUEST_DATA_STREAM for this connection",
                         silent,
                     )
@@ -2428,6 +1969,34 @@ class MavlinkBridge:
                     raise ConnectionError(f"link read failed: {exc}") from exc
                 self._interruptible_sleep(RECV_ERROR_BACKOFF_S)
 
+    def _note_boot_time(self, boot_ms: int) -> None:
+        """Notice a vehicle that rebooted while the link stayed up.
+
+        A reboot that is quicker than the heartbeat drop timeout (SITL always,
+        a board after a calibration or a reboot command often) never ends the
+        connection, so nothing used to forget what the old boot said: the
+        parameter cache, a download marked complete, the declared parameter
+        encoding. A parameter that only exists after the reboot (a driver just
+        enabled) then read as absent until the operator reconnected by hand.
+        The stream rates go with a reboot too, since the autopilot starts from
+        its defaults, so they are asked for again.
+        """
+        last = self._last_boot_ms
+        self._last_boot_ms = boot_ms
+        if last is None or boot_ms + VEHICLE_REBOOT_BACKSTEP_MS >= last:
+            return
+        text = "The vehicle rebooted. Parameters are read again when next needed"
+        logger.info("%s (uptime %d ms after %d ms)", text, boot_ms, last)
+        self._console_publish("LINK", text, "info")
+        self._reset_parameter_cache()
+        self._param_encoding_declared = ""
+        self._request_sent = False
+        if self._is_serial():
+            self._request_streams()
+        self._request_version()
+        self._request_home()
+        self._schedule_message_intervals()
+
     def _mark_degraded_once(self) -> None:
         """Transition to degraded link quality once per connection cycle (A3).
 
@@ -2458,7 +2027,9 @@ class MavlinkBridge:
             if self._ack_is_for_us(msg):
                 with self._ack_lock:
                     pending = self._pending_acks.get(msg.command)
-                    if pending and (
+                    if pending is not None and msg.result in pending.interim:
+                        pending.interim_result = msg.result
+                    elif pending and (
                         msg.result != mavutil.mavlink.MAV_RESULT_IN_PROGRESS
                         or pending.accept_in_progress
                     ):
@@ -2469,6 +2040,10 @@ class MavlinkBridge:
             self._handle_mission_request(msg, as_int=(name == "MISSION_REQUEST_INT"))
         elif name == "MISSION_ACK":
             self._handle_mission_ack(msg)
+        elif name == "MISSION_COUNT":
+            self._handle_mission_count(msg)
+        elif name in ("MISSION_ITEM_INT", "MISSION_ITEM"):
+            self._handle_mission_item(msg, as_int=(name == "MISSION_ITEM_INT"))
 
         # NSH debug-shell reply (device=SHELL). Routed as a standalone branch
         # so a chatty shell never starves the telemetry elif chain; the
@@ -2528,6 +2103,9 @@ class MavlinkBridge:
                 vehicle_type=vtype, autopilot=autopilot, armed=armed, mode=mode,
                 autopilot_stack=self._dialect.stack,
             )
+            if armed and self._prearm_reasons:
+                # It armed, so whatever held it back no longer does.
+                self._clear_prearm_reasons()
             # A heartbeat recovers a degraded link; recompute quality. When no
             # RADIO_STATUS arrives (UDP SITL), quality is heartbeat-driven.
             self._publish_link_quality()
@@ -2575,10 +2153,12 @@ class MavlinkBridge:
             voltage = msg.voltage_battery / 1000.0 if msg.voltage_battery != 65535 else 0
             current = msg.current_battery / 100.0 if msg.current_battery != -1 else 0
             reported = int(msg.battery_remaining) if msg.battery_remaining != -1 else -1
+            prearm = _prearm_ok(msg)
             self._store.update(
-                prearm_ok=_prearm_ok(msg),
+                prearm_ok=prearm,
                 **self._battery_fields(voltage, current, reported),
             )
+            self._note_prearm_state(prearm)
         elif name == "BATTERY_STATUS":
             self._handle_battery_status(msg)
         elif name == "SYSTEM_TIME":
@@ -2603,6 +2183,7 @@ class MavlinkBridge:
             # when the flown track belongs to a previous flight.
             boot_ms = getattr(msg, "time_boot_ms", None)
             if isinstance(boot_ms, (int, float)) and boot_ms >= 0:
+                self._note_boot_time(int(boot_ms))
                 self._store.update(boot_ms=int(boot_ms))
         elif name == "STATUSTEXT":
             self._handle_statustext(msg)
@@ -2627,6 +2208,14 @@ class MavlinkBridge:
                 self._board_product_id = int(getattr(msg, "product_id", 0) or 0)
             except (TypeError, ValueError):
                 pass
+            try:
+                capabilities = int(getattr(msg, "capabilities", 0) or 0)
+            except (TypeError, ValueError):
+                capabilities = 0
+            if capabilities & _CAP_PARAM_ENCODE_BYTEWISE:
+                self._param_encoding_declared = autopilot_dialect.PARAM_ENCODING_BYTEWISE
+            elif capabilities & _CAP_PARAM_ENCODE_C_CAST:
+                self._param_encoding_declared = autopilot_dialect.PARAM_ENCODING_C_CAST
         elif name in ("LOG_ENTRY", "LOG_DATA"):
             if not self._is_from_autopilot(msg):
                 return
@@ -2668,6 +2257,13 @@ class MavlinkBridge:
             self._handle_attitude_target(msg)
         elif name == "POSITION_TARGET_LOCAL_NED":
             self._handle_position_target(msg)
+        elif name in ("MISSION_CURRENT", "MISSION_ITEM_REACHED"):
+            if not self._is_from_autopilot(msg):
+                return
+            if name == "MISSION_CURRENT":
+                self._handle_mission_current(msg)
+            else:
+                self._handle_mission_item_reached(msg)
         elif name == "HOME_POSITION":
             if not self._is_from_autopilot(msg):
                 return
@@ -2675,496 +2271,6 @@ class MavlinkBridge:
             lon = msg.longitude / 1e7
             self._home_alt_amsl = msg.altitude / 1000.0
             self._store.update(home=[lon, lat])
-
-    # ------------------------------------------------------------------
-    # Battery
-    # ------------------------------------------------------------------
-
-    def set_battery_settings(self, raw: Any) -> dict[str, Any]:
-        """Install the operator's battery estimator settings; return them resolved.
-
-        Called at startup and again whenever the Battery & Power page saves.
-        The latched cell count is dropped with the old settings: a 6S typed in
-        place of an auto-detected 5S must take effect on the next frame, not on
-        the next connection.
-        """
-        resolved = battery_math.settings(raw)
-        with self._battery_lock:
-            self._battery_settings = resolved
-            self._battery_cells = 0
-        return resolved
-
-    def battery_settings(self) -> dict[str, Any]:
-        """The estimator settings currently in force, resolved against defaults."""
-        with self._battery_lock:
-            return dict(self._battery_settings)
-
-    def _forget_battery_cells(self) -> None:
-        """Drop the latched cell count (a new link may be a new pack)."""
-        with self._battery_lock:
-            self._battery_cells = 0
-
-    # ------------------------------------------------------------------
-    # Remote ID — the identity this station broadcasts for the aircraft
-    # ------------------------------------------------------------------
-
-    def set_remote_id(self, raw: Any) -> dict[str, Any]:
-        """Install the Remote ID identity; return it resolved.
-
-        Called at startup and again whenever the Remote ID page saves. Takes
-        effect on the next 1 Hz cycle rather than on the next connection: an
-        operator who has just corrected a mistyped serial number is standing
-        beside an aircraft that is still broadcasting the old one.
-        """
-        resolved = remote_id_model.settings(raw)
-        with self._remote_id_lock:
-            self._remote_id = resolved
-            # The old identity's send history says nothing about the new one,
-            # and the vehicle has not judged it yet.
-            self._remote_id_sent_at = 0.0
-            self._remote_id_error = ""
-            self._remote_id_arm = None
-        return resolved
-
-    def remote_id_settings(self) -> dict[str, Any]:
-        """The identity currently in force, resolved against the defaults."""
-        # Re-resolved rather than deep-copied: settings() rebuilds the nested
-        # dicts from scratch, so the caller cannot reach into stored state.
-        with self._remote_id_lock:
-            return remote_id_model.settings(self._remote_id)
-
-    def _forget_remote_id_session(self) -> None:
-        """Drop everything Remote ID learned from the link that just ended."""
-        with self._remote_id_lock:
-            self._remote_id_sent_at = 0.0
-            self._remote_id_error = ""
-            self._remote_id_arm = None
-
-    def remote_id_supported(self) -> bool:
-        """Whether the live link can carry the Remote ID messages at all.
-
-        ``OPEN_DRONE_ID_*`` are MAVLink 2 messages, and pymavlink only grows
-        the send methods for them once the dialect has been upgraded — which
-        happens when the first v2 frame arrives. So this is a fact about the
-        connected vehicle, not about this build: a v1-only autopilot genuinely
-        cannot be told an identity, and the page says so rather than showing a
-        broadcast that never leaves.
-        """
-        conn = self._conn
-        mav = getattr(conn, "mav", None)
-        return bool(mav is not None and hasattr(mav, "open_drone_id_basic_id_send"))
-
-    def _send_remote_id(self, conn: Any) -> None:
-        """Send one round of the Remote ID identity. Never raises.
-
-        Called from the GCS heartbeat loop with ``_send_lock`` already held. It
-        swallows everything because of where it is called from: a throw here
-        would land in the heartbeat loop's reconnect branch and turn a link that
-        cannot carry ODID into a 10 Hz heartbeat spin. The reason is recorded
-        for the page instead.
-        """
-        with self._remote_id_lock:
-            identity = self._remote_id
-            enabled = bool(identity.get("enabled"))
-        if not enabled:
-            return
-        mav = getattr(conn, "mav", None)
-        if mav is None or not hasattr(mav, "open_drone_id_basic_id_send"):
-            with self._remote_id_lock:
-                self._remote_id_error = (
-                    "this link is MAVLink 1 — the Remote ID messages are MAVLink 2 only"
-                )
-            return
-        try:
-            for name, kwargs in remote_id_model.messages(
-                identity,
-                target_system=self._target_system,
-                target_component=self._target_component,
-            ):
-                getattr(mav, name + "_send")(**kwargs)
-        except Exception as exc:  # noqa: BLE001 - see the docstring
-            with self._remote_id_lock:
-                self._remote_id_error = str(exc) or exc.__class__.__name__
-            return
-        with self._remote_id_lock:
-            self._remote_id_sent_at = time.monotonic()
-            self._remote_id_error = ""
-
-    def _handle_remote_id_arm_status(self, msg: Any) -> None:
-        """Latch the vehicle's verdict on the identity it is being sent.
-
-        ``OPEN_DRONE_ID_ARM_STATUS`` is the only feedback a ground station gets:
-        the aircraft says whether its Remote ID system would let it arm, and
-        gives the reason in plain text when it would not. Without it the page
-        could only report what it *sent*, which is the half of the exchange
-        that is never the problem.
-        """
-        status = remote_id_model.arm_status(
-            getattr(msg, "status", None), getattr(msg, "error", b""))
-        with self._remote_id_lock:
-            self._remote_id_arm = status
-
-    def remote_id_status(self) -> dict[str, Any]:
-        """What the Remote ID broadcast is doing right now.
-
-        ``broadcasting`` is deliberately "a send landed in the last few
-        seconds" rather than "enabled is true": the switch is the operator's
-        intention and this is what the aircraft is actually being told.
-        """
-        with self._remote_id_lock:
-            enabled = bool(self._remote_id.get("enabled"))
-            sent_at = self._remote_id_sent_at
-            error = self._remote_id_error
-            arm = dict(self._remote_id_arm) if self._remote_id_arm else None
-        age = (time.monotonic() - sent_at) if sent_at else None
-        return {
-            "enabled": enabled,
-            "supported": self.remote_id_supported(),
-            "broadcasting": bool(enabled and age is not None and age < 5.0),
-            "last_sent_age": round(age, 1) if age is not None else None,
-            "error": error,
-            "arm_status": arm,
-        }
-
-    def _battery_fields(self, voltage: float, current: float,
-                        reported: int) -> dict[str, Any]:
-        """The battery half of a SYS_STATUS update, both answers included.
-
-        *reported* is the autopilot's own remaining percentage, or -1 when it
-        publishes none. The voltage estimate is computed alongside it on every
-        frame whether or not the operator has switched to it, because the page
-        shows both side by side and an operator deciding which to trust needs
-        to see them disagree.
-
-        The cell count is latched. It is detected from the pack voltage, and
-        that detection is only unambiguous on a pack that has just been plugged
-        in — 21.0 V is a fresh 5S and a tired 6S. Recomputing per frame would
-        let the count fall by one somewhere over the field, which moves the
-        percentage by thirty points in a single frame and does it while the
-        aircraft is flying. So the first reading of a connection decides, and
-        the count then only changes when the operator changes it.
-        """
-        with self._battery_lock:
-            resolved = dict(self._battery_settings)
-            latched = self._battery_cells
-        configured = int(resolved.get("cells") or 0)
-        if latched and not configured:
-            resolved["cells"] = latched
-
-        est = battery_math.estimate(voltage, current, resolved)
-        cells = int(est["cells"])
-        if cells and not latched and not configured:
-            with self._battery_lock:
-                # Only if nothing was latched meanwhile: two frames can race
-                # here, and the first one to answer is the one closest to plug-in.
-                if not self._battery_cells:
-                    self._battery_cells = cells
-
-        estimated = float(est["percent"])
-        use_estimate = bool(resolved.get("estimate")) and estimated >= 0
-        if use_estimate:
-            shown: float = round(estimated)
-        else:
-            shown = reported if reported >= 0 else 0
-
-        return {
-            "battery_voltage": round(voltage, 1),
-            "battery_current": round(current, 1),
-            "battery_percent": shown,
-            "battery_percent_fc": reported,
-            "battery_percent_est": estimated,
-            "battery_source": "estimate" if use_estimate else "autopilot",
-            "battery_cells": cells,
-            "battery_cell_voltage": float(est["cell_voltage"]),
-        }
-
-    def _handle_battery_status(self, msg: Any) -> None:
-        """Publish the detail SYS_STATUS has no room for.
-
-        BATTERY_STATUS is where a pack that actually knows something about
-        itself says so: per-cell voltages, how many mAh have left it, its
-        temperature, and how long the autopilot thinks it has. An analog power
-        module fills in almost none of that, which is the normal case and not
-        an error — every field here is published only when the message carries
-        a real value, so "not reported" stays distinguishable from zero.
-
-        Only the first battery is published. A second monitor overwriting the
-        first would make the top bar read whichever pack sent last.
-        """
-        if int(getattr(msg, "id", 0) or 0) != 0:
-            return
-
-        # UINT16_MAX marks a cell slot the pack does not use; 0 is the same
-        # thing in practice, since a cell at 0.000 V is a pack that is not on
-        # the aircraft any more.
-        cells: list[float] = []
-        for raw in list(getattr(msg, "voltages", []) or []):
-            value = int(raw)
-            if value in (0, 65535):
-                continue
-            cells.append(round(value / 1000.0, 3))
-        for raw in list(getattr(msg, "voltages_ext", []) or []):
-            value = int(raw)
-            if value in (0, 65535):
-                continue
-            cells.append(round(value / 1000.0, 3))
-
-        fields: dict[str, Any] = {"battery_cell_voltages": cells}
-
-        consumed = int(getattr(msg, "current_consumed", -1) or -1)
-        if consumed >= 0:
-            fields["battery_consumed_mah"] = float(consumed)
-
-        # INT16_MAX is the "unknown" marker; the unit is centidegrees.
-        temperature = int(getattr(msg, "temperature", 32767) or 0)
-        fields["battery_temperature"] = (
-            None if temperature == 32767 else round(temperature / 100.0, 1)
-        )
-
-        remaining = int(getattr(msg, "time_remaining", 0) or 0)
-        fields["battery_time_remaining"] = max(0, remaining)
-
-        self._store.update(**fields)
-
-    # ------------------------------------------------------------------
-    # Controller setpoints (PID tuning)
-    # ------------------------------------------------------------------
-
-    def _handle_attitude_target(self, msg: Any) -> None:
-        """Publish the attitude and body-rate setpoints the controller is following.
-
-        ATTITUDE_TARGET carries the attitude as a quaternion and the body rates
-        as rad/s, and it is the counterpart of ATTITUDE: together they are the
-        commanded-versus-achieved pair the PID tuning page plots. Streamed at
-        PX4's default rate normally, and raised while the tuning page is open
-        (see :meth:`set_tuning_stream`).
-
-        A malformed or short quaternion is dropped rather than guessed at: an
-        invented setpoint on a tuning graph is worse than a missing one.
-        """
-        try:
-            quat = list(getattr(msg, "q", None) or [])
-            rates = (
-                math.degrees(float(msg.body_roll_rate)),
-                math.degrees(float(msg.body_pitch_rate)),
-                math.degrees(float(msg.body_yaw_rate)),
-            )
-        except (TypeError, ValueError, AttributeError):
-            return
-        update: dict[str, Any] = {
-            "rollspeed_sp": round(rates[0], 1),
-            "pitchspeed_sp": round(rates[1], 1),
-            "yawspeed_sp": round(rates[2], 1),
-            "setpoints_live": True,
-        }
-        if len(quat) >= 4:
-            try:
-                roll, pitch, yaw = _quaternion_to_euler_deg(
-                    float(quat[0]), float(quat[1]), float(quat[2]), float(quat[3]))
-            except (TypeError, ValueError):
-                pass
-            else:
-                update["roll_sp"] = round(roll, 1)
-                update["pitch_sp"] = round(pitch, 1)
-                update["yaw_sp"] = round(yaw, 1)
-        self._store.update(**update)
-
-    def _handle_position_target(self, msg: Any) -> None:
-        """Publish the velocity setpoint the position controller is following.
-
-        POSITION_TARGET_LOCAL_NED carries the whole setpoint triplet; only the
-        velocity part is kept, because that is the one the velocity-controller
-        gains are read against. The type mask is not consulted: PX4 fills the
-        velocity fields with the controller's own setpoint regardless of which
-        of them the active mode considers authoritative, and a masked field
-        reads as the zero the controller is in fact tracking.
-        """
-        try:
-            self._store.update(
-                vx_sp=round(float(msg.vx), 2),
-                vy_sp=round(float(msg.vy), 2),
-                vz_sp=round(float(msg.vz), 2),
-                setpoints_live=True,
-            )
-        except (TypeError, ValueError, AttributeError):
-            return
-
-    # ------------------------------------------------------------------
-    # Transmitter channels (Setup -> Radio Control)
-    # ------------------------------------------------------------------
-
-    def _handle_rc_channels(self, msg: Any, raw: bool = False) -> None:
-        """Publish the raw transmitter channel values, in microseconds.
-
-        The Radio Control page is built on these: the calibration wizard has no
-        autopilot-side procedure to follow (PX4 has none for RC), so what the
-        operator sweeps on the transmitter reaches the browser through this
-        message and nothing else.
-
-        ``RC_CHANNELS`` carries all 18 channels and is what PX4 sends.
-        ``RC_CHANNELS_RAW`` carries eight at a time with ``port`` naming the
-        bank, and is accepted as a fallback so a non-PX4 autopilot on the same
-        link is not silently channel-less; its banks are merged into the
-        published list rather than replacing it.
-
-        A channel value of ``UINT16_MAX`` is MAVLink's "not delivered", which is
-        published as 0 — the page draws that as an empty channel instead of a
-        bar pinned to the top of its range.
-        """
-        try:
-            offset = (int(getattr(msg, "port", 0) or 0) * 8) if raw else 0
-            width = 8 if raw else rc_config.MAX_CHANNELS
-        except (TypeError, ValueError):
-            return
-        if offset < 0 or offset >= rc_config.MAX_CHANNELS:
-            return
-
-        values: list[int] = []
-        for index in range(1, width + 1):
-            value = getattr(msg, f"chan{index}_raw", None)
-            if value is None:
-                break
-            try:
-                pulse = int(value)
-            except (TypeError, ValueError):
-                pulse = 0
-            values.append(0 if pulse == 65535 else max(0, min(pulse, 65534)))
-
-        if raw:
-            # Merge the bank into whatever the other bank already published, so
-            # a receiver split across two messages does not flip between eight
-            # channels and the other eight on every frame.
-            # Clamp the bank to the channels PX4 defines before merging: the
-            # offset guard above admits port=2 (channels 17-24), and without
-            # this the merged list grows past MAX_CHANNELS and the page draws
-            # channels no firmware here has. The RC_CHANNELS path below clamps
-            # for the same reason.
-            room = rc_config.MAX_CHANNELS - offset
-            if room <= 0:
-                return
-            values = values[:room]
-            if not values:
-                return
-            existing = list(self._store.get_snapshot().get("rc_channels") or [])
-            needed = offset + len(values)
-            if len(existing) < needed:
-                existing.extend([0] * (needed - len(existing)))
-            existing[offset:offset + len(values)] = values
-            values = existing
-            count = len(values)
-        else:
-            try:
-                count = int(getattr(msg, "chancount", 0) or 0)
-            except (TypeError, ValueError):
-                count = 0
-            # chancount is what the receiver actually delivers; trust it over
-            # the fixed 18 slots, but never let a bad value grow the list.
-            if 0 < count <= len(values):
-                values = values[:count]
-            else:
-                count = len(values)
-
-        self._store.update(
-            rc_channels=values,
-            rc_channel_count=count,
-            rc_rssi=_rc_rssi_percent(getattr(msg, "rssi", 255)),
-            rc_live=True,
-        )
-
-    # ------------------------------------------------------------------
-    # Link-quality tracking (A1)
-    # ------------------------------------------------------------------
-
-    def _handle_radio_status(self, msg: Any) -> None:
-        """Parse RADIO_STATUS into uplink score and radio metrics (A1).
-
-        SiK radios report RSSI on a 0-255 relative scale; remrssi is the
-        drone's signal as seen by the ground radio (the uplink quality
-        proxy). txbuf near 100 means the buffer is full (congested).
-        rxerrors/fixed are cumulative counters from the radio — stored as-is.
-        """
-        # RADIO_STATUS also carries rssi, noise and remnoise. They are the
-        # *ground* radio's view; the uplink score wants the drone's, which is
-        # remrssi + txbuf. They used to be read into three throwaway locals
-        # "for completeness" — three getattr + float per RADIO_STATUS on the
-        # receive path, to build numbers nothing looked at. A sentence costs
-        # less and says the same thing.
-        remrssi = float(getattr(msg, "remrssi", 0))
-        txbuf = float(getattr(msg, "txbuf", 0))
-        rxerrors = int(getattr(msg, "rxerrors", 0))
-        fixed = int(getattr(msg, "fixed", 0))
-        # 0/255 remrssi on SiK means no remote signal reading → unknown
-        # uplink: keep the last score (avoids a momentary 0 flapping the link
-        # to "poor" while the radio resyncs). Real signal loss is caught by
-        # the heartbeat two-tier path (A3).
-        self._radio_status_seen = True
-        if remrssi not in (0.0, 255.0):
-            remrssi_pct = max(
-                0.0, min(100.0, (remrssi - _SIK_RSSI_WEAK)
-                         / (_SIK_RSSI_STRONG - _SIK_RSSI_WEAK) * 100.0)
-            )
-            txbuf_pct = max(0.0, min(100.0, txbuf))
-            score = round(0.7 * remrssi_pct + 0.3 * txbuf_pct)
-            self._uplink_score = max(0, min(100, score))
-        self._store.update(
-            uplink=self._uplink_score,
-            uplink_rssi=remrssi,
-            uplink_rxerrors=rxerrors,
-            uplink_fixed=fixed,
-        )
-        self._publish_link_quality()
-
-    def _publish_heartbeat_jitter(self) -> None:
-        """Publish rolling stddev of heartbeat inter-arrival in ms (A1).
-
-        Needs at least two timestamps to compute one interval; below that
-        the link is too fresh to characterize and jitter stays 0.
-        """
-        times = list(self._hb_times)
-        if len(times) < 2:
-            self._store.update(heartbeat_jitter_ms=0.0)
-            return
-        intervals_ms = [
-            (times[i] - times[i - 1]) * 1000.0 for i in range(1, len(times))
-        ]
-        mean = sum(intervals_ms) / len(intervals_ms)
-        var = sum((v - mean) ** 2 for v in intervals_ms) / len(intervals_ms)
-        self._store.update(heartbeat_jitter_ms=round(math.sqrt(var), 1))
-
-    def _current_jitter_ms(self) -> float:
-        """Latest published heartbeat jitter (0 before two heartbeats)."""
-        times = list(self._hb_times)
-        if len(times) < 2:
-            return 0.0
-        intervals_ms = [
-            (times[i] - times[i - 1]) * 1000.0 for i in range(1, len(times))
-        ]
-        mean = sum(intervals_ms) / len(intervals_ms)
-        var = sum((v - mean) ** 2 for v in intervals_ms) / len(intervals_ms)
-        return round(math.sqrt(var), 1)
-
-    def _publish_link_quality(self) -> None:
-        """Derive the link_quality string from uplink + jitter (A1).
-
-        With RADIO_STATUS: good/fair/poor from uplink score + jitter. Without
-        RADIO_STATUS (UDP SITL): heartbeat-freshness-driven — good when fresh,
-        left to A3 to mark poor/lost on staleness. 'lost' is owned by A3's drop
-        path, not here.
-        """
-        jitter = self._current_jitter_ms()
-        if not self._radio_status_seen:
-            # Heartbeat-driven: a fresh heartbeat just arrived (we're in the
-            # HEARTBEAT branch) → good. A3 flips to poor/lost on staleness.
-            self._store.update(link_quality="good")
-            return
-        uplink = self._uplink_score
-        if uplink >= 70 and jitter < 50.0:
-            quality = "good"
-        elif uplink >= 40:
-            quality = "fair"
-        else:
-            quality = "poor"
-        self._store.update(link_quality=quality)
 
     def _is_from_vehicle(self, msg: Any) -> bool:
         """Did *msg* come from the aircraft this bridge is flying?
@@ -3210,106 +2316,6 @@ class MavlinkBridge:
         expected_component = getattr(conn, "source_component", 0)
         return not (target_component and expected_component and target_component != expected_component)
 
-    def _handle_mission_request(self, msg: Any, as_int: bool) -> None:
-        """Serve one MISSION_ITEM(_INT) during an upload we initiated."""
-        conn = self._conn
-        if not conn or not self._ack_is_for_us(msg):
-            return
-        seq = int(getattr(msg, "seq", -1))
-        with self._mission_lock:
-            items = self._mission_items
-        if items is None or not (0 <= seq < len(items)):
-            return
-        item = items[seq]
-        with self._mission_lock:
-            self._mission_last_request = time.monotonic()
-        try:
-            with self._send_lock:
-                # Connection swapped under us (A6): drop the request.
-                if conn is not self._conn:
-                    return
-                if as_int:
-                    conn.mav.mission_item_int_send(
-                        self._target_system, self._target_component, seq,
-                        item["frame"], item["command"], item["current"],
-                        item["autocontinue"], item["param1"], item["param2"],
-                        item["param3"], item["param4"], item["x_int"],
-                        item["y_int"], item["z"],
-                    )
-                else:
-                    conn.mav.mission_item_send(
-                        self._target_system, self._target_component, seq,
-                        item["frame"], item["command"], item["current"],
-                        item["autocontinue"], item["param1"], item["param2"],
-                        item["param3"], item["param4"], item["x_f"],
-                        item["y_f"], item["z"],
-                    )
-        except Exception as exc:
-            logger.debug("mission item send failed (seq=%d): %s", seq, exc)
-
-    def _handle_mission_ack(self, msg: Any) -> None:
-        """Resolve the pending upload waiter with the MISSION_ACK result."""
-        if not self._ack_is_for_us(msg):
-            return
-        ack_type = int(getattr(msg, "type", -1))
-        text = f"MISSION_ACK: type={ack_type}"
-        level = "success" if ack_type == mavutil.mavlink.MAV_MISSION_ACCEPTED else "error"
-        self._console_publish("GOTOPOINTS", text, level)
-        with self._mission_lock:
-            pending = self._pending_mission_ack
-            if pending is not None and pending.result is None:
-                pending.result = ack_type
-                pending.event.set()
-
-    def _upload_mission(self, items: list[dict[str, Any]]) -> int:
-        """Upload mission items and wait for MISSION_ACK.
-
-        Returns MAV_MISSION_ACCEPTED on success, the MISSION_ACK type on
-        rejection, -1 on timeout, -2 on disconnect/shutdown.
-        """
-        pending = _PendingAck()
-        with self._mission_lock:
-            self._mission_items = list(items)
-            self._pending_mission_ack = pending
-            self._mission_last_request = time.monotonic()
-        try:
-            conn = self._conn
-            try:
-                with self._send_lock:
-                    if conn is not self._conn:
-                        return -2
-                    conn.mav.mission_count_send(
-                        self._target_system, self._target_component, len(items),
-                    )
-            except Exception as exc:
-                logger.error("mission_count_send failed: %s", exc)
-                return -2
-            # Bounded by progress, not by item count. PX4 requests the items
-            # one at a time and back to back, so "the vehicle has stopped
-            # asking" is known within MISSION_UPLOAD_QUIET_S — where a budget
-            # of 2 s per item held _operation_lock (and with it arm, land and
-            # RTL) for minutes after a handshake had already died.
-            deadline = time.monotonic() + min(
-                MISSION_UPLOAD_MAX_S, 5.0 + 2.0 * len(items),
-            )
-            while True:
-                if pending.event.wait(timeout=0.2):
-                    return pending.result if pending.result is not None else -1
-                now = time.monotonic()
-                if now > deadline:
-                    return -1
-                with self._mission_lock:
-                    last = self._mission_last_request
-                # No item has been asked for in a while and no ACK has landed:
-                # the handshake is not in progress, it is over.
-                if now - last > MISSION_UPLOAD_QUIET_S:
-                    return -1
-        finally:
-            with self._mission_lock:
-                if self._pending_mission_ack is pending:
-                    self._pending_mission_ack = None
-                self._mission_items = None
-
     def _cancel_pending_commands(self) -> None:
         with self._ack_lock:
             for pending in self._pending_acks.values():
@@ -3323,37 +2329,6 @@ class MavlinkBridge:
         if pending is not None:
             pending.result = -2
             pending.event.set()
-
-    def _abort_parameter_operations(self) -> None:
-        """Wake parameter waiters and prevent an upload crossing a reconnect.
-
-        The download state goes back to idle whatever it was, not only when
-        something was in flight. "complete" means *this vehicle has given us
-        its parameters*, and the moment the link is gone that is no longer a
-        claim Corvus can make — the editor would otherwise sit at complete,
-        offering writes, against an aircraft that is not there. Guarding the
-        reset on an in-progress state left exactly that behind.
-        """
-        self._param_upload_cancel.set()
-        with self._param_lock:
-            self._param_download_state = "idle"
-            for pending in self._param_set_pending.values():
-                pending.result = -2
-                pending.event.set()
-            self._param_set_pending.clear()
-
-    def _reset_parameter_cache(self) -> None:
-        """Discard vehicle-specific parameter metadata for a new link cycle."""
-        self._abort_parameter_operations()
-        with self._param_lock:
-            self._params.clear()
-            self._param_count = -1
-            self._param_received = 0
-            self._param_download_state = "idle"
-            self._param_seen_indices.clear()
-            self._param_download_started_at = 0.0
-            self._param_retransmit_round = 0
-            self._param_last_value_at = 0.0
 
     def _connection_ready(self) -> bool:
         return bool(
@@ -3425,9 +2400,80 @@ class MavlinkBridge:
             self._statustext_chunks.pop(key, None)
 
     def _publish_statustext(self, text: str, severity: int) -> None:
+        # PX4 ends a STATUSTEXT that doubles one of its events with a tab (a
+        # marker for stations that show the event instead). Corvus shows the
+        # text, and without the strip the same message is two warnings.
+        text = text.rstrip()
         level = "critical" if severity <= 3 else ("warning" if severity <= 5 else "info")
         self._console_publish("STATUSTEXT", text, level)
         self._store_update_warning(text, level)
+        reason = self._dialect.prearm_failure(text)
+        if reason:
+            self._note_prearm_failure(reason)
+
+    # ------------------------------------------------------------------
+    # Why it will not arm
+    # ------------------------------------------------------------------
+    #
+    # SYS_STATUS's prearm bit says whether the vehicle would arm, not why it
+    # would not. The why is text: PX4 v1.16 to v1.18 send a "Preflight Fail:"
+    # STATUSTEXT beside each arming-check event, ArduPilot a "PreArm:" one.
+    # Decoding the events themselves needs the component metadata fetched over
+    # MAVLink FTP; the text carries the same reasons without it. But PX4 sends
+    # the report only when a result changes, on an arm attempt, or when asked,
+    # so the station asks (MAV_CMD_RUN_PREARM_CHECKS) whenever the vehicle
+    # says "not ready" and no reason has arrived.
+
+    def _note_prearm_failure(self, reason: str) -> None:
+        now = time.monotonic()
+        if now - self._prearm_reason_at > PREARM_REPORT_GAP_S:
+            self._prearm_reasons = []
+        self._prearm_reason_at = now
+        if reason in self._prearm_reasons or len(self._prearm_reasons) >= PREARM_REASONS_MAX:
+            return
+        self._prearm_reasons.append(reason)
+        self._store.update(prearm_reasons=list(self._prearm_reasons))
+
+    def _clear_prearm_reasons(self) -> None:
+        self._prearm_reasons = []
+        self._prearm_reason_at = 0.0
+        self._store.update(prearm_reasons=[])
+
+    def _note_prearm_state(self, prearm: bool | None) -> None:
+        """React to SYS_STATUS's verdict: clear the reasons, or go and get them."""
+        if prearm is True:
+            if self._prearm_reasons:
+                self._clear_prearm_reasons()
+            return
+        if prearm is not False or self._prearm_reasons:
+            return
+        now = time.monotonic()
+        if now - self._prearm_requested_at < PREARM_REPORT_REQUEST_EVERY_S:
+            return
+        self._prearm_requested_at = now
+        self._request_prearm_report()
+
+    def _request_prearm_report(self) -> None:
+        """Ask for the preflight report now. Fire and forget, like _request_home.
+
+        Runs on the receive thread, so it cannot wait for its own ACK; whether
+        it worked is judged by the reasons arriving.
+        """
+        conn = self._conn
+        if conn is None:
+            return
+        nan = float("nan")
+        try:
+            with self._send_lock:
+                if conn is not self._conn:
+                    return
+                conn.mav.command_long_send(
+                    self._target_system, self._target_component,
+                    mavutil.mavlink.MAV_CMD_RUN_PREARM_CHECKS, 0,
+                    nan, nan, nan, nan, nan, nan, nan,
+                )
+        except Exception as exc:  # noqa: BLE001 - the next SYS_STATUS asks again
+            logger.debug("prearm report request failed: %s", exc)
 
     def _store_update_warning(self, text: str, level: str) -> None:
         """Atomically merge a warning into the vehicle state."""
@@ -3469,20 +2515,24 @@ class MavlinkBridge:
     def get_available_modes(self) -> list[str]:
         """The modes this vehicle can actually be commanded into.
 
-        Sorted names from the live mapping when there is one, the dialect's own
-        table when there is not, and an empty list for a stack neither dialect
+        The live mapping's names when there is one, the dialect's own table
+        when there is not, and an empty list for a stack neither dialect
         recognises — never another stack's mode list, which is what used to
         fill an ArduPilot selector with PX4 names.
+
+        Either way in the dialect's order, not alphabetical: PX4's list runs
+        from the most manual mode to the most automatic, which is how an
+        operator reads a mode selector, and alphabetising it opened the
+        selector with ACRO. A live name the dialect has no place for goes
+        after the ones it knows, alphabetically.
         """
+        ordered = self._dialect.available_modes(self._mav_type_id)
         if self._mode_mapping:
-            return sorted(self._mode_mapping)
+            known = [name for name in ordered if name in self._mode_mapping]
+            return known + sorted(self._mode_mapping.difference(known))
         if self._modes_unsupported:
             return []
-        # The dialect's own order, not sorted(_mode_values): PX4's list runs
-        # from the most manual mode to the most automatic, which is how an
-        # operator reads a mode selector, and alphabetising it would open with
-        # ACRO.
-        return self._dialect.available_modes(self._mav_type_id)
+        return ordered
 
     @property
     def vehicle_type_id(self) -> int:
@@ -3531,8 +2581,15 @@ class MavlinkBridge:
         self, command: int, params: list[float] | None = None,
         timeout: float = 3.0, retries: int = 2,
         accept_in_progress: bool = False,
+        interim: frozenset[int] = frozenset(),
     ) -> int:
-        """Send COMMAND_LONG and wait for COMMAND_ACK. Returns result int (-1 = no ack)."""
+        """Send COMMAND_LONG and wait for COMMAND_ACK. Returns result int (-1 = no ack).
+
+        *interim* names results that may be followed by the real answer (see
+        ``cancel_calibration``). They do not end the wait; one is returned only
+        when nothing else arrives, and it stops the retries, since the vehicle
+        evidently heard the command.
+        """
         with self._operation_lock:
             if not self._connection_ready():
                 return -2
@@ -3542,7 +2599,7 @@ class MavlinkBridge:
             conn = self._conn
             p = list(params or [])[:7]
             p.extend([float("nan")] * (7 - len(p)))
-            pending = _PendingAck(accept_in_progress=accept_in_progress)
+            pending = _PendingAck(accept_in_progress=accept_in_progress, interim=interim)
             with self._ack_lock:
                 self._pending_acks[command] = pending
 
@@ -3568,6 +2625,8 @@ class MavlinkBridge:
                         return -2
                     if pending.event.wait(timeout=timeout):
                         return pending.result if pending.result is not None else -1
+                    if pending.interim_result is not None:
+                        return pending.interim_result
                     logger.warning("Command %d ACK timeout (attempt %d)", command, attempt + 1)
                 return -1
             finally:
@@ -3762,7 +2821,7 @@ class MavlinkBridge:
                 # of them named PX4 at an aircraft that was not running it.
                 if self._modes_unsupported:
                     text = (
-                        "Mode changes are not supported on this autopilot — "
+                        "Mode changes are not supported on this autopilot: "
                         "Corvus does not know how it encodes a mode"
                     )
                 else:
@@ -3847,8 +2906,8 @@ class MavlinkBridge:
             # as any arrives.
             text = (
                 f"{action} accepted by the vehicle, but no telemetry "
-                f"confirmation within {self.ARMED_STATE_CONFIRM_S:.0f}s — "
-                f"check the armed indicator"
+                f"confirmation within {self.ARMED_STATE_CONFIRM_S:.0f}s. "
+                f"Check the armed indicator"
             )
             self._console_publish("ARM", text, "warning")
             self._store_update_warning(text, "warning")
@@ -3964,7 +3023,7 @@ class MavlinkBridge:
             # takeoff on a slow link that was about to work.
             self._console_publish(
                 "MODE",
-                f"{wanted} accepted but not yet confirmed in telemetry — "
+                f"{wanted} accepted but not yet confirmed in telemetry, "
                 f"continuing with {action.lower()}",
                 "warning",
             )
@@ -4072,7 +3131,7 @@ class MavlinkBridge:
                 takeoff_alt = nan
                 text = (
                     "No altitude reference yet (no HOME_POSITION or global "
-                    "position) — asking the vehicle to take off to its own "
+                    "position), so asking the vehicle to take off to its own "
                     f"configured altitude instead of {altitude_agl:.0f} m"
                 )
                 logger.warning("%s", text)
@@ -4131,7 +3190,7 @@ class MavlinkBridge:
                     )
                     self._console_publish(
                         "TAKEOFF",
-                        "Takeoff refused after arming — disarming again",
+                        "Takeoff refused after arming, disarming again",
                         "warning",
                     )
                     self.arm(False)
@@ -4266,950 +3325,6 @@ class MavlinkBridge:
             return True
 
     # ------------------------------------------------------------------
-    # Fly to points (Punktabflug)
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _fly_to_point_number(value: Any) -> float | None:
-        """Coerce a point field to float, rejecting bool (subclass of int)."""
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            return None
-        return float(value)
-
-    def _validate_fly_to_points(
-        self, points: list[dict[str, float]],
-    ) -> list[tuple[float, float, float]] | None:
-        """Validate the operator payload. Returns cleaned points or None."""
-        if not isinstance(points, list) or not points:
-            self._set_command_error("points must be a non-empty list")
-            return None
-        if len(points) > FLY_TO_MAX_POINTS:
-            self._set_command_error(
-                f"too many points ({len(points)}); the maximum is {FLY_TO_MAX_POINTS}"
-            )
-            return None
-        cleaned: list[tuple[float, float, float]] = []
-        for idx, entry in enumerate(points):
-            if not isinstance(entry, dict):
-                self._set_command_error(f"point {idx} must be an object")
-                return None
-            lat = self._fly_to_point_number(entry.get("lat"))
-            lon = self._fly_to_point_number(entry.get("lon"))
-            alt = self._fly_to_point_number(entry.get("alt_agl"))
-            if lat is None:
-                self._set_command_error(f"point {idx} lat must be a number")
-                return None
-            if not math.isfinite(lat) or not -90.0 <= lat <= 90.0:
-                self._set_command_error(f"point {idx} lat out of range")
-                return None
-            if lon is None:
-                self._set_command_error(f"point {idx} lon must be a number")
-                return None
-            if not math.isfinite(lon) or not -180.0 <= lon <= 180.0:
-                self._set_command_error(f"point {idx} lon out of range")
-                return None
-            if alt is None:
-                self._set_command_error(f"point {idx} alt_agl must be a number")
-                return None
-            if not math.isfinite(alt) or not (
-                TAKEOFF_ALTITUDE_MIN_M <= alt <= TAKEOFF_ALTITUDE_MAX_M
-            ):
-                self._set_command_error(
-                    f"point {idx} alt_agl must be between "
-                    f"{TAKEOFF_ALTITUDE_MIN_M:.0f} and {TAKEOFF_ALTITUDE_MAX_M:.0f} m"
-                )
-                return None
-            cleaned.append((lat, lon, alt))
-        return cleaned
-
-    @staticmethod
-    def _build_mission_item_spec(
-        seq: int, command: int, lat: float, lon: float, alt: float,
-        p1: float, p2: float, p3: float, p4: float,
-        frame: int | None = None,
-    ) -> dict[str, Any]:
-        """Build one MISSION_ITEM_INT / MISSION_ITEM send-spec.
-
-        Frame defaults to MAV_FRAME_GLOBAL_RELATIVE_ALT (relative to home =
-        AGL), supported by PX4 v1.16-v1.18 for MISSION_ITEM_INT. A planner item
-        that names no place passes MISSION_DO_FRAME instead.
-        """
-        return {
-            "frame": (mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT
-                      if frame is None else int(frame)),
-            "command": command,
-            "current": 1 if seq == 0 else 0,
-            "autocontinue": 1,
-            "param1": float(p1), "param2": float(p2),
-            "param3": float(p3), "param4": float(p4),
-            "x_int": int(round(lat * 1e7)),
-            "y_int": int(round(lon * 1e7)),
-            "x_f": float(lat), "y_f": float(lon), "z": float(alt),
-        }
-
-    def _with_mission_home_slot(
-        self, specs: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        """Prepend the home slot ArduPilot reserves at mission sequence 0.
-
-        PX4 numbers mission items from 0. ArduPilot's AP_Mission keeps *home*
-        in slot 0 and the first real item in slot 1, and an upload that does
-        not account for that does not fail — the vehicle simply stores the
-        first item as a home position and flies a mission with its takeoff
-        missing. Which is exactly the sort of difference that only shows up on
-        the airfield.
-
-        The placeholder carries the home the vehicle has already told us about
-        when it has, and zeroes when it has not; ArduPilot overwrites slot 0
-        with its own home either way, so the values are a courtesy rather than
-        a command. A zero-item upload (the protocol's "clear") is passed
-        through untouched — a clear has no home slot to reserve.
-        """
-        if not specs or not self._dialect.mission_seq0_is_home:
-            return specs
-        snapshot = self._store.get_snapshot()
-        home = snapshot.get("home") or [0.0, 0.0]
-        try:
-            home_lat, home_lon = float(home[0]), float(home[1])
-        except (TypeError, ValueError, IndexError):
-            home_lat = home_lon = 0.0
-        home_alt = self._home_alt_amsl or 0.0
-        placeholder = self._build_mission_item_spec(
-            0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-            home_lat, home_lon, home_alt, 0.0, 0.0, 0.0, 0.0,
-            frame=mavutil.mavlink.MAV_FRAME_GLOBAL,
-        )
-        out = [placeholder]
-        for item in specs:
-            shifted = dict(item)
-            shifted["current"] = 0
-            out.append(shifted)
-        return out
-
-    def _mission_start_range(self, count: int) -> tuple[float, float]:
-        """The (first, last) item indices MAV_CMD_MISSION_START should carry.
-
-        *count* is how many items the planner produced, before the home slot.
-        On ArduPilot the real items start at 1, because slot 0 is home.
-        """
-        first = 1.0 if self._dialect.mission_seq0_is_home else 0.0
-        return first, first + max(0, count - 1)
-
-    @staticmethod
-    def _mission_ack_to_result(ack_type: int) -> int:
-        """Map MAV_MISSION_RESULT to MAV_RESULT for "Fly to points failed: ..."."""
-        if ack_type == mavutil.mavlink.MAV_MISSION_ACCEPTED:
-            return mavutil.mavlink.MAV_RESULT_ACCEPTED
-        if ack_type == mavutil.mavlink.MAV_MISSION_DENIED:
-            return mavutil.mavlink.MAV_RESULT_DENIED
-        # 2 = MAV_MISSION_UNSUPPORTED_FRAME, 3 = MAV_MISSION_UNSUPPORTED
-        if ack_type in (2, 3):
-            return mavutil.mavlink.MAV_RESULT_UNSUPPORTED
-        return mavutil.mavlink.MAV_RESULT_FAILED
-
-    def fly_to_points(self, points: list[dict[str, float]]) -> bool:
-        """Fly to the given points in order (Punktabflug) by uploading a mission.
-
-        Each point is ``{"lat","lon","alt_agl"}`` with ``alt_agl`` in metres
-        above home (same reference as :meth:`takeoff`). Uploads a
-        MISSION_ITEM_INT mission (MAV_FRAME_GLOBAL_RELATIVE_ALT), starts it
-        with MAV_CMD_MISSION_START, switches to AUTO.MISSION, and arms if
-        needed. Returns True only when the mission is accepted, started, and
-        the vehicle is armed. Works on PX4 v1.16, v1.17, and v1.18.
-        """
-        with self._operation_lock:
-            self._set_command_error("")
-            cleaned = self._validate_fly_to_points(points)
-            if cleaned is None:
-                return False
-            if not self._connection_ready():
-                return self._command_failure("Fly to points", -2)
-            # No altitude-reference gate here, on purpose. There used to be
-            # one, and it was pure ceremony: every item below is built in
-            # MAV_FRAME_GLOBAL_RELATIVE_ALT, whose z *is* the AGL number the
-            # operator typed, so the AMSL value the gate computed was thrown
-            # away without ever being sent. It refused missions over a
-            # conversion the mission does not need.
-            on_ground = not self._is_airborne()
-            nan = float("nan")
-            items: list[dict[str, Any]] = []
-            seq = 0
-            if on_ground:
-                # Climb to the first waypoint's AGL, then proceed to the points.
-                takeoff_agl = cleaned[0][2]
-                items.append(self._build_mission_item_spec(
-                    seq, mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-                    0.0, 0.0, takeoff_agl, nan, nan, nan, nan,
-                ))
-                seq += 1
-            for lat, lon, alt_agl in cleaned:
-                items.append(self._build_mission_item_spec(
-                    seq, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-                    lat, lon, alt_agl, 0.0, nan, nan, nan,
-                ))
-                seq += 1
-
-            planned = len(items)
-            items = self._with_mission_home_slot(items)
-            self._console_publish(
-                "GOTOPOINTS", f"Uploading {planned} mission item(s) …", "info",
-            )
-            ack = self._upload_mission(items)
-            if ack != mavutil.mavlink.MAV_MISSION_ACCEPTED:
-                result = ack if ack < 0 else self._mission_ack_to_result(ack)
-                return self._command_failure("Fly to points", result)
-
-            self._console_publish(
-                "GOTOPOINTS", "Mission accepted; starting …", "info",
-            )
-            # param1 = first item index, param2 = last item index (unambiguous
-            # across PX4 v1.16-v1.18; avoids the "0 = last item" convention).
-            # The pair is stack-dependent because ArduPilot's item 0 is home.
-            first, last = self._mission_start_range(planned)
-            result = self._send_command_and_wait(
-                mavutil.mavlink.MAV_CMD_MISSION_START,
-                [first, last, nan, nan, nan, nan, nan],
-                timeout=5.0, retries=1,
-            )
-            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                return self._command_failure("Fly to points", result)
-
-            # The mission mode + arming starts the uploaded mission. PX4 calls
-            # it MISSION (AUTO.MISSION); ArduPilot calls it AUTO.
-            if not self._enter_mission_mode("Fly to points"):
-                return False
-            if not self.arm(True):
-                return False
-
-            self._console_publish("GOTOPOINTS", "Fly to points started", "success")
-            return True
-
-    # ------------------------------------------------------------------
-    # Mission plan (the Mission page)
-    # ------------------------------------------------------------------
-    #
-    # Separate from fly_to_points on purpose. "Fly to points" is one gesture —
-    # click, click, FLY — and uploading, starting and arming are all part of
-    # that one press. A planned mission is drawn, reviewed, saved and only then
-    # flown, so upload and start are two decisions and two methods: an operator
-    # must be able to put a route on the aircraft and walk out to it before
-    # anything spins.
-
-    def upload_mission_plan(self, items: list[dict[str, Any]]) -> bool:
-        """Upload a planned mission. Does not start it and does not arm.
-
-        *items* is :func:`corvus.mission.plan_to_items` output — a flat list of
-        ``{"command", "lat", "lon", "alt", "params": [p1..p4]}``. Returns True
-        only on MAV_MISSION_ACCEPTED.
-        """
-        with self._operation_lock:
-            self._set_command_error("")
-            if not isinstance(items, list) or not items:
-                self._set_command_error("mission must carry at least one item")
-                return False
-            if len(items) > FLY_TO_MAX_POINTS:
-                self._set_command_error(
-                    f"too many mission items ({len(items)}); "
-                    f"the maximum is {FLY_TO_MAX_POINTS}"
-                )
-                return False
-            if not self._connection_ready():
-                return self._command_failure("Mission upload", -2)
-
-            specs: list[dict[str, Any]] = []
-            for seq, entry in enumerate(items):
-                params = list(entry.get("params") or [0.0, 0.0, 0.0, 0.0])
-                params += [0.0] * (4 - len(params))
-                command = int(entry["command"])
-                # A DO_ command carries no position, so it carries no altitude
-                # frame either; everything that navigates stays in the
-                # relative-alt frame the plan's altitudes are written in.
-                frame = (MISSION_DO_FRAME
-                         if command == mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED
-                         else None)
-                specs.append(self._build_mission_item_spec(
-                    seq, command,
-                    float(entry.get("lat", 0.0)), float(entry.get("lon", 0.0)),
-                    float(entry.get("alt", 0.0)),
-                    params[0], params[1], params[2], params[3],
-                    frame=frame,
-                ))
-
-            self._console_publish(
-                "MISSION", f"Uploading {len(specs)} mission item(s) …", "info",
-            )
-            ack = self._upload_mission(self._with_mission_home_slot(specs))
-            if ack != mavutil.mavlink.MAV_MISSION_ACCEPTED:
-                result = ack if ack < 0 else self._mission_ack_to_result(ack)
-                return self._command_failure("Mission upload", result)
-            self._console_publish("MISSION", "Mission accepted by the vehicle", "success")
-            return True
-
-    def start_mission(self, count: int) -> bool:
-        """Run the mission already on the vehicle: MISSION_START, AUTO, arm.
-
-        *count* is how many items were uploaded — MAV_CMD_MISSION_START is sent
-        with an explicit first/last pair rather than PX4's "0 = last item"
-        convention, which is the one part of this that differs across v1.16 to
-        v1.18.
-        """
-        with self._operation_lock:
-            self._set_command_error("")
-            if not isinstance(count, int) or count <= 0:
-                self._set_command_error("mission item count must be positive")
-                return False
-            if not self._connection_ready():
-                return self._command_failure("Mission start", -2)
-            nan = float("nan")
-            first, last = self._mission_start_range(count)
-            result = self._send_command_and_wait(
-                mavutil.mavlink.MAV_CMD_MISSION_START,
-                [first, last, nan, nan, nan, nan, nan],
-                timeout=5.0, retries=1,
-            )
-            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                return self._command_failure("Mission start", result)
-            if not self._enter_mission_mode("Mission start"):
-                return False
-            if not self.arm(True):
-                return False
-            self._console_publish("MISSION", "Mission started", "success")
-            return True
-
-    def clear_mission(self) -> bool:
-        """Wipe the mission stored on the vehicle.
-
-        Uploading a zero-item mission is the protocol's own way of saying this,
-        and it goes through the same MISSION_COUNT / MISSION_ACK handshake —
-        so a vehicle that refuses reports why, exactly as a real upload does.
-        """
-        with self._operation_lock:
-            self._set_command_error("")
-            if not self._connection_ready():
-                return self._command_failure("Mission clear", -2)
-            ack = self._upload_mission([])
-            if ack != mavutil.mavlink.MAV_MISSION_ACCEPTED:
-                result = ack if ack < 0 else self._mission_ack_to_result(ack)
-                return self._command_failure("Mission clear", result)
-            self._console_publish("MISSION", "Mission cleared", "success")
-            return True
-
-    # ------------------------------------------------------------------
-    # Parameter protocol
-    # ------------------------------------------------------------------
-
-    def request_param_list(self) -> bool:
-        """Start a full parameter download from the vehicle.
-
-        Lazy, operator-triggered — keeps the GCS lean; only GPS/telemetry
-        streams until requested. Returns False when disconnected or another
-        parameter operation is in progress.
-        """
-        with self._operation_lock:
-            if not self._connection_ready():
-                # Surface a fresh error rather than a stale thread-local one
-                # (BUG 11).
-                self._set_command_error("not connected")
-                return False
-            with self._param_lock:
-                # Guard against a concurrent upload/download (BUG 4): the upload
-                # worker reads self._params for MAV_PARAM_TYPE, so clobbering it
-                # here would corrupt an in-flight upload.
-                if self._param_download_state in ("downloading", "uploading"):
-                    self._set_command_error("another parameter operation in progress")
-                    return False
-                self._param_download_state = "downloading"
-                self._params.clear()
-                self._param_received = 0
-                self._param_count = -1
-                self._param_seen_indices = set()
-                # Lossy-link recovery bookkeeping (BUG 5).
-                now = time.monotonic()
-                self._param_download_started_at = now
-                self._param_last_value_at = now
-                self._param_retransmit_round = 0
-            conn = self._conn
-            try:
-                with self._send_lock:
-                    if conn is None or conn is not self._conn:
-                        raise ConnectionError("link closed")
-                    conn.mav.param_request_list_send(
-                        self._target_system, self._target_component,
-                    )
-            except Exception as exc:  # noqa: BLE001 - a torn-down link is not a 500
-                # Roll the state machine back: leaving it at "downloading" with
-                # nothing on the wire would block every later parameter
-                # operation behind an "in progress" that never progresses.
-                with self._param_lock:
-                    if self._param_download_state == "downloading":
-                        self._param_download_state = "idle"
-                self._set_command_error(f"parameter list request failed: {exc}")
-                return False
-            self._start_param_watchdog()
-            return True
-
-    # PARAM_VALUE / PARAM_SET carry the id in a fixed char[16] with no
-    # terminator when it is exactly full, so anything longer is not a
-    # parameter this vehicle could ever have — and pymavlink packs it by
-    # raising rather than truncating.
-    PARAM_ID_MAX_BYTES = 16
-
-    @classmethod
-    def _encode_param_name(cls, name: Any) -> bytes | None:
-        """Encode *name* for the wire, or None when it cannot be one.
-
-        Rejects instead of truncating: a silently shortened name addresses a
-        *different* parameter, which on a parameter write is the difference
-        between setting a rate gain and setting something else entirely.
-        """
-        if not isinstance(name, str) or not name:
-            return None
-        try:
-            encoded = name.encode("ascii")
-        except UnicodeEncodeError:
-            return None
-        if len(encoded) > cls.PARAM_ID_MAX_BYTES:
-            return None
-        return encoded
-
-    def request_param(self, name: str) -> bool:
-        """Request a single parameter by name (param_index=-1)."""
-        with self._operation_lock:
-            if not self._connection_ready():
-                return False
-            encoded = self._encode_param_name(name)
-            if encoded is None:
-                self._set_command_error("invalid parameter name")
-                return False
-            conn = self._conn
-            try:
-                with self._send_lock:
-                    if conn is None or conn is not self._conn:
-                        return False
-                    conn.mav.param_request_read_send(
-                        self._target_system, self._target_component,
-                        encoded, -1,
-                    )
-            except Exception as exc:  # noqa: BLE001 - a torn-down link is not a 500
-                logger.debug("param read request failed (%s): %s", name, exc)
-                return False
-            return True
-
-    def fetch_params(
-        self, names: list[str], timeout: float = 4.0,
-    ) -> dict[str, float]:
-        """Read a named set of parameters without a full parameter download.
-
-        The Motors page needs ~100 specific parameters, not the ~1300 a full
-        download pulls. This asks for the missing ones in one burst of
-        ``PARAM_REQUEST_READ`` (one retransmit round for the stragglers, since a
-        lossy link drops individual replies) and returns ``{name: value}`` for
-        whatever arrived before *timeout*.
-
-        Names the vehicle never answers for are simply absent from the result —
-        that is the version-tolerance contract: a parameter this firmware does
-        not have is a missing key, never an error. Nothing here mutates the
-        download state machine, so it is safe to call while the parameter
-        editor's full download is idle *or* running.
-        """
-        wanted = [n for n in names if isinstance(n, str) and n]
-        if not wanted:
-            return {}
-        if not self._connection_ready():
-            self._set_command_error("not connected")
-            return {}
-
-        def snapshot() -> dict[str, float]:
-            with self._param_lock:
-                return {n: self._params[n].value for n in wanted if n in self._params}
-
-        deadline = time.monotonic() + max(0.5, timeout)
-        have = snapshot()
-        missing = [n for n in wanted if n not in have]
-        # Two rounds: the initial burst, then one retransmit of whatever is
-        # still outstanding halfway through the budget.
-        for round_index in range(2):
-            if not missing:
-                break
-            for name in missing:
-                # stop() marks the vehicle disconnected before it tears the
-                # socket down, so this is also the shutdown bail-out.
-                if self._stop_event.is_set() or not self._connection_ready():
-                    return snapshot()
-                self.request_param(name)
-            round_deadline = deadline if round_index else (
-                time.monotonic() + max(0.25, (deadline - time.monotonic()) / 2))
-            while time.monotonic() < min(round_deadline, deadline):
-                have = snapshot()
-                missing = [n for n in wanted if n not in have]
-                if not missing:
-                    break
-                if self._stop_event.is_set():
-                    return have
-                time.sleep(0.05)
-            have = snapshot()
-            missing = [n for n in wanted if n not in have]
-        return have
-
-    def _wait_for_param(self, name: str, timeout: float = 2.0) -> ParamEntry | None:
-        """Poll the param cache until *name* appears or *timeout* expires."""
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            with self._param_lock:
-                entry = self._params.get(name)
-            if entry is not None:
-                return entry
-            time.sleep(0.02)
-        return None
-
-    def set_param(self, name: str, value: float) -> bool:
-        """Write a parameter and confirm the echoed PARAM_VALUE matches."""
-        with self._operation_lock:
-            self._set_command_error("")
-            if self._encode_param_name(name) is None:
-                self._set_command_error("invalid parameter name")
-                return False
-            # bool is an int in Python: True would be written as 1.0.
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                self._set_command_error("parameter value must be a number")
-                return False
-            value = float(value)
-            if not math.isfinite(value):
-                # NaN/Inf reaches PX4 as a valid float32 and is stored as one.
-                # The echo check below could never confirm it either (NaN is
-                # not equal to itself), so it would report an unconfirmed write
-                # for a value that did land on the vehicle.
-                self._set_command_error("parameter value must be finite")
-                return False
-            if not self._connection_ready():
-                self._set_command_error("not connected")
-                return False
-            # Defense-in-depth: refuse while armed (PX4 also rejects).
-            if self._store.get_snapshot().get("armed"):
-                self._set_command_error("cannot set parameter while armed")
-                return False
-            with self._param_lock:
-                entry = self._params.get(name)
-            if entry is None:
-                # Ad-hoc fetch: request then wait for the value to arrive.
-                self.request_param(name)
-                entry = self._wait_for_param(name, timeout=2.0)
-                if entry is None:
-                    self._set_command_error("parameter not found on vehicle")
-                    return False
-            pending = _PendingAck()
-            with self._param_lock:
-                self._param_set_pending[name] = pending
-            try:
-                for _attempt in range(3):
-                    if not self._connection_ready():
-                        self._set_command_error("not connected")
-                        return False
-                    conn = self._conn
-                    try:
-                        with self._send_lock:
-                            if conn is None or conn is not self._conn:
-                                self._set_command_error("not connected")
-                                return False
-                            conn.mav.param_set_send(
-                                self._target_system, self._target_component,
-                                name.encode("ascii"), value, entry.type,
-                            )
-                    except Exception as exc:  # noqa: BLE001 - report, never raise
-                        self._set_command_error(f"parameter write failed: {exc}")
-                        return False
-                    if pending.event.wait(timeout=1.0):
-                        # The waiter is woken by an echoed PARAM_VALUE
-                        # (result 0) and by a link teardown alike (result -2,
-                        # set by _abort_parameter_operations). Only the first
-                        # is a write. Treating the second as one meant a cable
-                        # pulled mid-write reported the parameter as set
-                        # whenever the stale cache still held the value being
-                        # written — which is exactly the case where nothing
-                        # went out at all.
-                        if pending.result == -2:
-                            self._set_command_error("not connected")
-                            return False
-                        break
-                else:
-                    self._set_command_error("parameter write not confirmed (timeout)")
-                    return False
-            finally:
-                with self._param_lock:
-                    if self._param_set_pending.get(name) is pending:
-                        self._param_set_pending.pop(name, None)
-            with self._param_lock:
-                echoed = self._params.get(name)
-            if echoed is None:
-                self._set_command_error("parameter write not confirmed (no echo)")
-                return False
-            if abs(echoed.value - value) <= max(1e-4, 1e-3 * abs(value)):
-                self._console_publish("PARAM", f"{name} set to {value}", "success")
-                return True
-            text = (f"parameter write not confirmed (got {echoed.value} expected {value})")
-            self._set_command_error(text)
-            return False
-
-    def start_param_upload(self, params: list[dict]) -> bool:
-        """Apply a saved parameter file to the vehicle as a background upload.
-
-        Validates the list up front, flips the protocol state to ``"uploading"``,
-        and spawns one daemon worker that walks the list calling :meth:`set_param`
-        (the confirmed-write path). Progress is published over the existing
-        param listeners so ``GET /api/params/progress`` emits per-param updates;
-        the final tally is read via :meth:`get_param_upload_result`. Mirrors
-        :meth:`request_param_list`: the validation+start run under
-        ``_operation_lock`` so they cannot race with ``set_param``/``stop``.
-        """
-        with self._operation_lock:
-            self._set_command_error("")
-            prior_upload = self._param_upload_thread
-            if prior_upload is not None and prior_upload.is_alive():
-                self._set_command_error("another parameter operation in progress")
-                return False
-            if not isinstance(params, list) or not params:
-                self._set_command_error("invalid parameter list")
-                return False
-            for entry in params:
-                if not isinstance(entry, dict):
-                    self._set_command_error("invalid parameter list")
-                    return False
-                name = entry.get("name")
-                value = entry.get("value")
-                if not isinstance(name, str) or not name:
-                    self._set_command_error("invalid parameter list")
-                    return False
-                # bool is a subclass of int — reject it so True is never coerced
-                # to 1.0 and silently written to the autopilot.
-                if isinstance(value, bool) or not isinstance(value, (int, float)):
-                    self._set_command_error("invalid parameter list")
-                    return False
-            if not self._connection_ready():
-                self._set_command_error("not connected")
-                return False
-            # Defense-in-depth: PX4 also rejects param writes while armed, but
-            # refuse up front so the operator gets a clear error instead of N
-            # per-param failures from the worker.
-            if self._store.get_snapshot().get("armed"):
-                self._set_command_error("cannot upload parameters while armed")
-                return False
-            with self._param_lock:
-                if self._param_download_state in ("downloading", "uploading"):
-                    self._set_command_error("another parameter operation in progress")
-                    return False
-                self._param_download_state = "uploading"
-                self._param_count = len(params)
-                self._param_received = 0
-                self._param_upload_failed = []
-                self._param_upload_result = {}
-                self._param_upload_cancel.clear()
-            # set_param acquires _operation_lock internally; since this runs on
-            # the worker thread (not this one) there is no recursive-lock
-            # issue, and we deliberately do NOT hold _operation_lock across
-            # the loop — that would block every other command for the whole
-            # upload.
-            self._param_upload_thread = threading.Thread(
-                target=self.set_params_batch, args=(params,),
-                name="param-upload", daemon=True,
-            )
-            self._param_upload_thread.start()
-            return True
-
-    def set_params_batch(self, params: list[dict]) -> None:
-        """Worker target: write each parameter via the confirmed-write path.
-
-        Runs on the ``param-upload`` daemon thread. Reuses :meth:`set_param`
-        so each write inherits the armed-check, cache-lookup, and PARAM_VALUE
-        echo confirmation. Per-param progress is pushed to the param listeners
-        (the SSE handler reads only ``state``/``count``/``received``); the
-        terminal ``"upload_complete"`` status is always emitted, even on error,
-        so the UI never waits on a stuck ``"uploading"`` state.
-        """
-        failed: list[dict[str, Any]] = []
-        try:
-            for p in params:
-                if not self._running.is_set() or self._param_upload_cancel.is_set():
-                    break
-                name = p["name"]
-                value = float(p["value"])
-                ok = self.set_param(name, value)
-                with self._param_lock:
-                    if ok:
-                        self._param_received += 1
-                    else:
-                        # Read the error on this worker thread (set_param sets
-                        # the thread-local _command_context here); copy it out
-                        # under the lock so the result is self-consistent.
-                        failed.append({
-                            "name": name,
-                            "error": self.get_last_command_error() or "write failed",
-                        })
-                    status = {
-                        "state": self._param_download_state,
-                        "count": self._param_count,
-                        "received": self._param_received,
-                        "name": name,
-                        "value": value,
-                    }
-                self._notify_param_listeners(status)
-        except Exception as exc:
-            logger.error("param upload failed: %s", exc)
-            with self._param_lock:
-                self._param_download_state = "upload_complete"
-                self._param_upload_result = {
-                    "state": "upload_complete",
-                    "written": self._param_received,
-                    "failed": len(failed),
-                    "errors": list(failed),
-                }
-                final = {
-                    "state": "upload_complete",
-                    "count": self._param_count,
-                    "received": self._param_received,
-                }
-            self._notify_param_listeners(final)
-            return
-        interrupted = self._param_upload_cancel.is_set() or not self._running.is_set()
-        with self._param_lock:
-            self._param_download_state = "idle" if interrupted else "upload_complete"
-            self._param_upload_result = {
-                "state": "interrupted" if interrupted else "upload_complete",
-                "written": self._param_received,
-                "failed": len(failed),
-                "errors": list(failed),
-            }
-            final = {
-                "state": self._param_download_state,
-                "count": self._param_count,
-                "received": self._param_received,
-            }
-        self._notify_param_listeners(final)
-
-    def get_param_upload_result(self) -> dict[str, Any]:
-        """Return the final tally of the last batch upload.
-
-        ``{"state","written","failed","errors"}`` — idle default before any
-        upload has run so the HTTP endpoint can render before a vehicle is
-        connected. Copied under ``_param_lock`` so concurrent readers see a
-        stable snapshot.
-        """
-        with self._param_lock:
-            if not self._param_upload_result:
-                return {"state": "idle", "written": 0, "failed": 0, "errors": []}
-            return dict(self._param_upload_result)
-
-    def get_params(self) -> list[dict[str, Any]]:
-        """Return cached parameters as sorted ``{"name","value","type"}`` dicts."""
-        with self._param_lock:
-            return [
-                {"name": e.name, "value": e.value, "type": e.type}
-                for _, e in sorted(self._params.items())
-            ]
-
-    def get_param(self, name: str) -> dict[str, Any] | None:
-        """Return a single cached parameter dict or None."""
-        with self._param_lock:
-            entry = self._params.get(name)
-            if entry is None:
-                return None
-            return {"name": entry.name, "value": entry.value, "type": entry.type}
-
-    def param_status(self) -> dict[str, Any]:
-        """Return ``{"state","count","received"}`` for the download progress."""
-        with self._param_lock:
-            return {
-                "state": self._param_download_state,
-                "count": self._param_count,
-                "received": self._param_received,
-            }
-
-    def add_param_listener(self, fn: Callable[[dict[str, Any]], None]) -> None:
-        with self._param_lock:
-            self._param_listeners.append(fn)
-
-    def remove_param_listener(self, fn: Callable[[dict[str, Any]], None]) -> None:
-        with self._param_lock:
-            try:
-                self._param_listeners.remove(fn)
-            except ValueError:
-                pass
-
-    def _notify_param_listeners(self, status: dict[str, Any]) -> None:
-        with self._param_lock:
-            listeners = list(self._param_listeners)
-        for fn in listeners:
-            try:
-                fn(status)
-            except Exception:
-                pass
-
-    def _handle_param_value(self, msg: Any) -> None:
-        """Cache a received PARAM_VALUE and notify listeners."""
-        try:
-            raw_id = msg.param_id
-            if isinstance(raw_id, bytes):
-                pname = raw_id.split(b"\x00", 1)[0].decode("ascii")
-            else:
-                pname = str(raw_id).split("\x00", 1)[0]
-            pval = float(msg.param_value)
-            ptype = int(msg.param_type)
-            pindex = int(msg.param_index)
-            pcount = int(msg.param_count)
-        except (AttributeError, TypeError, ValueError, UnicodeError):
-            logger.debug("discarding malformed PARAM_VALUE")
-            return
-        if (
-            self._encode_param_name(pname) is None
-            or not math.isfinite(pval)
-            or not 1 <= ptype <= 10
-            or not -1 <= pindex < PARAM_CACHE_MAX_ENTRIES
-            or not 0 <= pcount <= PARAM_CACHE_MAX_ENTRIES
-            or (pcount > 0 and pindex >= pcount)
-        ):
-            logger.warning(
-                "discarding invalid PARAM_VALUE id=%r index=%s count=%s type=%s",
-                pname, pindex, pcount, ptype,
-            )
-            return
-        with self._param_lock:
-            is_new = pname not in self._params
-            if is_new and len(self._params) >= PARAM_CACHE_MAX_ENTRIES:
-                logger.warning("parameter cache limit reached; dropping %s", pname)
-                return
-            if is_new:
-                self._param_received += 1
-            if pindex >= 0:
-                self._param_seen_indices.add(pindex)
-            # Last-arrival timestamp feeds the watchdog's inactivity retransmit
-            # (BUG 5).
-            self._param_last_value_at = time.monotonic()
-            self._params[pname] = ParamEntry(pname, pval, ptype, pindex, pcount)
-            if pcount > 0:
-                self._param_count = max(self._param_count, pcount)
-            if self._param_count > 0 and self._param_received >= self._param_count:
-                self._param_download_state = "complete"
-            status = {
-                "state": self._param_download_state,
-                "count": self._param_count,
-                "received": self._param_received,
-                "name": pname,
-                "value": pval,
-                "type": ptype,
-            }
-            # Wake a pending set_param waiter if the echoed name matches.
-            pending = self._param_set_pending.get(pname)
-            if pending is not None:
-                pending.result = 0
-                pending.event.set()
-        self._notify_param_listeners(status)
-
-    # ------------------------------------------------------------------
-    # Lossy-link parameter-download recovery (BUG 5)
-    # ------------------------------------------------------------------
-
-    def _start_param_watchdog(self) -> None:
-        """Spawn the download watchdog (only while the bridge is running)."""
-        if not self._running.is_set():
-            return
-        if self._param_watchdog_thread and self._param_watchdog_thread.is_alive():
-            return
-        self._param_watchdog_thread = threading.Thread(
-            target=self._param_watchdog, name="param-watchdog", daemon=True,
-        )
-        self._param_watchdog_thread.start()
-
-    def _finish_param_download_incomplete(self) -> None:
-        """Flip a stuck download to a terminal "incomplete" (partial params kept)."""
-        with self._param_lock:
-            if self._param_download_state != "downloading":
-                return
-            self._param_download_state = "incomplete"
-            status = {
-                "state": "incomplete",
-                "count": self._param_count,
-                "received": self._param_received,
-            }
-        self._notify_param_listeners(status)
-
-    def _param_watchdog(self) -> None:
-        """Re-request lost PARAM_VALUEs and time out a stuck download (BUG 5).
-
-        PX4 bursts the full parameter list on PARAM_REQUEST_LIST; on a lossy
-        link some PARAM_VALUEs are lost and _param_received never reaches
-        _param_count, leaving the editor stuck at complete:false. This
-        watchdog wakes periodically and, once the burst has settled (no new
-        PARAM_VALUE for PARAM_DOWNLOAD_INACTIVITY_S), re-requests the missing
-        indices via param_request_read_send. After PARAM_DOWNLOAD_MAX_ROUNDS
-        or PARAM_DOWNLOAD_TIMEOUT_S it flips the state to a terminal
-        "incomplete" (partial params kept) so the UI never waits forever.
-        Bounded: never loops past the rounds/timeout caps.
-        """
-        while self._running.is_set() and not self._stop_event.is_set():
-            self._interruptible_sleep(PARAM_WATCHDOG_TICK_S)
-            with self._param_lock:
-                state = self._param_download_state
-                if state != "downloading":
-                    return
-                count = self._param_count
-                received = self._param_received
-                seen = set(self._param_seen_indices)
-                started_at = self._param_download_started_at
-                last_value = self._param_last_value_at
-                round_ = self._param_retransmit_round
-            if count <= 0:
-                continue
-            if received >= count:
-                return
-            now = time.monotonic()
-            budget_s = (
-                PARAM_DOWNLOAD_TIMEOUT_S_SERIAL if self._is_serial()
-                else PARAM_DOWNLOAD_TIMEOUT_S
-            )
-            if now - started_at > budget_s:
-                self._finish_param_download_incomplete()
-                return
-            if now - last_value < PARAM_DOWNLOAD_INACTIVITY_S:
-                continue
-            if round_ >= PARAM_DOWNLOAD_MAX_ROUNDS:
-                self._finish_param_download_incomplete()
-                return
-            missing = set(range(count)) - seen
-            if not missing:
-                return
-            with self._param_lock:
-                self._param_retransmit_round = round_ + 1
-            conn = self._conn
-            if conn is None or conn is not self._conn:
-                return
-            # Re-request the missing indices by index (name=b"", index=idx),
-            # capped and paced so the recovery cannot saturate the very link
-            # whose losses it is recovering from. The inactivity gate above
-            # means this round's replies have to arrive (or not) before
-            # another round is scheduled, so what is left over is not lost.
-            if self._is_serial():
-                budget = PARAM_RETRANSMIT_MAX_PER_ROUND_SERIAL
-                gap = PARAM_RETRANSMIT_GAP_S_SERIAL
-            else:
-                budget = PARAM_RETRANSMIT_MAX_PER_ROUND_UDP
-                gap = PARAM_RETRANSMIT_GAP_S_UDP
-            for idx in sorted(missing)[:budget]:
-                if self._stop_event.is_set():
-                    return
-                try:
-                    with self._send_lock:
-                        if conn is not self._conn:
-                            return
-                        conn.mav.param_request_read_send(
-                            self._target_system, self._target_component,
-                            b"", idx,
-                        )
-                except Exception as exc:
-                    logger.debug("param retransmit idx=%d failed: %s", idx, exc)
-                # Outside the send lock: the point is to leave the link free
-                # between requests, not to hold it while waiting.
-                self._interruptible_sleep(gap)
-
-    # ------------------------------------------------------------------
     # On-board log download (MAVLink LOG_* protocol)
     # ------------------------------------------------------------------
 
@@ -5305,473 +3420,6 @@ class MavlinkBridge:
             return True
 
     # ------------------------------------------------------------------
-    # Sensor calibration
-    # ------------------------------------------------------------------
-
-    # The PX4 parameter slots, kept here because they were here first and the
-    # simulated vehicle and its tests read them by this name. The live command
-    # comes from the dialect — ArduPilot agrees on gyro/baro/accel and on
-    # nothing else, and runs its magnetometer fit from a different command
-    # entirely. See corvus.autopilot.
-    _CALIBRATION_MAP: dict[str, list[float]] = {
-        name: plan.param_list()
-        for name, plan in autopilot_dialect.PX4Dialect._CALIBRATION.items()
-        if plan.ok
-    }
-
-    def available_calibrations(self) -> list[str]:
-        """The calibrations the connected stack can actually run."""
-        return sorted(
-            name for name, plan in self._dialect._CALIBRATION.items() if plan.ok
-        )
-
-    def calibrate(self, sensor: str) -> bool:
-        """Start a sensor calibration on the connected autopilot.
-
-        Calibration is interactive: the ACCEPTED ack arrives quickly (the
-        firmware starts a worker), and the operator then follows the guidance
-        that flows through ``_handle_statustext``.
-
-        The command itself is the dialect's. PX4 runs every calibration through
-        ``MAV_CMD_PREFLIGHT_CALIBRATION`` and detects each accelerometer
-        position by itself; ArduPilot agrees about gyro, baro and the three
-        accelerometer forms, runs the compass from ``DO_START_MAG_CAL``, waits
-        to be *told* each accelerometer position (see
-        :meth:`accel_calibration_position`), and has no ESC calibration on the
-        MAVLink side at all.
-        """
-        with self._operation_lock:
-            self._set_command_error("")
-            plan = self._dialect.calibration(sensor)
-            if plan is None:
-                self._set_command_error(
-                    f"{self._dialect.label} has no {sensor} calibration"
-                    if sensor in autopilot_dialect.PX4Dialect._CALIBRATION
-                    else f"unknown calibration: {sensor}"
-                )
-                return False
-            if not plan.ok:
-                self._set_command_error(plan.unsupported)
-                return False
-            # Defense-in-depth: refuse while armed (both stacks also reject).
-            if self._store.get_snapshot().get("armed"):
-                self._set_command_error("cannot calibrate while armed")
-                return False
-            if not self._connection_ready():
-                return self._command_failure(f"Calibrate {sensor}", -2)
-            result = self._send_command_and_wait(
-                plan.command, plan.param_list(), timeout=5.0, retries=0,
-            )
-            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                return self._command_failure(f"Calibrate {sensor}", result)
-            self._active_calibration = sensor
-            self._console_publish("CALIBRATE", f"{sensor} calibration started", "success")
-            return True
-
-    def cancel_calibration(self) -> bool:
-        """Abort whatever calibration is running.
-
-        PX4's Commander reads an all-zero ``PREFLIGHT_CALIBRATION`` as "cancel
-        the calibration in progress" — verified against v1.16, v1.17 and v1.18.
-        ArduPilot needs its own ``DO_CANCEL_MAG_CAL`` for a magnetometer fit,
-        which is why the running calibration is remembered at all. Without
-        either, an operator who starts the wrong calibration, or one that
-        stalls waiting for a side it will never see, has no way out except
-        power-cycling the autopilot.
-
-        Deliberately not gated on the armed state: this only ever *stops* work
-        the vehicle is doing, so refusing it would be a safety regression rather
-        than defense in depth.
-        """
-        with self._operation_lock.priority():
-            self._set_command_error("")
-            if not self._connection_ready():
-                return self._command_failure("Cancel calibration", -2)
-            plan = self._dialect.cancel_calibration(self._active_calibration)
-            if not plan.ok:
-                self._set_command_error(plan.unsupported)
-                return False
-            result = self._send_command_and_wait(
-                plan.command, plan.param_list(), timeout=5.0, retries=0,
-            )
-            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                return self._command_failure("Cancel calibration", result)
-            self._active_calibration = ""
-            self._console_publish("CALIBRATE", "calibration cancelled", "warning")
-            return True
-
-    def accel_calibration_position(self, position: str) -> bool:
-        """Tell the autopilot the aircraft is now in the position it asked for.
-
-        This is the step that has no PX4 equivalent. PX4 recognises each of the
-        six accelerometer orientations from the accelerometer itself and moves
-        on when it is satisfied; ArduPilot asks for a side over STATUSTEXT and
-        then waits for ``MAV_CMD_ACCELCAL_VEHICLE_POS`` before measuring, for
-        as long as it takes. A ground station that never sends it turns an
-        ArduPilot accelerometer calibration into a screen that says "place
-        vehicle level" and never changes.
-        """
-        with self._operation_lock:
-            self._set_command_error("")
-            plan = self._dialect.accel_position(position)
-            if not plan.ok:
-                self._set_command_error(plan.unsupported)
-                return False
-            if not self._connection_ready():
-                return self._command_failure("Calibration position", -2)
-            result = self._send_command_and_wait(
-                plan.command, plan.param_list(), timeout=5.0, retries=0,
-            )
-            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                return self._command_failure("Calibration position", result)
-            self._console_publish(
-                "CALIBRATE", f"position confirmed: {position}", "info")
-            return True
-
-    # ------------------------------------------------------------------
-    # Motor test
-    # ------------------------------------------------------------------
-
-    # MAV_CMD_DO_MOTOR_TEST (209) — verified against PX4 v1.16, v1.17 and v1.18
-    # (mavlink_receiver.cpp -> actuator_test). param1 is the 1-based motor,
-    # param2 the throttle type (0 = percent), param3 the throttle value,
-    # param4 the timeout in seconds, param5 the motor count (0 = this motor
-    # only) and param6 the test order (0 = default).
-    MOTOR_TEST_THROTTLE_PERCENT = 0.0
-
-    # A spinning motor with no timeout is a hazard: if the link drops mid-test
-    # nothing stops it. Every test therefore carries a bounded timeout that PX4
-    # enforces on the vehicle itself, so the motor stops even if the GCS dies.
-    MOTOR_TEST_MAX_DURATION_S = 10.0
-
-    def motor_test(self, motor: int, throttle_pct: float, duration_s: float) -> bool:
-        """Spin one motor on the bench so the operator can identify it.
-
-        PROPELLERS MUST BE OFF. This is the identification tool behind Setup ->
-        Motors: it answers "which physical motor is Motor 3?" without arming.
-        The UI gates it behind an explicit propellers-removed acknowledgement;
-        this layer enforces what it can — disarmed only, a valid motor number, a
-        throttle inside the protocol range, and a bounded duration that the
-        *vehicle* counts down, so a dropped link cannot leave a motor running.
-        """
-        with self._operation_lock:
-            self._set_command_error("")
-            # bool is a subclass of int — reject it so True never becomes motor 1.
-            if isinstance(motor, bool) or not isinstance(motor, int) or not 1 <= motor <= 16:
-                self._set_command_error("motor must be between 1 and 16")
-                return False
-            if not 0.0 <= float(throttle_pct) <= 100.0:
-                self._set_command_error("throttle must be between 0 and 100 percent")
-                return False
-            duration = max(0.0, min(self.MOTOR_TEST_MAX_DURATION_S, float(duration_s)))
-            # Defense-in-depth: refuse while armed (PX4 also rejects an actuator
-            # test on an armed vehicle).
-            if self._store.get_snapshot().get("armed"):
-                self._set_command_error("cannot test motors while armed")
-                return False
-            if not self._connection_ready():
-                return self._command_failure(f"Motor test {motor}", -2)
-            result = self._send_command_and_wait(
-                mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST,
-                [float(motor), self.MOTOR_TEST_THROTTLE_PERCENT, float(throttle_pct),
-                 duration, 0.0, 0.0, 0.0],
-                timeout=5.0, retries=0,
-            )
-            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                return self._command_failure(f"Motor test {motor}", result)
-            self._console_publish(
-                "MOTOR", f"motor {motor} test at {throttle_pct:g}% for {duration:g}s",
-                "warning")
-            return True
-
-    def stop_motor_test(self) -> bool:
-        """Stop a running motor test (throttle 0, timeout 0).
-
-        Deliberately not gated on the armed state, and not gated on a valid
-        preceding test: this only ever *stops* a motor, so refusing it would be
-        a safety regression rather than defense in depth. Mirrors
-        :meth:`cancel_calibration`.
-        """
-        with self._operation_lock.priority():
-            self._set_command_error("")
-            if not self._connection_ready():
-                return self._command_failure("Stop motor test", -2)
-            ok = True
-            # Every motor, not just the last one tested: the operator pressing
-            # Stop wants silence, and a test that was started by something else
-            # (or before a reload) is exactly when that matters most.
-            for motor in range(1, 9):
-                result = self._send_command_and_wait(
-                    mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST,
-                    [float(motor), self.MOTOR_TEST_THROTTLE_PERCENT, 0.0,
-                     0.0, 0.0, 0.0, 0.0],
-                    timeout=2.0, retries=0,
-                )
-                if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                    ok = False
-            if not ok:
-                self._set_command_error("motor stop not confirmed for every motor")
-            self._console_publish("MOTOR", "motor test stopped", "warning")
-            return ok
-
-    # ------------------------------------------------------------------
-    # Autotune
-    # ------------------------------------------------------------------
-    #
-    # The autotune runs IN FLIGHT. PX4's mc_autotune_attitude_control injects
-    # steps into the rate controller and identifies the airframe from the
-    # response, which it can only do on an armed, airborne vehicle; the command
-    # handler answers TEMPORARILY_REJECTED while the vehicle is disarmed.
-    #
-    # Corvus used to refuse to send this command *unless* the vehicle was
-    # disarmed, copying the armed-refusal that is correct for calibration and
-    # parameter writes. Applied here it inverted the precondition, so the only
-    # state in which the command was sent was the only state PX4 rejects it in,
-    # and the autotune could never run. The gate below is the real one: the
-    # vehicle must be armed, and must not be sitting on the ground.
-    #
-    # Progress is not STATUSTEXT. PX4 answers this command with a repeated
-    # COMMAND_ACK carrying MAV_RESULT_IN_PROGRESS and a 0-100 progress field
-    # for as long as the tune runs, then a final ACK with the outcome; that
-    # stream is latched into the store by _handle_autotune_ack.
-
-    _AUTOTUNE_AXIS_MAP: dict[str, float] = {
-        # PX4's multicopter autotune always tunes all three axes: it ignores
-        # param2 on v1.16/v1.17 and wants zero on v1.18. The fixed-wing tune
-        # does take an axis selection, but through FW_AT_AXES rather than
-        # through this command, so "all" stays the only value on the wire.
-        "all": 0.0,
-    }
-
-    def autotune(self, axis: str = "all", enable: bool = True) -> bool:
-        """Start or stop the autotune, however the connected stack runs one.
-
-        **PX4** runs it as a command: ``MAV_CMD_DO_AUTOTUNE_ENABLE`` (212) with
-        param1 = 1 to start and 0 to stop, param2 the axis selection, which
-        v1.16-v1.18 accept only as 0 ("all"). A successful start is acknowledged
-        with ACCEPTED or IN_PROGRESS, and progress arrives as repeated ACKs.
-
-        **ArduPilot** does not implement that command on Copter at all: its
-        autotune is a *flight mode*. So starting one is a mode change to
-        AUTOTUNE and stopping one is a mode change back to whatever the vehicle
-        was in — which is why the previous mode is remembered here. There is no
-        progress stream; ArduPilot narrates the tune over STATUSTEXT, which the
-        console already shows.
-
-        Starting is gated on the vehicle being armed and airborne, because both
-        stacks require it. Stopping is gated on nothing at all: an operator who
-        wants the tune to end is never told to satisfy a precondition first, the
-        same reasoning as :meth:`cancel_calibration`.
-        """
-        if self._dialect.autotune_style == "mode":
-            return self._autotune_by_mode(enable)
-        with self._operation_lock:
-            self._set_command_error("")
-            axis_val = self._AUTOTUNE_AXIS_MAP.get(axis)
-            if axis_val is None:
-                self._set_command_error(f"unknown autotune axis: {axis}")
-                return False
-            plan = self._dialect.autotune_plan(self._mav_type_id, enable)
-            if not plan.ok:
-                self._set_command_error(plan.unsupported)
-                return False
-            if enable:
-                problem = self._autotune_precondition()
-                if problem:
-                    self._set_command_error(problem)
-                    return False
-            if not self._connection_ready():
-                return self._command_failure(f"Autotune {axis}", -2)
-            nan = float("nan")
-            result = self._send_command_and_wait(
-                plan.command,
-                [1.0 if enable else 0.0, axis_val, nan, nan, nan, nan, nan],
-                timeout=5.0, retries=0,
-                accept_in_progress=True,
-            )
-            if result not in (
-                mavutil.mavlink.MAV_RESULT_ACCEPTED,
-                mavutil.mavlink.MAV_RESULT_IN_PROGRESS,
-            ):
-                if enable:
-                    self._store.update(autotune_state="failed", autotune_progress=0)
-                return self._command_failure(f"Autotune {axis}", result)
-            if enable:
-                self._store.update(autotune_state="running", autotune_progress=0)
-                self._console_publish("AUTOTUNE", "Autotune started", "success")
-            else:
-                self._store.update(autotune_state="", autotune_progress=0)
-                self._console_publish("AUTOTUNE", "Autotune stopped", "warning")
-            return True
-
-    def _autotune_by_mode(self, enable: bool) -> bool:
-        """ArduPilot's autotune: a flight mode, not a command.
-
-        Copter carries no handler for ``MAV_CMD_DO_AUTOTUNE_ENABLE``, so the
-        command Corvus used to send was answered with UNSUPPORTED and the tune
-        never ran. The mode that *is* the tune is AUTOTUNE on Copter and on
-        Plane; a quadplane's QAUTOTUNE is left to the operator, because which of
-        the two a quadplane wants depends on which half of the airframe is
-        being tuned.
-        """
-        mode = self._dialect.autotune_mode(self._mav_type_id)
-        if not mode:
-            self._set_command_error(
-                f"{self._dialect.label} has no autotune mode on this vehicle"
-            )
-            return False
-        if enable:
-            problem = self._autotune_precondition()
-            if problem:
-                self._set_command_error(problem)
-                return False
-            previous = self._store.get_snapshot().get("mode") or ""
-            if not self.set_mode(mode):
-                self._store.update(autotune_state="failed", autotune_progress=0)
-                return False
-            # Only after the switch is accepted, so a refused tune does not
-            # leave a return mode nobody is going to use.
-            self._autotune_return_mode = previous if previous != mode else ""
-            self._store.update(autotune_state="running", autotune_progress=0)
-            self._console_publish(
-                "AUTOTUNE",
-                f"{mode} engaged — ArduPilot narrates the tune over the console",
-                "success",
-            )
-            return True
-        # Stopping is leaving the mode. Falling back to LOITER rather than
-        # refusing matters: an operator pressing Stop is flying, and "I do not
-        # know what mode you were in" is not an answer they can use.
-        target = self._autotune_return_mode or ""
-        if target not in self._mode_values:
-            target = "LOITER" if "LOITER" in self._mode_values else ""
-        if not target:
-            self._set_command_error(
-                "no mode to return to — select one on the mode selector to "
-                "leave the autotune"
-            )
-            return False
-        if not self.set_mode(target):
-            return False
-        self._autotune_return_mode = ""
-        self._store.update(autotune_state="", autotune_progress=0)
-        self._console_publish("AUTOTUNE", f"Autotune left — now in {target}", "warning")
-        return True
-
-    def _autotune_precondition(self) -> str:
-        """Why the autotune cannot start right now, or "" when it can.
-
-        The message is the whole point of this method: "cannot autotune" tells
-        an operator standing in a field nothing, whereas naming the missing
-        precondition tells them what to do next.
-
-        An unknown landed state (0, the firmware does not publish
-        EXTENDED_SYS_STATE, or nothing has arrived yet) is not treated as being
-        on the ground. Blocking on the absence of a message would refuse a
-        command PX4 would have accepted, and PX4 remains the authority — it
-        rejects the tune itself if the vehicle really is grounded.
-        """
-        snapshot = self._store.get_snapshot()
-        if not snapshot.get("armed"):
-            return ("the autotune runs in flight: arm the vehicle and take off "
-                    "before starting it")
-        on_ground = mavutil.mavlink.MAV_LANDED_STATE_ON_GROUND
-        if int(snapshot.get("landed_state") or 0) == on_ground:
-            return ("the vehicle is still on the ground: hold a stable hover "
-                    "before starting the autotune")
-        return ""
-
-    def _handle_autotune_ack(self, msg: Any) -> None:
-        """Latch the autotune's progress and outcome out of its COMMAND_ACK.
-
-        PX4 re-acknowledges MAV_CMD_DO_AUTOTUNE_ENABLE for the whole run: one
-        IN_PROGRESS ACK per step carrying `progress` 0-100, then one final ACK
-        whose result is the outcome. This is the only progress a ground station
-        receives — the module's uORB status topic never leaves the autopilot —
-        so it is stored rather than left to scroll past in the console.
-
-        Called from the receive loop for every autotune ACK, including ones
-        answering a command another station sent: a tune running on this
-        aircraft is this station's business regardless of who started it.
-        """
-        try:
-            result = int(msg.result)
-        except (TypeError, ValueError):
-            return
-        if result == mavutil.mavlink.MAV_RESULT_IN_PROGRESS:
-            try:
-                progress = int(getattr(msg, "progress", 0) or 0)
-            except (TypeError, ValueError):
-                progress = 0
-            self._store.update(
-                autotune_state="running",
-                autotune_progress=max(0, min(100, progress)),
-            )
-            return
-        if result == mavutil.mavlink.MAV_RESULT_ACCEPTED:
-            # ACCEPTED closes a run that was already reporting progress; on the
-            # very first ACK it only means "command taken", which the start
-            # path has already recorded as running.
-            if self._store.get_snapshot().get("autotune_state") == "running":
-                self._store.update(autotune_state="done", autotune_progress=100)
-            return
-        self._store.update(autotune_state="failed")
-        self._store.merge_warning(
-            "Autotune refused: " + MAV_RESULT_TEXT.get(result, f"result={result}"),
-            "warning",
-        )
-
-    # ------------------------------------------------------------------
-    # Reboot to bootloader (Firmware Flash)
-    # ------------------------------------------------------------------
-
-    def reboot_to_bootloader(self) -> bool:
-        """Reboot the autopilot into its USB bootloader (for firmware flashing).
-
-        Sends MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN with the param that PX4
-        v1.16-v1.18 interpret as 'reboot to bootloader'. Refused while armed
-        (defense-in-depth, even though PX4 would reject too). Returns True only
-        if PX4 ACCEPTED.
-
-        Verified param1 = 3.0 (REBOOT_TO_BOOTLOADER) against PX4 source
-        (src/modules/commander/Commander.cpp — the uORB vehicle_command handler,
-        NOT commander_helper.cpp which only deals with LEDs/tunes):
-          - v1.16.0  Commander.cpp:1254-1256
-            `else if ((param1 == 3) && !isArmed() &&
-                       (px4_reboot_request(REBOOT_TO_BOOTLOADER, 400_ms) == 0))`
-          - v1.17.0  Commander.cpp:1274-1276  (identical)
-          - v1.18    Commander.cpp:1415-1417  (v1.18.0-beta2; v1.18.0 final is
-            not yet tagged, beta2 is the latest pre-release — identical)
-        All three: param1==3 → px4_reboot_request(REBOOT_TO_BOOTLOADER), ACK =
-        VEHICLE_CMD_RESULT_ACCEPTED, then the commander parks in a busy loop
-        until the board resets. Armed or boards without CONFIG_BOARDCTL_RESET
-        fall through to VEHICLE_CMD_RESULT_DENIED. The three target versions
-        agree on param1=3, so we send one shot (retries=0) with a short 3 s
-        timeout — the ACK arrives before the FC actually resets. We do NOT stop
-        the bridge or close the connection here: the caller (FlashService) owns
-        teardown ordering so the bootloader stays reachable on the same device.
-        """
-        with self._operation_lock:
-            self._set_command_error("")
-            # Defense-in-depth: PX4 gates every reboot branch on !isArmed()
-            # (Commander.cpp), so an armed FC would DENY us regardless.
-            if self._store.get_snapshot().get("armed"):
-                self._set_command_error("cannot reboot to bootloader while armed")
-                return False
-            if not self._connection_ready():
-                return self._command_failure("Reboot to bootloader", -2)
-            nan = float("nan")
-            result = self._send_command_and_wait(
-                mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
-                [3.0, nan, nan, nan, nan, nan, nan],
-                timeout=3.0, retries=0,
-            )
-            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                return self._command_failure("Reboot to bootloader", result)
-            self._console_publish("REBOOT", "Reboot to bootloader accepted", "success")
-            return True
-
-    # ------------------------------------------------------------------
     # Per-message rate control
     # ------------------------------------------------------------------
 
@@ -5822,8 +3470,8 @@ class MavlinkBridge:
     # setpoint, Altitude an attitude one, Manual raw actuator). The joystick
     # is only ever an input source; it never changes mode, never arms, and
     # never overrides a failsafe. Whether the autopilot listens at all is the
-    # vehicle's decision via ``COM_RC_IN_MODE`` — 1 (joystick only) or 3 (both
-    # stick sources) — which the GCS deliberately does not set on the
+    # vehicle's decision via ``COM_RC_IN_MODE`` — 1 (joystick only), 2 or 3
+    # (either stick source) — which the GCS deliberately does not set on the
     # operator's behalf.
     #
     # No ACK exists for MANUAL_CONTROL and none is waited for: it is a
@@ -5900,302 +3548,3 @@ class MavlinkBridge:
             logger.error("manual control send failed: %s", exc)
             self._set_command_error(f"Manual control send failed: {exc}")
             return False
-
-    def set_vibration_stream(self, enabled: bool, rate_hz: int = 10) -> bool:
-        """Enable/disable high-rate VIBRATION streaming from the vehicle.
-
-        Lean — VIBRATION defaults to 0.1 Hz on PX4; the GCS requests ~10 Hz
-        only while the vibration plugin is open, then restores the default.
-        Safe to call while armed (vibration data is read-only telemetry).
-        """
-        with self._operation_lock:
-            self._set_command_error("")
-            if enabled:
-                if not isinstance(rate_hz, int) or not (1 <= rate_hz <= 50):
-                    self._set_command_error("vibration rate must be between 1 and 50 Hz")
-                    return False
-                interval_us = max(1, int(1_000_000 / rate_hz))
-            else:
-                # 0 = restore PX4 default rate (lean: high-rate only on demand).
-                interval_us = 0
-            return self.set_message_interval(
-                mavutil.mavlink.MAVLINK_MSG_ID_VIBRATION, interval_us,
-            )
-
-    def set_rc_stream(self, enabled: bool, rate_hz: int = 20) -> bool:
-        """Raise (or restore) the RC_CHANNELS rate the Radio Control page needs.
-
-        Lean, exactly like :meth:`set_vibration_stream`: PX4 streams
-        RC_CHANNELS at a few hertz by default, which is enough for a channel
-        bar and not enough for a calibration — a stick swept through its travel
-        in half a second is three samples at 5 Hz, and the endpoint the wizard
-        writes is then whatever those three happened to catch.
-
-        Safe while armed, and deliberately so — this is read-only telemetry,
-        and the page reads channels in flight to check a switch does what the
-        operator thinks it does. Disabling sends interval 0, handing the rate
-        back to the firmware's own default rather than to a number this build
-        picked.
-        """
-        with self._operation_lock:
-            self._set_command_error("")
-            if enabled:
-                if isinstance(rate_hz, bool) or not isinstance(rate_hz, int):
-                    self._set_command_error("RC rate must be an integer")
-                    return False
-                if not 1 <= rate_hz <= 50:
-                    self._set_command_error("RC rate must be between 1 and 50 Hz")
-                    return False
-                interval_us = max(1, int(1_000_000 / rate_hz))
-            else:
-                interval_us = 0
-            if not self._connection_ready():
-                # set_message_interval returns False here without a reason, and
-                # the page opened over a dead link is the common case for this
-                # route — an unexplained refusal would reach the browser as a
-                # conflict rather than as "there is no vehicle".
-                self._set_command_error("not connected")
-                self._store.update(rc_live=False)
-                return False
-            ok = self.set_message_interval(
-                mavutil.mavlink.MAVLINK_MSG_ID_RC_CHANNELS, interval_us,
-            )
-            if not enabled:
-                # The channel bars stop being live the moment the rate is handed
-                # back, so the page stops claiming a reading it is no longer
-                # being sent.
-                self._store.update(rc_live=False)
-            return ok
-
-    # The messages the PID tuning page plots, as commanded/achieved pairs.
-    # ATTITUDE is already streamed for the HUD; it is raised here too because a
-    # 50 Hz response sampled against a 5 Hz setpoint makes a clean tune look
-    # like a lagging one.
-    _TUNING_MSG_IDS: tuple[int, ...] = (
-        mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE,
-        mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE_TARGET,
-        mavutil.mavlink.MAVLINK_MSG_ID_POSITION_TARGET_LOCAL_NED,
-    )
-
-    def set_tuning_stream(self, enabled: bool, rate_hz: int = 20) -> bool:
-        """Raise (or restore) the setpoint stream the PID tuning page plots.
-
-        Lean, exactly like :meth:`set_vibration_stream`: PX4 streams
-        ATTITUDE_TARGET and POSITION_TARGET_LOCAL_NED slowly by default, the
-        GCS asks for a tuning rate only while the page is open, and disabling
-        sends interval 0 to hand the rate back to the firmware's own default
-        rather than to a number this build picked.
-
-        Safe while armed, and deliberately so — this is read-only telemetry,
-        and the page that wants it is used in flight.
-
-        Returns True only if every message was accepted; a firmware that
-        refuses one still gets the others, because a missing setpoint trace is
-        a degraded graph and not a failure worth aborting the page for.
-        """
-        with self._operation_lock:
-            self._set_command_error("")
-            if enabled:
-                if isinstance(rate_hz, bool) or not isinstance(rate_hz, int):
-                    self._set_command_error("tuning rate must be an integer")
-                    return False
-                if not 1 <= rate_hz <= 50:
-                    self._set_command_error("tuning rate must be between 1 and 50 Hz")
-                    return False
-                interval_us = max(1, int(1_000_000 / rate_hz))
-            else:
-                interval_us = 0
-            if not self._connection_ready():
-                # Same reason set_rc_stream carries this guard: without it
-                # set_message_interval clears the command error and returns
-                # False without setting one, so the route answers 409 with a
-                # generic "request failed" for what is simply no vehicle.
-                self._set_command_error("not connected")
-                self._store.update(setpoints_live=False)
-                return False
-            ok = True
-            for msg_id in self._TUNING_MSG_IDS:
-                if not self.set_message_interval(msg_id, interval_us):
-                    ok = False
-            if not enabled:
-                # The traces stop being live the moment the rate is handed
-                # back, so the page stops claiming a setpoint it is no longer
-                # being sent.
-                self._store.update(setpoints_live=False)
-            return ok
-
-    # ------------------------------------------------------------------
-    # PX4 NuttShell (NSH) debug shell — SERIAL_CONTROL device=SHELL
-    # ------------------------------------------------------------------
-    #
-    # The NSH shell is the only MAVLink path to NSH builtins with no MAV_CMD
-    # equivalent — ``listener <topic>``, ``top``, ``free``, ``dmesg``. PX4
-    # exposes it over SERIAL_CONTROL with device=SERIAL_CONTROL_DEV_SHELL;
-    # this is the standard QGC MAVLink Console mechanism, stable across PX4
-    # v1.16, v1.17, and v1.18. The debug shell must be enabled on the
-    # autopilot: it is on by default for SITL; on hardware the MAVLink
-    # instance must permit shell access (MAV_ADVANCED_PARAMS / instance
-    # config). RESPOND|EXCLUSIVE|MULTI is the QGroundControl framing: PX4
-    # keeps the shell open and streams every available 70-byte response chunk.
-
-    def _reset_shell_state(self) -> None:
-        """Clear all state associated with the current PX4 shell session."""
-        with self._shell_lock:
-            self._shell_active = False
-            self._shell_buffer = ""
-            self._shell_decoder.reset()
-
-    def _send_serial_control(
-        self, conn: Any, flags: int, count: int, data: bytes,
-    ) -> None:
-        """Send SERIAL_CONTROL, using target extensions when available."""
-        args: tuple[Any, ...] = (
-            mavutil.mavlink.SERIAL_CONTROL_DEV_SHELL,
-            flags,
-            0,
-            0,
-            count,
-            data,
-        )
-        fields = getattr(
-            mavutil.mavlink.MAVLink_serial_control_message,
-            "fieldnames",
-            (),
-        )
-        if "target_system" in fields and "target_component" in fields:
-            args += (self._target_system, self._target_component)
-        conn.mav.serial_control_send(*args)
-
-    def send_shell_command(self, text: str) -> bool:
-        """Send ``text`` (plus a newline) to the PX4 NSH debug shell.
-
-        Sends one or more ``SERIAL_CONTROL`` packets with ``device=SHELL`` and
-        ``flags=RESPOND|EXCLUSIVE|MULTI`` so PX4 streams the response back.
-        Returns
-        ``True`` if the SERIAL_CONTROL was sent, ``False`` on disconnect
-        or send failure (mirrors the ``-2``/``False`` convention of the
-        other command methods).
-        """
-        # Clear any stale thread-local error so the caller sees a fresh result
-        # (BUG 10). The success path leaves it empty; the failure paths set it.
-        self._set_command_error("")
-        if not isinstance(text, str):
-            self._set_command_error("shell command must be text")
-            return False
-        if not self._dialect.supports_shell:
-            # ArduPilot has no NSH. SERIAL_CONTROL exists on its wire, but it
-            # is a passthrough to a *peripheral* port rather than a console, so
-            # sending a command here would open a terminal that can never
-            # answer — and on a board with something attached to that port, it
-            # would take the port away from whatever is using it.
-            self._set_command_error(
-                f"{self._dialect.label} has no MAVLink shell — the console is "
-                f"a PX4 feature (NSH over SERIAL_CONTROL)"
-            )
-            return False
-        with self._send_lock:
-            conn = self._conn
-            # A6: bail if stop()/reconnect swapped the connection, or the
-            # link isn't healthy enough to dispatch an operator command.
-            if conn is not self._conn or not self._connection_ready():
-                return self._command_failure("Shell", -2)
-            payload = (text if text.endswith("\n") else text + "\n").encode(
-                "utf-8", errors="replace",
-            )
-            flags = (
-                mavutil.mavlink.SERIAL_CONTROL_FLAG_RESPOND
-                | mavutil.mavlink.SERIAL_CONTROL_FLAG_EXCLUSIVE
-                | mavutil.mavlink.SERIAL_CONTROL_FLAG_MULTI
-            )
-            with self._shell_lock:
-                self._reset_shell_state()
-                self._shell_active = True
-                try:
-                    for offset in range(0, len(payload), 70):
-                        chunk = payload[offset:offset + 70]
-                        self._send_serial_control(
-                            conn, flags, len(chunk), chunk.ljust(70, b"\x00"),
-                        )
-                except Exception as exc:
-                    self._reset_shell_state()
-                    logger.error("shell command send failed: %s", exc)
-                    # Surface the real cause instead of a stale/generic error (BUG 10).
-                    self._set_command_error(f"shell send failed: {exc}")
-                    return False
-            return True
-
-    def stop_shell(self) -> None:
-        """Release exclusive NSH shell mode and clear the line buffer.
-
-        Sends a ``SERIAL_CONTROL`` with ``flags=0`` and ``count=0`` (the
-        documented release) so the autopilot stops streaming shell output
-        and frees the shell for other clients. Best-effort and idempotent:
-        swallows exceptions and is a safe no-op when not connected. Called
-        from :meth:`stop` so exclusive mode is released on shutdown.
-        """
-        with self._send_lock:
-            conn = self._conn
-            self._reset_shell_state()
-            # A6: only release on the connection we snapshotted; no-op if
-            # the link was already torn down (best-effort release).
-            if conn is None or conn is not self._conn:
-                return
-            try:
-                self._send_serial_control(conn, 0, 0, b"\x00" * 70)
-            except Exception:
-                pass
-
-    def _handle_serial_control(self, msg: Any) -> None:
-        """Reassemble an NSH-shell SERIAL_CONTROL reply into console lines.
-
-        PX4 streams the shell response in 70-byte SERIAL_CONTROL chunks.
-        Each chunk is decoded incrementally, sanitized (CR stripped,
-        backspace applied),
-        appended to the line buffer, and complete lines are published to the
-        console subscribers. Runs in the receive loop and never blocks.
-        """
-        try:
-            if int(getattr(msg, "device", -1)) != mavutil.mavlink.SERIAL_CONTROL_DEV_SHELL:
-                return
-            if not self._shell_active or not self._ack_is_for_us(msg):
-                return
-            lines: list[str] = []
-            with self._shell_lock:
-                if not self._shell_active:
-                    return
-                count = int(getattr(msg, "count", 0))
-                if count <= 0 or count > 70:
-                    return
-                raw_data = bytes(msg.data)
-                if count > len(raw_data):
-                    return
-                text = self._shell_decoder.decode(raw_data[:count], final=False)
-                # Sanitize: drop CR (NSH sends \r\n); apply BS by removing the
-                # previous char — in this chunk, or the buffer tail if a
-                # backspace crosses a chunk boundary (NSH line-edit echo).
-                chunk: list[str] = []
-                for ch in text:
-                    if ch == "\r":
-                        continue
-                    if ch == "\b":
-                        if chunk:
-                            chunk.pop()
-                        elif self._shell_buffer:
-                            self._shell_buffer = self._shell_buffer[:-1]
-                        continue
-                    chunk.append(ch)
-                self._shell_buffer += "".join(chunk)
-                # Publish each complete line; keep the trailing partial line.
-                while "\n" in self._shell_buffer:
-                    line, self._shell_buffer = self._shell_buffer.split("\n", 1)
-                    if line:
-                        lines.append(line)
-                # No newline in sight and the buffer has run long: flush what
-                # is there rather than keep growing it.
-                if len(self._shell_buffer) >= SHELL_LINE_MAX_CHARS:
-                    lines.append(self._shell_buffer)
-                    self._shell_buffer = ""
-            for line in lines:
-                self._console_publish("SHELL", line, "info")
-        except Exception as exc:
-            logger.debug("SERIAL_CONTROL handling failed: %s", exc)

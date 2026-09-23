@@ -37,7 +37,9 @@ from . import (
     safety_config, sik_config, sik_service, tile_sources, tuning_config,
 )
 from .config import (
+    MAX_MAP_TOKEN_CHARS,
     CorvusConfig,
+    _MAP_TOKEN_CHARS,
     default_config_path,
     load_config,
     save_config,
@@ -119,6 +121,59 @@ MAX_LOGO_BODY_BYTES = 4 * 1024 * 1024
 # before anything has looked at it.
 MAX_ULOG_BODY_BYTES = 128 * 1024 * 1024
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+# Response hardening headers.
+#
+# The UI is a local web page with full control of an aircraft, and the only
+# thing between an injected script and that aircraft is the browser's own
+# policy engine — which was being told nothing at all. One injected <script>,
+# out of a plugin asset or any value the page renders, could read
+# GET /api/config, POST /api/mavlink/arm, and ship the result anywhere.
+#
+# ``connect-src 'self'`` is the line that matters most: nothing the page runs
+# may talk to a host other than this server, so even a successful injection
+# cannot get the telemetry, the SSH credentials or the map service keys off
+# the machine. ``frame-ancestors 'none'`` stops another page embedding the UI
+# and clickjacking the arm button, and ``base-uri``/``object-src``/
+# ``form-action`` close the classic script-redirection routes.
+#
+# ``'unsafe-inline'`` is in script-src because index.html carries the pre-paint
+# theme script and a plugin page may carry inline handlers. That is a real
+# weakening, and it is why this policy is written in terms of *where data may
+# go* rather than trusting "no inline script" to hold. ``blob:`` is in
+# worker-src and img-src because MapLibre builds its tile worker from a blob
+# URL and draws through canvas blobs — without it there is no map.
+#
+# Everything the app loads is served by this process (src/index.html names no
+# CDN and no remote font; offline operation is a contract), so 'self' is the
+# whole allow-list.
+CONTENT_SECURITY_POLICY = "; ".join((
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "worker-src 'self' blob:",
+    "child-src 'self' blob:",
+    "media-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'none'",
+))
+
+# Sent with every response, whatever produced it, from the one ``end_headers``
+# override below — so a route added later cannot forget them. ``nosniff`` is
+# the one that is not merely defence in depth: a plugin asset or an uploaded
+# file served under a guessed content type must not be re-interpreted as
+# script by the browser.
+SECURITY_HEADERS: tuple[tuple[str, str], ...] = (
+    ("Content-Security-Policy", CONTENT_SECURITY_POLICY),
+    ("X-Content-Type-Options", "nosniff"),
+    ("X-Frame-Options", "DENY"),
+    ("Referrer-Policy", "no-referrer"),
+)
 # The two constant building-cell bodies. `pending` tells the frontend the
 # backend has queued the fetch and is worth asking again; its absence means
 # this cell is simply empty and asking again would be a loop.
@@ -544,11 +599,13 @@ class _TileDownloaderPool:
         minzoom: int,
         maxzoom: int,
         on_progress: Any = None,
+        token: str = "",
     ) -> str:
         dl = self._downloaders.get(source)
         if dl is None:
             raise ValueError(f"no downloader for source {source!r}")
-        return dl.start(source, upstream, bounds, minzoom, maxzoom, on_progress=on_progress)
+        return dl.start(source, upstream, bounds, minzoom, maxzoom,
+                        on_progress=on_progress, token=token)
 
     def cancel(self, job_id: str) -> bool:
         for dl in self._downloaders.values():
@@ -1181,23 +1238,29 @@ def _delete_region_tiles(cache: Any, region: dict) -> int:
     full tile set would punch holes in the other, so every candidate tile is
     checked against the remaining regions first and kept if any still needs
     it. Returns the number of tiles actually removed.
-    """
-    from corvus.tile_downloader import enumerate_tiles
 
-    def _tiles_of(r: dict) -> set:
+    Only the region being deleted is expanded into tiles. The others are
+    asked per candidate through their zoom ranges: expanding each of them,
+    as this used to, built and threw away up to ``MAX_TILES_PER_JOB`` tuples
+    per remaining region to delete one area.
+    """
+    from corvus.tile_downloader import enumerate_tiles, tile_cover
+
+    def _area(r: dict) -> tuple[tuple[float, float, float, float], int, int]:
         b = r.get("bounds") or {}
-        return set(enumerate_tiles(
+        return (
             (b.get("w", 0.0), b.get("s", 0.0), b.get("e", 0.0), b.get("n", 0.0)),
             int(r.get("minzoom", 0)), int(r.get("maxzoom", 0)),
-        ))
+        )
 
-    doomed = _tiles_of(region)
+    doomed = set(enumerate_tiles(*_area(region)))
     for other in cache.list_regions():
-        if other["id"] == region["id"]:
-            continue
-        doomed -= _tiles_of(other)
         if not doomed:
             break
+        if other["id"] == region["id"]:
+            continue
+        still_needed = tile_cover(*_area(other))
+        doomed = {tile for tile in doomed if not still_needed(tile)}
     return cache.delete_tiles(doomed) if doomed else 0
 
 
@@ -1439,7 +1502,18 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     )
 
     def send_response(self, *args: Any, **kwargs: Any) -> None:
+        """Start a response: mark it started and reset the header bookkeeping.
+
+        ``_response_started`` is what stops ``_guarded`` writing a 500 on top
+        of a body already going out. The other two are the per-response state
+        the ``end_headers`` override below reads, and they have to be cleared
+        HERE rather than after the write: a keep-alive connection serves many
+        responses through one handler instance, so state left over from the
+        previous one would make the next one skip its hardening headers.
+        """
         self._response_started = True
+        self._security_headers_sent = False
+        self._headers_buffer_names = []
         super().send_response(*args, **kwargs)
 
     def log_message(self, fmt: str, *args) -> None:
@@ -1493,6 +1567,42 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.close_connection = True
         self._send_json({"ok": False, "error": "host not allowed"}, 403)
         return False
+
+    def end_headers(self) -> None:
+        """Emit the hardening headers, then close the header block.
+
+        Overridden rather than called from each route because there are close
+        to a hundred of them plus five raw-byte writers, and a header set that
+        depends on every one of them remembering is a header set that is
+        missing somewhere. ``BaseHTTPRequestHandler`` funnels every response —
+        JSON, static file, tile, SSE, 304, and its own ``send_error`` — through
+        this one call.
+
+        Guarded by a flag rather than by trust: ``send_error`` and a handful of
+        stdlib paths can reach here twice on one response, and a duplicated
+        ``Content-Security-Policy`` is not additive — the browser intersects
+        them, which would silently tighten the policy in ways nobody wrote
+        down. A header the route set itself always wins.
+        """
+        if not getattr(self, "_security_headers_sent", False):
+            self._security_headers_sent = True
+            existing = {
+                name.lower()
+                for name, _ in getattr(self, "_headers_buffer_names", ())
+            }
+            for name, value in SECURITY_HEADERS:
+                if name.lower() not in existing:
+                    self.send_header(name, value)
+        super().end_headers()
+
+    def send_header(self, keyword: str, value: str) -> None:
+        """Record what has been set so ``end_headers`` does not duplicate it."""
+        names = getattr(self, "_headers_buffer_names", None)
+        if names is None:
+            names = []
+            self._headers_buffer_names = names
+        names.append((keyword, value))
+        super().send_header(keyword, value)
 
     def _send_cors(self) -> None:
         """Emit this response's CORS headers: a loopback origin, or nothing.
@@ -1556,6 +1666,30 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.config_path = path
         return cfg
 
+    def _map_token(self, provider_id: str) -> str:
+        """The stored API key for *provider_id*, or "" when none is set.
+
+        The only reader of the map service credentials. They never leave this
+        process: the frontend asks this server for a tile, this substitutes the
+        key into the upstream URL, and the browser is handed the image bytes —
+        so an injected script in the page has nothing to steal, and a key does
+        not end up in a browser cache, a history entry or a referrer.
+        """
+        if not provider_id:
+            return ""
+        tokens = self._live_config().map_tokens
+        if not isinstance(tokens, dict):
+            return ""
+        value = tokens.get(provider_id)
+        return value if isinstance(value, str) else ""
+
+    def _map_tokens_set(self) -> set[str]:
+        """Provider ids with a key stored — never the keys themselves."""
+        tokens = self._live_config().map_tokens
+        if not isinstance(tokens, dict):
+            return set()
+        return {pid for pid, value in tokens.items() if isinstance(value, str) and value}
+
     def _save_live_config(self) -> None:
         """Persist the live config to its path; never raises into the handler.
 
@@ -1612,6 +1746,11 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             merged["theme"] = cfg.theme
         if cfg.map is not None:
             merged["map"] = cfg.map
+        # Carried through the merge but absent from ``known`` below: a write of
+        # any other setting must not drop the operator's map keys, and no
+        # client may set one here. POST /api/tiles/token owns them.
+        if cfg.map_tokens is not None:
+            merged["map_tokens"] = cfg.map_tokens
         if cfg.branding is not None:
             merged["branding"] = cfg.branding
         if cfg.controls is not None:
@@ -1644,7 +1783,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # forwarder, so a generic merge would change the file and not the
         # running state. The live value is untouched either way — it is not in
         # ``merged``, and _save_live_config serializes the live config object.
-        owned_elsewhere = {"forwarding"}
+        owned_elsewhere = {"forwarding", "map_tokens"}
 
         for key, value in partial.items():
             if key not in known:
@@ -1827,6 +1966,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             cfg.ssh_connections = new_cfg.ssh_connections
             cfg.theme = new_cfg.theme
             cfg.map = new_cfg.map
+            cfg.map_tokens = new_cfg.map_tokens
             cfg.branding = new_cfg.branding
             cfg.controls = new_cfg.controls
             cfg.ui = new_cfg.ui
@@ -2112,6 +2252,15 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         if not url:
             self._send_json({"ok": False, "error": "no release page known"}, 404)
             return
+        # Belt and braces over update_check's own derivation: whatever reaches
+        # this line is about to be handed to the platform's URL opener, and on
+        # every desktop OS that is a program launcher for schemes far beyond
+        # http. The scheme is the part that decides which program runs, so it
+        # is checked here rather than assumed from upstream.
+        if urlparse(url).scheme not in ("http", "https"):
+            logger.warning("refusing to open a non-web release URL: %r", url)
+            self._send_json({"ok": False, "error": "no release page known"}, 404)
+            return
         try:
             import webbrowser
             opened = webbrowser.open(url)
@@ -2339,6 +2488,18 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         """The MAV_TYPE the schemas key their per-airframe tables off."""
         return int(getattr(self.mavlink, "vehicle_type_id", 0) or 0)
 
+    def _fetch_page_params(self, names: list[str]) -> dict[str, float]:
+        """One setup page's batched read; ``?fresh=1`` asks the vehicle, not the cache.
+
+        A page asks fresh right after "Check values", so it is redrawn from
+        what the vehicle holds now, including what another station changed.
+        ``fresh`` is passed only when asked: bridge-shaped test doubles
+        predate it.
+        """
+        query = parse_qs(urlparse(getattr(self, "path", "") or "").query)
+        fresh = (query.get("fresh") or [""])[0] in ("1", "true")
+        return self.mavlink.fetch_params(names, **({"fresh": True} if fresh else {}))
+
     @route("GET", "/api/motors")
     def _api_motors(self) -> None:
         """Return the vehicle's motor configuration as a renderable description.
@@ -2360,7 +2521,14 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_json(payload)
             return
         try:
-            values = self.mavlink.fetch_params(schema.param_names())
+            values = self._fetch_page_params(schema.param_names())
+            # A second, smaller read once the first has said which pins drive
+            # a motor: their per-channel limits. A schema without per-channel
+            # limits has no such function.
+            followup = getattr(schema, "output_param_names", None)
+            names = followup(values) if values and followup is not None else []
+            if names:
+                values = dict(values, **self._fetch_page_params(names))
         except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
             logger.exception("motor parameter fetch failed")
             payload = schema.build({})
@@ -2404,7 +2572,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             })
             return
         try:
-            values = self.mavlink.fetch_params(schema.param_names() + extra)
+            values = self._fetch_page_params(schema.param_names() + extra)
         except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
             logger.exception("safety parameter fetch failed")
             self._send_json({
@@ -2445,7 +2613,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"connected": False, "groups": [], "received": 0})
             return
         try:
-            values = self.mavlink.fetch_params(schema.param_names())
+            values = self._fetch_page_params(schema.param_names())
         except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
             logger.exception("tuning parameter fetch failed")
             self._send_json({
@@ -2491,6 +2659,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         error banner; ``connected`` says which it is.
         """
         schema = self._schema("battery")
+        query = parse_qs(urlparse(self.path).query)
+        fresh = (query.get("fresh") or [""])[0] in ("1", "true")
         stored = getattr(self.config, "battery", None)
         settings = battery.settings(stored)
         # Both, because they are different questions. ``settings`` is what the
@@ -2506,7 +2676,9 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_json(empty)
             return
         try:
-            values = self.mavlink.fetch_params(schema.param_names())
+            # ``fresh`` only when asked: bridge-shaped test doubles predate it.
+            values = self.mavlink.fetch_params(
+                schema.param_names(), **({"fresh": True} if fresh else {}))
         except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
             logger.exception("battery parameter fetch failed")
             self._send_json(dict(empty, error=str(exc)))
@@ -2587,7 +2759,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # one is the one a regulator reads.
         base["suggested_ua_type"] = remote_id.ua_type_for_vehicle(self._vehicle_type_id())
         try:
-            values = self.mavlink.fetch_params(schema.param_names())
+            values = self._fetch_page_params(schema.param_names())
         except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
             logger.exception("remote id parameter fetch failed")
             self._send_json(dict(base, error=str(exc)))
@@ -2666,7 +2838,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             if isinstance(reported, int) and 0 < reported <= schema.MAX_CHANNELS:
                 channels = reported
         try:
-            values = self.mavlink.fetch_params(schema.param_names())
+            values = self._fetch_page_params(schema.param_names())
         except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
             logger.exception("RC parameter fetch failed")
             self._send_json(dict(empty, error=str(exc)))
@@ -3033,6 +3205,20 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "not connected"}, 400)
 
+    @route("POST", "/api/mavlink/reboot")
+    def _api_mavlink_reboot(self, payload: dict) -> None:
+        """Restart the autopilot. Disarmed only; the bridge refuses otherwise."""
+        del payload
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        if self.mavlink.reboot_autopilot():
+            self._send_json({"ok": True})
+            return
+        error = self.mavlink.get_last_command_error() or "reboot failed"
+        status = 503 if "not connected" in error or "DISCONNECTED" in error else 409
+        self._send_json({"ok": False, "error": error}, status)
+
     @route("POST", "/api/mavlink/manual")
     def _api_mavlink_manual(self, payload: dict) -> None:
         """Forward one virtual-joystick frame to the vehicle as MANUAL_CONTROL.
@@ -3204,13 +3390,18 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         if not self.mavlink.upload_mission_plan(items):
             self._send_mission_failure("mission upload failed")
             return
+        # Which state of the vehicle's mission this plan now is, so the page
+        # can follow its progress and stop the moment it no longer is.
+        store = getattr(self, "store", None)
+        synced = ({"revision": store.get_snapshot().get("mission_revision")}
+                  if store is not None else {})
         if not start:
-            self._send_json({"ok": True, "items": len(items), "started": False})
+            self._send_json({"ok": True, "items": len(items), "started": False, **synced})
             return
         if not self.mavlink.start_mission(len(items)):
             self._send_mission_failure("mission start failed")
             return
-        self._send_json({"ok": True, "items": len(items), "started": True})
+        self._send_json({"ok": True, "items": len(items), "started": True, **synced})
 
     @route("POST", "/api/mission/start")
     def _api_mission_start(self, payload: dict) -> None:
@@ -3242,6 +3433,27 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_mission_failure("mission clear failed")
             return
         self._send_json({"ok": True})
+
+    @route("POST", "/api/mission/download")
+    def _api_mission_download(self, payload: dict) -> None:
+        """Read the mission the vehicle holds, as a plan the Mission page can draw.
+
+        Answers ``{ok, plan, count, items, plan_index, skipped, adjusted,
+        revision, error}``. ``plan`` is None when not even the part the planner
+        understands makes a valid plan, and ``error`` says why; ``skipped``
+        names what the planner could not draw, which an upload of the plan
+        would remove from the vehicle.
+        """
+        del payload
+        download = getattr(self.mavlink, "download_mission", None)
+        if self.mavlink is None or download is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        result = download()
+        if result is None:
+            self._send_mission_failure("mission download failed")
+            return
+        self._send_json(dict(result, ok=True))
 
     def _send_mission_failure(self, fallback: str) -> None:
         """Report why the bridge refused, with the status that says whose fault.
@@ -3996,6 +4208,58 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             ) else 409
             self._send_json({"ok": False, "error": error}, status)
 
+    @route("POST", "/api/params/verify")
+    def _api_params_verify(self, payload: dict) -> None:
+        """Read parameters back from the vehicle and write again what did not stick.
+
+        Body: ``{"params": [{"name", "value"}, ...], "names": [...]}``.
+        ``params`` are the values the operator set and wants on the vehicle
+        (may be empty); ``names`` are further parameters to read back so a
+        page can redraw itself from what the vehicle really holds. Every name
+        is read fresh, never from the cache. See
+        :meth:`corvus.mavlink_bridge.MavlinkBridge.verify_params` for the
+        answer, which comes back with ``ok: true`` whenever the check ran,
+        whatever it found: ``all_confirmed`` is the verdict.
+        """
+        params = payload.get("params", [])
+        names = payload.get("names", [])
+        if not isinstance(params, list) or not isinstance(names, list):
+            self._send_json(
+                {"ok": False, "error": "params and names must be lists"}, 400)
+            return
+        if any(not isinstance(n, str) or not n for n in names):
+            self._send_json(
+                {"ok": False, "error": "names must be non-empty strings"}, 400)
+            return
+        clean: list[dict[str, Any]] = []
+        for index, entry in enumerate(params):
+            name = entry.get("name") if isinstance(entry, dict) else None
+            value = entry.get("value") if isinstance(entry, dict) else None
+            if not isinstance(name, str) or not name:
+                self._send_json(
+                    {"ok": False, "error": f"invalid parameter at index {index}: name must be a non-empty string"},
+                    400,
+                )
+                return
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                self._send_json(
+                    {"ok": False, "error": f"invalid parameter at index {index}: value must be a number"},
+                    400,
+                )
+                return
+            clean.append({"name": name, "value": float(value)})
+        verify = getattr(self.mavlink, "verify_params", None)
+        if self.mavlink is None or verify is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        result = verify(clean, names)
+        if result is None:
+            error = self.mavlink.get_last_command_error() or "check failed"
+            status = 503 if "not connected" in error else 400
+            self._send_json({"ok": False, "error": error}, status)
+            return
+        self._send_json(dict(result, ok=True))
+
     @route("POST", "/api/params/upload")
     def _api_params_upload(self, payload: dict) -> None:
         """Apply a saved parameter file to the vehicle as a background upload.
@@ -4077,7 +4341,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         servo, a gimbal, a parachute — is refused by name, because silently
         moving a servo off its pin is how a control surface stops working.
 
-        Body: ``{motor: 1-16, bank: "MAIN"|"AUX"|"CAN", pin: n}`` to assign, or
+        Body: ``{motor: 1-16, bank: "MAIN"|"AUX"|"CAN"|"SIM", pin: n}`` to assign, or
         ``{motor: n, output: null}`` to unassign.
         """
         schema = self._schema("motors")
@@ -4138,8 +4402,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             if displaced is None and int(round(occupant["value"])) != 0:
                 self._send_json({
                     "ok": False,
-                    "error": f"{target_label} drives {occupant['function']} — "
-                             "free it in Parameters before assigning a motor to it",
+                    "error": f"{target_label} drives {occupant['function']}. "
+                             "Free it in Parameters before assigning a motor to it",
                 }, 409)
                 return
             if displaced is not None and source is None:
@@ -5737,14 +6001,103 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             })
         buildings = (self.buildings.stats()
                      if self.buildings is not None else {"cells": 0, "bytes": 0})
+        # A keyed service reports whether the operator has given it a key —
+        # never the key. ``token_set`` is the whole of what the UI needs: the
+        # tiles are proxied by this process, so the browser has no use for the
+        # credential itself. A service that needs one and has not got one is
+        # still listed, with the reason on it, rather than hidden: a layer that
+        # vanished would leave the operator with nothing to act on.
+        have = self._map_tokens_set()
+        providers = []
+        for prov in tile_sources.list_providers():
+            keyed = prov.get("token") is not None
+            providers.append({
+                **prov,
+                "token_required": keyed,
+                "token_set": keyed and prov["id"] in have,
+            })
         self._send_json({
             "sources": sources,
-            "providers": tile_sources.list_providers(),
+            "providers": providers,
             "default_provider": tile_sources.DEFAULT_PROVIDER,
             "terrain": terrain,
             "default_terrain": tile_sources.DEFAULT_TERRAIN,
             "buildings": buildings,
         })
+
+    @route("POST", "/api/tiles/token")
+    def _api_tiles_token(self, payload: dict) -> None:
+        """Store (or clear) one map service's API key.
+
+        Its own endpoint rather than a key in ``POST /api/config``, for the
+        same reason the NTRIP password and the SSH passwords are handled
+        apart: this is a credential. It goes in one direction only — in through
+        here, out only as a substitution into an upstream URL made inside this
+        process. ``GET /api/config`` does not carry it back, and neither does
+        anything else; the UI learns from ``token_set`` that one is stored.
+
+        An empty ``token`` removes the key, which is how the dialog's REMOVE
+        works. Removing one that was never there is a success, so a stale UI
+        cannot report an error for the state the operator already wanted.
+        """
+        provider = payload.get("provider")
+        if not isinstance(provider, str) or not provider:
+            self._send_json({"ok": False, "error": "provider must be a non-empty string"}, 400)
+            return
+        if tile_sources.token_meta(provider) is None:
+            # Refused rather than stored: an id that is not a keyed service is
+            # either a typo or an attempt to use the config file as scratch
+            # space for something that is never read back.
+            self._send_json(
+                {"ok": False, "error": f"{provider!r} is not a keyed map service"}, 400)
+            return
+        raw = payload.get("token", "")
+        if not isinstance(raw, str):
+            self._send_json({"ok": False, "error": "token must be a string"}, 400)
+            return
+        token = raw.strip()
+
+        cfg = self._live_config()
+        tokens = dict(cfg.map_tokens) if isinstance(cfg.map_tokens, dict) else {}
+        if token:
+            if len(token) > MAX_MAP_TOKEN_CHARS:
+                self._send_json(
+                    {"ok": False,
+                     "error": f"that key is longer than {MAX_MAP_TOKEN_CHARS} characters"},
+                    400)
+                return
+            if not set(token) <= _MAP_TOKEN_CHARS:
+                # Named rather than silently cleaned: the overwhelmingly likely
+                # cause is a paste that took the surrounding quotes or the
+                # "key=" prefix with it, and an operator told what is wrong
+                # fixes it in one go.
+                self._send_json(
+                    {"ok": False,
+                     "error": "that does not look like an API key. Use letters, digits, "
+                              ". _ ~ - only, with no spaces or quotes"},
+                    400)
+                return
+            tokens[provider] = token
+        else:
+            tokens.pop(provider, None)
+
+        with _config_write_lock:
+            cfg.map_tokens = tokens or None
+            try:
+                self._save_live_config()
+            except Exception:  # noqa: BLE001 - never 500 over a settings write
+                logger.exception("could not persist the map service key")
+                self._send_json(
+                    {"ok": False,
+                     "error": "the key is set for this session but could not be saved"},
+                    500)
+                return
+        # Logged as a fact, never with the value: an operator reading the log
+        # should be able to see that a key was set without the log becoming a
+        # place the key lives.
+        logger.info("map service key for %s %s", provider,
+                    "stored" if token else "removed")
+        self._send_json({"ok": True, "provider": provider, "token_set": bool(token)})
 
     @route("GET", "/api/tiles/jobs")
     def _api_tiles_jobs(self) -> None:
@@ -5780,11 +6133,27 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # accounted for in the region list rather than silently invisible.
         name = _clean_region_name(payload.get("name")) or _default_region_name(bounds)
 
+        # A keyed service with no key downloads nothing but 401s, and does it
+        # for however many thousand tiles the region covers. Refused up front
+        # with the one thing the operator can act on, rather than reported as
+        # a job that failed every tile.
+        token = ""
+        if tile_sources.needs_token(source):
+            token = self._map_token(str(src.get("provider") or ""))
+            if not token:
+                self._send_json({
+                    "ok": False,
+                    "error": "this map service needs an API key. Add one under "
+                             "Settings, Map service",
+                }, 400)
+                return
+
         cache = (self.tile_caches or {}).get(source)
         on_progress = self._make_tile_progress(cache)
         try:
             job_id = self.tile_downloader.start(
-                source, src["upstream"], bounds, minzoom, maxzoom, on_progress=on_progress
+                source, src["upstream"], bounds, minzoom, maxzoom,
+                on_progress=on_progress, token=token,
             )
         except Exception as exc:  # noqa: BLE001 - a download submit must never 500
             logger.exception("tile download start failed")
@@ -6085,12 +6454,25 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         src = tile_sources.get(source)
         if src is None:
             return None
+        token = ""
+        if tile_sources.needs_token(source):
+            token = self._map_token(str(src.get("provider") or ""))
+            if not token:
+                # No key, so there is nothing to ask for. Returned BEFORE the
+                # breaker is consulted and without recording a failure: three
+                # of these would otherwise trip the shared breaker and stop the
+                # cache-fill for every OTHER source for the cooldown, so a
+                # keyless service the operator merely clicked past would take
+                # the working map down with it.
+                logger.debug("no API key stored for %s; not fetching %s/%d/%d/%d",
+                             src.get("provider"), source, z, x, y)
+                return None
         breaker = self.tile_breaker
         if breaker is not None and not breaker.allow():
             logger.debug("upstream breaker open; skipping fetch for %s/%d/%d/%d",
                          source, z, x, y)
             return None
-        url = tile_sources.build_tile_url(src["upstream"], z, x, y)
+        url = tile_sources.build_tile_url(src["upstream"], z, x, y, token)
         try:
             req = urllib.request.Request(
                 url, headers={"User-Agent": f"CorvusGCS/{get_version()}"}
@@ -6098,7 +6480,11 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             with urllib.request.urlopen(req, timeout=TILE_UPSTREAM_TIMEOUT_S) as resp:
                 data = resp.read(TILE_UPSTREAM_MAX_BYTES + 1)
         except Exception:  # noqa: BLE001 - offline field use must never 500
-            logger.debug("upstream tile fetch failed: %s", url, exc_info=True)
+            # Redacted: this line is the one an operator copies into a bug
+            # report when tiles will not load, and for a keyed service the URL
+            # carries their credential.
+            logger.debug("upstream tile fetch failed: %s",
+                         tile_sources.redact_url(url), exc_info=True)
             if breaker is not None:
                 breaker.record_failure()
             return None
@@ -6107,7 +6493,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             # oversized one; counting both keeps a broken-but-reachable
             # upstream from holding the breaker closed forever.
             if len(data) > TILE_UPSTREAM_MAX_BYTES:
-                logger.debug("upstream tile too large, discarding: %s", url)
+                logger.debug("upstream tile too large, discarding: %s",
+                             tile_sources.redact_url(url))
             if breaker is not None:
                 breaker.record_failure()
             return None
@@ -6474,7 +6861,7 @@ def bind_host() -> str:
         return DEFAULT_BIND_HOST
     logger.warning(
         "%s=%s: the HTTP API will accept requests from the network, and it has "
-        "no authentication — any non-browser client that can reach this port can "
+        "no authentication. Any non-browser client that can reach this port can "
         "arm the vehicle. Browser writes from a remote UI remain blocked unless "
         "%s is set to that UI's exact origin",
         BIND_HOST_ENV, host, REMOTE_ORIGIN_ENV,
@@ -6634,7 +7021,7 @@ def apply_startup_connection(
         bridge.set_connection(target)
     except ValueError as exc:
         logger.error(
-            "MAVLink connection %r is not usable (%s) — starting on %s instead",
+            "MAVLink connection %r is not usable (%s), starting on %s instead",
             target, exc, DEFAULT_MAVLINK_CONNECTION,
         )
         bridge.set_connection(DEFAULT_MAVLINK_CONNECTION)

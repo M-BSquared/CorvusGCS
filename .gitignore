@@ -17,3 +17,6 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# dev venv created by run.sh
+/.venv/

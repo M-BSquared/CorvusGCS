@@ -107,15 +107,41 @@ def test_a_connected_quad_returns_motors_outputs_and_sections() -> None:
     assert "error" not in payload
 
 
-def test_the_read_asks_for_the_whole_schema_in_one_batch() -> None:
-    """One named batch read, not the full ~1300-parameter download."""
-    bridge = FakeMotorBridge(_quad_values())
+def test_the_read_asks_for_the_schema_then_the_limits_of_the_motor_pins() -> None:
+    """Two named batch reads, never the full ~1300-parameter download.
+
+    The second one is only the per-channel limits of the four pins that
+    drive a motor, so a quad asks for sixteen more names, not a hundred.
+    """
+    values = _quad_values()
+    for pin in range(1, 5):
+        values[f"PWM_MAIN_MIN{pin}"] = 1100.0
+        values[f"PWM_MAIN_DIS{pin}"] = 900.0
+    bridge = FakeMotorBridge(values)
+    handler, responses = _handler(bridge)
+
+    handler._api_motors()
+
+    assert len(bridge.requested) == 2
+    assert bridge.requested[0] == motor_config.param_names()
+    assert bridge.requested[1] == [
+        f"PWM_MAIN_{suffix}{pin}"
+        for pin in range(1, 5) for suffix in ("MIN", "MAX", "DIS", "FAIL")
+    ]
+    limits = {f["param"]: f["value"] for f in responses[0][0]["motors"][0]["output_fields"]}
+    assert limits == {"PWM_MAIN_MIN1": 1100.0, "PWM_MAIN_DIS1": 900.0}
+
+
+def test_a_vehicle_with_no_motor_pins_is_read_once() -> None:
+    values = _quad_values()
+    for pin in range(1, 9):
+        values[f"PWM_MAIN_FUNC{pin}"] = 0.0
+    bridge = FakeMotorBridge(values)
     handler, _ = _handler(bridge)
 
     handler._api_motors()
 
     assert len(bridge.requested) == 1
-    assert bridge.requested[0] == motor_config.param_names()
 
 
 def test_without_a_bridge_the_page_still_renders() -> None:

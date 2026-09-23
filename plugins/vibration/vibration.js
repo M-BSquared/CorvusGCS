@@ -97,7 +97,23 @@ Corvus.pluginVibration = (function () {
     return true;
   }
 
+  // Plotly is lazy-loaded by the app, so a plugin opened before any chart page
+  // would otherwise find it absent and give up.
   function init(containerEl, api) {
+    const lazy = typeof Corvus !== "undefined" && Corvus.lazy;
+    if (typeof window !== "undefined" && typeof window.Plotly === "undefined"
+        && lazy && typeof lazy.plotly === "function") {
+      let cancelled = false;
+      containerEl.innerHTML = '<div class="vib-warning">Loading the chart…</div>';
+      containerEl._vibDestroy = function () { cancelled = true; containerEl._vibDestroy = null; };
+      const go = () => { if (!cancelled) mount(containerEl, api); };
+      lazy.plotly().then(go, go);
+      return;
+    }
+    mount(containerEl, api);
+  }
+
+  function mount(containerEl, api) {
     const reduced = api && typeof api.reducedMotion === "function" && api.reducedMotion();
 
     // Plotly not vendored → clear fallback message, do NOT subscribe. destroy
@@ -116,7 +132,7 @@ Corvus.pluginVibration = (function () {
         .catch(() => {
           warn = document.createElement("div");
           warn.className = "vib-warning";
-          warn.textContent = "Could not enable high-rate vibration stream — showing PX4 default-rate data";
+          warn.textContent = "Could not enable high-rate vibration stream, showing PX4 default-rate data";
           containerEl.insertBefore(warn, containerEl.firstChild);
         });
     }
@@ -179,12 +195,15 @@ Corvus.pluginVibration = (function () {
     // when accel-HF recovers — keeps the warnings popover from flooding.
     let notifiedHigh = false;
 
+    // Plotly.react only redraws data it sees as new, and the buffer is
+    // mutated in place, so every draw hands it fresh arrays.
     function buildTraces() {
       const c = traceColors();
+      const t = buf.t.slice();
       return [
-        { x: buf.t, y: buf.vx, mode: "lines", name: "Gyro coning", line: { color: c.x, width: 1.5 } },
-        { x: buf.t, y: buf.vy, mode: "lines", name: "Gyro HF", line: { color: c.y, width: 1.5 } },
-        { x: buf.t, y: buf.vz, mode: "lines", name: "Accel HF", line: { color: c.z, width: 1.5 } },
+        { x: t, y: buf.vx.slice(), mode: "lines", name: "Gyro coning", line: { color: c.x, width: 1.5 } },
+        { x: t, y: buf.vy.slice(), mode: "lines", name: "Gyro HF", line: { color: c.y, width: 1.5 } },
+        { x: t, y: buf.vz.slice(), mode: "lines", name: "Accel HF", line: { color: c.z, width: 1.5 } },
       ];
     }
 

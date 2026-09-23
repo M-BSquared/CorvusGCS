@@ -527,7 +527,7 @@ Corvus.pluginSshLauncher = (function () {
           className: "icon-btn sshl-open",
           ariaLabel: `Open the terminal for ${entry.label}`,
           title: running
-            ? "Open its terminal window — watch it, or press Ctrl-C to stop it"
+            ? "Open its terminal window to watch it, or press Ctrl-C to stop it"
             : "Not running. Launch it to open its terminal.",
           disabled: !running,
           onClick: () => openTerminal(entry),
@@ -599,7 +599,7 @@ Corvus.pluginSshLauncher = (function () {
         label: "Connection",
         control: connSel,
         hint: "One of the saved SSH connections, or a new one typed in below. " +
-              "Either way the password is kept by the backend — this plugin " +
+              "Either way the password is kept by the backend. This plugin " +
               "only ever names the connection.",
       }));
       if (connSel.value !== NEW_CONNECTION) draft.connection = connSel.value || "";
@@ -625,7 +625,7 @@ Corvus.pluginSshLauncher = (function () {
         { key: "port", label: "Port", type: "number", mono: true },
         { key: "username", label: "User", placeholder: "corvus" },
         { key: "password", label: "Password", type: "password", mono: true,
-          placeholder: "optional — or a key file" },
+          placeholder: "optional, or use a key file" },
         { key: "key_path", label: "Key file", mono: true,
           placeholder: "/home/you/.ssh/id_rsa" },
         { key: "name", label: "Save as", placeholder: "pilot@10.0.0.7",
@@ -704,10 +704,10 @@ Corvus.pluginSshLauncher = (function () {
         hint: "On: the program runs in an SSH session of this button's own, " +
               "and pressing the button again runs it again in that same " +
               "terminal. The arrow beside the button opens the window to watch " +
-              "it in — read its output there, and stop it with Ctrl-C or the " +
+              "it in. Read its output there, and stop it with Ctrl-C or the " +
               "window's disconnect button. The session lasts as long as Corvus " +
               "does. Off: the program is started with nohup and detached, so " +
-              "it survives Corvus closing — but there is nothing to watch and " +
+              "it survives Corvus closing, but there is nothing to watch and " +
               "nothing to stop from here.",
       }));
 
@@ -825,7 +825,7 @@ Corvus.pluginSshLauncher = (function () {
         // the address out again would read "pilot@10.0.0.7 — pilot@10.0.0.7".
         return {
           value: c.name,
-          label: (address && address !== c.name) ? `${c.name} — ${address}` : c.name,
+          label: (address && address !== c.name) ? `${c.name} (${address})` : c.name,
         };
       });
       saved.push({ value: NEW_CONNECTION, label: "New connection…" });
@@ -934,8 +934,8 @@ Corvus.pluginSshLauncher = (function () {
       live[session] = true;
       if (reconnected) openTerminal(entry, true, true);
       status.show(was && !reconnected
-        ? `${entry.label}: sent again to its terminal — the arrow opens it.`
-        : `${entry.label}: running — the arrow opens its terminal.`, "ok");
+        ? `${entry.label}: sent again to its terminal. The arrow opens it.`
+        : `${entry.label}: running. The arrow opens its terminal.`, "ok");
       // The console is the app's shared record of what was commanded; a
       // program started on a companion computer belongs in it.
       api.console(`ssh-launcher: ${line}`, "success");
@@ -1034,7 +1034,7 @@ Corvus.pluginSshLauncher = (function () {
       if (cancelled) return;
       connections = (data && Array.isArray(data.connections)) ? data.connections : [];
       connectionsError = connections.length ? ""
-        : "No saved SSH connections yet — add a button and choose " +
+        : "No saved SSH connections yet. Add a button and choose " +
           "\u201CNew connection\u2026\u201D to enter one here.";
       if (editing === null) renderShelf();
     }).catch(() => {

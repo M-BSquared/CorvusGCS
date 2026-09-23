@@ -50,6 +50,7 @@ class Scene:
     view: str | None = None         # setup sub-page: motors, safety, calibration, …
     workspace: str = "open"         # open | collapsed
     tab: str = "link"               # link | console | ssh | future
+    plugin: str | None = None       # plugin to open on the future tab, by its name
     hud: dict[str, Any] = field(default_factory=lambda: {
         "pinned": False, "compact": False, "collapsed": False, "readouts": True,
     })
@@ -289,6 +290,21 @@ _register(Scene(
     notes="The console fills from the aircraft's own status text (see CHATTER) "
           "plus every command acknowledgement. Type a command in the console "
           "input before shooting if the picture should show the prompt in use.",
+))
+
+_register(Scene(
+    id="plugins",
+    asset="docs/assets/images/plugins.jpg",
+    title="A plugin beside the map",
+    caption="The Vibration Monitor plugin, live beside the map, on a short hop "
+            "across the Neubiberg campus.",
+    theme="light",
+    page="home", workspace="open", tab="future", plugin="Vibration Monitor",
+    home=flight_mod.CAMPUS_HOP_START,
+    path="swoop", mode="MISSION", takeoff_time=8.0,
+    settle=45.0,
+    notes="The aircraft flies the curved hop once and holds at its end; the "
+          "vibration chart needs about twenty seconds of data to read as a trace.",
 ))
 
 _register(Scene(

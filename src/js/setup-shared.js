@@ -151,6 +151,55 @@ Corvus.setupShared = (function () {
     window.dispatchEvent(new CustomEvent("corvus:notification", { detail: { level, message } }));
   }
 
+  /**
+   * The "Reboot autopilot" button: calibrations and parameters that are read
+   * at boot (SYS_AUTOSTART, SENS_EN_*, SER_*, output protocols) take effect
+   * only after one. Asks first, because the link drops for a few seconds;
+   * the backend refuses while armed, and so should the caller's gate, which
+   * owns `disabled`.
+   *
+   * @param {{mount?: Element, size?: string, onRebooted?: function}} [opts]
+   * @returns {HTMLButtonElement}
+   */
+  function rebootButton(opts) {
+    const o = opts || {};
+    const btn = Corvus.ui.button({
+      variant: "secondary", size: o.size, icon: "power", label: "Reboot autopilot",
+      className: "reboot-autopilot",
+    });
+    let modal = null;
+    function close() { if (modal) { const m = modal; modal = null; m.close(); } }
+    async function reboot() {
+      close();
+      btn.classList.add("is-busy");
+      try {
+        await Corvus.telemetry.postAction("/api/mavlink/reboot", {});
+        notify("info", "The autopilot is rebooting. The link returns in a few seconds.");
+        if (typeof o.onRebooted === "function") o.onRebooted();
+      } catch (err) {
+        notify("critical", "Reboot refused: " + ((err && err.message) || "no answer"));
+      } finally {
+        btn.classList.remove("is-busy");
+      }
+    }
+    btn.addEventListener("click", () => {
+      if (btn.disabled || modal) return;
+      const body = el("div", "reboot-confirm",
+        "The link to the vehicle drops while it restarts, and the parameters "
+        + "are read again afterwards. The vehicle must be disarmed.");
+      modal = Corvus.ui.modal({
+        title: "Reboot the autopilot?", size: "sm", body,
+        actions: [
+          Corvus.ui.button({ variant: "secondary", label: "Cancel", onClick: close }),
+          Corvus.ui.button({ variant: "primary", icon: "power", label: "Reboot", onClick: reboot }),
+        ],
+        mount: o.mount, onClose: () => { modal = null; },
+      });
+      modal.open();
+    });
+    return btn;
+  }
+
   /** Trim float noise so 0.30000000000000004 does not reach the operator. */
   function formatNumber(value) {
     const n = Number(value);
@@ -270,6 +319,10 @@ Corvus.setupShared = (function () {
    */
   async function applyParam(state, field, el, status, value, onApplied) {
     if (state.armed) return;
+    // A page that offers "Check values" keeps what the operator asked for,
+    // written or refused, so the check can compare against it and write it
+    // again. A refused control snaps back, so the control cannot remember it.
+    if (state.wanted) state.wanted[field.param] = value;
     setFieldStatus(status, "pending", "saving");
     try {
       await Corvus.telemetry.postAction("/api/params/set", { name: field.param, value });
@@ -421,7 +474,212 @@ Corvus.setupShared = (function () {
       }
       grid.appendChild(row);
     });
+    if (state && state.check) markChecked(state.check, grid);
     return grid;
+  }
+
+  // -------------------------------------------------------------------------
+  // Check values: read back, write again what did not stick, redraw
+  // -------------------------------------------------------------------------
+  //
+  // Every setup page writes a field the moment it changes, and a write can be
+  // lost on a radio link or refused by the vehicle. "Check values" is the way
+  // to be sure: it reads each field back from the vehicle (never from the
+  // backend's cache), writes again whatever the operator set that did not
+  // stick, and has the page redraw itself from what the vehicle holds. What
+  // the operator asked for lives in `state.wanted` (see applyParam) until a
+  // check confirms it, because a refused field snaps back and cannot
+  // remember it.
+  //
+  // A page opts in with `wanted: {}`, `check: null` and `checking: false` on
+  // its state, a checkButton in its actions bar, a checkCard at the top of
+  // its content while `state.check` is set, and a loader that can read fresh.
+  // paramFieldGrid marks each checked field in place.
+
+  // POST /api/params/verify refuses more names than this in one request.
+  const CHECK_MAX_NAMES = 200;
+
+  /**
+   * Every editable parameter in a page description: any object carrying a
+   * `param` and a `kind`, which is what a field is on every page. Option
+   * tables, output catalogues and sensor driver lists have no `kind`, so a
+   * page that writes those as well adds them itself.
+   */
+  function fieldParams(doc) {
+    const names = [];
+    // Pages hang their own bookkeeping off the description under "_" keys
+    // (Safety keeps the controls of a sensor panel on `section._ctx`), and a
+    // control leads back into the DOM, so those are not walked, and nothing
+    // is walked twice.
+    const seen = new Set();
+    (function walk(node) {
+      if (!node || typeof node !== "object" || seen.has(node)) return;
+      seen.add(node);
+      if (Array.isArray(node)) { node.forEach(walk); return; }
+      if (typeof node.param === "string" && node.param && typeof node.kind === "string"
+          && names.indexOf(node.param) < 0) {
+        names.push(node.param);
+      }
+      Object.keys(node).forEach((key) => {
+        if (key !== "options" && key.charAt(0) !== "_") walk(node[key]);
+      });
+    })(doc);
+    return names;
+  }
+
+  function checkNames(state, opts) {
+    return typeof opts.names === "function" ? opts.names(state) : fieldParams(state.doc);
+  }
+
+  function checkable(state, opts) {
+    return !state.loading && !state.checking
+      && !!(state.doc && state.doc.connected) && checkNames(state, opts).length > 0;
+  }
+
+  /**
+   * The "Check values" button.
+   *
+   * `opts.prefix` names the page for its CSS hook, `opts.reload(state)` must
+   * return a promise for a fresh read and redraw, `opts.setStatus(state, cls,
+   * text)` writes the page's status line, and `opts.names(state)` may replace
+   * the default field walk.
+   */
+  function checkButton(state, opts) {
+    const o = opts || {};
+    const btn = Corvus.ui.button({
+      variant: "secondary", size: "sm", icon: "list-checks", label: "Check values",
+      className: (o.prefix ? o.prefix + "-check " : "") + "check-values",
+    });
+    btn.title = "Read every value back from the vehicle, write again what did "
+      + "not stick, and show what the vehicle holds now";
+    btn.disabled = !checkable(state, o);
+    btn.addEventListener("click", () => runCheck(state, o));
+    state.checkBtn = btn;
+    return btn;
+  }
+
+  /** Re-gate the button after a read, without a repaint. */
+  function recheckButton(state, opts) {
+    if (state.checkBtn) state.checkBtn.disabled = !checkable(state, opts || {});
+  }
+
+  async function runCheck(state, opts) {
+    if (!checkable(state, opts)) return;
+    const targets = Object.keys(state.wanted || {})
+      .map((name) => ({ name, value: state.wanted[name] }));
+    // Capped to what one request may name. A larger page loses nothing: the
+    // reload after the check reads every value fresh anyway.
+    const names = checkNames(state, opts)
+      .slice(0, Math.max(0, CHECK_MAX_NAMES - targets.length));
+    state.checking = true;
+    if (state.checkBtn) state.checkBtn.disabled = true;
+    if (state.reloadBtn) state.reloadBtn.disabled = true;
+    opts.setStatus(state, "pending", targets.length
+      ? `Checking ${targets.length} ${targets.length === 1 ? "change" : "changes"} on the vehicle…`
+      : "Reading every value back from the vehicle…");
+    let check;
+    try {
+      const res = await Corvus.telemetry.postAction(
+        "/api/params/verify", { params: targets, names });
+      if (state.destroyed) return;
+      (res.results || []).forEach((r) => { if (r.ok && state.wanted) delete state.wanted[r.name]; });
+      check = summarizeCheck(res);
+    } catch (err) {
+      if (state.destroyed) return;
+      check = { cls: "err", text: (err && err.message) || "The check could not run", rows: [] };
+    }
+    state.checking = false;
+    state.check = check;
+    // Redraw from the vehicle, so every field shows what it holds now.
+    await opts.reload(state);
+    if (state.destroyed) return;
+    opts.setStatus(state, check.cls, check.text);
+    notify(check.cls === "ok" ? "info" : "warning", check.text);
+  }
+
+  function summarizeCheck(res) {
+    const rows = Array.isArray(res && res.results) ? res.results : [];
+    const read = Object.keys((res && res.values) || {}).length;
+    const missing = Array.isArray(res && res.missing) ? res.missing : [];
+    const failed = rows.filter((r) => !r.ok);
+    const rewritten = rows.filter((r) => r.ok && r.rewritten);
+    let cls = "ok";
+    let text;
+    if (!rows.length) {
+      text = `No changes to confirm on this page. ${read} values read back from the vehicle.`;
+    } else if (!failed.length) {
+      text = rows.length === 1
+        ? `${rows[0].name} is on the vehicle.`
+        : `All ${rows.length} changes are on the vehicle.`;
+      if (rewritten.length) {
+        text += rewritten.length === 1 && rows.length === 1
+          ? " It had to be written again."
+          : ` ${rewritten.length} had to be written again.`;
+      }
+    } else {
+      cls = "err";
+      const names = failed.map((r) => r.name).join(", ");
+      text = (rows.length === 1
+        ? `${names} is not on the vehicle.`
+        : `${failed.length} of ${rows.length} changes are not on the vehicle: ${names}.`)
+        + " Press Check values again to retry.";
+    }
+    if (missing.length) {
+      cls = "err";
+      text += ` No answer for ${missing.join(", ")}.`;
+    }
+    return { cls, text, rows };
+  }
+
+  function formatChecked(value) {
+    return value === null || value === undefined ? "no answer" : formatNumber(value);
+  }
+
+  function checkOutcome(row) {
+    if (row.ok) return row.rewritten ? "written again, confirmed" : "confirmed";
+    return row.error || "not applied";
+  }
+
+  /** The last check, one row per value the operator set. */
+  function checkCard(check, prefix) {
+    const p = prefix || "setup";
+    const card = el("div", `page-card ${p}-card ${p}-check-card check-card`);
+    card.dataset.section = "check";
+    card.appendChild(sectionTitle("Check result"));
+    card.appendChild(el("div", `${p}-check-summary check-summary ${check.cls || ""}`, check.text));
+    if (check.rows && check.rows.length) {
+      const table = el("div", `${p}-check-rows check-rows`);
+      const head = el("div", `${p}-check-row ${p}-check-head check-row check-head`);
+      ["Parameter", "Wanted", "Vehicle now", "Result"].forEach((t) => head.appendChild(el("span", null, t)));
+      table.appendChild(head);
+      check.rows.forEach((row) => {
+        const state = row.ok ? "ok" : "err";
+        const line = el("div", `${p}-check-row check-row ${state}`);
+        line.dataset.param = row.name;
+        line.appendChild(el("span", `${p}-check-param check-param`, row.name));
+        line.appendChild(el("span", `${p}-check-value check-value`, formatChecked(row.wanted)));
+        line.appendChild(el("span", `${p}-check-value check-value`, formatChecked(row.after)));
+        line.appendChild(el("span", `${p}-check-outcome check-outcome`, checkOutcome(row)));
+        table.appendChild(line);
+      });
+      card.appendChild(table);
+    }
+    return card;
+  }
+
+  /** Put each checked value's outcome next to its field, where it was typed. */
+  function markChecked(check, grid) {
+    const rows = (check && check.rows) || [];
+    if (!rows.length || !grid) return;
+    const byName = {};
+    rows.forEach((r) => { byName[r.name] = r; });
+    Array.prototype.forEach.call(grid.children || [], (fieldRow) => {
+      const r = fieldRow && fieldRow.dataset && byName[fieldRow.dataset.param];
+      if (!r) return;
+      const status = fieldRow.querySelector(".params-row-status");
+      if (r.ok) setFieldStatus(status, "ok", checkOutcome(r));
+      else setFieldStatus(status, "err", `wanted ${formatChecked(r.wanted)}, vehicle holds ${formatChecked(r.after)}`);
+    });
   }
 
   return {
@@ -436,6 +694,9 @@ Corvus.setupShared = (function () {
     setFieldStatus, setActionsStatus,
     registerControl, dropControls, recheckAll, applyArmed,
     restoreControl, applyParam, signedValue, paramControl, paramFieldGrid,
-    pformClass,
+    pformClass, rebootButton,
+    // Check values, shared by every page that writes fields one at a time.
+    fieldParams, checkButton, recheckButton, checkCard, markChecked,
+    summarizeCheck, CHECK_MAX_NAMES,
   };
 })();

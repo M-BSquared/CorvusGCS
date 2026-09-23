@@ -33,9 +33,17 @@ window.Corvus = window.Corvus || {};
  * ground station refusing to let somebody fix its own display in the one
  * situation where the number matters most.
  *
+ * Every vehicle field is written the moment it changes, so "Check values" is
+ * the way to be sure: it reads each field back from the vehicle (never from
+ * the backend's cache), writes again whatever the operator set that did not
+ * stick, and redraws the page from what the vehicle holds afterwards. The
+ * values the operator asked for are kept in `state.wanted` until a check
+ * confirms them, because a refused field snaps back and cannot remember them.
+ *
  * Backend contract:
- *   GET  /api/battery                {connected,sections,pack,settings,configured,chemistries}
+ *   GET  /api/battery?fresh=1        {connected,sections,pack,settings,configured,chemistries}
  *   POST /api/params/set {name,val}  write one vehicle field (refused while armed)
+ *   POST /api/params/verify {params,names}  read back, write again what differs
  *   POST /api/config {battery:{...}} save the estimator settings
  *
  * Exposes render(container, navigateBack) -> destroy(). The caller (setup.js)
@@ -75,6 +83,11 @@ Corvus.setupBattery = (function () {
       // for the next frame off the link.
       live: null,
       gauge: null,
+      // param -> the value the operator last set, until a check confirms it.
+      wanted: {},
+      // The last "Check values" outcome, drawn until the next check or reload.
+      check: null,
+      checking: false,
     };
 
     const cur = Corvus.telemetry && Corvus.telemetry.getState();
@@ -120,10 +133,15 @@ Corvus.setupBattery = (function () {
       variant: "primary", size: "sm", icon: "refresh-cw", label: "Reload",
       className: "battery-reload",
     });
-    reloadBtn.disabled = state.loading;
-    reloadBtn.addEventListener("click", () => load(state));
+    reloadBtn.disabled = state.loading || state.checking;
+    reloadBtn.addEventListener("click", () => {
+      state.check = null;
+      load(state);
+    });
+    const checkBtn = S.checkButton(state, CHECK);
     const actionsStatus = S.el("div", "params-actions-status");
     actions.appendChild(reloadBtn);
+    actions.appendChild(checkBtn);
     actions.appendChild(actionsStatus);
     page.appendChild(actions);
 
@@ -143,12 +161,14 @@ Corvus.setupBattery = (function () {
     state.container.appendChild(page);
 
     state.reloadBtn = reloadBtn;
+    state.checkBtn = checkBtn;
     state.actionsStatus = actionsStatus;
     state.banner = banner;
     state.host = right;
     S.setActionsStatus(actionsStatus, state.status.cls, state.status.text);
 
     left.appendChild(livePanel(state));
+    if (state.check) right.appendChild(S.checkCard(state.check, "battery"));
     right.appendChild(estimatorCard(state));
     renderSections(state);
 
@@ -163,7 +183,9 @@ Corvus.setupBattery = (function () {
     state.loading = true;
     if (state.reloadBtn) state.reloadBtn.disabled = true;
     setStatus(state, "pending", "Reading battery configuration…");
-    return Corvus.telemetry.requestJson("/api/battery").then((doc) => {
+    // Fresh, never the backend's cache: the page must show what the vehicle
+    // holds now, including what another station or a calibration changed.
+    return Corvus.telemetry.requestJson("/api/battery?fresh=1").then((doc) => {
       if (state.destroyed) return;
       state.doc = doc || {};
       state.configured = Object.assign({}, SETTING_DEFAULTS, (doc && doc.configured) || {});
@@ -192,6 +214,17 @@ Corvus.setupBattery = (function () {
     state.status = { cls, text };
     S.setActionsStatus(state.actionsStatus, cls, text);
   }
+
+  // -------------------------------------------------------------------------
+  // Check values: the shared read back (setupShared), redrawn by load()
+  // -------------------------------------------------------------------------
+
+  // load() always reads fresh, so it is the redraw a check needs as it is.
+  const CHECK = {
+    prefix: "battery",
+    reload: (state) => load(state),
+    setStatus: (state, cls, text) => setStatus(state, cls, text),
+  };
 
   // -------------------------------------------------------------------------
   // Left column: the pack as it is right now
@@ -479,7 +512,7 @@ Corvus.setupBattery = (function () {
       const low = Math.min.apply(null, measured);
       const high = Math.max.apply(null, measured);
       const spread = (high - low) * 1000;
-      return `${low.toFixed(2)}–${high.toFixed(2)} V (${Math.round(spread)} mV apart)`;
+      return `${low.toFixed(2)} to ${high.toFixed(2)} V (${Math.round(spread)} mV apart)`;
     }
     const perCell = Number(s.battery_cell_voltage) > 0
       ? Number(s.battery_cell_voltage)
@@ -531,7 +564,7 @@ Corvus.setupBattery = (function () {
       "The autopilot's remaining figure is a capacity count that starts from a "
       + "guess, so a pack flown, charged to storage and flown again reads full on "
       + "the second take-off. Corvus can read the cell voltage against a discharge "
-      + "curve instead. Neither is right in every case — both are shown on the left, "
+      + "curve instead. Neither is right in every case. Both are shown on the left, "
       + "and this chooses which one the rest of the interface flies by."));
 
     const head = S.el("div", "battery-estimate-switch");
@@ -557,31 +590,31 @@ Corvus.setupBattery = (function () {
     grid.appendChild(numberRow(state, {
       key: "cells", label: "Cells in series", unit: "S", step: 1, min: 0, max: 24,
       hint: "0 works it out from the pack voltage when the battery is plugged "
-            + "in, which is the only moment that reading is unambiguous — 19.8 V "
+            + "in, which is the only moment that reading is unambiguous: 19.8 V "
             + "is a fresh 5S and a tired 6S. Pin it if you know it.",
       autoText: () => {
         const cells = Number((state.live || {}).battery_cells) || 0;
-        return cells > 0 ? `auto — reading ${cells}S` : "auto";
+        return cells > 0 ? `auto (reading ${cells}S)` : "auto";
       },
     }));
     grid.appendChild(numberRow(state, {
       key: "full_cell", label: "Full cell voltage", unit: "V", step: 0.01,
       min: 0, max: 5,
       hint: "Resting volts of one charged cell, at which the estimate reads 100%.",
-      autoText: () => `auto — ${chemistry(state).full} V`,
+      autoText: () => `auto (${chemistry(state).full} V)`,
     }));
     grid.appendChild(numberRow(state, {
       key: "empty_cell", label: "Empty cell voltage", unit: "V", step: 0.01,
       min: 0, max: 5,
       hint: "The landing decision, not the cell's datasheet minimum. The estimate "
             + "reads 0% here.",
-      autoText: () => `auto — ${chemistry(state).empty} V`,
+      autoText: () => `auto (${chemistry(state).empty} V)`,
     }));
     grid.appendChild(numberRow(state, {
       key: "resistance", label: "Internal resistance", unit: "mΩ/cell", step: 0.1,
       min: 0, max: 100,
       hint: "Corrects the voltage back to rest before it is read. A 6S pack "
-            + "pulling 60 A through 5 mΩ a cell reads 1.8 V low — thirty points "
+            + "pulling 60 A through 5 mΩ a cell reads 1.8 V low: thirty points "
             + "of charge, in a climb. 0 leaves the reading uncorrected, which is "
             + "pessimistic rather than wrong.",
       autoText: () => "off",
@@ -641,7 +674,7 @@ Corvus.setupBattery = (function () {
     row.appendChild(S.el("span", "pform-field-label battery-field-label", "Chemistry"));
     const cell = S.el("div", "pform-field-control battery-field-control");
     const options = ((state.doc && state.doc.chemistries) || []).map((c) => ({
-      value: c.value, label: `${c.label} (${c.empty}–${c.full} V)`,
+      value: c.value, label: `${c.label} (${c.empty} to ${c.full} V)`,
     }));
     const status = S.el("span", "params-row-status");
     const select = Corvus.ui.select({

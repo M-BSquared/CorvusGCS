@@ -18,7 +18,6 @@ in — which is exactly the bug these tests now pin against. Its own preconditio
 """
 from __future__ import annotations
 
-import math
 import sys
 from typing import Any
 
@@ -213,4 +212,5 @@ def test_calibrate_motor_disarmed_sends_preflight_with_param7_one() -> None:
     # command_long_send args: (sys, comp, cmd, confirm, p1..p7) -> p7 is index 10.
     assert int(cmd[2]) == mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION
     assert cmd[10] == 1.0, "param7=1.0 selects motor/ESC calibration"
-    assert all(math.isnan(cmd[i]) for i in range(4, 10)), "params 1-6 are NaN"
+    assert all(cmd[i] == 0.0 for i in range(4, 10)), \
+        "params 1-6 are 0, the message's own 'no calibration' (NaN reached PX4's (int) casts)"

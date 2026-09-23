@@ -265,3 +265,18 @@ def test_the_vehicle_class_is_the_axis_ardupilots_parameters_vary_along(
     mav_type: int, family: str,
 ) -> None:
     assert autopilot.vehicle_class(mav_type) == family
+
+
+@pytest.mark.parametrize("stack, text, reason", [
+    (autopilot.STACK_PX4, "Preflight Fail: Accel 0 uncalibrated", "Accel 0 uncalibrated"),
+    (autopilot.STACK_PX4, "PreArm: Compass not calibrated", None),
+    (autopilot.STACK_PX4, "Preflight Fail: ", None),
+    (autopilot.STACK_ARDUPILOT, "PreArm: Compass not calibrated", "Compass not calibrated"),
+    (autopilot.STACK_ARDUPILOT, "Arm: Throttle too high", "Throttle too high"),
+    (autopilot.STACK_ARDUPILOT, "Preflight Fail: Accel 0 uncalibrated", None),
+    (autopilot.STACK_GENERIC, "PreArm: Compass not calibrated", "Compass not calibrated"),
+    (autopilot.STACK_GENERIC, "Takeoff detected", None),
+])
+def test_each_stack_reads_its_own_preflight_wording(stack: str, text: str,
+                                                     reason: str | None) -> None:
+    assert autopilot.dialect_for_stack(stack).prearm_failure(text) == reason
