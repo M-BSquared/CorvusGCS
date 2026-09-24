@@ -20,3 +20,8 @@ __pycache__/
 
 # dev venv created by run.sh
 /.venv/
+
+# plugins besides the two basis plugins
+/plugins/*/
+!/plugins/ssh-launcher/
+!/plugins/vibration/

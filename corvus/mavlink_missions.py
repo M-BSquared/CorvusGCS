@@ -267,7 +267,7 @@ class MissionProtocolMixin:
             if fields["mission_total"] == len(index):
                 self._vehicle_mission_confirmed = True
             elif (self._vehicle_mission_confirmed
-                  or time.monotonic() - self._vehicle_mission_noted_at > MISSION_CHANGE_GRACE_S):
+                  or time.monotonic() - self._vehicle_mission_noted_at >= MISSION_CHANGE_GRACE_S):
                 changed = True
         if changed and index is not None:
             self._forget_vehicle_mission("the vehicle holds a different mission now")

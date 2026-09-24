@@ -1673,11 +1673,12 @@ Corvus.analysis = (function () {
       // The credit the imagery is served under, worded as the Home map words
       // it — the same tiles, so the same attribution.
       try {
-        map.addControl(new window.maplibregl.AttributionControl(
-          (Corvus.map && typeof Corvus.map.attributionOptions === "function")
-            ? Corvus.map.attributionOptions()
-            : { compact: true, customAttribution: [] },
-        ), "bottom-left");
+        if (Corvus.map && typeof Corvus.map.addAttribution === "function") {
+          Corvus.map.addAttribution(map);
+        } else {
+          map.addControl(new window.maplibregl.AttributionControl(
+            { compact: true, customAttribution: [] }), "bottom-left");
+        }
         map.addControl(new window.maplibregl.NavigationControl(
           { showCompass: false }), "top-right");
       } catch (_e) { /* a control is not worth losing the map over */ }

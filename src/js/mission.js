@@ -1365,11 +1365,12 @@ Corvus.mission = (function () {
     // it (see ATTRIBUTION_OPTIONS there). The fallback is not a second copy of
     // that argument, only the empty list that keeps MapLibre's default credit
     // out of a build where map.js did not load.
-    map.addControl(new maplibregl.AttributionControl(
-      (Corvus.map && typeof Corvus.map.attributionOptions === "function")
-        ? Corvus.map.attributionOptions()
-        : { compact: true, customAttribution: [] },
-    ), "bottom-left");
+    if (Corvus.map && typeof Corvus.map.addAttribution === "function") {
+      Corvus.map.addAttribution(map);
+    } else {
+      map.addControl(new maplibregl.AttributionControl(
+        { compact: true, customAttribution: [] }), "bottom-left");
+    }
 
     map.on("load", () => {
       if (destroyed) return;

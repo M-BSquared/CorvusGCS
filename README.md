@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.56-0E8A6B?style=for-the-badge" height="28" alt="Version 2026.09.56" />
+  <img src="https://img.shields.io/badge/Version-2026.09.57-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.09.57" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -26,23 +26,24 @@
   <!-- <a href="https://github.com/ArduPilot/pymavlink" target="_blank"><img src="https://img.shields.io/badge/pymavlink-00A6E2?logoColor=white&style=for-the-badge" height="28" alt="pymavlink" /></a>
   <img width="8" /> -->
   <br>
-  <a href="https://px4.io/" target="_blank"><img src="https://img.shields.io/badge/PX4-v1.16%20%7C%201.17%20%7C%201.18-00C7B7?logoColor=white&style=for-the-badge" height="28" alt="PX4 v1.16 | 1.17 | 1.18" /></a>
+  <a href="https://px4.io/" target="_blank"><img src="https://img.shields.io/badge/PX4-v1.16%20%7C%201.17%20%7C%201.18-9f2dfe?logoColor=white&style=for-the-badge" height="28" alt="PX4 v1.16 | 1.17 | 1.18" /></a>
   <img width="8" />
-  <a href="https://ardupilot.org/" target="_blank"><img src="https://img.shields.io/badge/ArduPilot-4.3%20to%204.6-E62B1E?logoColor=white&style=for-the-badge" height="28" alt="ArduPilot 4.3 to 4.6" /></a>
+  <a href="https://ardupilot.org/" target="_blank"><img src="https://img.shields.io/badge/ArduPilot-4.3%20to%204.6-e2e518?logoColor=white&style=for-the-badge" height="28" alt="ArduPilot 4.3 to 4.6" /></a>
   <br>
   <!-- <img src="https://img.shields.io/badge/%F0%9F%A4%96-Vibe%20Coded-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded" />
   <img width="8" /> -->
   <img src="https://img.shields.io/badge/Lines%20of%20Code-90k%2B-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 90k+" />
   <img width="8" />
-  <img src="https://img.shields.io/badge/Tests-69k%20lines%20%C2%B7%20154%20files-2EA043?style=for-the-badge" height="28" alt="Tests: 69k lines across 154 files" />
+  <img src="https://img.shields.io/badge/Tests-69k%20lines%20%C2%B7%20154%20files-18a4de?style=for-the-badge" height="28" alt="Tests: 69k lines across 154 files" />
   <br>
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-6E7681?style=for-the-badge" height="28" alt="Platform: macOS | Linux | Windows" />
   <img width="8" />
-  <img src="https://img.shields.io/badge/Offline-First-C2540A?style=for-the-badge" height="28" alt="Offline first" />
+  <img src="https://img.shields.io/badge/Offline-First-b91701?style=for-the-badge" height="28" alt="Offline first" />
   <img width="8" />
-  <img src="https://img.shields.io/badge/Ready%20to%20Fly-in%20seconds-0E8A6B?style=for-the-badge" height="28" alt="Ready to fly in seconds" />
+  <img src="https://img.shields.io/badge/Ready%20to%20Fly-in%20seconds-38c602?style=for-the-badge" height="28" alt="Ready to fly in seconds" />
   <img width="8" />
-  <a href="LICENSE.md"><img src="https://img.shields.io/badge/License-Sustainable%20Use%201.0-8A5A0E?style=for-the-badge" height="28" alt="License: Sustainable Use License 1.0" /></a>
+  <!-- <br> -->
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/License-Sustainable%20Use%201.0-0c5918?style=for-the-badge" height="28" alt="License: Sustainable Use License 1.0" /></a>
 </div>
 
 <!--

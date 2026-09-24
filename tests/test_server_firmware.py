@@ -561,11 +561,12 @@ def test_flash_reconnect_after_reboot_rejected(monkeypatch: pytest.MonkeyPatch) 
     mav = FakeMavlink(transport="usb", reboot_ok=False)
     fs = FlashService(mav, _store())
     assert fs.start(b"\x00" * 1024) is True
-    # wait for worker to finish (it returns fast on reboot rejection)
-    for _ in range(100):
-        if fs.status()["state"] != "flashing":
-            break
-        time.sleep(0.01)
+    # "failed" is published before the worker's finally reconnects the bridge,
+    # so wait for the worker itself rather than for the state.
+    worker = fs._worker
+    assert worker is not None
+    worker.join(timeout=5.0)
+    assert not worker.is_alive()
     assert fs.status()["state"] == "failed"
     # Bridge was reconnected (set_connection + start) after the failed reboot.
     assert mav.connection_set_to == "serial:/dev/ttyACM0:115200"

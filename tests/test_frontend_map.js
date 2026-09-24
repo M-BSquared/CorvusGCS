@@ -216,8 +216,8 @@ function testTheCreditIsTheImagerysAndNotTheRenderersToo() {
   const missionSrc = fs.readFileSync(
     path.join(__dirname, "..", "src", "js", "mission.js"), "utf-8");
   assert.ok(
-    /Corvus\.map\.attributionOptions\(\)/.test(missionSrc),
-    "the Mission map must take the credit's options from map.js",
+    /Corvus\.map\.addAttribution\(map\)/.test(missionSrc),
+    "the Mission map must take the credit control from map.js",
   );
   // The imagery credit itself is not suppressible from here and must not be:
   // it is a condition of the tiles being on screen at all, and it arrives on
@@ -671,6 +671,106 @@ function testTheFlightBarShrinkIsOffWhenTheConfigIsSilent() {
     "and persist the one key it owns");
 }
 
+// ---------------------------------------------------------------------------
+// The credit toggle. It starts folded on every map, only a click opens it, and
+// MapLibre's own opens are undone. The old guard closed real clicks as well,
+// because the click reached it through two writers, and the planner had no
+// guard at all, so its credit opened by itself.
+// ---------------------------------------------------------------------------
+
+function fakeAttrib() {
+  const classes = new Set(["maplibregl-ctrl", "maplibregl-ctrl-attrib", "maplibregl-compact"]);
+  const attrs = new Map();
+  const listeners = [];
+  const observers = [];
+  const notify = () => observers.forEach((cb) => cb());
+  const el = {
+    classList: {
+      contains: (c) => classes.has(c),
+      add: (...cs) => { cs.forEach((c) => classes.add(c)); notify(); },
+      remove: (...cs) => { cs.forEach((c) => classes.delete(c)); notify(); },
+      toggle: (c, on) => { if (on) classes.add(c); else classes.delete(c); notify(); },
+    },
+    hasAttribute: (n) => attrs.has(n),
+    setAttribute: (n, v) => { attrs.set(n, v); notify(); },
+    removeAttribute: (n) => { attrs.delete(n); notify(); },
+    addEventListener: (type, cb, capture) => listeners.push({ type, cb, capture }),
+    click(onButton) {
+      let prevented = false;
+      let stopped = false;
+      const e = {
+        target: { closest: (sel) => (onButton && sel === ".maplibregl-ctrl-attrib-button" ? {} : null) },
+        preventDefault: () => { prevented = true; },
+        stopImmediatePropagation: () => { stopped = true; },
+      };
+      listeners.filter((l) => l.type === "click").forEach((l) => l.cb(e));
+      return { prevented, stopped };
+    },
+    get shown() { return classes.has("maplibregl-compact-show") || attrs.has("open"); },
+    get openAttr() { return attrs.has("open"); },
+    get showClass() { return classes.has("maplibregl-compact-show"); },
+  };
+  return { el, observers };
+}
+
+function withAttrib(fn) {
+  const saved = global.MutationObserver;
+  const { el, observers } = fakeAttrib();
+  let depth = 0;
+  global.MutationObserver = class {
+    constructor(cb) { this.cb = cb; }
+    observe() {
+      observers.push(() => {
+        // A real observer is batched; a bounded re-entry is close enough and
+        // still catches an observer that keeps writing.
+        if (depth > 5) throw new Error("the observer never settles");
+        depth++; try { this.cb([]); } finally { depth--; }
+      });
+    }
+  };
+  try { map._ownAttributionToggle(el); fn(el); } finally { global.MutationObserver = saved; }
+}
+
+function testTheCreditStartsFoldedEvenAfterMapLibreOpensIt() {
+  withAttrib((el) => {
+    assert.equal(el.shown, false, "folded at start");
+    // What MapLibre does when the source's attribution text arrives.
+    el.setAttribute("open", "");
+    el.classList.add("maplibregl-compact", "maplibregl-compact-show");
+    assert.equal(el.shown, false, "an open MapLibre makes on its own is undone");
+  });
+}
+
+function testAClickOpensTheCreditAndItStaysOpen() {
+  withAttrib((el) => {
+    const r = el.click(true);
+    assert.ok(r.prevented, "the native <summary> toggle must not run as a second writer");
+    assert.ok(r.stopped, "MapLibre's own toggle must not run as a second writer");
+    assert.ok(el.showClass && el.openAttr, "a click on the icon opens the credit");
+    el.click(true);
+    assert.equal(el.shown, false, "a second click folds it again");
+  });
+}
+
+function testTheFoldedDiscIsTheButtonButTheOpenCreditsLinksAreNot() {
+  withAttrib((el) => {
+    el.click(false);
+    assert.ok(el.shown, "folded, a click anywhere on the disc opens it");
+    const r = el.click(false);
+    assert.ok(el.shown && !r.prevented, "open, a click on the credit text is left alone");
+  });
+}
+
+function testAFoldMapLibreMakesIsAccepted() {
+  withAttrib((el) => {
+    el.click(true);
+    el.classList.remove("maplibregl-compact-show");  // MapLibre folds it on drag
+    assert.equal(el.shown, false, "the credit folds and stays folded");
+    el.click(true);
+    assert.ok(el.shown, "and the next click opens it, not closes it");
+  });
+}
+
 const tests = [
   testTheFlightBarIsFullSizeUntilTheSwitchIsThrown,
   testTheFlightBarIsMeasuredAgainstAShareOfTheMap,
@@ -717,6 +817,10 @@ const tests = [
   testPlanRoutePrependsVehicleForMultipleWaypoints,
   testPlanRouteZeroPositionTreatedAsNoFix,
   testPlanRouteMissingTelemetryDegradesToWaypointsOnly,
+  testTheCreditStartsFoldedEvenAfterMapLibreOpensIt,
+  testAClickOpensTheCreditAndItStaysOpen,
+  testTheFoldedDiscIsTheButtonButTheOpenCreditsLinksAreNot,
+  testAFoldMapLibreMakesIsAccepted,
 ];
 
 let failed = 0;

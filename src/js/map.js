@@ -279,6 +279,58 @@ Corvus.map = (function () {
    * no longer inherited from the default object we stopped using.
    */
   const ATTRIBUTION_OPTIONS = { compact: true, customAttribution: [] };
+
+  /**
+   * Take the credit's open/closed state away from MapLibre, so it starts
+   * folded and only a click unfolds it.
+   *
+   * MapLibre opens the credit by itself: once in onAdd when `compact` is set
+   * explicitly, and again when a source's attribution text arrives a tick
+   * later. Its own toggle is also spread over two writers, its click handler
+   * and the native <summary> default, which is why collapsing "every open
+   * that was not a click" kept closing real clicks too. Here the click is
+   * handled once, in the capture phase, and both writers are stopped; any
+   * other open is undone. A fold MapLibre makes on its own (it folds on map
+   * drag) is accepted.
+   *
+   * @param {Element} attribEl the control's `.maplibregl-ctrl-attrib` <details>
+   */
+  function ownAttributionToggle(attribEl) {
+    let shown = false;
+    const apply = () => {
+      if (attribEl.classList.contains("maplibregl-compact-show") !== shown) {
+        attribEl.classList.toggle("maplibregl-compact-show", shown);
+      }
+      if (attribEl.hasAttribute("open") !== shown) {
+        if (shown) attribEl.setAttribute("open", "");
+        else attribEl.removeAttribute("open");
+      }
+    };
+    attribEl.addEventListener("click", (e) => {
+      const onButton = e.target && typeof e.target.closest === "function"
+        && e.target.closest(".maplibregl-ctrl-attrib-button");
+      // Folded, the whole disc is the button. Unfolded, only the icon is, so
+      // the links in the credit still work.
+      if (!onButton && shown) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      shown = !shown;
+      apply();
+    }, true);
+    new MutationObserver(() => {
+      if (shown && !attribEl.classList.contains("maplibregl-compact-show")) shown = false;
+      apply();
+    }).observe(attribEl, { attributes: true, attributeFilter: ["class", "open"] });
+    apply();
+  }
+
+  /** The credit control, bottom-left, folded until clicked. Every map uses it. */
+  function addAttribution(targetMap) {
+    targetMap.addControl(new maplibregl.AttributionControl(ATTRIBUTION_OPTIONS), "bottom-left");
+    const host = typeof targetMap.getContainer === "function" ? targetMap.getContainer() : null;
+    const attribEl = host && host.querySelector(".maplibregl-ctrl-attrib");
+    if (attribEl) ownAttributionToggle(attribEl);
+  }
   // All tile traffic routes through the backend serve endpoint so the map works
   // fully offline once tiles are cached. Online, the backend fetches+caches
   // transparently, so the online experience is unchanged. The browser never
@@ -3654,37 +3706,7 @@ Corvus.map = (function () {
     // the corner nothing else competes for. Bottom-right is where the control
     // rail and the HUD live, so it goes bottom-left, with the clear-track button
     // stacked above it (see .track-clear in main.css).
-    map.addControl(new maplibregl.AttributionControl(ATTRIBUTION_OPTIONS), "bottom-left");
-    // MapLibre's own onAdd opens the credit the moment `compact: true` is set
-    // explicit (as opposed to width-triggered compact, which starts closed):
-    // it adds "maplibregl-compact-show" and a native <details open>. The
-    // satellite style's raster source attaches its attribution a tick later
-    // than addControl returns, and MapLibre reruns the exact same "first
-    // open" branch the moment that text arrives (it was skipped once because
-    // the control briefly carried "maplibregl-attrib-empty"), which reopens
-    // it even after an immediate one-shot collapse. Watch the class instead,
-    // and collapse every reopen that MapLibre triggers on its own, while
-    // leaving one that followed a click on the toggle button alone.
-    const attribEl = mapEl.querySelector(".maplibregl-ctrl-attrib");
-    if (attribEl) {
-      let userToggled = false;
-      const toggleButton = attribEl.querySelector(".maplibregl-ctrl-attrib-button");
-      if (toggleButton) {
-        toggleButton.addEventListener("click", () => { userToggled = true; });
-      }
-      const collapseIfAuto = () => {
-        if (userToggled) { userToggled = false; return; }
-        if (attribEl.classList.contains("maplibregl-compact-show")) {
-          attribEl.classList.remove("maplibregl-compact-show");
-          attribEl.removeAttribute("open");
-        }
-      };
-      collapseIfAuto();
-      new MutationObserver(collapseIfAuto).observe(attribEl, {
-        attributes: true,
-        attributeFilter: ["class", "open"],
-      });
-    }
+    addAttribution(map);
 
     // Controls are built NOW, not on "load". MapLibre fires "load" only once the
     // style AND its first tiles have resolved, so building the rail there left
@@ -3882,9 +3904,10 @@ Corvus.map = (function () {
     // maxzoom and attribution. A second map building its own raster source
     // needs those, and the catalogue is fetched once, here.
     layerSpec: specFor,
-    // What the credit in the corner says, so the second map says the same
-    // thing rather than keeping its own copy of the argument.
-    attributionOptions: () => ATTRIBUTION_OPTIONS,
+    // The credit control, so every map says the same thing and folds and
+    // opens it the same way rather than keeping its own copy of either.
+    addAttribution,
+    _ownAttributionToggle: ownAttributionToggle,
     // The shared view (see "The view the two maps share"): where the Mission
     // planner opens, and how it reports back where the operator left it.
     missionOpenView,

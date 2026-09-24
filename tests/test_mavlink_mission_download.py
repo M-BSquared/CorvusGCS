@@ -378,6 +378,19 @@ def test_a_report_of_the_old_count_right_after_an_upload_is_not_a_change(
     assert bridge._store.get_snapshot()["mission_known"] is False
 
 
+def test_an_expired_grace_counts_even_when_the_clock_has_not_ticked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows' monotonic clock ticks every ~15 ms, so two reads often agree."""
+    bridge = download(monkeypatch)
+    monkeypatch.setattr("corvus.mavlink_missions.time",
+                        SimpleNamespace(monotonic=lambda: 1000.0))
+    bridge._vehicle_mission_noted_at = 1000.0
+    monkeypatch.setattr("corvus.mavlink_missions.MISSION_CHANGE_GRACE_S", 0.0)
+    bridge._dispatch(current(0, total=3))
+    assert bridge._store.get_snapshot()["mission_known"] is False
+
+
 def test_ardupilot_progress_is_numbered_without_the_home_slot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

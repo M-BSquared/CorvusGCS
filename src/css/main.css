@@ -641,24 +641,28 @@ svg { display: block; }
      than absorbed. */
   box-sizing: border-box;
   min-height: 0;
-  padding: 3px 9px 3px 4px;
-  background: rgb(var(--glass-rgb) / 0.55);
-  backdrop-filter: var(--blur-soft);
-  -webkit-backdrop-filter: var(--blur-soft);
+  /* 4px top and bottom, the same as the folded disc below, so opening the
+     credit does not change the pill's height or nudge the icon. */
+  padding: 4px 9px 4px 4px;
+  background: rgb(var(--glass-rgb) / 0.38);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
   border: 1px solid rgb(var(--tint-rgb) / 0.06);
   border-radius: 999px;
   box-shadow: var(--shadow-pop);
   font-size: 10px;
   line-height: 1.4;
   color: var(--text-2);
-  transition: background 160ms ease, color 160ms ease;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
 }
 /* Readable whenever the credit is actually open. Keyed only to the open state,
    not :hover: the credit is a click-to-reveal detail, not a mouseover
    tooltip, so passing over the pill must not pop the text open on its own. */
 .maplibregl-ctrl-bottom-left
   > .maplibregl-ctrl.maplibregl-ctrl-attrib.maplibregl-compact-show {
-  background: var(--surface-hover);
+  /* Still glass when open: an opaque plate read as a sticker on the imagery.
+     The heavier blur, not the fill, is what keeps the text legible. */
+  background: rgb(var(--glass-rgb) / 0.45);
   color: var(--text-1);
 }
 /* Collapsed — MapLibre folds the credit into a bare toggle on a narrow map, so
@@ -671,6 +675,21 @@ svg { display: block; }
      gap, and pad evenly, and the box is square again. */
   gap: 0;
   padding: 4px;
+  cursor: pointer;
+}
+/* Hover warms the toggle towards the theme's accent: the whole disc while
+   folded, the icon alone while open. A hint, not the full accent: this is the
+   least important thing on the map. Colour only, it still opens on click. */
+.maplibregl-ctrl-bottom-left
+  > .maplibregl-ctrl.maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show):hover {
+  background: rgb(var(--glass-rgb) / 0.5);
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: color-mix(in srgb, var(--accent) 55%, var(--text-1));
+}
+.maplibregl-ctrl-bottom-left
+  .maplibregl-ctrl-attrib.maplibregl-compact-show
+  .maplibregl-ctrl-attrib-button:hover {
+  color: color-mix(in srgb, var(--accent) 55%, var(--text-1));
 }
 /* The credit itself. Capped and wrapped rather than allowed to run: with
    terrain on, two sources are joined into one line, and an unbounded caption
