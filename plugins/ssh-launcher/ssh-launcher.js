@@ -500,6 +500,9 @@ Corvus.pluginSshLauncher = (function () {
       if (failure) {
         tools.appendChild(ui.infoHint({
           icon: "triangle-alert",
+          // The chevron's and pencil's size: here it is one of the row's
+          // tools, not a hint annotating a label.
+          size: 15,
           className: "sshl-error",
           title: entry.label,
           text: failure,
@@ -598,7 +601,7 @@ Corvus.pluginSshLauncher = (function () {
       card.appendChild(ui.field({
         label: "Connection",
         control: connSel,
-        hint: "One of the saved SSH connections, or a new one typed in below. " +
+        info: "One of the saved SSH connections, or a new one typed in below. " +
               "Either way the password is kept by the backend. This plugin " +
               "only ever names the connection.",
       }));
@@ -629,9 +632,9 @@ Corvus.pluginSshLauncher = (function () {
         { key: "key_path", label: "Key file", mono: true,
           placeholder: "/home/you/.ssh/id_rsa" },
         { key: "name", label: "Save as", placeholder: "pilot@10.0.0.7",
-          hint: "The name this connection is saved under. Leave it empty to " +
-                "use user@host. It joins the SSH connections in Settings, so " +
-                "the next button can simply pick it." },
+          hint: "Leave it empty to use user@host.",
+          info: "The name this connection is saved under. It joins the SSH " +
+                "connections in Settings, so the next button can simply pick it." },
       ];
 
       /* Built only while it is in use, and thrown away when a saved connection
@@ -654,7 +657,7 @@ Corvus.pluginSshLauncher = (function () {
             onInput: (v) => { newConn[f.key] = v; paintPreview(); },
           });
           if (f.key === "name") nameInput = control;
-          newConnEl.appendChild(ui.field({ label: f.label, control, hint: f.hint }));
+          newConnEl.appendChild(ui.field({ label: f.label, control, hint: f.hint, info: f.info }));
         });
       }
       renderNewConnection();
@@ -687,7 +690,7 @@ Corvus.pluginSshLauncher = (function () {
       card.appendChild(ui.field({
         label: "Program",
         control: cmdInput,
-        hint: "Run by the remote login shell, so a pipeline or arguments work " +
+        info: "Run by the remote login shell, so a pipeline or arguments work " +
               "as typed. It runs as the connection's own user and can do " +
               "whatever that account can do.",
       }));
@@ -701,7 +704,7 @@ Corvus.pluginSshLauncher = (function () {
         label: "Run in a terminal",
         control: terminalSwitch.el,
         className: "field-switch",
-        hint: "On: the program runs in an SSH session of this button's own, " +
+        info: "On: the program runs in an SSH session of this button's own, " +
               "and pressing the button again runs it again in that same " +
               "terminal. The arrow beside the button opens the window to watch " +
               "it in. Read its output there, and stop it with Ctrl-C or the " +

@@ -143,6 +143,7 @@ function testBoundsMatchThePythonModel() {
     ["SPEED_MIN_MS", "MISSION_SPEED_MIN_MS"],
     ["SPEED_MAX_MS", "MISSION_SPEED_MAX_MS"],
     ["MAX_ITEMS", "MISSION_MAX_ITEMS"],
+    ["POINT_NAME_MAX", "MISSION_POINT_NAME_MAX"],
   ];
   pairs.forEach(([js, py]) => {
     assert.strictEqual(
@@ -238,7 +239,7 @@ function testEveryToolHasACaptionToShow() {
   // The bar renders icon over `entry.label`, so a tool missing one is a blank
   // button — which is exactly what the vertical icon rail this replaced was.
   const tools = mission._tools.filter((entry) => entry.id.indexOf("divider") !== 0);
-  assert.ok(tools.length >= 8, `expected the full tool palette, got ${tools.length}`);
+  assert.ok(tools.length >= 7, `expected the full tool palette, got ${tools.length}`);
   tools.forEach((entry) => {
     assert.ok(entry.label && /^[A-Z]+$/.test(entry.label),
       `tool "${entry.id}" needs an upper-case caption, like the Home bar's`);
@@ -316,6 +317,44 @@ function topLevelRules(css) {
 
 const tilesJs = fs.readFileSync(
   path.join(__dirname, "..", "src", "js", "tiles.js"), "utf-8");
+
+/** The declarations of every top-level rule whose selector is exactly this. */
+function rulesFor(selector) {
+  return topLevelRules(mainCss)
+    .filter((rule) => rule.selector.split(",").map((part) => part.trim()).includes(selector))
+    .map((rule) => rule.body);
+}
+
+function testAHiddenVehicleBoxOrIssueListTakesNoRoom() {
+  // Both are display: flex, which outranks the UA's [hidden] rule. The
+  // vehicle box has a border and padding, so hidden it still drew as an empty
+  // bar between the summary and the item list.
+  for (const box of [".mission-vehicle", ".mission-issues"]) {
+    assert.ok(rulesFor(`${box}[hidden]`).some((body) => /display:\s*none/.test(body)),
+      `${box}[hidden] must restate display: none`);
+  }
+}
+
+function testTheListScrollsWithTheSidebarAboveIt() {
+  // The list used to be the only part of the sidebar that scrolled, and with
+  // the summary above it and the point editor below it showed three rows.
+  // Now name, summary and list scroll as one box and the list takes its full
+  // height inside it.
+  assert.ok(rulesFor(".mission-side-scroll").some((body) => /overflow-y:\s*auto/.test(body)),
+    "the sidebar's upper part must be one scrolling box");
+  rulesFor(".mission-list").forEach((body) => assert.ok(!/overflow/.test(body),
+    "on a wide screen the list must not scroll on its own inside that box"));
+  assert.ok(/sideScrollEl\.appendChild\(listEl\)/.test(missionJs),
+    "the list must live inside the scrolling box");
+  assert.ok(/sideScrollEl\.appendChild\(summaryEl\)/.test(missionJs),
+    "and so must the summary above it");
+  assert.ok(/side\.appendChild\(detailEl\)/.test(missionJs),
+    "the point editor stays outside it, pinned above the buttons");
+  // A row dragged against the end of what is visible has to scroll the box
+  // that actually scrolls; the list's own scrollTop no longer moves.
+  assert.ok(/\[listEl, sideScrollEl\]/.test(missionJs),
+    "the row drag must scroll the sidebar when the list itself cannot scroll");
+}
 
 function testTheToolBarIsOneRowLikeTheHomeBar() {
   // The two bars were already the same glass, radius, padding, gap and 72px
@@ -628,6 +667,36 @@ function testTheBadgeStillAnchorsToItsMarker() {
   const badge = rulesNaming(mainCss, ["mission-point-badge"])
     .find((rule) => /position\s*:\s*absolute/.test(rule.body));
   assert.ok(badge, "the type badge must be absolutely positioned on the ring");
+}
+
+function testTheStartMarkCarriesTheTakeoffsNumber() {
+  // The takeoff on the start has no ring of its own, so the start wears its
+  // number. Without it the route read H, 2, 3 and point 1 looked missing.
+  assert.ok(missionJs.includes("buildHomeMarker(startTakeoff())"),
+    "the start mark must be built knowing which takeoff it stands for");
+  assert.ok(/mission-home-num[\s\S]{0,200}positionNumber\(items\.indexOf\(takeoff\)\)/.test(missionJs),
+    "and label it with that takeoff's number, the one the list shows");
+  const badge = rulesNaming(mainCss, ["mission-home-num"])
+    .find((rule) => /position\s*:\s*absolute/.test(rule.body));
+  assert.ok(badge, "the number must be pinned onto the start mark, not laid out beside it");
+}
+
+function testTheSelectionIsDrawnInItsOwnColour() {
+  // The themed --nav blue sank into water and shadow on imagery. The selection
+  // ring has its own literal, like the route.
+  const selected = rulesNaming(mainCss, ["mission-point", "mission-home"])
+    .filter((rule) => /\.is-selected/.test(rule.selector) && /box-shadow/.test(rule.body));
+  assert.ok(selected.length >= 2, "both the points and the start must have a selected state");
+  selected.forEach((rule) => {
+    assert.ok(/var\(--plan-select\)/.test(rule.body),
+      `"${rule.selector}" must draw the selection in --plan-select`);
+    assert.ok(!/--nav\b/.test(rule.body),
+      `"${rule.selector}" still borrows the themed --nav blue`);
+  });
+  // The profile sits on a themed surface, where a white ring would vanish in
+  // the light theme, so it takes the theme's own text colour instead.
+  assert.ok(missionJs.includes('line: { color: Corvus.ui.token("--text-1", "#12151A"), width: 2.5 }'),
+    "the profile's selected ring must follow the theme, not --nav");
 }
 
 function testTheMarksGrowAsTheCameraPullsBack() {
@@ -1080,6 +1149,79 @@ function testAPointsOwnSpeedRoundTripsAndAnAbsentOneStaysAbsent() {
     "a point that pins no speed must not send one");
 }
 
+function testAPointsNameRoundTripsAndAnUnnamedOneSendsNone() {
+  mission.setPlan({
+    version: 1,
+    name: "Named",
+    home: { lat: 48, lon: 11 },
+    items: [
+      { type: "waypoint", lat: 48, lon: 11, alt: 25, name: "Nordhang Süd" },
+      { type: "waypoint", lat: 48.01, lon: 11.01, alt: 25 },
+      { type: "rtl", name: "Heim" },
+    ],
+  });
+  const plan = mission.getPlan();
+
+  assert.strictEqual(plan.items[0].name, "Nordhang Süd");
+  assert.ok(!("name" in plan.items[1]),
+    "an unnamed point must not send an empty name");
+  assert.strictEqual(plan.items[2].name, "Heim");
+  mission.setPlan({ items: [] });
+}
+
+function testAPointNameIsCleanedAsTheBackendCleansIt() {
+  const clean = mission._cleanPointName;
+  const max = mission._bounds.POINT_NAME_MAX;
+  assert.strictEqual(clean("  Ridge  "), "Ridge");
+  assert.strictEqual(clean("Ridge\nnorth\tside"), "Ridge north side");
+  assert.strictEqual(clean("a\u0000b\u001bc d"), "a b c d");
+  assert.strictEqual(clean("   "), "");
+  assert.strictEqual(clean(42), "");
+  assert.strictEqual(clean(null), "");
+  // Counted in code points, as Python counts them: cut in UTF-16 units, an
+  // emoji at the limit would be split into half a character.
+  const emoji = "\u{1F681}".repeat(max + 5);
+  assert.strictEqual(Array.from(clean(emoji)).length, max);
+  assert.ok(!/[\uD800-\uDBFF]$/.test(clean(emoji)), "no lone surrogate at the cut");
+}
+
+function testRenamingAPointDoesNotMakeItADifferentPlanFromTheOneFlown() {
+  // A name never reaches the vehicle, so it cannot be what ends "this is the
+  // plan being flown". An altitude can.
+  const base = {
+    name: "Flown",
+    items: [
+      { type: "waypoint", lat: 48.0, lon: 11.0, alt: 30 },
+      { type: "waypoint", lat: 48.1, lon: 11.1, alt: 30 },
+    ],
+  };
+  mission.setPlan(base);
+  const key = mission._planKey();
+  const named = JSON.parse(JSON.stringify(base));
+  named.items[1].name = "Ridge";
+  mission.setPlan(named);
+  assert.strictEqual(mission._planKey(), key);
+  named.items[1].alt = 45;
+  mission.setPlan(named);
+  assert.notStrictEqual(mission._planKey(), key);
+  mission.setPlan({ items: [] });
+}
+
+function testAPointNameIsDrawnBesideTheRingAndNotOnIt() {
+  // Its own selector: the marker rules are the ones a position or a transform
+  // must never appear in, and this label needs both.
+  const rules = rulesNaming(mainCss, ["mission-point-name"]);
+  assert.ok(rules.some((rule) => /position\s*:\s*absolute/.test(rule.body)),
+    "the name must be absolutely positioned beside its marker");
+  rules.forEach((rule) => {
+    assert.ok(!/\.(mission-point|wp-marker)(?![\w-])/.test(rule.selector),
+      `"${rule.selector}" also names the marker element, which would give it ` +
+      "the label's position and transform");
+  });
+  assert.ok(rules.some((rule) => /pointer-events\s*:\s*none/.test(rule.body)),
+    "a name over the map must not take the click that places the next point");
+}
+
 function testASpeedOutOfRangeIsClampedOnLoadRatherThanRefused() {
   mission.setPlan({
     version: 1,
@@ -1146,6 +1288,110 @@ function testAPlanInOrderIsNotComplainedAbout() {
   });
   assert.deepStrictEqual(mission._problems(), [],
     "a warning on a correct plan is a warning nobody reads on a wrong one");
+}
+
+// ---------------------------------------------------------------------------
+// The order a plan is drawn in: start, route, one ending
+// ---------------------------------------------------------------------------
+
+const at = (lat, lon) => ({ lat, lng: lon });
+const types = () => mission.getPlan().items.map((i) => i.type);
+
+function testNothingButTheStartCanBePlacedOnAnEmptyPlan() {
+  mission.setPlan({ items: [] });
+  assert.strictEqual(mission._toolBlocked("home"), null);
+  assert.strictEqual(mission._toolBlocked("select"), null);
+  for (const id of ["waypoint", "loiter_turns", "loiter_time", "land", "rtl"]) {
+    assert.match(String(mission._toolBlocked(id)), /start first/,
+      `"${id}" must wait for the start: a landing with no takeoff is not a mission`);
+  }
+}
+
+function testThereIsNoSeparateTakeoffTool() {
+  assert.ok(!mission._tools.some((entry) => entry.id === "takeoff"),
+    "START places the takeoff; a second tool for the same place is the confusion");
+}
+
+function testTheStartCarriesItsTakeoff() {
+  mission.setPlan({ items: [] });
+  mission._placeStart(at(48, 11));
+  const plan = mission.getPlan();
+  assert.deepStrictEqual(plan.home, { lat: 48, lon: 11 });
+  assert.deepStrictEqual(types(), ["takeoff"]);
+  assert.strictEqual(plan.items[0].lat, 48);
+  assert.strictEqual(plan.items[0].lon, 11);
+
+  // Moving the start moves the takeoff, and never adds a second one.
+  mission._placeStart(at(48.001, 11.002));
+  assert.deepStrictEqual(types(), ["takeoff"]);
+  assert.strictEqual(mission.getPlan().items[0].lat, 48.001);
+  assert.strictEqual(mission.getPlan().items[0].lon, 11.002);
+
+  mission._removeStart();
+  assert.strictEqual(mission.getPlan().home, undefined);
+  assert.deepStrictEqual(types(), [], "the takeoff on the start goes with it");
+}
+
+function testAStartDoesNotAddATakeoffToAPlanThatHasOneElsewhere() {
+  mission.setPlan({
+    items: [
+      { type: "takeoff", lat: 48.01, lon: 11, alt: 30 },
+      { type: "waypoint", lat: 48.02, lon: 11, alt: 30 },
+    ],
+  });
+  mission._placeStart(at(48, 11));
+  assert.deepStrictEqual(types(), ["takeoff", "waypoint"]);
+  assert.strictEqual(mission.getPlan().items[0].lat, 48.01, "an older file's takeoff stays put");
+}
+
+function testOnlyOneEndingAndNewPointsGoInBeforeIt() {
+  mission.setPlan({ items: [] });
+  mission._placeStart(at(48, 11));
+  mission._addItem("waypoint", at(48.001, 11));
+  mission._addItem("land", at(48.002, 11));
+  assert.match(String(mission._toolBlocked("land")), /already ends with a landing/);
+  assert.match(String(mission._toolBlocked("rtl")), /already ends with a landing/);
+  assert.strictEqual(mission._toolBlocked("waypoint"), null);
+
+  mission._addItem("waypoint", at(48.003, 11));
+  assert.deepStrictEqual(types(), ["takeoff", "waypoint", "waypoint", "land"],
+    "a point drawn after the landing is still flown, before it");
+  assert.deepStrictEqual(mission._problems(), []);
+}
+
+function testTheTakeoffStaysFirstAndTheEndingStaysLast() {
+  mission.setPlan({ items: [] });
+  mission._placeStart(at(48, 11));
+  const a = mission._addItem("waypoint", at(48.001, 11));
+  const b = mission._addItem("waypoint", at(48.002, 11));
+  const end = mission._addItem("rtl", null);
+  const takeoffId = 1;
+
+  mission._moveItemTo(a.id, 0);
+  assert.deepStrictEqual(types(), ["takeoff", "waypoint", "waypoint", "rtl"],
+    "nothing goes in front of the climb");
+  mission._moveItemTo(b.id, 3);
+  assert.deepStrictEqual(types(), ["takeoff", "waypoint", "waypoint", "rtl"],
+    "nothing goes after the ending");
+  mission._moveItemTo(end.id, 1);
+  mission._moveItemTo(takeoffId, 2);
+  assert.deepStrictEqual(types(), ["takeoff", "waypoint", "waypoint", "rtl"]);
+
+  mission._moveItemTo(a.id, 2);
+  const order = mission.getPlan().items.slice(0, 3).map((i) => i.lat);
+  assert.deepStrictEqual(order, [48, 48.002, 48.001],
+    "the route between them still reorders freely");
+}
+
+function testAPlanWithARouteButNoEndingSaysSo() {
+  mission.setPlan({
+    home: { lat: 48, lon: 11 },
+    items: [
+      { type: "takeoff", lat: 48, lon: 11, alt: 30 },
+      { type: "waypoint", lat: 48.001, lon: 11, alt: 40 },
+    ],
+  });
+  assert.match(mission._problems().join(" | "), /no ending/);
 }
 
 function testALandingLoadsOnTheGroundWhateverTheFileSays() {
@@ -1215,6 +1461,8 @@ const tests = [
   testEveryToolHasACaptionToShow,
   testEveryPlaceableToolNamesARealItemType,
   testTheToolBarIsOneRowLikeTheHomeBar,
+  testAHiddenVehicleBoxOrIssueListTakesNoRoom,
+  testTheListScrollsWithTheSidebarAboveIt,
   testBothBarsAreMeasuredAgainstARoomAndNotThemselves,
   testTheTwoBarsButtonsAreTheSameSize,
   testProgressIsClaimedOnlyWhileTheVehicleHoldsThisPlan,
@@ -1229,6 +1477,8 @@ const tests = [
   testTheMarksAreSizedRatherThanTransformed,
   testNothingOverridesMapLibresMarkerPositioning,
   testTheBadgeStillAnchorsToItsMarker,
+  testTheStartMarkCarriesTheTakeoffsNumber,
+  testTheSelectionIsDrawnInItsOwnColour,
   testTheMarksGrowAsTheCameraPullsBack,
   testTheRouteIsDrawnWiderTheFurtherOutTheCameraIs,
   testDistanceMatchesAKnownSeparation,
@@ -1263,6 +1513,10 @@ const tests = [
   testRowsOfUnequalHeightAreMeasuredEachOnItsOwn,
   testSetPlanAndGetPlanRoundTripWhatTheBackendValidates,
   testAPointsOwnSpeedRoundTripsAndAnAbsentOneStaysAbsent,
+  testAPointsNameRoundTripsAndAnUnnamedOneSendsNone,
+  testAPointNameIsCleanedAsTheBackendCleansIt,
+  testRenamingAPointDoesNotMakeItADifferentPlanFromTheOneFlown,
+  testAPointNameIsDrawnBesideTheRingAndNotOnIt,
   testASpeedOutOfRangeIsClampedOnLoadRatherThanRefused,
   testAnOutOfRangeAltitudeIsClampedOnLoadRatherThanRefused,
   testAnUnknownItemTypeIsDroppedOnLoad,
@@ -1270,6 +1524,13 @@ const tests = [
   testAPlanThatCannotBeFlownInOrderSaysSo,
   testTwoTakeoffsAreCalledOut,
   testAPlanInOrderIsNotComplainedAbout,
+  testNothingButTheStartCanBePlacedOnAnEmptyPlan,
+  testThereIsNoSeparateTakeoffTool,
+  testTheStartCarriesItsTakeoff,
+  testAStartDoesNotAddATakeoffToAPlanThatHasOneElsewhere,
+  testOnlyOneEndingAndNewPointsGoInBeforeIt,
+  testTheTakeoffStaysFirstAndTheEndingStaysLast,
+  testAPlanWithARouteButNoEndingSaysSo,
   testEveryDocumentListenerIsAlsoRemoved,
   testLeavingThePlannerSuspendsItRatherThanRebuildingIt,
   testOnlyTeardownLetsGoOfTheMap,

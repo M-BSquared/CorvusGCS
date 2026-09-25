@@ -184,8 +184,12 @@ def _clean_file_list(raw: Any, plugin_dir: pathlib.Path) -> list[str]:
             logger.warning("plugin %s: dropping unusable file %r", plugin_dir.name, rel)
             continue
         # Store the path as the manifest spelled it (minus a leading "./"),
-        # because that is what the frontend turns into a URL.
-        normalized = rel.replace("\\", "/").lstrip("./")
+        # because that is what the frontend turns into a URL. Whole "./" steps
+        # only: lstrip("./") removed characters, so ".build.js" lost its dot
+        # and the URL named a file that does not exist.
+        normalized = rel.replace("\\", "/")
+        while normalized.startswith("./"):
+            normalized = normalized[2:]
         if normalized not in out:
             out.append(normalized)
     return out

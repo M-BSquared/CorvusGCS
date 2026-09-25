@@ -675,3 +675,18 @@ def test_to_public_dict_on_defaults_returns_redactable_shape() -> None:
     public = to_public_dict(CorvusConfig())
     assert public["ssh_connections"] == []
     assert public["mavlink_connection"] == CorvusConfig().mavlink_connection
+
+
+def test_windows_in_app_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
+    """Off unless asked for: the desktop app opens camera and terminal windows
+    as windows of their own straight away (src/js/popout.js). Only a real
+    ``True`` keeps them inside the Corvus window first."""
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("windows_in_app") is None
+    p.write_text(json.dumps({"ui": {"windows_in_app": "true"}}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("windows_in_app") is None
+    p.write_text(json.dumps({"ui": {"windows_in_app": True, "scale": 1.1}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"windows_in_app": True, "scale": 1.1}
+    p.write_text(json.dumps({"ui": {"windows_in_app": False}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"windows_in_app": False}

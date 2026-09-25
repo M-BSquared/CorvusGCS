@@ -31,12 +31,15 @@ transcripts.
 """
 from __future__ import annotations
 
+import json
+import lzma
 import math
 import os
 import random
 import struct
 import threading
 import time
+import zlib
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -49,6 +52,7 @@ from pymavlink import mavutil  # noqa: E402  (must follow the MAVLINK20 line)
 from pymavlink.dialects.v20 import common as mavlink2  # noqa: E402
 
 from . import flight as flight_mod  # noqa: E402
+from . import params as params_mod  # noqa: E402
 
 # PX4's custom_mode layout: main mode in bits 16-23, AUTO sub-mode in 24-31.
 # Mirrors corvus/mavlink_bridge.py's decoder, which is what reads it back.
@@ -237,6 +241,10 @@ class SimVehicle:
         # Extra one-off messages the RX thread hands to the TX thread, so
         # everything on the wire is written by one thread and cannot interleave.
         self._pending: list[Callable[[], None]] = []
+        # MAVLink FTP: the one file open, and the parameter metadata built on
+        # first request from the table the vehicle booted with.
+        self._ftp_open: bytes | None = None
+        self._param_metadata: bytes | None = None
 
     # -- lifecycle --------------------------------------------------------
 
@@ -554,6 +562,8 @@ class SimVehicle:
             self._answer_log_data(msg)
         elif kind == "LOG_ERASE":
             self._on_event("log erase requested")
+        elif kind == "FILE_TRANSFER_PROTOCOL":
+            self._answer_ftp(msg)
         elif kind == "SET_MODE":
             self.mode = _mode_name(getattr(msg, "custom_mode", 0))
             self._on_event(f"mode -> {self.mode}")
@@ -632,6 +642,72 @@ class SimVehicle:
             self.params[name] = value
         self._send_param(name, list(self.params).index(name))
         self._on_event(f"{name} = {self.params[name]}")
+
+    # -- MAVLink FTP ------------------------------------------------------
+
+    _FTP_HEADER = struct.Struct("<HBBBBBBI")
+
+    def _ftp_file(self, path: str) -> bytes | None:
+        """The files this autopilot serves: PX4's parameter metadata, compressed."""
+        if path.lstrip("/") != "etc/extras/parameters.json.xz":
+            return None
+        if self._param_metadata is None:
+            doc = params_mod.px4_metadata(dict(self.opts.params))
+            self._param_metadata = lzma.compress(
+                json.dumps(doc).encode("utf-8"), format=lzma.FORMAT_XZ)
+        return self._param_metadata
+
+    def _ftp_reply(self, msg: Any, seq: int, opcode: int, req_opcode: int, *,
+                   data: bytes = b"", offset: int = 0, burst_complete: bool = False) -> None:
+        header = self._FTP_HEADER.pack(seq & 0xFFFF, 0, opcode, len(data), req_opcode,
+                                       int(burst_complete), 0, offset)
+        payload = list((header + data).ljust(251, b"\x00"))
+        self._send(self._conn.mav.file_transfer_protocol_send,
+                   0, msg.get_srcSystem(), msg.get_srcComponent(), payload)
+
+    def _answer_ftp(self, msg: Any) -> None:
+        """Open, burst-read, checksum and close: what a ground station reads metadata with."""
+        raw = bytes(msg.payload)
+        seq, _session, opcode, size, _req, _burst, _pad, offset = self._FTP_HEADER.unpack_from(raw)
+        data = raw[12:12 + size]
+        ack, nak = 128, 129
+        if opcode == 4:        # OpenFileRO
+            content = self._ftp_file(data.split(b"\x00")[0].decode("utf-8", "replace"))
+            if content is None:
+                self._ftp_reply(msg, seq + 1, nak, opcode, data=bytes([10]))   # FileNotFound
+                return
+            self._ftp_open = content
+            self._ftp_reply(msg, seq + 1, ack, opcode, data=struct.pack("<I", len(content)))
+        elif opcode == 15:     # BurstReadFile
+            content = self._ftp_open
+            if content is None:
+                self._ftp_reply(msg, seq + 1, nak, opcode, data=bytes([4]))    # InvalidSession
+                return
+
+            def burst() -> None:
+                pos, reply_seq = offset, seq + 1
+                while pos < len(content) and not self._stop.is_set():
+                    chunk = content[pos:pos + 239]
+                    self._ftp_reply(msg, reply_seq, ack, opcode, data=chunk, offset=pos,
+                                    burst_complete=pos + len(chunk) >= len(content))
+                    pos += len(chunk)
+                    reply_seq += 1
+                    time.sleep(0.0005)
+                self._ftp_reply(msg, reply_seq, nak, opcode, data=bytes([6]), offset=pos)  # EOF
+
+            threading.Thread(target=burst, name="ftp-burst", daemon=True).start()
+        elif opcode == 14:     # CalcFileCRC32
+            content = self._ftp_file(data.split(b"\x00")[0].decode("utf-8", "replace"))
+            if content is None:
+                self._ftp_reply(msg, seq + 1, nak, opcode, data=bytes([10]))   # FileNotFound
+                return
+            self._ftp_reply(msg, seq + 1, ack, opcode,
+                            data=struct.pack("<I", zlib.crc32(content)))
+        elif opcode in (1, 2):  # TerminateSession, ResetSessions
+            self._ftp_open = None
+            self._ftp_reply(msg, seq + 1, ack, opcode)
+        else:
+            self._ftp_reply(msg, seq + 1, nak, opcode, data=bytes([7]))       # UnknownCommand
 
     # -- commands ---------------------------------------------------------
 

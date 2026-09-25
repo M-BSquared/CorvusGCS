@@ -240,6 +240,83 @@ def test_unknown_keys_are_dropped_rather_than_carried() -> None:
 
 
 # ---------------------------------------------------------------------------
+# A point's own name
+# ---------------------------------------------------------------------------
+
+def test_a_point_name_survives_validation_and_an_unnamed_point_carries_none() -> None:
+    cleaned, error = mission.validate_plan(plan(items=[
+        {"type": "waypoint", "lat": 48.0, "lon": 11.0, "alt": 20, "name": "Nordhang Süd"},
+        {"type": "waypoint", "lat": 48.1, "lon": 11.1, "alt": 20},
+        {"type": "rtl", "name": "Heim"},
+    ]))
+
+    assert error == ""
+    assert cleaned is not None
+    assert cleaned["items"][0]["name"] == "Nordhang Süd"
+    assert "name" not in cleaned["items"][1]
+    assert cleaned["items"][2]["name"] == "Heim"
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("  Ridge  ", "Ridge"),
+    ("Ridge\nnorth\tside", "Ridge north side"),
+    ("a\x00b\x1bc d", "a b c d"),
+    ("", ""),
+    ("   ", ""),
+    (None, ""),
+    (42, ""),
+    (["Ridge"], ""),
+])
+def test_a_point_name_is_cleaned_to_one_line(raw: Any, expected: str) -> None:
+    assert mission.clean_point_name(raw) == expected
+
+
+def test_a_point_name_that_is_not_one_is_dropped_rather_than_refusing_the_plan() -> None:
+    # A name is a label. A plan must never fail to upload over one.
+    cleaned, error = mission.validate_plan(plan(items=[
+        {"type": "waypoint", "lat": 48.0, "lon": 11.0, "alt": 20, "name": 7},
+        {"type": "waypoint", "lat": 48.1, "lon": 11.1, "alt": 20, "name": " \n "},
+    ]))
+
+    assert error == ""
+    assert cleaned is not None
+    assert all("name" not in item for item in cleaned["items"])
+
+
+def test_a_long_point_name_is_cut_at_the_limit_counted_in_characters() -> None:
+    long = "ü" * (mission.MISSION_POINT_NAME_MAX + 10)
+    assert mission.clean_point_name(long) == "ü" * mission.MISSION_POINT_NAME_MAX
+
+
+def test_a_point_name_never_reaches_the_wire() -> None:
+    named, _error = mission.validate_plan(plan(items=[
+        {"type": "waypoint", "lat": 48.0, "lon": 11.0, "alt": 20, "name": "Ridge"},
+    ]))
+    bare, _error = mission.validate_plan(plan(items=[
+        {"type": "waypoint", "lat": 48.0, "lon": 11.0, "alt": 20},
+    ]))
+    assert named is not None and bare is not None
+
+    lowered = mission.plan_to_items(named)
+    assert all("name" not in entry for entry in lowered)
+    assert json.dumps(lowered, default=str) == json.dumps(mission.plan_to_items(bare), default=str)
+
+
+def test_a_point_name_is_saved_with_the_plan(tmp_path: Any) -> None:
+    directory = str(tmp_path)
+    cleaned, _error = mission.validate_plan(plan(items=[
+        {"type": "waypoint", "lat": 48.0, "lon": 11.0, "alt": 20, "name": "Fotopunkt 1"},
+    ]))
+    assert cleaned is not None
+
+    stored = mission.write_plan(directory, "Named", cleaned)
+    loaded = mission.read_plan(directory, stored)
+
+    assert loaded is not None
+    assert loaded["items"][0]["name"] == "Fotopunkt 1"
+
+
+# ---------------------------------------------------------------------------
 # plan_to_items — the lowering to MAVLink
 # ---------------------------------------------------------------------------
 

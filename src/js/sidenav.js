@@ -624,6 +624,7 @@ Corvus.sidenav = (function () {
     body.appendChild(flightBarCard(cfg));
     body.appendChild(topBarCard(cfg));
     body.appendChild(notificationsCard(cfg));
+    body.appendChild(windowsCard(cfg));
     body.appendChild(appIconCard(cfg));
     container.appendChild(Corvus.ui.section({ title: "Appearance", body }));
   }
@@ -934,6 +935,49 @@ Corvus.sidenav = (function () {
         + ": blue for info, amber for a warning, red for a fault. Off "
         + "by default. The icon already carries the level in its "
         + "colour. Turn them on to underline it.",
+    }));
+    return card;
+  }
+
+  // Where camera and terminal windows open. By default the desktop app gives
+  // each a window of its own at once, which the operating system lets go
+  // anywhere; with the switch on they open inside the Corvus window, and a
+  // drag past its edge takes one out (js/popout.js). A browser cannot make
+  // such windows at all, so there the switch is off with the reason on it
+  // rather than missing.
+  function windowsCard(cfg) {
+    const card = Corvus.ui.card({ title: "Camera and terminal windows" });
+    const on = !!(cfg.ui && cfg.ui.windows_in_app);
+    const po = Corvus.popouts;
+    if (po) po.setInApp(on);
+    const desktop = !!(po && po.native());
+
+    const sw = Corvus.ui.toggle({
+      id: "settingsWindowsInApp",
+      value: on,
+      disabled: !desktop,
+      ariaLabel: "Open inside the Corvus window",
+      title: desktop ? "" : "Only the desktop app can give a window one of its own.",
+      onChange: (next) => {
+        if (po) po.setInApp(next);
+        return postConfig({ ui: { windows_in_app: next } }, { strict: true })
+          .catch((error) => {
+            if (po) po.setInApp(!next);
+            throw error;
+          });
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Open inside the Corvus window",
+      control: sw.el,
+      className: "field-switch",
+      hint: desktop
+        ? "Off (the default): a camera or terminal opens as a window of its " +
+          "own straight away, which can go anywhere, a second screen " +
+          "included. On: it opens inside the Corvus window, and becomes a " +
+          "window of its own when you drag it past the edge."
+        : "Only the desktop app can give a window one of its own. In a " +
+          "browser, camera and terminal windows always open inside.",
     }));
     return card;
   }
@@ -1697,6 +1741,69 @@ Corvus.sidenav = (function () {
             "Leave empty for ~/.corvus/params. The export dialog can still override it per file.",
     }));
     container.appendChild(Corvus.ui.section({ title: "Files", body: card }));
+    container.appendChild(paramDefaultsCacheCard(cfg));
+  }
+
+  // The copy of PX4's parameter metadata (corvus/param_metadata.py). Off by
+  // default and it says why, in the warning under the switch: a copy is
+  // trusted on a 32 bit checksum the vehicle reports, which is what makes it
+  // cheap and also what makes it fallible. The count and the Clear button are
+  // the way out when defaults look wrong.
+  function paramDefaultsCacheCard(cfg) {
+    const card = Corvus.ui.card({ title: "Parameter defaults" });
+    const on = !!(cfg.parameters && cfg.parameters.cache_defaults);
+    const sw = Corvus.ui.toggle({
+      id: "settingsParamDefaultsCache",
+      value: on,
+      ariaLabel: "Keep a copy on this computer",
+      onChange: (next) => postConfig({ parameters: { cache_defaults: next } }, { strict: true }),
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Keep a copy on this computer",
+      control: sw.el,
+      className: "field-switch",
+      hint: "The parameter editor reads each parameter's default from the vehicle. "
+        + "On PX4 that file can take half a minute over a telemetry radio. With this on, "
+        + "Corvus keeps a copy per firmware and reuses it whenever the vehicle reports the "
+        + "same checksum for its file. ArduPilot always reads from the vehicle.",
+    }));
+    const warning = Corvus.ui.message({ className: "settings-param-cache-warning" });
+    warning.show("Use with care. A copy is matched to the vehicle by a checksum only, and in "
+      + "rare cases two different files share one: the defaults, descriptions and ranges "
+      + "shown would then belong to another firmware. If defaults ever look wrong, clear "
+      + "the copies below and switch this off.", "warn");
+    card.appendChild(warning.el);
+
+    const line = document.createElement("div");
+    line.className = "settings-param-cache-line";
+    const info = document.createElement("span");
+    info.className = "settings-param-cache-info";
+    const clear = Corvus.ui.button({
+      variant: "secondary", size: "sm", icon: "trash-2", label: "Clear copies",
+      className: "settings-param-cache-clear",
+    });
+    line.appendChild(info);
+    line.appendChild(clear);
+    card.appendChild(line);
+
+    function show(data) {
+      const n = (data && data.files) || 0;
+      const kb = Math.round(((data && data.bytes) || 0) / 1024);
+      info.textContent = n
+        ? `${n} ${n === 1 ? "copy" : "copies"}, ${kb} kB` + (data.dir ? ` in ${data.dir}` : "")
+        : "No copies kept.";
+      clear.disabled = !n;
+    }
+    Corvus.telemetry.requestJson("/api/params/metadata/cache").then(show)
+      .catch(() => { info.textContent = "Copies unavailable."; clear.disabled = true; });
+    clear.addEventListener("click", () => {
+      Corvus.ui.setBusy(clear, true);
+      Corvus.telemetry.requestJson("/api/params/metadata/cache/clear", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+      }).then((data) => { Corvus.ui.setBusy(clear, false); show(data); })
+        .catch(() => { Corvus.ui.setBusy(clear, false); });
+    });
+    return card;
   }
 
   // --- Section D2: Plugins (the drop-in folder) ---

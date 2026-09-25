@@ -168,8 +168,9 @@ global.FileReader = class FileReader {
   readAsText() { /* tests use file.text() */ }
 };
 
-// window.confirm → true (the import confirmation proceeds).
-window.confirm = () => true;
+// The import confirmation is a dialog now, not window.confirm: make sure a
+// test that forgets to press its button fails instead of passing silently.
+window.confirm = () => { throw new Error("the import must not use window.confirm"); };
 
 // ---------------------------------------------------------------------------
 // Helpers ---------------------------------------------------------------------
@@ -193,6 +194,41 @@ function findByDataset(root, key, value) {
 function fire(el, type, payload) {
   const listeners = (el && el._listeners && el._listeners[type]) || [];
   listeners.forEach((cb) => cb(payload || {}));
+}
+
+/** Press Import and hand it a file; returns once the preview dialog is up. */
+async function importFile(container, file) {
+  const actions = findOneByClass(container, "params-actions");
+  const importBtn = findByClass(actions, "btn").find((b) =>
+    b.children.some((c) => c._attrs && c._attrs["data-lucide"] === "upload"));
+  const origCreate = document.createElement;
+  let capturedInput = null;
+  document.createElement = function (tag) {
+    const el = origCreate(tag);
+    if (String(tag).toLowerCase() === "input") { el.files = [file]; capturedInput = el; }
+    return el;
+  };
+  try { fire(importBtn, "click"); } finally { document.createElement = origCreate; }
+  fire(capturedInput, "change");
+  await flushMicrotasks();
+  await flushMicrotasks();
+  return capturedInput;
+}
+
+function lastDialog() {
+  const all = findByClass(bodyEl, "modal");
+  return all.length ? all[all.length - 1] : null;
+}
+
+function dialogPrimary() {
+  const modal = lastDialog();
+  if (!modal) return null;
+  return findByClass(findOneByClass(modal, "modal-actions"), "btn")
+    .find((b) => b.getAttribute("data-variant") === "primary") || null;
+}
+
+function closeDialogs() {
+  findByClass(bodyEl, "modal-overlay").forEach((o) => bodyEl.removeChild(o));
 }
 
 // ---------------------------------------------------------------------------
@@ -219,9 +255,19 @@ function makeFakeTelemetry(opts = {}) {
   const exportTargetResponse = opts.exportTargetResponse ||
     { dir: "/home/pilot/.corvus/params", filename: "corvus-params_px4-quadrotor_2026-01-02_03-04.json" };
   let state = opts.state || { armed: false, connected: true };
+  // The defaults: what POST /api/params/metadata answers, then what the
+  // status poll (GET) answers. Idle by default, so a test that does not care
+  // about defaults sees an editor without them.
+  let metadataStart = opts.metadataStart || { ok: true, state: "idle", error: "" };
+  let metadataResponse = opts.metadataResponse || { state: "idle", error: "" };
   const telemetry = {
     postAction(url, payload) {
       postCalls.push({ url, payload });
+      if (url === "/api/params/metadata") return Promise.resolve(metadataStart);
+      if (url === "/api/params/set" && opts.setReject) {
+        return Promise.reject(new Error(opts.setReject));
+      }
+      if (url === "/api/params/set") return Promise.resolve({ ok: true });
       if (url === "/api/params/upload" && opts.uploadReject) {
         return Promise.reject(new Error(opts.uploadReject));
       }
@@ -233,6 +279,7 @@ function makeFakeTelemetry(opts = {}) {
       // assertions (postCalls only covers postAction).
       if (init) jsonCalls.push({ url, init, body: init.body ? JSON.parse(init.body) : null });
       if (url === "/api/version") return Promise.resolve(versionResponse);
+      if (url === "/api/params/metadata") return Promise.resolve(metadataResponse);
       if (url === "/api/params/upload/result") return Promise.resolve(uploadResultResponse);
       if (url === "/api/params/export/target") return Promise.resolve(exportTargetResponse);
       if (url === "/api/params/export") {
@@ -256,6 +303,8 @@ function makeFakeTelemetry(opts = {}) {
     get unsubCalls() { return unsubCalls; },
     getSubCb: () => subCb,
     setParamsResponse(r) { paramsResponse = r; },
+    setMetadataResponse(r) { metadataResponse = r; },
+    setMetadataStart(r) { metadataStart = r; },
     setState(s) { state = s; },
     getUploadResultResponse: () => uploadResultResponse,
   };
@@ -292,6 +341,7 @@ async function testActionsBarRendersWithInitialState() {
   intervalCbs.length = 0;
   clearedIds.clear();
   dispatched.length = 0;
+  closeDialogs();
 
   const destroy = Corvus.setupParameters.render(container, () => {});
   await flushMicrotasks();
@@ -354,20 +404,16 @@ async function testExportOpensDialogAndSavesThroughBackend() {
   intervalCbs.length = 0;
   clearedIds.clear();
   dispatched.length = 0;
+  closeDialogs();
 
   const destroy = Corvus.setupParameters.render(container, () => {});
+  // The backend already holds a complete set for this link, so the editor
+  // opens on it: nothing is downloaded again.
   await flushMicrotasks();
-
-  // Drive the download: click the Download Parameters button → openProgressView.
-  const downloadBtn = findOneByClass(container, "params-download-btn");
-  fire(downloadBtn, "click");
-  await flushMicrotasks();   // postAction → openProgressView (SSE + poll created)
-
-  // Complete the download via the SSE progress event.
-  const sse = eventSources[0];
-  sse.emit("params", { state: "complete", received: 2, count: 2 });
-  await flushMicrotasks();   // finishDownload → requestJson(/api/params)
-  await flushMicrotasks();   // renderEditor
+  await flushMicrotasks();
+  assert.ok(findOneByClass(container, "params-table"), "the set this link holds is shown");
+  assert.equal(fake.postCalls.filter((c) => c.url === "/api/params/download").length, 0,
+    "showing a set the backend already holds downloads nothing");
 
   // Export is now enabled.
   const actions = findOneByClass(container, "params-actions");
@@ -460,12 +506,9 @@ async function testExportFailureKeepsDialogOpenWithReason() {
   intervalCbs.length = 0;
   clearedIds.clear();
   dispatched.length = 0;
+  closeDialogs();
 
   const destroy = Corvus.setupParameters.render(container, () => {});
-  await flushMicrotasks();
-  fire(findOneByClass(container, "params-download-btn"), "click");
-  await flushMicrotasks();
-  eventSources[0].emit("params", { state: "complete", received: 1, count: 1 });
   await flushMicrotasks();
   await flushMicrotasks();
 
@@ -511,6 +554,7 @@ async function testImportValidFileUploadsAndSummarises() {
   intervalCbs.length = 0;
   clearedIds.clear();
   dispatched.length = 0;
+  closeDialogs();
 
   const destroy = Corvus.setupParameters.render(container, () => {});
   await flushMicrotasks();
@@ -550,8 +594,17 @@ async function testImportValidFileUploadsAndSummarises() {
   // The module appended the input to document.body then called input.click().
   // The change listener is attached; fire it to simulate a file selection.
   fire(capturedInput, "change");
-  await flushMicrotasks();   // readFileText → JSON.parse → confirm → postAction
-  await flushMicrotasks();   // openUploadProgress (SSE created)
+  await flushMicrotasks();   // readFileText → parse → preview dialog
+  await flushMicrotasks();
+  assert.equal(fake.postCalls.filter((c) => c.url === "/api/params/upload").length, 0,
+    "nothing is written before the operator confirms the preview");
+  const preview = lastDialog();
+  assert.ok(preview, "the import opens a preview");
+  assert.ok(/Download the vehicle's parameters first/.test(findOneByClass(preview, "params-desc").textContent),
+    "without a loaded set the preview says it cannot compare");
+  fire(dialogPrimary(), "click");
+  await flushMicrotasks();   // postAction → the upload is followed
+  await flushMicrotasks();
 
   const uploadCall = fake.postCalls.find((c) => c.url === "/api/params/upload");
   assert.ok(uploadCall, "POST /api/params/upload issued");
@@ -576,7 +629,7 @@ async function testImportValidFileUploadsAndSummarises() {
     "params watcher released on upload_complete");
   const status = findOneByClass(container, "params-actions-status");
   assert.ok(status.classList.contains("ok"), "summary status has ok class (failed===0)");
-  assert.ok(/Uploaded 1 parameters/.test(status.textContent),
+  assert.ok(/Uploaded 1 parameter\b/.test(status.textContent),
     `summary text shows written count: got "${status.textContent}"`);
 
   destroy();
@@ -604,12 +657,9 @@ async function testAnImportRedrawsAnOpenEditorWithTheNewValues() {
   intervalCbs.length = 0;
   clearedIds.clear();
   dispatched.length = 0;
+  closeDialogs();
 
   const destroy = Corvus.setupParameters.render(container, () => {});
-  await flushMicrotasks();
-  fire(findOneByClass(container, "params-download-btn"), "click");
-  await flushMicrotasks();
-  eventSources[0].emit("params", { state: "complete", received: 2, count: 2 });
   await flushMicrotasks();
   await flushMicrotasks();
   const search = findOneByClass(container, "params-search");
@@ -634,6 +684,13 @@ async function testAnImportRedrawsAnOpenEditorWithTheNewValues() {
   };
   try { fire(importBtn, "click"); } finally { document.createElement = origCreate; }
   fire(capturedInput, "change");
+  await flushMicrotasks();
+  await flushMicrotasks();
+  const rowsInPreview = findByClass(bodyEl, "params-import-row");
+  assert.equal(rowsInPreview.length, 1, "the preview lists the one value that changes");
+  assert.equal(findOneByClass(rowsInPreview[0], "params-import-from").textContent, "6");
+  assert.equal(findOneByClass(rowsInPreview[0], "params-import-to").textContent, "7");
+  fire(dialogPrimary(), "click");
   await flushMicrotasks();
   await flushMicrotasks();
 
@@ -678,12 +735,9 @@ async function testRebootAsksThenReturnsToTheDownloadPrompt() {
   intervalCbs.length = 0;
   clearedIds.clear();
   dispatched.length = 0;
+  closeDialogs();
 
   const destroy = Corvus.setupParameters.render(container, () => {});
-  await flushMicrotasks();
-  fire(findOneByClass(container, "params-download-btn"), "click");
-  await flushMicrotasks();
-  eventSources[0].emit("params", { state: "complete", received: 1, count: 1 });
   await flushMicrotasks();
   await flushMicrotasks();
   assert.equal(findByClass(container, "params-row").length, 1, "editor open");
@@ -726,6 +780,7 @@ async function testImportInvalidJsonNotifiesAndDoesNotPost() {
   intervalCbs.length = 0;
   clearedIds.clear();
   dispatched.length = 0;
+  closeDialogs();
 
   const destroy = Corvus.setupParameters.render(container, () => {});
   await flushMicrotasks();
@@ -831,6 +886,7 @@ async function testDestroyClosesUploadSse() {
   intervalCbs.length = 0;
   clearedIds.clear();
   dispatched.length = 0;
+  closeDialogs();
 
   const destroy = Corvus.setupParameters.render(container, () => {});
   await flushMicrotasks();
@@ -851,7 +907,10 @@ async function testDestroyClosesUploadSse() {
   try { fire(importBtn, "click"); } finally { document.createElement = origCreate; }
   fire(capturedInput, "change");
   await flushMicrotasks();
-  await flushMicrotasks();   // openUploadProgress created the upload SSE
+  await flushMicrotasks();
+  fire(dialogPrimary(), "click");
+  await flushMicrotasks();
+  await flushMicrotasks();   // the upload watch is open
 
   // The first EventSource is the download SSE (if any); the upload SSE is the
   // last one created. Identify it and confirm it is open before destroy().
@@ -860,6 +919,355 @@ async function testDestroyClosesUploadSse() {
 
   destroy();
   assert.equal(Corvus.events.listenerCount("params"), 0, "params watcher released by destroy");
+}
+
+
+// ===========================================================================
+// Defaults, the Modified filter, drafts, and parameter files
+// ===========================================================================
+
+function rowByName(container, name) {
+  return findByClass(container, "params-row").find((r) => r.dataset.name === name) || null;
+}
+
+function filterButton(container, mode) {
+  return findByClass(container, "params-filter-opt").find((b) => b.dataset.mode === mode);
+}
+
+function freshTest() {
+  clock = 1000;
+  eventSources.length = 0;
+  Corvus.events.stop();
+  intervalCbs.length = 0;
+  clearedIds.clear();
+  dispatched.length = 0;
+  closeDialogs();
+}
+
+// A function, not a constant: the editor updates the objects it is handed
+// when a write is confirmed, exactly as it does with the backend's answer.
+function threeParams() {
+  return {
+    complete: true, received: 3, count: 3, state: "complete",
+    params: [
+      { name: "MPC_XY_VEL_MAX", value: 10, type: 9 },
+      { name: "MC_ROLL_P", value: 6.5, type: 9 },
+      { name: "COM_RC_IN_MODE", value: 1, type: 6 },
+    ],
+  };
+}
+
+const THREE_META = {
+  state: "ready", error: "",
+  params: {
+    MPC_XY_VEL_MAX: { default: 12, short_desc: "Maximum horizontal velocity", units: "m/s", min: 0, max: 20 },
+    MC_ROLL_P: { default: 6.5 },
+    COM_RC_IN_MODE: { default: 3, reboot_required: true,
+      values: [[0, "RC only"], [1, "Joystick only"], [3, "Both"]] },
+  },
+};
+
+// The defaults are read from the vehicle once the editor is open, each row
+// shows its own, and "Modified" narrows the list to what differs from them.
+async function testDefaultsAreShownAndModifiedFilters() {
+  const fake = makeFakeTelemetry({
+    paramsResponse: threeParams(),
+    metadataStart: { ok: true, state: "loading", error: "", received: 0, size: 0 },
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  freshTest();
+
+  const destroy = Corvus.setupParameters.render(container, () => {});
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  assert.equal(fake.postCalls.filter((c) => c.url === "/api/params/metadata").length, 1,
+    "opening the editor asks for the defaults once");
+  const note = findOneByClass(container, "params-meta-note");
+  assert.ok(!note.hidden && /Reading the defaults/.test(note.textContent),
+    "the operator sees the defaults being read");
+  assert.equal(filterButton(container, "modified").disabled, true,
+    "Modified cannot be used before the defaults are known");
+
+  fake.setMetadataResponse(THREE_META);
+  const poll = intervalCbs[intervalCbs.length - 1];
+  poll.cb();
+  await flushMicrotasks();
+  await flushMicrotasks();
+  assert.ok(clearedIds.has(poll.id), "the status poll stops once the defaults are in");
+  assert.ok(note.hidden, "nothing left to say once they arrived");
+
+  const vel = rowByName(container, "MPC_XY_VEL_MAX");
+  assert.equal(findOneByClass(vel, "params-default").textContent, "12", "the default is shown");
+  assert.ok(vel.classList.contains("is-modified"), "a value off its default is marked");
+  assert.equal(findOneByClass(vel, "params-unit").textContent, "m/s", "with its unit");
+  assert.equal(findOneByClass(vel, "params-hint").textContent, "Maximum horizontal velocity");
+  const roll = rowByName(container, "MC_ROLL_P");
+  assert.ok(!roll.classList.contains("is-modified"), "a value at its default is not marked");
+  assert.ok(findOneByClass(roll, "params-reset").hidden, "nothing to reset at the default");
+  const mode = rowByName(container, "COM_RC_IN_MODE");
+  assert.equal(findOneByClass(mode, "params-value").tagName, "SELECT",
+    "a parameter with named values is picked from a list");
+
+  const modified = filterButton(container, "modified");
+  assert.equal(modified.disabled, false);
+  assert.equal(findOneByClass(modified, "params-filter-count").textContent, "2");
+  fire(modified, "click");
+  assert.deepEqual(findByClass(container, "params-row").map((r) => r.dataset.name),
+    ["COM_RC_IN_MODE", "MPC_XY_VEL_MAX"], "Modified lists only what differs from its default");
+
+  // Reset to default is a draft the operator still has to apply.
+  const velNow = rowByName(container, "MPC_XY_VEL_MAX");
+  fire(findOneByClass(velNow, "params-reset"), "click");
+  assert.equal(fake.postCalls.filter((c) => c.url === "/api/params/set").length, 0,
+    "resetting writes nothing by itself");
+  assert.equal(findOneByClass(velNow, "params-value").value, "12");
+  const bar = findOneByClass(container, "params-pending-bar");
+  assert.ok(!bar.hidden, "the unsaved bar appears");
+  assert.equal(findOneByClass(bar, "params-pending-text").textContent, "1 unsaved change");
+
+  fire(findOneByClass(bar, "params-apply-all"), "click");
+  for (let i = 0; i < 4; i += 1) await flushMicrotasks();
+  assert.deepEqual(fake.postCalls.filter((c) => c.url === "/api/params/set").map((c) => c.payload),
+    [{ name: "MPC_XY_VEL_MAX", value: 12 }], "Apply all writes the draft");
+  assert.ok(bar.hidden, "and the bar goes once nothing is left unsaved");
+  assert.ok(/Wrote 1 parameter\b/.test(findOneByClass(container, "params-actions-status").textContent));
+  destroy();
+  assert.equal(intervalCbs.filter((c) => !clearedIds.has(c.id)).length, 0,
+    "no poll outlives the page");
+}
+
+// A draft is state, not DOM: it survives the search, "Unsaved" finds it,
+// Enter writes it and Escape drops it.
+async function testDraftsSurviveFilteringAndKeysWork() {
+  const fake = makeFakeTelemetry({ paramsResponse: threeParams() });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  freshTest();
+  const destroy = Corvus.setupParameters.render(container, () => {});
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  let input = findOneByClass(rowByName(container, "MC_ROLL_P"), "params-value");
+  input.value = "7";
+  fire(input, "input");
+  assert.ok(rowByName(container, "MC_ROLL_P").classList.contains("is-pending"));
+
+  const search = findOneByClass(container, "params-search");
+  search.value = "MPC";
+  fire(search, "input");
+  assert.equal(rowByName(container, "MC_ROLL_P"), null, "filtered away");
+  search.value = "";
+  fire(search, "input");
+  input = findOneByClass(rowByName(container, "MC_ROLL_P"), "params-value");
+  assert.equal(input.value, "7", "the draft is still there after the search");
+
+  fire(filterButton(container, "pending"), "click");
+  assert.deepEqual(findByClass(container, "params-row").map((r) => r.dataset.name), ["MC_ROLL_P"],
+    "Unsaved lists the drafts");
+  fire(filterButton(container, "all"), "click");
+
+  const pitch = findOneByClass(rowByName(container, "MPC_XY_VEL_MAX"), "params-value");
+  pitch.value = "9";
+  fire(pitch, "input");
+  fire(pitch, "keydown", { key: "Escape", preventDefault() {} });
+  assert.equal(pitch.value, "10", "Escape puts the vehicle's value back");
+
+  input = findOneByClass(rowByName(container, "MC_ROLL_P"), "params-value");
+  fire(input, "keydown", { key: "Enter", preventDefault() {} });
+  await flushMicrotasks();
+  await flushMicrotasks();
+  assert.deepEqual(fake.postCalls.filter((c) => c.url === "/api/params/set").map((c) => c.payload),
+    [{ name: "MC_ROLL_P", value: 7 }], "Enter writes the row");
+  assert.ok(findOneByClass(container, "params-pending-bar").hidden);
+  destroy();
+}
+
+// An integer parameter takes whole numbers only: the backend would refuse 1.5.
+async function testIntegerParametersRefuseFractions() {
+  const fake = makeFakeTelemetry({ paramsResponse: threeParams() });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  freshTest();
+  const destroy = Corvus.setupParameters.render(container, () => {});
+  await flushMicrotasks();
+  await flushMicrotasks();
+  const row = rowByName(container, "COM_RC_IN_MODE");
+  const input = findOneByClass(row, "params-value");
+  input.value = "1.5";
+  fire(input, "input");
+  assert.ok(input.classList.contains("invalid"));
+  assert.equal(findOneByClass(row, "params-apply").disabled, true);
+  assert.equal(findOneByClass(row, "params-row-status").textContent, "whole numbers only");
+  destroy();
+}
+
+// A QGroundControl file against a loaded set: only what changes is written,
+// and a name this firmware does not have is never sent.
+async function testImportingAQgcFileWritesOnlyTheChanges() {
+  const fake = makeFakeTelemetry({
+    paramsResponse: threeParams(),
+    uploadResultResponse: { written: 1, failed: 0, errors: [] },
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  freshTest();
+  const destroy = Corvus.setupParameters.render(container, () => {});
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  await importFile(container, {
+    name: "quad.params",
+    text() {
+      return Promise.resolve([
+        "# Onboard parameters for Vehicle 1",
+        "#",
+        "# Vehicle-Id Component-Id Name Value Type",
+        "1\t1\tMC_ROLL_P\t6.5\t9",
+        "1\t1\tCOM_RC_IN_MODE\t3\t6",
+        "1\t1\tNOT_ON_THIS\t1\t6",
+        "1\t100\tCAM_MODE\t2\t6",
+      ].join("\n"));
+    },
+  });
+  const preview = lastDialog();
+  const text = findOneByClass(preview, "params-desc").textContent;
+  assert.ok(/1 of 3 parameters in quad\.params differs/.test(text), text);
+  assert.ok(/1 already match/.test(text), text);
+  assert.ok(/1 parameter is not on this vehicle/.test(text), text);
+  assert.ok(/1 row for other components is skipped/.test(text), text);
+  fire(dialogPrimary(), "click");
+  await flushMicrotasks();
+  await flushMicrotasks();
+  assert.deepEqual(fake.postCalls.find((c) => c.url === "/api/params/upload").payload,
+    { params: [{ name: "COM_RC_IN_MODE", value: 3 }] });
+  destroy();
+}
+
+function testParsingTheOtherGroundStationsFiles() {
+  const parse = Corvus.setupParameters.parseParamFile;
+  const mp = parse("# Mission Planner\nARMING_CHECK,1\r\nATC_RAT_RLL_P,0.135\n", "plane.param");
+  assert.equal(mp.format, "mission-planner");
+  assert.deepEqual(mp.params, [{ name: "ARMING_CHECK", value: 1 }, { name: "ATC_RAT_RLL_P", value: 0.135 }]);
+  assert.deepEqual(parse("ARMING_CHECK 0\n", "defaults.parm").params, [{ name: "ARMING_CHECK", value: 0 }]);
+  assert.equal(parse("1\t1\tMC_ROLL_P\t6.5\t9\n", "x.params").format, "qgc");
+  assert.throws(() => parse("ARMING_CHECK,abc\n", "x.param"), /not a number/);
+  assert.throws(() => parse("", "x.param"), /empty/);
+  assert.throws(() => parse("not json {", "x.json"), /valid JSON/);
+  assert.equal(Corvus.setupParameters.formatValue(0.10000000149011612, 9), "0.1",
+    "a float32 is shown as the number that was typed");
+  assert.equal(Corvus.setupParameters.formatValue(3, 6), "3");
+}
+
+// The watchdog's "incomplete" used to leave the progress bar waiting forever.
+async function testAnIncompleteDownloadOffersToTryAgain() {
+  const fake = makeFakeTelemetry();
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  freshTest();
+  const destroy = Corvus.setupParameters.render(container, () => {});
+  await flushMicrotasks();
+  fire(findOneByClass(container, "params-download-btn"), "click");
+  await flushMicrotasks();
+  eventSources[0].emit("params", { state: "incomplete", received: 900, count: 1000 });
+  await flushMicrotasks();
+  const retry = findOneByClass(container, "params-download-btn");
+  assert.ok(retry, "a retry is offered");
+  assert.ok(/Download again/.test(retry.children.map((c) => c.textContent).join("")));
+  assert.ok(/900 of 1000/.test(findOneByClass(container, "params-desc").textContent));
+  assert.equal(Corvus.events.listenerCount("params"), 0, "the progress watch is released");
+  destroy();
+}
+
+// The export format follows the vehicle's stack, the name follows the
+// format, and "only changed from default" narrows what is written.
+async function testExportFormatAndOnlyChanged() {
+  const fake = makeFakeTelemetry({
+    paramsResponse: threeParams(),
+    metadataStart: { ok: true, state: "ready", error: "" },
+    metadataResponse: THREE_META,
+    exportTargetResponse: { dir: "/tmp/p", filename: "corvus-params.params", format: "qgc" },
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  freshTest();
+  const destroy = Corvus.setupParameters.render(container, () => {});
+  for (let i = 0; i < 4; i += 1) await flushMicrotasks();
+  assert.ok(findOneByClass(rowByName(container, "MPC_XY_VEL_MAX"), "params-default").textContent === "12",
+    "the defaults arrived");
+
+  const exportBtn = findByClass(findOneByClass(container, "params-actions"), "btn")
+    .find((b) => b.children.some((c) => c._attrs && c._attrs["data-lucide"] === "download"));
+  fire(exportBtn, "click");
+  await flushMicrotasks();
+  await flushMicrotasks();
+  const dialog = lastDialog();
+  const format = findByClass(dialog, "params-export-format").find((e) => e.tagName === "SELECT");
+  assert.equal(format.value, "qgc", "the backend's format is preselected");
+  format.value = "mission-planner";
+  fire(format, "change");
+  const nameInput = findByClass(dialog, "field-input").find((e) => e.id === "paramsExportName");
+  assert.equal(nameInput.value, "corvus-params.param", "the file name follows the format");
+  fire(findOneByClass(dialog, "ui-toggle"), "click");
+  fire(dialogPrimary(), "click");
+  await flushMicrotasks();
+  await flushMicrotasks();
+  const post = fake.jsonCalls.find((c) => c.url === "/api/params/export");
+  assert.equal(post.body.format, "mission-planner");
+  assert.deepEqual(post.body.params.map((p) => p.name), ["COM_RC_IN_MODE", "MPC_XY_VEL_MAX"],
+    "only the parameters that differ from their default");
+  destroy();
+}
+
+
+// Regression: a short upload is over before the POST's answer is back. The
+// watch has to be open by then, or the status reads "Uploading" for good.
+async function testAnUploadThatEndsBeforeItsAnswerIsStillFollowed() {
+  const fake = makeFakeTelemetry({ uploadResultResponse: { written: 1, failed: 0, errors: [] } });
+  const post = fake.telemetry.postAction;
+  fake.telemetry.postAction = (url, payload) => {
+    if (url === "/api/params/upload") {
+      eventSources[eventSources.length - 1].emit("params",
+        { state: "upload_complete", count: 1, received: 1 });
+    }
+    return post(url, payload);
+  };
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  freshTest();
+  const destroy = Corvus.setupParameters.render(container, () => {});
+  await flushMicrotasks();
+  await importFile(container, {
+    name: "one.json",
+    text() { return Promise.resolve(JSON.stringify({ params: [{ name: "X", value: 1 }] })); },
+  });
+  fire(dialogPrimary(), "click");
+  for (let i = 0; i < 5; i += 1) await flushMicrotasks();
+  const status = findOneByClass(container, "params-actions-status");
+  assert.ok(/Uploaded 1 parameter\b/.test(status.textContent), status.textContent);
+  assert.equal(intervalCbs.filter((c) => !clearedIds.has(c.id)).length, 0,
+    "the result poll stops with the upload");
+  destroy();
+}
+
+
+// Defaults served from the copy the operator switched on in Settings say so:
+// the copy is matched by checksum only, which is the warning on that switch.
+async function testDefaultsFromTheCopySaySo() {
+  const fake = makeFakeTelemetry({
+    paramsResponse: threeParams(),
+    metadataStart: { ok: true, state: "ready", error: "" },
+    metadataResponse: Object.assign({}, THREE_META, { source: "cache" }),
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  freshTest();
+  const destroy = Corvus.setupParameters.render(container, () => {});
+  for (let i = 0; i < 4; i += 1) await flushMicrotasks();
+  const note = findOneByClass(container, "params-meta-note");
+  assert.ok(!note.hidden && /copy kept on this computer/.test(note.textContent), note.textContent);
+  destroy();
 }
 
 // ===========================================================================
@@ -875,6 +1283,15 @@ async function run() {
   await testImportInvalidJsonNotifiesAndDoesNotPost();
   await testArmedGatingDisablesImport();
   await testDestroyClosesUploadSse();
+  await testDefaultsAreShownAndModifiedFilters();
+  await testDraftsSurviveFilteringAndKeysWork();
+  await testIntegerParametersRefuseFractions();
+  await testImportingAQgcFileWritesOnlyTheChanges();
+  testParsingTheOtherGroundStationsFiles();
+  await testAnIncompleteDownloadOffersToTryAgain();
+  await testExportFormatAndOnlyChanged();
+  await testAnUploadThatEndsBeforeItsAnswerIsStillFollowed();
+  await testDefaultsFromTheCopySaySo();
 
   // Let any best-effort microtasks drain so the process exits cleanly.
   await flushMicrotasks();

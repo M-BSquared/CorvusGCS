@@ -935,7 +935,7 @@ async function testTheHardwareDropdownLeadsWithCustomAndWritesNothingOnSelection
   const labels = optionsOf(select).map((o) => o.label);
   assert.match(labels[0], /^Custom/);
   assert.match(labels[1], /Holybro H-Flow · DroneCAN · 19006/);
-  assert.match(labels[3], /not supported by PX4/,
+  assert.match(labels[3], /cannot be set up here/,
     "a module this firmware cannot run says so before it is chosen");
 
   pickPreset(container, "holybro-h-flow");
@@ -1367,6 +1367,221 @@ async function testALateResponseAfterTeardownIsIgnored() {
     "nothing was rendered into the abandoned container");
 }
 
+// ===========================================================================
+// PART C — prerequisites, ports and where a sensor is plugged in
+// ===========================================================================
+
+// An ArduPilot-shaped rangefinder: the driver is RNGFND1_TYPE, a serial one
+// also needs its SERIALn port, and the entries carry those writes.
+function ardupilotRangeDoc(overrides, presets) {
+  return safetyDoc(Object.assign({
+    detail: "No driver enabled · height source: Barometer",
+    drivers: [
+      { id: "RNGFND1_TYPE:20", label: "Benewake TFmini (serial)",
+        param: "RNGFND1_TYPE", value: 20, serial: true,
+        wiring: "Plug it into the serial port you pick below.",
+        port_writes: [{ param: "SERIAL{port}_PROTOCOL", value: 9 },
+                      { param: "SERIAL{port}_BAUD", value: 115 }],
+        port_clear: [{ port: 4, param: "SERIAL4_PROTOCOL", value: -1 },
+                     { port: 2, param: "SERIAL2_PROTOCOL", value: -1 }] },
+      { id: "RNGFND1_TYPE:24", label: "DroneCAN", param: "RNGFND1_TYPE", value: 24,
+        serial: false, wiring: "Plug it into the CAN1 connector.",
+        blocked: "CAN port 1 already runs another protocol." },
+      { id: "RNGFND1_TYPE:7", label: "LightWare (I2C)", param: "RNGFND1_TYPE", value: 7,
+        serial: false, wiring: "Plug it into an I2C connector.",
+        extra: [{ param: "RNGFND1_ADDR", value: 102 }] },
+    ],
+    selected: "RNGFND1_TYPE:20",
+    ports: [{ value: 2, label: "SERIAL2 (MAVLink2)" },
+            { value: 4, label: "SERIAL4 (Rangefinder)" },
+            { value: 5, label: "SERIAL5 (not used)" }],
+    port: 5,
+    enable: [], disable: [], clear: [],
+  }, overrides || {}), presets === undefined ? [] : presets);
+}
+
+function pickDriver(container, id) {
+  const driver = findOneByClass(container, "safety-driver-select");
+  driver.value = id;
+  fire(driver, "change");
+}
+
+// "Which connector?" is the first question on the bench, and the answer
+// depends on the model: the line follows the picker.
+async function testTheWiringLineFollowsThePickedDriver() {
+  const { container } = await openSensorPage(ardupilotRangeDoc());
+  const text = () => findOneByClass(container, "safety-wiring-text").textContent;
+
+  assert.match(text(), /serial port you pick below/);
+  pickDriver(container, "RNGFND1_TYPE:7");
+  assert.match(text(), /I2C connector/, "an I2C model names the I2C connector");
+  pickDriver(container, "RNGFND1_TYPE:24");
+  assert.match(text(), /CAN1/);
+}
+
+// A serial rangefinder on ArduPilot takes the first port set to Rangefinder,
+// so the other ports on that protocol are freed first, then the chosen port
+// gets its protocol and baud rate, and the driver comes last.
+async function testASerialDriverSetsItsPortBeforeTheDriver() {
+  const { container, fake } = await openSensorPage(ardupilotRangeDoc());
+  findOneByClass(container, "safety-port-select").value = "2";
+
+  fire(findOneByClass(container, "safety-sensor-switch"), "click");
+  await flushMicrotasks();
+
+  assert.deepEqual(fake.writes(), [
+    { name: "SERIAL4_PROTOCOL", value: -1 },
+    { name: "SERIAL2_PROTOCOL", value: 9 },
+    { name: "SERIAL2_BAUD", value: 115 },
+    { name: "RNGFND1_TYPE", value: 20 },
+  ], "the stale port is freed, the chosen one is set up, never freed again");
+}
+
+async function testADriverCarriesItsBusAddress() {
+  const { container, fake } = await openSensorPage(ardupilotRangeDoc());
+  pickDriver(container, "RNGFND1_TYPE:7");
+
+  fire(findOneByClass(container, "safety-sensor-switch"), "click");
+  await flushMicrotasks();
+
+  assert.deepEqual(fake.writes(), [
+    { name: "RNGFND1_ADDR", value: 102 },
+    { name: "RNGFND1_TYPE", value: 7 },
+  ], "the I2C address is written with the driver that needs it");
+}
+
+// Writing only the driver of a sensor whose CAN port cannot be set up is the
+// half-setup this page exists to prevent, so the whole chain is refused.
+async function testABlockedDriverIsRefusedWhole() {
+  const { container, fake } = await openSensorPage(ardupilotRangeDoc());
+  pickDriver(container, "RNGFND1_TYPE:24");
+  const status = findOneByClass(findOneByClass(container, "safety-sensor-picker"),
+    "params-row-status");
+  assert.match(status.textContent, /already runs another protocol/,
+    "the reason shows as soon as the model is picked");
+
+  const sw = findOneByClass(container, "safety-sensor-switch");
+  fire(sw, "click");
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  assert.equal(fake.writes().length, 0, "nothing is written");
+  assert.equal(sw.getAttribute("aria-checked"), "false", "the switch stays off");
+}
+
+// PX4 starts every driver configured on a port, and two on one port both fail.
+// A port something else already runs on is refused with the reason.
+async function testAPortSomethingElseRunsOnIsRefused() {
+  const doc = safetyDoc({
+    ports: [{ value: 102, label: "TELEM 2" },
+            { value: 101, label: "TELEM 1 (MAVLink)",
+              blocked: "TELEM 1 is already set up for MAVLink (MAV_0_CONFIG)." }],
+  });
+  const { container, fake } = await openSensorPage(doc);
+  pickDriver(container, "SENS_TFMINI_CFG");
+  findOneByClass(container, "safety-port-select").value = "101";
+
+  fire(findOneByClass(container, "safety-sensor-switch"), "click");
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  assert.equal(fake.writes().length, 0, "the port is not handed to a second driver");
+  const note = dispatched.filter((e) => e.type === "corvus:notification").pop();
+  assert.match(note.detail.message, /MAVLink/, "the operator is told what holds the port");
+}
+
+// A driver the estimator ignores reads perfectly and changes nothing. The
+// overview must not call that "On", and the sensor page says what is missing.
+async function testAHalfConfiguredSensorIsShownAsIncomplete() {
+  const doc = safetyDoc({
+    enabled: false, state: "partial",
+    detail: "Lightware SF/LW20/c (I2C) · fusion: Disabled",
+    problems: ["The driver runs, but the estimator ignores it: EKF2_RNG_CTRL is Disabled."],
+  });
+  const { container } = await openWith(doc);
+  const pill = findOneByClass(findByClass(container, "safety-sensor-tile")[0],
+    "safety-sensor-pill");
+  assert.equal(pill.textContent, "Incomplete");
+  assert.ok(pill.className.includes("partial"));
+
+  enterSensor(container);
+  const problems = findByClass(container, "safety-sensor-problem-text")
+    .map((e) => e.textContent);
+  assert.deepEqual(problems, [
+    "The driver runs, but the estimator ignores it: EKF2_RNG_CTRL is Disabled.",
+  ]);
+  assert.equal(findOneByClass(container, "safety-sensor-switch").getAttribute("aria-checked"),
+    "false", "the switch is off, so one press completes the chain");
+}
+
+function serialPreset(extra) {
+  return Object.assign({
+    id: "benewake-tfmini-s", label: "Benewake TFmini-S", vendor: "Benewake",
+    model: "TFmini-S", bus: "UART", serial: true, supported: true, unsupported: "",
+    active: false, reboot: true, summary: "Time-of-flight rangefinder.", note: "",
+    wiring: "Plug it into a free serial port and pick it below.",
+    writes: [
+      { param: "SERIAL{port}_PROTOCOL", value: 9, port_param: true,
+        label: "The port speaks Rangefinder" },
+      { param: "SERIAL{port}_BAUD", value: 115, port_param: true, label: "115200 baud" },
+      { param: "RNGFND1_TYPE", value: 20, label: "The Benewake serial driver" },
+    ],
+    kept: [], clear: [{ port: 4, param: "SERIAL4_PROTOCOL", value: -1 }], missing: [],
+  }, extra || {});
+}
+
+// The list is the consent surface, so it names the parameter that will really
+// be written: SERIAL2_PROTOCOL once SERIAL2 is picked, not a template.
+async function testAPresetNamesThePortParameterItWillWrite() {
+  const { container, fake } = await openSensorPage(
+    ardupilotRangeDoc(undefined, [serialPreset()]));
+  const panel = pickPreset(container, "benewake-tfmini-s");
+
+  assert.match(findOneByClass(panel, "safety-wiring-text").textContent, /free serial port/,
+    "the preset says where the module is plugged in");
+  const names = () => findByClass(panel, "safety-preset-write")
+    .map((r) => findOneByClass(r, "safety-preset-write-param").textContent);
+  assert.deepEqual(names(), ["SERIAL5_PROTOCOL", "SERIAL5_BAUD", "RNGFND1_TYPE"]);
+
+  const port = findOneByClass(panel, "safety-preset-port");
+  port.value = "2";
+  fire(port, "change");
+  assert.deepEqual(names(), ["SERIAL2_PROTOCOL", "SERIAL2_BAUD", "RNGFND1_TYPE"]);
+
+  fire(findOneByClass(container, "safety-preset-apply"), "click");
+  await flushMicrotasks();
+  assert.deepEqual(fake.writes(), [
+    { name: "SERIAL4_PROTOCOL", value: -1 },
+    { name: "SERIAL2_PROTOCOL", value: 9 },
+    { name: "SERIAL2_BAUD", value: 115 },
+    { name: "RNGFND1_TYPE", value: 20 },
+  ]);
+}
+
+// A board already on UAVCAN_ENABLE = 3 runs DroneCAN ESCs, so the preset keeps
+// it rather than writing 2. The list still shows it was considered.
+async function testAValueThePresetKeepsIsShownAndNeverWritten() {
+  const presets = defaultPresets();
+  presets[0].writes = presets[0].writes.filter((w) => w.param !== "UAVCAN_ENABLE");
+  presets[0].kept = [{ param: "UAVCAN_ENABLE", value: 3,
+    label: "Already 3 on this vehicle, which covers this. It is not lowered" }];
+  presets[0].clear = ["SENS_TFMINI_CFG"];
+  const { container, fake } = await openSensorPage(safetyDoc(undefined, presets));
+  const panel = pickPreset(container, "holybro-h-flow");
+
+  const kept = findByClass(panel, "safety-preset-kept");
+  assert.equal(kept.length, 1);
+  assert.equal(findOneByClass(kept[0], "safety-preset-write-value").textContent, "stays 3");
+
+  fire(findOneByClass(container, "safety-preset-apply"), "click");
+  await flushMicrotasks();
+  assert.deepEqual(fake.writes(), [
+    { name: "SENS_TFMINI_CFG", value: 0 },
+    { name: "UAVCAN_SUB_RNG", value: 1 },
+    { name: "EKF2_RNG_CTRL", value: 1 },
+  ], "the backend's clear list is used, and the kept value is not touched");
+}
+
 // ---------------------------------------------------------------------------
 async function main() {
   const tests = [
@@ -1424,6 +1639,14 @@ async function main() {
     testAnArmedSwitchWritesNothing,
     testTeardownReleasesTheSubscription,
     testALateResponseAfterTeardownIsIgnored,
+    testTheWiringLineFollowsThePickedDriver,
+    testASerialDriverSetsItsPortBeforeTheDriver,
+    testADriverCarriesItsBusAddress,
+    testABlockedDriverIsRefusedWhole,
+    testAPortSomethingElseRunsOnIsRefused,
+    testAHalfConfiguredSensorIsShownAsIncomplete,
+    testAPresetNamesThePortParameterItWillWrite,
+    testAValueThePresetKeepsIsShownAndNeverWritten,
   ];
   for (const t of tests) {
     // The added-parameter list is persisted, so it would otherwise leak from

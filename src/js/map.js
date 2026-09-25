@@ -864,11 +864,14 @@ Corvus.map = (function () {
       { id: "layers", icon: "layers", title: "Map layers" },
       { id: "regions", icon: "frame", title: "Show downloaded areas", active: true },
       { id: "three", icon: "box", title: "3D mode" },
+      { id: "divider", group: "video" },
+      { id: "video", icon: "video", title: "Camera windows (set up under Setup, Video)" },
     ];
     items.forEach((it) => {
       if (it.id === "divider") {
         const d = document.createElement("div");
         d.className = "mc-divider";
+        if (it.group) d.dataset.group = it.group;
         container.appendChild(d);
         return;
       }
@@ -906,10 +909,134 @@ Corvus.map = (function () {
         // one you meant — it lives in the panel that appears on hover.
         set3D(!threeD);
         persistThreeD();
+      } else if (act === "video" && Corvus.videoWindows) {
+        pressCameraButton(b);
       }
     });
 
+    wireCameraButton(container);
+
     wireThreeDPanel(container.querySelector('[data-act="three"]'));
+  }
+
+  /**
+   * The rail's camera button, which only exists while there is a camera.
+   *
+   * With none set up it is hidden (with the divider above it) rather than a
+   * button that only says where to add one. With one camera a press opens or
+   * closes its window. With several, a press opens a list beside the rail:
+   * one row per camera, marked while its window is open, and a last row that
+   * opens or closes all of them. The list stays open, so several cameras can
+   * be picked in one go.
+   *
+   * It is lit while any camera window is open, whichever button or page
+   * opened it.
+   */
+  function wireCameraButton(container) {
+    const vw = Corvus.videoWindows;
+    const btn = container.querySelector('[data-act="video"]');
+    const divider = container.querySelector('.mc-divider[data-group="video"]');
+    if (!btn) return;
+    if (!vw || typeof vw.onCameras !== "function") {
+      btn.hidden = true;
+      if (divider) divider.hidden = true;
+      return;
+    }
+    const show = (list) => {
+      const any = list.length > 0;
+      btn.hidden = !any;
+      if (divider) divider.hidden = !any;
+      btn.title = list.length > 1 ? "Cameras" : (any ? `Camera: ${cameraLabel(list[0])}` : "");
+      btn.setAttribute("aria-haspopup", list.length > 1 ? "menu" : "false");
+      if (cameraMenuHandle && cameraMenuHandle.isOpen()) {
+        if (list.length > 1) cameraMenuHandle.rebuild();
+        else cameraMenuHandle.close(false);
+      }
+    };
+    show([]);
+    vw.onCameras(show);
+    vw.onChange((n) => {
+      btn.classList.toggle("active", n > 0 || !!(cameraMenuHandle && cameraMenuHandle.isOpen()));
+      if (cameraMenuHandle && cameraMenuHandle.isOpen()) cameraMenuHandle.rebuild();
+    });
+    vw.loadCameras();
+  }
+
+  function cameraLabel(cam) {
+    return String((cam && (cam.name || cam.address)) || "Camera");
+  }
+
+  function pressCameraButton(btn) {
+    const vw = Corvus.videoWindows;
+    const list = vw.cameras();
+    if (list.length > 1) {
+      const menu = cameraMenu();
+      if (menu.isOpen()) menu.close(false);
+      else menu.open({ el: btn });
+    } else if (list.length === 1) {
+      vw.toggle(list[0]);
+    } else {
+      vw.toggleAll();
+    }
+  }
+
+  let cameraMenuHandle = null;
+
+  /** The list the camera button opens when there is more than one camera. */
+  function cameraMenu() {
+    if (cameraMenuHandle) return cameraMenuHandle;
+    const mark = (on) => {
+      const b = controlsEl && controlsEl.querySelector('[data-act="video"]');
+      if (!b) return;
+      b.classList.toggle("active", on || Corvus.videoWindows.count() > 0);
+      b.setAttribute("aria-expanded", on ? "true" : "false");
+    };
+    cameraMenuHandle = Corvus.ui.menu({
+      className: "layers-popover camera-popover",
+      role: "menu",
+      ariaLabel: "Cameras",
+      side: "left",
+      gap: railMenuGap,
+      matchAnchorWidth: false,
+      render: renderCameraRows,
+      onOpen: () => mark(true),
+      onClose: () => mark(false),
+    });
+    return cameraMenuHandle;
+  }
+
+  function renderCameraRows(surface) {
+    const vw = Corvus.videoWindows;
+    const head = document.createElement("div");
+    head.className = "ui-menu-head";
+    head.textContent = "Cameras";
+    surface.appendChild(head);
+    const rows = vw.cameras().map((cam) => {
+      const on = vw.has(cam.id);
+      const row = Corvus.ui.menuItem({
+        label: cameraLabel(cam),
+        note: cam.name && cam.address ? cam.address : "",
+        dot: true,
+        active: on,
+        role: "menuitemcheckbox",
+        onSelect: () => vw.toggle(cam),
+      });
+      row.setAttribute("aria-checked", on ? "true" : "false");
+      surface.appendChild(row);
+      return row;
+    });
+    const anyOpen = vw.count() > 0;
+    const all = Corvus.ui.menuItem({
+      label: anyOpen ? "Close all" : "Open all",
+      icon: anyOpen ? "x" : "layout-grid",
+      onSelect: () => {
+        if (anyOpen) vw.closeAll();
+        else vw.cameras().forEach((cam) => vw.open(cam));
+      },
+    });
+    surface.appendChild(all);
+    rows.push(all);
+    return rows;
   }
 
   /**

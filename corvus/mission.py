@@ -11,7 +11,9 @@ Three jobs, deliberately separate:
   whether it carries a position, and which of the four command parameters its
   named fields land in. The frontend mirrors the *names*; this mirrors nothing.
   A per-item ``speed`` is deliberately not among them: it is a command of its
-  own on the wire, not a parameter of the item it is set on.
+  own on the wire, not a parameter of the item it is set on. Nor is a per-item
+  ``name``, which never reaches the wire at all: MISSION_ITEM_INT has no field
+  for one, so it lives in the plan and in the saved file only.
 * :func:`validate_plan` is the only gate. It is reached from an HTTP endpoint,
   so it treats every value as hostile: wrong types, NaN, infinities, out-of-
   range coordinates and oversized lists all come back as a message rather than
@@ -73,6 +75,9 @@ MISSION_SPEED_MAX_MS = 100.0
 MISSION_HOLD_MAX_S = 3600.0
 MISSION_TURNS_MAX = 100.0
 MISSION_NAME_MAX = 64
+# A point's own name. Short, because it is drawn next to the point on the map
+# and in a list row that shares its width with the point's values.
+MISSION_POINT_NAME_MAX = 40
 
 # MAV_CMD values, frozen. Stated as literals so this module stays importable
 # without pymavlink (the HTTP layer validates plans on machines where the
@@ -173,6 +178,9 @@ ORBIT_TYPES: tuple[str, ...] = ("loiter_turns", "loiter_time")
 COMMAND_OF: dict[str, int] = {name: spec["command"] for name, spec in ITEM_SPECS.items()}
 
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9 ._-]+")
+# Control characters (C0, DEL, C1) and the line and paragraph separators. A
+# point name is one line of text on a map; none of these can be part of one.
+_POINT_NAME_JUNK_RE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]+")
 
 # WGS-84 mean radius. Plan distances are used for the profile's x-axis and the
 # duration estimate, neither of which is navigation, so a spherical earth is
@@ -214,6 +222,22 @@ def safe_plan_name(raw: Any) -> str:
     cleaned = _SAFE_NAME_RE.sub(" ", raw).strip(" .")
     cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned[:MISSION_NAME_MAX].strip()
+
+
+def clean_point_name(raw: Any) -> str:
+    """A point's display name, or "" when *raw* carries none.
+
+    Unlike a plan name this is never a filename, so it keeps any printable
+    character, umlauts and all. Control characters become spaces, runs of
+    whitespace collapse to one, and the result is capped at
+    :data:`MISSION_POINT_NAME_MAX`. Anything that is not a string is no name
+    rather than an error: the name is a label, and a plan must not be refused
+    over one.
+    """
+    if not isinstance(raw, str):
+        return ""
+    cleaned = re.sub(r"\s+", " ", _POINT_NAME_JUNK_RE.sub(" ", raw)).strip()
+    return cleaned[:MISSION_POINT_NAME_MAX].strip()
 
 
 def missions_dir(configured: str = "") -> str:
@@ -285,6 +309,12 @@ def _validate_item(index: int, raw: Any) -> tuple[dict[str, Any] | None, str]:
                 f"and {MISSION_SPEED_MAX_MS:g} m/s"
             )
         item["speed"] = value
+
+    # Absent and empty are the same thing: the point is shown by its number
+    # and its kind. The key stays off the item rather than carrying "".
+    name = clean_point_name(raw.get("name"))
+    if name:
+        item["name"] = name
 
     return item, ""
 

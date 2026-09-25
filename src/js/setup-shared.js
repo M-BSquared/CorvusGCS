@@ -68,6 +68,22 @@ Corvus.setupShared = (function () {
   const sectionTitle = Corvus.ui.sectionTitle;
 
   /**
+   * A form row's label, with its explanation behind a hint icon.
+   *
+   * Printed under the control, a paragraph per row made a four-row form read
+   * as a page of prose and pushed the rows apart. Label and icon share one
+   * wrapper so the grid still sees a single label cell.
+   */
+  function rowLabel(className, text, info) {
+    const label = el("span", className, text);
+    if (!info) return label;
+    const wrap = el("span", "field-label-row pform-label-row");
+    wrap.appendChild(label);
+    wrap.appendChild(Corvus.ui.infoHint({ title: text, text: info }));
+    return wrap;
+  }
+
+  /**
    * A labelled value row used in the Vehicle Info card.
    * @param {string} label
    * @param {string|number} value
@@ -687,7 +703,7 @@ Corvus.setupShared = (function () {
     get COLOR_RATE() { return chartColor("nav", "#4CC9FF"); },
     get COLOR_ATT() { return chartColor("healthy", "#45D483"); },
     get COLOR_VEL() { return chartColor("nav", "#4CC9FF"); },
-    reducedMotion, el, icon, refreshIcons, pageHeader, sectionTitle, infoRow,
+    reducedMotion, el, icon, refreshIcons, pageHeader, sectionTitle, infoRow, rowLabel,
     backButton, plotlyLayout, plotlyConfig,
     // Schema-driven parameter forms (Motors, Safety & Sensors).
     notify, formatNumber, isNumeric, rangeProblem,

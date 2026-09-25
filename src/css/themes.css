@@ -59,6 +59,10 @@
      src/js/mission.js (the Mission planner) are both painted from here. */
   --plan: #FFC21A;
   --plan-ink: rgba(0, 0, 0, 0.7);
+  /* The ring around the selected point on the map. White, cased in
+     --plan-ink like the route: it is the one colour that reads on every tile
+     and sits with the amber rather than competing with it. */
+  --plan-select: #FFFFFF;
 
   /* --- Spacing scale ---
      The gaps and paddings a layout is allowed to use. Introduced because the

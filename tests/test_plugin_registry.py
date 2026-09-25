@@ -288,6 +288,7 @@ def test_ensure_user_plugins_dir_is_idempotent(tmp_path, monkeypatch):
 @pytest.mark.parametrize("plugin_id,script,style", [
     ("vibration", "vibration.js", "vibration.css"),
     ("ssh-launcher", "ssh-launcher.js", "ssh-launcher.css"),
+    ("schwalby", "schwalby.js", "schwalby.css"),
 ])
 def test_bundled_plugin_is_discoverable(plugin_id, script, style):
     """Every shipped plugin parses through the same code path a dropped-in
@@ -303,6 +304,33 @@ def test_bundled_plugin_is_discoverable(plugin_id, script, style):
 
 def test_bundled_plugins_keep_the_grid_order_they_declare():
     """Vibration first, then the launcher — the order the TOOLS tab had before
-    either of them lived in a folder."""
+    either of them lived in a folder — and Schwalby after it."""
     found = reg.discover(user_dir=os.path.join(str(os.devnull), "none"))
-    assert [p["id"] for p in found] == ["vibration", "ssh-launcher"]
+    assert [p["id"] for p in found] == ["vibration", "ssh-launcher", "schwalby"]
+
+
+def test_bundled_plugins_are_not_ignored_by_git():
+    """`.gitignore` keeps operator plugins out of the repository by ignoring
+    every folder under plugins/ and letting the shipped ones back in. A shipped
+    plugin missing from that list is one CI never sees, so the artifacts would
+    go out without it."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root, ".gitignore"), encoding="utf-8") as fh:
+        rules = [line.strip() for line in fh]
+    assert "/plugins/*/" in rules
+    for plugin in reg.discover(user_dir=os.path.join(str(os.devnull), "none")):
+        assert f"!/plugins/{plugin['id']}/" in rules, plugin["id"]
+
+
+def test_a_file_name_that_starts_with_a_dot_keeps_it(tmp_path):
+    """Only a leading "./" is dropped, never the dot of a name."""
+    from corvus import plugin_registry
+    folder = tmp_path / "dotty"
+    (folder / "lib").mkdir(parents=True)
+    (folder / ".build.js").write_text("//", encoding="utf-8")
+    (folder / "lib" / "x.js").write_text("//", encoding="utf-8")
+    (folder / "plugin.json").write_text(
+        '{"id": "dotty", "scripts": ["./.build.js", "././lib/x.js", ".\\\\lib\\\\x.js"]}',
+        encoding="utf-8")
+    manifests = plugin_registry.discover(user_dir=str(tmp_path), bundled_dir=str(tmp_path / "none"))
+    assert manifests[0]["scripts"] == [".build.js", "lib/x.js"]

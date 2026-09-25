@@ -33,6 +33,9 @@ _EXPECTED_GET = {
     "/api/ssh/sessions",
     "/api/ssh/connections",
     "/api/ssh/stream",
+    # A terminal's output, keystrokes and size on one WebSocket, which is not
+    # one of the six connections a browser allows per host.
+    "/api/ssh/ws",
     "/api/plugins",
     "/api/mavlink/auto",
     "/api/mavlink/modes",
@@ -59,6 +62,8 @@ _EXPECTED_GET = {
     "/api/params/progress",
     "/api/params/upload/result",
     "/api/params/export/target",
+    "/api/params/metadata",
+    "/api/params/metadata/cache",
     "/api/telemetry",
     "/api/console/stream",
     # The multiplexed stream: console, params, firmware and tiles down one
@@ -77,6 +82,12 @@ _EXPECTED_GET = {
     "/api/firmware/catalog",
     "/api/sik/status",
     "/api/rtk/status",
+    # Camera video: the page's state, and one frame per request (a long poll,
+    # so a camera never holds one of the browser's six connections for good).
+    "/api/video/status",
+    "/api/video/frame",
+    # Whether a terminal on this computer is possible here (a launcher's local buttons).
+    "/api/local/status",
     "/api/logs/status",
     "/api/logs/review",
     "/api/logs/tlog-review",
@@ -128,6 +139,8 @@ _EXPECTED_POST = {
     # Read back what the operator wrote, write again what did not stick.
     "/api/params/verify",
     "/api/params/export",
+    "/api/params/metadata",
+    "/api/params/metadata/cache/clear",
     "/api/calibrate",
     "/api/calibrate/cancel",
     # ArduPilot waits to be told each accelerometer position; PX4 recognises
@@ -161,6 +174,17 @@ _EXPECTED_POST = {
     # survey. Never behind a method a browser may prefetch or retry.
     "/api/rtk/settings",
     "/api/rtk/restart",
+    "/api/video/streams",
+    "/api/video/streams/remove",
+    "/api/video/settings",
+    # WebRTC signalling runs through the backend so the camera password stays
+    # there; the window only ever holds an opaque session token.
+    "/api/video/webrtc/offer",
+    "/api/video/webrtc/close",
+    # Launcher buttons that run on this computer: a shell in a terminal, or a
+    # program in the background. Loopback callers only.
+    "/api/local/connect",
+    "/api/local/run",
     "/api/warnings/clear",
     # The logo UPLOAD is not here on purpose: like /api/firmware/upload it
     # carries a raw octet-stream body and is dispatched ahead of the JSON

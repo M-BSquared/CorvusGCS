@@ -154,16 +154,16 @@ def test_the_bitmask_fields_come_out_as_bitmasks() -> None:
     assert {b["bit"] for b in field["bits"]} == {0, 1, 2, 3}
 
 
-def test_a_sensor_toggle_writes_the_driver_and_the_estimator() -> None:
-    """The ArduPilot version of the classic trap: a rangefinder streaming
-    perfect distances that EK3_SRC1_POSZ never looks at."""
+def test_the_sensor_toggles_share_the_px4_shape() -> None:
+    """The sensor chains themselves are pinned in test_ardupilot_sensors.py."""
     payload = ardupilot_safety.build(_all_values(ardupilot_safety), [], "copter")
     section = next(s for s in payload["sections"] if s["id"] == "rangefinder")
     toggle = section["toggle"]
-    assert {"param": "EK3_SRC1_POSZ", "value": 2.0} in toggle["enable"]
-    # Off goes back to the barometer, not to no height source at all.
-    assert {"param": "EK3_SRC1_POSZ", "value": 1.0} in toggle["disable"]
+    for key in ("enabled", "state", "problems", "detail", "drivers", "selected",
+                "enable", "disable", "clear", "reboot"):
+        assert key in toggle, key
     assert any(d["param"] == "RNGFND1_TYPE" for d in toggle["drivers"])
+    assert payload["received"] == len(_all_values(ardupilot_safety))
 
 
 def test_extra_parameters_are_bounded_and_upper_cased() -> None:

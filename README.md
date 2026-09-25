@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.57-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.09.57" />
+  <img src="https://img.shields.io/badge/Version-2026.09.58-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.09.58" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -32,9 +32,9 @@
   <br>
   <!-- <img src="https://img.shields.io/badge/%F0%9F%A4%96-Vibe%20Coded-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded" />
   <img width="8" /> -->
-  <img src="https://img.shields.io/badge/Lines%20of%20Code-90k%2B-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 90k+" />
+  <img src="https://img.shields.io/badge/Lines%20of%20Code-100k%2B-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 100k+" />
   <img width="8" />
-  <img src="https://img.shields.io/badge/Tests-69k%20lines%20%C2%B7%20154%20files-18a4de?style=for-the-badge" height="28" alt="Tests: 69k lines across 154 files" />
+  <img src="https://img.shields.io/badge/Tests-77k%20lines%20%C2%B7%20169%20files-18a4de?style=for-the-badge" height="28" alt="Tests: 77k lines across 169 files" />
   <br>
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-6E7681?style=for-the-badge" height="28" alt="Platform: macOS | Linux | Windows" />
   <img width="8" />
@@ -195,11 +195,12 @@ Everything here is **built and working today**.
 | 🌍 **See in 3D** | A spinnable globe when you zoom out, real terrain relief and extruded OpenStreetMap buildings when you zoom in, and the aircraft drawn at the altitude it is actually flying. Or switch terrain and buildings off and keep just the camera tilt, for a slow link or a low battery | ✅ |
 | 📴 **Work offline** | Nothing loads from the internet. Download named map areas in advance and the whole app keeps working with no connection | ✅ |
 | 📡 **Connect** | Connects on its own to whatever is plugged in (flight controller on USB first, then telemetry radio, then the simulator port), plus serial, UDP and TCP by hand, a live port picker, saved recent connections, link-quality display and automatic reconnect | ✅ |
+| 🎥 **Watch the camera** | Add the camera on the aircraft by its RTSP address (or a udp://, srt:// or http:// stream), or by its WebRTC (WHEP) address on a media server such as MediaMTX, and it opens in a floating window over the map, the same kind of window the SSH Launcher's terminals use: drag it, size it, maximize it, keep several side by side, and put it on another screen: each is a window of its own that looks exactly like the frame inside the app (or, if you prefer, starts inside the app and goes out when you drag it past the edge). A button on the map opens them: one camera directly, several from a list. Cameras reconnect by themselves, and a frozen picture is greyed out rather than passed off as live. RTSP is decoded with ffmpeg, which has to be installed on the computer | ✅ |
 | 🛰️ **RTK GPS** | Plug a base station into this computer and Corvus finds it, surveys it in, and streams RTCM 3 corrections to the aircraft. No port to pick, no protocol to know. An NTRIP caster works the same way, over the network instead of a second receiver | ✅ |
-| 🔧 **Set up** | Airframe drawn to scale: click a motor to wire, position or spin-test it; ESC protocol; parameter editor with import / export; guided sensor calibration, ESC calibration, PID tuning by hand or by in-flight autotune, and firmware flashing for both stacks, with every build target of a release laid out as a searchable list grouped by vendor, your own board detected and put first, and the developer builds folded away until you ask for them | ✅ |
+| 🔧 **Set up** | Airframe drawn to scale: click a motor to wire, position or spin-test it; ESC protocol; parameter editor with each value's default and import / export in QGroundControl and Mission Planner formats; guided sensor calibration, ESC calibration, PID tuning by hand or by in-flight autotune, and firmware flashing for both stacks, with every build target of a release laid out as a searchable list grouped by vendor, your own board detected and put first, and the developer builds folded away until you ask for them | ✅ |
 | 🛡️ **Set limits** | Maximum distance and height, the return-to-launch profile, and a failsafe action for every loss the autopilot can detect, plus a distance sensor or optical-flow camera brought up by one switch, driver and estimator together | ✅ |
 | 📊 **Review flights** | Download the vehicle's logs and record the live stream, then read either on your own machine: Flight Review for a ULog, Telemetry Review for the recording that exists even when the ULog does not, including the radio link, which an onboard log cannot see | ✅ |
-| 🖥️ **Tools** | MAVLink console, SSH terminal to an onboard companion computer, and an extensible plugin system. The Vibration Monitor and the SSH Launcher ship with it, and dropping a folder in adds your own | ✅ |
+| 🖥️ **Tools** | MAVLink console, SSH terminal to an onboard companion computer, and an extensible plugin system. The Vibration Monitor, the SSH Launcher and Schwalby ship with it, and dropping a folder in adds your own | ✅ |
 | 🎨 **Personalise** | Six colour themes, interface scale from 80 % to 150 %, your own logo, an app-icon switch with an optional backplate, all saved between sessions | ✅ |
 | 🔒 **One at a time** | Launching Corvus while it is already running tells you so instead of splitting one serial link's telemetry across two windows. `CORVUS_ALLOW_MULTI=1` is as the escape hatch for a genuine two-aircraft setup | ✅ |
 | 💻 **Just run it** | One standalone app for macOS, Linux and Windows. No install, no server, no browser, clean shutdown every time | ✅ |
@@ -886,11 +887,26 @@ aircraft is no longer flying what you are looking at.
   page. There, one switch brings the sensor up: Corvus starts the driver *and*
   tells the estimator to fuse it, which is the step usually missed. A
   rangefinder reading perfectly while the EKF ignores it looks exactly like a
-  working sensor. The state line always names both halves, so a half-configured
-  sensor cannot look finished.
+  working sensor. The state line always names both halves, and a sensor that
+  is only half set up is shown as **Incomplete**, with one line for each
+  missing piece: the estimator ignoring it, no serial port set to it, the wrong
+  baud rate, a CAN port not running DroneCAN. One press of the switch
+  completes it.
+- **Where to plug it in**: every sensor model says which connector it belongs
+  on (I2C, CAN, or a serial port), and the serial port picker shows what
+  already runs on each port, so a lidar is never put on the port your
+  telemetry radio uses. On PX4 a port another driver already holds is refused
+  with the reason.
+- **ArduPilot sensors**: the switch also sets what the driver depends on (the
+  serial port and its baud rate, the CAN port, or the sensor's I2C address)
+  and leaves the height source on the barometer, as ArduPilot's own
+  documentation asks. Optical flow goes into an EKF source set the way the
+  ArduPilot wiki describes: the primary one on an aircraft without GPS, source
+  set 2 beside the GPS otherwise, selected in flight with an RC switch.
 - **Hardware presets**: you do not own a `SENS_TFMINI_CFG`, you own a TFmini-S.
   One dropdown lists the modules Corvus knows (Holybro H-Flow, Benewake
-  TFmini-S, TFmini Plus and TF03, with more to come), each row naming its bus
+  TFmini-S, TFmini Plus and TF03, and on ArduPilot the Matek 3901-L0X,
+  with more to come), each row naming its bus
   and model, because picking "UART" when the module on the bench has a CAN plug
   is the mistake a list like this can actually prevent. Choose one and Corvus
   writes its whole chain: the driver, the estimator, and the numbers off that
@@ -947,9 +963,13 @@ aircraft is no longer flying what you are looking at.
 - **Parameters**: the full set is downloaded only when you open this page (see
   [Fast to ready-for-flight](#fast-to-ready-for-flight)), with a live progress
   bar. Then you can edit any value; writes are confirmed by the aircraft and
-  **refused while armed**. *Export* and *Import* write and read a readable JSON
-  file with the airframe and date in the name, and after an import the list
-  shows the values it wrote.
+  **refused while armed**. Corvus reads each parameter's **default** off the
+  vehicle over MAVLink FTP (on PX4 with its description, unit and value list
+  too), so the list has a Default column, a one-click reset per row, and a
+  **Modified** view with only what differs from the firmware. *Export* and
+  *Import* read and write QGroundControl's `.params`, Mission Planner's
+  `.param` and Corvus's own JSON, optionally only the changed values, and
+  after an import the list shows the values it wrote.
 - **Reboot autopilot**: some settings are only read when the autopilot starts
   (the airframe, a sensor driver, a serial port, the output protocol), and an
   accelerometer or compass calibration takes effect after a restart. The
@@ -1115,6 +1135,49 @@ aircraft is no longer flying what you are looking at.
   forever, which is right in the field and wrong the day PX4 publishes a new
   version, so there is a **Refresh** next to it. It is the only control on
   the page that needs the network on purpose.
+- **Video**: the cameras, each an address with an optional user and
+  password. A camera is one of two types. **RTSP** (and udp://, srt:// and
+  http:// streams) is decoded by Corvus with ffmpeg. **WebRTC** is the WHEP
+  address of a stream on a media server such as MediaMTX
+  (`http://host:8889/<stream>/whep`), go2rtc or Janus: the video goes straight
+  from there to the window, with the lowest delay, and needs no ffmpeg. The
+  page lists the codecs the window can play over WebRTC, because the desktop
+  app's browser engine may lack H.264; an H.264 camera then comes in over RTSP.
+  A user and password written into the address are moved into their
+  own fields, and the password is never shown again. **Open** puts the camera
+  in a floating window of its own, the same frame the SSH Launcher's
+  terminals use, so it stays up over the map while you fly. The camera button
+  on the map shows only once a camera is set up: with one camera it opens and
+  closes it, with several it opens a list to pick cameras from, or open and
+  close them all. In the desktop
+  app a camera or terminal opens as a window of its own: the same frame, bar,
+  buttons and grip as inside the app, with nothing of the operating system's
+  around it, free to go anywhere, including a second screen, and back where
+  you left it the next time it opens. The pin in its title bar keeps it above
+  the Corvus window; other programs can still cover it when they are in
+  front. With **Settings, Camera and terminal
+  windows, Open inside the Corvus window** on, it opens inside the app
+  instead; drag it by its title bar past the edge and it carries on outside,
+  and let go of it over the app and it is back in. In a browser, where a page
+  cannot make such a window, windows always open inside, and the title bar has
+  a button that opens one in a pop-up. The title bar
+  says **LIVE**, **CONNECTING**, **NO PICTURE** or **OFFLINE**, and when the
+  picture stops the last frame stays up greyed out with the reason over it,
+  so a frozen picture can never pass for a live one. TCP is the default
+  transport because it survives a lossy link; UDP is there for cameras that
+  only do that. A browser cannot play RTSP, so Corvus decodes it with
+  **ffmpeg**, which is not bundled: install it (Homebrew, apt, or ffmpeg.org)
+  or give its path on the page. It runs only while a camera window is open
+  and stops a few seconds after the last one closes.
+
+  Camera passwords stay on this computer. They never reach the browser: a
+  WebRTC connection is opened through Corvus, and the window only ever holds a
+  session token. They never appear on ffmpeg's command line either, where
+  other accounts could read them (ffmpeg 5 or later; the page warns when an
+  older one would show them). A camera moved to another host does not take its
+  password along. ffmpeg may open only the protocols the camera's address
+  needs, never a local file, and every network wait has a timeout, so a camera
+  that stops answering is reconnected instead of hanging.
 
 ### Analysis: logs, Flight Review and Telemetry Review
 
@@ -1213,12 +1276,14 @@ picture.
   (Shift-Escape leaves it; plain Escape belongs to whatever is running).
   Connections are **saved by name** with password or key-file authentication,
   so reconnecting is one click.
-- **Plugins**: specialist views that plug in without touching the core. Two
+- **Plugins**: specialist views that plug in without touching the core. Three
   ship with it: the **Vibration Monitor**, a live graph of the aircraft's
-  vibration levels plus cumulative clipping counters, and the **SSH Launcher**,
+  vibration levels plus cumulative clipping counters, the **SSH Launcher**,
   a shelf of one-press buttons that start programs on a companion computer,
-  each with its own terminal to watch and stop them in. Both are ordinary
-  plugin folders, and you can add your own, see [Plugins](#plugins) below.
+  each with its own terminal to watch and stop them in, and **Schwalby**, the
+  same kind of shelf where each button runs either on this computer or over
+  SSH. All three are ordinary plugin folders, and you can add your own, see
+  [Plugins](#plugins) below.
 
 ### Settings
 
@@ -1285,7 +1350,7 @@ instantly and is saved.
 The **TOOLS** tab in the side workspace is an extension point: a plugin adds
 its own view there without a fork and without touching the rest of the app.
 
-Two ship with Corvus:
+Three ship with Corvus:
 
 - **Vibration Monitor**: a live graph of gyro coning, gyro high-frequency and
   accelerometer high-frequency vibration, with the cumulative clipping counters
@@ -1303,9 +1368,12 @@ Two ship with Corvus:
   last program is still running in the foreground, what you send goes to it,
   just as if you had typed it there. Ctrl-C first, or let it finish.)
 
-  The **arrow** beside a button opens that session's terminal, a floating
-  window you can move, resize, maximise and put away like any other, while the
-  tab you were on stays where it was. Only the arrow opens it; pressing the
+  The **arrow** beside a button opens that session's terminal, a window you
+  can move, resize, maximise and put away like any other, while the tab you
+  were on stays where it was. It behaves exactly like a camera window: in the
+  desktop app a window of its own that can go on another screen, with the pin
+  that keeps it above Corvus, or a frame inside the app if you set it so under
+  Settings (see Video above). Only the arrow opens it; pressing the
   button starts the program without throwing a window at you, which matters
   when four of them go up on the pad. Three buttons are three terminals, side
   by side when you want to see them. Output is right there to read, and Ctrl-C
@@ -1326,6 +1394,26 @@ Two ship with Corvus:
 
   Corvus never holds the password in the plugin. A button names a saved SSH
   connection and the backend takes the credentials from there.
+- **Schwalby**: a shelf of one-press buttons like the SSH Launcher's, for the
+  programs on the ground station as well as on the aircraft. When you create a
+  button, the **Local / SSH** switch at the top of its settings decides where
+  it runs:
+
+  - **Local** runs the command on this computer, as you, in your own login
+    shell. In a terminal it gets a window of its own like any other terminal
+    (arrow, pin, disconnect, Ctrl-C); in the background it starts without one.
+    Either way it is stopped when Corvus closes, so nothing is left running
+    after you shut down. Only this computer can start anything locally, even
+    when Corvus is reachable from the network.
+  - **SSH** runs it on a saved SSH connection, exactly as an SSH Launcher
+    button does, including *New connection…* and the `nohup` background mode.
+
+  Each row says where it runs. Moving a button that is still running to the
+  other side (or to another connection) asks first and closes its old session,
+  so the next press can never land on the wrong machine. On Windows a local
+  terminal is not available and the switch says so; local background buttons
+  work there too. Schwalby is a plugin of its own, with its own buttons and
+  settings: it and the SSH Launcher never share or touch each other's.
 
 ### Adding your own
 
@@ -1334,7 +1422,7 @@ Plugins are folders. Corvus reads two places:
 | Where | What it is |
 | --- | --- |
 | `~/.corvus/plugins` (`%USERPROFILE%\.corvus\plugins` on Windows) | Yours. Survives updates. |
-| `plugins/` inside the application | The ones that ship with Corvus, including the two above live here. Replaced by an update. |
+| `plugins/` inside the application | The ones that ship with Corvus, including the three above live here. Replaced by an update. |
 
 **Settings ▸ Plugins ▸ Open plugin folder** opens the first one in Finder /
 Explorer / your file manager, and lists what Corvus found. Drop a folder in,
@@ -1385,10 +1473,11 @@ Corvus.plugins.register("my-plugin", {
 ```
 
 The full `api` is documented at the top of `src/js/plugins.js` and the manifest
-in `corvus/plugin_registry.py`. Both shipped plugins are complete worked
+in `corvus/plugin_registry.py`. The shipped plugins are complete worked
 examples that go through exactly this path: `plugins/ssh-launcher` for a form,
-saved settings and a backend call, `plugins/vibration` for a live chart on the
-telemetry stream. Copy one and start from there. A plugin that fails to load
+saved settings and a backend call, `plugins/schwalby` for the same with a
+control and a stylesheet of its own, `plugins/vibration` for a live chart on
+the telemetry stream. Copy one and start from there. A plugin that fails to load
 costs itself and nothing else: the rest of the app, and the other plugins, come
 up regardless.
 

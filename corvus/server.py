@@ -32,9 +32,10 @@ from urllib.parse import parse_qs, unquote, urlparse
 from . import (
     ardupilot_battery, ardupilot_motors, ardupilot_rc, ardupilot_remote_id,
     ardupilot_safety, ardupilot_tuning, autopilot, battery, battery_config,
-    geocode, mission, motor_config, rc_config, remote_id, remote_id_config,
-    rtk, rtk_service,
-    safety_config, sik_config, sik_service, tile_sources, tuning_config,
+    geocode, mission, motor_config, param_files, param_metadata, rc_config, remote_id,
+    remote_id_config,
+    local_shell, rtk, rtk_service,
+    safety_config, sik_config, sik_service, tile_sources, tuning_config, video, websocket,
 )
 from .config import (
     MAX_MAP_TOKEN_CHARS,
@@ -57,7 +58,7 @@ from .mavlink_bridge import (
     TAKEOFF_ALTITUDE_MIN_M,
     MavlinkBridge,
 )
-from .file_manager import open_folder
+from .file_manager import open_folder, open_url
 from .plugin_registry import (
     bundled_plugins_dir,
     ensure_user_plugins_dir,
@@ -174,6 +175,50 @@ SECURITY_HEADERS: tuple[tuple[str, str], ...] = (
     ("X-Frame-Options", "DENY"),
     ("Referrer-Policy", "no-referrer"),
 )
+# The content type of every file this server hands out, fixed rather than
+# asked of the host. ``mimetypes.guess_type`` reads the Windows registry, where
+# an installed editor or IDE can have registered ``.js`` as ``text/plain``; with
+# ``nosniff`` above, Chromium then refuses to run a single script and the app
+# is a blank window, on that one machine only. The table covers what src/ and
+# a plugin folder may serve (plugin_registry.ASSET_SUFFIXES); anything else
+# falls back to Python's own built-in table, which the registry cannot reach.
+_CONTENT_TYPES: dict[str, str] = {
+    ".html": "text/html",
+    ".js": "text/javascript",
+    ".mjs": "text/javascript",
+    ".css": "text/css",
+    ".json": "application/json",
+    ".map": "application/json",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".ico": "image/vnd.microsoft.icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+    ".ttf": "font/ttf",
+    ".otf": "font/otf",
+    ".wasm": "application/wasm",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".csv": "text/csv",
+}
+# An instance, not the module functions: it starts from the built-in table and
+# never takes in the registry or /etc/mime.types.
+_BUILTIN_TYPES = mimetypes.MimeTypes()
+
+
+def content_type(path: str | os.PathLike[str]) -> str:
+    """The Content-Type for a file served from disk, the same on every host."""
+    name = os.fspath(path)
+    fixed = _CONTENT_TYPES.get(os.path.splitext(name)[1].lower())
+    if fixed:
+        return fixed
+    return _BUILTIN_TYPES.guess_type(name)[0] or "application/octet-stream"
+
+
 # The two constant building-cell bodies. `pending` tells the frontend the
 # backend has queued the fetch and is worth asking again; its absence means
 # this cell is simply empty and asking again would be a loop.
@@ -839,6 +884,32 @@ def _build_rtk_service(mavlink: Any, store: Any, config: Any) -> Any:
         return None
 
 
+def _build_video_service(config: Any) -> Any:
+    """Build the camera video service, or None.
+
+    Constructed only: no ffmpeg runs until a camera window asks for a frame,
+    and none keeps running once no window does (see :mod:`corvus.video`).
+    """
+    try:
+        return video.VideoService(getattr(config, "video", None))
+    except Exception:  # noqa: BLE001 - never block server creation
+        logger.exception("video service unavailable; camera endpoints disabled")
+        return None
+
+
+def _build_local_runner() -> Any:
+    """Build the runner for programs started on this computer, or None.
+
+    Constructed only: nothing runs until a launcher button asks, and whatever
+    it starts is stopped at shutdown (see :mod:`corvus.local_shell`).
+    """
+    try:
+        return local_shell.LocalRunner()
+    except Exception:  # noqa: BLE001 - never block server creation
+        logger.exception("local runner unavailable; local launcher buttons disabled")
+        return None
+
+
 def _build_update_checker() -> Any:
     """Build the release-update checker, or None.
 
@@ -965,7 +1036,7 @@ def stop_backend(server: Any, log: Any = None) -> None:
     forwarder) first, so none of them is mid-operation when the bridge goes;
     then the auto-connect watcher, for the reason above; then the bridge
     itself (joins its threads, flushes the tlog); then SSH (joins reader
-    threads); then the state store; then the HTTP server and the tile caches,
+    threads); then the camera decoders (ffmpeg processes); then the state store; then the HTTP server and the tile caches,
     whose SQLite handles close last so no in-flight handler touches a closed
     database. Every step is guarded on its own, so a failure in one cannot
     skip the rest.
@@ -1050,6 +1121,25 @@ def stop_backend(server: Any, log: Any = None) -> None:
             log.info("ssh stopped")
         except Exception:
             log.exception("ssh shutdown failed")
+    # Programs a launcher button started on this computer: Corvus' own
+    # children, stopped with it.
+    local_runner = getattr(server, "local", None)
+    if local_runner is not None:
+        try:
+            log.info("stopping local programs …")
+            local_runner.shutdown()
+            log.info("local programs stopped")
+        except Exception:
+            log.exception("local programs shutdown failed")
+    # One ffmpeg per camera being watched, each with two reader threads.
+    video_svc = getattr(server, "video", None)
+    if video_svc is not None:
+        try:
+            log.info("stopping video …")
+            video_svc.shutdown()
+            log.info("video stopped")
+        except Exception:
+            log.exception("video shutdown failed")
     store = getattr(server, "store", None)
     if store is not None:
         try:
@@ -1156,23 +1246,29 @@ def _compose_remote_command(directory: str, command: str, detach: bool) -> str:
     return body
 
 
+def _param_metadata_cache_dir() -> str:
+    """Where the opt-in copies of PX4's parameter metadata are kept."""
+    return corvus_path("param-metadata")
+
+
 def _slugify(value: Any) -> str:
     """Lowercase, filename-safe slug of *value* ("" when there is nothing)."""
     text = re.sub(r"[^A-Za-z0-9]+", "-", str(value or "")).strip("-").lower()
     return text
 
 
-def _default_params_filename(vehicle_tag: str = "") -> str:
+def _default_params_filename(vehicle_tag: str = "", suffix: str = ".json") -> str:
     """Build a readable default name for an exported parameter file.
 
-    ``corvus-params_<vehicle>_<YYYY-MM-DD_HH-MM>.json``. Local time and a
+    ``corvus-params_<vehicle>_<YYYY-MM-DD_HH-MM><suffix>``. Local time and a
     vehicle tag rather than the old epoch-milliseconds name: a folder of
     exports has to be scannable by eye, and "which airframe was this?" is the
     first question asked of an old parameter file.
     """
     stamp = time.strftime("%Y-%m-%d_%H-%M")
     tag = _slugify(vehicle_tag)
-    return f"corvus-params_{tag}_{stamp}.json" if tag else f"corvus-params_{stamp}.json"
+    stem = f"corvus-params_{tag}_{stamp}" if tag else f"corvus-params_{stamp}"
+    return stem + suffix
 
 
 def _safe_filename(raw: Any, fallback: str, suffix: str = ".json") -> str:
@@ -1421,6 +1517,12 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     # RTK base station (corvus/rtk_service.py). None when the service could
     # not be built; the endpoints then report that rather than 500.
     rtk: Any = None
+    # Camera video (corvus/video.py). None when it could not be built; the
+    # endpoints then say video is unavailable rather than 500.
+    video: Any = None
+    # Programs a launcher button starts on this computer without a window
+    # (corvus/local_shell.py). The ones in a terminal are SSH-bridge sessions.
+    local: Any = None
 
     # SiK telemetry-radio configuration (corvus/sik_service.py). None when not
     # wired, same as `flash`; the endpoints then report the service as absent
@@ -1767,13 +1869,15 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             merged["remote_id"] = cfg.remote_id
         if cfg.plugins is not None:
             merged["plugins"] = cfg.plugins
+        if cfg.parameters is not None:
+            merged["parameters"] = cfg.parameters
 
         known = {
             "mavlink_connection", "http_port", "tile_cache_dir", "tlog_dir",
             "params_dir", "firmware_dir", "log_download_dir", "missions_dir",
             "tile_sources", "stream_rates", "ssh_connections",
             "theme", "map", "branding", "controls", "ui", "updates", "plugins",
-            "autoconnect", "battery", "remote_id",
+            "autoconnect", "battery", "remote_id", "parameters",
         }
         # Real config keys that belong to their own endpoint. A client that
         # POSTs back a whole GET /api/config body carries them along, and
@@ -1884,6 +1988,14 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                     merged["remote_id"] = nested
                 else:
                     merged["remote_id"] = dict(value)
+            elif key == "parameters":
+                if not isinstance(value, dict):
+                    return None, "parameters must be an object"
+                # Merged per key, like controls: one switch per POST.
+                base = merged.get("parameters")
+                merged["parameters"] = (
+                    {**base, **value} if isinstance(base, dict) else dict(value)
+                )
             elif key == "plugins":
                 if not isinstance(value, dict):
                     return None, "plugins must be an object"
@@ -1975,6 +2087,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             cfg.battery = new_cfg.battery
             cfg.remote_id = new_cfg.remote_id
             cfg.plugins = new_cfg.plugins
+            cfg.parameters = new_cfg.parameters
             self._save_live_config()
             self._refresh_autoconnect_session(cfg)
             self._refresh_battery_settings(cfg)
@@ -2261,12 +2374,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             logger.warning("refusing to open a non-web release URL: %r", url)
             self._send_json({"ok": False, "error": "no release page known"}, 404)
             return
-        try:
-            import webbrowser
-            opened = webbrowser.open(url)
-        except Exception:  # noqa: BLE001 - no browser is not a server error
-            logger.info("could not open %s in a browser", url, exc_info=True)
-            opened = False
+        opened = open_url(url)
         if not opened:
             self._send_json(
                 {"ok": False, "error": "no browser available", "url": url}, 200)
@@ -2362,9 +2470,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             logger.warning("plugin asset %s/%s unreadable: %s", plugin_id, rel, exc)
             self._send_json({"error": "not found"}, 404)
             return
-        ctype, _ = mimetypes.guess_type(str(target))
-        if ctype is None:
-            ctype = "application/octet-stream"
+        ctype = content_type(target)
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
@@ -3606,10 +3712,15 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # terminal header from this rather than assuming a default account,
         # so an operator connecting as someone other than "corvus" sees their
         # own user.
-        self._send_json({
+        reply: dict[str, Any] = {
             "ok": ok, "connected": ok,
             "name": name, "host": host, "port": port, "username": username,
-        })
+        }
+        if not ok:
+            # Every caller already shows `error`; without it a refused port, a
+            # host that is off and a wrong password all read the same.
+            reply["error"] = self.ssh.connect_error(name) or "Connection failed."
+        self._send_json(reply)
 
     @route("POST", "/api/config")
     def _api_config_update(self, payload: dict) -> None:
@@ -4093,12 +4204,35 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
         The dialog prefills from this so the operator sees the real path before
         committing, rather than a file vanishing into a browser download folder
-        they then have to hunt for. Always 200.
+        they then have to hunt for. ``format`` is the file the connected
+        stack's users exchange: QGroundControl's ``.params`` for PX4, Mission
+        Planner's ``.param`` for ArduPilot. Always 200.
         """
+        fmt = self._param_file_info()["format"]
         self._send_json({
             "dir": _params_export_dir(self._live_config()),
-            "filename": _default_params_filename(self._vehicle_tag()),
+            "filename": _default_params_filename(
+                self._vehicle_tag(), param_files.PARAM_FILE_SUFFIX[fmt]),
+            "format": fmt,
+            "formats": [
+                {"id": key, "suffix": suffix}
+                for key, suffix in param_files.PARAM_FILE_SUFFIX.items()
+            ],
         })
+
+    def _param_file_info(self) -> dict[str, Any]:
+        """The connected vehicle's parameter file details, or PX4's without one."""
+        info = None
+        if self.mavlink is not None and hasattr(self.mavlink, "param_file_info"):
+            try:
+                info = self.mavlink.param_file_info()
+            except Exception:  # noqa: BLE001 - an export must never 500 on a header
+                logger.debug("param_file_info failed", exc_info=True)
+        info = dict(info or {})
+        if info.get("format") not in param_files.PARAM_FILE_SUFFIX:
+            info["format"] = autopilot.dialect_for_stack(
+                autopilot.STACK_PX4).param_file_format
+        return info
 
     def _vehicle_tag(self) -> str:
         """Short identifier for the connected vehicle, or "" when unknown.
@@ -4127,28 +4261,64 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         ``dir`` and ``filename`` are optional; both default to what
         ``GET /api/params/export/target`` reports. The filename is sanitized to
         a single path component, so a caller cannot write outside *dir*.
+        ``format`` is ``qgc``, ``mission-planner`` or ``json`` (the default,
+        for a caller that predates the choice); the filename's suffix follows
+        it. See :mod:`corvus.param_files`.
         """
         params = payload.get("params")
         if not isinstance(params, list) or not params:
             self._send_json({"ok": False, "error": "params must be a non-empty list"}, 400)
             return
+        fmt = payload.get("format", param_files.FORMAT_JSON)
+        if fmt not in param_files.PARAM_FILE_SUFFIX:
+            self._send_json({"ok": False, "error": f"unknown format {fmt!r}"}, 400)
+            return
+        for index, entry in enumerate(params):
+            value = entry.get("value") if isinstance(entry, dict) else None
+            name = entry.get("name") if isinstance(entry, dict) else None
+            if (not isinstance(name, str) or not name or isinstance(value, bool)
+                    or not isinstance(value, (int, float))):
+                self._send_json(
+                    {"ok": False, "error": f"invalid parameter at index {index}"}, 400)
+                return
 
         raw_dir = payload.get("dir")
         target_dir = raw_dir if isinstance(raw_dir, str) and raw_dir.strip() else \
             _params_export_dir(self._live_config())
         target_dir = os.path.expanduser(target_dir.strip())
 
+        suffix = param_files.PARAM_FILE_SUFFIX[fmt]
         filename = _safe_filename(
-            payload.get("filename"), _default_params_filename(self._vehicle_tag()))
+            payload.get("filename"),
+            _default_params_filename(self._vehicle_tag(), suffix), suffix)
 
-        doc = {
-            "product": "Corvus GCS",
-            "version": get_version(),
-            "exported_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "vehicle": self._vehicle_tag(),
-            "param_count": len(params),
-            "params": params,
-        }
+        exported_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        if fmt == param_files.FORMAT_QGC:
+            info = self._param_file_info()
+            text = param_files.write_qgc(
+                params,
+                system_id=int(info.get("system_id") or 1),
+                component_id=int(info.get("component_id") or 1),
+                stack=str(info.get("stack") or ""),
+                vehicle=str(info.get("vehicle") or ""),
+                version=str(info.get("version") or ""),
+                git_hash=str(info.get("git_hash") or ""),
+            )
+        elif fmt == param_files.FORMAT_MISSION_PLANNER:
+            vehicle = self._vehicle_tag()
+            text = param_files.write_mission_planner(params, header="\n".join((
+                f"Corvus GCS {get_version()} parameter export",
+                f"Exported {exported_at}" + (f", vehicle {vehicle}" if vehicle else ""),
+            )))
+        else:
+            text = param_files.write_json({
+                "product": "Corvus GCS",
+                "version": get_version(),
+                "exported_at": exported_at,
+                "vehicle": self._vehicle_tag(),
+                "param_count": len(params),
+                "params": params,
+            })
         try:
             os.makedirs(target_dir, exist_ok=True)
             path = os.path.join(target_dir, filename)
@@ -4156,9 +4326,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             # it looks importable. Same temp-then-replace shape as save_config.
             fd, tmp_name = tempfile.mkstemp(prefix=filename + ".", suffix=".tmp", dir=target_dir)
             try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(doc, f, indent=2, ensure_ascii=False)
-                    f.write("\n")
+                with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(text)
                 os.replace(tmp_name, path)
             except BaseException:
                 try:
@@ -4179,8 +4348,61 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         logger.info("exported %d parameters to %s", len(params), path)
         self._send_json({
             "ok": True, "path": path, "dir": target_dir,
-            "filename": filename, "param_count": len(params),
+            "filename": filename, "param_count": len(params), "format": fmt,
         })
+
+    @route("GET", "/api/params/metadata")
+    def _api_params_metadata(self) -> None:
+        """The vehicle's parameter metadata: defaults, and on PX4 descriptions.
+
+        ``{"state","error","received","size","count"}``; ``state`` is idle,
+        loading, ready or unavailable, and ``params`` (name -> metadata) comes
+        with ready. Read from the vehicle over MAVLink FTP once
+        ``POST /api/params/metadata`` asked for it; see
+        :mod:`corvus.param_metadata`. Always 200.
+        """
+        status = getattr(self.mavlink, "param_metadata_status", None)
+        if status is None:
+            self._send_json({"state": "idle", "error": "not connected",
+                             "received": 0, "size": 0, "count": 0})
+            return
+        self._send_json(status(include_params=True))
+
+    @route("POST", "/api/params/metadata")
+    def _api_params_metadata_fetch(self, payload: dict) -> None:
+        """Start reading the parameter metadata from the vehicle in the background.
+
+        Idempotent: a fetch already running or finished for this link is left
+        alone, a failed one is tried again. The answer is the status, without
+        the metadata itself; poll ``GET /api/params/metadata`` for that.
+        """
+        start = getattr(self.mavlink, "start_param_metadata", None)
+        if start is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        cache = self._param_metadata_cache() if self._cache_param_defaults() else None
+        self._send_json(dict(start(cache=cache), ok=True))
+
+    def _cache_param_defaults(self) -> bool:
+        """Has the operator switched on the copy of the parameter metadata?"""
+        return bool((self._live_config().parameters or {}).get("cache_defaults"))
+
+    def _param_metadata_cache(self) -> param_metadata.ParamMetadataCache:
+        return param_metadata.ParamMetadataCache(_param_metadata_cache_dir())
+
+    @route("GET", "/api/params/metadata/cache")
+    def _api_params_metadata_cache(self) -> None:
+        """``{"enabled","dir","files","bytes"}``: the copies the switch keeps."""
+        info = self._param_metadata_cache().info()
+        self._send_json(dict(info, enabled=self._cache_param_defaults()))
+
+    @route("POST", "/api/params/metadata/cache/clear")
+    def _api_params_metadata_cache_clear(self, payload: dict) -> None:
+        """Delete every kept copy; the next editor reads the file from the vehicle."""
+        cache = self._param_metadata_cache()
+        removed = cache.clear()
+        self._send_json(dict(cache.info(), ok=True, removed=removed,
+                             enabled=self._cache_param_defaults()))
 
     @route("POST", "/api/params/set")
     def _api_params_set(self, payload: dict) -> None:
@@ -5192,6 +5414,346 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             return
         self._send_json({"ok": True, "status": self.rtk.status()})
 
+    # ---- Programs on this computer (launcher buttons) ----
+    def _local_only(self) -> bool:
+        """Refuse, and say why, unless the request came from this computer.
+
+        Running a program here is nothing the operator cannot already do on
+        their own laptop, and a process on it already runs as them. It is not
+        something another machine may do: CORVUS_BIND can open the rest of the
+        API to the flight-line network (whoever reaches it can fly the
+        aircraft), but never this. Cross-site pages are already refused by
+        _mutating_request_allowed, and a rebound DNS name by the Host check.
+        """
+        client = getattr(self, "client_address", None)
+        host = str(client[0]) if client else ""
+        if host in ("127.0.0.1", "::1", "::ffff:127.0.0.1") or host.startswith("127."):
+            return True
+        self._send_json({"ok": False, "error":
+                         "Programs on this computer can only be started from this computer."}, 403)
+        return False
+
+    @route("GET", "/api/local/status")
+    def _api_local_status(self) -> None:
+        """Whether a terminal on this computer is possible here, and why not."""
+        caps = local_shell.capabilities()
+        caps["background"] = self.local is not None
+        caps["running"] = self.local.count() if self.local is not None else 0
+        self._send_json(caps)
+
+    @route("POST", "/api/local/connect")
+    def _api_local_connect(self, payload: dict) -> None:
+        """Open (or replace) a shell on this computer under ``name``.
+
+        ``{name, directory?}``. It becomes a session like an SSH one, so
+        ``/api/ssh/send``, ``/resize``, ``/stream``, ``/disconnect`` and the
+        terminal windows all work on it by that name.
+        """
+        if not self._local_only():
+            return
+        name = payload.get("name")
+        directory = payload.get("directory", "")
+        if not isinstance(name, str) or not name.strip() or len(name) > 128:
+            self._send_json({"ok": False, "error": "name must be a non-empty string"}, 400)
+            return
+        if not isinstance(directory, str):
+            directory = ""
+        if self.ssh is None:
+            self._send_json({"ok": False, "connected": False, "error": "terminals are unavailable"}, 503)
+            return
+        connected = self.ssh.connect_local(name, directory)
+        answer: dict[str, Any] = {"ok": connected, "connected": connected, "name": name}
+        if not connected:
+            answer["error"] = self.ssh.connect_error(name) or "The shell could not be started."
+        self._send_json(answer)
+
+    @route("POST", "/api/local/run")
+    def _api_local_run(self, payload: dict) -> None:
+        """Start a program on this computer without a window.
+
+        ``{command, directory?}``. Answers at once when it is still running
+        (``{ok, pid}``), or with its exit code and last output when it ended
+        within a second (``{ok, exited, code, output}``). It is stopped when
+        Corvus closes.
+        """
+        if not self._local_only():
+            return
+        command = payload.get("command")
+        directory = payload.get("directory", "")
+        if not isinstance(command, str) or not isinstance(directory, str):
+            self._send_json({"ok": False, "error": "command and directory must be strings"}, 400)
+            return
+        if self.local is None:
+            self._send_json({"ok": False, "error": "Programs on this computer are unavailable."}, 503)
+            return
+        result = self.local.run(command, directory)
+        result["command"] = command
+        self._send_json(result)
+
+    # ---- Camera video ----
+    def _video_status(self) -> dict[str, Any]:
+        """The Video page's whole state, or an unavailable one without a service."""
+        if self.video is None:
+            return {
+                "available": False,
+                "reason": "Video is unavailable in this build.",
+                "ffmpeg": {"path": "", "source": "", "version": "", "configured": ""},
+                "streams": [
+                    dict(video.public_stream(s), state=video.STATE_UNAVAILABLE, message="")
+                    for s in video.settings(getattr(self._live_config(), "video", None))["streams"]
+                ],
+                "max_streams": video.MAX_STREAMS,
+                "schemes": list(video.SCHEMES),
+                "transports": list(video.TRANSPORTS),
+            }
+        return self.video.status()
+
+    @route("GET", "/api/video/status")
+    def _api_video_status(self) -> None:
+        """Every camera with its state, and whether there is an ffmpeg to decode with.
+
+        Always 200 so the page can poll it. Never carries a password.
+        """
+        try:
+            self._send_json(self._video_status())
+        except Exception as exc:  # noqa: BLE001 - a status read must never 500
+            logger.exception("video status failed")
+            self._send_json({"ok": False, "error": f"video status failed: {exc}"}, 500)
+
+    @route("GET", "/api/video/frame")
+    def _api_video_frame(self) -> None:
+        """The next frame of one camera, as ``image/jpeg``, or its state as JSON.
+
+        ``?id=`` names the camera and ``?after=`` the last frame number the
+        window has. The request waits up to ``video.FRAME_WAIT_S`` for a newer
+        frame, so a window asking in a loop gets every frame as it is decoded
+        while holding a connection for no longer than one frame interval (see
+        :mod:`corvus.video` for why this is not one endless stream). With no
+        new frame in time the answer is ``{"state", "message", "seq"}``.
+
+        Asking is also what keeps the camera's ffmpeg running: it is started by
+        the first request and stopped a few seconds after the last one. That
+        makes this the one GET with a side effect, so it gets the check the
+        POSTs do: a page on another site cannot start a decoder from an <img>.
+        """
+        headers = getattr(self, "headers", None)
+        if headers is not None and str(headers.get("Sec-Fetch-Site", "")).lower() == "cross-site":
+            self._send_json({"error": "cross-site request forbidden"}, 403)
+            return
+        params = parse_qs(urlparse(self.path).query)
+        stream_id = (params.get("id") or [""])[0]
+        try:
+            after = int((params.get("after") or ["0"])[0])
+        except ValueError:
+            after = 0
+        if self.video is None:
+            self._send_json({"state": video.STATE_UNAVAILABLE, "seq": 0,
+                             "message": "Video is unavailable in this build."}, 503)
+            return
+        try:
+            result = self.video.frame(stream_id, after, stopping=self._sse_stopping)
+        except KeyError:
+            self._send_json({"error": "no such camera"}, 404)
+            return
+        except video.WrongKind as exc:
+            self._send_json({"error": str(exc)}, 409)
+            return
+        jpeg = result.get("jpeg")
+        if not jpeg:
+            self._send_json(result)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(jpeg)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Video-Seq", str(result["seq"]))
+        self._send_cors()
+        self.end_headers()
+        try:
+            self.wfile.write(jpeg)
+        except CLIENT_GONE_ERRORS:
+            pass
+
+    def _save_video(self, streams: list[dict[str, Any]], ffmpeg: str) -> dict[str, Any]:
+        """Store the camera list and persist it; return what was stored.
+
+        Called with ``_config_write_lock`` held, so two saves cannot interleave
+        their read-modify-write of the list. The caller hands the result to
+        the service once the lock is released.
+        """
+        cfg = self._live_config()
+        cfg.video = video.settings({"streams": streams, "ffmpeg": ffmpeg})
+        self._save_live_config()
+        return cfg.video
+
+    def _apply_video(self, stored: dict[str, Any]) -> None:
+        if self.video is not None:
+            self.video.apply_settings(stored)
+
+    @route("POST", "/api/video/streams")
+    def _api_video_streams_upsert(self, payload: dict) -> None:
+        """Add a camera, or replace the one named by ``id``. Does not open it.
+
+        ``kind`` is ``"rtsp"`` (decoded here by ffmpeg, the default) or
+        ``"webrtc"`` (a WHEP address the window plays itself).
+
+        ``password`` follows the rule the SSH connections use, because the
+        status never sends it to the browser: an omitted key keeps the stored
+        one, a sent one (including ``""``) replaces it. With one exception: a
+        camera moved to another host does not take its password along, because
+        that would send one camera's password to a different machine. The
+        answer then carries a ``warning`` saying so. Credentials typed into the
+        address itself (``rtsp://user:pass@host/…``) are taken out of it and
+        stored apart, so the address can be shown and the password cannot.
+        """
+        name = payload.get("name", "")
+        url = payload.get("url", "")
+        username = payload.get("username", "")
+        if not isinstance(name, str) or not isinstance(url, str) or not isinstance(username, str):
+            self._send_json({"ok": False, "error": "name, url and username must be strings"}, 400)
+            return
+        if len(name.strip()) > video.MAX_NAME_LEN:
+            self._send_json({"ok": False, "error": "The name is too long."}, 400)
+            return
+        kind = payload.get("kind", video.KIND_RTSP)
+        if kind not in video.KINDS:
+            self._send_json({"ok": False, "error": "kind must be rtsp or webrtc"}, 400)
+            return
+        clean_url, url_user, url_password = video.split_credentials(url)
+        problem = video.url_problem(clean_url, kind)
+        if problem:
+            self._send_json({"ok": False, "error": problem}, 400)
+            return
+        transport = payload.get("transport", video.DEFAULT_TRANSPORT)
+        if transport not in video.TRANSPORTS:
+            self._send_json({"ok": False, "error": "transport must be tcp or udp"}, 400)
+            return
+        stream_id = payload.get("id")
+        if not isinstance(stream_id, str):
+            stream_id = ""
+
+        with _config_write_lock:
+            current = video.settings(getattr(self._live_config(), "video", None))
+            streams = current["streams"]
+            existing = next((s for s in streams if s["id"] == stream_id), None) if stream_id else None
+            if stream_id and existing is None:
+                self._send_json({"ok": False, "error": "That camera is no longer saved."}, 404)
+                return
+            if existing is None and len(streams) >= video.MAX_STREAMS:
+                self._send_json({"ok": False,
+                                 "error": f"At most {video.MAX_STREAMS} cameras can be saved."}, 400)
+                return
+            warning = ""
+            if "password" in payload:
+                password = payload["password"] if isinstance(payload["password"], str) else ""
+            else:
+                password = existing.get("password", "") if existing else ""
+                if password and not video.same_origin(existing["url"], clean_url):
+                    password = ""
+                    warning = ("The camera moved to another host, so its password was not "
+                               "kept. Enter it again if the new one needs it.")
+            if url_user:
+                username, password = url_user, url_password or password
+            entry = video.coerce_stream({
+                "id": existing["id"] if existing else video.new_stream_id(),
+                "name": name,
+                "url": clean_url,
+                "username": username.strip(),
+                "password": password,
+                "transport": transport,
+                "kind": kind,
+            })
+            if entry is None:
+                self._send_json({"ok": False, "error": "That camera cannot be saved."}, 400)
+                return
+            if existing is not None:
+                streams = [entry if s["id"] == entry["id"] else s for s in streams]
+            else:
+                streams.append(entry)
+            stored = self._save_video(streams, current["ffmpeg"])
+        self._apply_video(stored)
+        answer = {"ok": True, "id": entry["id"], "status": self._video_status()}
+        if warning:
+            answer["warning"] = warning
+        self._send_json(answer)
+
+    @route("POST", "/api/video/streams/remove")
+    def _api_video_streams_remove(self, payload: dict) -> None:
+        """Remove a camera by ``id``; its decoder is stopped. Idempotent."""
+        stream_id = payload.get("id")
+        if not isinstance(stream_id, str) or not stream_id:
+            self._send_json({"ok": False, "error": "id must be a non-empty string"}, 400)
+            return
+        with _config_write_lock:
+            current = video.settings(getattr(self._live_config(), "video", None))
+            streams = [s for s in current["streams"] if s["id"] != stream_id]
+            stored = self._save_video(streams, current["ffmpeg"])
+        self._apply_video(stored)
+        self._send_json({"ok": True, "status": self._video_status()})
+
+    @route("POST", "/api/video/webrtc/offer")
+    def _api_video_webrtc_offer(self, payload: dict) -> None:
+        """Pass a camera window's WebRTC offer to the camera's WHEP server.
+
+        ``{id, sdp}`` in; ``{ok, sdp, session}`` out, where ``sdp`` is the
+        server's answer and ``session`` an opaque token for
+        ``/api/video/webrtc/close``. The request is made from here rather than
+        from the window so the camera's password never reaches the browser,
+        and the answer never names the session URL it would be sent to.
+        """
+        stream_id = payload.get("id")
+        sdp = payload.get("sdp")
+        if not isinstance(stream_id, str) or not stream_id or not isinstance(sdp, str):
+            self._send_json({"ok": False, "error": "id and sdp must be strings"}, 400)
+            return
+        if self.video is None:
+            self._send_json({"ok": False, "error": "Video is unavailable in this build."}, 503)
+            return
+        try:
+            result = self.video.whep_offer(stream_id, sdp)
+        except KeyError:
+            self._send_json({"ok": False, "error": "no such camera"}, 404)
+            return
+        except video.WrongKind as exc:
+            self._send_json({"ok": False, "error": str(exc)}, 409)
+            return
+        status = result.pop("status", 200) if not result.get("ok") else 200
+        self._send_json(result, status)
+
+    @route("POST", "/api/video/webrtc/close")
+    def _api_video_webrtc_close(self, payload: dict) -> None:
+        """End a WebRTC session a camera window opened. Idempotent."""
+        token = payload.get("session")
+        if not isinstance(token, str) or not token:
+            self._send_json({"ok": False, "error": "session must be a non-empty string"}, 400)
+            return
+        closed = self.video.whep_close(token) if self.video is not None else False
+        self._send_json({"ok": True, "closed": closed})
+
+    @route("POST", "/api/video/settings")
+    def _api_video_settings(self, payload: dict) -> None:
+        """Set the ffmpeg to decode with. ``""`` means find one by itself.
+
+        A path that is not an executable file is refused rather than stored,
+        so the page never has to explain a setting that was saved broken.
+        """
+        path = payload.get("ffmpeg", "")
+        if not isinstance(path, str):
+            self._send_json({"ok": False, "error": "ffmpeg must be a string"}, 400)
+            return
+        path = path.strip()
+        if path:
+            resolved, _ = video.resolve_ffmpeg(path)
+            if not resolved:
+                self._send_json({"ok": False,
+                                 "error": "There is no program at that path that can be run."}, 400)
+                return
+        with _config_write_lock:
+            current = video.settings(getattr(self._live_config(), "video", None))
+            stored = self._save_video(current["streams"], path)
+        self._apply_video(stored)
+        self._send_json({"ok": True, "status": self._video_status()})
+
     # ---- Second-station MAVLink forwarding ----
     @route("GET", "/api/forwarding")
     def _api_forwarding_status(self) -> None:
@@ -5886,6 +6448,116 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 session = self.ssh.get_session(attached_name)
                 if session:
                     session.remove_sub(listener)
+
+    @route("GET", "/api/ssh/ws")
+    def _ws_ssh(self) -> None:
+        """One terminal over a WebSocket: output out, keystrokes and size in.
+
+        The same as ``/api/ssh/stream`` with ``/api/ssh/send`` and
+        ``/api/ssh/resize``, on one connection that is not one of the six a
+        browser allows per host (see :mod:`corvus.websocket` for why that
+        matters). JSON messages: ``{"type": "output", "text"}`` and
+        ``{"type": "closed", "name"}`` to the browser, ``{"type": "input",
+        "data"}`` and ``{"type": "resize", "cols", "rows"}`` from it.
+
+        Input writes to a shell, so the opening request is held to what the
+        POSTs are held to: a page on another site is refused before the
+        upgrade. ``?name=`` is required; a session that is not there, or not
+        connected, is answered with ``closed`` right after the upgrade, so
+        the terminal can tell it apart from a server that has no WebSocket.
+        """
+        if not self._mutating_request_allowed():
+            return
+        problem = websocket.handshake_problem(self.headers)
+        if problem:
+            self._send_json({"ok": False, "error": problem}, 400)
+            return
+        name = (parse_qs(urlparse(self.path).query).get("name") or [""])[0]
+        self.close_connection = True
+        self._response_started = True
+        self.wfile.write(websocket.handshake_response(self.headers.get("Sec-WebSocket-Key", "")))
+        self.wfile.flush()
+        ws = websocket.WebSocket(self.connection)
+
+        session = self.ssh.get_session(name) if (self.ssh is not None and name) else None
+        if session is None or not session.connected:
+            try:
+                ws.send_text(json.dumps({"type": "closed", "name": name or None}))
+            except websocket.Closed:
+                pass
+            ws.close()
+            return
+
+        q = _BoundedSseBuffer(SSH_SSE_CAPACITY)
+        listener = q.put_fifo
+        done = threading.Event()
+        session.add_sub(listener)
+        writer = threading.Thread(
+            target=self._ws_ssh_writer, args=(ws, q, name, done),
+            name=f"ssh-ws-{name}", daemon=True)
+        writer.start()
+        try:
+            while not done.is_set() and not self._sse_stopping():
+                try:
+                    text = ws.receive(1.0)
+                except websocket.Closed:
+                    break
+                if text is not None:
+                    self._ws_ssh_input(name, text)
+        finally:
+            done.set()
+            session.remove_sub(listener)
+            writer.join(2.0)
+            ws.close(websocket.CLOSE_GOING_AWAY if self._sse_stopping() else websocket.CLOSE_NORMAL)
+
+    def _ws_ssh_writer(self, ws: websocket.WebSocket, q: _BoundedSseBuffer,
+                       name: str, done: threading.Event) -> None:
+        """Send a session's output as it comes; say so when the session ends."""
+        idle = 0.0
+        try:
+            while not done.is_set():
+                try:
+                    text = q.get(timeout=1.0)
+                    idle = 0.0
+                    ws.send_text(json.dumps({"type": "output", "text": text}))
+                    continue
+                except queue.Empty:
+                    pass
+                if self._sse_stopping():
+                    break
+                live = self.ssh.get_session(name) if self.ssh is not None else None
+                if live is None or not live.connected:
+                    # What the shell printed on its way out comes before the end.
+                    for text in q.drain():
+                        ws.send_text(json.dumps({"type": "output", "text": text}))
+                    ws.send_text(json.dumps({"type": "closed", "name": name}))
+                    break
+                idle += 1.0
+                if idle >= 15.0:
+                    idle = 0.0
+                    ws.ping()
+        except websocket.Closed:
+            pass
+        finally:
+            done.set()
+
+    def _ws_ssh_input(self, name: str, text: str) -> None:
+        """Apply one message from a terminal. Anything malformed is ignored."""
+        try:
+            msg = json.loads(text)
+        except ValueError:
+            return
+        if not isinstance(msg, dict) or self.ssh is None:
+            return
+        kind = msg.get("type")
+        if kind == "input":
+            data = msg.get("data")
+            if isinstance(data, str) and data:
+                self.ssh.send(name, data)
+        elif kind == "resize":
+            dims = [msg.get("cols"), msg.get("rows")]
+            if all(isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 1000 for v in dims):
+                self.ssh.resize(name, dims[0], dims[1])
 
     @route("GET", "/api/firmware/progress")
     def _sse_firmware(self) -> None:
@@ -6583,9 +7255,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         if not file_path.is_file():
             self._send_json({"error": "not found"}, 404)
             return
-        ctype, _ = mimetypes.guess_type(str(file_path))
-        if ctype is None:
-            ctype = "application/octet-stream"
+        ctype = content_type(file_path)
         # Validators, so the browser can ask "still the same?" instead of
         # being handed the whole file again. src/ is ~4.8 MB and index.html
         # pulls 38 blocking scripts, including maplibre (1.0 MB), plotly
@@ -6800,6 +7470,21 @@ class CorvusServer(socketserver.ThreadingTCPServer):
                 logs.shutdown()
             except Exception:  # noqa: BLE001 - shutdown must not raise
                 logger.exception("log service shutdown failed")
+        # Programs started on this computer. Same reason as the services above.
+        local_runner = getattr(self, "local", None)
+        if local_runner is not None:
+            try:
+                local_runner.shutdown()
+            except Exception:  # noqa: BLE001 - shutdown must not raise
+                logger.exception("local programs shutdown failed")
+        # ffmpeg processes. Same reason as the services above: a caller that
+        # only has the server must not be left with a decoder running.
+        video_svc = getattr(self, "video", None)
+        if video_svc is not None:
+            try:
+                video_svc.shutdown()
+            except Exception:  # noqa: BLE001 - shutdown must not raise
+                logger.exception("video shutdown failed")
         try:
             super().shutdown()
         except Exception:  # noqa: BLE001 - shutdown must not raise
@@ -6872,6 +7557,26 @@ def bind_host() -> str:
     return host
 
 
+def ipv6_loopback_taken(port: int) -> bool:
+    """Whether another program holds *port* on ``[::1]``.
+
+    The UI is opened as ``http://localhost:<port>``, and macOS and Windows
+    resolve ``localhost`` to ``::1`` first. This server listens on
+    ``127.0.0.1`` only, so a program listening on ``[::1]`` (or on ``[::]``)
+    with the same port gets the window's requests instead: the app shows
+    another program's page, or a blank one, and says nothing. A port taken
+    there is treated as taken. A host without IPv6 has nothing to take.
+    """
+    if not socket.has_ipv6:
+        return False
+    try:
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as probe:
+            probe.bind(("::1", int(port)))
+    except OSError as exc:
+        return exc.errno == errno.EADDRINUSE
+    return False
+
+
 def bind_server(
     port: int,
     handler: type | None = None,
@@ -6907,6 +7612,9 @@ def bind_server(
     first = int(port)
     last_exc: OSError | None = None
     for candidate in range(first, first + max(1, int(span))):
+        if host == DEFAULT_BIND_HOST and ipv6_loopback_taken(candidate):
+            logger.info("port %d is taken on [::1]; looking for a free one", candidate)
+            continue
         try:
             return server_cls((host, candidate), handler)
         except OSError as exc:
@@ -7147,6 +7855,14 @@ def create_server(
     updates = _build_update_checker()
     CorvusHandler.updates = updates
 
+    # Camera video. Nothing runs until a camera window asks for a frame.
+    video_svc = _build_video_service(config)
+    CorvusHandler.video = video_svc
+
+    # Launcher buttons that run on this computer. Nothing runs until one does.
+    local_runner = _build_local_runner()
+    CorvusHandler.local = local_runner
+
     # bind_server, not a bare constructor: a port that is already taken moves
     # to the next one instead of raising out of create_server and killing the
     # launch. Callers that care which port they got read server_address[1].
@@ -7162,6 +7878,8 @@ def create_server(
     server.logs = logs
     server.forwarder = forwarder
     server.updates = updates
+    server.video = video_svc
+    server.local = local_runner
     server.tile_caches = tile_caches
     server.tile_downloader = tile_downloader
     server.buildings = buildings

@@ -58,6 +58,7 @@ Corvus.mission = (function () {
   const SPEED_MIN_MS = 0.5;
   const SPEED_MAX_MS = 100;
   const MAX_ITEMS = 255;
+  const POINT_NAME_MAX = 40;
 
   // The altitude a freshly placed point gets. 30 m is a working height for
   // almost everything and is below the 120 m ceiling the takeoff button
@@ -83,6 +84,10 @@ Corvus.mission = (function () {
     { value: -1, label: "Counter-clockwise" },
   ];
 
+  // What cannot be part of a one-line name: control characters and the line
+  // and paragraph separators. Mirrors _POINT_NAME_JUNK_RE in corvus/mission.py.
+  const POINT_NAME_JUNK = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g;
+
   // One row per item type. `params` names the editable fields and their
   // bounds; the names are the contract with ITEM_SPECS in corvus/mission.py.
   // A point's own SPEED is not in here, for the same reason it is not in
@@ -91,7 +96,7 @@ Corvus.mission = (function () {
   const TYPES = {
     takeoff: {
       label: "Takeoff", icon: "plane-takeoff", position: true, color: "healthy",
-      hint: "Climbs to this height over the launch point, then flies on.",
+      hint: "Takes off from the start point and climbs to this height before flying on.",
       params: { pitch: { label: "Climb pitch", unit: "°", min: 0, max: 45, step: 1, def: 0 } },
     },
     waypoint: {
@@ -137,18 +142,30 @@ Corvus.mission = (function () {
   // The tools on the map's own rail, top left. "select" is the resting state:
   // a map click with no tool armed selects nothing and changes nothing, which
   // is what makes panning around a finished plan safe.
+  //
+  // There is no TAKEOFF tool. The start and the takeoff were two tools for
+  // one place, and which one to press first was a question the operator had
+  // to be told the answer to. START places both: where the aircraft stands,
+  // and the climb from there that is the mission's first item.
   const TOOLS = [
     { id: "select", icon: "mouse-pointer-2", label: "SELECT", title: "Select and move points" },
-    { id: "home", icon: "flag", label: "START", title: "Set the start point" },
+    { id: "home", icon: "plane-takeoff", label: "START", title: "Set the start: the aircraft takes off here" },
     { id: "divider" },
-    { id: "takeoff", icon: "plane-takeoff", label: "TAKEOFF", title: "Add a takeoff" },
     { id: "waypoint", icon: "map-pin", label: "POINT", title: "Add a waypoint" },
     { id: "loiter_turns", icon: "rotate-cw", label: "CIRCLE", title: "Add a circle (orbit)" },
     { id: "loiter_time", icon: "timer", label: "HOLD", title: "Add a timed hold" },
-    { id: "land", icon: "plane-landing", label: "LAND", title: "Add a landing" },
+    { id: "land", icon: "plane-landing", label: "LAND", title: "End the mission with a landing" },
     { id: "divider2" },
-    { id: "rtl", icon: "house", label: "RETURN", title: "Append a return to launch" },
+    { id: "rtl", icon: "house", label: "RETURN", title: "End the mission with a return to the start" },
   ];
+
+  // The item types that end a mission. Nothing after one is flown, so a plan
+  // has at most one and it is always last.
+  const ENDS = { land: true, rtl: true };
+  const END_NAMES = { land: "a landing", rtl: "a return" };
+  // How close a takeoff has to stand to the start to BE the start's takeoff,
+  // rather than a separate place the aircraft flies to before it climbs.
+  const TIED_M = 0.5;
 
   // The plan's colour and the dark casing under it, both from css/themes.css
   // where they are defined once for every theme — see --plan there for why
@@ -267,6 +284,8 @@ Corvus.mission = (function () {
   let mapEl = null;
   let profileEl = null;
   let listEl = null;
+  let listHeadEl = null;
+  let sideScrollEl = null;
   let detailEl = null;
   let summaryEl = null;
   let issuesEl = null;
@@ -571,6 +590,7 @@ Corvus.mission = (function () {
         // backend has to refuse, and sending 0 would be PX4's "no change"
         // dressed up as a speed.
         if (item.speed != null) out.speed = item.speed;
+        if (item.name) out.name = item.name;
         return out;
       }),
     };
@@ -612,9 +632,28 @@ Corvus.mission = (function () {
       // a 0.5 m/s crawl out of nothing.
       item.speed = raw.speed == null
         ? null : clampNumber(raw.speed, SPEED_MIN_MS, SPEED_MAX_MS, SPEED_MIN_MS);
+      item.name = cleanPointName(raw.name);
       snapDirection(item);
       items.push(item);
     });
+  }
+
+  /** A point's name as corvus/mission.py's clean_point_name stores it, or ""
+   *  for none. Counted in code points, as Python counts, so a name that ends
+   *  in an emoji is cut in the same place on both sides. */
+  function cleanPointName(raw) {
+    if (typeof raw !== "string") return "";
+    const text = raw.replace(POINT_NAME_JUNK, " ").replace(/\s+/g, " ").trim();
+    return Array.from(text).slice(0, POINT_NAME_MAX).join("").trim();
+  }
+
+  /** What a point is called on screen: its own name, else its kind. */
+  function pointName(item) {
+    return item.name || TYPES[item.type].label;
+  }
+
+  function escapeMarkup(text) {
+    return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
   // =====================================================================
@@ -627,36 +666,124 @@ Corvus.mission = (function () {
 
   /** The altitude a new point should get: the one before it, so a route drawn
    *  left to right stays level unless the operator says otherwise. */
-  function suggestedAltitude() {
-    for (let i = items.length - 1; i >= 0; i -= 1) {
+  function suggestedAltitude(before) {
+    const from = before == null ? items.length : before;
+    for (let i = from - 1; i >= 0; i -= 1) {
       const spec = TYPES[items[i].type];
       if (spec.position && items[i].type !== "land") return items[i].alt;
     }
     return DEFAULT_ALT_M;
   }
 
-  function addItem(type, lngLat) {
+  /** Where the mission ends: the index of its first landing or return, or -1. */
+  function endIndex() {
+    return items.findIndex((item) => ENDS[item.type]);
+  }
+
+  /** The takeoff the start point carries: the first item, when it is a
+   *  takeoff standing on the start. Null for a plan with no start, a plan for
+   *  an aircraft already in the air, or an older file whose takeoff is
+   *  somewhere else. */
+  function startTakeoff() {
+    const first = items[0];
+    if (!home || !first || first.type !== "takeoff") return null;
+    return distanceM(home, first) <= TIED_M ? first : null;
+  }
+
+  /** Why the tool *id* cannot be used right now, or null when it can. A tool
+   *  that would draw a plan nobody can fly is greyed with the reason on it,
+   *  rather than letting the operator build one and warning afterwards. */
+  function toolBlocked(id) {
+    if (id === "select" || id === "home") return null;
+    if (!home) return "Set the start first. The mission begins there.";
+    if (ENDS[id]) {
+      const end = endIndex();
+      if (end >= 0) {
+        return `The mission already ends with ${END_NAMES[items[end].type]}. `
+          + "Remove it to end the mission differently.";
+      }
+    }
+    return null;
+  }
+
+  /** Add one item. It goes in before the mission's ending when there is one,
+   *  so a point drawn after the landing is still flown, and the landing stays
+   *  the last thing the aircraft does. *at* overrides that. */
+  function addItem(type, lngLat, at) {
     if (items.length >= MAX_ITEMS) {
       notify("warning", `A mission can hold ${MAX_ITEMS} items.`);
       return null;
     }
     const spec = TYPES[type];
     if (!spec) return null;
+    let index = at;
+    if (index == null) {
+      const end = endIndex();
+      index = end >= 0 ? end : items.length;
+    }
     const item = { id: nextId++, type };
     if (spec.position) {
       if (!lngLat) return null;
       item.lat = lngLat.lat;
       item.lon = lngLat.lng != null ? lngLat.lng : lngLat.lon;
-      item.alt = type === "land" ? 0 : suggestedAltitude();
+      item.alt = type === "land" ? 0 : suggestedAltitude(index);
     }
     Object.keys(spec.params).forEach((key) => { item[key] = spec.params[key].def; });
     // No speed of its own: a new point is flown at whatever the plan, or the
     // point before it, already set.
     item.speed = null;
+    item.name = "";
     snapDirection(item);
-    items.push(item);
+    items.splice(index, 0, item);
     selectedId = item.id;
     return item;
+  }
+
+  /** Put the start at *lngLat*, and the takeoff with it. A takeoff already
+   *  standing on the start moves along; a plan with no takeoff at all gets
+   *  one as its first item. A takeoff somewhere else (an older file) is left
+   *  where it was drawn, since a second one would be a climb in mid air. */
+  function placeStart(lngLat) {
+    const lat = lngLat.lat;
+    const lon = lngLat.lng != null ? lngLat.lng : lngLat.lon;
+    const tied = startTakeoff();
+    home = { lat, lon, elevation: null };
+    homeElevation = null;
+    if (tied) {
+      tied.lat = lat;
+      tied.lon = lon;
+      selectedId = tied.id;
+      return tied;
+    }
+    if (items.some((item) => item.type === "takeoff")) return null;
+    const takeoff = addItem("takeoff", { lat, lon }, 0);
+    if (takeoff) takeoff.alt = DEFAULT_ALT_M;
+    return takeoff;
+  }
+
+  /** Take the start away, and the takeoff that stands on it. */
+  function removeStart() {
+    const tied = startTakeoff();
+    if (tied) removeItem(tied.id);
+    home = null;
+    homeElevation = null;
+  }
+
+  /** The slots a moved item may land in. The start's takeoff stays first and
+   *  the ending stays last, so dragging a row can reorder the route but never
+   *  put a point before the climb or after the touchdown. */
+  function slotRange() {
+    const last = items.length - 1;
+    return {
+      min: startTakeoff() ? 1 : 0,
+      max: last >= 0 && ENDS[items[last].type] && endIndex() === last ? last - 1 : last,
+    };
+  }
+
+  /** Is the item at *index* held in place (the start's takeoff, the ending)? */
+  function pinned(index) {
+    const range = slotRange();
+    return index < range.min || index > range.max;
   }
 
   /** Direction is one of two things, not a range: a 0 from a hand-edited file
@@ -697,6 +824,7 @@ Corvus.mission = (function () {
     const index = items.findIndex((item) => item.id === id);
     if (index < 0 || target === index) return;
     if (target < 0 || target >= items.length) return;
+    if (pinned(index) || pinned(target)) return;
     const [moved] = items.splice(index, 1);
     items.splice(target, 0, moved);
   }
@@ -1000,6 +1128,7 @@ Corvus.mission = (function () {
     pageEl = null;
     mapWrapEl = null;
     mapEl = profileEl = listEl = detailEl = summaryEl = issuesEl = toolsEl = null;
+    listHeadEl = sideScrollEl = null;
     status = null;
   }
 
@@ -1035,19 +1164,44 @@ Corvus.mission = (function () {
       button.appendChild(caption);
       toolsEl.appendChild(button);
     });
+    updateTools();
     fitTools();
     toolsEl.addEventListener("click", (event) => {
       const button = event.target.closest(".fa-btn");
       if (!button) return;
       event.preventDefault();
+      // A greyed tool still answers a press, with the reason it is greyed:
+      // a button that silently does nothing reads as a broken one.
+      const blocked = toolBlocked(button.dataset.tool);
+      if (blocked) {
+        setHint(blocked);
+        return;
+      }
       // RTL names no place on the map, so arming a tool for it would be a mode
       // the operator could never leave by clicking. It appends immediately.
       if (button.dataset.tool === "rtl") {
         addItem("rtl", null);
+        setTool("select");
         refreshAll();
         return;
       }
       setTool(button.dataset.tool);
+    });
+  }
+
+  /** Grey the tools that cannot be used on the plan as it stands, with the
+   *  reason as the tooltip, and mark START while the plan still needs one. */
+  function updateTools() {
+    if (!toolsEl) return;
+    const titles = {};
+    TOOLS.forEach((entry) => { titles[entry.id] = entry.title; });
+    toolsEl.querySelectorAll(".fa-btn").forEach((button) => {
+      const id = button.dataset.tool;
+      const blocked = toolBlocked(id);
+      button.classList.toggle("is-blocked", !!blocked);
+      button.setAttribute("aria-disabled", blocked ? "true" : "false");
+      button.title = blocked || titles[id] || "";
+      button.classList.toggle("is-next", id === "home" && !home);
     });
   }
 
@@ -1075,6 +1229,7 @@ Corvus.mission = (function () {
 
   function setTool(next) {
     tool = next || "select";
+    if (toolBlocked(tool)) tool = "select";
     if (!toolsEl) return;
     toolsEl.querySelectorAll(".fa-btn").forEach((button) => {
       button.classList.toggle("active", button.dataset.tool === tool);
@@ -1083,17 +1238,34 @@ Corvus.mission = (function () {
     updateHint();
   }
 
-  function updateHint() {
+  function setHint(text) {
     const hint = document.getElementById("missionHint");
-    if (!hint) return;
-    if (tool === "select") {
-      hint.textContent = items.length || home
-        ? "Drag a point to move it, right-click to delete it. Pick a tool to add more."
-        : "Set the start point, then add a takeoff and waypoints.";
-    } else if (tool === "home") {
-      hint.textContent = "Click the map to place the start point.";
+    if (hint) hint.textContent = text;
+  }
+
+  /** The line under the tool bar: what the next step is, in the order a
+   *  mission is drawn in. Start, then the route, then how it ends. */
+  function updateHint() {
+    if (tool === "home") {
+      setHint(home
+        ? "Click the map to move the start. The aircraft takes off there."
+        : "Click the map where the aircraft takes off.");
+      return;
+    }
+    if (tool !== "select") {
+      const end = endIndex();
+      const before = end >= 0 && !ENDS[tool] ? ` before ${END_NAMES[items[end].type]}` : "";
+      setHint(`Click the map to add a ${TYPES[tool].label.toLowerCase()}${before}. Esc to stop.`);
+      return;
+    }
+    if (!home) {
+      setHint("Press START and click where the aircraft takes off.");
+    } else if (!items.some((item) => TYPES[item.type].position && item.type !== "takeoff")) {
+      setHint("Now add points with POINT, CIRCLE or HOLD, then end with LAND or RETURN.");
+    } else if (endIndex() < 0) {
+      setHint("End the mission with LAND or RETURN. Drag a point to move it, right-click to delete it.");
     } else {
-      hint.textContent = `Click the map to add a ${TYPES[tool].label.toLowerCase()}. Esc to stop.`;
+      setHint("Drag a point to move it, right-click to delete it. New points go in before the end.");
     }
   }
 
@@ -1258,24 +1430,31 @@ Corvus.mission = (function () {
       },
     });
 
+    // Everything above the point editor scrolls as one. The list used to be
+    // the only part that scrolled, squeezed between a fixed header block and
+    // the editor, and showed three rows of a plan with thirty.
+    sideScrollEl = document.createElement("div");
+    sideScrollEl.className = "mission-side-scroll";
+    side.appendChild(sideScrollEl);
+
     const planRow = document.createElement("div");
     planRow.className = "mission-plan-row";
     planRow.appendChild(Corvus.ui.field({ label: "Name", control: nameInput }));
     // "Start" because a point further down the plan may raise or lower it;
     // this is the speed the mission begins at.
     planRow.appendChild(Corvus.ui.field({ label: "Start speed (m/s)", control: speedInput }));
-    side.appendChild(planRow);
+    sideScrollEl.appendChild(planRow);
 
     summaryEl = document.createElement("div");
     summaryEl.className = "mission-summary";
-    side.appendChild(summaryEl);
+    sideScrollEl.appendChild(summaryEl);
 
     // The vehicle's side of it: which leg is being flown, or that the
     // aircraft holds a mission that is not the one on screen.
     vehicleEl = document.createElement("div");
     vehicleEl.className = "mission-vehicle";
     vehicleEl.hidden = true;
-    side.appendChild(vehicleEl);
+    sideScrollEl.appendChild(vehicleEl);
 
     // What is wrong with the plan, while it is being drawn rather than at the
     // moment of upload. These used to appear only in the confirm dialog, which
@@ -1283,23 +1462,23 @@ Corvus.mission = (function () {
     issuesEl = document.createElement("div");
     issuesEl.className = "mission-issues";
     issuesEl.hidden = true;
-    side.appendChild(issuesEl);
+    sideScrollEl.appendChild(issuesEl);
 
-    const listHead = document.createElement("div");
-    listHead.className = "mission-list-head";
+    listHeadEl = document.createElement("div");
+    listHeadEl.className = "mission-list-head";
     const listTitle = document.createElement("span");
     listTitle.textContent = "ITEMS";
-    listHead.appendChild(listTitle);
-    listHead.appendChild(Corvus.ui.iconButton("trash-2", {
+    listHeadEl.appendChild(listTitle);
+    listHeadEl.appendChild(Corvus.ui.iconButton("trash-2", {
       title: "Clear the whole plan",
       ariaLabel: "Clear the whole plan",
       onClick: () => confirmClear(),
     }));
-    side.appendChild(listHead);
+    sideScrollEl.appendChild(listHeadEl);
 
     listEl = document.createElement("div");
     listEl.className = "mission-list";
-    side.appendChild(listEl);
+    sideScrollEl.appendChild(listEl);
 
     detailEl = document.createElement("div");
     detailEl.className = "mission-detail";
@@ -1410,10 +1589,15 @@ Corvus.mission = (function () {
     // fly-to-points planner uses. A right-click on a point deletes that point
     // instead and never reaches here (the marker stops it), because a gesture
     // aimed at something has to act on the thing it was aimed at.
+    // "Last placed" is the newest item, not the last in the list: a point
+    // drawn after the landing goes in before it, and undoing that point must
+    // not take the landing away instead.
     map.on("contextmenu", (event) => {
       if (event && event.preventDefault) event.preventDefault();
       if (!items.length) return;
-      removeItem(items[items.length - 1].id);
+      const newest = items.reduce((best, item) => (item.id > best.id ? item : best));
+      if (newest === startTakeoff()) removeStart();
+      else removeItem(newest.id);
       refreshAll();
     });
 
@@ -1796,17 +1980,23 @@ Corvus.mission = (function () {
     if (!event || !event.lngLat) return;
     if (tool === "select") return;
     if (tool === "home") {
-      home = { lat: event.lngLat.lat, lon: event.lngLat.lng, elevation: null };
-      homeElevation = null;
+      placeStart(event.lngLat);
       setTool("select");
       refreshAll();
       return;
     }
+    // The start is what every altitude in the plan is measured from and where
+    // the climb begins, so nothing is placed before it. The tool bar already
+    // says so; this is the guard for a tool armed before the start went away.
+    const blocked = toolBlocked(tool);
+    if (blocked) {
+      setTool("select");
+      setHint(blocked);
+      return;
+    }
     if (!addItem(tool, event.lngLat)) return;
-    // The start point is what every altitude in the plan is measured from, so
-    // a first point placed without one would be drawn against nothing. Adopt
-    // it silently rather than refusing the click.
-    if (!home) home = { lat: event.lngLat.lat, lon: event.lngLat.lng, elevation: null };
+    // A landing ends the mission: there is no second one to place.
+    if (ENDS[tool]) setTool("select");
     refreshAll();
   }
 
@@ -1829,25 +2019,31 @@ Corvus.mission = (function () {
     markers = [];
 
     if (home) {
-      const element = buildHomeMarker();
+      const element = buildHomeMarker(startTakeoff());
       if (homeMarker) homeMarker.remove();
       homeMarker = new maplibregl.Marker({ element, anchor: "center", draggable: true })
         .setLngLat([home.lon, home.lat]).addTo(map);
       homeMarker.on("dragend", () => {
-        const at = homeMarker.getLngLat();
-        home = { lat: at.lat, lon: at.lng, elevation: null };
-        homeElevation = null;
+        // placeStart carries the takeoff along: the two are one place.
+        placeStart(homeMarker.getLngLat());
         window.setTimeout(refreshAll, 0);   // see the item markers below
       });
+      // The start IS the takeoff on the map, so a click on it opens the
+      // takeoff, which is where its climb height is set.
+      element.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const tied = startTakeoff();
+        if (!tied) return;
+        selectedId = tied.id;
+        refreshSelection();
+      });
       // The same gesture every other mark answers to. Recoverable: the START
-      // tool puts it back, and the next point placed without one adopts its
-      // own position as the start.
+      // tool puts both back.
       element.addEventListener("contextmenu", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        home = null;
-        homeElevation = null;
-        refreshAll();
+        removeStart();
+        window.setTimeout(refreshAll, 0);
       });
     } else if (homeMarker) {
       homeMarker.remove();
@@ -1855,10 +2051,14 @@ Corvus.mission = (function () {
     }
 
     let number = 0;
+    const tied = startTakeoff();
     items.forEach((item) => {
       const spec = TYPES[item.type];
       if (!spec.position) return;
       number += 1;
+      // Drawn by the start's own mark, which carries its number. A second
+      // ring on the same spot would be two things to grab for one place.
+      if (item === tied) return;
       const element = buildItemMarker(item, number);
       const marker = new maplibregl.Marker({ element, anchor: "center", draggable: true })
         .setLngLat([item.lon, item.lat]).addTo(map);
@@ -1944,19 +2144,21 @@ Corvus.mission = (function () {
    *  the same place a dragged altitude reports itself. */
   function showRadiusValue(item) {
     const note = document.getElementById("missionProfileNote");
-    if (note) note.textContent = `${TYPES[item.type].label}: ${Math.round(item.radius)} m radius`;
+    if (note) note.textContent = `${pointName(item)}: ${Math.round(item.radius)} m radius`;
   }
 
   /* The start point, drawn as the SAME landing-pad mark the Home tab puts on
      the aircraft's home: "H" in a ring with crosshair ticks on the exact
      coordinate. It is the same concept — where the flight begins — so it is
      the same drawing, down to the .home-marker class it shares with map.js.
-     The planner's one addition is that this one can be dragged. */
-  function buildHomeMarker() {
+     The planner's additions are that this one can be dragged, and that when
+     it carries the takeoff it wears that point's ring and number, so the
+     route reads 1, 2, 3 from the start instead of beginning at 2. */
+  function buildHomeMarker(takeoff) {
     const element = document.createElement("div");
     element.className = "home-marker mission-home";
-    element.title = "Start point. Every altitude in the plan is measured from here. "
-      + "Drag to move, right-click to remove";
+    element.title = "Start. The aircraft takes off here, and every altitude in the plan "
+      + "is measured from here. Click to set the climb height, drag to move, right-click to remove";
     element.innerHTML =
       '<svg class="h-body" viewBox="0 0 32 32" aria-hidden="true">' +
         '<g class="h-ticks">' +
@@ -1973,6 +2175,15 @@ Corvus.mission = (function () {
           '<line x1="12.4" y1="16" x2="19.6" y2="16"/>' +
         "</g>" +
       "</svg>";
+    if (takeoff) {
+      element.classList.add("has-takeoff");
+      element.dataset.id = String(takeoff.id);
+      if (takeoff.id === selectedId) element.classList.add("is-selected");
+      const number = document.createElement("span");
+      number.className = "mission-home-num";
+      number.textContent = String(positionNumber(items.indexOf(takeoff)));
+      element.appendChild(number);
+    }
     return element;
   }
 
@@ -1989,7 +2200,7 @@ Corvus.mission = (function () {
     element.dataset.kind = item.type;
     element.dataset.id = String(item.id);
     if (item.id === selectedId) element.classList.add("is-selected");
-    element.title = `${number}. ${spec.label}: drag to move, right-click to delete`;
+    element.title = markerTitle(item, number);
     const label = document.createElement("span");
     label.className = "wp-marker-num";
     label.textContent = String(number);
@@ -2000,7 +2211,50 @@ Corvus.mission = (function () {
       badge.appendChild(Corvus.ui.icon(spec.icon, "auto"));
       element.appendChild(badge);
     }
+    setMarkerName(element, item.name);
     return element;
+  }
+
+  function markerTitle(item, number) {
+    const spec = TYPES[item.type];
+    const what = item.name ? `${item.name} (${spec.label})` : spec.label;
+    return `${number}. ${what}: drag to move, right-click to delete`;
+  }
+
+  /* The name beside the ring, when the point has one. The number stays in the
+     ring: it is the order the route is flown in, which a name does not say. */
+  function setMarkerName(element, name) {
+    let tag = element.querySelector(".mission-point-name");
+    if (!name) {
+      if (tag) tag.remove();
+      return;
+    }
+    if (!tag) {
+      tag = document.createElement("span");
+      tag.className = "mission-point-name";
+      element.appendChild(tag);
+    }
+    tag.textContent = name;
+  }
+
+  /** Show *item*'s name in its list row and on its marker while it is being
+   *  typed. In place, because a rebuild of either would be a rebuild per
+   *  keystroke, and the detail panel with the field in it is not touched. */
+  function relabelItem(item) {
+    if (listEl) {
+      const label = listEl.querySelector(`.mission-row[data-id="${item.id}"] .mission-row-label`);
+      if (label) {
+        label.textContent = pointName(item);
+        label.title = item.name ? TYPES[item.type].label : "";
+      }
+    }
+    if (mapEl) {
+      const element = mapEl.querySelector(`.mission-point[data-id="${item.id}"]`);
+      if (element) {
+        setMarkerName(element, item.name);
+        element.title = markerTitle(item, positionNumber(items.indexOf(item)));
+      }
+    }
   }
 
   /* The grab handle on a selected orbit's ring: drag it to set the radius.
@@ -2204,6 +2458,7 @@ Corvus.mission = (function () {
     drawMap();
     renderList();
     renderSummary();
+    updateTools();
     updateHint();
     updateClearButton();
     sampleGround();
@@ -2218,7 +2473,7 @@ Corvus.mission = (function () {
   function refreshSelection() {
     if (destroyed) return;
     if (mapEl) {
-      mapEl.querySelectorAll(".mission-point").forEach((element) => {
+      mapEl.querySelectorAll(".mission-point, .mission-home.has-takeoff").forEach((element) => {
         element.classList.toggle("is-selected", element.dataset.id === String(selectedId));
       });
     }
@@ -2240,11 +2495,13 @@ Corvus.mission = (function () {
     endRowDrag();
     Corvus.ui.clear(listEl);
     if (!items.length) {
-      listEl.appendChild(Corvus.ui.empty("Nothing planned yet."));
+      listEl.appendChild(Corvus.ui.empty(home
+        ? "Nothing planned yet. Add points from the tool bar."
+        : "Nothing planned yet. Press START and click where the aircraft takes off."));
       return;
     }
     let number = 0;
-    items.forEach((item) => {
+    items.forEach((item, at) => {
       const spec = TYPES[item.type];
       if (spec.position) number += 1;
       const row = document.createElement("div");
@@ -2264,20 +2521,30 @@ Corvus.mission = (function () {
       icon.classList.add("mission-row-icon");
       const label = document.createElement("span");
       label.className = "mission-row-label";
-      label.textContent = spec.label;
+      // A named point is listed by its name; the icon beside it still says
+      // what kind of point it is, and the tooltip says it in words.
+      label.textContent = pointName(item);
+      if (item.name) label.title = spec.label;
       const value = document.createElement("span");
       value.className = "mission-row-value";
       value.textContent = describeItem(item);
       row.append(index, icon, label, value);
 
+      // The start's takeoff and the ending hold their places, so they have
+      // no handle and no arrows, and nothing else can be moved past them.
+      const held = pinned(at);
+      if (held) {
+        row.classList.add("is-pinned");
+        index.title = at === 0 ? "The takeoff is always first" : "The mission always ends here";
+      }
       const tools = document.createElement("span");
       tools.className = "mission-row-tools";
       tools.appendChild(Corvus.ui.iconButton("chevron-up", {
-        title: "Move up", size: 12,
+        title: "Move up", size: 12, disabled: held || pinned(at - 1),
         onClick: (event) => { event.stopPropagation(); moveItem(item.id, -1); refreshAll(); },
       }));
       tools.appendChild(Corvus.ui.iconButton("chevron-down", {
-        title: "Move down", size: 12,
+        title: "Move down", size: 12, disabled: held || pinned(at + 1),
         onClick: (event) => { event.stopPropagation(); moveItem(item.id, 1); refreshAll(); },
       }));
       tools.appendChild(Corvus.ui.iconButton("x", {
@@ -2307,6 +2574,7 @@ Corvus.mission = (function () {
     const spec = TYPES[item.type];
     if (!spec.position) return "to start";
     if (item.type === "land") return "ground";
+    if (item.type === "takeoff") return `climb to ${formatAlt(item.alt)} m`;
     const parts = [`${formatAlt(item.alt)} m`];
     if (isOrbit(item)) {
       const count = item.type === "loiter_turns"
@@ -2403,6 +2671,36 @@ Corvus.mission = (function () {
     };
   }
 
+  /** The part of the list that is on screen, in unscaled pixels: the band a
+   *  grabbed row is kept inside and whose ends scroll. On a wide screen the
+   *  list has no height of its own, the sidebar around it scrolls and the
+   *  ITEMS header stays pinned over the rows passing under it, so the band is
+   *  the list cut to that box and below that header. On a narrow one the list
+   *  scrolls itself and the band is simply its own box. */
+  function listViewport(k) {
+    const box = unscaledRect(listEl, k);
+    let top = box.top;
+    let bottom = box.bottom;
+    if (sideScrollEl) {
+      const view = unscaledRect(sideScrollEl, k);
+      top = Math.max(top, view.top);
+      bottom = Math.min(bottom, view.bottom);
+    }
+    if (listHeadEl) top = Math.max(top, unscaledRect(listHeadEl, k).bottom);
+    return { top, bottom: Math.max(top, bottom) };
+  }
+
+  /** Scroll whichever box holds the list: the list itself where it has a
+   *  height of its own, the sidebar where it does not. True if one moved. */
+  function scrollListBy(step) {
+    return [listEl, sideScrollEl].some((el) => {
+      if (!el) return false;
+      const was = el.scrollTop;
+      el.scrollTop = was + step;
+      return el.scrollTop !== was;
+    });
+  }
+
   /** A press on a row. Arms a drag without starting one: a press that never
    *  travels is a click, and the click is how a row gets selected. */
   function armRowDrag(event, id, row) {
@@ -2418,6 +2716,7 @@ Corvus.mission = (function () {
     }
     if (items.length < 2) return;
     if (event.button != null && event.button !== 0) return;
+    if (pinned(items.findIndex((item) => item.id === id))) return;
     // The per-row buttons are targets in their own right; a press on one is
     // a press on it, not a grab of the row underneath.
     if (closestClass(event.target, ".mission-row-tools")) return;
@@ -2496,7 +2795,7 @@ Corvus.mission = (function () {
     const rows = Array.prototype.slice.call(listEl.children);
     const at = rows.indexOf(row);
     if (at < 0) { endRowDrag(); return; }
-    const box = unscaledRect(listEl, drag.scale);
+    const box = listViewport(drag.scale);
     const height = row.offsetHeight;
     // The row stays inside the panel however far past it the pointer goes:
     // going further is what scrolls the list, below.
@@ -2507,7 +2806,8 @@ Corvus.mission = (function () {
       const rect = unscaledRect(el, drag.scale);
       others.push({ el, top: rect.top, height: rect.height });
     });
-    const slot = dropSlot(others, wanted + height / 2);
+    const range = slotRange();
+    const slot = clampNumber(dropSlot(others, wanted + height / 2), range.min, range.max, at);
     if (slot !== at) {
       listEl.insertBefore(row, others[slot] ? others[slot].el : null);
       renumberRows();
@@ -2537,19 +2837,15 @@ Corvus.mission = (function () {
    *  coming to it. */
   function rowEdgeScroll() {
     if (!rowDrag || !rowDrag.active) return;
-    const box = unscaledRect(listEl, rowDrag.scale);
+    const box = listViewport(rowDrag.scale);
     const above = (box.top + ROW_EDGE_PX) - rowDrag.clientY;
     const below = rowDrag.clientY - (box.bottom - ROW_EDGE_PX);
     let step = 0;
     if (above > 0) step = -above * ROW_EDGE_SPEED;
     else if (below > 0) step = below * ROW_EDGE_SPEED;
-    if (step) {
-      const was = listEl.scrollTop;
-      listEl.scrollTop = was + step;
-      // Only if it actually moved: at either end of the list it does not, and
-      // replacing the row costs a layout each frame for nothing.
-      if (listEl.scrollTop !== was) placeRow();
-    }
+    // Only if it actually moved: at either end of the list it does not, and
+    // replacing the row costs a layout each frame for nothing.
+    if (step && scrollListBy(step)) placeRow();
     if (rowDrag) rowDrag.raf = window.requestAnimationFrame(rowEdgeScroll);
   }
 
@@ -2631,33 +2927,45 @@ Corvus.mission = (function () {
     note.className = "field-hint";
     detailEl.appendChild(note);
 
+    detailEl.appendChild(nameField(item));
+
     if (spec.position) {
       const grid = document.createElement("div");
       grid.className = "mission-detail-grid";
       // Clamped here, not only announced by the input's min/max: a typed 500
       // passes an HTML `max` untouched, and the first thing that would have
       // said so is the 400 the backend answers an upload with.
+      // The start's takeoff and the start are one place, so typing a new
+      // position for one moves both.
+      const moveTo = (lat, lon) => {
+        if (item === startTakeoff()) placeStart({ lat, lon });
+        else { item.lat = lat; item.lon = lon; }
+        refreshPlan();
+      };
       grid.appendChild(numberField({
         label: "Latitude", value: item.lat, step: 0.000001, min: -90, max: 90,
         onCommit: (value) => {
-          item.lat = clampNumber(value, -90, 90, item.lat);
-          refreshPlan();
+          moveTo(clampNumber(value, -90, 90, item.lat), item.lon);
           return item.lat;
         },
       }));
       grid.appendChild(numberField({
         label: "Longitude", value: item.lon, step: 0.000001, min: -180, max: 180,
         onCommit: (value) => {
-          item.lon = clampNumber(value, -180, 180, item.lon);
-          refreshPlan();
+          moveTo(item.lat, clampNumber(value, -180, 180, item.lon));
           return item.lon;
         },
       }));
       detailEl.appendChild(grid);
 
       if (item.type !== "land") {
-        detailEl.appendChild(numberField({
-          label: "Altitude above home", unit: "m",
+        // Height and speed on one row: the speed box used to be the last field
+        // in a panel capped at 42% of the sidebar, below the fold, where an
+        // operator looking for a per-point speed concluded there was none.
+        const flight = document.createElement("div");
+        flight.className = "mission-detail-grid";
+        flight.appendChild(numberField({
+          label: item.type === "takeoff" ? "Climb to (above start)" : "Altitude above home", unit: "m",
           value: item.alt, step: 1, min: ALT_MIN_M, max: ALT_MAX_M,
           onCommit: (value) => {
             const stored = setAltitude(item.id, value);
@@ -2665,10 +2973,14 @@ Corvus.mission = (function () {
             return stored;
           },
         }));
+        flight.appendChild(speedField(item));
+        detailEl.appendChild(flight);
+      } else {
+        detailEl.appendChild(speedField(item));
       }
+    } else {
+      detailEl.appendChild(speedField(item));
     }
-
-    detailEl.appendChild(speedField(item));
 
     // A radius and a direction this airframe will not fly are not shown as
     // fields the operator can set. Said once, under the item, rather than
@@ -2711,6 +3023,36 @@ Corvus.mission = (function () {
      empty box falls back to the last stored number. The placeholder is the
      speed the point is flown at as things stand, so an empty field still says
      what will happen. */
+  /* The point's own name. Optional: empty means it is shown by its number and
+     its kind, which is what the placeholder says. Shown in the list and on
+     the map as it is typed; committed on change like every other field. The
+     vehicle never sees it (MISSION_ITEM_INT has no field for one), so it
+     lives in the plan and in the saved file. */
+  function nameField(item) {
+    const input = Corvus.ui.input({
+      value: item.name || "",
+      placeholder: TYPES[item.type].label,
+      ariaLabel: "Name of this point",
+      autocomplete: false,
+      onInput: (value) => {
+        item.name = cleanPointName(value);
+        relabelItem(item);
+      },
+      onChange: (value) => {
+        item.name = cleanPointName(value);
+        input.value = item.name;
+        relabelItem(item);
+        // Not refreshPlan(): a rebuilt list on blur would swallow the click
+        // on another row that caused the blur. Only the two places that
+        // quote a point by name and are not relabelled in place.
+        drawProfile();
+        renderVehicle();
+      },
+    });
+    input.maxLength = POINT_NAME_MAX;
+    return Corvus.ui.field({ label: "Name", control: input });
+  }
+
   function speedField(item) {
     const inherited = speedInto(item);
     const input = Corvus.ui.input({
@@ -3165,7 +3507,7 @@ Corvus.mission = (function () {
       mode: "markers",
       marker: {
         size: 17, color: "rgba(0,0,0,0)",
-        line: { color: colors.nav, width: 2.5 },
+        line: { color: Corvus.ui.token("--text-1", "#12151A"), width: 2.5 },
       },
       hoverinfo: "skip",
       name: "Selected",
@@ -3180,7 +3522,11 @@ Corvus.mission = (function () {
   }
 
   function hoverText(station, index) {
-    const label = station.type === "home" ? "Start" : TYPES[station.type].label;
+    const item = station.type === "home" ? null : items.find((entry) => entry.id === station.id);
+    // Escaped: Plotly reads hover text as a subset of HTML, and a name is
+    // whatever the operator typed.
+    const label = station.type === "home" ? "Start"
+      : escapeMarkup(item ? pointName(item) : TYPES[station.type].label);
     const parts = [`${index === 0 ? "" : index + ". "}${label}`, `${formatAlt(station.alt)} m above home`];
     if (ground) {
       const under = interpolateAt(ground, station.distance);
@@ -3349,7 +3695,7 @@ Corvus.mission = (function () {
     const note = document.getElementById("missionProfileNote");
     const item = items.find((entry) => entry.id === id);
     if (!note || !item) return;
-    const parts = [`${TYPES[item.type].label}: ${formatAlt(item.alt)} m above home`];
+    const parts = [`${pointName(item)}: ${formatAlt(item.alt)} m above home`];
     if (ground) {
       const station = stations(items, home).find((entry) => entry.id === id);
       const under = station ? interpolateAt(ground, station.distance) : null;
@@ -3379,7 +3725,11 @@ Corvus.mission = (function () {
     if (takeoffs === 1 && items[0].type !== "takeoff") {
       list.push("The takeoff is not the first item. The aircraft flies to it before climbing.");
     }
-    const ends = items.findIndex((item) => item.type === "land" || item.type === "rtl");
+    const ends = endIndex();
+    if (ends < 0 && items.some((item) => TYPES[item.type].position && item.type !== "takeoff")) {
+      list.push("The mission has no ending. Add a landing or a return, or the aircraft "
+        + "stays at the last point when it is done.");
+    }
     if (ends >= 0 && ends < items.length - 1) {
       const left = items.length - 1 - ends;
       list.push(
@@ -3469,7 +3819,14 @@ Corvus.mission = (function () {
   /** The plan as it goes on the wire, for "is this still what was synced". */
   function planKey() {
     const plan = toPlan();
-    return JSON.stringify({ items: plan.items, speed: plan.speed == null ? null : plan.speed });
+    // Without the names: they never reach the vehicle, so renaming a point
+    // mid-flight does not make the plan a different one from what is flown.
+    const wire = plan.items.map((item) => {
+      const copy = Object.assign({}, item);
+      delete copy.name;
+      return copy;
+    });
+    return JSON.stringify({ items: wire, speed: plan.speed == null ? null : plan.speed });
   }
 
   /** This plan is now what the vehicle holds, at the backend's `revision`. */
@@ -3570,15 +3927,23 @@ Corvus.mission = (function () {
     });
   }
 
-  /** "3. Waypoint", numbered as the list numbers it. */
+  /** The number the list and the map give the item at *index*: its place
+   *  among the items that have a position. */
+  function positionNumber(index) {
+    let number = 0;
+    for (let i = 0; i <= index && i < items.length; i += 1) {
+      if (TYPES[items[i].type].position) number += 1;
+    }
+    return number;
+  }
+
+  /** "3. Waypoint" (or "3. Ridge" once it is named), numbered as the list
+   *  numbers it. */
   function itemLabel(index) {
     const item = items[index];
     if (!item) return "";
-    const spec = TYPES[item.type];
-    if (!spec.position) return spec.label;
-    let number = 0;
-    for (let i = 0; i <= index; i += 1) if (TYPES[items[i].type].position) number += 1;
-    return `${number}. ${spec.label}`;
+    if (!TYPES[item.type].position) return pointName(item);
+    return `${positionNumber(index)}. ${pointName(item)}`;
   }
 
   function renderVehicle() {
@@ -3924,6 +4289,13 @@ Corvus.mission = (function () {
     _currentIndex: currentIndex,
     _widthByZoom: widthByZoom,
     _problems: problems,
+    // test hooks: the order a plan is drawn in. Start first, the route, one
+    // ending; wrong silently, as a landing with nothing before it.
+    _placeStart: placeStart,
+    _removeStart: removeStart,
+    _addItem: addItem,
+    _toolBlocked: toolBlocked,
+    _moveItemTo: moveItemTo,
     // The live chart geometry and the grab test that reads it. Exported
     // because "the drag does nothing" is otherwise invisible from outside: it
     // is a silent early return in a pointer handler.
@@ -3935,7 +4307,12 @@ Corvus.mission = (function () {
     _bounds: {
       ALT_MIN_M, ALT_MAX_M, RADIUS_MIN_M, RADIUS_MAX_M,
       HOLD_MAX_S, TURNS_MAX, SPEED_MIN_MS, SPEED_MAX_MS, MAX_ITEMS,
+      POINT_NAME_MAX,
     },
+    // test hooks: a point's name, cleaned as the backend cleans it, and the
+    // plan as the vehicle sees it (which has no names in it).
+    _cleanPointName: cleanPointName,
+    _planKey: planKey,
     _types: TYPES,
     // The tool bar's contents. Every entry that is not a divider is rendered
     // as icon over caption, so one without a label is a blank button.

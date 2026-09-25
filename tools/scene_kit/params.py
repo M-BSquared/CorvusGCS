@@ -237,6 +237,16 @@ RANGEFINDER: dict[str, Any] = {
     "EKF2_RNG_SFE": 0.05,
     "EKF2_RNG_QLTY_T": 1.0,
     "MPC_ALT_MODE": 2,
+    # The other rangefinder drivers a stock build carries, all off, so the
+    # driver picker and the presets have something real to offer.
+    "SENS_TFMINI_CFG": 0,
+    "SENS_TFMINI_HW": 1,
+    "SENS_SF0X_CFG": 0,
+    "SENS_EN_SF0X": 1,
+    "UAVCAN_ENABLE": 0,
+    "UAVCAN_SUB_RNG": 0,
+    "UAVCAN_RNG_MIN": 0.3,
+    "UAVCAN_RNG_MAX": 200.0,
 }
 
 OPTICAL_FLOW: dict[str, Any] = {
@@ -254,6 +264,8 @@ OPTICAL_FLOW: dict[str, Any] = {
     "SENS_FLOW_MINHGT": 0.08,
     "SENS_FLOW_MAXHGT": 25.0,
     "SENS_FLOW_MAXR": 2.5,
+    "SENS_TFLOW_CFG": 0,
+    "UAVCAN_SUB_FLOW": 0,
 }
 
 # Radio Control. RC_MAP_* is what the transmitter drawing reads for the sticks;
@@ -358,6 +370,9 @@ GENERAL: dict[str, Any] = {
     "NAV_MC_ALT_RAD": 0.8,
     "MIS_TAKEOFF_ALT": 10.0,
     "GPS_1_CONFIG": 201,
+    "GPS_2_CONFIG": 0,
+    "MAV_0_CONFIG": 101,
+    "RC_PORT_CONFIG": 300,
     "SDLOG_MODE": 0,
     "SDLOG_PROFILE": 3,
     "CBRK_SUPPLY_CHK": 0,
@@ -481,3 +496,97 @@ def build_full_table(base: dict[str, Any], total: int = 1180) -> dict[str, Any]:
     for name, value in _filler(missing).items():
         table.setdefault(name, value)
     return table
+
+
+# ---------------------------------------------------------------------------
+# Parameter metadata: what the editor shows as defaults and descriptions
+# ---------------------------------------------------------------------------
+
+# PX4's own default where this table carries a field value instead: sensor
+# calibration, a bigger battery, a geofence, a hover throttle found in flight.
+# Everything the table holds that is not here is served at its own value, so
+# the editor's "Modified" filter shows the rows a real set-up quad would.
+PX4_DEFAULTS: dict[str, Any] = {
+    "CAL_ACC0_ID": 0, "CAL_GYRO0_ID": 0, "CAL_MAG0_ID": 0,
+    "CAL_ACC0_XOFF": 0.0, "CAL_ACC0_YOFF": 0.0, "CAL_ACC0_ZOFF": 0.0,
+    "CAL_ACC0_XSCALE": 1.0, "CAL_ACC0_YSCALE": 1.0, "CAL_ACC0_ZSCALE": 1.0,
+    "CAL_GYRO0_XOFF": 0.0, "CAL_GYRO0_YOFF": 0.0, "CAL_GYRO0_ZOFF": 0.0,
+    "CAL_MAG0_XOFF": 0.0, "CAL_MAG0_YOFF": 0.0, "CAL_MAG0_ZOFF": 0.0,
+    "BAT1_N_CELLS": 0, "BAT1_CAPACITY": -1.0,
+    "BAT1_V_CHARGED": 4.05, "BAT1_V_EMPTY": 3.6,
+    "GF_MAX_HOR_DIST": 0.0, "GF_MAX_VER_DIST": 0.0,
+    "COM_LOW_BAT_ACT": 0, "NAV_DLL_ACT": 0, "COM_RC_IN_MODE": 3,
+    "MPC_THR_HOVER": 0.5,
+}
+
+_ACTIONS = [[0, "Disabled"], [1, "Hold mode"], [2, "Return mode"], [3, "Land mode"],
+            [5, "Terminate"], [6, "Disarm"]]
+
+# (short description, unit, min, max, named values) for the rows a screenshot
+# is likely to show. PX4's own wording, shortened.
+PX4_DOCS: dict[str, tuple[str, str, Any, Any, Any]] = {
+    "MPC_THR_HOVER": ("Vertical thrust required to hover", "norm", 0.1, 0.8, None),
+    "MPC_XY_VEL_MAX": ("Maximum horizontal velocity", "m/s", 0.0, 20.0, None),
+    "MPC_Z_VEL_MAX_UP": ("Maximum ascent velocity", "m/s", 0.5, 8.0, None),
+    "MPC_Z_VEL_MAX_DN": ("Maximum descent velocity", "m/s", 0.5, 4.0, None),
+    "MPC_TILTMAX_AIR": ("Maximum tilt angle in air", "deg", 20.0, 89.0, None),
+    "MC_ROLL_P": ("Roll P gain", "", 0.0, 12.0, None),
+    "MC_PITCH_P": ("Pitch P gain", "", 0.0, 12.0, None),
+    "MC_YAW_P": ("Yaw P gain", "", 0.0, 5.0, None),
+    "MC_ROLLRATE_P": ("Roll rate P gain", "", 0.01, 0.5, None),
+    "MC_PITCHRATE_P": ("Pitch rate P gain", "", 0.01, 0.6, None),
+    "BAT1_N_CELLS": ("Number of cells for battery 1", "", 0, 16, None),
+    "BAT1_CAPACITY": ("Battery 1 capacity", "mAh", -1.0, 100000.0, None),
+    "BAT1_V_CHARGED": ("Full cell voltage", "V", None, None, None),
+    "BAT1_V_EMPTY": ("Empty cell voltage", "V", None, None, None),
+    "GF_ACTION": ("Geofence violation action", "", None, None,
+                  [[0, "None"], [1, "Warning"], [2, "Hold mode"], [3, "Return mode"],
+                   [4, "Terminate"], [5, "Land mode"]]),
+    "GF_MAX_HOR_DIST": ("Maximum horizontal distance from home", "m", 0.0, 10000.0, None),
+    "GF_MAX_VER_DIST": ("Maximum vertical distance above home", "m", 0.0, 10000.0, None),
+    "NAV_RCL_ACT": ("Failsafe action on RC loss", "", None, None, _ACTIONS),
+    "NAV_DLL_ACT": ("Failsafe action on data link loss", "", None, None, _ACTIONS),
+    "COM_LOW_BAT_ACT": ("Battery failsafe mode", "", None, None,
+                        [[0, "Warning"], [2, "Land mode"],
+                         [3, "Return at critical level, land at emergency level"]]),
+    "COM_RC_IN_MODE": ("RC control input mode", "", None, None,
+                       [[0, "RC Transmitter only"], [1, "Joystick only"],
+                        [2, "RC and Joystick with fallback"],
+                        [3, "RC or Joystick keep first"], [4, "Stick input disabled"]]),
+    "RTL_RETURN_ALT": ("Return mode return altitude", "m", 0.0, 150.0, None),
+}
+
+
+def px4_metadata(table: dict[str, Any]) -> dict[str, Any]:
+    """The ``parameters.json`` PX4 serves over MAVLink FTP, for *table*.
+
+    Its defaults are the table's own values except where :data:`PX4_DEFAULTS`
+    names PX4's; its descriptions are the few in :data:`PX4_DOCS`. Built from
+    the table the vehicle booted with, so an edit made in the editor shows up
+    as a change from the default, as it would on a real board.
+    """
+    entries = []
+    for name, value in table.items():
+        is_int = isinstance(value, (bool, int))
+        default = PX4_DEFAULTS.get(name, value)
+        entry: dict[str, Any] = {
+            "name": name,
+            "type": "Int32" if is_int else "Float",
+            "default": int(default) if is_int else float(default),
+        }
+        doc = PX4_DOCS.get(name)
+        if doc:
+            short, units, lo, hi, values = doc
+            entry["shortDesc"] = short
+            if units:
+                entry["units"] = units
+            if lo is not None:
+                entry["min"] = lo
+            if hi is not None:
+                entry["max"] = hi
+            if values:
+                entry["values"] = [{"value": v, "description": d} for v, d in values]
+        if name.startswith(("CAL_", "SYS_AUTOSTART", "SENS_BOARD_ROT")):
+            entry["rebootRequired"] = True
+        entries.append(entry)
+    return {"version": 1, "parameters": entries}

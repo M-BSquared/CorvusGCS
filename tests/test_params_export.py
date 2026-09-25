@@ -276,3 +276,79 @@ def test_export_overwrites_an_existing_file_atomically(export_server) -> None:
     assert first["path"] == second["path"]
     with open(second["path"], encoding="utf-8") as f:
         assert json.load(f)["param_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 5. The file formats other ground stations read
+# ---------------------------------------------------------------------------
+
+def test_export_target_offers_the_formats_and_picks_qgc_without_a_vehicle(export_server) -> None:
+    """PX4 is the default stack, and QGroundControl's .params is its file."""
+    server, _ = export_server
+    _, data = _req(server, "GET", "/api/params/export/target")
+    assert data["format"] == "qgc"
+    assert data["filename"].endswith(".params")
+    assert {f["id"]: f["suffix"] for f in data["formats"]} == {
+        "qgc": ".params", "mission-planner": ".param", "json": ".json",
+    }
+
+
+def test_export_writes_a_qgroundcontrol_params_file(export_server) -> None:
+    server, _ = export_server
+    params = [
+        {"name": "MC_ROLL_P", "value": 6.5, "type": 9},
+        {"name": "MPC_XY_VEL_MAX", "value": 0.10000000149011612, "type": 9},
+        {"name": "COM_RC_IN_MODE", "value": 3, "type": 6},
+    ]
+    status, res = _req(server, "POST", "/api/params/export",
+                       {"filename": "quad", "format": "qgc", "params": params})
+    assert status == 200 and res["filename"] == "quad.params"
+    with open(res["path"], encoding="utf-8") as f:
+        text = f.read()
+    assert text.startswith("# Onboard parameters for Vehicle 1\n")
+    rows = [line.split("\t") for line in text.splitlines() if not line.startswith("#")]
+    assert rows == [
+        ["1", "1", "COM_RC_IN_MODE", "3", "6"],
+        ["1", "1", "MC_ROLL_P", "6.5", "9"],
+        ["1", "1", "MPC_XY_VEL_MAX", "0.1", "9"],
+    ], "tab separated, sorted, float32 values written as typed, the vehicle's own type"
+
+
+def test_export_writes_a_mission_planner_param_file(export_server) -> None:
+    server, _ = export_server
+    status, res = _req(server, "POST", "/api/params/export", {
+        "filename": "plane.param", "format": "mission-planner",
+        "params": [{"name": "ARMING_CHECK", "value": 1, "type": 6},
+                   {"name": "ATC_RAT_RLL_P", "value": 0.13500000536441803, "type": 9}],
+    })
+    assert status == 200 and res["filename"] == "plane.param"
+    with open(res["path"], encoding="utf-8") as f:
+        lines = [line for line in f.read().splitlines() if not line.startswith("#")]
+    assert lines == ["ARMING_CHECK,1", "ATC_RAT_RLL_P,0.135"]
+
+
+def test_export_refuses_an_unknown_format(export_server) -> None:
+    server, _ = export_server
+    status, res = _req(server, "POST", "/api/params/export",
+                       {"format": "xml", "params": _PARAMS})
+    assert status == 400 and "format" in res["error"]
+
+
+def test_export_refuses_a_parameter_without_a_number(export_server) -> None:
+    server, _ = export_server
+    status, _ = _req(server, "POST", "/api/params/export",
+                     {"format": "qgc", "params": [{"name": "X", "value": "1"}]})
+    assert status == 400
+
+
+@pytest.mark.parametrize("value,ptype,expected", [
+    (0.10000000149011612, 9, "0.1"),
+    (6.5, 9, "6.5"),
+    (1.0, 9, "1"),
+    (-3, 6, "-3"),
+    (1e-07, 9, "1e-07"),
+    (123456.78125, 9, "123456.78"),
+])
+def test_values_are_written_as_the_shortest_exact_float32(value, ptype, expected) -> None:
+    from corvus.param_files import format_param_value
+    assert format_param_value(value, ptype) == expected

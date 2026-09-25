@@ -372,16 +372,13 @@ async function testTileGridRendersEveryTile() {
 
   Corvus.setup.render(container);
 
-  const all = findByClass(container, "setup-tile");
-  // The Video tile has no sub-page yet: shown, disabled, and routed nowhere.
-  const video = all[all.length - 1];
-  assert.equal(findOneByClass(video, "tile-title").textContent, "Video");
-  assert.equal(video.disabled, true, "a planned page is shown disabled, not hidden");
-  assert.equal(video.dataset.view, undefined);
-  const tiles = all.slice(0, -1);
+  const tiles = findByClass(container, "setup-tile");
+  // Video was a disabled placeholder until RTSP landed; it is a page now.
+  const video = tiles[tiles.length - 1];
+  assert.equal(video.disabled, false, "the Video tile opens its page");
   assert.deepEqual(tiles.map((t) => t.dataset.view),
     ["calibration", "control", "tuning", "motors", "safety", "battery", "sik",
-     "rtk", "remoteid", "parameters", "firmware"],
+     "rtk", "remoteid", "parameters", "firmware", "video"],
     "every Setup tile, in order");
 
   // Tile titles are real text nodes. Setup tiles are Corvus.ui.tile instances
@@ -391,7 +388,7 @@ async function testTileGridRendersEveryTile() {
   assert.deepEqual(titles,
     ["Calibration", "Radio Control", "PID Tuning", "Motors", "Safety & Sensors",
      "Battery & Power", "Telemetry Radio", "RTK GPS", "Remote ID", "Parameters",
-     "Firmware"]);
+     "Firmware", "Video"]);
 }
 
 async function testClickTileSwapsToSubPageAndBackReturns() {

@@ -62,6 +62,7 @@ from .mavlink_missions import (  # noqa: F401 - re-exported
     MISSION_UPLOAD_QUIET_S,
     MissionProtocolMixin,
 )
+from .mavlink_ftp import FtpClientMixin
 from .mavlink_params import (  # noqa: F401 - re-exported
     PARAM_CACHE_MAX_ENTRIES,
     PARAM_DOWNLOAD_INACTIVITY_S,
@@ -93,6 +94,7 @@ from .mavlink_telemetry import (  # noqa: F401 - re-exported
     _quaternion_to_euler_deg,
     _rc_rssi_percent,
 )
+from .param_metadata import ParamMetadataMixin
 from .paths import corvus_path
 from .priority_lock import _PriorityLock, _PriorityLockAbort  # noqa: F401 - re-exported
 from .serial_ports import (  # noqa: F401 - re-exported
@@ -313,6 +315,32 @@ def _is_vehicle_heartbeat(hb: Any) -> bool:
 _PREARM_BIT = mavutil.mavlink.MAV_SYS_STATUS_PREARM_CHECK
 
 
+_GPS_SENSOR_BIT = mavutil.mavlink.MAV_SYS_STATUS_SENSOR_GPS
+
+
+def _sensor_health(msg, bit: int) -> str:
+    """SYS_STATUS -> "ok" / "fault" for one sensor, "" when it is not reported."""
+    enabled = getattr(msg, "onboard_control_sensors_enabled", 0) or 0
+    present = getattr(msg, "onboard_control_sensors_present", 0) or 0
+    if not ((enabled | present) & bit):
+        return ""
+    health = getattr(msg, "onboard_control_sensors_health", 0) or 0
+    return "ok" if health & bit else "fault"
+
+
+def _gps_accuracy_m(raw) -> float:
+    """GPS_RAW_INT h_acc/v_acc (mm) -> metres, -1 when not reported.
+
+    Both are MAVLink 2 extensions, so a MAVLink 1 frame or a receiver that
+    does not fill them carries 0, which is "unknown" and not a perfect fix.
+    """
+    try:
+        value = int(raw or 0)
+    except (TypeError, ValueError):
+        return -1.0
+    return round(value / 1000.0, 2) if value > 0 else -1.0
+
+
 def _prearm_ok(msg) -> bool | None:
     """SYS_STATUS -> True (ready to arm) / False (refused) / None (not reported)."""
     enabled = getattr(msg, "onboard_control_sensors_enabled", 0) or 0
@@ -325,6 +353,8 @@ def _prearm_ok(msg) -> bool | None:
 
 class MavlinkBridge(
     ParamProtocolMixin,
+    ParamMetadataMixin,
+    FtpClientMixin,
     MissionProtocolMixin,
     VehicleSetupMixin,
     ShellMixin,
@@ -420,6 +450,8 @@ class MavlinkBridge(
         self._prearm_requested_at = 0.0
         # Each protocol owns its own state; see the mixin modules.
         self._init_param_state()
+        self._init_param_metadata_state()
+        self._init_ftp_state()
         self._init_mission_state()
         self._init_setup_state()
         self._init_shell_state()
@@ -734,6 +766,9 @@ class MavlinkBridge(
         if self._param_upload_thread:
             self._param_upload_thread.join(timeout=3)
             self._param_upload_thread = None
+        # Cancels a metadata download mid-transfer: its waits check the
+        # cancel event and the stop event every 0.1 s.
+        self._stop_param_metadata()
         if self._conn:
             try:
                 self._conn.close()
@@ -915,6 +950,7 @@ class MavlinkBridge(
         logger.info("Connecting to %s …", self._conn_str)
         self._reset_shell_state()
         self._reset_parameter_cache()
+        self._reset_param_metadata()
         self._request_sent = False
         self._param_encoding_declared = ""
         self._last_boot_ms = None
@@ -939,6 +975,7 @@ class MavlinkBridge(
         # A new link may be a new aircraft with a different pack, so the
         # latched cell count goes with the old connection.
         self._forget_battery_cells()
+        self._forget_gnss_integrity()
         # Same reasoning for Remote ID: the arm status and the "we are sending"
         # timestamp both describe the link that just went away.
         self._forget_remote_id_session()
@@ -1989,6 +2026,7 @@ class MavlinkBridge(
         logger.info("%s (uptime %d ms after %d ms)", text, boot_ms, last)
         self._console_publish("LINK", text, "info")
         self._reset_parameter_cache()
+        self._reset_param_metadata()
         self._param_encoding_declared = ""
         self._request_sent = False
         if self._is_serial():
@@ -2056,6 +2094,12 @@ class MavlinkBridge(
         # served before the from-the-vehicle guard below would reject it.
         if name == "RADIO_STATUS":
             self._handle_radio_status(msg)
+            return
+
+        # Not in the dialect pymavlink loads, so it arrives without a source id
+        # and checks the aircraft's own itself. See _handle_gnss_integrity.
+        if name in ("UNKNOWN_441", "GNSS_INTEGRITY"):
+            self._handle_gnss_integrity(msg)
             return
 
         # Everything past here writes the aircraft's own state — position,
@@ -2148,15 +2192,30 @@ class MavlinkBridge(
         elif name == "GPS_RAW_INT":
             fix = GPS_FIX_MAP.get(msg.fix_type, f"FIX_{msg.fix_type}")
             hdop = msg.eph / 100.0 if msg.eph != 65535 and msg.eph > 0 else 99.0
-            self._store.update(gps_fix=fix, gps_satellites=msg.satellites_visible, gps_hdop=round(hdop, 1))
+            epv = getattr(msg, "epv", 65535)
+            vdop = epv / 100.0 if epv != 65535 and epv > 0 else 99.0
+            self._store.update(
+                gps_fix=fix, gps_satellites=msg.satellites_visible,
+                gps_hdop=round(hdop, 1), gps_vdop=round(vdop, 1),
+                gps_h_acc=_gps_accuracy_m(getattr(msg, "h_acc", 0)),
+                gps_v_acc=_gps_accuracy_m(getattr(msg, "v_acc", 0)),
+            )
         elif name == "SYS_STATUS":
             voltage = msg.voltage_battery / 1000.0 if msg.voltage_battery != 65535 else 0
             current = msg.current_battery / 100.0 if msg.current_battery != -1 else 0
             reported = int(msg.battery_remaining) if msg.battery_remaining != -1 else -1
             prearm = _prearm_ok(msg)
+            battery = self._battery_fields(voltage, current, reported)
+            known = battery["battery_source"] == "estimate" or reported >= 0
+            battery.update(self._battery_endurance_fields(
+                battery["battery_percent"] if known else None,
+                battery["battery_source"],
+                bool(self._store.get_snapshot().get("armed")),
+            ))
             self._store.update(
                 prearm_ok=prearm,
-                **self._battery_fields(voltage, current, reported),
+                gps_health=_sensor_health(msg, _GPS_SENSOR_BIT),
+                **battery,
             )
             self._note_prearm_state(prearm)
         elif name == "BATTERY_STATUS":
@@ -2231,6 +2290,9 @@ class MavlinkBridge(
             if not self._is_from_autopilot(msg):
                 return
             self._handle_param_value(msg)
+        elif name == "FILE_TRANSFER_PROTOCOL":
+            if self._is_from_autopilot(msg):
+                self._handle_ftp_message(msg)
         elif name == "VIBRATION":
             self._store.update(
                 vibration_x=round(float(msg.vibration_x), 4),

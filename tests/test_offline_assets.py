@@ -168,3 +168,26 @@ def test_font_faces_cover_the_weights_the_ui_uses() -> None:
     assert ranges, "fonts.css declares no weight ranges — variable axis not exposed"
     for lo, hi in ranges:
         assert int(lo) <= 400 and int(hi) >= 600, f"weight range {lo}-{hi} misses the UI's 400-600"
+
+
+# ---------------------------------------------------------------------------
+# 3. The pop-out page is held to the same rules
+# ---------------------------------------------------------------------------
+
+_POPOUT = _SRC / "popout.html"
+
+
+def test_popout_html_is_offline_and_complete() -> None:
+    """A camera or terminal taken out into a window of its own (popout.html)
+    loads nothing from the network, and everything it names is on disk."""
+    text = _POPOUT.read_text(encoding="utf-8")
+    offenders = re.findall(r'(?:src|href)\s*=\s*"((?:https?:)?//[^"]*)"', text)
+    assert not offenders, f"popout.html loads external resources: {offenders}"
+    refs = re.findall(r'(?:src|href)\s*=\s*"([^"#][^"]*)"', text)
+    missing = [r for r in refs if not (_SRC / r).is_file()]
+    assert not missing, f"popout.html references files that are not on disk: {missing}"
+
+
+def test_popout_html_loads_the_stylesheets_in_the_apps_order() -> None:
+    order = re.findall(r'href="css/([\w.-]+\.css)"', _POPOUT.read_text(encoding="utf-8"))
+    assert order == ["themes.css", "components.css", "main.css"]

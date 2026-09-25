@@ -154,6 +154,11 @@ neither PX4 SITL nor QGroundControl. From a source checkout, `./run.sh`.
       and the editor stays on the full set.
 - [ ] Log download: list, download one `.ulg`, erase.
 - [ ] MAVLink shell: `ver all`, `listener vehicle_status`.
+- [ ] Parameter defaults over MAVLink FTP: open the parameter editor after a
+      download. The note "Reading the defaults" must give way to a Default
+      column, **Modified** must count the parameters off their default, and
+      descriptions, units and value lists must show. So far only seen against
+      the scene simulator (`tools/scene.py run parameters`), never a real PX4.
 
 ### 1.3 Real hardware
 
@@ -163,6 +168,36 @@ neither PX4 SITL nor QGroundControl. From a source checkout, `./run.sh`.
       download finishes inside the 180 s budget, Check values works.
 - [ ] Both at once (USB plus radio): autoconnect prefers USB and never steals
       an active link.
+- [ ] Parameter defaults on real boards with PX4 v1.16, v1.17 and v1.18: the
+      editor reads `/etc/extras/parameters.json.xz` over MAVLink FTP
+      (`corvus/mavlink_ftp.py`, `corvus/param_metadata.py`) and shows each
+      parameter's default. Not yet tried on any real board.
+- [ ] A board with little flash (1 MB, PX4's constrained-flash builds) may be
+      built without that file (to be confirmed per board). The editor must
+      then say "Defaults are not available: this firmware was built without
+      parameter metadata" instead of the defaults, and everything else must
+      keep working. QGroundControl fetches the file from the web in that case;
+      Corvus is offline and does not.
+- [ ] The same over a SiK radio at 57600: how long the metadata download
+      takes (estimate 20 to 40 s) and whether telemetry stays usable meanwhile.
+- [ ] Settings, Files, **Keep a copy on this computer** (off by default): with
+      it on, the second connection to the same firmware must answer
+      `CalcFileCRC32` for `/etc/extras/parameters.json.xz` and read the copy
+      instead of downloading (the editor says "Defaults from the copy kept on
+      this computer"). Written from PX4's `MavlinkFTP.cpp`, only seen against
+      the scene simulator. A firmware that refuses the checksum must fall
+      back to the download and keep nothing.
+- [ ] Export a `.params` file from Corvus and import it in QGroundControl, and
+      the other way round.
+
+### 1.4 ArduPilot
+
+- [ ] Parameter defaults on real ArduPilot 4.3 to 4.6 (Copter, Plane, Rover):
+      `@PARAM/param.pck?withdefaults=1` over MAVLink FTP. Only the pack parser
+      has been tested, against packs built in the test suite, never against a
+      live vehicle.
+- [ ] Export a `.param` file and load it in Mission Planner, and the other way
+      round.
 
 ---
 

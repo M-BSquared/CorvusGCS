@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="icon" type="image/png" media="(prefers-color-scheme: dark)" href="assets/CorvusGCS_logo.png" />
+<link rel="icon" type="image/png" href="assets/CorvusGCS_logo_inverted.png" />
+<title>CORVUS GCS</title>
+<!-- A camera or a terminal taken out of the app into a window of its own
+     (see js/popout.js). The same stylesheets as index.html, in the same
+     order, so the content looks exactly as it did in its frame. -->
+<link rel="stylesheet" href="vendor/fonts.css" />
+<link href="vendor/xterm.css" rel="stylesheet" />
+<link rel="stylesheet" href="css/themes.css" />
+<link rel="stylesheet" href="css/components.css" />
+<link rel="stylesheet" href="css/main.css" />
+<script>
+/* The app's theme and interface size before first paint, from the same
+   storage the app writes, so the frame looks exactly as it did in the app. */
+(function () {
+  try {
+    var t = localStorage.getItem("corvus.theme");
+    if (t) document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+  try {
+    var s = parseFloat(localStorage.getItem("corvus.scale"));
+    if (s >= 0.8 && s <= 1.5) document.documentElement.style.setProperty("--ui-scale", String(s));
+  } catch (e) {}
+  /* In the desktop app this page is a frameless, see-through window of its
+     own (corvus/app.py), and has to be transparent from the first paint, or
+     its rounded corners would flash up square. */
+  if (window.qt && window.qt.webChannelTransport) {
+    document.documentElement.classList.add("native-window");
+  }
+})();
+</script>
+</head>
+<body class="popout-page">
+<div id="popout" class="popout-root"></div>
+<script src="vendor/lucide.min.js" defer></script>
+<script src="js/lazy.js" defer></script>
+<script src="js/ui.js" defer></script>
+<script src="js/ssh-term.js" defer></script>
+<script src="js/float-window.js" defer></script>
+<script src="js/popout.js" defer></script>
+<script src="js/video-window.js" defer></script>
+<script src="js/popout-page.js" defer></script>
+</body>
+</html>

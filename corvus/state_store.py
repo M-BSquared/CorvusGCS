@@ -201,9 +201,25 @@ class VehicleStateStore:
             "battery_temperature": None,
             # Seconds the autopilot thinks are left, 0 = not reported.
             "battery_time_remaining": 0,
+            # Corvus's own time-to-empty from the recent drain, -1 = not enough
+            # of a flight yet to say. See battery.drain_endurance.
+            "battery_endurance_est": -1,
             "gps_fix": "",
             "gps_satellites": 0,
             "gps_hdop": 99.0,
+            "gps_vdop": 99.0,
+            # Metres, -1 = the receiver does not say.
+            "gps_h_acc": -1.0,
+            "gps_v_acc": -1.0,
+            # The autopilot's own verdict on the receiver from SYS_STATUS:
+            # "ok", "fault", or "" when it does not report one.
+            "gps_health": "",
+            # From GNSS_INTEGRITY, when the autopilot sends it: "ok",
+            # "mitigated", "detected", or "" for not reported. Signal quality
+            # is the message's own 0 to 10 scale, -1 = not reported.
+            "gps_jamming": "",
+            "gps_spoofing": "",
+            "gps_signal_quality": -1,
             # The RTK base station, in the four scalars the whole app can read
             # off the telemetry stream. Everything else about a base — which
             # receiver, which port, how many corrections of which type — is a

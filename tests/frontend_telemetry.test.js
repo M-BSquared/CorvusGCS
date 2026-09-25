@@ -87,11 +87,17 @@ async function run() {
   const secondSource = eventSources[1];
   assert.equal(firstSource.closed, true);
   secondSource.onerror();
-  assert.equal(notifications.length, 3, "a replacement stream should report its own outage");
+  assert.equal(notifications.length, 2, "an outage before any vehicle was linked is not reported");
+  secondSource.emit("state", JSON.stringify({ connected: false, heading: 0, warnings: [] }));
+  secondSource.onerror();
+  assert.equal(notifications.length, 2, "nor is one while the link has no vehicle on it");
   firstSource.emit("state", JSON.stringify({ connected: true, heading: 999, warnings: [] }));
   secondSource.emit("state", JSON.stringify({ connected: true, heading: 40, warnings: [] }));
   flushAnimationFrame();
   assert.equal(states.at(-1).heading, 40, "events from a replaced stream must be ignored");
+  secondSource.onerror();
+  assert.equal(notifications.length, 3, "a replacement stream should report its own outage");
+  secondSource.emit("state", JSON.stringify({ connected: true, heading: 40, warnings: [] }));
 
   const originalConsoleError = console.error;
   console.error = () => {};

@@ -346,3 +346,54 @@ def estimate(voltage: float, current: float, raw_settings: Any = None) -> dict[s
         "rest_cell_voltage": round(rest / cells, 3),
         "chemistry": resolved["chemistry"],
     }
+
+
+# Corvus's own time-to-empty, for the autopilot that publishes none. It is a
+# straight line through the last few minutes of the percentage the operator is
+# flying by, so it needs enough of a line to be one: a minute of samples, and
+# at least a point of drop across them. Less than that and the slope is noise
+# (a voltage reading wobbling with throttle, a coulomb count that has not moved
+# yet), and a ground station that prints "3 h 40 min" off noise is worse than
+# one that prints nothing.
+ENDURANCE_WINDOW_S = 180.0
+ENDURANCE_MIN_SPAN_S = 60.0
+ENDURANCE_MIN_DROP = 1.0
+
+
+def drain_endurance(samples: Any) -> float:
+    """Seconds until the remaining percentage reaches zero at the recent rate.
+
+    *samples* are ``(seconds, percent)`` pairs, oldest first, taken while the
+    aircraft was armed. Only the last :data:`ENDURANCE_WINDOW_S` of them count,
+    so a climb at the start of the flight does not set the rate for the cruise.
+    Returns -1 when there is no honest answer: too short a window, too little
+    drop, or a percentage that is not falling.
+    """
+    points: list[tuple[float, float]] = []
+    for item in samples or ():
+        try:
+            t, p = float(item[0]), float(item[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if math.isfinite(t) and math.isfinite(p) and 0.0 <= p <= 100.0:
+            points.append((t, p))
+    if len(points) < 3:
+        return -1.0
+    latest = points[-1][0]
+    points = [pt for pt in points if latest - pt[0] <= ENDURANCE_WINDOW_S]
+    span = points[-1][0] - points[0][0]
+    if len(points) < 3 or span < ENDURANCE_MIN_SPAN_S:
+        return -1.0
+    n = float(len(points))
+    mean_t = sum(t for t, _ in points) / n
+    mean_p = sum(p for _, p in points) / n
+    sxx = sum((t - mean_t) ** 2 for t, _ in points)
+    if sxx <= 0:
+        return -1.0
+    slope = sum((t - mean_t) * (p - mean_p) for t, p in points) / sxx
+    if slope >= 0 or -slope * span < ENDURANCE_MIN_DROP:
+        return -1.0
+    # The fitted value rather than the last raw sample: the line is what the
+    # rate came from, and a single sagging reading should not shorten it.
+    now = max(0.0, mean_p + slope * (latest - mean_t))
+    return float(round(now / -slope))

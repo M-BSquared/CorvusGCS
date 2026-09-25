@@ -304,9 +304,8 @@ Corvus.setupSafety = (function () {
 
       const body = tile.querySelector(".tile-body");
       const stateRow = S.el("span", "safety-sensor-state");
-      const on = !!t.enabled;
-      stateRow.appendChild(S.el("span",
-        "safety-sensor-pill " + (on ? "on" : "off"), on ? "On" : "Off"));
+      const st = sensorState(t);
+      stateRow.appendChild(S.el("span", "safety-sensor-pill " + st, STATE_LABELS[st]));
       if (t.detail) stateRow.appendChild(S.el("span", "safety-sensor-state-detail", t.detail));
       if (body) body.appendChild(stateRow); else tile.appendChild(stateRow);
 
@@ -314,6 +313,16 @@ Corvus.setupSafety = (function () {
     });
     card.appendChild(grid);
     return card;
+  }
+
+  // "partial" is its own state rather than a variant of on or off: a driver
+  // the estimator ignores is exactly the sensor that reads perfectly and
+  // changes nothing, and the overview must not call it either.
+  const STATE_LABELS = { on: "On", partial: "Incomplete", off: "Off" };
+
+  function sensorState(t) {
+    if (t && STATE_LABELS[t.state]) return t.state;
+    return t && t.enabled ? "on" : "off";
   }
 
   // -------------------------------------------------------------------------
@@ -382,6 +391,22 @@ Corvus.setupSafety = (function () {
     main.appendChild(sw.el);
     wrap.appendChild(main);
 
+    // What is still missing, read back from the vehicle. One line per gap,
+    // because "the port is at the wrong baud" and "the estimator ignores it"
+    // are two things to fix, not one.
+    const problems = Array.isArray(t.problems) ? t.problems : [];
+    if (problems.length) {
+      const list = S.el("div", "safety-sensor-problems");
+      problems.forEach((text) => {
+        const row = S.el("div", "safety-sensor-problem");
+        row.appendChild(S.icon("triangle-alert"));
+        row.appendChild(S.el("span", "safety-sensor-problem-text", text));
+        list.appendChild(row);
+      });
+      wrap.appendChild(list);
+    }
+    if (t.note) wrap.appendChild(S.el("p", "safety-preset-note safety-sensor-note", t.note));
+
     const picker = S.el("div", "safety-sensor-picker");
     let driverSelect = null;
     let portSelect = null;
@@ -392,7 +417,9 @@ Corvus.setupSafety = (function () {
       driverSelect = Corvus.ui.select({
         className: "safety-select safety-driver-select",
         ariaLabel: (t.label || "Sensor") + " model",
-        options: drivers.map((d) => ({ value: d.id, label: d.label })),
+        options: drivers.map((d) => ({
+          value: d.id, label: d.blocked ? d.label + "  (cannot be set up here)" : d.label,
+        })),
         value: t.selected || (drivers[0] && drivers[0].id),
       });
       driverSelect.dataset.sensor = section.id || "";
@@ -412,20 +439,34 @@ Corvus.setupSafety = (function () {
     picker.appendChild(status);
     wrap.appendChild(picker);
 
+    // Where the picked sensor is plugged in. It follows the model picker,
+    // because an I2C lidar and a serial one of the same brand go to different
+    // connectors.
+    const wiring = wiringLine("");
+    wrap.appendChild(wiring.el);
+
     const ctx = { section, sw, opts, driverSelect, portSelect, portCell, status, detail };
     section._ctx = ctx;
 
     // The port picker only means anything for a serial driver, so it is hidden
     // for an I2C sensor rather than sitting there implying it is being written.
-    function syncPortVisibility() {
-      if (!portCell) return;
+    function syncPicked() {
       const driver = pickedDriver(ctx);
-      portCell.hidden = !(driver && driver.serial);
+      if (portCell) portCell.hidden = !(driver && driver.serial);
+      wiring.set(driver && driver.wiring);
     }
-    syncPortVisibility();
+    syncPicked();
 
     const reapply = () => {
-      syncPortVisibility();
+      syncPicked();
+      // A driver whose prerequisites cannot be set safely from here, or a
+      // port something else already runs on, says why the moment it is
+      // picked, not only when the switch refuses it.
+      const driver = pickedDriver(ctx);
+      const problem = (driver && driver.blocked)
+        || (driver && driver.serial && portProblem(t, ctx.portSelect && ctx.portSelect.value));
+      if (problem) setFieldStatus(status, "err", problem);
+      else setFieldStatus(status, "", "");
       if (!sw.getValue()) return;
       applySensor(state, section, true, status).catch(() => {});
     };
@@ -441,6 +482,26 @@ Corvus.setupSafety = (function () {
       if (portSelect) portSelect.disabled = state.armed;
     });
     return wrap;
+  }
+
+  /** The "where to plug it in" line: a plug icon and one sentence, hidden when empty. */
+  function wiringLine(text) {
+    const el = S.el("div", "safety-wiring");
+    el.appendChild(S.icon("plug"));
+    const body = S.el("span", "safety-wiring-text", "");
+    el.appendChild(body);
+    const set = (next) => {
+      body.textContent = next || "";
+      el.hidden = !next;
+    };
+    set(text);
+    return { el, set };
+  }
+
+  /** Why the serial port *value* cannot take this sensor, or "". */
+  function portProblem(t, value) {
+    const port = ((t && t.ports) || []).find((p) => String(p.value) === String(value));
+    return (port && port.blocked) || "";
   }
 
   /** A small caption above a picker, so the two selects are not two bare boxes. */
@@ -521,7 +582,7 @@ Corvus.setupSafety = (function () {
   function presetOptionLabel(preset) {
     const parts = [preset.bus, preset.model].filter(Boolean).join(" · ");
     let label = preset.label + (parts ? " · " + parts : "");
-    if (!preset.supported) label += "  (not supported by PX4)";
+    if (!preset.supported) label += "  (cannot be set up here)";
     else if (preset.active) label += "  (in use)";
     return label;
   }
@@ -552,6 +613,7 @@ Corvus.setupSafety = (function () {
     if (!preset) return;
 
     if (preset.summary) host.appendChild(S.el("p", "safety-preset-summary", preset.summary));
+    if (preset.wiring) host.appendChild(wiringLine(preset.wiring).el);
     if (preset.note) host.appendChild(S.el("p", "safety-preset-note", preset.note));
 
     if (!preset.supported) {
@@ -606,13 +668,24 @@ Corvus.setupSafety = (function () {
     S.refreshIcons();
   }
 
-  /** Exactly what the preset will write, parameter by parameter, and why. */
+  /**
+   * Exactly what the preset will write, parameter by parameter, and why.
+   *
+   * A write whose parameter name depends on the port (ArduPilot's
+   * SERIALn_PROTOCOL) is renamed as the port picker changes, so the list
+   * always names the parameter that will really be written. What the preset
+   * considered and left alone (a CAN stack already past the value it needs)
+   * is listed too, so its absence from the writes is not a mystery.
+   */
   function writeTable(preset, portSelect) {
     const list = S.el("div", "safety-preset-writes");
+    const named = [];
     (preset.writes || []).forEach((w) => {
       const row = S.el("div", "safety-preset-write");
       row.dataset.param = w.param || "";
-      row.appendChild(S.el("span", "safety-preset-write-param", w.param || ""));
+      const name = S.el("span", "safety-preset-write-param", w.param || "");
+      row.appendChild(name);
+      if (w.port_param) named.push({ row, name, template: String(w.param || "") });
       const value = S.el("span", "safety-preset-write-value",
         w.port ? "the port below" : S.formatNumber(w.value));
       if (w.port) value.classList.add("pending");
@@ -620,8 +693,68 @@ Corvus.setupSafety = (function () {
       row.appendChild(S.el("span", "safety-preset-write-why", w.label || ""));
       list.appendChild(row);
     });
-    if (portSelect) list.dataset.serial = "true";
+    (preset.kept || []).forEach((w) => {
+      const row = S.el("div", "safety-preset-kept");
+      row.dataset.param = w.param || "";
+      row.appendChild(S.el("span", "safety-preset-write-param", w.param || ""));
+      row.appendChild(S.el("span", "safety-preset-write-value", "stays " + S.formatNumber(w.value)));
+      row.appendChild(S.el("span", "safety-preset-write-why", w.label || ""));
+      list.appendChild(row);
+    });
+    const syncNames = () => {
+      named.forEach((n) => {
+        const text = portSelect ? portParam(n.template, portSelect.value) : n.template;
+        n.name.textContent = text;
+        n.row.dataset.param = text;
+      });
+    };
+    syncNames();
+    if (portSelect) {
+      list.dataset.serial = "true";
+      portSelect.addEventListener("change", syncNames);
+    }
     return list;
+  }
+
+  /** A parameter name with the SERIAL port number filled in. */
+  function portParam(template, port) {
+    return String(template).split("{port}").join(String(port));
+  }
+
+  /**
+   * The zeroing writes that come first in a chain.
+   *
+   * A plain name is written to 0 (a PX4 driver enable). An object names its
+   * own value and, for a serial port being freed, the port it belongs to, so
+   * the port the operator just picked is never freed again.
+   */
+  function clearWrites(list, port) {
+    const out = [];
+    (list || []).forEach((c) => {
+      if (typeof c === "string") { out.push({ name: c, value: 0 }); return; }
+      if (!c || !c.param) return;
+      if (c.port != null && Number(c.port) === port) return;
+      out.push({ name: c.param, value: Number(c.value) });
+    });
+    return out;
+  }
+
+  /**
+   * Everything one picker entry writes to start its driver, in order: free
+   * the other ports on its protocol, set its own port, the prerequisites it
+   * carries (a CAN stack, a model, a bus address), and the driver last.
+   */
+  function driverWrites(driver, port) {
+    const out = clearWrites(driver.port_clear, port);
+    (driver.port_writes || []).forEach((w) => {
+      out.push({ name: portParam(w.param, port), value: Number(w.value) });
+    });
+    (driver.extra || []).forEach((w) => out.push({ name: w.param, value: Number(w.value) }));
+    if (driver.param) {
+      const value = driver.value == null ? port : Number(driver.value);
+      out.push({ name: driver.param, value });
+    }
+    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -854,19 +987,27 @@ Corvus.setupSafety = (function () {
     if (!preset.supported) throw new Error(preset.unsupported || "not supported");
 
     const t = section.toggle || {};
-    const own = (preset.writes || []).map((w) => w.param);
-    const writes = [];
-    (t.clear || []).forEach((param) => {
-      if (own.indexOf(param) < 0) writes.push({ name: param, value: 0 });
-    });
-    for (const w of preset.writes || []) {
-      const value = w.port ? Number(portSelect && portSelect.value) : Number(w.value);
-      if (!isFinite(value)) {
-        setPresetStatus(state, status, "err", "pick the serial port first");
-        throw new Error("no serial port selected");
-      }
-      writes.push({ name: w.param, value });
+    const port = preset.serial ? Number(portSelect && portSelect.value) : NaN;
+    if (preset.serial && !(portSelect && portSelect.value !== "" && isFinite(port))) {
+      setPresetStatus(state, status, "err", "pick the serial port first");
+      throw new Error("no serial port selected");
     }
+    const taken = preset.serial ? portProblem(t, port) : "";
+    if (taken) {
+      setPresetStatus(state, status, "err", taken);
+      throw new Error(taken);
+    }
+    const own = (preset.writes || []).map((w) => ({
+      name: w.port_param ? portParam(w.param, port) : w.param,
+      value: w.port ? port : Number(w.value),
+    }));
+    const ownNames = own.map((w) => w.name);
+    // The backend's own list when it sent one: a module carrying two sensors
+    // replaces the drivers on both pages, not only on the one it was applied
+    // from.
+    const clear = Array.isArray(preset.clear) ? preset.clear : (t.clear || []);
+    const writes = clearWrites(clear, port).filter((w) => ownNames.indexOf(w.name) < 0);
+    own.forEach((w) => writes.push(w));
     if (!writes.length) {
       setPresetStatus(state, status, "", "");
       return;
@@ -894,8 +1035,9 @@ Corvus.setupSafety = (function () {
    *
    * Ordered on purpose: a driver that is being replaced is switched off before
    * the new one is switched on, so two rangefinder drivers never claim the same
-   * bus at once. The estimator half goes last on enable and follows the driver
-   * on disable.
+   * bus at once. What the new driver depends on (its serial port, a CAN stack,
+   * its model or bus address) is written before the driver itself. The
+   * estimator half goes last on enable and follows the driver on disable.
    *
    * Rejects on the first refused write. The switch component snaps back on a
    * rejection, so a refusal never leaves an "on" switch over a sensor that is
@@ -907,20 +1049,31 @@ Corvus.setupSafety = (function () {
     const ctx = section._ctx || {};
     const driver = on ? pickedDriver(ctx) : null;
 
-    const writes = [];
-    (t.clear || []).forEach((param) => {
-      if (driver && driver.param === param) return;
-      writes.push({ name: param, value: 0 });
-    });
-    if (driver && driver.param) {
-      const value = driver.serial
-        ? Number(ctx.portSelect && ctx.portSelect.value)
-        : Number(driver.value);
-      if (isFinite(value)) writes.push({ name: driver.param, value });
-      // A DroneCAN sensor is a subscription, and a subscription is silent while
-      // the CAN stack is off — the driver carries that second write with it.
-      (driver.extra || []).forEach((w) => writes.push({ name: w.param, value: Number(w.value) }));
+    // A driver whose prerequisites cannot be set safely from here (a CAN port
+    // already running something else, a second serial rangefinder) is refused
+    // whole. Writing only the driver would be the half-setup this page exists
+    // to prevent.
+    if (driver && driver.blocked) {
+      setFieldStatus(status, "err", driver.blocked);
+      notify("critical", `Could not configure ${t.label}: ${driver.blocked}`);
+      throw new Error(driver.blocked);
     }
+    const port = driver && driver.serial ? Number(ctx.portSelect && ctx.portSelect.value) : NaN;
+    if (driver && driver.serial
+        && !(ctx.portSelect && ctx.portSelect.value !== "" && isFinite(port))) {
+      setFieldStatus(status, "err", "pick the serial port first");
+      throw new Error("no serial port selected");
+    }
+    const taken = driver && driver.serial ? portProblem(t, port) : "";
+    if (taken) {
+      setFieldStatus(status, "err", taken);
+      notify("critical", `Could not configure ${t.label}: ${taken}`);
+      throw new Error(taken);
+    }
+
+    const writes = clearWrites(t.clear, port)
+      .filter((w) => !(driver && driver.param === w.name));
+    if (driver) driverWrites(driver, port).forEach((w) => writes.push(w));
     const tail = on ? (t.enable || []) : (t.disable || []);
     tail.forEach((w) => writes.push({ name: w.param, value: Number(w.value) }));
 

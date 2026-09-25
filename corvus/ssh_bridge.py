@@ -16,6 +16,7 @@ actually is so full-screen programs wrap correctly.
 """
 from __future__ import annotations
 
+import codecs
 import collections
 import logging
 import os
@@ -102,14 +103,24 @@ def _new_client() -> paramiko.SSHClient:
     path = known_hosts_path()
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        # The file has to exist before the first host is accepted, not after.
+        # paramiko's save_host_keys reads the file again before it writes, and
+        # a file that is not there makes that read raise inside the policy: the
+        # very first connection to a new host failed, and every one after it,
+        # because nothing was ever saved. Only a machine whose hosts were all
+        # in ~/.ssh/known_hosts already, never asked to accept one, got through.
+        # Owner-only, like the config file: it records where this station
+        # connects to.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        os.close(fd)
     except OSError:
-        logger.debug("could not create %s", os.path.dirname(path), exc_info=True)
+        logger.debug("could not create %s", path, exc_info=True)
     try:
-        # Sets _host_keys_filename before it reads, so a file that does not
-        # exist yet still becomes the one auto-added keys are saved to.
+        # Sets _host_keys_filename before it reads, so it is the file
+        # auto-added keys are saved to.
         client.load_host_keys(path)
     except OSError:
-        logger.debug("no Corvus known_hosts at %s yet", path)
+        logger.debug("could not read the Corvus known_hosts at %s", path)
     client.set_missing_host_key_policy(
         paramiko.RejectPolicy() if strict_host_keys() else _RememberAndWarnPolicy()
     )
@@ -125,6 +136,27 @@ def _host_key_hint(exc: Exception) -> str:
         f"{known_hosts_path()} and connect again), or something else is "
         f"answering on that address."
     )
+
+
+def _connect_failure(exc: Exception, host: str, port: int, timeout: float) -> str:
+    """The operator-facing reason a connect failed.
+
+    A timeout is the usual field failure (the companion computer is off, or on
+    another network) and its own text is a bare "timed out", so it gets a
+    sentence that names the address that did not answer. Socket errors lose
+    their "[Errno N]" prefix and gain the address instead; paramiko bundles a
+    refused or unreachable address into one error whose own text hides which.
+    """
+    where = f"{host}:{port}"
+    if isinstance(exc, TimeoutError):
+        return f"No answer from {where} within {timeout:g} s."
+    if isinstance(exc, paramiko.ssh_exception.NoValidConnectionsError):
+        causes = sorted({e.strerror or str(e) for e in exc.errors.values()})
+        if causes:
+            return f"{', '.join(causes)} ({where})."
+    if isinstance(exc, OSError) and exc.strerror:
+        return f"{exc.strerror} ({where})."
+    return str(exc) or exc.__class__.__name__
 
 
 class SshSession:
@@ -160,6 +192,9 @@ class SshSession:
         self._replay: collections.deque[str] = collections.deque()
         self._replay_len = 0
         self._connected = False
+        # Why connect() returned False. A failed session is never kept, so its
+        # scrollback (where the reason is also published) has no reader.
+        self.error = ""
         self.cols = 80
         self.rows = 24
 
@@ -169,13 +204,14 @@ class SshSession:
 
     def connect(self) -> bool:
         """Open the SSH connection and start the shell reader thread."""
+        timeout = 8
         try:
             self._client = _new_client()
             kwargs: dict[str, Any] = {
                 "hostname": self.host,
                 "port": self.port,
                 "username": self.username,
-                "timeout": 8,
+                "timeout": timeout,
             }
             if self._key_path:
                 kwargs["key_filename"] = self._key_path
@@ -204,20 +240,29 @@ class SshSession:
         except paramiko.BadHostKeyException as exc:
             logger.error("SSH host key mismatch for %s: %s", self.host, exc)
             self._close_transport()
-            self._publish("Connection refused: " + _host_key_hint(exc).replace("\n", "\r\n") + "\r\n")
+            self.error = _host_key_hint(exc)
+            self._publish("Connection refused: " + self.error.replace("\n", "\r\n") + "\r\n")
             return False
         except Exception as exc:
             logger.error("SSH connect to %s: %s", self.host, exc)
             self._close_transport()
-            self._publish(f"Connection failed: {exc}\r\n")
+            self.error = _connect_failure(exc, self.host, self.port, timeout)
+            self._publish(f"Connection failed: {self.error}\r\n")
             return False
 
     def _read_loop(self) -> None:
-        """Read shell output continuously and push to subscribers."""
+        """Read shell output continuously and push to subscribers.
+
+        Decoded incrementally: a read ends wherever the channel's window did,
+        often in the middle of a character, and decoding each read on its own
+        turned every character split that way (an umlaut, a box-drawing line
+        of ``htop``) into a replacement mark.
+        """
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         while self._running.is_set() and self._channel:
             try:
                 if self._channel.recv_ready():
-                    data = self._channel.recv(65536).decode("utf-8", errors="replace")
+                    data = decoder.decode(self._channel.recv(65536))
                     self._publish(data)
                 elif self._channel.exit_status_ready():
                     break
@@ -271,7 +316,9 @@ class SshSession:
             connected = self._connected
         if channel and connected:
             try:
-                channel.send(data)
+                # sendall: send() takes what fits in the channel's window and
+                # says how much that was, so a large paste arrived cut short.
+                channel.sendall(data.encode("utf-8"))
             except Exception as exc:
                 logger.error("SSH send: %s", exc)
 
@@ -335,6 +382,8 @@ class SshBridge:
         self._sessions: dict[str, SshSession] = {}
         self._lock = threading.Lock()
         self._attempts: dict[str, int] = {}
+        # name -> why the latest connect under it failed; see connect_error().
+        self._errors: dict[str, str] = {}
         self._shutting_down = False
 
     def connect(
@@ -355,6 +404,20 @@ class SshBridge:
         the existing same-name session first, and insert the new one after a
         successful connect.
         """
+        return self._open(name, lambda: SshSession(name, host, port, username, password, key_path))
+
+    def connect_local(self, name: str, directory: str = "") -> bool:
+        """Open (or replace) a named shell on this computer.
+
+        It lives among the SSH sessions on purpose: the output stream, input,
+        resize, disconnect and the terminal windows all work on it by name,
+        exactly as on an SSH session (see ``corvus/local_shell.py``).
+        """
+        from .local_shell import LocalSession
+        return self._open(name, lambda: LocalSession(name, directory))
+
+    def _open(self, name: str, make: Callable[[], SshSession]) -> bool:
+        """Replace whatever runs under *name* with the session *make* builds."""
         # Disconnect any existing session under the same name first (under the
         # lock, brief — only the reader-thread join, up to 2s). The entry stays
         # in the dict (now disconnected) so a failed reconnect matches the
@@ -364,13 +427,19 @@ class SshBridge:
                 return False
             attempt = self._attempts.get(name, 0) + 1
             self._attempts[name] = attempt
+            self._errors.pop(name, None)
             old = self._sessions.get(name)
         if old is not None:
             old.disconnect()
         # Build + connect OUTSIDE the lock so the SSH API stays responsive.
-        session = SshSession(name, host, port, username, password, key_path)
+        session = make()
         ok = session.connect()
         if not ok:
+            with self._lock:
+                # Only the latest attempt's answer: a slower, older one must not
+                # overwrite the reason the caller that came after it will read.
+                if self._attempts.get(name) == attempt:
+                    self._errors[name] = session.error
             return ok
         with self._lock:
             if self._shutting_down or self._attempts.get(name) != attempt:
@@ -390,10 +459,16 @@ class SshBridge:
             sneaked.disconnect()
         return ok
 
+    def connect_error(self, name: str) -> str:
+        """Why the latest connect under *name* failed, or "" when it did not."""
+        with self._lock:
+            return self._errors.get(name, "")
+
     def disconnect(self, name: str) -> bool:
         """Close a named session."""
         with self._lock:
             self._attempts[name] = self._attempts.get(name, 0) + 1
+            self._errors.pop(name, None)
             session = self._sessions.pop(name, None)
         if session:
             session.disconnect()
@@ -444,6 +519,7 @@ class SshBridge:
                 self._attempts[name] += 1
             sessions = list(self._sessions.values())
             self._sessions.clear()
+            self._errors.clear()
         for s in sessions:
             s.disconnect()
 

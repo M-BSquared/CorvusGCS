@@ -1,0 +1,188 @@
+/* Schwalby — the only styles this plugin adds.
+   Everything else is the app's own form, card and button styling, reached
+   through Corvus.ui. A plugin stylesheet is loaded into the shared document,
+   so every selector here is prefixed (schw-) and none restyles an app class. */
+
+/* The shelf: one row per launch button, separated by a hairline so a shelf of
+   eight still reads as one object. */
+.schw-shelf {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 14px;
+}
+.schw-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.schw-row:first-child { padding-top: 0; }
+.schw-row:last-child { border-bottom: none; }
+
+/* The launch button takes the row; a long label truncates rather than
+   wrapping the row onto two lines. */
+.schw-launch {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+}
+.schw-launch span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Where it runs, the warning, the live dot, the arrow and the pencil: present,
+   never competing with the launch button, full strength on hover or focus.
+   Centred, because they are not all one height. */
+.schw-row-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  opacity: 0.55;
+  transition: opacity 120ms ease;
+}
+.schw-row:hover .schw-row-tools,
+.schw-row-tools:focus-within { opacity: 1; }
+
+/* Local or SSH, in the segment's words: a quiet tag, not a control. */
+.schw-where {
+  flex: 0 0 auto;
+  margin-right: 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* A row whose program is running: a live dot on the card's own surface, and
+   tools that stop fading, because that is when the arrow matters. */
+.schw-dot {
+  width: 6px;
+  height: 6px;
+  margin: 0 4px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--healthy);
+}
+.schw-running .schw-row-tools { opacity: 1; }
+.schw-running .schw-open { color: var(--healthy); }
+.schw-open:disabled { opacity: 0.35; cursor: default; }
+
+/* Why the last press failed: the app's hint icon in the critical colour, in
+   the tools' 28px box so it sits on their centre line. Qualified with .ui-info
+   so it outranks the app's own hint rules by specificity, not by order. */
+.ui-info.schw-error {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-btn);
+  color: var(--critical);
+}
+.ui-info.schw-error:hover,
+.ui-info.schw-error[data-popover-open="true"] { color: var(--critical-bright); }
+.schw-failed .schw-row-tools { opacity: 1; }
+
+/* Local or SSH in the editor: a recessed well with the chosen segment lifted
+   out of it, the same metrics as the connection panel's Serial / Network. */
+.schw-seg {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  background: var(--panel-fill);
+  border: 1px solid var(--panel-hairline);
+  border-radius: var(--radius-btn);
+}
+.schw-seg-opt {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: calc(var(--radius-btn) - 2px);
+  background: transparent;
+  color: var(--text-3);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: background 130ms ease, color 130ms ease;
+}
+.schw-seg-opt i, .schw-seg-opt svg { width: 13px; height: 13px; flex: 0 0 auto; }
+.schw-seg-opt:hover { color: var(--text-1); }
+.schw-seg-opt[aria-checked="true"] { background: var(--surface-1); color: var(--text-1); }
+.schw-seg-opt[aria-checked="true"] i,
+.schw-seg-opt[aria-checked="true"] svg { color: var(--accent); }
+.schw-seg-opt:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: -2px; }
+
+/* The SSH fields, gone for a button on this computer. */
+.schw-ssh-fields[hidden] { display: none; }
+
+/* A connection typed in for a button that has none saved yet: inset, so six
+   fields read as one answer to the Connection question above them. */
+.schw-newconn {
+  margin: -4px 0 14px;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-btn);
+  background: var(--surface-2);
+}
+.schw-newconn[hidden] { display: none; }
+.schw-newconn .field:last-child { margin-bottom: 0; }
+
+/* What the button will run, while it is being edited. Wrapping, because a
+   wrong folder is easiest to spot with the whole line in view. */
+.schw-preview {
+  margin: 4px 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-btn);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.schw-preview-empty {
+  color: var(--text-3);
+  font-family: inherit;
+}
+
+.schw-note { margin-top: 10px; }
+
+/* The output of a background run that failed: capped, so a long one cannot
+   push the shelf off screen. */
+.schw-output {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-btn);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .schw-row-tools,
+  .schw-seg-opt { transition: none; }
+}

@@ -368,13 +368,37 @@ def test_run_rejects_a_bad_payload(tmp_path, monkeypatch, payload, expected):
 class _ConnectSpy:
     """Records the SshBridge.connect call and returns a canned result."""
 
-    def __init__(self, ok: bool = True) -> None:
+    def __init__(self, ok: bool = True, reason: str = "") -> None:
         self.calls: list[tuple] = []
         self.ok = ok
+        self.reason = reason
 
     def connect(self, name, host, port, username, password, key_path):
         self.calls.append((name, host, port, username, password, key_path))
         return self.ok
+
+    def connect_error(self, name):
+        return self.reason
+
+
+def test_a_failed_connect_says_why(tmp_path):
+    """The launcher's warning shows `error`. Without it every failure, a host
+    that is off or a wrong password alike, read as the same generic line."""
+    spy = _ConnectSpy(ok=False, reason="No answer from 10.0.0.7:2222 within 8 s.")
+    handler, responses = _with_saved_connection(tmp_path, ssh=spy)
+    handler._api_ssh_connect({"name": "ssh-launcher/b1", "from": "companion"})
+    body, status = responses[0]
+    assert status == 200
+    assert body["ok"] is False and body["connected"] is False
+    assert body["error"] == "No answer from 10.0.0.7:2222 within 8 s."
+
+
+def test_a_failed_connect_without_a_reason_still_says_something(tmp_path):
+    spy = _ConnectSpy(ok=False)
+    handler, responses = _with_saved_connection(tmp_path, ssh=spy)
+    handler._api_ssh_connect({"name": "ssh-launcher/b1", "from": "companion"})
+    body, _ = responses[0]
+    assert body["error"] == "Connection failed."
 
 
 def test_connect_can_borrow_a_saved_connections_credentials(tmp_path):
@@ -425,3 +449,28 @@ def test_run_is_registered_on_the_post_route_table():
     assert CorvusHandler._POST_ROUTES["/api/plugins/settings"] == "_api_plugins_settings"
     assert CorvusHandler._POST_ROUTES["/api/plugins/folder"] == "_api_plugins_folder"
     assert CorvusHandler._GET_ROUTES["/api/plugins"] == "_api_plugins"
+
+
+def test_a_registry_that_calls_javascript_plain_text_changes_nothing(tmp_path, monkeypatch):
+    """Windows: mimetypes reads the registry, where an editor can have set .js
+    to text/plain. With nosniff, Chromium would then run no script at all."""
+    import mimetypes
+    monkeypatch.setattr(mimetypes, "guess_type", lambda *_a, **_k: ("text/plain", None))
+    _make_plugin(tmp_path / "bundled", "demo")
+    handler, _ = _handler(tmp_path)
+    raw = _RawCapture()
+    raw.attach(handler)
+    handler._api_plugin_asset("demo", "demo.js")
+    assert raw.status == 200
+    assert raw.headers["Content-Type"] == "text/javascript"
+
+
+@pytest.mark.parametrize("name,expected", [
+    ("app.js", "text/javascript"), ("m.mjs", "text/javascript"), ("main.css", "text/css"),
+    ("index.html", "text/html"), ("f.woff2", "font/woff2"), ("x.svg", "image/svg+xml"),
+    ("x.map", "application/json"), ("README.md", "text/markdown"), ("blob", "application/octet-stream"),
+    ("UPPER.JS", "text/javascript"),
+])
+def test_content_types_are_the_same_on_every_host(name, expected):
+    from corvus.server import content_type
+    assert content_type(name) == expected

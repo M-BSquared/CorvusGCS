@@ -15,11 +15,11 @@ Design rules (mandated by AGENTS.md):
 - Unknown keys are ignored; known keys are type-coerced where reasonable.
 
 ``save_config`` writes the file **atomically** with mode 0o600 because the
-file carries secrets: SSH passwords, the NTRIP password, and the map service
-API keys. ``to_public_dict`` is the single redaction point: it strips
-``password`` from every ``ssh_connections`` entry, blanks the NTRIP password,
-and drops ``map_tokens`` outright, so no HTTP response ever echoes a secret
-back.
+file carries secrets: SSH passwords, the NTRIP password, camera passwords and
+the map service API keys. ``to_public_dict`` is the single redaction point: it
+strips ``password`` from every ``ssh_connections`` entry and every camera,
+blanks the NTRIP password, and drops ``map_tokens`` outright, so no HTTP
+response ever echoes a secret back.
 
 stdlib only.
 """
@@ -70,7 +70,9 @@ _CONFIG_FIELD_ORDER: tuple[str, ...] = (
     "battery",
     "remote_id",
     "rtk",
+    "video",
     "plugins",
+    "parameters",
 )
 
 # Required keys on a saved ssh_connections entry; missing keys default to a
@@ -134,8 +136,16 @@ class CorvusConfig:
     see ``corvus/rtk.py``. ``enabled`` is true when the key is absent, which is
     what makes a plugged-in base work on a station that has never been
     configured).
+    ``video`` is the camera list (``{"streams": [{"id", "name", "url",
+    "username", "password", "transport"}], "ffmpeg": ""}``; see
+    ``corvus/video.py``). A stream password is a secret like the SSH ones and
+    is redacted by :func:`to_public_dict`.
     ``plugins`` is the state each TOOLS-tab plugin saves for itself
     (``{"<plugin id>": {...}}``; see ``corvus/plugin_registry.py``).
+    ``parameters`` holds the parameter editor's options
+    (``{"cache_defaults": false}``: whether a copy of each PX4 firmware's
+    parameter metadata is kept on this machine; see
+    ``corvus/param_metadata.py``).
 
     They default to empty/None so an old config file with none of these keys
     still loads cleanly.
@@ -173,7 +183,9 @@ class CorvusConfig:
     battery: dict[str, Any] | None = None
     remote_id: dict[str, Any] | None = None
     rtk: dict[str, Any] | None = None
+    video: dict[str, Any] | None = None
     plugins: dict[str, Any] | None = None
+    parameters: dict[str, Any] | None = None
 
     def apply_overrides(self, **kwargs: Any) -> CorvusConfig:
         """Return a copy with non-None kwargs overriding matching fields.
@@ -568,6 +580,12 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     it the bar is full-size until the row genuinely will not fit — the same
     rule, at the same size, as the Mission planner's tool bar — and trading
     the labels for map earlier than that is a preference, not a default.
+
+    ``windows_in_app`` keeps camera and terminal windows inside the Corvus
+    window, where a drag past its edge takes one out into a window of its own.
+    Off unless asked for: in the desktop app they open as windows of their own
+    straight away (see ``src/js/popout.js``). A browser has no such windows, so
+    there they are always inside, whatever this says.
     """
     if not isinstance(raw, dict):
         return None
@@ -578,7 +596,8 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
         if scale == scale and scale not in (float("inf"), float("-inf")):  # not NaN / inf
             out["scale"] = min(max(scale, _UI_SCALE_MIN), _UI_SCALE_MAX)
     for key in ("inverted_app_icon", "app_icon_backplate", "topbar_status_dots",
-                "mission_page", "notification_marks", "flight_bar_shrink"):
+                "mission_page", "notification_marks", "flight_bar_shrink",
+                "windows_in_app"):
         if isinstance(raw.get(key), bool):
             out[key] = raw[key]
     return out or None
@@ -655,6 +674,19 @@ def _coerce_rtk(raw: Any) -> dict[str, Any] | None:
     return settings(raw)
 
 
+def _coerce_video(raw: Any) -> dict[str, Any] | None:
+    """Keep the camera list; bound every field.
+
+    The bounds live in :mod:`corvus.video` beside the code that hands the
+    address to ffmpeg, which is the reason they exist: an address edited into
+    the file by hand must not become a way to open a local file.
+    """
+    if not isinstance(raw, dict):
+        return None
+    from .video import settings
+    return settings(raw)
+
+
 def _coerce_plugins(raw: Any) -> dict[str, Any] | None:
     """Keep the per-plugin settings objects; drop everything else.
 
@@ -673,6 +705,21 @@ def _coerce_plugins(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
     out = {k: v for k, v in raw.items() if isinstance(k, str) and k and isinstance(v, dict)}
+    return out or None
+
+
+def _coerce_parameters(raw: Any) -> dict[str, Any] | None:
+    """Keep the boolean ``cache_defaults``; else None.
+
+    Off unless asked for, and a genuine boolean only, like the controls keys:
+    the copy it turns on can in rare cases show another firmware's defaults,
+    so a config carrying ``"false"`` must not read as on.
+    """
+    if not isinstance(raw, dict):
+        return None
+    out: dict[str, Any] = {}
+    if isinstance(raw.get("cache_defaults"), bool):
+        out["cache_defaults"] = raw["cache_defaults"]
     return out or None
 
 
@@ -742,7 +789,9 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
     battery = _coerce_battery(data.get("battery"))
     remote_id = _coerce_remote_id(data.get("remote_id"))
     rtk_cfg = _coerce_rtk(data.get("rtk"))
+    video_cfg = _coerce_video(data.get("video"))
     plugins = _coerce_plugins(data.get("plugins"))
+    parameters = _coerce_parameters(data.get("parameters"))
 
     return CorvusConfig(
         mavlink_connection=mavlink_connection,
@@ -768,7 +817,9 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         battery=battery,
         remote_id=remote_id,
         rtk=rtk_cfg,
+        video=video_cfg,
         plugins=plugins,
+        parameters=parameters,
     )
 
 
@@ -856,8 +907,15 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
             k: (dict(v) if isinstance(v, dict) else v)
             for k, v in cfg.rtk.items()
         }
+    if cfg.video is not None:
+        out["video"] = {
+            "streams": [dict(s) for s in cfg.video.get("streams", [])],
+            "ffmpeg": cfg.video.get("ffmpeg", ""),
+        }
     if cfg.plugins is not None:
         out["plugins"] = {k: dict(v) for k, v in cfg.plugins.items()}
+    if cfg.parameters is not None:
+        out["parameters"] = dict(cfg.parameters)
     # Stable key order for a readable on-disk diff.
     return {k: out[k] for k in _CONFIG_FIELD_ORDER if k in out}
 
@@ -941,6 +999,15 @@ def to_public_dict(cfg: CorvusConfig) -> dict[str, Any]:
         ntrip["has_password"] = bool(ntrip.get("password"))
         ntrip["password"] = ""
         rtk_block["ntrip"] = ntrip
+    # A camera password is the third: an RTSP address usually carries one.
+    video_block = public.get("video")
+    if isinstance(video_block, dict):
+        streams = []
+        for stream in video_block.get("streams", []):
+            clean = dict(stream)
+            clean["has_password"] = bool(clean.pop("password", ""))
+            streams.append(clean)
+        video_block["streams"] = streams
     redacted: list[dict[str, Any]] = []
     for entry in public.get("ssh_connections", []):
         if not isinstance(entry, dict):

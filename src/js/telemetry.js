@@ -116,11 +116,15 @@ Corvus.telemetry = (function () {
     eventSource.addEventListener("ping", () => {});
     eventSource.onerror = () => {
       if (generation !== connectionGeneration) return;
+      // With no vehicle on the link a dropped stream loses nothing, and
+      // EventSource retries on its own; reporting it then only buries the
+      // operator in notifications while they are still setting up the radio.
+      const vehicleWasLinked = state.connected === true;
       if (state.connected !== false) {
         state.connected = false;
         notifySubscribers();
       }
-      if (!streamErrorReported) {
+      if (vehicleWasLinked && !streamErrorReported) {
         streamErrorReported = true;
         publishTransportError("Telemetry connection interrupted; reconnecting");
       }

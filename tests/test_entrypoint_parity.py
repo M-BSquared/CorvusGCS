@@ -55,6 +55,8 @@ _SHARED_SERVICES = [
     ("_build_flash_service", "FlashService"),
     ("_build_sik_service", "SikService"),
     ("_build_rtk_service", "RtkService"),
+    ("_build_video_service", "VideoService"),
+    ("_build_local_runner", "LocalRunner"),
     ("_build_update_checker", "UpdateChecker"),
     ("_build_log_service", "LogService"),
     ("_build_geocoder", "Geocoder"),

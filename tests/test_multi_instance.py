@@ -151,3 +151,40 @@ def test_the_server_is_marked_stopping_before_its_resources_go_away() -> None:
         assert not thread.is_alive()
     finally:
         server.server_close()
+
+
+def _ipv6_loopback() -> bool:
+    if not socket.has_ipv6:
+        return False
+    try:
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as probe:
+            probe.bind(("::1", 0))
+    except OSError:
+        return False
+    return True
+
+
+@pytest.mark.skipif(not _ipv6_loopback(), reason="no IPv6 loopback on this host")
+def test_a_port_another_program_holds_on_ipv6_loopback_is_skipped() -> None:
+    """The window opens localhost, which macOS and Windows try as ::1 first.
+
+    A program on [::1] with Corvus' port would get the window's requests while
+    Corvus sat on 127.0.0.1 unseen.
+    """
+    other = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+    try:
+        other.bind(("::1", 0))
+        other.listen(1)
+        taken = other.getsockname()[1]
+        assert server_mod.ipv6_loopback_taken(taken) is True
+        server = bind_server(taken, CorvusHandler, host="127.0.0.1")
+        try:
+            assert server.server_address[1] != taken
+        finally:
+            server.server_close()
+    finally:
+        other.close()
+
+
+def test_a_free_ipv6_port_is_not_reported_taken() -> None:
+    assert server_mod.ipv6_loopback_taken(_free_port()) is False

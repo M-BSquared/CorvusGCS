@@ -21,7 +21,8 @@ __pycache__/
 # dev venv created by run.sh
 /.venv/
 
-# plugins besides the two basis plugins
+# plugins besides the ones that ship with Corvus
 /plugins/*/
+!/plugins/schwalby/
 !/plugins/ssh-launcher/
 !/plugins/vibration/

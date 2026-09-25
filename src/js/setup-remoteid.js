@@ -364,7 +364,7 @@ Corvus.setupRemoteId = (function () {
       key: "region", path: [], label: "Check against",
       options: options(state, "regions", [{ value: "eu", label: "European Union" }]),
       stringValue: true,
-      hint: "Which published broadcast format the list below is measured "
+      info: "Which published broadcast format the list below is measured "
             + "against. It changes what Corvus checks, never what it sends.",
     }));
     card.appendChild(grid);
@@ -491,14 +491,14 @@ Corvus.setupRemoteId = (function () {
     grid.appendChild(selectRow(state, {
       key: "id_type", path: ["basic_id"], label: "ID type",
       options: options(state, "id_types", []),
-      hint: "What kind of identifier the field below is. Getting this wrong "
+      info: "What kind of identifier the field below is. Getting this wrong "
             + "broadcasts a correct number under the wrong heading.",
     }));
     grid.appendChild(textRow(state, {
       key: "uas_id", path: ["basic_id"], label: "Aircraft ID",
       maxLength: (schema(state).limits || {}).uas_id || 20,
       placeholder: "e.g. 1596F483658SK8U6PNJ1",
-      hint: "Exactly as it appears on the aircraft. Capitals and digits only, "
+      info: "Exactly as it appears on the aircraft. Capitals and digits only, "
             + "without the letters I and O.",
       uppercase: true,
       validate: (value) => serialProblem(state, value),
@@ -506,7 +506,7 @@ Corvus.setupRemoteId = (function () {
     grid.appendChild(selectRow(state, {
       key: "ua_type", path: ["basic_id"], label: "Aircraft type",
       options: options(state, "ua_types", []),
-      hint: "What the aircraft is, as it was registered.",
+      info: "What the aircraft is, as it was registered.",
       suggestion: suggestedUaType(state),
     }));
     card.appendChild(grid);
@@ -575,7 +575,7 @@ Corvus.setupRemoteId = (function () {
       key: "operator_id", path: ["operator_id"], label: "Operator registration",
       maxLength: (schema(state).limits || {}).operator_id || 20,
       placeholder: "e.g. FIN87astrdge12k8",
-      hint: "Under the FAA's rule this field is optional; under the EU's it is "
+      info: "Under the FAA's rule this field is optional; under the EU's it is "
             + "what the broadcast is for.",
     }));
     card.appendChild(grid);
@@ -602,7 +602,7 @@ Corvus.setupRemoteId = (function () {
       key: "description", path: ["self_id"], label: "Description",
       maxLength: (schema(state).limits || {}).description || 23,
       placeholder: "e.g. Survey flight, Hall 7",
-      hint: "Short enough to read off a phone screen.",
+      info: "Short enough to read off a phone screen.",
     }));
     card.appendChild(grid);
     return card;
@@ -637,7 +637,7 @@ Corvus.setupRemoteId = (function () {
         key: "operator_altitude_geo", path: ["system"], label: "Height above the ellipsoid",
         unit: "m", step: 1, min: -1000, max: 31767, unknown: ALTITUDE_UNKNOWN,
         placeholder: "not declared",
-        hint: "WGS-84 height, not height above ground. Leave it empty when you "
+        info: "WGS-84 height, not height above ground. Leave it empty when you "
               + "do not know it. The broadcast has a value that means exactly "
               + "that, and a guessed number does not.",
       }));
@@ -710,38 +710,38 @@ Corvus.setupRemoteId = (function () {
       grid.appendChild(selectRow(state, {
         key: "category_eu", path: ["system"], label: "Operational category",
         options: options(state, "categories_eu", []),
-        hint: "Open, Specific or Certified: the category the flight is "
+        info: "Open, Specific or Certified: the category the flight is "
               + "authorised under, not the aircraft's own class.",
       }));
       grid.appendChild(selectRow(state, {
         key: "class_eu", path: ["system"], label: "Class mark",
         options: options(state, "classes_eu", []),
-        hint: "The C0-C6 label on the airframe or in its declaration of "
+        info: "The C0-C6 label on the airframe or in its declaration of "
               + "conformity.",
       }));
       grid.appendChild(numberRow(state, {
         key: "area_count", path: ["system"], label: "Operational areas",
         step: 1, min: 1, max: 65535,
-        hint: "How many volumes the flight is authorised in. 1 unless the "
+        info: "How many volumes the flight is authorised in. 1 unless the "
               + "authorisation says otherwise.",
       }));
       grid.appendChild(numberRow(state, {
         key: "area_radius", path: ["system"], label: "Area radius",
         unit: "m", step: 1, min: 0, max: 65535,
-        hint: "Radius of the authorised volume around the aircraft. 0 declares "
+        info: "Radius of the authorised volume around the aircraft. 0 declares "
               + "no radius.",
       }));
       grid.appendChild(numberRow(state, {
         key: "area_ceiling", path: ["system"], label: "Area ceiling",
         unit: "m", step: 1, min: -1000, max: 31767, unknown: ALTITUDE_UNKNOWN,
         placeholder: "not declared",
-        hint: "Upper limit of the authorised volume, above the ellipsoid.",
+        info: "Upper limit of the authorised volume, above the ellipsoid.",
       }));
       grid.appendChild(numberRow(state, {
         key: "area_floor", path: ["system"], label: "Area floor",
         unit: "m", step: 1, min: -1000, max: 31767, unknown: ALTITUDE_UNKNOWN,
         placeholder: "not declared",
-        hint: "Lower limit of the authorised volume, above the ellipsoid.",
+        info: "Lower limit of the authorised volume, above the ellipsoid.",
       }));
     }
     card.appendChild(grid);
@@ -784,7 +784,7 @@ Corvus.setupRemoteId = (function () {
   function rowShell(state, spec) {
     const row = S.el("div", "pform-field rid-field");
     row.dataset.field = spec.key;
-    row.appendChild(S.el("span", "pform-field-label rid-field-label", spec.label));
+    row.appendChild(S.rowLabel("pform-field-label rid-field-label", spec.label, spec.info));
     const cell = S.el("div", "pform-field-control rid-field-control");
     row.appendChild(cell);
     return { row, cell };
@@ -831,7 +831,6 @@ Corvus.setupRemoteId = (function () {
       });
       row.appendChild(suggest);
     }
-    if (spec.hint) row.appendChild(S.el("span", "field-hint pform-field-hint", spec.hint));
     return row;
   }
 
@@ -882,7 +881,6 @@ Corvus.setupRemoteId = (function () {
     cell.appendChild(input);
     cell.appendChild(counter);
     cell.appendChild(status);
-    if (spec.hint) row.appendChild(S.el("span", "field-hint pform-field-hint", spec.hint));
     return row;
   }
 
@@ -924,7 +922,6 @@ Corvus.setupRemoteId = (function () {
     cell.appendChild(input);
     if (spec.unit) cell.appendChild(S.el("span", "pform-unit", spec.unit));
     cell.appendChild(status);
-    if (spec.hint) row.appendChild(S.el("span", "field-hint pform-field-hint", spec.hint));
     return row;
   }
 

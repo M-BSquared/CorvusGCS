@@ -545,6 +545,10 @@ async function testLoadInstalledAppendsScriptsAndStyles() {
   assert.deepEqual(loaded, ["demo"], "loadInstalled reports the ids it loaded");
   assert.deepEqual(appendedScripts, ["/api/plugins/asset/demo/demo.js"]);
   assert.deepEqual(appendedStyles, ["/api/plugins/asset/demo/demo.css"]);
+  // An inserted script is async by default and would run whenever its download
+  // finished, so the grid order would follow the network, not the manifests.
+  const tag = head.children.filter((c) => c.tagName === "SCRIPT").pop();
+  assert.equal(tag.async, false, "plugin scripts run in the order discovery listed them");
 }
 
 async function testLoadInstalledEncodesEachPathSegment() {
@@ -1126,6 +1130,38 @@ async function testSshLauncherTerminalButtonReportsAFailedConnect() {
   Corvus.pluginSshLauncher.destroy(h.container);
 }
 
+async function testSshLauncherWarningSitsOnTheToolsCentreLine() {
+  const h = mountLauncher({
+    saved: { buttons: [TERMINAL_BUTTON] },
+    connect: { ok: false, connected: false, error: "Authentication failed" },
+  });
+  await flushMicrotasks();
+  click(h.shelf()[0]);
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  // The triangle is one of the row's tools, so its glyph is the pencil's size.
+  // Lucide carries the inline size onto the <svg>, so this is the size drawn.
+  const glyph = h.failures()[0].btn.children[0];
+  const pencil = h.tool("Edit Start mission").children[0];
+  assert.equal(glyph.style.width, pencil.style.width);
+  assert.equal(glyph.style.height, pencil.style.height);
+  Corvus.pluginSshLauncher.destroy(h.container);
+
+  // A 16px hint beside 28px buttons was left at the top of the row by the
+  // default stretch; the row has to centre its tools, and the triangle has to
+  // take their box.
+  const css = require("node:fs").readFileSync(
+    require("node:path").join(__dirname, "..", "plugins", "ssh-launcher", "ssh-launcher.css"), "utf8");
+  const block = (sel) => {
+    const m = css.match(new RegExp(sel.replace(/[.[\]]/g, "\\$&") + "\\s*\\{([^}]*)\\}"));
+    return m ? m[1] : "";
+  };
+  assert.match(block(".sshl-row-tools"), /align-items:\s*center/);
+  assert.match(block(".ui-info.sshl-error"), /width:\s*28px/);
+  assert.match(block(".ui-info.sshl-error"), /height:\s*28px/);
+}
+
 async function testSshLauncherAFailureGoesWhenTheButtonWorksAgain() {
   const h = mountLauncher({
     saved: { buttons: [TERMINAL_BUTTON] },
@@ -1650,6 +1686,7 @@ async function run() {
   await testSshLauncherRendersOneButtonPerSavedEntry();
   await testSshLauncherTerminalButtonOpensASessionAndTypesTheLine();
   await testSshLauncherTerminalButtonReportsAFailedConnect();
+  await testSshLauncherWarningSitsOnTheToolsCentreLine();
   await testSshLauncherAFailureGoesWhenTheButtonWorksAgain();
   await testSshLauncherBackgroundButtonUsesTheRunEndpoint();
   await testSshLauncherArrowIsOffUntilSomethingIsRunning();

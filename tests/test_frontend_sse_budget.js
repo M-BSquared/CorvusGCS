@@ -19,12 +19,15 @@
  *
  *   1. /api/telemetry   — the 50 Hz path, deliberately its own connection
  *   2. /api/events      — console + params + firmware + tiles
- *   3. /api/ssh/stream  — per session, high-volume, ends with its shell
+ *   3. /api/ssh/stream  — a terminal's output, only where its WebSocket
+ *                         (/api/ssh/ws) could not open
  *
- * Three at the very worst, so three are free for tiles and fetches instead of
- * one. This file is what stops that drifting back: a fifth endpoint, or a
- * second construction site for an existing one, fails here and has to be
- * argued for.
+ * A terminal is a WebSocket now, which is not in the six: with one SSE stream
+ * per terminal, and the pool shared by every window of the app, four
+ * terminals left nothing for anything else. The stream stays as the fallback,
+ * so it is still counted here. This file is what stops the budget drifting
+ * back: a fourth endpoint, or a second construction site for an existing one,
+ * fails here and has to be argued for.
  *
  * Run:
  *   node tests/test_frontend_sse_budget.js

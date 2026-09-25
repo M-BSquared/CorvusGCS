@@ -79,6 +79,13 @@ window.Corvus = window.Corvus || {};
  *                                 running; the window's disconnect button ends
  *                                 it. Returns true when a terminal is showing
  *                                 it. Best-effort + guarded, like console().
+ *                                 Where the window opens is the operator's
+ *                                 setting, not the plugin's: in the desktop
+ *                                 app a window of its own by default (with a
+ *                                 pin that keeps it above Corvus), or a frame
+ *                                 inside the app that can be dragged out;
+ *                                 see js/popout.js. The plugin calls this the
+ *                                 same way either way.
  *   getSettings() {() => Object}  This plugin's saved settings, from the
  *                                 config file. {} when it has never saved any.
  *   saveSettings(patch, replace)  Merge `patch` into them and persist
@@ -470,7 +477,8 @@ Corvus.plugins = (function () {
   /**
    * Show the live terminal for an SSH session the plugin opened.
    *
-   * Every session gets a floating window of its own (Corvus.termWindows), so a
+   * Every session gets a window of its own (Corvus.termWindows: a native
+   * window or a frame inside the app, as the operator has set it), so a
    * plugin with several sessions has several terminals side by side and the
    * operator stays on the tab they were working in. Pointing them all at the
    * panel's single SSH tab — which is what this did — meant four independent
@@ -635,9 +643,12 @@ Corvus.plugins = (function () {
   function appendScript(src) {
     return new Promise((resolve, reject) => {
       const el = document.createElement("script");
+      // Set, not left to the default: an inserted script is async unless told
+      // otherwise, and runs whenever it happens to finish downloading. Ordered,
+      // the plugins register in the order discovery listed them, which is
+      // their manifest `order`, so the grid does not reshuffle between starts.
+      el.async = false;
       el.src = src;
-      // Default (async=false for an inserted script with src) preserves the
-      // chain's order; the promise is what the caller actually sequences on.
       el.onload = () => resolve();
       el.onerror = () => reject(new Error(`could not load ${src}`));
       document.head.appendChild(el);

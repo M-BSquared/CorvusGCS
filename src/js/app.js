@@ -415,6 +415,9 @@ Corvus.app = (function () {
       // because the rail is built before this fetch can land — the rail
       // re-renders itself when the answer arrives.
       Corvus.sidenav.setMissionEnabled(!!(cfg.ui && cfg.ui.mission_page));
+      // Where camera and terminal windows open in the desktop app. Off unless
+      // the config asks: by default each is a window of its own at once.
+      if (Corvus.popouts) Corvus.popouts.setInApp(!!(cfg.ui && cfg.ui.windows_in_app));
     }).catch(() => {});
 
     /* Before any module builds its DOM: this replaces the operating system's

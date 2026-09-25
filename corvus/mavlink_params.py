@@ -786,6 +786,24 @@ class ParamProtocolMixin:
                 return None
             return {"name": entry.name, "value": entry.value, "type": entry.type}
 
+    def param_file_info(self) -> dict[str, Any]:
+        """What a parameter file written for this vehicle needs to say about it.
+
+        ``format`` is the file the connected stack's users exchange (see
+        :mod:`corvus.param_files`); the rest fills QGroundControl's header and
+        the system and component columns it checks on import.
+        """
+        snapshot = self._store.get_snapshot()
+        return {
+            "format": self._dialect.param_file_format,
+            "system_id": int(self._target_system or 1),
+            "component_id": int(self._target_component or 1),
+            "stack": self._dialect.label,
+            "vehicle": str(snapshot.get("vehicle_type") or ""),
+            "version": str(snapshot.get("px4_version") or ""),
+            "git_hash": str(snapshot.get("px4_version_detail") or ""),
+        }
+
     def _param_encoding(self) -> str:
         """How this vehicle packs integer parameters: what it declared, else its dialect's."""
         return self._param_encoding_declared or self._dialect.param_encoding

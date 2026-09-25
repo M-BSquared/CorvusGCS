@@ -498,6 +498,20 @@ async function testAnAutoSettingShowsWhatItResolvedToWithoutClaimingItWasTyped()
   assert.match(setting(container, "full_cell").placeholder, /4\.2 V/);
 }
 
+async function testASettingsExplanationIsBehindAHintIconNotUnderTheRow() {
+  /* A paragraph under each of five rows made the estimator read as prose and
+     pushed the rows a screen apart. */
+  const { container } = await mount();
+  const row = findByDataset(container, "setting", "cells")[0];
+  assert.equal(findByClass(row, "pform-field-hint").length, 0, "nothing printed under the row");
+  const hint = findOneByClass(row, "ui-info");
+  assert.ok(hint && hint.corvusPopover, "a hint icon beside the label");
+  const text = hint.corvusPopover.el.children
+    .filter((c) => c.className.split(/\s+/).includes("ui-popover-text"))
+    .map((c) => c.textContent).join("");
+  assert.match(text, /19\.8 V/);
+}
+
 async function testAValueOutsideItsBoundsIsRefusedInTheRowItWasTypedIn() {
   const { container, fake } = await mount();
   const input = setting(container, "cells");
@@ -789,6 +803,7 @@ async function main() {
     testTurningTheEstimateOnSavesItThroughTheConfigEndpoint,
     testASettingLeftBlankMeansWorkItOut,
     testAnAutoSettingShowsWhatItResolvedToWithoutClaimingItWasTyped,
+    testASettingsExplanationIsBehindAHintIconNotUnderTheRow,
     testAValueOutsideItsBoundsIsRefusedInTheRowItWasTypedIn,
     testChangingTheChemistryIsSavedByName,
     testTakingThePackFromTheVehicleConvertsTheResistancePerCell,

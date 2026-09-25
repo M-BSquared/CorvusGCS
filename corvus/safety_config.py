@@ -45,6 +45,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .param_fields import flag_flow_without_range
+
 # EKF2_AID_MASK bit 1 — the pre-v1.14 way to switch optical-flow fusion on.
 # Kept as a numeric mask because that firmware has no EKF2_OF_CTRL to write.
 AID_MASK_FLOW_BIT = 2
@@ -190,47 +192,122 @@ SERIAL_PORT_OPTIONS: list[dict[str, Any]] = [
     {"value": 401, "label": "Ext2"},
 ]
 
-# Rangefinders started over I2C/SPI/PWM by a plain enable parameter. Several of
-# them encode the *model* in the value, so one parameter yields several drivers.
-RANGEFINDER_BUS_DRIVERS: list[tuple[str, list[tuple[int, str]]]] = [
+# The other things PX4 starts on a serial port, read so the port picker can say
+# what already runs where. Two drivers configured on one port both open it and
+# neither works, so a port taken by one of these is refused for a sensor.
+PORT_USERS: list[tuple[str, str]] = [
+    ("MAV_0_CONFIG", "MAVLink"),
+    ("MAV_1_CONFIG", "MAVLink"),
+    ("MAV_2_CONFIG", "MAVLink"),
+    ("GPS_1_CONFIG", "GPS"),
+    ("GPS_2_CONFIG", "GPS"),
+    ("RC_PORT_CONFIG", "RC input"),
+    ("UXRCE_DDS_CFG", "uXRCE-DDS"),
+]
+
+# Where a sensor is plugged in, by how its driver reaches it. Shown beside the
+# driver picker and in every preset, because "which connector" is the first
+# question on the bench and the answer differs per bus. The serial names in
+# SERIAL_PORT_OPTIONS are PX4's own, and PX4 maps them to the connectors
+# labelled that way on the board.
+BUS_I2C = "i2c"
+BUS_SPI = "spi"
+BUS_PWM = "pwm"
+BUS_SERIAL = "serial"
+BUS_CAN = "can"
+BUS_BOARD = "board"
+BUS_EXTERNAL = "external"
+
+WIRING: dict[str, str] = {
+    BUS_I2C: "Plug it into an I2C connector. On most Pixhawk boards the GPS 1 "
+             "connector carries I2C as well, and an I2C splitter lets several "
+             "devices share one port.",
+    BUS_SPI: "An SPI sensor has to sit on an SPI bus the board brings out for it, "
+             "usually a connector labelled SPI. A board without one cannot run it.",
+    BUS_PWM: "Connect its PWM line to the pin the PX4 page for your flight "
+             "controller names for the Lidar-Lite PWM driver.",
+    BUS_SERIAL: "Plug it into the serial connector you pick below; the names are "
+                "the ones printed on the flight controller. Cross the data lines: "
+                "the sensor's TX goes to the port's RX, its RX to the port's TX.",
+    BUS_CAN: "Plug it into a CAN connector, CAN 1 or CAN 2. CAN devices can be "
+             "chained, and the last one on the bus needs its termination on.",
+    BUS_BOARD: "The driver runs on the port the flight controller's own startup "
+               "gives it; see the PX4 page for the board.",
+    BUS_EXTERNAL: "Nothing plugs into the flight controller for this: the sensor "
+                  "reaches it over MAVLink, usually from a companion computer.",
+}
+
+# Rangefinders started over I2C/SPI/PWM by a plain enable parameter:
+# ``(parameter, [(value, label, bus)])``. Several of them encode the *model*
+# in the value, so one parameter yields several drivers. Every name and value
+# here is the driver's own parameters.yaml in PX4; a driver that is started
+# from a board's startup script has no enable parameter and cannot be offered
+# (the GY-US42 is one).
+RANGEFINDER_BUS_DRIVERS: list[tuple[str, list[tuple[int, str, str]]]] = [
     ("SENS_EN_SF1XX", [
-        (1, "Lightware SF10/a"),
-        (2, "Lightware SF10/b"),
-        (3, "Lightware SF10/c"),
-        (4, "Lightware SF11/c"),
-        (5, "Lightware SF/LW20/b"),
-        (6, "Lightware SF/LW20/c"),
-        (7, "Lightware SF/LW30/d"),
+        (1, "Lightware SF10/a (I2C)", BUS_I2C),
+        (2, "Lightware SF10/b (I2C)", BUS_I2C),
+        (3, "Lightware SF10/c (I2C)", BUS_I2C),
+        (4, "Lightware SF11/c (I2C)", BUS_I2C),
+        (5, "Lightware SF/LW20/b (I2C)", BUS_I2C),
+        (6, "Lightware SF/LW20/c (I2C)", BUS_I2C),
+        (7, "Lightware SF/LW30/d (I2C)", BUS_I2C),
     ]),
     ("SENS_EN_LL40LS", [
-        (1, "Lidar-Lite (PWM)"),
-        (2, "Lidar-Lite (I2C)"),
+        (1, "Garmin Lidar-Lite (PWM)", BUS_PWM),
+        (2, "Garmin Lidar-Lite (I2C)", BUS_I2C),
     ]),
-    ("SENS_EN_MB12XX", [(1, "Maxbotix MB12xx (I2C)")]),
-    ("SENS_EN_VL53L1X", [(1, "ST VL53L1X (I2C)")]),
-    ("SENS_EN_PGA460", [(1, "TI PGA460")]),
-    ("SENS_EN_GY_US42", [(1, "GY-US42 (I2C)")]),
-    ("SENS_EN_TFMINI", [(1, "Benewake TFmini (legacy enable)")]),
+    ("SENS_EN_TRANGER", [
+        (1, "TeraRanger, model detected (I2C)", BUS_I2C),
+        (2, "TeraRanger One (I2C)", BUS_I2C),
+        (3, "TeraRanger Evo 60 m (I2C)", BUS_I2C),
+        (4, "TeraRanger Evo 600 Hz (I2C)", BUS_I2C),
+        (5, "TeraRanger Evo 3 m (I2C)", BUS_I2C),
+    ]),
+    ("SENS_EN_TF02PRO", [(1, "Benewake TF02 Pro (I2C)", BUS_I2C)]),
+    ("SENS_EN_MB12XX", [(1, "Maxbotix MB12xx (I2C)", BUS_I2C)]),
+    ("SENS_EN_VL53L0X", [(1, "ST VL53L0X (I2C)", BUS_I2C)]),
+    ("SENS_EN_VL53L1X", [(1, "ST VL53L1X (I2C)", BUS_I2C)]),
+    ("SENS_EN_PGA460", [(1, "TI PGA460", BUS_BOARD)]),
 ]
 
-# Rangefinders started by naming a serial port instead of a 0/1 enable.
-RANGEFINDER_SERIAL_DRIVERS: list[tuple[str, str]] = [
-    ("SENS_TFMINI_CFG", "Benewake TFmini / TF02 (serial)"),
-    ("SENS_SF0X_CFG", "Lightware SF02 / SF10 / SF11 (serial)"),
-    ("SENS_ULAND_CFG", "Aerotenna uLanding (serial)"),
-    ("SENS_CM8JL65_CFG", "Lanbao CM8JL65 (serial)"),
-    ("SENS_LEDDAR1_CFG", "LeddarOne (serial)"),
+# Rangefinders started by naming a serial port instead of a 0/1 enable:
+# ``(port parameter, model parameter, [(model value, label)], label)``.
+#
+# Two of these drivers read a second parameter that says which product is on
+# the port, and starting the driver without it is a silent half-setup: the
+# Lightware serial driver defaults to the SF02 and applies the SF02's range
+# limits to whatever is really wired, and the TFmini driver also serves the
+# ISTRA24 radar with different limits. So the model is part of the driver
+# entry and is written with the port. A firmware that does not carry the model
+# parameter gets the plain entry.
+RANGEFINDER_SERIAL_DRIVERS: list[tuple[str, str | None, list[tuple[int, str]], str]] = [
+    ("SENS_TFMINI_CFG", "SENS_TFMINI_HW",
+     [(1, "Benewake TFmini family (serial)")], "Benewake TFmini family (serial)"),
+    ("SENS_SF0X_CFG", "SENS_EN_SF0X", [
+        (1, "Lightware SF02 (serial)"),
+        (2, "Lightware SF10/a (serial)"),
+        (3, "Lightware SF10/b (serial)"),
+        (4, "Lightware SF10/c (serial)"),
+        (5, "Lightware SF11/c (serial)"),
+        (6, "Lightware SF30/b (serial)"),
+        (7, "Lightware SF30/c (serial)"),
+        (8, "Lightware LW20/c (serial)"),
+    ], "Lightware (serial)"),
+    ("SENS_ULAND_CFG", None, [], "Aerotenna uLanding (serial)"),
+    ("SENS_CM8JL65_CFG", None, [], "Lanbao CM8JL65 (serial)"),
+    ("SENS_LEDDAR1_CFG", None, [], "LeddarOne (serial)"),
 ]
 
-FLOW_BUS_DRIVERS: list[tuple[str, list[tuple[int, str]]]] = [
-    ("SENS_EN_PMW3901", [(1, "PMW3901 (SPI)")]),
-    ("SENS_EN_PAW3902", [(1, "PAW3902 (SPI)")]),
+FLOW_BUS_DRIVERS: list[tuple[str, list[tuple[int, str, str]]]] = [
+    ("SENS_EN_PMW3901", [(1, "PixArt PMW3901 (SPI)", BUS_SPI)]),
+    ("SENS_EN_PAW3902", [(1, "PixArt PAW3902 / PAW3903 (SPI)", BUS_SPI)]),
+    ("SENS_EN_PAA3905", [(1, "PixArt PAA3905 (SPI)", BUS_SPI)]),
+    ("SENS_EN_PX4FLOW", [(1, "PX4Flow (I2C)", BUS_I2C)]),
 ]
 
-# Flow cameras started by naming a serial port — the UART variants of the
-# PMW3901 family (Holybro PMW3901, ThoneFlow-3901U).
-FLOW_SERIAL_DRIVERS: list[tuple[str, str]] = [
-    ("SENS_TFLOW_CFG", "PMW3901 / ThoneFlow-3901U (serial)"),
+FLOW_SERIAL_DRIVERS: list[tuple[str, str | None, list[tuple[int, str]], str]] = [
+    ("SENS_TFLOW_CFG", None, [], "ThoneFlow-3901U (serial)"),
 ]
 
 # A DroneCAN sensor is not a local driver but a subscription: the autopilot
@@ -248,6 +325,17 @@ FLOW_CAN_DRIVERS: list[tuple[str, str]] = [
 # ESCs, so a board already on 3 is left alone rather than quietly downgraded.
 CAN_ENABLE_PARAM = "UAVCAN_ENABLE"
 CAN_ENABLE_VALUE = 2.0
+
+# Parameters a preset may raise but must never lower. UAVCAN_ENABLE is the one
+# that matters: writing 2 over a 3 switches the DroneCAN ESCs off at the next
+# boot, so a board already at or past the value keeps what it has.
+RAISE_ONLY_PARAMS = frozenset({CAN_ENABLE_PARAM})
+
+# EKF2_HGT_REF = 2 makes the rangefinder the height reference. Switching the
+# rangefinder off has to move the reference back to the barometer as well, or
+# the estimator is told to reference a sensor it no longer fuses.
+HEIGHT_REF_RANGE = 2
+HEIGHT_REF_BARO = 0.0
 
 # Estimator controls that switch rangefinder fusion on, most modern first. Only
 # the first one the firmware answers for is used, so v1.16+ writes
@@ -300,11 +388,17 @@ SENSOR_PRESETS: list[dict[str, Any]] = [
         "bus": "DroneCAN",
         "provides": ["flow", "range"],
         "driver_id": {"flow": "UAVCAN_SUB_FLOW:1", "range": "UAVCAN_SUB_RNG:1"},
+        "wiring": "Plug it into CAN 1 or CAN 2 with the 4-pin JST-GH cable. It has two "
+                  "CAN connectors, so further CAN devices can be chained behind it; the "
+                  "last device on the bus needs its termination on.",
         "summary": "PAA3905E1 optical flow and an AFBR-S50LV85D distance sensor on one "
                    "board, 0.08 to 30 m, over a single CAN cable.",
         "note": "A DroneCAN node rather than a local driver: the autopilot subscribes to "
                 "the messages it publishes, which is why the CAN stack itself has to be "
-                "running. Wire it to a CAN port. This module has no UART mode.",
+                "running. Wire it to a CAN port and mount it with the connectors "
+                "pointing to the back of the vehicle. Set EKF2_OF_POS_X, _Y and _Z to "
+                "where it sits relative to the centre of gravity. The numbers below are "
+                "Holybro's own setup values for this module.",
         "params": [
             (CAN_ENABLE_PARAM, CAN_ENABLE_VALUE,
              "Run the DroneCAN stack and configure sensor nodes automatically"),
@@ -313,10 +407,10 @@ SENSOR_PRESETS: list[dict[str, Any]] = [
             ("UAVCAN_RNG_MIN", 0.08, "Shortest distance the module reports"),
             ("UAVCAN_RNG_MAX", 30.0, "Longest distance the module reports"),
             ("SENS_FLOW_ROT", 0.0,
-             "Mounted with the connector aft. Change it if the board is turned"),
+             "Mounted with the connectors aft. Change it if the board is turned"),
             ("SENS_FLOW_MINHGT", 0.08, "Below this height the flow reading is not used"),
-            ("SENS_FLOW_MAXHGT", 25.0, "Above it the ground is too far to track"),
-            ("SENS_FLOW_MAXR", 7.4, "Fastest angular rate the PAA3905E1 can follow"),
+            ("SENS_FLOW_MAXHGT", 30.0, "Above it the ground is too far to track"),
+            ("SENS_FLOW_MAXR", 7.4, "Fastest angular rate the flow sensor can follow"),
             ("EKF2_OF_CTRL", 1.0, "Fuse the flow into the estimator"),
             ("EKF2_RNG_CTRL", 1.0, "Use the distance sensor for height when low and slow"),
             ("EKF2_RNG_A_HMAX", 10.0, "Height below which that range aid is trusted"),
@@ -347,6 +441,16 @@ SENSOR_PRESETS: list[dict[str, Any]] = [
 ]
 
 
+SERIAL_WIRING = ("Plug it into a free serial connector, TELEM or GPS, and pick that "
+                 "connector below. The sensor's TX goes to the port's RX and its RX to "
+                 "the port's TX, plus 5 V and ground.")
+
+# PX4's TFmini driver (SENS_TFMINI_HW = 1) accepts readings from 0.4 m to 12 m,
+# whatever the module on the port could do. The presets say so rather than
+# quoting a datasheet span PX4 never uses.
+TFMINI_DRIVER_SPAN = "PX4's TFmini driver uses readings from 0.4 to 12 m"
+
+
 def _benewake_serial_preset(pid: str, label: str, model: str, *, span: str,
                             accuracy: str, hmax: float, noise: float,
                             note: str) -> dict[str, Any]:
@@ -367,9 +471,13 @@ def _benewake_serial_preset(pid: str, label: str, model: str, *, span: str,
         "provides": ["range"],
         "driver_id": {"range": "SENS_TFMINI_CFG"},
         "serial": True,
-        "summary": f"{span} time-of-flight rangefinder, {accuracy}, on one UART.",
+        "wiring": SERIAL_WIRING,
+        "summary": f"{span} time-of-flight rangefinder, {accuracy}, on one UART. "
+                   f"{TFMINI_DRIVER_SPAN}.",
         "note": note,
         "params": [
+            ("SENS_TFMINI_HW", 1.0,
+             "The TFmini model: the driver's 0.4 to 12 m limits, not the radar's"),
             ("EKF2_RNG_CTRL", 1.0, "Use it for height while the vehicle is low and slow"),
             ("EKF2_RNG_A_HMAX", hmax, "Height below which that range aid is trusted"),
             ("EKF2_RNG_NOISE", noise, "Measurement noise implied by the datasheet accuracy"),
@@ -396,11 +504,10 @@ SENSOR_PRESETS += [
     _benewake_serial_preset(
         "benewake-tf03", "Benewake TF03", "TF03",
         span="0.1 to 180 m", accuracy="±10 cm", hmax=10.0, noise=0.1,
-        note="PX4 documents this driver for the TFmini family; the TF03 ships the same "
-             "9-byte Benewake frame at 115200 baud, so it comes up on the same serial "
-             "port parameter. Its CAN mode is not read by PX4. Keep the module in UART "
-             "mode. The range aid stays capped near the ground whatever the 180 m reach: "
-             "height from a lidar is only trustworthy over terrain it can actually see.",
+        note="The TF03 sends the same 9-byte Benewake frame at 115200 baud as the "
+             "TFmini, so it runs on the TFmini driver. That driver treats anything past "
+             "12 m as out of range, so on PX4 this is a 12 m sensor. Its CAN mode is not "
+             "read by PX4; keep the module in UART mode.",
     ),
 ]
 
@@ -494,8 +601,9 @@ def param_names() -> list[str]:
         "COM_FAIL_ACT_T", "COM_DISARM_LAND", "COM_DISARM_PRFLT",
         # Rangefinder estimator + geometry
         "EKF2_RNG_CTRL", "EKF2_RNG_AID", "EKF2_HGT_REF", "EKF2_RNG_A_HMAX",
-        "EKF2_RNG_A_VMAX", "EKF2_RNG_POS_Z", "EKF2_RNG_PITCH", "EKF2_RNG_DELAY",
-        "EKF2_RNG_NOISE", "EKF2_RNG_SFE", "EKF2_RNG_QLTY_T", "MPC_ALT_MODE",
+        "EKF2_RNG_A_VMAX", "EKF2_RNG_POS_X", "EKF2_RNG_POS_Y", "EKF2_RNG_POS_Z",
+        "EKF2_RNG_PITCH", "EKF2_RNG_DELAY", "EKF2_RNG_NOISE", "EKF2_RNG_SFE",
+        "EKF2_RNG_QLTY_T", "EKF2_MIN_RNG", "MPC_ALT_MODE",
         # Optical flow estimator + geometry
         "EKF2_OF_CTRL", "EKF2_AID_MASK", "EKF2_OF_DELAY", "EKF2_OF_QMIN",
         "EKF2_OF_QMIN_GND", "EKF2_OF_N_MIN", "EKF2_OF_N_MAX",
@@ -504,15 +612,16 @@ def param_names() -> list[str]:
         # DroneCAN sensors: the stack itself plus the two subscriptions and the
         # distance bounds a CAN rangefinder is read through.
         CAN_ENABLE_PARAM, "UAVCAN_RNG_MIN", "UAVCAN_RNG_MAX",
+        # What else runs on the serial ports, for the port picker.
+        *(param for param, _use in PORT_USERS),
     ]
-    for param, _models in RANGEFINDER_BUS_DRIVERS:
+    for param, _models in RANGEFINDER_BUS_DRIVERS + FLOW_BUS_DRIVERS:
         names.append(param)
-    for param, _label in RANGEFINDER_SERIAL_DRIVERS:
-        names.append(param)
-    for param, _models in FLOW_BUS_DRIVERS:
-        names.append(param)
-    for param, _label in FLOW_SERIAL_DRIVERS:
-        names.append(param)
+    for port_param, model_param, _models, _label in (
+            RANGEFINDER_SERIAL_DRIVERS + FLOW_SERIAL_DRIVERS):
+        names.append(port_param)
+        if model_param:
+            names.append(model_param)
     for param, _label in RANGEFINDER_CAN_DRIVERS + FLOW_CAN_DRIVERS:
         names.append(param)
     return names
@@ -658,31 +767,73 @@ def _failsafe_section(values: dict[str, float]) -> dict[str, Any] | None:
 # ---------------------------------------------------------------------------
 
 def _bus_drivers(values: dict[str, float],
-                 table: list[tuple[str, list[tuple[int, str]]]]) -> list[dict[str, Any]]:
-    """Driver entries for every enable parameter the firmware answered for."""
+                 table: list[tuple[str, list[tuple[int, str, str]]]]) -> list[dict[str, Any]]:
+    """Driver entries for every enable parameter the firmware answered for.
+
+    A value the table does not know is offered as its own entry. Without it the
+    picker would fall back to the first model, and the next press of the switch
+    would replace a working driver with that one.
+    """
     drivers: list[dict[str, Any]] = []
     for param, models in table:
         if param not in values:
             continue
-        for value, label in models:
+        for value, label, bus in models:
             drivers.append({
                 "id": f"{param}:{value}", "label": label,
                 "param": param, "value": float(value), "serial": False,
+                "wiring": WIRING[bus],
+            })
+        current = int(round(values[param]))
+        if current != 0 and all(current != value for value, _label, _bus in models):
+            drivers.append({
+                "id": f"{param}:{current}",
+                "label": f"{param} = {current}, not in this list",
+                "param": param, "value": float(current), "serial": False,
+                "wiring": WIRING[models[0][2]],
             })
     return drivers
 
 
+def _serial_entry(port_param: str, label: str, entry_id: str,
+                  model: tuple[str, float] | None) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "id": entry_id, "label": label,
+        "param": port_param, "value": None, "serial": True,
+        "wiring": WIRING[BUS_SERIAL],
+    }
+    if model is not None:
+        entry["model"] = {"param": model[0], "value": model[1]}
+        entry["extra"] = [{"param": model[0], "value": model[1]}]
+    return entry
+
+
 def _serial_drivers(values: dict[str, float],
-                    table: list[tuple[str, str]]) -> list[dict[str, Any]]:
-    """Driver entries whose "enable" is the serial port the sensor is wired to."""
+                    table: list[tuple[str, str | None, list[tuple[int, str]], str]],
+                    ) -> list[dict[str, Any]]:
+    """Driver entries whose "enable" is the serial port the sensor is wired to.
+
+    Where the driver also reads a model parameter, each model is an entry of its
+    own and carries that write, so the port and the model are always set
+    together. A model number this build does not know is kept as an entry for
+    the same reason an unknown bus driver is.
+    """
     drivers: list[dict[str, Any]] = []
-    for param, label in table:
-        if param not in values:
+    for port_param, model_param, models, label in table:
+        if port_param not in values:
             continue
-        drivers.append({
-            "id": param, "label": label,
-            "param": param, "value": None, "serial": True,
-        })
+        if not model_param or model_param not in values:
+            drivers.append(_serial_entry(port_param, label, port_param, None))
+            continue
+        for value, model_label in models:
+            drivers.append(_serial_entry(port_param, model_label, f"{port_param}:{value}",
+                                         (model_param, float(value))))
+        current = int(round(values[model_param]))
+        running = int(round(values[port_param])) != 0
+        if running and all(current != value for value, _label in models):
+            drivers.append(_serial_entry(
+                port_param, f"{label}, {model_param} = {current}",
+                f"{port_param}:{current}", (model_param, float(current))))
     return drivers
 
 
@@ -702,10 +853,13 @@ def _can_drivers(values: dict[str, float],
         driver: dict[str, Any] = {
             "id": f"{param}:1", "label": label,
             "param": param, "value": 1.0, "serial": False,
+            "wiring": WIRING[BUS_CAN],
         }
         current = values.get(CAN_ENABLE_PARAM)
         if current is not None and float(current) < CAN_ENABLE_VALUE:
             driver["extra"] = [{"param": CAN_ENABLE_PARAM, "value": CAN_ENABLE_VALUE}]
+            driver["needs"] = (f"{CAN_ENABLE_PARAM} is {int(round(current))}, so the "
+                               "DroneCAN stack is off and the subscription hears nothing.")
         drivers.append(driver)
     return drivers
 
@@ -716,18 +870,23 @@ def _active_driver(values: dict[str, float],
 
     A bus driver matches on its exact model value, because ``SENS_EN_SF1XX`` = 6
     is a different rangefinder from ``SENS_EN_SF1XX`` = 3. A serial driver
-    matches on "not 0", and its value *is* the port.
+    matches on "not 0", and its value *is* the port; where it also reads a model
+    parameter, that has to match too.
     """
     for driver in drivers:
         param = driver.get("param")
         if not param or param not in values:
             continue
-        current = values[param]
-        if int(round(current)) == 0:
+        current = int(round(values[param]))
+        if current == 0:
             continue
         if driver["serial"]:
-            return driver, int(round(current))
-        if int(round(current)) == int(round(float(driver["value"]))):
+            model = driver.get("model")
+            if model and int(round(values.get(model["param"], model["value"]))) != int(
+                    round(model["value"])):
+                continue
+            return driver, current
+        if current == int(round(float(driver["value"]))):
             return driver, None
     return None, None
 
@@ -740,6 +899,12 @@ def _driver_params(drivers: list[dict[str, Any]]) -> list[str]:
         if param and param not in params:
             params.append(param)
     return params
+
+
+def _running_params(values: dict[str, float], drivers: list[dict[str, Any]]) -> list[str]:
+    """The enable parameters in *drivers* that are currently switched on."""
+    return [p for p in _driver_params(drivers)
+            if p in values and int(round(values[p])) != 0]
 
 
 def _fusion(values: dict[str, float],
@@ -759,6 +924,7 @@ def _sensor_toggle(values: dict[str, float], *, label: str,
                    extra_off: list[dict[str, Any]] | None = None,
                    extra_enabled: bool = False,
                    extra_detail: str = "",
+                   fusion_off: str = "",
                    ) -> dict[str, Any] | None:
     """Assemble the toggle description for one sensor.
 
@@ -771,7 +937,13 @@ def _sensor_toggle(values: dict[str, float], *, label: str,
     its own — the pre-v1.14 optical-flow bit inside ``EKF2_AID_MASK``. It carries
     its own writes, its own current state and its own state text, because a
     toggle that reported only the driver would call a sensor "on" while the
-    estimator was still ignoring it.
+    estimator was still ignoring it. ``extra_off`` is written before the
+    estimator control on the way down.
+
+    ``state`` is what the overview reports: ``on`` only when every half is in
+    place, ``partial`` when some of it is, and ``problems`` says what is
+    missing. The switch follows ``enabled``, which is ``state == "on"``, so a
+    half-configured sensor shows an off switch and one press completes it.
     """
     if not drivers and fusion is None and not extra_on:
         return None
@@ -780,16 +952,14 @@ def _sensor_toggle(values: dict[str, float], *, label: str,
     fusion_on = (fusion is not None and int(round(fusion[3])) != 0) or extra_enabled
 
     enable: list[dict[str, Any]] = []
-    disable: list[dict[str, Any]] = []
+    disable: list[dict[str, Any]] = list(extra_off or [])
     if fusion is not None:
         param, _options, on_value, _current = fusion
         enable.append({"param": param, "value": on_value})
         disable.append({"param": param, "value": 0.0})
     enable += list(extra_on or [])
-    disable += list(extra_off or [])
 
-    clear = [p for p in _driver_params(drivers)
-             if p in values and int(round(values[p])) != 0]
+    clear = _running_params(values, drivers)
 
     # An external sensor arrives over MAVLink and has no local driver, so it is
     # offered whenever the estimator half exists at all — otherwise a vehicle
@@ -799,6 +969,7 @@ def _sensor_toggle(values: dict[str, float], *, label: str,
         offered.append({
             "id": EXTERNAL_DRIVER_ID, "label": "External / MAVLink",
             "param": None, "value": None, "serial": False,
+            "wiring": WIRING[BUS_EXTERNAL],
         })
 
     if active is not None:
@@ -820,9 +991,34 @@ def _sensor_toggle(values: dict[str, float], *, label: str,
     elif extra_detail:
         detail += f" · {extra_detail}"
 
+    problems: list[str] = []
+    if active is not None and active.get("needs"):
+        problems.append(str(active["needs"]))
+    if active is not None and not fusion_on:
+        if fusion is not None:
+            problems.append(
+                f"The driver runs, but the estimator ignores it: {fusion[0]} is "
+                f"{_option_label(fusion[1], fusion[3])}.")
+        else:
+            problems.append(fusion_off or "The driver runs, but the estimator ignores it.")
+    if clear and active is None:
+        problems.append(
+            "A driver is running that this page cannot match to a model: "
+            + ", ".join(clear) + ".")
+    ports = _port_options(values, own=_driver_params(drivers))
+    if active is not None and port is not None:
+        shared = next((p for p in ports if int(p["value"]) == port and p.get("blocked")), None)
+        if shared is not None:
+            problems.append(shared["blocked"])
+
+    configured = active is not None or fusion_on or bool(clear)
+    state = "off" if not configured else ("partial" if problems else "on")
+
     toggle: dict[str, Any] = {
         "label": label,
-        "enabled": active is not None or fusion_on,
+        "enabled": state == "on",
+        "state": state,
+        "problems": problems,
         "detail": detail,
         "drivers": offered,
         "selected": selected,
@@ -834,9 +1030,46 @@ def _sensor_toggle(values: dict[str, float], *, label: str,
         "reboot": bool(clear or any(d.get("param") for d in offered)),
     }
     if any(d["serial"] for d in offered):
-        toggle["ports"] = SERIAL_PORT_OPTIONS
-        toggle["port"] = port
+        toggle["ports"] = ports
+        toggle["port"] = port if port is not None else next(
+            (int(p["value"]) for p in ports if not p.get("used")), None)
     return toggle
+
+
+def _port_options(values: dict[str, float], own: list[str]) -> list[dict[str, Any]]:
+    """PX4's serial ports, each labelled with what already runs on it.
+
+    *own* are the driver parameters of the sensor this picker belongs to: a
+    port one of them holds is where that sensor already is, and switching it
+    to another model of the same sensor zeroes the old driver first. Any other
+    user makes the port ``blocked`` for this sensor, with the reason, because
+    PX4 would start both drivers on one port and neither would work.
+    """
+    users: dict[int, list[tuple[str, str]]] = {}
+    named = list(PORT_USERS) + [
+        (param, label.replace(" (serial)", ""))
+        for param, _model, _models, label in RANGEFINDER_SERIAL_DRIVERS + FLOW_SERIAL_DRIVERS
+    ]
+    for param, name in named:
+        if param in values and int(round(values[param])) != 0:
+            users.setdefault(int(round(values[param])), []).append((param, name))
+    out: list[dict[str, Any]] = []
+    for option in SERIAL_PORT_OPTIONS:
+        taken = users.get(int(option["value"]), [])
+        names = list(dict.fromkeys(name for _param, name in taken))
+        entry: dict[str, Any] = {
+            "value": option["value"],
+            "label": option["label"] + (f" ({', '.join(names)})" if names else ""),
+            "used": bool(taken),
+        }
+        others = [(param, name) for param, name in taken if param not in own]
+        if others:
+            entry["blocked"] = (
+                f"{option['label']} is already set up for {others[0][1]} "
+                f"({others[0][0]}). One serial port cannot serve two drivers; pick a "
+                "free port, or free this one on the Parameters page first.")
+        out.append(entry)
+    return out
 
 
 def _preset_driver_param(preset: dict[str, Any], kind: str) -> tuple[str, int] | None:
@@ -871,6 +1104,10 @@ def _preset_is_active(preset: dict[str, Any], kind: str,
     return current == value
 
 
+def _format_value(value: float) -> str:
+    return str(int(value)) if float(value).is_integer() else f"{value:g}"
+
+
 def _resolve_preset(preset: dict[str, Any], kind: str,
                     values: dict[str, float]) -> dict[str, Any]:
     """Turn one catalogue entry into what this firmware can actually do with it.
@@ -879,6 +1116,15 @@ def _resolve_preset(preset: dict[str, Any], kind: str,
     and what fell out is reported rather than dropped silently — a preset that
     quietly wrote eleven of its thirteen parameters and called itself applied is
     the same half-configured sensor this page exists to prevent.
+
+    A parameter in :data:`RAISE_ONLY_PARAMS` that already holds the value or
+    more is not written at all and comes back under ``kept``: the preset shows
+    it, so the operator sees it was considered, and the vehicle keeps its 3.
+
+    ``clear`` is every driver on the pages this module covers that is running
+    now and that the preset does not set itself. A module carrying both sensors
+    replaces both, so a TFmini left running beside an H-Flow is not a second
+    downward rangefinder the estimator can switch between.
     """
     driver = _preset_driver_param(preset, kind)
     supported = bool(preset.get("supported", True))
@@ -890,6 +1136,7 @@ def _resolve_preset(preset: dict[str, Any], kind: str,
                   "this module cannot be started from here.")
 
     writes: list[dict[str, Any]] = []
+    kept: list[dict[str, Any]] = []
     missing: list[str] = []
     if supported:
         if preset.get("serial") and driver is not None:
@@ -900,10 +1147,24 @@ def _resolve_preset(preset: dict[str, Any], kind: str,
                 "label": "The serial port the module is wired to",
             })
         for param, value, label in preset.get("params", []):
-            if param in values:
-                writes.append({"param": param, "value": float(value), "label": label})
-            else:
+            if param not in values:
                 missing.append(param)
+            elif param in RAISE_ONLY_PARAMS and values[param] >= value:
+                kept.append({
+                    "param": param, "value": float(values[param]),
+                    "label": f"Already {_format_value(values[param])} on this vehicle, "
+                             "which covers this. It is not lowered",
+                })
+            else:
+                writes.append({"param": param, "value": float(value), "label": label})
+
+    own = {w["param"] for w in writes}
+    clear: list[str] = []
+    if supported:
+        for covered in preset.get("provides", []):
+            for param in _running_params(values, _DRIVERS_BY_KIND[covered](values)):
+                if param not in own and param not in clear:
+                    clear.append(param)
 
     return {
         "id": preset["id"],
@@ -913,11 +1174,14 @@ def _resolve_preset(preset: dict[str, Any], kind: str,
         "bus": preset.get("bus", ""),
         "summary": preset.get("summary", ""),
         "note": preset.get("note", ""),
+        "wiring": preset.get("wiring", ""),
         "serial": bool(preset.get("serial")),
         "supported": supported,
         "unsupported": reason,
         "driver": (preset.get("driver_id") or {}).get(kind, ""),
         "writes": writes,
+        "kept": kept,
+        "clear": clear,
         "missing": missing,
         "active": _preset_is_active(preset, kind, values),
         "reboot": bool(preset.get("reboot")) and supported,
@@ -930,14 +1194,31 @@ def _presets_for(kind: str, values: dict[str, float]) -> list[dict[str, Any]]:
             for p in SENSOR_PRESETS if kind in p.get("provides", [])]
 
 
+def _range_drivers(values: dict[str, float]) -> list[dict[str, Any]]:
+    return (_bus_drivers(values, RANGEFINDER_BUS_DRIVERS)
+            + _serial_drivers(values, RANGEFINDER_SERIAL_DRIVERS)
+            + _can_drivers(values, RANGEFINDER_CAN_DRIVERS))
+
+
+def _flow_drivers(values: dict[str, float]) -> list[dict[str, Any]]:
+    return (_bus_drivers(values, FLOW_BUS_DRIVERS)
+            + _serial_drivers(values, FLOW_SERIAL_DRIVERS)
+            + _can_drivers(values, FLOW_CAN_DRIVERS))
+
+
+_DRIVERS_BY_KIND = {"range": _range_drivers, "flow": _flow_drivers}
+
+
 def _rangefinder_section(values: dict[str, float]) -> dict[str, Any] | None:
-    drivers = (_bus_drivers(values, RANGEFINDER_BUS_DRIVERS)
-               + _serial_drivers(values, RANGEFINDER_SERIAL_DRIVERS)
-               + _can_drivers(values, RANGEFINDER_CAN_DRIVERS))
+    height_ref = values.get("EKF2_HGT_REF")
+    extra_off = None
+    if height_ref is not None and int(round(height_ref)) == HEIGHT_REF_RANGE:
+        extra_off = [{"param": "EKF2_HGT_REF", "value": HEIGHT_REF_BARO}]
     toggle = _sensor_toggle(
         values, label="Distance sensor",
-        drivers=drivers,
+        drivers=_range_drivers(values),
         fusion=_fusion(values, RANGE_FUSION_CANDIDATES),
+        extra_off=extra_off,
     )
     if toggle is None:
         return None
@@ -948,12 +1229,20 @@ def _rangefinder_section(values: dict[str, float]) -> dict[str, Any] | None:
         _enum("EKF2_RNG_AID", "Range aid", values, ON_OFF_OPTIONS),
         _enum("EKF2_HGT_REF", "Primary height source", values, HEIGHT_REF_OPTIONS,
               hint="Leave on Barometer or GPS for outdoor flight; Range sensor is for "
-                   "indoor and low-altitude work over a flat floor."),
+                   "indoor and low-altitude work over a flat floor. Switching the "
+                   "sensor off moves this back to Barometer."),
         _enum("MPC_ALT_MODE", "Altitude control mode", values, ALT_MODE_OPTIONS,
               hint="Terrain following holds a height above the ground the sensor sees, "
                    "not above home."),
         _number("EKF2_RNG_A_HMAX", "Range aid maximum height", values, unit="m", step=0.1),
         _number("EKF2_RNG_A_VMAX", "Range aid maximum speed", values, unit="m/s", step=0.1),
+        _number("EKF2_MIN_RNG", "Reading on the ground", values, unit="m", step=0.01,
+                min=0, hint="What the sensor reads with the vehicle standing on the "
+                            "ground."),
+        _number("EKF2_RNG_POS_X", "Mounting offset, X", values, unit="m", step=0.01,
+                hint="Sensor position ahead of the centre of gravity."),
+        _number("EKF2_RNG_POS_Y", "Mounting offset, Y", values, unit="m", step=0.01,
+                hint="Sensor position right of the centre of gravity."),
         _number("EKF2_RNG_POS_Z", "Mounting offset, Z", values, unit="m", step=0.01,
                 hint="Sensor position below the centre of gravity, positive down."),
         _number("EKF2_RNG_PITCH", "Mounting pitch offset", values, unit="rad", step=0.01),
@@ -987,15 +1276,14 @@ def _flow_section(values: dict[str, float]) -> dict[str, Any] | None:
 
     mask_on = bool(extra_on and int(round(values["EKF2_AID_MASK"])) & AID_MASK_FLOW_BIT)
 
-    drivers = (_bus_drivers(values, FLOW_BUS_DRIVERS)
-               + _serial_drivers(values, FLOW_SERIAL_DRIVERS)
-               + _can_drivers(values, FLOW_CAN_DRIVERS))
     toggle = _sensor_toggle(
-        values, label="Optical flow", drivers=drivers, fusion=fusion,
+        values, label="Optical flow", drivers=_flow_drivers(values), fusion=fusion,
         extra_on=extra_on, extra_off=extra_off,
         extra_enabled=mask_on,
         extra_detail=("fusion: " + ("On" if mask_on else "Off")
                       + " (EKF2_AID_MASK bit 1)") if extra_on else "",
+        fusion_off=("The driver runs, but the estimator ignores it: EKF2_AID_MASK does "
+                    "not have the optical flow bit set."),
     )
     if toggle is None:
         return None
@@ -1055,6 +1343,7 @@ def build(values: dict[str, float],
         _rangefinder_section(values),
         _flow_section(values),
     ) if s is not None]
+    flag_flow_without_range(sections)
 
     # A parameter this build already renders is not offered a second time: two
     # controls over one number can disagree until the next read, and the one the

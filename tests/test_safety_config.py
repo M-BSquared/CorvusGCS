@@ -168,9 +168,10 @@ def test_a_rangefinder_off_offers_its_drivers_and_reports_it_is_off() -> None:
     assert toggle["enabled"] is False
     assert toggle["clear"] == []
     labels = [d["label"] for d in toggle["drivers"]]
-    assert "Lightware SF/LW20/c" in labels
-    assert "Benewake TFmini / TF02 (serial)" in labels
+    assert "Lightware SF/LW20/c (I2C)" in labels
+    assert "Benewake TFmini family (serial)" in labels
     assert labels[-1] == "External / MAVLink"
+    assert toggle["state"] == "off" and toggle["problems"] == []
 
 
 def test_enabling_a_rangefinder_writes_the_driver_and_the_estimator() -> None:
@@ -198,7 +199,9 @@ def test_a_serial_rangefinder_is_enabled_by_naming_its_port() -> None:
     assert toggle["selected"] == "SENS_TFMINI_CFG"
     assert toggle["port"] == 102
     assert toggle["clear"] == ["SENS_TFMINI_CFG"]
-    assert {"value": 102, "label": "TELEM 2"} in toggle["ports"]
+    telem2 = next(p for p in toggle["ports"] if p["value"] == 102)
+    assert telem2["label"] == "TELEM 2 (Benewake TFmini family)"
+    assert "blocked" not in telem2, "the sensor's own port is not refused to it"
     serial = next(d for d in toggle["drivers"] if d["id"] == "SENS_TFMINI_CFG")
     assert serial["serial"] is True and serial["value"] is None
 
@@ -379,7 +382,8 @@ def test_a_serial_preset_leaves_the_port_for_the_operator_to_name() -> None:
     assert first["param"] == "SENS_TFMINI_CFG"
     assert first["value"] is None and first["port"] is True
     assert [w["param"] for w in preset["writes"][1:]] == [
-        "EKF2_RNG_CTRL", "EKF2_RNG_A_HMAX", "EKF2_RNG_NOISE", "EKF2_RNG_SFE",
+        "SENS_TFMINI_HW", "EKF2_RNG_CTRL", "EKF2_RNG_A_HMAX", "EKF2_RNG_NOISE",
+        "EKF2_RNG_SFE",
     ]
 
 
@@ -539,3 +543,165 @@ def test_a_parameter_read_but_never_drawn_can_still_be_added() -> None:
 def test_no_added_names_is_an_empty_list_not_a_missing_key() -> None:
     for extra in (None, []):
         assert safety_config.build(_safe(), extra)["extra"] == []
+
+
+# ---- states the overview must not call "On" ----
+
+def test_a_driver_the_estimator_ignores_is_partial_and_the_switch_is_off() -> None:
+    """The switch shows off, so one press writes the whole chain and fixes it."""
+    toggle = _sections(safety_config.build(
+        _with_rangefinder(SENS_EN_SF1XX=4.0, EKF2_RNG_CTRL=0.0)))["rangefinder"]["toggle"]
+    assert toggle["state"] == "partial"
+    assert toggle["enabled"] is False
+    assert "EKF2_RNG_CTRL is Disabled" in toggle["problems"][0]
+
+
+def test_a_can_subscription_with_the_stack_off_is_partial() -> None:
+    values = _with_rangefinder(UAVCAN_SUB_RNG=1.0, UAVCAN_ENABLE=0.0, EKF2_RNG_CTRL=1.0)
+    toggle = _sections(safety_config.build(values))["rangefinder"]["toggle"]
+    assert toggle["state"] == "partial"
+    assert any("UAVCAN_ENABLE is 0" in p for p in toggle["problems"])
+
+
+def test_a_complete_chain_is_on() -> None:
+    toggle = _sections(safety_config.build(
+        _with_rangefinder(SENS_EN_SF1XX=4.0, EKF2_RNG_CTRL=1.0)))["rangefinder"]["toggle"]
+    assert (toggle["state"], toggle["enabled"], toggle["problems"]) == ("on", True, [])
+
+
+def test_flow_without_a_distance_sensor_is_partial_but_keeps_its_switch() -> None:
+    """Flow needs a height above ground; what is missing is on the other page."""
+    values = _with_flow(SENS_EN_PMW3901=1.0, EKF2_OF_CTRL=1.0)
+    values.update(SENS_EN_SF1XX=0.0, EKF2_RNG_CTRL=0.0)
+    flow = _sections(safety_config.build(values))["flow"]["toggle"]
+    assert flow["state"] == "partial"
+    assert flow["enabled"] is True
+    assert any("no distance sensor" in p for p in flow["problems"])
+
+    values.update(SENS_EN_SF1XX=4.0, EKF2_RNG_CTRL=1.0)
+    flow = _sections(safety_config.build(values))["flow"]["toggle"]
+    assert flow["state"] == "on"
+
+
+def test_switching_the_rangefinder_off_moves_the_height_reference_back() -> None:
+    """EKF2_HGT_REF on Range sensor with range fusion off references nothing."""
+    values = _with_rangefinder(SENS_EN_SF1XX=4.0, EKF2_RNG_CTRL=1.0, EKF2_HGT_REF=2.0)
+    toggle = _sections(safety_config.build(values))["rangefinder"]["toggle"]
+    assert _writes(toggle["disable"]) == [("EKF2_HGT_REF", 0.0), ("EKF2_RNG_CTRL", 0.0)]
+
+    values["EKF2_HGT_REF"] = 0.0
+    toggle = _sections(safety_config.build(values))["rangefinder"]["toggle"]
+    assert _writes(toggle["disable"]) == [("EKF2_RNG_CTRL", 0.0)]
+
+
+# ---- drivers: real PX4 parameters, and nothing silently replaced ----
+
+def test_only_driver_parameters_px4_really_has_are_read() -> None:
+    """Neither exists in PX4: the TFmini starts from SENS_TFMINI_CFG and the
+    GY-US42 has no enable parameter at all."""
+    names = set(safety_config.param_names())
+    assert "SENS_EN_TFMINI" not in names
+    assert "SENS_EN_GY_US42" not in names
+    assert {"SENS_EN_PAA3905", "SENS_EN_PX4FLOW", "SENS_EN_VL53L0X",
+            "SENS_EN_TRANGER", "SENS_EN_TF02PRO"} <= names
+
+
+def test_a_model_value_this_build_does_not_know_is_kept_selected() -> None:
+    """Falling back to the first model would replace a working driver on the
+    next press of the switch."""
+    toggle = _sections(safety_config.build(
+        _with_rangefinder(SENS_EN_SF1XX=8.0, EKF2_RNG_CTRL=1.0)))["rangefinder"]["toggle"]
+    assert toggle["selected"] == "SENS_EN_SF1XX:8"
+    entry = next(d for d in toggle["drivers"] if d["id"] == "SENS_EN_SF1XX:8")
+    assert entry["value"] == 8.0
+    assert toggle["state"] == "on"
+
+
+def test_a_lightware_serial_driver_is_written_with_its_model() -> None:
+    """The serial driver defaults to the SF02 and would apply its limits to an
+    SF11 on the same port."""
+    values = _with_rangefinder(SENS_SF0X_CFG=0.0, SENS_EN_SF0X=1.0)
+    toggle = _sections(safety_config.build(values))["rangefinder"]["toggle"]
+    sf11 = next(d for d in toggle["drivers"] if d["id"] == "SENS_SF0X_CFG:5")
+    assert sf11["serial"] is True
+    assert _writes(sf11["extra"]) == [("SENS_EN_SF0X", 5.0)]
+
+    values.update(SENS_SF0X_CFG=102.0, SENS_EN_SF0X=5.0, EKF2_RNG_CTRL=1.0)
+    toggle = _sections(safety_config.build(values))["rangefinder"]["toggle"]
+    assert toggle["selected"] == "SENS_SF0X_CFG:5"
+
+
+def test_a_port_another_driver_runs_on_is_refused() -> None:
+    """PX4 starts every driver configured on a port, and both then fail."""
+    values = _with_rangefinder(MAV_0_CONFIG=101.0, GPS_1_CONFIG=201.0)
+    ports = {p["value"]: p for p in
+             _sections(safety_config.build(values))["rangefinder"]["toggle"]["ports"]}
+    assert ports[101]["label"] == "TELEM 1 (MAVLink)"
+    assert "MAV_0_CONFIG" in ports[101]["blocked"]
+    assert ports[201]["label"] == "GPS 1 (GPS)"
+    assert "blocked" not in ports[102]
+    toggle = _sections(safety_config.build(values))["rangefinder"]["toggle"]
+    assert toggle["port"] == 102, "the picker opens on a free port"
+
+
+def test_a_sensor_sharing_its_port_with_mavlink_is_partial() -> None:
+    values = _with_rangefinder(SENS_TFMINI_CFG=101.0, MAV_0_CONFIG=101.0, EKF2_RNG_CTRL=1.0)
+    toggle = _sections(safety_config.build(values))["rangefinder"]["toggle"]
+    assert toggle["state"] == "partial"
+    assert any("MAVLink" in p for p in toggle["problems"])
+
+
+def test_every_driver_and_preset_says_where_it_is_plugged_in() -> None:
+    sections = _sections(safety_config.build(_full()))
+    for sid in ("rangefinder", "flow"):
+        for driver in sections[sid]["toggle"]["drivers"]:
+            assert driver["wiring"], driver["id"]
+        for preset in sections[sid]["presets"]:
+            if preset["supported"]:
+                assert preset["wiring"], preset["id"]
+    rng = sections["rangefinder"]["toggle"]["drivers"]
+    assert "CAN" in next(d for d in rng if d["id"] == "UAVCAN_SUB_RNG:1")["wiring"]
+    assert "I2C" in next(d for d in rng if d["id"] == "SENS_EN_SF1XX:4")["wiring"]
+
+
+# ---- presets that must not break what is already there ----
+
+def test_a_preset_never_lowers_the_can_stack() -> None:
+    """UAVCAN_ENABLE 3 runs DroneCAN ESCs; writing 2 over it stops them."""
+    values = _full()
+    values["UAVCAN_ENABLE"] = 3.0
+    preset = _presets(_sections(safety_config.build(values))["flow"])["holybro-h-flow"]
+    assert "UAVCAN_ENABLE" not in [w["param"] for w in preset["writes"]]
+    assert [k["param"] for k in preset["kept"]] == ["UAVCAN_ENABLE"]
+
+    values["UAVCAN_ENABLE"] = 0.0
+    preset = _presets(_sections(safety_config.build(values))["flow"])["holybro-h-flow"]
+    assert ("UAVCAN_ENABLE", 2.0) in _writes(preset["writes"])
+    assert preset["kept"] == []
+
+
+def test_a_module_with_both_sensors_replaces_the_drivers_of_both() -> None:
+    """Applied from the flow page, the H-Flow still stops a TFmini, or there are
+    two downward rangefinders for the estimator to switch between."""
+    values = _full()
+    values.update(SENS_TFMINI_CFG=102.0, SENS_EN_PMW3901=1.0)
+    for sid in ("flow", "rangefinder"):
+        preset = _presets(_sections(safety_config.build(values))[sid])["holybro-h-flow"]
+        assert sorted(preset["clear"]) == ["SENS_EN_PMW3901", "SENS_TFMINI_CFG"], sid
+
+
+def test_the_h_flow_uses_holybros_own_numbers() -> None:
+    preset = _presets(_sections(safety_config.build(_full()))["flow"])["holybro-h-flow"]
+    writes = dict(_writes(preset["writes"]))
+    assert writes["SENS_FLOW_MAXHGT"] == 30.0
+    assert writes["UAVCAN_RNG_MAX"] == 30.0
+    assert writes["UAVCAN_RNG_MIN"] == 0.08
+    assert writes["SENS_FLOW_MAXR"] == 7.4
+
+
+def test_the_benewake_presets_say_what_px4_really_reads() -> None:
+    """PX4's TFmini driver uses 0.4 to 12 m whatever the datasheet says."""
+    presets = _presets(_sections(safety_config.build(_full()))["rangefinder"])
+    for pid in ("benewake-tfmini-s", "benewake-tfmini-plus", "benewake-tf03"):
+        assert "0.4 to 12 m" in presets[pid]["summary"]
+        assert ("SENS_TFMINI_HW", 1.0) in _writes(presets[pid]["writes"])

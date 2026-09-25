@@ -9,13 +9,62 @@ from __future__ import annotations
 
 import collections
 import math
+import struct
 import threading
+import time
 from typing import Any
 
 from pymavlink import mavutil
+from pymavlink.generator.mavcrc import x25crc
 
 from . import battery as battery_math
 from . import rc_config
+
+# GNSS_INTEGRITY (id 441) lives in MAVLink's development.xml, not in the
+# ardupilotmega dialect pymavlink loads, so it reaches the bridge as an
+# UNKNOWN_441 frame and is decoded here. The layout and CRC seed are the
+# message definition's; the CRC is checked because pymavlink cannot check a
+# frame it does not know, and an unchecked frame is a guess about jamming.
+_GNSS_INTEGRITY_ID = 441
+_GNSS_INTEGRITY_CRC_EXTRA = 169
+_GNSS_INTEGRITY = struct.Struct("<IHHBBBBBBBBB")
+_JAMMING_STATES = {1: "ok", 2: "mitigated", 3: "detected"}
+_SPOOFING_STATES = {1: "ok", 2: "mitigated", 3: "detected"}
+
+
+def _decode_gnss_integrity(frame: Any) -> dict[str, Any] | None:
+    """A raw MAVLink 2 GNSS_INTEGRITY frame -> its fields, or None.
+
+    None for anything that is not an intact frame of that message: MAVLink 1
+    (the message id does not fit), a short buffer, or a CRC that does not
+    match. MAVLink 2 trims trailing zero bytes off a payload, so the payload
+    is padded back to its full length before it is unpacked.
+    """
+    try:
+        buf = bytes(frame)
+    except (TypeError, ValueError):
+        return None
+    if len(buf) < 12 or buf[0] != 0xFD:
+        return None
+    length = buf[1]
+    if int.from_bytes(buf[7:10], "little") != _GNSS_INTEGRITY_ID:
+        return None
+    end = 10 + length
+    if len(buf) < end + 2 or length > _GNSS_INTEGRITY.size:
+        return None
+    crc = x25crc(buf[1:end])
+    crc.accumulate(bytes([_GNSS_INTEGRITY_CRC_EXTRA]))
+    if crc.crc != int.from_bytes(buf[end:end + 2], "little"):
+        return None
+    payload = buf[10:end].ljust(_GNSS_INTEGRITY.size, b"\0")
+    (_errors, _hfom, _vfom, receiver, _auth, jamming, spoofing, _raim,
+     _corrections, _summary, signal, _ppk) = _GNSS_INTEGRITY.unpack(payload)
+    return {
+        "system": buf[5], "id": receiver,
+        "jamming_state": jamming, "spoofing_state": spoofing,
+        "gnss_signal_quality": signal,
+    }
+
 
 # SiK radio RSSI is a 0-255 relative scale; ~150 strong, ~40 weak. Used to
 # map RADIO_STATUS.remrssi (the drone's signal as seen by the radio) to 0-100.
@@ -84,6 +133,10 @@ class TelemetryMixin:
         self._battery_lock = threading.Lock()
         self._battery_settings: dict[str, Any] = battery_math.settings(None)
         self._battery_cells: int = 0
+        # (monotonic seconds, percent) while armed, for Corvus's own
+        # time-to-empty. Guarded by _battery_lock; see _battery_endurance_fields.
+        self._drain_samples: collections.deque[tuple[float, float]] = collections.deque(maxlen=400)
+        self._drain_source: str = ""
 
     # ------------------------------------------------------------------
     # Battery
@@ -112,6 +165,7 @@ class TelemetryMixin:
         """Drop the latched cell count (a new link may be a new pack)."""
         with self._battery_lock:
             self._battery_cells = 0
+            self._drain_samples.clear()
 
     def _battery_fields(self, voltage: float, current: float,
                         reported: int) -> dict[str, Any]:
@@ -165,6 +219,30 @@ class TelemetryMixin:
             "battery_cell_voltage": float(est["cell_voltage"]),
         }
 
+    def _battery_endurance_fields(self, percent: float | None, source: str,
+                                  armed: bool, now: float | None = None) -> dict[str, Any]:
+        """Corvus's own time-to-empty, as the ``battery_endurance_est`` field.
+
+        Only a fallback: the autopilot's BATTERY_STATUS.time_remaining wins
+        whenever it is published, and the top bar decides that. This one is
+        the drain rate of the percentage the operator is flying by, so it is
+        only kept while the aircraft is armed (a pack on the bench drains at
+        a rate that says nothing about a flight) and is restarted when the
+        source of that percentage changes, because a series that is half a
+        coulomb count and half a voltage reading has no slope worth reading.
+        *percent* is None when neither source has an answer.
+        """
+        stamp = time.monotonic() if now is None else now
+        with self._battery_lock:
+            if not armed or percent is None or source != self._drain_source:
+                self._drain_samples.clear()
+                self._drain_source = source
+            if not armed or percent is None:
+                return {"battery_endurance_est": -1}
+            self._drain_samples.append((stamp, float(percent)))
+            seconds = battery_math.drain_endurance(self._drain_samples)
+        return {"battery_endurance_est": int(seconds) if seconds >= 0 else -1}
+
     def _handle_battery_status(self, msg: Any) -> None:
         """Publish the detail SYS_STATUS has no room for.
 
@@ -215,6 +293,47 @@ class TelemetryMixin:
         fields["battery_time_remaining"] = max(0, remaining)
 
         self._store.update(**fields)
+
+    # ------------------------------------------------------------------
+    # GNSS integrity (jamming, spoofing)
+    # ------------------------------------------------------------------
+
+    def _handle_gnss_integrity(self, msg: Any) -> None:
+        """Publish the receiver's own jamming and spoofing verdicts.
+
+        Accepts the decoded message too, for a dialect that one day carries
+        it. Only the first receiver is published, for the reason
+        _handle_battery_status gives, and only the aircraft's: an unknown
+        frame has no source id pymavlink could read, so it is checked here.
+        """
+        if msg.get_type() == "GNSS_INTEGRITY":
+            fields = {
+                "system": getattr(msg, "get_srcSystem", lambda: 0)(),
+                "id": int(getattr(msg, "id", 0) or 0),
+                "jamming_state": int(getattr(msg, "jamming_state", 0) or 0),
+                "spoofing_state": int(getattr(msg, "spoofing_state", 0) or 0),
+                "gnss_signal_quality": int(getattr(msg, "gnss_signal_quality", 255)),
+            }
+        else:
+            decoded = _decode_gnss_integrity(getattr(msg, "data", b""))
+            if decoded is None:
+                return
+            fields = decoded
+        target = int(getattr(self, "_target_system", 0) or 0)
+        if fields["system"] and target and fields["system"] != target:
+            return
+        if fields["id"] != 0:
+            return
+        signal = int(fields["gnss_signal_quality"])
+        self._store.update(
+            gps_jamming=_JAMMING_STATES.get(int(fields["jamming_state"]), ""),
+            gps_spoofing=_SPOOFING_STATES.get(int(fields["spoofing_state"]), ""),
+            gps_signal_quality=signal if 0 <= signal <= 10 else -1,
+        )
+
+    def _forget_gnss_integrity(self) -> None:
+        """Clear the integrity verdicts (a new link may be a new receiver)."""
+        self._store.update(gps_jamming="", gps_spoofing="", gps_signal_quality=-1)
 
     # ------------------------------------------------------------------
     # Controller setpoints (PID tuning)

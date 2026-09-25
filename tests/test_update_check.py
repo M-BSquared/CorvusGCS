@@ -540,8 +540,7 @@ def test_api_update_skip_ignores_a_junk_version(tmp_path) -> None:
 
 def test_api_update_open_uses_the_derived_url_not_the_payload(tmp_path, monkeypatch) -> None:
     opened: list[str] = []
-    import webbrowser
-    monkeypatch.setattr(webbrowser, "open", lambda url: opened.append(url) or True)
+    monkeypatch.setattr("corvus.server.open_url", lambda url: opened.append(url) or True)
 
     checker = _StubChecker()
     handler, responses = _handler(
@@ -555,8 +554,7 @@ def test_api_update_open_uses_the_derived_url_not_the_payload(tmp_path, monkeypa
 
 
 def test_api_update_open_reports_when_no_browser_opens(tmp_path, monkeypatch) -> None:
-    import webbrowser
-    monkeypatch.setattr(webbrowser, "open", lambda url: False)
+    monkeypatch.setattr("corvus.server.open_url", lambda url: False)
 
     handler, responses = _handler(
         updates=_StubChecker(), config=CorvusConfig(),

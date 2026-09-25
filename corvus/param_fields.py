@@ -84,6 +84,30 @@ def option_label(options: list[dict[str, Any]], value: float) -> str:
     return f"Unknown ({ivalue})"
 
 
+FLOW_WITHOUT_RANGE = ("Flow is set up, but no distance sensor is on. Without a height "
+                      "above the ground the flow rate cannot be turned into a speed.")
+
+
+def flag_flow_without_range(sections: list[dict[str, Any]]) -> None:
+    """Mark a complete flow setup as partial while the rangefinder is not on.
+
+    Both stacks need a height above the ground to turn a flow rate into a
+    speed. The flow switch stays on, because its own chain is complete and
+    pressing it again would change nothing; what is missing is on the other
+    sensor's page, and the overview has to say so rather than report both
+    tiles as fine.
+    """
+    by_id = {s.get("id"): s for s in sections}
+    flow = (by_id.get("flow") or {}).get("toggle")
+    if not flow or flow.get("state") != "on":
+        return
+    rng = (by_id.get("rangefinder") or {}).get("toggle")
+    if rng is not None and rng.get("state") == "on":
+        return
+    flow["state"] = "partial"
+    flow["problems"] = list(flow.get("problems", [])) + [FLOW_WITHOUT_RANGE]
+
+
 def section(section_id: str, title: str, fields: list[dict[str, Any]],
             hint: str = "", **extra: Any) -> dict[str, Any] | None:
     """A plain-form section, or None when nothing in it survived."""

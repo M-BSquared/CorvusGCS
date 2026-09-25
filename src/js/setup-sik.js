@@ -138,16 +138,16 @@ Corvus.setupSik = (function () {
     const portRow = S.el("div", "sik-port-row");
     portRow.appendChild(Corvus.ui.field({
       label: "Serial port", control: portSelect,
-      hint: "A radio on a USB cable, or the port the live link already runs on.",
+      info: "A radio on a USB cable, or the port the live link already runs on.",
     }));
     portRow.appendChild(Corvus.ui.field({
       label: "Baud rate", control: baudSelect,
-      hint: "The speed of this cable, not of the air link. If the radio does " +
+      info: "The speed of this cable, not of the air link. If the radio does " +
             "not answer, Corvus tries the other common rates before giving up.",
     }));
     portRow.appendChild(Corvus.ui.field({
       label: "Scope", control: remoteToggle,
-      hint: "Reading the far radio takes a few seconds longer and needs it powered.",
+      info: "Reading the far radio takes a few seconds longer and needs it powered.",
     }));
     portCard.appendChild(portRow);
 

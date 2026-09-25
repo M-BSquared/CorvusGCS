@@ -903,3 +903,85 @@ def test_params_verify_without_a_link_returns_503() -> None:
     handler, responses = _handler_with_bridge(bridge)
     handler._api_params_verify({"params": [{"name": "A", "value": 1}]})
     assert responses[0][1] == 503
+
+
+# ---- GET/POST /api/params/metadata ----
+
+class FakeMetadataBridge(FakeParamBridge):
+    def __init__(self, status: dict) -> None:
+        super().__init__()
+        self.status = status
+        self.starts = 0
+        self.include_params: list[bool] = []
+
+    def start_param_metadata(self, cache: Any = None) -> dict:
+        self.starts += 1
+        self.cache = cache
+        return {k: v for k, v in self.status.items() if k != "params"}
+
+    def param_metadata_status(self, include_params: bool = False) -> dict:
+        self.include_params.append(include_params)
+        return dict(self.status)
+
+
+def test_metadata_post_starts_the_fetch_and_answers_the_status() -> None:
+    bridge = FakeMetadataBridge({"state": "loading", "error": "", "received": 0,
+                                 "size": 0, "count": 0})
+    handler, responses = _handler_with_bridge(bridge)
+    handler._api_params_metadata_fetch({})
+    assert bridge.starts == 1
+    assert responses == [({"state": "loading", "error": "", "received": 0,
+                           "size": 0, "count": 0, "ok": True}, 200)]
+
+
+def test_metadata_get_carries_the_params_once_ready() -> None:
+    ready = {"state": "ready", "error": "", "received": 10, "size": 10, "count": 1,
+             "params": {"MC_ROLL_P": {"default": 6.5}}}
+    bridge = FakeMetadataBridge(ready)
+    handler, responses = _handler_with_bridge(bridge)
+    handler._handle_api_get("/api/params/metadata")
+    assert bridge.include_params == [True]
+    assert responses[0][0]["params"] == {"MC_ROLL_P": {"default": 6.5}}
+
+
+def test_metadata_without_a_vehicle() -> None:
+    handler, responses = _handler_without_bridge()
+    handler._api_params_metadata()
+    assert responses[0][0]["state"] == "idle"
+    handler._api_params_metadata_fetch({})
+    assert responses[1][1] == 503
+
+
+def _config_handler(bridge: Any, tmp_path, parameters: dict | None):
+    from corvus.config import CorvusConfig
+    handler, responses = _handler_with_bridge(bridge)
+    handler.config = CorvusConfig(parameters=parameters)
+    handler.config_path = str(tmp_path / "config.json")
+    return handler, responses
+
+
+def test_the_copy_is_used_only_when_the_operator_switched_it_on(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("corvus.server._param_metadata_cache_dir", lambda: str(tmp_path / "pm"))
+    bridge = FakeMetadataBridge({"state": "loading", "error": "", "received": 0,
+                                 "size": 0, "count": 0})
+    handler, _ = _config_handler(bridge, tmp_path, None)
+    handler._api_params_metadata_fetch({})
+    assert bridge.cache is None, "off by default"
+    handler, _ = _config_handler(bridge, tmp_path, {"cache_defaults": True})
+    handler._api_params_metadata_fetch({})
+    assert bridge.cache is not None
+    assert str(bridge.cache.directory) == str(tmp_path / "pm")
+
+
+def test_the_copies_can_be_counted_and_cleared(tmp_path, monkeypatch) -> None:
+    folder = tmp_path / "pm"
+    folder.mkdir()
+    (folder / "px4-json-0badf00d.bin").write_bytes(b"x" * 10)
+    (folder / "notes.txt").write_text("not ours")
+    monkeypatch.setattr("corvus.server._param_metadata_cache_dir", lambda: str(folder))
+    handler, responses = _config_handler(None, tmp_path, {"cache_defaults": True})
+    handler._api_params_metadata_cache()
+    assert responses[-1][0] == {"dir": str(folder), "files": 1, "bytes": 10, "enabled": True}
+    handler._api_params_metadata_cache_clear({})
+    assert responses[-1][0]["removed"] == 1 and responses[-1][0]["files"] == 0
+    assert (folder / "notes.txt").exists(), "only the copies are deleted"

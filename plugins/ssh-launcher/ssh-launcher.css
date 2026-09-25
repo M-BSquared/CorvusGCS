@@ -35,9 +35,12 @@
 }
 
 /* Open-terminal and edit: present, but never competing with the launch button.
-   They come up to full strength on hover or keyboard focus. */
+   They come up to full strength on hover or keyboard focus. Centred, because
+   the items are not all one height: the default stretch only fills the ones
+   without a height of their own and leaves the rest at the top. */
 .sshl-row-tools {
   display: flex;
+  align-items: center;
   gap: 2px;
   flex: 0 0 auto;
   opacity: 0.55;
@@ -55,7 +58,6 @@
   height: 6px;
   margin: 0 4px;
   border-radius: 50%;
-  align-self: center;
   flex: 0 0 auto;
   background: var(--healthy);
 }
@@ -70,10 +72,20 @@
    icon in the critical colour, holding the message in its popover. The row it
    is on stops fading — a failure is not a tool that waits to be hovered — and
    the launch button, being the flexible item in the row, gives up exactly this
-   much width for it without a rule of its own. */
-.sshl-error { color: var(--critical); }
-.sshl-error:hover,
-.sshl-error[data-popover-open="true"] { color: var(--critical-bright); }
+   much width for it without a rule of its own.
+   In this row it is one of the tools, so it takes their 28px box (the 15px
+   glyph is set where it is built): a 16px hint beside two 28px buttons sat
+   off their centre line and spaced unevenly. Qualified with .ui-info so it
+   outranks the app's own hint rules by specificity rather than by stylesheet
+   order. */
+.ui-info.sshl-error {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-btn);
+  color: var(--critical);
+}
+.ui-info.sshl-error:hover,
+.ui-info.sshl-error[data-popover-open="true"] { color: var(--critical-bright); }
 .sshl-failed .sshl-row-tools { opacity: 1; }
 
 /* The connection typed in for a button that has none saved yet. Inset and

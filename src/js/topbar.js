@@ -332,32 +332,223 @@ Corvus.topbar = (function () {
     return changed;
   }
 
-  /**
-   * Where the percentage in the bar came from, and what the other answer says.
-   *
-   * Two readings of one pack disagree for good reasons — a capacity count
-   * seeded by a guess against a curve read under load — and the bar has room
-   * for exactly one number. Naming the source on hover is what stops the other
-   * one being invisible; both are on Setup -> Battery & Power, which is also
-   * where the choice is made.
-   */
-  function batteryTitle(state) {
-    if (!state.connected) return "";
-    const cells = Number(state.battery_cells) || 0;
-    const pack = cells > 0 ? `${cells}S pack` : "";
-    if (state.battery_source === "estimate") {
-      const reported = Number(state.battery_percent_fc);
-      const other = reported >= 0
-        ? `the autopilot reports ${Math.round(reported)}%`
-        : "the autopilot reports no estimate";
-      return [`Remaining read from the cell voltage${pack ? " of a " + pack : ""}`,
-              other].join("; ");
+  /* ---------------- hover cards: GPS and Battery ----------------
+     The bar has room for one number per block. The cards behind GPS and
+     Battery hold the rest of what an operator asks before trusting that
+     number: how many satellites and how good the geometry is, whether the
+     receiver says it is being jammed, what the pack is actually doing.
+     Each card is a list of [label, value, tone] rows; a row the vehicle has
+     no answer for is left out rather than printed as a zero, except where
+     "not reported" is itself the answer (jamming, on a receiver that cannot
+     tell). Nothing is shown while disconnected: there is nothing to say. */
+
+  const FIX_LABELS = {
+    NO_GPS: "No receiver", NO_FIX: "No fix", "2D_FIX": "2D fix", "3D_FIX": "3D fix",
+    DGPS: "DGPS", RTK_FLOAT: "RTK float", RTK_FIXED: "RTK fixed",
+    STATIC: "Static", PPP: "PPP",
+  };
+
+  function hasFix(state) {
+    return !!state.gps_fix && state.gps_fix !== "NO_GPS" && state.gps_fix !== "NO_FIX";
+  }
+
+  /** HDOP in words. The usual bands: under 1 is as good as it gets, over 5
+   *  is a position nobody should fly a mission on. */
+  function dopWord(dop) {
+    if (!(dop > 0) || dop >= 99) return "";
+    if (dop <= 1) return "excellent";
+    if (dop <= 2) return "good";
+    if (dop <= 5) return "moderate";
+    return "poor";
+  }
+
+  /** One verdict on reception from what every receiver reports: the fix,
+   *  the satellite count and the geometry. Deliberately coarse, because it is
+   *  a summary of the rows under it, not a new measurement. */
+  function reception(state) {
+    if (!hasFix(state)) return ["No fix", "critical"];
+    const sats = Number(state.gps_satellites) || 0;
+    const hdop = Number(state.gps_hdop) || 99;
+    if (sats >= 10 && hdop <= 1.5) return ["Good", "healthy"];
+    if (sats >= 6 && hdop <= 2.5) return ["Fair", "warning"];
+    return ["Poor", "critical"];
+  }
+
+  function integrityRow(value) {
+    if (value === "ok") return ["None detected", "healthy"];
+    if (value === "mitigated") return ["Detected, mitigated", "warning"];
+    if (value === "detected") return ["Detected", "critical"];
+    return ["Not reported", "muted"];
+  }
+
+  function metres(value) {
+    const v = Number(value);
+    if (!(v >= 0)) return "";
+    return v < 10 ? `${v.toFixed(2)} m` : `${Math.round(v)} m`;
+  }
+
+  function gpsDetail(state) {
+    if (!state.connected) return null;
+    const rows = [];
+    const fix = state.gps_fix || "NO_GPS";
+    rows.push(["Fix", FIX_LABELS[fix] || fix, hasFix(state) ? "healthy" : "critical"]);
+    rows.push(["Satellites", String(Number(state.gps_satellites) || 0), ""]);
+    const [recv, recvTone] = reception(state);
+    rows.push(["Reception", recv, recvTone]);
+    const signal = Number(state.gps_signal_quality);
+    if (signal >= 0) rows.push(["Signal quality", `${signal} of 10`, ""]);
+    const hdop = Number(state.gps_hdop);
+    if (hdop > 0 && hdop < 99) rows.push(["HDOP", `${hdop.toFixed(1)} (${dopWord(hdop)})`, ""]);
+    const vdop = Number(state.gps_vdop);
+    if (vdop > 0 && vdop < 99) rows.push(["VDOP", vdop.toFixed(1), ""]);
+    const hAcc = metres(state.gps_h_acc);
+    if (hAcc) rows.push(["Horizontal accuracy", hAcc, ""]);
+    const vAcc = metres(state.gps_v_acc);
+    if (vAcc) rows.push(["Vertical accuracy", vAcc, ""]);
+    const jam = integrityRow(state.gps_jamming);
+    rows.push(["Jamming", jam[0], jam[1]]);
+    const spoof = integrityRow(state.gps_spoofing);
+    rows.push(["Spoofing", spoof[0], spoof[1]]);
+    if (state.gps_health === "ok") rows.push(["Receiver health", "OK", "healthy"]);
+    else if (state.gps_health === "fault") rows.push(["Receiver health", "Fault", "critical"]);
+    const notes = [];
+    if (!state.gps_jamming && !state.gps_spoofing) {
+      notes.push("Jamming and spoofing need a receiver that reports GNSS integrity.");
     }
-    const estimated = Number(state.battery_percent_est);
-    const other = estimated >= 0
-      ? `the cell voltage reads ${Math.round(estimated)}%`
-      : "no cell count, so there is no voltage reading";
-    return ["Remaining as the autopilot reports it", other].join("; ");
+    return { title: "GPS", rows, notes };
+  }
+
+  /** "about 12 min", "about 1 h 05 min", "under 1 min". Rounded to the
+   *  minute: seconds would claim a precision no estimate here has. */
+  function flightTime(seconds) {
+    const s = Number(seconds) || 0;
+    if (s < 60) return "under 1 min";
+    const total = Math.round(s / 60);
+    if (total < 60) return `about ${total} min`;
+    const h = Math.floor(total / 60);
+    const m = String(total % 60).padStart(2, "0");
+    return `about ${h} h ${m} min`;
+  }
+
+  /**
+   * Time left, only when there is an honest answer. The autopilot's own
+   * figure wins (it knows the capacity and filters the current); Corvus's
+   * drain-rate estimate is the fallback. Both only while armed: on the bench
+   * the pack drains at a rate that says nothing about a flight.
+   */
+  function endurance(state) {
+    if (!state.armed) return null;
+    const fc = Number(state.battery_time_remaining) || 0;
+    if (fc > 0) return { value: flightTime(fc), note: "Time to empty, as the autopilot estimates it." };
+    const est = Number(state.battery_endurance_est);
+    if (est >= 0) {
+      return { value: flightTime(est), note: "Time to empty at the drain of the last few minutes." };
+    }
+    return null;
+  }
+
+  function batteryDetail(state) {
+    if (!state.connected) return null;
+    const rows = [];
+    const voltage = Number(state.battery_voltage) || 0;
+    const current = Number(state.battery_current) || 0;
+    const pct = Number(state.battery_percent) || 0;
+    const tone = pct > 25 ? "healthy" : (pct > 12 ? "warning" : "critical");
+    const usingEstimate = state.battery_source === "estimate";
+    rows.push(["Remaining", `${Math.round(pct)}%`, tone]);
+    const time = endurance(state);
+    if (time) rows.push(["Flight time left", time.value, tone]);
+    if (voltage > 0) rows.push(["Voltage", `${voltage.toFixed(1)} V`, ""]);
+    const cells = Number(state.battery_cells) || 0;
+    const measured = Array.isArray(state.battery_cell_voltages) ? state.battery_cell_voltages : [];
+    if (measured.length > 1) {
+      const low = Math.min.apply(null, measured);
+      const high = Math.max.apply(null, measured);
+      rows.push(["Cells", `${low.toFixed(2)} to ${high.toFixed(2)} V`, ""]);
+    } else if (cells > 0 && voltage > 0) {
+      rows.push(["Per cell", `${(voltage / cells).toFixed(2)} V (${cells}S)`, ""]);
+    }
+    rows.push(["Current", `${current.toFixed(1)} A`, ""]);
+    if (voltage > 0) rows.push(["Power", `${Math.round(voltage * current)} W`, ""]);
+    const consumed = Number(state.battery_consumed_mah) || 0;
+    if (consumed > 0) rows.push(["Consumed", `${Math.round(consumed)} mAh`, ""]);
+    if (typeof state.battery_temperature === "number") {
+      rows.push(["Temperature", `${state.battery_temperature.toFixed(1)} °C`, ""]);
+    }
+    // Where the percentage came from, and what the other reading says. Two
+    // readings of one pack disagree for good reasons (a capacity count seeded
+    // by a guess against a curve read under load), and naming the source is
+    // what stops the other one being invisible.
+    const other = usingEstimate ? Number(state.battery_percent_fc) : Number(state.battery_percent_est);
+    rows.push([usingEstimate ? "Autopilot says" : "Cell voltage says",
+      other >= 0 ? `${Math.round(other)}%` : "no reading", "muted"]);
+    const notes = [usingEstimate
+      ? "Remaining is read from the cell voltage."
+      : "Remaining is the autopilot's own figure."];
+    if (time) notes.push(time.note);
+    return { title: "Battery", rows, notes };
+  }
+
+  const DETAILS = { gps: gpsDetail, battery: batteryDetail };
+
+  function detailBody(detail) {
+    const body = document.createElement("div");
+    body.className = "tb-pop-body";
+    const grid = document.createElement("div");
+    grid.className = "tb-pop-grid";
+    detail.rows.forEach(([label, value, rowTone]) => {
+      const k = document.createElement("span");
+      k.className = "tb-pop-key";
+      k.textContent = label;
+      const v = document.createElement("span");
+      v.className = "tb-pop-val" + (rowTone ? " " + rowTone : "");
+      v.textContent = value;
+      grid.append(k, v);
+    });
+    body.appendChild(grid);
+    detail.notes.forEach((line) => {
+      const note = document.createElement("p");
+      note.className = "tb-pop-note";
+      note.textContent = line;
+      body.appendChild(note);
+    });
+    return body;
+  }
+
+  // block key -> {handle, signature}
+  let detailPops = {};
+
+  /** Bring one card up to date. Rebuilt only when what it says changed, so a
+   *  10 Hz telemetry stream does not re-lay the sheet out under the pointer. */
+  function refreshDetail(key, state, force) {
+    const entry = detailPops[key];
+    if (!entry || !state) return;
+    const detail = DETAILS[key](state);
+    if (!detail) {
+      entry.signature = "";
+      entry.handle.setContent({});
+      entry.handle.hide();
+      return;
+    }
+    const signature = JSON.stringify(detail);
+    if (!force && signature === entry.signature) return;
+    entry.signature = signature;
+    entry.handle.setContent({ title: detail.title, body: detailBody(detail) });
+  }
+
+  function attachDetail(root, key) {
+    if (!Corvus.ui || typeof Corvus.ui.popover !== "function") return;
+    root.tabIndex = 0;
+    root.classList.add("has-detail");
+    // Registered before the popover's own listeners, so the sheet is filled
+    // from the latest snapshot by the time it decides whether it has
+    // anything to show.
+    const fill = () => refreshDetail(key, lastState, false);
+    root.addEventListener("pointerenter", fill);
+    root.addEventListener("focus", fill);
+    root.addEventListener("click", fill);
+    const handle = Corvus.ui.popover(root, { className: "tb-pop" });
+    detailPops[key] = { handle, signature: "" };
   }
 
   function blocks(state) {
@@ -367,7 +558,6 @@ Corvus.topbar = (function () {
       ? "healthy" : "off";
     const battPct = state.battery_percent || 0;
     const battCls = !state.connected ? "off" : battPct > 25 ? "healthy" : (battPct > 12 ? "warning" : "critical");
-    const batt = batteryTitle(state);
     const notifications = notificationSummary(state);
     const gpsSub = state.connected ? `(${state.gps_hdop > 0 && state.gps_hdop < 99 ? state.gps_hdop.toFixed(1) : "—"})` : "";
     const fw = vehicleFirmware(state);
@@ -377,8 +567,8 @@ Corvus.topbar = (function () {
       { key: "vehicle", label: "Vehicle", value: vehicleLabel(state), cls: state.connected ? "" : "critical", dot: conn, sub: fw.text, subCls: fw.cls, title: fw.title, priority: "high" },
       { key: "mode", label: "Mode", value: modeLabel(state), cls: "accent", priority: "high" },
       { key: "armed", label: "Status", value: ready.value, sub: ready.sub || "", cls: ready.cls, dot: ready.cls, tone: ready.tone, title: ready.title, priority: "high" },
-      { key: "gps", label: "GPS", value: state.connected ? (state.gps_fix || "NO GPS") : "—", sub: gpsSub, cls: gpsCls, dot: gpsCls, priority: "high" },
-      { key: "battery", label: "Battery", value: state.connected ? `${state.battery_voltage.toFixed(1)} V` : "—", sub: state.connected ? `${battPct}%` : "", cls: battCls, dot: battCls, title: batt, priority: "high" },
+      { key: "gps", label: "GPS", value: state.connected ? (state.gps_fix || "NO GPS") : "—", sub: gpsSub, cls: gpsCls, dot: gpsCls, detail: true, priority: "high" },
+      { key: "battery", label: "Battery", value: state.connected ? `${state.battery_voltage.toFixed(1)} V` : "—", sub: state.connected ? `${battPct}%` : "", cls: battCls, dot: battCls, detail: true, priority: "high" },
       { key: "altitude", label: "Altitude", value: state.connected ? `${Math.round(state.altitude_amsl)}` : "—", sub: "m AMSL", priority: "mid" },
       { key: "groundspeed", label: "Groundspeed", value: state.connected ? `${state.groundspeed.toFixed(1)}` : "—", sub: "m/s", priority: "mid" },
       { key: "vspeed", label: "Vertical speed", value: state.connected ? `${state.vspeed >= 0 ? "+" : ""}${state.vspeed.toFixed(1)}` : "—", sub: "m/s", priority: "mid" },
@@ -607,6 +797,7 @@ Corvus.topbar = (function () {
           dot: root.querySelector(".tb-dot"),
           value: root.querySelector(".tb-value"),
         };
+        if (b.detail) attachDetail(root, b.key);
       });
       topBarBuilt = true;
       applyCompanyLogo();
@@ -661,6 +852,9 @@ Corvus.topbar = (function () {
       }
     }
     if (warningsOpen) renderWarningsPopover(state);
+    Object.keys(detailPops).forEach((key) => {
+      if (detailPops[key].handle.isOpen()) refreshDetail(key, state, false);
+    });
   }
 
   function renderWarningsPopover(state, force = false) {
@@ -990,6 +1184,8 @@ Corvus.topbar = (function () {
     setNotificationMarks,
     notificationMarks,
     notifyError: showCmdError,
+    // The rows behind the GPS and Battery cards, for the tests.
+    detail: (key, state) => (DETAILS[key] ? DETAILS[key](state || {}) : null),
     beginCommand: (key) => commandDedupe.begin(key),
     succeedCommand: (attempt) => commandDedupe.succeeded(attempt),
     failCommand: completeFailedAttempt,

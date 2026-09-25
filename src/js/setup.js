@@ -128,10 +128,11 @@ Corvus.setup = (function () {
     grid.appendChild(makeTile("remoteid", "id-card", "Remote ID",
       "Serial number, operator registration, description and EU class."));
     grid.appendChild(makeTile("parameters", "list", "Parameters",
-      "Download all PX4 parameters on demand, then edit any value."));
+      "Every parameter with its default. Edit values, load and save parameter files."));
     grid.appendChild(makeTile("firmware", "cpu", "Firmware",
       "Flash PX4 firmware over a direct USB connection only."));
-    grid.appendChild(makeVideoTile());
+    grid.appendChild(makeTile("video", "video", "Video",
+      "Cameras over RTSP or WebRTC, each in a floating window over the map."));
     container.appendChild(grid);
 
     // Subscribe to telemetry so the Vehicle Info rows update live. The firmware version
@@ -179,26 +180,10 @@ Corvus.setup = (function () {
     return btn;
   }
 
-  /**
-   * The Video tile has no sub-page yet, so it is disabled rather than
-   * hidden: an operator can see that a capability is planned instead of
-   * wondering why it is missing.
-   */
-  function makeVideoTile() {
-    const btn = Corvus.ui.tile({
-      className: "setup-tile",
-      icon: "video",
-      title: "Video",
-      desc: "RTSP support coming soon.",
-    });
-    btn.disabled = true;
-    return btn;
-  }
-
   /** Swap the container to a sub-page. Tears the grid down first. */
   function openView(viewId) {
     if (["calibration", "control", "tuning", "motors", "safety", "battery",
-         "sik", "rtk", "remoteid", "parameters", "firmware"].indexOf(viewId) < 0) return;
+         "sik", "rtk", "remoteid", "parameters", "firmware", "video"].indexOf(viewId) < 0) return;
     teardown();
     activeView = viewId;
     const container = document.getElementById("pageView");
@@ -233,6 +218,8 @@ Corvus.setup = (function () {
       activeDestroy = Corvus.setupRemoteId.render(container, navigateBack);
     } else if (viewId === "parameters") {
       activeDestroy = Corvus.setupParameters.render(container, navigateBack);
+    } else if (viewId === "video") {
+      activeDestroy = Corvus.setupVideo.render(container, navigateBack);
     } else { // firmware
       activeDestroy = Corvus.setupFirmware.render(container, navigateBack);
     }

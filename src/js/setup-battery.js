@@ -589,7 +589,7 @@ Corvus.setupBattery = (function () {
     grid.appendChild(chemistryRow(state));
     grid.appendChild(numberRow(state, {
       key: "cells", label: "Cells in series", unit: "S", step: 1, min: 0, max: 24,
-      hint: "0 works it out from the pack voltage when the battery is plugged "
+      info: "0 works it out from the pack voltage when the battery is plugged "
             + "in, which is the only moment that reading is unambiguous: 19.8 V "
             + "is a fresh 5S and a tired 6S. Pin it if you know it.",
       autoText: () => {
@@ -600,20 +600,20 @@ Corvus.setupBattery = (function () {
     grid.appendChild(numberRow(state, {
       key: "full_cell", label: "Full cell voltage", unit: "V", step: 0.01,
       min: 0, max: 5,
-      hint: "Resting volts of one charged cell, at which the estimate reads 100%.",
+      info: "Resting volts of one charged cell, at which the estimate reads 100%.",
       autoText: () => `auto (${chemistry(state).full} V)`,
     }));
     grid.appendChild(numberRow(state, {
       key: "empty_cell", label: "Empty cell voltage", unit: "V", step: 0.01,
       min: 0, max: 5,
-      hint: "The landing decision, not the cell's datasheet minimum. The estimate "
+      info: "The landing decision, not the cell's datasheet minimum. The estimate "
             + "reads 0% here.",
       autoText: () => `auto (${chemistry(state).empty} V)`,
     }));
     grid.appendChild(numberRow(state, {
       key: "resistance", label: "Internal resistance", unit: "mΩ/cell", step: 0.1,
       min: 0, max: 100,
-      hint: "Corrects the voltage back to rest before it is read. A 6S pack "
+      info: "Corrects the voltage back to rest before it is read. A 6S pack "
             + "pulling 60 A through 5 mΩ a cell reads 1.8 V low: thirty points "
             + "of charge, in a climb. 0 leaves the reading uncorrected, which is "
             + "pessimistic rather than wrong.",
@@ -671,7 +671,9 @@ Corvus.setupBattery = (function () {
   function chemistryRow(state) {
     const row = S.el("div", "pform-field battery-field");
     row.dataset.setting = "chemistry";
-    row.appendChild(S.el("span", "pform-field-label battery-field-label", "Chemistry"));
+    row.appendChild(S.rowLabel("pform-field-label battery-field-label", "Chemistry",
+      "Which discharge curve the cell voltage is read against. A LiFePO4 cell at "
+      + "3.3 V is nearly full; a LiPo cell at 3.3 V is empty."));
     const cell = S.el("div", "pform-field-control battery-field-control");
     const options = ((state.doc && state.doc.chemistries) || []).map((c) => ({
       value: c.value, label: `${c.label} (${c.empty} to ${c.full} V)`,
@@ -689,9 +691,6 @@ Corvus.setupBattery = (function () {
     cell.appendChild(select);
     cell.appendChild(status);
     row.appendChild(cell);
-    row.appendChild(S.el("span", "field-hint pform-field-hint",
-      "Which discharge curve the cell voltage is read against. A LiFePO4 cell at "
-      + "3.3 V is nearly full; a LiPo cell at 3.3 V is empty."));
     return row;
   }
 
@@ -706,7 +705,7 @@ Corvus.setupBattery = (function () {
   function numberRow(state, spec) {
     const row = S.el("div", "pform-field battery-field");
     row.dataset.setting = spec.key;
-    row.appendChild(S.el("span", "pform-field-label battery-field-label", spec.label));
+    row.appendChild(S.rowLabel("pform-field-label battery-field-label", spec.label, spec.info));
 
     const cell = S.el("div", "pform-field-control battery-field-control");
     const status = S.el("span", "params-row-status");
@@ -740,7 +739,6 @@ Corvus.setupBattery = (function () {
     if (spec.unit) cell.appendChild(S.el("span", "pform-unit", spec.unit));
     cell.appendChild(status);
     row.appendChild(cell);
-    if (spec.hint) row.appendChild(S.el("span", "field-hint pform-field-hint", spec.hint));
     return row;
   }
 

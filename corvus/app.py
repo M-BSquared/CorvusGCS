@@ -15,12 +15,15 @@ anywhere) — see :func:`chromium_flags`.
 from __future__ import annotations
 
 import atexit
+import json
 import logging
+import re
 import os
 import signal
 import sys
 import threading
 import time
+from urllib.parse import parse_qs, urlsplit
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
@@ -75,6 +78,34 @@ def chromium_flags(platform: str = sys.platform) -> list[str]:
 
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", " ".join(chromium_flags()))
 
+
+def qpa_platform(env, platform: str = sys.platform) -> str:
+    """The Qt platform to ask for, or ``""`` to leave Qt its own choice.
+
+    On a Linux desktop running Wayland with XWayland beside it, X11 first:
+    ``"xcb;wayland"``. A Wayland client may not place its own windows, read
+    where the pointer is on the screen, or keep a window above others, and
+    the windows out of the app need all three: dragged by their bar, docked
+    back by letting go over the app, pinned above it. Under XWayland they
+    work as on any X11 desktop. Wayland stays the fallback in the same value,
+    so a machine whose Qt cannot load its X11 plugin still starts (see
+    :func:`window_support` for what is then left out). An operator who set
+    ``QT_QPA_PLATFORM`` gets exactly that.
+    """
+    if not platform.startswith("linux") or env.get("QT_QPA_PLATFORM"):
+        return ""
+    wayland = bool(env.get("WAYLAND_DISPLAY")) or env.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+    return "xcb;wayland" if wayland and env.get("DISPLAY") else ""
+
+
+_QPA = qpa_platform(os.environ)
+if _QPA:
+    from corvus.child_env import QPA_DEFAULT_ENV
+
+    os.environ["QT_QPA_PLATFORM"] = _QPA
+    # So corvus.child_env can keep it from the programs Corvus starts.
+    os.environ[QPA_DEFAULT_ENV] = _QPA
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
@@ -90,6 +121,7 @@ from corvus.instance_lock import (
     allow_multi,
     describe_peer,
 )
+from corvus.file_manager import open_url
 from corvus.paths import corvus_path
 from corvus.version import get_version
 
@@ -236,6 +268,222 @@ def start_backend(port: int, mavlink_conn: str | None = None) -> tuple:
     )
     backend_thread.start()
     return server, server.mavlink, server.ssh
+
+# ---------------------------------------------------------------------------
+# Pop-out windows
+# ---------------------------------------------------------------------------
+#
+# A floating camera or terminal frame lives inside the page, so it cannot leave
+# the app's window. Its pop-out button calls window.open (src/js/popout.js),
+# and these are the rules the native window that makes is held to. Pure, so
+# they are tested without Qt.
+
+POPOUT_MIN_W = 320
+POPOUT_MIN_H = 200
+
+
+def popout_url_allowed(url: str, port: int) -> bool:
+    """Whether a window the page opened may show *url*: this backend's own pages only.
+
+    A pop-out has no address bar and no business showing the web. Anything
+    else it is sent to goes to the system browser instead (see
+    :func:`external_url`), or nowhere.
+    """
+    if url in ("", "about:blank"):
+        return True
+    try:
+        parts = urlsplit(url)
+        url_port = parts.port
+    except ValueError:
+        return False
+    return (parts.scheme == "http"
+            and (parts.hostname or "") in ("localhost", "127.0.0.1")
+            and url_port == port)
+
+
+# A pop-out's key names the frame it came from ("video:<id>", "term:<session>")
+# and travels in its address. Narrow, because it also keys the native window.
+_POPOUT_KEY_RE = re.compile(r"^(video|term):[A-Za-z0-9_./@:-]{1,96}$")
+
+
+def popout_key_valid(key: str) -> bool:
+    """Whether *key* can name a pop-out window."""
+    return isinstance(key, str) and bool(_POPOUT_KEY_RE.match(key))
+
+
+def popout_key(url: str) -> str:
+    """The key a popout.html address names, or ``""``."""
+    try:
+        values = parse_qs(urlsplit(url).query).get("key") or [""]
+    except ValueError:
+        return ""
+    return values[0] if popout_key_valid(values[0]) else ""
+
+
+# Runs in every page of the app's profile before the page's own scripts: it
+# connects the page to the Qt object it may ask things of (see PopoutBridge
+# and MainBridge in main()). A page without a web channel, such as one in a
+# plain browser, has no ``qt`` object and nothing happens. It runs before the
+# document has an element, so it must not touch the DOM.
+NATIVE_BOOTSTRAP_JS = """
+;(function () {
+  if (typeof qt === "undefined" || !qt.webChannelTransport || typeof QWebChannel !== "function") return;
+  new QWebChannel(qt.webChannelTransport, function (channel) {
+    window.corvusNative = channel.objects.corvusNative || null;
+    window.dispatchEvent(new CustomEvent("corvus:native-ready"));
+  });
+})();
+"""
+
+
+def native_support_js(support: dict[str, bool]) -> str:
+    """The line of the bootstrap that tells a page what its windows can do.
+
+    Set before any script of the page runs, so a page decides once, and
+    synchronously, whether to offer a drag out of the app or a pin (see
+    :func:`window_support`).
+    """
+    return "\n;window.corvusNativeSupport = Object.freeze(" + json.dumps(support) + ");\n"
+
+
+def external_url(url: str) -> bool:
+    """Whether *url* may be handed to the system browser: a web page, nothing local."""
+    try:
+        return urlsplit(url).scheme in ("http", "https")
+    except ValueError:
+        return False
+
+
+def stays_on_top(pinned: bool, app_active: bool) -> bool:
+    """Whether a pop-out window is raised above every other window right now.
+
+    The pin keeps a window above the Corvus window, not above everything: a
+    camera floating over another program's windows is in the way there. So the
+    window is held on top only while Corvus is the active application; with
+    another program in front it is an ordinary window its windows can cover,
+    and it is on top again the moment Corvus is.
+    """
+    return bool(pinned) and bool(app_active)
+
+
+def window_support(platform_name: str) -> dict[str, bool]:
+    """What the windows out of the app can do on this Qt platform.
+
+    ``place``: this process may put a window where it wants and knows where
+    the pointer is, which dragging by the bar, following the pointer out of
+    the app and docking by letting go over it all rest on. ``pin``: a window
+    can be kept above others. Wayland gives a client neither: the compositor
+    moves and sizes the window (``startSystemMove``), and there is no pin.
+    The pages read this before they offer either (the bootstrap script puts
+    it on ``window.corvusNativeSupport``), so a missing feature is left out
+    rather than offered and broken.
+    """
+    wayland = str(platform_name or "").lower().startswith("wayland")
+    return {"place": not wayland, "pin": not wayland}
+
+
+def popout_geometry(rect: tuple[int, int, int, int],
+                    available: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+    """Where a pop-out opens: the rect the page asked for, kept on the screen.
+
+    *rect* and *available* are ``(x, y, width, height)``; *available* is the
+    usable area of the screen the rect is on. The page asks for the spot its
+    frame was at, which is on screen by construction, but a window must never
+    open somewhere it cannot be grabbed: off an unplugged monitor, under the
+    menu bar, or bigger than the screen.
+    """
+    x, y, w, h = rect
+    ax, ay, aw, ah = available
+    w = max(min(w, aw), min(POPOUT_MIN_W, aw))
+    h = max(min(h, ah), min(POPOUT_MIN_H, ah))
+    x = min(max(x, ax), ax + aw - w)
+    y = min(max(y, ay), ay + ah - h)
+    return x, y, w, h
+
+
+class Win32Windows:
+    """The Win32 calls a frameless window needs to follow the pointer on Windows.
+
+    Qt's coordinates on Windows are logical pixels, and with screens at
+    different scales (a laptop at 150 % beside a monitor at 100 %) they are
+    not one continuous plane: each screen keeps its physical origin and is
+    shrunk from there, so there are gaps and overlaps between them. A window
+    moved through ``QWidget.move`` while the pointer crosses from one screen
+    to the other lands in a gap, is placed by the scale of the screen it came
+    from, and jumps back and forth. Windows' own pixels have no gaps. So the
+    drag is done in them: where the pointer is (``GetCursorPos``), where the
+    window is (``GetWindowRect``), and ``SetWindowPos``; Windows then tells Qt
+    the window changed screens, and Qt rescales it as it would for the
+    system's own drag.
+
+    Also the one thing the pin needs that Qt does not do: when another
+    program comes to the front, a window that stops being topmost is placed
+    above every other window, that program's included (``HWND_NOTOPMOST``).
+    :meth:`step_back` puts it behind that program's window instead.
+    """
+
+    _SWP_NOSIZE = 0x0001
+    _SWP_NOMOVE = 0x0002
+    _SWP_NOZORDER = 0x0004
+    _SWP_NOACTIVATE = 0x0010
+    _SWP_NOOWNERZORDER = 0x0200
+    _HWND_NOTOPMOST = -2
+
+    def __init__(self) -> None:
+        import ctypes
+        from ctypes import wintypes
+
+        self._ct = ctypes
+        self._wt = wintypes
+        # A private handle, so setting argtypes here changes nothing for any
+        # other user of ctypes.windll.user32.
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
+        user32.GetCursorPos.restype = wintypes.BOOL
+        user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+        user32.GetWindowRect.restype = wintypes.BOOL
+        user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+                                        ctypes.c_int, ctypes.c_int, wintypes.UINT]
+        user32.SetWindowPos.restype = wintypes.BOOL
+        user32.GetForegroundWindow.argtypes = []
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        self._user32 = user32
+
+    def cursor(self) -> tuple[int, int]:
+        pt = self._wt.POINT()
+        if not self._user32.GetCursorPos(self._ct.byref(pt)):
+            raise OSError(self._ct.get_last_error(), "GetCursorPos failed")
+        return pt.x, pt.y
+
+    def origin(self, hwnd: int) -> tuple[int, int]:
+        rect = self._wt.RECT()
+        if not self._user32.GetWindowRect(hwnd, self._ct.byref(rect)):
+            raise OSError(self._ct.get_last_error(), "GetWindowRect failed")
+        return rect.left, rect.top
+
+    def move(self, hwnd: int, x: int, y: int) -> None:
+        flags = self._SWP_NOSIZE | self._SWP_NOZORDER | self._SWP_NOACTIVATE
+        if not self._user32.SetWindowPos(hwnd, None, int(x), int(y), 0, 0, flags):
+            raise OSError(self._ct.get_last_error(), "SetWindowPos failed")
+
+    def step_back(self, hwnd: int) -> None:
+        flags = self._SWP_NOSIZE | self._SWP_NOMOVE | self._SWP_NOACTIVATE | self._SWP_NOOWNERZORDER
+        self._user32.SetWindowPos(hwnd, self._HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+        front = self._user32.GetForegroundWindow()
+        if front and front != hwnd:
+            self._user32.SetWindowPos(hwnd, front, 0, 0, 0, 0, flags)
+
+
+def win32_windows(platform: str = sys.platform) -> Win32Windows | None:
+    """:class:`Win32Windows` on Windows, None elsewhere or when it cannot load."""
+    if platform != "win32":
+        return None
+    try:
+        return Win32Windows()
+    except Exception:  # noqa: BLE001 - Qt's own moves are the fallback
+        logger.debug("Win32 window calls unavailable", exc_info=True)
+        return None
+
 
 def app_icon_inverted(cfg) -> bool:
     """Whether the operator asked for the inverted cut of the mark.
@@ -405,8 +653,14 @@ def set_windows_app_id(app_id: str) -> bool:
 
 
 def main() -> int:
-    from PyQt6.QtCore import QUrl
-    from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
+    from PyQt6.QtCore import (
+        QFile, QIODevice, QObject, QPoint, QRect, QSize, Qt, QTimer, QUrl, pyqtSlot,
+    )
+    from PyQt6.QtGui import QGuiApplication
+    from PyQt6.QtWebChannel import QWebChannel
+    from PyQt6.QtWebEngineCore import (
+        QWebEnginePage, QWebEngineProfile, QWebEngineScript, QWebEngineSettings,
+    )
     from PyQt6.QtWebEngineWidgets import QWebEngineView
     from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
 
@@ -498,6 +752,469 @@ def main() -> int:
     layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(0)
 
+    def configure_view(view) -> None:
+        # A WebRTC camera's picture arrives seconds after the click that opened
+        # its window, by which time the click no longer counts as one. The
+        # video is muted, and this app plays no other media.
+        try:
+            view.settings().setAttribute(
+                QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture, False)
+        except Exception:  # noqa: BLE001 - a camera that needs a click beats no window
+            logger.exception("could not allow camera video to start by itself")
+        # Copying: a terminal's selection, a parameter, a log path. QtWebEngine
+        # refuses navigator.clipboard.writeText without this, on every
+        # platform, and the copy failed without a word. Writing only: reading
+        # the clipboard (JavascriptCanPaste) stays off, and a paste from the
+        # keyboard needs neither.
+        try:
+            view.settings().setAttribute(
+                QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard, True)
+        except Exception:  # noqa: BLE001 - copying is a convenience
+            logger.exception("could not allow copying to the clipboard")
+
+    # ---- windows out of the app ----------------------------------------------
+    #
+    # A camera or terminal frame dragged past the edge of the app goes on in a
+    # native window of its own (src/js/popout.js), which the operating system
+    # lets the operator put anywhere, another screen included. The window is
+    # frameless and transparent: the page draws the very same frame the app
+    # does, bar, buttons and grip, so the frame does not change as it crosses
+    # the edge, and there is no second, native title bar with its three
+    # buttons. The page moves and sizes its window through PopoutBridge.
+    #
+    # Parented to the main window so it closes with it and never keeps the app
+    # running on its own (only a window without a parent counts as the last
+    # one for quitOnLastWindowClosed).
+    popout_windows: dict = {}   # key -> window, once its page has named it
+    # key -> where its window was when it was last closed, for this run, so a
+    # camera opened again comes back to the screen and the spot it was left on.
+    popout_last: dict = {}
+    # key -> whether its window is pinned above the Corvus window (the pin in
+    # its bar), for this run, so a camera opened again is pinned again.
+    popout_pinned: dict = {}
+    support = window_support(QGuiApplication.platformName())
+    win = win32_windows()
+    if not support["place"]:
+        logger.info("Qt platform %s: windows out of the app are moved by the compositor "
+                    "and cannot be pinned", QGuiApplication.platformName())
+
+    def set_on_top(holder, on: bool) -> None:
+        """Hold a window above every other window, or stop.
+
+        The flag goes to the live native window (QWindow.setFlags) rather than
+        through QWidget.setWindowFlags, which would hide the window and build
+        it again: a camera would blink out and reconnect for a click on a pin.
+        overrideWindowFlags keeps the widget's own record in step, so a window
+        not made yet is made with the flag.
+        """
+        flags = holder.windowFlags()
+        if on:
+            flags |= Qt.WindowType.WindowStaysOnTopHint
+        else:
+            flags &= ~Qt.WindowType.WindowStaysOnTopHint
+        holder.overrideWindowFlags(flags)
+        handle = holder.windowHandle()
+        if handle is not None:
+            handle.setFlags(flags)
+
+    def app_active() -> bool:
+        return QGuiApplication.applicationState() == Qt.ApplicationState.ApplicationActive
+
+    def step_back(holder) -> None:
+        """A pinned window as another program comes forward: behind it, not over it.
+
+        Dropping the flag alone moves the window to the top of the ordinary
+        windows on Windows and on X11, which is above the program that just
+        came forward. macOS keeps the order of the level it leaves.
+        """
+        if win is not None:
+            try:
+                win.step_back(int(holder.winId()))
+            except Exception:  # noqa: BLE001 - the order is cosmetic
+                logger.debug("could not step a window back", exc_info=True)
+        elif QGuiApplication.platformName() == "xcb":
+            holder.lower()
+
+    def apply_pin(holder) -> None:
+        """Put a window at the level its pin and the app's state call for."""
+        if not support["pin"]:
+            return
+        active = app_active()
+        want = stays_on_top(holder.pinned, active)
+        if want != bool(holder.windowFlags() & Qt.WindowType.WindowStaysOnTopHint):
+            set_on_top(holder, want)
+            if not want and not active:
+                step_back(holder)
+
+    def pin(holder, on: bool) -> None:
+        holder.pinned = bool(on) and support["pin"]
+        if holder.key:
+            popout_pinned[holder.key] = holder.pinned
+        apply_pin(holder)
+
+    # Corvus in front: pinned windows above everything of Corvus'. Another
+    # program in front: they are ordinary windows it can cover.
+    def on_app_state(_state) -> None:
+        for holder in list(popout_windows.values()):
+            try:
+                apply_pin(holder)
+            except RuntimeError:     # a window deleted a moment ago
+                pass
+
+    app.applicationStateChanged.connect(on_app_state)
+
+    class PopoutWindow(QWidget):
+        """The native window a camera or terminal gets. Remembers where it was."""
+
+        def __init__(self):
+            super().__init__(window, Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
+            self.key = ""
+            self.normal = None      # the geometry before a maximize
+            self.pinned = False     # the pin in its bar (see apply_pin)
+
+        def closeEvent(self, event):  # noqa: N802 - Qt's name
+            if self.key:
+                popout_last[self.key] = QRect(self.normal or self.geometry())
+            super().closeEvent(event)
+
+    def screen_area_at(point) -> tuple[int, int, int, int]:
+        screen = (QGuiApplication.screenAt(point) or window.screen()
+                  or QGuiApplication.primaryScreen())
+        area = screen.availableGeometry()
+        return area.x(), area.y(), area.width(), area.height()
+
+    def settle(holder) -> None:
+        """Keep a window that was let go of where it can be grabbed again."""
+        g = holder.geometry()
+        now = (g.x(), g.y(), g.width(), g.height())
+        fitted = popout_geometry(now, screen_area_at(g.center()))
+        if fitted != now:
+            holder.setGeometry(*fitted)
+
+    def over_app(point) -> bool:
+        """Whether *point* (global) is over the app's page, which is shown."""
+        if not window.isVisible() or window.isMinimized():
+            return False
+        return QRect(web.mapToGlobal(QPoint(0, 0)), web.size()).contains(point)
+
+    def place_popout(holder, rect) -> None:
+        x, y, w, h = popout_geometry(
+            (rect.x(), rect.y(), rect.width(), rect.height()), screen_area_at(rect.center()))
+        holder.setGeometry(x, y, w, h)
+
+    class PopoutBridge(QObject):
+        """What a window out of the app may ask of its own window, and nothing else.
+
+        Moves and sizes are relative to where a gesture started (``dragStart``),
+        in the pointer's own screen deltas, so they are right on every screen
+        whatever the window's position was. On Windows a move follows the
+        pointer in Windows' own pixels instead (:class:`Win32Windows`), and on
+        Wayland the page hands the gesture to the compositor (``systemMove``,
+        ``systemResize``): see :func:`window_support`.
+        """
+
+        def __init__(self, holder):
+            super().__init__(holder)
+            self._holder = holder
+            self._start = None
+            self._grab = None       # Windows: (hwnd, dx, dy), pointer to window, in its pixels
+
+        @pyqtSlot()
+        def dragStart(self) -> None:
+            self._start = self._holder.geometry()
+            self._grab = None
+            if win is not None:
+                try:
+                    hwnd = int(self._holder.winId())
+                    cx, cy = win.cursor()
+                    ox, oy = win.origin(hwnd)
+                    self._grab = (hwnd, cx - ox, cy - oy)
+                except Exception:  # noqa: BLE001 - Qt's move is the fallback
+                    logger.debug("native drag unavailable", exc_info=True)
+
+        @pyqtSlot(int, int)
+        def dragTo(self, dx: int, dy: int) -> None:
+            if self._start is None or self._holder.normal is not None:
+                return
+            if self._grab is not None:
+                hwnd, gx, gy = self._grab
+                try:
+                    cx, cy = win.cursor()
+                    win.move(hwnd, cx - gx, cy - gy)
+                    return
+                except Exception:  # noqa: BLE001 - Qt's move is the fallback
+                    self._grab = None
+            self._holder.move(self._start.x() + dx, self._start.y() + dy)
+
+        @pyqtSlot(result=bool)
+        def systemMove(self) -> bool:
+            """Hand the move to the window system (Wayland: the only way to move)."""
+            handle = self._holder.windowHandle()
+            return bool(handle is not None and self._holder.normal is None
+                        and handle.startSystemMove())
+
+        @pyqtSlot(result=bool)
+        def systemResize(self) -> bool:
+            """Hand a resize from the corner grip to the window system."""
+            handle = self._holder.windowHandle()
+            return bool(handle is not None
+                        and handle.startSystemResize(Qt.Edge.RightEdge | Qt.Edge.BottomEdge))
+
+        @pyqtSlot(int, int)
+        def resizeTo(self, dw: int, dh: int) -> None:
+            if self._start is not None:
+                self._holder.normal = None
+                self._holder.resize(max(POPOUT_MIN_W, self._start.width() + dw),
+                                    max(POPOUT_MIN_H, self._start.height() + dh))
+
+        @pyqtSlot(int, int, result=str)
+        def dragEnd(self, x: int, y: int) -> str:
+            """End a gesture let go of at (x, y) in this window's page.
+
+            Says whether that was over the app, and where the window's top left
+            is in the app's page, so it can go back in right there. The point
+            is the page's own, mapped here: Chromium's screen coordinates in
+            QtWebEngine leave out the window's title bar.
+            """
+            self._start = None
+            self._grab = None
+            if self._holder.normal is not None or not support["place"]:
+                return json.dumps({"inside": False})
+            released = self._holder.mapToGlobal(QPoint(x, y))
+            settle(self._holder)
+            if not over_app(released):
+                return json.dumps({"inside": False})
+            origin = web.mapFromGlobal(self._holder.pos())
+            return json.dumps({"inside": True, "left": origin.x(), "top": origin.y(),
+                               "width": self._holder.width(), "height": self._holder.height()})
+
+        @pyqtSlot(result=bool)
+        def toggleMaximize(self) -> bool:
+            if not support["place"]:
+                # Where a window may not place itself, the compositor maximizes it.
+                if self._holder.isMaximized():
+                    self._holder.normal = None
+                    self._holder.showNormal()
+                    return False
+                self._holder.normal = self._holder.geometry()
+                self._holder.showMaximized()
+                return True
+            if self._holder.normal is not None:
+                self._holder.setGeometry(self._holder.normal)
+                self._holder.normal = None
+                return False
+            self._holder.normal = self._holder.geometry()
+            self._holder.setGeometry(*screen_area_at(self._holder.geometry().center()))
+            return True
+
+        @pyqtSlot(bool, result=bool)
+        def setPinned(self, on: bool) -> bool:
+            """Keep this window above the Corvus window (the pin in its bar)."""
+            pin(self._holder, bool(on))
+            return self._holder.pinned
+
+        @pyqtSlot(result=bool)
+        def isPinned(self) -> bool:
+            return self._holder.pinned
+
+        @pyqtSlot()
+        def raiseWindow(self) -> None:
+            self._holder.show()
+            self._holder.raise_()
+            self._holder.activateWindow()
+
+        @pyqtSlot()
+        def closeWindow(self) -> None:
+            self._holder.close()
+
+    class PopoutPage(QWebEnginePage):
+        """A pop-out's page: Corvus' own pages only, never the web."""
+
+        def __init__(self, page_profile, parent, holder):
+            super().__init__(page_profile, parent)
+            self.holder = holder
+
+        def acceptNavigationRequest(self, url, nav_type, is_main_frame):  # noqa: N802 - Qt's name
+            text = url.toString()
+            if popout_url_allowed(text, port):
+                key = popout_key(text) if is_main_frame else ""
+                if key and key not in popout_windows:
+                    popout_windows[key] = self.holder
+                    self.holder.key = key
+                    if popout_pinned.get(key):
+                        pin(self.holder, True)
+                    self.holder.destroyed.connect(
+                        lambda *_: popout_windows.pop(key, None))
+                return True
+            if is_main_frame:
+                if external_url(text):
+                    open_url(text)
+                QTimer.singleShot(0, self.holder.close)
+            return False
+
+        def createWindow(self, _type):  # noqa: N802 - Qt's name
+            return open_popout(self.profile())
+
+    def show_popout(holder) -> None:
+        if not holder.isVisible():
+            holder.show()
+            holder.raise_()
+
+    def open_popout(page_profile):
+        holder = PopoutWindow()
+        holder.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        # The page draws the frame, rounded corners included; around them the
+        # window has to be see-through, or the corners would be square again.
+        holder.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        holder.setWindowTitle("CORVUS GCS")
+        holder.setMinimumSize(POPOUT_MIN_W, POPOUT_MIN_H)
+        holder.resize(640, 400)
+        box = QVBoxLayout(holder)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(0)
+        view = QWebEngineView(holder)
+        page = PopoutPage(page_profile, view, holder)
+        page.setBackgroundColor(Qt.GlobalColor.transparent)
+        channel = QWebChannel(page)
+        channel.registerObject("corvusNative", PopoutBridge(holder))
+        page.setWebChannel(channel)
+        view.setPage(page)
+        configure_view(view)
+        box.addWidget(view)
+        page.titleChanged.connect(holder.setWindowTitle)
+        page.windowCloseRequested.connect(holder.close)
+        page.geometryChangeRequested.connect(lambda rect: place_popout(holder, rect))
+        # Shown once its page has drawn, so it never flashes up empty.
+        page.loadFinished.connect(lambda ok: show_popout(holder) if ok else holder.close())
+        return page
+
+    def window_for(key: str, query: str):
+        """The native window for `key`, made and pointed at its page if there is none."""
+        holder = popout_windows.get(key)
+        if holder is not None:
+            return holder, False
+        url = f"http://localhost:{port}/popout.html?{query}"
+        if not popout_url_allowed(url, port) or popout_key(url) != key:
+            return None, False
+        page = open_popout(web.page().profile())
+        holder = page.holder
+        holder.key = key
+        if popout_pinned.get(key):
+            pin(holder, True)
+        popout_windows[key] = holder
+        holder.destroyed.connect(lambda *_: popout_windows.pop(key, None))
+        page.setUrl(QUrl(url))
+        return holder, True
+
+    class MainBridge(QObject):
+        """What the app's page may ask: a window for a frame, moved, closed.
+
+        Coordinates are the page's own (CSS pixels from the top left of the
+        page, the same as the pointer's clientX and clientY), so the page
+        never has to know where its window is on the screen.
+        """
+
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            # key -> (hwnd, dx, dy): on Windows, where the pointer holds the
+            # window being dragged out, in Windows' own pixels (see Win32Windows).
+            self._grabs: dict = {}
+
+        def _rect(self, left: int, top: int, width: int, height: int):
+            return QRect(web.mapToGlobal(QPoint(left, top)),
+                         QSize(max(POPOUT_MIN_W, width), max(POPOUT_MIN_H, height)))
+
+        @pyqtSlot(str, str, int, int, int, int)
+        def openWindow(self, key: str, query: str, left: int, top: int,
+                       width: int, height: int) -> None:
+            """A window of its own straight away: where it was last, or where
+            the frame would have opened in the app. An open one comes forward."""
+            if not popout_key_valid(key) or len(query) > 4096:
+                return
+            holder, made = window_for(key, query)
+            if holder is None:
+                return
+            if not made:
+                # Still loading, it shows itself once drawn (open_popout).
+                if holder.isVisible():
+                    holder.raise_()
+                    holder.activateWindow()
+                return
+            rect = popout_last.get(key) or self._rect(left, top, width, height)
+            holder.setGeometry(*popout_geometry(
+                (rect.x(), rect.y(), rect.width(), rect.height()), screen_area_at(rect.center())))
+
+        @pyqtSlot(str, str, int, int, int, int)
+        def detachWindow(self, key: str, query: str, left: int, top: int,
+                         width: int, height: int) -> None:
+            """A frame dragged out of the app: its window, exactly where the frame is."""
+            if not popout_key_valid(key) or len(query) > 4096:
+                return
+            holder, _ = window_for(key, query)
+            if holder is None:
+                return
+            holder.setGeometry(self._rect(left, top, width, height))
+            self._grabs.pop(key, None)
+            if win is not None:
+                try:
+                    hwnd = int(holder.winId())
+                    cx, cy = win.cursor()
+                    ox, oy = win.origin(hwnd)
+                    self._grabs[key] = (hwnd, cx - ox, cy - oy)
+                except Exception:  # noqa: BLE001 - Qt's move is the fallback
+                    logger.debug("native drag unavailable", exc_info=True)
+
+        @pyqtSlot(str, int, int)
+        def moveWindow(self, key: str, left: int, top: int) -> None:
+            holder = popout_windows.get(key)
+            if holder is None:
+                return
+            grab = self._grabs.get(key)
+            if grab is not None:
+                hwnd, gx, gy = grab
+                try:
+                    cx, cy = win.cursor()
+                    win.move(hwnd, cx - gx, cy - gy)
+                    return
+                except Exception:  # noqa: BLE001 - Qt's move is the fallback
+                    self._grabs.pop(key, None)
+            holder.move(web.mapToGlobal(QPoint(left, top)))
+
+        @pyqtSlot(str)
+        def settleWindow(self, key: str) -> None:
+            self._grabs.pop(key, None)
+            holder = popout_windows.get(key)
+            if holder is not None:
+                settle(holder)
+
+        @pyqtSlot(str)
+        def closeWindow(self, key: str) -> None:
+            self._grabs.pop(key, None)
+            holder = popout_windows.get(key)
+            if holder is not None:
+                holder.close()
+
+    class MainPage(QWebEnginePage):
+        """The app's page. window.open gets a real window, for pop-outs."""
+
+        def createWindow(self, _type):  # noqa: N802 - Qt's name
+            return open_popout(self.profile())
+
+    def native_script():
+        """qwebchannel.js and the bootstrap above, for every page of a profile."""
+        source = QFile(":/qtwebchannel/qwebchannel.js")
+        if not source.open(QIODevice.OpenModeFlag.ReadOnly):
+            logger.warning("qwebchannel.js not found; windows cannot leave the app")
+            return None
+        script = QWebEngineScript()
+        script.setName("corvus-native")
+        script.setSourceCode(bytes(source.readAll()).decode("utf-8")
+                             + native_support_js(support) + NATIVE_BOOTSTRAP_JS)
+        script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
+        script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
+        script.setRunsOnSubFrames(False)
+        return script
+
     # A profile of our own rather than Chromium's shared default one, so a
     # second instance (CORVUS_ALLOW_MULTI=1) cannot contend for the profile
     # lock and end up with a blank window. Parented to `window` so Qt's
@@ -510,11 +1227,25 @@ def main() -> int:
         profile.setPersistentStoragePath(profile_dir)
         profile.setCachePath(os.path.join(profile_dir, "cache"))
         web = QWebEngineView()
-        web.setPage(QWebEnginePage(profile, web))
+        web.setPage(MainPage(profile, web))
     except Exception:  # noqa: BLE001 - a window on the default profile beats no window
         logger.exception("could not set up a private web profile at %s; "
                          "falling back to the shared default", profile_dir)
         web = QWebEngineView()
+        try:
+            web.setPage(MainPage(QWebEngineProfile.defaultProfile(), web))
+        except Exception:  # noqa: BLE001 - a window without pop-outs beats no window
+            logger.exception("pop-out windows unavailable")
+    configure_view(web)
+    try:
+        script = native_script()
+        if script is not None:
+            web.page().profile().scripts().insert(script)
+            main_channel = QWebChannel(web.page())
+            main_channel.registerObject("corvusNative", MainBridge(web))
+            web.page().setWebChannel(main_channel)
+    except Exception:  # noqa: BLE001 - frames that stay inside the app beat no window
+        logger.exception("could not connect the page to its windows")
     web.setUrl(QUrl(f"http://localhost:{port}/"))
     layout.addWidget(web)
     window.setCentralWidget(central)
@@ -633,7 +1364,6 @@ def main() -> int:
     signal.signal(signal.SIGTERM, quit_app)
 
     # Timer to process SIGINT promptly (Qt doesn't handle signals natively)
-    from PyQt6.QtCore import QTimer
     timer = QTimer()
     timer.start(500)
     timer.timeout.connect(lambda: None)

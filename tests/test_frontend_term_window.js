@@ -185,6 +185,7 @@ global.fetch = (url, init) => {
 };
 
 require("../src/js/ui.js");
+require("../src/js/float-window.js");
 require("../src/js/term-window.js");
 
 const tw = Corvus.termWindows;

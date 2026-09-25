@@ -387,6 +387,15 @@ test("every identity card is on the page", async () => {
   });
 });
 
+test("a field's explanation is behind a hint icon, not under the row", async () => {
+  const { container } = await mount();
+  const row = container.querySelector('.rid-field[data-field="operator_id"]');
+  assert.equal(row.querySelector(".pform-field-hint"), null, "nothing printed under the row");
+  const hint = row.querySelector(".ui-info");
+  assert.ok(hint && hint.corvusPopover, "a hint icon beside the label");
+  assert.match(allText(hint.corvusPopover.el), /FAA's rule/);
+});
+
 test("the master switch saves the broadcast flag on its own", async () => {
   const { fake, container } = await mount({
     replies: { "/api/remoteid": payload({ identity: identity({ enabled: false }) }) },

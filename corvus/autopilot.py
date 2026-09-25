@@ -477,6 +477,18 @@ class Dialect:
     # How an integer parameter travels in the float32 field. See the
     # "Parameter value encoding" section above.
     param_encoding: str = PARAM_ENCODING_BYTEWISE
+    # Where the vehicle keeps its parameter metadata, read over MAVLink FTP
+    # (corvus.param_metadata). PX4 builds the file QGroundControl reads into
+    # ROMFS: defaults, descriptions, units and ranges for the running firmware.
+    param_metadata_path: str = "/etc/extras/parameters.json.xz"
+    param_metadata_format: str = "px4-json"
+    # Whether a copy kept on the ground station may stand in for that file.
+    # PX4's is fixed when the firmware is built, so the same checksum means
+    # the same file (see ParamMetadataCache).
+    param_metadata_cacheable: bool = True
+    # The parameter file an export writes unless the operator picks another
+    # (corvus.param_files): QGroundControl's .params is what PX4 users trade.
+    param_file_format: str = "qgc"
     # The STATUSTEXT a failing preflight check is reported in starts with one
     # of these, and the reason follows. PX4 v1.16 to v1.18 report the arming
     # checks as events, and still send this text beside every one of them
@@ -597,6 +609,8 @@ class Dialect:
             "guided_mode": self.guided_mode(mav_type),
             "mission_mode": self.mission_mode,
             "takeoff_frame": self.takeoff_plan(mav_type).altitude_frame,
+            "param_defaults": bool(self.param_metadata_path),
+            "param_file_format": self.param_file_format,
             "calibrations": sorted(
                 name for name, plan in self._CALIBRATION.items() if plan.ok
             ),
@@ -644,6 +658,14 @@ class ArduPilotDialect(Dialect):
     mission_seq0_is_home = True
     mission_mode = "AUTO"
     param_encoding = PARAM_ENCODING_C_CAST
+    # Generated on request since ArduPilot 4.1; the query adds each
+    # parameter's default. There are no descriptions on board, only defaults.
+    param_metadata_path = "@PARAM/param.pck?withdefaults=1"
+    param_metadata_format = "ardupilot-pck"
+    # Generated from the live parameters, and some defaults follow the frame
+    # the vehicle is set up as, so a stored copy would be stale by design.
+    param_metadata_cacheable = False
+    param_file_format = "mission-planner"
     # ArduPilot only ever reports in text: "PreArm: ..." for a check, and
     # "Arm: ..." for the reason an arm command was refused.
     prearm_prefixes = ("PreArm: ", "Arm: ")
@@ -834,6 +856,9 @@ class GenericDialect(Dialect):
     # common.xml's own default: the value is cast. An autopilot that packs
     # bytewise says so in AUTOPILOT_VERSION, and the bridge honours that.
     param_encoding = PARAM_ENCODING_C_CAST
+    param_metadata_path = ""
+    param_metadata_format = ""
+    param_metadata_cacheable = False
     # Either wording: text is all there is to go on.
     prearm_prefixes = ("Preflight Fail: ", "PreArm: ")
 
