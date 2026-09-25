@@ -152,6 +152,9 @@ class LogEntry:
     id: int
     utc: int          # unix seconds
     size: int         # bytes
+    # The file itself, when the scene has one (see :mod:`flight_log`). Without
+    # it a download still runs and completes, over deterministic filler.
+    data: bytes | None = None
 
 
 @dataclass
@@ -406,12 +409,15 @@ class SimVehicle:
         # attitude moves but whose rates read zero is visibly wrong on the
         # tuning plots, which draw both.
         ahead = self.model.sample(self.elapsed + 0.1)
+        # A gyro is never exactly still; without its noise a steady axis draws
+        # as a ruled line on the tuning charts.
+        noise = self._rng.gauss
         self._send(
             self._conn.mav.attitude_send, self._boot_ms(),
             fix.roll, fix.pitch, fix.yaw,
-            (ahead.roll - fix.roll) * 10.0,
-            (ahead.pitch - fix.pitch) * 10.0,
-            _wrap_pi(ahead.yaw - fix.yaw) * 10.0,
+            (ahead.roll - fix.roll) * 10.0 + noise(0.0, 0.004),
+            (ahead.pitch - fix.pitch) * 10.0 + noise(0.0, 0.004),
+            _wrap_pi(ahead.yaw - fix.yaw) * 10.0 + noise(0.0, 0.004),
         )
 
     def _send_hud(self) -> None:
@@ -453,7 +459,7 @@ class SimVehicle:
         cells = max(1, int(self.params.get("BAT1_N_CELLS", 6)))
         per_cell = int(volts / cells * 1000)
         voltages = [per_cell] * cells + [65535] * (10 - cells)
-        consumed = int(self.model.cruise_current * self.elapsed / 3.6)   # mAh
+        consumed = int(amps * self.elapsed / 3.6)   # mAh
         self._send(
             self._conn.mav.battery_status_send,
             0, mavlink2.MAV_BATTERY_FUNCTION_ALL, mavlink2.MAV_BATTERY_TYPE_LIPO,
@@ -881,16 +887,25 @@ class SimVehicle:
         if entry is None:
             return
         offset = int(msg.ofs)
-        count = min(90, int(msg.count), max(0, entry.size - offset))
-        if count <= 0:
+        wanted = int(msg.count)
+        # A ground station asks for a large window and expects LOG_DATA
+        # packets back to back until it is filled, the way PX4 streams them.
+        # Answering one packet per request would make a download of a real
+        # log take minutes.
+        end = min(entry.size, offset + max(0, wanted))
+        if end <= offset:
             self._send(self._conn.mav.log_data_send, log_id, offset, 0, [0] * 90)
             return
-        # Deterministic filler: the download is real, the ULog inside it is not.
-        # A scene that needs a log Flight Review can open points the Analysis
-        # page at a file on disk instead (see the analysis scene).
-        chunk = bytes((offset + i) & 0xFF for i in range(count))
-        self._send(self._conn.mav.log_data_send, log_id, offset, count,
-                   list(chunk) + [0] * (90 - count))
+        pos = offset
+        while pos < end and not self._stop.is_set():
+            count = min(90, end - pos)
+            if entry.data is not None:
+                chunk = entry.data[pos:pos + count]
+            else:
+                chunk = bytes((pos + i) & 0xFF for i in range(count))
+            self._send(self._conn.mav.log_data_send, log_id, pos, count,
+                       list(chunk) + [0] * (90 - count))
+            pos += count
 
     # -- calibration ------------------------------------------------------
 

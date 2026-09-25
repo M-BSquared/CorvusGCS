@@ -466,6 +466,30 @@ def test_flight_bar_shrink_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
     assert load_config(str(p)).ui == {"flight_bar_shrink": False, "mission_page": True}
 
 
+def test_display_units_keep_only_known_values_per_quantity(tmp_path) -> None:
+    """``ui.units`` keeps each quantity whose value src/js/units.js can draw.
+
+    Per key rather than all or nothing: a typo in one quantity must not throw
+    away the operator's other three choices. What is dropped reads as the
+    metric default on the frontend.
+    """
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({"ui": {"units": {
+        "length": "ft", "distance": "nmi", "speed": "kn", "temperature": "f",
+    }}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"units": {
+        "length": "ft", "distance": "nmi", "speed": "kn", "temperature": "f",
+    }}
+    p.write_text(json.dumps({"ui": {"units": {
+        "length": "furlong", "speed": "mph", "temperature": ["c"], "extra": "x",
+    }}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"units": {"speed": "mph"}}
+    p.write_text(json.dumps({"ui": {"units": "imperial"}}), encoding="utf-8")
+    assert load_config(str(p)).ui is None
+    p.write_text(json.dumps({"ui": {"units": {}, "scale": 1.1}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"scale": 1.1}
+
+
 def test_load_config_parses_app_icon_backplate(tmp_path) -> None:
     """The backplate is its own key, kept independently of the inversion."""
     p = tmp_path / "c.json"

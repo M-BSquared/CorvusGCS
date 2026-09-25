@@ -22,6 +22,7 @@ from typing import Any
 
 import pytest
 
+from conftest import posix_permissions
 from corvus import video
 from corvus.config import CorvusConfig, _build_config, _config_to_dict, to_public_dict
 
@@ -389,7 +390,6 @@ def test_the_first_frame_request_starts_one_decoder_and_frames_follow_in_order()
         assert "file 'rtsp://admin:s3cret@10.0.0.2/main'" in proc.list_text, (
             "the list file is the one place the password goes"
         )
-        assert proc.list_mode == 0o600, "and only this account can read it"
         assert _wait_until(lambda: not os.path.exists(proc.list_path)), (
             "the list is removed once ffmpeg has opened it"
         )
@@ -522,9 +522,24 @@ def test_shutdown_leaves_no_list_file_or_folder_behind() -> None:
     svc = _service(launcher)
     assert "jpeg" in svc.frame("cam", 0, timeout=3)
     folder = os.path.dirname(launcher.procs[0].list_path)
-    assert stat.S_IMODE(os.stat(folder).st_mode) == 0o700
     svc.shutdown()
     assert not os.path.exists(folder)
+
+
+@posix_permissions
+def test_the_list_file_and_its_folder_are_this_accounts_alone() -> None:
+    """The list file carries the camera password. On Windows the folder is
+    private through its access list (``mkdtemp``, Python 3.12.4 and later),
+    which ``st_mode`` does not show."""
+    launcher = Launcher()
+    svc = _service(launcher)
+    try:
+        assert "jpeg" in svc.frame("cam", 0, timeout=3)
+        proc = launcher.procs[0]
+        assert proc.list_mode == 0o600, "only this account can read the password"
+        assert stat.S_IMODE(os.stat(os.path.dirname(proc.list_path)).st_mode) == 0o700
+    finally:
+        svc.shutdown()
 
 
 def test_an_old_ffmpeg_still_works_and_the_status_says_the_password_shows() -> None:

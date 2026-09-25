@@ -34,7 +34,7 @@ from . import (
     ardupilot_safety, ardupilot_tuning, autopilot, battery, battery_config,
     geocode, mission, motor_config, param_files, param_metadata, rc_config, remote_id,
     remote_id_config,
-    local_shell, rtk, rtk_service,
+    local_shell, net_probe, rtk, rtk_service,
     safety_config, sik_config, sik_service, tile_sources, tuning_config, video, websocket,
 )
 from .config import (
@@ -910,6 +910,15 @@ def _build_local_runner() -> Any:
         return None
 
 
+def _build_pinger() -> Any:
+    """Build the one-shot pinger for the companion-computer indicator, or None."""
+    try:
+        return net_probe.Pinger()
+    except Exception:  # noqa: BLE001 - never block server creation
+        logger.exception("pinger unavailable; the companion indicator cannot probe")
+        return None
+
+
 def _build_update_checker() -> Any:
     """Build the release-update checker, or None.
 
@@ -1131,6 +1140,12 @@ def stop_backend(server: Any, log: Any = None) -> None:
             log.info("local programs stopped")
         except Exception:
             log.exception("local programs shutdown failed")
+    pinger = getattr(server, "pinger", None)
+    if pinger is not None:
+        try:
+            pinger.shutdown()
+        except Exception:
+            log.exception("pinger shutdown failed")
     # One ffmpeg per camera being watched, each with two reader threads.
     video_svc = getattr(server, "video", None)
     if video_svc is not None:
@@ -1523,6 +1538,9 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     # Programs a launcher button starts on this computer without a window
     # (corvus/local_shell.py). The ones in a terminal are SSH-bridge sessions.
     local: Any = None
+    # One-shot pings from this computer (corvus/net_probe.py), for the
+    # companion-computer indicator.
+    pinger: Any = None
 
     # SiK telemetry-radio configuration (corvus/sik_service.py). None when not
     # wired, same as `flash`; the endpoints then report the service as absent
@@ -5490,6 +5508,33 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         result["command"] = command
         self._send_json(result)
 
+    @route("POST", "/api/local/ping")
+    def _api_local_ping(self, payload: dict) -> None:
+        """Send one ICMP echo from this computer and say whether it came back.
+
+        ``{host, wait_ms?}`` -> ``{ok, host, reachable, rtt_ms}``. One probe per
+        request; the caller decides how often to ask and when silence means
+        offline. POST, and only from this computer: it starts a process, and
+        another machine has no business mapping the flight-line network
+        through this one.
+        """
+        if not self._local_only():
+            return
+        host = payload.get("host")
+        wait_ms = payload.get("wait_ms", 2000)
+        if not isinstance(host, str) or isinstance(wait_ms, bool) \
+                or not isinstance(wait_ms, (int, float)) or not math.isfinite(wait_ms):
+            self._send_json({"ok": False, "error": "host must be a string and wait_ms a number"}, 400)
+            return
+        _, problem = net_probe.clean_host(host)
+        if problem:
+            self._send_json({"ok": False, "error": problem}, 400)
+            return
+        if self.pinger is None:
+            self._send_json({"ok": False, "error": "Pinging is unavailable in this build."}, 503)
+            return
+        self._send_json(self.pinger.ping(host, wait_ms / 1000.0))
+
     # ---- Camera video ----
     def _video_status(self) -> dict[str, Any]:
         """The Video page's whole state, or an unavailable one without a service."""
@@ -7477,6 +7522,12 @@ class CorvusServer(socketserver.ThreadingTCPServer):
                 local_runner.shutdown()
             except Exception:  # noqa: BLE001 - shutdown must not raise
                 logger.exception("local programs shutdown failed")
+        pinger = getattr(self, "pinger", None)
+        if pinger is not None:
+            try:
+                pinger.shutdown()
+            except Exception:  # noqa: BLE001 - shutdown must not raise
+                logger.exception("pinger shutdown failed")
         # ffmpeg processes. Same reason as the services above: a caller that
         # only has the server must not be left with a decoder running.
         video_svc = getattr(self, "video", None)
@@ -7862,6 +7913,8 @@ def create_server(
     # Launcher buttons that run on this computer. Nothing runs until one does.
     local_runner = _build_local_runner()
     CorvusHandler.local = local_runner
+    pinger = _build_pinger()
+    CorvusHandler.pinger = pinger
 
     # bind_server, not a bare constructor: a port that is already taken moves
     # to the next one instead of raising out of create_server and killing the
@@ -7880,6 +7933,7 @@ def create_server(
     server.updates = updates
     server.video = video_svc
     server.local = local_runner
+    server.pinger = pinger
     server.tile_caches = tile_caches
     server.tile_downloader = tile_downloader
     server.buildings = buildings

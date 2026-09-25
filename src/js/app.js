@@ -56,9 +56,12 @@ Corvus.app = (function () {
 
     const takeoffSlider = document.getElementById("takeoffAlt");
     const takeoffAltValue = document.getElementById("takeoffAltValue");
-    takeoffSlider.addEventListener("input", () => {
-      takeoffAltValue.textContent = takeoffSlider.value + " m";
-    });
+    const showTakeoffAlt = () => {
+      takeoffAltValue.textContent = Corvus.units.formatLength(takeoffSlider.value);
+    };
+    takeoffSlider.addEventListener("input", showTakeoffAlt);
+    window.addEventListener("corvus:unitschange", showTakeoffAlt);
+    showTakeoffAlt();
 
     document.getElementById("takeoffClose").addEventListener("click", () => {
       document.getElementById("takeoffPanel").hidden = true;
@@ -189,9 +192,14 @@ Corvus.app = (function () {
       setPlanPanelVisible(false);
     });
 
-    planAlt.addEventListener("input", () => {
-      planAltValue.textContent = planAlt.value + " m AGL";
-    });
+    // The slider itself stays in whole metres, which is what the bridge is
+    // sent; only its caption follows the display unit.
+    const showPlanAlt = () => {
+      planAltValue.textContent = `${Corvus.units.formatLength(planAlt.value)} AGL`;
+    };
+    planAlt.addEventListener("input", showPlanAlt);
+    window.addEventListener("corvus:unitschange", showPlanAlt);
+    showPlanAlt();
 
     planClear.addEventListener("click", () => {
       if (mapWaypointApi) Corvus.map.clearWaypoints();
@@ -285,7 +293,7 @@ Corvus.app = (function () {
             if (!enabled) {
               return state().connected ? "Arm the vehicle first" : "Not connected";
             }
-            return `${planAltAgl()} m AGL`;
+            return `${Corvus.units.formatLength(planAltAgl())} AGL`;
           },
           run: (point) => runMapCommand(
             "gotopoints", "/api/mavlink/gotopoints",
@@ -381,6 +389,8 @@ Corvus.app = (function () {
       if (name) Corvus.theme.setTheme(name);
       const scale = Corvus.scale.fromConfig(cfg);
       if (scale) Corvus.scale.setScale(scale);
+      const units = Corvus.units.fromConfig(cfg);
+      if (units) Corvus.units.set(units);
       // Off unless the config says otherwise: a control that can move the
       // aircraft is opt-in, and an unreachable backend must leave both off
       // rather than guess from a cached value.

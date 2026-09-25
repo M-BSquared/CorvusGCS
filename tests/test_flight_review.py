@@ -754,6 +754,18 @@ def test_error_messages_are_surfaced_and_carried_through() -> None:
         "Preflight Fail: Compass", "Armed"]
 
 
+def test_an_error_written_the_way_px4_writes_it_is_flagged() -> None:
+    """PX4 writes the level as an ASCII digit. Read as a number, a real log's
+    errors all came back as info and this finding never fired."""
+    blob = _build(
+        _msg("L", b"3" + struct.pack("<Q", 100) + b"Preflight Fail: Compass"),
+        _msg("L", b"6" + struct.pack("<Q", 200) + b"Armed"),
+    )
+    result = review(read(blob), "x.ulg")
+    assert any("1 error-level message" in f["text"] for f in result["findings"])
+    assert [m["level"] for m in result["messages"]] == ["error", "info"]
+
+
 def test_an_empty_log_reviews_without_raising() -> None:
     """A log with nothing in it must produce an empty review, not a 500."""
     result = review(read(_build()), "empty.ulg")

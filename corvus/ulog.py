@@ -68,6 +68,16 @@ _LEVELS = {
     4: "warning", 5: "notice", 6: "info", 7: "debug",
 }
 
+
+def _level(raw: int) -> str:
+    """The severity name for the level byte of an 'L' or 'C' record."""
+    # The spec and PX4's logger write the level as an ASCII digit, '0' to '7'.
+    # Read as a bare number, every message in a real log fell through to
+    # "info" and no error was ever flagged. A bare 0 to 7 is still accepted.
+    if ord("0") <= raw <= ord("7"):
+        raw -= ord("0")
+    return _LEVELS.get(raw, "info")
+
 MAX_FILE_BYTES = 512 * 1024 * 1024
 
 
@@ -429,12 +439,13 @@ def read(source: BinaryIO | bytes, topics: Iterable[str] | None = None) -> ULog:
                     log.info.setdefault(field_name, value)
 
             elif msg_type in (_LOGGING, _LOGGING_TAGGED):
+                # Both records lead with the level; 'C' puts a uint16 tag
+                # between it and the timestamp.
                 head = 9 if msg_type == _LOGGING else 11
-                level = body[0] if msg_type == _LOGGING else body[2]
                 stamp = struct.unpack_from("<Q", body, 1 if msg_type == _LOGGING else 3)[0]
                 text = body[head:].decode("utf-8", errors="replace").rstrip("\x00")
                 log.messages.append({
-                    "t": stamp, "level": _LEVELS.get(level, "info"), "text": text,
+                    "t": stamp, "level": _level(body[0]), "text": text,
                 })
 
             elif msg_type == _DROPOUT:

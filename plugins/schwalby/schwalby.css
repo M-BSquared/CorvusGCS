@@ -3,6 +3,91 @@
    through Corvus.ui. A plugin stylesheet is loaded into the shared document,
    so every selector here is prefixed (schw-) and none restyles an app class. */
 
+/* The companion computer, above everything: one slim pressable strip with
+   the chip icon, the name and the address on one line, and the state with its
+   dot on the right. Its border takes the state's colour, so it reads from across the
+   tent before the words do. */
+.schw-comp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0 0 10px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-btn);
+  background: var(--surface-2);
+  color: var(--text-1);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.schw-comp:hover { background: var(--surface-1); }
+.schw-comp:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+.schw-comp[data-state="online"] { border-color: var(--healthy); }
+.schw-comp[data-state="offline"] { border-color: var(--critical); }
+.schw-comp[data-state="checking"],
+.schw-comp[data-state="error"] { border-color: var(--warning); }
+
+.schw-comp-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+.schw-comp[data-state="online"] .schw-comp-icon { color: var(--healthy); }
+.schw-comp[data-state="offline"] .schw-comp-icon { color: var(--critical); }
+
+/* Name first; the address gives way when the panel is narrow. */
+.schw-comp-text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.schw-comp-name { flex: 0 1 auto; }
+.schw-comp-host { flex: 1 1 0; min-width: 0; }
+.schw-comp-name,
+.schw-comp-host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.schw-comp-name {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+}
+.schw-comp-host {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-3);
+}
+.schw-comp[data-state="unset"] .schw-comp-host { font-family: inherit; }
+
+.schw-comp-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+/* The popup: its fields sit in one wrapper, so the dialog's own gap between
+   children never reaches them. The sliders are inset so the first and last
+   step labels stay inside the dialog instead of scrolling it sideways. */
+.schw-comp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.schw-comp-form .schw-comp-slider { padding: 2px 8px 0; }
+
 /* The shelf: one row per launch button, separated by a hairline so a shelf of
    eight still reads as one object. */
 .schw-shelf {
@@ -184,5 +269,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .schw-row-tools,
-  .schw-seg-opt { transition: none; }
+  .schw-seg-opt,
+  .schw-comp { transition: none; }
 }

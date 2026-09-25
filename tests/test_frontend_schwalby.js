@@ -71,7 +71,8 @@ function makeEl(tag) {
     textContent: "",
     children: [],
     dataset: {},
-    style: {},
+    // setProperty for Corvus.ui.slider, which the companion popup uses.
+    style: { setProperty() {} },
     type: "",
     hidden: false,
     disabled: false,
@@ -166,6 +167,7 @@ global.document = {
   getElementById: () => null,
   querySelectorAll: () => [],
   addEventListener: () => {},
+  removeEventListener: () => {},
   head,
   body,
 };
@@ -212,7 +214,8 @@ const mounted = [];
  * (live session names), connections, connect / localConnect (the connect
  * answers), run / localRun (the background answers), localStatus (an object,
  * or a promise for one), holdDisconnect (keep /api/ssh/disconnect pending
- * until releaseDisconnect()).
+ * until releaseDisconnect()), ping (the /api/local/ping answer), holdPing
+ * (keep each ping pending until releasePing()).
  */
 function mount(opts) {
   const o = opts || {};
@@ -224,6 +227,7 @@ function mount(opts) {
   let sessions = (o.sessions || []).map((name) => ({ name, connected: true }));
   let settings = o.saved || {};
   let releaseDisconnect = () => {};
+  let releasePing = () => {};
   const terminals = [];
   const termOpts = [];
   const notes = [];
@@ -265,13 +269,21 @@ function mount(opts) {
       if (url === "/api/local/run") {
         return Promise.resolve(o.localRun || { ok: true, pid: 4242, command: body.command });
       }
+      if (url === "/api/local/ping") {
+        const res = o.ping || { ok: true, host: body.host, reachable: true, rtt_ms: 3.2 };
+        if (!o.holdPing) return Promise.resolve(res);
+        return new Promise((resolve) => { releasePing = () => resolve(res); });
+      }
       if (url === "/api/ssh/run") {
         return Promise.resolve(o.run || { ok: true, stdout: "4711", stderr: "", command: body.command });
       }
       return Promise.reject(new Error("no stub for " + url));
     },
     getSettings: () => settings,
-    saveSettings: (patch) => { settings = Object.assign({}, settings, patch); return Promise.resolve(settings); },
+    saveSettings: (patch, replace) => {
+      settings = replace ? Object.assign({}, patch) : Object.assign({}, settings, patch);
+      return Promise.resolve(settings);
+    },
     terminal: (session, topts) => { terminals.push(session); termOpts.push(topts || null); return true; },
     console: (line, level) => { consoleLines.push({ line, level }); },
     notification: (level, message) => { notes.push({ level, message }); },
@@ -280,6 +292,9 @@ function mount(opts) {
   return {
     container, calls, terminals, termOpts, notes, consoleLines,
     releaseDisconnect: () => releaseDisconnect(),
+    releasePing: () => releasePing(),
+    pings: () => calls.filter((c) => c.url === "/api/local/ping").map((c) => c.body),
+    strip: () => all(".schw-comp")[0],
     savedNow: () => settings,
     urls: () => calls.map((c) => c.url),
     sends: () => calls.filter((c) => c.url === "/api/ssh/send").map((c) => c.body),
@@ -802,6 +817,195 @@ async function testDestroyStopsLateCallbacks() {
   assert.equal(h.shelf().length, 1, "nothing was redrawn after destroy");
 }
 
+// ---------------------------------------------------------------------------
+// The companion computer
+// ---------------------------------------------------------------------------
+
+const COMPANION = { name: "Jetson", host: "192.168.2.10", interval_s: 2, timeout_s: 6 };
+
+function stripText(h) {
+  const strip = h.strip();
+  return {
+    state: strip.dataset.state,
+    name: querySel(strip.children, ".schw-comp-name")[0].textContent,
+    host: querySel(strip.children, ".schw-comp-host")[0].textContent,
+    word: querySel(strip.children, ".schw-comp-state")[0].children[1].textContent,
+    dot: querySel(strip.children, ".status-dot")[0].getAttribute("data-level"),
+  };
+}
+
+/** Press the indicator and hand back the popup it opened. */
+function openCompanion(h) {
+  click(h.strip());
+  const overlays = querySel(body.children, ".modal-overlay");
+  const overlay = overlays[overlays.length - 1];
+  assert.ok(overlay, "the indicator opens a popup");
+  const inside = (sel) => querySel(overlay.children, sel);
+  return {
+    overlay,
+    input: (aria) => inside(".field-input").find((i) => i.getAttribute("aria-label") === aria),
+    sliders: () => inside(".ui-slider-input"),
+    button: (text) => inside(".btn").find((b) => b.children.some((c) => c.textContent === text)),
+    hints: () => inside(".field-hint").filter((x) => !x.hidden).map((x) => x.textContent),
+    open: () => !!overlay.parentNode,
+  };
+}
+
+/** Move a Corvus.ui.slider to step *index*, as a drag would. */
+function slideTo(range, index) {
+  range.value = String(index);
+  (range._listeners.input || []).forEach((cb) => cb());
+  (range._listeners.change || []).forEach((cb) => cb());
+}
+
+function testCompanionHelpers() {
+  assert.equal(S.hostError("192.168.2.10"), "");
+  assert.equal(S.hostError("companion.local"), "");
+  assert.equal(S.hostError("fe80::1%en0"), "");
+  assert.equal(S.hostError("::1"), "");
+  assert.equal(S.hostError("  "), "Enter an IP address or host name.");
+  assert.equal(S.hostError("-c 99 x"), "That is not an IP address or host name.");
+  assert.equal(S.hostError("a;rm -rf ~"), "That is not an IP address or host name.");
+
+  assert.equal(S.normalizeCompanion(null), null);
+  assert.equal(S.normalizeCompanion({ host: "" }), null, "no address, no companion");
+  assert.deepEqual(S.normalizeCompanion({ host: " 10.0.0.7 " }),
+    { name: "", host: "10.0.0.7", interval_s: 2, timeout_s: 6 }, "the defaults are 2 s and 6 s");
+  assert.deepEqual(S.normalizeCompanion({ name: "Pi", host: "pi", interval_s: 4.4, timeout_s: 11 }),
+    { name: "Pi", host: "pi", interval_s: 5, timeout_s: 10 }, "hand-edited values land on stops");
+  assert.equal(S.normalizeCompanion({ host: "pi", interval_s: 10, timeout_s: 3 }).timeout_s, 15,
+    "the timeout is kept longer than the interval");
+
+  assert.equal(S.probeWaitMs(2), 2000);
+  assert.equal(S.probeWaitMs(10), 5000, "a slow interval still waits at most 5 s per echo");
+
+  const at = (over) => S.companionState(Object.assign(
+    { host: "pi", startedAt: 0, lastOkAt: null, error: "", now: 0, timeoutMs: 6000 }, over));
+  assert.equal(at({ host: "" }), "unset");
+  assert.equal(at({ now: 5999 }), "checking");
+  assert.equal(at({ now: 6000 }), "offline", "no reply at all within the timeout");
+  assert.equal(at({ lastOkAt: 1000, now: 7000 }), "online");
+  assert.equal(at({ lastOkAt: 1000, now: 7001 }), "offline");
+  assert.equal(at({ error: "no ping", now: 100 }), "error");
+  assert.equal(at({ error: "no ping", lastOkAt: 50, now: 100 }), "online",
+    "a failed probe does not overrule a fresh reply");
+}
+
+async function testNoCompanionIsNotPinged() {
+  const h = mount({ saved: { buttons: [LOCAL_BUTTON] } });
+  await flushMicrotasks();
+  assert.equal(h.container.children[0].children[0], h.strip(), "the indicator is the first thing");
+  assert.deepEqual(stripText(h), {
+    state: "unset", name: "Companion computer", host: "Press to set",
+    word: "Not set", dot: "off",
+  });
+  assert.deepEqual(h.pings(), []);
+  S.destroy(h.container);
+}
+
+async function testASavedCompanionIsPingedAndShownOnline() {
+  const h = mount({ saved: { buttons: [LOCAL_BUTTON], companion: COMPANION } });
+  assert.deepEqual(h.pings(), [{ host: "192.168.2.10", wait_ms: 2000 }]);
+  await flushMicrotasks();
+  assert.deepEqual(stripText(h), {
+    state: "online", name: "Jetson", host: "192.168.2.10", word: "Online · 3.2 ms", dot: "healthy",
+  });
+  assert.ok(h.consoleLines.some((l) => l.line === "schwalby: Jetson (192.168.2.10) is online"));
+  S.destroy(h.container);
+}
+
+async function testSilenceLongerThanTheTimeoutIsOffline() {
+  const realNow = Date.now;
+  let now = 1000000;
+  Date.now = () => now;
+  try {
+    const h = mount({
+      saved: { companion: COMPANION }, holdPing: true,
+      ping: { ok: true, host: COMPANION.host, reachable: false, rtt_ms: null },
+    });
+    await flushMicrotasks();
+    assert.equal(stripText(h).state, "checking", "before the first answer");
+    now += 6000;
+    h.releasePing();
+    await flushMicrotasks();
+    assert.deepEqual([stripText(h).state, stripText(h).dot], ["offline", "critical"]);
+    assert.ok(h.consoleLines.some((l) => l.level === "error" && /offline, no reply for 6 s/.test(l.line)));
+    S.destroy(h.container);
+  } finally {
+    Date.now = realNow;
+  }
+}
+
+async function testAProbeThatCannotBeMadeSaysWhy() {
+  const h = mount({ saved: { companion: COMPANION }, ping: { ok: false, error: "There is no ping program on this computer." } });
+  await flushMicrotasks();
+  assert.equal(stripText(h).state, "error");
+  assert.equal(h.strip().title, "There is no ping program on this computer.");
+  S.destroy(h.container);
+}
+
+async function testThePopupSavesClearsAndExits() {
+  const h = mount({ saved: { buttons: [LOCAL_BUTTON] } });
+  await flushMicrotasks();
+
+  let d = openCompanion(h);
+  assert.ok(d.button("Clear").disabled, "nothing to clear yet");
+  assert.ok(d.button("Save").disabled, "nothing to save without an address");
+  typeInto(d.input("Companion IP address"), "10.0.0.9; reboot");
+  assert.ok(d.button("Save").disabled);
+  assert.deepEqual(d.hints().filter((t) => t.trim() && !/Shown at the top/.test(t)),
+    ["That is not an IP address or host name."]);
+  typeInto(d.input("Companion IP address"), "10.0.0.9");
+  typeInto(d.input("Companion name"), "Jetson");
+  assert.ok(!d.button("Save").disabled);
+
+  // Interval 10 s pushes the timeout past it.
+  const [interval, timeout] = d.sliders();
+  slideTo(interval, S.INTERVAL_STEPS.indexOf(10));
+  assert.equal(timeout.value, String(S.TIMEOUT_STEPS.indexOf(15)));
+  // And a timeout pulled under the interval pulls the interval down.
+  slideTo(timeout, S.TIMEOUT_STEPS.indexOf(4));
+  assert.equal(interval.value, String(S.INTERVAL_STEPS.indexOf(3)));
+
+  click(d.button("Save"));
+  assert.ok(!d.open(), "Save closes the popup");
+  assert.deepEqual(h.savedNow().companion, { name: "Jetson", host: "10.0.0.9", interval_s: 3, timeout_s: 4 });
+  assert.equal(h.savedNow().buttons.length, 1, "the buttons are saved with it, not dropped");
+  assert.deepEqual(h.pings(), [{ host: "10.0.0.9", wait_ms: 3000 }], "pinged at once");
+  await flushMicrotasks();
+  assert.equal(stripText(h).state, "online");
+
+  // Exit changes nothing.
+  d = openCompanion(h);
+  typeInto(d.input("Companion IP address"), "10.0.0.99");
+  click(d.button("Exit"));
+  assert.ok(!d.open());
+  assert.equal(h.savedNow().companion.host, "10.0.0.9");
+
+  // Clear forgets it and stops asking.
+  d = openCompanion(h);
+  click(d.button("Clear"));
+  assert.ok(!d.open());
+  assert.equal(h.savedNow().companion, undefined);
+  assert.equal(h.savedNow().buttons.length, 1);
+  assert.equal(stripText(h).state, "unset");
+  const count = h.pings().length;
+  await flushMicrotasks();
+  assert.equal(h.pings().length, count);
+  S.destroy(h.container);
+}
+
+async function testDestroyStopsPingingAndClosesThePopup() {
+  const h = mount({ saved: { companion: COMPANION }, holdPing: true });
+  const d = openCompanion(h);
+  S.destroy(h.container);
+  assert.ok(!d.open(), "the popup goes with the plugin");
+  h.releasePing();
+  await flushMicrotasks();
+  assert.equal(stripText(h).state, "checking", "a late answer paints nothing");
+  assert.equal(h.pings().length, 1);
+}
+
 async function run() {
   testRegistered();
   testSessionsAreItsOwn();
@@ -829,6 +1033,13 @@ async function run() {
   await testARenameKeepsTheSession();
   await testRemovingARunningButtonClosesItsSession();
   await testDestroyStopsLateCallbacks();
+  testCompanionHelpers();
+  await testNoCompanionIsNotPinged();
+  await testASavedCompanionIsPingedAndShownOnline();
+  await testSilenceLongerThanTheTimeoutIsOffline();
+  await testAProbeThatCannotBeMadeSaysWhy();
+  await testThePopupSavesClearsAndExits();
+  await testDestroyStopsPingingAndClosesThePopup();
   dismissToasts();
   await flushMicrotasks();
   console.log("frontend schwalby tests passed");

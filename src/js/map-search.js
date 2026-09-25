@@ -215,6 +215,7 @@ Corvus.mapSearch = (function () {
    *  measure from. */
   function formatDistance(metres) {
     if (!isFinite(metres)) return "";
+    if (Corvus.units) return Corvus.units.formatDistance(metres, { coarse: true });
     if (metres < 950) return `${Math.round(metres / 10) * 10} m`;
     if (metres < 9950) return `${(metres / 1000).toFixed(1)} km`;
     return `${Math.round(metres / 1000)} km`;

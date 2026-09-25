@@ -75,6 +75,7 @@ global.document = {
 };
 
 require("../src/js/ui.js");
+require("../src/js/units.js");
 require("../src/js/mission.js");
 
 const mission = Corvus.mission;

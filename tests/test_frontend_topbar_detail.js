@@ -23,6 +23,7 @@ window.removeEventListener = () => {};
 global.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 global.document = { documentElement: { setAttribute: () => {}, getAttribute: () => null } };
 
+require("./../src/js/units.js");
 require("./../src/js/notification_dedupe.js");
 require("./../src/js/topbar.js");
 

@@ -19,6 +19,9 @@ A screenshot run must not touch it, so:
   empty grid. ``--isolated-tiles`` opts out.
 * The MAVLink port defaults to 14555, not 14550, so a scene never fights a real
   ground station or a SITL for the socket.
+* No company logo, ever. The sandbox config carries no ``branding`` and any
+  logo left in a reused sandbox is deleted before the backend starts, so the
+  operator's own logo cannot end up in a README picture.
 """
 from __future__ import annotations
 
@@ -37,7 +40,7 @@ from typing import Any, Callable
 
 from . import recipe as recipe_mod
 from .library import CHATTER, Scene
-from .vehicle import SimVehicle, VehicleOptions
+from .vehicle import LogEntry, SimVehicle, VehicleOptions
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_HTTP_PORT = 8777
@@ -63,12 +66,12 @@ class SceneRunner:
         self.scene = scene
         self.opts = options or RunnerOptions()
         self.log = log or (lambda text: print(text, flush=True))
-        self.sandbox = (self.opts.sandbox
-                        or Path(os.environ.get("TMPDIR", "/tmp"))
-                        / f"corvus-scene-{scene.id}")
+        self.sandbox = self.opts.sandbox or _default_sandbox(scene.id)
         self.backend: subprocess.Popen | None = None
         self.vehicle: SimVehicle | None = None
+        self.companion: Any = None
         self._backend_log: Any = None
+        self._logs: tuple[LogEntry, ...] = ()
 
     # -- the sandbox ------------------------------------------------------
 
@@ -88,6 +91,10 @@ class SceneRunner:
         corvus_dir.mkdir(parents=True, exist_ok=True)
         scene = self.scene
 
+        # A logo left behind by an earlier run in a reused sandbox would be
+        # served to the top bar; the pictures never carry one.
+        shutil.rmtree(corvus_dir / "branding", ignore_errors=True)
+
         tiles = (str(Path.home() / ".corvus" / "tiles") if self.opts.reuse_tiles
                  else str(corvus_dir / "tiles"))
         config = {
@@ -100,7 +107,8 @@ class SceneRunner:
             "log_download_dir": str(corvus_dir / "flightlogs"),
             "theme": {"name": scene.theme},
             "map": {"provider": scene.map_provider, "base_layer": scene.map_layer},
-            "ui": {"scale": scene.scale, "topbar_status_dots": scene.topbar_dots},
+            "ui": {"scale": scene.scale, "topbar_status_dots": scene.topbar_dots,
+                   "mission_page": scene.mission_page},
             "controls": {"virtual_joystick": scene.virtual_joystick},
             # No release check: a screenshot run must not reach the network, and
             # an update dialog across the frame is the one thing that would
@@ -108,6 +116,15 @@ class SceneRunner:
             "updates": {"check": False},
             "forwarding": {"enabled": False},
         }
+        if self.companion is not None:
+            from .companion import JETSON, PASSWORD, RASPBERRY
+
+            config["ssh_connections"] = [
+                {"name": name, "host": "127.0.0.1", "port": self.companion.port,
+                 "username": machine.username, "password": PASSWORD, "key_path": ""}
+                for name, machine in ((recipe_mod.SSH_TAB, JETSON),
+                                      (recipe_mod.SSH_WINDOW, RASPBERRY))
+            ]
         path = corvus_dir / "config.json"
         path.write_text(json.dumps(config, indent=2) + "\n")
         return path
@@ -115,9 +132,23 @@ class SceneRunner:
     # -- lifecycle --------------------------------------------------------
 
     def start(self) -> None:
+        if self.scene.ssh:
+            from .companion import CompanionServer
+
+            self.companion = CompanionServer(
+                on_event=(lambda text: self.log(f"companion  {text}"))
+                if self.opts.verbose else None)
+            self.companion.start()
+            self.log(f"companion  SSH on 127.0.0.1:{self.companion.port}")
+        self._logs = self.scene.build_logs()
         config_path = self._write_config()
         self.log(f"sandbox    {self.sandbox}")
         self.log(f"config     {config_path}")
+        if self.scene.review_log:
+            saved = self._place_downloaded_log()
+            if saved is not None:
+                self.log(f"log        {saved.name} ({saved.stat().st_size // 1024} KB, "
+                         "already downloaded)")
 
         if self.opts.start_backend:
             self._start_backend()
@@ -164,7 +195,7 @@ class SceneRunner:
             armed=scene.armed,
             mode=scene.mode,
             rc=scene.rc_state,
-            logs=scene.build_logs(),
+            logs=self._logs,
             chatter=CHATTER(scene.mode) if scene.chatter else (),
             calibration_pause_after=scene.calibration_pause_after,
         )
@@ -194,10 +225,31 @@ class SceneRunner:
             time.sleep(0.5)
         return False
 
+    def _place_downloaded_log(self) -> Path | None:
+        """Put the newest log in the download folder, as a finished download.
+
+        Named the way ``corvus/log_service.py`` names a download, with the id
+        and the size of the vehicle's entry, so the Analysis page matches it
+        to the vehicle's log and lists it as downloaded rather than as a stray
+        file.
+        """
+        entry = next((e for e in reversed(self._logs) if e.data), None)
+        if entry is None:
+            return None
+        folder = self.sandbox / ".corvus" / "flightlogs"
+        folder.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("_%Y-%m-%d_%H-%M", time.localtime(entry.utc))
+        target = folder / f"log_{entry.id:03d}{stamp}.ulg"
+        target.write_bytes(entry.data)
+        return target
+
     def stop(self) -> None:
         if self.vehicle is not None:
             self.vehicle.stop()
             self.vehicle = None
+        if self.companion is not None:
+            self.companion.stop()
+            self.companion = None
         backend = self.backend
         self.backend = None
         if backend is not None:
@@ -229,6 +281,20 @@ class SceneRunner:
 
     def recipe_json(self) -> dict[str, Any]:
         return recipe_mod.as_json(self.scene, self.url)
+
+
+def _default_sandbox(scene_id: str) -> Path:
+    """Where a scene's throwaway ``HOME`` goes when none is named.
+
+    The path is on screen: the Analysis page shows the download folder in
+    full. ``/tmp/corvus-scene-<id>`` reads as what it is; the macOS
+    ``$TMPDIR`` is forty characters of random directory names in front of
+    it, and the operator's own home directory would put their account name in
+    a README picture.
+    """
+    base = Path("/tmp") if os.name == "posix" and Path("/tmp").is_dir() else Path(
+        os.environ.get("TMPDIR") or os.environ.get("TEMP") or "/tmp")
+    return base / f"corvus-scene-{scene_id}"
 
 
 def _port_in_use(port: int) -> bool:

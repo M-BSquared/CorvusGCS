@@ -18,6 +18,9 @@ browser steps that take the shot.
     tools/scene.py run flight               stand the scene up and hold it
     tools/scene.py run map --json           the same, as machine-readable steps
     tools/scene.py run dark --set theme=blue --set path=orbit
+    tools/scene.py run flight --shoot       stand it up, take the picture, stop
+    tools/scene.py shoot                    every picture, one scene after another
+    tools/scene.py shoot mission ssh        just these
     tools/scene.py check                    every scene builds, and renders
 
 Nothing it runs touches the operator's own Corvus: the backend runs against a
@@ -104,8 +107,81 @@ def cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _target(scene: library.Scene, out: str | None) -> Path:
+    """Where a scene's picture is written: its asset path, or into ``--out``."""
+    if out:
+        return Path(out).expanduser() / Path(scene.asset).name
+    return Path(__file__).resolve().parents[1] / scene.asset
+
+
+def _camera(args: argparse.Namespace):
+    """The off-screen QtWebEngine the pictures are taken with, or None."""
+    from scene_kit import capture
+
+    problem = capture.qt_problem()
+    if problem:
+        print(f"error      {problem}", file=sys.stderr)
+        return None
+    return capture.Camera(hidpi=args.hidpi, verbose=args.verbose)
+
+
+def _shoot_one(camera, runner: SceneRunner, out: str | None) -> Path:
+    target = _target(runner.scene, out)
+    steps = recipe_mod.steps(runner.scene, runner.url)
+    return camera.run(steps, target)
+
+
+def cmd_shoot(args: argparse.Namespace) -> int:
+    """Stand every scene up in turn, take its picture, and take it down again."""
+    wanted = args.scenes or sorted(library.SCENES, key=_library_order)
+    scenes = [library.get(scene_id).with_overrides(_parse_set(args.set or []))
+              for scene_id in wanted]
+    camera = _camera(args)
+    if camera is None:
+        return 1
+
+    def _stop(*_args: object) -> None:
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, _stop)
+    failed: list[str] = []
+    started = time.monotonic()
+    try:
+        for number, scene in enumerate(scenes, 1):
+            print(f"\nscene      {scene.id} ({number}/{len(scenes)}) -> {scene.asset}")
+            runner = SceneRunner(scene, RunnerOptions(
+                http_port=args.port, mav_port=args.mav_port,
+                reuse_tiles=not args.isolated_tiles, verbose=args.verbose))
+            try:
+                runner.start()
+                _shoot_one(camera, runner, args.out)
+            except RuntimeError as exc:
+                print(f"error      {scene.id}: {exc}", file=sys.stderr)
+                failed.append(scene.id)
+            finally:
+                runner.stop()
+    except KeyboardInterrupt:
+        print("\nstopped    interrupted")
+        return 130
+    finally:
+        camera.close()
+    minutes = (time.monotonic() - started) / 60
+    print(f"\ndone       {len(scenes) - len(failed)} of {len(scenes)} pictures "
+          f"in {minutes:.1f} min" + (f"; failed: {', '.join(failed)}" if failed else ""))
+    return 1 if failed else 0
+
+
+def _library_order(scene_id: str) -> int:
+    return list(library.SCENES).index(scene_id)
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     scene = library.get(args.scene).with_overrides(_parse_set(args.set or []))
+    camera = None
+    if args.shoot:
+        camera = _camera(args)
+        if camera is None:
+            return 1
     options = RunnerOptions(
         http_port=args.port,
         mav_port=args.mav_port,
@@ -133,6 +209,24 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"error      {exc}", file=sys.stderr)
         runner.stop()
         return 1
+
+    if camera is not None:
+        try:
+            _shoot_one(camera, runner, args.out)
+        except RuntimeError as exc:
+            print(f"error      {exc}", file=sys.stderr)
+            runner.stop()
+            camera.close()
+            return 1
+        except KeyboardInterrupt:
+            runner.stop()
+            camera.close()
+            return 130
+        camera.close()
+        if not args.seconds:
+            runner.stop()
+            print("stopped")
+            return 0
 
     print()
     if args.json:
@@ -235,7 +329,29 @@ def main(argv: list[str] | None = None) -> int:
                        help="print the recipe as JSON, for an agent to follow")
     p_run.add_argument("-v", "--verbose", action="store_true",
                        help="stream the backend's log and the aircraft's events")
+    p_run.add_argument("--shoot", action="store_true",
+                       help="follow the recipe off screen, save the picture, then stop "
+                            "(or hold for --seconds)")
+    p_run.add_argument("--out", help="write the picture into this folder instead of "
+                                     "over the scene's asset")
+    p_run.add_argument("--hidpi", action="store_true",
+                       help="keep the display's pixel density instead of the viewport size")
     p_run.set_defaults(func=cmd_run)
+
+    p_shoot = sub.add_parser(
+        "shoot", help="take the pictures: every scene, or the ones named")
+    p_shoot.add_argument("scenes", nargs="*", metavar="scene")
+    p_shoot.add_argument("--port", type=int, default=DEFAULT_HTTP_PORT)
+    p_shoot.add_argument("--mav-port", type=int, default=DEFAULT_MAV_PORT)
+    p_shoot.add_argument("--set", action="append", metavar="KEY=VALUE",
+                         help="override a field on every scene shot, e.g. --set theme=blue")
+    p_shoot.add_argument("--out", help="write the pictures into this folder instead "
+                                       "of over the scenes' assets")
+    p_shoot.add_argument("--hidpi", action="store_true",
+                         help="keep the display's pixel density instead of the viewport size")
+    p_shoot.add_argument("--isolated-tiles", action="store_true")
+    p_shoot.add_argument("-v", "--verbose", action="store_true")
+    p_shoot.set_defaults(func=cmd_shoot)
 
     p_check = sub.add_parser(
         "check", help="every scene builds, and its pages render from its parameters")

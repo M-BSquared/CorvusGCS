@@ -615,6 +615,7 @@ Corvus.sidenav = (function () {
     body.appendChild(companyLogoCard(cfg));
     body.appendChild(themeCard(cfg));
     body.appendChild(scaleCard(cfg));
+    body.appendChild(unitsCard(cfg));
     body.appendChild(pagesCard(cfg));
     body.appendChild(mapServiceCard(cfg, gen));
     body.appendChild(controlsCard(cfg));
@@ -1225,6 +1226,86 @@ Corvus.sidenav = (function () {
             "and panels. Larger reads better on a bright field laptop. " +
             "100% is the default.",
     }));
+    return card;
+  }
+
+  // Display units. The presets and the four selects are two views of one
+  // stored value (the four keys in `ui.units`): a preset writes all four, a
+  // select writes one, and after either the preset row shows whichever preset
+  // the four now match, or none. The whole object is posted every time
+  // because the backend merges `ui` one level deep and would otherwise drop
+  // the other three.
+  function unitsCard(cfg) {
+    const U = Corvus.units;
+    const current = U.fromConfig(cfg) || U.get();
+    U.set(current);
+
+    const card = Corvus.ui.card({ title: "Units" });
+    const selects = {};
+
+    function persist() {
+      return postConfig({ ui: { units: U.get() } });
+    }
+
+    function sync() {
+      const now = U.get();
+      presets.setValue(U.systemOf(now) || "");
+      Object.keys(selects).forEach((q) => {
+        const sel = selects[q];
+        sel.value = now[q];
+        if (sel.corvusSelect) sel.corvusSelect.refresh();
+      });
+    }
+
+    const presets = Corvus.ui.optionCards({
+      ariaLabel: "Unit system",
+      columns: 3,
+      value: U.systemOf(current) || "",
+      options: U.SYSTEMS.map((s) => ({ id: s.id, label: s.label, desc: s.desc })),
+      onChange: (id) => {
+        U.setSystem(id);
+        sync();
+        persist();
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Unit system",
+      control: presets.el,
+      hint: "Sets all four below at once. You can still change any one of them afterwards.",
+    }));
+
+    const rows = [
+      { q: "length", label: "Altitude and length",
+        hint: "Altitudes, heights, radii and GPS accuracy." },
+      { q: "distance", label: "Distance",
+        hint: "Route lengths and distances to a place. Short hops stay in the length unit." },
+      { q: "speed", label: "Speed", hint: "Ground speed, vertical speed and mission speeds." },
+      { q: "temperature", label: "Temperature", hint: "Battery temperature." },
+    ];
+    rows.forEach((r) => {
+      const sel = Corvus.ui.select({
+        id: "settingsUnits_" + r.q,
+        ariaLabel: r.label,
+        value: current[r.q],
+        options: U.QUANTITIES[r.q].map((u) => ({ value: u.id, label: u.label })),
+        onChange: (v) => {
+          const patch = {};
+          patch[r.q] = v;
+          U.set(patch);
+          sync();
+          persist();
+        },
+      });
+      selects[r.q] = sel;
+      card.appendChild(Corvus.ui.field({ label: r.label, control: sel, hint: r.hint }));
+    });
+
+    const note = Corvus.ui.empty(
+      "Display only. Parameters, mission files and everything sent to the " +
+      "aircraft stay in the units the autopilot uses."
+    );
+    note.className = "field-hint";
+    card.appendChild(note);
     return card;
   }
 

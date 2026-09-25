@@ -224,6 +224,7 @@ function makeFakeTelemetry(opts = {}) {
 }
 
 require("../src/js/ui.js");
+require("../src/js/units.js");
 require("../src/js/setup-shared.js");
 require("../src/js/setup-battery.js");
 
@@ -395,6 +396,150 @@ async function testAnArdupilotLevelInVoltsIsPlacedOnlyOnceTheCellsAreKnown() {
   fake.getSubCb()(liveState({ battery_cells: 6 }));
   const marks = findByClass(container, "battery-threshold");
   assert.equal(marks.length, 2, "with six cells the volts become a position");
+}
+
+// ---------------------------------------------------------------------------
+// Threshold label layout. Boxes are worked out here from the rendered
+// attributes with a width model of this file's own, as wide as the widest
+// uppercase fallback font the app can end up in (DejaVu Sans on a bare Linux
+// box), so a pass does not depend on the page's own estimate being right.
+// ---------------------------------------------------------------------------
+
+const LABEL_SIZE = 8.5;
+
+function px4Thresholds(low, crit, emergency) {
+  return [
+    { id: "low", label: "Low", param: "BAT_LOW_THR", percent: low },
+    { id: "crit", label: "Critical", param: "BAT_CRIT_THR", percent: crit },
+    { id: "emergen", label: "Emergency", param: "BAT_EMERGEN_THR", percent: emergency },
+  ];
+}
+
+async function mountWithThresholds(thresholds) {
+  const doc = batteryDoc();
+  doc.pack.thresholds = thresholds;
+  return mount({ doc });
+}
+
+/** Every threshold as {line, label} with the label's box in drawing units. */
+function thresholdFlags(container) {
+  const lines = findByClass(container, "battery-threshold");
+  const labels = findByClass(container, "battery-threshold-label");
+  assert.equal(lines.length, labels.length, "one label per line");
+  return lines.map((line, i) => {
+    const text = labels[i];
+    const x = Number(text.getAttribute("x"));
+    const y = Number(text.getAttribute("y"));
+    const width = text.textContent.length * (LABEL_SIZE * 0.78 + 0.3);
+    const anchor = text.getAttribute("text-anchor");
+    const left = anchor === "end" ? x - width : anchor === "middle" ? x - width / 2 : x;
+    return {
+      name: text.textContent,
+      line: {
+        x: Number(line.getAttribute("x1")),
+        top: Number(line.getAttribute("y1")),
+        bottom: Number(line.getAttribute("y2")),
+      },
+      box: { left, right: left + width, top: y - 0.8 * LABEL_SIZE, bottom: y + 0.2 * LABEL_SIZE },
+    };
+  });
+}
+
+function boxesOverlap(a, b) {
+  return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+}
+
+function lineCrosses(line, box) {
+  return line.x > box.left && line.x < box.right && line.top < box.bottom && line.bottom > box.top;
+}
+
+/** No label over another, no line through a label that is not its own. */
+function assertFlagsReadable(flags) {
+  flags.forEach((a, i) => {
+    flags.forEach((b, j) => {
+      if (i >= j) return;
+      assert.ok(!boxesOverlap(a.box, b.box), `${a.name} and ${b.name} are printed over each other`);
+    });
+    flags.forEach((b, j) => {
+      if (i === j) return;
+      assert.ok(!lineCrosses(b.line, a.box), `the ${b.name} line runs through ${a.name}`);
+    });
+  });
+}
+
+function viewBox(container) {
+  const [x, y, w, h] = findOneByClass(container, "battery-figure")
+    .getAttribute("viewBox").split(/\s+/).map(Number);
+  return { left: x, top: y, right: x + w, bottom: y + h };
+}
+
+async function testPx4DefaultLevelsAreEachReadable() {
+  /* BAT_EMERGEN_THR 0.05, BAT_CRIT_THR 0.07 and BAT_LOW_THR 0.15 put three
+     lines within 22 units of each other; centred labels printed as
+     "EMERGENCYLOW". */
+  const { container } = await mountWithThresholds(px4Thresholds(15, 7, 5));
+  const flags = thresholdFlags(container);
+  assert.deepEqual(flags.map((f) => f.name), ["Low", "Critical", "Emergency"]);
+  assertFlagsReadable(flags);
+
+  // x0 = 8 and a 220 unit wide body: the lines stay where the levels are.
+  assert.deepEqual(flags.map((f) => f.line.x), [15, 7, 5].map((p) => 8 + (220 * p) / 100));
+
+  const view = viewBox(container);
+  flags.forEach((f) => {
+    assert.ok(f.box.top >= view.top && f.box.left >= view.left && f.box.right <= view.right,
+      `${f.name} is inside the drawing`);
+    assert.ok(Math.abs(f.box.left - f.line.x) <= 4 || Math.abs(f.box.right - f.line.x) <= 4,
+      `${f.name} sits beside its own line`);
+    assert.ok(f.line.top <= f.box.top + 3, `the ${f.name} line reaches its label`);
+  });
+}
+
+async function testLevelsFarApartShareOneRowAndTheDrawingKeepsItsSize() {
+  const { container } = await mountWithThresholds([
+    { id: "low", label: "Low", param: "BAT_LOW_THR", percent: 60 },
+    { id: "crit", label: "Critical", param: "BAT_CRIT_THR", percent: 10 },
+  ]);
+  const flags = thresholdFlags(container);
+  assertFlagsReadable(flags);
+  assert.equal(flags[0].box.top, flags[1].box.top, "no reason to stack them");
+  assert.deepEqual(viewBox(container), { left: 0, top: 0, right: 260, bottom: 132 });
+}
+
+async function testALevelNearFullPointsInwardAndStaysOnTheDrawing() {
+  const { container } = await mountWithThresholds(px4Thresholds(15, 96, 5));
+  const flags = thresholdFlags(container);
+  assertFlagsReadable(flags);
+  const view = viewBox(container);
+  flags.forEach((f) => {
+    assert.ok(f.box.left >= view.left && f.box.right <= view.right, `${f.name} is inside the drawing`);
+  });
+}
+
+async function testTwoLevelsSetTheSameAreBothStillNamed() {
+  const { container } = await mountWithThresholds(px4Thresholds(15, 7, 7));
+  const flags = thresholdFlags(container);
+  assertFlagsReadable(flags);
+  assert.equal(flags[1].line.x, flags[2].line.x, "both lines where the levels are");
+}
+
+function testLabelsThatCannotAvoidEveryLineStillNeverOverlap() {
+  /* Two flags pointing at each other across a line each: no row keeps both
+     lines clear, so text over text is what must still never happen. */
+  const flags = [{ x: 5, width: 20 }, { x: 100, width: 60 }, { x: 150, width: 60 }];
+  const placed = Corvus.setupBattery.layoutThresholdLabels(flags, 0, 200);
+  const box = (f, p) => (p.anchor === "start" ? [f.x + 3, f.x + 3 + f.width] : [f.x - 3 - f.width, f.x - 3]);
+  flags.forEach((a, i) => flags.forEach((b, j) => {
+    if (i >= j || placed[i].row !== placed[j].row) return;
+    const [al, ar] = box(a, placed[i]);
+    const [bl, br] = box(b, placed[j]);
+    assert.ok(ar <= bl || br <= al, `flags ${i} and ${j} overlap on row ${placed[i].row}`);
+  }));
+  flags.forEach((f, i) => {
+    const [l, r] = box(f, placed[i]);
+    assert.ok(l >= 0 || placed[i].anchor === "start", `flag ${i} stays on the drawing where it can`);
+    assert.ok(r <= 200 || placed[i].anchor === "end", `flag ${i} stays on the drawing where it can`);
+  });
 }
 
 // ===========================================================================
@@ -795,6 +940,11 @@ async function main() {
     testAPackWhoseCellCountIsUnknownIsDrawnWithoutDividers,
     testTheFailsafeLevelsAreMarkedOnThePack,
     testAnArdupilotLevelInVoltsIsPlacedOnlyOnceTheCellsAreKnown,
+    testPx4DefaultLevelsAreEachReadable,
+    testLevelsFarApartShareOneRowAndTheDrawingKeepsItsSize,
+    testALevelNearFullPointsInwardAndStaysOnTheDrawing,
+    testTwoLevelsSetTheSameAreBothStillNamed,
+    testLabelsThatCannotAvoidEveryLineStillNeverOverlap,
     testTheReadoutCarriesWhatTheAircraftIsActuallyDoing,
     testTheOtherAnswerIsAlwaysOnScreenAndAlwaysNamed,
     testAnAutopilotThatReportsNothingSaysSoRatherThanZero,

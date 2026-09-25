@@ -440,20 +440,54 @@ function testEveryBindableControlHasACalloutAndNoTwoShareARow() {
   });
 }
 
-function testTheHandleLeansFurtherForEveryPositionUp() {
-  // Position is carried by the angle of the handle, so the angles have to be
-  // monotonic: a three-position switch whose middle leant further than its top
+function testTheHandlePointsHigherForEveryPositionUp() {
+  // Position is carried by where the handle points, so the lifts have to be
+  // monotonic: a three-position switch whose middle stood higher than its top
   // would still light, and still be wrong.
-  const three = [0, 1, 2].map((i) => TX.leverAngle(i, 3));
-  assert.ok(three[0] < three[1] && three[1] < three[2], "down < middle < up");
-  const two = [0, 1].map((i) => TX.leverAngle(i, 2));
-  assert.deepEqual([two[0], two[1]], [three[0], three[2]],
+  const three = [0, 1, 2].map((i) => TX.leverLift(i, 3));
+  assert.deepEqual(three, [-1, 0, 1], "down, pointing out, up");
+  const two = [0, 1].map((i) => TX.leverLift(i, 2));
+  assert.deepEqual(two, [three[0], three[2]],
     "a two-position switch uses the same extremes, so the drawings agree");
-  // The whole sweep stays in the upper quadrant — a handle that lay flat
-  // across the shoulder stopped reading as a switch on a radio — and the
-  // swing between the extremes is wide enough to tell apart at a glance.
-  assert.ok(two[0] > 0 && two[1] <= 90, "every position stands up out of the case");
-  assert.ok(two[1] - two[0] >= 45, "with a visible swing between down and up");
+}
+
+function testEveryHandleKeepsOneSlightMirroredLean() {
+  // A handle that swung through a wide arc pointed at its neighbour on the
+  // staggered shoulder, and a row in mixed positions read as crossing
+  // handles. Every position keeps the same slight outboard lean, mirrored
+  // across the centre line, and only the tip's height carries the position.
+  assert.ok(TX.LEVER_LEAN > 0 && TX.LEVER_LEAN <= 20, "a slight lean, not a swing");
+  storage = makeStorage();
+  const bindings = {};
+  const switches = TX.LAYOUT.controls.filter((c) => c.kind === "switch");
+  switches.forEach((c, i) => { bindings[c.id] = { channel: 5 + i, positions: 3 }; });
+  storage.setItem("corvus.rc.transmitter.bindings.v2", JSON.stringify(bindings));
+  const widget = TX.create({ interactive: true });
+  const lean = TX.LEVER_LEAN * Math.PI / 180;
+  const tips = {};
+  [1000, 1500, 2000].forEach((pulse) => {
+    widget.update(frame([1500, 1500, 1500, 1500].concat(switches.map(() => pulse))));
+    switches.forEach((c) => {
+      const node = controlNode(widget.el, c.id);
+      const stem = node.querySelector(".rc-tx-lever-stem");
+      const ball = node.querySelector(".rc-tx-lever-ball");
+      assert.equal(stem.getAttribute("x2"), ball.getAttribute("cx"), "ball rides the tip");
+      assert.equal(stem.getAttribute("y2"), ball.getAttribute("cy"), "ball rides the tip");
+      (tips[c.id] = tips[c.id] || []).push(
+        [Number(stem.getAttribute("x2")) - c.cx, Number(stem.getAttribute("y2")) - c.cy]);
+    });
+  });
+  const near = (a, b) => Math.abs(a - b) < 0.11;
+  switches.forEach((c) => {
+    const out = c.side === "left" ? -1 : 1;
+    const dx = out * c.lever * Math.sin(lean);
+    const dy = c.lever * Math.cos(lean);
+    const want = [[dx, dy], [0, 0], [dx, -dy]];
+    tips[c.id].forEach((tip, i) => {
+      assert.ok(near(tip[0], want[i][0]) && near(tip[1], want[i][1]),
+        c.id + " position " + i + " tip at " + tip + ", expected " + want[i]);
+    });
+  });
 }
 
 // ===========================================================================
@@ -701,7 +735,8 @@ function main() {
     testTheHandsetsOwnMenuButtonsAreNotBindable,
     testEveryBindableControlHasACalloutAndNoTwoShareARow,
     testTheDrawingIsSymmetricAboutItsCentreLine,
-    testTheHandleLeansFurtherForEveryPositionUp,
+    testTheHandlePointsHigherForEveryPositionUp,
+    testEveryHandleKeepsOneSlightMirroredLean,
     testSelectingAControlOpensItsInspector,
     testAStickAxisIsReachedThroughItsMarginLabel,
     testANonInteractiveWidgetNeverSelects,

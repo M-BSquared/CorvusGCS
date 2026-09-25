@@ -134,7 +134,7 @@
           <div class="takeoff-body">
             <div class="takeoff-slider-row">
               <input type="range" min="1" max="120" value="10" step="1" class="takeoff-slider" id="takeoffAlt" />
-              <span class="takeoff-alt-value" id="takeoffAltValue">10 m</span>
+              <span class="takeoff-alt-value" id="takeoffAltValue"></span>
             </div>
             <button class="takeoff-confirm" id="takeoffConfirm">
               <i data-lucide="arrow-up"></i>
@@ -155,7 +155,7 @@
             </div>
             <div class="takeoff-slider-row">
               <input type="range" min="1" max="50" value="10" step="1" class="takeoff-slider" id="planAlt" aria-label="Waypoint altitude above home" />
-              <span class="takeoff-alt-value" id="planAltValue">10 m AGL</span>
+              <span class="takeoff-alt-value" id="planAltValue"></span>
             </div>
             <div class="plan-actions">
               <button class="plan-fly" id="planFly" disabled>
@@ -535,6 +535,7 @@
 <script src="js/lazy.js" defer></script>
 <script src="js/events.js" defer></script>
 <script src="js/ui.js" defer></script>
+<script src="js/units.js" defer></script>
 <script src="js/credits.js" defer></script>
 <script src="js/telemetry.js" defer></script>
 <script src="js/capabilities.js" defer></script>

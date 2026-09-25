@@ -78,6 +78,16 @@ def test_a_folder_in_home_is_written_with_a_tilde(tmp_path, monkeypatch):
     assert clean_directory("~/mission") == (str(tmp_path / "mission"), "")
 
 
+@pytest.mark.parametrize("typed", ["~/mission/", "~//mission", "~/./mission"])
+def test_a_folder_comes_back_in_the_systems_own_spelling(tmp_path, monkeypatch, typed):
+    """On Windows ``~/mission`` came back as ``C:\\Users\\op/mission``. The same
+    missing normalisation shows here on every platform."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    (tmp_path / "mission").mkdir()
+    assert clean_directory(typed) == (str(tmp_path / "mission"), "")
+
+
 def test_a_missing_folder_says_so(tmp_path):
     path, why = clean_directory(str(tmp_path / "nope"))
     assert path == ""
@@ -160,6 +170,26 @@ def test_a_program_that_ignores_sigterm_is_killed(tmp_path):
 
 
 @posix_only
+def test_a_program_in_a_group_of_its_own_still_stops_with_corvus(tmp_path):
+    """Signalling the shell's group alone missed it: it had left that group."""
+    runner = LocalRunner()
+    marker = tmp_path / "child.pid"
+    (tmp_path / "detach.py").write_text(
+        "import os, sys, time\n"
+        "os.setpgid(0, 0)\n"
+        "open(sys.argv[1], 'w').write(str(os.getpid()))\n"
+        "time.sleep(60)\n", encoding="utf-8")
+    # Not the command alone: a shell execs that, and a session leader cannot
+    # change its group.
+    res = runner.run(f"'{sys.executable}' detach.py '{marker}'; echo done", str(tmp_path))
+    assert res["ok"] is True
+    assert _wait(lambda: marker.exists() and marker.read_text().strip() != "")
+    child = int(marker.read_text().strip())
+    runner.shutdown()
+    assert _wait(lambda: _gone(child)), "a program in its own group outlived Corvus"
+
+
+@posix_only
 def test_the_output_kept_is_bounded(runner, tmp_path):
     res = runner.run("head -c 200000 /dev/zero | tr '\\0' 'a'; exit 1", str(tmp_path))
     assert res["exited"] is True and res["ok"] is False
@@ -220,19 +250,58 @@ def test_ctrl_c_reaches_the_program_in_the_foreground(tmp_path):
         session.disconnect()
 
 
-@needs_pty
-def test_closing_a_local_shell_ends_what_runs_in_it(tmp_path):
-    session = LocalSession("schwalby/k", str(tmp_path), shell="/bin/sh")
-    marker = tmp_path / "shell.pid"
-    assert session.connect()
-    session.send(f"sleep 60 & echo $! > '{marker}'\n")
+def _shells() -> list[Any]:
+    """Every shell a terminal may run, where this machine has it. dash is
+    Ubuntu's /bin/sh and does not pass a hangup on to its jobs; macOS ships
+    it too, so that case is not left to the Linux runner to find."""
+    return [pytest.param(sh, id=os.path.basename(sh),
+                         marks=pytest.mark.skipif(not os.path.isfile(sh), reason=f"no {sh} here"))
+            for sh in ("/bin/sh", "/bin/dash", "/bin/bash", "/bin/zsh")]
+
+
+def _job_in(session: LocalSession, marker: Any, job: str = "sleep 60") -> int:
+    session.send(f"{job} & echo $! > '{marker}'\n")
     assert _wait(lambda: marker.exists() and marker.read_text().strip() != "")
-    child = int(marker.read_text().strip())
+    return int(marker.read_text().strip())
+
+
+@needs_pty
+@pytest.mark.parametrize("shell", _shells())
+def test_closing_a_local_shell_ends_what_runs_in_it(tmp_path, shell):
+    session = LocalSession("schwalby/k", str(tmp_path), shell=shell)
+    assert session.connect()
+    child = _job_in(session, tmp_path / "shell.pid")
     shell_pid = session._proc.pid
     session.disconnect()
     assert _wait(lambda: _gone(shell_pid)), "the shell outlived its window's session"
-    # A background job of an interactive shell gets the hangup with it.
     assert _wait(lambda: _gone(child)), "a job in the shell outlived it"
+
+
+@needs_pty
+def test_closing_a_local_shell_ends_a_job_that_ignores_the_hangup(tmp_path):
+    """Like ``nohup``: whatever the shell passes on, the job would outlive Corvus."""
+    session = LocalSession("schwalby/n", str(tmp_path), shell="/bin/sh")
+    assert session.connect()
+    child = _job_in(session, tmp_path / "shell.pid", job="( trap '' HUP; exec sleep 60 )")
+    started = time.monotonic()
+    session.disconnect()
+    assert _wait(lambda: _gone(child)), "a job that ignores SIGHUP outlived the shell"
+    assert time.monotonic() - started < local_shell.TERM_TIMEOUT_S + 5
+
+
+@needs_pty
+def test_a_job_left_behind_by_exit_ends_with_the_window(tmp_path):
+    """``exit`` ends the shell but not its background jobs. On Linux they keep
+    the terminal and the window open; macOS revokes the terminal and the
+    window ends by itself. Either way the job must not outlive it."""
+    session = LocalSession("schwalby/e", str(tmp_path), shell="/bin/sh")
+    assert session.connect()
+    child = _job_in(session, tmp_path / "shell.pid")
+    shell_pid = session._proc.pid
+    session.send("exit\n")
+    assert _wait(lambda: _gone(shell_pid))
+    session.disconnect()
+    assert _wait(lambda: _gone(child)), "the job outlived the window it was started in"
 
 
 @needs_pty
@@ -512,7 +581,7 @@ def test_stopping_on_windows_ends_the_tree_not_cmd_alone(monkeypatch):
         return local_shell.subprocess.CompletedProcess(argv, 0)
 
     monkeypatch.setattr(local_shell.subprocess, "run", fake_run)
-    local_shell._stop_group(proc, 15, platform="win32")
+    local_shell._stop_session(proc, 15, platform="win32")
     assert ran and ran[0][1:] == ["/F", "/T", "/PID", "4242"]
     assert not proc.killed
 
@@ -525,7 +594,7 @@ def test_stopping_on_windows_falls_back_to_kill_when_taskkill_cannot_run(monkeyp
 
     monkeypatch.setattr(local_shell.subprocess, "run", missing)
     monkeypatch.setattr(local_shell, "TERM_TIMEOUT_S", 0.01)
-    local_shell._stop_group(proc, 15, platform="win32")
+    local_shell._stop_session(proc, 15, platform="win32")
     assert proc.killed
 
 

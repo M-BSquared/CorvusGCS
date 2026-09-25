@@ -27,6 +27,13 @@ from .vehicle import LogEntry, RcState
 # Every theme in src/css/themes.css, as the settings page offers them.
 THEMES = ("light-orange", "light", "green", "blue", "pink", "orange")
 
+# The sortie the flying pictures show: the curved hop across the field on the
+# Neubiberg campus, from the start point to the end point in flight.py. Every
+# picture with a map on it flies this, the mission planner draws it, and the
+# Flight Review picture reviews its log, so the README tells one flight.
+SORTIE_HOME = flight_mod.CAMPUS_HOP_START
+SORTIE_PATH = "swoop"
+
 # The README's pictures are wide: a 16:10 window is what the layout is designed
 # around, and it is what makes the map, the instrument panel and the workspace
 # all readable in one frame.
@@ -56,8 +63,9 @@ class Scene:
     })
     map_provider: str = "esri"
     map_layer: str = "esri_world_imagery"
-    topbar_dots: bool = True
+    topbar_dots: bool = False       # the caption status dots (Settings > Status dots)
     virtual_joystick: bool = False
+    mission_page: bool = True       # MISSION in the left rail (Settings > Pages)
 
     # --- the aircraft ---------------------------------------------------
     airframe: str = params_mod.DEFAULT_AIRFRAME
@@ -71,7 +79,7 @@ class Scene:
     full_param_table: bool = False  # pad to a real firmware's ~1200 parameters
 
     # --- the flight -----------------------------------------------------
-    home: tuple[float, float] = flight_mod.NEUBIBERG
+    home: tuple[float, float] = SORTIE_HOME
     path: str = "orbit"
     path_options: dict[str, Any] = field(default_factory=dict)
     takeoff_time: float = 10.0
@@ -82,6 +90,17 @@ class Scene:
     calibration: str | None = None          # accel | compass | gyro | level | …
     calibration_pause_after: int | None = None
     logs: int = 0                           # how many logs the card holds
+    # The newest of those logs already downloaded, as the ULog of the sortie
+    # the map pictures show (see flight_log). Flight Review opens this file.
+    review_log: bool = False
+    # The Flight Review plot brought to the top of the picture, by its title;
+    # "" frames the review's head: summary, modes, findings and ground track.
+    review_focus: str = ""
+    # A simulated companion computer on SSH (see companion), and the terminals
+    # the recipe opens on it: the SSH tab, plus a terminal window.
+    ssh: bool = False
+    # The mission planner is seeded with a plan over the sortie's points.
+    mission_plan: bool = False
     chatter: bool = True                    # scripted STATUSTEXT traffic
     settle: float = 20.0                    # seconds to let the scene build
     notes: str = ""                         # what to look for before shooting
@@ -122,7 +141,9 @@ class Scene:
         """A plausible log card: a morning's flights, newest last.
 
         Sizes and timestamps are generated from the count rather than listed,
-        so asking for twelve logs does not mean inventing twelve dates.
+        so asking for twelve logs does not mean inventing twelve dates. The
+        newest one is the real ULog of the sortie (see :meth:`build_flight_log`),
+        so a download of it gives a file Flight Review can open.
         """
         if self.logs <= 0:
             return ()
@@ -139,7 +160,54 @@ class Scene:
                 # profile actually weighs.
                 size=int(minutes * 1_150_000 + (i * 37_000)),
             ))
+        blob = self.build_flight_log()
+        newest = out[-1]
+        out[-1] = LogEntry(id=newest.id, utc=newest.utc, size=len(blob), data=blob)
         return tuple(out)
+
+    def build_flight_log(self) -> bytes:
+        """The ULog of the sortie, whatever this scene's own aircraft is doing.
+
+        Always the campus hop the flying pictures show, so the Flight Review
+        picture reviews the same flight the map pictures draw.
+        """
+        from . import flight_log
+
+        # Finely divided: the log's attitude comes from the path's curvature.
+        path = flight_mod.make_path(SORTIE_PATH, home=SORTIE_HOME, points=240)
+        return flight_log.build(SORTIE_HOME, path, self.build_params(),
+                                chatter=(), boot_offset_s=12.0)
+
+    def mission(self) -> dict[str, Any]:
+        """The plan the mission planner is seeded with, over the sortie's points.
+
+        The start, a takeoff, the curved hop as three waypoints, a circle over
+        its end point and a return: the flight the map pictures show, drawn
+        beforehand instead of flown.
+        """
+        path = flight_mod.make_path(SORTIE_PATH, home=SORTIE_HOME)
+        points = path.points
+        picks = [points[len(points) * k // 4] for k in (1, 2, 3)]
+        end = points[-1]
+        items: list[dict[str, Any]] = [
+            {"type": "takeoff", "lat": SORTIE_HOME[0], "lon": SORTIE_HOME[1],
+             "alt": 40.0, "pitch": 0, "name": "Climb out"},
+        ]
+        for index, point in enumerate(picks, 1):
+            items.append({"type": "waypoint", "lat": round(point.lat, 7),
+                          "lon": round(point.lon, 7), "alt": 40.0, "hold": 0,
+                          "accept_radius": 0, "name": f"Field {index}"})
+        items.append({"type": "loiter_turns", "lat": round(end.lat, 7),
+                      "lon": round(end.lon, 7), "alt": 45.0, "turns": 2,
+                      "radius": 25, "direction": 1, "name": "Survey point"})
+        items.append({"type": "rtl"})
+        return {
+            "version": 1,
+            "name": "Campus hop",
+            "home": {"lat": SORTIE_HOME[0], "lon": SORTIE_HOME[1]},
+            "speed": 6.0,
+            "items": items,
+        }
 
     def with_overrides(self, overrides: dict[str, Any]) -> "Scene":
         """A copy of this scene with *overrides* applied — the ``--set`` path."""
@@ -188,18 +256,25 @@ def _register(scene: Scene) -> Scene:
     return scene
 
 
+# The flying pictures share one flight: the sortie above, lifted off at the
+# start point, flown once and held at the end point. The aircraft takes about
+# 45 s to get there, so these settle for 50 s and are shot with the whole
+# curve drawn and the aircraft standing at its end.
+_SORTIE = dict(home=SORTIE_HOME, path=SORTIE_PATH, mode="MISSION", takeoff_time=8.0)
+_SORTIE_NOTE = ("The aircraft flies the curved hop across the field once and "
+                "holds at its end; shoot once it has arrived, with the whole "
+                "curve drawn from the start point.")
+
 _register(Scene(
     id="flight",
     asset="assets/screenshot_flight.jpg",
-    title="In flight — map, instrument panel and workspace",
+    title="In flight: map, instrument panel and workspace",
     caption="Live map, the floating instrument panel, and the engineering "
             "workspace on the right.",
     page="home", workspace="open", tab="link",
-    path="survey", path_options={"width": 320.0, "height": 210.0, "alt": 80.0},
-    mode="MISSION", takeoff_time=8.0,
-    settle=70.0,
-    notes="Shoot once the survey has laid down three or four legs of track and "
-          "the aircraft is mid-leg — a turn mid-frame hides the pattern.",
+    **_SORTIE,
+    settle=50.0,
+    notes=_SORTIE_NOTE,
 ))
 
 _register(Scene(
@@ -207,26 +282,50 @@ _register(Scene(
     asset="assets/screenshot_map.jpg",
     title="The map is the interface",
     caption="Collapse the side panel and the whole window becomes the "
-            "operational picture — vehicle, heading, home point and the flown "
+            "operational picture: vehicle, heading, home point and the flown "
             "track, with the instrument panel wherever you put it.",
     page="home", workspace="collapsed",
     hud={"pinned": False, "compact": False, "collapsed": False, "readouts": True,
          "x": 40, "y": 120},
-    path="orbit", path_options={"radius": 140.0, "alt": 65.0},
-    mode="LOITER", takeoff_time=8.0,
-    settle=80.0,
-    notes="A full orbit is about 95 s at 9 m/s; wait for the circle to close "
-          "before shooting, and move the instrument panel if it covers the track.",
+    **_SORTIE,
+    settle=50.0,
+    notes=_SORTIE_NOTE + " Move the instrument panel if it covers the track.",
+))
+
+_register(Scene(
+    id="mission",
+    asset="assets/screenshot_mission.jpg",
+    title="The mission planner",
+    caption="A flight drawn before it is flown: start point, waypoints, an "
+            "orbit and the return, with the altitude profile underneath.",
+    page="mission", workspace="collapsed",
+    home=SORTIE_HOME, armed=False, mode="POSCTL", path="parked", takeoff_time=0.0,
+    mission_plan=True,
+    settle=12.0,
+    notes="The plan is the sortie the map pictures fly, seeded into the page "
+          "and framed with its own fit button. Nothing is uploaded.",
+))
+
+_register(Scene(
+    id="setup",
+    asset="assets/screenshot_setup.png",
+    title="Setup: every configuration page, one tile each",
+    caption="Calibration, radio, tuning, motors, safety, battery, telemetry "
+            "radio, RTK, Remote ID, parameters, firmware and video.",
+    page="setup", workspace="collapsed",
+    armed=False, mode="POSCTL", path="parked", takeoff_time=0.0, settle=10.0,
+    notes="The vehicle info card at the top fills in once AUTOPILOT_VERSION "
+          "has arrived, a few seconds after the link comes up.",
 ))
 
 _register(Scene(
     id="motors",
     asset="assets/screenshot_motors.png",
-    title="Setup — the airframe drawn to scale",
+    title="Setup: the airframe drawn to scale",
     caption="Every motor at its real distance from the centre of gravity, with "
             "its number, its output pin and a spin-direction arrow.",
     page="setup", view="motors", workspace="collapsed",
-    airframe="quad_x", armed=False, mode="POSCTL", path="hover",
+    airframe="quad_x", armed=False, mode="POSCTL", path="parked",
     takeoff_time=0.0, settle=14.0,
     notes="Disarmed on purpose: the page refuses writes while armed, and the "
           "screenshot should show the editable state. Try airframe=hexa_x for "
@@ -234,15 +333,26 @@ _register(Scene(
 ))
 
 _register(Scene(
+    id="battery",
+    asset="assets/screenshot_battery.png",
+    title="Setup: battery and power",
+    caption="Cells, capacity, the power module and which charge reading the "
+            "top bar shows.",
+    page="setup", view="battery", workspace="collapsed",
+    armed=False, mode="POSCTL", path="parked", takeoff_time=0.0, settle=14.0,
+    notes="A 6S 16 Ah pack on a power module, read back from BAT1_*.",
+))
+
+_register(Scene(
     id="safety",
     asset="assets/screenshot_safety.png",
-    title="Setup — limits, failsafes and sensors",
+    title="Setup: limits, failsafes and sensors",
     caption="Maximum distance and height, the return-to-launch profile, and an "
             "action for every loss PX4 can detect. A distance sensor or "
             "optical-flow camera comes up with one switch.",
     page="setup", view="safety", workspace="collapsed",
     rangefinder=True, optical_flow=True,
-    armed=False, mode="POSCTL", path="hover", takeoff_time=0.0, settle=14.0,
+    armed=False, mode="POSCTL", path="parked", takeoff_time=0.0, settle=14.0,
     notes="Both sensors are on, so the driver-and-estimator pairing the caption "
           "describes is visible. Set rangefinder=False for the bare aircraft.",
 ))
@@ -252,9 +362,9 @@ _register(Scene(
     asset="assets/screenshot_calibration.png",
     title="Guided accelerometer calibration",
     caption="PX4 names the six accelerometer positions in its own order and in "
-            "its own vocabulary — so each one is drawn instead of named.",
+            "its own vocabulary, so each one is drawn instead of named.",
     page="setup", view="calibration", workspace="collapsed",
-    armed=False, mode="POSCTL", path="hover", takeoff_time=0.0,
+    armed=False, mode="POSCTL", path="parked", takeoff_time=0.0,
     calibration="accel", calibration_pause_after=3,
     settle=30.0,
     notes="The transcript stops with three sides ticked off and the fourth "
@@ -266,30 +376,73 @@ _register(Scene(
 _register(Scene(
     id="analysis",
     asset="assets/screenshot_analysis.png",
-    title="Analysis — vehicle logs and Flight Review",
+    title="Analysis: vehicle logs and Flight Review",
     caption="Download the vehicle's logs, record the live stream, and open "
             "either in the built-in Flight Review.",
     page="analysis", workspace="collapsed",
-    logs=9, armed=False, mode="POSCTL", path="hover", takeoff_time=0.0,
-    settle=25.0,
-    notes="The vehicle answers the log protocol with nine logs, so the card "
-          "lists them with real dates and sizes. A download runs and completes, "
-          "but the bytes are filler — open a real .ulg in Flight Review if the "
-          "picture needs a plot.",
+    logs=9, review_log=True,
+    armed=False, mode="POSCTL", path="parked", takeoff_time=0.0,
+    settle=15.0,
+    notes="The vehicle answers the log protocol with nine logs. The newest is "
+          "a real ULog of the sortie, already in the download folder, so the "
+          "Flight Review tile has a log ready to open.",
+))
+
+_register(Scene(
+    id="flight_review",
+    asset="assets/screenshot_flight_review.png",
+    title="Flight Review of the sortie",
+    caption="A downloaded ULog reduced to the plots that decide whether a "
+            "flight was healthy, with the flight modes behind every trace.",
+    page="analysis", view="review", workspace="collapsed",
+    logs=9, review_log=True,
+    armed=False, mode="POSCTL", path="parked", takeoff_time=0.0,
+    settle=12.0,
+    notes="The log is the ULog of the same hop the map pictures fly, written "
+          "by the simulation (see flight_log.py), not a flight somebody flew.",
+))
+
+_register(Scene(
+    id="flight_review_charts",
+    asset="assets/screenshot_flight_review_charts.png",
+    title="Flight Review: estimate against setpoint",
+    caption="Every plot carries the flight modes behind it. Here the pitch angle "
+            "and its rate, estimate against setpoint, from the takeoff through "
+            "the mission to the return.",
+    page="analysis", view="review", workspace="collapsed",
+    logs=9, review_log=True, review_focus="Pitch angle",
+    armed=False, mode="POSCTL", path="parked", takeoff_time=0.0,
+    settle=6.0,
+    notes="The same log as flight_review, scrolled to the control plots. Set "
+          "review_focus to another plot's title (Speed, Motor outputs, Battery) "
+          "to frame that one instead.",
 ))
 
 _register(Scene(
     id="console",
     asset="assets/screenshot_console.jpg",
-    title="The side workspace — MAVLink console",
+    title="The side workspace: MAVLink console",
     caption="A MAVLink console, an SSH terminal for the companion computer, "
-            "and a plugin slot — beside the map rather than instead of it.",
+            "and a plugin slot, beside the map rather than instead of it.",
     page="home", workspace="open", tab="console",
-    path="out_and_back", mode="MISSION", takeoff_time=8.0,
-    settle=75.0,
+    **_SORTIE,
+    settle=50.0,
     notes="The console fills from the aircraft's own status text (see CHATTER) "
           "plus every command acknowledgement. Type a command in the console "
           "input before shooting if the picture should show the prompt in use.",
+))
+
+_register(Scene(
+    id="ssh",
+    asset="assets/screenshot_ssh.jpg",
+    title="SSH terminals on the companion computers",
+    caption="A real terminal on the companion computer in the side panel, and "
+            "a second one in a window of its own over the map.",
+    page="home", workspace="open", tab="ssh", ssh=True,
+    **_SORTIE,
+    settle=50.0,
+    notes="Both computers are simulated by companion.py on 127.0.0.1; the "
+          "sessions are real SSH, and each types a few commands on login.",
 ))
 
 _register(Scene(
@@ -300,24 +453,23 @@ _register(Scene(
             "across the Neubiberg campus.",
     theme="light",
     page="home", workspace="open", tab="future", plugin="Vibration Monitor",
-    home=flight_mod.CAMPUS_HOP_START,
-    path="swoop", mode="MISSION", takeoff_time=8.0,
-    settle=45.0,
-    notes="The aircraft flies the curved hop once and holds at its end; the "
-          "vibration chart needs about twenty seconds of data to read as a trace.",
+    **_SORTIE,
+    settle=50.0,
+    notes=_SORTIE_NOTE + " The vibration chart needs about twenty seconds of "
+          "data to read as a trace.",
 ))
 
 _register(Scene(
     id="dark",
     asset="assets/screenshot_dark.jpg",
     title="A dark theme, in flight",
-    caption="Six themes, two light and four dark. Switching is instant — no "
-            "reload, no flash — and the map, the plots and the instruments all "
-            "follow.",
+    caption="Six themes, two light and four dark. Switching is instant, with "
+            "no reload and no flash, and the map, the plots and the "
+            "instruments all follow.",
     theme="green",
     page="home", workspace="open", tab="link",
-    path="figure_eight", path_options={"size": 170.0, "alt": 55.0},
-    mode="MISSION", takeoff_time=8.0, settle=70.0,
+    **_SORTIE,
+    settle=50.0,
     notes="theme=green here; blue, pink and orange are the other dark ones. "
           "Shooting the same frame in two themes is one run each with --set theme=…",
 ))
@@ -330,7 +482,7 @@ _register(Scene(
     theme="pink",
     page="setup", view="parameters", workspace="collapsed",
     full_param_table=True,
-    armed=False, mode="POSCTL", path="hover", takeoff_time=0.0,
+    armed=False, mode="POSCTL", path="parked", takeoff_time=0.0,
     settle=30.0,
     notes="The vehicle answers with a full-sized table (~1200 parameters), so "
           "the download has something to download and the list has weight. "
@@ -340,11 +492,11 @@ _register(Scene(
 _register(Scene(
     id="rc",
     asset="assets/screenshot_rc.png",
-    title="Radio Control — the transmitter, drawn",
+    title="Radio Control: the transmitter, drawn",
     caption="The handset as a drawing: sticks, six switches and two knobs, "
             "each one live against the channel bound to it.",
     page="setup", view="control", workspace="collapsed",
-    armed=False, mode="POSCTL", path="hover", takeoff_time=0.0,
+    armed=False, mode="POSCTL", path="parked", takeoff_time=0.0,
     # The arm switch (channel 7) is down, because this aircraft is disarmed:
     # a drawn transmitter showing arm-up beside a DISARMED top bar is the kind
     # of contradiction a reader who flies notices immediately.
@@ -353,7 +505,7 @@ _register(Scene(
                                9: (1, 3), 10: (1, 2)},
                      knobs={11: 0.7, 12: 0.3}, rssi=94),
     settle=18.0,
-    notes="The sticks sit off-centre on purpose — a drawn transmitter with "
+    notes="The sticks sit off-centre on purpose: a drawn transmitter with "
           "every control centred looks like a diagram, not a reading. The "
           "switch-to-control binding lives in the browser, so the recipe seeds "
           "it in localStorage before the page opens.",
@@ -369,7 +521,7 @@ _register(Scene(
     path="figure_eight", path_options={"size": 90.0, "alt": 40.0},
     mode="POSCTL", takeoff_time=6.0, settle=45.0,
     notes="Flying a tight figure of eight so the rate plots have something to "
-          "draw. The aircraft stays armed here — the plots are the picture.",
+          "draw. The aircraft stays armed here: the plots are the picture.",
 ))
 
 

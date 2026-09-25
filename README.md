@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.58-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.09.58" />
+  <img src="https://img.shields.io/badge/Version-2026.09.59-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.09.59" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -224,12 +224,27 @@ window becomes the operational picture: vehicle, heading, home point and the flo
 instrument panel wherever you put it. It stays there across restarts and page changes.</em></p>
 
 <p align="center">
+  <img src="assets/screenshot_mission.jpg" alt="The mission planner: waypoints, an orbit and the altitude profile">
+</p>
+
+<p align="center"><em><strong>Plan the flight.</strong> A take-off, named waypoints, an orbit and the return, drawn on their own map,
+with the whole flight read as an altitude profile underneath. Save it, upload it, or fly it.</em></p>
+
+<p align="center">
   <img src="assets/screenshot_motors.png" alt="Setup: the airframe drawn to scale with every motor">
 </p>
 
 <p align="center"><em><strong>Your airframe, drawn.</strong> Every motor at its real distance from the
 centre of gravity, with its number, its output pin and a spin-direction arrow, so "the front-left one"
 is something you point at instead of work out. Click a motor to wire, position or bench-test it.</em></p>
+
+<p align="center">
+  <img src="assets/screenshot_battery.png" alt="Setup: the battery pack, its cells and how Corvus reads it">
+</p>
+
+<p align="center"><em><strong>Know the pack.</strong> Cells, capacity and the power module, the warning thresholds drawn on the pack,
+and a choice of which charge reading the top bar, the map and the logs fly by: the autopilot's count or
+the cell voltage against a discharge curve.</em></p>
 
 <p align="center">
   <img src="assets/screenshot_safety.png" alt="Setup: safety limits, failsafe actions and sensors">
@@ -251,6 +266,21 @@ progress can be cancelled on the vehicle. Compass, gyro, level horizon, baromete
 same way.</em></p>
 
 <p align="center">
+  <img src="assets/screenshot_rc.png" alt="Radio Control: the transmitter drawn with every stick, switch and knob">
+</p>
+
+<p align="center"><em><strong>The transmitter, drawn.</strong> Sticks, six switches and two knobs, each one live against the
+channel bound to it. Click a control to see what it sends, or to teach it one.</em></p>
+
+<p align="center">
+  <img src="assets/screenshot_tuning.png" alt="PID tuning with live rate plots during a flight">
+</p>
+
+<p align="center"><em><strong>Tune in flight.</strong> Rate, attitude, velocity and position gains, one loop at a time, with the
+live response drawn above them. Gains are read only while armed; the autotune is the opposite and
+only runs in flight.</em></p>
+
+<p align="center">
   <img src="assets/screenshot_analysis.png" alt="Analysis: vehicle logs and Flight Review">
 </p>
 
@@ -259,11 +289,33 @@ stream, and open either in the built-in Flight Review, on your own machine, with
 anywhere.</em></p>
 
 <p align="center">
+  <img src="assets/screenshot_flight_review.png" alt="Flight Review: flight mode timeline and ground track">
+</p>
+
+<p align="center"><em><strong>Flight Review, built in.</strong> A downloaded ULog reduced to the plots that decide whether a flight
+was healthy: the flight modes as a timeline, anything worth a look flagged, and the ground track over
+the imagery.</em></p>
+
+<p align="center">
+  <img src="assets/screenshot_flight_review_charts.png" alt="Flight Review: pitch angle and rate, estimate against setpoint">
+</p>
+
+<p align="center"><em><strong>Estimate against setpoint.</strong> Every plot carries the flight modes behind it, from the takeoff
+through the mission to the return, with a line under each on what a healthy trace looks like.</em></p>
+
+<p align="center">
   <img src="assets/screenshot_console.jpg" alt="MAVLink console in the right-hand workspace">
 </p>
 
 <p align="center"><em><strong>The side workspace.</strong> A MAVLink console, an SSH terminal for the
 companion computer, and a plugin slot, right next to the map.</em></p>
+
+<p align="center">
+  <img src="assets/screenshot_ssh.jpg" alt="SSH terminals to the companion and payload computers">
+</p>
+
+<p align="center"><em><strong>On the companion computer.</strong> A real SSH terminal in the side panel, and a second one in a
+window of its own over the map, or popped out onto another screen.</em></p>
 
 <p align="center">
   <img src="assets/screenshot_dark.jpg" alt="Corvus GCS in a dark theme">

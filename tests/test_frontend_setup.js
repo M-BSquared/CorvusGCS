@@ -1775,6 +1775,41 @@ async function testChartsPlotTheSetpointBesideTheResponse() {
   delete window.Plotly;
 }
 
+async function testEveryRedrawHandsPlotlyFreshArrays() {
+  /* Regression. Plotly.react diffs data arrays by reference, and the sample
+     buffer is appended to in place. Handing it the buffer itself meant every
+     redraw after the first looked unchanged, and the chart froze on its
+     first 20 ms while the buffer kept growing underneath it. */
+  const plot = fakePlotly();
+  window.Plotly = plot;
+  const fake = makeFakeTelemetry({ state: DISARMED });
+  clock = 1000;
+  await openTuning(fake);
+  const cb = fake.getSubCb();
+  const sample = (rate) => Object.assign({}, DISARMED,
+    { setpoints_live: true, rollspeed: rate, rollspeed_sp: rate + 1 });
+
+  clock = 1000 + 150;
+  cb(sample(10));
+  const first = plot.reactCalls[plot.reactCalls.length - 1].data;
+  clock = 1000 + 300;
+  cb(sample(20));
+  const second = plot.reactCalls[plot.reactCalls.length - 1].data;
+
+  assert.notEqual(first, second, "the second sample redrew");
+  first.forEach((trace, i) => {
+    assert.notEqual(trace.x, second[i].x, `trace ${i}: x is a new array on each redraw`);
+    assert.notEqual(trace.y, second[i].y, `trace ${i}: y is a new array on each redraw`);
+  });
+  // What Plotly was handed last time is its record of the old state, so a
+  // later sample must not reach into it.
+  assert.deepEqual(first[0].y, [10], "an earlier draw's data is not mutated afterwards");
+  assert.deepEqual(first[1].y, [11]);
+  assert.deepEqual(second[0].y, [10, 20], "the new draw carries both samples");
+  assert.deepEqual(second[1].y, [11, 21]);
+  delete window.Plotly;
+}
+
 async function testAFirmwareThatSendsNoSetpointDrawsNoSetpointTrace() {
   // A dashed line pinned at zero would read as "the controller is commanding
   // nothing", which is a different and far more alarming claim than "this
@@ -2800,6 +2835,7 @@ async function run() {
   await withReset(testTuningDisconnectedRendersAnExplanationNotAnError);
 
   await withReset(testChartsPlotTheSetpointBesideTheResponse);
+  await withReset(testEveryRedrawHandsPlotlyFreshArrays);
   await withReset(testAFirmwareThatSendsNoSetpointDrawsNoSetpointTrace);
   await withReset(testTheSetpointStreamIsRaisedWhileOpenAndHandedBackOnLeaving);
   await withReset(testAChartTornDownMidRedrawDoesNotThrow);

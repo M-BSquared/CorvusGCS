@@ -50,6 +50,10 @@ def _logged(level: int, timestamp: int, text: str) -> bytes:
     return _msg("L", bytes([level]) + struct.pack("<Q", timestamp) + text.encode())
 
 
+def _tagged(level: int, tag: int, timestamp: int, text: str) -> bytes:
+    return _msg("C", bytes([level]) + struct.pack("<HQ", tag, timestamp) + text.encode())
+
+
 # ---------------------------------------------------------------------------
 # Header
 # ---------------------------------------------------------------------------
@@ -175,6 +179,26 @@ def test_logged_messages_keep_their_level_and_timestamp() -> None:
     assert [m["level"] for m in log.messages] == ["error", "info"]
     assert log.messages[0]["t"] == 5000
     assert log.messages[0]["text"] == "Critical: EKF reset"
+
+
+def test_a_px4_level_is_read_as_the_ascii_digit_it_is_written_as() -> None:
+    """PX4's logger writes the level as '4', not 4. Read as a number, byte 52
+    was unknown and every warning and error in a real log came back as info."""
+    log = read(_header() + _logged(ord("4"), 5000, "Low battery")
+               + _logged(ord("0"), 5100, "Motor failure")
+               + _logged(ord("7"), 5200, "Debug line")
+               + _logged(ord("8"), 5300, "Unknown level"))
+    assert [m["level"] for m in log.messages] == ["warning", "emergency", "debug", "info"]
+
+
+def test_a_tagged_message_takes_its_level_from_the_first_byte() -> None:
+    """A 'C' record puts a uint16 tag between the level and the timestamp.
+    The tag's high byte is not the level, whatever its value."""
+    log = read(_header() + _tagged(ord("3"), 0x0102, 7000, "Compass error")
+               + _tagged(4, 0, 8000, "Raw level"))
+    assert [m["level"] for m in log.messages] == ["error", "warning"]
+    assert [m["t"] for m in log.messages] == [7000, 8000]
+    assert log.messages[0]["text"] == "Compass error"
 
 
 def test_dropouts_are_recorded_because_a_gap_is_a_finding() -> None:

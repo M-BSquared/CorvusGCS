@@ -854,6 +854,12 @@ svg { display: block; }
    the rail. What is left here is a width the layer names can live in, and the
    per-service group headings that are interleaved between the rows. */
 .layers-popover { min-width: 168px; }
+/* A stream address can be a hundred characters of path and query; left to
+   size the list, it stretches the popover across the map. Cap it and let the
+   address trail off (the row's tooltip carries the whole thing). */
+.camera-popover { max-width: 260px; }
+.camera-popover .option-item-label,
+.camera-popover .option-item-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ===== 3D PANEL (hover the map rail's cube button) =====
    The one map popover that is a SETTING rather than a list: the button itself
@@ -3590,10 +3596,10 @@ button.link-card-title:focus-visible {
 }
 
 /* --- switches ---
-   A mounting nut and a bat handle that leans to the position the channel says
-   it is in. Position is carried by the ANGLE, which is what the operator's own
-   switch is doing; colour carries only whether it is at rest or not, so the
-   two facts never have to share one signal. */
+   A mounting nut and a bat handle that points to the position the channel says
+   it is in. Position is carried by WHERE THE HANDLE POINTS (up, out, down),
+   which is what the operator's own switch is doing; colour carries only whether
+   it is at rest or not, so the two facts never have to share one signal. */
 .rc-tx-nut { fill: var(--surface-2); stroke: var(--border-strong); stroke-width: 2; }
 .rc-tx-nut-hub { fill: var(--surface-3); stroke: var(--border); stroke-width: 1; }
 .rc-tx-lever-stem {
@@ -4306,9 +4312,8 @@ button.link-card-title:focus-visible {
   width: 100%; max-width: 360px; height: auto;
   display: block; margin: 0 auto; overflow: visible;
 }
-.battery-body {
-  fill: var(--surface-2); stroke: var(--text-3); stroke-width: 2;
-}
+.battery-body { fill: var(--surface-2); }
+.battery-outline { fill: none; stroke: var(--text-3); stroke-width: 5.5; }
 .battery-terminal { fill: var(--text-3); }
 /* The cell seams are drawn in the card's own background rather than in a grey,
    because they cross both halves of the gauge: a grey line reads on the empty
@@ -4326,11 +4331,16 @@ button.link-card-title:focus-visible {
 .battery-fill.critical { fill: var(--critical); opacity: 0.6; }
 .battery-fill.off { fill: var(--text-3); opacity: 0.25; }
 
+/* Sans with tabular figures rather than mono: six "4.15 V" in a monospace
+   face ran into one line across the pack. */
 .battery-cell-label {
-  fill: var(--text-2); font-family: var(--mono); font-size: 9px;
+  fill: var(--text-2); font-family: var(--sans); font-size: 8.5px;
+  font-variant-numeric: tabular-nums;
 }
+.battery-percent-window { fill: var(--surface-1); stroke: var(--text-3); stroke-width: 1.5; }
 .battery-percent-label {
-  fill: var(--text-1); font-family: var(--sans); font-size: 22px; font-weight: 700;
+  fill: var(--text-1); font-family: var(--sans); font-size: 18px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 .battery-source-label {
   fill: var(--text-3); font-family: var(--sans); font-size: 9.5px;

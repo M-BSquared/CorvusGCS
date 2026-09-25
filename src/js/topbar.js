@@ -384,7 +384,8 @@ Corvus.topbar = (function () {
   function metres(value) {
     const v = Number(value);
     if (!(v >= 0)) return "";
-    return v < 10 ? `${v.toFixed(2)} m` : `${Math.round(v)} m`;
+    const shown = Corvus.units.length(v);
+    return Corvus.units.formatLength(v, { digits: shown < 10 ? 2 : 0 });
   }
 
   function gpsDetail(state) {
@@ -473,7 +474,7 @@ Corvus.topbar = (function () {
     const consumed = Number(state.battery_consumed_mah) || 0;
     if (consumed > 0) rows.push(["Consumed", `${Math.round(consumed)} mAh`, ""]);
     if (typeof state.battery_temperature === "number") {
-      rows.push(["Temperature", `${state.battery_temperature.toFixed(1)} °C`, ""]);
+      rows.push(["Temperature", Corvus.units.formatTemperature(state.battery_temperature), ""]);
     }
     // Where the percentage came from, and what the other reading says. Two
     // readings of one pack disagree for good reasons (a capacity count seeded
@@ -561,6 +562,7 @@ Corvus.topbar = (function () {
     const notifications = notificationSummary(state);
     const gpsSub = state.connected ? `(${state.gps_hdop > 0 && state.gps_hdop < 99 ? state.gps_hdop.toFixed(1) : "—"})` : "";
     const fw = vehicleFirmware(state);
+    const units = Corvus.units;
 
     return [
       { type: "logo" },
@@ -569,9 +571,9 @@ Corvus.topbar = (function () {
       { key: "armed", label: "Status", value: ready.value, sub: ready.sub || "", cls: ready.cls, dot: ready.cls, tone: ready.tone, title: ready.title, priority: "high" },
       { key: "gps", label: "GPS", value: state.connected ? (state.gps_fix || "NO GPS") : "—", sub: gpsSub, cls: gpsCls, dot: gpsCls, detail: true, priority: "high" },
       { key: "battery", label: "Battery", value: state.connected ? `${state.battery_voltage.toFixed(1)} V` : "—", sub: state.connected ? `${battPct}%` : "", cls: battCls, dot: battCls, detail: true, priority: "high" },
-      { key: "altitude", label: "Altitude", value: state.connected ? `${Math.round(state.altitude_amsl)}` : "—", sub: "m AMSL", priority: "mid" },
-      { key: "groundspeed", label: "Groundspeed", value: state.connected ? `${state.groundspeed.toFixed(1)}` : "—", sub: "m/s", priority: "mid" },
-      { key: "vspeed", label: "Vertical speed", value: state.connected ? `${state.vspeed >= 0 ? "+" : ""}${state.vspeed.toFixed(1)}` : "—", sub: "m/s", priority: "mid" },
+      { key: "altitude", label: "Altitude", value: state.connected ? units.formatLength(state.altitude_amsl, { bare: true }) : "—", sub: `${units.lengthSymbol()} AMSL`, priority: "mid" },
+      { key: "groundspeed", label: "Groundspeed", value: state.connected ? units.formatSpeed(state.groundspeed, { bare: true }) : "—", sub: units.speedSymbol(), priority: "mid" },
+      { key: "vspeed", label: "Vertical speed", value: state.connected ? units.formatSpeed(state.vspeed, { bare: true, signed: true }) : "—", sub: units.speedSymbol(), priority: "mid" },
       { key: "warnings", type: "warnings", label: "Notifications", value: notifications.count, level: notifications.level, priority: "high" },
     ];
   }
@@ -1154,6 +1156,11 @@ Corvus.topbar = (function () {
     applySavedNotificationMarks();
 
     Corvus.telemetry.subscribe(handleTelemetryState);
+    // The captions under ALTITUDE and the speeds are static between frames, so
+    // a unit change must not wait for the next one to reach them.
+    window.addEventListener("corvus:unitschange", () => {
+      if (topBarBuilt && lastState) updateTopBarValues(lastState);
+    });
     warningsList.setAttribute("role", "list");
     document.getElementById("wpClose").addEventListener("click", () => closeWarnings(true));
     const wpClearAll = document.getElementById("wpClearAll");

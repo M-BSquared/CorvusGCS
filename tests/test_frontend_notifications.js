@@ -179,6 +179,7 @@ global.Corvus.telemetry = {
 };
 
 require("./../src/js/ui.js");
+require("./../src/js/units.js");
 require("./../src/js/notification_dedupe.js");
 require("./../src/js/topbar.js");
 

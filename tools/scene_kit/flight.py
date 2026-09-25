@@ -27,9 +27,14 @@ from typing import Callable, Iterable
 # default map centre (src/js/map.js). [lat, lon] here — the human order; the
 # map's [lng, lat] conversion happens where it talks to MapLibre.
 NEUBIBERG = (48.080217, 11.640969)
-# The short hop across the Neubiberg campus used for the plugin picture.
-CAMPUS_HOP_START = (48.075484, 11.641796)
-CAMPUS_HOP_END = (48.076423, 11.644330)
+# The short hop across the field on the Neubiberg campus that every flying
+# picture shows: from the start point to the end point, along a gentle curve.
+CAMPUS_HOP_START = (48.075718, 11.642051)
+CAMPUS_HOP_END = (48.076507, 11.644507)
+# How far the hop's curve sags right of the straight line at its middle, as a
+# fraction of the line's length. A fraction rather than metres, so the curve
+# keeps its shape whichever two points it joins.
+HOP_SAG = 0.084
 
 EARTH_R = 6378137.0
 G = 9.80665
@@ -89,6 +94,20 @@ def hover(home: tuple[float, float] = NEUBIBERG, alt: float = 30.0,
     return Path("hover", pts, speed=1.2, loop=True)
 
 
+def parked(home: tuple[float, float] = NEUBIBERG, alt: float = 0.0) -> Path:
+    """On the ground at the start point, disarmed: the configuration pages.
+
+    A path needs a length, so this one has a few centimetres, crept round
+    very slowly; the model reports it as standing still and landed.
+    """
+    pts = []
+    for i in range(6):
+        angle = 2 * math.pi * i / 6
+        lat, lon = _offset(home, 0.02 * math.sin(angle), 0.02 * math.cos(angle))
+        pts.append(Point(lat, lon, alt))
+    return Path("parked", pts, speed=0.002, loop=True)
+
+
 def orbit(home: tuple[float, float] = NEUBIBERG, radius: float = 120.0,
           alt: float = 60.0, points: int = 48, clockwise: bool = True) -> Path:
     """A circle around home — the inspection orbit, and the cleanest track."""
@@ -125,8 +144,13 @@ def survey(home: tuple[float, float] = NEUBIBERG, width: float = 300.0,
 
 
 def figure_eight(home: tuple[float, float] = NEUBIBERG, size: float = 150.0,
-                 alt: float = 50.0, points: int = 64) -> Path:
-    """A lemniscate — the shape a compass calibration flight or a demo makes."""
+                 alt: float = 50.0, points: int = 720) -> Path:
+    """A lemniscate — the shape a compass calibration flight or a demo makes.
+
+    Finely divided because the heading turns at every vertex: at 64 points the
+    angular rates the tuning charts draw were flat lines with a 150 deg/s
+    spike at each corner, where a real figure of eight turns smoothly.
+    """
     pts = []
     for i in range(points):
         t = 2 * math.pi * i / points
@@ -155,18 +179,26 @@ def out_and_back(home: tuple[float, float] = NEUBIBERG, distance: float = 400.0,
 
 
 def swoop(home: tuple[float, float] = CAMPUS_HOP_START,
-          end: Iterable[float] = CAMPUS_HOP_END, bulge: float = 35.0,
+          end: Iterable[float] = CAMPUS_HOP_END, bulge: float | None = None,
           alt: float = 40.0, speed: float = 6.0, points: int = 24) -> Path:
     """From *home* to *end* along a gentle curve, flown once and held there.
 
-    The curve is a quadratic Bezier whose control point sits *bulge* metres
-    to the left of the straight line; a negative *bulge* swings it right.
+    The curve is a quadratic Bezier that passes *bulge* metres to the left of
+    the straight line at its midpoint; a negative *bulge* swings it right.
+
+    The default is the track the README's pictures show: leaving the start
+    point nearly due east, sagging south of the straight line by
+    :data:`HOP_SAG` of its length, and turning north-east into the end point,
+    so the aircraft arrives pointing further north than the line it flew
+    along.
     """
     end = tuple(end)
     mn, me = _metres_per_degree(home[0])
     dn = (end[0] - home[0]) * mn
     de = (end[1] - home[1]) * me
     length = math.hypot(dn, de) or 1.0
+    if bulge is None:
+        bulge = -HOP_SAG * length
     cn = dn / 2 + 2 * bulge * de / length
     ce = de / 2 - 2 * bulge * dn / length
     pts = []
@@ -188,6 +220,7 @@ def waypoints(coords: Iterable[Iterable[float]], speed: float = 10.0,
 
 
 PATHS: dict[str, Callable[..., Path]] = {
+    "parked": parked,
     "hover": hover,
     "orbit": orbit,
     "survey": survey,
@@ -283,6 +316,31 @@ class FlightModel:
         a, b, length = self._legs[-1]
         return a, b, 1.0
 
+    def _position(self, dist: float) -> tuple[float, float, float]:
+        """(lat, lon, alt) *dist* metres along the path, clamped to a path that ends."""
+        if not self.path.loop:
+            dist = min(max(dist, 0.0), self._length * (1 - 1e-9))
+        a, b, frac = self._at_distance(dist)
+        return (a.lat + (b.lat - a.lat) * frac, a.lon + (b.lon - a.lon) * frac,
+                a.alt + (b.alt - a.alt) * frac)
+
+    def _tangent(self, dist: float, span: float = 1.5) -> float:
+        """The path's heading at *dist*, from a chord a few metres across it.
+
+        A leg's own bearing steps at every vertex, and a heading that steps is
+        a yaw rate and a bank angle that jitter from one leg to the next: the
+        tuning charts drew that as noise no airframe makes. The chord turns
+        smoothly through a vertex instead.
+        """
+        la, loa, _ = self._position(dist - span)
+        lb, lob, _ = self._position(dist + span)
+        mn, me = _metres_per_degree(self.home[0])
+        dn, de = (lb - la) * mn, (lob - loa) * me
+        if abs(dn) + abs(de) < 1e-9:
+            a, b, _ = self._at_distance(dist)
+            return self._bearing(a, b)
+        return math.degrees(math.atan2(de, dn)) % 360.0
+
     def leg_at(self, t: float) -> int:
         """Which leg of the path is being flown *t* seconds in: 0 is the first.
 
@@ -319,6 +377,13 @@ class FlightModel:
                 phase="takeoff" if t > 0.5 else "landed",
             )
 
+        if self.path.name == "parked":
+            return Fix(
+                lat=first.lat, lon=first.lon, alt_agl=0.0,
+                heading=62.0, ground_speed=0.0, climb=0.0,
+                roll=0.004, pitch=-0.006, yaw=math.radians(62.0),
+                vx=0.0, vy=0.0, vz=0.0, phase="landed",
+            )
         flown = (t - self.takeoff_time) * self.path.speed
         # A path that does not loop is flown once, then held at its end.
         arrived = not self.path.loop and flown >= self._length
@@ -329,14 +394,14 @@ class FlightModel:
         lat = a.lat + (b.lat - a.lat) * frac
         lon = a.lon + (b.lon - a.lon) * frac
         alt = a.alt + (b.alt - a.alt) * frac
-        heading = self._bearing(a, b)
+        heading = self._tangent(flown)
 
-        # Bank angle from the turn the aircraft is in: the heading a second
-        # from now against the heading now. A multirotor banks into its turn
-        # like anything else, and a track drawn with the HUD level through a
-        # 90-degree corner is the detail that gives a staged screenshot away.
-        ahead_a, ahead_b, _ = self._at_distance(flown + speed)
-        turn = _angle_diff(self._bearing(ahead_a, ahead_b), heading)
+        # Bank angle from the turn the aircraft is in: the heading half a
+        # second ahead against half a second back. A multirotor banks into its
+        # turn like anything else, and a track drawn with the HUD level through
+        # a 90-degree corner is the detail that gives a staged screenshot away.
+        turn = _angle_diff(self._tangent(flown + speed * 0.5),
+                           self._tangent(flown - speed * 0.5))
         roll = math.atan((math.radians(turn) * speed) / G)
         climb = (b.alt - a.alt) / max(1.0, self.path.speed)
 
@@ -362,10 +427,16 @@ class FlightModel:
         line from full to empty, because the top-bar voltage reading is the
         number an operator checks first.
         """
-        drawn_ah = self.cruise_current * max(0.0, t) / 3600.0
+        if self.path.name == "parked":
+            # Disarmed on the ground: the flight controller, the receiver and
+            # the companion computer, and no motors.
+            current = 0.9
+            drawn_ah = current * max(0.0, t) / 3600.0
+        else:
+            drawn_ah = self.cruise_current * max(0.0, t) / 3600.0
+            current = self.cruise_current * (0.35 if t < self.takeoff_time else 1.0)
         used = min(1.0, drawn_ah / self.battery_capacity_ah)
         per_cell = 4.15 - 0.55 * used - 0.25 * (used ** 6)
-        current = self.cruise_current * (0.35 if t < self.takeoff_time else 1.0)
         return (round(per_cell * self.cells, 2), round(current, 1),
                 int(round((1.0 - used) * 100)))
 

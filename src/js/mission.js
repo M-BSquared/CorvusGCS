@@ -1413,16 +1413,18 @@ Corvus.mission = (function () {
     const speedInput = Corvus.ui.input({
       id: "missionSpeed",
       type: "number",
-      value: planSpeed == null ? "" : planSpeed,
+      value: shown("speed", planSpeed),
       placeholder: "default",
-      min: SPEED_MIN_MS, max: SPEED_MAX_MS, step: 0.5,
+      min: shown("speed", SPEED_MIN_MS), max: shown("speed", SPEED_MAX_MS),
+      step: isSi("speed") ? 0.5 : 1,
       mono: true,
-      ariaLabel: "Cruise speed in metres per second",
+      ariaLabel: `Cruise speed in ${symbolOf("speed")}`,
       autocomplete: false,
       onChange: (value) => {
         const text = String(value).trim();
-        planSpeed = text ? clampNumber(text, SPEED_MIN_MS, SPEED_MAX_MS, SPEED_MIN_MS) : null;
-        speedInput.value = planSpeed == null ? "" : planSpeed;
+        planSpeed = text
+          ? clampNumber(fromShown("speed", text), SPEED_MIN_MS, SPEED_MAX_MS, SPEED_MIN_MS) : null;
+        speedInput.value = shown("speed", planSpeed);
         renderSummary();
         // The selected point's own speed box shows what it INHERITS as its
         // placeholder, and this is what it inherits.
@@ -1442,7 +1444,9 @@ Corvus.mission = (function () {
     planRow.appendChild(Corvus.ui.field({ label: "Name", control: nameInput }));
     // "Start" because a point further down the plan may raise or lower it;
     // this is the speed the mission begins at.
-    planRow.appendChild(Corvus.ui.field({ label: "Start speed (m/s)", control: speedInput }));
+    const speedFieldEl = Corvus.ui.field({ label: `Start speed (${symbolOf("speed")})`, control: speedInput });
+    speedFieldEl.firstChild.id = "missionSpeedCaption";
+    planRow.appendChild(speedFieldEl);
     sideScrollEl.appendChild(planRow);
 
     summaryEl = document.createElement("div");
@@ -2144,7 +2148,7 @@ Corvus.mission = (function () {
    *  the same place a dragged altitude reports itself. */
   function showRadiusValue(item) {
     const note = document.getElementById("missionProfileNote");
-    if (note) note.textContent = `${pointName(item)}: ${Math.round(item.radius)} m radius`;
+    if (note) note.textContent = `${pointName(item)}: ${Corvus.units.formatLength(item.radius)} radius`;
   }
 
   /* The start point, drawn as the SAME landing-pad mark the Home tab puts on
@@ -2442,10 +2446,19 @@ Corvus.mission = (function () {
       nameInput.value = planName;
     }
     const speedInput = document.getElementById("missionSpeed");
-    const speedText = planSpeed == null ? "" : String(planSpeed);
-    if (speedInput && speedInput.value !== speedText && document.activeElement !== speedInput) {
-      speedInput.value = speedText;
+    const speedShown = String(shown("speed", planSpeed));
+    if (speedInput && speedInput.value !== speedShown && document.activeElement !== speedInput) {
+      speedInput.value = speedShown;
     }
+    // The unit may have changed while the page was put down.
+    if (speedInput) {
+      speedInput.min = String(shown("speed", SPEED_MIN_MS));
+      speedInput.max = String(shown("speed", SPEED_MAX_MS));
+      speedInput.step = isSi("speed") ? "0.5" : "1";
+      speedInput.setAttribute("aria-label", `Cruise speed in ${symbolOf("speed")}`);
+    }
+    const speedCaption = document.getElementById("missionSpeedCaption");
+    if (speedCaption) speedCaption.textContent = `Start speed (${symbolOf("speed")})`;
     renderDetail();
     refreshPlan();
   }
@@ -2574,8 +2587,8 @@ Corvus.mission = (function () {
     const spec = TYPES[item.type];
     if (!spec.position) return "to start";
     if (item.type === "land") return "ground";
-    if (item.type === "takeoff") return `climb to ${formatAlt(item.alt)} m`;
-    const parts = [`${formatAlt(item.alt)} m`];
+    if (item.type === "takeoff") return `climb to ${lengthText(item.alt)}`;
+    const parts = [lengthText(item.alt)];
     if (isOrbit(item)) {
       const count = item.type === "loiter_turns"
         ? `${item.turns}×` : `${Math.round(item.seconds)} s`;
@@ -2583,7 +2596,7 @@ Corvus.mission = (function () {
       // multirotor the row would otherwise quote a circle it does not fly.
       if (!hovers) {
         const turn = item.direction < 0 ? "↺" : "↻";
-        parts.push(`${turn}${Math.round(item.radius)} m`);
+        parts.push(`${turn}${Corvus.units.formatLength(item.radius)}`);
       }
       parts.push(count);
     }
@@ -2591,13 +2604,71 @@ Corvus.mission = (function () {
     // Only where the speed CHANGES. Printing the inherited one on every row
     // would put the same number down the whole list and hide the one row that
     // is actually different.
-    if (item.speed != null) parts.push(`${formatAlt(item.speed)} m/s`);
+    if (item.speed != null) parts.push(speedText(item.speed));
     return parts.join(" · ");
   }
 
   function formatAlt(value) {
     const n = Number(value) || 0;
     return Number.isInteger(n) ? String(n) : n.toFixed(1);
+  }
+
+  // ---- display units ---------------------------------------------------
+  // The plan is metres and m/s throughout, on screen as on the wire. These
+  // are the only places a number crosses into or out of the unit the
+  // operator reads (Settings > Appearance > Units).
+
+  function isSi(quantity) {
+    const u = Corvus.units.get();
+    return quantity === "speed" ? u.speed === "ms" : u.length === "m";
+  }
+
+  /** *si* as an editor box shows it: untouched in SI, rounded to what the
+   *  display unit can meaningfully carry otherwise. */
+  function shown(quantity, si) {
+    if (si == null || si === "") return "";
+    const n = Number(si);
+    if (isSi(quantity)) return n;
+    const v = quantity === "speed" ? Corvus.units.speed(n) : Corvus.units.length(n);
+    return Number(v.toFixed(quantity === "speed" ? 1 : 0));
+  }
+
+  function fromShown(quantity, value) {
+    const n = Number(value);
+    if (isSi(quantity)) return n;
+    return quantity === "speed" ? Corvus.units.speedToSi(n) : Corvus.units.lengthToSi(n);
+  }
+
+  function symbolOf(quantity) {
+    return quantity === "speed" ? Corvus.units.speedSymbol() : Corvus.units.lengthSymbol();
+  }
+
+  function lengthText(metres) {
+    return `${formatAlt(shown("length", metres))} ${symbolOf("length")}`;
+  }
+
+  function speedText(ms) {
+    return `${formatAlt(shown("speed", ms))} ${symbolOf("speed")}`;
+  }
+
+  /* Axis ticks for a chart whose data stays in SI: round numbers in the
+     display unit, placed at the SI values they stand for. The altitude drag
+     works in data units, so it never has to know which unit is shown. */
+  function unitTicks(lo, hi, toShown, toSi) {
+    const a = toShown(lo);
+    const b = toShown(hi);
+    if (!(b > a)) return {};
+    const raw = (b - a) / 5;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 5, 10].map((k) => k * mag).find((k) => k >= raw);
+    const tickvals = [];
+    const ticktext = [];
+    for (let v = Math.ceil(a / step) * step; v <= b + step * 1e-9; v += step) {
+      const r = Number(v.toFixed(9));
+      tickvals.push(toSi(r));
+      ticktext.push(String(Number(r.toFixed(6))));
+    }
+    return { tickmode: "array", tickvals, ticktext };
   }
 
   // ---- dragging a row to a new place in the plan -----------------------
@@ -2965,7 +3036,7 @@ Corvus.mission = (function () {
         const flight = document.createElement("div");
         flight.className = "mission-detail-grid";
         flight.appendChild(numberField({
-          label: item.type === "takeoff" ? "Climb to (above start)" : "Altitude above home", unit: "m",
+          label: item.type === "takeoff" ? "Climb to (above start)" : "Altitude above home", quantity: "length",
           value: item.alt, step: 1, min: ALT_MIN_M, max: ALT_MAX_M,
           onCommit: (value) => {
             const stored = setAltitude(item.id, value);
@@ -3003,6 +3074,7 @@ Corvus.mission = (function () {
       }
       detailEl.appendChild(numberField({
         label: rule.label, unit: rule.unit,
+        quantity: rule.unit === "m" ? "length" : undefined,
         value: item[key], step: rule.step, min: rule.min, max: rule.max,
         onCommit: (value) => {
           item[key] = clampNumber(value, rule.min, rule.max, rule.def);
@@ -3057,27 +3129,28 @@ Corvus.mission = (function () {
     const inherited = speedInto(item);
     const input = Corvus.ui.input({
       type: "number",
-      value: item.speed == null ? "" : item.speed,
-      placeholder: inherited == null ? "airframe" : String(inherited),
-      min: SPEED_MIN_MS, max: SPEED_MAX_MS, step: 0.5,
+      value: shown("speed", item.speed),
+      placeholder: inherited == null ? "airframe" : String(shown("speed", inherited)),
+      min: shown("speed", SPEED_MIN_MS), max: shown("speed", SPEED_MAX_MS),
+      step: isSi("speed") ? 0.5 : 1,
       mono: true,
-      ariaLabel: "Speed to this point in metres per second",
+      ariaLabel: `Speed to this point in ${symbolOf("speed")}`,
       autocomplete: false,
       onChange: (value) => {
         const text = String(value).trim();
         item.speed = text
-          ? clampNumber(text, SPEED_MIN_MS, SPEED_MAX_MS, SPEED_MIN_MS) : null;
-        input.value = item.speed == null ? "" : item.speed;
+          ? clampNumber(fromShown("speed", text), SPEED_MIN_MS, SPEED_MAX_MS, SPEED_MIN_MS) : null;
+        input.value = shown("speed", item.speed);
         // The points after this one inherit the change, so their rows and the
         // duration are both stale until this runs.
         refreshPlan();
         if (item.speed == null) {
           const back = speedInto(item);
-          input.placeholder = back == null ? "airframe" : String(back);
+          input.placeholder = back == null ? "airframe" : String(shown("speed", back));
         }
       },
     });
-    return Corvus.ui.field({ label: "Speed (m/s)", control: input });
+    return Corvus.ui.field({ label: `Speed (${symbolOf("speed")})`, control: input });
   }
 
   /** A field whose value is one of a short list rather than a number on a
@@ -3102,11 +3175,16 @@ Corvus.mission = (function () {
     // The last value that was actually STORED, which is what an emptied field
     // goes back to. opts.value is only the value the field opened with, and
     // the panel is deliberately not rebuilt on a commit.
-    let last = opts.value;
+    // A length is stored in metres and shown in the display unit; `last` is
+    // kept in what the box shows.
+    const q = opts.quantity;
+    const view = (v) => (q ? shown(q, v) : v);
+    let last = view(opts.value);
     const input = Corvus.ui.input({
       type: "number",
-      value: opts.value,
-      min: opts.min, max: opts.max, step: opts.step,
+      value: view(opts.value),
+      min: view(opts.min), max: view(opts.max),
+      step: q && !isSi(q) ? 1 : opts.step,
       mono: true,
       ariaLabel: opts.label,
       autocomplete: false,
@@ -3122,12 +3200,13 @@ Corvus.mission = (function () {
         // the one that was typed.
         const n = text === "" ? NaN : Number(text);
         if (!isFinite(n)) { input.value = last; return; }
-        const stored = opts.onCommit(n);
-        if (stored != null) { last = stored; input.value = stored; }
+        const stored = opts.onCommit(q ? fromShown(q, n) : n);
+        if (stored != null) { last = view(stored); input.value = last; }
       },
     });
+    const unit = q ? symbolOf(q) : opts.unit;
     return Corvus.ui.field({
-      label: opts.unit ? `${opts.label} (${opts.unit})` : opts.label,
+      label: unit ? `${opts.label} (${unit})` : opts.label,
       control: input,
     });
   }
@@ -3145,11 +3224,11 @@ Corvus.mission = (function () {
     summaryEl.appendChild(summaryCell("Items", String(items.length)));
     summaryEl.appendChild(summaryCell("Distance", formatDistance(length)));
     summaryEl.appendChild(summaryCell("Duration", formatDuration(seconds)));
-    summaryEl.appendChild(summaryCell("Top", `${formatAlt(highest)} m`,
+    summaryEl.appendChild(summaryCell("Top", lengthText(highest),
       highest > CEILING_HINT_M ? "warn" : ""));
     if (gaps.length) {
       const lowest = Math.min.apply(null, gaps);
-      summaryEl.appendChild(summaryCell("Clearance", `${formatAlt(lowest)} m`,
+      summaryEl.appendChild(summaryCell("Clearance", lengthText(lowest),
         lowest < CLEARANCE_WARN_M ? "warn" : ""));
     }
     renderIssues();
@@ -3193,7 +3272,7 @@ Corvus.mission = (function () {
 
   function formatDistance(metres) {
     if (!(metres > 0)) return "—";
-    return metres >= 1000 ? `${(metres / 1000).toFixed(2)} km` : `${Math.round(metres)} m`;
+    return Corvus.units.formatDistance(metres);
   }
 
   function formatDuration(seconds) {
@@ -3428,16 +3507,31 @@ Corvus.mission = (function () {
       hovermode: "closest",
       dragmode: false,
       xaxis: Object.assign({}, theme.xaxis, {
-        title: "Distance (km)",
+        title: `Distance (${Corvus.units.distanceSymbol()})`,
         fixedrange: true,
         rangemode: "tozero",
       }),
       yaxis: Object.assign({}, theme.yaxis, {
-        title: "m above home",
+        title: `${symbolOf("length")} above home`,
         fixedrange: true,
         range: range,
       }),
     });
+    // The chart's x data is kilometres and its y data metres whatever is
+    // shown; another unit only moves where the tick labels sit.
+    if (Corvus.units.get().distance !== "km") {
+      // What Plotly's autorange will span: a little past the last point, or
+      // its own 0 to 6 for a plan with no length yet.
+      const lastKm = Math.max(0, ...planX);
+      const farKm = lastKm > 0 ? lastKm * 1.1 : 6;
+      Object.assign(layout.xaxis, unitTicks(0, farKm,
+        (km) => Corvus.units.distance(km * 1000),
+        (v) => Corvus.units.distanceToSi(v) / 1000));
+    }
+    if (!isSi("length")) {
+      Object.assign(layout.yaxis, unitTicks(range[0], range[1],
+        Corvus.units.length, Corvus.units.lengthToSi));
+    }
 
     window.Plotly.react(profileEl, traces, layout, {
       displayModeBar: false, responsive: true, showTips: false,
@@ -3527,10 +3621,10 @@ Corvus.mission = (function () {
     // whatever the operator typed.
     const label = station.type === "home" ? "Start"
       : escapeMarkup(item ? pointName(item) : TYPES[station.type].label);
-    const parts = [`${index === 0 ? "" : index + ". "}${label}`, `${formatAlt(station.alt)} m above home`];
+    const parts = [`${index === 0 ? "" : index + ". "}${label}`, `${lengthText(station.alt)} above home`];
     if (ground) {
       const under = interpolateAt(ground, station.distance);
-      if (under != null) parts.push(`${formatAlt(station.alt - under)} m over ground`);
+      if (under != null) parts.push(`${lengthText(station.alt - under)} over ground`);
     }
     parts.push(formatDistance(station.distance) + " along");
     return parts.join("<br>");
@@ -3695,11 +3789,11 @@ Corvus.mission = (function () {
     const note = document.getElementById("missionProfileNote");
     const item = items.find((entry) => entry.id === id);
     if (!note || !item) return;
-    const parts = [`${pointName(item)}: ${formatAlt(item.alt)} m above home`];
+    const parts = [`${pointName(item)}: ${lengthText(item.alt)} above home`];
     if (ground) {
       const station = stations(items, home).find((entry) => entry.id === id);
       const under = station ? interpolateAt(ground, station.distance) : null;
-      if (under != null) parts.push(`${formatAlt(item.alt - under)} m over ground`);
+      if (under != null) parts.push(`${lengthText(item.alt - under)} over ground`);
     }
     note.textContent = parts.join("  ·  ");
   }
@@ -3740,11 +3834,11 @@ Corvus.mission = (function () {
     const highest = items.reduce(
       (best, item) => (TYPES[item.type].position ? Math.max(best, item.alt) : best), 0);
     if (highest > CEILING_HINT_M) {
-      list.push(`The plan reaches ${formatAlt(highest)} m, above the ${CEILING_HINT_M} m open-category ceiling.`);
+      list.push(`The plan reaches ${lengthText(highest)}, above the ${lengthText(CEILING_HINT_M)} open-category ceiling.`);
     }
     const gaps = clearances(stations(items, home), ground).filter((value) => value != null);
     if (gaps.length && Math.min.apply(null, gaps) < CLEARANCE_WARN_M) {
-      list.push(`The route passes within ${formatAlt(Math.min.apply(null, gaps))} m of the ground.`);
+      list.push(`The route passes within ${lengthText(Math.min.apply(null, gaps))} of the ground.`);
     }
     return list;
   }

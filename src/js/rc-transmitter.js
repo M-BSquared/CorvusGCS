@@ -30,7 +30,7 @@ window.Corvus = window.Corvus || {};
  *             moving it), then give that channel a PX4 function.
  *
  * A switch is drawn as a real toggle — a mounting nut with a bat handle that
- * leans down, level or up — rather than as an abstract indicator, because that
+ * points down, out or up — rather than as an abstract indicator, because that
  * is the shape the operator is looking at on the bench. The gimbals carry a
  * thumbstick each — a dished, knurled cap on a shaft — which travels across
  * its well exactly as the thumb travels: a cap up and to the right is a stick
@@ -69,7 +69,7 @@ window.Corvus = window.Corvus || {};
  *   LAYOUT, MODES                  the drawn model and the four stick modes
  *   axisRoles(mode)                gimbal axis id -> stick role, for one mode
  *   positionIndex(fraction, n)     a normalised value -> switch position
- *   leverAngle(index, n)           a switch position -> the handle's lean
+ *   leverLift(index, n)            a switch position -> where the handle points
  *   loadBindings() / saveBindings(map) / loadMode() / saveMode(mode)
  *   create(opts) -> {el, update, setStickChannels, setChannelInfo, setMode,
  *                    setPrompt, channelMap, forgetAll, select, refresh,
@@ -120,7 +120,7 @@ Corvus.rcTransmitter = (function () {
    *
    * `kind` decides both how a control is drawn and how a pulse is read off it:
    *   axis    a gimbal axis; continuous, drawn as the thumbstick's travel
-   *   switch  n discrete positions; drawn as a bat handle leaning to one
+   *   switch  n discrete positions; drawn as a bat handle pointing up, out or down
    *   knob    a continuous rotary; drawn as a pointer angle
    *
    * `callout` is where its name and live reading sit in the margin, and which
@@ -189,9 +189,9 @@ Corvus.rcTransmitter = (function () {
 
     /* --- the bindable controls ----------------------------------------
        The switch nuts descend across each shoulder rather than sitting in a
-       row: the handles all swing through the same arc, so a row would put each
-       one's "down" position on top of its neighbour's nut. The stagger is what
-       keeps six switches legible at every position at once.
+       row, following the line of the case. The handles all keep one slight
+       outboard lean and only move along it (see leverLift), so the stagger
+       never puts one handle across another in any combination of positions.
 
        That stagger is one step repeated, not three placed by eye: 70 units
        between nuts along a line at 23.4 degrees, laid out from SB and SC
@@ -224,7 +224,7 @@ Corvus.rcTransmitter = (function () {
       // model of a radio and not a specification of one.
       { id: "SA", kind: "switch", positions: 3, side: "left",
         cx: 334, cy: 212, lever: 44, label: "SA",
-        callout: { side: "left", y: 126, stub: 308, target: [334, 212] } },
+        callout: { side: "left", y: 126, stub: 280, target: [334, 212] } },
       { id: "SB", kind: "switch", positions: 3, side: "left",
         cx: 270, cy: 240, lever: 44, label: "SB",
         callout: { side: "left", y: 200, stub: 244, target: [270, 240] } },
@@ -233,7 +233,7 @@ Corvus.rcTransmitter = (function () {
         callout: { side: "left", y: 268, target: [206, 268] } },
       { id: "SD", kind: "switch", positions: 3, side: "right",
         cx: 546, cy: 212, lever: 44, label: "SD",
-        callout: { side: "right", y: 126, stub: 572, target: [546, 212] } },
+        callout: { side: "right", y: 126, stub: 600, target: [546, 212] } },
       { id: "SC", kind: "switch", positions: 3, side: "right",
         cx: 610, cy: 240, lever: 44, label: "SC",
         callout: { side: "right", y: 200, stub: 636, target: [610, 240] } },
@@ -351,30 +351,40 @@ Corvus.rcTransmitter = (function () {
   }
 
   /**
-   * How far above horizontal a bat handle leans, in degrees, for one position.
+   * Where a bat handle's tip sits for one position, as a signed share of the
+   * handle's length: +1 up, 0 pointing at the viewer, -1 down.
    *
-   * The whole sweep sits in the upper quadrant, because that is where a real
-   * switch's handle lives: it stands up out of the case and leans outboard as
-   * it comes down, rather than lying flat across the shoulder. A sweep that
-   * started below horizontal drew six handles sticking out sideways, which
-   * looked like six levers and not like a radio.
-   *
-   * Sixty degrees of swing is still plenty to tell three positions apart at a
-   * glance — the tip moves most of the handle's own length between them.
+   * Every position shares one slight outboard lean (LEVER_LEAN), so the
+   * handles on a shoulder stay parallel whatever positions they are in. A
+   * handle that swung through a wide arc to show its position pointed at its
+   * neighbour on the staggered shoulder as it came down, and a row in mixed
+   * positions read as a tangle of crossing handles rather than as six
+   * readings. Up, pointing out and down is also how the handset itself names
+   * them (the up, middle and down arrows on its own screen).
    */
-  const LEVER_LOW = 28;
-  const LEVER_HIGH = 90;
+  const LEVER_LEAN = 12;
+
+  function leverLift(index, positions) {
+    const n = Math.max(2, Math.round(Number(positions) || 2));
+    const i = Math.max(0, Math.min(n - 1, Number(index) || 0));
+    return (i / (n - 1)) * 2 - 1;
+  }
+
+  /** A handle's tip for a lift, leaning outboard (`out` is -1 on the left
+   *  shoulder, +1 on the right) by LEVER_LEAN in up and down alike, so the two
+   *  shoulders mirror each other in every position. */
+  function leverTip(control, out, lift) {
+    const lean = LEVER_LEAN * Math.PI / 180;
+    return {
+      x: control.cx + out * Math.abs(lift) * control.lever * Math.sin(lean),
+      y: control.cy - lift * control.lever * Math.cos(lean),
+    };
+  }
 
   /** Radius of the thumbstick cap. Sized against the 84-unit gimbal well so
    *  the cap is unmistakably a thumb-sized control rather than a marker, and
    *  still leaves a throw worth watching at full deflection. */
   const STICK_R = 27;
-
-  function leverAngle(index, positions) {
-    const n = Math.max(2, Math.round(Number(positions) || 2));
-    const i = Math.max(0, Math.min(n - 1, Number(index) || 0));
-    return LEVER_LOW + (LEVER_HIGH - LEVER_LOW) * (i / (n - 1));
-  }
 
   /* ================================================================== */
   /* Binding store                                                       */
@@ -737,11 +747,11 @@ Corvus.rcTransmitter = (function () {
     /* ---------------- switches and knobs ---------------- */
 
     /**
-     * A toggle: a mounting nut and a bat handle that leans to its position.
+     * A toggle: a mounting nut and a bat handle that points to its position.
      *
-     * The handle is drawn pointing outboard at rest and rotated about the nut,
-     * so "up" on the drawing is up on the handset — the operator compares two
-     * pictures rather than decoding an indicator.
+     * The handle stands on the vertical through the nut and its tip moves
+     * along it, so "up" on the drawing is up on the handset: the operator
+     * compares two pictures rather than decoding an indicator.
      */
     function buildSwitch(s, control) {
       const group = node("g", { class: "rc-tx-control rc-tx-switch" });
@@ -755,21 +765,22 @@ Corvus.rcTransmitter = (function () {
       }));
 
       const out = control.side === "left" ? -1 : 1;
+      const tip = leverTip(control, out, 1);
       const lever = node("g", { class: "rc-tx-lever" });
-      lever.appendChild(node("line", {
+      const stem = node("line", {
         class: "rc-tx-lever-stem",
-        x1: control.cx, y1: control.cy,
-        x2: control.cx + out * control.lever, y2: control.cy,
-      }));
-      lever.appendChild(node("circle", {
-        class: "rc-tx-lever-ball",
-        cx: control.cx + out * control.lever, cy: control.cy, r: 9,
-      }));
+        x1: control.cx, y1: control.cy, x2: tip.x, y2: tip.y,
+      });
+      const ball = node("circle", {
+        class: "rc-tx-lever-ball", cx: tip.x, cy: tip.y, r: 9,
+      });
+      lever.appendChild(stem);
+      lever.appendChild(ball);
       group.appendChild(lever);
 
       s.appendChild(group);
       attach(group, control.id);
-      return { group, lever, out };
+      return { group, lever, stem, ball, out };
     }
 
     /** A rotary: a capped body with a pointer swept across KNOB_SPAN. */
@@ -1004,18 +1015,18 @@ Corvus.rcTransmitter = (function () {
     }
 
     function paintSwitch(control, part, index) {
-      // No signal parks the handle level and dimmed rather than at a position
-      // it might not be in: a lever frozen where it was last seen is a switch
-      // that looks like it is still being held.
-      const angle = index < 0
-        ? (LEVER_LOW + LEVER_HIGH) / 2
-        : leverAngle(index, positionsOf(control.id));
-      // The handle is drawn lying outboard and rotated up to its angle. SVG
-      // rotates clockwise, so a left-hand handle lifts on a positive angle and
-      // a right-hand one on a negative.
-      const applied = part.out < 0 ? angle : -angle;
-      part.lever.setAttribute("transform",
-        "rotate(" + applied.toFixed(1) + " " + control.cx + " " + control.cy + ")");
+      // No signal parks the handle up and dimmed, the pose all six share at
+      // rest, rather than holding the last position seen: a lever frozen
+      // where it was is a switch that looks like it is still being held. The
+      // dashed nut is what says there is no reading.
+      const lift = index < 0 ? 1 : leverLift(index, positionsOf(control.id));
+      const tip = leverTip(control, part.out, lift);
+      const x = tip.x.toFixed(1);
+      const y = tip.y.toFixed(1);
+      part.stem.setAttribute("x2", x);
+      part.stem.setAttribute("y2", y);
+      part.ball.setAttribute("cx", x);
+      part.ball.setAttribute("cy", y);
     }
 
     /** Knob sweep, in degrees either side of straight up. */
@@ -1385,7 +1396,7 @@ Corvus.rcTransmitter = (function () {
 
   return {
     LAYOUT, MODES, DEFAULT_MODE, ROLE_PARAM, ROLE_LABEL,
-    axisRoles, positionIndex, positionLabel, fractionOf, leverAngle,
+    axisRoles, positionIndex, positionLabel, fractionOf, leverLift, LEVER_LEAN,
     loadBindings, saveBindings, loadMode, saveMode,
     create,
   };

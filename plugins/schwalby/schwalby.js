@@ -44,6 +44,13 @@ window.Corvus = window.Corvus || {};
  * Two views, never both: the SHELF (the buttons plus Add) and the EDITOR (one
  * button's fields). Removing a button is the last thing in its editor.
  *
+ * Above both, the COMPANION indicator: the companion computer's name and
+ * address with a status dot, pinged from this computer through
+ * POST /api/local/ping at the interval set in its popup, and shown offline
+ * once no reply has come back for the timeout set there. Pressing it opens
+ * that popup. It is saved beside the buttons as {name, host, interval_s,
+ * timeout_s} and probed only while the plugin is open.
+ *
  * When a press does not run, the reason lands on the row that failed (a
  * warning triangle, the message in its popover) and on the notification board
  * (api.notification), for the operator who has already turned back to the
@@ -413,6 +420,121 @@ Corvus.pluginSchwalby = (function () {
     return { el, getValue: () => value };
   }
 
+  // ---- the companion computer ---------------------------------------------
+
+  // The slider stops, in seconds. Timeouts start above the shortest interval
+  // because a timeout no longer than the interval calls every reply late.
+  const INTERVAL_STEPS = [1, 2, 3, 5, 10];
+  const TIMEOUT_STEPS = [3, 4, 6, 10, 15, 20, 30];
+  const DEFAULT_INTERVAL_S = 2;
+  const DEFAULT_TIMEOUT_S = 6;
+  const MAX_COMPANION_NAME = 40;
+
+  // The same rule the backend applies (corvus/net_probe.py), so Save is only
+  // offered for a host the ping endpoint will take.
+  const HOST_RE = /^[A-Za-z0-9:](?:[A-Za-z0-9._:%-]*[A-Za-z0-9])?$/;
+
+  function nearestStep(steps, value, fallback) {
+    const n = Number(value);
+    if (!isFinite(n)) return fallback;
+    return steps.reduce((best, s) => (Math.abs(s - n) < Math.abs(best - n) ? s : best), steps[0]);
+  }
+
+  /** The shortest timeout that is still longer than *interval*. */
+  function timeoutFor(interval) {
+    return TIMEOUT_STEPS.find((t) => t > interval) || TIMEOUT_STEPS[TIMEOUT_STEPS.length - 1];
+  }
+
+  /** The longest interval that is still shorter than *timeout*. */
+  function intervalFor(timeout) {
+    const fit = INTERVAL_STEPS.filter((i) => i < timeout);
+    return fit.length ? fit[fit.length - 1] : INTERVAL_STEPS[0];
+  }
+
+  /**
+   * Why a companion address cannot be pinged, or "" when it can.
+   *
+   * Pure, and exported for the test suite.
+   *
+   * @param {string} host
+   * @returns {string}
+   */
+  function hostError(host) {
+    const h = String(host == null ? "" : host).trim();
+    if (!h) return "Enter an IP address or host name.";
+    if (h.length > 253 || !HOST_RE.test(h)) return "That is not an IP address or host name.";
+    return "";
+  }
+
+  /**
+   * The saved companion computer as the indicator uses it, or null when none
+   * is set. The intervals land on slider stops, and the timeout is kept longer
+   * than the interval.
+   *
+   * Pure, and exported for the test suite.
+   *
+   * @param {*} raw
+   * @returns {{name: string, host: string, interval_s: number, timeout_s: number}|null}
+   */
+  function normalizeCompanion(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const host = String(raw.host == null ? "" : raw.host).trim();
+    if (hostError(host)) return null;
+    const interval = nearestStep(INTERVAL_STEPS, raw.interval_s, DEFAULT_INTERVAL_S);
+    let timeout = nearestStep(TIMEOUT_STEPS, raw.timeout_s, DEFAULT_TIMEOUT_S);
+    if (timeout <= interval) timeout = timeoutFor(interval);
+    return {
+      name: String(raw.name == null ? "" : raw.name).trim().slice(0, MAX_COMPANION_NAME),
+      host,
+      interval_s: interval,
+      timeout_s: timeout,
+    };
+  }
+
+  /**
+   * How long one probe may wait for its echo: the interval, within 1 to 5 s,
+   * so a slow reply never holds the next probe back for long.
+   *
+   * Pure, and exported for the test suite.
+   *
+   * @param {number} intervalS
+   * @returns {number} milliseconds
+   */
+  function probeWaitMs(intervalS) {
+    return Math.min(5000, Math.max(1000, Number(intervalS) * 1000 || 2000));
+  }
+
+  /**
+   * What the indicator shows. Online while the last reply is younger than the
+   * timeout; before the first reply, checking until the timeout has passed;
+   * offline after that. A probe that could not be made at all (no ping
+   * program, the backend unreachable) is an error, not a verdict on the
+   * companion, unless a recent reply already answers the question.
+   *
+   * Pure, and exported for the test suite.
+   *
+   * @param {Object} s {host, startedAt, lastOkAt, error, now, timeoutMs}
+   * @returns {string} "unset" | "checking" | "online" | "offline" | "error"
+   */
+  function companionState(s) {
+    const o = s || {};
+    if (!o.host) return "unset";
+    const now = Number(o.now);
+    const timeout = Number(o.timeoutMs);
+    if (o.lastOkAt != null && now - o.lastOkAt <= timeout) return "online";
+    if (o.error) return "error";
+    if (o.lastOkAt == null && now - o.startedAt < timeout) return "checking";
+    return "offline";
+  }
+
+  const COMPANION_LOOK = {
+    unset: { level: "off", text: "Not set" },
+    checking: { level: "warning", text: "Checking" },
+    online: { level: "healthy", text: "Online" },
+    offline: { level: "critical", text: "Offline" },
+    error: { level: "warning", text: "Cannot ping" },
+  };
+
   function init(containerEl, api) {
     const ui = Corvus.ui;
     containerEl.innerHTML = "";
@@ -430,6 +552,21 @@ Corvus.pluginSchwalby = (function () {
     let pollTimer = null;
     let cancelled = false;        // set by destroy(); gates every late callback
 
+    let companion = normalizeCompanion(
+      (api && typeof api.getSettings === "function") ? (api.getSettings() || {}).companion : null);
+    const probe = {
+      gen: 0,               // bumped on every restart, so a late answer is dropped
+      timer: null,          // the next probe
+      paintTimer: null,     // the moment the indicator changes without an answer
+      startedAt: 0,
+      lastOkAt: null,
+      rtt: null,
+      error: "",
+      shown: "",            // the state last painted, for the console line
+    };
+    let companionDialog = null;
+
+    const companionEl = document.createElement("div");
     const shelfEl = document.createElement("div");
     const editorEl = document.createElement("div");
     const status = ui.message({});
@@ -437,6 +574,7 @@ Corvus.pluginSchwalby = (function () {
     output.className = "schw-output";
     output.hidden = true;
 
+    containerEl.appendChild(companionEl);
     containerEl.appendChild(status.el);
     containerEl.appendChild(shelfEl);
     containerEl.appendChild(editorEl);
@@ -473,7 +611,279 @@ Corvus.pluginSchwalby = (function () {
      *  next start, never the run the operator is doing now. */
     function persist() {
       if (!api || typeof api.saveSettings !== "function") return;
-      api.saveSettings({ buttons: buttons }, true).catch(() => {});
+      const settings = { buttons: buttons };
+      if (companion) settings.companion = companion;
+      api.saveSettings(settings, true).catch(() => {});
+    }
+
+    // ---- the companion computer ---------------------------------------------
+
+    function companionNow() {
+      return companionState({
+        host: companion ? companion.host : "",
+        startedAt: probe.startedAt,
+        lastOkAt: probe.lastOkAt,
+        error: probe.error,
+        now: Date.now(),
+        timeoutMs: companion ? companion.timeout_s * 1000 : 0,
+      });
+    }
+
+    /** The indicator at the top: one button that also opens the settings. */
+    function paintCompanion() {
+      if (probe.paintTimer !== null) { clearTimeout(probe.paintTimer); probe.paintTimer = null; }
+      const state = companionNow();
+      const look = COMPANION_LOOK[state];
+      ui.clear(companionEl);
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "schw-comp";
+      btn.dataset.state = state;
+      btn.addEventListener("click", () => openCompanionDialog());
+
+      const iconEl = document.createElement("span");
+      iconEl.className = "schw-comp-icon";
+      iconEl.appendChild(ui.icon("cpu", 14));
+      btn.appendChild(iconEl);
+
+      const text = document.createElement("span");
+      text.className = "schw-comp-text";
+      const name = document.createElement("span");
+      name.className = "schw-comp-name";
+      const host = document.createElement("span");
+      host.className = "schw-comp-host";
+      if (companion) {
+        name.textContent = companion.name || "Companion computer";
+        host.textContent = companion.host;
+      } else {
+        name.textContent = "Companion computer";
+        host.textContent = "Press to set";
+      }
+      text.append(name, host);
+      btn.appendChild(text);
+
+      const stateEl = document.createElement("span");
+      stateEl.className = "schw-comp-state";
+      stateEl.appendChild(ui.statusDot(look.level));
+      const word = document.createElement("span");
+      word.textContent = state === "online" && probe.rtt != null
+        ? `${look.text} · ${formatRtt(probe.rtt)}`
+        : look.text;
+      stateEl.appendChild(word);
+      btn.appendChild(stateEl);
+
+      const label = companion
+        ? `${companion.name || "Companion computer"} at ${companion.host}: ${look.text}`
+        : "Companion computer: not set";
+      btn.setAttribute("aria-label", `${label}. Change`);
+      btn.title = state === "error" ? probe.error
+        : companion ? `Pinged every ${companion.interval_s} s, offline after ${companion.timeout_s} s without a reply`
+          : "Set the companion computer to watch";
+      companionEl.appendChild(btn);
+      ui.refreshIcons();
+
+      noteTransition(state);
+
+      // Online and checking both end on their own when nothing answers.
+      let due = null;
+      if (state === "online") due = probe.lastOkAt + companion.timeout_s * 1000;
+      else if (state === "checking") due = probe.startedAt + companion.timeout_s * 1000;
+      if (due !== null && !cancelled) {
+        probe.paintTimer = setTimeout(paintCompanion, Math.max(0, due - Date.now()) + 50);
+      }
+    }
+
+    function formatRtt(ms) {
+      const n = Number(ms);
+      if (!isFinite(n)) return "";
+      return n < 10 ? `${n.toFixed(1)} ms` : `${Math.round(n)} ms`;
+    }
+
+    /** A line on the console when the companion comes up or goes away. */
+    function noteTransition(state) {
+      const was = probe.shown;
+      probe.shown = state;
+      if (!companion || was === state) return;
+      const who = `${companion.name || "Companion computer"} (${companion.host})`;
+      if (state === "online") api.console(`${PLUGIN_ID}: ${who} is online`, "success");
+      else if (state === "offline") {
+        api.console(`${PLUGIN_ID}: ${who} is offline, no reply for ${companion.timeout_s} s`, "error");
+      }
+    }
+
+    function stopProbing() {
+      probe.gen += 1;
+      if (probe.timer !== null) { clearTimeout(probe.timer); probe.timer = null; }
+      if (probe.paintTimer !== null) { clearTimeout(probe.paintTimer); probe.paintTimer = null; }
+    }
+
+    /** Start over: forget the old answers and probe the saved companion. */
+    function startProbing() {
+      stopProbing();
+      probe.startedAt = Date.now();
+      probe.lastOkAt = null;
+      probe.rtt = null;
+      probe.error = "";
+      probe.shown = "";
+      paintCompanion();
+      if (!companion) return;
+      const gen = probe.gen;
+      const current = () => !cancelled && gen === probe.gen;
+      const tick = () => {
+        probe.timer = null;
+        if (!current()) return;
+        const began = Date.now();
+        api.postJson("/api/local/ping", {
+          host: companion.host,
+          wait_ms: probeWaitMs(companion.interval_s),
+        }).then((res) => {
+          if (!current()) return;
+          if (res && res.ok) {
+            probe.error = "";
+            if (res.reachable) {
+              probe.lastOkAt = Date.now();
+              probe.rtt = res.rtt_ms == null ? null : res.rtt_ms;
+            }
+          } else {
+            probe.error = (res && res.error) || "The ping failed.";
+          }
+        }).catch((error) => {
+          if (!current()) return;
+          probe.error = (error && error.message) || "Could not reach the backend";
+        }).then(() => {
+          if (!current()) return;
+          paintCompanion();
+          const wait = Math.max(0, companion.interval_s * 1000 - (Date.now() - began));
+          probe.timer = setTimeout(tick, wait);
+        });
+      };
+      tick();
+    }
+
+    /** The popup: name, address, how often to ask and when to give up. */
+    function openCompanionDialog() {
+      if (companionDialog) return;
+      const draft = companion ? Object.assign({}, companion) : {
+        name: "", host: "", interval_s: DEFAULT_INTERVAL_S, timeout_s: DEFAULT_TIMEOUT_S,
+      };
+      const body = document.createElement("div");
+      body.className = "schw-comp-form";
+
+      body.appendChild(ui.field({
+        label: "Name",
+        control: ui.input({
+          value: draft.name,
+          placeholder: "Companion computer",
+          ariaLabel: "Companion name",
+          autocomplete: false,
+          onInput: (v) => { draft.name = v; },
+        }),
+        hint: "Optional. Shown at the top of Schwalby.",
+      }));
+
+      const hostField = ui.field({
+        label: "IP address",
+        control: ui.input({
+          value: draft.host,
+          placeholder: "192.168.2.10",
+          mono: true,
+          ariaLabel: "Companion IP address",
+          autocomplete: false,
+          spellcheck: false,
+          onInput: (v) => { draft.host = v.trim(); paintSave(); },
+        }),
+        hint: " ",
+      });
+      body.appendChild(hostField);
+
+      const seconds = (list) => list.map((n) => ({ value: n, label: `${n} s` }));
+      const intervalSlider = ui.slider({
+        steps: seconds(INTERVAL_STEPS),
+        value: draft.interval_s,
+        ariaLabel: "Ping every",
+        className: "schw-comp-slider",
+        onInput: (v) => {
+          draft.interval_s = v;
+          if (draft.timeout_s <= v) {
+            draft.timeout_s = timeoutFor(v);
+            timeoutSlider.setValue(draft.timeout_s);
+          }
+        },
+      });
+      const timeoutSlider = ui.slider({
+        steps: seconds(TIMEOUT_STEPS),
+        value: draft.timeout_s,
+        ariaLabel: "Offline after",
+        className: "schw-comp-slider",
+        onInput: (v) => {
+          draft.timeout_s = v;
+          if (draft.interval_s >= v) {
+            draft.interval_s = intervalFor(v);
+            intervalSlider.setValue(draft.interval_s);
+          }
+        },
+      });
+      body.appendChild(ui.field({
+        label: "Ping every",
+        className: "field-ruled",
+        control: intervalSlider.el,
+        info: "How often this computer sends the companion one ping.",
+      }));
+      body.appendChild(ui.field({
+        label: "Offline after",
+        control: timeoutSlider.el,
+        info: "How long without a single reply before the companion is shown " +
+              "as offline. Always longer than the ping interval, so one late " +
+              "reply does not count as a lost companion.",
+      }));
+
+      const saveBtn = ui.button({
+        variant: "primary",
+        icon: "check",
+        label: "Save",
+        onClick: () => {
+          const next = normalizeCompanion(draft);
+          if (!next) return;
+          companion = next;
+          persist();
+          dialog.close();
+          startProbing();
+        },
+      });
+      const clearBtn = ui.button({
+        variant: "secondary",
+        icon: "eraser",
+        label: "Clear",
+        title: "Forget the companion computer and stop pinging it",
+        disabled: !companion,
+        onClick: () => {
+          companion = null;
+          persist();
+          dialog.close();
+          startProbing();
+        },
+      });
+      const exitBtn = ui.button({ variant: "ghost", label: "Exit", onClick: () => dialog.close() });
+
+      function paintSave() {
+        const problem = hostError(draft.host);
+        saveBtn.disabled = !!problem;
+        saveBtn.title = problem;
+        // Only a wrong address is worth a line; an empty one is still being typed.
+        setHint(hostField, draft.host ? problem : "");
+      }
+      paintSave();
+
+      const dialog = ui.modal({
+        title: "Companion computer",
+        size: "sm",
+        body,
+        actions: [saveBtn, clearBtn, exitBtn],
+        onClose: () => { companionDialog = null; },
+      });
+      companionDialog = dialog;
+      dialog.open();
     }
 
     // ---- which sessions are up ----------------------------------------------
@@ -1167,9 +1577,13 @@ Corvus.pluginSchwalby = (function () {
     // Sessions survive the plugin being closed; find the ones still up.
     refreshLive();
 
+    startProbing();
+
     containerEl._schwDestroy = function () {
       cancelled = true;
       stopPolling();
+      stopProbing();
+      if (companionDialog) companionDialog.close();
       containerEl._schwDestroy = null;
     };
   }
@@ -1184,8 +1598,10 @@ Corvus.pluginSchwalby = (function () {
     previewLine, terminalLine, sshSummary, localSummary, normalizeButtons,
     coerceButton, coerceMode, coerceTarget, sessionName, derivedName,
     newConnectionError, newConnectionBody, segment,
+    hostError, normalizeCompanion, companionState, probeWaitMs,
     MAX_BUTTONS, LIVE_POLL_MS, MODE_TERMINAL, MODE_BACKGROUND, NEW_CONNECTION,
     TARGET_LOCAL, TARGET_SSH, LOCAL_HOST,
+    INTERVAL_STEPS, TIMEOUT_STEPS, DEFAULT_INTERVAL_S, DEFAULT_TIMEOUT_S,
   };
 })();
 

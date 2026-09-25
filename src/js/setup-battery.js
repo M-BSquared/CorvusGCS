@@ -61,6 +61,17 @@ Corvus.setupBattery = (function () {
   // in the readout instead. 14S exists; 14 legible labels across 220px do not.
   const MAX_LABELLED_CELLS = 8;
 
+  // The drawing's own coordinate space. Rows of threshold labels are added
+  // above it, so the top edge moves and these stay the size of the pack.
+  const FIGURE_WIDTH = 260;
+  const FIGURE_HEIGHT = 132;
+
+  // Threshold label geometry, in drawing units; `size` and `tracking` mirror
+  // .battery-threshold-label in main.css. `em` is a generous uppercase advance
+  // for when the text cannot be measured (not laid out yet), so an estimate
+  // errs towards another row rather than towards an overlap.
+  const FLAG = { gap: 3, pad: 2, pitch: 10, cap: 6.5, size: 8.5, tracking: 0.3, em: 0.76 };
+
   // The estimator settings this page owns, and what an unset one means. Kept
   // here as well as in corvus/battery.py because the form has to draw an
   // "auto" field before any answer has come back from the vehicle.
@@ -242,7 +253,7 @@ Corvus.setupBattery = (function () {
     card.appendChild(S.sectionTitle("Pack"));
 
     const svg = document.createElementNS(NS, "svg");
-    svg.setAttribute("viewBox", "0 0 260 132");
+    svg.setAttribute("viewBox", `0 0 ${FIGURE_WIDTH} ${FIGURE_HEIGHT}`);
     svg.setAttribute("class", "battery-figure");
     svg.setAttribute("role", "img");
     svg.setAttribute("aria-label", "Battery charge and cell voltages");
@@ -309,7 +320,7 @@ Corvus.setupBattery = (function () {
       return node;
     };
 
-    // Terminal first so the body's stroke draws over its root.
+    // Terminal first so the outline draws over its root.
     svg.appendChild(el("rect", {
       x: x1, y: (y0 + y1) / 2 - 12, width: 14, height: 24, rx: 4,
       class: "battery-terminal",
@@ -346,6 +357,20 @@ Corvus.setupBattery = (function () {
         }));
       }
     }
+    // The outline is its own shape above the fill and the dividers. As the
+    // body's stroke it sat under the fill, which hid its inner half on the
+    // charged side only, so it looked thinner there than over the empty part.
+    svg.appendChild(el("rect", {
+      x: x0, y: y0, width, height: y1 - y0, rx: 8, class: "battery-outline",
+    }));
+    // The percentage sits in a window of the card's own colour, the same
+    // material as the cell seams, so no seam runs through the number. Drawn
+    // before the failsafe lines so a level in the middle of the pack stays
+    // visible across it.
+    svg.appendChild(el("rect", {
+      x: x0 + width / 2 - 31, y: (y0 + y1) / 2 - 14, width: 62, height: 28, rx: 8,
+      class: "battery-percent-window",
+    }));
     if (count > 0 && count <= MAX_LABELLED_CELLS) {
       for (let i = 0; i < count; i += 1) {
         const x = x0 + (width * (i + 0.5)) / count;
@@ -362,23 +387,42 @@ Corvus.setupBattery = (function () {
     // threshold the backend sent in volts is only drawable once a cell count
     // is known, so it is dropped rather than placed at a guessed position.
     const marks = [];
+    const flags = [];
     (thresholds || []).forEach((threshold) => {
       const percent = thresholdPercent(state, threshold, cells);
       if (percent == null) return;
       const x = x0 + (width * Math.max(0, Math.min(100, percent))) / 100;
-      svg.appendChild(el("line", {
+      const line = el("line", {
         x1: x, y1: y0 - 6, x2: x, y2: y1 + 4,
         class: "battery-threshold " + (threshold.id || ""),
-      }));
-      svg.appendChild(el("text", {
-        x: x.toFixed(1), y: y0 - 9, class: "battery-threshold-label",
-        "text-anchor": "middle",
-      }, threshold.label || ""));
+      });
+      svg.appendChild(line);
+      const text = el("text", { class: "battery-threshold-label" }, threshold.label || "");
+      svg.appendChild(text);
+      flags.push({ x, line, text, width: labelWidth(text, threshold.label || "") });
       marks.push(threshold);
     });
 
+    // Each label is a flag at the top of its own line, so the lines keep their
+    // true positions however close they are and every label still says which
+    // line it belongs to. Lines too close to share a row get stacked rows, and
+    // the drawing grows upwards to hold them.
+    const placement = layoutThresholdLabels(flags, 0, FIGURE_WIDTH);
+    let rows = 0;
+    flags.forEach((flag, i) => {
+      const { row, anchor } = placement[i];
+      const baseline = y0 - 9 - row * FLAG.pitch;
+      flag.text.setAttribute("x", (anchor === "start" ? flag.x + FLAG.gap : flag.x - FLAG.gap).toFixed(1));
+      flag.text.setAttribute("y", baseline.toFixed(1));
+      flag.text.setAttribute("text-anchor", anchor);
+      flag.line.setAttribute("y1", (baseline - FLAG.cap).toFixed(1));
+      rows = Math.max(rows, row);
+    });
+    const extra = rows * FLAG.pitch;
+    svg.setAttribute("viewBox", `0 ${-extra} ${FIGURE_WIDTH} ${FIGURE_HEIGHT + extra}`);
+
     const percentText = el("text", {
-      x: (x0 + width / 2).toFixed(1), y: ((y0 + y1) / 2 + 9).toFixed(1),
+      x: (x0 + width / 2).toFixed(1), y: ((y0 + y1) / 2 + 6.5).toFixed(1),
       class: "battery-percent-label", "text-anchor": "middle",
     }, "—");
     svg.appendChild(percentText);
@@ -396,6 +440,73 @@ Corvus.setupBattery = (function () {
     gauge.sourceText = sourceText;
     gauge.geometry = { x0, width };
     gauge.marks = marks;
+  }
+
+  /** A threshold label's width in drawing units: measured, else estimated. */
+  function labelWidth(text, label) {
+    try {
+      const measured = typeof text.getComputedTextLength === "function"
+        ? text.getComputedTextLength() : 0;
+      if (measured > 0) return measured;
+    } catch (_e) { /* not laid out yet */ }
+    return label.length * (FLAG.size * FLAG.em + FLAG.tracking);
+  }
+
+  /**
+   * A row and a side for every threshold label, so that none is printed over
+   * another and no line cuts through a label that is not its own.
+   *
+   * `flags` are {x, width} in drawing units; the answer is one {row, anchor}
+   * per flag, in the same order, row 0 being the one nearest the pack. A label
+   * sits beside its line rather than across it (anchor "start" to the right,
+   * "end" to the left), and a higher row means a longer line, so the rule is:
+   * two labels on one row must not overlap, and a line reaching past a lower
+   * row must miss the label there.
+   */
+  function layoutThresholdLabels(flags, left, right) {
+    const fitsRight = (f) => f.x + FLAG.gap + f.width <= right;
+    const fitsLeft = (f) => f.x - FLAG.gap - f.width >= left;
+    // One direction for the whole set whenever it fits, so the flags read as
+    // a staircase; mixed only when the levels span too much of the pack.
+    const side = flags.every(fitsRight) ? "start" : flags.every(fitsLeft) ? "end" : "";
+    const boxes = flags.map((f) => {
+      const anchor = side || (fitsRight(f) || !fitsLeft(f) ? "start" : "end");
+      const from = anchor === "start" ? f.x + FLAG.gap : f.x - FLAG.gap - f.width;
+      return { x: f.x, anchor, from: from - FLAG.pad, to: from + f.width + FLAG.pad, row: 0 };
+    });
+
+    const apart = (a, b) => a.to <= b.from || b.to <= a.from;
+    const misses = (line, label) => line.x <= label.from || line.x >= label.to;
+    const fits = (box, row, done) => done.every((other) => {
+      if (other.row === row) return apart(box, other);
+      return other.row > row ? misses(other, box) : misses(box, other);
+    });
+
+    // Flags pointing right are placed from the right-most inward and flags
+    // pointing left from the left-most, so a free row always exists above the
+    // ones already taken: nothing placed so far can reach back over this line.
+    const order = boxes.map((_b, i) => i).sort((a, b) => {
+      const A = boxes[a];
+      const B = boxes[b];
+      if (A.anchor !== B.anchor) return A.anchor === "end" ? -1 : 1;
+      return A.anchor === "end" ? (A.x - B.x || a - b) : (B.x - A.x || b - a);
+    });
+    const done = [];
+    order.forEach((i) => {
+      const box = boxes[i];
+      let row = 0;
+      while (row <= done.length && !fits(box, row, done)) row += 1;
+      if (row > done.length) {
+        // Two flags pointing at each other can leave no row that satisfies
+        // both rules. A line through a label still leaves it legible; two
+        // labels printed over each other do not.
+        row = 0;
+        while (done.some((other) => other.row === row && !apart(box, other))) row += 1;
+      }
+      box.row = row;
+      done.push(box);
+    });
+    return boxes.map((b) => ({ row: b.row, anchor: b.anchor }));
   }
 
   /**
@@ -490,7 +601,7 @@ Corvus.setupBattery = (function () {
     v.capacity.textContent = Number(pack.capacity_mah) > 0
       ? `${Math.round(pack.capacity_mah)} mAh` : dash;
     v.temperature.textContent = typeof s.battery_temperature === "number"
-      ? `${s.battery_temperature.toFixed(1)} °C` : dash;
+      ? Corvus.units.formatTemperature(s.battery_temperature) : dash;
     v.endurance.textContent = Number(s.battery_time_remaining) > 0
       ? formatDuration(s.battery_time_remaining) : dash;
 
@@ -815,5 +926,5 @@ Corvus.setupBattery = (function () {
     });
   }
 
-  return { render };
+  return { render, layoutThresholdLabels };
 })();

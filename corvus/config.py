@@ -107,13 +107,15 @@ class CorvusConfig:
     the interface size, desktop app icon and top bar (``{"scale": 1.25,
     "inverted_app_icon": false, "app_icon_backplate": false,
     "topbar_status_dots": false, "mission_page": false,
-    "notification_marks": false, "flight_bar_shrink": false}`` — the multiplier
+    "notification_marks": false, "flight_bar_shrink": false, "units": {"length":
+    "m", "distance": "km", "speed": "ms", "temperature": "c"}}`` — the multiplier
     the frontend puts on every length in the UI, which cut of the mark the
     Dock / taskbar gets, whether that mark sits on a filled backplate, whether
     the top bar shows its per-block state dots, whether the left rail
     carries the Mission planner, whether a notification draws the severity
     bar above and below its level icon, and whether the Home flight bar starts
-    narrowing at half the map column rather than only when it must),
+    narrowing at half the map column rather than only when it must, and the
+    display units for lengths, distances, speeds and temperatures),
     and the update check
     (``{"check": true, "skipped": "2026.09.27"}`` — whether to look at the
     GitHub releases at all, and the one release the operator dismissed),
@@ -439,6 +441,15 @@ def _coerce_controls(raw: Any) -> dict[str, Any] | None:
 _UI_SCALE_MIN = 0.5
 _UI_SCALE_MAX = 3.0
 
+# The display units the frontend may be asked for (see src/js/units.js), per
+# quantity. Display only: every value in the backend stays SI.
+_UI_UNITS: dict[str, tuple[str, ...]] = {
+    "length": ("m", "ft"),
+    "distance": ("km", "mi", "nmi"),
+    "speed": ("ms", "kmh", "mph", "kn"),
+    "temperature": ("c", "f"),
+}
+
 
 _FORWARD_PORT_MIN = 1
 _FORWARD_PORT_MAX = 65535
@@ -586,10 +597,20 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     Off unless asked for: in the desktop app they open as windows of their own
     straight away (see ``src/js/popout.js``). A browser has no such windows, so
     there they are always inside, whatever this says.
+
+    ``units`` is the display unit per quantity (``length``, ``distance``,
+    ``speed``, ``temperature``; see ``_UI_UNITS``). Each key is kept only with
+    a value the frontend knows, so a typo reads as the metric default rather
+    than as a unit nothing can draw.
     """
     if not isinstance(raw, dict):
         return None
     out: dict[str, Any] = {}
+    units = raw.get("units")
+    if isinstance(units, dict):
+        kept = {q: units[q] for q, allowed in _UI_UNITS.items() if units.get(q) in allowed}
+        if kept:
+            out["units"] = kept
     value = raw.get("scale")
     if not isinstance(value, bool) and isinstance(value, (int, float)):
         scale = float(value)

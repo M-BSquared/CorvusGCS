@@ -167,14 +167,14 @@ Corvus.analysis = (function () {
      calls, so the grid can be repainted from a telemetry frame without
      restating the layout. */
   const TELEMETRY_TILES = [
-    { label: "Altitude AMSL", icon: "mountain", unit: "m",
-      value: (s) => String(Math.round(s.altitude_amsl)) },
-    { label: "Altitude AGL", icon: "arrow-up-from-line", unit: "m",
-      value: (s) => String(Math.round(s.altitude_agl)) },
-    { label: "Groundspeed", icon: "gauge", unit: "m/s",
-      value: (s) => s.groundspeed.toFixed(1) },
-    { label: "Vertical speed", icon: "move-vertical", unit: "m/s",
-      value: (s) => s.vspeed.toFixed(1) },
+    { label: "Altitude AMSL", icon: "mountain", unit: () => Corvus.units.lengthSymbol(),
+      value: (s) => Corvus.units.formatLength(s.altitude_amsl, { bare: true }) },
+    { label: "Altitude AGL", icon: "arrow-up-from-line", unit: () => Corvus.units.lengthSymbol(),
+      value: (s) => Corvus.units.formatLength(s.altitude_agl, { bare: true }) },
+    { label: "Groundspeed", icon: "gauge", unit: () => Corvus.units.speedSymbol(),
+      value: (s) => Corvus.units.formatSpeed(s.groundspeed, { bare: true }) },
+    { label: "Vertical speed", icon: "move-vertical", unit: () => Corvus.units.speedSymbol(),
+      value: (s) => Corvus.units.formatSpeed(s.vspeed, { bare: true }) },
     { label: "Heading", icon: "compass", unit: "°",
       value: (s) => String(Math.round(s.heading)) },
     { label: "Pitch", icon: "plane", unit: "°",
@@ -197,6 +197,12 @@ Corvus.analysis = (function () {
    * each left the whole right half of the card empty and pushed the log tools
    * a screen down. Returns {el, destroy}.
    */
+  /** A tile's unit caption; the length and speed tiles follow the display
+   *  units, so theirs is asked for on every paint. */
+  function unitText(spec) {
+    return typeof spec.unit === "function" ? spec.unit() : (spec.unit || "");
+  }
+
   function telemetryCard() {
     const body = S.el("div", "tele-body");
     const grid = S.el("div", "tele-grid");
@@ -209,7 +215,7 @@ Corvus.analysis = (function () {
       const line = S.el("div", "tele-tile-line");
       const num = S.el("span", "tele-tile-value", "—");
       line.appendChild(num);
-      const unit = S.el("span", "tele-tile-unit", spec.unit || "");
+      const unit = S.el("span", "tele-tile-unit", unitText(spec));
       unit.hidden = !spec.unit;
       line.appendChild(unit);
       el.appendChild(line);
@@ -243,6 +249,8 @@ Corvus.analysis = (function () {
         const live = connected && text !== "—";
         if (t.num.textContent !== text) t.num.textContent = text;
         if (t.unit.hidden === live) t.unit.hidden = !live;
+        const u = unitText(t.spec);
+        if (t.unit.textContent !== u) t.unit.textContent = u;
         if (t.detail.textContent !== detail) t.detail.textContent = detail;
       });
     }

@@ -196,26 +196,97 @@ def _stop_tree_windows(proc: subprocess.Popen) -> None:
         logger.warning("local process %s did not exit", proc.pid)
 
 
-def _stop_group(proc: subprocess.Popen, first: int, platform: str = sys.platform) -> None:
-    """Signal a process and its whole group, then make sure it is gone. Never raises."""
-    if proc.poll() is not None:
-        return
-    if platform == "win32":
-        _stop_tree_windows(proc)
-        return
+def session_groups(sid: int) -> set[int]:
+    """The process groups of every process still running in session *sid*. Never raises.
+
+    Zombies are left out: they have ended, and waiting for them to be reaped
+    would only hold up the shutdown. Read from ``/proc`` where there is one
+    (Linux), from ``ps`` and ``getsid`` elsewhere (macOS, whose ``ps`` has no
+    session column). Neither kernel hands a session's number to a new process
+    while anything is still in that session, so a match is always one of ours.
+    """
+    groups: set[int] = set()
+    if os.path.isfile("/proc/self/stat"):
+        try:
+            names = os.listdir("/proc")
+        except OSError:
+            names = []
+        for name in names:
+            if not name.isdigit():
+                continue
+            try:
+                with open(f"/proc/{name}/stat", "rb") as fh:
+                    # After the name in parentheses: state ppid pgrp session ...
+                    fields = fh.read().rsplit(b")", 1)[1].split()
+                if fields[0] != b"Z" and int(fields[3]) == sid:
+                    groups.add(int(fields[2]))
+            except (OSError, IndexError, ValueError):
+                continue
+        return groups
     try:
-        os.killpg(proc.pid, first)
-    except (OSError, ProcessLookupError):
-        pass
+        listing = subprocess.run(
+            ["/bin/ps", "-A", "-o", "pid=,pgid=,stat="], stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, timeout=TERM_TIMEOUT_S, check=False, env=child_env(),
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return groups
+    for line in listing.splitlines():
+        parts = line.split()
+        if len(parts) < 3 or parts[2].startswith("Z"):
+            continue
+        try:
+            if os.getsid(int(parts[0])) == sid:
+                groups.add(int(parts[1]))
+        except (OSError, ValueError):
+            continue
+    return groups
+
+
+def _signal_groups(groups: set[int], sig: int) -> None:
+    for group in groups:
+        try:
+            os.killpg(group, sig)
+        except OSError:
+            pass
+
+
+def _stop_session(proc: subprocess.Popen, first: int, platform: str = sys.platform) -> None:
+    """Signal everything in the session *proc* leads, then make sure it is gone. Never raises.
+
+    The session, not only the process's own group: a shell with job control
+    puts every background job in a group of its own, and whether a hangup is
+    passed on to them is the shell's choice (bash does, dash does not). A job
+    that ignores the hangup outlives any shell. Both would keep running after
+    Corvus exits. What is still in the session after :data:`TERM_TIMEOUT_S` is
+    killed. A program that left the session on purpose (``setsid``) is not
+    Corvus' to stop, as it would not be a terminal window's.
+
+    Asked even when *proc* has already ended: an ``exit`` typed in the shell
+    leaves its background jobs running.
+    """
+    if platform == "win32":
+        if proc.poll() is None:
+            _stop_tree_windows(proc)
+        return
+    sid = proc.pid
+    _signal_groups(session_groups(sid) | {sid}, first)
+    # A stopped job acts on nothing but SIGKILL until it is continued.
+    _signal_groups(session_groups(sid), signal.SIGCONT)
+    deadline = time.monotonic() + TERM_TIMEOUT_S
     try:
         proc.wait(TERM_TIMEOUT_S)
-        return
     except subprocess.TimeoutExpired:
         pass
+    left = session_groups(sid)
+    while left and time.monotonic() < deadline:
+        time.sleep(0.05)
+        left = session_groups(sid)
+    if not left and proc.poll() is not None:
+        return
+    _signal_groups(left | {sid}, signal.SIGKILL)
     try:
-        os.killpg(proc.pid, signal.SIGKILL)
         proc.wait(TERM_TIMEOUT_S)
-    except (OSError, ProcessLookupError, subprocess.TimeoutExpired):
+    except subprocess.TimeoutExpired:
         logger.warning("local process %s did not exit", proc.pid)
 
 
@@ -226,12 +297,15 @@ def clean_directory(directory: str) -> tuple[str, str]:
     login shell in a terminal reads it: ``mission`` is the same folder whether
     the button runs in a terminal or in the background, and never one relative
     to wherever Corvus happened to be started from.
+
+    Given back in the system's own spelling: ``~/mission`` on Windows would
+    otherwise come back as ``C:\\Users\\op/mission``.
     """
     text = str(directory or "").strip()
     home = os.path.expanduser("~")
     if not text:
         return home, ""
-    path = os.path.join(home, os.path.expanduser(text))
+    path = os.path.normpath(os.path.join(home, os.path.expanduser(text)))
     if not os.path.isdir(path):
         return "", f"There is no folder {text} on this computer."
     return path, ""
@@ -312,7 +386,7 @@ class LocalSession(SshSession):
         self._publish("\r\n[Shell ended]\r\n")
 
     def _close_transport(self) -> None:
-        """Stop the shell's whole process group and let the pty go.
+        """Stop the shell and every job in its session, and let the pty go.
 
         The pty is closed by the reader thread, never under it: closed from
         another thread while the reader waits in ``select``, its number could be
@@ -333,9 +407,9 @@ class LocalSession(SshSession):
             if owns_pty:
                 self._master = None
         if proc is not None:
-            # SIGHUP first: what closing a terminal sends, and what a shell
-            # passes on to the programs it started.
-            _stop_group(proc, signal.SIGHUP)
+            # SIGHUP first: what closing a terminal sends. Sent to every job
+            # here, since not every shell passes it on.
+            _stop_session(proc, signal.SIGHUP)
         if master is not None:
             try:
                 os.close(master)
@@ -487,7 +561,7 @@ class LocalRunner:
             self._running.clear()
         for e in entries:
             try:
-                _stop_group(e["proc"], signal.SIGTERM)
+                _stop_session(e["proc"], signal.SIGTERM)
             except Exception:  # noqa: BLE001 - teardown never raises
                 logger.exception("stopping a local program failed")
         for e in entries:

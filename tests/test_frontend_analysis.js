@@ -325,6 +325,7 @@ const STATUS = {
 };
 
 require("../src/js/ui.js");
+require("../src/js/units.js");
 require("../src/js/setup-shared.js");
 require("../src/js/analysis.js");
 

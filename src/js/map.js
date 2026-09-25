@@ -1022,6 +1022,7 @@ Corvus.map = (function () {
         onSelect: () => vw.toggle(cam),
       });
       row.setAttribute("aria-checked", on ? "true" : "false");
+      if (cam.address) row.title = String(cam.address);
       surface.appendChild(row);
       return row;
     });
@@ -3525,7 +3526,7 @@ Corvus.map = (function () {
     line.setAttribute("y2", air.y.toFixed(1));
 
     veh3dAltEl.hidden = false;
-    veh3dAltEl.textContent = `${Math.round(vehAltAgl)} m`;
+    veh3dAltEl.textContent = Corvus.units.formatLength(vehAltAgl);
     veh3dAltEl.style.transform =
       `translate(-50%, -50%) translate(${air.x}px, ${(air.y + (base.y - air.y) * 0.5).toFixed(1)}px)`;
   }

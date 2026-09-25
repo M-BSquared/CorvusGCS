@@ -252,10 +252,11 @@ Corvus.instruments = (function () {
       ["altAmsl", "agl", "gs", "vs", "hdg", "sats"].forEach((k) => set(k, "\u2014"));
       return;
     }
-    set("altAmsl", `${Math.round(s.altitude_amsl)} m`);
-    set("agl", `${Math.round(s.altitude_agl)} m`);
-    set("gs", `${s.groundspeed.toFixed(1)} m/s`);
-    set("vs", `${s.vspeed >= 0 ? "+" : ""}${s.vspeed.toFixed(1)} m/s`);
+    const u = Corvus.units;
+    set("altAmsl", u.formatLength(s.altitude_amsl));
+    set("agl", u.formatLength(s.altitude_agl));
+    set("gs", u.formatSpeed(s.groundspeed));
+    set("vs", u.formatSpeed(s.vspeed, { signed: true }));
     set("hdg", `${String(Math.round(s.heading)).padStart(3, "0")}\u00B0`);
     set("sats", `${s.gps_satellites}`);
   }

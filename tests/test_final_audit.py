@@ -185,6 +185,8 @@ _EXPECTED_POST = {
     # program in the background. Loopback callers only.
     "/api/local/connect",
     "/api/local/run",
+    # One ping from this computer, for Schwalby's companion indicator.
+    "/api/local/ping",
     "/api/warnings/clear",
     # The logo UPLOAD is not here on purpose: like /api/firmware/upload it
     # carries a raw octet-stream body and is dispatched ahead of the JSON

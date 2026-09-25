@@ -350,10 +350,13 @@ Corvus.setupTuning = (function () {
     return wrap;
   }
 
+  // Plotly.react only redraws data it sees as new, and pushSample mutates the
+  // buffer in place, so every draw hands it fresh arrays.
   function traces(state, entry) {
     const palette = Corvus.ui.chartColors();
+    const t = entry.buf.t.slice();
     const out = [{
-      x: entry.buf.t, y: entry.buf.actual, mode: "lines", name: "response",
+      x: t, y: entry.buf.actual.slice(), mode: "lines", name: "response",
       line: { color: palette.nav || "#4CC9FF", width: 1.6 },
     }];
     // The setpoint is drawn only when the vehicle is actually sending one. A
@@ -362,7 +365,7 @@ Corvus.setupTuning = (function () {
     // firmware is not streaming its setpoint".
     if (entry.spec.setpoint && state.snapshot.setpoints_live) {
       out.push({
-        x: entry.buf.t, y: entry.buf.sp, mode: "lines", name: "setpoint",
+        x: t, y: entry.buf.sp.slice(), mode: "lines", name: "setpoint",
         line: { color: palette.healthy || "#45D483", width: 1.4, dash: "dot" },
       });
     }
