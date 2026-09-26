@@ -21,7 +21,7 @@ import pytest
 pytest.importorskip("pymavlink")
 pytest.importorskip("paramiko")
 
-from corvus import motor_config  # noqa: E402
+from corvus import motor_config, mounting_config  # noqa: E402
 from corvus.server import CorvusHandler  # noqa: E402
 
 
@@ -123,7 +123,10 @@ def test_the_read_asks_for_the_schema_then_the_limits_of_the_motor_pins() -> Non
     handler._api_motors()
 
     assert len(bridge.requested) == 2
-    assert bridge.requested[0] == motor_config.param_names()
+    # The lever arms of the flight controller and GPS ride the same first
+    # read: they are drawn on the same airframe.
+    assert bridge.requested[0] == (
+        motor_config.param_names() + mounting_config.position_param_names())
     assert bridge.requested[1] == [
         f"PWM_MAIN_{suffix}{pin}"
         for pin in range(1, 5) for suffix in ("MIN", "MAX", "DIS", "FAIL")

@@ -87,7 +87,8 @@ def _bridge_with_results(results: list[int], monkeypatch):
     fallbacks: list[int] = []
     answers = iter(results)
 
-    def _interval(msg_id: int, interval_us: int) -> tuple[bool, int]:
+    def _interval(msg_id: int, interval_us: int, quiet: bool = False) -> tuple[bool, int]:
+        assert quiet, "the connect-time batch must not report on the status bar"
         asked.append(msg_id)
         result = next(answers, results[-1])
         return result == mv.mavlink.MAV_RESULT_ACCEPTED, result

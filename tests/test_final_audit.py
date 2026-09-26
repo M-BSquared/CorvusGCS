@@ -44,6 +44,9 @@ _EXPECTED_GET = {
     "/api/mavlink/capabilities",
     "/api/mavlink/serial-ports",
     "/api/motors",
+    # How the flight controller is turned on the airframe, which every
+    # calibration is measured through (SENS_BOARD_ROT / AHRS_ORIENTATION).
+    "/api/mounting",
     # The pack, how the autopilot measures it, and Corvus's own estimator
     # settings — every BAT_/BATT_ parameter lives behind this one.
     "/api/battery",
@@ -62,6 +65,7 @@ _EXPECTED_GET = {
     "/api/params/progress",
     "/api/params/upload/result",
     "/api/params/export/target",
+    "/api/settings/export/target",
     "/api/params/metadata",
     "/api/params/metadata/cache",
     "/api/telemetry",
@@ -139,6 +143,8 @@ _EXPECTED_POST = {
     # Read back what the operator wrote, write again what did not stick.
     "/api/params/verify",
     "/api/params/export",
+    "/api/settings/export",
+    "/api/settings/import",
     "/api/params/metadata",
     "/api/params/metadata/cache/clear",
     "/api/calibrate",

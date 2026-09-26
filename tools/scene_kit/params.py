@@ -363,6 +363,11 @@ GENERAL: dict[str, Any] = {
     "EKF2_IMU_POS_X": 0.0,
     "EKF2_IMU_POS_Y": 0.0,
     "EKF2_IMU_POS_Z": 0.0,
+    # A GPS on a mast behind the flight controller, as most airframes carry
+    # it: the Motors page draws it where it sits.
+    "EKF2_GPS_POS_X": -0.06,
+    "EKF2_GPS_POS_Y": 0.0,
+    "EKF2_GPS_POS_Z": -0.1,
     "COM_ARM_WO_GPS": 0,
     "COM_OBL_RC_ACT": 0,
     "COM_PREARM_MODE": 0,

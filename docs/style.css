@@ -581,13 +581,45 @@ a:hover { color: var(--accent); }
 /* ===================================================================
    Screenshot gallery
    =================================================================== */
+/* Three groups (fly, set up, review), each its own grid. Six columns, so a
+   group can mix a full-width lead, pairs and rows of three. */
+.gallery-nav {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  margin: calc(-1 * clamp(12px, 2vw, 28px)) 0 clamp(32px, 4vw, 48px);
+}
+.gallery-nav a {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-1);
+  color: var(--text-1);
+  font-size: 0.875rem; font-weight: 600;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+.gallery-nav a:hover { border-color: var(--accent); background: var(--surface-2); color: var(--text-1); }
+.gallery-nav .icon { width: 16px; height: 16px; color: var(--accent-bright); }
+.gallery-nav .mono { color: var(--text-3); font-weight: 500; }
+
+.gallery-group + .gallery-group { margin-top: clamp(48px, 6vw, 80px); }
+.gallery-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px;
+  margin-bottom: 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.gallery-head h3 { display: inline-flex; align-items: center; gap: 10px; align-self: center; }
+.gallery-head h3 .icon { width: 19px; height: 19px; color: var(--accent-bright); }
+.gallery-head p { color: var(--text-2); font-size: 0.9375rem; }
+
 .gallery {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 18px;
 }
-.shot { margin: 0; grid-column: span 2; }
-.shot-lead { grid-column: span 4; }
+.shot { margin: 0; grid-column: span 3; }
+.shot-lead { grid-column: span 6; }
+.shot-third { grid-column: span 2; }
 
 .shot-btn {
   position: relative;
@@ -822,10 +854,11 @@ a:hover { color: var(--accent); }
   font-size: 0.875rem;
   text-align: center;
 }
+.lightbox-caption strong { color: var(--text-1); }
 .lightbox-controls { display: flex; align-items: center; gap: 14px; }
 .lightbox .icon-btn { background: var(--surface-1); border-color: var(--border-strong); }
 .lightbox .icon-btn:hover { background: var(--surface-hover); }
-.lightbox-count { color: var(--text-3); font-size: 0.75rem; min-width: 5ch; text-align: center; }
+.lightbox-count { color: var(--text-3); font-size: 0.75rem; min-width: 17ch; text-align: center; }
 .lightbox-close { position: absolute; top: -8px; right: 0; transform: translateY(-100%); }
 
 /* ===================================================================
@@ -877,7 +910,7 @@ a:hover { color: var(--accent); }
 
   .capabilities { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .shot { grid-column: span 1; }
+  .shot, .shot-third { grid-column: span 1; }
   .shot-lead { grid-column: span 2; }
 
   .spec, .spec tbody, .spec tr { display: block; }
@@ -905,7 +938,7 @@ a:hover { color: var(--accent); }
   .card-grid { grid-template-columns: 1fr; }
 
   .gallery { grid-template-columns: 1fr; }
-  .shot, .shot-lead { grid-column: span 1; }
+  .shot, .shot-lead, .shot-third { grid-column: span 1; }
 
   .footer-inner { grid-template-columns: 1fr; gap: 32px; }
   .footer-credit { grid-template-columns: 1fr; gap: 22px; }

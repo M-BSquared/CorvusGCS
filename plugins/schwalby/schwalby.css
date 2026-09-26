@@ -95,6 +95,7 @@
   flex-direction: column;
   margin-bottom: 14px;
 }
+.schw-empty { margin-bottom: 14px; }
 .schw-row {
   display: flex;
   align-items: center;
@@ -211,26 +212,40 @@
 .schw-seg-opt[aria-checked="true"] svg { color: var(--accent); }
 .schw-seg-opt:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: -2px; }
 
+/* The editor's fields, evenly apart. A card stacks its children as plain
+   blocks, so without a gap each hint ran straight into the next caption. */
+.schw-editor,
+.schw-ssh-fields,
+.schw-newconn {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.schw-editor > .ui-actions { margin-top: 4px; }
+
 /* The SSH fields, gone for a button on this computer. */
 .schw-ssh-fields[hidden] { display: none; }
 
-/* A connection typed in for a button that has none saved yet: inset, so six
-   fields read as one answer to the Connection question above them. */
+/* A connection typed in for a button that has none saved yet. It drops out
+   of the Connection select as that select's own list does (.glass, 6px
+   below, the menu's radius and entrance), so six fields read as one answer
+   to the question above them. The negative margin takes the column's gap
+   back down to the 6px a dropdown stands off its trigger. */
 .schw-newconn {
-  margin: -4px 0 14px;
+  gap: 12px;
+  margin-top: -10px;
   padding: 12px;
-  border: 1px solid var(--border-soft);
-  border-left: 2px solid var(--accent);
-  border-radius: var(--radius-btn);
-  background: var(--surface-2);
+  border-radius: var(--radius);
+  animation: corvus-enter 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .schw-newconn[hidden] { display: none; }
-.schw-newconn .field:last-child { margin-bottom: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .schw-newconn { animation: none !important; }
+}
 
 /* What the button will run, while it is being edited. Wrapping, because a
    wrong folder is easiest to spot with the whole line in view. */
 .schw-preview {
-  margin: 4px 0 14px;
   padding: 10px 12px;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-btn);

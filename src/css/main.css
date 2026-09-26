@@ -159,6 +159,7 @@ svg { display: block; }
 }
 .tb-value .sub { font-size: 11px; color: var(--text-2); font-weight: 500; }
 .tb-value .sub:empty { display: none; }
+.tb-value .v-short { display: none; }
 .tb-value .sub.undetected { color: var(--text-3); }
 /* Hidden unless the operator asks for them in Settings > Appearance > Top
    bar, which writes data-topbar-dots on <html> (Corvus.topbar.setStatusDots).
@@ -195,21 +196,22 @@ svg { display: block; }
 
 /* The STATUS block's tone.
    Colour alone was carrying every one of these states, which asks the operator
-   to interpret a hue mid-flight. The three states worth recognising at a
-   glance — cleared to fly, propellers live, airborne — get a tinted pill as
+   to interpret a hue mid-flight. The two states worth recognising at a
+   glance on the ground (cleared to fly, propellers live) get a tinted pill as
    well, so they are distinguishable by shape before the colour is read at all.
    NOT READY deliberately gets no pill: it is the absence of a clearance, not
    an active state, and giving it the same weight is how a bar ends up amber
    from end to end. */
 .tb-block[data-tone] { background: var(--surface-2); }
 .tb-block[data-tone="ready"] { background: var(--healthy-dark); }
-.tb-block[data-tone="flying"] { background: var(--nav-dark); }
 .tb-block[data-tone="armed"] { background: var(--warning-dark); }
+/* FLYING is the green word on the bare bar: the normal state of a flight,
+   so it should be the quietest thing in the bar for as long as it lasts. */
+.tb-block[data-tone="flying"],
 .tb-block[data-tone="notready"],
 .tb-block[data-tone="none"] { background: none; }
 .tb-block[data-tone]:hover { background: var(--surface-hover); }
 .tb-block[data-tone="ready"]:hover { background: var(--healthy-dark); }
-.tb-block[data-tone="flying"]:hover { background: var(--nav-dark); }
 .tb-block[data-tone="armed"]:hover { background: var(--warning-dark); }
 
 .tb-icon { width: 14px; height: 14px; color: var(--text-3); }
@@ -567,6 +569,17 @@ svg { display: block; }
 .settings-map-keys { margin-top: var(--space-14); }
 .settings-map-keys-note { display: block; margin-top: 6px; }
 
+/* Settings > Export and import (settings-transfer.js). The buttons get the
+   12px every card with actions puts under its text. */
+.settings-transfer .ui-actions { margin-top: 12px; }
+/* The import dialog: the file's two lines read as one block, and the parts
+   sit in a plain block of their own, so the dialog's gap does not stack on
+   top of the rows' spacing and each hairline has the same room on both
+   sides. */
+.settings-transfer-file { display: flex; flex-direction: column; gap: 4px; }
+.settings-transfer-parts > .field-switch + .field-switch { margin-top: 8px; padding-top: 8px; }
+.settings-transfer-parts > .field-switch > .field-hint { margin-top: -8px; }
+
 /* One keyed map service in the API keys dialog: the field, then the saved
    state and the REMOVE button on a row of their own under it. Separated by a
    rule rather than by spacing alone — several services stacked read as one
@@ -612,11 +625,7 @@ svg { display: block; }
 }
 .settings-path-row > .settings-path { flex: 1 1 auto; min-width: 0; }
 .settings-path-row > .btn { flex: 0 0 auto; }
-/* The hint explains the folder, not the button, so it keeps to a readable
-   measure instead of running the full width of a wide settings page under
-   both of them. */
 .settings-plugin-dir > .settings-path-row { margin-top: var(--space-2); }
-.settings-plugin-dir > .field-hint { margin-top: var(--space-2); max-width: 78ch; }
 
 /* ===== MAIN / MAP ===== */
 .main { flex: 1; position: relative; min-width: 0; background: var(--bg); }
@@ -2349,6 +2358,8 @@ svg { display: block; }
   .calib-progress-fill,
   .calib-figure-marker circle,
   .calib-pose[data-state="active"] .calib-pose-mark,
+  .calib-cue svg,
+  .calib-log-summary::after,
   .autotune-live-dot,
   .tune-tab,
   .link-kind,
@@ -2563,6 +2574,13 @@ button.link-card-title:focus-visible {
   background: var(--critical-dark);
 }
 
+/* ----- CALIBRATION: the flight controller's rotation -----
+   Above the calibrations, since each of them is measured through it. */
+.calib-mounting { margin-bottom: 14px; }
+.calib-mounting-card { display: flex; flex-direction: column; gap: 10px; }
+.calib-mounting-reboot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.calib-mounting-reboot[hidden] { display: none; }
+
 /* ----- CALIBRATION: the card list -----
    A row per calibration rather than a button grid: the operator's first
    question is which one they need, and a grid of seven icons answers it with a
@@ -2621,8 +2639,8 @@ button.link-card-title:focus-visible {
    The figure carries the instruction, so it gets the space: a fixed-ratio panel
    beside the text rather than an illustration tucked under it. */
 .calib-stage {
-  display: grid; grid-template-columns: minmax(200px, 260px) 1fr;
-  gap: 20px; align-items: center; padding: 18px 20px; margin-bottom: 12px;
+  display: grid; grid-template-columns: minmax(200px, 400px) minmax(240px, 1fr);
+  gap: 24px; align-items: center; padding: 18px 20px; margin-bottom: 12px;
 }
 .calib-stage-figure {
   background: var(--surface-2); border: 1px solid var(--border-soft);
@@ -2648,8 +2666,44 @@ button.link-card-title:focus-visible {
 .calib-phase[data-phase="cancelled"] {
   color: var(--warning); border-color: var(--warning); background: var(--warning-dark);
 }
-.calib-headline { font-size: 19px; font-weight: 650; line-height: 1.25; color: var(--text-1); }
-.calib-detail { font-size: 12.5px; color: var(--text-2); line-height: 1.5; }
+.calib-instruction { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.calib-words { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.calib-headline { font-size: 22px; font-weight: 650; line-height: 1.2; color: var(--text-1); }
+.calib-detail { font-size: 13.5px; color: var(--text-2); line-height: 1.4; }
+.calib-detail[hidden] { display: none; }
+/* The cue: what to do with the aircraft, as a symbol. Colour says what kind
+   of thing it is (move it, keep it still, act on it, finished) before the
+   icon is even recognised. */
+.calib-cue {
+  flex: 0 0 auto; width: 52px; height: 52px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--surface-2); border: 1.5px solid var(--border-soft);
+  color: var(--accent-bright);
+}
+.calib-cue svg, .calib-cue i { width: 28px; height: 28px; }
+.calib-cue[data-cue="wait"],
+.calib-cue[data-cue="rotate"],
+.calib-cue[data-cue="spin"] {
+  color: var(--nav); border-color: var(--nav); background: var(--nav-dark);
+}
+.calib-cue[data-cue="hold"],
+.calib-cue[data-cue="warn"],
+.calib-cue[data-cue="battery_on"],
+.calib-cue[data-cue="battery_off"],
+.calib-cue[data-cue="blow"],
+.calib-cue[data-cue="shield"],
+.calib-cue[data-cue="cancelled"] {
+  color: var(--warning); border-color: var(--warning); background: var(--warning-dark);
+}
+.calib-cue[data-cue="done"] {
+  color: var(--healthy); border-color: var(--healthy); background: var(--healthy-dark);
+}
+.calib-cue[data-cue="failed"] {
+  color: var(--critical-bright); border-color: var(--critical); background: var(--critical-dark);
+}
+.calib-cue[data-cue="spin"] svg { animation: calibCueSpin 2.4s linear infinite; }
+.calib-cue[data-cue="wait"] svg { animation: calibMarkerPulse 1.6s ease-in-out infinite; }
+@keyframes calibCueSpin { to { transform: rotate(360deg); } }
 .calib-progress {
   height: 5px; border-radius: 3px; background: var(--surface-3);
   overflow: hidden; margin-top: 4px;
@@ -2714,7 +2768,13 @@ button.link-card-title:focus-visible {
   position: absolute; top: 6px; right: 7px;
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--border-strong);
+  display: grid; place-items: center; color: #fff;
 }
+.calib-pose-mark svg, .calib-pose-mark i { display: none; width: 13px; height: 13px; stroke-width: 3; }
+.calib-pose[data-state="done"] .calib-pose-mark,
+.calib-pose[data-state="failed"] .calib-pose-mark { width: 20px; height: 20px; top: 5px; right: 5px; }
+.calib-pose[data-state="done"] .calib-pose-ok,
+.calib-pose[data-state="failed"] .calib-pose-bad { display: block; }
 .calib-pose[data-state="active"] {
   border-color: var(--nav); background: var(--nav-dark); color: var(--text-1);
 }
@@ -2722,21 +2782,57 @@ button.link-card-title:focus-visible {
   background: var(--nav);
   animation: calibMarkerPulse 1.4s ease-in-out infinite;
 }
-.calib-pose[data-state="done"] { opacity: 0.55; }
+.calib-pose[data-state="done"] { border-color: var(--healthy); }
+.calib-pose[data-state="done"] .calib-pose-figure,
+.calib-pose[data-state="done"] .calib-pose-label { opacity: 0.45; }
 .calib-pose[data-state="done"] .calib-pose-mark { background: var(--healthy); }
 .calib-pose[data-state="failed"] { border-color: var(--critical); }
 .calib-pose[data-state="failed"] .calib-pose-mark { background: var(--critical); }
 
 /* ----- CALIBRATION: preparation + transcript + actions ----- */
-.calib-prep { margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
-.calib-prep-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
-.calib-prep-item { font-size: 12px; line-height: 1.5; color: var(--text-2); }
+.calib-prep { margin-bottom: 12px; display: flex; flex-direction: column; gap: 10px; }
+.calib-prep-list {
+  margin: 0; padding: 0; list-style: none;
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+.calib-prep-item {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12.5px; font-weight: 550; line-height: 1.3; color: var(--text-1);
+  background: var(--surface-2); border: 1px solid var(--border-soft);
+  border-radius: 999px; padding: 6px 12px 6px 9px;
+}
+.calib-prep-item svg, .calib-prep-item i { width: 16px; height: 16px; color: var(--nav); flex: 0 0 auto; }
 .calib-prep[hidden] { display: none; }
 .calib-prep-danger { border-color: var(--critical); }
-.calib-prep-danger .calib-prep-item { color: var(--text-1); }
+.calib-prep-danger .calib-prep-item { border-color: var(--critical); background: var(--critical-dark); }
+.calib-prep-danger .calib-prep-item svg,
+.calib-prep-danger .calib-prep-item i,
 .calib-prep-danger .guidance-title svg,
 .calib-prep-danger .guidance-title i { color: var(--critical); }
-.calib-log-card { display: flex; flex-direction: column; gap: 8px; }
+.calib-log-card { display: block; }
+/* Title left, Start or Abort right, its bottom edge flush with the
+   subtitle's. The header's own bottom margin moves to the row so the stage
+   below keeps its distance. */
+.calib-head {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: 12px 20px; margin-bottom: 28px;
+}
+.calib-head .page-header { margin-bottom: 0; min-width: 0; flex: 1 1 auto; }
+.calib-head > .btn { flex: 0 0 auto; }
+.calib-log-summary { cursor: pointer; list-style: none; user-select: none; }
+.calib-log-summary::-webkit-details-marker { display: none; }
+.calib-log-summary::after {
+  content: ""; width: 6px; height: 6px; margin-left: 4px;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg); transition: transform 160ms ease;
+}
+.calib-log-card[open] .calib-log-summary::after { transform: rotate(45deg); }
+.calib-log-card[open] .calib-log-summary { margin-bottom: 8px; }
+.calib-log-count {
+  font-size: 10px; font-weight: 700; color: var(--text-3);
+  background: var(--surface-2); border-radius: 999px; padding: 1px 7px;
+}
+.calib-log-count:empty { display: none; }
 .calib-actions { margin-top: 12px; }
 
 /* ----- MOTOR / ESC SAFETY WARNING -----
@@ -2750,7 +2846,8 @@ button.link-card-title:focus-visible {
   background: var(--critical-dark); border: 1px solid var(--critical);
   border-radius: var(--radius-btn); padding: 12px 14px;
 }
-.motor-calib-warning-line { color: var(--text-1); }
+.motor-calib-warning-line { color: var(--text-1); display: flex; align-items: center; gap: 10px; font-weight: 550; }
+.motor-calib-warning-line svg, .motor-calib-warning-line i { width: 18px; height: 18px; color: var(--critical); flex: 0 0 auto; }
 /* Critical cue on the shared dialog title, so this one reads as a warning
    rather than a plain label. Scoped to the dialog that contains the warning
    block, so no other .modal is affected. */
@@ -3075,6 +3172,7 @@ button.link-card-title:focus-visible {
   gap: 12px;
   align-items: start;
 }
+.sik-port-row + .ui-actions { margin-top: var(--space-14); }
 .sik-results { display: flex; flex-direction: column; gap: 14px; }
 .sik-results:empty { display: none; }
 
@@ -3510,7 +3608,7 @@ button.link-card-title:focus-visible {
 
 .rc-tx { display: flex; flex-direction: column; gap: 10px; }
 .rc-tx-figure { display: flex; justify-content: center; }
-.rc-tx-svg { width: 100%; max-width: 720px; height: auto; display: block; }
+.rc-tx-svg { width: 100%; max-width: 620px; height: auto; display: block; }
 
 /* --- the shell ---
    Line-drawing weights: the case outline is the heaviest line on the page, the
@@ -3864,6 +3962,8 @@ button.link-card-title:focus-visible {
    attribute directly. */
 :where(:root[data-vw~="max-1279"]) .tb-block { padding: 6px 9px; }
 :where(:root[data-vw~="max-1279"]) .tb-value { font-size: 14px; }
+:where(:root[data-vw~="max-1279"]) .tb-block[data-short] .v-main { display: none; }
+:where(:root[data-vw~="max-1279"]) .tb-block[data-short] .v-short { display: inline; }
 :where(:root[data-vw~="max-1279"]) .nav-item .nav-label { display: none; }
 :where(:root[data-vw~="max-1279"]) .nav-item { padding: 12px 0; }
 :where(:root[data-vw~="max-1279"]) .flight-overlay { --hud-w: 290px; }
@@ -4033,6 +4133,25 @@ button.link-card-title:focus-visible {
   font-size: 11px; color: var(--text-3);
 }
 .motors-legend-item { white-space: nowrap; }
+
+/* The flight controller and the GPS antenna on the airframe. Drawn under the
+   motors and never a click target: their fields are in their own card. */
+.motors-sensor { pointer-events: none; }
+.motors-sensor-mark { stroke-width: 2; }
+.motors-sensor-fc .motors-sensor-mark { fill: var(--accent-dim); stroke: var(--accent-bright); }
+.motors-sensor-gps .motors-sensor-mark { fill: none; stroke: var(--nav); }
+.motors-sensor-tag {
+  fill: var(--text-2); font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+  user-select: none;
+}
+
+/* ----- frame size ----- */
+.motors-frame { display: flex; flex-direction: column; gap: 8px; }
+.motors-frame-dims { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.motors-frame-control { display: flex; align-items: center; gap: 6px; }
+.motors-frame-input { width: 96px; }
+
+.motors-sensor-head { padding-top: 10px; border-top: 1px solid var(--border-soft); }
 
 .motors-count-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .motors-count-note {
@@ -5624,26 +5743,26 @@ button.review-finding-head:focus-visible {
   padding: 0 calc(var(--mission-side-pad) - 9px) 0 var(--mission-side-pad);
 }
 
-/* Name and cruise speed share a row: the speed is three characters wide and a
-   full-width field for it would push the item list down by a whole control for
-   nothing. */
-.mission-plan-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 124px;
-  gap: 8px;
+/* The panel's title with the mission's name beside it. */
+.mission-plan-row { flex-direction: row; align-items: center; gap: 10px; }
+.mission-plan-row .field-label {
+  flex: 0 0 auto;
+  font-size: 13px; font-weight: 700; letter-spacing: 0; text-transform: none;
+  color: var(--text-1);
 }
-/* One line per caption, or the longer one wraps and pushes its input below
-   its neighbour's. */
-.mission-plan-row .field-label { white-space: nowrap; }
+.mission-plan-row .field-input { flex: 1 1 auto; min-width: 0; }
 
+/* Caption and figure on one line, two to a row. Stacked, every figure cost a
+   caption's height as well, and that height came out of the item list. */
 .mission-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
 }
 .mission-summary-cell {
-  display: flex; flex-direction: column; gap: 2px;
-  padding: 7px 9px;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  min-width: 0;
+  padding: 4px 9px;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-btn);
   background: var(--surface-2);
@@ -5652,11 +5771,14 @@ button.review-finding-head:focus-visible {
   border-color: color-mix(in srgb, var(--warning) 55%, var(--border-soft));
 }
 .mission-summary-label {
+  flex: 0 0 auto;
   font-size: 9px; letter-spacing: 0.7px; text-transform: uppercase;
   color: var(--text-3);
 }
 .mission-summary-value {
-  font-family: var(--mono); font-size: 12.5px; color: var(--text-1);
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--mono); font-size: 12px; color: var(--text-1);
   font-variant-numeric: tabular-nums;
 }
 .mission-summary-cell[data-level="warn"] .mission-summary-value { color: var(--warning); }
@@ -5669,8 +5791,8 @@ button.review-finding-head:focus-visible {
    still draws its border and padding: a blank bar under the summary. */
 .mission-issues[hidden], .mission-vehicle[hidden] { display: none; }
 .mission-issue {
-  display: grid; grid-template-columns: 14px minmax(0, 1fr);
-  align-items: start; gap: 6px;
+  display: grid; grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center; gap: 6px;
   padding: 6px 8px;
   border-radius: var(--radius-btn);
   border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border-soft));
@@ -5678,7 +5800,10 @@ button.review-finding-head:focus-visible {
   color: var(--text-2);
   font-size: 11px; line-height: 1.45;
 }
-.mission-issue i, .mission-issue svg { color: var(--warning); margin-top: 1px; }
+.mission-issue > i, .mission-issue > svg { color: var(--warning); }
+/* One line, always: the explanation lives in the info popover. */
+.mission-issue-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mission-issue .ui-info { color: var(--text-3); }
 
 /* Pinned while the rows scroll under it, so the clear button and the
    caption stay in reach on a plan longer than the panel. Above a dragged row
@@ -5690,8 +5815,9 @@ button.review-finding-head:focus-visible {
   color: var(--text-3);
   background: var(--surface-1);
   border-bottom: 1px solid var(--border-soft);
-  padding-bottom: 4px;
+  padding-bottom: 3px;
 }
+.mission-list-head .icon-btn { width: 24px; height: 24px; }
 
 /* Full height: the box around it does the scrolling (see
    .mission-side-scroll). */
@@ -5794,13 +5920,21 @@ button.review-finding-head:focus-visible {
   flex: 0 0 auto;
   max-height: 42%;
   overflow-y: auto;
-  padding-top: 8px;
+  padding-top: 10px;
   border-top: 1px solid var(--border-soft);
-  display: flex; flex-direction: column; gap: 6px;
+  display: flex; flex-direction: column; gap: 8px;
 }
+/* The kind's one-line explanation belongs to the title above it. */
+.mission-detail-head + .field-hint { margin-top: -4px; }
 .mission-detail-head {
   display: flex; align-items: center; gap: 7px;
   font-size: 12px; font-weight: 700; color: var(--text-1);
+}
+.mission-detail-head > span { flex: 0 0 auto; }
+.mission-detail .mission-detail-name {
+  flex: 1 1 auto; min-width: 0; width: auto;
+  margin-left: 3px;
+  font-weight: 400;
 }
 /* Delete this one item. Against the far edge of the header, away from the
    fields — it is the only control in the panel that is not an edit. */
@@ -5809,20 +5943,14 @@ button.review-finding-head:focus-visible {
   color: var(--critical);
   background: color-mix(in srgb, var(--critical) 16%, transparent);
 }
-/* Why two fields that belong to this item type are not on screen. A note, not
-   a warning: nothing is wrong with the plan — this airframe simply does not
-   fly that part of it. */
-.mission-detail-note {
-  padding: 6px 8px;
-  border-radius: var(--radius-btn);
-  background: var(--surface-2);
-  border: 1px solid var(--border-soft);
-  line-height: 1.45;
-}
 
 /* Bottom-aligned so a caption that wraps in a narrow sidebar lifts itself, not
    its input out of line with the one beside it. */
-.mission-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
+.mission-detail-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px; align-items: end;
+}
+.mission-detail-wide { grid-column: 1 / -1; }
 .mission-detail .field { gap: 3px; }
 .mission-detail .field-input { font-size: 12px; padding: 5px 8px; }
 
@@ -5832,11 +5960,7 @@ button.review-finding-head:focus-visible {
 .mission-file-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .mission-file-row .btn { white-space: nowrap; }
 .mission-status { margin: 0; }
-.mission-warning {
-  color: var(--warning);
-  font-size: 12px; line-height: 1.5;
-  padding-top: 6px;
-}
+.mission-warnings { padding-top: 8px; }
 
 .mission-open-list { display: flex; flex-direction: column; gap: 4px; min-width: 320px; }
 .mission-open-row { display: flex; align-items: center; gap: 6px; }

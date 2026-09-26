@@ -1,6 +1,7 @@
 # Regenerating the screenshots
 
-Every picture in `README.md` is the real interface driven by real MAVLink. That
+Every picture in `README.md` and on the project website (`docs/`) is the real
+interface driven by real MAVLink. That
 is what makes them worth having, and it is what made each one expensive: an
 aircraft in a particular state, a flight already flown, a parameter set, a
 theme, and a page open at the right moment. Rebuilding that by hand for one
@@ -32,15 +33,49 @@ same recipe as machine-readable steps, which is the form an agent should use.
 | `hud` | where the floating instrument panel sits |
 | `airframe`, `rangefinder`, `optical_flow`, `rc` | what the configuration pages read |
 | `param_overrides`, `full_param_table` | any PX4 parameter, and the editor's weight |
+| `param_filter` | the parameter editor's All, Modified or Unsaved filter, pressed for the shot |
 | `home`, `path`, `path_options`, `takeoff_time` | the flight, and therefore the flown track |
 | `armed`, `mode` | what the top bar and the pages allow |
+| `map_3d`, `map_bearing`, `map_zoom` | the map's 3D mode, where the tilted camera looks, and how much closer than the fitted frame |
 | `calibration`, `calibration_pause_after` | which calibration runs, and where it stops |
 | `logs`, `chatter` | the Analysis page's log card and the console's traffic |
 | `settle`, `notes` | how long the picture needs to build, and what to look for |
+| `web` | the picture's name on the website, or empty when the site does not show it |
 
 Airframes: `quad_x`, `quad_x_heavy`, `hexa_x`, `octo_x`, `vtol_quad`,
 `fixed_wing`. Paths: `hover`, `orbit`, `survey`, `figure_eight`, `out_and_back`.
 Themes: the six in `src/css/themes.css`.
+
+## The website
+
+The website shows the same pictures as JPEGs in two sizes: the 1600 px
+original its lightbox opens, and an 800 px copy the page loads first. After a
+shoot, one command writes both for every scene with a `web` name:
+
+```bash
+python3 tools/scene.py web
+```
+
+```bash
+python3 tools/scene.py shoot --web
+```
+
+The second does both in one run. With `--out`, `shoot --web` reads the batch
+from that folder, and `web --source <folder>` does the same for a batch you
+looked at first. A picture only the website shows (`plugins`, `three_d`) has
+its asset in `docs/assets/images/` already; it gets its 800 px copy and keeps
+its original.
+
+A new picture on the site is a scene with a `web` name plus a `<figure>` in
+the Screenshots section of `docs/index.html`, which takes its caption from the
+figure itself. `tests/test_website_images.py` fails when a picture the page
+names is missing in either size, and `tests/test_scene_kit.py` fails when the
+page shows a picture no scene makes.
+
+The link preview other sites show for the page
+(`docs/assets/images/social-preview.jpg`, 1200 x 630) is the `dark` picture in
+a window under the logo. `web` remakes it whenever `dark` is among the scenes
+it writes.
 
 ## One-off variations
 

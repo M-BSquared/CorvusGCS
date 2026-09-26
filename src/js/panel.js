@@ -637,7 +637,7 @@ Corvus.panel = (function () {
     note.textContent = msg || "Connection failed";
   }
 
-  async function connectSSH(conn, btn) {
+  async function connectSSH(conn, btn, retried) {
     if (btn) { btn.textContent = "CONNECTING \u2026"; btn.disabled = true; }
     let res;
     try {
@@ -655,6 +655,13 @@ Corvus.panel = (function () {
           port: res.port || conn.port,
           username: res.username || conn.username,
         }));
+      } else if (!retried && sshNeeds(res)) {
+        // A connection that came from another machine without its password:
+        // ask for it once, then connect as if it had always been there.
+        if (await setupSSHConnection(res)) return connectSSH(conn, btn, true);
+        showSSHCardError(btn, res.error || "Connection failed");
+        if (btn) btn.disabled = false;
+        return res;
       } else {
         // Failure: do NOT open a fresh terminal/SSE — surface the error in the
         // existing card so the operator can retry from the connection list.
@@ -869,6 +876,168 @@ Corvus.panel = (function () {
       { key: "key_path", label: "Key file", mono: true,
         placeholder: "/home/user/.ssh/id_rsa", value: c.key_path || "" },
     ];
+  }
+
+  /**
+   * What an SSH reply asks for, or null when it asks for nothing.
+   *
+   * The connect and run routes answer a failure that more typing can fix with
+   * `needs` ("connection": this computer has no saved connection of that name,
+   * or one without an address; "credentials": the host refused the login) and
+   * `connection`, the saved name. `reply` is either such a body or the Error a
+   * rejected request threw, which carries the body as `.body`.
+   *
+   * Pure, and exported for the test suite.
+   *
+   * @param {Object|Error} reply
+   * @returns {{name: string, needs: string, error: string}|null}
+   */
+  function sshNeeds(reply) {
+    if (!reply || typeof reply !== "object") return null;
+    const body = reply.needs ? reply : reply.body;
+    if (!body || typeof body !== "object") return null;
+    const needs = body.needs === "connection" || body.needs === "credentials" ? body.needs : "";
+    const name = typeof body.connection === "string" ? body.connection.trim() : "";
+    if (!needs || !name) return null;
+    return { name, needs, error: typeof body.error === "string" ? body.error : "" };
+  }
+
+  // One dialog at a time per connection name: two buttons naming the same
+  // missing connection, pressed together, must not stack two forms asking
+  // for the same thing.
+  const sshSetupPending = Object.create(null);
+
+  /**
+   * Ask for what a saved SSH connection lacks on this computer, save it under
+   * the same name, and resolve true once saved (false when cancelled, or when
+   * `reply` asks for nothing). The caller then tries again.
+   *
+   * This is how settings copied from another ground station become usable: a
+   * button, a launcher or a saved connection arrives naming a connection, but
+   * never with its password, so the first use asks for the address and login
+   * once and every later one just works. The name is not editable here,
+   * because it is what everything else refers to.
+   *
+   * @param {Object|Error} reply a failed connect/run reply, see sshNeeds
+   * @returns {Promise<boolean>}
+   */
+  function setupSSHConnection(reply) {
+    const need = sshNeeds(reply);
+    if (!need) return Promise.resolve(false);
+    if (sshSetupPending[need.name]) return sshSetupPending[need.name];
+    const pending = Corvus.telemetry.requestJson("/api/ssh/connections")
+      .then((data) => (data && Array.isArray(data.connections) ? data.connections : []))
+      .catch(() => [])
+      .then((list) => askSSHConnection(need, list.find((c) => c && c.name === need.name) || null));
+    sshSetupPending[need.name] = pending;
+    const clear = () => { delete sshSetupPending[need.name]; };
+    pending.then(clear, clear);
+    return pending;
+  }
+
+  function askSSHConnection(need, known) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
+
+      const body = document.createDocumentFragment();
+      // The same muted paragraph a modal gives a string body.
+      body.appendChild(Corvus.ui.empty(need.needs === "credentials"
+        ? `The login for "${need.name}" was refused. Enter the user and the ` +
+          "password or key file it needs. They are saved on this computer only."
+        : `This computer has no address for "${need.name}" yet. Enter it and ` +
+          "the login once. Everything that uses this connection works from then on."));
+      if (need.error && need.needs === "credentials") {
+        const why = Corvus.ui.message();
+        why.show(need.error, "warn");
+        body.appendChild(why.el);
+      }
+
+      const inputs = {};
+      let autofocusEl = null;
+      // The shared field list minus the name: the name is what the button or
+      // launcher already refers to, so it is fixed here.
+      sshFieldDefs(known).filter((f) => f.key !== "name").forEach((f) => {
+        const control = Corvus.ui.input({
+          id: "sshSetupFld_" + f.key,
+          type: f.type || "text",
+          value: f.value,
+          placeholder: f.key === "password" && known && known.has_password
+            ? "leave blank to keep the current password"
+            : (f.key === "password" ? "or use a key file" : f.placeholder),
+          mono: f.mono,
+          ariaLabel: f.label,
+          autocomplete: false,
+        });
+        inputs[f.key] = control;
+        body.appendChild(Corvus.ui.field({ label: f.label, control }));
+      });
+      // The field that is actually missing takes the keyboard.
+      autofocusEl = (need.needs === "credentials" && inputs.host.value)
+        ? (inputs.username.value ? inputs.password : inputs.username)
+        : inputs.host;
+      const error = Corvus.ui.message();
+      body.appendChild(error.el);
+
+      const cancelBtn = Corvus.ui.button({
+        variant: "secondary", label: "CANCEL", onClick: () => dialog.close(),
+      });
+      const saveBtn = Corvus.ui.button({
+        variant: "primary", icon: "check", label: "SAVE", onClick: submit,
+      });
+      const dialog = Corvus.ui.modal({
+        title: `Set up ${need.name}`,
+        size: "sm",
+        body,
+        actions: [cancelBtn, saveBtn],
+        onClose: () => finish(false),
+      });
+      dialog.open();
+      if (autofocusEl && typeof autofocusEl.focus === "function") autofocusEl.focus();
+      Object.keys(inputs).forEach((key) => {
+        inputs[key].addEventListener("keydown", (e) => {
+          if (e.key === "Enter") { e.preventDefault(); submit(); }
+        });
+      });
+
+      function value(key) { return (inputs[key].value || "").trim(); }
+
+      async function submit() {
+        const host = value("host");
+        const username = value("username");
+        if (!host) { error.show("Host is required.", "err"); return; }
+        if (!username) { error.show("Username is required.", "err"); return; }
+        error.hide();
+        const payload = {
+          name: need.name,
+          original_name: need.name,
+          host,
+          port: parseInt(inputs.port.value, 10) || 22,
+          username,
+          key_path: value("key_path"),
+        };
+        // Blank keeps a stored password rather than erasing it.
+        if (inputs.password.value) payload.password = inputs.password.value;
+        Corvus.ui.setBusy(saveBtn, true);
+        let res;
+        try {
+          res = await Corvus.telemetry.requestJson("/api/ssh/connections", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+        } catch (err) {
+          res = { ok: false, error: (err && err.message) || "Save failed" };
+        }
+        Corvus.ui.setBusy(saveBtn, false);
+        if (!res || !res.ok) {
+          error.show((res && res.error) || "Save failed", "err");
+          return;
+        }
+        finish(true);
+        dialog.close();
+      }
+    });
   }
 
   function addSSHConnection(onSaved) {
@@ -1172,6 +1341,7 @@ Corvus.panel = (function () {
 
   return {
     init, toggle, addConsoleLine, addSSHConnection, editSSHConnection, showSSHTerminal, showTab,
+    setupSSHConnection, sshNeeds,
     // Exposed for tests: the pure pieces, assertable without a DOM.
     // The transcript, for screens outside the CONSOLE tab (the Logs page).
     consoleText, consoleLineCount, exportLog,

@@ -122,6 +122,74 @@ Corvus.calibFigures = (function () {
     ];
   }
 
+  // --- quaternions ----------------------------------------------------------
+  // Only for the turn between two poses: interpolating matrices element-wise
+  // shears the bird mid-turn, a slerp keeps it rigid.
+
+  function quatFromMatrix(m) {
+    const trace = m[0][0] + m[1][1] + m[2][2];
+    let w, x, y, z;
+    if (trace > 0) {
+      const s = Math.sqrt(trace + 1) * 2;
+      w = s / 4;
+      x = (m[2][1] - m[1][2]) / s;
+      y = (m[0][2] - m[2][0]) / s;
+      z = (m[1][0] - m[0][1]) / s;
+    } else if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
+      const s = Math.sqrt(1 + m[0][0] - m[1][1] - m[2][2]) * 2;
+      w = (m[2][1] - m[1][2]) / s;
+      x = s / 4;
+      y = (m[0][1] + m[1][0]) / s;
+      z = (m[0][2] + m[2][0]) / s;
+    } else if (m[1][1] > m[2][2]) {
+      const s = Math.sqrt(1 + m[1][1] - m[0][0] - m[2][2]) * 2;
+      w = (m[0][2] - m[2][0]) / s;
+      x = (m[0][1] + m[1][0]) / s;
+      y = s / 4;
+      z = (m[1][2] + m[2][1]) / s;
+    } else {
+      const s = Math.sqrt(1 + m[2][2] - m[0][0] - m[1][1]) * 2;
+      w = (m[1][0] - m[0][1]) / s;
+      x = (m[0][2] + m[2][0]) / s;
+      y = (m[1][2] + m[2][1]) / s;
+      z = s / 4;
+    }
+    return [w, x, y, z];
+  }
+
+  function matrixFromQuat(q) {
+    const [w, x, y, z] = q;
+    return [
+      [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+      [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+      [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+    ];
+  }
+
+  function slerp(a, b, t) {
+    let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+    let end = b;
+    if (dot < 0) {
+      dot = -dot;
+      end = [-b[0], -b[1], -b[2], -b[3]];
+    }
+    if (dot > 0.9995) {
+      const q = a.map((v, i) => v + t * (end[i] - v));
+      const n = Math.hypot(q[0], q[1], q[2], q[3]) || 1;
+      return q.map((v) => v / n);
+    }
+    const theta = Math.acos(Math.min(1, dot));
+    const sin = Math.sin(theta);
+    const wa = Math.sin((1 - t) * theta) / sin;
+    const wb = Math.sin(t * theta) / sin;
+    return a.map((v, i) => wa * v + wb * end[i]);
+  }
+
+  function ease(t) {
+    const c = Math.max(0, Math.min(1, t));
+    return c * c * (3 - 2 * c);
+  }
+
   const HALF = Math.PI / 2;
 
   /* The six PX4 accelerometer orientations, keyed by our own names. PX4's own
@@ -139,6 +207,19 @@ Corvus.calibFigures = (function () {
     right: rotX(-HALF),
     upside_down: rotX(Math.PI),
   };
+
+  const POSE_Q = {};
+  Object.keys(POSE_M).forEach((key) => { POSE_Q[key] = quatFromMatrix(POSE_M[key]); });
+
+  /* The demonstrated turn: a moment at the side the aircraft is on, drawn
+     faint, then the turn itself, then a long rest at the target, drawn solid.
+     Faint means "where you are", solid means "where to go", so a glance at any
+     point of the loop still reads the right way round. */
+  const DEMO_LEAD_MS = 500;
+  const DEMO_MOVE_MS = 1300;
+  const DEMO_HOLD_MS = 1800;
+  const DEMO_FAINT = 0.45;
+  const TWEEN_MS = 450;
 
   const POSES = [
     "level",
@@ -159,12 +240,12 @@ Corvus.calibFigures = (function () {
   };
 
   const POSE_HINT = {
-    level: "Wings level, nose forward, flat on the surface.",
-    nose_down: "Stand it on its nose, tail straight up.",
-    tail_down: "Stand it on its tail, nose straight up.",
-    left: "Roll it onto its left wing.",
-    right: "Roll it onto its right wing.",
-    upside_down: "Turn it over: belly up, nose still forward.",
+    level: "Flat, nose forward.",
+    nose_down: "On its nose, tail up.",
+    tail_down: "On its tail, nose up.",
+    left: "Roll onto the left wing.",
+    right: "Roll onto the right wing.",
+    upside_down: "Belly up, nose forward.",
   };
 
   function poseLabel(pose) {
@@ -928,8 +1009,10 @@ Corvus.calibFigures = (function () {
    * @param {{compact?:boolean, pose?:string, spin?:boolean, marker?:string,
    *          reduced?:boolean}} [opts]
    * @returns {{el:Object, set:function, destroy:function}} `set` accepts
-   *   `{pose, spin, marker}`; `destroy` stops the animation frame. Both are
-   *   idempotent and safe after destroy.
+   *   `{pose, spin, marker, from, motion}`: with `motion` on and a `from` pose
+   *   that differs from `pose`, the figure loops the turn from one to the
+   *   other; any other pose change turns to the new pose once. `destroy` stops
+   *   the animation frame. Both are idempotent and safe after destroy.
    */
   function create(host, opts) {
     const options = opts || {};
@@ -956,10 +1039,19 @@ Corvus.calibFigures = (function () {
 
     let spin = !!options.spin;
     let marker = options.marker || null;
+    let from = null;
+    let motion = false;
     let animationFrame = 0;
     let destroyed = false;
     let angle = 0;
     let previousTime = 0;
+
+    // The attitude and opacity last drawn, so a new target is turned to from
+    // wherever the figure actually is, including halfway through a loop.
+    let shown = POSE_Q[pose];
+    let shownOpacity = 1;
+    let tween = null;
+    let demoStart = 0;
 
     if (!svgSupported()) {
       // Test/no-SVG fallback: still announce the attitude so the wizard's
@@ -1347,10 +1439,18 @@ Corvus.calibFigures = (function () {
       );
     }
 
-    function draw() {
+    let lastOpacity = 1;
+
+    function draw(base, opacity) {
       const matrix = spin
-        ? mul(rotZ(angle), POSE_M[pose])
-        : POSE_M[pose];
+        ? mul(rotZ(angle), base)
+        : base;
+
+      const alpha = opacity == null ? 1 : opacity;
+      if (alpha !== lastOpacity) {
+        lastOpacity = alpha;
+        bodyGroup.setAttribute("opacity", alpha.toFixed(3));
+      }
 
       const world = MODEL.verts.map(
         (vertex) => apply(matrix, vertex)
@@ -1438,6 +1538,77 @@ Corvus.calibFigures = (function () {
       );
     }
 
+    function canAnimate() {
+      return (
+        !options.reduced &&
+        typeof window !== "undefined" &&
+        typeof window.requestAnimationFrame === "function"
+      );
+    }
+
+    function demoActive() {
+      return (
+        motion &&
+        !!from &&
+        from !== pose &&
+        canAnimate()
+      );
+    }
+
+    /** The base attitude (before any spin) and opacity for this instant. */
+    function frame(time) {
+      if (demoActive()) {
+        if (!demoStart) {
+          demoStart = time || 1;
+        }
+
+        const cycle =
+          DEMO_LEAD_MS + DEMO_MOVE_MS + DEMO_HOLD_MS;
+
+        const t = (time - demoStart) % cycle;
+        const p = ease((t - DEMO_LEAD_MS) / DEMO_MOVE_MS);
+
+        shown = slerp(POSE_Q[from], POSE_Q[pose], p);
+        shownOpacity = DEMO_FAINT + (1 - DEMO_FAINT) * p;
+
+        return {
+          base: matrixFromQuat(shown),
+          opacity: shownOpacity,
+          animating: true,
+        };
+      }
+
+      if (tween) {
+        if (!tween.start) {
+          tween.start = time || 1;
+        }
+
+        const p = ease((time - tween.start) / TWEEN_MS);
+
+        shown = slerp(tween.from, POSE_Q[pose], p);
+        shownOpacity = tween.opacity + (1 - tween.opacity) * p;
+
+        if (p >= 1) {
+          tween = null;
+        }
+
+        return {
+          base: tween ? matrixFromQuat(shown) : POSE_M[pose],
+          opacity: shownOpacity,
+          animating: !!tween,
+        };
+      }
+
+      shown = POSE_Q[pose];
+      shownOpacity = 1;
+
+      return {
+        base: POSE_M[pose],
+        opacity: 1,
+        animating: false,
+      };
+    }
+
     function tick(now) {
       if (destroyed) {
         return;
@@ -1448,7 +1619,7 @@ Corvus.calibFigures = (function () {
           ? now
           : 0;
 
-      if (previousTime) {
+      if (previousTime && spin) {
         angle +=
           ((time - previousTime) / 1000) *
           0.9;
@@ -1456,10 +1627,17 @@ Corvus.calibFigures = (function () {
 
       previousTime = time;
 
-      draw();
+      const current = frame(time);
 
-      animationFrame =
-        window.requestAnimationFrame(tick);
+      draw(current.base, current.opacity);
+
+      if (spin || current.animating) {
+        animationFrame =
+          window.requestAnimationFrame(tick);
+      } else {
+        animationFrame = 0;
+        previousTime = 0;
+      }
     }
 
     function stopSpin() {
@@ -1480,19 +1658,19 @@ Corvus.calibFigures = (function () {
     function refresh() {
       stopSpin();
 
-      // Reduced motion keeps the guide ring — the instruction — but not the
-      // motion, which is the accessible reading of "show me the rotation".
-      if (
-        spin &&
-        !options.reduced &&
-        typeof window !== "undefined" &&
-        typeof window.requestAnimationFrame ===
-          "function"
-      ) {
+      // Reduced motion keeps the guide ring and the target pose, which are
+      // the instruction, but not the motion: the accessible reading of "show
+      // me the rotation".
+      if (!canAnimate()) {
+        tween = null;
+      }
+
+      if (canAnimate() && (spin || demoActive() || tween)) {
         animationFrame =
           window.requestAnimationFrame(tick);
       } else {
-        draw();
+        const current = frame(0);
+        draw(current.base, current.opacity);
       }
     }
 
@@ -1518,6 +1696,26 @@ Corvus.calibFigures = (function () {
           changed = true;
         }
 
+        if ("from" in next) {
+          const nextFrom =
+            next.from && POSE_M[next.from]
+              ? next.from
+              : null;
+
+          if (nextFrom !== from) {
+            from = nextFrom;
+            changed = true;
+          }
+        }
+
+        if (
+          typeof next.motion === "boolean" &&
+          next.motion !== motion
+        ) {
+          motion = next.motion;
+          changed = true;
+        }
+
         if (
           typeof next.spin === "boolean" &&
           next.spin !== spin
@@ -1534,9 +1732,32 @@ Corvus.calibFigures = (function () {
           changed = true;
         }
 
-        if (changed) {
-          refresh();
+        if (!changed) {
+          return;
         }
+
+        // A new loop starts from its beginning, so the operator always sees
+        // the turn start at the side the aircraft is on.
+        demoStart = 0;
+
+        if (!demoActive()) {
+          const target = POSE_Q[pose];
+          const dot = Math.abs(
+            shown[0] * target[0] +
+              shown[1] * target[1] +
+              shown[2] * target[2] +
+              shown[3] * target[3]
+          );
+
+          tween =
+            dot < 0.99999 || shownOpacity < 1
+              ? { from: shown, opacity: shownOpacity, start: 0 }
+              : null;
+        } else {
+          tween = null;
+        }
+
+        refresh();
       },
 
       destroy() {

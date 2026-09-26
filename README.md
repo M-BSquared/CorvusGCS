@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.59-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.09.59" />
+  <img src="https://img.shields.io/badge/Version-2026.09.60-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.09.60" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -913,6 +913,15 @@ aircraft is no longer flying what you are looking at.
   silently taken. A motor wired to nothing is flagged on the drawing. The
   airframe type and the motor count sit on the same card, next to the picture
   they change, and adding or removing a motor redraws it.
+- **Frame size and sensor positions**: how far apart the motors are, as a frame
+  is measured: the diagonal a 450 frame is named after, front to back, and left
+  to right. Changing one rescales every lift rotor at once and keeps the
+  layout's shape. The flight controller and the GPS antenna are drawn on the
+  same airframe at their offset from the centre of gravity, and set on a card
+  of their own. PX4 1.18 moved the antenna offset to one set per receiver and
+  ArduPilot 4.6 renamed it; the page writes whichever the aircraft has.
+  ArduPilot mixes a fixed layout per frame type, so there the frame size is
+  explained rather than offered.
 - **Motor test**: spin one motor on the bench to find out which one it is.
   **Remove the propellers first**: the button will not enable until you confirm
   you have, it is refused while armed, the throttle stops at half, and the
@@ -1033,6 +1042,9 @@ aircraft is no longer flying what you are looking at.
   running calibration can be cancelled on the vehicle. PX4 recognises each
   position by itself; ArduPilot asks to be told, so on an ArduPilot aircraft a
   confirm button appears under the figure and the calibration waits for it.
+  Above the calibrations sits the flight controller's rotation on the airframe,
+  because every accelerometer and compass calibration is measured through it.
+  Change it and the page offers the reboot and names the calibrations to repeat.
 - **Motor / ESC calibration**: behind a safety confirmation, because motors
   spin at full PWM. **Remove the propellers first.** Refused while armed.
 - **Radio Control**: the transmitter in your hands, on one page, and drawn
@@ -1386,6 +1398,14 @@ instantly and is saved.
 - **Files**: where parameter exports, logs and downloads are written.
 - **Plugins**: what Corvus found, and a button that opens the folder you drop
   plugins into. See [Plugins](#plugins).
+- **Export and import**: every setting of the station in one JSON file, for a
+  backup or for setting up the next laptop. That includes the window layout
+  (where the flight HUD and the virtual joystick sit), the RC transmitter
+  bindings, every plugin's settings and the company logo. Passwords and map
+  keys stay out of the file unless you switch them on, and an import without
+  them keeps the ones already stored for the same host. Import shows what the
+  file holds and lets you switch off parts, such as the folders and port of
+  another machine. It is refused while the aircraft is armed.
 - **About**: version, the live connection summary, and **Credits** listing
   every bundled dependency and its licence.
 - **Updates**: a switch (on by default) that compares the running version

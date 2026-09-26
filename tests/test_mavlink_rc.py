@@ -229,8 +229,20 @@ def test_disabling_hands_the_rate_back_and_clears_live() -> None:
     assert bridge._store.get_snapshot()["rc_live"] is True
 
     assert bridge.set_rc_stream(False) is True
-    assert bridge._conn.mav.commands[-1][5] == pytest.approx(0.0)
+    # Back to the 5 Hz this UDP session asked for at connect, not to the
+    # firmware's default: the rate the page found is the one it leaves.
+    baseline = bridge._message_intervals()[mavutil.mavlink.MAVLINK_MSG_ID_RC_CHANNELS]
+    assert bridge._conn.mav.commands[-1][5] == pytest.approx(float(baseline))
     assert bridge._store.get_snapshot()["rc_live"] is False
+
+
+def test_disabling_on_a_radio_hands_the_rate_to_the_firmware() -> None:
+    """The serial set never asks for RC_CHANNELS, so there is no rate of
+    Corvus's own to go back to."""
+    bridge = _accepting_bridge()
+    bridge._conn_str = "serial:/dev/ttyUSB0:57600"
+    assert bridge.set_rc_stream(False) is True
+    assert bridge._conn.mav.commands[-1][5] == pytest.approx(0.0)
 
 
 @pytest.mark.parametrize("rate", [0, 51, True, 12.5, "20"])

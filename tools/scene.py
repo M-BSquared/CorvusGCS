@@ -21,6 +21,8 @@ browser steps that take the shot.
     tools/scene.py run flight --shoot       stand it up, take the picture, stop
     tools/scene.py shoot                    every picture, one scene after another
     tools/scene.py shoot mission ssh        just these
+    tools/scene.py web                      the website's copies, in both sizes
+    tools/scene.py shoot --web              take every picture, then the website's
     tools/scene.py check                    every scene builds, and renders
 
 Nothing it runs touches the operator's own Corvus: the backend runs against a
@@ -168,7 +170,30 @@ def cmd_shoot(args: argparse.Namespace) -> int:
     minutes = (time.monotonic() - started) / 60
     print(f"\ndone       {len(scenes) - len(failed)} of {len(scenes)} pictures "
           f"in {minutes:.1f} min" + (f"; failed: {', '.join(failed)}" if failed else ""))
+    if args.web and not failed:
+        from scene_kit import web
+
+        web.publish(scenes, Path(args.out).expanduser() if args.out else None)
     return 1 if failed else 0
+
+
+def cmd_web(args: argparse.Namespace) -> int:
+    """The website's copies of the pictures already taken, in both sizes."""
+    from scene_kit import capture, web
+
+    problem = capture.qt_problem()
+    if problem:
+        print(f"error      {problem}", file=sys.stderr)
+        return 1
+    wanted = args.scenes or sorted(library.SCENES, key=_library_order)
+    scenes = [library.get(scene_id) for scene_id in wanted]
+    try:
+        written = web.publish(scenes, Path(args.source).expanduser() if args.source else None)
+    except RuntimeError as exc:
+        print(f"error      {exc}", file=sys.stderr)
+        return 1
+    print(f"done       {len(written)} files in {web.WEB_DIR.relative_to(web.REPO_ROOT)}")
+    return 0
 
 
 def _library_order(scene_id: str) -> int:
@@ -350,8 +375,17 @@ def main(argv: list[str] | None = None) -> int:
     p_shoot.add_argument("--hidpi", action="store_true",
                          help="keep the display's pixel density instead of the viewport size")
     p_shoot.add_argument("--isolated-tiles", action="store_true")
+    p_shoot.add_argument("--web", action="store_true",
+                         help="then write the website's copies (see the web command)")
     p_shoot.add_argument("-v", "--verbose", action="store_true")
     p_shoot.set_defaults(func=cmd_shoot)
+
+    p_web = sub.add_parser(
+        "web", help="the website's copies of the pictures, 1600 px and 800 px")
+    p_web.add_argument("scenes", nargs="*", metavar="scene")
+    p_web.add_argument("--source", help="read the pictures from this folder (a shoot "
+                                        "--out batch) instead of the scenes' assets")
+    p_web.set_defaults(func=cmd_web)
 
     p_check = sub.add_parser(
         "check", help="every scene builds, and its pages render from its parameters")

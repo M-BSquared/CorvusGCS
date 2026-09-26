@@ -47,6 +47,9 @@ class Scene:
     id: str
     asset: str                      # where it belongs in the repo
     title: str
+    # Its name on the project website, docs/assets/images/<web>.jpg with an
+    # 800 px copy beside it (see web.py); "" for a picture the site does not show.
+    web: str = ""
     caption: str = ""               # the README's sentence under the image
 
     # --- the interface --------------------------------------------------
@@ -58,14 +61,26 @@ class Scene:
     workspace: str = "open"         # open | collapsed
     tab: str = "link"               # link | console | ssh | future
     plugin: str | None = None       # plugin to open on the future tab, by its name
+    # No x/y: the instrument panel sits where the app puts it, at the bottom
+    # right of the map.
     hud: dict[str, Any] = field(default_factory=lambda: {
         "pinned": False, "compact": False, "collapsed": False, "readouts": True,
     })
+    # The panel's lock, compact and collapse controls, which the app shows only
+    # under the pointer, shown for the picture.
+    hud_controls: bool = True
     map_provider: str = "esri"
     map_layer: str = "esri_world_imagery"
     topbar_dots: bool = False       # the caption status dots (Settings > Status dots)
     virtual_joystick: bool = False
     mission_page: bool = True       # MISSION in the left rail (Settings > Pages)
+    # The map's 3D mode for the picture, as the rail's 3D button sets it:
+    # "off", "simple" (a tilt) or "full" (terrain, buildings, the aircraft at
+    # its altitude). The bearing is where the tilted camera looks, and the zoom
+    # is added to the fitted one, since a tilt shows more ground than a plan.
+    map_3d: str = "off"
+    map_bearing: float = 0.0
+    map_zoom: float = 0.0
 
     # --- the aircraft ---------------------------------------------------
     airframe: str = params_mod.DEFAULT_AIRFRAME
@@ -77,6 +92,10 @@ class Scene:
     rc_state: RcState = field(default_factory=RcState)
     param_overrides: dict[str, Any] = field(default_factory=dict)
     full_param_table: bool = False  # pad to a real firmware's ~1200 parameters
+    # The parameter editor's All / Modified / Unsaved filter, pressed for the
+    # picture. "modified" leaves only the real, set-up rows beside their
+    # defaults; the padding (see params._filler) is all at its default.
+    param_filter: str = "all"
 
     # --- the flight -----------------------------------------------------
     home: tuple[float, float] = SORTIE_HOME
@@ -268,6 +287,7 @@ _SORTIE_NOTE = ("The aircraft flies the curved hop across the field once and "
 _register(Scene(
     id="flight",
     asset="assets/screenshot_flight.jpg",
+    web="flight-light",
     title="In flight: map, instrument panel and workspace",
     caption="Live map, the floating instrument panel, and the engineering "
             "workspace on the right.",
@@ -280,21 +300,37 @@ _register(Scene(
 _register(Scene(
     id="map",
     asset="assets/screenshot_map.jpg",
+    web="map",
     title="The map is the interface",
     caption="Collapse the side panel and the whole window becomes the "
             "operational picture: vehicle, heading, home point and the flown "
             "track, with the instrument panel wherever you put it.",
     page="home", workspace="collapsed",
-    hud={"pinned": False, "compact": False, "collapsed": False, "readouts": True,
-         "x": 40, "y": 120},
     **_SORTIE,
     settle=50.0,
-    notes=_SORTIE_NOTE + " Move the instrument panel if it covers the track.",
+    notes=_SORTIE_NOTE,
+))
+
+_register(Scene(
+    id="three_d",
+    asset="docs/assets/images/map-3d.jpg",
+    web="map-3d",
+    title="The map in 3D",
+    caption="The ground with its real shape, extruded OpenStreetMap buildings, "
+            "and the aircraft drawn at the altitude it is flying.",
+    theme="blue",
+    page="home", workspace="collapsed",
+    map_3d="full", map_bearing=20.0, map_zoom=0.6,
+    **_SORTIE,
+    settle=50.0,
+    notes=_SORTIE_NOTE + " Terrain and buildings come from the tile cache on "
+          "disk; over ground that was never cached the map is only tilted.",
 ))
 
 _register(Scene(
     id="mission",
     asset="assets/screenshot_mission.jpg",
+    web="mission",
     title="The mission planner",
     caption="A flight drawn before it is flown: start point, waypoints, an "
             "orbit and the return, with the altitude profile underneath.",
@@ -309,6 +345,7 @@ _register(Scene(
 _register(Scene(
     id="setup",
     asset="assets/screenshot_setup.png",
+    web="setup",
     title="Setup: every configuration page, one tile each",
     caption="Calibration, radio, tuning, motors, safety, battery, telemetry "
             "radio, RTK, Remote ID, parameters, firmware and video.",
@@ -321,6 +358,7 @@ _register(Scene(
 _register(Scene(
     id="motors",
     asset="assets/screenshot_motors.png",
+    web="motors",
     title="Setup: the airframe drawn to scale",
     caption="Every motor at its real distance from the centre of gravity, with "
             "its number, its output pin and a spin-direction arrow.",
@@ -335,6 +373,7 @@ _register(Scene(
 _register(Scene(
     id="battery",
     asset="assets/screenshot_battery.png",
+    web="battery",
     title="Setup: battery and power",
     caption="Cells, capacity, the power module and which charge reading the "
             "top bar shows.",
@@ -346,6 +385,7 @@ _register(Scene(
 _register(Scene(
     id="safety",
     asset="assets/screenshot_safety.png",
+    web="safety",
     title="Setup: limits, failsafes and sensors",
     caption="Maximum distance and height, the return-to-launch profile, and an "
             "action for every loss PX4 can detect. A distance sensor or "
@@ -360,6 +400,7 @@ _register(Scene(
 _register(Scene(
     id="calibration",
     asset="assets/screenshot_calibration.png",
+    web="calibration",
     title="Guided accelerometer calibration",
     caption="PX4 names the six accelerometer positions in its own order and in "
             "its own vocabulary, so each one is drawn instead of named.",
@@ -391,6 +432,7 @@ _register(Scene(
 _register(Scene(
     id="flight_review",
     asset="assets/screenshot_flight_review.png",
+    web="flight-review",
     title="Flight Review of the sortie",
     caption="A downloaded ULog reduced to the plots that decide whether a "
             "flight was healthy, with the flight modes behind every trace.",
@@ -405,6 +447,7 @@ _register(Scene(
 _register(Scene(
     id="flight_review_charts",
     asset="assets/screenshot_flight_review_charts.png",
+    web="flight-review-charts",
     title="Flight Review: estimate against setpoint",
     caption="Every plot carries the flight modes behind it. Here the pitch angle "
             "and its rate, estimate against setpoint, from the takeoff through "
@@ -421,6 +464,7 @@ _register(Scene(
 _register(Scene(
     id="console",
     asset="assets/screenshot_console.jpg",
+    web="console",
     title="The side workspace: MAVLink console",
     caption="A MAVLink console, an SSH terminal for the companion computer, "
             "and a plugin slot, beside the map rather than instead of it.",
@@ -435,6 +479,7 @@ _register(Scene(
 _register(Scene(
     id="ssh",
     asset="assets/screenshot_ssh.jpg",
+    web="ssh",
     title="SSH terminals on the companion computers",
     caption="A real terminal on the companion computer in the side panel, and "
             "a second one in a window of its own over the map.",
@@ -448,6 +493,7 @@ _register(Scene(
 _register(Scene(
     id="plugins",
     asset="docs/assets/images/plugins.jpg",
+    web="plugins",
     title="A plugin beside the map",
     caption="The Vibration Monitor plugin, live beside the map, on a short hop "
             "across the Neubiberg campus.",
@@ -462,6 +508,7 @@ _register(Scene(
 _register(Scene(
     id="dark",
     asset="assets/screenshot_dark.jpg",
+    web="flight-dark",
     title="A dark theme, in flight",
     caption="Six themes, two light and four dark. Switching is instant, with "
             "no reload and no flash, and the map, the plots and the "
@@ -477,21 +524,24 @@ _register(Scene(
 _register(Scene(
     id="parameters",
     asset="assets/screenshot_parameters.png",
+    web="parameters",
     title="The parameter editor",
     caption="The parameter editor in another theme.",
     theme="pink",
     page="setup", view="parameters", workspace="collapsed",
-    full_param_table=True,
+    full_param_table=True, param_filter="modified",
     armed=False, mode="POSCTL", path="parked", takeoff_time=0.0,
     settle=30.0,
     notes="The vehicle answers with a full-sized table (~1200 parameters), so "
           "the download has something to download and the list has weight. "
-          "Press Download on the page, then shoot once it completes.",
+          "The Modified filter is pressed for the shot: the rows a set-up "
+          "aircraft changed, each beside its PX4 default.",
 ))
 
 _register(Scene(
     id="rc",
     asset="assets/screenshot_rc.png",
+    web="rc",
     title="Radio Control: the transmitter, drawn",
     caption="The handset as a drawing: sticks, six switches and two knobs, "
             "each one live against the channel bound to it.",
@@ -514,6 +564,7 @@ _register(Scene(
 _register(Scene(
     id="tuning",
     asset="assets/screenshot_tuning.png",
+    web="tuning",
     title="PID tuning, with the response drawn beside the setpoint",
     caption="Rate, attitude, velocity and position gains by hand, plus the "
             "in-flight autotune.",

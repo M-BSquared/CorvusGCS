@@ -88,11 +88,37 @@ def test_plugins_list_reports_installed_plugins(tmp_path):
 
 def test_plugins_list_carries_saved_settings(tmp_path):
     _make_plugin(tmp_path / "user", "demo")
+    (tmp_path / "user" / "demo" / "config.json").write_text(
+        json.dumps({"directory": "/srv"}), encoding="utf-8")
     handler, responses = _handler(tmp_path)
-    handler.config.plugins = {"demo": {"directory": "/srv"}}
     handler._api_plugins()
     body, _ = responses[0]
     assert body["settings"] == {"demo": {"directory": "/srv"}}
+
+
+def test_plugins_list_reads_a_bundled_plugins_config_from_the_user_folder(tmp_path):
+    # The bundled folder is read-only inside an artifact, so a shipped plugin's
+    # config lives in a folder of the same name under the user root.
+    _make_plugin(tmp_path / "bundled", "schwalby")
+    (tmp_path / "user" / "schwalby").mkdir(parents=True)
+    (tmp_path / "user" / "schwalby" / "config.json").write_text(
+        json.dumps({"buttons": [{"id": "b1"}]}), encoding="utf-8")
+    handler, responses = _handler(tmp_path)
+    handler._api_plugins()
+    body, _ = responses[0]
+    assert [p["id"] for p in body["plugins"]] == ["schwalby"]
+    assert body["plugins"][0]["source"] == "bundled"
+    assert body["settings"] == {"schwalby": {"buttons": [{"id": "b1"}]}}
+
+
+def test_plugins_list_falls_back_to_unmigrated_settings(tmp_path):
+    handler, responses = _handler(tmp_path)
+    handler.config.plugins = {"old": {"a": 1}, "demo": {"stale": True}}
+    (tmp_path / "user" / "demo").mkdir(parents=True)
+    (tmp_path / "user" / "demo" / "config.json").write_text('{"fresh": true}', encoding="utf-8")
+    handler._api_plugins()
+    # The file wins over what is left in the main config.
+    assert responses[0][0]["settings"] == {"old": {"a": 1}, "demo": {"fresh": True}}
 
 
 # ---------------------------------------------------------------------------
@@ -157,18 +183,54 @@ def test_settings_are_saved_and_merged(tmp_path):
     assert responses[-1][0]["settings"] == {"directory": "/srv", "command": "./run"}
 
 
+def _plugin_file(tmp_path, plugin_id: str) -> dict:
+    return json.loads((tmp_path / "user" / plugin_id / "config.json").read_text(encoding="utf-8"))
+
+
 def test_settings_are_scoped_per_plugin(tmp_path):
     handler, _ = _handler(tmp_path)
     handler._api_plugins_settings({"id": "a", "settings": {"x": 1}})
     handler._api_plugins_settings({"id": "b", "settings": {"y": 2}})
-    assert handler.config.plugins == {"a": {"x": 1}, "b": {"y": 2}}
+    assert _plugin_file(tmp_path, "a") == {"x": 1}
+    assert _plugin_file(tmp_path, "b") == {"y": 2}
 
 
-def test_settings_survive_a_save_and_reload(tmp_path):
+def test_settings_are_kept_apart_from_the_main_config(tmp_path):
     handler, _ = _handler(tmp_path)
     handler._api_plugins_settings({"id": "demo", "settings": {"directory": "/srv"}})
-    from corvus.config import load_config
-    assert load_config(handler.config_path).plugins == {"demo": {"directory": "/srv"}}
+    assert _plugin_file(tmp_path, "demo") == {"directory": "/srv"}
+    assert handler.config.plugins is None
+    main = tmp_path / "config.json"
+    assert not main.exists() or "plugins" not in json.loads(main.read_text(encoding="utf-8"))
+
+
+def test_a_copied_config_file_deploys_the_same_settings(tmp_path):
+    source, _ = _handler(tmp_path / "a")
+    source._api_plugins_settings({"id": "schwalby", "settings": {"buttons": [{"id": "b1"}]}})
+    target_dir = tmp_path / "b" / "user" / "schwalby"
+    target_dir.mkdir(parents=True)
+    (target_dir / "config.json").write_bytes(
+        (tmp_path / "a" / "user" / "schwalby" / "config.json").read_bytes())
+    target, responses = _handler(tmp_path / "b")
+    target._api_plugins()
+    assert responses[0][0]["settings"] == {"schwalby": {"buttons": [{"id": "b1"}]}}
+
+
+def test_saving_moves_an_unmigrated_plugin_out_of_the_main_config(tmp_path):
+    handler, responses = _handler(tmp_path)
+    handler.config.plugins = {"demo": {"directory": "/srv"}, "other": {"z": 1}}
+    handler._api_plugins_settings({"id": "demo", "settings": {"command": "./run"}})
+    # The merge starts from the legacy object, not from nothing.
+    assert responses[-1][0]["settings"] == {"directory": "/srv", "command": "./run"}
+    assert _plugin_file(tmp_path, "demo") == {"directory": "/srv", "command": "./run"}
+    assert handler.config.plugins == {"other": {"z": 1}}
+
+
+def test_settings_rejects_an_id_that_could_leave_the_folder(tmp_path):
+    handler, responses = _handler(tmp_path)
+    handler._api_plugins_settings({"id": "../escape", "settings": {"x": 1}})
+    assert responses[0][1] == 400
+    assert not (tmp_path / "escape").exists()
 
 
 def test_settings_replace_drops_a_key_a_merge_cannot(tmp_path):
@@ -178,14 +240,15 @@ def test_settings_replace_drops_a_key_a_merge_cannot(tmp_path):
     # A merge can only ever add; replace is how a plugin retires a key it no
     # longer writes.
     assert responses[-1][0]["settings"] == {"keep": 3}
-    assert handler.config.plugins == {"demo": {"keep": 3}}
+    assert _plugin_file(tmp_path, "demo") == {"keep": 3}
 
 
 def test_settings_replace_leaves_other_plugins_alone(tmp_path):
     handler, _ = _handler(tmp_path)
     handler._api_plugins_settings({"id": "a", "settings": {"x": 1}})
     handler._api_plugins_settings({"id": "b", "settings": {"y": 2}, "replace": True})
-    assert handler.config.plugins == {"a": {"x": 1}, "b": {"y": 2}}
+    assert _plugin_file(tmp_path, "a") == {"x": 1}
+    assert _plugin_file(tmp_path, "b") == {"y": 2}
 
 
 @pytest.mark.parametrize("payload", [
@@ -474,3 +537,91 @@ def test_a_registry_that_calls_javascript_plain_text_changes_nothing(tmp_path, m
 def test_content_types_are_the_same_on_every_host(name, expected):
     from corvus.server import content_type
     assert content_type(name) == expected
+
+
+# ---------------------------------------------------------------------------
+# `needs`: a failure more typing can fix names the connection to set up
+# ---------------------------------------------------------------------------
+
+class _AuthSpy(_ConnectSpy):
+    """A bridge whose connect was refused at the login."""
+
+    def __init__(self, refused: bool = True) -> None:
+        super().__init__(ok=False, reason="Authentication failed.")
+        self.refused = refused
+
+    def connect_auth_failed(self, name):
+        return self.refused
+
+
+def test_connect_to_a_missing_connection_says_to_set_it_up(tmp_path):
+    handler, responses = _handler(tmp_path, ssh=_ConnectSpy())
+    handler._api_ssh_connect({"name": "schwalby/s", "from": "companion"})
+    body, status = responses[0]
+    assert status == 400
+    assert body["needs"] == "connection"
+    assert body["connection"] == "companion"
+
+
+def test_a_refused_login_says_to_ask_for_it(tmp_path):
+    handler, responses = _with_saved_connection(tmp_path, ssh=_AuthSpy(), password="")
+    handler._api_ssh_connect({"name": "schwalby/s", "from": "companion"})
+    body, _ = responses[0]
+    assert body["ok"] is False
+    assert body["needs"] == "credentials"
+    assert body["connection"] == "companion"
+
+
+def test_an_unreachable_host_asks_for_nothing(tmp_path):
+    handler, responses = _with_saved_connection(tmp_path, ssh=_AuthSpy(refused=False))
+    handler._api_ssh_connect({"name": "companion"})
+    assert "needs" not in responses[0][0]
+
+
+def test_an_ad_hoc_connect_names_no_connection(tmp_path):
+    handler, responses = _handler(tmp_path, ssh=_AuthSpy())
+    handler._api_ssh_connect({"name": "x", "host": "10.0.0.9", "username": "pi"})
+    assert "needs" not in responses[0][0]
+
+
+def test_run_on_a_missing_connection_says_to_set_it_up(tmp_path, monkeypatch):
+    monkeypatch.setattr("corvus.server.ssh_run_command", _RunSpy())
+    handler, responses = _handler(tmp_path)
+    handler._api_ssh_run({"name": "ground", "command": "./record.sh"})
+    body, status = responses[0]
+    assert status == 400
+    assert (body["needs"], body["connection"]) == ("connection", "ground")
+
+
+def test_run_with_a_refused_login_says_to_ask_for_it(tmp_path, monkeypatch):
+    spy = _RunSpy({"ok": False, "exit_status": None, "stdout": "", "stderr": "",
+                   "error": "Authentication failed.", "auth_failed": True})
+    monkeypatch.setattr("corvus.server.ssh_run_command", spy)
+    handler, responses = _with_saved_connection(tmp_path)
+    handler._api_ssh_run({"name": "companion", "command": "./start.sh"})
+    body, status = responses[0]
+    assert status == 200
+    assert (body["needs"], body["connection"]) == ("credentials", "companion")
+    assert "auth_failed" not in body
+
+
+def test_run_that_failed_otherwise_asks_for_nothing(tmp_path, monkeypatch):
+    spy = _RunSpy({"ok": False, "exit_status": 127, "stdout": "", "stderr": "nope",
+                   "error": "command exited with status 127", "auth_failed": False})
+    monkeypatch.setattr("corvus.server.ssh_run_command", spy)
+    handler, responses = _with_saved_connection(tmp_path)
+    handler._api_ssh_run({"name": "companion", "command": "./start.sh"})
+    assert "needs" not in responses[0][0]
+    assert "auth_failed" not in responses[0][0]
+
+
+def test_the_connection_list_says_whether_a_password_is_stored(tmp_path):
+    handler, responses = _with_saved_connection(tmp_path)
+    handler.config.ssh_connections.append(
+        {"name": "copied", "host": "10.0.0.8", "port": 22, "username": "pi",
+         "key_path": "", "password": ""})
+    handler._api_ssh_connections()
+    listed = {c["name"]: c for c in responses[0][0]["connections"]}
+    assert listed["companion"]["has_password"] is True
+    assert listed["copied"]["has_password"] is False
+    assert "hunter2" not in json.dumps(responses[0][0])

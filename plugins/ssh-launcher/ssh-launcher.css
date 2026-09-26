@@ -88,25 +88,39 @@
 .ui-info.sshl-error[data-popover-open="true"] { color: var(--critical-bright); }
 .sshl-failed .sshl-row-tools { opacity: 1; }
 
-/* The connection typed in for a button that has none saved yet. Inset and
-   hairlined so six fields read as one answer to the Connection question above
-   them, rather than as six more questions of the same rank. */
+/* The editor's fields, evenly apart. A card stacks its children as plain
+   blocks, so without a gap each field ran straight into the next caption. */
+.sshl-editor,
 .sshl-newconn {
-  margin: -4px 0 14px;
-  padding: 12px;
-  border: 1px solid var(--border-soft);
-  border-left: 2px solid var(--accent);
-  border-radius: var(--radius-btn);
-  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
-.sshl-newconn .field:last-child { margin-bottom: 0; }
+.sshl-editor > .ui-actions { margin-top: 4px; }
+
+/* The connection typed in for a button that has none saved yet. It drops out
+   of the Connection select as that select's own list does (.glass, 6px
+   below, the menu's radius and entrance), so six fields read as one answer
+   to the question above them rather than as six more of the same rank. The
+   negative margin takes the column's gap back down to the 6px a dropdown
+   stands off its trigger. */
+.sshl-newconn {
+  gap: 12px;
+  margin-top: -10px;
+  padding: 12px;
+  border-radius: var(--radius);
+  animation: corvus-enter 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.sshl-newconn[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .sshl-newconn { animation: none !important; }
+}
 
 /* The command a button will run, shown while editing it. A quiet inset surface
    rather than a field: it is the plugin telling the operator what it
    understood, not another control. Wrapping (not scrolling) because a wrong
    folder is easiest to spot when the whole line is visible at once. */
 .sshl-preview {
-  margin: 4px 0 14px;
   padding: 10px 12px;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-btn);

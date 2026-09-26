@@ -910,7 +910,7 @@ Corvus.map = (function () {
         set3D(!threeD);
         persistThreeD();
       } else if (act === "video" && Corvus.videoWindows) {
-        pressCameraButton(b);
+        pressCameraButton();
       }
     });
 
@@ -924,10 +924,15 @@ Corvus.map = (function () {
    *
    * With none set up it is hidden (with the divider above it) rather than a
    * button that only says where to add one. With one camera a press opens or
-   * closes its window. With several, a press opens a list beside the rail:
-   * one row per camera, marked while its window is open, and a last row that
-   * opens or closes all of them. The list stays open, so several cameras can
-   * be picked in one go.
+   * closes its window.
+   *
+   * With several, the press still opens or closes ONE window: the camera
+   * picked last, so the common case (the same camera, flight after flight) is
+   * one press. The list of all of them is the button's second gesture, the
+   * same one the 3D button has: the pointer resting on it, keyboard focus, or
+   * a long press or right-click. One row per camera, marked while its window
+   * is open, and a last row that opens or closes all of them. The list stays
+   * open, so several cameras can be picked in one go.
    *
    * It is lit while any camera window is open, whichever button or page
    * opened it.
@@ -946,19 +951,20 @@ Corvus.map = (function () {
       const any = list.length > 0;
       btn.hidden = !any;
       if (divider) divider.hidden = !any;
-      btn.title = list.length > 1 ? "Cameras" : (any ? `Camera: ${cameraLabel(list[0])}` : "");
+      btn.title = any ? `Camera: ${cameraLabel(lastCamera(list))}` : "";
       btn.setAttribute("aria-haspopup", list.length > 1 ? "menu" : "false");
       if (cameraMenuHandle && cameraMenuHandle.isOpen()) {
         if (list.length > 1) cameraMenuHandle.rebuild();
-        else cameraMenuHandle.close(false);
+        else closeCameraList(false);
       }
     };
     show([]);
     vw.onCameras(show);
     vw.onChange((n) => {
-      btn.classList.toggle("active", n > 0 || !!(cameraMenuHandle && cameraMenuHandle.isOpen()));
+      btn.classList.toggle("active", n > 0);
       if (cameraMenuHandle && cameraMenuHandle.isOpen()) cameraMenuHandle.rebuild();
     });
+    wireCameraHover(btn);
     vw.loadCameras();
   }
 
@@ -966,31 +972,44 @@ Corvus.map = (function () {
     return String((cam && (cam.name || cam.address)) || "Camera");
   }
 
-  function pressCameraButton(btn) {
+  // Which camera the press opens, per browser profile: it describes this
+  // operator's habit, not the vehicle, so it is not worth a config key.
+  const LAST_CAMERA_KEY = "corvus.map.lastCamera";
+  // Only consulted when storage cannot be read (a private window).
+  let lastCameraId = "";
+
+  function readLastCamera() {
+    try { return String(window.localStorage.getItem(LAST_CAMERA_KEY) || ""); }
+    catch (_e) { return lastCameraId; }
+  }
+
+  function rememberCamera(cam) {
+    if (!cam || !cam.id) return;
+    lastCameraId = String(cam.id);
+    try { window.localStorage.setItem(LAST_CAMERA_KEY, lastCameraId); } catch (_e) {}
+    const b = controlsEl && controlsEl.querySelector('[data-act="video"]');
+    if (b) b.title = `Camera: ${cameraLabel(cam)}`;
+  }
+
+  /** The camera picked last, or the first one when that one is gone. */
+  function lastCamera(list) {
+    const id = readLastCamera();
+    return list.find((c) => c.id === id) || list[0] || null;
+  }
+
+  function pressCameraButton() {
     const vw = Corvus.videoWindows;
     const list = vw.cameras();
-    if (list.length > 1) {
-      const menu = cameraMenu();
-      if (menu.isOpen()) menu.close(false);
-      else menu.open({ el: btn });
-    } else if (list.length === 1) {
-      vw.toggle(list[0]);
-    } else {
-      vw.toggleAll();
-    }
+    if (list.length > 0) vw.toggle(lastCamera(list));
+    else vw.toggleAll();
   }
 
   let cameraMenuHandle = null;
+  let cameraHoverTimer = null;
 
-  /** The list the camera button opens when there is more than one camera. */
+  /** The list the camera button reveals when there is more than one camera. */
   function cameraMenu() {
     if (cameraMenuHandle) return cameraMenuHandle;
-    const mark = (on) => {
-      const b = controlsEl && controlsEl.querySelector('[data-act="video"]');
-      if (!b) return;
-      b.classList.toggle("active", on || Corvus.videoWindows.count() > 0);
-      b.setAttribute("aria-expanded", on ? "true" : "false");
-    };
     cameraMenuHandle = Corvus.ui.menu({
       className: "layers-popover camera-popover",
       role: "menu",
@@ -998,11 +1017,63 @@ Corvus.map = (function () {
       side: "left",
       gap: railMenuGap,
       matchAnchorWidth: false,
+      // Revealed by pointing, like the 3D panel: it must not take the keyboard.
+      autofocus: false,
       render: renderCameraRows,
-      onOpen: () => mark(true),
-      onClose: () => mark(false),
+      onOpen: () => markCameraList(true),
+      onClose: () => markCameraList(false),
     });
     return cameraMenuHandle;
+  }
+
+  function markCameraList(open) {
+    const b = controlsEl && controlsEl.querySelector('[data-act="video"]');
+    if (b) b.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  /** The 3D panel's hover, focus and long-press wiring, for the camera list. */
+  function wireCameraHover(btn) {
+    btn.addEventListener("mouseenter", () => scheduleCameraList(true));
+    btn.addEventListener("mouseleave", () => scheduleCameraList(false));
+    btn.addEventListener("focus", () => openCameraList());
+    btn.addEventListener("blur", (e) => {
+      const to = e && e.relatedTarget;
+      if (to && cameraMenuHandle && withinNode(to, cameraMenuHandle.el)) return;
+      closeCameraList(true);
+    });
+    btn.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      openCameraList();
+    });
+    const surface = cameraMenu().el;
+    surface.addEventListener("mouseenter", () => scheduleCameraList(true));
+    surface.addEventListener("mouseleave", () => scheduleCameraList(false));
+  }
+
+  function clearCameraHoverTimer() {
+    if (cameraHoverTimer) window.clearTimeout(cameraHoverTimer);
+    cameraHoverTimer = null;
+  }
+
+  function scheduleCameraList(open) {
+    clearCameraHoverTimer();
+    cameraHoverTimer = window.setTimeout(
+      () => { cameraHoverTimer = null; if (open) openCameraList(); else closeCameraList(false); },
+      open ? THREE_D_HOVER_OPEN_MS : THREE_D_HOVER_CLOSE_MS);
+  }
+
+  function openCameraList() {
+    clearCameraHoverTimer();
+    const btn = controlsEl && controlsEl.querySelector('[data-act="video"]');
+    const vw = Corvus.videoWindows;
+    if (!btn || btn.hidden || !vw || vw.cameras().length < 2) return;
+    if (cameraMenu().isOpen()) return;
+    cameraMenu().open({ el: btn });
+  }
+
+  function closeCameraList(refocus) {
+    clearCameraHoverTimer();
+    if (cameraMenuHandle) cameraMenuHandle.close(!!refocus);
   }
 
   function renderCameraRows(surface) {
@@ -1019,7 +1090,7 @@ Corvus.map = (function () {
         dot: true,
         active: on,
         role: "menuitemcheckbox",
-        onSelect: () => vw.toggle(cam),
+        onSelect: () => { rememberCamera(cam); vw.toggle(cam); },
       });
       row.setAttribute("aria-checked", on ? "true" : "false");
       if (cam.address) row.title = String(cam.address);

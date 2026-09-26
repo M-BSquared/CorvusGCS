@@ -130,15 +130,26 @@ Corvus.topbar = (function () {
     return ap ? `${ap} ${type}` : type;
   }
 
+  /** The narrow bar's vehicle: the stack alone, which is what the version
+   *  beside it belongs to. The airframe is on the setup pages. */
+  function vehicleShortLabel(state) {
+    if (!state.connected) return "NO LINK";
+    return state.autopilot || vehicleTypeLabel(state.vehicle_type);
+  }
+
   function vehicleFirmware(state) {
     if (!state.connected) return { text: "", cls: "", title: "" };
     /* Release version only. The git hash the firmware also reports identifies
        the exact build, which matters when filing a bug and never in flight, so
        it lives in the tooltip instead of the bar. */
     if (state.px4_version) {
+      const full = state.px4_version;
       const detail = state.px4_version_detail
-        ? `Build ${state.px4_version_detail}` : "";
-      return { text: state.px4_version, cls: "", title: detail };
+        ? `${full}, build ${state.px4_version_detail}` : full;
+      /* Major.minor only: the patch release never changes what the operator
+         can do, and the full string stays in the tooltip. */
+      const short = full.replace(/^(v?\d+\.\d+)\.\d+/, "$1");
+      return { text: short, cls: "", title: detail };
     }
     if (state.autopilot) {
       return {
@@ -195,7 +206,7 @@ Corvus.topbar = (function () {
     if (!state.connected) return { value: "—", cls: "off", tone: "none", title: "No link to a vehicle" };
     if (state.armed) {
       if (isAirborne(state)) {
-        return { value: "FLYING", cls: "nav", tone: "flying", title: "Airborne, motors are live" };
+        return { value: "FLYING", cls: "healthy", tone: "flying", title: "Airborne, motors are live" };
       }
       return {
         value: "ARMED",
@@ -217,6 +228,7 @@ Corvus.topbar = (function () {
         ? state.prearm_reasons.filter((r) => typeof r === "string" && r) : [];
       return {
         value: "NOT READY",
+        short: "NO GO",
         cls: "warning",
         tone: "notready",
         sub: reasons.length ? `${reasons.length} check${reasons.length === 1 ? "" : "s"}` : "",
@@ -228,6 +240,7 @@ Corvus.topbar = (function () {
     }
     return {
       value: "STANDBY",
+      short: "STBY",
       cls: "off",
       tone: "none",
       title: "Disarmed. This firmware does not report its preflight-check state, so readiness is unknown.",
@@ -346,6 +359,14 @@ Corvus.topbar = (function () {
     NO_GPS: "No receiver", NO_FIX: "No fix", "2D_FIX": "2D fix", "3D_FIX": "3D fix",
     DGPS: "DGPS", RTK_FLOAT: "RTK float", RTK_FIXED: "RTK fixed",
     STATIC: "Static", PPP: "PPP",
+  };
+
+  /** The fix, in the small print beside the GPS caption: the operator reads
+   *  the colour for "can I trust the position" and this for "how precise".
+   *  A plain 3D fix is the normal case and says nothing, so it prints nothing. */
+  const FIX_SHORT = {
+    NO_GPS: "none", NO_FIX: "no fix", "2D_FIX": "2D", "3D_FIX": "", DGPS: "DGPS",
+    RTK_FLOAT: "RTK float", RTK_FIXED: "RTK fix", STATIC: "static", PPP: "PPP",
   };
 
   function hasFix(state) {
@@ -555,21 +576,22 @@ Corvus.topbar = (function () {
   function blocks(state) {
     const conn = state.connected ? "healthy" : "critical";
     const ready = readiness(state);
-    const gpsCls = state.connected && state.gps_fix && state.gps_fix !== "NO_GPS" && state.gps_fix !== "NO_FIX"
-      ? "healthy" : "off";
+    const gpsCls = !state.connected || !state.gps_fix || state.gps_fix === "NO_GPS"
+      ? "off" : reception(state)[1];
     const battPct = state.battery_percent || 0;
     const battCls = !state.connected ? "off" : battPct > 25 ? "healthy" : (battPct > 12 ? "warning" : "critical");
     const notifications = notificationSummary(state);
-    const gpsSub = state.connected ? `(${state.gps_hdop > 0 && state.gps_hdop < 99 ? state.gps_hdop.toFixed(1) : "—"})` : "";
+    const gpsFix = state.gps_fix || "NO_GPS";
+    const gpsSub = state.connected ? (FIX_SHORT[gpsFix] ?? gpsFix) : "";
     const fw = vehicleFirmware(state);
     const units = Corvus.units;
 
     return [
       { type: "logo" },
-      { key: "vehicle", label: "Vehicle", value: vehicleLabel(state), cls: state.connected ? "" : "critical", dot: conn, sub: fw.text, subCls: fw.cls, title: fw.title, priority: "high" },
+      { key: "vehicle", label: "Vehicle", value: vehicleLabel(state), short: vehicleShortLabel(state), cls: state.connected ? "" : "critical", dot: conn, sub: fw.text, subCls: fw.cls, title: fw.title, priority: "high" },
       { key: "mode", label: "Mode", value: modeLabel(state), cls: "accent", priority: "high" },
-      { key: "armed", label: "Status", value: ready.value, sub: ready.sub || "", cls: ready.cls, dot: ready.cls, tone: ready.tone, title: ready.title, priority: "high" },
-      { key: "gps", label: "GPS", value: state.connected ? (state.gps_fix || "NO GPS") : "—", sub: gpsSub, cls: gpsCls, dot: gpsCls, detail: true, priority: "high" },
+      { key: "armed", label: "Status", value: ready.value, short: ready.short || ready.value, sub: ready.sub || "", cls: ready.cls, dot: ready.cls, tone: ready.tone, title: ready.title, priority: "high" },
+      { key: "gps", label: "GPS", value: state.connected ? "GPS" : "—", sub: gpsSub, cls: gpsCls, dot: gpsCls, detail: true, priority: "high" },
       { key: "battery", label: "Battery", value: state.connected ? `${state.battery_voltage.toFixed(1)} V` : "—", sub: state.connected ? `${battPct}%` : "", cls: battCls, dot: battCls, detail: true, priority: "high" },
       { key: "altitude", label: "Altitude", value: state.connected ? units.formatLength(state.altitude_amsl, { bare: true }) : "—", sub: `${units.lengthSymbol()} AMSL`, priority: "mid" },
       { key: "groundspeed", label: "Groundspeed", value: state.connected ? units.formatSpeed(state.groundspeed, { bare: true }) : "—", sub: units.speedSymbol(), priority: "mid" },
@@ -752,6 +774,16 @@ Corvus.topbar = (function () {
     vMain.className = "v-main";
     vMain.textContent = b.value;
     value.appendChild(vMain);
+    // A narrow bar swaps the value for its abbreviation (main.css, data-vw)
+    // rather than letting the block squeeze its neighbours out.
+    if (b.short !== undefined) {
+      const vShort = document.createElement("span");
+      vShort.className = "v-short";
+      vShort.setAttribute("aria-hidden", "true");
+      vShort.textContent = b.short;
+      value.appendChild(vShort);
+      blk.dataset.short = "";
+    }
     if (b.sub !== undefined) {
       const sub = document.createElement("span");
       sub.className = "sub" + (b.subCls ? " " + b.subCls : "");
@@ -795,6 +827,7 @@ Corvus.topbar = (function () {
         blockEls[b.key] = {
           root,
           vMain: root.querySelector(".v-main"),
+          vShort: root.querySelector(".v-short"),
           sub: root.querySelector(".sub"),
           dot: root.querySelector(".tb-dot"),
           value: root.querySelector(".tb-value"),
@@ -818,6 +851,9 @@ Corvus.topbar = (function () {
       const el = cached.root;
       const valEl = cached.vMain;
       if (valEl && valEl.textContent !== b.value) valEl.textContent = b.value;
+      if (cached.vShort && b.short !== undefined && cached.vShort.textContent !== b.short) {
+        cached.vShort.textContent = b.short;
+      }
       const subEl = cached.sub;
       if (subEl && b.sub !== undefined) subEl.textContent = b.sub;
       if (subEl && b.subCls !== undefined) subEl.className = "sub" + (b.subCls ? " " + b.subCls : "");

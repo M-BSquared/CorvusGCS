@@ -22,11 +22,13 @@ from pymavlink import mavutil as mv  # noqa: E402
 
 from corvus import (  # noqa: E402
     ardupilot_motors,
+    ardupilot_mounting,
     ardupilot_rc,
     ardupilot_safety,
     ardupilot_tuning,
     autopilot,
     motor_config,
+    mounting_config,
     rc_config,
     safety_config,
     tuning_config,
@@ -84,6 +86,7 @@ PAGES = [
     ("_api_tuning", "/api/tuning", tuning_config, ardupilot_tuning),
     ("_api_rc", "/api/rc", rc_config, ardupilot_rc),
     ("_api_motors", "/api/motors", motor_config, ardupilot_motors),
+    ("_api_mounting", "/api/mounting", mounting_config, ardupilot_mounting),
 ]
 
 
@@ -120,6 +123,55 @@ def test_a_bridge_without_a_stack_still_renders_rather_than_raising(
     handler, responses = _handler(LegacyBridge(), path)
     getattr(handler, endpoint)()
     assert responses and responses[0][1] == 200
+
+
+class AnsweringBridge(FakeBridge):
+    """A FakeBridge that answers for the names it is given values for."""
+
+    def __init__(self, stack: str, values: dict[str, float]) -> None:
+        super().__init__(stack)
+        self.values = values
+
+    def fetch_params(self, names: list[str], timeout: float = 4.0) -> dict[str, float]:
+        self.requested.append(list(names))
+        return {n: v for n, v in self.values.items() if n in names}
+
+
+def test_the_motors_page_carries_the_lever_arms_of_the_connected_stack() -> None:
+    """The flight controller and the GPS are drawn on the motors' airframe,
+    so they ride the same read, named the way the connected stack names them."""
+    bridge = AnsweringBridge(autopilot.STACK_ARDUPILOT, {
+        "FRAME_CLASS": 1.0, "FRAME_TYPE": 1.0,
+        "INS_POS1_X": 0.03, "INS_POS1_Y": 0.0, "INS_POS1_Z": 0.0,
+        "GPS1_POS_X": -0.1, "GPS1_POS_Y": 0.0, "GPS1_POS_Z": -0.15,
+    })
+    handler, responses = _handler(bridge, "/api/motors")
+    handler._api_motors()
+    payload = responses[0][0]
+    assert [s["id"] for s in payload["sensors"]] == ["fc", "gps1"]
+    assert payload["sensors"][1]["fields"][0]["param"] == "GPS1_POS_X"
+    assert payload["frame"]["adjustable"] is False
+    assert payload["position_hint"]
+
+
+def test_the_mounting_endpoint_returns_the_board_rotation() -> None:
+    bridge = AnsweringBridge(autopilot.STACK_PX4, {
+        "SENS_BOARD_ROT": 4.0, "SENS_BOARD_X_OFF": 0.5,
+    })
+    handler, responses = _handler(bridge, "/api/mounting")
+    handler._api_mounting()
+    payload, status = responses[0]
+    assert status == 200 and payload["connected"] is True
+    assert [f["param"] for f in payload["orientation"]["fields"]] == [
+        "SENS_BOARD_ROT", "SENS_BOARD_X_OFF"]
+
+
+def test_the_mounting_endpoint_without_a_link_still_renders() -> None:
+    handler, responses = _handler(None, "/api/mounting")
+    handler._api_mounting()
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["connected"] is False and payload["orientation"] is None
 
 
 def test_an_unknown_stack_falls_back_to_px4s_schema() -> None:

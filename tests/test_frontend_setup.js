@@ -1264,6 +1264,208 @@ async function testAFirmwareWithoutRotorAxesDrawsPlainDiscs() {
     "no axis means no invented thrust direction");
 }
 
+// The flight controller and GPS share the motors' origin, the centre of
+// gravity, so they are drawn on the same airframe at the same scale. "Where is
+// the flight controller relative to the motors?" is read off the picture.
+function sensorsFor(fc, gps) {
+  const axisFields = (prefix, p) => ["X", "Y", "Z"].map((a, i) => ({
+    param: `${prefix}${a}`, label: ["Forward", "Right", "Down"][i], kind: "number",
+    value: p[i], unit: "m", step: 0.001, min: -5, max: 5,
+  }));
+  return [
+    { id: "fc", label: "Flight controller", tag: "FC", kind: "fc",
+      x: fc[0], y: fc[1], z: fc[2], fields: axisFields("EKF2_IMU_POS_", fc) },
+    { id: "gps1", label: "GPS antenna", tag: "GPS", kind: "gps",
+      x: gps[0], y: gps[1], z: gps[2], fields: axisFields("EKF2_GPS_POS_", gps) },
+  ];
+}
+
+function sensorCentre(container, id) {
+  const g = findByDataset(container, "sensor", id)[0];
+  const rect = findByTag(g, "rect")[0];
+  if (rect) {
+    return { x: Number(rect.getAttribute("x")) + 9, y: Number(rect.getAttribute("y")) + 6 };
+  }
+  const circle = findByTag(g, "circle")[0];
+  return { x: Number(circle.getAttribute("cx")), y: Number(circle.getAttribute("cy")) };
+}
+
+async function testTheFlightControllerAndGpsAreDrawnBetweenTheMotors() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake, motorsDoc({
+    sensors: sensorsFor([0.05, 0, 0], [-0.1, 0, -0.12]),
+    position_hint: "Metres from the centre of gravity.",
+  }));
+
+  const centre = 340 / 2;
+  const fc = sensorCentre(container, "fc");
+  const gps = sensorCentre(container, "gps1");
+  assert.ok(Math.abs(fc.x - centre) < 0.5 && fc.y < centre,
+    "the flight controller, 5 cm forward, is drawn just ahead of the hub");
+  assert.ok(Math.abs(gps.x - centre) < 0.5 && gps.y > centre,
+    "the GPS, 10 cm back, is drawn behind the hub");
+  // Same scale as the motors: 0.05 m and 0.1 m against a 0.2121 m motor radius.
+  const m1 = motorCentre(container, 1);
+  const rMotor = Math.hypot(m1.x - centre, m1.y - centre);
+  assert.ok(Math.abs((centre - fc.y) / rMotor - 0.05 / Math.hypot(0.15, 0.15)) < 0.01,
+    "the flight controller is to scale with the motors");
+  assert.ok(Math.abs((gps.y - centre) / rMotor - 0.1 / Math.hypot(0.15, 0.15)) < 0.01,
+    "the GPS is to scale with the motors");
+
+  const tags = findByClass(container, "motors-sensor-tag").map((e) => e.textContent);
+  assert.deepEqual(tags, ["FC", "GPS"]);
+  assert.equal(findByTag(findByDataset(container, "sensor", "fc")[0], "rect").length, 1,
+    "the flight controller is drawn as a board");
+  assert.equal(findByTag(findByDataset(container, "sensor", "gps1")[0], "circle").length, 1,
+    "the GPS antenna is drawn as a ring");
+  const legend = findByClass(container, "motors-legend-item").map((e) => e.textContent);
+  assert.ok(legend.some((t) => t.includes("Flight controller and GPS to scale")));
+  const aria = findByDataset(container, "sensor", "gps1")[0].getAttribute("aria-label");
+  assert.ok(aria.includes("-0.12 metres down"), "the height of the antenna is announced");
+}
+
+async function testAGpsMastPastTheArmsWidensTheView() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake, motorsDoc({
+    sensors: sensorsFor([0, 0, 0], [0.5, 0, 0]),
+  }));
+  const centre = 340 / 2;
+  const gps = sensorCentre(container, "gps1");
+  assert.ok(Math.abs((centre - gps.y) - 118) < 0.5, "the antenna sits on the outer ring");
+  const m1 = motorCentre(container, 1);
+  assert.ok(Math.abs(Math.hypot(m1.x - centre, m1.y - centre) / 118
+    - Math.hypot(0.15, 0.15) / 0.5) < 0.01, "the motors shrink to the same scale");
+}
+
+async function testWithNoMotorPositionsTheSensorsKeepOnlyTheirDirection() {
+  const fake = makeFakeTelemetry();
+  const doc = motorsDoc({ sensors: sensorsFor([0, 0.02, 0], [-0.1, 0, 0]) });
+  doc.motors.forEach((m) => { m.x = 0; m.y = 0; });
+  const container = await openMotors(fake, doc);
+  const centre = 340 / 2;
+  const gps = sensorCentre(container, "gps1");
+  assert.ok(gps.y > centre && gps.y - centre < 118, "the GPS points back, inside the ring");
+  const legend = findByClass(container, "motors-legend-item").map((e) => e.textContent);
+  assert.ok(legend.some((t) => t.includes("only the direction")),
+    "the legend says the sensors are not to scale");
+}
+
+async function testMovingTheGpsWritesItsParameterAndRedraws() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake, motorsDoc({
+    sensors: sensorsFor([0, 0, 0], [0, 0, 0]),
+    position_hint: "Metres from the centre of gravity.",
+  }));
+  assert.ok(findOneByClass(container, "motors-sensor-card"), "the positions have a card");
+  const before = fake.requests.filter((u) => u === "/api/motors").length;
+  const input = findByDataset(container, "param", "EKF2_GPS_POS_Z")
+    .filter((e) => e.tagName === "INPUT")[0];
+  input.value = "-0.15";
+  fire(input, "change");
+  await flushMicrotasks();
+  assert.deepEqual(fake.postCalls.filter((c) => c.url === "/api/params/set")[0].payload,
+    { name: "EKF2_GPS_POS_Z", value: -0.15 });
+  assert.equal(fake.requests.filter((u) => u === "/api/motors").length, before + 1,
+    "the airframe is redrawn so the marker moves");
+}
+
+// ArduPilot keeps a position per IMU. One field moves the IMUs of the board
+// together, and the check afterwards covers all of them.
+async function testAPositionFieldAlsoWritesTheOtherImus() {
+  const fake = makeFakeTelemetry();
+  const sensors = sensorsFor([0, 0, 0], [0, 0, 0]);
+  sensors[0].fields[0] = Object.assign({}, sensors[0].fields[0],
+    { param: "INS_POS1_X", also: ["INS_POS2_X", "INS_POS3_X"] });
+  const container = await openMotors(fake, motorsDoc({ sensors }));
+  const input = findByDataset(container, "param", "INS_POS1_X")
+    .filter((e) => e.tagName === "INPUT")[0];
+  input.value = "0.03";
+  fire(input, "change");
+  await flushMicrotasks();
+  assert.deepEqual(
+    fake.postCalls.filter((c) => c.url === "/api/params/set").map((c) => c.payload),
+    [{ name: "INS_POS1_X", value: 0.03 }, { name: "INS_POS2_X", value: 0.03 },
+     { name: "INS_POS3_X", value: 0.03 }]);
+}
+
+function quadFrame() {
+  return {
+    adjustable: true, length: 0.3, width: 0.3, diagonal: 0.4243,
+    center: { x: 0, y: 0 },
+    motors: [[0.15, 0.15], [-0.15, -0.15], [0.15, -0.15], [-0.15, 0.15]].map(([x, y], i) => ({
+      number: i + 1, x, y, x_param: `CA_ROTOR${i}_PX`, y_param: `CA_ROTOR${i}_PY`,
+    })),
+    hint: "Scales the motor positions around the middle of the frame.",
+  };
+}
+
+async function testTheFrameDiagonalRescalesEveryLiftRotor() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake, motorsDoc({ frame: quadFrame() }));
+  const inputs = findByClass(container, "motors-frame-input");
+  assert.deepEqual(inputs.map((i) => i.dataset.dim), ["diagonal", "length", "width"]);
+  assert.equal(inputs[0].value, "0.4243", "the diagonal is prefilled from the vehicle");
+
+  const before = fake.requests.filter((u) => u === "/api/motors").length;
+  inputs[0].value = "0.8486";
+  fire(inputs[0], "change");
+  await flushMicrotasks();
+  const writes = fake.postCalls.filter((c) => c.url === "/api/params/set").map((c) => c.payload);
+  assert.equal(writes.length, 8, "both coordinates of all four motors move");
+  assert.deepEqual(writes.slice(0, 2),
+    [{ name: "CA_ROTOR0_PX", value: 0.3 }, { name: "CA_ROTOR0_PY", value: 0.3 }]);
+  assert.deepEqual(writes[3], { name: "CA_ROTOR1_PY", value: -0.3 });
+  assert.equal(fake.requests.filter((u) => u === "/api/motors").length, before + 1,
+    "the page redraws from what the vehicle now holds");
+}
+
+function testFrameLengthMovesOnlyTheXAndKeepsTheCentreOfGravityOffset() {
+  const frame = {
+    adjustable: true, length: 0.4, width: 0.4, diagonal: 0.5657,
+    center: { x: 0.05, y: 0 },
+    motors: [
+      { number: 1, x: 0.25, y: 0.2, x_param: "A_X", y_param: "A_Y" },
+      { number: 2, x: -0.15, y: -0.2, x_param: "B_X", y_param: "B_Y" },
+    ],
+  };
+  assert.deepEqual(Corvus.setupMotors.frameWrites(frame, "length", 0.6), [
+    { name: "A_X", value: 0.35 }, { name: "B_X", value: -0.25 },
+  ], "the frame grows around its middle, which stays 5 cm ahead of the centre of gravity");
+  assert.deepEqual(Corvus.setupMotors.frameWrites(frame, "width", 0.4), [],
+    "an unchanged size writes nothing");
+  assert.deepEqual(Corvus.setupMotors.frameWrites({ adjustable: false }, "diagonal", 1), []);
+}
+
+async function testAFrameSizeOutsideTheBoundsIsNeverWritten() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake, motorsDoc({ frame: quadFrame() }));
+  const input = findByClass(container, "motors-frame-input")[0];
+  for (const bad of ["0", "12", "abc", ""]) {
+    input.value = bad;
+    fire(input, "change");
+    await flushMicrotasks();
+  }
+  assert.equal(fake.postCalls.filter((c) => c.url === "/api/params/set").length, 0);
+  assert.ok(input.className.includes("invalid"));
+}
+
+// ArduPilot has no motor positions. The operator looking for the arm length is
+// told why there is none, rather than finding nothing.
+async function testAFrameThatCannotBeScaledSaysWhy() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake, motorsDoc({
+    frame: { adjustable: false, note: "ArduPilot mixes a fixed layout for the frame class and type." },
+  }));
+  assert.equal(findByClass(container, "motors-frame-input").length, 0);
+  assert.ok(findOneByClass(container, "motors-frame-note").textContent.includes("ArduPilot"));
+}
+
+async function testTheFrameSizeIsReadOnlyWhileArmed() {
+  const fake = makeFakeTelemetry({ state: { armed: true, connected: true } });
+  const container = await openMotors(fake, motorsDoc({ frame: quadFrame() }));
+  assert.ok(findByClass(container, "motors-frame-input").every((i) => i.disabled));
+}
+
 async function testMotorsDisconnectedRendersAnExplanationNotAnError() {
   const fake = makeFakeTelemetry();
   const container = await openMotors(fake, {
@@ -1317,6 +1519,69 @@ async function testMotorsTeardownReleasesTheSubscription() {
 // ===========================================================================
 // PART B — Calibration
 // ===========================================================================
+
+// Every accelerometer and compass calibration is measured through the board
+// rotation, so it is set above the calibrations, and a change says which of
+// them it has invalidated.
+async function testCalibrationSetsTheBoardRotationFirst() {
+  const fake = makeFakeTelemetry();
+  fake.setResponse("/api/mounting", {
+    connected: true,
+    orientation: {
+      hint: "Set the rotation before calibrating.",
+      fields: [{ param: "SENS_BOARD_ROT", label: "Flight controller rotation", kind: "enum",
+        value: 0, reboot: true,
+        options: [{ value: 0, label: "No rotation" }, { value: 4, label: "Yaw 180°" }] }],
+    },
+    positions: [],
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  pageViewEl = container;
+  Corvus.setup.render(container);
+  openTile(container, "calibration");
+  await flushMicrotasks();
+
+  assert.ok(fake.requests.includes("/api/mounting"), "the rotation is read on open");
+  const view = findOneByClass(container, "calib-list-view");
+  const order = view.children.map((c) => c.className);
+  assert.ok(order.findIndex((c) => c.includes("calib-mounting"))
+    < order.findIndex((c) => c.includes("page-section") && !c.includes("calib-mounting")),
+    "the rotation comes before the calibrations");
+  const reboot = findOneByClass(container, "calib-mounting-reboot");
+  assert.equal(reboot.hidden, true, "no reboot is offered before anything changed");
+  assert.ok(textOf(findOneByClass(container, "calib-mounting")).includes("Motors page"),
+    "the page says where the positions are set");
+
+  const select = findByDataset(container, "param", "SENS_BOARD_ROT")
+    .filter((e) => e.tagName === "SELECT")[0];
+  select.value = "4";
+  fire(select, "change");
+  await flushMicrotasks();
+  assert.deepEqual(fake.postCalls.filter((c) => c.url === "/api/params/set")[0].payload,
+    { name: "SENS_BOARD_ROT", value: 4 });
+  assert.equal(reboot.hidden, false, "a rotation change offers the reboot");
+  assert.ok(textOf(reboot).includes("calibrate the accelerometer"),
+    "and says which calibrations to repeat");
+}
+
+async function testTheBoardRotationIsReadOnlyWhileArmed() {
+  const fake = makeFakeTelemetry({ state: { armed: true, connected: true } });
+  fake.setResponse("/api/mounting", {
+    connected: true,
+    orientation: { fields: [{ param: "AHRS_ORIENTATION", label: "Flight controller rotation",
+      kind: "enum", value: 0, reboot: true, options: [{ value: 0, label: "No rotation" }] }] },
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  pageViewEl = container;
+  Corvus.setup.render(container);
+  openTile(container, "calibration");
+  await flushMicrotasks();
+  const select = findByDataset(container, "param", "AHRS_ORIENTATION")
+    .filter((e) => e.tagName === "SELECT")[0];
+  assert.equal(select.disabled, true);
+}
 
 async function testCalibrationCardsCoverEveryProcedure() {
   const fake = makeFakeTelemetry();
@@ -2812,10 +3077,22 @@ async function run() {
   await withReset(testAProtocolFieldWriteGoesThroughTheParameterEndpoint);
   await withReset(testMotorsNumberFieldAppliesOnChangeAndRejectsGarbage);
   await withReset(testMotorsSpinFlipKeepsTheMomentMagnitude);
+  await withReset(testTheFlightControllerAndGpsAreDrawnBetweenTheMotors);
+  await withReset(testAGpsMastPastTheArmsWidensTheView);
+  await withReset(testWithNoMotorPositionsTheSensorsKeepOnlyTheirDirection);
+  await withReset(testMovingTheGpsWritesItsParameterAndRedraws);
+  await withReset(testAPositionFieldAlsoWritesTheOtherImus);
+  await withReset(testTheFrameDiagonalRescalesEveryLiftRotor);
+  await withReset(testFrameLengthMovesOnlyTheXAndKeepsTheCentreOfGravityOffset);
+  await withReset(testAFrameSizeOutsideTheBoundsIsNeverWritten);
+  await withReset(testAFrameThatCannotBeScaledSaysWhy);
+  await withReset(testTheFrameSizeIsReadOnlyWhileArmed);
   await withReset(testMotorsDisconnectedRendersAnExplanationNotAnError);
   await withReset(testMotorsArmedGatingDisablesEveryControl);
   await withReset(testMotorsTeardownReleasesTheSubscription);
 
+  await withReset(testCalibrationSetsTheBoardRotationFirst);
+  await withReset(testTheBoardRotationIsReadOnlyWhileArmed);
   await withReset(testCalibrationCardsCoverEveryProcedure);
   await withReset(testCalibrationLinesThatBeatTheAckAreNotRewound);
   await withReset(testCalibrationArmedGating);

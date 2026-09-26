@@ -335,22 +335,43 @@ Corvus.setupShared = (function () {
    */
   async function applyParam(state, field, el, status, value, onApplied) {
     if (state.armed) return;
+    // `also` names parameters that hold the same quantity and follow this
+    // one: ArduPilot keeps a position per IMU, and the IMUs of one board sit
+    // within millimetres of each other.
+    const also = Array.isArray(field.also) ? field.also : [];
     // A page that offers "Check values" keeps what the operator asked for,
     // written or refused, so the check can compare against it and write it
     // again. A refused control snaps back, so the control cannot remember it.
-    if (state.wanted) state.wanted[field.param] = value;
+    if (state.wanted) {
+      state.wanted[field.param] = value;
+      also.forEach((name) => { state.wanted[name] = value; });
+    }
     setFieldStatus(status, "pending", "saving");
     try {
       await Corvus.telemetry.postAction("/api/params/set", { name: field.param, value });
-      field.value = value;
-      setFieldStatus(status, "ok", "saved");
-      if (typeof onApplied === "function") onApplied(field);
     } catch (err) {
       const msg = (err && err.message) || "write failed";
       setFieldStatus(status, "err", msg);
       restoreControl(field, el);
       notify("critical", `Could not set ${field.param}: ${msg}`);
+      return;
     }
+    field.value = value;
+    for (const name of also) {
+      try {
+        await Corvus.telemetry.postAction("/api/params/set", { name, value });
+      } catch (err) {
+        // The field itself was written, so the control keeps the new value;
+        // "Check values" writes the one that did not follow again.
+        const msg = (err && err.message) || "write failed";
+        setFieldStatus(status, "err", `${name}: ${msg}`);
+        notify("warning", `${field.param} was set, but ${name} was not: ${msg}`);
+        if (typeof onApplied === "function") onApplied(field);
+        return;
+      }
+    }
+    setFieldStatus(status, "ok", "saved");
+    if (typeof onApplied === "function") onApplied(field);
   }
 
   /**

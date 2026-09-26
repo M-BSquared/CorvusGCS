@@ -262,17 +262,19 @@ class TelemetryMixin:
         # UINT16_MAX marks a cell slot the pack does not use; 0 is the same
         # thing in practice, since a cell at 0.000 V is a pack that is not on
         # the aircraft any more.
-        cells: list[float] = []
-        for raw in list(getattr(msg, "voltages", []) or []):
-            value = int(raw)
-            if value in (0, 65535):
-                continue
-            cells.append(round(value / 1000.0, 3))
-        for raw in list(getattr(msg, "voltages_ext", []) or []):
-            value = int(raw)
-            if value in (0, 65535):
-                continue
-            cells.append(round(value / 1000.0, 3))
+        slots = [int(raw) for raw in list(getattr(msg, "voltages", []) or [])]
+        slots += [int(raw) for raw in list(getattr(msg, "voltages_ext", []) or [])]
+        used = [value for value in slots if value not in (0, 65535)]
+        # A monitor that cannot see its cells puts the whole pack voltage in
+        # slot 0 and marks the rest unused, carrying on into slot 1 above
+        # 65.534 V (common.xml). That is every analog power module on both
+        # stacks, and read as cells it showed one "cell" at 16.8 V. The pack
+        # voltage already comes from SYS_STATUS, so it is not a cell reading.
+        pack_only = bool(slots) and (
+            (len(used) == 1 and slots[0] == used[0])
+            or (slots[0] == 65534 and len(used) == 2 and slots[1] == used[1])
+        )
+        cells = [] if pack_only else [round(value / 1000.0, 3) for value in used]
 
         fields: dict[str, Any] = {"battery_cell_voltages": cells}
 
@@ -575,6 +577,25 @@ class TelemetryMixin:
             quality = "poor"
         self._store.update(link_quality=quality)
 
+    def _stream_interval_us(self, msg_id: int, requested_us: int | None) -> int:
+        """The interval a page's stream request should really send for *msg_id*.
+
+        *requested_us* is the page's own rate, or None when it is done with the
+        stream. Some of these messages the session already asked for at
+        connect (ATTITUDE for the HUD at 50 Hz, RC_CHANNELS at 5 Hz on UDP).
+        Such a message is never slowed below that rate while the page is open,
+        and gets that rate back when it closes. Handing it to the firmware's
+        default instead left the HUD at PX4's 15 Hz after one visit to the
+        tuning page. A message the session never asked for is handed back with
+        0, the firmware's own default.
+        """
+        baseline = int(self._message_intervals().get(msg_id, 0))
+        if requested_us is None:
+            return baseline
+        if baseline > 0:
+            return min(int(requested_us), baseline)
+        return int(requested_us)
+
     def set_vibration_stream(self, enabled: bool, rate_hz: int = 10) -> bool:
         """Enable/disable high-rate VIBRATION streaming from the vehicle.
 
@@ -607,9 +628,9 @@ class TelemetryMixin:
 
         Safe while armed, and deliberately so — this is read-only telemetry,
         and the page reads channels in flight to check a switch does what the
-        operator thinks it does. Disabling sends interval 0, handing the rate
-        back to the firmware's own default rather than to a number this build
-        picked.
+        operator thinks it does. Disabling hands the rate back: to the one this
+        session asked for at connect when it asked for one, otherwise to the
+        firmware's own default (see :meth:`_stream_interval_us`).
         """
         with self._operation_lock:
             self._set_command_error("")
@@ -620,9 +641,11 @@ class TelemetryMixin:
                 if not 1 <= rate_hz <= 50:
                     self._set_command_error("RC rate must be between 1 and 50 Hz")
                     return False
-                interval_us = max(1, int(1_000_000 / rate_hz))
+                requested: int | None = max(1, int(1_000_000 / rate_hz))
             else:
-                interval_us = 0
+                requested = None
+            interval_us = self._stream_interval_us(
+                mavutil.mavlink.MAVLINK_MSG_ID_RC_CHANNELS, requested)
             if not self._connection_ready():
                 # set_message_interval returns False here without a reason, and
                 # the page opened over a dead link is the common case for this
@@ -657,8 +680,8 @@ class TelemetryMixin:
         Lean, exactly like :meth:`set_vibration_stream`: PX4 streams
         ATTITUDE_TARGET and POSITION_TARGET_LOCAL_NED slowly by default, the
         GCS asks for a tuning rate only while the page is open, and disabling
-        sends interval 0 to hand the rate back to the firmware's own default
-        rather than to a number this build picked.
+        hands each rate back, ATTITUDE to the HUD's own and the setpoints to
+        the firmware's default (see :meth:`_stream_interval_us`).
 
         Safe while armed, and deliberately so — this is read-only telemetry,
         and the page that wants it is used in flight.
@@ -676,9 +699,9 @@ class TelemetryMixin:
                 if not 1 <= rate_hz <= 50:
                     self._set_command_error("tuning rate must be between 1 and 50 Hz")
                     return False
-                interval_us = max(1, int(1_000_000 / rate_hz))
+                requested: int | None = max(1, int(1_000_000 / rate_hz))
             else:
-                interval_us = 0
+                requested = None
             if not self._connection_ready():
                 # Same reason set_rc_stream carries this guard: without it
                 # set_message_interval clears the command error and returns
@@ -689,6 +712,7 @@ class TelemetryMixin:
                 return False
             ok = True
             for msg_id in self._TUNING_MSG_IDS:
+                interval_us = self._stream_interval_us(msg_id, requested)
                 if not self.set_message_interval(msg_id, interval_us):
                     ok = False
             if not enabled:

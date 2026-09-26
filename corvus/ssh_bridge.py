@@ -159,6 +159,21 @@ def _connect_failure(exc: Exception, host: str, port: int, timeout: float) -> st
     return str(exc) or exc.__class__.__name__
 
 
+def is_auth_failure(exc: BaseException) -> bool:
+    """Whether *exc* means the host answered and refused the login.
+
+    That is the one failure more typing can fix: a wrong or missing password,
+    a user the host does not know, a key it does not accept. paramiko reports
+    "nothing to try" (no password, no key, no agent) as a bare SSHException
+    with its own sentence, which is the case of a connection copied to this
+    machine without its password.
+    """
+    if isinstance(exc, paramiko.AuthenticationException):
+        return True
+    return (isinstance(exc, paramiko.SSHException)
+            and "no authentication methods available" in str(exc).lower())
+
+
 class SshSession:
     """A single SSH session with an interactive shell."""
 
@@ -195,6 +210,8 @@ class SshSession:
         # Why connect() returned False. A failed session is never kept, so its
         # scrollback (where the reason is also published) has no reader.
         self.error = ""
+        # Whether that reason was a refused login (see is_auth_failure).
+        self.auth_failed = False
         self.cols = 80
         self.rows = 24
 
@@ -246,6 +263,7 @@ class SshSession:
         except Exception as exc:
             logger.error("SSH connect to %s: %s", self.host, exc)
             self._close_transport()
+            self.auth_failed = is_auth_failure(exc)
             self.error = _connect_failure(exc, self.host, self.port, timeout)
             self._publish(f"Connection failed: {self.error}\r\n")
             return False
@@ -384,6 +402,8 @@ class SshBridge:
         self._attempts: dict[str, int] = {}
         # name -> why the latest connect under it failed; see connect_error().
         self._errors: dict[str, str] = {}
+        # Names whose latest connect failed on the login; see connect_auth_failed().
+        self._auth_failed: set[str] = set()
         self._shutting_down = False
 
     def connect(
@@ -428,6 +448,7 @@ class SshBridge:
             attempt = self._attempts.get(name, 0) + 1
             self._attempts[name] = attempt
             self._errors.pop(name, None)
+            self._auth_failed.discard(name)
             old = self._sessions.get(name)
         if old is not None:
             old.disconnect()
@@ -440,6 +461,8 @@ class SshBridge:
                 # overwrite the reason the caller that came after it will read.
                 if self._attempts.get(name) == attempt:
                     self._errors[name] = session.error
+                    if getattr(session, "auth_failed", False):
+                        self._auth_failed.add(name)
             return ok
         with self._lock:
             if self._shutting_down or self._attempts.get(name) != attempt:
@@ -464,11 +487,17 @@ class SshBridge:
         with self._lock:
             return self._errors.get(name, "")
 
+    def connect_auth_failed(self, name: str) -> bool:
+        """Whether the latest connect under *name* failed because the login was refused."""
+        with self._lock:
+            return name in self._auth_failed
+
     def disconnect(self, name: str) -> bool:
         """Close a named session."""
         with self._lock:
             self._attempts[name] = self._attempts.get(name, 0) + 1
             self._errors.pop(name, None)
+            self._auth_failed.discard(name)
             session = self._sessions.pop(name, None)
         if session:
             session.disconnect()
@@ -520,6 +549,7 @@ class SshBridge:
             sessions = list(self._sessions.values())
             self._sessions.clear()
             self._errors.clear()
+            self._auth_failed.clear()
         for s in sessions:
             s.disconnect()
 
@@ -612,8 +642,9 @@ def run_command(
 
     *command* is executed by the remote login shell, so the caller composes the
     whole line (``cd … && …``) and owns its quoting. Returns
-    ``{"ok", "exit_status", "stdout", "stderr", "error"}``; ``ok`` is true only
-    when the command actually ran AND exited 0. Never raises.
+    ``{"ok", "exit_status", "stdout", "stderr", "error", "auth_failed"}``;
+    ``ok`` is true only when the command actually ran AND exited 0, and
+    ``auth_failed`` is true when the host refused the login. Never raises.
 
     Lifecycle: this blocks its calling thread (an HTTP handler thread, which is
     a daemon) for at most the 8s connect plus *timeout*, and it owns no state
@@ -655,6 +686,7 @@ def run_command(
             "stdout": _truncate(out),
             "stderr": _truncate(err),
             "error": "" if status == 0 else f"command exited with status {status}",
+            "auth_failed": False,
         }
     except paramiko.BadHostKeyException as exc:
         logger.error("SSH host key mismatch for %s: %s", host, exc)
@@ -664,6 +696,7 @@ def run_command(
             "stdout": "",
             "stderr": "",
             "error": _host_key_hint(exc),
+            "auth_failed": False,
         }
     except Exception as exc:  # noqa: BLE001 - every failure is a message, not a 500
         logger.error("SSH run on %s: %s", host, exc)
@@ -673,6 +706,7 @@ def run_command(
             "stdout": "",
             "stderr": "",
             "error": str(exc) or exc.__class__.__name__,
+            "auth_failed": is_auth_failure(exc),
         }
     finally:
         try:

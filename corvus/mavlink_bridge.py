@@ -1058,6 +1058,10 @@ class MavlinkBridge(
         try:
             self._conn.target_system = self._target_system
             self._conn.target_component = self._target_component
+            # mode_mapping() reads the per-system state of mavutil's own
+            # latched sysid, not target_system, so that has to follow too.
+            if self._target_system in (getattr(self._conn, "sysid_state", None) or {}):
+                self._conn.sysid = self._target_system
         except Exception as exc:  # noqa: BLE001 - a mavutil that will not be told is not fatal
             logger.debug("could not pin mavutil target: %s", exc)
         vtype = MAV_TYPE_MAP.get(hb.type, f"TYPE_{hb.type}")
@@ -1136,6 +1140,15 @@ class MavlinkBridge(
         if key is None:
             return
         try:
+            # Signing only exists in MAVLink 2, and the key lives on conn.mav.
+            # A connection that starts out as MAVLink 1 swaps conn.mav for a
+            # fresh object when the first MAVLink 2 frame arrives
+            # (mavutil.auto_mavlink_version), and the key goes with the old
+            # one: the link then says "signing enabled" and sends every frame
+            # unsigned. Switching to MAVLink 2 before the key is installed
+            # leaves nothing for that swap to do.
+            if getattr(self._conn, "WIRE_PROTOCOL_VERSION", "2.0") != "2.0":
+                self._conn.auto_mavlink_version(b"\xfd")
             self._conn.setup_signing(
                 key,
                 sign_outgoing=True,
@@ -1201,14 +1214,14 @@ class MavlinkBridge(
                 getattr(hb, "get_srcComponent", lambda: "?")(),
             )
 
-    def _latch_dialect(self, autopilot_id: Any, mav_type: Any) -> None:
+    def _latch_dialect(self, autopilot_id: Any, mav_type: Any) -> bool:
         """Pick the flight-stack dialect this link will be flown with.
 
         Called from :meth:`_connect` and again from every HEARTBEAT, because a
         vehicle behind mavlink-router can be swapped for a different one
-        without the socket ever closing. Rebuilding the mode table is deferred
-        to :meth:`_build_mode_mapping`; this only records what we are talking
-        to, which every decode below then reads.
+        without the socket ever closing. Rebuilding the mode table is left to
+        :meth:`_build_mode_mapping`; this only records what we are talking to,
+        which every decode below then reads, and returns whether it changed.
         """
         try:
             type_id = int(mav_type)
@@ -1222,6 +1235,7 @@ class MavlinkBridge(
             logger.info(
                 "Flight stack: %s (MAV_TYPE %s)", dialect.label, type_id,
             )
+        return changed
 
     def _decode_mode(self, hb: Any) -> str:
         """HEARTBEAT -> the mode name, in the connected stack's own vocabulary.
@@ -1497,8 +1511,12 @@ class MavlinkBridge(
         reason this path exists at all. PX4 ignores the message entirely, so
         these rates only ever reach a non-PX4 stack.
         """
+        # EXTENDED_STATUS is the group that carries SYS_STATUS, GPS_RAW_INT
+        # and MISSION_CURRENT on ArduPilot. Without it a stack that needs this
+        # fallback had no battery, no GPS fix and no mission progress at all.
         if self._is_slow_link():
             return {
+                mavutil.mavlink.MAV_DATA_STREAM_EXTENDED_STATUS: 2,
                 mavutil.mavlink.MAV_DATA_STREAM_POSITION: 5,
                 mavutil.mavlink.MAV_DATA_STREAM_EXTRA1: 10,
                 mavutil.mavlink.MAV_DATA_STREAM_EXTRA2: 5,
@@ -1507,6 +1525,7 @@ class MavlinkBridge(
                 mavutil.mavlink.MAV_DATA_STREAM_RC_CHANNELS: 0,
             }
         return {
+            mavutil.mavlink.MAV_DATA_STREAM_EXTENDED_STATUS: 2,
             mavutil.mavlink.MAV_DATA_STREAM_POSITION: 10,
             mavutil.mavlink.MAV_DATA_STREAM_EXTRA1: 50,
             mavutil.mavlink.MAV_DATA_STREAM_EXTRA2: 10,
@@ -1574,9 +1593,17 @@ class MavlinkBridge(
                 # and knowing which cell is dragging the pack down. 41 bytes
                 # twice a minute of a 57 kbps budget.
                 m.MAVLINK_MSG_ID_BATTERY_STATUS: 2_000_000,   # 0.5 Hz
+                # Mission progress, and the uptime that tells a reboot from a
+                # dropped link. ArduPilot streams neither unless asked: its
+                # SRx rates default to 0, and on a link where this batch is
+                # accepted REQUEST_DATA_STREAM is never sent.
+                m.MAVLINK_MSG_ID_MISSION_CURRENT: 1_000_000,  # 1 Hz
+                m.MAVLINK_MSG_ID_SYSTEM_TIME: 2_000_000,      # 0.5 Hz
             }
+        # No HEARTBEAT: it is 1 Hz on every stack by definition, and PX4 v1.16
+        # to v1.18 answer an interval request for it with FAILED
+        # (MavlinkReceiver::set_message_interval), on every connect.
         return {
-            m.MAVLINK_MSG_ID_HEARTBEAT: 1_000_000,            # 1 Hz
             m.MAVLINK_MSG_ID_ATTITUDE: 20_000,                # 50 Hz
             m.MAVLINK_MSG_ID_GLOBAL_POSITION_INT: 100_000,    # 10 Hz
             m.MAVLINK_MSG_ID_VFR_HUD: 100_000,               # 10 Hz
@@ -1595,6 +1622,9 @@ class MavlinkBridge(
             # Asked for explicitly rather than left to the firmware's defaults,
             # which publish it on some builds and not others.
             m.MAVLINK_MSG_ID_BATTERY_STATUS: 1_000_000,      # 1 Hz
+            # See the serial list: nothing else asks ArduPilot for these.
+            m.MAVLINK_MSG_ID_MISSION_CURRENT: 1_000_000,     # 1 Hz
+            m.MAVLINK_MSG_ID_SYSTEM_TIME: 1_000_000,         # 1 Hz
         }
 
     def _interruptible_sleep(self, seconds: float) -> None:
@@ -1718,11 +1748,17 @@ class MavlinkBridge(
         next message may well be answered. Anything else — an accept, or a
         DENIED for one message this build does not carry — is proof the modern
         path works, and REQUEST_DATA_STREAM is then never sent.
+
+        Quietly, too: a refusal here is an answer the loop acts on, not a
+        failure the operator did anything to cause. Reported the way an
+        operator's own request is, every connect to a PX4 put a critical
+        "Set message interval failed" on the status bar for MISSION_CURRENT,
+        which PX4 sends from its mission manager rather than as a stream.
         """
         silent = 0
         for msg_id, interval_us in self._message_intervals().items():
             try:
-                _ok, result = self._set_message_interval(msg_id, interval_us)
+                _ok, result = self._set_message_interval(msg_id, interval_us, quiet=True)
             except Exception as exc:
                 logger.debug("SET_MESSAGE_INTERVAL msg %d failed: %s", msg_id, exc)
                 continue
@@ -2139,8 +2175,10 @@ class MavlinkBridge(
             autopilot = MAV_AUTOPILOT_MAP.get(msg.autopilot, f"AP_{msg.autopilot}")
             # Behind a router the aircraft on the far end can be swapped
             # without the socket closing, so the stack is re-read from every
-            # heartbeat rather than trusted from connect time.
-            self._latch_dialect(msg.autopilot, msg.type)
+            # heartbeat rather than trusted from connect time. The mode table
+            # goes with it: mode 4 is GUIDED on a copter and ACRO on a plane.
+            if self._latch_dialect(msg.autopilot, msg.type) and self._conn is not None:
+                self._build_mode_mapping()
             armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
             mode = self._decode_mode(msg)
             self._store.update(
@@ -2221,6 +2259,13 @@ class MavlinkBridge(
         elif name == "BATTERY_STATUS":
             self._handle_battery_status(msg)
         elif name == "SYSTEM_TIME":
+            # The autopilot's own clock only. A companion computer sends this
+            # message too, under the vehicle's system id (MAVROS does it at
+            # 1 Hz), and its uptime interleaved with the autopilot's reads as
+            # the vehicle rebooting every second, each time dropping the
+            # parameter cache and asking for every stream again.
+            if not self._is_from_autopilot(msg):
+                return
             # utcfromtimestamp is deprecated (and gone in a coming release);
             # more to the point it raises on an out-of-range value, and an
             # autopilot that has no GPS lock yet sends exactly that — a huge
@@ -3494,7 +3539,9 @@ class MavlinkBridge(
         """
         return self._set_message_interval(msg_id, interval_us)[0]
 
-    def _set_message_interval(self, msg_id: int, interval_us: int) -> tuple[bool, int]:
+    def _set_message_interval(
+        self, msg_id: int, interval_us: int, quiet: bool = False,
+    ) -> tuple[bool, int]:
         """The same request, with the raw COMMAND_ACK result beside the verdict.
 
         The connect-time batch needs the result code and not just the bool:
@@ -3502,7 +3549,8 @@ class MavlinkBridge(
         MAV_CMD_SET_MESSAGE_INTERVAL (MAV_RESULT_UNSUPPORTED) from one that
         refuses a single message it does not carry (MAV_RESULT_DENIED), and
         only the first is grounds for falling back to REQUEST_DATA_STREAM.
-        -1 is no ACK at all, -2 no usable link.
+        -1 is no ACK at all, -2 no usable link. *quiet* keeps the outcome off
+        the console and the status bar; the reason is still the last error.
         """
         with self._operation_lock:
             self._set_command_error("")
@@ -3515,7 +3563,15 @@ class MavlinkBridge(
                 timeout=3.0, retries=1,
             )
             if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                if quiet:
+                    self._set_command_error(
+                        "Set message interval failed: "
+                        + MAV_RESULT_TEXT.get(result, f"RESULT_{result}"))
+                    logger.debug("SET_MESSAGE_INTERVAL msg %d: result %s", msg_id, result)
+                    return False, result
                 return self._command_failure("Set message interval", result), result
+            if quiet:
+                return True, result
             self._console_publish(
                 "STREAM",
                 f"Message {msg_id} interval set to {interval_us} us", "success",

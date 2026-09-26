@@ -68,11 +68,17 @@ MAX_RESISTANCE_MOHM = 100.0
 # usable further down. LiFePO4 is the flattest of the three — 3.20 V and
 # 3.28 V are 30% and 70% — which is precisely why a linear reading of one is
 # useless and a table is not.
+#
+# ``empty`` is where the estimate reads 0%, and it is a landing point, not the
+# cell's absolute floor: each one sits on its curve's 5% point, just ahead of
+# the knee where the voltage falls away. A pack flown to 0% there still has a
+# reserve and has not been damaged. LiPo's 3.6 V is also PX4's own
+# ``BAT1_V_EMPTY`` default, so the two figures agree on what "empty" means.
 CHEMISTRIES: dict[str, dict[str, Any]] = {
     "lipo": {
         "label": "LiPo",
         "full": 4.2,
-        "empty": 3.3,
+        "empty": 3.6,
         "nominal": 3.7,
         "curve": [
             (4.20, 100.0), (4.15, 95.0), (4.11, 90.0), (4.08, 85.0),
@@ -86,7 +92,7 @@ CHEMISTRIES: dict[str, dict[str, Any]] = {
     "liion": {
         "label": "Li-ion",
         "full": 4.2,
-        "empty": 3.0,
+        "empty": 3.2,
         "nominal": 3.6,
         "curve": [
             (4.20, 100.0), (4.10, 90.0), (4.00, 80.0), (3.92, 70.0),
@@ -97,7 +103,7 @@ CHEMISTRIES: dict[str, dict[str, Any]] = {
     "lifepo4": {
         "label": "LiFePO4",
         "full": 3.65,
-        "empty": 2.8,
+        "empty": 3.0,
         "nominal": 3.2,
         "curve": [
             (3.65, 100.0), (3.35, 99.0), (3.32, 90.0), (3.30, 80.0),

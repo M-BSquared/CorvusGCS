@@ -6,6 +6,7 @@ and exposes JSON/SSE API endpoints under ``/api/``.
 from __future__ import annotations
 
 import collections
+import dataclasses
 import http.server
 import json
 import logging
@@ -30,9 +31,10 @@ from email.utils import formatdate, parsedate_to_datetime
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import (
-    ardupilot_battery, ardupilot_motors, ardupilot_rc, ardupilot_remote_id,
-    ardupilot_safety, ardupilot_tuning, autopilot, battery, battery_config,
-    geocode, mission, motor_config, param_files, param_metadata, rc_config, remote_id,
+    ardupilot_battery, ardupilot_motors, ardupilot_mounting, ardupilot_rc,
+    ardupilot_remote_id, ardupilot_safety, ardupilot_tuning, autopilot, battery,
+    battery_config, geocode, mission, motor_config, mounting_config, param_files,
+    param_metadata, rc_config, remote_id,
     remote_id_config,
     local_shell, net_probe, rtk, rtk_service,
     safety_config, sik_config, sik_service, tile_sources, tuning_config, video, websocket,
@@ -41,6 +43,7 @@ from .config import (
     MAX_MAP_TOKEN_CHARS,
     CorvusConfig,
     _MAP_TOKEN_CHARS,
+    _config_to_dict,
     default_config_path,
     load_config,
     save_config,
@@ -59,10 +62,12 @@ from .mavlink_bridge import (
     MavlinkBridge,
 )
 from .file_manager import open_folder, open_url
+from . import plugin_config, settings_bundle
 from .plugin_registry import (
     bundled_plugins_dir,
     ensure_user_plugins_dir,
     find_dir as find_plugin_dir,
+    is_valid_id as is_valid_plugin_id,
     public_list as public_plugin_list,
     resolve_asset as resolve_plugin_asset,
     user_plugins_dir,
@@ -122,6 +127,10 @@ MAX_LOGO_BODY_BYTES = 4 * 1024 * 1024
 # before anything has looked at it.
 MAX_ULOG_BODY_BYTES = 128 * 1024 * 1024
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+# Config keys read once at startup (the listening socket, the tile cache, the
+# tlog recorder, the firmware catalog), so a settings import that changes one
+# says a restart is needed rather than pretending it took effect.
+_IMPORT_RESTART_KEYS: tuple[str, ...] = ("http_port", "tile_cache_dir", "tlog_dir", "firmware_dir")
 
 # Response hardening headers.
 #
@@ -790,6 +799,27 @@ def _params_export_dir(cfg: Any) -> str:
     if configured.strip():
         return os.path.expanduser(configured.strip())
     return corvus_path("params")
+
+
+def _settings_export_dir() -> str:
+    """Where a settings export goes by default: Downloads, else the home folder.
+
+    Not under ``~/.corvus`` like the other exports: this file is made to be
+    carried to another machine, and a hidden folder is where it gets lost.
+    """
+    home = os.path.expanduser("~")
+    downloads = os.path.join(home, "Downloads")
+    return downloads if os.path.isdir(downloads) else home
+
+
+def _default_settings_filename() -> str:
+    """``corvus-settings_<host>_<YYYY-MM-DD_HH-MM>.json``: which station, and when."""
+    stamp = time.strftime("%Y-%m-%d_%H-%M")
+    try:
+        host = _slugify(socket.gethostname().split(".")[0])
+    except OSError:
+        host = ""
+    return f"corvus-settings_{host}_{stamp}.json" if host else f"corvus-settings_{stamp}.json"
 
 
 def _missions_dir(cfg: Any) -> str:
@@ -1894,7 +1924,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             "mavlink_connection", "http_port", "tile_cache_dir", "tlog_dir",
             "params_dir", "firmware_dir", "log_download_dir", "missions_dir",
             "tile_sources", "stream_rates", "ssh_connections",
-            "theme", "map", "branding", "controls", "ui", "updates", "plugins",
+            "theme", "map", "branding", "controls", "ui", "updates",
             "autoconnect", "battery", "remote_id", "parameters",
         }
         # Real config keys that belong to their own endpoint. A client that
@@ -1905,7 +1935,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # forwarder, so a generic merge would change the file and not the
         # running state. The live value is untouched either way — it is not in
         # ``merged``, and _save_live_config serializes the live config object.
-        owned_elsewhere = {"forwarding", "map_tokens"}
+        # Plugin settings are not in the main config at all any more; each
+        # plugin keeps a file of its own (corvus/plugin_config.py), written by
+        # POST /api/plugins/settings.
+        owned_elsewhere = {"forwarding", "map_tokens", "plugins"}
 
         for key, value in partial.items():
             if key not in known:
@@ -2014,14 +2047,6 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 merged["parameters"] = (
                     {**base, **value} if isinstance(base, dict) else dict(value)
                 )
-            elif key == "plugins":
-                if not isinstance(value, dict):
-                    return None, "plugins must be an object"
-                # Replaced wholesale, not merged: POST /api/plugins/settings
-                # has already merged the one plugin's keys into the full store
-                # and sends it back complete, so merging again here would make
-                # a deleted setting un-deletable.
-                merged["plugins"] = value
             elif key == "mavlink_connection":
                 if not isinstance(value, str) or not value:
                     return None, "mavlink_connection must be a non-empty string"
@@ -2083,29 +2108,17 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # serialize the object between two of them (which wrote a file that was
         # part old config and part new), and no second updater can interleave
         # its own assignments with these.
+        #
+        # Exactly the fields that went through the merge are copied. A
+        # hand-kept list of assignments once missed missions_dir, so a POST
+        # of it answered 200 and was dropped. Copying every field would be
+        # the opposite bug: rtk, video and forwarding are never in ``merged``
+        # (their own endpoints write them), and _build_config would hand
+        # back None for each.
         with _config_write_lock:
-            cfg.mavlink_connection = new_cfg.mavlink_connection
-            cfg.http_port = new_cfg.http_port
-            cfg.tile_cache_dir = new_cfg.tile_cache_dir
-            cfg.tlog_dir = new_cfg.tlog_dir
-            cfg.params_dir = new_cfg.params_dir
-            cfg.firmware_dir = new_cfg.firmware_dir
-            cfg.log_download_dir = new_cfg.log_download_dir
-            cfg.tile_sources = new_cfg.tile_sources
-            cfg.stream_rates = new_cfg.stream_rates
-            cfg.ssh_connections = new_cfg.ssh_connections
-            cfg.theme = new_cfg.theme
-            cfg.map = new_cfg.map
-            cfg.map_tokens = new_cfg.map_tokens
-            cfg.branding = new_cfg.branding
-            cfg.controls = new_cfg.controls
-            cfg.ui = new_cfg.ui
-            cfg.autoconnect = new_cfg.autoconnect
-            cfg.updates = new_cfg.updates
-            cfg.battery = new_cfg.battery
-            cfg.remote_id = new_cfg.remote_id
-            cfg.plugins = new_cfg.plugins
-            cfg.parameters = new_cfg.parameters
+            for field in dataclasses.fields(new_cfg):
+                if field.name in merged:
+                    setattr(cfg, field.name, getattr(new_cfg, field.name))
             self._save_live_config()
             self._refresh_autoconnect_session(cfg)
             self._refresh_battery_settings(cfg)
@@ -2181,7 +2194,9 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             if not isinstance(entry, dict):
                 continue
             clean = dict(entry)
-            clean.pop("password", None)
+            # Whether one is stored, never what it is: a connection that came
+            # from another machine without its password is shown as needing one.
+            clean["has_password"] = bool(clean.pop("password", None))
             clean["connected"] = live.get(clean.get("name", ""), False)
             out.append(clean)
         return out
@@ -2499,9 +2514,16 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _plugin_settings_all(self) -> dict[str, Any]:
-        """Every plugin's saved settings, keyed by plugin id."""
-        raw = self._live_config().plugins
-        return dict(raw) if isinstance(raw, dict) else {}
+        """Every plugin's saved settings, keyed by plugin id.
+
+        Read from each plugin's own config file. Anything still under the main
+        config's old ``plugins`` key fills in for a plugin that has no file
+        yet, so a migration that could not write loses nothing.
+        """
+        legacy = self._live_config().plugins
+        out: dict[str, Any] = dict(legacy) if isinstance(legacy, dict) else {}
+        out.update(plugin_config.load_all(self.plugin_user_dir))
+        return out
 
     @route("GET", "/api/mavlink/modes")
     def _api_mavlink_modes(self) -> None:
@@ -2582,12 +2604,14 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             "motors": ardupilot_motors, "safety": ardupilot_safety,
             "tuning": ardupilot_tuning, "rc": ardupilot_rc,
             "battery": ardupilot_battery, "remote_id": ardupilot_remote_id,
+            "mounting": ardupilot_mounting,
         },
     }
     _DEFAULT_SCHEMAS: dict[str, Any] = {
         "motors": motor_config, "safety": safety_config,
         "tuning": tuning_config, "rc": rc_config,
         "battery": battery_config, "remote_id": remote_id_config,
+        "mounting": mounting_config,
     }
 
     def _schema(self, page: str) -> Any:
@@ -2639,13 +2663,19 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         error banner; ``connected`` says which it is.
         """
         schema = self._schema("motors")
+        # The flight controller and the GPS antenna are placed relative to the
+        # same centre of gravity as the motors, so they are drawn on the same
+        # airframe and ride the same batched read.
+        mounting = self._schema("mounting")
         if self.mavlink is None:
             payload = schema.build({})
+            payload["sensors"] = mounting.positions({})
             payload["connected"] = False
             self._send_json(payload)
             return
         try:
-            values = self._fetch_page_params(schema.param_names())
+            values = self._fetch_page_params(
+                schema.param_names() + mounting.position_param_names())
             # A second, smaller read once the first has said which pins drive
             # a motor: their per-channel limits. A schema without per-channel
             # limits has no such function.
@@ -2655,6 +2685,42 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 values = dict(values, **self._fetch_page_params(names))
         except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
             logger.exception("motor parameter fetch failed")
+            payload = schema.build({})
+            payload["sensors"] = mounting.positions({})
+            payload["connected"] = False
+            payload["error"] = str(exc)
+            self._send_json(payload)
+            return
+        payload = schema.build(values)
+        payload["sensors"] = mounting.positions(values)
+        payload["position_hint"] = mounting.POSITION_HINT
+        payload["connected"] = bool(values)
+        if not values:
+            payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
+        self._send_json(payload)
+
+    @route("GET", "/api/mounting")
+    def _api_mounting(self) -> None:
+        """Return how the flight controller is mounted, for the Calibration page.
+
+        Same contract as ``/api/motors``: one batched read of the parameters
+        the stack's mounting schema (:mod:`corvus.mounting_config` or
+        :mod:`corvus.ardupilot_mounting`) knows about, only what the vehicle
+        answered for, and always 200 with ``connected`` saying which it is.
+        ``orientation`` is the board rotation every calibration is measured
+        through; ``positions`` are the lever arms, which the Motors page shows
+        and edits.
+        """
+        schema = self._schema("mounting")
+        if self.mavlink is None:
+            payload = schema.build({})
+            payload["connected"] = False
+            self._send_json(payload)
+            return
+        try:
+            values = self._fetch_page_params(schema.param_names())
+        except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
+            logger.exception("mounting parameter fetch failed")
             payload = schema.build({})
             payload["connected"] = False
             payload["error"] = str(exc)
@@ -3697,6 +3763,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # connection, load the saved creds (host, port, username, key_path,
         # password) and connect with those. This lets the UI's card CONNECT
         # button connect by name without the UI holding the password.
+        # The saved connection this attempt was resolved from, if any. A
+        # failure then carries ``needs`` + ``connection`` so the UI can ask
+        # for exactly what is missing and save it under that name.
+        lookup = ""
         if not host:
             lookup = borrow or name
             saved = None
@@ -3705,9 +3775,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                     saved = entry
                     break
             if saved is None:
-                self._send_json(
-                    {"error": f"no saved connection named {lookup!r}" if borrow else "no host"},
-                    400)
+                self._send_json({
+                    "error": f"no saved connection named {lookup!r}" if borrow else "no host",
+                    "needs": "connection", "connection": lookup,
+                }, 400)
                 return
             host = saved.get("host", "")
             port = int(saved.get("port", 22))
@@ -3718,12 +3789,16 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             if not key_path:
                 key_path = saved.get("key_path") or None
             if not host:
-                self._send_json({"error": "no host"}, 400)
+                self._send_json({"error": "no host", "needs": "connection",
+                                 "connection": lookup}, 400)
                 return
         # An empty username reaches paramiko as an empty auth user and fails
         # with an opaque authentication error; say what is actually missing.
         if not isinstance(username, str) or not username:
-            self._send_json({"error": "username is required"}, 400)
+            reply_err: dict[str, Any] = {"error": "username is required"}
+            if lookup:
+                reply_err.update(needs="credentials", connection=lookup)
+            self._send_json(reply_err, 400)
             return
         ok = self.ssh.connect(name, host, port, username, password, key_path)
         # Echo the identity the connection actually used. The UI renders the
@@ -3738,6 +3813,11 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             # Every caller already shows `error`; without it a refused port, a
             # host that is off and a wrong password all read the same.
             reply["error"] = self.ssh.connect_error(name) or "Connection failed."
+            # getattr: a bridge double written before the flag has no answer,
+            # which is "not known to be the login", not a crash.
+            auth_failed = getattr(self.ssh, "connect_auth_failed", None)
+            if lookup and callable(auth_failed) and auth_failed(name):
+                reply.update(needs="credentials", connection=lookup)
         self._send_json(reply)
 
     @route("POST", "/api/config")
@@ -3754,6 +3834,191 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"error": error}, 400)
             return
         self._send_json({"ok": True, "config": public})
+
+    # ---- Settings export and import (corvus/settings_bundle.py) ----
+    @route("GET", "/api/settings/export/target")
+    def _api_settings_export_target(self) -> None:
+        """Where a settings export would be written, and a filename. Always 200."""
+        self._send_json({"dir": _settings_export_dir(),
+                         "filename": _default_settings_filename()})
+
+    @route("POST", "/api/settings/export")
+    def _api_settings_export(self, payload: dict) -> None:
+        """Write every setting of this station to one file and return its path.
+
+        Written here rather than as a browser download for the reason parameter
+        exports are (see ``_api_params_export``). It is also what lets the file
+        carry the secrets when ``include_secrets`` asks for them: they go from
+        the config straight to disk and never through an HTTP response.
+        ``browser`` is the interface state the page keeps in localStorage,
+        carried through untouched.
+        """
+        include_secrets = payload.get("include_secrets", False)
+        if not isinstance(include_secrets, bool):
+            self._send_json({"ok": False, "error": "include_secrets must be true or false"}, 400)
+            return
+        browser = payload.get("browser", {})
+        if not isinstance(browser, dict):
+            self._send_json({"ok": False, "error": "browser must be an object"}, 400)
+            return
+        raw_dir = payload.get("dir")
+        target_dir = raw_dir if isinstance(raw_dir, str) and raw_dir.strip() else \
+            _settings_export_dir()
+        target_dir = os.path.expanduser(target_dir.strip())
+        filename = _safe_filename(payload.get("filename"), _default_settings_filename(), ".json")
+
+        with _config_write_lock:
+            cfg = self._live_config()
+            config = _config_to_dict(cfg)
+            plugins = self._plugin_settings_all()
+        logo = None
+        if isinstance(cfg.branding, dict) and cfg.branding.get("logo"):
+            try:
+                logo = self._logo_path().read_bytes() or None
+            except OSError:
+                logo = None
+        bundle = settings_bundle.build(config, plugins=plugins, logo=logo, browser=browser,
+                                       include_secrets=include_secrets)
+        try:
+            text = json.dumps(bundle, indent=2, ensure_ascii=False) + "\n"
+            os.makedirs(target_dir, exist_ok=True)
+            path = os.path.join(target_dir, filename)
+            # mkstemp creates the file 0o600, which the replace keeps: with the
+            # secrets in it, this file is as sensitive as the config itself.
+            fd, tmp_name = tempfile.mkstemp(prefix=filename + ".", suffix=".tmp", dir=target_dir)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(text)
+                os.replace(tmp_name, path)
+            except BaseException:
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
+                raise
+        except OSError as exc:
+            self._send_json(
+                {"ok": False, "error": f"could not write to {target_dir}: {exc.strerror or exc}"},
+                400)
+            return
+        except Exception as exc:  # noqa: BLE001 - an export must never 500 unexplained
+            logger.exception("settings export failed")
+            self._send_json({"ok": False, "error": f"export failed: {exc}"}, 500)
+            return
+        logger.info("exported settings to %s (secrets %s)", path,
+                    "included" if include_secrets else "left out")
+        self._send_json({"ok": True, "path": path, "dir": target_dir,
+                         "filename": filename, "secrets": include_secrets})
+
+    @route("POST", "/api/settings/import")
+    def _api_settings_import(self, payload: dict) -> None:
+        """Apply a settings file written by ``POST /api/settings/export``.
+
+        ``bundle`` is the parsed file and ``sections`` the section ids to take
+        from it (every one when absent). Refused while armed: an import can
+        restart the forwarder, the RTK corrections and the cameras, and
+        replace the Remote ID the aircraft broadcasts. Everything is checked
+        before anything is written. What runs from the config is applied now;
+        the few settings read only at startup come back in ``restart`` so the
+        page can say so. The browser block is the page's to apply.
+        """
+        if self.store is not None and self.store.get_snapshot().get("armed"):
+            self._send_json({"ok": False,
+                             "error": "Settings cannot be imported while the vehicle is armed."},
+                            409)
+            return
+        try:
+            bundle = settings_bundle.parse(payload.get("bundle"))
+            sections = settings_bundle.normalize_sections(payload.get("sections"))
+        except ValueError as exc:
+            self._send_json({"ok": False, "error": str(exc)}, 400)
+            return
+        if not sections:
+            self._send_json({"ok": False, "error": "Choose at least one part to import."}, 400)
+            return
+
+        from .config import _build_config
+        warnings: list[str] = []
+        plugins_written = 0
+        with _config_write_lock:
+            cfg = self._live_config()
+            before = _config_to_dict(cfg)
+            merged = settings_bundle.merge(before, bundle["config"], sections,
+                                           secrets=bundle["secrets"])
+            logo = bundle["logo"] if "interface" in sections else None
+            if "interface" in sections and logo is None:
+                # A logo name with no picture behind it would draw a broken
+                # image in the top bar.
+                branding = merged.get("branding")
+                if isinstance(branding, dict):
+                    branding = {k: v for k, v in branding.items() if k != "logo"}
+                    if branding:
+                        merged["branding"] = branding
+                    else:
+                        merged.pop("branding", None)
+            new_cfg = _build_config(merged)
+
+            if "interface" in sections:
+                try:
+                    if logo is not None:
+                        self._store_logo(logo)
+                    else:
+                        self._logo_path().unlink(missing_ok=True)
+                except OSError as exc:
+                    logger.error("settings import: company logo not stored: %s", exc)
+                    warnings.append("The company logo could not be stored.")
+                    new_cfg.branding = cfg.branding
+
+            new_cfg.plugins = cfg.plugins
+            if "plugins" in sections:
+                legacy = dict(cfg.plugins) if isinstance(cfg.plugins, dict) else {}
+                for plugin_id, settings in bundle["plugins"].items():
+                    if not is_valid_plugin_id(plugin_id):
+                        continue
+                    try:
+                        plugin_config.save(plugin_id, settings, self.plugin_user_dir)
+                    except (OSError, ValueError) as exc:
+                        logger.error("settings import: plugin %s not stored: %s", plugin_id, exc)
+                        warnings.append(f"The settings of plugin {plugin_id} could not be stored.")
+                        continue
+                    plugins_written += 1
+                    legacy.pop(plugin_id, None)
+                new_cfg.plugins = legacy or None
+
+            # In place, like _apply_config_partial: every handler shares this object.
+            for field in dataclasses.fields(cfg):
+                setattr(cfg, field.name, getattr(new_cfg, field.name))
+            after = _config_to_dict(cfg)
+            try:
+                save_config(cfg, self.config_path or default_config_path())
+            except OSError as exc:
+                logger.error("settings import: config not saved: %s", exc)
+                warnings.append("Applied for this session but not saved.")
+            if before.get("forwarding") != after.get("forwarding"):
+                self._restart_forwarder()
+            self._refresh_autoconnect_session(cfg)
+            self._refresh_battery_settings(cfg)
+            self._refresh_remote_id(cfg)
+
+        if before.get("video") != after.get("video"):
+            self._apply_video(video.settings(cfg.video))
+        if before.get("rtk") != after.get("rtk") and self.rtk is not None:
+            try:
+                self.rtk.apply_settings(rtk.settings(cfg.rtk))
+            except Exception:  # noqa: BLE001 - the rest of the import stands
+                logger.exception("settings import: RTK settings not applied")
+                warnings.append("The RTK settings are stored but could not be applied.")
+        restart = [key for key in _IMPORT_RESTART_KEYS if before.get(key) != after.get(key)]
+        logger.info("imported settings (%s) from a file written by %s",
+                    ", ".join(sorted(sections)), bundle["version"] or "an unknown version")
+        self._send_json({
+            "ok": True,
+            "config": to_public_dict(cfg),
+            "sections": sorted(sections),
+            "plugins": plugins_written,
+            "restart": restart,
+            "warnings": warnings,
+        })
 
     # ---- Company logo (optional operator branding) ----
     def _branding_dir(self) -> Path:
@@ -3793,6 +4058,23 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(blob)
 
+    def _store_logo(self, raw: bytes) -> None:
+        """Write *raw* as the company logo, atomically. Raises OSError."""
+        path = self._logo_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp",
+                                        dir=str(path.parent))
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(raw)
+            os.replace(tmp_name, path)
+        except OSError:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
+
     def _api_branding_logo_upload_raw(self) -> None:
         """Store a raw PNG body as the company logo and record its name.
 
@@ -3830,23 +4112,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         raw_name = (query.get("name") or [""])[0].replace("\\", "/")
         name = os.path.basename(raw_name).strip()[:120] or "logo.png"
 
-        path = self._logo_path()
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp",
-                                            dir=str(path.parent))
-            try:
-                with os.fdopen(fd, "wb") as f:
-                    f.write(raw)
-                os.replace(tmp_name, path)
-            except OSError:
-                try:
-                    os.unlink(tmp_name)
-                except OSError:
-                    pass
-                raise
+            self._store_logo(raw)
         except OSError as exc:
-            logger.error("company logo write to %s failed: %s", path, exc)
+            logger.error("company logo write to %s failed: %s", self._logo_path(), exc)
             self._send_json({"ok": False, "error": "could not store logo"}, 500)
             return
 
@@ -4057,14 +4326,15 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
         password: str | None = None
         key_path: str | None = None
+        saved: dict[str, Any] | None = None
         if name:
-            saved = None
             for entry in self._live_config().ssh_connections:
                 if isinstance(entry, dict) and entry.get("name") == name:
                     saved = entry
                     break
             if saved is None and not host:
-                self._send_json({"ok": False, "error": f"no saved connection named {name!r}"}, 400)
+                self._send_json({"ok": False, "error": f"no saved connection named {name!r}",
+                                 "needs": "connection", "connection": name}, 400)
                 return
             if saved is not None:
                 host = host or saved.get("host", "")
@@ -4073,11 +4343,18 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 username = username or saved.get("username", "")
                 password = saved.get("password") or None
                 key_path = saved.get("key_path") or None
+        from_saved = bool(name) and saved is not None
         if not host:
-            self._send_json({"ok": False, "error": "no host"}, 400)
+            body: dict[str, Any] = {"ok": False, "error": "no host"}
+            if from_saved:
+                body.update(needs="connection", connection=name)
+            self._send_json(body, 400)
             return
         if not username:
-            self._send_json({"ok": False, "error": "username is required"}, 400)
+            body = {"ok": False, "error": "username is required"}
+            if from_saved:
+                body.update(needs="credentials", connection=name)
+            self._send_json(body, 400)
             return
 
         line = _compose_remote_command(directory, command, detach)
@@ -4092,6 +4369,9 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         result["host"] = host
         result["username"] = username
         result["port"] = port
+        if from_saved and result.pop("auth_failed", False):
+            result.update(needs="credentials", connection=name)
+        result.pop("auth_failed", None)
         # 200 even for a command that failed: the request itself succeeded, and
         # the caller needs the ``stderr`` in the body to say *why* it failed —
         # an error status would leave the UI with nothing but a status line.
@@ -4108,14 +4388,19 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         object and needs a key it no longer uses to actually go away, which a
         merge can never do.
 
-        This is ordinary UI state — which saved SSH connection a launcher
-        points at, which folder it opens — and it is stored in the plain config
-        file, so a plugin must keep secrets out of it and reference a saved SSH
-        connection by name instead.
+        Stored in the plugin's own file, ``<plugin folder>/<id>/config.json``
+        (see corvus/plugin_config.py), never in the main config, so it can be
+        copied to another machine on its own. This is ordinary UI state (which
+        saved SSH connection a launcher points at, which folder it opens) and
+        the file is not a secret store: a plugin references a saved SSH
+        connection by name instead of keeping a password.
         """
         plugin_id = payload.get("id")
         if not isinstance(plugin_id, str) or not plugin_id:
             self._send_json({"error": "id must be a non-empty string"}, 400)
+            return
+        if not is_valid_plugin_id(plugin_id):
+            self._send_json({"error": "id is not a valid plugin id"}, 400)
             return
         settings = payload.get("settings")
         if not isinstance(settings, dict):
@@ -4125,18 +4410,28 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         if not isinstance(replace, bool):
             self._send_json({"error": "replace must be a boolean"}, 400)
             return
-        cfg = self._live_config()
-        store = dict(cfg.plugins) if isinstance(cfg.plugins, dict) else {}
-        existing = store.get(plugin_id)
-        if replace or not isinstance(existing, dict):
-            store[plugin_id] = dict(settings)
-        else:
-            store[plugin_id] = {**existing, **settings}
-        public, error = self._apply_config_partial({"plugins": store})
-        if error is not None:
-            self._send_json({"error": error}, 400)
-            return
-        self._send_json({"ok": True, "settings": self._plugin_settings_all().get(plugin_id, {})})
+        user_dir = self.plugin_user_dir
+        with _config_write_lock:
+            cfg = self._live_config()
+            legacy = cfg.plugins if isinstance(cfg.plugins, dict) else {}
+            # A merge onto a plugin whose settings were never moved out of the
+            # main config starts from those, not from nothing.
+            if (not replace and plugin_id in legacy
+                    and plugin_config.load(plugin_id, user_dir) is None):
+                base = legacy[plugin_id]
+                settings = {**base, **settings} if isinstance(base, dict) else settings
+            try:
+                saved = plugin_config.update(plugin_id, settings, replace=replace,
+                                             user_dir=user_dir)
+            except (OSError, ValueError) as exc:
+                logger.error("plugin %s: saving settings failed: %s", plugin_id, exc)
+                self._send_json({"error": f"could not save settings: {exc}"}, 500)
+                return
+            if plugin_id in legacy:
+                rest = {k: v for k, v in legacy.items() if k != plugin_id}
+                cfg.plugins = rest or None
+                self._save_live_config()
+        self._send_json({"ok": True, "settings": saved})
 
     @route("POST", "/api/plugins/folder")
     def _api_plugins_folder(self, payload: dict) -> None:
@@ -5826,6 +6121,28 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             return
         self._send_json(forwarder.status())
 
+    def _restart_forwarder(self) -> Any:
+        """Stop the running forwarder and start the one the live config says.
+
+        Called with ``_config_write_lock`` held, for the reason given in
+        ``_api_forwarding_set``. Returns the new forwarder, or None when
+        forwarding is off.
+        """
+        old = getattr(self, "forwarder", None)
+        if old is not None:
+            try:
+                if self.mavlink is not None:
+                    self.mavlink.set_frame_sink(None)
+                old.stop()
+            except Exception:  # noqa: BLE001 - a stuck old forwarder never blocks the new one
+                logger.exception("stopping the previous forwarder failed")
+        forwarder = _build_forwarder(self.mavlink, self.config) if self.mavlink else None
+        type(self).forwarder = forwarder
+        server = getattr(self, "server", None)
+        if server is not None:
+            server.forwarder = forwarder
+        return forwarder
+
     @route("POST", "/api/forwarding")
     def _api_forwarding_set(self, payload: dict) -> None:
         """Turn forwarding on/off and persist the choice.
@@ -5888,20 +6205,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             if endpoints is not None:
                 current["endpoints"] = [e.strip() for e in endpoints if e.strip()]
             self.config.forwarding = current
-
-            old = getattr(self, "forwarder", None)
-            if old is not None:
-                try:
-                    if self.mavlink is not None:
-                        self.mavlink.set_frame_sink(None)
-                    old.stop()
-                except Exception:  # noqa: BLE001 - a stuck old forwarder never blocks the new one
-                    logger.exception("stopping the previous forwarder failed")
-            forwarder = _build_forwarder(self.mavlink, self.config) if self.mavlink else None
-            type(self).forwarder = forwarder
-            server = getattr(self, "server", None)
-            if server is not None:
-                server.forwarder = forwarder
+            forwarder = self._restart_forwarder()
 
             try:
                 save_config(self.config, self.config_path or default_config_path())
@@ -7804,6 +8108,24 @@ def apply_startup_connection(
     return bridge.connection_string()
 
 
+def _migrate_plugin_settings(config: CorvusConfig, cfg_path: str) -> None:
+    """Move plugin settings out of the main config into per-plugin files, once.
+
+    The key is only dropped from the main config when every plugin's file was
+    written; otherwise it stays, and GET /api/plugins keeps reading it, so a
+    read-only plugin folder costs the migration and not the settings.
+    """
+    if not config.plugins:
+        return
+    if not plugin_config.migrate(config.plugins):
+        return
+    config.plugins = None
+    try:
+        save_config(config, cfg_path)
+    except OSError as exc:
+        logger.warning("could not drop migrated plugin settings from %s: %s", cfg_path, exc)
+
+
 def create_server(
     port: int = 8000,
     mavlink_conn: str | None = None,
@@ -7827,6 +8149,7 @@ def create_server(
     # toggles live in it and the startup resolver needs them.
     cfg_path = config_path or default_config_path()
     config = load_config(cfg_path)
+    _migrate_plugin_settings(config, cfg_path)
 
     # The battery estimator runs on the telemetry path, so the bridge needs the
     # operator's settings before the first frame rather than at the first save.

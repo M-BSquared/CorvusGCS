@@ -215,7 +215,9 @@ const mounted = [];
  * answers), run / localRun (the background answers), localStatus (an object,
  * or a promise for one), holdDisconnect (keep /api/ssh/disconnect pending
  * until releaseDisconnect()), ping (the /api/local/ping answer), holdPing
- * (keep each ping pending until releasePing()).
+ * (keep each ping pending until releasePing()), connectOnce / runOnce (the
+ * answer to the FIRST SSH connect / run only: a reply, or an Error to reject
+ * with), sshSetup (the api.sshSetup stub; each call is kept in `setups`).
  */
 function mount(opts) {
   const o = opts || {};
@@ -232,6 +234,10 @@ function mount(opts) {
   const termOpts = [];
   const notes = [];
   const consoleLines = [];
+  const setups = [];
+  let connectOnce = o.connectOnce;
+  let runOnce = o.runOnce;
+  const once = (value) => (value instanceof Error ? Promise.reject(value) : Promise.resolve(value));
   const container = makeEl("div");
   mounted.push(container);
   S.init(container, {
@@ -246,6 +252,16 @@ function mount(opts) {
     },
     postJson: (url, body) => {
       calls.push({ url, body });
+      if (url === "/api/ssh/connect" && connectOnce) {
+        const first = connectOnce;
+        connectOnce = null;
+        return once(first);
+      }
+      if (url === "/api/ssh/run" && runOnce) {
+        const first = runOnce;
+        runOnce = null;
+        return once(first);
+      }
       if (url === "/api/ssh/connect" || url === "/api/local/connect") {
         const res = (url === "/api/local/connect" ? o.localConnect : o.connect)
           || { ok: true, connected: true };
@@ -287,10 +303,15 @@ function mount(opts) {
     terminal: (session, topts) => { terminals.push(session); termOpts.push(topts || null); return true; },
     console: (line, level) => { consoleLines.push({ line, level }); },
     notification: (level, message) => { notes.push({ level, message }); },
+    sshSetup: (reply) => {
+      setups.push(reply);
+      return Promise.resolve(o.sshSetup ? o.sshSetup(reply) : false);
+    },
   });
   const all = (sel) => querySel(container.children, sel);
   return {
-    container, calls, terminals, termOpts, notes, consoleLines,
+    container, calls, terminals, termOpts, notes, consoleLines, setups,
+    notes_: () => all(".schw-note").map((n) => n.textContent),
     releaseDisconnect: () => releaseDisconnect(),
     releasePing: () => releasePing(),
     pings: () => calls.filter((c) => c.url === "/api/local/ping").map((c) => c.body),
@@ -596,6 +617,103 @@ async function testSshButtonsRunOverSsh() {
   assert.deepEqual(h.calls.find((c) => c.url === "/api/ssh/run").body,
     { name: "ground", directory: "", command: "./record.sh", detach: true });
   assert.ok(!h.urls().includes("/api/local/run"));
+  S.destroy(h.container);
+}
+
+function testMissingConnections() {
+  const buttons = S.normalizeButtons({ buttons: [LOCAL_BUTTON, SSH_BUTTON, SSH_BACKGROUND,
+    Object.assign({}, SSH_BUTTON, { id: "s2" })] });
+  assert.deepEqual(S.missingConnections(buttons, []), ["companion", "ground"]);
+  assert.deepEqual(S.missingConnections(buttons, [{ name: "companion" }]), ["ground"]);
+  assert.deepEqual(S.missingConnections(buttons, [{ name: "companion" }, { name: "ground" }]), []);
+  assert.deepEqual(S.missingConnections([], null), []);
+}
+
+/** A 400 the way telemetry.requestJson rejects it: the body on the Error. */
+function rejected(body) {
+  const error = new Error(body.error || "Request failed (400)");
+  error.status = 400;
+  error.body = body;
+  return error;
+}
+
+async function testACopiedShelfSaysWhichConnectionsAreMissing() {
+  const h = mount({ saved: { buttons: [LOCAL_BUTTON, SSH_BUTTON] }, connections: [] });
+  await flushMicrotasks();
+  const note = h.notes_().join("\n");
+  assert.match(note, /Not set up on this computer yet: “companion”/);
+  S.destroy(h.container);
+}
+
+async function testAMissingConnectionIsSetUpThenPressedAgain() {
+  const need = { error: "no saved connection named 'companion'", needs: "connection", connection: "companion" };
+  const h = mount({
+    saved: { buttons: [SSH_BUTTON] },
+    connections: [],
+    connectOnce: rejected(need),
+    sshSetup: () => true,
+  });
+  await flushMicrotasks();
+  click(h.shelf()[0]);
+  for (let i = 0; i < 6; i++) await flushMicrotasks();
+  assert.equal(h.setups.length, 1, "asked once");
+  assert.deepEqual(h.setups[0].needs, "connection");
+  assert.equal(h.setups[0].connection, "companion");
+  const connects = h.calls.filter((c) => c.url === "/api/ssh/connect");
+  assert.equal(connects.length, 2, "pressed again after the setup");
+  assert.equal(h.sends().length >= 1, true, "the line was typed");
+  assert.deepEqual(h.failures(), [], "no failure left on the row");
+  S.destroy(h.container);
+}
+
+async function testACancelledSetupLeavesTheFailure() {
+  const need = { ok: false, connected: false, error: "Authentication failed.",
+    needs: "credentials", connection: "companion" };
+  const h = mount({ saved: { buttons: [SSH_BUTTON] }, connectOnce: need, sshSetup: () => false });
+  await flushMicrotasks();
+  click(h.shelf()[0]);
+  for (let i = 0; i < 6; i++) await flushMicrotasks();
+  assert.equal(h.setups.length, 1);
+  assert.equal(h.calls.filter((c) => c.url === "/api/ssh/connect").length, 1, "not pressed again");
+  assert.match(h.failures()[0].text, /Authentication failed/);
+  S.destroy(h.container);
+}
+
+async function testABackgroundRunAsksForTheLoginAndRunsAgain() {
+  const h = mount({
+    saved: { buttons: [SSH_BACKGROUND] },
+    runOnce: { ok: false, error: "Authentication failed.", needs: "credentials", connection: "ground" },
+    sshSetup: () => true,
+  });
+  await flushMicrotasks();
+  click(h.shelf()[0]);
+  for (let i = 0; i < 6; i++) await flushMicrotasks();
+  assert.equal(h.setups.length, 1);
+  assert.equal(h.calls.filter((c) => c.url === "/api/ssh/run").length, 2);
+  assert.deepEqual(h.failures(), []);
+  S.destroy(h.container);
+}
+
+async function testAnOrdinaryFailureAsksForNothing() {
+  const h = mount({
+    saved: { buttons: [SSH_BACKGROUND] },
+    runOnce: { ok: false, exit_status: 127, stderr: "not found", error: "command exited with status 127" },
+  });
+  await flushMicrotasks();
+  click(h.shelf()[0]);
+  for (let i = 0; i < 4; i++) await flushMicrotasks();
+  assert.equal(h.setups.length, 0);
+  assert.equal(h.failures().length, 1);
+  S.destroy(h.container);
+}
+
+async function testTheEditorKeepsAMissingConnection() {
+  const h = mount({ saved: { buttons: [SSH_BUTTON] }, connections: [] });
+  await flushMicrotasks();
+  click(h.tool("Edit Start mission"));
+  await flushMicrotasks();
+  assert.equal(h.select().value, "companion");
+  assert.ok(!h.newConnShowing(), "not the new-connection form");
   S.destroy(h.container);
 }
 
@@ -1023,6 +1141,13 @@ async function run() {
   await testARefusedLocalShellSaysWhy();
   await testSshButtonsRunOverSsh();
   await testRowsSayWhereTheyRun();
+  testMissingConnections();
+  await testACopiedShelfSaysWhichConnectionsAreMissing();
+  await testAMissingConnectionIsSetUpThenPressedAgain();
+  await testACancelledSetupLeavesTheFailure();
+  await testABackgroundRunAsksForTheLoginAndRunsAgain();
+  await testAnOrdinaryFailureAsksForNothing();
+  await testTheEditorKeepsAMissingConnection();
   await testEditorSwitchesBetweenLocalAndSsh();
   await testCancelDiscardsTheDraft();
   await testTypingANewConnectionIsGoneWhenLocal();

@@ -110,7 +110,8 @@ Corvus.mission = (function () {
     loiter_turns: {
       label: "Circle", icon: "rotate-cw", position: true, color: "warning",
       hint: "Orbit this point a set number of times, then continue.",
-      hoverHint: "Hold over this point, then continue. A multirotor does not fly the orbit.",
+      hoverHint: "Hold over this point, then continue. This aircraft holds the point instead "
+        + "of circling it, so the radius and direction stay in the plan but are not flown.",
       params: {
         turns: { label: "Turns", unit: "", min: 0, max: TURNS_MAX, step: 0.5, def: 1 },
         radius: { label: "Radius", unit: "m", min: RADIUS_MIN_M, max: RADIUS_MAX_M, step: 1, def: DEFAULT_RADIUS_M },
@@ -120,7 +121,8 @@ Corvus.mission = (function () {
     loiter_time: {
       label: "Hold", icon: "timer", position: true, color: "warning",
       hint: "Circle this point for a set time, then continue.",
-      hoverHint: "Hold position over this point for a set time, then continue.",
+      hoverHint: "Hold position over this point for a set time, then continue. The radius "
+        + "and direction stay in the plan but are not flown.",
       params: {
         seconds: { label: "Time", unit: "s", min: 0, max: HOLD_MAX_S, step: 1, def: 30 },
         radius: { label: "Radius", unit: "m", min: RADIUS_MIN_M, max: RADIUS_MAX_M, step: 1, def: DEFAULT_RADIUS_M },
@@ -297,7 +299,6 @@ Corvus.mission = (function () {
   let selectedId = null;
   let tool = "select";
   let planName = "Mission";
-  let planSpeed = null;    // m/s, or null for "whatever the airframe does"
   let nextId = 1;
 
   let markers = [];        // maplibregl.Marker[], parallel to positioned items
@@ -469,7 +470,7 @@ Corvus.mission = (function () {
    *  ahead of it pins one and the airframe's own default is what flies. */
   function speedInto(item) {
     if (!item) return null;
-    let current = planSpeed;
+    let current = null;
     for (let i = 0; i < items.length; i += 1) {
       if (items[i].speed != null) current = items[i].speed;
       if (items[i].id === item.id) return current;
@@ -598,7 +599,6 @@ Corvus.mission = (function () {
       plan.home = { lat: home.lat, lon: home.lon };
       if (home.elevation != null) plan.home.elevation = home.elevation;
     }
-    if (planSpeed != null) plan.speed = planSpeed;
     return plan;
   }
 
@@ -608,7 +608,6 @@ Corvus.mission = (function () {
     nextId = 1;
     selectedId = null;
     planName = (plan && plan.name) || "Mission";
-    planSpeed = (plan && typeof plan.speed === "number") ? plan.speed : null;
     home = (plan && plan.home)
       ? { lat: plan.home.lat, lon: plan.home.lon,
           elevation: plan.home.elevation != null ? plan.home.elevation : null }
@@ -636,6 +635,14 @@ Corvus.mission = (function () {
       snapDirection(item);
       items.push(item);
     });
+    // The planner has no plan-wide speed any more, only each point's own. A
+    // file or a download that carries one (a DO_CHANGE_SPEED ahead of every
+    // item) hands it to the first item instead, which puts the very same
+    // command in the very same place on the wire.
+    const start = plan && typeof plan.speed === "number" ? plan.speed : null;
+    if (start != null && items.length && items[0].speed == null) {
+      items[0].speed = clampNumber(start, SPEED_MIN_MS, SPEED_MAX_MS, SPEED_MIN_MS);
+    }
   }
 
   /** A point's name as corvus/mission.py's clean_point_name stores it, or ""
@@ -1405,32 +1412,6 @@ Corvus.mission = (function () {
       autocomplete: false,
       onChange: (value) => { planName = value.trim() || "Mission"; },
     });
-    /* Cruise speed. Empty is the ABSENCE of the setting, not zero: corvus/
-       mission.py emits a DO_CHANGE_SPEED only when the plan pins one, and 0 is
-       a real PX4 value meaning "no change". Without this field a speed could
-       only ever arrive by opening a file that already carried one — and it
-       still quietly drove the duration estimate. */
-    const speedInput = Corvus.ui.input({
-      id: "missionSpeed",
-      type: "number",
-      value: shown("speed", planSpeed),
-      placeholder: "default",
-      min: shown("speed", SPEED_MIN_MS), max: shown("speed", SPEED_MAX_MS),
-      step: isSi("speed") ? 0.5 : 1,
-      mono: true,
-      ariaLabel: `Cruise speed in ${symbolOf("speed")}`,
-      autocomplete: false,
-      onChange: (value) => {
-        const text = String(value).trim();
-        planSpeed = text
-          ? clampNumber(fromShown("speed", text), SPEED_MIN_MS, SPEED_MAX_MS, SPEED_MIN_MS) : null;
-        speedInput.value = shown("speed", planSpeed);
-        renderSummary();
-        // The selected point's own speed box shows what it INHERITS as its
-        // placeholder, and this is what it inherits.
-        renderDetail();
-      },
-    });
 
     // Everything above the point editor scrolls as one. The list used to be
     // the only part that scrolled, squeezed between a fixed header block and
@@ -1439,14 +1420,9 @@ Corvus.mission = (function () {
     sideScrollEl.className = "mission-side-scroll";
     side.appendChild(sideScrollEl);
 
-    const planRow = document.createElement("div");
-    planRow.className = "mission-plan-row";
-    planRow.appendChild(Corvus.ui.field({ label: "Name", control: nameInput }));
-    // "Start" because a point further down the plan may raise or lower it;
-    // this is the speed the mission begins at.
-    const speedFieldEl = Corvus.ui.field({ label: `Start speed (${symbolOf("speed")})`, control: speedInput });
-    speedFieldEl.firstChild.id = "missionSpeedCaption";
-    planRow.appendChild(speedFieldEl);
+    // The panel's title and the mission's name on one line: a caption above
+    // a single box cost a whole row of the height the item list needs.
+    const planRow = Corvus.ui.field({ label: "Mission", control: nameInput, className: "mission-plan-row" });
     sideScrollEl.appendChild(planRow);
 
     summaryEl = document.createElement("div");
@@ -2437,28 +2413,13 @@ Corvus.mission = (function () {
 
   function refreshAll() {
     if (destroyed) return;
-    // The name and the speed are the two controls that are not rebuilt from
-    // state on every pass, so an Open (which replaces the whole plan) has to
-    // write into them or the boxes keep claiming the old mission's values.
-    // Never while one has focus: that would rewrite a number mid-keystroke.
+    // The name is the one control that is not rebuilt from state on every
+    // pass, so an Open (which replaces the whole plan) has to write into it or
+    // the box keeps claiming the old mission's name. Never while it has focus.
     const nameInput = document.getElementById("missionName");
     if (nameInput && nameInput.value !== planName && document.activeElement !== nameInput) {
       nameInput.value = planName;
     }
-    const speedInput = document.getElementById("missionSpeed");
-    const speedShown = String(shown("speed", planSpeed));
-    if (speedInput && speedInput.value !== speedShown && document.activeElement !== speedInput) {
-      speedInput.value = speedShown;
-    }
-    // The unit may have changed while the page was put down.
-    if (speedInput) {
-      speedInput.min = String(shown("speed", SPEED_MIN_MS));
-      speedInput.max = String(shown("speed", SPEED_MAX_MS));
-      speedInput.step = isSi("speed") ? "0.5" : "1";
-      speedInput.setAttribute("aria-label", `Cruise speed in ${symbolOf("speed")}`);
-    }
-    const speedCaption = document.getElementById("missionSpeedCaption");
-    if (speedCaption) speedCaption.textContent = `Start speed (${symbolOf("speed")})`;
     renderDetail();
     refreshPlan();
   }
@@ -2498,6 +2459,22 @@ Corvus.mission = (function () {
     renderDetail();
     drawProfile();
     Corvus.ui.refreshIcons();
+    // After the editor below it has its new height, which is what decides how
+    // much of the list is left on screen.
+    revealSelectedRow();
+  }
+
+  /** Scroll the selected row into the part of the list that is on screen, so
+   *  a point picked on the map can be found in the list as well. */
+  function revealSelectedRow() {
+    if (!listEl || rowDrag) return;
+    const row = listEl.querySelector(".mission-row.is-selected");
+    if (!row) return;
+    const k = pointerScale();
+    const band = listViewport(k);
+    const box = unscaledRect(row, k);
+    if (box.top < band.top) scrollListBy(box.top - band.top);
+    else if (box.bottom > band.bottom) scrollListBy(box.bottom - band.bottom);
   }
 
   function renderList() {
@@ -2981,6 +2958,10 @@ Corvus.mission = (function () {
     const title = document.createElement("span");
     title.textContent = spec.label;
     head.appendChild(title);
+    // The point's name beside its kind, as the mission's name sits beside
+    // "Mission" at the top: a captioned row of its own took height from the
+    // item list above.
+    head.appendChild(nameInput(item));
     // Deleting one item had three gestures and no button: a row that has to be
     // hovered, a key with nothing on screen saying it works, and a right-click
     // on the map. This is the one an operator finds by looking.
@@ -2993,12 +2974,12 @@ Corvus.mission = (function () {
     }));
     detailEl.appendChild(head);
 
+    // On an aircraft that holds a loiter point rather than circling it, this
+    // is also where it says why the radius and direction fields are missing.
     const note = Corvus.ui.empty(
       (hovers && spec.hoverHint) ? spec.hoverHint : spec.hint);
     note.className = "field-hint";
     detailEl.appendChild(note);
-
-    detailEl.appendChild(nameField(item));
 
     if (spec.position) {
       const grid = document.createElement("div");
@@ -3053,26 +3034,20 @@ Corvus.mission = (function () {
       detailEl.appendChild(speedField(item));
     }
 
-    // A radius and a direction this airframe will not fly are not shown as
-    // fields the operator can set. Said once, under the item, rather than
-    // leaving two dead controls to be filled in.
-    if (isOrbit(item) && hovers) {
-      const why = Corvus.ui.empty(
-        "This aircraft holds the point rather than circling it, so the orbit "
-        + "radius and direction are not flown. They stay in the plan for an "
-        + "airframe that does fly them.");
-      why.className = "field-hint mission-detail-note";
-      detailEl.appendChild(why);
-    }
-
+    // Two to a row, like the fields above. A choice takes the whole row: its
+    // longest option does not fit half the panel.
+    const params = document.createElement("div");
+    params.className = "mission-detail-grid";
     Object.keys(spec.params).forEach((key) => {
       if (!paramApplies(item, key)) return;
       const rule = spec.params[key];
       if (rule.choices) {
-        detailEl.appendChild(choiceField(item, key, rule));
+        const choice = choiceField(item, key, rule);
+        choice.classList.add("mission-detail-wide");
+        params.appendChild(choice);
         return;
       }
-      detailEl.appendChild(numberField({
+      params.appendChild(numberField({
         label: rule.label, unit: rule.unit,
         quantity: rule.unit === "m" ? "length" : undefined,
         value: item[key], step: rule.step, min: rule.min, max: rule.max,
@@ -3083,6 +3058,7 @@ Corvus.mission = (function () {
         },
       }));
     });
+    if (params.children.length) detailEl.appendChild(params);
   }
 
   /* How fast the leg INTO this point is flown, and from here on until another
@@ -3096,14 +3072,14 @@ Corvus.mission = (function () {
      speed the point is flown at as things stand, so an empty field still says
      what will happen. */
   /* The point's own name. Optional: empty means it is shown by its number and
-     its kind, which is what the placeholder says. Shown in the list and on
+     its kind, which the title beside it already says. Shown in the list and on
      the map as it is typed; committed on change like every other field. The
      vehicle never sees it (MISSION_ITEM_INT has no field for one), so it
      lives in the plan and in the saved file. */
-  function nameField(item) {
+  function nameInput(item) {
     const input = Corvus.ui.input({
       value: item.name || "",
-      placeholder: TYPES[item.type].label,
+      placeholder: "Name",
       ariaLabel: "Name of this point",
       autocomplete: false,
       onInput: (value) => {
@@ -3122,7 +3098,8 @@ Corvus.mission = (function () {
       },
     });
     input.maxLength = POINT_NAME_MAX;
-    return Corvus.ui.field({ label: "Name", control: input });
+    input.classList.add("mission-detail-name");
+    return input;
   }
 
   function speedField(item) {
@@ -3216,16 +3193,14 @@ Corvus.mission = (function () {
     Corvus.ui.clear(summaryEl);
     const points = stations(items, home);
     const length = routeLength(items, home);
-    const seconds = routeDuration(items, home, planSpeed);
+    const seconds = routeDuration(items, home, null);
     const gaps = clearances(points, ground).filter((value) => value != null);
-    const highest = items.reduce(
-      (best, item) => (TYPES[item.type].position ? Math.max(best, item.alt) : best), 0);
 
+    // No highest-point figure: the altitude profile shows it, and the one case
+    // where it matters (above the open-category ceiling) is in the issues.
     summaryEl.appendChild(summaryCell("Items", String(items.length)));
     summaryEl.appendChild(summaryCell("Distance", formatDistance(length)));
     summaryEl.appendChild(summaryCell("Duration", formatDuration(seconds)));
-    summaryEl.appendChild(summaryCell("Top", lengthText(highest),
-      highest > CEILING_HINT_M ? "warn" : ""));
     if (gaps.length) {
       const lowest = Math.min.apply(null, gaps);
       summaryEl.appendChild(summaryCell("Clearance", lengthText(lowest),
@@ -3240,20 +3215,30 @@ Corvus.mission = (function () {
   function renderIssues() {
     if (!issuesEl) return;
     Corvus.ui.clear(issuesEl);
-    const lines = problems().filter((line) => line !== "The mission is empty.");
+    const lines = problems().filter((issue) => issue.text !== EMPTY_PLAN);
     issuesEl.hidden = !lines.length;
-    lines.forEach((line) => {
-      const row = document.createElement("div");
-      row.className = "mission-issue";
-      row.appendChild(Corvus.ui.icon("triangle-alert", 12));
-      const text = document.createElement("span");
-      text.textContent = line;
-      row.appendChild(text);
-      issuesEl.appendChild(row);
-    });
-    // Called straight from the terrain pass and from the speed field too, so
-    // it cannot lean on refreshPlan to draw its icons.
+    lines.forEach((issue) => issuesEl.appendChild(issueRow(issue)));
+    // Called straight from the terrain pass too, so it cannot lean on
+    // refreshPlan to draw its icons.
     if (lines.length) Corvus.ui.refreshIcons();
+  }
+
+  /** One line per warning, so a column of them can be scanned. The why and
+   *  the fix sit behind the info icon, where they cost no room until asked. */
+  function issueRow(issue) {
+    const row = document.createElement("div");
+    row.className = "mission-issue";
+    row.appendChild(Corvus.ui.icon("triangle-alert", 12));
+    const text = document.createElement("span");
+    text.className = "mission-issue-text";
+    text.textContent = issue.text;
+    row.appendChild(text);
+    if (issue.info) {
+      row.appendChild(Corvus.ui.infoHint({
+        text: issue.info, size: 12, ariaLabel: "Why: " + issue.text,
+      }));
+    }
+    return row;
   }
 
   function summaryCell(label, value, level) {
@@ -3802,10 +3787,15 @@ Corvus.mission = (function () {
   // Vehicle and file actions
   // =====================================================================
 
+  const EMPTY_PLAN = "The mission is empty.";
+
+  /** The plan's warnings as {text, info}: text is one short line, info the
+   *  reason and the fix, shown on demand. */
   function problems() {
     const list = [];
-    if (!items.length) list.push("The mission is empty.");
-    if (items.length && !home) list.push("The mission has no start point.");
+    const say = (text, info) => list.push({ text, info: info || "" });
+    if (!items.length) say(EMPTY_PLAN);
+    if (items.length && !home) say("No start point.", "Place the start point on the map before uploading.");
 
     /* Order is the one thing a mission has that a set of points does not, and
        PX4 flies it literally: it does not refuse a takeoff in the middle or an
@@ -3814,31 +3804,33 @@ Corvus.mission = (function () {
        ALREADY FLYING legitimately has no takeoff at all. */
     const takeoffs = items.filter((item) => item.type === "takeoff").length;
     if (takeoffs > 1) {
-      list.push(`The plan has ${takeoffs} takeoffs; only the first one climbs.`);
+      say(`${takeoffs} takeoffs in the plan.`, "Only the first one climbs. The others are flown as points.");
     }
     if (takeoffs === 1 && items[0].type !== "takeoff") {
-      list.push("The takeoff is not the first item. The aircraft flies to it before climbing.");
+      say("The takeoff is not the first item.", "The aircraft flies to it before climbing.");
     }
     const ends = endIndex();
     if (ends < 0 && items.some((item) => TYPES[item.type].position && item.type !== "takeoff")) {
-      list.push("The mission has no ending. Add a landing or a return, or the aircraft "
-        + "stays at the last point when it is done.");
+      say("The mission has no ending.",
+        "Add a landing or a return, or the aircraft stays at the last point when it is done.");
     }
     if (ends >= 0 && ends < items.length - 1) {
       const left = items.length - 1 - ends;
-      list.push(
-        `${left} item${left === 1 ? "" : "s"} after the `
-        + `${TYPES[items[ends].type].label.toLowerCase()} will not be flown.`);
+      const end = TYPES[items[ends].type].label.toLowerCase();
+      say(`${left} item${left === 1 ? "" : "s"} after the ${end} will not be flown.`,
+        `The mission ends at the ${end}. Move the items before it or delete them.`);
     }
 
     const highest = items.reduce(
       (best, item) => (TYPES[item.type].position ? Math.max(best, item.alt) : best), 0);
     if (highest > CEILING_HINT_M) {
-      list.push(`The plan reaches ${lengthText(highest)}, above the ${lengthText(CEILING_HINT_M)} open-category ceiling.`);
+      say(`The plan reaches ${lengthText(highest)}.`,
+        `That is above the ${lengthText(CEILING_HINT_M)} ceiling of the open category.`);
     }
     const gaps = clearances(stations(items, home), ground).filter((value) => value != null);
     if (gaps.length && Math.min.apply(null, gaps) < CLEARANCE_WARN_M) {
-      list.push(`The route passes within ${lengthText(Math.min.apply(null, gaps))} of the ground.`);
+      say(`Only ${lengthText(Math.min.apply(null, gaps))} above the ground.`,
+        "The route passes this close to the terrain. Raise the points near the lowest part of the profile.");
     }
     return list;
   }
@@ -3848,7 +3840,7 @@ Corvus.mission = (function () {
       say("Nothing to upload. The mission is empty.", "warn");
       return;
     }
-    const warnings = problems().filter((line) => line !== "The mission is empty.");
+    const warnings = problems().filter((issue) => issue.text !== EMPTY_PLAN);
     const go = () => sendPlan(andFly, button);
     if (andFly || warnings.length) confirmUpload(andFly, warnings, go);
     else go();
@@ -3863,11 +3855,12 @@ Corvus.mission = (function () {
       ? `${planName} will be uploaded, the vehicle switched to MISSION and armed. It will take off.`
       : `${planName} will be written to the vehicle. It will not fly until you start it.`);
     body.appendChild(lead);
-    warnings.forEach((line) => {
-      const warn = Corvus.ui.empty(line);
-      warn.className = "mission-warning";
-      body.appendChild(warn);
-    });
+    if (warnings.length) {
+      const list = document.createElement("div");
+      list.className = "mission-issues mission-warnings";
+      warnings.forEach((issue) => list.appendChild(issueRow(issue)));
+      body.appendChild(list);
+    }
 
     let dialog = null;
     const cancel = Corvus.ui.button({ variant: "secondary", label: "Cancel", onClick: () => dialog.close() });
@@ -4302,7 +4295,6 @@ Corvus.mission = (function () {
     homeElevation = null;
     selectedId = null;
     planName = "Mission";
-    planSpeed = null;
     ground = null;
     const nameInput = document.getElementById("missionName");
     if (nameInput) nameInput.value = planName;
@@ -4382,7 +4374,8 @@ Corvus.mission = (function () {
     _progress: () => progress,
     _currentIndex: currentIndex,
     _widthByZoom: widthByZoom,
-    _problems: problems,
+    _problems: () => problems().map((issue) => issue.text),
+    _problemDetails: problems,
     // test hooks: the order a plan is drawn in. Start first, the route, one
     // ending; wrong silently, as a landing with nothing before it.
     _placeStart: placeStart,

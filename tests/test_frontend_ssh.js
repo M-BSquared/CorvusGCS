@@ -40,7 +40,7 @@ global.document = {
 require("./../src/js/ui.js");
 require("./../src/js/panel.js");
 
-const { sshAddress } = Corvus.panel;
+const { sshAddress, sshNeeds } = Corvus.panel;
 
 function testTheAccountIsNamed() {
   assert.equal(
@@ -62,7 +62,25 @@ function testMissingPiecesDegradeInsteadOfPrintingUndefined() {
   assert.equal(sshAddress({}), "");
 }
 
+function testSshNeedsReadsAReplyOrARejectedRequest() {
+  const body = { ok: false, error: "Authentication failed.", needs: "credentials", connection: "companion" };
+  assert.deepEqual(sshNeeds(body), { name: "companion", needs: "credentials", error: "Authentication failed." });
+  const error = new Error("no saved connection named 'x'");
+  error.body = { error: error.message, needs: "connection", connection: "x" };
+  assert.deepEqual(sshNeeds(error), { name: "x", needs: "connection", error: error.message });
+}
+
+function testSshNeedsAsksForNothingElse() {
+  assert.equal(sshNeeds(null), null);
+  assert.equal(sshNeeds({ ok: false, error: "No answer from 10.0.0.7:22 within 8 s." }), null);
+  assert.equal(sshNeeds({ needs: "connection" }), null, "no name, nothing to save it under");
+  assert.equal(sshNeeds({ needs: "coffee", connection: "x" }), null, "an unknown need");
+  assert.equal(sshNeeds(new Error("plain")), null);
+}
+
 const tests = [
+  testSshNeedsReadsAReplyOrARejectedRequest,
+  testSshNeedsAsksForNothingElse,
   testTheAccountIsNamed,
   testTwoEntriesDifferingOnlyByAccountReadDifferently,
   testMissingPiecesDegradeInsteadOfPrintingUndefined,

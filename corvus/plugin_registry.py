@@ -95,6 +95,13 @@ Each script registers the plugin when it loads:
       destroy: function (containerEl) { /* tear it down again */ },
     });
 
+Whatever a plugin saves through `api.saveSettings` is written to
+`<id>/config.json` in this folder, one file per plugin and separate from the
+application's own config. To set up another computer the same way, copy that
+file (or the whole plugin folder) to the same place there and restart. This
+works for the plugins that ship with Corvus too: their folder here holds only
+the config.
+
 `api` is documented at the top of `src/js/plugins.js`. The plugins shipped in
 the application's own `plugins/` folder are complete worked examples:
 `ssh-launcher` for a form, saved settings, a backend call and a terminal,
@@ -135,6 +142,11 @@ def ensure_user_plugins_dir() -> str:
     except OSError as exc:
         logger.warning("could not create plugin folder %s: %s", path, exc)
     return path
+
+
+def is_valid_id(plugin_id: Any) -> bool:
+    """Whether *plugin_id* is safe to use as a folder name and in a URL."""
+    return isinstance(plugin_id, str) and bool(_ID_RE.match(plugin_id))
 
 
 def _clean_str(raw: Any, default: str = "") -> str:

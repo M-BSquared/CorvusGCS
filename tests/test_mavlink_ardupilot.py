@@ -320,7 +320,8 @@ def test_a_mission_upload_reserves_slot_zero_for_home() -> None:
     item is eaten, and the aircraft flies a mission missing its takeoff."""
     bridge = ardupilot_bridge()
     conn = accept_everything(bridge)
-    bridge._store.update(home=[48.0, 11.0])
+    # [lon, lat], the order HOME_POSITION is stored in.
+    bridge._store.update(home=[11.0, 48.0])
 
     def fake_upload(items: list[dict]) -> int:
         conn.mav.items = list(items)
@@ -335,8 +336,27 @@ def test_a_mission_upload_reserves_slot_zero_for_home() -> None:
     assert len(conn.mav.items) == 2
     home, waypoint = conn.mav.items
     assert home["frame"] == mavutil.mavlink.MAV_FRAME_GLOBAL
-    assert home["x_int"] == int(round(48.0 * 1e7))
+    assert home["x_int"] == int(round(48.0 * 1e7)), "x is the latitude"
+    assert home["y_int"] == int(round(11.0 * 1e7)), "y is the longitude"
     assert waypoint["x_int"] == int(round(48.1 * 1e7))
+
+
+def test_the_home_slot_is_read_from_a_real_home_position() -> None:
+    """The store's home is [lon, lat]. Read the other way round, a vehicle at
+    48.1 N 11.6 E got a home slot at 11.6 N 48.1 E, in Somalia."""
+    bridge = ardupilot_bridge()
+    accept_everything(bridge)
+    bridge._dispatch(FakeMessage(
+        message_type="HOME_POSITION", latitude=481234567, longitude=116543210,
+        altitude=520000, source_system=1,
+    ))
+    home = bridge._with_mission_home_slot([
+        bridge._build_mission_item_spec(
+            0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT, 48.2, 11.7, 30.0, 0, 0, 0, 0),
+    ])[0]
+    assert home["x_int"] == 481234567
+    assert home["y_int"] == 116543210
+    assert home["z"] == 520.0
 
 
 def test_a_px4_mission_upload_still_starts_at_item_zero() -> None:
@@ -357,16 +377,61 @@ def test_a_px4_mission_upload_still_starts_at_item_zero() -> None:
     assert len(sent) == 1
 
 
-def test_a_mission_start_names_the_right_first_item_and_the_right_mode() -> None:
+def test_a_copter_mission_arms_in_guided_and_is_started_by_mission_start() -> None:
+    """Copter refuses to arm in AUTO unless AUTO_OPTIONS allows it (off by
+    default), so AUTO then arm could never start a mission from the ground.
+    GUIDED, arm, then MISSION_START, which is itself the switch to AUTO."""
     bridge = ardupilot_bridge()
     conn = accept_everything(bridge)
     assert bridge.start_mission(3) is True
-    start = conn.mav.commands[0]
-    assert int(start[2]) == mavutil.mavlink.MAV_CMD_MISSION_START
-    assert (start[4], start[5]) == (1.0, 3.0)   # home is item 0 on ArduPilot
-    mode = conn.mav.commands[1]
+    assert commands_of(conn) == [
+        mavutil.mavlink.MAV_CMD_DO_SET_MODE,
+        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+        mavutil.mavlink.MAV_CMD_MISSION_START,
+    ]
+    mode, arm, start = conn.mav.commands
+    assert mode[5] == 4.0                        # copter GUIDED
+    assert arm[4] == 1.0
+    # ArduPilot 4.6 answers any other first/last pair with DENIED.
+    assert (start[4], start[5]) == (0.0, 0.0)
+
+
+def test_a_plane_mission_arms_in_auto() -> None:
+    """A tiltrotor armed in GUIDED spins up in the forward flight position."""
+    bridge = ardupilot_bridge(mavutil.mavlink.MAV_TYPE_FIXED_WING)
+    conn = accept_everything(bridge)
+    assert bridge.start_mission(3) is True
+    mode = conn.mav.commands[0]
     assert int(mode[2]) == mavutil.mavlink.MAV_CMD_DO_SET_MODE
-    assert mode[5] == 3.0                        # copter AUTO
+    assert mode[5] == 10.0                       # plane AUTO
+    assert commands_of(conn)[-1] == mavutil.mavlink.MAV_CMD_MISSION_START
+
+
+def test_a_refused_mission_start_disarms_what_it_armed() -> None:
+    bridge = ardupilot_bridge()
+    conn = accept_everything(bridge)
+    accepted = conn.mav.on_send
+
+    def refuse_start(args: tuple) -> None:
+        if int(args[2]) == mavutil.mavlink.MAV_CMD_MISSION_START:
+            bridge._dispatch(ack(int(args[2]), mavutil.mavlink.MAV_RESULT_FAILED))
+            return
+        accepted(args)
+
+    conn.mav.on_send = refuse_start
+    assert bridge.start_mission(3) is False
+    assert commands_of(conn)[-1] == mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM
+    assert conn.mav.commands[-1][4] == 0.0, "disarmed again"
+    assert bridge._store.get_snapshot()["armed"] is False
+    assert "Mission start failed: FAILED" in bridge.get_last_command_error()
+
+
+def test_an_airborne_ardupilot_mission_start_only_sends_mission_start() -> None:
+    bridge = ardupilot_bridge()
+    bridge._store.update(armed=True, landed_state=2, mode="LOITER")
+    conn = accept_everything(bridge)
+    assert bridge.start_mission(3) is True
+    assert commands_of(conn) == [mavutil.mavlink.MAV_CMD_MISSION_START]
 
 
 @pytest.mark.parametrize(("mav_type", "mode_number"), [

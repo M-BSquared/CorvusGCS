@@ -558,6 +558,23 @@ class Dialect:
         """
         return ""
 
+    def mission_start_params(self, count: int) -> tuple[float, float]:
+        """MISSION_START's (first, last) item for *count* uploaded plan items.
+
+        PX4 is given both ends explicitly rather than its "0 = last item"
+        shorthand, which is the one part of the command that moved across
+        v1.16 to v1.18.
+        """
+        return 0.0, float(max(0, int(count) - 1))
+
+    def mission_arm_mode(self, mav_type: int) -> str:
+        """The mode to arm in before MISSION_START, or "" to arm afterwards.
+
+        PX4's MISSION_START switches to the mission and arms in one step, so
+        nothing has to happen first.
+        """
+        return ""
+
     # --- calibration ---------------------------------------------------
 
     _CALIBRATION: dict[str, CommandPlan] = {}
@@ -753,6 +770,28 @@ class ArduPilotDialect(Dialect):
         if int(mav_type or 0) == 5:      # antenna tracker: nothing to fly
             return ""
         return ARDUPILOT_GUIDED_MODE
+
+    def mission_start_params(self, count: int) -> tuple[float, float]:
+        """Always (0, 0): ArduPilot 4.6 answers any other pair with DENIED.
+
+        Copter, Plane and Rover 4.6 reject a first/last item outright ("not
+        supported"); 4.3 to 4.5 ignore both fields. Zero is the one value every
+        supported release runs the mission with.
+        """
+        return 0.0, 0.0
+
+    def mission_arm_mode(self, mav_type: int) -> str:
+        """Where an ArduPilot vehicle arms before its mission starts.
+
+        Copter refuses to arm in AUTO unless AUTO_OPTIONS allows it, and it is
+        off by default, so a copter (and a rover or sub, the same way
+        QGroundControl does it) arms in GUIDED and MISSION_START then switches
+        it to AUTO. A plane arms in AUTO itself: a tiltrotor armed in GUIDED
+        would spin its motors up in the forward flight position.
+        """
+        if vehicle_class(mav_type) == VEHICLE_PLANE:
+            return self.mission_mode
+        return self.guided_mode(mav_type)
 
     # --- calibration ---------------------------------------------------
 

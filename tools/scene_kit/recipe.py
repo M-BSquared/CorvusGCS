@@ -291,6 +291,24 @@ def review_js(focus: str = "") -> str:
     )
 
 
+def hud_controls_js() -> str:
+    """Show the instrument panel's own controls: lock, compact and collapse.
+
+    The app shows them only while the pointer is over the panel, and a picture
+    has no pointer, so the panel would read as one with no controls at all.
+    A style on the page for the shot, the same kind of staging as taking the
+    logo out; nothing in the app is changed.
+    """
+    return (
+        "(() => { let s = document.getElementById('scene-hud-controls'); "
+        "if (!s) { s = document.createElement('style'); s.id = 'scene-hud-controls'; "
+        "s.textContent = '.flight-overlay .hud-actions { opacity: 1 !important; "
+        "transition: none !important; }'; document.head.appendChild(s); } "
+        "const n = document.querySelectorAll('.flight-overlay .hud-actions .icon-btn').length; "
+        "return n ? n + ' panel controls shown' : 'no instrument panel'; })()"
+    )
+
+
 def hide_logo_js() -> str:
     """Take the operator's company logo out of the top bar for the picture.
 
@@ -330,6 +348,67 @@ def frame_js(scene: Scene) -> str:
         "await new Promise((done) => { const t = setTimeout(done, 8000); "
         "m.once('idle', () => { clearTimeout(t); done(); }); m.triggerRepaint(); }); "
         "return 'framed at zoom ' + m.getZoom().toFixed(2); })()"
+    )
+
+
+def param_filter_js(mode: str) -> str:
+    """Press one of the parameter editor's All / Modified / Unsaved filters.
+
+    The Modified filter stays disabled until the firmware's metadata (its
+    defaults) has arrived, so this waits for the button to come alive rather
+    than clicking a dead one.
+    """
+    return (
+        "(async () => { const w = (ms) => new Promise((r) => setTimeout(r, ms)); "
+        f"const sel = '.params-filter-opt[data-mode={json.dumps(mode)}]'; "
+        "for (let t = 0; t < 15000; t += 200) { const b = document.querySelector(sel); "
+        "if (b && !b.disabled) { b.click(); await w(400); "
+        "const n = document.querySelector('.params-count'); "
+        f"return {json.dumps(mode)} + ' filter on' + (n ? ', ' + n.textContent : ''); }} "
+        "await w(200); } return 'filter not available'; })()"
+    )
+
+
+def calibration_hold_js() -> str:
+    """Wait for the calibration figure to rest, solid, at the side to turn to.
+
+    The large figure demonstrates the turn in a loop: faint where the aircraft
+    is, then the turn, then a hold at the target drawn solid. A picture taken
+    at a random moment is faint half the time, which reads as "nothing asked
+    for". So this waits out any hold already under way and returns as the next
+    one begins, leaving the shot the whole hold to land in.
+    """
+    return (
+        "(async () => { const w = (ms) => new Promise((r) => setTimeout(r, ms)); "
+        "const body = () => document.querySelector("
+        "'svg.calib-figure:not(.calib-figure-compact) .calib-figure-body'); "
+        "const solid = () => { const b = body(); const o = b && b.getAttribute('opacity'); "
+        "return !o || parseFloat(o) >= 0.999; }; "
+        "if (!body()) return 'no calibration figure'; let t = 0; "
+        "while (solid() && t < 4000) { await w(40); t += 40; } "
+        "while (!solid() && t < 8000) { await w(40); t += 40; } "
+        "return solid() ? 'figure solid at its target' : 'figure never settled'; })()"
+    )
+
+
+def three_d_js(scene: Scene) -> str:
+    """Put the framed map into the scene's 3D mode, turned to its bearing.
+
+    Through ``set3DMode``, the door the rail's 3D button uses, so the picture
+    is the 3D an operator gets. The bearing and zoom wait for the tilt to
+    land: set during the tilt's ease, the ease would take them straight back.
+    """
+    return (
+        "(async () => { if (!window.Corvus || !Corvus.map || !Corvus.map.isReady()) "
+        "return 'map not ready'; const m = Corvus.map.getMap(); "
+        "const idle = (ms) => new Promise((done) => { const t = setTimeout(done, ms); "
+        "m.once('idle', () => { clearTimeout(t); done(); }); m.triggerRepaint(); }); "
+        f"const mode = Corvus.map.set3DMode({json.dumps(scene.map_3d)}); "
+        "await new Promise((r) => setTimeout(r, 2000)); "
+        f"m.jumpTo({{ bearing: {scene.map_bearing:.1f}, zoom: m.getZoom() + {scene.map_zoom:.2f} }}); "
+        "await idle(15000); "
+        "return mode + ' at pitch ' + m.getPitch().toFixed(0) + ', bearing ' + "
+        "m.getBearing().toFixed(0) + (Corvus.map.hasTerrain() ? ', terrain' : ', no terrain'); })()"
     )
 
 
@@ -389,6 +468,27 @@ def steps(scene: Scene, url: str) -> list[Step]:
                         "Frame the map on the flight: following off, fitted to "
                         "the track and the home point, and wait for the imagery.",
                         frame_js(scene)))
+        if scene.map_3d != "off":
+            out.append(Step("evaluate",
+                            f"Switch the map to 3D ({scene.map_3d}) and turn it "
+                            f"to a bearing of {scene.map_bearing:.0f} degrees.",
+                            three_d_js(scene)))
+        if scene.hud_controls:
+            out.append(Step("evaluate",
+                            "Show the instrument panel's lock, compact and "
+                            "collapse controls, which the app shows only under "
+                            "the pointer.",
+                            hud_controls_js()))
+    if scene.view == "parameters" and scene.param_filter != "all":
+        out.append(Step("evaluate",
+                        f"Press the editor's {scene.param_filter} filter once the "
+                        "firmware defaults have arrived.",
+                        param_filter_js(scene.param_filter)))
+    if scene.calibration:
+        out.append(Step("evaluate",
+                        "Wait for the demonstrated turn to rest, solid, at the "
+                        "side the aircraft is asked for.",
+                        calibration_hold_js()))
     out.append(Step("evaluate",
                     "Take any company logo out of the top bar. The pictures "
                     "never carry one.",

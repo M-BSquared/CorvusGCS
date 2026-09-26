@@ -233,6 +233,42 @@ def test_bridge_keeps_the_reason_until_the_next_attempt(monkeypatch) -> None:
     assert bridge.connect_error("launcher/a") == ""
 
 
+@pytest.mark.parametrize("exc,expected", [
+    (paramiko.AuthenticationException("Authentication failed."), True),
+    (paramiko.BadAuthenticationType("Bad authentication type", ["publickey"]), True),
+    (paramiko.SSHException("No authentication methods available"), True),
+    (paramiko.SSHException("Error reading SSH protocol banner"), False),
+    (TimeoutError("timed out"), False),
+    (OSError(64, "Host is down"), False),
+])
+def test_only_a_refused_login_counts_as_one(exc, expected) -> None:
+    assert ssh_bridge.is_auth_failure(exc) is expected
+
+
+def test_bridge_remembers_a_refused_login_until_the_next_attempt(monkeypatch) -> None:
+    """What lets the HTTP layer tell the UI to ask for a password rather than
+    only saying that the connect failed."""
+    _connects_fail_with(monkeypatch, paramiko.AuthenticationException("Authentication failed."))
+    bridge = SshBridge()
+    assert bridge.connect("schwalby/a", "10.0.0.5", 22, "pilot") is False
+    assert bridge.connect_auth_failed("schwalby/a") is True
+    assert bridge.connect_auth_failed("schwalby/b") is False
+
+    _connects_fail_with(monkeypatch, TimeoutError("timed out"))
+    assert bridge.connect("schwalby/a", "10.0.0.5", 22, "pilot") is False
+    assert bridge.connect_auth_failed("schwalby/a") is False
+
+
+def test_run_command_flags_a_refused_login(monkeypatch) -> None:
+    _connects_fail_with(monkeypatch, paramiko.AuthenticationException("Authentication failed."))
+    result = ssh_bridge.run_command("10.0.0.5", "uptime", username="pilot")
+    assert result["ok"] is False
+    assert result["auth_failed"] is True
+
+    _connects_fail_with(monkeypatch, TimeoutError("timed out"))
+    assert ssh_bridge.run_command("10.0.0.5", "uptime", username="pilot")["auth_failed"] is False
+
+
 def test_the_first_connection_to_a_new_host_can_remember_its_key(tmp_path, monkeypatch) -> None:
     """Regression: on a station that had never accepted a host, every connect failed.
 

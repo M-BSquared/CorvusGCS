@@ -48,8 +48,12 @@ window.Corvus = window.Corvus || {};
  * there); what this plugin saves is still only the name.
  *
  * The shelf is the plugin's state: a list of {id, label, connection, directory,
- * command, mode}, saved through api.saveSettings, so the buttons are there on
- * the next start. Nothing secret goes in there — a typed-in password is in the
+ * command, mode}, saved through api.saveSettings into the plugin's own config
+ * file (~/.corvus/plugins/ssh-launcher/config.json), so the buttons are there
+ * on the next start and can be copied to another ground station. A button there
+ * naming a connection the station does not have (or has without a working
+ * login) asks for its address, user and password on the first press, through
+ * api.sshSetup, saves them under that name and runs. Nothing secret goes in there — a typed-in password is in the
  * form for as long as the editor is open and is never written to these
  * settings.
  *
@@ -238,6 +242,27 @@ Corvus.pluginSshLauncher = (function () {
    * @param {Object} saved api.getSettings()
    * @returns {Object[]} complete buttons, capped at MAX_BUTTONS
    */
+  /**
+   * The connections the buttons name that this computer has not saved: what
+   * a shelf copied from another ground station still needs. In shelf order,
+   * each name once.
+   *
+   * Pure, and exported for the test suite.
+   *
+   * @param {Object[]} buttons     normalized buttons
+   * @param {Object[]} connections GET /api/ssh/connections entries
+   * @returns {string[]}
+   */
+  function missingConnections(buttons, connections) {
+    const known = new Set((connections || []).map((c) => c && c.name));
+    const out = [];
+    (buttons || []).forEach((b) => {
+      const name = String((b && b.connection) || "").trim();
+      if (name && !known.has(name) && !out.includes(name)) out.push(name);
+    });
+    return out;
+  }
+
   function normalizeButtons(saved) {
     const s = saved || {};
     const source = Array.isArray(s.buttons) ? s.buttons : [s];
@@ -320,6 +345,7 @@ Corvus.pluginSshLauncher = (function () {
       (api && typeof api.getSettings === "function") ? api.getSettings() : {});
     let connections = [];        // saved SSH connections, filled by the fetch below
     let connectionsError = "";   // why the list is empty, when it is
+    let connectionsLoaded = false; // whether that list is the backend's answer yet
     let editing = null;          // the button being edited, or null on the shelf
     let live = {};               // session name -> true, from /api/ssh/sessions
     let errors = Object.create(null);  // button id -> why its last press failed
@@ -447,9 +473,19 @@ Corvus.pluginSshLauncher = (function () {
       });
       card.appendChild(ui.actions(addBtn));
 
-      // Not an error any more, just a hint: a button can carry a connection
-      // that was never saved in Settings.
-      if (connectionsError) {
+      // A shelf copied from another computer names connections this one has
+      // not saved. Saying so up front beats a press that fails; the press
+      // itself asks for them.
+      const missing = connectionsLoaded ? missingConnections(buttons, connections) : [];
+      if (missing.length) {
+        const names = missing.map((n) => `\u201C${n}\u201D`).join(", ");
+        const note = ui.empty(`Not set up on this computer yet: ${names}. ` +
+          "Press a button that uses one to enter its address and login once.");
+        note.classList.add("sshl-note");
+        card.appendChild(note);
+      } else if (connectionsError) {
+        // Not an error any more, just a hint: a button can carry a connection
+        // that was never saved in Settings.
         const note = ui.empty(connectionsError);
         // add, not assign: `className =` dropped the muted description styling
         // ui.empty() had just put there, and the hint came out as body text.
@@ -570,6 +606,7 @@ Corvus.pluginSshLauncher = (function () {
       ui.clear(editorEl);
 
       const card = ui.card({});
+      card.classList.add("sshl-editor");
 
       const labelInput = ui.input({
         value: draft.label,
@@ -592,10 +629,10 @@ Corvus.pluginSshLauncher = (function () {
 
       const connSel = ui.select({
         ariaLabel: "SSH connection",
-        options: connectionOptions(),
+        options: connectionOptions(draft.connection),
         // With nothing saved there is nothing to pick, so the editor opens on
         // the form instead of on an empty list.
-        value: connections.length ? draft.connection : NEW_CONNECTION,
+        value: (connections.length || draft.connection) ? draft.connection : NEW_CONNECTION,
         onChange: () => { renderNewConnection(); paintPreview(); },
       });
       card.appendChild(ui.field({
@@ -608,7 +645,7 @@ Corvus.pluginSshLauncher = (function () {
       if (connSel.value !== NEW_CONNECTION) draft.connection = connSel.value || "";
 
       const newConnEl = document.createElement("div");
-      newConnEl.className = "sshl-newconn";
+      newConnEl.className = "sshl-newconn glass";
       card.appendChild(newConnEl);
 
       /** Whether the operator is typing a connection rather than picking one. */
@@ -821,7 +858,7 @@ Corvus.pluginSshLauncher = (function () {
     /** Options for the connection <select>: the saved ones, then the way to
      *  type one that was never saved. The last entry is always there — a shelf
      *  is built on the pad as often as at a desk. */
-    function connectionOptions() {
+    function connectionOptions(current) {
       const saved = connections.map((c) => {
         const address = c.username ? `${c.username}@${c.host}` : String(c.host || "");
         // A connection typed in here is named user@host by default, so spelling
@@ -831,6 +868,12 @@ Corvus.pluginSshLauncher = (function () {
           label: (address && address !== c.name) ? `${c.name} (${address})` : c.name,
         };
       });
+      // A button naming one this computer lacks keeps it on the list, so
+      // opening its editor does not quietly repoint it.
+      const name = String(current || "").trim();
+      if (name && !connections.some((c) => c.name === name)) {
+        saved.unshift({ value: name, label: `${name} (not set up on this computer)` });
+      }
       saved.push({ value: NEW_CONNECTION, label: "New connection…" });
       return saved;
     }
@@ -908,12 +951,21 @@ Corvus.pluginSshLauncher = (function () {
     }
 
     /** Open this button's session, then type the line into it. */
-    function connectThenSend(entry, line) {
+    function connectThenSend(entry, line, retried) {
       const session = sessionName(entry);
       return api.postJson("/api/ssh/connect", { name: session, from: entry.connection })
+        .catch(replyOf)
         .then((res) => {
           if (cancelled) return null;
           if (!(res && res.ok && res.connected)) {
+            if (!retried) {
+              return setUpConnection(res).then((saved) => {
+                if (cancelled) return null;
+                if (saved) return connectThenSend(entry, line, true);
+                failed(entry, (res && res.error) || "Could not open the terminal");
+                return null;
+              });
+            }
             failed(entry, (res && res.error) || "Could not open the terminal");
             return null;
           }
@@ -947,7 +999,7 @@ Corvus.pluginSshLauncher = (function () {
     }
 
     /** BACKGROUND mode: one-shot nohup, nothing left to watch. */
-    function launchDetached(entry) {
+    function launchDetached(entry, retried) {
       // postJson, not postAction: a command that fails puts the reason in
       // stderr, and that is the whole value of the response.
       return api.postJson("/api/ssh/run", {
@@ -955,8 +1007,21 @@ Corvus.pluginSshLauncher = (function () {
         directory: entry.directory,
         command: entry.command,
         detach: true,
-      }).then((res) => {
+      }).catch(replyOf).then((res) => {
+        if (cancelled) return null;
+        if (!retried && res && res.needs) {
+          return setUpConnection(res).then((saved) => {
+            if (cancelled) return null;
+            return saved ? launchDetached(entry, true) : report(res);
+          });
+        }
+        return report(res);
+      }).catch((error) => {
         if (cancelled) return;
+        failed(entry, error.message || "Could not reach the backend");
+      });
+
+      function report(res) {
         const summary = resultSummary(res);
         if (summary.kind === "err") failed(entry, summary.text);
         else status.show(`${entry.label}: ${summary.text}`, summary.kind);
@@ -971,9 +1036,31 @@ Corvus.pluginSshLauncher = (function () {
           output.hidden = false;
         }
         api.console(`ssh-launcher: ${res.command || entry.command}`, res.ok ? "success" : "error");
-      }).catch((error) => {
-        if (cancelled) return;
-        failed(entry, error.message || "Could not reach the backend");
+        return null;
+      }
+    }
+
+    /**
+     * A rejected SSH request as a reply body: the connect and run routes
+     * answer "this computer has no such connection" with a 400, and its body
+     * (which says what to ask for) is on the Error.
+     */
+    function replyOf(error) {
+      return Object.assign({ ok: false, error: (error && error.message) || "Could not reach the backend" },
+        (error && error.body) || {});
+    }
+
+    /**
+     * Ask for the connection a reply says is missing or refused (host, user,
+     * password), save it under the name the button already carries, and
+     * resolve whether to press again. A shelf copied from another computer
+     * works after this, once per connection.
+     */
+    function setUpConnection(reply) {
+      if (typeof api.sshSetup !== "function") return Promise.resolve(false);
+      return api.sshSetup(reply).then((saved) => {
+        if (saved && !cancelled) loadConnections();
+        return saved;
       });
     }
 
@@ -1033,19 +1120,23 @@ Corvus.pluginSshLauncher = (function () {
     // is fetched once and the view redrawn with it. A shelf that is already
     // configured stays pressable either way — the names are saved, and the
     // backend resolves them.
-    api.requestJson("/api/ssh/connections").then((data) => {
-      if (cancelled) return;
-      connections = (data && Array.isArray(data.connections)) ? data.connections : [];
-      connectionsError = connections.length ? ""
-        : "No saved SSH connections yet. Add a button and choose " +
-          "\u201CNew connection\u2026\u201D to enter one here.";
-      if (editing === null) renderShelf();
-    }).catch(() => {
-      if (cancelled) return;
-      connections = [];
-      connectionsError = "Could not read the saved SSH connections.";
-      if (editing === null) renderShelf();
-    });
+    function loadConnections() {
+      return api.requestJson("/api/ssh/connections").then((data) => {
+        if (cancelled) return;
+        connections = (data && Array.isArray(data.connections)) ? data.connections : [];
+        connectionsLoaded = true;
+        connectionsError = connections.length ? ""
+          : "No saved SSH connections yet. Add a button and choose " +
+            "\u201CNew connection\u2026\u201D to enter one here.";
+        if (editing === null) renderShelf();
+      }).catch(() => {
+        if (cancelled) return;
+        connections = [];
+        connectionsError = "Could not read the saved SSH connections.";
+        if (editing === null) renderShelf();
+      });
+    }
+    loadConnections();
 
     // Which sessions survived from a previous visit to this tab: the plugin is
     // torn down every time it is closed, but its sessions are not.
@@ -1067,7 +1158,7 @@ Corvus.pluginSshLauncher = (function () {
 
   return {
     init, destroy,
-    previewLine, remoteLine, resultSummary, normalizeButtons, coerceButton,
+    previewLine, remoteLine, resultSummary, normalizeButtons, coerceButton, missingConnections,
     coerceMode, sessionName, derivedName, newConnectionError, newConnectionBody,
     MAX_BUTTONS, LIVE_POLL_MS, MODE_TERMINAL, MODE_BACKGROUND, NEW_CONNECTION,
   };

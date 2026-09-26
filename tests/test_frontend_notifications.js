@@ -587,6 +587,53 @@ function testStatusNeverInventsReadinessTheVehicleDidNotReport() {
   assert.equal(status().text, "STANDBY", "a missing field is unknown, not ready");
 }
 
+function testANarrowBarHasAShortFormForEveryStatus() {
+  const ui = mount();
+  settle(ui);
+  const short = () => byId.topBar.querySelector('[data-block="armed"] .v-short').textContent;
+
+  push({ armed: false, prearm_ok: null });
+  assert.equal(short(), "STBY");
+  push({ armed: false, prearm_ok: false, prearm_reasons: [] });
+  assert.equal(short(), "NO GO");
+  push({ armed: false, prearm_ok: true, landed_state: 1 });
+  assert.equal(short(), "READY", "a word that is already short keeps itself");
+
+  const vehicle = () => byId.topBar.querySelector('[data-block="vehicle"] .v-short').textContent;
+  assert.equal(vehicle(), "PX4", "the version beside it says which build");
+  push({ connected: false });
+  assert.equal(vehicle(), "NO LINK");
+}
+
+function testGpsSaysReceptionInColourAndTheFixInSmallPrint() {
+  const ui = mount();
+  settle(ui);
+  const gps = () => {
+    const root = byId.topBar.querySelector('[data-block="gps"]');
+    return {
+      text: root.querySelector(".v-main").textContent,
+      sub: root.querySelector(".sub").textContent,
+      cls: root.querySelector(".tb-value").className,
+    };
+  };
+
+  push({ gps_fix: "RTK_FIXED", gps_satellites: 22, gps_hdop: 0.6 });
+  assert.equal(gps().text, "GPS");
+  assert.equal(gps().sub, "RTK fix");
+  assert.ok(gps().cls.includes("healthy"));
+
+  push({ gps_fix: "3D_FIX", gps_satellites: 7, gps_hdop: 2.2 });
+  assert.equal(gps().sub, "", "a plain 3D fix is the normal case and adds no small print");
+  assert.ok(gps().cls.includes("warning"), "a fix on few satellites is fair, not good");
+
+  push({ gps_fix: "NO_FIX", gps_satellites: 2, gps_hdop: 99 });
+  assert.equal(gps().sub, "no fix");
+  assert.ok(gps().cls.includes("critical"));
+
+  push({ gps_fix: "NO_GPS", gps_satellites: 0 });
+  assert.ok(gps().cls.includes("off"), "no receiver at all is absent, not alarming");
+}
+
 function testArmedOnTheGroundIsNotTheSameAsFlying() {
   const ui = mount();
   settle(ui);
@@ -601,7 +648,7 @@ function testArmedOnTheGroundIsNotTheSameAsFlying() {
   // thing the bar could say at this point — of course it is armed, it is flying.
   push({ armed: true, prearm_ok: false, landed_state: 2, altitude_agl: 30 });
   assert.equal(status().text, "FLYING");
-  assert.ok(status().cls.includes("nav"), "flying is an active state, not a fault");
+  assert.ok(status().cls.includes("healthy"), "flying is the normal state of a flight, not a fault");
 }
 
 function testAirborneFallsBackToHeightWhenTheFirmwareIsSilent() {
@@ -712,6 +759,8 @@ const tests = [
   testStatusReportsTheAutopilotsOwnPreflightVerdict,
   testNotReadyNamesTheChecksThatFailed,
   testStatusNeverInventsReadinessTheVehicleDidNotReport,
+  testANarrowBarHasAShortFormForEveryStatus,
+  testGpsSaysReceptionInColourAndTheFixInSmallPrint,
   testArmedOnTheGroundIsNotTheSameAsFlying,
   testAirborneFallsBackToHeightWhenTheFirmwareIsSilent,
   testALostLinkOutranksEverything,

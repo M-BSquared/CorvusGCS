@@ -233,7 +233,14 @@ Corvus.telemetry = (function () {
     } catch (_error) {
       throw new Error(`Invalid response from ${url}`);
     }
-    if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
+    if (!response.ok) {
+      // The body rides along: an error can carry more than its sentence (the
+      // SSH routes say which connection needs setting up, and how).
+      const error = new Error(data.error || `Request failed (${response.status})`);
+      error.status = response.status;
+      error.body = data;
+      throw error;
+    }
     return data;
   }
 

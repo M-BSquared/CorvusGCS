@@ -1123,7 +1123,10 @@ function testSetPlanAndGetPlanRoundTripWhatTheBackendValidates() {
   const plan = mission.getPlan();
 
   assert.strictEqual(plan.name, "Ridge run");
-  assert.strictEqual(plan.speed, 9);
+  // The planner has no plan-wide speed: one that arrives with a plan is the
+  // first item's, which is the same DO_CHANGE_SPEED in the same place.
+  assert.ok(!("speed" in plan), "the plan must not carry a speed of its own");
+  assert.strictEqual(plan.items[0].speed, 9);
   assert.deepStrictEqual(plan.home, { lat: 48, lon: 11 });
   assert.deepStrictEqual(plan.items.map((i) => i.type), ["takeoff", "loiter_turns", "rtl"]);
   assert.strictEqual(plan.items[1].turns, 3);
@@ -1148,6 +1151,26 @@ function testAPointsOwnSpeedRoundTripsAndAnAbsentOneStaysAbsent() {
   assert.strictEqual(plan.items[0].speed, 4);
   assert.ok(!("speed" in plan.items[1]),
     "a point that pins no speed must not send one");
+}
+
+function testAPlanSpeedNeverOverridesTheFirstPointsOwn() {
+  // The first point's own speed is flown into it after any plan-wide one, so
+  // it is the one that wins, and the plan-wide one had nothing left to do.
+  mission.setPlan({
+    version: 1,
+    name: "Both",
+    home: { lat: 48, lon: 11 },
+    speed: 9,
+    items: [
+      { type: "waypoint", lat: 48, lon: 11, alt: 25, speed: 4 },
+      { type: "waypoint", lat: 48.01, lon: 11.01, alt: 25 },
+    ],
+  });
+  const plan = mission.getPlan();
+
+  assert.ok(!("speed" in plan));
+  assert.strictEqual(plan.items[0].speed, 4);
+  assert.ok(!("speed" in plan.items[1]));
 }
 
 function testAPointsNameRoundTripsAndAnUnnamedOneSendsNone() {
@@ -1395,6 +1418,25 @@ function testAPlanWithARouteButNoEndingSaysSo() {
   assert.match(mission._problems().join(" | "), /no ending/);
 }
 
+function testAWarningIsOneLineAndItsReasonSitsBehindTheInfoIcon() {
+  mission.setPlan({
+    home: { lat: 48, lon: 11 },
+    items: [
+      { type: "waypoint", lat: 48, lon: 11, alt: 400 },
+      { type: "takeoff", lat: 48.001, lon: 11, alt: 30 },
+      { type: "takeoff", lat: 48.002, lon: 11, alt: 30 },
+    ],
+  });
+  const issues = mission._problemDetails();
+  assert.ok(issues.length >= 3);
+  for (const issue of issues) {
+    assert.ok(issue.text.length <= 48, `too long for one line: ${issue.text}`);
+    assert.ok(issue.info, `no explanation behind: ${issue.text}`);
+  }
+  assert.ok(rulesFor(".mission-issue-text").some((body) => /white-space:\s*nowrap/.test(body)),
+    "the warning text must not wrap");
+}
+
 function testALandingLoadsOnTheGroundWhateverTheFileSays() {
   mission.setPlan({ items: [{ type: "land", lat: 48, lon: 11, alt: 40 }] });
   assert.strictEqual(mission.getPlan().items[0].alt, 0);
@@ -1514,6 +1556,7 @@ const tests = [
   testRowsOfUnequalHeightAreMeasuredEachOnItsOwn,
   testSetPlanAndGetPlanRoundTripWhatTheBackendValidates,
   testAPointsOwnSpeedRoundTripsAndAnAbsentOneStaysAbsent,
+  testAPlanSpeedNeverOverridesTheFirstPointsOwn,
   testAPointsNameRoundTripsAndAnUnnamedOneSendsNone,
   testAPointNameIsCleanedAsTheBackendCleansIt,
   testRenamingAPointDoesNotMakeItADifferentPlanFromTheOneFlown,
@@ -1532,6 +1575,7 @@ const tests = [
   testOnlyOneEndingAndNewPointsGoInBeforeIt,
   testTheTakeoffStaysFirstAndTheEndingStaysLast,
   testAPlanWithARouteButNoEndingSaysSo,
+  testAWarningIsOneLineAndItsReasonSitsBehindTheInfoIcon,
   testEveryDocumentListenerIsAlsoRemoved,
   testLeavingThePlannerSuspendsItRatherThanRebuildingIt,
   testOnlyTeardownLetsGoOfTheMap,

@@ -422,6 +422,43 @@ def test_post_config_merges_with_existing_keeps_other_fields(tmp_path) -> None:
     assert "password" not in payload["config"]["ssh_connections"][0]
 
 
+@pytest.mark.parametrize("key", [
+    "tile_cache_dir", "tlog_dir", "params_dir", "firmware_dir",
+    "log_download_dir", "missions_dir",
+])
+def test_post_config_folder_is_live_and_saved(tmp_path, key: str) -> None:
+    """Regression: missions_dir answered 200 and was neither applied nor saved."""
+    cfg_path = tmp_path / "config.json"
+    handler, responses = _handler(config=CorvusConfig(), config_path=str(cfg_path))
+    folder = str(tmp_path / "chosen")
+    handler._api_config_update({key: folder})
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["config"][key] == folder
+    assert getattr(handler.config, key) == folder
+    assert getattr(load_config(str(cfg_path)), key) == folder
+
+
+def test_post_config_leaves_settings_owned_by_other_endpoints_alone(tmp_path) -> None:
+    """rtk, video and forwarding are never in the merge; a save must not reset them."""
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text(json.dumps({
+        "rtk": {"enabled": True, "baud": 57600},
+        "video": {"ffmpeg": "/opt/bin/ffmpeg"},
+        "forwarding": {"enabled": True, "host": "10.0.0.9"},
+    }), encoding="utf-8")
+    existing = load_config(str(cfg_path))
+    before = {k: getattr(existing, k) for k in ("rtk", "video", "forwarding")}
+    assert all(before.values())
+    handler, responses = _handler(config=existing, config_path=str(cfg_path))
+    handler._api_config_update({"missions_dir": str(tmp_path / "m")})
+    assert responses[0][1] == 200
+    reloaded = load_config(str(cfg_path))
+    for key, value in before.items():
+        assert getattr(handler.config, key) == value
+        assert getattr(reloaded, key) == value
+
+
 def test_post_config_rejects_empty_mavlink_connection(tmp_path) -> None:
     handler, responses = _handler(
         config=CorvusConfig(),

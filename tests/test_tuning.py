@@ -497,7 +497,12 @@ def test_the_tuning_stream_raises_every_message_the_page_plots() -> None:
     assert bridge.set_tuning_stream(True, 20) is True
 
     assert [m for m, _i in sent] == list(MavlinkBridge._TUNING_MSG_IDS)
-    assert {i for _m, i in sent} == {50_000}
+    rates = dict(sent)
+    attitude = mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE
+    # The setpoints at the page's rate; ATTITUDE is never slowed below the
+    # 50 Hz the HUD already asked for.
+    assert {i for m, i in sent if m != attitude} == {50_000}
+    assert rates[attitude] == bridge._message_intervals()[attitude] == 20_000
 
 
 def test_disabling_the_tuning_stream_restores_the_firmware_default() -> None:
@@ -509,9 +514,26 @@ def test_disabling_the_tuning_stream_restores_the_firmware_default() -> None:
 
     assert bridge.set_tuning_stream(False) is True
 
-    # 0 hands the rate back to PX4 rather than to a number this build picked.
-    assert {i for _m, i in sent} == {0}
+    # 0 hands a setpoint back to PX4 rather than to a number this build picked.
+    attitude = mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE
+    assert {i for m, i in sent if m != attitude} == {0}
     assert bridge._store.get_snapshot()["setpoints_live"] is False
+
+
+def test_closing_the_tuning_page_gives_the_hud_its_attitude_rate_back() -> None:
+    """ATTITUDE is the one message the page shares with the HUD. Handing it to
+    the firmware's default left the horizon at PX4's 15 Hz for the rest of the
+    session after one look at the tuning page."""
+    bridge = _connected_bridge()
+    sent: list[tuple[int, int]] = []
+    bridge.set_message_interval = (  # type: ignore[method-assign]
+        lambda msg_id, interval_us: sent.append((msg_id, interval_us)) or True)
+
+    assert bridge.set_tuning_stream(False) is True
+
+    attitude = mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE
+    assert dict(sent)[attitude] == bridge._message_intervals()[attitude]
+    assert dict(sent)[attitude] > 0
 
 
 def test_the_tuning_stream_says_not_connected_rather_than_failing_vaguely() -> None:

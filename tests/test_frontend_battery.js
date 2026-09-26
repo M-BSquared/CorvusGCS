@@ -267,12 +267,12 @@ function batteryDoc(overrides) {
     },
     settings: {
       estimate: false, chemistry: "lipo", cells: 0, full_cell: 4.2,
-      empty_cell: 3.3, resistance: 0, capacity_mah: 0,
+      empty_cell: 3.6, resistance: 0, capacity_mah: 0,
     },
     configured: {},
     chemistries: [
-      { value: "lipo", label: "LiPo", full: 4.2, empty: 3.3, nominal: 3.7 },
-      { value: "lifepo4", label: "LiFePO4", full: 3.65, empty: 2.8, nominal: 3.2 },
+      { value: "lipo", label: "LiPo", full: 4.2, empty: 3.6, nominal: 3.7 },
+      { value: "lifepo4", label: "LiFePO4", full: 3.65, empty: 3.0, nominal: 3.2 },
     ],
   }, overrides || {});
 }

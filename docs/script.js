@@ -20,9 +20,22 @@
      --------------------------------------------------------------- */
   var root = document.documentElement;
   var themeToggle = document.getElementById('theme-toggle');
+  var heroImage = document.getElementById('hero-image');
+
+  /* The hero screenshot wears the page's theme: the application in one of
+     its dark themes on the dark page, in its light default on the light one. */
+  function applyHeroImage(theme) {
+    if (!heroImage) return;
+    var base = heroImage.getAttribute('data-' + theme);
+    if (!base || heroImage.getAttribute('data-shown') === theme) return;
+    heroImage.setAttribute('data-shown', theme);
+    heroImage.srcset = base + '-800.jpg 800w, ' + base + '.jpg 1600w';
+    heroImage.src = base + '-800.jpg';
+  }
 
   function applyTheme(theme) {
     root.setAttribute('data-theme', theme);
+    applyHeroImage(theme);
     if (themeToggle) {
       var light = theme === 'light';
       themeToggle.setAttribute('aria-pressed', String(light));
@@ -167,16 +180,35 @@
   var openerIndex = 0;
   var opener = null;
 
+  function preload(index) {
+    var total = shots.length;
+    var btn = shots[(index + total) % total];
+    if (btn) new Image().src = btn.getAttribute('data-full');
+  }
+
   function show(index) {
     var total = shots.length;
     openerIndex = (index + total) % total;
     var btn = shots[openerIndex];
     var img = btn.querySelector('img');
+    var figure = btn.closest('figure');
+    var caption = figure && figure.querySelector('figcaption');
+    var group = btn.closest('[data-group]');
 
     lbImage.src = btn.getAttribute('data-full');
     lbImage.alt = img ? img.alt : '';
-    lbCaption.textContent = btn.getAttribute('data-caption') || '';
-    lbCount.textContent = openerIndex + 1 + ' / ' + total;
+    /* The figure's own caption, title included, so each one is written once. */
+    lbCaption.textContent = '';
+    if (caption) {
+      Array.prototype.forEach.call(caption.childNodes, function (node) {
+        lbCaption.appendChild(node.cloneNode(true));
+      });
+    }
+    lbCount.textContent = (group ? group.getAttribute('data-group') + ' · ' : '') +
+      (openerIndex + 1) + ' / ' + total;
+    /* Stepping through should not wait on the network each time. */
+    preload(openerIndex + 1);
+    preload(openerIndex - 1);
   }
 
   function openLightbox(index, source) {

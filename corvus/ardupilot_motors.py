@@ -145,6 +145,11 @@ BANKS: list[dict[str, Any]] = [
 ]
 
 
+FRAME_NOTE = ("ArduPilot mixes a fixed layout for the frame class and type. How far "
+              "apart the motors are is not a parameter there, and the tuning absorbs "
+              "the size of the frame, so there is nothing to set for it.")
+
+
 def motor_function_value(motor: int) -> float | None:
     """The ``SERVO<n>_FUNCTION`` value that means "this is Motor *motor*"."""
     value = MOTOR_FUNCTIONS.get(int(motor))
@@ -285,7 +290,7 @@ def build(values: dict[str, float]) -> dict[str, Any]:
 
     Same return shape as :func:`corvus.motor_config.build`, so the page renders
     both stacks with one code path: ``sections``, ``geometry``, ``motors``,
-    ``outputs``, ``banks``, ``airframe_family`` and the counts.
+    ``frame``, ``outputs``, ``banks``, ``airframe_family`` and the counts.
     """
     geometry = present([
         enum("FRAME_CLASS", "Frame class", values, FRAME_CLASS_OPTIONS,
@@ -350,6 +355,9 @@ def build(values: dict[str, float]) -> dict[str, Any]:
         "sections": sections,
         "geometry": geometry,
         "motors": _motors(values, output_entries),
+        # Reported rather than left out: an operator looking for the arm length
+        # needs to hear that ArduPilot has no such setting, not find nothing.
+        "frame": {"adjustable": False, "note": FRAME_NOTE},
         "outputs": output_entries,
         "banks": banks(output_entries),
         "airframe_family": airframe_family(values),

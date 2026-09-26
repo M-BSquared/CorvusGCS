@@ -431,6 +431,8 @@ def _motors(values: dict[str, float],
         ) if f is not None]
         assigned = by_motor.get(number)
         axis = _axis(values, i)
+        position = {a.lower(): f"CA_ROTOR{i}_P{a}" for a in ("X", "Y")
+                    if f"CA_ROTOR{i}_P{a}" in values}
         motors.append({
             "index": i,
             "number": number,
@@ -440,6 +442,9 @@ def _motors(values: dict[str, float],
             "z": float(values.get(f"CA_ROTOR{i}_PZ", 0.0)),
             "axis": axis,
             "thrust": axis["kind"] if axis else None,
+            # The parameters behind x and y, for the frame size control, which
+            # rewrites every lift rotor's position at once.
+            "position_params": position if len(position) == 2 else None,
             "spin": None if km is None else ("CW" if km < 0 else "CCW"),
             "fields": fields,
             "output_fields": _output_fields(values, assigned),
@@ -449,6 +454,63 @@ def _motors(values: dict[str, float],
             },
         })
     return motors
+
+
+# Below this a frame has no measurable size: its motor positions are not set.
+MIN_FRAME_M = 1e-3
+
+FRAME_HINT = ("Scales the motor positions around the middle of the frame, and keeps "
+              "where the centre of gravity sits relative to that middle. The diagonal "
+              "is the distance between opposite motors that frames are sold by, 450 mm "
+              "on a 450 frame. Length and width change one axis alone, for an H or a "
+              "stretched frame. PX4 normalises the mix, so the proportions and the "
+              "centre of gravity matter more than the overall size.")
+
+
+def _metres(value: float) -> float:
+    """A distance to a tenth of a millimetre: finer than anyone measures an arm."""
+    return round(float(value), 4)
+
+
+def frame(motors: list[dict[str, Any]]) -> dict[str, Any]:
+    """The frame's measured size, and the rotors a size change moves.
+
+    Only lift rotors count. A quadplane's pusher sits on the tail boom, and
+    stretching the lift frame must not move it, nor let its position decide how
+    long the frame is. ``length`` is the extent along X (front to back),
+    ``width`` along Y, ``diagonal`` the largest distance between two rotors. An
+    axis along which every rotor sits in one line has no extent to scale, and
+    comes back as None.
+    """
+    lift = [m for m in motors
+            if m.get("thrust") != "horizontal" and m.get("position_params")]
+    if len(lift) < 2:
+        return {"adjustable": False,
+                "note": "The frame size needs at least two lift rotors with positions. "
+                        "Set each motor's position below instead."}
+    xs = [float(m["x"]) for m in lift]
+    ys = [float(m["y"]) for m in lift]
+    diagonal = max(
+        ((a["x"] - b["x"]) ** 2 + (a["y"] - b["y"]) ** 2) ** 0.5
+        for i, a in enumerate(lift) for b in lift[i + 1:])
+    if diagonal < MIN_FRAME_M:
+        return {"adjustable": False,
+                "note": "No motor positions are set yet, so there is no size to scale. "
+                        "Set each motor's position below, or pick an airframe preset."}
+    length = max(xs) - min(xs)
+    width = max(ys) - min(ys)
+    return {
+        "adjustable": True,
+        "length": _metres(length) if length >= MIN_FRAME_M else None,
+        "width": _metres(width) if width >= MIN_FRAME_M else None,
+        "diagonal": _metres(diagonal),
+        "center": {"x": (max(xs) + min(xs)) / 2, "y": (max(ys) + min(ys)) / 2},
+        "motors": [{
+            "number": m["number"], "x": float(m["x"]), "y": float(m["y"]),
+            "x_param": m["position_params"]["x"], "y_param": m["position_params"]["y"],
+        } for m in lift],
+        "hint": FRAME_HINT,
+    }
 
 
 def _protocol_options(values: dict[str, float], name: str) -> list[dict[str, Any]]:
@@ -501,6 +563,8 @@ def build(values: dict[str, float]) -> dict[str, Any]:
                   (``output_fields``, present once :func:`output_param_names`
                   has been read too). Drives the airframe diagram and the
                   click-to-select detail panel.
+    ``frame``     the frame's size (length, width, diagonal) and the lift
+                  rotors a size change rewrites; see :func:`frame`.
     ``outputs``   every output pin that exists, and what it currently drives.
     ``banks``     the output banks this board actually has.
     """
@@ -551,10 +615,12 @@ def build(values: dict[str, float]) -> dict[str, Any]:
     output_entries = outputs(values)
     autostart = values.get("SYS_AUTOSTART")
     airframe = values.get("CA_AIRFRAME")
+    motors = _motors(values, output_entries)
     return {
         "sections": sections,
         "geometry": geometry,
-        "motors": _motors(values, output_entries),
+        "motors": motors,
+        "frame": frame(motors),
         "outputs": output_entries,
         "banks": banks(output_entries),
         "airframe_family": airframe_family(values),

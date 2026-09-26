@@ -3,7 +3,7 @@
   "name": "Schwalby",
   "icon": "bird",
   "description": "One-press buttons that start programs on this computer or over SSH",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Maximilian Böck",
   "order": 30,
   "scripts": [

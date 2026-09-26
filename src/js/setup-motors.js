@@ -32,8 +32,14 @@ window.Corvus = window.Corvus || {};
  * not remembered — it is re-asked every time the page opens, because the one
  * time it is stale is the time someone put the props back on.
  *
+ * The flight controller and the GPS antenna are drawn on the same airframe,
+ * because their positions share the motors' origin: all of them are offsets
+ * from the centre of gravity. "Where is the flight controller relative to the
+ * motors?" is then a question the picture answers, and the frame size control
+ * rescales every lift rotor at once instead of one coordinate at a time.
+ *
  * Backend contract:
- *   GET  /api/motors                        {connected,motors,outputs,banks,sections}
+ *   GET  /api/motors                        {connected,motors,frame,sensors,outputs,banks,sections}
  *   POST /api/motors/assign {motor,bank,pin} wire a motor to an output pin
  *   POST /api/motors/test {motor,throttle,duration}
  *   POST /api/motors/test/stop
@@ -69,6 +75,18 @@ Corvus.setupMotors = (function () {
   // origin), so positions are laid out evenly and the ring is drawn dashed —
   // an honest "no positions set" rather than four discs stacked on the hub.
   const MIN_SPAN_M = 1e-4;
+  // With no measured frame to place them on, the flight controller and GPS
+  // keep only the direction of their offset, inside this share of the ring.
+  const SENSOR_REACH = 0.55;
+
+  // The frame size a typed value may set. A 65 mm whoop to a 5 m lifter.
+  const FRAME_MIN_M = 0.02;
+  const FRAME_MAX_M = 5;
+  const FRAME_DIMS = [
+    { key: "diagonal", label: "Diagonal" },
+    { key: "length", label: "Front to back" },
+    { key: "width", label: "Left to right" },
+  ];
 
   // Bench identification throttles. Deliberately stops at half: this is "which
   // motor is this?", not a power test, and the ESC calibration procedure is the
@@ -196,7 +214,7 @@ Corvus.setupMotors = (function () {
     state.controls = [];
     state.nodes = {};
 
-    if (!motors.length && !(doc.sections || []).length) {
+    if (!motors.length && !(doc.sections || []).length && !(doc.sensors || []).length) {
       const card = S.el("div", "page-card motors-card");
       card.appendChild(S.sectionTitle("Motors"));
       card.appendChild(S.el("div", "params-desc",
@@ -218,6 +236,7 @@ Corvus.setupMotors = (function () {
       state.host.appendChild(motorCard(state, doc, motors));
       state.host.appendChild(testCard(state, motors));
     }
+    if ((doc.sensors || []).length) state.host.appendChild(sensorCard(state, doc));
     (doc.sections || []).forEach((section) => {
       const card = S.el("div", "page-card motors-card");
       card.appendChild(S.sectionTitle(section.title || ""));
@@ -252,8 +271,13 @@ Corvus.setupMotors = (function () {
       card.appendChild(caption);
     }
 
-    const span = motorSpan(motors);
-    card.appendChild(diagram(state, motors, span, doc.airframe_family || "multirotor"));
+    const sensors = doc.sensors || [];
+    const measured = motorSpan(motors) >= MIN_SPAN_M;
+    // One scale for motors and sensors, so the flight controller sits where
+    // it really sits between the motors; a GPS mast reaching past the arms
+    // widens the view rather than falling off it.
+    const span = measured ? Math.max(motorSpan(motors), sensorSpan(sensors)) : 0;
+    card.appendChild(diagram(state, motors, span, doc.airframe_family || "multirotor", sensors));
 
     const legend = S.el("div", "motors-legend");
     legend.appendChild(S.el("span", "motors-legend-item",
@@ -269,9 +293,16 @@ Corvus.setupMotors = (function () {
       legend.appendChild(S.el("span", "motors-legend-item",
         `${doc.airframe_label || "Airframe"} outline is schematic; motor positions are to scale`));
     }
+    if (sensors.length) {
+      legend.appendChild(S.el("span", "motors-legend-item", measured
+        ? "Flight controller and GPS to scale"
+        : "Flight controller and GPS show only the direction of their offset"));
+    }
     legend.appendChild(S.el("span", "motors-legend-item",
       "Click a motor to select it"));
     card.appendChild(legend);
+
+    if (doc.frame) card.appendChild(frameBlock(state, doc.frame));
 
     // Add / remove motors. These write CA_ROTOR_COUNT, which changes which
     // fields exist at all, so both reload the page afterwards.
@@ -308,6 +339,12 @@ Corvus.setupMotors = (function () {
       (max, m) => Math.max(max, Math.hypot(Number(m.x) || 0, Number(m.y) || 0)), 0);
   }
 
+  /** Distance of the furthest placed sensor from the centre of gravity, in metres. */
+  function sensorSpan(sensors) {
+    return (sensors || []).reduce(
+      (max, s) => Math.max(max, Math.hypot(Number(s.x) || 0, Number(s.y) || 0)), 0);
+  }
+
   /**
    * Screen position of a motor, in viewBox units.
    *
@@ -328,7 +365,7 @@ Corvus.setupMotors = (function () {
     };
   }
 
-  function diagram(state, motors, span, family) {
+  function diagram(state, motors, span, family, sensors) {
     const host = S.el("div", "motors-diagram");
     if (typeof document.createElementNS !== "function") {
       // No SVG (a browser without it): fall back to a plain row of motor
@@ -368,8 +405,12 @@ Corvus.setupMotors = (function () {
     fwd.textContent = "FWD";
     svg.appendChild(fwd);
 
-    // The body, then the motors on top of it.
+    // The body, the sensors on it, then the motors on top: the motors are the
+    // click targets, and nothing may cover them.
     svg.appendChild(silhouette(family, motors, span));
+    (sensors || []).forEach((s) => {
+      svg.appendChild(sensorNode(s, sensorPoint(s, span, sensors)));
+    });
     motors.forEach((m, i) => {
       svg.appendChild(motorNode(state, m, motorPoint(m, i, motors.length, span)));
     });
@@ -487,6 +528,70 @@ Corvus.setupMotors = (function () {
       class: "motors-shape motors-rotor-disc",
       cx: CENTER + 20, cy: CENTER + 104, r: 24,
     }));
+  }
+
+  /**
+   * Screen position of a placed sensor, in viewBox units.
+   *
+   * On a measured frame it shares the motors' scale. Without one (ArduPilot
+   * publishes no motor positions) there is nothing to be to scale against, so
+   * the offset keeps its direction and the relative distances of the sensors,
+   * inside the ring, and the legend says so.
+   */
+  function sensorPoint(sensor, span, sensors) {
+    const x = Number(sensor.x) || 0;
+    const y = Number(sensor.y) || 0;
+    let scale;
+    if (span >= MIN_SPAN_M) {
+      scale = ARM_PX / span;
+    } else {
+      const reach = sensorSpan(sensors);
+      if (reach < MIN_SPAN_M) return { x: CENTER, y: CENTER };
+      scale = (ARM_PX * SENSOR_REACH) / reach;
+    }
+    return { x: CENTER + y * scale, y: CENTER - x * scale };
+  }
+
+  /**
+   * The flight controller (a board) or a GPS antenna (a ring) on the drawing.
+   *
+   * The tags sit on opposite sides, flight controller left and GPS right, so
+   * the common case of a GPS mast straight above the board still reads as
+   * two things rather than one blot.
+   */
+  function sensorNode(sensor, point) {
+    const g = node("g", {
+      class: `motors-sensor motors-sensor-${sensor.kind === "fc" ? "fc" : "gps"}`,
+      role: "img",
+      "aria-label": sensorAria(sensor),
+    });
+    g.dataset.sensor = String(sensor.id || "");
+    const tag = node("text", {
+      y: round(point.y + 4), class: "motors-sensor-tag",
+    });
+    if (sensor.kind === "fc") {
+      g.appendChild(node("rect", {
+        x: round(point.x - 9), y: round(point.y - 6), width: 18, height: 12, rx: 3,
+        class: "motors-sensor-mark",
+      }));
+      tag.setAttribute("x", String(round(point.x - 13)));
+      tag.setAttribute("text-anchor", "end");
+    } else {
+      g.appendChild(node("circle", {
+        cx: round(point.x), cy: round(point.y), r: 7, class: "motors-sensor-mark",
+      }));
+      tag.setAttribute("x", String(round(point.x + 11)));
+      tag.setAttribute("text-anchor", "start");
+    }
+    tag.textContent = sensor.tag || sensor.label || "";
+    g.appendChild(tag);
+    return g;
+  }
+
+  function sensorAria(sensor) {
+    return `${sensor.label}, ${formatNumber(sensor.x)} metres forward, `
+      + `${formatNumber(sensor.y)} metres right, ${formatNumber(sensor.z)} metres down `
+      + "of the centre of gravity";
   }
 
   function pts(list) {
@@ -935,6 +1040,142 @@ Corvus.setupMotors = (function () {
   }
 
   // -------------------------------------------------------------------------
+  // Frame size
+  // -------------------------------------------------------------------------
+
+  /**
+   * How far apart the motors are, as the three numbers a frame is measured
+   * by: the diagonal (what a "450" frame is named after), front to back and
+   * left to right.
+   *
+   * Changing one rescales the lift rotors around the middle of the frame, so
+   * the layout keeps its shape and the offset of the centre of gravity from
+   * that middle is kept. A stack with no motor positions says so here in the
+   * backend's words, rather than the block going missing.
+   */
+  function frameBlock(state, frame) {
+    const box = S.el("div", "motors-frame");
+    const head = S.el("div", "motors-panel-head motors-output-head");
+    head.appendChild(S.el("span", "motors-panel-sub", "Frame size"));
+    box.appendChild(head);
+    if (!frame.adjustable) {
+      box.appendChild(S.el("div", "field-hint motors-frame-note", frame.note || ""));
+      return box;
+    }
+    const row = S.el("div", "motors-frame-dims");
+    const status = S.el("span", "params-row-status", "");
+    FRAME_DIMS.forEach((dim) => {
+      if (frame[dim.key] == null) return;
+      const input = Corvus.ui.input({
+        className: "motors-frame-input",
+        mono: true,
+        value: formatNumber(frame[dim.key]),
+        ariaLabel: `Frame ${dim.label.toLowerCase()} in metres`,
+        step: "0.001",
+        autocomplete: false,
+      });
+      input.dataset.dim = dim.key;
+      input.addEventListener("change", () => resizeFrame(state, frame, dim.key, input, status));
+      const cell = S.el("div", "motors-frame-control");
+      cell.appendChild(input);
+      cell.appendChild(S.el("span", "pform-unit motors-unit", "m"));
+      row.appendChild(Corvus.ui.field({ label: dim.label, control: cell }));
+      registerControl(state, input);
+    });
+    box.appendChild(row);
+    box.appendChild(status);
+    if (frame.hint) box.appendChild(S.el("div", "field-hint", frame.hint));
+    return box;
+  }
+
+  /**
+   * The parameter writes that give the frame `value` metres along `key`.
+   *
+   * Every lift rotor moves away from or towards the middle of the frame by
+   * the same factor: all axes for the diagonal, one for length or width. A
+   * coordinate that does not move is not written. Positions are rounded to a
+   * tenth of a millimetre, finer than an arm is measured.
+   */
+  function frameWrites(frame, key, value) {
+    const current = Number(frame && frame[key]);
+    const target = Number(value);
+    if (!frame || !frame.adjustable || !(current > 0) || !(target > 0)) return [];
+    const k = target / current;
+    const kx = key === "width" ? 1 : k;
+    const ky = key === "length" ? 1 : k;
+    const cx = Number(frame.center && frame.center.x) || 0;
+    const cy = Number(frame.center && frame.center.y) || 0;
+    const writes = [];
+    (frame.motors || []).forEach((m) => {
+      const x = Math.round((cx + (Number(m.x) - cx) * kx) * 1e4) / 1e4;
+      const y = Math.round((cy + (Number(m.y) - cy) * ky) * 1e4) / 1e4;
+      if (Math.abs(x - Number(m.x)) > 1e-6) writes.push({ name: m.x_param, value: x });
+      if (Math.abs(y - Number(m.y)) > 1e-6) writes.push({ name: m.y_param, value: y });
+    });
+    return writes;
+  }
+
+  async function resizeFrame(state, frame, key, input, status) {
+    if (state.armed) return;
+    const value = Number(input.value);
+    if (String(input.value).trim() === "" || !isFinite(value)
+        || value < FRAME_MIN_M || value > FRAME_MAX_M) {
+      input.classList.add("invalid");
+      setFieldStatus(status, "err", `between ${FRAME_MIN_M} and ${FRAME_MAX_M} m`);
+      return;
+    }
+    input.classList.remove("invalid");
+    const writes = frameWrites(frame, key, value);
+    if (!writes.length) {
+      setFieldStatus(status, "ok", "unchanged");
+      return;
+    }
+    // All of them are wanted before the first is sent: a write lost halfway
+    // leaves a distorted frame, and "Check values" then writes the rest.
+    writes.forEach((w) => { state.wanted[w.name] = w.value; });
+    setFieldStatus(status, "pending", `moving ${(frame.motors || []).length} motors`);
+    try {
+      for (const w of writes) {
+        await Corvus.telemetry.postAction("/api/params/set", w);
+      }
+      setFieldStatus(status, "ok", "frame resized");
+    } catch (err) {
+      const msg = (err && err.message) || "write failed";
+      setFieldStatus(status, "err", msg);
+      notify("critical", `The frame was only partly resized: ${msg}. `
+        + "Check values writes the motors that did not move.");
+    }
+    // Redraw from what the vehicle now holds, whole or partial.
+    load(state);
+  }
+
+  // -------------------------------------------------------------------------
+  // Flight controller and GPS
+  // -------------------------------------------------------------------------
+
+  /**
+   * Where the flight controller and each GPS antenna sit, as offsets from
+   * the centre of gravity. The estimator uses them in flight; no calibration
+   * reads them. Each write redraws the airframe so the marker moves with it.
+   */
+  function sensorCard(state, doc) {
+    const card = S.el("div", "page-card motors-card motors-sensor-card");
+    card.appendChild(S.sectionTitle("Flight controller and GPS"));
+    if (doc.position_hint) card.appendChild(S.el("div", "field-hint", doc.position_hint));
+    (doc.sensors || []).forEach((sensor) => {
+      const head = S.el("div", "motors-panel-head motors-sensor-head");
+      head.appendChild(S.el("span", "motors-panel-title", sensor.label || ""));
+      card.appendChild(head);
+      card.appendChild(S.paramFieldGrid(state, sensor.fields || [], {
+        prefix: "motors",
+        onApplied: () => load(state),
+      }));
+      if (sensor.hint) card.appendChild(S.el("div", "field-hint", sensor.hint));
+    });
+    return card;
+  }
+
+  // -------------------------------------------------------------------------
   // Generic fields
   // -------------------------------------------------------------------------
 
@@ -982,5 +1223,5 @@ Corvus.setupMotors = (function () {
     S.setActionsStatus(state.actionsStatus, cls, text);
   }
 
-  return { render };
+  return { render, frameWrites };
 })();

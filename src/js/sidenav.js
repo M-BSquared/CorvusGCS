@@ -1716,19 +1716,30 @@ Corvus.sidenav = (function () {
       size: "sm",
       label: "CONNECT",
     });
-    connectBtn.addEventListener("click", async () => {
-      connectBtn.textContent = "CONNECTING…";
-      connectBtn.disabled = true;
-      note.textContent = "";
-      let res;
+    async function connectOnce() {
       try {
-        res = await Corvus.telemetry.requestJson("/api/ssh/connect", {
+        return await Corvus.telemetry.requestJson("/api/ssh/connect", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: c.name }),   // connect by name
         });
       } catch (err) {
-        res = { ok: false, error: err.message };
+        return Object.assign({ ok: false, error: err.message }, err.body || {});
+      }
+    }
+    connectBtn.addEventListener("click", async () => {
+      connectBtn.textContent = "CONNECTING…";
+      connectBtn.disabled = true;
+      note.textContent = "";
+      let res = await connectOnce();
+      // Copied here without its password (or with one this host refuses):
+      // ask for the login once and try again with it.
+      const panel = Corvus.panel;
+      if (!(res && res.ok && res.connected) && panel
+          && typeof panel.setupSSHConnection === "function"
+          && await panel.setupSSHConnection(res)) {
+        res = await connectOnce();
+        refreshSettingsSSHList(list);
       }
       if (res && res.ok && res.connected) {
         // Hand off to the panel's live terminal + switch the SSH tab to it.
@@ -1941,10 +1952,14 @@ Corvus.sidenav = (function () {
         className: "settings-plugin-dir",
         label: "Plugin folder",
         control: line,
-        hint: "One folder per plugin, each with a plugin.json. Corvus loads " +
-              "them on the next start, so restart after copying one in. The " +
-              "folder's own README.md describes the format, and the plugins " +
-              "that ship with Corvus are worked examples.",
+        info: "One folder per plugin, each with a plugin.json. Corvus loads " +
+              "them on the next start, so restart after copying one in.\n" +
+              "Each plugin keeps its settings in its own config.json in there " +
+              "(<id>/config.json), apart from the app's config. Copy that file " +
+              "to the same place on another computer to set it up the same " +
+              "way.\n" +
+              "The folder's own README.md describes the format, and the " +
+              "plugins that ship with Corvus are worked examples.",
       });
     }
 
@@ -2155,6 +2170,7 @@ Corvus.sidenav = (function () {
       renderConnectionSection(container, cfg);
       renderFilesSection(container, cfg);
       renderPluginsSection(container, gen);
+      if (Corvus.settingsTransfer) container.appendChild(Corvus.settingsTransfer.section());
       renderAboutSection(container, gen);
       Corvus.ui.refreshIcons();
     }).catch(() => {

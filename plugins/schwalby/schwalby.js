@@ -37,8 +37,13 @@ window.Corvus = window.Corvus || {};
  *     cannot be shut down cleanly between flights.
  *
  * The shelf is the plugin's state: a list of {id, label, target, connection,
- * directory, command, mode}, saved through api.saveSettings. Nothing secret
- * goes in there. Its sessions are "schwalby/<button id>", its own, so it never
+ * directory, command, mode}, saved through api.saveSettings into Schwalby's
+ * own config file (~/.corvus/plugins/schwalby/config.json), apart from the
+ * app's config. Copying that file to another ground station gives it the same
+ * shelf. A button there that names an SSH connection the station does not have
+ * (or has without a working login) asks for its address, user and password on
+ * the first press, through api.sshSetup, saves them under that name and runs.
+ * Nothing secret goes in there. Its sessions are "schwalby/<button id>", its own, so it never
  * presses the SSH Launcher's.
  *
  * Two views, never both: the SHELF (the buttons plus Add) and the EDITOR (one
@@ -250,6 +255,28 @@ Corvus.pluginSchwalby = (function () {
    * @param {Object} saved api.getSettings()
    * @returns {Object[]} complete buttons, capped at MAX_BUTTONS
    */
+  /**
+   * The connections SSH buttons name that this computer has not saved: what
+   * a shelf copied from another ground station still needs. In shelf order,
+   * each name once.
+   *
+   * Pure, and exported for the test suite.
+   *
+   * @param {Object[]} buttons     normalized buttons
+   * @param {Object[]} connections GET /api/ssh/connections entries
+   * @returns {string[]}
+   */
+  function missingConnections(buttons, connections) {
+    const known = new Set((connections || []).map((c) => c && c.name));
+    const out = [];
+    (buttons || []).forEach((b) => {
+      if (!b || coerceTarget(b) !== TARGET_SSH) return;
+      const name = String(b.connection || "").trim();
+      if (name && !known.has(name) && !out.includes(name)) out.push(name);
+    });
+    return out;
+  }
+
   function normalizeButtons(saved) {
     const s = saved || {};
     const out = [];
@@ -543,6 +570,7 @@ Corvus.pluginSchwalby = (function () {
       (api && typeof api.getSettings === "function") ? api.getSettings() : {});
     let connections = [];         // saved SSH connections
     let connectionsError = "";    // why that list is empty, when it is
+    let connectionsLoaded = false; // whether that list is the backend's answer yet
     let localStatus = null;       // GET /api/local/status
     let editing = null;           // the button being edited, or null on the shelf
     let repaintTarget = null;     // the open editor's target painter, for a late status
@@ -924,8 +952,10 @@ Corvus.pluginSchwalby = (function () {
 
       const card = ui.card({});
       if (!buttons.length) {
-        card.appendChild(ui.empty("No launch buttons yet. Add one for each program you start " +
-                                  "before a flight, on this computer or on a companion computer."));
+        const none = ui.empty("No launch buttons yet. Add one for each program you start " +
+                              "before a flight, on this computer or on a companion computer.");
+        none.classList.add("schw-empty");
+        card.appendChild(none);
       } else {
         const list = document.createElement("div");
         list.className = "schw-shelf";
@@ -952,8 +982,18 @@ Corvus.pluginSchwalby = (function () {
         }, true),
       })));
 
-      // Only worth saying once a button actually runs over SSH.
-      if (connectionsError && buttons.some((b) => !isLocal(b))) {
+      // A shelf copied from another computer names connections this one has
+      // not saved. Saying so up front beats a press that fails; the press
+      // itself asks for them.
+      const missing = connectionsLoaded ? missingConnections(buttons, connections) : [];
+      if (missing.length) {
+        const names = missing.map((n) => `“${n}”`).join(", ");
+        const note = ui.empty(`Not set up on this computer yet: ${names}. ` +
+          "Press a button that uses one to enter its address and login once.");
+        note.classList.add("schw-note");
+        card.appendChild(note);
+      } else if (connectionsError && buttons.some((b) => !isLocal(b))) {
+        // Only worth saying once a button actually runs over SSH.
         const note = ui.empty(connectionsError);
         note.classList.add("schw-note");
         card.appendChild(note);
@@ -1109,6 +1149,7 @@ Corvus.pluginSchwalby = (function () {
       let wantedMode = draft.mode === MODE_BACKGROUND ? MODE_BACKGROUND : MODE_TERMINAL;
 
       const card = ui.card({});
+      card.classList.add("schw-editor");
 
       card.appendChild(ui.field({
         label: "Button",
@@ -1140,12 +1181,12 @@ Corvus.pluginSchwalby = (function () {
       // The typed-in connection, held here rather than on the draft: it
       // carries a password, and the draft is what gets saved.
       const newConn = blankConnection();
-      let nameInput = null;
+      let nameField = null;
 
       const connSel = ui.select({
         ariaLabel: "SSH connection",
-        options: connectionOptions(),
-        value: connections.length ? draft.connection : NEW_CONNECTION,
+        options: connectionOptions(draft.connection),
+        value: (connections.length || draft.connection) ? draft.connection : NEW_CONNECTION,
         onChange: () => { renderNewConnection(); paintPreview(); },
       });
       sshEl.appendChild(ui.field({
@@ -1157,7 +1198,7 @@ Corvus.pluginSchwalby = (function () {
       }));
 
       const newConnEl = document.createElement("div");
-      newConnEl.className = "schw-newconn";
+      newConnEl.className = "schw-newconn glass";
       sshEl.appendChild(newConnEl);
 
       function pickedNew() { return isSsh() && connSel.value === NEW_CONNECTION; }
@@ -1169,7 +1210,11 @@ Corvus.pluginSchwalby = (function () {
         return String(newConn.name || "").trim() || derivedName(newConn);
       }
 
+      // Name first, as in the SSH connection form in Settings.
       const NEW_FIELDS = [
+        { key: "name", label: "Name", placeholder: "CORVUS-01", hint: " ",
+          info: "The name this connection is saved under. It joins the SSH " +
+                "connections in Settings, so the next button can simply pick it." },
         { key: "host", label: "Host", placeholder: "192.168.2.10", mono: true },
         { key: "port", label: "Port", type: "number", mono: true },
         { key: "username", label: "User", placeholder: "corvus" },
@@ -1177,17 +1222,13 @@ Corvus.pluginSchwalby = (function () {
           placeholder: "optional, or use a key file" },
         { key: "key_path", label: "Key file", mono: true,
           placeholder: "/home/you/.ssh/id_rsa" },
-        { key: "name", label: "Save as", placeholder: "pilot@10.0.0.7",
-          hint: "Leave it empty to use user@host.",
-          info: "The name this connection is saved under. It joins the SSH " +
-                "connections in Settings, so the next button can simply pick it." },
       ];
 
       /* Built only while in use: a password field that is merely hidden is
          still a password field in the page. */
       function renderNewConnection() {
         ui.clear(newConnEl);
-        nameInput = null;
+        nameField = null;
         newConnEl.hidden = !pickedNew();
         if (!pickedNew()) return;
         NEW_FIELDS.forEach((f) => {
@@ -1201,8 +1242,9 @@ Corvus.pluginSchwalby = (function () {
             spellcheck: false,
             onInput: (v) => { newConn[f.key] = v; paintPreview(); },
           });
-          if (f.key === "name") nameInput = control;
-          newConnEl.appendChild(ui.field({ label: f.label, control, hint: f.hint, info: f.info }));
+          const field = ui.field({ label: f.label, control, hint: f.hint, info: f.info });
+          if (f.key === "name") nameField = field;
+          newConnEl.appendChild(field);
         });
       }
 
@@ -1338,7 +1380,10 @@ Corvus.pluginSchwalby = (function () {
         const line = previewLine(Object.assign({}, draft, { connection: target }));
         preview.textContent = line || "Name a program to see the command.";
         preview.classList.toggle("schw-preview-empty", !line);
-        if (nameInput) nameInput.placeholder = derivedName(newConn) || "pilot@10.0.0.7";
+        if (nameField) {
+          setHint(nameField, String(newConn.name || "").trim() ? ""
+            : `Optional. Left empty, it is saved as ${derivedName(newConn) || "user@host"}.`);
+        }
 
         // Nothing to save until there is a command and somewhere to run it.
         // This computer is always somewhere to run it.
@@ -1356,8 +1401,10 @@ Corvus.pluginSchwalby = (function () {
       ui.refreshIcons();
     }
 
-    /** The saved connections, then the way to type one in. */
-    function connectionOptions() {
+    /** The saved connections, then the way to type one in. A button naming
+     *  one this computer lacks keeps it on the list, so opening its editor
+     *  does not quietly repoint it. */
+    function connectionOptions(current) {
       const saved = connections.map((c) => {
         const address = c.username ? `${c.username}@${c.host}` : String(c.host || "");
         return {
@@ -1365,6 +1412,10 @@ Corvus.pluginSchwalby = (function () {
           label: (address && address !== c.name) ? `${c.name} (${address})` : c.name,
         };
       });
+      const name = String(current || "").trim();
+      if (name && !connections.some((c) => c.name === name)) {
+        saved.unshift({ value: name, label: `${name} (not set up on this computer)` });
+      }
       saved.push({ value: NEW_CONNECTION, label: "New connection…" });
       return saved;
     }
@@ -1419,14 +1470,23 @@ Corvus.pluginSchwalby = (function () {
     }
 
     /** Open this button's session (a shell here, or over SSH), then type. */
-    function connectThenSend(entry, line) {
+    function connectThenSend(entry, line, retried) {
       const session = sessionName(entry);
       const opening = isLocal(entry)
         ? api.postJson("/api/local/connect", { name: session })
-        : api.postJson("/api/ssh/connect", { name: session, from: entry.connection });
+        : api.postJson("/api/ssh/connect", { name: session, from: entry.connection })
+          .catch(replyOf);
       return opening.then((res) => {
         if (cancelled) return null;
         if (!(res && res.ok && res.connected)) {
+          if (!retried && !isLocal(entry)) {
+            return setUpConnection(res).then((saved) => {
+              if (cancelled) return null;
+              if (saved) return connectThenSend(entry, line, true);
+              failed(entry, (res && res.error) || "Could not open the terminal");
+              return null;
+            });
+          }
           failed(entry, (res && res.error) || "Could not open the terminal");
           return null;
         }
@@ -1451,7 +1511,7 @@ Corvus.pluginSchwalby = (function () {
     }
 
     /** BACKGROUND mode: one shot, here or over SSH. */
-    function launchDetached(entry) {
+    function launchDetached(entry, retried) {
       const local = isLocal(entry);
       const request = local
         ? api.postJson("/api/local/run", { directory: entry.directory, command: entry.command })
@@ -1460,9 +1520,22 @@ Corvus.pluginSchwalby = (function () {
           directory: entry.directory,
           command: entry.command,
           detach: true,
-        });
+        }).catch(replyOf);
       return request.then((res) => {
+        if (cancelled) return null;
+        if (!local && !retried && res && res.needs) {
+          return setUpConnection(res).then((saved) => {
+            if (cancelled) return null;
+            return saved ? launchDetached(entry, true) : report(res);
+          });
+        }
+        return report(res);
+      }).catch((error) => {
         if (cancelled) return;
+        failed(entry, error.message || "Could not reach the backend");
+      });
+
+      function report(res) {
         const r = res || {};
         const summary = local ? localSummary(r) : sshSummary(r);
         if (summary.kind === "err") failed(entry, summary.text);
@@ -1476,9 +1549,31 @@ Corvus.pluginSchwalby = (function () {
           output.hidden = false;
         }
         api.console(consoleLine(entry, r.command || entry.command), r.ok ? "success" : "error");
-      }).catch((error) => {
-        if (cancelled) return;
-        failed(entry, error.message || "Could not reach the backend");
+        return null;
+      }
+    }
+
+    /**
+     * A rejected SSH request as a reply body: the connect and run routes
+     * answer "this computer has no such connection" with a 400, and its body
+     * (which says what to ask for) is on the Error.
+     */
+    function replyOf(error) {
+      return Object.assign({ ok: false, error: (error && error.message) || "Could not reach the backend" },
+        (error && error.body) || {});
+    }
+
+    /**
+     * Ask for the connection a reply says is missing or refused (host, user,
+     * password), save it under the name the button already carries, and
+     * resolve whether to press again. A shelf copied from another computer
+     * works after this, once per connection.
+     */
+    function setUpConnection(reply) {
+      if (typeof api.sshSetup !== "function") return Promise.resolve(false);
+      return api.sshSetup(reply).then((saved) => {
+        if (saved && !cancelled) loadConnections();
+        return saved;
       });
     }
 
@@ -1552,19 +1647,24 @@ Corvus.pluginSchwalby = (function () {
 
     renderShelf();
 
-    api.requestJson("/api/ssh/connections").then((data) => {
-      if (cancelled) return;
-      connections = (data && Array.isArray(data.connections)) ? data.connections : [];
-      connectionsError = connections.length ? ""
-        : "No saved SSH connections yet. Add a button, pick SSH and choose " +
-          "“New connection…” to enter one here.";
-      if (editing === null) renderShelf();
-    }).catch(() => {
-      if (cancelled) return;
-      connections = [];
-      connectionsError = "Could not read the saved SSH connections.";
-      if (editing === null) renderShelf();
-    });
+    /** (Re)read the saved SSH connections, and repaint the shelf with them. */
+    function loadConnections() {
+      return api.requestJson("/api/ssh/connections").then((data) => {
+        if (cancelled) return;
+        connections = (data && Array.isArray(data.connections)) ? data.connections : [];
+        connectionsLoaded = true;
+        connectionsError = connections.length ? ""
+          : "No saved SSH connections yet. Add a button, pick SSH and choose " +
+            "“New connection…” to enter one here.";
+        if (editing === null) renderShelf();
+      }).catch(() => {
+        if (cancelled) return;
+        connections = [];
+        connectionsError = "Could not read the saved SSH connections.";
+        if (editing === null) renderShelf();
+      });
+    }
+    loadConnections();
 
     // Whether a terminal can be had on this computer. Unanswered, the switch
     // stays the operator's, and the backend says why when a button is pressed.
@@ -1595,7 +1695,7 @@ Corvus.pluginSchwalby = (function () {
 
   return {
     init, destroy,
-    previewLine, terminalLine, sshSummary, localSummary, normalizeButtons,
+    previewLine, terminalLine, sshSummary, localSummary, normalizeButtons, missingConnections,
     coerceButton, coerceMode, coerceTarget, sessionName, derivedName,
     newConnectionError, newConnectionBody, segment,
     hostError, normalizeCompanion, companionState, probeWaitMs,

@@ -20,7 +20,16 @@ window.Corvus = window.Corvus || {};
  * the required attitude (Corvus.calibFigures), driven by a parser for PX4's own
  * guidance (Corvus.calibProtocol).
  *
+ * Above the calibrations sits the flight controller's rotation on the
+ * airframe, because every accelerometer and compass calibration is measured
+ * through it: set wrong, the wizard asks for "nose down" and the sensor sees
+ * a side. Where the flight controller and the GPS *sit* is not here. Those
+ * positions are lever arms the estimator uses in flight, no calibration reads
+ * them, and they share their origin with the motors, so the Motors page draws
+ * and edits them.
+ *
  * Backend contract (verified against PX4 v1.16 / v1.17 / v1.18):
+ *   GET  /api/mounting            {connected, orientation:{fields,hint}, positions}
  *   POST /api/calibrate {type}    start a sensor calibration (refused while armed)
  *   POST /api/calibrate/cancel    abort the running calibration
  *   GET  /api/console/stream      ordered STATUSTEXT, via Corvus.telemetry.subscribeConsole
@@ -55,6 +64,23 @@ Corvus.setupCalibration = (function () {
    *  the operator has not realised it wants. */
   const STALL_TIMEOUT_MS = 45000;
   const TRANSCRIPT_MAX = 60;
+
+  /** The session's cue as an icon beside the instruction: the operator's eyes
+   *  are on the aircraft, and a symbol reads faster than a sentence. */
+  const CUE_ICON = {
+    wait: "hourglass",
+    rotate: "rotate-3d",
+    hold: "hand",
+    spin: "refresh-cw",
+    warn: "triangle-alert",
+    battery_on: "plug-zap",
+    battery_off: "unplug",
+    blow: "wind",
+    shield: "shield",
+    done: "circle-check",
+    failed: "circle-x",
+    cancelled: "ban",
+  };
 
   function now() { return Date.now(); }
 
@@ -123,6 +149,9 @@ Corvus.setupCalibration = (function () {
     ready.appendChild(linkChip.el);
     ready.appendChild(armChip.el);
     el.appendChild(ready);
+
+    const mounting = buildMounting();
+    el.appendChild(mounting.el);
 
     const sensorSection = S.el("div", "page-section");
     sensorSection.appendChild(S.sectionTitle("Sensor Calibration"));
@@ -209,6 +238,7 @@ Corvus.setupCalibration = (function () {
 
     refreshSupport();
     let lastStack = Corvus.capabilities ? Corvus.capabilities.stack() : "";
+    let lastConnected = null;
 
     return {
       el,
@@ -219,6 +249,7 @@ Corvus.setupCalibration = (function () {
         armChip.set(!armed, armed ? "Armed" : "Disarmed");
         paintArmed(armed);
         armedBanner.hidden = !armed;
+        mounting.setArmed(armed);
         // A different aircraft is a different feature set, and the capability
         // document is cached per stack — so a change here is the one event
         // that has to re-ask.
@@ -226,10 +257,102 @@ Corvus.setupCalibration = (function () {
         if (nextStack !== lastStack) {
           lastStack = nextStack;
           refreshSupport();
+          mounting.load();
+        } else if (connected !== lastConnected && lastConnected !== null) {
+          mounting.load();
         }
+        lastConnected = connected;
       },
-      destroy() { dead = true; },
+      destroy() { dead = true; mounting.destroy(); },
     };
+  }
+
+  /**
+   * The flight controller's rotation on the airframe, from GET /api/mounting.
+   *
+   * Schema driven like every setup form: the fields name the parameter they
+   * write (SENS_BOARD_ROT on PX4, AHRS_ORIENTATION on ArduPilot), so nothing
+   * here knows which stack answered. A rotation is read at boot, so a change
+   * offers the reboot, and says which calibrations it has invalidated.
+   */
+  function buildMounting() {
+    const section = S.el("div", "page-section calib-mounting");
+    section.appendChild(S.sectionTitle("Flight controller orientation"));
+    const card = S.el("div", "page-card calib-mounting-card");
+    section.appendChild(card);
+    const state = { armed: false, controls: [], wanted: null, doc: null,
+                    loading: false, destroyed: false };
+
+    function load() {
+      if (state.loading || state.destroyed) return Promise.resolve();
+      if (!Corvus.telemetry || typeof Corvus.telemetry.requestJson !== "function") {
+        paint();
+        return Promise.resolve();
+      }
+      state.loading = true;
+      return Corvus.telemetry.requestJson("/api/mounting").then((doc) => {
+        if (state.destroyed) return;
+        state.doc = doc || {};
+        paint();
+      }).catch(() => {
+        if (state.destroyed) return;
+        state.doc = {};
+        paint();
+      }).finally(() => { state.loading = false; });
+    }
+
+    function paint() {
+      card.innerHTML = "";
+      state.controls = [];
+      const doc = state.doc || {};
+      const orientation = doc.orientation;
+      if (!orientation || !(orientation.fields || []).length) {
+        card.appendChild(S.el("div", "field-hint", doc.connected
+          ? "The connected firmware reports no board rotation."
+          : "Connect to a vehicle to read how the flight controller is mounted."));
+        return;
+      }
+      if (orientation.hint) card.appendChild(S.el("div", "field-hint", orientation.hint));
+
+      const reboot = S.el("div", "calib-mounting-reboot");
+      reboot.hidden = true;
+      reboot.appendChild(S.el("span", "field-hint",
+        "Reboot for the new rotation to take effect, then calibrate the accelerometer, "
+        + "the compass and the level horizon again."));
+      const rebootBtn = S.rebootButton({ size: "sm", mount: section,
+        onRebooted: () => { reboot.hidden = true; } });
+      reboot.appendChild(rebootBtn);
+
+      card.appendChild(S.paramFieldGrid(state, orientation.fields, {
+        prefix: "calib",
+        onApplied: (field) => { if (field.reboot) reboot.hidden = false; },
+      }));
+      card.appendChild(reboot);
+      S.registerControl(state, rebootBtn);
+
+      card.appendChild(S.el("div", "field-hint calib-mounting-positions",
+        "Where the flight controller and the GPS sit is set on the Motors page, on the "
+        + "drawing of the airframe. The estimator uses those positions in flight; no "
+        + "calibration reads them."));
+      S.applyArmed(state, state.armed);
+      S.refreshIcons();
+    }
+
+    load();
+    return {
+      el: section,
+      load,
+      setArmed(armed) { S.applyArmed(state, armed); },
+      destroy() { state.destroyed = true; },
+    };
+  }
+
+  /** One checklist line: an icon the eye finds first, and a few words. */
+  function prepItem(entry, tag, cls) {
+    const item = S.el(tag, cls);
+    item.appendChild(S.icon(entry.icon));
+    item.appendChild(S.el("span", null, entry.text));
+    return item;
   }
 
   function readyChip(key, label) {
@@ -263,7 +386,12 @@ Corvus.setupCalibration = (function () {
       icon: "chevron-left", label: "Calibration",
       ariaLabel: "Back to the calibration list", onClick: () => navigateBack(),
     }));
-    el.appendChild(S.pageHeader(proc.label + " Calibration", proc.summary));
+    // The title row also carries Start and Abort, top right, in the same
+    // slot: only one of them is ever shown, and the way in or out is where
+    // the eye goes first, not below the log.
+    const head = S.el("div", "calib-head");
+    head.appendChild(S.pageHeader(proc.label + " Calibration", proc.summary));
+    el.appendChild(head);
 
     const banner = S.el("div", "params-banner setup-armed-banner");
     banner.hidden = true;
@@ -281,12 +409,19 @@ Corvus.setupCalibration = (function () {
     const phaseChip = S.el("div", "calib-phase");
     phaseChip.dataset.phase = "idle";
     text.appendChild(phaseChip);
+    const instruction = S.el("div", "calib-instruction");
+    const cueBox = S.el("div", "calib-cue");
+    cueBox.setAttribute("aria-hidden", "true");
+    instruction.appendChild(cueBox);
+    const words = S.el("div", "calib-words");
     const headline = S.el("div", "calib-headline");
     headline.setAttribute("role", "status");
     headline.setAttribute("aria-live", "polite");
-    text.appendChild(headline);
+    words.appendChild(headline);
     const detail = S.el("div", "calib-detail");
-    text.appendChild(detail);
+    words.appendChild(detail);
+    instruction.appendChild(words);
+    text.appendChild(instruction);
     const bar = S.el("div", "calib-progress");
     const barFill = S.el("div", "calib-progress-fill");
     bar.appendChild(barFill);
@@ -317,9 +452,17 @@ Corvus.setupCalibration = (function () {
         chip.appendChild(host);
         chip.appendChild(S.el("span", "calib-pose-label", F.poseLabel(pose)));
         const mark = S.el("span", "calib-pose-mark");
+        const ok = S.icon("check");
+        ok.classList.add("calib-pose-ok");
+        mark.appendChild(ok);
+        const bad = S.icon("x");
+        bad.classList.add("calib-pose-bad");
+        mark.appendChild(bad);
         chip.appendChild(mark);
         chip.addEventListener("click", () => {
-          if (session.getState().phase === "idle") figure.set({ pose, spin: false });
+          if (session.getState().phase !== "idle") return;
+          preview = pose;
+          paint();
         });
         poseStrip.appendChild(chip);
         poseFigures.push({ pose, chip, fig: F.create(host, { compact: true, pose, reduced }) });
@@ -334,21 +477,24 @@ Corvus.setupCalibration = (function () {
     prepTitle.appendChild(S.el("span", null, "Before you start"));
     prep.appendChild(prepTitle);
     const prepList = S.el("ul", "calib-prep-list");
-    proc.prep.forEach((line) => {
-      const item = document.createElement("li");
-      item.className = "calib-prep-item";
-      item.textContent = line;
-      prepList.appendChild(item);
-    });
+    proc.prep.forEach((entry) => prepList.appendChild(prepItem(entry, "li", "calib-prep-item")));
     prep.appendChild(prepList);
     if (proc.danger) prep.classList.add("calib-prep-danger");
     el.appendChild(prep);
 
     // --- live autopilot transcript ----------------------------------------
-    const logCard = S.el("div", "page-card calib-log-card");
-    const logTitle = S.el("div", "guidance-title");
+    // Folded away by default: the stage above already says what the
+    // autopilot wants, and a scrolling log beside it is text the operator
+    // does not need to read. It opens by itself when a calibration fails,
+    // where the autopilot's own words are the explanation.
+    const logCard = document.createElement("details");
+    logCard.className = "page-card calib-log-card";
+    const logTitle = document.createElement("summary");
+    logTitle.className = "guidance-title calib-log-summary";
     logTitle.appendChild(S.icon("info"));
-    logTitle.appendChild(S.el("span", null, "Autopilot messages (live STATUSTEXT)"));
+    logTitle.appendChild(S.el("span", null, "Autopilot messages"));
+    const logCountEl = S.el("span", "calib-log-count", "");
+    logTitle.appendChild(logCountEl);
     logCard.appendChild(logTitle);
     const guidanceList = S.el("div", "guidance-list");
     guidanceList.setAttribute("role", "log");
@@ -375,6 +521,8 @@ Corvus.setupCalibration = (function () {
     const abortBtn = Corvus.ui.button({
       variant: "danger", icon: "octagon-x", label: "Abort calibration", onClick: onAbort,
     });
+    head.appendChild(startBtn);
+    head.appendChild(abortBtn);
     const retryBtn = Corvus.ui.button({
       variant: "secondary", icon: "rotate-cw", label: "Try again", onClick: onRetry,
     });
@@ -386,7 +534,7 @@ Corvus.setupCalibration = (function () {
     // says so offers the reboot rather than sending the operator to find one.
     const rebootBtn = S.rebootButton({ mount: el });
     const actions = Corvus.ui.actions(
-      [startBtn, confirmBtn, abortBtn, retryBtn, rebootBtn, doneBtn]);
+      [confirmBtn, retryBtn, rebootBtn, doneBtn]);
     actions.classList.add("calib-actions");
     el.appendChild(actions);
 
@@ -404,6 +552,11 @@ Corvus.setupCalibration = (function () {
     let busy = false;
     let logCount = 0;
     let watchdogTimer = null;
+    let shownCue = null;
+    // The position picked on the strip before the start. Held here rather
+    // than set on the figure directly, because every telemetry repaint would
+    // otherwise put the figure straight back on the start pose.
+    let preview = null;
 
     /* ---------------- rendering ---------------- */
 
@@ -421,7 +574,13 @@ Corvus.setupCalibration = (function () {
       phaseChip.textContent = PHASE_TEXT[st.phase] || st.phase;
       headline.textContent = st.headline;
       detail.textContent = st.detail;
-      figure.set({ pose: st.pose, spin: st.spin, marker: st.marker });
+      detail.hidden = !st.detail;
+      paintCue(st.cue || "idle");
+      if (st.phase !== "idle") preview = null;
+      figure.set({
+        pose: preview || st.pose, spin: st.spin, marker: st.marker,
+        from: st.from, motion: st.cue === "rotate",
+      });
 
       bar.hidden = st.progress == null;
       if (st.progress != null) {
@@ -458,7 +617,19 @@ Corvus.setupCalibration = (function () {
       banner.textContent = vehicle.armed
         ? "Cannot calibrate while armed. Disarm first."
         : "No link to the vehicle. Connect before calibrating.";
+      if (st.phase === "failed" && el.dataset.phase !== "failed") logCard.open = true;
       el.dataset.phase = st.phase;
+    }
+
+    /** Swap the cue icon only when the cue changes: a progress line arrives
+     *  every second or so, and each icon refresh walks the document. */
+    function paintCue(cue) {
+      if (cue === shownCue) return;
+      shownCue = cue;
+      cueBox.dataset.cue = cue;
+      Corvus.ui.clear(cueBox);
+      cueBox.appendChild(S.icon(CUE_ICON[cue] || proc.icon));
+      S.refreshIcons();
     }
 
     function appendLog(entryText, level) {
@@ -468,6 +639,7 @@ Corvus.setupCalibration = (function () {
       line.appendChild(S.el("span", "guidance-msg", entryText));
       guidanceList.appendChild(line);
       logCount += 1;
+      logCountEl.textContent = String(logCount);
       // Cap the transcript so a long calibration cannot grow the DOM without
       // bound; the tail is the part that matters anyway.
       while (guidanceList.children.length > TRANSCRIPT_MAX && guidanceList.firstChild) {
@@ -487,8 +659,7 @@ Corvus.setupCalibration = (function () {
       const quiet = now() - st.lastEventAt;
       if (!st.seenVehicleMessage && quiet > START_TIMEOUT_MS) {
         watchdog.hidden = false;
-        watchdog.textContent = "The autopilot accepted the command but has not reported "
-          + "anything yet. Check the link, or abort and try again.";
+        watchdog.textContent = "No reply from the autopilot yet. Check the link, or abort.";
       } else if (st.confirm) {
         // Not a stall: the autopilot is waiting for the operator, and saying
         // "no word for 40 s" here would blame the vehicle for the pause it
@@ -496,9 +667,8 @@ Corvus.setupCalibration = (function () {
         watchdog.hidden = true;
       } else if (st.seenVehicleMessage && quiet > STALL_TIMEOUT_MS) {
         watchdog.hidden = false;
-        watchdog.textContent = "No word from the autopilot for "
-          + Math.round(quiet / 1000) + " s. It is probably still waiting for a "
-          + "position, or abort and start over.";
+        watchdog.textContent = "Autopilot silent for " + Math.round(quiet / 1000)
+          + " s. It may want the next position.";
       } else {
         watchdog.hidden = true;
       }
@@ -565,9 +735,7 @@ Corvus.setupCalibration = (function () {
       busy = true;
       session.reset();
       session.begin(now());
-      logCount = 0;
-      Corvus.ui.clear(guidanceList);
-      guidanceList.appendChild(S.el("div", "guidance-empty", "Waiting for the autopilot…"));
+      clearLog("Waiting for the autopilot…");
       paint();
       try {
         await Corvus.telemetry.postAction("/api/calibrate", { type: proc.type });
@@ -640,18 +808,22 @@ Corvus.setupCalibration = (function () {
 
     function onRetry() {
       session.reset();
-      logCount = 0;
-      Corvus.ui.clear(guidanceList);
-      guidanceList.appendChild(S.el("div", "guidance-empty", "Nothing from the autopilot yet."));
+      clearLog("Nothing from the autopilot yet.");
+      logCard.open = false;
       paint();
+    }
+
+    function clearLog(placeholder) {
+      logCount = 0;
+      logCountEl.textContent = "";
+      Corvus.ui.clear(guidanceList);
+      guidanceList.appendChild(S.el("div", "guidance-empty", placeholder));
     }
 
     function openSafetyModal() {
       const body = S.el("div", "motor-calib-warning");
-      proc.prep.forEach((line) => body.appendChild(S.el("div", "motor-calib-warning-line", line)));
-      body.appendChild(S.el("div", "motor-calib-warning-line",
-        "The ESCs are powered by re-plugging the battery AFTER you press Calibrate, "
-        + "when PX4 instructs you to."));
+      proc.prep.forEach((entry) => body.appendChild(
+        prepItem(entry, "div", "motor-calib-warning-line")));
 
       const cancel = Corvus.ui.button({ variant: "secondary", label: "Cancel", onClick: closeModal });
       const confirm = Corvus.ui.button({
@@ -664,6 +836,7 @@ Corvus.setupCalibration = (function () {
         mount: el, onClose: () => { modal = null; },
       });
       modal.open();
+      S.refreshIcons();
     }
 
     paint();

@@ -32,7 +32,19 @@ def _fields(section: dict) -> dict[str, dict]:
 def test_a_full_pack_reads_full_and_a_flat_one_reads_flat() -> None:
     six = {"cells": 6}
     assert battery.estimate(25.2, 0.0, six)["percent"] == 100.0
-    assert battery.estimate(6 * 3.3, 0.0, six)["percent"] == 0.0
+    assert battery.estimate(6 * 3.6, 0.0, six)["percent"] == 0.0
+
+
+def test_each_default_empty_leaves_a_reserve_before_the_knee() -> None:
+    """0% is where to land, so the default must sit above the cell's own floor.
+
+    Placed at the curve's bottom it would read 0% on a pack already past the
+    knee, with nothing left to fly a go-around on.
+    """
+    for name, chem in battery.CHEMISTRIES.items():
+        at_empty = battery._interpolate(chem["curve"], chem["empty"])
+        assert 3.0 <= at_empty <= 10.0, name
+    assert battery.CHEMISTRIES["lipo"]["empty"] == 3.6
 
 
 def test_the_curve_is_not_a_straight_line() -> None:
@@ -140,7 +152,7 @@ def test_a_hand_edited_config_cannot_produce_a_percentage_at_all() -> None:
 def test_endpoints_that_cross_fall_back_to_the_chemistry() -> None:
     resolved = battery.settings({"full_cell": 3.0, "empty_cell": 4.0})
     assert resolved["full_cell"] == 4.2
-    assert resolved["empty_cell"] == 3.3
+    assert resolved["empty_cell"] == 3.6
 
 
 # ---------------------------------------------------------------------------

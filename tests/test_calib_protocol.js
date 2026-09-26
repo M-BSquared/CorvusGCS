@@ -399,6 +399,86 @@ function testArdupilotShortCalibrationsAreNarratedAtAll() {
   assert.equal(s.getState().phase, "done");
 }
 
+/* ------------------------------------------------------------------ */
+/* Cues and copy                                                       */
+/* ------------------------------------------------------------------ */
+
+function testTheCueSaysWhatToDoWithTheAircraft() {
+  const s = P.createSession("accel");
+  assert.equal(s.getState().cue, "idle");
+  s.begin(1000);
+  assert.equal(s.getState().cue, "wait");
+
+  feed(s, ["[cal] Hold still, measuring down side"]);
+  assert.equal(s.getState().cue, "hold");
+  assert.equal(s.getState().from, "level", "the aircraft is where it is being measured");
+
+  // The figure loops the turn from the side just finished to the next one.
+  feed(s, ["[cal] down side done, rotate to a different side"]);
+  let st = s.getState();
+  assert.equal(st.cue, "rotate");
+  assert.equal(st.from, "level");
+  assert.notEqual(st.pose, "level");
+  assert.match(st.headline, /^Rotate to /);
+
+  feed(s, ["[cal] ERROR: Not enough measurements for back side"]);
+  assert.equal(s.getState().cue, "warn");
+
+  feed(s, ["[cal] calibration done: accel"]);
+  assert.equal(s.getState().cue, "done");
+
+  const compass = P.createSession("compass");
+  compass.begin(1000);
+  feed(compass, ["[cal] left orientation detected"]);
+  st = compass.getState();
+  assert.equal(st.cue, "spin");
+  assert.equal(st.from, "left");
+
+  const motor = P.createSession("motor");
+  motor.begin(1000);
+  feed(motor, ["[cal] Disconnect the battery now"]);
+  assert.equal(motor.getState().cue, "battery_off");
+
+  const local = P.createSession("gyro");
+  local.finish("failed", "Could not start", "");
+  assert.equal(local.getState().cue, "failed", "an operator-caused end has a cue too");
+
+  const every = [s, compass, motor, local].map((x) => x.getState().cue);
+  every.forEach((cue) => assert.ok(P.CUES.includes(cue), cue + " is a known cue"));
+}
+
+function testAConfirmedPlacementBecomesTheNextTurnsStart() {
+  const s = P.createSession("accel");
+  s.begin(1000);
+  s.ingest("Place vehicle on its LEFT side and press any key.", 2000);
+  assert.equal(s.getState().cue, "rotate");
+  s.confirmPlacement();
+  let st = s.getState();
+  assert.equal(st.cue, "hold");
+  assert.equal(st.from, "left");
+  s.ingest("Place vehicle on its RIGHT side and press any key.", 3000);
+  st = s.getState();
+  assert.equal(st.from, "left", "the loop turns from left to right");
+  assert.equal(st.pose, "right");
+}
+
+function testTheCopyStaysShort() {
+  // Read with an aircraft in both hands: the figure and the icons carry the
+  // instruction, the words only name it. A paragraph creeping back in here is
+  // the regression this guards.
+  for (const type of P.ORDER) {
+    const proc = P.PROCEDURES[type];
+    assert.ok(proc.brief.length <= 64, type + " brief is one short line: " + proc.brief);
+    proc.prep.forEach((item) => {
+      assert.ok(item.icon && typeof item.icon === "string", type + " prep item has an icon");
+      assert.ok(item.text.length <= 32, type + " prep item is a few words: " + item.text);
+    });
+  }
+  F.POSES.forEach((pose) => {
+    assert.ok(F.poseHint(pose).length <= 28, pose + " hint is short: " + F.poseHint(pose));
+  });
+}
+
 function testThePx4TranscriptStillParsesUnchanged() {
   // The ArduPilot patterns are additive. A PX4 session must behave exactly as
   // it did before they were added.
@@ -437,6 +517,9 @@ const tests = [
   testAnyOtherVehicleMessageSupersedesAnOutstandingPrompt,
   testArdupilotOutcomeWordingIsTerminal,
   testArdupilotShortCalibrationsAreNarratedAtAll,
+  testTheCueSaysWhatToDoWithTheAircraft,
+  testAConfirmedPlacementBecomesTheNextTurnsStart,
+  testTheCopyStaysShort,
   testThePx4TranscriptStillParsesUnchanged,
 ];
 

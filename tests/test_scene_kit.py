@@ -537,3 +537,110 @@ def test_the_sortie_log_has_no_corner_spikes() -> None:
     log = ulog.read(library.get("flight_review").build_flight_log())
     rates = [abs(math.degrees(row[0])) for row in log.series("vehicle_angular_velocity", "xyz")]
     assert max(rates) < 20.0, "a roll-rate spike means the path's corners reached the log"
+
+
+def test_the_instrument_panel_is_pictured_bottom_right_with_its_controls() -> None:
+    """Where the app puts it, and with the controls the pointer would reveal."""
+    root = Path(__file__).resolve().parents[1]
+    index = (root / "src" / "index.html").read_text(encoding="utf-8")
+    css = (root / "src" / "css" / "main.css").read_text(encoding="utf-8")
+    hud = (root / "src" / "js" / "hud-panel.js").read_text(encoding="utf-8")
+    assert 'class="flight-overlay' in index
+    assert '"hud-actions"' in hud
+    assert ".flight-overlay:hover .hud-actions" in css, "the controls are revealed differently now"
+
+    for scene in library.SCENES.values():
+        assert "x" not in scene.hud and "y" not in scene.hud, (
+            f"{scene.id} moves the instrument panel off the bottom right")
+        if scene.page == "home":
+            steps = recipe.steps(scene, "http://127.0.0.1:8777/")
+            assert any(".hud-actions" in s.payload for s in steps), scene.id
+
+
+def test_the_3d_picture_uses_the_map_s_own_3d_door() -> None:
+    """The mode the rail's button sets, and only on the scene that asks for it."""
+    map_js = (Path(__file__).resolve().parents[1] / "src" / "js" / "map.js").read_text(
+        encoding="utf-8")
+    assert "set3DMode," in map_js and "hasTerrain:" in map_js
+
+    scene = library.get("three_d")
+    assert scene.map_3d == "full" and scene.page == "home"
+    steps = recipe.steps(scene, "http://127.0.0.1:8777/")
+    payloads = [s.payload for s in steps]
+    three_d = next(i for i, p in enumerate(payloads) if "set3DMode" in p)
+    frame = next(i for i, p in enumerate(payloads) if "fitBounds" in p)
+    assert frame < three_d, "tilting before the fit frames the flight from the side"
+    assert '"full"' in payloads[three_d]
+
+    for other in library.SCENES.values():
+        if other.id != "three_d":
+            assert not any("set3DMode" in s.payload
+                           for s in recipe.steps(other, "http://127.0.0.1:8777/")), other.id
+
+
+def test_the_calibration_picture_waits_for_the_solid_figure() -> None:
+    """Shot during the demonstrated turn's hold, not its faint start."""
+    figures = (Path(__file__).resolve().parents[1] / "src" / "js" / "calib-figures.js").read_text(
+        encoding="utf-8")
+    assert 'class: "calib-figure-body"' in figures
+    assert '" calib-figure-compact"' in figures
+    assert 'bodyGroup.setAttribute("opacity"' in figures
+
+    steps = recipe.steps(library.get("calibration"), "http://127.0.0.1:8777/")
+    hold = next(i for i, s in enumerate(steps) if "calib-figure-body" in s.payload)
+    build = next(i for i, s in enumerate(steps) if s.detail.startswith("Let the scene build"))
+    assert build < hold, "the figure is waited for before the scene has built"
+    assert steps[-1].action == "screenshot" and hold >= len(steps) - 3
+
+
+def test_the_parameter_picture_shows_the_modified_rows() -> None:
+    """The real, set-up rows beside their defaults, not the alphabetical padding."""
+    editor = (Path(__file__).resolve().parents[1] / "src" / "js" / "setup-parameters.js").read_text(
+        encoding="utf-8")
+    assert 'b.className = "params-filter-opt"' in editor
+    assert "b.dataset.mode = m.id" in editor and 'id: "modified"' in editor
+    assert '"params-count"' in editor
+
+    scene = library.get("parameters")
+    assert scene.param_filter == "modified"
+    steps = recipe.steps(scene, "http://127.0.0.1:8777/")
+    press = next(s.payload for s in steps if ".params-filter-opt" in s.payload)
+    assert '"modified"' in press and "disabled" in press
+    for other in library.SCENES.values():
+        if other.id != "parameters":
+            assert not any(".params-filter-opt" in s.payload
+                           for s in recipe.steps(other, "http://127.0.0.1:8777/")), other.id
+
+
+def test_every_website_picture_is_made_by_a_scene() -> None:
+    """The site's pictures come from the scenes, so a refresh cannot miss one."""
+    import re
+
+    from scene_kit import web
+
+    names = [s.web for s in library.SCENES.values() if s.web]
+    assert len(names) == len(set(names)), "two scenes write the same website picture"
+
+    index = (Path(__file__).resolve().parents[1] / "docs" / "index.html").read_text(
+        encoding="utf-8")
+    shown = set(re.findall(r'data-full="assets/images/([\w-]+)\.jpg"', index))
+    shown |= set(re.findall(r'data-(?:dark|light)="assets/images/([\w-]+)"', index))
+    shown |= set(re.findall(r'srcset="assets/images/([\w-]+)-800\.jpg', index))
+    assert shown, "the page shows no screenshots"
+    assert shown <= set(names), f"no scene makes {sorted(shown - set(names))}"
+
+    full, small = web.targets(library.get("three_d"))
+    assert full.name == "map-3d.jpg" and small.name == "map-3d-800.jpg"
+    assert full.parent == web.WEB_DIR
+
+
+def test_the_link_preview_is_made_from_a_picture_that_exists() -> None:
+    from scene_kit import web
+
+    scene = library.get(web.SOCIAL_SCENE)
+    assert scene.theme != "light-orange", "the preview is the dark picture, on a dark page"
+    assert web.SOCIAL.name == "social-preview.jpg"
+    index = (Path(__file__).resolve().parents[1] / "docs" / "index.html").read_text(
+        encoding="utf-8")
+    assert f"assets/images/{web.SOCIAL.name}" in index
+    assert (web.REPO_ROOT / "assets" / "CorvusGCS.png").is_file()

@@ -325,6 +325,19 @@ class ParamProtocolMixin:
         a complete download anything not in it, and otherwise a name that went
         unanswered in :data:`PARAM_ABSENT_AFTER_MISSES` reads the vehicle
         answered others in. Both hold until the next connection.
+
+        A round ends when the vehicle has visibly worked through it, not when
+        its budget runs out. Every page lists candidates for several firmware
+        versions, so some name is nearly always one this vehicle lacks, and
+        the vehicle says nothing about a name it does not have. Waiting for
+        that silence to time out cost every page its whole budget on the first
+        two opens. So after the burst one parameter the vehicle is known to
+        have is asked for again: autopilots answer PARAM_REQUEST_READ in the
+        order they arrive, so once that answer is back, every request before
+        it has been answered or never will be. With no such parameter to ask
+        for, or while a full download or an upload is streaming values that
+        could be mistaken for its answer, the round runs to its budget as
+        before.
         """
         wanted = [n for n in names if isinstance(n, str) and n]
         if not wanted:
@@ -354,14 +367,44 @@ class ParamProtocolMixin:
         def still_missing(have: dict[str, float]) -> list[str]:
             return [n for n in wanted if n not in have and n not in known_absent]
 
+        def barrier_name(
+            batch: set[str], batch_sent_after: int, have: dict[str, float],
+        ) -> str | None:
+            # Never a name from this round's burst that is still unanswered:
+            # its own late answer would pass for the barrier's.
+            with self._param_lock:
+                if self._param_download_state in ("downloading", "uploading"):
+                    return None
+
+                def usable(name: str) -> bool:
+                    entry = self._params.get(name)
+                    return entry is not None and (
+                        name not in batch or entry.seq > batch_sent_after)
+
+                for name in have:
+                    if usable(name):
+                        return name
+                for name in self._params:
+                    if usable(name):
+                        return name
+            return None
+
+        def barrier_answered(name: str, sent_after: int) -> bool:
+            with self._param_lock:
+                entry = self._params.get(name)
+                return entry is not None and entry.seq > sent_after
+
         deadline = time.monotonic() + max(0.5, timeout)
         have = snapshot()
         missing = still_missing(have)
         # Two rounds: the initial burst, then one retransmit of whatever is
-        # still outstanding halfway through the budget.
+        # still outstanding, at the barrier or halfway through the budget.
         for round_index in range(2):
             if not missing:
                 break
+            batch = set(missing)
+            with self._param_lock:
+                batch_sent_after = self._param_rx_seq
             for name in missing:
                 # stop() marks the vehicle disconnected before it tears the
                 # socket down, so this is also the shutdown bail-out.
@@ -370,6 +413,8 @@ class ParamProtocolMixin:
                 self.request_param(name)
             round_deadline = deadline if round_index else (
                 time.monotonic() + max(0.25, (deadline - time.monotonic()) / 2))
+            barrier: tuple[str, int] | None = None
+            barrier_sent = False
             while time.monotonic() < min(round_deadline, deadline):
                 have = snapshot()
                 missing = still_missing(have)
@@ -377,7 +422,18 @@ class ParamProtocolMixin:
                     break
                 if self._stop_event.is_set():
                     return have
-                time.sleep(0.05)
+                if barrier is not None and barrier_answered(*barrier):
+                    break
+                if not barrier_sent:
+                    name = barrier_name(batch, batch_sent_after, have)
+                    if name is not None:
+                        barrier_sent = True
+                        with self._param_lock:
+                            sent_after = self._param_rx_seq
+                        if self.request_param(name):
+                            barrier = (name, sent_after)
+                        continue
+                time.sleep(0.02)
             have = snapshot()
             missing = still_missing(have)
         # Only a read the vehicle answered in part says anything about the

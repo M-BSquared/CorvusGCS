@@ -837,6 +837,8 @@ function destroyLaunchers() {
  * Mount the launcher against a stub api and return everything a test needs.
  * `opts` is {saved, run, connect, sessions}: the settings it reads, the
  * /api/ssh/run body, the /api/ssh/connect body, and which sessions are live.
+ * `connectOnce` answers the FIRST connect only (a body, or an Error to reject
+ * with); `sshSetup` is the api.sshSetup stub, its calls kept in `setups`.
  */
 function mountLauncher(opts) {
   const o = opts || {};
@@ -852,9 +854,14 @@ function mountLauncher(opts) {
   const terminals = [];
   const termOpts = [];
   const notes = [];
+  const setups = [];
+  let connectOnce = o.connectOnce;
   const container = makeEl("div");
   mountedLaunchers.push(container);
-  Corvus.pluginSshLauncher.init(container, {
+  const extra = o.sshSetup ? {
+    sshSetup: (reply) => { setups.push(reply); return Promise.resolve(o.sshSetup(reply)); },
+  } : {};
+  Corvus.pluginSshLauncher.init(container, Object.assign(extra, {
     requestJson: (url) => {
       calls.push({ url });
       if (url === "/api/ssh/connections") return Promise.resolve({ connections });
@@ -866,6 +873,11 @@ function mountLauncher(opts) {
       // The backend modelled closely enough to matter: a connect makes the
       // session live, and a send only succeeds while it IS live — which is
       // what tells the launcher whether it has to open a shell at all.
+      if (url === "/api/ssh/connect" && connectOnce) {
+        const first = connectOnce;
+        connectOnce = null;
+        return first instanceof Error ? Promise.reject(first) : Promise.resolve(first);
+      }
       if (url === "/api/ssh/connect") {
         const res = o.connect || { ok: true, connected: true };
         if (res.ok && res.connected && !sessions.some((x) => x.name === body.name)) {
@@ -897,9 +909,10 @@ function mountLauncher(opts) {
     terminal: (session, opts) => { terminals.push(session); termOpts.push(opts || null); return true; },
     console: () => {},
     notification: (level, message) => { notes.push({ level, message }); },
-  });
+  }));
   return {
-    container, calls, connections, terminals, termOpts, notes,
+    container, calls, connections, terminals, termOpts, notes, setups,
+    notesShown: () => querySel(container.children, ".sshl-note").map((n) => n.textContent),
     savedNow: () => settings,
     setSessions: (names) => { sessions = names.map((name) => ({ name, connected: true })); },
     /** Every /api/ssh/send body, in order. */
@@ -1127,6 +1140,58 @@ async function testSshLauncherTerminalButtonReportsAFailedConnect() {
   // after the connect failed — there is nothing on the far end to type into.
   assert.equal(h.sends().length, 1);
   assert.equal(h.dots().length, 0, "and the row does not claim to be running");
+  Corvus.pluginSshLauncher.destroy(h.container);
+}
+
+function testSshLauncherMissingConnections() {
+  const L = Corvus.pluginSshLauncher;
+  const buttons = L.normalizeButtons({ buttons: [TERMINAL_BUTTON, BACKGROUND_BUTTON,
+    Object.assign({}, TERMINAL_BUTTON, { id: "c" })] });
+  assert.deepEqual(L.missingConnections(buttons, []), ["companion", "ground"]);
+  assert.deepEqual(L.missingConnections(buttons, [{ name: "ground" }]), ["companion"]);
+  assert.deepEqual(L.missingConnections(buttons, [{ name: "companion" }, { name: "ground" }]), []);
+}
+
+async function testSshLauncherACopiedShelfSaysWhatIsMissing() {
+  const h = mountLauncher({ saved: { buttons: [TERMINAL_BUTTON] }, connections: [] });
+  await flushMicrotasks();
+  assert.match(h.notesShown().join("\n"), /Not set up on this computer yet: \u201Ccompanion\u201D/);
+  Corvus.pluginSshLauncher.destroy(h.container);
+}
+
+async function testSshLauncherSetsUpAMissingConnectionAndPressesAgain() {
+  const error = new Error("no saved connection named 'companion'");
+  error.status = 400;
+  error.body = { error: error.message, needs: "connection", connection: "companion" };
+  const h = mountLauncher({
+    saved: { buttons: [TERMINAL_BUTTON] },
+    connections: [],
+    connectOnce: error,
+    sshSetup: () => true,
+  });
+  await flushMicrotasks();
+  click(h.shelf()[0]);
+  for (let i = 0; i < 6; i++) await flushMicrotasks();
+  assert.equal(h.setups.length, 1);
+  assert.equal(h.setups[0].connection, "companion");
+  assert.equal(h.connects().length, 2, "pressed again once it was set up");
+  assert.equal(h.failures().length, 0);
+  Corvus.pluginSshLauncher.destroy(h.container);
+}
+
+async function testSshLauncherAskedLoginThatIsCancelledStaysAFailure() {
+  const h = mountLauncher({
+    saved: { buttons: [TERMINAL_BUTTON] },
+    connectOnce: { ok: false, connected: false, error: "Authentication failed",
+      needs: "credentials", connection: "companion" },
+    sshSetup: () => false,
+  });
+  await flushMicrotasks();
+  click(h.shelf()[0]);
+  for (let i = 0; i < 6; i++) await flushMicrotasks();
+  assert.equal(h.setups.length, 1);
+  assert.equal(h.connects().length, 1);
+  assert.equal(h.failures()[0].text, "Authentication failed");
   Corvus.pluginSshLauncher.destroy(h.container);
 }
 
@@ -1712,6 +1777,10 @@ async function run() {
   await testSshLauncherRefusesAConnectionNameThatIsAlreadySaved();
   await testSshLauncherKeepsTheFormWhenTheConnectionCannotBeSaved();
   await testSshLauncherDestroyStopsThePollAndLateCallbacks();
+  testSshLauncherMissingConnections();
+  await testSshLauncherACopiedShelfSaysWhatIsMissing();
+  await testSshLauncherSetsUpAMissingConnectionAndPressesAgain();
+  await testSshLauncherAskedLoginThatIsCancelledStaysAFailure();
 
   // Let the best-effort postAction microtasks (from destroy) drain so the
   // process exits cleanly with no pending unhandled work — and close the

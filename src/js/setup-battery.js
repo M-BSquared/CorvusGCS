@@ -658,7 +658,7 @@ Corvus.setupBattery = (function () {
     const wanted = state.configured.chemistry || SETTING_DEFAULTS.chemistry;
     return list.find((c) => c.value === wanted)
       || list[0]
-      || { value: wanted, label: wanted, full: 4.2, empty: 3.3, nominal: 3.7 };
+      || { value: wanted, label: wanted, full: 4.2, empty: 3.6, nominal: 3.7 };
   }
 
   /** A setting's effective value: what the operator pinned, else the default. */
@@ -671,16 +671,27 @@ Corvus.setupBattery = (function () {
     const card = S.el("div", "page-card battery-card battery-estimator-card");
     card.dataset.section = "estimator";
     card.appendChild(S.sectionTitle("How Corvus reads the pack"));
-    card.appendChild(S.el("div", "field-hint",
-      "The autopilot's remaining figure is a capacity count that starts from a "
-      + "guess, so a pack flown, charged to storage and flown again reads full on "
-      + "the second take-off. Corvus can read the cell voltage against a discharge "
-      + "curve instead. Neither is right in every case. Both are shown on the left, "
-      + "and this chooses which one the rest of the interface flies by."));
-
     const head = S.el("div", "battery-estimate-switch");
     const label = S.el("div", "battery-estimate-label");
-    label.appendChild(S.el("span", "battery-estimate-title", "Use the cell-voltage estimate"));
+    const titleRow = S.el("span", "field-label-row battery-estimate-title-row");
+    titleRow.appendChild(S.el("span", "battery-estimate-title", "Use the cell-voltage estimate"));
+    titleRow.appendChild(Corvus.ui.infoHint({
+      title: "Which percentage to fly by",
+      text: "Autopilot (off): counts the charge used since power-on against the "
+        + "capacity you set. Precise in flight with a calibrated current sensor, "
+        + "but the count starts from a guess at power-on (ArduPilot assumes a "
+        + "full pack), so a pack flown, set aside and plugged in again can read "
+        + "far too high.\n"
+        + "Cell voltage (on): reads the cell voltage against the chemistry's "
+        + "discharge curve. Right from the moment the pack is plugged in, "
+        + "whatever it went through before. Under load the voltage sags, so set "
+        + "the internal resistance or it reads low in a climb.\n"
+        + "Turn it on when packs are not always freshly charged or the current "
+        + "sensor is not calibrated. Leave it off when every flight starts on a "
+        + "full pack and the current reading is trusted.\n"
+        + "Both figures stay visible on the left, whichever you choose.",
+    }));
+    label.appendChild(titleRow);
     label.appendChild(S.el("span", "battery-estimate-sub",
       "Replaces the percentage in the top bar, the map and the logs."));
     head.appendChild(label);
@@ -717,8 +728,10 @@ Corvus.setupBattery = (function () {
     grid.appendChild(numberRow(state, {
       key: "empty_cell", label: "Empty cell voltage", unit: "V", step: 0.01,
       min: 0, max: 5,
-      info: "The landing decision, not the cell's datasheet minimum. The estimate "
-            + "reads 0% here.",
+      info: "Where the estimate reads 0%. It is a landing point, not the cell's "
+            + "datasheet minimum: the default leaves about 5% in the pack, just "
+            + "before the voltage drops away. Raise it for more reserve, never "
+            + "lower it below the default.",
       autoText: () => `auto (${chemistry(state).empty} V)`,
     }));
     grid.appendChild(numberRow(state, {

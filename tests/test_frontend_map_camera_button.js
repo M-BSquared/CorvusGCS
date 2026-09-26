@@ -4,8 +4,9 @@
  * The map rail's camera button (Corvus.map, wireCameraButton).
  *
  * It exists only while a camera is set up: hidden with its divider when there
- * is none, a plain open/close for one camera, and a list beside the rail when
- * there are several, one row per camera plus "Open all" / "Close all".
+ * is none, and a press opens or closes the camera picked last. With several,
+ * hovering (or a right-click) reveals a list beside the rail, one row per
+ * camera plus "Open all" / "Close all".
  *
  * The map harness is tests/test_frontend_map_follow.js's; Corvus.videoWindows
  * is a fake that records what the button asked of it.
@@ -48,7 +49,12 @@ window.matchMedia = (query) => ({
 });
 if (typeof global.performance === "undefined") global.performance = { now: () => Date.now() };
 global.fetch = () => Promise.reject(new Error("offline"));
-global.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+const stored = {};
+global.localStorage = {
+  getItem: (k) => (k in stored ? stored[k] : null),
+  setItem(k, v) { stored[k] = String(v); },
+  removeItem(k) { delete stored[k]; },
+};
 
 // ---------------------------------------------------------------------------
 // DOM stub (mirrors tests/test_frontend_mapmenu.js, plus [data-act] selectors
@@ -271,6 +277,7 @@ const atStart = { calls: calls.slice(), hidden: controlsEl.querySelector('[data-
 const btn = () => controlsEl.querySelector('[data-act="video"]');
 const divider = () => controlsEl.querySelector('.mc-divider[data-group="video"]');
 const press = () => controlsEl.fire("click", { target: btn() });
+const reveal = () => btn().fire("contextmenu");
 const surface = () => document.body.children.find((c) => c.classList.contains("camera-popover")) || null;
 const rowsOf = (el) => {
   const out = [];
@@ -283,7 +290,7 @@ const labelOf = (row) => {
   return text;
 };
 const reset = () => {
-  if (surface()) press();
+  btn().fire("blur", { relatedTarget: null });
   openIds = new Set();
   calls.length = 0;
 };
@@ -322,22 +329,42 @@ function testOneCameraIsOpenedAndClosedByThePress() {
   assert.equal(btn().classList.contains("active"), false);
 }
 
-function testSeveralCamerasOpenAList() {
+function testSeveralCamerasRevealAListWithoutOpeningOne() {
   reset();
   setList([CAM_A, CAM_B]);
-  press();
+  reveal();
   const el = surface();
-  assert.ok(el, "several cameras open a list beside the rail");
+  assert.ok(el, "several cameras reveal a list beside the rail");
   const rows = rowsOf(el);
   assert.deepEqual(rows.map(labelOf), ["Gimbal", "Belly", "Open all"]);
   assert.equal(btn().getAttribute("aria-expanded"), "true");
-  assert.deepEqual(calls, [], "opening the list opens no camera");
+  assert.deepEqual(calls, [], "revealing the list opens no camera");
+  assert.equal(btn().classList.contains("active"), false, "a revealed list does not light the button");
+}
+
+async function testHoverRevealsTheListAfterAPause() {
+  reset();
+  setList([CAM_A, CAM_B]);
+  btn().fire("mouseenter");
+  assert.equal(surface(), null, "a pointer passing over the rail leaves nothing behind");
+  await new Promise((r) => setTimeout(r, 260));
+  assert.ok(surface(), "a pointer resting on the button reveals the list");
+  btn().fire("mouseleave");
+  await new Promise((r) => setTimeout(r, 360));
+  assert.equal(surface(), null, "and it goes again once the pointer has left");
+}
+
+function testOneCameraRevealsNoList() {
+  reset();
+  setList([CAM_A]);
+  reveal();
+  assert.equal(surface(), null);
 }
 
 function testARowOpensItsCameraAndTheListStaysOpen() {
   reset();
   setList([CAM_A, CAM_B]);
-  press();
+  reveal();
   rowsOf(surface())[1].fire("click");
   assert.deepEqual(calls, ["toggle:b"]);
   const el = surface();
@@ -349,10 +376,39 @@ function testARowOpensItsCameraAndTheListStaysOpen() {
   assert.equal(labelOf(rows[2]), "Close all");
 }
 
+function testThePressOpensTheCameraPickedLast() {
+  reset();
+  delete stored["corvus.map.lastCamera"];
+  setList([CAM_A, CAM_B]);
+  press();
+  assert.deepEqual(calls, ["toggle:a"], "with nothing picked yet, the first camera");
+  press();
+  reveal();
+  rowsOf(surface())[1].fire("click");
+  assert.equal(stored["corvus.map.lastCamera"], "b", "the pick is remembered");
+  assert.match(btn().title, /Belly/);
+  rowsOf(surface())[1].fire("click");
+  calls.length = 0;
+  press();
+  assert.deepEqual(calls, ["toggle:b"], "the press now opens the camera picked last");
+  assert.ok(btn().classList.contains("active"));
+  press();
+  assert.deepEqual(calls, ["toggle:b", "toggle:b"], "and a second press closes it");
+}
+
+function testAPickThatIsGoneFallsBackToTheFirst() {
+  reset();
+  stored["corvus.map.lastCamera"] = "b";
+  setList([CAM_A]);
+  setList([CAM_A, { id: "c", name: "Tail", address: "", kind: "rtsp" }]);
+  press();
+  assert.deepEqual(calls.filter((c) => c.startsWith("toggle")), ["toggle:a"]);
+}
+
 function testTheLastRowOpensOrClosesThemAll() {
   reset();
   setList([CAM_A, CAM_B]);
-  press();
+  reveal();
   rowsOf(surface())[2].fire("click");
   assert.deepEqual(calls, ["open:a", "open:b"]);
   assert.equal(labelOf(rowsOf(surface())[2]), "Close all");
@@ -363,7 +419,7 @@ function testTheLastRowOpensOrClosesThemAll() {
 function testTheListGoesWhenOnlyOneCameraIsLeft() {
   reset();
   setList([CAM_A, CAM_B]);
-  press();
+  reveal();
   assert.ok(surface());
   setList([CAM_A]);
   assert.equal(surface(), null);
@@ -372,26 +428,34 @@ function testTheListGoesWhenOnlyOneCameraIsLeft() {
 }
 
 function testNoDashesInTheButtonsText() {
+  reset();
   setList([CAM_A, CAM_B]);
-  press();
+  reveal();
   const text = rowsOf(surface()).map(labelOf).join(" ") + " " + btn().title;
   assert.doesNotMatch(text, /[\u2013\u2014]| - /);
-  press();
+  reset();
 }
 
 const tests = [
   testTheButtonStartsHiddenAndAsksForTheCameraList,
   testWithoutACameraTheButtonIsHidden,
   testOneCameraIsOpenedAndClosedByThePress,
-  testSeveralCamerasOpenAList,
+  testSeveralCamerasRevealAListWithoutOpeningOne,
+  testHoverRevealsTheListAfterAPause,
+  testOneCameraRevealsNoList,
   testARowOpensItsCameraAndTheListStaysOpen,
+  testThePressOpensTheCameraPickedLast,
+  testAPickThatIsGoneFallsBackToTheFirst,
   testTheLastRowOpensOrClosesThemAll,
   testTheListGoesWhenOnlyOneCameraIsLeft,
   testNoDashesInTheButtonsText,
 ];
 
-for (const t of tests) {
-  t();
-  console.log(`  ok  ${t.name}`);
-}
-console.log(`\nAll ${tests.length} map camera button tests passed.`);
+(async () => {
+  for (const t of tests) {
+    await t();
+    console.log(`  ok  ${t.name}`);
+  }
+  console.log(`\nAll ${tests.length} map camera button tests passed.`);
+  process.exit(0);
+})().catch((e) => { console.error(e); process.exit(1); });

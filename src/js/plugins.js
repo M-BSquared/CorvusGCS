@@ -86,15 +86,33 @@ window.Corvus = window.Corvus || {};
  *                                 inside the app that can be dragged out;
  *                                 see js/popout.js. The plugin calls this the
  *                                 same way either way.
- *   getSettings() {() => Object}  This plugin's saved settings, from the
- *                                 config file. {} when it has never saved any.
+ *   sshSetup(reply) {(reply) => Promise<boolean>}
+ *                                 For a plugin that runs things over a saved
+ *                                 SSH connection it only knows by name. Pass
+ *                                 it the reply of a failed /api/ssh/connect or
+ *                                 /api/ssh/run (or the Error a rejected
+ *                                 request threw; it carries the body as
+ *                                 `.body`). When the reply says this computer
+ *                                 lacks that connection or its login was
+ *                                 refused (`needs`), the operator is asked for
+ *                                 host, user and password once, they are saved
+ *                                 under the same name, and this resolves true:
+ *                                 try again. Anything else resolves false
+ *                                 without asking. This is what makes a plugin
+ *                                 config copied from another computer work
+ *                                 after one prompt. Best-effort + guarded.
+ *   getSettings() {() => Object}  This plugin's saved settings, from its own
+ *                                 config file (<plugin folder>/<id>/config.json,
+ *                                 apart from the application's config, so it
+ *                                 can be copied to another machine on its
+ *                                 own). {} when it has never saved any.
  *   saveSettings(patch, replace)  Merge `patch` into them and persist
  *                                 (POST /api/plugins/settings). Resolves with
  *                                 the saved object. Pass `replace` true to
  *                                 store `patch` as the whole settings object
  *                                 instead — the only way to drop a key, since
  *                                 a merge can only add. Plain UI state only —
- *                                 the config file is not a secret store, so a
+ *                                 that file is not a secret store, so a
  *                                 plugin names a saved SSH connection rather
  *                                 than keeping a password.
  *
@@ -515,6 +533,23 @@ Corvus.plugins = (function () {
   }
 
   /**
+   * Set up the SSH connection a failed connect/run reply names, then resolve
+   * whether the plugin should try again. See the api contract above.
+   *
+   * @param {Object|Error} reply the reply body, or the Error a request threw
+   * @returns {Promise<boolean>} true once the connection was saved
+   */
+  function pluginSshSetup(reply) {
+    try {
+      const panel = window.Corvus && window.Corvus.panel;
+      if (!panel || typeof panel.setupSSHConnection !== "function") return Promise.resolve(false);
+      return Promise.resolve(panel.setupSSHConnection(reply)).catch(() => false);
+    } catch (_e) {
+      return Promise.resolve(false);
+    }
+  }
+
+  /**
    * Return the connected firmware's flight-mode list (GET /api/mavlink/modes).
    * Cached for the session; concurrent callers share one fetch; a transient
    * error resolves to [] and clears the in-flight promise so a later call
@@ -561,6 +596,7 @@ Corvus.plugins = (function () {
       modes: pluginModes,
       terminal: pluginTerminal,
       postJson: pluginPostJson,
+      sshSetup: pluginSshSetup,
       // Overwritten per plugin by apiFor(); present here so the shape is the
       // same object whether a plugin was handed the scoped api or reached the
       // shared one, and so a plugin calling them outside init() gets an empty

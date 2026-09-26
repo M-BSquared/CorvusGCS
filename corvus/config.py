@@ -142,8 +142,10 @@ class CorvusConfig:
     "username", "password", "transport"}], "ffmpeg": ""}``; see
     ``corvus/video.py``). A stream password is a secret like the SSH ones and
     is redacted by :func:`to_public_dict`.
-    ``plugins`` is the state each TOOLS-tab plugin saves for itself
-    (``{"<plugin id>": {...}}``; see ``corvus/plugin_registry.py``).
+    ``plugins`` is legacy: the state each TOOLS-tab plugin saved for itself
+    (``{"<plugin id>": {...}}``) before every plugin got a config file of its
+    own. It is only read so startup can move it out (``corvus/plugin_config.py``)
+    and is gone from the file once that has worked.
     ``parameters`` holds the parameter editor's options
     (``{"cache_defaults": false}``: whether a copy of each PX4 firmware's
     parameter metadata is kept on this machine; see

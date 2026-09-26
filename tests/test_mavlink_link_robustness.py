@@ -307,6 +307,55 @@ def test_after_a_complete_download_a_missing_name_is_known_absent(fast_clock: No
     assert _reads(mav) == []
 
 
+def test_a_name_the_firmware_lacks_does_not_cost_the_read_its_budget(
+    fast_clock: None,
+) -> None:
+    """The first open of a setup page used to wait out all 4 s for it."""
+    bridge, mav = ready_bridge()
+    mav.answers = {"BAT1_V_EMPTY": 3.5, "BAT1_V_CHARGED": 4.2}
+    start = time.monotonic()
+
+    result = bridge.fetch_params(["BAT1_V_EMPTY", "BAT1_V_CHARGED", "BAT_N_CELLS"])
+
+    assert result == {"BAT1_V_EMPTY": 3.5, "BAT1_V_CHARGED": 4.2}
+    assert time.monotonic() - start < 0.5
+    assert _reads(mav).count(b"BAT_N_CELLS") == 2, "the retransmit round still runs"
+    assert bridge._param_misses == {"BAT_N_CELLS": 1}
+
+
+def test_a_reply_lost_before_the_barrier_is_asked_for_again(fast_clock: None) -> None:
+    bridge, mav = ready_bridge()
+    mav.answers = {"BAT1_V_EMPTY": 3.5, "BAT1_V_CHARGED": 4.2}
+    original = mav.param_request_read_send
+    dropped: list[bytes] = []
+
+    def lossy(sys_id: int, comp_id: int, name: bytes, index: int) -> None:
+        if name == b"BAT1_V_CHARGED" and not dropped:
+            dropped.append(name)
+            mav.calls.append(("param_request_read_send", (name,)))
+            return
+        original(sys_id, comp_id, name, index)
+
+    mav.param_request_read_send = lossy  # type: ignore[method-assign]
+
+    assert bridge.fetch_params(["BAT1_V_EMPTY", "BAT1_V_CHARGED"]) == {
+        "BAT1_V_EMPTY": 3.5, "BAT1_V_CHARGED": 4.2}
+    assert bridge._param_misses == {}
+
+
+def test_no_barrier_is_trusted_while_a_full_download_streams(fast_clock: None) -> None:
+    """The burst carries every name, so a barrier's answer proves nothing."""
+    bridge, mav = ready_bridge()
+    mav.answers = {"BAT1_V_EMPTY": 3.5}
+    bridge._param_download_state = "downloading"
+    start = time.monotonic()
+
+    bridge.fetch_params(["BAT1_V_EMPTY", "BAT_N_CELLS"], timeout=2.0)
+
+    assert time.monotonic() - start >= 2.0
+    assert _reads(mav) == [b"BAT1_V_EMPTY", b"BAT_N_CELLS", b"BAT_N_CELLS"]
+
+
 def test_a_name_that_turns_up_after_all_is_believed(fast_clock: None) -> None:
     bridge, mav = ready_bridge()
     mav.answers = {"BAT1_V_EMPTY": 3.5}

@@ -277,7 +277,9 @@ function openWizard(container, type) {
 }
 
 function actionButton(container, label) {
-  return findByClass(findOneByClass(container, "calib-actions"), "btn")
+  // The wizard's buttons live in two places: Start and Abort in the title
+  // row, the rest in the action row under the stage.
+  return findByClass(findOneByClass(container, "calib-wizard-view"), "btn")
     .find((b) => (b.textContent + (b.children || []).map((c) => c.textContent).join(""))
       .includes(label)) || null;
 }
@@ -340,6 +342,8 @@ async function testStartPostsTheCalibrationAndSwapsToAbort() {
 
   const start = actionButton(container, "Start");
   assert.ok(start && !start.disabled, "start enabled when disarmed and linked");
+  assert.ok(start.parentNode.classList.contains("calib-head"),
+    "start sits in the title row, where the abort takes its place");
   fire(start, "click");
   await flushMicrotasks();
 
@@ -347,6 +351,8 @@ async function testStartPostsTheCalibrationAndSwapsToAbort() {
   assert.deepEqual(call.payload, { type: "gyro" }, "posts the procedure's own type");
   assert.ok(actionButton(container, "Abort") && !actionButton(container, "Abort").hidden,
     "abort offered while the calibration runs");
+  assert.ok(actionButton(container, "Abort").parentNode.classList.contains("calib-head"),
+    "the abort sits in the title row, top right");
   assert.ok(start.hidden, "start withdrawn while the calibration runs");
   assert.ok(findOneByClass(container, "calib-prep").hidden,
     "the briefing gives way to the live instruction");
@@ -478,6 +484,79 @@ async function testRejectedStartIsReportedNotSwallowed() {
   destroy();
 }
 
+async function testTheCueIconFollowsTheAutopilot() {
+  const { container, fake } = reset({ state: { armed: false, connected: true } });
+  const destroy = openWizard(container, "accel");
+  const cue = findOneByClass(container, "calib-cue");
+  assert.equal(cue.dataset.cue, "idle", "the briefing shows the procedure's own icon");
+
+  fire(actionButton(container, "Start"), "click");
+  await flushMicrotasks();
+  fake.statustext("[cal] Hold still, measuring down side");
+  assert.equal(cue.dataset.cue, "hold");
+  fake.statustext("[cal] down side done, rotate to a different side");
+  assert.equal(cue.dataset.cue, "rotate");
+  assert.match(findOneByClass(container, "calib-headline").textContent, /^Rotate to /);
+
+  destroy();
+}
+
+async function testTheTranscriptIsFoldedUntilItExplainsAFailure() {
+  const { container, fake } = reset({ state: { armed: false, connected: true } });
+  const destroy = openWizard(container, "accel");
+  const log = findOneByClass(container, "calib-log-card");
+  assert.equal(log.tagName, "DETAILS", "the transcript is collapsible");
+  assert.ok(!log.open, "and folded while the stage says what to do");
+
+  fire(actionButton(container, "Start"), "click");
+  await flushMicrotasks();
+  fake.statustext("[cal] Hold still, measuring down side");
+  assert.ok(!log.open, "a running calibration keeps it folded");
+  assert.equal(findOneByClass(container, "calib-log-count").textContent, "1",
+    "the folded card still says how much is inside");
+
+  fake.statustext("[cal] calibration failed: accel", "critical");
+  assert.ok(log.open, "a failure opens it: the autopilot's words are the reason");
+
+  fire(actionButton(container, "Try again"), "click");
+  assert.ok(!log.open, "and a retry folds it again");
+  assert.equal(findOneByClass(container, "calib-log-count").textContent, "");
+
+  destroy();
+}
+
+async function testAPreviewedPositionSurvivesTheNextTelemetry() {
+  // Clicking a position before the start shows it on the big figure. Every
+  // telemetry push repaints the wizard, and used to put the figure straight
+  // back on the start pose, so the preview never stayed long enough to see.
+  const { container, fake } = reset({ state: { armed: false, connected: true } });
+  const destroy = openWizard(container, "accel");
+  const stage = findOneByClass(container, "calib-stage-figure");
+  const chip = findByClass(container, "calib-pose").find((c) => c.dataset.pose === "upside_down");
+  fire(chip, "click");
+  fake.getSubCb()({ armed: false, connected: true });
+  assert.equal(findOneByClass(stage, "calib-figure").dataset.pose, "upside_down");
+
+  fire(actionButton(container, "Start"), "click");
+  await flushMicrotasks();
+  assert.equal(findOneByClass(stage, "calib-figure").dataset.pose, "level",
+    "the start drops the preview for what the autopilot asks");
+  destroy();
+}
+
+async function testTheChecklistIsIconsAndAFewWords() {
+  const { container } = reset();
+  const destroy = openWizard(container, "motor");
+  const items = findByClass(container, "calib-prep-item");
+  assert.equal(items.length, Corvus.calibProtocol.PROCEDURES.motor.prep.length);
+  items.forEach((item) => {
+    const icon = item.children[0];
+    assert.equal(icon.tagName, "I", "each line leads with an icon");
+    assert.ok(icon.getAttribute("data-lucide"));
+  });
+  destroy();
+}
+
 // ---------------------------------------------------------------------------
 // Motor / ESC safety gate
 // ---------------------------------------------------------------------------
@@ -589,6 +668,10 @@ async function run() {
     testFailureOffersARetryWithoutReopeningTheWizard,
     testAbortCancelsOnTheVehicle,
     testRejectedStartIsReportedNotSwallowed,
+    testTheCueIconFollowsTheAutopilot,
+    testTheTranscriptIsFoldedUntilItExplainsAFailure,
+    testTheChecklistIsIconsAndAFewWords,
+    testAPreviewedPositionSurvivesTheNextTelemetry,
     testMotorStartOpensTheSafetyGateAndPostsNothing,
     testMotorConfirmPostsMotorType,
     testMotorCancelNoPost,

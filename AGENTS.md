@@ -247,6 +247,7 @@ these differences is a silent wrong answer rather than an error:
 | Autotune | `DO_AUTOTUNE_ENABLE` | the AUTOTUNE flight mode |
 | Mission item 0 | the first item | home |
 | Mission mode | `MISSION` | `AUTO` |
+| Mission start | `MISSION_START` (first, last), which also arms | arm in GUIDED (AUTO on a plane), then `MISSION_START` with 0, 0 |
 | MAVLink shell | NSH over `SERIAL_CONTROL` | none |
 | On-board log | ULog (`.ulg`) | DataFlash (`.bin`) |
 

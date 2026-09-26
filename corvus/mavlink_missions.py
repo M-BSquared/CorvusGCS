@@ -602,8 +602,9 @@ class MissionProtocolMixin:
             return specs
         snapshot = self._store.get_snapshot()
         home = snapshot.get("home") or [0.0, 0.0]
+        # The store keeps home as [lon, lat], like every position it holds.
         try:
-            home_lat, home_lon = float(home[0]), float(home[1])
+            home_lon, home_lat = float(home[0]), float(home[1])
         except (TypeError, ValueError, IndexError):
             home_lat = home_lon = 0.0
         home_alt = self._home_alt_amsl or 0.0
@@ -623,10 +624,57 @@ class MissionProtocolMixin:
         """The (first, last) item indices MAV_CMD_MISSION_START should carry.
 
         *count* is how many items the planner produced, before the home slot.
-        On ArduPilot the real items start at 1, because slot 0 is home.
+        The pair is the dialect's: PX4 is told both ends, ArduPilot is sent
+        (0, 0) because 4.6 refuses any other pair.
         """
-        first = 1.0 if self._dialect.mission_seq0_is_home else 0.0
-        return first, first + max(0, count - 1)
+        return self._dialect.mission_start_params(count)
+
+    def _start_uploaded_mission(self, action: str, count: int) -> bool:
+        """MISSION_START, the mission mode and arming, in this stack's order.
+
+        PX4's MISSION_START switches to the mission and arms by itself; the
+        mode change and arm that follow only confirm it. ArduPilot's switches
+        to AUTO and nothing more, and a copter will not arm in AUTO, so a
+        vehicle still on the ground is put in the dialect's arming mode and
+        armed first. That order can leave an aircraft armed for nothing, so a
+        MISSION_START refused after arming disarms again, as takeoff does.
+
+        Called with the command lock held; returns False with the reason set.
+        """
+        nan = float("nan")
+        first, last = self._mission_start_range(count)
+        arm_mode = self._dialect.mission_arm_mode(self._mav_type_id)
+        armed_here = False
+        if arm_mode and not self._store.get_snapshot().get("armed"):
+            if arm_mode == self._dialect.mission_mode:
+                entered = self._enter_mission_mode(action)
+            else:
+                entered = self._enter_guided(action)
+            if not entered:
+                return False
+            if not self.arm(True):
+                return False
+            armed_here = True
+        result = self._send_command_and_wait(
+            mavutil.mavlink.MAV_CMD_MISSION_START,
+            [first, last, nan, nan, nan, nan, nan],
+            timeout=5.0, retries=1,
+        )
+        if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+            if armed_here:
+                self._console_publish(
+                    "MISSION", "Mission start refused after arming, disarming again",
+                    "warning",
+                )
+                self.arm(False)
+            return self._command_failure(action, result)
+        if arm_mode:
+            # ArduPilot's MISSION_START is itself the switch to AUTO, and the
+            # vehicle was armed above (or already was).
+            return True
+        if not self._enter_mission_mode(action):
+            return False
+        return self.arm(True)
 
     @staticmethod
     def _mission_ack_to_result(ack_type: int) -> int:
@@ -669,10 +717,11 @@ class MissionProtocolMixin:
 
         Each point is ``{"lat","lon","alt_agl"}`` with ``alt_agl`` in metres
         above home (same reference as :meth:`takeoff`). Uploads a
-        MISSION_ITEM_INT mission (MAV_FRAME_GLOBAL_RELATIVE_ALT), starts it
-        with MAV_CMD_MISSION_START, switches to AUTO.MISSION, and arms if
-        needed. Returns True only when the mission is accepted, started, and
-        the vehicle is armed. Works on PX4 v1.16, v1.17, and v1.18.
+        MISSION_ITEM_INT mission (MAV_FRAME_GLOBAL_RELATIVE_ALT), then starts
+        and arms it in the order the connected stack needs (see
+        :meth:`_start_uploaded_mission`). Returns True only when the mission is
+        accepted, started, and the vehicle is armed. Works on PX4 v1.16, v1.17
+        and v1.18, and on ArduPilot 4.3 to 4.6.
         """
         with self._operation_lock:
             self._set_command_error("")
@@ -722,23 +771,7 @@ class MissionProtocolMixin:
             self._console_publish(
                 "GOTOPOINTS", "Mission accepted; starting …", "info",
             )
-            # param1 = first item index, param2 = last item index (unambiguous
-            # across PX4 v1.16-v1.18; avoids the "0 = last item" convention).
-            # The pair is stack-dependent because ArduPilot's item 0 is home.
-            first, last = self._mission_start_range(planned)
-            result = self._send_command_and_wait(
-                mavutil.mavlink.MAV_CMD_MISSION_START,
-                [first, last, nan, nan, nan, nan, nan],
-                timeout=5.0, retries=1,
-            )
-            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                return self._command_failure("Fly to points", result)
-
-            # The mission mode + arming starts the uploaded mission. PX4 calls
-            # it MISSION (AUTO.MISSION); ArduPilot calls it AUTO.
-            if not self._enter_mission_mode("Fly to points"):
-                return False
-            if not self.arm(True):
+            if not self._start_uploaded_mission("Fly to points", planned):
                 return False
 
             self._console_publish("GOTOPOINTS", "Fly to points started", "success")
@@ -813,10 +846,11 @@ class MissionProtocolMixin:
     def start_mission(self, count: int) -> bool:
         """Run the mission already on the vehicle: MISSION_START, AUTO, arm.
 
-        *count* is how many items were uploaded — MAV_CMD_MISSION_START is sent
-        with an explicit first/last pair rather than PX4's "0 = last item"
+        *count* is how many items were uploaded. On PX4 MAV_CMD_MISSION_START
+        carries an explicit first/last pair rather than the "0 = last item"
         convention, which is the one part of this that differs across v1.16 to
-        v1.18.
+        v1.18; the order of the steps is the dialect's, see
+        :meth:`_start_uploaded_mission`.
         """
         with self._operation_lock:
             self._set_command_error("")
@@ -825,18 +859,7 @@ class MissionProtocolMixin:
                 return False
             if not self._connection_ready():
                 return self._command_failure("Mission start", -2)
-            nan = float("nan")
-            first, last = self._mission_start_range(count)
-            result = self._send_command_and_wait(
-                mavutil.mavlink.MAV_CMD_MISSION_START,
-                [first, last, nan, nan, nan, nan, nan],
-                timeout=5.0, retries=1,
-            )
-            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                return self._command_failure("Mission start", result)
-            if not self._enter_mission_mode("Mission start"):
-                return False
-            if not self.arm(True):
+            if not self._start_uploaded_mission("Mission start", count):
                 return False
             self._console_publish("MISSION", "Mission started", "success")
             return True
