@@ -124,24 +124,25 @@ function reset() {
 }
 
 // ---------------------------------------------------------------------------
-// Corvus.theme — the default is the white/orange theme, not a dark one
+// Corvus.theme — the default is the white/black theme, not a dark one
 // ---------------------------------------------------------------------------
 reset();
-assert.equal(theme.DEFAULT, "light-orange", "the light/orange theme is the default");
-assert.ok(theme.isKnown("light-orange"), "the default must be a known theme id");
-assert.equal(theme.THEMES[0].id, "light-orange", "the default is offered first in the picker");
+assert.equal(theme.DEFAULT, "light", "the white/black theme is the default");
+assert.ok(theme.isKnown("light"), "the default must be a known theme id");
+assert.equal(theme.THEMES[0].id, "light", "the default is offered first in the picker");
+assert.equal(theme.THEMES[1].id, "light-orange", "the orange light theme comes right after it");
 assert.deepEqual(theme.IDS.slice().sort(),
   ["blue", "green", "light", "light-orange", "orange", "pink"],
   "every theme block in css/themes.css is offered, and no id that has none");
 
 // An unknown id degrades to the default rather than a half-applied palette.
 reset();
-assert.equal(theme.setTheme("no-such-theme"), "light-orange");
-assert.equal(docEl.getAttribute("data-theme"), "light-orange");
+assert.equal(theme.setTheme("no-such-theme"), "light");
+assert.equal(docEl.getAttribute("data-theme"), "light");
 
 // With nothing stored, a fresh install lands on the default.
 reset();
-assert.equal(theme.applySaved(), "light-orange");
+assert.equal(theme.applySaved(), "light");
 
 // A theme the operator already picked outranks the new default.
 reset();

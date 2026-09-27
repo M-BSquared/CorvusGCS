@@ -24,8 +24,7 @@ _TESTS_DIR = __import__("pathlib").Path(__file__).resolve().parent
 if str(_TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(_TESTS_DIR))
 
-# Reuse the shared fake-conn / clock helpers (same pattern as
-# test_integration_review.py importing from test_mavlink_takeoff).
+# Reuse the shared fake-conn / clock helpers.
 from test_mavlink_linkquality import (  # noqa: E402
     _FakeClock,
     _bridge_for_receive_test,

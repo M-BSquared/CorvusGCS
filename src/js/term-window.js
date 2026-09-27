@@ -29,6 +29,10 @@ window.Corvus = window.Corvus || {};
 Corvus.termWindows = (function () {
   const F = Corvus.floatWindows;
   const KIND = "terminal";
+  // Frosted glass unless Settings, "Solid terminals", is on. Mirrored into
+  // storage for the windows of their own, which read it as they read the
+  // theme (js/popout-page.js): "0" is solid, anything else frosted.
+  const FROSTED_KEY = "corvus.frostedTerminals";
 
   function keyOf(name) { return "term:" + name; }
 
@@ -188,6 +192,7 @@ Corvus.termWindows = (function () {
       icon: "square-terminal",
       noun: "terminal",
       ariaLabel: `Terminal: ${title}`,
+      className: "term-win--terminal",
       bodyClass: "ssh-term",
       status: "CONNECTED",
       statusTone: "on",
@@ -229,13 +234,23 @@ Corvus.termWindows = (function () {
     return F.close(keyOf(name));
   }
 
-  /** End the session, then close its window. This stops the remote program. */
+  /**
+   * End the session, then close its window. This stops the remote program.
+   * The window goes before its stream could report the end, so it is said
+   * here, for the SSH tab's cards and anything else showing the session.
+   */
   function disconnect(name) {
+    const done = () => {
+      close(name);
+      if (Corvus.sshTerm && typeof Corvus.sshTerm.sessionEnded === "function") {
+        Corvus.sshTerm.sessionEnded(name);
+      }
+    };
     fetch("/api/ssh/disconnect", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
-    }).catch(() => {}).then(() => close(name), () => close(name));
+    }).catch(() => {}).then(done, done);
   }
 
   /** Every terminal window, gone. Sessions untouched — see close(). */
@@ -250,6 +265,33 @@ Corvus.termWindows = (function () {
     });
   }
 
+  /**
+   * Frosted glass on every terminal window, or solid. The frames in the app
+   * follow the class on the root at once; a window of its own follows the
+   * storage event, and frosts only where the operating system can blur what
+   * is behind it.
+   * @param {boolean} on
+   */
+  function setFrosted(on) {
+    const want = !!on;
+    if (typeof document !== "undefined" && document.documentElement) {
+      document.documentElement.classList.toggle("frosted-terminals", want);
+    }
+    try {
+      if (window.localStorage) window.localStorage.setItem(FROSTED_KEY, want ? "1" : "0");
+    } catch (_e) { /* storage refused: the windows of their own stay solid */ }
+  }
+
+  /** What the last run left, until the config says (app.js): frosted unless solid. */
+  function storedFrosted() {
+    try {
+      return !window.localStorage || window.localStorage.getItem(FROSTED_KEY) !== "0";
+    } catch (_e) {
+      return true;
+    }
+  }
+  setFrosted(storedFrosted());
+
   /** @returns {boolean} whether a window for this session is open. */
   function has(name) { return F.has(keyOf(name)); }
 
@@ -257,7 +299,7 @@ Corvus.termWindows = (function () {
   function count() { return F.count(KIND); }
 
   return {
-    open, close, closeAll, has, count,
+    open, close, closeAll, has, count, setFrosted, storedFrosted, FROSTED_KEY,
     clampRect: F.clampRect, cascadeRect: F.cascadeRect,
     MIN_W: F.MIN_W, MIN_H: F.MIN_H, DEF_W: F.DEF_W, DEF_H: F.DEF_H,
     MARGIN: F.MARGIN, BAR_H: F.BAR_H, KEEP_X: F.KEEP_X, NARROW: F.NARROW,

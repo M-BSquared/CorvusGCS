@@ -41,7 +41,10 @@ REQUIRED_KEYS = {"label", "provider", "style", "upstream", "maxzoom", "attributi
 @pytest.mark.parametrize("sid", list(TILE_SOURCES))
 def test_entry_has_required_keys_and_nonempty_attribution(sid: str) -> None:
     entry = TILE_SOURCES[sid]
-    assert set(entry) == REQUIRED_KEYS, f"{sid}: unexpected keys {set(entry) ^ REQUIRED_KEYS}"
+    # ``licensed`` is the one optional key: the licensed API a source moves to
+    # once its service has a key (Google, Bing).
+    assert set(entry) - {"licensed"} == REQUIRED_KEYS, \
+        f"{sid}: unexpected keys {(set(entry) - {'licensed'}) ^ REQUIRED_KEYS}"
     assert isinstance(entry["label"], str) and entry["label"], f"{sid}: label missing"
     # A template addresses a tile either by {z}/{x}/{y} or by a Bing quadkey
     # ({q}); one of the two must be present or the URL cannot be built.
@@ -159,9 +162,9 @@ class _FakeResp:
 def _make_url_recorder(monkeypatch, recorded: list, want_request: bool):
     """Patch urlopen to record the URL and return fixed bytes.
 
-    *want_request* selects how the patched site calls urlopen: the server
-    builds a ``urllib.request.Request`` and passes it, while the downloader
-    passes a plain URL string. Both expose the final URL.
+    *want_request* names how the patched site calls urlopen. Both the server
+    and the downloader now pass a ``urllib.request.Request`` (for the
+    User-Agent); a plain URL string is still accepted.
     """
 
     def fake_urlopen(url_or_req, timeout=None):
@@ -361,7 +364,9 @@ def test_list_providers_shape() -> None:
     provs = tile_sources.list_providers()
     assert [p["id"] for p in provs] == list(tile_sources.PROVIDERS)
     for p in provs:
-        assert set(p) == {"id", "label", "sources", "token"}
+        assert set(p) == {"id", "label", "sources", "token", "token_optional"}
+        assert p["token_optional"] is (
+            p["token"] is not None and not tile_sources.token_required(p["id"]))
         assert p["label"].strip()
         assert p["sources"] == tile_sources.PROVIDERS[p["id"]]["sources"]
         # ``token`` is the metadata an operator needs to go and get a key —

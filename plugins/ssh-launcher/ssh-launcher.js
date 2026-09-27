@@ -349,6 +349,7 @@ Corvus.pluginSshLauncher = (function () {
     let editing = null;          // the button being edited, or null on the shelf
     let live = {};               // session name -> true, from /api/ssh/sessions
     let errors = Object.create(null);  // button id -> why its last press failed
+    const opening = Object.create(null); // session name -> the arrow's connect in flight
     let pollTimer = null;
     let cancelled = false;       // set by destroy(); gates every late callback
 
@@ -556,20 +557,20 @@ Corvus.pluginSshLauncher = (function () {
         tools.appendChild(dot);
       }
 
-      // The arrow back to this button's own terminal window. Launching opens
-      // it; this is how it is fetched again after it was closed or buried.
-      // Only terminal-mode buttons have one to go to, and only while the
-      // session is actually up — an arrow that led to a dead terminal would be
-      // worse than no arrow, so it says why it is off instead.
+      // The arrow into this button's own terminal window. With the session
+      // up it fetches the window again after it was closed or buried. With
+      // nothing running it connects first and opens a plain shell, the
+      // program NOT started: the operator asked to look, and the button runs
+      // its line into that same shell afterwards. Only terminal-mode buttons
+      // have a terminal to go to.
       if (entry.mode !== MODE_BACKGROUND) {
         const openBtn = ui.iconButton("chevron-right", {
           className: "icon-btn sshl-open",
           ariaLabel: `Open the terminal for ${entry.label}`,
           title: running
             ? "Open its terminal window to watch it, or press Ctrl-C to stop it"
-            : "Not running. Launch it to open its terminal.",
-          disabled: !running,
-          onClick: () => openTerminal(entry),
+            : "Open its terminal and connect. The program starts with the button.",
+          onClick: () => (running ? openTerminal(entry) : connectAndOpen(entry, openBtn)),
         });
         tools.appendChild(openBtn);
       }
@@ -920,7 +921,11 @@ Corvus.pluginSshLauncher = (function () {
     function launchInTerminal(entry) {
       const session = sessionName(entry);
       const line = remoteLine(entry);
-      return api.postJson("/api/ssh/send", { name: session, data: line + "\n" })
+      const send = () => api.postJson("/api/ssh/send", { name: session, data: line + "\n" });
+      // The arrow may be opening this session right now: wait for it, or the
+      // line would find no shell and open a second one over it.
+      const pending = opening[session];
+      return (pending ? pending.then(send) : send())
         .then((res) => {
           if (cancelled) return null;
           // ok:false is the backend saying it has no such live session — the
@@ -950,28 +955,72 @@ Corvus.pluginSshLauncher = (function () {
       api.notification("warning", `${entry.label}: ${detail}`);
     }
 
-    /** Open this button's session, then type the line into it. */
-    function connectThenSend(entry, line, retried) {
+    /**
+     * Open this button's session. A reply that says the connection is missing
+     * or refused asks for it once (setUpConnection) and tries again; any other
+     * failure goes on the row. Resolves whether the session is up.
+     */
+    function connectSession(entry, retried) {
       const session = sessionName(entry);
       return api.postJson("/api/ssh/connect", { name: session, from: entry.connection })
         .catch(replyOf)
         .then((res) => {
-          if (cancelled) return null;
-          if (!(res && res.ok && res.connected)) {
-            if (!retried) {
-              return setUpConnection(res).then((saved) => {
-                if (cancelled) return null;
-                if (saved) return connectThenSend(entry, line, true);
-                failed(entry, (res && res.error) || "Could not open the terminal");
-                return null;
-              });
-            }
-            failed(entry, (res && res.error) || "Could not open the terminal");
-            return null;
+          if (cancelled) return false;
+          if (res && res.ok && res.connected) return true;
+          if (!retried) {
+            return setUpConnection(res).then((saved) => {
+              if (cancelled) return false;
+              if (saved) return connectSession(entry, true);
+              failed(entry, (res && res.error) || "Could not open the terminal");
+              return false;
+            });
           }
-          return api.postJson("/api/ssh/send", { name: session, data: line + "\n" })
-            .then(() => (cancelled ? null : ran(entry, line, true)));
+          failed(entry, (res && res.error) || "Could not open the terminal");
+          return false;
         });
+    }
+
+    /** Open this button's session, then type the line into it. */
+    function connectThenSend(entry, line) {
+      const session = sessionName(entry);
+      return connectSession(entry).then((up) => {
+        if (!up || cancelled) return null;
+        return api.postJson("/api/ssh/send", { name: session, data: line + "\n" })
+          .then(() => (cancelled ? null : ran(entry, line, true)));
+      });
+    }
+
+    /**
+     * The arrow on a button with nothing running: connect, and show the
+     * terminal. The program is not started; the button does that, into this
+     * same shell (launchInTerminal sends to the live session first).
+     */
+    function connectAndOpen(entry, btn) {
+      const session = sessionName(entry);
+      if (opening[session]) return opening[session];
+      status.hide();
+      clearError(entry);
+      ui.setBusy(btn, true);
+      const up = connectSession(entry)
+        .catch((error) => {
+          if (!cancelled) failed(entry, error.message || "Could not reach the backend");
+          return false;
+        })
+        .then((ok) => {
+          if (opening[session] === up) delete opening[session];
+          if (cancelled) return false;
+          ui.setBusy(btn, false);
+          if (!ok) return false;
+          live[session] = true;
+          // reattach: a window still open on a shell that has ended takes
+          // the new one instead of staying OFFLINE.
+          openTerminal(entry, true);
+          status.show(`${entry.label}: connected. The button starts it in this terminal.`, "ok");
+          if (editing === null) renderShelf();
+          return true;
+        });
+      opening[session] = up;
+      return up;
     }
 
     /**

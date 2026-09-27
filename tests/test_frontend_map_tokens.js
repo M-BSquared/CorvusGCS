@@ -96,22 +96,41 @@ assert.ok(!/<a\s/i.test(dialog), "no anchor: an external link goes nowhere in th
 assert.ok(/meta\.signup/.test(dialog), "the operator is told where to get a key");
 
 // ---------------------------------------------------------------------------
-// 5. A keyed service with no key says so, and is still offered
+// 5. A keyed service with no key gets no card, unless it is the active one
 // ---------------------------------------------------------------------------
+assert.ok(
+  /const shown = providers\.filter\(\s*\(p\) => !p\.token_required \|\| p\.token_set \|\| p\.id === activeProvider\);/
+    .test(sidenav),
+  "a keyed service without a key is left out of the picker, except the active one");
+assert.ok(
+  /options: shown\.map\(/.test(sidenav),
+  "the service cards are built from the filtered list");
 assert.ok(
   /if \(prov\.token_required && !prov\.token_set\) return "Needs an API key";/
     .test(sidenav),
-  "a service that cannot draw says why on its own card");
+  "an active service that cannot draw says why on its own card");
 assert.ok(
-  !/providers\s*=\s*providers\.filter\(\(p\) => !p\.token_required/.test(sidenav),
-  "a keyed service is reported, never hidden from the picker");
+  /service once you add an API key\./.test(sidenav),
+  "the hidden services are named under API KEYS");
 
 // The button only appears when this build actually has a keyed service, so it
 // can never open an empty dialog.
 assert.ok(
-  /const keyed = providers\.filter\(\(p\) => p\.token_required\);\s*\n\s*if \(keyed\.length\)/
+  /const keyed = providers\.filter\(\(p\) => p\.token\);\s*\n\s*if \(keyed\.length\)/
     .test(sidenav),
   "the API KEYS button is conditional on there being a keyed service");
+
+// Google and Bing take an optional key: listed in the dialog, never hidden
+// from the picker, and named apart from the services that cannot draw at all.
+assert.ok(
+  /const hidden = unset\.filter\(\(p\) => p\.token_required\)/.test(sidenav),
+  "only a service that needs its key is reported as hidden");
+assert.ok(
+  /licensed API once you add a key\./.test(sidenav),
+  "a service with an optional key says what the key changes");
+assert.ok(
+  /if \(prov\.token_optional && prov\.token_set\) parts\.push\("licensed API"\)/.test(sidenav),
+  "a service on its licensed API says so on its card");
 
 // ---------------------------------------------------------------------------
 // 6. Every class the dialog writes is styled

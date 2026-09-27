@@ -544,7 +544,7 @@ def test_plain_http_noise_does_not_subscribe_its_sender() -> None:
     (Renamed: this shared a name with the trailing-0xFD test below, so Python
     bound only the later definition and THIS test never ran. Nothing failed —
     it simply was not there. It is the kind of thing only a linter finds,
-    which is why both pipelines run one now.)
+    which is why CI runs one now.)
     """
     port = _free_port()
     fwd = _forwarder(listen_port=port)

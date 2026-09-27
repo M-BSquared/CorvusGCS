@@ -38,9 +38,8 @@ agents.
   bundle + optional `.dmg`), and produces reproducible, self-contained
   artifacts after every major change; never hardcodes a version.
 - `devops` — CI/CD and release automation. Owns the CI pipeline
-  (`.gitlab-ci.yml` on the self-hosted GitLab at `git.unibw.de`;
-  `.github/workflows/` if a GitHub mirror is added) and the release pipeline
-  (tag -> AppImage + macOS `.app` -> release); automates the build after every
+  (`.github/workflows/build.yml` on GitHub, the only CI) and the release
+  pipeline (tag -> AppImage + macOS `.app` + Windows zip -> GitHub Release); automates the build after every
   major change; never hardcodes a version.
 - `review` — final safety/reliability audit and test authoring.
 
@@ -99,10 +98,10 @@ the current host and fails loudly rather than pretending to cross-build.
 | macOS (arm64 / x86_64) | `./build.sh --dmg` -> `build-macos-app.sh` | `dist/Corvus GCS.app` (+ `dist/Corvus_GCS-<version>-macOS-<arch>.dmg`) | relocatable framework CPython, ad-hoc codesigned |
 | Windows x64 | `.\build-windows.ps1 [-Zip]` | `dist\Corvus GCS\` (+ `dist\Corvus_GCS-<version>-windows-x64.zip`) | PyInstaller, not a hand-relocated interpreter; `./build.sh` from a Windows shell points here rather than cross-building |
 
-Both CI pipelines call the same `./build.sh`: `.gitlab-ci.yml` (primary, on
-`git.unibw.de`, Linux only — no macOS or Windows runner) and
-`.github/workflows/build.yml` (test + test-windows + frontend + appimage +
-macos-app + windows-app + release). They must not drift.
+CI is GitHub Actions only: `.github/workflows/build.yml` (test + test-windows +
+lint + frontend + appimage + macos-app + windows-app + release) calls the same
+`./build.sh` a developer runs locally. There is no second pipeline; do not add
+one back.
 
 Windows is the one row whose entry point is not `./build.sh`, because the script
 is PowerShell — `build.sh` detects an MSYS/Git-Bash shell and says so rather
@@ -110,12 +109,9 @@ than pretending to cross-build. Everything else in this section still applies to
 it unchanged: one `VERSION`, the layout contract, `LICENSE.md` inside the
 artifact, no version literal.
 
-"Must not drift" is checkable, so check it rather than assuming it. The two
-have to agree on: the jobs that exist (GitLab carried no `frontend` job for a
-while, so the whole browser-side suite went unrun on the primary pipeline), the
-apt package set for the AppImage build, and the build distro — an AppImage
-links against the glibc of its build host, so building on a newer Ubuntu than
-the sibling pipeline silently narrows the machines the artifact runs on.
+The AppImage job builds on `ubuntu-22.04` on purpose: an AppImage links
+against the glibc of its build host, so building on a newer Ubuntu silently
+narrows the machines the artifact runs on.
 
 Shared packaging invariants — a violation of any of these is a build bug:
 
@@ -330,8 +326,8 @@ does not accept a handoff that skips one; `review` fails it.
 5. **Tests.** `python3 -m pytest -q` passes; new behaviour has a test, fixed
    bugs have a regression test.
 6. **Packaging.** If the change adds a file, dependency, or runtime path, both
-   `build-appimage.sh` and `build-macos-app.sh` still bundle it, and both CI
-   pipelines (`.gitlab-ci.yml`, `.github/workflows/build.yml`) still pass.
+   `build-appimage.sh` and `build-macos-app.sh` still bundle it, and the CI
+   pipeline (`.github/workflows/build.yml`) still passes.
 7. **Docs.** User-visible changes were routed to `readme` (README) and `doc`
    (manual / API reference).
 
@@ -363,7 +359,7 @@ Rules that keep the chain honest:
 ```
 ./run.sh                        # create/update .venv from pyproject.toml + launch desktop app
 .venv/bin/python -m pytest -q   # test suite (the gate for every change)
-.venv/bin/python -m ruff check corvus serve.py tests   # lint, as both pipelines run it
+.venv/bin/python -m ruff check corvus serve.py tests   # lint, as CI runs it
 .venv/bin/python serve.py       # backend only, UI in a normal browser
 ./build.sh [--dmg]              # artifact for the current host (dispatches below)
 ./build-appimage.sh             # Linux artifact  (x86_64)

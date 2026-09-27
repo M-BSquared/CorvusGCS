@@ -104,7 +104,8 @@ Corvus.popoutPage = (function () {
    *
    * @param {Object} rec the frame
    * @param {Object} n the bridge
-   * @param {Object} opts {noun, onClose(), dockBtn, onDrop({left, top, width, height})}
+   * @param {Object} opts {noun, onClose(), dockBtn, onDrop({left, top, width, height}),
+   *        onMaximize(isMax)}
    *        `dockBtn` and `onDrop` only for a window that may go back in
    */
   function goNative(rec, n, opts) {
@@ -173,6 +174,7 @@ Corvus.popoutPage = (function () {
         maxBtn.setAttribute("aria-label", `${maximized ? "Restore" : "Maximize"} the ${opts.noun}`);
         ui.clear(maxBtn).appendChild(ui.icon(maximized ? "minimize-2" : "maximize-2", 13));
         ui.refreshIcons();
+        if (typeof opts.onMaximize === "function") opts.onMaximize(maximized);
       });
     }
 
@@ -234,6 +236,80 @@ Corvus.popoutPage = (function () {
       toggleMax();
     });
     return { toggleMax, pinBtn };
+  }
+
+  // ---- frosted glass ------------------------------------------------------------
+
+  /** Where the app keeps whether terminals are frosted (js/term-window.js):
+   *  "0" when Settings, "Solid terminals", is on. */
+  const FROSTED_KEY = "corvus.frostedTerminals";
+
+  /** Frosted unless the app said solid: frosted glass is the default. */
+  function frostedWanted() {
+    try {
+      return !window.localStorage || window.localStorage.getItem(FROSTED_KEY) !== "0";
+    } catch (_e) {
+      return true;
+    }
+  }
+
+  function reducedTransparency() {
+    try {
+      return typeof window.matchMedia === "function"
+        && window.matchMedia("(prefers-reduced-transparency: reduce)").matches;
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  /** Whether the theme's glass is dark, for the blur's own light or dark tint. */
+  function darkGlass() {
+    const rgb = String(Corvus.ui.token("--glass-rgb", "255 255 255")).split(/[\s,]+/).map(Number);
+    if (rgb.length < 3 || rgb.some((v) => !isFinite(v))) return false;
+    return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2] < 128;
+  }
+
+  /** The frame's corner radius in the window's own points (the interface
+   *  scale is a zoom on <body>), so the blur has the frame's corners. */
+  function cornerRadius(rec) {
+    let px = 0;
+    try { px = parseFloat(getComputedStyle(rec.el).borderTopLeftRadius) || 0; } catch (_e) { px = 0; }
+    return px * Corvus.ui.uiScale();
+  }
+
+  /**
+   * Frost a terminal's window of its own, unless Settings asks for solid ones.
+   *
+   * The page cannot do it alone: backdrop-filter only sees the page, and
+   * behind this page is the desktop. So the desktop app puts the operating
+   * system's blur behind the window (corvus/app.py, PopoutBridge.setFrosted),
+   * and the page turns see-through only once it has said the blur is there.
+   * Where there is none, the terminal stays solid: text over a sharp desktop
+   * is not readable.
+   *
+   * Followed live: the switch, the theme (light or dark glass) and maximize
+   * (square corners at the edges of the screen).
+   *
+   * @returns {{refresh: Function}|null}
+   */
+  function followFrosted(rec, n) {
+    const root = document.documentElement;
+    if (typeof n.setFrosted !== "function" || !root) return null;
+    let asked = 0;
+    function refresh() {
+      const want = frostedWanted() && !reducedTransparency();
+      const ticket = ++asked;
+      // Solid before the blur goes, see-through only after it came: either
+      // way round, the desktop never shows through sharp.
+      if (!want) root.classList.remove("frosted-terminals");
+      n.setFrosted(want, darkGlass(), cornerRadius(rec), (ok) => {
+        if (ticket === asked) root.classList.toggle("frosted-terminals", !!(want && ok));
+      });
+    }
+    window.addEventListener("storage", (e) => { if (e.key === FROSTED_KEY) refresh(); });
+    window.addEventListener("corvus:themechange", refresh);
+    refresh();
+    return { refresh };
   }
 
   function dockButton(noun, onClick) {
@@ -335,6 +411,7 @@ Corvus.popoutPage = (function () {
       icon: "square-terminal",
       title: session.title || session.name,
       subtitle: address,
+      className: "term-win--terminal",
       bodyClass: "ssh-term",
       tools: [
         dockBtn,
@@ -344,11 +421,19 @@ Corvus.popoutPage = (function () {
           title: "Disconnect. This stops what is running",
           ariaLabel: "Disconnect the session",
           onClick: () => {
+            // Said before the window goes, as closeWindow says it is closing:
+            // the app's SSH tab still shows the session as connected otherwise.
+            const done = () => {
+              if (typeof Corvus.sshTerm.sessionEnded === "function") {
+                Corvus.sshTerm.sessionEnded(session.name);
+              }
+              closeWindow();
+            };
             fetch("/api/ssh/disconnect", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ name: session.name }),
-            }).catch(() => {}).then(closeWindow, closeWindow);
+            }).catch(() => {}).then(done, done);
           },
         }),
       ].filter(Boolean),
@@ -391,17 +476,22 @@ Corvus.popoutPage = (function () {
       onFocus: () => { raiseWindow(); if (handle) handle.focus(); },
       onReattach: () => attach(true),
     });
-    whenNative((n) => goNative(rec, n, {
-      noun: "terminal",
-      closeTitle: "Close the window. What is running keeps running",
-      onClose: () => { dispose(); closeWindow(); },
-      dockBtn,
-      onDrop: dockBtn ? (at) => {
-        link.dock({ session, at });
-        dispose();
-        closeWindow();
-      } : null,
-    }));
+    let frost = null;
+    whenNative((n) => {
+      goNative(rec, n, {
+        noun: "terminal",
+        closeTitle: "Close the window. What is running keeps running",
+        onClose: () => { dispose(); closeWindow(); },
+        dockBtn,
+        onDrop: dockBtn ? (at) => {
+          link.dock({ session, at });
+          dispose();
+          closeWindow();
+        } : null,
+        onMaximize: () => { if (frost) frost.refresh(); },
+      });
+      frost = followFrosted(rec, n);
+    });
     window.addEventListener("pagehide", () => { dispose(); link.stop(); });
     return { rec, link };
   }
@@ -422,5 +512,5 @@ Corvus.popoutPage = (function () {
     boot(document.getElementById("popout"), window.location.search);
   }
 
-  return { boot, goNative };
+  return { boot, goNative, followFrosted, darkGlass, FROSTED_KEY };
 })();

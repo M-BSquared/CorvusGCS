@@ -19,7 +19,6 @@ from __future__ import annotations
 import math
 import threading
 import time
-import urllib.error
 import urllib.request
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -27,10 +26,15 @@ from collections.abc import Callable, Iterator
 
 from corvus import tile_sources
 from corvus.tile_cache import TileCache
+from corvus.version import get_version
 
 # A single job never exceeds this many tiles; bigger regions must be split.
 MAX_TILES_PER_JOB = 50_000
 _FETCH_TIMEOUT = 15.0      # seconds per upstream tile request
+# Largest tile body kept. The same bound the interactive cache-fill uses
+# (server.TILE_UPSTREAM_MAX_BYTES): anything bigger is an error page or a
+# server that has stopped being a tile server, not a map tile.
+_MAX_TILE_BYTES = 4 * 1024 * 1024
 _SUBMIT_PAUSE = 0.05       # seconds between task submissions — be respectful
 # Fetched tiles are written to the cache in batches of this many, in one
 # transaction each (TileCache.put_tiles). A region job is capped at 50 000
@@ -158,6 +162,19 @@ def enumerate_tiles(
         for x in range(x_min, x_max + 1):
             for y in range(y_min, y_max + 1):
                 yield z, x, y
+
+
+def tile_ranges(
+    bounds: tuple, minzoom: int, maxzoom: int
+) -> list[tuple[int, int, int, int, int]]:
+    """Per-zoom ``(z, x_min, x_max, y_min, y_max)`` XYZ ranges covering *bounds*.
+
+    The tile set :func:`enumerate_tiles` yields, as rectangles rather than
+    tiles, so a caller can ask the cache how much of an area it holds without
+    materializing the area.
+    """
+    ranges, _ = _ranges_for_bounds(bounds, minzoom, maxzoom)
+    return ranges
 
 
 def tile_cover(
@@ -340,13 +357,23 @@ class TileDownloader:
             return
         url = tile_sources.build_tile_url(
             job["_template"], z, x, y, job.get("_token", ""))
+        # Identified like the interactive cache-fill: OSM's tile policy blocks
+        # a library's default User-Agent, and a bulk download is exactly the
+        # traffic a tile operator wants to be able to attribute.
+        req = urllib.request.Request(
+            url, headers={"User-Agent": f"CorvusGCS/{get_version()}"})
         blob: bytes | None = None
         for attempt in range(2):  # one retry on transient network errors
             try:
-                with urllib.request.urlopen(url, timeout=_FETCH_TIMEOUT) as resp:
-                    blob = resp.read()
+                with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as resp:
+                    data = resp.read(_MAX_TILE_BYTES + 1)
+                if data and len(data) <= _MAX_TILE_BYTES:
+                    blob = data
                 break
-            except (urllib.error.URLError, TimeoutError, OSError):
+            except Exception:  # noqa: BLE001 - every failure is a failed tile
+                # Broad on purpose: an exception escaping this method dies in
+                # its future, so the tile would be neither done nor failed and
+                # the job would still report success.
                 if attempt == 1 or cancel.is_set() or self._stop_event.is_set():
                     break
         if blob is None:
@@ -390,15 +417,12 @@ class TileDownloader:
         if not batch:
             return 0
         try:
-            self._cache.put_tiles(batch)
+            written = int(self._cache.put_tiles(batch) or 0)
         except Exception:
-            with job["_lock"]:
-                job["failed"] += len(batch)
             written = 0
-        else:
-            with job["_lock"]:
-                job["done"] += len(batch)
-            written = len(batch)
+        with job["_lock"]:
+            job["done"] += written
+            job["failed"] += len(batch) - written
         self._fire_progress(job, job["_on_progress"])
         return written
 
@@ -436,9 +460,16 @@ class TileDownloader:
             # On a global shutdown, do not wait for in-flight fetches (bounded by
             # their own timeout); on normal/cancel completion, drain so the
             # final counters are accurate before announcing "done"/"cancelled".
-            wait = not self._stop_event.is_set()
+            #
+            # Queued fetches are dropped only when the job was stopped. The
+            # loop above submits faster than a slow link fetches, so at the end
+            # of a normal run most of a region can still be in the queue, and
+            # cancelling it here reported a finished job with those tiles
+            # silently missing from the cache.
+            stopped = cancel.is_set() or self._stop_event.is_set()
             try:
-                executor.shutdown(wait=wait, cancel_futures=True)
+                executor.shutdown(
+                    wait=not self._stop_event.is_set(), cancel_futures=stopped)
             except Exception:
                 pass
             # Everything fetched but not yet committed goes in before the job
@@ -448,5 +479,15 @@ class TileDownloader:
             self._flush_pending(job)
             with lock:
                 if job["state"] == "running":
-                    job["state"] = "cancelled" if (cancel.is_set() or self._stop_event.is_set()) else "done"
+                    if cancel.is_set() or self._stop_event.is_set():
+                        job["state"] = "cancelled"
+                    elif job["done"] == 0 and job["failed"] > 0:
+                        # Not one tile is on disk for this area. Reporting that
+                        # as a finished download is how an operator drives out
+                        # believing they have a map they do not have.
+                        job["state"] = "failed"
+                        job["error"] = ("no tile could be downloaded. Check the "
+                                        "internet connection and try again")
+                    else:
+                        job["state"] = "done"
             self._fire_progress(job, on_progress)

@@ -110,29 +110,29 @@ Corvus.setup = (function () {
     // reachable and announces as a control.
     const grid = S.el("div", "setup-tiles");
     grid.appendChild(makeTile("calibration", "sliders-horizontal", "Calibration",
-      "Accelerometer, compass, gyro, level and ESCs."));
+      "Accelerometer, compass, gyro, level, ESCs."));
     grid.appendChild(makeTile("control", "radio", "Radio Control",
-      "Calibrate the transmitter, assign channels, and map switches to actions."));
+      "Transmitter, channels and switch actions."));
     grid.appendChild(makeTile("tuning", "activity", "PID Tuning",
-      "Rate, attitude, velocity and position gains by hand, plus the in-flight autotune."));
+      "Controller gains and in-flight autotune."));
     grid.appendChild(makeTile("motors", "fan", "Motors",
-      "Airframe geometry, motor assignment and spacing, and the output protocol."));
+      "Frame geometry, motor order and protocol."));
     grid.appendChild(makeTile("safety", "shield", "Safety & Sensors",
-      "Distance and height limits, failsafe actions, rangefinder and optical flow."));
+      "Limits, failsafes, rangefinder, optical flow."));
     grid.appendChild(makeTile("battery", "battery-charging", "Battery & Power",
-      "Cells, capacity, power module and which charge reading is shown."));
+      "Cells, capacity and power module."));
     grid.appendChild(makeTile("sik", "radio-tower", "Telemetry Radio",
-      "Program a SiK radio pair: network ID, air rate, power and band."));
+      "SiK radio pair: network ID, rate, power."));
     grid.appendChild(makeTile("rtk", "satellite-dish", "RTK GPS",
-      "Centimetre positioning from a local base or an NTRIP caster."));
+      "Corrections from a base or NTRIP caster."));
     grid.appendChild(makeTile("remoteid", "id-card", "Remote ID",
-      "Serial number, operator registration, description and EU class."));
+      "Serial number, operator ID and EU class."));
     grid.appendChild(makeTile("parameters", "list", "Parameters",
-      "Every parameter with its default. Edit values, load and save parameter files."));
+      "Edit, load and save every parameter."));
     grid.appendChild(makeTile("firmware", "cpu", "Firmware",
-      "Flash PX4 firmware over a direct USB connection only."));
+      "Flash PX4 firmware over direct USB."));
     grid.appendChild(makeTile("video", "video", "Video",
-      "Cameras over RTSP or WebRTC, each in a floating window over the map."));
+      "RTSP or WebRTC cameras in floating windows."));
     container.appendChild(grid);
 
     // Subscribe to telemetry so the Vehicle Info rows update live. The firmware version

@@ -6,7 +6,11 @@ restored after a reinstall, or copied to the next laptop. It holds:
 * ``config``: the application config (``~/.corvus/config.json``), exactly as
   :func:`corvus.config._config_to_dict` writes it, minus the legacy
   ``plugins`` key;
-* ``plugins``: every plugin's own config file (``corvus/plugin_config.py``);
+* ``plugins``: the chosen plugins' own config files
+  (``corvus/plugin_config.py``);
+* ``plugin_files``: the chosen plugins themselves, as base64 per relative
+  path, for plugins installed in the operator's folder
+  (``corvus/plugin_files.py``);
 * ``logo``: the company logo as base64, when one is set;
 * ``browser``: the interface state the browser keeps for itself, such as where
   the flight HUD and the virtual joystick sit. This module never reads it. It
@@ -20,10 +24,16 @@ on the importing station: an entry that is still the same entry (same name,
 host and user; same camera address; same caster) keeps its stored secret, and
 nothing is ever handed to a host it was not stored for.
 
-Import is by section, so an operator can take the window layout from a file
-and leave the serial port and folders of this machine alone. Every key of the
+Export and import are both by section, so an operator can write a file with
+only the interface in it, or take the window layout from a full file and leave
+the serial port and folders of this machine alone. ``sections`` names what a
+file carries; a section it does not carry is never imported from it, because
+importing a section resets every key the file leaves out. Every key of the
 application config belongs to exactly one section; the test suite fails when a
 new key is added without one.
+
+Format 2 added ``sections`` and ``plugin_files``. A format 1 file carries every
+section and no plugin files, and is still read.
 
 stdlib only.
 """
@@ -36,10 +46,12 @@ import time
 from collections.abc import Iterable
 from typing import Any
 
+from . import plugin_files as plugin_files_mod
+from .plugin_registry import is_valid_id
 from .version import get_version
 
 KIND = "corvus-settings"
-FORMAT = 1
+FORMAT = 2
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 MAX_LOGO_BYTES = 4 * 1024 * 1024
 
@@ -93,17 +105,25 @@ def redact(config: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def build(config: dict[str, Any], *, plugins: dict[str, Any] | None = None,
+def build(config: dict[str, Any], *, sections: Iterable[str] | None = None,
+          plugins: dict[str, Any] | None = None,
+          plugin_files: dict[str, dict[str, bytes]] | None = None,
           logo: bytes | None = None, browser: dict[str, Any] | None = None,
           include_secrets: bool = False) -> dict[str, Any]:
     """Assemble the bundle written to disk by an export.
 
-    *config* is the serialized application config. The result is plain JSON
-    data; the caller writes it.
+    *config* is the serialized application config and *sections* the parts
+    to write (every one when None). Only the config keys of those sections go
+    in; the plugins only with ``plugins``, the logo only with ``interface``.
+    *plugins* and *plugin_files* are already the chosen plugins. The result is
+    plain JSON data; the caller writes it.
     """
-    cfg = {k: v for k, v in config.items() if k not in EXCLUDED_KEYS}
+    chosen = set(SECTIONS) if sections is None else set(sections) & set(SECTIONS)
+    cfg = {k: v for k, v in config.items()
+           if k not in EXCLUDED_KEYS and section_of(k) in chosen}
     if not include_secrets:
         cfg = redact(cfg)
+    with_plugins = "plugins" in chosen
     bundle: dict[str, Any] = {
         "kind": KIND,
         "format": FORMAT,
@@ -111,11 +131,17 @@ def build(config: dict[str, Any], *, plugins: dict[str, Any] | None = None,
         "version": get_version(),
         "exported_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "secrets": bool(include_secrets),
+        "sections": [s for s in SECTIONS if s in chosen],
         "config": cfg,
-        "plugins": {k: v for k, v in (plugins or {}).items() if isinstance(v, dict)},
+        "plugins": ({k: v for k, v in (plugins or {}).items() if isinstance(v, dict)}
+                    if with_plugins else {}),
+        "plugin_files": ({pid: {rel: base64.b64encode(data).decode("ascii")
+                                for rel, data in sorted(files.items())}
+                          for pid, files in (plugin_files or {}).items()}
+                         if with_plugins else {}),
         "browser": _clean_browser(browser),
     }
-    if logo:
+    if logo and "interface" in chosen:
         bundle["logo"] = base64.b64encode(logo).decode("ascii")
     return bundle
 
@@ -133,7 +159,8 @@ def parse(data: Any) -> dict[str, Any]:
 
     Raises ValueError with a sentence an operator can act on. A bundle from a
     newer format is refused rather than half applied: whatever that version
-    added, this one would silently drop.
+    added, this one would silently drop. So is a bundle with a plugin that
+    could not be installed as it stands.
     """
     if not isinstance(data, dict) or data.get("kind") != KIND:
         raise ValueError("This is not a Corvus GCS settings file.")
@@ -146,20 +173,59 @@ def parse(data: Any) -> dict[str, Any]:
     config = data.get("config")
     if not isinstance(config, dict):
         raise ValueError("The settings file carries no configuration.")
+    if fmt < 2:
+        sections = set(SECTIONS)
+    else:
+        raw_sections = data.get("sections")
+        if not isinstance(raw_sections, list):
+            raise ValueError("The settings file does not say which settings it carries.")
+        sections = {s for s in raw_sections if isinstance(s, str) and s in SECTIONS}
     plugins = data.get("plugins")
     logo = None
-    if data.get("logo") is not None:
+    if data.get("logo") is not None and "interface" in sections:
         logo = decode_logo(data.get("logo"))
+    with_plugins = "plugins" in sections
     return {
         "version": data.get("version") if isinstance(data.get("version"), str) else "",
         "exported_at": data.get("exported_at") if isinstance(data.get("exported_at"), str) else "",
         "secrets": data.get("secrets") is True,
-        "config": {k: v for k, v in config.items() if k not in EXCLUDED_KEYS},
+        "sections": [s for s in SECTIONS if s in sections],
+        "config": {k: v for k, v in config.items()
+                   if k not in EXCLUDED_KEYS and section_of(k) in sections},
         "plugins": ({k: v for k, v in plugins.items() if isinstance(k, str) and isinstance(v, dict)}
-                    if isinstance(plugins, dict) else {}),
+                    if with_plugins and isinstance(plugins, dict) else {}),
+        "plugin_files": (decode_plugin_files(data.get("plugin_files"))
+                         if with_plugins and fmt >= 2 else {}),
         "logo": logo,
         "browser": _clean_browser(data.get("browser")),
     }
+
+
+def decode_plugin_files(raw: Any) -> dict[str, dict[str, bytes]]:
+    """A bundle's ``plugin_files`` as ``{plugin id: {path: bytes}}``.
+
+    Every plugin is checked the way an install checks it
+    (:func:`corvus.plugin_files.check`), so a file that parses here installs.
+    """
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError("The plugins in the settings file are unreadable.")
+    out: dict[str, dict[str, bytes]] = {}
+    for plugin_id, files in raw.items():
+        if not is_valid_id(plugin_id) or not isinstance(files, dict):
+            raise ValueError("The plugins in the settings file are unreadable.")
+        decoded: dict[str, bytes] = {}
+        try:
+            for rel, blob in files.items():
+                if not isinstance(blob, str):
+                    raise ValueError(rel)
+                decoded[rel] = base64.b64decode(blob, validate=True)
+            out[plugin_id] = plugin_files_mod.check(decoded)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError(f"The plugin {plugin_id} in the settings file is unusable "
+                             f"({exc}).") from exc
+    return out
 
 
 def decode_logo(raw: Any) -> bytes:
@@ -184,6 +250,16 @@ def normalize_sections(raw: Any) -> set[str]:
     if not isinstance(raw, list):
         raise ValueError("sections must be a list")
     return {s for s in raw if isinstance(s, str) and s in SECTIONS}
+
+
+def normalize_ids(raw: Any, available: Iterable[str], name: str) -> set[str]:
+    """The plugin ids in *raw* that are also in *available*; all of them when None."""
+    pool = set(available)
+    if raw is None:
+        return pool
+    if not isinstance(raw, list):
+        raise ValueError(f"{name} must be a list")
+    return {p for p in raw if isinstance(p, str) and p in pool}
 
 
 def merge(current: dict[str, Any], imported: dict[str, Any],

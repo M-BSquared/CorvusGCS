@@ -88,8 +88,8 @@ if ($pyInfo.conda) {
 if ($pyInfo.bits -ne 64) {
     throw "$Python is 32-bit. Corvus ships x64 only; install the 64-bit python.org build."
 }
-# 3.12 is the floor pyproject.toml declares and the version both CI pipelines
-# test. Nothing checked this before, so the shipped .exe could be built on an
+# 3.12 is the floor pyproject.toml declares and the version CI tests.
+# Nothing checked this before, so the shipped .exe could be built on an
 # interpreter older than anything the suite had ever run against.
 $pyParts = $pyInfo.version.Split(".")
 if ([int]$pyParts[0] -lt 3 -or ([int]$pyParts[0] -eq 3 -and [int]$pyParts[1] -lt 12)) {

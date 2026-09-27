@@ -377,9 +377,17 @@ def window_support(platform_name: str) -> dict[str, bool]:
     The pages read this before they offer either (the bootstrap script puts
     it on ``window.corvusNativeSupport``), so a missing feature is left out
     rather than offered and broken.
+
+    ``frost``: the desktop behind a window can be blurred (:class:`MacBlur`),
+    which a frosted terminal in a window of its own needs. macOS only. On
+    Linux a client has no way to ask for it: Cinnamon (Linux Mint) and GNOME
+    (Ubuntu) blur nothing behind another program's window, and only KWin has
+    a protocol for it. There, and on Windows, such a window stays solid; the
+    frames inside the app are frosted by the page itself everywhere.
     """
-    wayland = str(platform_name or "").lower().startswith("wayland")
-    return {"place": not wayland, "pin": not wayland}
+    name = str(platform_name or "").lower()
+    wayland = name.startswith("wayland")
+    return {"place": not wayland, "pin": not wayland, "frost": name == "cocoa"}
 
 
 def popout_geometry(rect: tuple[int, int, int, int],
@@ -482,6 +490,142 @@ def win32_windows(platform: str = sys.platform) -> Win32Windows | None:
         return Win32Windows()
     except Exception:  # noqa: BLE001 - Qt's own moves are the fallback
         logger.debug("Win32 window calls unavailable", exc_info=True)
+        return None
+
+
+class MacBlur:
+    """The desktop behind a see-through window, blurred by macOS.
+
+    A terminal's window of its own is frosted glass unless Settings asks for
+    solid ones (src/js/popout-page.js), and the page cannot do that alone: CSS
+    ``backdrop-filter`` only sees the page, and behind the page is the
+    desktop. macOS blurs it with an ``NSVisualEffectView`` behind the window's
+    content. Qt's view *is* the content view and draws in its own layer, so a
+    subview of it would cover the page; the effect view goes one level up,
+    into the window's frame view, below the content view. It follows the
+    window's size by itself, and its layer is rounded like the page's frame,
+    so the blur has the frame's corners rather than the window's square ones.
+
+    ctypes over the Objective-C runtime rather than PyObjC: a dozen messages
+    to AppKit are not worth a dependency. Every call is made on the Qt main
+    thread, which is AppKit's.
+    """
+
+    _BEHIND_WINDOW = 0       # NSVisualEffectBlendingModeBehindWindow
+    _ALWAYS_ACTIVE = 1       # NSVisualEffectStateActive: not grey behind another app
+    _POPOVER = 6             # the material that lets the most colour through
+    _SIZABLE = 2 | 16        # NSViewWidthSizable | NSViewHeightSizable
+    _BELOW = -1              # NSWindowBelow
+
+    def __init__(self) -> None:
+        import ctypes
+        import ctypes.util
+
+        objc_path = ctypes.util.find_library("objc")
+        appkit_path = ctypes.util.find_library("AppKit")
+        if not objc_path or not appkit_path:
+            raise OSError("no Objective-C runtime or AppKit")
+        ctypes.CDLL(appkit_path)
+        objc = ctypes.CDLL(objc_path)
+        objc.objc_getClass.restype = ctypes.c_void_p
+        objc.objc_getClass.argtypes = [ctypes.c_char_p]
+        objc.sel_registerName.restype = ctypes.c_void_p
+        objc.sel_registerName.argtypes = [ctypes.c_char_p]
+        if not objc.objc_getClass(b"NSVisualEffectView"):
+            raise OSError("AppKit has no NSVisualEffectView")
+
+        class Rect(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double),
+                        ("w", ctypes.c_double), ("h", ctypes.c_double)]
+
+        self._ct = ctypes
+        self._objc = objc
+        self._rect = Rect
+        self._msg_send = ctypes.cast(objc.objc_msgSend, ctypes.c_void_p).value
+        self._prototypes: dict = {}
+
+    def _send(self, target: int, selector: str, restype=None, argtypes=(), *args):
+        """``[target selector:args…]``, with the C signature spelled out."""
+        c = self._ct
+        key = (restype, tuple(argtypes))
+        fn = self._prototypes.get(key)
+        if fn is None:
+            fn = c.CFUNCTYPE(restype, c.c_void_p, c.c_void_p, *argtypes)(self._msg_send)
+            self._prototypes[key] = fn
+        return fn(target, self._objc.sel_registerName(selector.encode()), *args)
+
+    def _obj(self, target: int, selector: str) -> int:
+        return int(self._send(target, selector, self._ct.c_void_p) or 0)
+
+    def frost(self, view_id: int, effect: int, dark: bool, radius: float,
+              width: int, height: int) -> int:
+        """Blur the desktop behind the window whose content view is *view_id*.
+
+        *effect* is what an earlier call returned, or 0: it is updated in
+        place while it is still behind this window, and replaced when Qt has
+        made the window anew. *dark* picks the blur's own tint to match the
+        theme, *radius* is the page frame's corner radius and *width* by
+        *height* the window's size, all in points. Returns the effect view,
+        retained, for the next call or for :meth:`clear`.
+        """
+        c = self._ct
+        window = self._obj(view_id, "window")
+        content = self._obj(window, "contentView") if window else 0
+        frame = self._obj(content, "superview") if content else 0
+        if not frame:
+            raise OSError("the view is not in a window with a frame view")
+        # Let go of a view behind a window that is gone only once its
+        # replacement exists: the caller keeps what it had if this raises.
+        stale = effect if effect and self._obj(effect, "superview") != frame else 0
+        if stale:
+            effect = 0
+        if not effect:
+            cls = self._objc.objc_getClass(b"NSVisualEffectView")
+            effect = self._obj(cls, "alloc")
+            effect = int(self._send(effect, "initWithFrame:", c.c_void_p, (self._rect,),
+                                    self._rect(0.0, 0.0, float(width), float(height))) or 0)
+            if not effect:
+                raise OSError("could not make an NSVisualEffectView")
+            self._send(effect, "setAutoresizingMask:", None, (c.c_ulong,), self._SIZABLE)
+            self._send(effect, "setBlendingMode:", None, (c.c_long,), self._BEHIND_WINDOW)
+            self._send(effect, "setState:", None, (c.c_long,), self._ALWAYS_ACTIVE)
+            self._send(effect, "setMaterial:", None, (c.c_long,), self._POPOVER)
+            self._send(effect, "setWantsLayer:", None, (c.c_bool,), True)
+            self._send(frame, "addSubview:positioned:relativeTo:", None,
+                       (c.c_void_p, c.c_long, c.c_void_p), effect, self._BELOW, content)
+        if stale:
+            self.clear(stale)
+        name =b"NSAppearanceNameDarkAqua" if dark else b"NSAppearanceNameAqua"
+        text = self._send(self._objc.objc_getClass(b"NSString"), "stringWithUTF8String:",
+                          c.c_void_p, (c.c_char_p,), name)
+        appearance = self._send(self._objc.objc_getClass(b"NSAppearance"), "appearanceNamed:",
+                                c.c_void_p, (c.c_void_p,), text)
+        self._send(effect, "setAppearance:", None, (c.c_void_p,), appearance)
+        layer = self._obj(effect, "layer")
+        if layer:
+            self._send(layer, "setCornerRadius:", None, (c.c_double,), max(0.0, float(radius)))
+            self._send(layer, "setMasksToBounds:", None, (c.c_bool,), True)
+        # The window's shadow is traced from what it draws, and it now draws
+        # the blur as well.
+        self._send(window, "invalidateShadow")
+        return effect
+
+    def clear(self, effect: int) -> None:
+        """Take the blur away, and let go of the view :meth:`frost` returned."""
+        if not effect:
+            return
+        self._send(effect, "removeFromSuperview")
+        self._send(effect, "release")
+
+
+def mac_blur(platform: str = sys.platform) -> MacBlur | None:
+    """:class:`MacBlur` on macOS, None elsewhere or when AppKit will not load."""
+    if platform != "darwin":
+        return None
+    try:
+        return MacBlur()
+    except Exception:  # noqa: BLE001 - a solid terminal is the fallback
+        logger.debug("macOS window blur unavailable", exc_info=True)
         return None
 
 
@@ -794,6 +938,7 @@ def main() -> int:
     popout_pinned: dict = {}
     support = window_support(QGuiApplication.platformName())
     win = win32_windows()
+    mac = mac_blur() if support["frost"] else None
     if not support["place"]:
         logger.info("Qt platform %s: windows out of the app are moved by the compositor "
                     "and cannot be pinned", QGuiApplication.platformName())
@@ -871,10 +1016,20 @@ def main() -> int:
             self.key = ""
             self.normal = None      # the geometry before a maximize
             self.pinned = False     # the pin in its bar (see apply_pin)
+            self.blur = 0           # the blur behind it (MacBlur), while frosted
+
+        def unfrost(self) -> None:
+            if self.blur and mac is not None:
+                try:
+                    mac.clear(self.blur)
+                except Exception:  # noqa: BLE001 - the window goes either way
+                    logger.debug("could not take a window's blur away", exc_info=True)
+            self.blur = 0
 
         def closeEvent(self, event):  # noqa: N802 - Qt's name
             if self.key:
                 popout_last[self.key] = QRect(self.normal or self.geometry())
+            self.unfrost()
             super().closeEvent(event)
 
     def screen_area_at(point) -> tuple[int, int, int, int]:
@@ -1016,6 +1171,26 @@ def main() -> int:
         @pyqtSlot(result=bool)
         def isPinned(self) -> bool:
             return self._holder.pinned
+
+        @pyqtSlot(bool, bool, float, result=bool)
+        def setFrosted(self, on: bool, dark: bool, radius: float) -> bool:
+            """Blur the desktop behind this window, or stop (frosted terminals).
+
+            Answers whether the blur is there. The page turns see-through only
+            when it is: a terminal over a sharp desktop is not readable, so
+            where there is no blur the terminal stays solid.
+            """
+            holder = self._holder
+            if not on or mac is None:
+                holder.unfrost()
+                return False
+            try:
+                holder.blur = mac.frost(int(holder.winId()), holder.blur, bool(dark),
+                                        float(radius), holder.width(), holder.height())
+            except Exception:  # noqa: BLE001 - a solid terminal is the fallback
+                logger.debug("could not blur behind a window", exc_info=True)
+                return False
+            return True
 
         @pyqtSlot()
         def raiseWindow(self) -> None:

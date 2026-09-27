@@ -30,8 +30,8 @@ command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 not found" >&2; exi
 
 PY_MAJOR="$(python3 -c 'import sys; print(sys.version_info.major)')"
 PY_MINOR="$(python3 -c 'import sys; print(sys.version_info.minor)')"
-# 3.12 is the floor pyproject.toml declares and the version both CI pipelines
-# test. This used to accept 3.10, so the shipped AppImage could be built on an
+# 3.12 is the floor pyproject.toml declares and the version CI tests.
+# This used to accept 3.10, so the shipped AppImage could be built on an
 # interpreter older than anything the suite had ever run against.
 if [ "$PY_MAJOR" -lt 3 ] || { [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 12 ]; }; then
     echo "ERROR: Python >= 3.12 required, found $PY_MAJOR.$PY_MINOR" >&2

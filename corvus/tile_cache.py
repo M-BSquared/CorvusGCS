@@ -371,6 +371,25 @@ class TileCache:
             self._conn.commit()
         return removed
 
+    def count_tiles(self, ranges: Iterable[tuple[int, int, int, int, int]]) -> int:
+        """Count the cached tiles inside XYZ ``(z, x_min, x_max, y_min, y_max)`` ranges.
+
+        One indexed range query per zoom, so the answer for a region costs
+        nothing like enumerating it tile by tile.
+        """
+        if self._closed:
+            return 0
+        total = 0
+        with self._lock:
+            for z, x_min, x_max, y_min, y_max in ranges:
+                cur = self._conn.execute(
+                    "SELECT COUNT(*) FROM tiles WHERE zoom_level=? "
+                    "AND tile_column BETWEEN ? AND ? AND tile_row BETWEEN ? AND ?",
+                    (z, x_min, x_max, xyz_to_tms(z, y_max), xyz_to_tms(z, y_min)),
+                )
+                total += cur.fetchone()[0] or 0
+        return total
+
     def stats(self) -> dict:
         """Return {count, minzoom, maxzoom} from the tiles table.
 

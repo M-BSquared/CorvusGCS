@@ -1266,14 +1266,58 @@ async function testSshLauncherBackgroundButtonUsesTheRunEndpoint() {
   Corvus.pluginSshLauncher.destroy(h.container);
 }
 
-async function testSshLauncherArrowIsOffUntilSomethingIsRunning() {
+/* The arrow before the first press: the operator wants the terminal, and the
+   connection behind it, without starting the program yet. */
+async function testSshLauncherArrowConnectsBeforeTheFirstPress() {
   const h = mountLauncher({ saved: { buttons: [TERMINAL_BUTTON] } });
   await flushMicrotasks();
   const arrow = h.tool("Open the terminal for Start mission");
   assert.ok(arrow, "a terminal button has an arrow");
-  assert.equal(arrow.disabled, true, "with nothing running the arrow leads nowhere");
-  assert.ok(arrow.title.includes("Not running"));
-  assert.equal(h.dots().length, 0, "and there is no live dot");
+  assert.equal(arrow.disabled, false, "with nothing running the arrow still works");
+  assert.match(arrow.title, /connect/i, "and says it connects");
+  assert.equal(h.dots().length, 0, "nothing is running yet");
+
+  click(arrow);
+  await flushMicrotasks();
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  assert.deepEqual(h.connects(), [{ name: "ssh-launcher/a", from: "companion" }],
+    "the button's own session, on its saved connection");
+  assert.deepEqual(h.sends(), [], "the program is not started by the arrow");
+  assert.equal(h.terminals.length, 1, "its terminal window is opened");
+  assert.equal(h.terminals[0].name, "ssh-launcher/a");
+  assert.deepEqual(h.termOpts[0], { reattach: true, existingOnly: false },
+    "a window left on an ended shell takes the new one");
+  assert.equal(h.dots().length, 1, "the row shows the session is up");
+
+  // The button now types into that same shell, and opens no second one.
+  click(h.shelf()[0]);
+  await flushMicrotasks();
+  await flushMicrotasks();
+  assert.equal(h.connects().length, 1, "no second connect");
+  assert.deepEqual(h.sends(), [{
+    name: "ssh-launcher/a", data: Corvus.pluginSshLauncher.remoteLine(TERMINAL_BUTTON) + "\n",
+  }], "the line went straight into the shell the arrow opened");
+  Corvus.pluginSshLauncher.destroy(h.container);
+}
+
+async function testSshLauncherArrowThatCannotConnectSaysWhy() {
+  const h = mountLauncher({
+    saved: { buttons: [TERMINAL_BUTTON] },
+    connect: { ok: false, connected: false, error: "Authentication failed" },
+  });
+  await flushMicrotasks();
+  click(h.tool("Open the terminal for Start mission"));
+  await flushMicrotasks();
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  assert.equal(h.terminals.length, 0, "no window onto a shell that is not there");
+  assert.equal(h.failures().length, 1, "the row says why");
+  assert.match(h.failures()[0].text, /Authentication failed/);
+  assert.equal(h.tool("Open the terminal for Start mission").disabled, false,
+    "and the arrow can be pressed again");
   Corvus.pluginSshLauncher.destroy(h.container);
 }
 
@@ -1754,7 +1798,8 @@ async function run() {
   await testSshLauncherWarningSitsOnTheToolsCentreLine();
   await testSshLauncherAFailureGoesWhenTheButtonWorksAgain();
   await testSshLauncherBackgroundButtonUsesTheRunEndpoint();
-  await testSshLauncherArrowIsOffUntilSomethingIsRunning();
+  await testSshLauncherArrowConnectsBeforeTheFirstPress();
+  await testSshLauncherArrowThatCannotConnectSaysWhy();
   await testSshLauncherBackgroundButtonHasNoArrow();
   await testSshLauncherPressingItAgainRunsInTheSameSession();
   await testSshLauncherReopensASessionThatHasEnded();

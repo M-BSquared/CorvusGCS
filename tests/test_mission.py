@@ -240,6 +240,125 @@ def test_unknown_keys_are_dropped_rather_than_carried() -> None:
 
 
 # ---------------------------------------------------------------------------
+# The aircraft a plan is for
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("aircraft", mission.PLAN_AIRCRAFT)
+def test_the_plan_aircraft_survives_validation(aircraft: str) -> None:
+    cleaned, error = mission.validate_plan(plan(aircraft=aircraft))
+
+    assert error == ""
+    assert cleaned is not None
+    assert cleaned["aircraft"] == aircraft
+
+
+@pytest.mark.parametrize("aircraft", [None, "", "zeppelin", 1, ["multirotor"]])
+def test_an_unknown_plan_aircraft_is_dropped_rather_than_refusing_the_plan(
+        aircraft: Any) -> None:
+    cleaned, error = mission.validate_plan(plan(aircraft=aircraft))
+
+    assert error == ""
+    assert cleaned is not None
+    assert "aircraft" not in cleaned
+
+
+def test_the_plan_aircraft_never_reaches_the_wire() -> None:
+    hold = {"type": "loiter_time", "lat": 48.0, "lon": 11.0, "alt": 30,
+            "seconds": 20, "radius": 60}
+    as_multicopter, _ = mission.validate_plan(plan(items=[hold], aircraft="multirotor"))
+    as_fixed_wing, _ = mission.validate_plan(plan(items=[hold], aircraft="fixed_wing"))
+
+    assert as_multicopter is not None and as_fixed_wing is not None
+    assert mission.plan_to_items(as_multicopter) == mission.plan_to_items(as_fixed_wing)
+
+
+def test_the_plan_aircraft_is_saved_with_the_plan(tmp_path: Any) -> None:
+    cleaned, _ = mission.validate_plan(plan(aircraft="multirotor"))
+    assert cleaned is not None
+    name = mission.write_plan(str(tmp_path), "Kopter", cleaned)
+
+    loaded = mission.read_plan(str(tmp_path), name)
+
+    assert loaded is not None
+    assert loaded["aircraft"] == "multirotor"
+
+
+# ---------------------------------------------------------------------------
+# The height a multicopter's landing descends from
+# ---------------------------------------------------------------------------
+
+def _landing_plan(aircraft: Any = "multirotor", **land: Any) -> dict[str, Any]:
+    cleaned, error = mission.validate_plan(plan(aircraft=aircraft, items=[
+        {"type": "takeoff", "lat": 48.08, "lon": 11.64, "alt": 25},
+        {"type": "waypoint", "lat": 48.09, "lon": 11.65, "alt": 40},
+        {"type": "land", "lat": 48.10, "lon": 11.66, "alt": 0, **land},
+    ]))
+    assert error == ""
+    assert cleaned is not None
+    return cleaned
+
+
+def test_a_landing_keeps_its_descent_height_and_an_unset_one_stays_absent() -> None:
+    assert _landing_plan(approach_alt=12)["items"][2]["approach_alt"] == 12.0
+    assert "approach_alt" not in _landing_plan()["items"][2]
+
+
+def test_only_a_landing_carries_a_descent_height() -> None:
+    cleaned, _ = mission.validate_plan(plan(items=[
+        {"type": "waypoint", "lat": 48.0, "lon": 11.0, "alt": 20, "approach_alt": 5},
+    ]))
+    assert cleaned is not None
+    assert "approach_alt" not in cleaned["items"][0]
+
+
+def test_a_descent_may_start_as_low_as_the_floor_and_no_lower() -> None:
+    # All the way down is a dive; the floor keeps the touchdown itself vertical.
+    assert _landing_plan(approach_alt=mission.MISSION_APPROACH_MIN_M)["items"][2][
+        "approach_alt"] == mission.MISSION_APPROACH_MIN_M
+
+
+@pytest.mark.parametrize("approach", [0, 2.9, -101, 1001, "high", float("nan"), True])
+def test_a_descent_height_outside_the_altitude_bounds_is_refused(approach: Any) -> None:
+    cleaned, error = mission.validate_plan(plan(aircraft="multirotor", items=[
+        {"type": "land", "lat": 48.0, "lon": 11.0, "alt": 0, "approach_alt": approach},
+    ]))
+    assert cleaned is None
+    assert "approach_alt" in error
+
+
+def test_a_multicopter_descends_from_a_waypoint_right_above_the_landing() -> None:
+    # PX4 and ArduCopter both fly NAV_LAND in at the height they already
+    # have, so the height the descent starts from is a waypoint of its own.
+    wire = mission.plan_to_items(_landing_plan(approach_alt=12, speed=3))
+
+    assert [entry["command"] for entry in wire] == [
+        mission.MAV_CMD_NAV_TAKEOFF, mission.MAV_CMD_NAV_WAYPOINT,
+        mission.MAV_CMD_DO_CHANGE_SPEED, mission.MAV_CMD_NAV_WAYPOINT,
+        mission.MAV_CMD_NAV_LAND,
+    ], "the landing's speed is flown on the leg into the descent point"
+    above, land = wire[3], wire[4]
+    assert (above["lat"], above["lon"], above["alt"]) == (land["lat"], land["lon"], 12.0)
+    assert above["params"][0] == 0.0, "no hold before the descent"
+    assert math.isnan(above["params"][3]), "and no heading asked for"
+    assert above["item"] == land["item"] == 2, "progress reads it as the landing"
+
+
+@pytest.mark.parametrize("aircraft", ["fixed_wing", "vtol", None])
+def test_no_descent_point_is_sent_for_anything_but_a_multicopter(aircraft: Any) -> None:
+    # A fixed wing sent right above its touchdown would have to dive into it.
+    wire = mission.plan_to_items(_landing_plan(aircraft, approach_alt=12))
+
+    assert [entry["command"] for entry in wire] == [
+        mission.MAV_CMD_NAV_TAKEOFF, mission.MAV_CMD_NAV_WAYPOINT, mission.MAV_CMD_NAV_LAND,
+    ]
+
+
+def test_an_unset_descent_height_sends_nothing_extra() -> None:
+    wire = mission.plan_to_items(_landing_plan())
+    assert len(wire) == 3
+
+
+# ---------------------------------------------------------------------------
 # A point's own name
 # ---------------------------------------------------------------------------
 

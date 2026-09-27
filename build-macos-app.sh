@@ -102,8 +102,8 @@ py_ok() {  # <path> -> 0 if usable
     [ -x "$p" ] || return 1
     ARCH="$ARCH" "$p" - <<'PY' >/dev/null 2>&1 || return 1
 import os, platform, sys, sysconfig
-# 3.12 is the floor pyproject.toml declares and the version both CI
-# pipelines test. This used to accept 3.10, so the shipped .app could be
+# 3.12 is the floor pyproject.toml declares and the version CI
+# tests. This used to accept 3.10, so the shipped .app could be
 # built on an interpreter older than the one anything was tested on --
 # "it passes CI" then said nothing about what operators run.
 assert sys.version_info >= (3, 12), sys.version

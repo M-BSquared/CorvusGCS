@@ -714,3 +714,18 @@ def test_windows_in_app_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
     assert load_config(str(p)).ui == {"windows_in_app": True, "scale": 1.1}
     p.write_text(json.dumps({"ui": {"windows_in_app": False}}), encoding="utf-8")
     assert load_config(str(p)).ui == {"windows_in_app": False}
+
+
+def test_solid_terminals_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
+    """Off unless asked for: a terminal window is frosted glass by default.
+    Only a real ``True`` makes it solid, and a string is not one."""
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("solid_terminals") is None
+    p.write_text(json.dumps({"ui": {"solid_terminals": "true"}}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("solid_terminals") is None
+    p.write_text(json.dumps({"ui": {"solid_terminals": True, "windows_in_app": True}}),
+                 encoding="utf-8")
+    assert load_config(str(p)).ui == {"solid_terminals": True, "windows_in_app": True}
+    p.write_text(json.dumps({"ui": {"solid_terminals": False}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"solid_terminals": False}

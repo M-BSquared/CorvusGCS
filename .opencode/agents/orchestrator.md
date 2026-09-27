@@ -50,7 +50,7 @@ request, release tagging and manual version overrides.
      change or release to `build` so a runnable artifact always exists on
      every platform the current host can build; a platform that cannot be
      built here is reported, never silently skipped.
-   - `devops` — CI pipeline (`.gitlab-ci.yml`) and release automation. Route
+   - `devops` — CI pipeline (`.github/workflows/build.yml`) and release automation. Route
      CI/release pipeline work to `devops`; it automates the build after every
      major change.
    - `review` — final safety/reliability audit and test authoring; the last

@@ -9,12 +9,12 @@ name = "corvus-gcs"
 version = "0.0.0"
 # 3.12: the version CI tests, run.sh creates the dev venv with, and the three
 # build scripts ship. It used to be >=3.10 here, 3.11 in a conda file and 3.12
-# in both pipelines, so the tested, the developed and the shipped interpreter
+# in CI, so the tested, the developed and the shipped interpreter
 # could all be different ones.
 requires-python = ">=3.12"
 
 # Every Python package Corvus installs, anywhere, is named in this table and
-# nowhere else: the dev venv (run.sh), both CI pipelines and all three build
+# nowhere else: the dev venv (run.sh), the CI pipeline and all three build
 # scripts read it with `pip install --group <file>:<group>` (pip >= 25.1; every
 # installer upgrades pip in its fresh venv first). It replaces environment.yml
 # and three requirements*.txt files that used to restate the same list.
@@ -53,7 +53,7 @@ test = [
     { include-group = "headless" },
     "pytest>=7.0",
 ]
-# The linter both pipelines run.
+# The linter CI runs.
 lint = ["ruff>=0.5"]
 # The local development venv that run.sh creates: the app, the suite and the
 # linter in one place.
@@ -86,7 +86,7 @@ markers = [
 ]
 
 [tool.ruff]
-# The two pipelines run `ruff check corvus serve.py tests`. This section is
+# CI runs `ruff check corvus serve.py tests`. This section is
 # what "clean" means, and it is deliberately narrow: the point of adding a
 # linter to a codebase this size is to catch mistakes, not to start a
 # reformatting argument. Line length is not enforced at all.

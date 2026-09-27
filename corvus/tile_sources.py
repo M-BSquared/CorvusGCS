@@ -84,17 +84,27 @@ worker) — call :func:`build_tile_url`, so the two can never drift apart.
 Terms of service
 ----------------
 Only the Esri and OpenStreetMap endpoints below are documented public tile
-services. The Google and Bing entries address their internal map tile
-endpoints directly, which their terms of service do not permit outside of
-their own SDKs/APIs. They are registered because the operator asked for
-them; using them in a deployed product needs a proper licensed key (Google
-Maps Tile API / Bing Maps Key) swapped into the template first.
+services. Without a key, the Google and Bing entries address their internal
+map tile endpoints directly, which their terms of service do not permit
+outside of their own SDKs/APIs. They are registered because the operator asked
+for them. With a key they switch to the licensed APIs instead (see *Licensed
+APIs* below), which is how they are meant to be used.
 
 The MapTiler and Mapbox entries are the licensed answer to that: both publish
 plain XYZ raster endpoints, both are used here exactly as their terms
 describe, and both are keyed — which is why they appear only once the operator
 has put a key in. Higher-resolution imagery and a rate limit that belongs to
 the operator rather than to a shared public endpoint is what the key buys.
+
+Licensed APIs
+-------------
+Google and Bing take a key too, but an optional one (``token_optional`` on the
+provider). Their licensed APIs are not plain XYZ templates: Google's Map Tiles
+API wants a session created first, Bing's REST API hands out the tile URL in an
+imagery metadata answer. A source that can go that way carries a ``licensed``
+block naming the API and the layer it asks for; :mod:`corvus.tile_sessions`
+turns it into an ordinary template this module's :func:`build_tile_url` then
+fills. The endpoints those calls go to live here with the other upstream URLs.
 
 stdlib only.
 """
@@ -165,6 +175,7 @@ TILE_SOURCES: dict[str, dict[str, Any]] = {
         "upstream": "https://mt{s}.google.com/vt/lyrs=s&hl=en&x={x}&y={y}&z={z}",
         "maxzoom": 20,
         "attribution": "© Google",
+        "licensed": {"api": "google_tiles", "map_type": "satellite"},
     },
     "google_streets": {
         "label": "Streets",
@@ -173,6 +184,7 @@ TILE_SOURCES: dict[str, dict[str, Any]] = {
         "upstream": "https://mt{s}.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}",
         "maxzoom": 20,
         "attribution": "© Google",
+        "licensed": {"api": "google_tiles", "map_type": "roadmap"},
     },
     "google_hybrid": {
         "label": "Hybrid",
@@ -181,6 +193,7 @@ TILE_SOURCES: dict[str, dict[str, Any]] = {
         "upstream": "https://mt{s}.google.com/vt/lyrs=y&hl=en&x={x}&y={y}&z={z}",
         "maxzoom": 20,
         "attribution": "© Google",
+        "licensed": {"api": "google_tiles", "map_type": "satellite", "layer_types": ["layerRoadmap"]},
     },
     "google_topo": {
         "label": "Terrain",
@@ -189,6 +202,7 @@ TILE_SOURCES: dict[str, dict[str, Any]] = {
         "upstream": "https://mt{s}.google.com/vt/lyrs=p&hl=en&x={x}&y={y}&z={z}",
         "maxzoom": 18,
         "attribution": "© Google",
+        "licensed": {"api": "google_tiles", "map_type": "terrain", "layer_types": ["layerRoadmap"]},
     },
 
     # ---- MapTiler (keyed; see "Keyed services" in the module docstring) ----
@@ -272,6 +286,7 @@ TILE_SOURCES: dict[str, dict[str, Any]] = {
         "upstream": "https://ecn.t{s}.tiles.virtualearth.net/tiles/a{q}.jpeg?g=1",
         "maxzoom": 19,
         "attribution": "© Microsoft, Earthstar Geographics",
+        "licensed": {"api": "bing_rest", "imagery_set": "Aerial"},
     },
     "bing_streets": {
         "label": "Streets",
@@ -280,6 +295,7 @@ TILE_SOURCES: dict[str, dict[str, Any]] = {
         "upstream": "https://ecn.t{s}.tiles.virtualearth.net/tiles/r{q}.png?g=1",
         "maxzoom": 19,
         "attribution": "© Microsoft, HERE",
+        "licensed": {"api": "bing_rest", "imagery_set": "RoadOnDemand"},
     },
     "bing_hybrid": {
         "label": "Hybrid",
@@ -288,6 +304,7 @@ TILE_SOURCES: dict[str, dict[str, Any]] = {
         "upstream": "https://ecn.t{s}.tiles.virtualearth.net/tiles/h{q}.jpeg?g=1",
         "maxzoom": 19,
         "attribution": "© Microsoft, Earthstar Geographics",
+        "licensed": {"api": "bing_rest", "imagery_set": "AerialWithLabelsOnDemand"},
     },
 }
 
@@ -328,13 +345,29 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "label": "OpenStreetMap",
         "sources": ["osm"],
     },
+    # Optionally keyed: they draw without a key, and with one they go through
+    # the licensed API rather than the internal endpoint (see "Licensed APIs").
     "google": {
         "label": "Google",
         "sources": ["google_satellite", "google_streets", "google_hybrid", "google_topo"],
+        "token_optional": True,
+        "token": {
+            "label": "Google Maps API key",
+            "signup": "https://console.cloud.google.com/google/maps-apis/credentials",
+            "help": "Optional. With a key, Google tiles load through the licensed "
+                    "Map Tiles API, which has to be enabled for that key.",
+        },
     },
     "bing": {
         "label": "Bing",
         "sources": ["bing_satellite", "bing_streets", "bing_hybrid"],
+        "token_optional": True,
+        "token": {
+            "label": "Bing Maps key",
+            "signup": "https://www.bingmapsportal.com/",
+            "help": "Optional. With a key, Bing tiles load through the licensed "
+                    "Bing Maps REST API. Needs a Bing Maps for Enterprise key.",
+        },
     },
     # Keyed services. ``token`` is what makes a provider keyed; its presence is
     # the only test anything performs (see :func:`token_meta`), so adding a
@@ -366,6 +399,16 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         },
     },
 }
+
+# The licensed API endpoints behind the ``licensed`` blocks above. ``{k}`` is the
+# operator's key, as in a tile template; ``{session}`` and ``{imagery_set}`` are
+# filled by corvus.tile_sessions.
+GOOGLE_TILES_SESSION_URL = "https://tile.googleapis.com/v1/createSession?key={k}"
+GOOGLE_TILES_URL = (
+    "https://tile.googleapis.com/v1/2dtiles/{z}/{x}/{y}?session={session}&key={k}")
+BING_METADATA_URL = (
+    "https://dev.virtualearth.net/REST/v1/Imagery/Metadata/{imagery_set}"
+    "?output=json&uriScheme=https&key={k}")
 
 # The provider used when nothing is configured. Esri keeps the historical
 # default base layer ("satellite") working unchanged.
@@ -469,8 +512,11 @@ def build_tile_url(template: str, z: int, x: int, y: int, token: str = "") -> st
 # keep that service's key out of the logs.
 _TOKEN_QUERY_PARAMS: frozenset[str] = frozenset(
     match.group(1)
-    for entry in TILE_SOURCES.values()
-    for match in re.finditer(r"[?&]([A-Za-z0-9_.\-]+)=\{k\}", entry["upstream"])
+    for template in (
+        *(entry["upstream"] for entry in TILE_SOURCES.values()),
+        GOOGLE_TILES_SESSION_URL, GOOGLE_TILES_URL, BING_METADATA_URL,
+    )
+    for match in re.finditer(r"[?&]([A-Za-z0-9_.\-]+)=\{(?:k|session)\}", template)
 )
 
 
@@ -512,8 +558,19 @@ def token_meta(provider_id: str) -> dict[str, str] | None:
 
 
 def keyed_providers() -> list[str]:
-    """Provider ids that need an operator-supplied key, in registry order."""
+    """Provider ids that take an operator-supplied key, in registry order.
+
+    Includes the services where the key is optional; :func:`token_required`
+    tells the two apart.
+    """
     return [pid for pid in PROVIDERS if token_meta(pid) is not None]
+
+
+def token_required(provider_id: str) -> bool:
+    """Does *provider_id* serve nothing at all without a key?"""
+    prov = PROVIDERS.get(provider_id)
+    return (prov is not None and token_meta(provider_id) is not None
+            and not prov.get("token_optional", False))
 
 
 def needs_token(source_id: str) -> bool:
@@ -522,9 +579,21 @@ def needs_token(source_id: str) -> bool:
     Answered from the provider rather than from the template so a source whose
     URL happens not to carry ``{k}`` still counts as keyed if its service is —
     the question callers are really asking is "will this 401 without a key".
+    A service whose key is optional is not: it draws without one.
     """
     provider = provider_of(source_id)
-    return provider is not None and token_meta(provider) is not None
+    return provider is not None and token_required(provider)
+
+
+def licensed(source_id: str) -> dict[str, Any] | None:
+    """The ``licensed`` block of *source_id*, or None when it has none.
+
+    Present on the sources that switch to a licensed API once their service
+    has a key; :mod:`corvus.tile_sessions` is what reads it.
+    """
+    entry = TILE_SOURCES.get(source_id)
+    block = entry.get("licensed") if entry is not None else None
+    return dict(block) if isinstance(block, dict) else None
 
 
 def all_sources() -> dict[str, dict[str, Any]]:
@@ -593,11 +662,12 @@ def list_sources() -> list[dict]:
 
 
 def list_providers() -> list[dict]:
-    """Return ``[{id, label, sources, token}, ...]`` for the service picker.
+    """Return ``[{id, label, sources, token, token_optional}, ...]``.
 
     ``token`` is the metadata block for a keyed service or None — never the
-    key. Whether one is actually stored is the server's answer to give, since
-    only it can see the config file.
+    key. ``token_optional`` says the service draws without one. Whether one is
+    actually stored is the server's answer to give, since only it can see the
+    config file.
     """
     return [
         {
@@ -605,6 +675,7 @@ def list_providers() -> list[dict]:
             "label": p["label"],
             "sources": list(p["sources"]),
             "token": token_meta(pid),
+            "token_optional": bool(p.get("token_optional", False)),
         }
         for pid, p in PROVIDERS.items()
     ]
@@ -645,7 +716,15 @@ def resolve_source(provider_id: str, style: str | None = None) -> str | None:
 # unkeyed one that carried it would build a URL with an empty key in it. The
 # template and the provider block have to agree, both ways.
 assert all(
-    ("{k}" in TILE_SOURCES[sid]["upstream"]) == (token_meta(pid) is not None)
+    ("{k}" in TILE_SOURCES[sid]["upstream"]) == token_required(pid)
     for pid, prov in PROVIDERS.items()
     for sid in prov["sources"]
-), "a {k} placeholder and a provider token block must imply each other"
+), "a {k} placeholder and a required provider key must imply each other"
+# An optional key is only worth taking if every layer of that service has a
+# licensed API to spend it on; one that did not would silently ignore it.
+assert all(
+    (TILE_SOURCES[sid].get("licensed") is not None)
+    == (token_meta(pid) is not None and not token_required(pid))
+    for pid, prov in PROVIDERS.items()
+    for sid in prov["sources"]
+), "a licensed block and an optional provider key must imply each other"

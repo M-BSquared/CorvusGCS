@@ -59,6 +59,12 @@ MISSION_MAX_ITEMS = 255
 MISSION_ALT_MIN_M = -100.0
 MISSION_ALT_MAX_M = 1000.0
 
+# The lowest a multicopter's landing descent may start. Dragged all the way
+# down, the descent point makes a straight dive from the point before; this
+# keeps the last metres a vertical touchdown under NAV_LAND's own slow descent,
+# because a waypoint on the ground is flown into at cruise speed.
+MISSION_APPROACH_MIN_M = 3.0
+
 # Orbit geometry. A radius under a few metres is not a circle the aircraft can
 # fly, and PX4 clamps it to NAV_LOITER_RAD anyway; the upper bound is the point
 # past which "orbit" stops describing the path.
@@ -172,6 +178,22 @@ ITEM_TYPES: tuple[str, ...] = tuple(ITEM_SPECS)
 
 # The item types that orbit, and therefore have a direction to orbit in.
 ORBIT_TYPES: tuple[str, ...] = ("loiter_turns", "loiter_time")
+
+# The kind of aircraft a plan is drawn for. It never reaches the wire: it only
+# tells the planner what a Hold looks like when nothing is connected, because a
+# multicopter hovers over the point where a fixed wing has to circle it. The
+# names are the contract with AIRCRAFT in src/js/mission.js.
+PLAN_AIRCRAFT: tuple[str, ...] = ("multirotor", "fixed_wing", "vtol")
+
+# The one place the plan's aircraft does reach the wire. A landing may carry
+# ``approach_alt``: the height a multicopter arrives at above the landing point
+# before it descends straight down, which is the landing's counterpart of the
+# takeoff's climb. PX4 and ArduCopter both fly NAV_LAND in at the height they
+# already have, so the height is carried by a NAV_WAYPOINT above the point,
+# just ahead of the landing. Only for a multicopter: a fixed wing sent to a
+# point right above its touchdown would have to dive, and PX4 refuses that
+# approach on upload. The value stays in the plan either way.
+APPROACH_AIRCRAFT = "multirotor"
 
 # Item types whose command number the MAVLink layer must agree with. Exported
 # so mavlink_bridge can assert the pairing rather than restate it.
@@ -310,6 +332,18 @@ def _validate_item(index: int, raw: Any) -> tuple[dict[str, Any] | None, str]:
             )
         item["speed"] = value
 
+    # Like a pinned speed, optional in a way a default cannot express: absent
+    # means "come in at the height it already has", which is not a number.
+    approach = raw.get("approach_alt")
+    if kind == "land" and approach is not None:
+        value = _bounded(approach, MISSION_APPROACH_MIN_M, MISSION_ALT_MAX_M)
+        if value is None:
+            return None, (
+                f"item {index} approach_alt must be between {MISSION_APPROACH_MIN_M:.0f} "
+                f"and {MISSION_ALT_MAX_M:.0f} m above home"
+            )
+        item["approach_alt"] = value
+
     # Absent and empty are the same thing: the point is shown by its number
     # and its kind. The key stays off the item rather than carrying "".
     name = clean_point_name(raw.get("name"))
@@ -349,6 +383,12 @@ def validate_plan(raw: Any) -> tuple[dict[str, Any] | None, str]:
 
     name = safe_plan_name(raw.get("name"))
     plan["name"] = name or "Mission"
+
+    # Like a point's name, a label rather than a flight parameter: an unknown
+    # value is dropped instead of refusing a plan that flies the same either way.
+    aircraft = raw.get("aircraft")
+    if aircraft in PLAN_AIRCRAFT:
+        plan["aircraft"] = aircraft
 
     # The planned launch point. Optional: a plan drawn before the aircraft has
     # a home is still a plan, and PX4 uses the vehicle's own home when the
@@ -427,6 +467,11 @@ def plan_to_items(plan: dict[str, Any]) -> list[dict[str, Any]]:
     A pinned speed equal to the one already in force emits nothing: the
     aircraft is flying at it, and a second identical command would only spend
     a mission slot to say so.
+
+    A landing's ``approach_alt`` is a waypoint of its own, above the landing
+    point and right before it, on a plan for a multicopter only (see
+    :data:`APPROACH_AIRCRAFT`). A speed pinned on the landing goes ahead of
+    that waypoint, because the leg it is set on now ends there.
     """
     items: list[dict[str, Any]] = []
     current: float | None = None
@@ -442,6 +487,18 @@ def plan_to_items(plan: dict[str, Any]) -> list[dict[str, Any]]:
                 and float(pinned) != current):
             current = float(pinned)
             items.append(_speed_item(current, index))
+        approach = entry.get("approach_alt")
+        if (entry["type"] == "land" and plan.get("aircraft") == APPROACH_AIRCRAFT
+                and isinstance(approach, (int, float)) and not isinstance(approach, bool)):
+            items.append({
+                "command": MAV_CMD_NAV_WAYPOINT,
+                "lat": float(entry.get("lat", 0.0)),
+                "lon": float(entry.get("lon", 0.0)),
+                "alt": float(approach),
+                # No hold, the airframe's acceptance radius, no heading asked for.
+                "params": [0.0, 0.0, 0.0, float("nan")],
+                "item": index,
+            })
         spec = ITEM_SPECS[entry["type"]]
         params = [0.0, 0.0, 0.0, 0.0]
         # The yaw slot is NaN, "keep the airframe's heading behaviour". 0 is a

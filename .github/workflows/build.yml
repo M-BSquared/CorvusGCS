@@ -1,5 +1,5 @@
 # =============================================================================
-# Corvus GCS — GitHub Actions pipeline (mirror of .gitlab-ci.yml)
+# Corvus GCS — GitHub Actions pipeline (the project's only CI)
 # -----------------------------------------------------------------------------
 # Jobs:
 #   test        — pytest suite (python 3.12) on every push, PR, and tag.
@@ -14,9 +14,6 @@
 # Packaging cannot be cross-built, so each artifact is produced on its own
 # runner. No version is hardcoded anywhere: the build scripts read the repo-root
 # VERSION file and the release name comes from the tag.
-#
-# Keep this in sync with .gitlab-ci.yml — git.unibw.de is the primary CI and
-# the two pipelines must not drift.
 # =============================================================================
 name: build
 
@@ -24,8 +21,8 @@ on:
   push:
     branches: [master, main]
     tags:
-      # v?X.Y.Z (semver, optional v) and CalVer YYYY.MM.PP — the same tag shapes
-      # the GitLab pipeline releases on. The build reads VERSION regardless.
+      # v?X.Y.Z (semver, optional v) and CalVer YYYY.MM.PP. The build reads
+      # VERSION regardless of the tag text.
       - 'v[0-9]*.[0-9]*.[0-9]*'
       - '[0-9][0-9][0-9][0-9].[0-9]*.[0-9]*'
   pull_request:
@@ -84,7 +81,7 @@ jobs:
         run: pytest -q tests
 
   # --- lint ------------------------------------------------------------------
-  # Neither pipeline ran a linter, which is how six dead locals — an unused
+  # The pipeline ran no linter, which is how six dead locals — an unused
   # AppUserModelID that left the Windows taskbar showing the launcher's icon
   # among them — sat in the tree unnoticed. ruff over corvus/ takes about a
   # second. Scoped to the checks that catch real mistakes rather than style:
@@ -116,12 +113,21 @@ jobs:
         with:
           node-version: '20'
       - name: Run frontend tests
+        # An unmatched glob would pass itself through as a literal filename
+        # and "succeed" by running nothing, so the count is checked.
         run: |
           set -e
+          found=0
           for f in tests/*.js; do
+            [ -e "$f" ] || continue
+            found=1
             echo "--- $f"
             node "$f"
           done
+          if [ "$found" -ne 1 ]; then
+            echo "no frontend test files found, expected tests/*.js" >&2
+            exit 1
+          fi
 
   # --- Linux artifact --------------------------------------------------------
   # ubuntu-22.04 on purpose: the AppImage bundles the host's CPython and links

@@ -55,7 +55,10 @@ Corvus.tiles = (function () {
   const FALLBACK_ZOOM_CAP = 19; // used only until /api/tiles/sources responds
   const HARD_ZOOM_FLOOR = 0;
   const HARD_ZOOM_CEIL = 22;    // server rejects z > 22 on the serve path
-  const BIG_JOB_TILES = 100000; // above this, warn before the operator commits
+  const BIG_JOB_TILES = 20000;  // above this, warn before the operator commits
+  // The server's per-job cap, until /api/tiles/sources says otherwise.
+  const FALLBACK_MAX_TILES = 50000;
+  const TERRAIN_PHASE_MSG = "Imagery done. Downloading elevation data…";
 
   let triggerEl = null;
   // Whichever button opened the dialog, so the pressed state goes back on the
@@ -75,8 +78,14 @@ Corvus.tiles = (function () {
   let regions = [];    // last /api/tiles/regions result
   let captured = null; // {w,s,e,n,zoom} captured from the map at open/recapture
   let es = null;       // unsubscribe from the shared stream, while a job runs
-  let jobId = null;    // id of the running job (for cancel / re-attach)
-  let jobState = null; // last known state of that job
+  let jobId = null;    // id of the imagery job (for cancel / re-attach)
+  // The elevation job the backend starts alongside the imagery, or null. It
+  // is followed once the imagery is done and cancelled together with it.
+  let terrainJobId = null;
+  let followId = null; // the job whose progress is on screen
+  let jobState = null; // "running" until both jobs have ended, then the outcome
+  let results = {};    // job id -> terminal progress snapshot
+  let maxTilesPerJob = FALLBACK_MAX_TILES;
   let dialog = null;   // Corvus.ui.modal handle while the dialog is open
   let dom = {};        // populated by buildDialog
 
@@ -365,6 +374,7 @@ Corvus.tiles = (function () {
         sources = (data && data.sources) || [];
         providers = (data && data.providers) || [];
         terrainSources = (data && data.terrain) || [];
+        maxTilesPerJob = (data && data.max_tiles_per_job) || FALLBACK_MAX_TILES;
         renderSourceSelect();
         renderTerrainOption();
       })
@@ -393,17 +403,24 @@ Corvus.tiles = (function () {
       return;
     }
     sel.disabled = false;
-    const options = sources.map((s) => ({ value: s.id, label: sourceLabel(s) }));
+    // A service that serves nothing without a key (MapTiler, Mapbox) is only
+    // offered once one is stored: without it every tile would be a 401, and
+    // the server refuses the job anyway.
+    const usable = sources.filter((s) => {
+      const p = providers.find((x) => x.id === s.provider);
+      return !(p && p.token_required && !p.token_set);
+    });
+    const options = usable.map((s) => ({ value: s.id, label: sourceLabel(s) }));
     // Keep an explicit choice the operator already made; otherwise follow the
     // map. Falls back to the first source when neither resolves.
     const prev = sel.value;
-    const known = (id) => !!id && sources.some((s) => s.id === id);
+    const known = (id) => !!id && usable.some((s) => s.id === id);
     const owner = mapHost();
     const mapLayer = (owner && typeof owner.getBaseLayer === "function")
       ? owner.getBaseLayer()
       : null;
     Corvus.ui.setOptions(sel, options,
-      known(prev) ? prev : (known(mapLayer) ? mapLayer : sources[0].id));
+      known(prev) ? prev : (known(mapLayer) ? mapLayer : usable[0].id));
   }
 
   // ---- downloaded areas ----
@@ -487,6 +504,7 @@ Corvus.tiles = (function () {
     parts.push(region.state === "running"
       ? "downloading…"
       : `${fmtCount(region.tile_count || 0)} tiles`);
+    if (region.state === "cancelled" || region.state === "failed") parts.push("incomplete");
     const date = fmtDate(region.created_at);
     if (date) parts.push(date);
     return parts.filter(Boolean).join(" · ");
@@ -544,11 +562,12 @@ Corvus.tiles = (function () {
     loadRegions();
     // A job started before the dialog was last closed is still running in the
     // background; re-attach so its progress reappears instead of looking lost.
-    if (jobId && jobState !== "done" && jobState !== "failed" && jobState !== "cancelled") {
+    if (followId && jobState === "running") {
       Corvus.ui.setBusy(dom.dlBtn, true);
       dom.cancelBtn.disabled = false;
       dom.progress.el.hidden = false;
-      openProgress(jobId);
+      if (followId === terrainJobId) showMsg(TERRAIN_PHASE_MSG);
+      openProgress(followId);
     }
   }
 
@@ -619,12 +638,21 @@ Corvus.tiles = (function () {
     return Math.max(lo, Math.min(hi, n));
   }
 
+  /** Tile count of the imagery job for the dialog's current area and zooms. */
+  function imageryCount() {
+    const cap = currentCap();
+    const lo = clampInt(dom.minZoom.value, HARD_ZOOM_FLOOR, cap);
+    const hi = clampInt(dom.maxZoom.value, HARD_ZOOM_FLOOR, cap);
+    return estimateTileCount(captured.w, captured.s, captured.e, captured.n, lo, hi);
+  }
+
   function updateEstimate() {
     if (!captured || !dom.estVal) return;
     const cap = currentCap();
     const lo = clampInt(dom.minZoom.value, HARD_ZOOM_FLOOR, cap);
     const hi = clampInt(dom.maxZoom.value, HARD_ZOOM_FLOOR, cap);
-    let count = estimateTileCount(captured.w, captured.s, captured.e, captured.n, lo, hi);
+    const imagery = imageryCount();
+    let count = imagery;
     // The elevation job is a second download over the same ground, capped at
     // the DEM's own maxzoom — so it has to be in the number the operator
     // decides on, not a surprise on their disk afterwards.
@@ -636,8 +664,21 @@ Corvus.tiles = (function () {
     }
     dom.estVal.textContent = `≈ ${fmtCount(count)} tiles`;
     dom.estSub.textContent = `~ ${fmtSize(count * AVG_TILE_KB)}`;
-    if (count > BIG_JOB_TILES) showMsg("Very large region. Consider a smaller zoom range.", "warn");
-    else if (!dom.dlBtn.classList.contains("is-busy")) hideMsg();
+    // While a job runs the message line and the button belong to it.
+    if (dom.dlBtn.classList.contains("is-busy")) return;
+    // The server refuses an imagery job over its cap. Said here, before the
+    // press, with the two settings that bring it down; the elevation job
+    // never exceeds the imagery one, so only the imagery count decides.
+    const tooBig = imagery > maxTilesPerJob;
+    dom.dlBtn.disabled = tooBig;
+    if (tooBig) {
+      showMsg(`Too many tiles for one download: ${fmtCount(imagery)}, the limit is ` +
+        `${fmtCount(maxTilesPerJob)}. Choose a smaller area or a lower maximum zoom.`, "err");
+    } else if (count > BIG_JOB_TILES) {
+      showMsg("Very large region. Consider a smaller zoom range.", "warn");
+    } else {
+      hideMsg();
+    }
   }
 
   // ---- download flow ----
@@ -648,7 +689,12 @@ Corvus.tiles = (function () {
     const minzoom = clampInt(dom.minZoom.value, HARD_ZOOM_FLOOR, cap);
     const maxzoom = clampInt(dom.maxZoom.value, HARD_ZOOM_FLOOR, cap);
     if (!source || minzoom > maxzoom) return;
+    if (imageryCount() > maxTilesPerJob) { updateEstimate(); return; }
 
+    jobId = null;
+    terrainJobId = null;
+    followId = null;
+    results = {};
     Corvus.ui.setBusy(dom.dlBtn, true);
     dom.cancelBtn.disabled = false;
     dom.progress.el.hidden = false;
@@ -670,6 +716,7 @@ Corvus.tiles = (function () {
       const id = data && data.job_id;
       if (!id) throw new Error("No job id returned");
       jobId = id;
+      terrainJobId = (data && data.terrain_job_id) || null;
       jobState = "running";
       openProgress(id);
       // The area is recorded the moment the job exists, so it appears on the
@@ -681,7 +728,8 @@ Corvus.tiles = (function () {
   }
 
   function openProgress(id) {
-    closeEventSource();
+    dropSubscriptions();
+    followId = id;
     // The shared /api/events stream (js/events.js): a browser allows six
     // connections per origin, and this page is precisely the one that wants
     // the rest of them for tiles. `followJob` points the "tiles" topic at this
@@ -700,31 +748,49 @@ Corvus.tiles = (function () {
 
   function onProgress(data) {
     if (!data) return;
-    jobState = data.state || jobState;
+    // One stream follows one job at a time; a late event for the job this
+    // dialog has moved on from must not move the bar.
+    if (data.job_id && data.job_id !== followId) return;
     if (dom.progress) dom.progress.set(data.done || 0, data.total || 0);
-    if (data.state === "done") finishOk();
-    else if (data.state === "failed") finishFail(data);
-    else if (data.state === "cancelled") finishCancelled();
+    const state = data.state;
+    if (state !== "done" && state !== "failed" && state !== "cancelled") return;
+    results[data.job_id || followId] = data;
+    // The elevation job runs alongside the imagery. The download is not
+    // finished while the heights 3D mode needs offline are still coming in,
+    // so it is followed next rather than left running unseen.
+    if (state !== "cancelled" && followId === jobId && terrainJobId) {
+      if (dom.progress) dom.progress.reset();
+      showMsg(TERRAIN_PHASE_MSG);
+      openProgress(terrainJobId);
+      loadRegions();
+      return;
+    }
+    finishJobs();
   }
 
-  function finishOk() {
+  /** Report the outcome of the imagery job and its elevation companion. */
+  function finishJobs() {
     closeEventSource();
     resetButtons();
-    showMsg("Download complete. Tiles cached for offline use.", "ok");
-    loadRegions();
-  }
-
-  function finishFail(data) {
-    closeEventSource();
-    resetButtons();
-    showMsg(`Download failed: ${(data && data.error) || "unknown error"}`, "err");
-    loadRegions();
-  }
-
-  function finishCancelled() {
-    closeEventSource();
-    resetButtons();
-    showMsg("Download cancelled. Tiles fetched so far stay cached.", "warn");
+    const ended = [jobId, terrainJobId].filter(Boolean).map((id) => results[id]).filter(Boolean);
+    const imagery = results[jobId] || {};
+    // A job "done" with failed tiles still has holes: the operator must hear
+    // that before driving out, not find it in the field.
+    const missing = ended.reduce((n, r) => n + (Number(r.failed) || 0), 0);
+    if (ended.some((r) => r.state === "cancelled")) {
+      jobState = "cancelled";
+      showMsg("Download cancelled. Tiles fetched so far stay cached.", "warn");
+    } else if (imagery.state === "failed") {
+      jobState = "failed";
+      showMsg(`Download failed: ${imagery.error || "unknown error"}`, "err");
+    } else if (missing > 0) {
+      jobState = "done";
+      showMsg(`Download finished, but ${fmtCount(missing)} tiles could not be fetched. ` +
+        "Start the same download again to fill the gaps.", "warn");
+    } else {
+      jobState = "done";
+      showMsg("Download complete. Tiles cached for offline use.", "ok");
+    }
     loadRegions();
   }
 
@@ -746,19 +812,30 @@ Corvus.tiles = (function () {
   function cancelDownload() {
     if (!jobId) return;
     Corvus.ui.setBusy(dom.cancelBtn, true);
-    Corvus.telemetry.requestJson("/api/tiles/cancel", {
+    // Both jobs: cancelling only the imagery left the elevation download
+    // running in the background after the operator had said stop.
+    const ids = [jobId, terrainJobId].filter(Boolean);
+    Promise.all(ids.map((id) => Corvus.telemetry.requestJson("/api/tiles/cancel", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: jobId }),
-    }).catch(() => { /* best-effort; the progress stream reports the outcome */ })
-      .finally(() => { if (dom.cancelBtn) Corvus.ui.setBusy(dom.cancelBtn, false); });
+      body: JSON.stringify({ id }),
+    }).catch(() => { /* best-effort; the progress stream reports the outcome */ })))
+      .finally(() => {
+        if (!dom.cancelBtn) return;
+        Corvus.ui.setBusy(dom.cancelBtn, false);
+        dom.cancelBtn.disabled = jobState !== "running";
+      });
+  }
+
+  function dropSubscriptions() {
+    // `es` is an unsubscribe from the shared stream, not a socket.
+    if (es) { try { es(); } catch (_) {} es = null; }
   }
 
   function closeEventSource() {
-    // `es` is an unsubscribe from the shared stream, not a socket. The topic
-    // itself stays on the connection (see js/events.js on sticky topics);
-    // dropping the job is what stops the server following it.
-    if (es) { try { es(); } catch (_) {} es = null; }
+    // The topic itself stays on the connection (see js/events.js on sticky
+    // topics); dropping the job is what stops the server following it.
+    dropSubscriptions();
     if (Corvus.events) Corvus.events.followJob(null);
   }
 

@@ -392,10 +392,18 @@ async function testDisconnectEndsTheSessionAndTakesTheWindowWithIt() {
   reset();
   tw.open(SESSION_A);
   const frame = frameOf(SESSION_A.title);
-  fire(toolOf(frame, "Disconnect the session"), "click");
-  await flush();
-  assert.deepEqual(posts, [{ url: "/api/ssh/disconnect", body: { name: SESSION_A.name } }]);
-  assert.equal(tw.count(), 0, "the window goes with the session it was showing");
+  const ended = [];
+  Corvus.sshTerm.sessionEnded = (name) => ended.push(name);
+  try {
+    fire(toolOf(frame, "Disconnect the session"), "click");
+    await flush();
+    assert.deepEqual(posts, [{ url: "/api/ssh/disconnect", body: { name: SESSION_A.name } }]);
+    assert.equal(tw.count(), 0, "the window goes with the session it was showing");
+    assert.deepEqual(ended, [SESSION_A.name],
+      "and says the session ended, so the SSH tab's card stops saying CONNECTED");
+  } finally {
+    delete Corvus.sshTerm.sessionEnded;
+  }
 }
 
 function testAReopenedWindowComesBackWhereItWasPut() {

@@ -5,7 +5,7 @@ of failure that only shows up in a shipped artifact, weeks later, on someone
 else's machine — the kind the suite cannot otherwise see.
 
 The dependency list used to exist in five places in three formats: a conda
-environment.yml's pip: block (with floors), both CI pipelines (``pip install
+environment.yml's pip: block (with floors), two CI pipelines (``pip install
 pymavlink pyserial paramiko``, no floors), build-appimage.sh (no floors),
 build-macos-app.sh (a regex that screen-scraped environment.yml) and
 build-windows.ps1 (a hardcoded array). The Linux artifact was the one that
@@ -34,7 +34,6 @@ import tomllib
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PYPROJECT = ROOT / "pyproject.toml"
 GITHUB_CI = ROOT / ".github" / "workflows" / "build.yml"
-GITLAB_CI = ROOT / ".gitlab-ci.yml"
 
 # Everything that installs Python packages, and the group each one installs.
 INSTALLERS = {
@@ -46,7 +45,6 @@ INSTALLERS = {
         '--group "${Pyproject}:package-windows"',
     ],
     GITHUB_CI: ["pip install --group test", "pip install --group lint"],
-    GITLAB_CI: ["pip install --group test", "pip install --group lint"],
 }
 
 # The packages the application needs at runtime. Adding one here without
@@ -194,10 +192,9 @@ def test_one_python_version_across_the_toolchain() -> None:
     run_sh = (ROOT / "run.sh").read_text(encoding="utf-8")
     assert "sys.version_info < (3, 12)" in run_sh
 
-    for ci in (GITHUB_CI, GITLAB_CI):
-        text = ci.read_text(encoding="utf-8")
-        versions = set(re.findall(r"python[-:]?(?:version:)?\s*['\"]?3\.(\d+)", text))
-        assert versions <= {"12"}, f"{ci.name} names Python 3.{sorted(versions)}"
+    text = GITHUB_CI.read_text(encoding="utf-8")
+    versions = set(re.findall(r"python[-:]?(?:version:)?\s*['\"]?3\.(\d+)", text))
+    assert versions <= {"12"}, f"{GITHUB_CI.name} names Python 3.{sorted(versions)}"
 
 
 def test_setup_python_caches_on_pyproject() -> None:
@@ -214,13 +211,18 @@ def test_the_dev_venv_stays_out_of_git() -> None:
     assert "/.venv/" in gitignore
 
 
-def test_both_pipelines_run_a_linter() -> None:
-    """Neither did, which is how six dead locals sat in the tree — including
+def test_the_pipeline_runs_a_linter() -> None:
+    """It did not, which is how six dead locals sat in the tree — including
     an AppUserModelID computed and thrown away, leaving the Windows taskbar
     showing the launcher's icon instead of Corvus's."""
-    for ci in (GITHUB_CI, GITLAB_CI):
-        text = ci.read_text(encoding="utf-8")
-        assert "ruff check" in text, f"{ci.name} runs no linter"
+    text = GITHUB_CI.read_text(encoding="utf-8")
+    assert "ruff check" in text, f"{GITHUB_CI.name} runs no linter"
+
+
+def test_github_is_the_only_ci() -> None:
+    """The GitLab pipeline was retired. A second pipeline is a second place
+    for the job list, the apt set and the build distro to drift."""
+    assert not (ROOT / ".gitlab-ci.yml").exists()
 
 
 def test_builds_write_into_dist_not_the_repo_root() -> None:

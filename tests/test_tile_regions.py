@@ -36,9 +36,11 @@ from corvus.server import (  # noqa: E402
     CorvusHandler,
     CorvusServer,
     _TileProgressBus,
+    _build_tile_resources,
     _clean_region_name,
     _default_region_name,
     _delete_region_tiles,
+    _settle_interrupted_regions,
 )
 
 
@@ -521,3 +523,88 @@ def test_regions_endpoint_survives_an_unreadable_cache(region_server) -> None:
         assert [r["source"] for r in listing["regions"]] == ["satellite"]
     finally:
         CorvusHandler.tile_caches = caches
+
+
+# ---------------------------------------------------------------------------
+# Interrupted downloads, the per-job cap, and a job ending as its stream binds
+# ---------------------------------------------------------------------------
+
+def test_count_tiles_counts_only_what_lies_inside_the_ranges(cache) -> None:
+    from corvus.tile_downloader import tile_ranges
+
+    area = (8.5, 47.3, 8.6, 47.4)
+    inside = list(enumerate_tiles(area, 12, 13))
+    cache.put_tiles([(z, x, y, b"t") for z, x, y in inside[:5]])
+    cache.put_tile(12, 0, 0, b"elsewhere")
+    assert cache.count_tiles(tile_ranges(area, 12, 13)) == 5
+
+
+def test_a_region_left_running_by_a_killed_process_is_settled(cache) -> None:
+    """No job survives a restart, so "running" at startup can only be a
+    download whose process died before its last update. It used to show
+    "downloading" forever, with nothing behind it to finish or cancel."""
+    cache.add_region(_region("dead", state="running", tile_count=0))
+    cache.add_region(_region("fine", state="done", tile_count=99))
+    tiles = list(enumerate_tiles((8.5, 47.3, 8.6, 47.4), 12, 13))
+    cache.put_tiles([(z, x, y, b"t") for z, x, y in tiles[:7]])
+
+    assert _settle_interrupted_regions(cache) == 1
+    dead = cache.get_region("dead")
+    assert dead["state"] == "cancelled"
+    assert dead["tile_count"] == 7
+    assert cache.get_region("fine")["state"] == "done"
+    assert cache.get_region("fine")["tile_count"] == 99
+
+
+def test_startup_settles_interrupted_regions(tmp_path) -> None:
+    cache_dir = tmp_path / "tiles"
+    before = TileCache(str(cache_dir / "satellite.mbtiles"))
+    before.add_region(_region("dead", state="running"))
+    before.close()
+
+    caches, _bus, downloader, _breaker = _build_tile_resources(str(cache_dir))
+    try:
+        assert caches["satellite"].get_region("dead")["state"] == "cancelled"
+    finally:
+        if downloader is not None:
+            downloader.shutdown()
+        for c in caches.values():
+            c.close()
+
+
+def test_sources_report_the_per_job_cap(region_server) -> None:
+    """The dialog refuses an oversized area before the press, from this."""
+    from corvus.tile_downloader import MAX_TILES_PER_JOB
+
+    server, _, _ = region_server
+    status, data = _req(server, "GET", "/api/tiles/sources")
+    assert status == 200
+    assert data["max_tiles_per_job"] == MAX_TILES_PER_JOB
+
+
+def test_a_job_that_ends_as_its_stream_binds_is_not_lost(region_server) -> None:
+    """The binder read the status and only then subscribed. A job ending in
+    between sent its terminal event to nobody, the stream opened on
+    "running", and the dialog waited for an end that had already happened."""
+    server, downloader, _ = region_server
+    _, data = _req(server, "POST", "/api/tiles/download", _DOWNLOAD)
+    jid = data["job_id"]
+    real_status = downloader.status
+
+    def status_then_finish(job_id):
+        before = real_status(job_id)
+        downloader.finish(job_id)
+        return before
+
+    downloader.status = status_then_finish
+    got: list[dict] = []
+
+    class _Buf:
+        def put_latest(self, entry: dict) -> None:
+            got.append(entry)
+
+    handler = object.__new__(CorvusHandler)
+    unbind, initial = handler._bind_tiles(_Buf(), jid)
+    unbind()
+    states = [initial["state"]] + [e["state"] for e in got]
+    assert "done" in states

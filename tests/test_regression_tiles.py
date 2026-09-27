@@ -227,7 +227,7 @@ def test_tiles_download_valid_returns_job_id(tile_server, monkeypatch) -> None:
         def __exit__(self, *exc):
             return False
 
-        def read(self):
+        def read(self, amt=None):
             return b"\x89PNG\r\n\x1a\n" + b"stub"
 
     monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: _Resp())

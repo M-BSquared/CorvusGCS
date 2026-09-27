@@ -5,12 +5,6 @@ reads it dynamically: ``corvus.version.get_version()`` at import time and
 ``GET /api/version`` at runtime. These tests pin all three layers and
 grep-scan the source tree so a future change cannot smuggle in a hardcoded
 literal alongside the canonical one.
-
-The .py/.js/.html/.css scan overlaps deliberately with
-``tests/test_integration_review.py`` (which keeps its own narrower check);
-this file extends coverage to ``.md`` and asserts the CalVer shape plus the
-HTTP endpoint contract that the integration file does not exercise. The
-existing tests are left untouched.
 """
 from __future__ import annotations
 
@@ -18,14 +12,8 @@ import http.client
 import json
 import pathlib
 import re
-import sys
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-_TESTS_DIR = pathlib.Path(__file__).resolve().parent
-if str(_TESTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_TESTS_DIR))
-
-from corvus.version import get_version  # noqa: E402
 
 # CalVer: the product ships a calendar version YYYY.M.P (year.month.patch),
 # not semver. The format pin lives here so a stray semver bump is caught.
@@ -84,10 +72,6 @@ def test_version_file_is_calver_single_line() -> None:
 # ---------------------------------------------------------------------------
 # 2. corvus.version.get_version() returns exactly the VERSION string
 # ---------------------------------------------------------------------------
-
-def test_get_version_equals_version_file() -> None:
-    assert get_version() == _version_from_file()
-
 
 def test_version_module_exposes_version_and_dunder() -> None:
     import corvus.version as v

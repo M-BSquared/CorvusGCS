@@ -3,10 +3,10 @@
 #
 # A release is: commit (the pre-commit hook already bumped VERSION) -> tag
 # v<VERSION> -> push the branch and the tag to every remote. The tag push is
-# what the CI pipelines watch for: .github/workflows/build.yml and
-# .gitlab-ci.yml both build the AppImage / .app+.dmg / Windows zip from the
-# tag and, on GitHub, attach them to a GitHub Release. There is no separate
-# hand-edit of VERSION here — see AGENTS.md, "Version control".
+# what CI watches for: .github/workflows/build.yml builds the AppImage /
+# .app+.dmg / Windows zip from the tag and attaches them to a GitHub Release.
+# There is no separate hand-edit of VERSION here — see AGENTS.md, "Version
+# control".
 #
 # Usage:
 #   ./release.sh              # test, tag, push to every remote

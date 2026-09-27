@@ -397,6 +397,21 @@ def test_param_value_notifies_listeners_with_status_dict() -> None:
     assert s["state"] == "complete"
 
 
+def test_a_removed_param_listener_is_released_and_hears_nothing_more() -> None:
+    """Every /api/params/progress stream adds a listener and removes it on close."""
+    bridge = ready_bridge()
+    statuses: list[dict] = []
+    listener = statuses.append
+    bridge.add_param_listener(listener)
+    bridge._dispatch(param_value("MC_ROLL_P", 6.0, index=0, count=2))
+    assert [s["name"] for s in statuses] == ["MC_ROLL_P"]
+
+    bridge.remove_param_listener(listener)
+    assert bridge._param_listeners == []
+    bridge._dispatch(param_value("MC_PITCH_P", 7.0, index=1, count=2))
+    assert [s["name"] for s in statuses] == ["MC_ROLL_P"]
+
+
 def test_param_value_single_request_does_not_flip_state_to_downloading() -> None:
     bridge = ready_bridge()
     assert bridge._param_download_state == "idle"

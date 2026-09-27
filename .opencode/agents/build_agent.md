@@ -51,7 +51,7 @@ every build script and build reproducibility.
 | --- | --- |
 | `build.sh`, `build-appimage.sh`, `build-macos-app.sh`, `packaging/**` | `corvus/**`, `src/**` (hand back to backend/gui) |
 | `pyproject.toml` (its `[dependency-groups]` are the only dependency list), `run.sh` | `VERSION` (hook-owned), `corvus/version.py` |
-| the `build/` + `dist/` layout and `.gitignore` entries for them | `.gitlab-ci.yml` (devops) |
+| the `build/` + `dist/` layout and `.gitignore` entries for them | `.github/workflows/` (devops) |
 
 ## 1. Build after every major change
 

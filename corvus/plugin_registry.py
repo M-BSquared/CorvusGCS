@@ -100,7 +100,9 @@ Whatever a plugin saves through `api.saveSettings` is written to
 application's own config. To set up another computer the same way, copy that
 file (or the whole plugin folder) to the same place there and restart. This
 works for the plugins that ship with Corvus too: their folder here holds only
-the config.
+the config. Settings > Export and import does the same in one file: switch on a
+plugin's Settings, and for a plugin of your own its Files, and an import on
+the other computer puts them here.
 
 `api` is documented at the top of `src/js/plugins.js`. The plugins shipped in
 the application's own `plugins/` folder are complete worked examples:
@@ -290,6 +292,11 @@ def _scan_root(root: str, source: str) -> list[dict[str, Any]]:
         return []
     out: list[dict[str, Any]] = []
     for entry in entries:
+        # A hidden folder is never a plugin: it is where an import stages a
+        # plugin before swapping it in (corvus/plugin_files.py), and one left
+        # behind by a crash must not load as a second copy.
+        if entry.name.startswith("."):
+            continue
         try:
             if not entry.is_dir():
                 continue

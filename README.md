@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.60-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.09.60" />
+  <img src="https://img.shields.io/badge/Version-2026.09.61-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.09.61" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -74,6 +74,7 @@
 - [Install \& run](#install--run)
   - [The easy way: a ready-made app](#the-easy-way-a-ready-made-app)
   - [From source](#from-source)
+  - [The first start](#the-first-start)
 - [Connect to your aircraft](#connect-to-your-aircraft)
   - [Run QGroundControl at the same time](#run-qgroundcontrol-at-the-same-time)
   - [One Corvus at a time](#one-corvus-at-a-time)
@@ -361,6 +362,23 @@ On Windows the serial port is a `COM` name rather than a device path. Pick it
 from the dropdown on the LINK tab and you never have to type one. Ports past
 `COM9` need the escaped form, `\\.\COM12`, which is what the dropdown fills in.
 
+### The first start
+
+On a machine that has never run Corvus, a short setup opens over the map. It
+offers three ways on:
+
+- **Set up this station**: the colour theme, the units
+  (metric, imperial, aviation, or each quantity on its own), whether the
+  Mission planner is in the left rail, and whether Corvus looks for updates.
+  Every choice shows at once, and nothing is saved until **Finish**.
+- **Import settings**: take the settings, and plugins, from a file
+  exported on another station (see **Export and import** under
+  [Settings](#settings)). You pick which parts.
+- **Skip for now**: start with the defaults.
+
+It appears once. Everything in it is under Settings afterwards. The interface
+size is not part of it: adjust that later in Settings under **Appearance**.
+
 ### From source
 
 Requires **Python 3.12+**. One command creates a virtual environment in
@@ -445,8 +463,7 @@ default icon.
 
 Build artifacts (`build/`, `dist/`, `*.AppImage`, `*.dmg`, the Windows `.zip`)
 are gitignored. CI runs the same scripts, see
-[`.github/workflows/build.yml`](.github/workflows/build.yml) and
-[`.gitlab-ci.yml`](.gitlab-ci.yml).
+[`.github/workflows/build.yml`](.github/workflows/build.yml).
 
 </details>
 
@@ -832,8 +849,47 @@ Pick a tool and click:
 - **Start point**: where the flight begins. Every altitude in the plan is
   measured from here, which is the same reference PX4 flies a mission in.
 - **Takeoff**, **Waypoint**, **Circle** (orbit a point a set number of times),
-  **Hold** (circle it for a set time), **Land**, and **Return** (which needs no
+  **Hold** (stay at it for a set time), **Land**, and **Return** (which needs no
   click, since it names no place).
+
+Above the altitude profile, **Aircraft** says what flies the plan: multicopter,
+fixed wing or VTOL. It matters for a Hold. A fixed wing has to circle the point
+to stay there, so its Hold gets a ring, a radius and a direction; a multicopter
+simply hovers over it, so its Hold gets none. While an aircraft is connected it
+sets this itself, and the choice is saved with the plan, so a mission drawn at
+the desk without the drone already looks the way it will be flown.
+
+The same choice decides how the altitude profile draws the start and the end
+of a flight, because the two aircraft do them in opposite ways.
+
+- **Takeoff.** A multicopter climbs straight up from the start point. A fixed
+  wing cannot: it climbs out along the first leg at its climb pitch (10° unless
+  the takeoff says otherwise, PX4's default) and reaches the takeoff height only
+  after a run, 170 m for 30 m. The profile draws that run, and says so when the
+  first point is closer than it.
+- **Landing.** A multicopter flies to the landing point and descends straight
+  down there, so the profile shows a step. The corner of that step is a point of
+  its own, the landing's counterpart of the takeoff: drag it up or down, or type
+  it into **Descend from**, to set the height the descent starts at. Left
+  alone, it is the height of the point before. Drag it all the way down and the
+  multicopter dives straight in from the point before, down to 3 m above the
+  landing point, where the last metres stay a slow vertical touchdown; a waypoint
+  on the ground would be flown into at cruise speed. Corvus flies the corner as
+  a waypoint right above the landing point, which is how PX4 and ArduCopter both
+  let a mission set that height. A fixed wing glides down from the point before,
+  so the profile shows the slope and writes its angle on it. A glide steeper
+  than 5° is called out while you draw, with how far out or how low the point
+  before it has to be: that is PX4's default limit (`FW_LND_ANG`), and PX4
+  refuses a steeper approach on upload.
+- **Return.** A return flies to where the aircraft was armed, or to the nearest
+  rally point, at heights that are the vehicle's own rather than the plan's.
+  While it is connected, Corvus reads them (the same Return settings the
+  Safety page shows) and draws the return the way it is flown: a multicopter
+  climbs to its return height, comes home, descends and lands. A fixed wing does
+  not land after a return at all; PX4 and ArduPlane both circle over home until
+  you take over. The profile ends it in the air, marked "circles here", and the
+  plan says so, so a fixed wing mission that is meant to come down ends with
+  **Land**.
 
 Points are dragged to move them, right-click removes the last one, and Esc puts
 the tool rail back to the pointer. A **circle** draws its real radius as a ring
@@ -1224,7 +1280,12 @@ aircraft is no longer flying what you are looking at.
   instead; drag it by its title bar past the edge and it carries on outside,
   and let go of it over the app and it is back in. In a browser, where a page
   cannot make such a window, windows always open inside, and the title bar has
-  a button that opens one in a pop-up. The title bar
+  a button that opens one in a pop-up. Terminal windows are frosted glass,
+  with what is behind them blurred: the map inside the app, and on macOS the
+  desktop behind a window of its own. Linux (Mint, Ubuntu and others) and
+  Windows offer no blur behind a program's window, so a terminal in a window
+  of its own is solid there; inside the app it is frosted everywhere.
+  **Solid terminals**, in the same card, makes them all solid. The title bar
   says **LIVE**, **CONNECTING**, **NO PICTURE** or **OFFLINE**, and when the
   picture stops the last frame stays up greyed out with the reason over it,
   so a frozen picture can never pass for a live one. TCP is the default
@@ -1337,9 +1398,17 @@ picture.
   in any other terminal, and the prompt you see is the machine's own. The
   remote is told the terminal's actual size, and the panel is a few hundred
   pixels wide, so there is a **full-screen** button next to the connection name
-  (Shift-Escape leaves it; plain Escape belongs to whatever is running).
+  (Shift-Escape leaves it; plain Escape belongs to whatever is running), and a
+  **pop-out** button beside it that opens the same session in a terminal window
+  of its own as well. Both show one shell: what you type in either reaches it,
+  what it prints appears in both, and it lays itself out for the one you are
+  typing in.
   Connections are **saved by name** with password or key-file authentication,
-  so reconnecting is one click.
+  so reconnecting is one click. The **arrow** beside CONNECT connects it, if it
+  is not already, and opens it in a terminal window of its own instead of in
+  the tab. The **pencil** beside the arrow edits its address and login, and is
+  where you delete it: the delete asks first, and closes the session if it is
+  open.
 - **Plugins**: specialist views that plug in without touching the core. Three
   ship with it: the **Vibration Monitor**, a live graph of the aircraft's
   vibration levels plus cumulative clipping counters, the **SSH Launcher**,
@@ -1360,13 +1429,18 @@ instantly and is saved.
   app's Dock (macOS) / taskbar (Linux) icon between the white mark and the
   black one for a light dock. The icon switch changes nothing but the icon.
 - **Map service**: which service and which of its layers. Also switchable from
-  the layer control on the map itself. Esri, OpenStreetMap, Google and Bing
-  need nothing from you. **MapTiler** and **Mapbox** need an API key, and
-  **API keys** is the button that takes one: a free key from either gets you
-  licensed satellite imagery and street cartography on your own quota, instead
-  of a shared public endpoint. Both are listed whether or not you have a key.
-  A service that says "Needs an API key" is something you can act on, one that
-  quietly vanished is not.
+  the layer control on the map itself. Esri and OpenStreetMap need nothing
+  from you. **MapTiler** and **Mapbox** need an API key, and **API keys** is
+  the button that takes one: a free key from either gets you licensed
+  satellite imagery and street cartography on your own quota, instead of a
+  shared public endpoint. They show up as a map service once they have a key;
+  until then the note under **API keys** names them.
+
+  **Google** and **Bing** work without a key, and take one if you have it.
+  With a key, Corvus loads their tiles through the licensed APIs (the Google
+  Map Tiles API, which has to be enabled for the key, and the Bing Maps REST
+  API with a Bing Maps for Enterprise key) instead of their internal
+  endpoints. The service card then says "licensed API".
 
   The key never reaches your browser. Corvus fetches the tiles itself and hands
   the images to the page, so the key stays in `~/.corvus/config.json` (readable
@@ -1398,14 +1472,19 @@ instantly and is saved.
 - **Files**: where parameter exports, logs and downloads are written.
 - **Plugins**: what Corvus found, and a button that opens the folder you drop
   plugins into. See [Plugins](#plugins).
-- **Export and import**: every setting of the station in one JSON file, for a
+- **Export and import**: the settings of the station in one JSON file, for a
   backup or for setting up the next laptop. That includes the window layout
   (where the flight HUD and the virtual joystick sit), the RC transmitter
-  bindings, every plugin's settings and the company logo. Passwords and map
-  keys stay out of the file unless you switch them on, and an import without
-  them keeps the ones already stored for the same host. Import shows what the
-  file holds and lets you switch off parts, such as the folders and port of
-  another machine. It is refused while the aircraft is armed.
+  bindings, the plugins and the company logo. Both directions go by part
+  (interface, window layout, map, connections, vehicle, folders, plugins),
+  with **All** and **None** to start from, and under Plugins by plugin: its
+  **Settings**, and its **Files**, which is the plugin itself for one you
+  installed in your plugin folder. The plugins that ship with Corvus are on
+  every station already, so only their settings travel. A part left out of the
+  file is never touched on import. Passwords and map keys stay out of the file
+  unless you switch them on, and an import without them keeps the ones already
+  stored for the same host. Import shows what the file holds, warns before it
+  installs plugin files, and is refused while the aircraft is armed.
 - **About**: version, the live connection summary, and **Credits** listing
   every bundled dependency and its licence.
 - **Updates**: a switch (on by default) that compares the running version
@@ -1447,7 +1526,9 @@ Three ship with Corvus:
   that keeps it above Corvus, or a frame inside the app if you set it so under
   Settings (see Video above). Only the arrow opens it; pressing the
   button starts the program without throwing a window at you, which matters
-  when four of them go up on the pad. Three buttons are three terminals, side
+  when four of them go up on the pad. Pressed before the button, the arrow
+  connects and opens the terminal on a plain shell, the program not started
+  yet; the button then runs it in that same terminal. Three buttons are three terminals, side
   by side when you want to see them. Output is right there to read, and Ctrl-C
   (or the window's disconnect button) is how you stop it; closing the window
   with × leaves the program running, and the arrow brings the window back with
@@ -1557,6 +1638,13 @@ A plugin is ordinary JavaScript running in the app's own page, and the SSH
 Launcher runs whatever command you give it as the account you point it at. Read
 a plugin before you drop it in, exactly as you would a script you were about to
 run yourself.
+
+To take a plugin to another station, switch on its **Files** in **Settings ▸
+Export and import ▸ Export settings**. The file then carries the plugin's
+folder (scripts, styles, images, up to 4 MB) as well as its settings, and an
+import installs it into the plugin folder there, replacing a copy with the
+same id and keeping that copy's settings unless the file's are taken too. The
+same rule applies: install plugin files only from a settings file you trust.
 
 ---
 

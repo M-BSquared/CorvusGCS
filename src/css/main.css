@@ -579,6 +579,207 @@ svg { display: block; }
 .settings-transfer-file { display: flex; flex-direction: column; gap: 4px; }
 .settings-transfer-parts > .field-switch + .field-switch { margin-top: 8px; padding-top: 8px; }
 .settings-transfer-parts > .field-switch > .field-hint { margin-top: -8px; }
+/* The caption over the parts, with All and None at its right end. The dialog's
+   own gap separates it from the list, so it needs none of its own. */
+.settings-transfer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.settings-transfer-head .ui-actions { gap: 4px; }
+/* One row per plugin under the Plugins switch, indented so they read as its
+   children: the name and where it lives, then its two halves, each a caption
+   with its own switch. The caption is a <label>, so it works the switch. The
+   list is the grid and each row passes its cells through to it, so the
+   Settings and Files columns line up from one plugin to the next. */
+.settings-transfer-plugins {
+  margin-top: 8px;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 2px solid var(--border-soft);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 20px;
+  row-gap: 10px;
+}
+.settings-transfer-plugins[hidden] { display: none; }
+.settings-transfer-plugin { display: contents; }
+.settings-transfer-plugin-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.settings-transfer-plugin-name {
+  font-size: 12px;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-transfer-opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.settings-transfer-opt.is-unavailable { color: var(--text-3); cursor: default; }
+
+/* ===== First start setup (welcome.js) =====
+   The first page is an onboarding sheet rather than a form: the mark and a
+   centred heading, then one wide card for the setup and the two lesser ways
+   out side by side under it. The cards are .tile, so the glass, the lift and
+   the press are the app's own; only the layout and the icon chips differ.
+   Colour is spent once: the setup card's chip carries the accent, the other
+   two stay monochrome, so the page has one obvious answer.
+
+   The steps above each later page are a row of numbered pills: the one being
+   filled in carries the accent, the ones behind it are ticked off in the same
+   colour at a lower weight. */
+.modal.welcome { border-radius: 18px; padding: 26px; }
+.modal.welcome:focus { outline: none; }
+.welcome.is-start .modal-header { display: none; }
+/* Room for the focus halo and the hover shadow of a card flush with the
+   scroll edge. */
+.welcome .modal-body { padding: 4px; margin: -4px; }
+
+.welcome-start { display: flex; flex-direction: column; gap: 12px; }
+.welcome-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 6px 12px 14px;
+}
+.welcome-mark {
+  width: 52px; height: 52px;
+  margin-bottom: 14px;
+  background-image: var(--logo-mark);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+.welcome-heading {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  line-height: 1.2;
+  color: var(--text-1);
+}
+.welcome-lede {
+  margin: 8px 0 0;
+  max-width: 400px;
+  font-size: var(--text-md);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.welcome-card { position: relative; border-radius: var(--radius-lg); }
+.welcome-card:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.welcome-card .tile-icon {
+  width: 38px; height: 38px;
+  border-radius: 10px;
+  background: rgb(var(--tint-rgb) / 0.06);
+  color: var(--text-1);
+}
+.welcome-card .tile-icon svg, .welcome-card .tile-icon i { width: 18px; height: 18px; }
+.welcome-card .tile-title { font-size: var(--text-lg); letter-spacing: -0.1px; }
+.welcome-card .tile-desc { font-size: var(--text-sm); line-height: 1.45; }
+
+.welcome-card-primary { align-items: center; gap: 16px; padding: 20px 20px 20px 18px; }
+.welcome-card-primary .tile-icon {
+  width: 48px; height: 48px;
+  border-radius: 13px;
+  background: var(--accent);
+  color: var(--text-inverted);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18), 0 4px 14px var(--accent-dim);
+}
+.welcome-card-primary .tile-icon svg, .welcome-card-primary .tile-icon i { width: 22px; height: 22px; }
+.welcome-card-primary .tile-body { flex: 1; gap: 4px; }
+.welcome-card-primary .tile-title { font-size: 16px; }
+.welcome-card-go {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  background: rgb(var(--tint-rgb) / 0.06);
+  color: var(--text-1);
+  transition: background 160ms, color 160ms, transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.welcome-card-go svg, .welcome-card-go i { width: 16px; height: 16px; }
+.welcome-card-primary:hover .welcome-card-go,
+.welcome-card-primary:focus-visible .welcome-card-go {
+  background: var(--accent);
+  color: var(--text-inverted);
+  transform: translateX(2px);
+}
+
+.welcome-more {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+[data-vw~="max-600"] .welcome-more { grid-auto-flow: row; }
+.welcome-more .welcome-card { align-items: center; gap: 12px; padding: 11px 12px 11px 11px; }
+.welcome-more .welcome-card .tile-icon { width: 32px; height: 32px; border-radius: 9px; }
+.welcome-more .welcome-card .tile-icon svg, .welcome-more .welcome-card .tile-icon i { width: 16px; height: 16px; }
+.welcome-more .welcome-card .tile-body { flex: 1; gap: 1px; }
+.welcome-more .welcome-card .tile-title { font-size: var(--text-md); }
+.welcome-more .welcome-card .tile-desc {
+  font-size: var(--text-xs-plus);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.welcome-more .welcome-card > svg { transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.welcome-more .welcome-card:hover > svg { transform: translateX(2px); }
+@media (prefers-reduced-motion: reduce) {
+  .welcome-card-go, .welcome-more .welcome-card > svg { transition: none; transform: none !important; }
+}
+.welcome-steps {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.welcome-step {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.welcome-step-num {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 10px;
+  background: rgb(var(--tint-rgb) / 0.08);
+  color: var(--text-2);
+}
+.welcome-step.active { border-color: var(--accent); color: var(--text-1); }
+.welcome-step.active .welcome-step-num { background: var(--accent); color: var(--text-inverted); }
+.welcome-step.done { color: var(--text-2); }
+.welcome-step.done .welcome-step-num { background: var(--accent-dim); color: var(--accent-bright); }
+.welcome-units {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+[data-vw~="max-600"] .welcome-units { grid-template-columns: minmax(0, 1fr); }
+.welcome-outro { margin-top: 4px; }
 
 /* One keyed map service in the API keys dialog: the field, then the saved
    state and the REMOVE button on a row of their own under it. Separated by a
@@ -1385,7 +1586,9 @@ svg { display: block; }
    corner itself and must never be covered. */
 .track-clear {
   position: absolute;
-  left: var(--map-rail-inset, 14px);
+  /* Centred on the folded attribution disc below it, which is 25px wide
+     (15px icon, 4px padding, 1px border): half the 3px difference in. */
+  left: calc(var(--map-rail-inset, 14px) + 1.5px);
   bottom: calc(var(--map-rail-inset, 14px) + 30px);
   z-index: var(--z-map-chrome);
   width: 22px; height: 22px;
@@ -2117,20 +2320,26 @@ svg { display: block; }
 .ssh-status.pending { color: var(--warning); }
 .ssh-status.pending .dot { background: var(--warning); }
 .ssh-status[hidden] { display: none; }
+/* A terminal's header carries its buttons as well, so the name and address
+   keep to one line there and shorten, rather than wrapping into the status
+   pill beside them. The full text is their tooltip. */
+.ssh-terminal-card .ssh-name,
+.ssh-terminal-card .ssh-host { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ssh-card-top .ssh-status { flex: 0 0 auto; }
+.ssh-card-top .icon-btn + .icon-btn { margin-left: -6px; }
 /* .ssh-connect is now .btn + data-variant + data-shape="block"; the legacy
    colour/padding/border rules moved to the component system. */
 
-/* CONNECT and remove sit on one line: the remove button is a destructive
-   afterthought, not a second full-width action, so it keeps a square of its
+/* CONNECT and its two small buttons (the terminal window, edit) sit on one
+   line: they are not second full-width actions, so each keeps a square of its
    own at the end of the row and CONNECT takes what is left. Without this the
    row is a plain block, data-shape="block" makes CONNECT full width, and the
-   bin drops to a line of its own under it. */
+   buttons drop to a line of their own under it. */
 .ssh-card-actions { display: flex; align-items: center; gap: 8px; }
 .ssh-card-actions .btn[data-shape="block"] { flex: 1 1 auto; width: auto; min-width: 0; }
 /* Square matches the card's server avatar, so the row reads as one band
    rather than a button with a small icon parked beside it. */
 .ssh-card-actions .icon-btn { flex: 0 0 auto; width: 34px; height: 34px; }
-.ssh-card-actions .icon-btn:hover { color: var(--critical); }
 
 /* Settings page's own SSH connection list (sidenav.js renderSSHSection) — a
    plain name-left, actions-right row rather than the SSH tab's cards. Without
@@ -2271,6 +2480,40 @@ svg { display: block; }
 
 /* A frame whose content has gone on in a window outside the app. */
 .term-win.is-out { visibility: hidden; }
+
+/* Frosted terminals, the default (Settings, "Solid terminals", off). The frame lets
+   what is behind it through, blurred and tinted with the terminal's own
+   ground, and the terminal draws on that. One blur for the whole frame: a
+   second one on the bar would only blur the frame's own tint. In a window of
+   its own the page is see-through and the operating system blurs the desktop
+   behind it (corvus/app.py), so there the page adds the tint and no blur; the
+   class is only set there once that blur is confirmed (js/popout-page.js). */
+:root.frosted-terminals .term-win--terminal {
+  --frost-tint: 60%;
+  background: color-mix(in srgb, var(--ssh-bg) var(--frost-tint), transparent);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+}
+:root.frosted-terminals .term-win--terminal .term-win-bar {
+  background: rgb(var(--glass-rgb) / 0.35);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+:root.frosted-terminals .term-win--terminal .ssh-term { background: transparent; }
+:root.native-window.frosted-terminals .term-win--terminal {
+  --frost-tint: 48%;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root.frosted-terminals .term-win.term-win--terminal { --frost-tint: 100%; }
+  :root.frosted-terminals .term-win--terminal .term-win-bar { background: var(--surface-2); }
+}
+/* An engine that cannot blur would show the map through sharp: solid instead. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root.frosted-terminals .term-win.term-win--terminal { --frost-tint: 100%; }
+  :root.frosted-terminals .term-win--terminal .term-win-bar { background: var(--surface-2); }
+}
 
 /* ----- FLOATING CAMERA WINDOWS ----- */
 /* The same frame as the terminals above; only the body differs. The picture
@@ -2551,6 +2794,19 @@ button.link-card-title:focus-visible {
 .setup-tile .tile-icon { width: 40px; height: 40px; }
 .setup-tile .tile-icon svg, .setup-tile .tile-icon i { width: 20px; height: 20px; }
 .setup-tile .tile-body { flex: 1; }
+/* One fixed tile size: a one-line title and a description box that is always
+   exactly two lines tall, whatever the text or the window width. */
+.setup-tile .tile-title {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.setup-tile .tile-desc {
+  line-height: 1.45;
+  height: calc(2 * 1.45em);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
 
 /* ----- CALIBRATION: readiness strip ----- */
 .calib-ready { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
@@ -5995,12 +6251,25 @@ button.review-finding-head:focus-visible {
   background: var(--surface-1);
 }
 .mission-profile-head {
-  display: flex; align-items: baseline; gap: 12px;
-  padding: 8px 14px 4px;
+  display: flex; align-items: center; gap: 12px;
+  padding: 6px 14px 2px;
+}
+/* What flies the plan, at the heading's right end. Sized to the heading's
+   own small caps so the row does not grow and take height from the chart. */
+.mission-aircraft {
+  flex-direction: row; align-items: center; gap: 8px;
+  flex: 0 0 auto; margin-left: auto;
+}
+.mission-aircraft .field-label { letter-spacing: 0.9px; }
+.mission-aircraft .field-select {
+  width: auto; min-width: 118px;
+  padding: 3px 26px 3px 8px;
+  font-size: 11px;
 }
 .mission-profile-title {
   font-size: 10px; letter-spacing: 0.9px; text-transform: uppercase;
   color: var(--text-3);
+  flex: 0 0 auto; white-space: nowrap;
 }
 .mission-profile-note {
   font-size: 11px; color: var(--text-3);

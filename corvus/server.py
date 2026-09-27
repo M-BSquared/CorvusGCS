@@ -37,7 +37,8 @@ from . import (
     param_metadata, rc_config, remote_id,
     remote_id_config,
     local_shell, net_probe, rtk, rtk_service,
-    safety_config, sik_config, sik_service, tile_sources, tuning_config, video, websocket,
+    safety_config, sik_config, sik_service, tile_sessions, tile_sources, tuning_config,
+    video, websocket,
 )
 from .config import (
     MAX_MAP_TOKEN_CHARS,
@@ -62,9 +63,10 @@ from .mavlink_bridge import (
     MavlinkBridge,
 )
 from .file_manager import open_folder, open_url
-from . import plugin_config, settings_bundle
+from . import plugin_config, plugin_files, settings_bundle
 from .plugin_registry import (
     bundled_plugins_dir,
+    discover as discover_plugins,
     ensure_user_plugins_dir,
     find_dir as find_plugin_dir,
     is_valid_id as is_valid_plugin_id,
@@ -117,6 +119,12 @@ TILE_UPSTREAM_COOLDOWN_S = 30.0
 # int() crashes the handler on a non-numeric header, and an unbounded read
 # can exhaust memory. General JSON API vs raw firmware binary (a few MB).
 MAX_JSON_BODY_BYTES = 8 * 1024 * 1024
+# A settings file can carry the company logo (4 MB) and the operator's plugins
+# (4 MB each, see corvus/plugin_files.py), both as base64 inside the JSON.
+MAX_SETTINGS_BODY_BYTES = 32 * 1024 * 1024
+# The plugins one export may carry together, before base64. Keeps a file with
+# the logo and every plugin inside MAX_SETTINGS_BODY_BYTES once encoded.
+MAX_EXPORT_PLUGIN_BYTES = 16 * 1024 * 1024
 MAX_FIRMWARE_BODY_BYTES = 64 * 1024 * 1024
 # Operator-supplied company logo: a brand mark, not an image library, so a few
 # MB is already generous and keeps a mis-picked photo out of the config dir.
@@ -762,10 +770,39 @@ def _build_tile_resources(
         sid: TileCache(os.path.join(cache_dir, f"{sid}.mbtiles"))
         for sid in tile_sources.all_sources()
     }
+    for sid, cache in tile_caches.items():
+        try:
+            _settle_interrupted_regions(cache)
+        except Exception:  # noqa: BLE001 - bookkeeping must never stop launch
+            logger.exception("could not settle interrupted regions for %s", sid)
     tile_progress_bus = _TileProgressBus()
     tile_downloader = _build_tile_downloader(tile_caches)
     tile_breaker = _UpstreamBreaker()
     return tile_caches, tile_progress_bus, tile_downloader, tile_breaker
+
+
+def _settle_interrupted_regions(cache: TileCache) -> int:
+    """Close out regions a previous run left in state ``running``.
+
+    At startup no download job exists, so a ``running`` region is one whose
+    process was killed or lost power mid-download before the final progress
+    update could land. Left alone it shows "downloading" forever, with no job
+    behind it to finish or cancel. It becomes ``cancelled`` with the tile count
+    the cache actually holds for its area. Returns the number settled.
+    """
+    from corvus.tile_downloader import tile_ranges
+
+    settled = 0
+    for region in cache.list_regions():
+        if region.get("state") != "running":
+            continue
+        b = region["bounds"]
+        ranges = tile_ranges((b["w"], b["s"], b["e"], b["n"]),
+                             int(region["minzoom"]), int(region["maxzoom"]))
+        cache.update_region(region["id"], state="cancelled",
+                            tile_count=cache.count_tiles(ranges))
+        settled += 1
+    return settled
 
 
 def _tile_cache_dir(cfg: Any) -> str:
@@ -1608,6 +1645,11 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     # never reads the developer's own plugin folder.
     plugin_user_dir: str | None = None
     plugin_bundled_dir: str | None = None
+    # Whether the first start setup is still to be done, as {"pending": bool}.
+    # A dict so a route can clear it for every handler; create_server sets it
+    # from whether a config file existed when the process started. None (the
+    # tests, and anything that never went through create_server) means done.
+    first_start: dict[str, bool] | None = None
 
     _GET_ROUTES: dict[str, str] = {}
     _POST_ROUTES: dict[str, str] = {}
@@ -2780,6 +2822,35 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
         self._send_json(payload)
 
+    @route("GET", "/api/mission/return")
+    def _api_mission_return(self) -> None:
+        """How the connected vehicle flies a Return, for the planner to draw.
+
+        A Return is not flown at a height the plan sets: the vehicle climbs,
+        comes home and lands (or circles) at heights of its own. The planner
+        used to draw it at the height of the last point, which PX4's default
+        return height is often well above. The parameter names belong to the Safety
+        page's schema for the connected stack, which turns them into one shape
+        for both. Always 200; ``connected`` says whether anything answered.
+        """
+        if self.mavlink is None:
+            self._send_json({"connected": False})
+            return
+        schema = self._schema("safety")
+        ardupilot = schema is ardupilot_safety
+        vehicle = autopilot.vehicle_class(self._vehicle_type_id())
+        try:
+            values = self._fetch_page_params(
+                schema.return_param_names(vehicle) if ardupilot else schema.return_param_names())
+        except Exception:  # noqa: BLE001 - a read must never 500 the page
+            logger.exception("return parameter fetch failed")
+            self._send_json({"connected": False})
+            return
+        payload = (schema.return_profile(values, vehicle) if ardupilot
+                   else schema.return_profile(values))
+        payload["connected"] = bool(values)
+        self._send_json(payload)
+
     @route("GET", "/api/tuning")
     def _api_tuning(self) -> None:
         """Return the vehicle's PID tuning configuration as a description.
@@ -3057,7 +3128,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         if length < 0:
             self._send_json({"error": "invalid content-length"}, 400)
             return
-        if length > MAX_JSON_BODY_BYTES:
+        limit = MAX_SETTINGS_BODY_BYTES if path == "/api/settings/import" else MAX_JSON_BODY_BYTES
+        if length > limit:
             self._send_json({"error": "request too large"}, 413)
             return
         raw = self.rfile.read(length) if length else b"{}"
@@ -3844,7 +3916,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
     @route("POST", "/api/settings/export")
     def _api_settings_export(self, payload: dict) -> None:
-        """Write every setting of this station to one file and return its path.
+        """Write the chosen settings of this station to one file and return its path.
 
         Written here rather than as a browser download for the reason parameter
         exports are (see ``_api_params_export``). It is also what lets the file
@@ -3852,6 +3924,12 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         the config straight to disk and never through an HTTP response.
         ``browser`` is the interface state the page keeps in localStorage,
         carried through untouched.
+
+        ``sections`` picks the parts (every one when absent). With
+        ``plugins`` among them, ``plugin_settings`` names the plugins whose
+        settings go in (every one when absent) and ``plugin_files`` the
+        plugins that go in themselves (none when absent); only a plugin from
+        the operator's folder can, since a bundled one ships with Corvus.
         """
         include_secrets = payload.get("include_secrets", False)
         if not isinstance(include_secrets, bool):
@@ -3860,6 +3938,19 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         browser = payload.get("browser", {})
         if not isinstance(browser, dict):
             self._send_json({"ok": False, "error": "browser must be an object"}, 400)
+            return
+        try:
+            sections = settings_bundle.normalize_sections(payload.get("sections"))
+        except ValueError as exc:
+            self._send_json({"ok": False, "error": str(exc)}, 400)
+            return
+        if not sections:
+            self._send_json({"ok": False, "error": "Choose at least one part to export."}, 400)
+            return
+        files_by_plugin, error = self._export_plugin_files(payload.get("plugin_files", []),
+                                                           "plugins" in sections)
+        if error is not None:
+            self._send_json({"ok": False, "error": error}, 400)
             return
         raw_dir = payload.get("dir")
         target_dir = raw_dir if isinstance(raw_dir, str) and raw_dir.strip() else \
@@ -3871,14 +3962,22 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             cfg = self._live_config()
             config = _config_to_dict(cfg)
             plugins = self._plugin_settings_all()
+        try:
+            chosen_settings = settings_bundle.normalize_ids(
+                payload.get("plugin_settings"), plugins, "plugin_settings")
+        except ValueError as exc:
+            self._send_json({"ok": False, "error": str(exc)}, 400)
+            return
+        plugins = {k: v for k, v in plugins.items() if k in chosen_settings}
         logo = None
         if isinstance(cfg.branding, dict) and cfg.branding.get("logo"):
             try:
                 logo = self._logo_path().read_bytes() or None
             except OSError:
                 logo = None
-        bundle = settings_bundle.build(config, plugins=plugins, logo=logo, browser=browser,
-                                       include_secrets=include_secrets)
+        bundle = settings_bundle.build(config, sections=sections, plugins=plugins,
+                                       plugin_files=files_by_plugin, logo=logo,
+                                       browser=browser, include_secrets=include_secrets)
         try:
             text = json.dumps(bundle, indent=2, ensure_ascii=False) + "\n"
             os.makedirs(target_dir, exist_ok=True)
@@ -3905,22 +4004,65 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             logger.exception("settings export failed")
             self._send_json({"ok": False, "error": f"export failed: {exc}"}, 500)
             return
-        logger.info("exported settings to %s (secrets %s)", path,
-                    "included" if include_secrets else "left out")
+        logger.info("exported settings (%s) to %s (secrets %s, %d plugin(s) with their files)",
+                    ", ".join(bundle["sections"]), path,
+                    "included" if include_secrets else "left out", len(files_by_plugin))
         self._send_json({"ok": True, "path": path, "dir": target_dir,
-                         "filename": filename, "secrets": include_secrets})
+                         "filename": filename, "secrets": include_secrets,
+                         "sections": bundle["sections"]})
+
+    def _export_plugin_files(self, raw: Any, wanted: bool
+                             ) -> tuple[dict[str, dict[str, bytes]], str | None]:
+        """The files of each plugin named in *raw*, or an error sentence.
+
+        Only plugins discovered in the operator's folder: a bundled one ships
+        with Corvus, and a name that is not installed has no files to take.
+        """
+        if raw is None or not wanted:
+            return {}, None
+        if not isinstance(raw, list) or not all(isinstance(p, str) for p in raw):
+            return {}, "plugin_files must be a list of plugin ids"
+        if not raw:
+            return {}, None
+        user_dir, bundled_dir = self._plugin_roots()
+        installed = {m["id"]: m for m in discover_plugins(user_dir, bundled_dir)}
+        out: dict[str, dict[str, bytes]] = {}
+        total = 0
+        for plugin_id in dict.fromkeys(raw):
+            manifest = installed.get(plugin_id)
+            if manifest is None or manifest.get("source") != "user":
+                return {}, f"The plugin {plugin_id} is not in the plugin folder, so its files cannot be exported."
+            try:
+                files = plugin_files.collect(manifest["dir"])
+            except ValueError as exc:
+                return {}, (f"The plugin {manifest['name']} is {exc}, too much for a settings file. "
+                            "Copy its folder instead.")
+            except OSError as exc:
+                return {}, f"The plugin {manifest['name']} could not be read: {exc.strerror or exc}"
+            total += sum(len(b) for b in files.values())
+            if total > MAX_EXPORT_PLUGIN_BYTES:
+                return {}, ("The chosen plugins are larger than "
+                            f"{MAX_EXPORT_PLUGIN_BYTES // (1024 * 1024)} MB together. "
+                            "Take fewer of them, or copy their folders instead.")
+            out[plugin_id] = files
+        return out, None
 
     @route("POST", "/api/settings/import")
     def _api_settings_import(self, payload: dict) -> None:
         """Apply a settings file written by ``POST /api/settings/export``.
 
         ``bundle`` is the parsed file and ``sections`` the section ids to take
-        from it (every one when absent). Refused while armed: an import can
-        restart the forwarder, the RTK corrections and the cameras, and
-        replace the Remote ID the aircraft broadcasts. Everything is checked
-        before anything is written. What runs from the config is applied now;
-        the few settings read only at startup come back in ``restart`` so the
-        page can say so. The browser block is the page's to apply.
+        from it (every one the file carries when absent); a section the file
+        does not carry is never taken from it. With ``plugins`` among them,
+        ``plugin_settings`` and ``plugin_files`` name the plugins whose
+        settings, and which plugins themselves, are taken (every one in the
+        file when absent). Refused while armed: an import can restart the
+        forwarder, the RTK corrections and the cameras, replace the Remote ID
+        the aircraft broadcasts, and install plugin code. Everything is
+        checked before anything is written. What runs from the config is
+        applied now; the few settings read only at startup come back in
+        ``restart`` so the page can say so. The browser block is the page's to
+        apply. A successful import also counts as the first start setup.
         """
         if self.store is not None and self.store.get_snapshot().get("armed"):
             self._send_json({"ok": False,
@@ -3930,9 +4072,16 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         try:
             bundle = settings_bundle.parse(payload.get("bundle"))
             sections = settings_bundle.normalize_sections(payload.get("sections"))
+            take_settings = settings_bundle.normalize_ids(
+                payload.get("plugin_settings"), bundle["plugins"], "plugin_settings")
+            take_files = settings_bundle.normalize_ids(
+                payload.get("plugin_files"), bundle["plugin_files"], "plugin_files")
         except ValueError as exc:
             self._send_json({"ok": False, "error": str(exc)}, 400)
             return
+        sections &= set(bundle["sections"])
+        if "plugins" not in sections:
+            take_settings, take_files = set(), set()
         if not sections:
             self._send_json({"ok": False, "error": "Choose at least one part to import."}, 400)
             return
@@ -3940,6 +4089,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         from .config import _build_config
         warnings: list[str] = []
         plugins_written = 0
+        plugins_installed = 0
         with _config_write_lock:
             cfg = self._live_config()
             before = _config_to_dict(cfg)
@@ -3971,9 +4121,22 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
             new_cfg.plugins = cfg.plugins
             if "plugins" in sections:
+                # Files before settings: an install keeps the settings the
+                # installed copy had, and the file's own settings, when
+                # chosen, then replace them.
+                for plugin_id in sorted(take_files):
+                    try:
+                        plugin_files.install(plugin_id, bundle["plugin_files"][plugin_id],
+                                             self.plugin_user_dir)
+                    except (OSError, ValueError) as exc:
+                        logger.error("settings import: plugin %s not installed: %s",
+                                     plugin_id, exc)
+                        warnings.append(f"The plugin {plugin_id} could not be installed.")
+                        continue
+                    plugins_installed += 1
                 legacy = dict(cfg.plugins) if isinstance(cfg.plugins, dict) else {}
                 for plugin_id, settings in bundle["plugins"].items():
-                    if not is_valid_plugin_id(plugin_id):
+                    if plugin_id not in take_settings or not is_valid_plugin_id(plugin_id):
                         continue
                     try:
                         plugin_config.save(plugin_id, settings, self.plugin_user_dir)
@@ -4009,6 +4172,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 logger.exception("settings import: RTK settings not applied")
                 warnings.append("The RTK settings are stored but could not be applied.")
         restart = [key for key in _IMPORT_RESTART_KEYS if before.get(key) != after.get(key)]
+        self._finish_first_start()
         logger.info("imported settings (%s) from a file written by %s",
                     ", ".join(sorted(sections)), bundle["version"] or "an unknown version")
         self._send_json({
@@ -4016,9 +4180,46 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             "config": to_public_dict(cfg),
             "sections": sorted(sections),
             "plugins": plugins_written,
+            "plugins_installed": plugins_installed,
             "restart": restart,
             "warnings": warnings,
         })
+
+    # ---- First start setup (src/js/welcome.js) ----
+    def _finish_first_start(self) -> None:
+        """Mark the first start setup done for every handler of this process."""
+        state = self.first_start
+        if state is not None:
+            state["pending"] = False
+
+    @route("GET", "/api/welcome")
+    def _api_welcome(self) -> None:
+        """Whether the first start setup should open: ``{"pending": bool}``.
+
+        Pending on a station that had no config file when Corvus started,
+        until the operator finishes it, skips it, or imports a settings file.
+        """
+        state = self.first_start
+        self._send_json({"pending": bool(state and state.get("pending"))})
+
+    @route("POST", "/api/welcome")
+    def _api_welcome_done(self, payload: dict) -> None:
+        """Mark the first start setup finished or skipped.
+
+        The config is written even when nothing in it changed, because a
+        config file on disk is what tells the next start that this station
+        has been set up. ``saved`` is false when that write failed: the setup
+        is then done for this session and offered again on the next start.
+        """
+        self._finish_first_start()
+        saved = True
+        with _config_write_lock:
+            try:
+                save_config(self._live_config(), self.config_path or default_config_path())
+            except OSError as exc:
+                logger.error("first start setup: config not saved: %s", exc)
+                saved = False
+        self._send_json({"ok": True, "saved": saved})
 
     # ---- Company logo (optional operator branding) ----
     def _branding_dir(self) -> Path:
@@ -6541,11 +6742,15 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # one download job, and without an id there is nothing to follow.
         if not job_id or self.tile_downloader is None or self.tile_progress_bus is None:
             return (lambda: None), None
-        status = self.tile_downloader.status(job_id)
-        if status is None:
-            return (lambda: None), None
+        # Subscribe BEFORE reading the status. The other order lost a job that
+        # finished in between: the initial event said "running" and the
+        # terminal one had already gone to nobody, so the dialog waited forever.
         listener = buf.put_latest
         self.tile_progress_bus.subscribe(job_id, listener)
+        status = self.tile_downloader.status(job_id)
+        if status is None:
+            self.tile_progress_bus.unsubscribe(job_id, listener)
+            return (lambda: None), None
         return (
             lambda: self.tile_progress_bus.unsubscribe(job_id, listener),
             _sanitize(status),
@@ -7027,16 +7232,19 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # tiles are proxied by this process, so the browser has no use for the
         # credential itself. A service that needs one and has not got one is
         # still listed, with the reason on it, rather than hidden: a layer that
-        # vanished would leave the operator with nothing to act on.
+        # vanished would leave the operator with nothing to act on. A service
+        # whose key is optional (Google, Bing) draws either way; its key only
+        # moves it onto the licensed API.
         have = self._map_tokens_set()
         providers = []
         for prov in tile_sources.list_providers():
             keyed = prov.get("token") is not None
             providers.append({
                 **prov,
-                "token_required": keyed,
+                "token_required": tile_sources.token_required(prov["id"]),
                 "token_set": keyed and prov["id"] in have,
             })
+        from .tile_downloader import MAX_TILES_PER_JOB
         self._send_json({
             "sources": sources,
             "providers": providers,
@@ -7044,6 +7252,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             "terrain": terrain,
             "default_terrain": tile_sources.DEFAULT_TERRAIN,
             "buildings": buildings,
+            # The per-job cap POST /api/tiles/download enforces, so the dialog
+            # can refuse an area before the operator presses Download rather
+            # than after.
+            "max_tiles_per_job": MAX_TILES_PER_JOB,
         })
 
     @route("POST", "/api/tiles/token")
@@ -7158,22 +7370,30 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # for however many thousand tiles the region covers. Refused up front
         # with the one thing the operator can act on, rather than reported as
         # a job that failed every tile.
-        token = ""
-        if tile_sources.needs_token(source):
-            token = self._map_token(str(src.get("provider") or ""))
-            if not token:
-                self._send_json({
-                    "ok": False,
-                    "error": "this map service needs an API key. Add one under "
-                             "Settings, Map service",
-                }, 400)
+        token = self._map_token(str(src.get("provider") or ""))
+        if tile_sources.needs_token(source) and not token:
+            self._send_json({
+                "ok": False,
+                "error": "this map service needs an API key. Add one under "
+                         "Settings, Map service",
+            }, 400)
+            return
+        # A licensed API hands out its template once, here, and the job keeps
+        # it: a session outlives any download, and a refused key is reported
+        # before a single tile is asked for.
+        template = src["upstream"]
+        if token and tile_sources.licensed(source) is not None:
+            try:
+                template = tile_sessions.resolve(source, token)
+            except tile_sessions.TileSessionError as exc:
+                self._send_json({"ok": False, "error": str(exc)}, 502)
                 return
 
         cache = (self.tile_caches or {}).get(source)
         on_progress = self._make_tile_progress(cache)
         try:
             job_id = self.tile_downloader.start(
-                source, src["upstream"], bounds, minzoom, maxzoom,
+                source, template, bounds, minzoom, maxzoom,
                 on_progress=on_progress, token=token,
             )
         except Exception as exc:  # noqa: BLE001 - a download submit must never 500
@@ -7475,9 +7695,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         src = tile_sources.get(source)
         if src is None:
             return None
-        token = ""
+        token = self._map_token(str(src.get("provider") or ""))
         if tile_sources.needs_token(source):
-            token = self._map_token(str(src.get("provider") or ""))
             if not token:
                 # No key, so there is nothing to ask for. Returned BEFORE the
                 # breaker is consulted and without recording a failure: three
@@ -7493,14 +7712,30 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             logger.debug("upstream breaker open; skipping fetch for %s/%d/%d/%d",
                          source, z, x, y)
             return None
-        url = tile_sources.build_tile_url(src["upstream"], z, x, y, token)
+        template = src["upstream"]
+        session_based = bool(token) and tile_sources.licensed(source) is not None
+        if session_based:
+            try:
+                template = tile_sessions.resolve(source, token)
+            except tile_sessions.TileSessionError as exc:
+                # Only "could not reach it" is the network's fault. A refused
+                # key says nothing about the link, and must not open the
+                # breaker for every other source.
+                logger.debug("licensed tile API unavailable for %s: %s", source, exc)
+                if exc.offline and breaker is not None:
+                    breaker.record_failure()
+                return None
+        url = tile_sources.build_tile_url(template, z, x, y, token)
         try:
             req = urllib.request.Request(
                 url, headers={"User-Agent": f"CorvusGCS/{get_version()}"}
             )
             with urllib.request.urlopen(req, timeout=TILE_UPSTREAM_TIMEOUT_S) as resp:
                 data = resp.read(TILE_UPSTREAM_MAX_BYTES + 1)
-        except Exception:  # noqa: BLE001 - offline field use must never 500
+        except Exception as exc:  # noqa: BLE001 - offline field use must never 500
+            if session_based and getattr(exc, "code", None) in (401, 403):
+                # The session was withdrawn early; the next tile opens a new one.
+                tile_sessions.invalidate(source, token)
             # Redacted: this line is the one an operator copies into a bug
             # report when tiles will not load, and for a keyed service the URL
             # carries their credential.
@@ -8148,6 +8383,8 @@ def create_server(
     # Loaded BEFORE the bridge is pointed anywhere, because the auto-connect
     # toggles live in it and the startup resolver needs them.
     cfg_path = config_path or default_config_path()
+    # Before anything can write the file: no config yet is a first start.
+    first_start = {"pending": not os.path.exists(cfg_path)}
     config = load_config(cfg_path)
     _migrate_plugin_settings(config, cfg_path)
 
@@ -8187,6 +8424,7 @@ def create_server(
     CorvusHandler.ssh = ssh
     CorvusHandler.config = config
     CorvusHandler.config_path = cfg_path
+    CorvusHandler.first_start = first_start
     CorvusHandler.autoconnect_session = autoconnect_session
     CorvusHandler.tile_caches = tile_caches
     CorvusHandler.tile_downloader = tile_downloader

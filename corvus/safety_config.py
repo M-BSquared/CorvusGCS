@@ -627,6 +627,46 @@ def param_names() -> list[str]:
     return names
 
 
+# What the mission planner needs of a Return, as against what this page shows
+# of one: the heights it is flown at, so the altitude profile can draw it. The
+# same shape as ardupilot_safety.return_profile, so the planner cannot tell
+# which stack answered.
+RETURN_PARAMS: tuple[str, ...] = ("RTL_RETURN_ALT", "RTL_DESCEND_ALT", "RTL_LAND_DELAY")
+
+
+def return_param_names() -> list[str]:
+    """The parameters :func:`return_profile` reads. The same on every PX4 airframe."""
+    return list(RETURN_PARAMS)
+
+
+def _height(value: float | None) -> float | None:
+    """A height the vehicle answered with, in metres, or None for none."""
+    if value is None or value != value or value < 0:
+        return None
+    return float(value)
+
+
+def return_profile(values: dict[str, float]) -> dict[str, Any]:
+    """How PX4 flies a Return, in metres above home.
+
+    ``climb_to`` is the height it climbs to before it turns for home, when it
+    is lower than that; higher, it returns where it is. ``arrive_at`` is the
+    height it goes to once it is overhead: a multicopter waits there before it
+    lands, a fixed wing circles there. ``hold`` is a multicopter that never
+    lands on its own (``RTL_LAND_DELAY`` of -1). None where the vehicle did not
+    answer. The return cone, which lowers the height close to home, is left
+    out: the planner draws a Return from the end of a route, which is rarely
+    inside it.
+    """
+    delay = values.get("RTL_LAND_DELAY")
+    return {
+        "known": bool(values),
+        "climb_to": _height(values.get("RTL_RETURN_ALT")),
+        "arrive_at": _height(values.get("RTL_DESCEND_ALT")),
+        "hold": delay is not None and delay < 0,
+    }
+
+
 def _enum_options(options: list[dict[str, Any]], value: float) -> list[dict[str, Any]]:
     """Options list guaranteed to contain *value*.
 

@@ -428,6 +428,9 @@ Corvus.app = (function () {
       // Where camera and terminal windows open in the desktop app. Off unless
       // the config asks: by default each is a window of its own at once.
       if (Corvus.popouts) Corvus.popouts.setInApp(!!(cfg.ui && cfg.ui.windows_in_app));
+      // Terminal windows are frosted glass unless the config asks for solid
+      // ones. Where nothing behind them can be blurred they are solid anyway.
+      if (Corvus.termWindows) Corvus.termWindows.setFrosted(!(cfg.ui && cfg.ui.solid_terminals));
     }).catch(() => {});
 
     /* Before any module builds its DOM: this replaces the operating system's
@@ -465,10 +468,11 @@ Corvus.app = (function () {
       document.title = `CORVUS GCS v${v.version}`;
     }).catch(() => {});
 
-    // Background release check; raises a dialog only when GitHub has a newer
-    // version than the one running. Scheduled, never awaited — offline is the
-    // normal case and it must stay silent there.
-    Corvus.update.init();
+    // The first start setup, on a station that has none yet. The background
+    // release check (a dialog only when GitHub has a newer version, silent
+    // offline) is scheduled once the setup is closed, so its notice never
+    // lands on top of it. maybeOpen never rejects.
+    Corvus.welcome.maybeOpen().then(() => Corvus.update.init());
 
     let userToggled = false;
     document.getElementById("panelHandle").addEventListener("click", () => { userToggled = true; });

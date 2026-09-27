@@ -105,23 +105,21 @@ def test_vibration_dispatch_populates_store_fields() -> None:
     bridge = ready_bridge()
     bridge._dispatch(vibration_msg(0.12, 0.34, 0.56, 1, 2, 3))
     snap = bridge._store.get_snapshot()
-    if "vibration_x" in snap:
-        assert snap["vibration_x"] == 0.12
-        assert snap["vibration_y"] == 0.34
-        assert snap["vibration_z"] == 0.56
-        assert snap["clipping_0"] == 1
-        assert snap["clipping_1"] == 2
-        assert snap["clipping_2"] == 3
+    assert snap["vibration_x"] == 0.12
+    assert snap["vibration_y"] == 0.34
+    assert snap["vibration_z"] == 0.56
+    assert snap["clipping_0"] == 1
+    assert snap["clipping_1"] == 2
+    assert snap["clipping_2"] == 3
 
 
 def test_vibration_dispatch_rounds_to_4_decimals() -> None:
     bridge = ready_bridge()
     bridge._dispatch(vibration_msg(0.123456, 0.987654, 0.555555, 0, 0, 0))
     snap = bridge._store.get_snapshot()
-    if "vibration_x" in snap:
-        assert snap["vibration_x"] == pytest.approx(0.1235)
-        assert snap["vibration_y"] == pytest.approx(0.9877)
-        assert snap["vibration_z"] == pytest.approx(0.5556)
+    assert snap["vibration_x"] == pytest.approx(0.1235)
+    assert snap["vibration_y"] == pytest.approx(0.9877)
+    assert snap["vibration_z"] == pytest.approx(0.5556)
 
 
 def test_vibration_dispatch_overwrites_previous_values() -> None:
@@ -129,9 +127,8 @@ def test_vibration_dispatch_overwrites_previous_values() -> None:
     bridge._dispatch(vibration_msg(0.1, 0.2, 0.3, 1, 1, 1))
     bridge._dispatch(vibration_msg(0.5, 0.6, 0.7, 5, 6, 7))
     snap = bridge._store.get_snapshot()
-    if "vibration_x" in snap:
-        assert snap["vibration_x"] == 0.5
-        assert snap["clipping_2"] == 7
+    assert snap["vibration_x"] == 0.5
+    assert snap["clipping_2"] == 7
 
 
 # ---------------------------------------------------------------------------

@@ -1168,6 +1168,53 @@ def param_names() -> list[str]:
     return list(dict.fromkeys(names))
 
 
+# What the mission planner needs of a Return: the heights it is flown at. A
+# copter keeps them in centimetres. A plane had ALT_HOLD_RTL, also centimetres
+# and -1 for "where it is", and has RTL_ALTITUDE in metres on the releases
+# that renamed it; both are asked for and the one that answers is used.
+_RETURN_PARAMS: dict[str, tuple[str, ...]] = {
+    "copter": ("RTL_ALT", "RTL_ALT_FINAL"),
+    "plane": ("RTL_ALTITUDE", "ALT_HOLD_RTL"),
+}
+
+
+def return_param_names(vehicle: str = "copter") -> list[str]:
+    """The parameters :func:`return_profile` reads for *vehicle*."""
+    return list(_RETURN_PARAMS.get(vehicle, _RETURN_PARAMS["copter"]))
+
+
+def _centimetres(value: float | None) -> float | None:
+    """A positive height in centimetres as metres, else None ("where it is")."""
+    if value is None or value != value or value <= 0:
+        return None
+    return float(value) / 100.0
+
+
+def return_profile(values: dict[str, float], vehicle: str = "copter") -> dict[str, Any]:
+    """How ArduPilot flies a Return, in the shape safety_config.return_profile has.
+
+    A copter climbs to ``RTL_ALT`` when it is lower (0: it returns where it
+    is), and over home goes to ``RTL_ALT_FINAL``, where 0 is a landing and
+    anything else a hover it stays in. A plane flies home at its return
+    altitude and circles there; it lands only through a landing sequence
+    this planner does not write.
+    """
+    if vehicle == "plane":
+        altitude = values.get("RTL_ALTITUDE")
+        if altitude is not None and altitude == altitude and altitude > 0:
+            climb: float | None = float(altitude)
+        else:
+            climb = _centimetres(values.get("ALT_HOLD_RTL"))
+        return {"known": bool(values), "climb_to": climb, "arrive_at": None, "hold": False}
+    final = _centimetres(values.get("RTL_ALT_FINAL"))
+    return {
+        "known": bool(values),
+        "climb_to": _centimetres(values.get("RTL_ALT")),
+        "arrive_at": final,
+        "hold": final is not None,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Sections
 # ---------------------------------------------------------------------------

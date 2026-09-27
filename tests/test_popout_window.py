@@ -8,6 +8,8 @@ it may open.
 """
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 import corvus.app as app
@@ -129,11 +131,11 @@ def test_everywhere_else_qt_chooses(env, platform) -> None:
 
 
 @pytest.mark.parametrize("name,expected", [
-    ("xcb", {"place": True, "pin": True}),
-    ("cocoa", {"place": True, "pin": True}),
-    ("windows", {"place": True, "pin": True}),
-    ("wayland", {"place": False, "pin": False}),
-    ("wayland-egl", {"place": False, "pin": False}),
+    ("xcb", {"place": True, "pin": True, "frost": False}),
+    ("cocoa", {"place": True, "pin": True, "frost": True}),
+    ("windows", {"place": True, "pin": True, "frost": False}),
+    ("wayland", {"place": False, "pin": False, "frost": False}),
+    ("wayland-egl", {"place": False, "pin": False, "frost": False}),
 ])
 def test_what_a_window_can_do_follows_the_platform(name, expected) -> None:
     assert app.window_support(name) == expected
@@ -148,3 +150,18 @@ def test_the_pages_learn_it_before_their_own_scripts_run() -> None:
 def test_the_win32_calls_exist_only_on_windows() -> None:
     assert app.win32_windows("darwin") is None
     assert app.win32_windows("linux") is None
+
+
+def test_the_desktop_blur_exists_only_on_macos() -> None:
+    """A frosted terminal in a window of its own needs the operating system
+    to blur what is behind it. Elsewhere there is nothing to load, and the
+    window stays solid."""
+    assert app.mac_blur("linux") is None
+    assert app.mac_blur("win32") is None
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="AppKit is macOS only")
+def test_the_desktop_blur_loads_on_macos() -> None:
+    blur = app.mac_blur("darwin")
+    assert isinstance(blur, app.MacBlur)
+    blur.clear(0)   # nothing to take away is not an error

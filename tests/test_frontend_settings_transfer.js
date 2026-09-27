@@ -145,6 +145,107 @@ function testEveryStoredKeyIsAccountedFor() {
     "add these to BROWSER_KEYS or NOT_SETTINGS in src/js/settings-transfer.js");
 }
 
+
+function testCollectCanTakeOnlyTheChosenParts() {
+  const store = fakeStorage({
+    "corvus.hud": '{"x":12}',
+    "corvus.theme": "green",
+    "corvus.link.recent": "[]",
+  });
+  assert.deepEqual(T.collectBrowser(store, ["interface"]), { "corvus.theme": "green" });
+  assert.deepEqual(Object.keys(T.collectBrowser(store)).sort(),
+    ["corvus.hud", "corvus.link.recent", "corvus.theme"]);
+}
+
+function testAFormat1FileCarriesEveryPart() {
+  const all = T.SECTIONS.map((s) => s.id);
+  assert.deepEqual(T.sectionsInFile({ format: 1, config: {} }), all);
+  // A format 1 file never had the list, whatever it says.
+  assert.deepEqual(T.sectionsInFile({ format: 1, sections: ["map"], config: {} }), all);
+}
+
+function testAFormat2FileCarriesWhatItSays() {
+  const bundle = { format: 2, sections: ["map", "interface", "bogus"], config: {} };
+  assert.deepEqual(T.sectionsInFile(bundle), ["interface", "map"]);
+  const empty = T.emptySections(bundle).sort();
+  assert.deepEqual(empty, ["connections", "folders", "layout", "plugins", "vehicle"]);
+}
+
+function testPluginFilesAloneAreSomethingToImport() {
+  const bundle = {
+    format: 2, sections: ["plugins"], config: {}, plugins: {},
+    plugin_files: { mine: { "plugin.json": "e30=" } },
+  };
+  assert.ok(!T.emptySections(bundle).includes("plugins"));
+}
+
+function b64(text) {
+  return Buffer.from(text, "utf8").toString("base64");
+}
+
+function testManifestNameReadsTheNameOutOfTheFile() {
+  assert.equal(T.manifestName({ "plugin.json": b64('{"name":"Höhenmesser"}') }), "Höhenmesser");
+  assert.equal(T.manifestName({ "plugin.json": "not base64 json" }), "");
+  assert.equal(T.manifestName({}), "");
+  assert.equal(T.manifestName(null), "");
+}
+
+function testOnlyAPluginFromTheFolderCanTakeItsFiles() {
+  const rows = T.exportPlugins({
+    plugins: [
+      { id: "ssh-launcher", name: "SSH Launcher", source: "bundled" },
+      { id: "vibration", name: "Vibration", source: "bundled" },
+      { id: "mine", name: "Mine", source: "user" },
+    ],
+    settings: { "ssh-launcher": { a: 1 }, gone: { b: 2 } },
+  });
+  const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+  // A bundled plugin with nothing saved has nothing to export: no row.
+  assert.deepEqual(rows.map((r) => r.id), ["ssh-launcher", "mine", "gone"]);
+  assert.equal(byId["ssh-launcher"].files, false);
+  assert.equal(byId["ssh-launcher"].settings, true);
+  assert.equal(byId["ssh-launcher"].why.files, "Built in");
+  assert.equal(byId.mine.files, true);
+  assert.equal(byId.mine.settings, false);
+  // A saved config whose plugin is not installed still travels, alone.
+  assert.equal(byId.gone.settings, true);
+  assert.equal(byId.gone.files, false);
+  assert.deepEqual(T.exportPlugins({}), []);
+}
+
+function testImportSaysWhatEachPluginDoesHere() {
+  const bundle = {
+    plugins: { "ssh-launcher": {}, mine: {}, waiting: {} },
+    plugin_files: {
+      mine: { "plugin.json": b64('{"name":"Mine, from the file"}') },
+      fresh: { "plugin.json": b64("{}") },
+      "ssh-launcher": { "plugin.json": b64("{}") },
+    },
+  };
+  const listing = { plugins: [
+    { id: "mine", name: "Mine", source: "user" },
+    { id: "ssh-launcher", name: "SSH Launcher", source: "bundled" },
+  ] };
+  const rows = Object.fromEntries(T.importPlugins(bundle, listing).map((r) => [r.id, r]));
+  assert.equal(rows.mine.name, "Mine, from the file");
+  assert.match(rows.mine.note, /Replaces the copy installed here/);
+  assert.match(rows.fresh.note, /New on this station/);
+  assert.equal(rows.fresh.name, "fresh");
+  assert.equal(rows.fresh.settings, false);
+  assert.match(rows["ssh-launcher"].note, /ships with Corvus GCS/);
+  assert.equal(rows["ssh-launcher"].name, "SSH Launcher");
+  assert.match(rows.waiting.note, /Not installed here/);
+  assert.equal(rows.waiting.files, false);
+}
+
+function testPluginHintsUseNoDashes() {
+  const texts = [];
+  T.SECTIONS.forEach((s) => texts.push(s.label, s.hint));
+  T.exportPlugins({ plugins: [{ id: "a", source: "bundled" }, { id: "b", source: "user" }],
+    settings: { c: {} } }).forEach((r) => texts.push(r.note, r.why.files, r.why.settings));
+  texts.filter(Boolean).forEach((t) => assert.ok(!/[–—]| - /.test(t), t));
+}
+
 // ---------------------------------------------------------------------------
 
 const tests = [
@@ -159,6 +260,14 @@ const tests = [
   testEmptyPartsAreReported,
   testSectionsMatchTheBackend,
   testEveryStoredKeyIsAccountedFor,
+  testCollectCanTakeOnlyTheChosenParts,
+  testAFormat1FileCarriesEveryPart,
+  testAFormat2FileCarriesWhatItSays,
+  testPluginFilesAloneAreSomethingToImport,
+  testManifestNameReadsTheNameOutOfTheFile,
+  testOnlyAPluginFromTheFolderCanTakeItsFiles,
+  testImportSaysWhatEachPluginDoesHere,
+  testPluginHintsUseNoDashes,
 ];
 
 let failed = 0;

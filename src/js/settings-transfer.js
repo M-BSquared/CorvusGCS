@@ -4,12 +4,18 @@ window.Corvus = window.Corvus || {};
 /*
   Corvus.settingsTransfer: Export and Import on the Settings page.
 
-  One file carries the whole station. The backend puts in its config, every
-  plugin's config and the company logo (POST /api/settings/export, see
+  One file carries the station, or the parts of it the operator picks. The
+  backend puts in its config, the plugins' configs, the operator's own plugins
+  and the company logo (POST /api/settings/export, see
   corvus/settings_bundle.py); this page adds the interface state it keeps in
   localStorage, listed in BROWSER_KEYS: where the flight HUD and the virtual
   joystick sit, the RC transmitter bindings, the extra safety parameters,
   which link cards are folded.
+
+  Both dialogs pick by part, and under Plugins by plugin, with two halves each:
+  its settings, and its files (the plugin itself). Only a plugin installed in
+  the operator's folder has files to take; the ones that ship with Corvus GCS
+  are on every station already.
 
   The backend writes the file, for the reason parameter exports are written
   there: QtWebEngine drops a browser download. Import reads the file here,
@@ -39,7 +45,10 @@ Corvus.settingsTransfer = (function () {
     { key: "corvus.link.recent", section: "connections" },
     { key: "corvus.safety.extra", section: "vehicle" },
   ];
-  const NOT_SETTINGS = ["corvus.console.history", "corvus.mission.last"];
+  // corvus.frostedTerminals mirrors the config's ui.solid_terminals for
+  // the windows of their own (js/term-window.js), rewritten on every start;
+  // the setting itself travels with the config.
+  const NOT_SETTINGS = ["corvus.console.history", "corvus.mission.last", "corvus.frostedTerminals"];
 
   /* The parts an import is chosen by. The ids match SECTIONS in
      corvus/settings_bundle.py. */
@@ -56,7 +65,8 @@ Corvus.settingsTransfer = (function () {
     { id: "folders", label: "Folders and port",
       hint: "Where Corvus keeps tiles, logs, parameters, firmware and missions. " +
             "Paths from another machine may not exist on this one." },
-    { id: "plugins", label: "Plugins", hint: "The saved settings of every plugin." },
+    { id: "plugins", label: "Plugins",
+      hint: "Each plugin's saved settings, and the plugins you installed yourself." },
   ];
 
   const LABELS = {
@@ -85,12 +95,15 @@ Corvus.settingsTransfer = (function () {
     return keys;
   }
 
-  /** Every setting this page keeps in *storage*, as {key: string}. */
-  function collectBrowser(storage) {
+  /** Every setting this page keeps in *storage*, as {key: string}; only those
+   *  of *sections* when it is given. */
+  function collectBrowser(storage, sections) {
     const out = {};
+    const only = sections ? new Set(sections) : null;
     try {
       storageKeys(storage).forEach((k) => {
-        if (!sectionOfKey(k)) return;
+        const section = sectionOfKey(k);
+        if (!section || (only && !only.has(section))) return;
         const v = storage.getItem(k);
         if (typeof v === "string") out[k] = v;
       });
@@ -126,18 +139,258 @@ Corvus.settingsTransfer = (function () {
     try { return window.localStorage; } catch (_e) { return null; }
   }
 
+  // ---- what a file carries -----------------------------------------------
+
+  /** The parts *bundle* carries. A format 1 file carries every part. Pure. */
+  function sectionsInFile(bundle) {
+    const all = SECTIONS.map((s) => s.id);
+    if (!bundle || !(bundle.format >= 2) || !Array.isArray(bundle.sections)) return all;
+    return all.filter((id) => bundle.sections.indexOf(id) !== -1);
+  }
+
+  /** The parts that have nothing to import in *bundle*. Pure. */
+  function emptySections(bundle) {
+    const present = new Set(sectionsInFile(bundle));
+    const empty = SECTIONS.map((s) => s.id).filter((id) => !present.has(id));
+    const plugins = (bundle && bundle.plugins) || {};
+    const files = (bundle && bundle.plugin_files) || {};
+    if (present.has("plugins") && !Object.keys(plugins).length && !Object.keys(files).length) {
+      empty.push("plugins");
+    }
+    const browser = (bundle && bundle.browser) || {};
+    if (present.has("layout") && !Object.keys(browser).some((k) => sectionOfKey(k) === "layout")) {
+      empty.push("layout");
+    }
+    return empty;
+  }
+
+  function isObject(v) { return !!v && typeof v === "object" && !Array.isArray(v); }
+
+  /** The name in a plugin's base64 plugin.json, or "" when there is none. Pure. */
+  function manifestName(files) {
+    const raw = isObject(files) ? files["plugin.json"] : null;
+    if (typeof raw !== "string") return "";
+    try {
+      const bytes = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
+      const manifest = JSON.parse(new TextDecoder().decode(bytes));
+      return (manifest && typeof manifest.name === "string" && manifest.name.trim()) || "";
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function installedById(listing) {
+    const out = {};
+    ((listing && listing.plugins) || []).forEach((p) => { if (p && p.id) out[p.id] = p; });
+    return out;
+  }
+
+  /**
+   * The plugins an export can take, from GET /api/plugins: one row per
+   * installed plugin with something to take, then one per saved config whose
+   * plugin is not installed. `settings` and `files` say which halves exist;
+   * `why` is the word shown in place of a half that does not. Pure.
+   */
+  function exportPlugins(listing) {
+    const saved = (listing && isObject(listing.settings)) ? listing.settings : {};
+    const rows = ((listing && listing.plugins) || []).filter((p) => p && p.id).map((p) => {
+      const user = p.source === "user";
+      return {
+        id: p.id,
+        name: p.name || p.id,
+        note: user ? "Installed in your plugin folder" : "Ships with Corvus GCS",
+        settings: Object.prototype.hasOwnProperty.call(saved, p.id),
+        files: user,
+        why: { settings: "No settings", files: "Built in" },
+      };
+    }).filter((r) => r.settings || r.files);
+    const seen = new Set(rows.map((r) => r.id));
+    Object.keys(saved).sort().forEach((id) => {
+      if (seen.has(id)) return;
+      rows.push({
+        id, name: id, note: "Not installed here", settings: true, files: false,
+        why: { settings: "", files: "Not installed" },
+      });
+    });
+    return rows;
+  }
+
+  /** The plugins in *bundle*, described against what *listing* has installed. Pure. */
+  function importPlugins(bundle, listing) {
+    const saved = isObject(bundle && bundle.plugins) ? bundle.plugins : {};
+    const files = isObject(bundle && bundle.plugin_files) ? bundle.plugin_files : {};
+    const here = installedById(listing);
+    const ids = Array.from(new Set(Object.keys(files).concat(Object.keys(saved)))).sort();
+    return ids.map((id) => {
+      const mine = here[id];
+      const hasFiles = Object.prototype.hasOwnProperty.call(files, id);
+      let note;
+      if (hasFiles) {
+        if (!mine) note = "New on this station";
+        else if (mine.source === "user") note = "Replaces the copy installed here";
+        else note = "Takes the place of the copy that ships with Corvus GCS";
+      } else if (!mine) {
+        note = "Not installed here. The settings wait for it.";
+      } else {
+        note = mine.source === "user" ? "Installed here" : "Ships with Corvus GCS";
+      }
+      return {
+        id,
+        name: manifestName(files[id]) || (mine && mine.name) || id,
+        note,
+        settings: Object.prototype.hasOwnProperty.call(saved, id),
+        files: hasFiles,
+        why: { settings: "Not in file", files: "Not in file" },
+      };
+    });
+  }
+
+  // ---- the part picker both dialogs share -------------------------------
+
+  /**
+   * One switch per part, and under Plugins a row per plugin with a switch
+   * for its settings and one for its files. A half the plugin does not have
+   * shows why in place of its switch, rather than a switch that cannot move.
+   *
+   *   spec.unavailable  {part id: hint} for parts that cannot be chosen
+   *   spec.plugins      rows from exportPlugins() or importPlugins()
+   *   spec.onChange     called after any switch moves
+   *
+   * Returns {el, head, chosen(), pluginChoice(), anyFiles()}.
+   */
+  function partsPicker(spec) {
+    const unavailable = spec.unavailable || {};
+    const plugins = spec.plugins || [];
+    const toggles = new Map();
+    const halves = [];
+    let pluginList = null;
+
+    const el = document.createElement("div");
+    el.className = "settings-transfer-parts";
+
+    function showPluginList() {
+      if (!pluginList) return;
+      const t = toggles.get("plugins");
+      pluginList.hidden = !(t && t.getValue());
+    }
+
+    function changed() {
+      showPluginList();
+      if (typeof spec.onChange === "function") spec.onChange();
+    }
+
+    function setAll(on) {
+      toggles.forEach((t, id) => { if (!unavailable[id]) t.setValue(on); });
+      halves.forEach((h) => h.toggle.setValue(on));
+      changed();
+    }
+
+    SECTIONS.forEach((s) => {
+      const off = unavailable[s.id];
+      const t = Corvus.ui.toggle({
+        value: !off,
+        disabled: !!off,
+        ariaLabel: s.label,
+        onChange: () => changed(),
+      });
+      toggles.set(s.id, t);
+      el.appendChild(Corvus.ui.field({
+        label: s.label,
+        control: t.el,
+        className: "field-switch",
+        hint: off || s.hint,
+      }));
+      if (s.id === "plugins" && !off && plugins.length) {
+        pluginList = document.createElement("div");
+        pluginList.className = "settings-transfer-plugins";
+        plugins.forEach((p) => pluginList.appendChild(pluginRow(p)));
+        el.appendChild(pluginList);
+      }
+    });
+
+    function pluginRow(p) {
+      const row = document.createElement("div");
+      row.className = "settings-transfer-plugin";
+      const text = document.createElement("div");
+      text.className = "settings-transfer-plugin-text";
+      const name = document.createElement("span");
+      name.className = "settings-transfer-plugin-name";
+      name.textContent = p.name;
+      text.appendChild(name);
+      const note = document.createElement("span");
+      note.className = "field-hint";
+      note.textContent = p.note || "";
+      text.appendChild(note);
+      row.appendChild(text);
+
+      [["settings", "Settings"], ["files", "Files"]].forEach(([kind, caption]) => {
+        if (!p[kind]) {
+          const none = document.createElement("span");
+          none.className = "settings-transfer-opt is-unavailable";
+          none.textContent = (p.why && p.why[kind]) || "";
+          row.appendChild(none);
+          return;
+        }
+        const t = Corvus.ui.toggle({
+          value: true,
+          ariaLabel: `${p.name}: ${caption}`,
+          onChange: () => changed(),
+        });
+        // A label, so the caption works the switch as well.
+        const opt = document.createElement("label");
+        opt.className = "settings-transfer-opt";
+        const cap = document.createElement("span");
+        cap.textContent = caption;
+        opt.appendChild(cap);
+        opt.appendChild(t.el);
+        row.appendChild(opt);
+        halves.push({ id: p.id, kind, toggle: t });
+      });
+      return row;
+    }
+
+    // "All" and "None" above the list, beside its caption.
+    const head = document.createElement("div");
+    head.className = "settings-transfer-head";
+    head.appendChild(Corvus.ui.label(spec.caption || "Parts"));
+    head.appendChild(Corvus.ui.actions([
+      Corvus.ui.button({ variant: "ghost", size: "sm", label: "All", onClick: () => setAll(true) }),
+      Corvus.ui.button({ variant: "ghost", size: "sm", label: "None", onClick: () => setAll(false) }),
+    ]));
+
+    function chosen() {
+      return SECTIONS.map((s) => s.id).filter((id) => !unavailable[id] && toggles.get(id).getValue());
+    }
+
+    function pluginChoice() {
+      const on = toggles.get("plugins");
+      const out = { settings: [], files: [] };
+      if (!on || unavailable.plugins || !on.getValue()) return out;
+      halves.forEach((h) => { if (h.toggle.getValue()) out[h.kind].push(h.id); });
+      return out;
+    }
+
+    // Not changed(): the dialog building this has no buttons yet to refresh.
+    showPluginList();
+    return {
+      el, head, chosen, pluginChoice, setAll,
+      anyFiles: () => pluginChoice().files.length > 0,
+    };
+  }
+
   // ---- export ------------------------------------------------------------
 
   async function openExport() {
-    let target = {};
-    try {
-      target = await Corvus.telemetry.requestJson("/api/settings/export/target");
-    } catch (_e) { /* the placeholders stand in */ }
+    const [target, listing] = await Promise.all([
+      Corvus.telemetry.requestJson("/api/settings/export/target").catch(() => ({})),
+      Corvus.telemetry.requestJson("/api/plugins").catch(() => ({})),
+    ]);
+    const plugins = exportPlugins(listing || {});
 
     const nameInput = Corvus.ui.input({
       id: "settingsExportName",
       ariaLabel: "File name",
-      value: target.filename || "",
+      value: (target && target.filename) || "",
       placeholder: "corvus-settings.json",
       mono: true,
       autocomplete: false,
@@ -145,7 +398,7 @@ Corvus.settingsTransfer = (function () {
     const dirInput = Corvus.ui.input({
       id: "settingsExportDir",
       ariaLabel: "Folder",
-      value: target.dir || "",
+      value: (target && target.dir) || "",
       placeholder: "~/Downloads",
       mono: true,
       autocomplete: false,
@@ -158,9 +411,19 @@ Corvus.settingsTransfer = (function () {
     const body = document.createDocumentFragment();
     const summary = document.createElement("div");
     summary.className = "page-card-desc";
-    summary.textContent = "Every setting of this station in one file: the interface, " +
-      "the window layout, the map, connections, vehicle settings, folders and plugins.";
+    summary.textContent = "Choose what goes into the file. Everything is switched on, " +
+      "which is the whole station: a backup, or the setup for the next laptop.";
     body.appendChild(summary);
+
+    const picker = partsPicker({
+      caption: "What goes into the file",
+      unavailable: plugins.length ? {} : { plugins: "No plugin has anything to export." },
+      plugins,
+      onChange: () => refresh(),
+    });
+    body.appendChild(picker.head);
+    body.appendChild(picker.el);
+
     body.appendChild(Corvus.ui.field({ label: "File name", control: nameInput }));
     body.appendChild(Corvus.ui.field({
       label: "Folder",
@@ -192,9 +455,17 @@ Corvus.settingsTransfer = (function () {
       actions: [cancelBtn, saveBtn],
     });
     dialog.open();
+    refresh();
+
+    function refresh() {
+      saveBtn.disabled = !picker.chosen().length;
+    }
 
     async function save() {
       msg.hide();
+      const sections = picker.chosen();
+      if (!sections.length) return;
+      const choice = picker.pluginChoice();
       Corvus.ui.setBusy(saveBtn, true);
       try {
         const store = localStore();
@@ -205,7 +476,10 @@ Corvus.settingsTransfer = (function () {
             filename: nameInput.value.trim(),
             dir: dirInput.value.trim(),
             include_secrets: secrets.getValue(),
-            browser: store ? collectBrowser(store) : {},
+            browser: store ? collectBrowser(store, sections) : {},
+            sections,
+            plugin_settings: choice.settings,
+            plugin_files: choice.files,
           }),
         });
         dialog.close();
@@ -220,7 +494,11 @@ Corvus.settingsTransfer = (function () {
 
   // ---- import ------------------------------------------------------------
 
-  function pickFile() {
+  /**
+   * Ask for a settings file and open the import dialog for it.
+   * *opts* is handed to openImport (see there).
+   */
+  function pickFile(opts) {
     const input = document.createElement("input");
     input.type = "file";
     input.setAttribute("accept", ".json,application/json");
@@ -231,7 +509,7 @@ Corvus.settingsTransfer = (function () {
       const file = input.files && input.files[0];
       if (!file) return;
       readFileText(file).then((text) => {
-        openImport(parseBundle(text), file.name || "the file");
+        openImport(parseBundle(text), file.name || "the file", opts);
       }).catch((err) => {
         notify("critical", (err && err.message) || "Could not read the settings file.");
       });
@@ -262,18 +540,6 @@ Corvus.settingsTransfer = (function () {
     return data;
   }
 
-  /** The parts that have nothing to import in *bundle*. Pure. */
-  function emptySections(bundle) {
-    const empty = [];
-    const plugins = bundle && bundle.plugins;
-    if (!plugins || typeof plugins !== "object" || !Object.keys(plugins).length) {
-      empty.push("plugins");
-    }
-    const browser = (bundle && bundle.browser) || {};
-    if (!Object.keys(browser).some((k) => sectionOfKey(k) === "layout")) empty.push("layout");
-    return empty;
-  }
-
   function describeSource(bundle, fileName) {
     const parts = [];
     if (bundle.version) parts.push(`Corvus GCS ${bundle.version}`);
@@ -284,9 +550,24 @@ Corvus.settingsTransfer = (function () {
     return parts.length ? `${fileName}, from ${parts.join(", ")}.` : `${fileName}.`;
   }
 
-  function openImport(bundle, fileName) {
-    const empty = new Set(emptySections(bundle));
-    const toggles = new Map();
+  /**
+   * The import dialog for a parsed *bundle*.
+   *
+   * opts.onImported(res) runs once the backend has taken the file, before the
+   * page offers to reload; the first start setup uses it to close itself.
+   */
+  async function openImport(bundle, fileName, opts) {
+    const o = opts || {};
+    let listing = {};
+    try {
+      listing = await Corvus.telemetry.requestJson("/api/plugins");
+    } catch (_e) { /* the rows then say less about what is installed here */ }
+    const plugins = importPlugins(bundle, listing);
+    const present = new Set(sectionsInFile(bundle));
+    const unavailable = {};
+    emptySections(bundle).forEach((id) => {
+      unavailable[id] = present.has(id) ? "Nothing of this in the file." : "Not in this file.";
+    });
 
     const body = document.createDocumentFragment();
     // What the file is and whether it carries passwords, together above the
@@ -306,27 +587,17 @@ Corvus.settingsTransfer = (function () {
     about.appendChild(note);
     body.appendChild(about);
 
-    const parts = document.createElement("div");
-    parts.className = "settings-transfer-parts";
-    body.appendChild(parts);
-
-    SECTIONS.forEach((s) => {
-      const none = empty.has(s.id);
-      const t = Corvus.ui.toggle({
-        value: !none,
-        disabled: none,
-        ariaLabel: s.label,
-        onChange: () => refresh(),
-      });
-      toggles.set(s.id, t);
-      parts.appendChild(Corvus.ui.field({
-        label: s.label,
-        control: t.el,
-        className: "field-switch",
-        hint: none ? "Nothing of this in the file." : s.hint,
-      }));
+    const picker = partsPicker({
+      caption: "What to take from the file",
+      unavailable,
+      plugins,
+      onChange: () => refresh(),
     });
+    body.appendChild(picker.head);
+    body.appendChild(picker.el);
 
+    const code = Corvus.ui.message();
+    body.appendChild(code.el);
     const warn = Corvus.ui.message();
     warn.show("The parts switched on replace the settings of this station. " +
               "The interface reloads afterwards.", "warn");
@@ -340,8 +611,6 @@ Corvus.settingsTransfer = (function () {
     const importBtn = Corvus.ui.button({
       variant: "primary", icon: "upload", label: "Import", onClick: run,
     });
-    // Wide, so each part's hint fits on one line and seven of them fit on a
-    // laptop screen without the dialog scrolling.
     const dialog = Corvus.ui.modal({
       title: "Import settings",
       size: "lg",
@@ -349,29 +618,40 @@ Corvus.settingsTransfer = (function () {
       actions: [cancelBtn, importBtn],
     });
     dialog.open();
+    refresh();
 
-    function chosen() {
-      return SECTIONS.map((s) => s.id).filter((id) => toggles.get(id).getValue());
-    }
     function refresh() {
-      importBtn.disabled = !chosen().length;
+      importBtn.disabled = !picker.chosen().length;
+      if (picker.anyFiles()) {
+        code.show("Plugin files are code. It runs inside Corvus GCS and can reach the " +
+                  "vehicle like the interface can. Install plugins only from a file you trust.",
+                  "warn");
+      } else {
+        code.hide();
+      }
     }
 
     async function run() {
       msg.hide();
-      const sections = chosen();
+      const sections = picker.chosen();
       if (!sections.length) return;
       if (armedNow()) {
         msg.show("Settings cannot be imported while the vehicle is armed.", "err");
         return;
       }
+      const choice = picker.pluginChoice();
       Corvus.ui.setBusy(importBtn, true);
       let res;
       try {
         res = await Corvus.telemetry.requestJson("/api/settings/import", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ bundle, sections }),
+          body: JSON.stringify({
+            bundle,
+            sections,
+            plugin_settings: choice.settings,
+            plugin_files: choice.files,
+          }),
         });
       } catch (err) {
         msg.show((err && err.message) || "Import failed", "err");
@@ -381,6 +661,9 @@ Corvus.settingsTransfer = (function () {
       const store = localStore();
       if (store) applyBrowser(store, bundle.browser, sections);
       dialog.close();
+      if (typeof o.onImported === "function") {
+        try { o.onImported(res || {}); } catch (_e) { /* the result still shows */ }
+      }
       showResult(res || {});
     }
   }
@@ -388,6 +671,10 @@ Corvus.settingsTransfer = (function () {
   /** What the import did, and the reload that makes it take effect. */
   function showResult(res) {
     const lines = ["Settings imported."];
+    const installed = Number(res.plugins_installed) || 0;
+    if (installed) {
+      lines.push(installed === 1 ? "1 plugin installed." : `${installed} plugins installed.`);
+    }
     const restart = (res.restart || []).map((k) => LABELS[k] || k);
     if (restart.length) {
       lines.push(`Restart Corvus GCS for the new ${restart.join(", ")}.`);
@@ -422,9 +709,9 @@ Corvus.settingsTransfer = (function () {
     card.classList.add("settings-transfer");
     const desc = document.createElement("div");
     desc.className = "page-card-desc";
-    desc.textContent = "Save every setting of this station to one file, or load one " +
-      "saved here or on another station. The file includes the window layout, " +
-      "such as where the flight HUD sits.";
+    desc.textContent = "Save the settings of this station to one file, or load one " +
+      "saved here or on another station. You choose the parts, down to each " +
+      "plugin, which can travel with its settings or on its own.";
     card.appendChild(desc);
     card.appendChild(Corvus.ui.actions([
       Corvus.ui.button({
@@ -452,6 +739,7 @@ Corvus.settingsTransfer = (function () {
     section,
     openExport,
     openImport,
+    pickFile,
     BROWSER_KEYS,
     NOT_SETTINGS,
     SECTIONS,
@@ -460,6 +748,10 @@ Corvus.settingsTransfer = (function () {
     collectBrowser,
     applyBrowser,
     parseBundle,
+    sectionsInFile,
     emptySections,
+    manifestName,
+    exportPlugins,
+    importPlugins,
   };
 })();

@@ -5,8 +5,7 @@ Pins the defense-in-depth contract: mutating/destructive PREFLIGHT actions
 command/param write leaves the GCS), while the in-flight commands (takeoff,
 land, rtl, arm, set_mode) do NOT carry an armed-refusal — they proceed while
 armed (an armed vehicle can be disarmed, landed, switched to RTL, etc.).
-Mirrors the patterns in ``tests/test_mavlink_params.py`` and
-``tests/test_integration_review.py``.
+Mirrors the patterns in ``tests/test_mavlink_params.py``.
 
 Autotune is deliberately in the second group, not the first. It is not a
 preflight action: PX4 injects steps into the rate controller and identifies the

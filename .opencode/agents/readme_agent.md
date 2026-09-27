@@ -39,10 +39,8 @@ look professional, trustworthy, and easy to understand at a glance.
 - **Badges:** a badge row. Always include a **"Vibecoded"** badge (the project
   is built via AI-assisted "vibe coding") alongside status badges. Use
   **dynamic** shields.io badges so they stay current without hand edits. The
-  repo is hosted on a self-hosted GitLab at `git.unibw.de`, so prefer GitLab
-  badges (`https://img.shields.io/gitlab/v/...?gitlab_url=https://git.unibw.de`)
-  for the version; use static custom badges for license, Python version, PX4
-  target, and "Vibecoded". See §4.
+  repo is hosted on GitHub (`M-BSquared/CorvusGCS`); use static custom badges
+  for license, Python version, PX4 target, and "Vibecoded". See §4.
 - **What it is & why:** an extensive, plain-language description of what the
   program does — an offline Ground Control Station for PX4 aircraft, with a
   live HUD, satellite map, MAVLink console, parameter editor, sensor
@@ -77,11 +75,9 @@ look professional, trustworthy, and easy to understand at a glance.
 
 - The README must **never hardcode a version literal**. The product version
   comes from the `VERSION` file via dynamic channels only:
-  - Use the platform's dynamic version badge. The repo lives on a self-hosted
-    GitLab at `git.unibw.de`, so use a shields.io GitLab badge
-    (`https://img.shields.io/gitlab/v/release/<project>?gitlab_url=https://git.unibw.de`)
-    so the displayed version tracks releases automatically. If a GitHub
-    mirror is added, add the GitHub variant too.
+  - The version badge is rewritten from `VERSION` by `.githooks/pre-commit`
+    (it finds the line by the `corvus:version-badge` marker). Do not hand-edit
+    the number or remove the marker.
   - If a static version snapshot is unavoidable in prose, read it from
     `VERSION` at edit time and treat it as a snapshot, not the source of
     truth. Never edit `VERSION` or `corvus/version.py`.

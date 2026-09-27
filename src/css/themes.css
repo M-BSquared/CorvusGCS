@@ -11,7 +11,7 @@
   How a theme is selected
   -----------------------
   Corvus.theme writes `data-theme="<id>"` on <html>. Bare `:root` carries the
-  DEFAULT theme (light-orange) in full, so the app is completely styled before
+  DEFAULT theme (light, white and black) in full, so the app is completely styled before
   any script runs and an unknown/missing id degrades to the default rather
   than to an unpainted page.
 
@@ -20,8 +20,8 @@
   restates the whole dark surface/text/shadow stack (and carries green's
   accent, since green is the reference dark theme), and blue/pink/orange then
   override only their accent family. On the light side it is the other way
-  round: "light" is the white/black theme and differs from the default only in
-  its accent family, so its block is four lines. Because every value in the
+  round: "light-orange" is the white and corporate orange theme and differs from
+  the default only in its accent family, so its block is a few lines. Because every value in the
   app is a token, neither base needs a single per-component override.
 
   Channel tokens (--glass-rgb, --tint-rgb, --input-rgb) hold bare `R G B`
@@ -210,14 +210,16 @@
 }
 
 /* ===================================================================
-   DEFAULT THEME — light with orange accents. Also the complete light
-   base the white/black theme builds on, so that block only restates
-   the accent family.
+   DEFAULT THEME — light, the white/black theme: the accent is
+   near-black, which is what makes it "white & black" rather than a
+   light tint of a coloured one. Also the complete light base the
+   light-orange theme builds on, so that block only restates the accent
+   family.
 
    The surfaces are deliberately neutral grey-white rather than warmed
-   toward the accent: they are shared with the "light" theme, whose
-   accent is near-black, and a warm cast under a black accent reads as
-   a colour mistake rather than a choice.
+   toward any accent: they are shared with light-orange, and a warm cast
+   under the black accent would read as a colour mistake rather than a
+   choice.
 
    Status colours are picked at darker, more saturated values than the
    dark themes use, so they keep AA contrast against white instead of
@@ -233,20 +235,12 @@
   --surface-hover: #E2E6EC;
   --surface-active: #D6DBE3;
 
-  /* A saturated burnt orange, not the dark themes' amber: #F58A2B carries
-     2.5:1 on white and fails as both text and a fill behind white button
-     labels. This one is fully saturated at hue 27deg — a true orange rather
-     than the red-orange it replaced — and holds 4.0:1 in both directions,
-     which clears AA for the UI components and large text it is actually used
-     on. Accent-coloured body text uses --accent-bright (5.3:1) instead, and
-     hover/pressed only deepen the fill, so a pressed control never loses
-     contrast under the cursor. */
-  --accent: #CE5E00;
-  --accent-dim: rgba(206, 94, 0, 0.14);
-  --accent-bright: #B04E00;
-  --accent-dark: #FCE7D3;
-  --accent-hover: #B85300;
-  --accent-pressed: #9E4700;
+  --accent: #1B1F26;
+  --accent-dim: rgba(27, 31, 38, 0.10);
+  --accent-bright: #343B45;
+  --accent-dark: #E2E6EC;
+  --accent-hover: #2C323B;
+  --accent-pressed: #0E1116;
 
   --healthy: #0F8B50;
   --healthy-dark: #D8F1E3;
@@ -286,7 +280,8 @@
   --terminal-bg: #FFFFFF;
   --terminal-text: #1B1F26;
   --terminal-muted: #79828D;
-  --terminal-cmd: #BD5500;
+  /* A black "you typed this" marker is indistinguishable from output. */
+  --terminal-cmd: #0F8B50;
   --ssh-bg: #F7F8FA;
 
   /* --- Attitude indicator ---
@@ -365,19 +360,25 @@
 }
 
 /* ===================================================================
-   LIGHT — the white/black theme. Same light base as the default; the
-   accent is near-black, which is what makes this the "white & black"
-   theme rather than a light tint of a coloured one.
+   LIGHT ORANGE — white and corporate orange. Same light base as the
+   default; only the accent family differs.
    =================================================================== */
-:root[data-theme="light"] {
-  --accent: #1B1F26;
-  --accent-dim: rgba(27, 31, 38, 0.10);
-  --accent-bright: #343B45;
-  --accent-dark: #E2E6EC;
-  --accent-hover: #2C323B;
-  --accent-pressed: #0E1116;
-  /* A black "you typed this" marker is indistinguishable from output. */
-  --terminal-cmd: #0F8B50;
+:root[data-theme="light-orange"] {
+  /* A saturated burnt orange, not the dark themes' amber: #F58A2B carries
+     2.5:1 on white and fails as both text and a fill behind white button
+     labels. This one is fully saturated at hue 27deg — a true orange rather
+     than the red-orange it replaced — and holds 4.0:1 in both directions,
+     which clears AA for the UI components and large text it is actually used
+     on. Accent-coloured body text uses --accent-bright (5.3:1) instead, and
+     hover/pressed only deepen the fill, so a pressed control never loses
+     contrast under the cursor. */
+  --accent: #CE5E00;
+  --accent-dim: rgba(206, 94, 0, 0.14);
+  --accent-bright: #B04E00;
+  --accent-dark: #FCE7D3;
+  --accent-hover: #B85300;
+  --accent-pressed: #9E4700;
+  --terminal-cmd: #BD5500;
 }
 
 /* ===================================================================

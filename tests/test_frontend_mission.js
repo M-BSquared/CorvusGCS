@@ -145,6 +145,7 @@ function testBoundsMatchThePythonModel() {
     ["SPEED_MAX_MS", "MISSION_SPEED_MAX_MS"],
     ["MAX_ITEMS", "MISSION_MAX_ITEMS"],
     ["POINT_NAME_MAX", "MISSION_POINT_NAME_MAX"],
+    ["APPROACH_MIN_M", "MISSION_APPROACH_MIN_M"],
   ];
   pairs.forEach(([js, py]) => {
     assert.strictEqual(
@@ -545,6 +546,408 @@ function testAHiddenRadiusIsStillSavedAndUploaded() {
   const item = mission.getPlan().items[0];
   assert.strictEqual(item.radius, 120, "the radius stays in the plan");
   assert.strictEqual(item.direction, -1, "and so does the direction");
+}
+
+function testThePlanAircraftNamesMatchThePythonModel() {
+  // A kind the backend does not know is dropped on save, and the plan comes
+  // back from disk with its Holds circling again.
+  const block = missionPy.split("PLAN_AIRCRAFT: tuple[str, ...] = (")[1];
+  assert.ok(block, "corvus/mission.py must declare PLAN_AIRCRAFT");
+  const py = Array.from(block.split(")")[0].matchAll(/"([a-z_]+)"/g)).map((m) => m[1]);
+  assert.deepStrictEqual(mission._aircraft.map((entry) => entry.value), py);
+}
+
+function testEveryConnectedAirframeMapsToTheRightPlanAircraft() {
+  assert.strictEqual(mission._aircraftOf("QUADROTOR"), "multirotor");
+  assert.strictEqual(mission._aircraftOf("HEXAROTOR"), "multirotor");
+  assert.strictEqual(mission._aircraftOf("HELICOPTER"), "multirotor",
+    "a helicopter hovers at a Hold as a multicopter does");
+  assert.strictEqual(mission._aircraftOf("FIXED_WING"), "fixed_wing");
+  assert.strictEqual(mission._aircraftOf("VTOL_QUADROTOR"), "vtol");
+  assert.strictEqual(mission._aircraftOf("GROUNDED_ROVER"), null,
+    "an airframe that is none of the three sets nothing");
+  assert.strictEqual(mission._aircraftOf(""), null);
+  const bridge = fs.readFileSync(
+    path.join(__dirname, "..", "corvus", "mavlink_bridge.py"), "utf-8");
+  const known = Array.from(bridge.matchAll(/\d+:\s*"([A-Z_]+)"/g)).map((m) => m[1]);
+  mission._aircraft.forEach((entry) => entry.types.forEach((type) => {
+    assert.ok(known.indexOf(type) >= 0,
+      `"${type}" is not a MAV_TYPE the bridge ever puts in the state store`);
+  }));
+}
+
+function testAMulticopterPlanHoldsWithoutARingEvenWithNothingConnected() {
+  /* The case the whole setting exists for: a plan drawn at the desk for a
+     multicopter. A Hold is flown as a hover on PX4 and ArduPilot alike, so it
+     has no ring, radius or direction. A Circle keeps them: ArduCopter flies
+     NAV_LOITER_TURNS as a real circle. */
+  const was = Corvus.telemetry;
+  Corvus.telemetry = { getState: () => ({ connected: false, vehicle_type: "" }) };
+  try {
+    mission.setPlan({
+      aircraft: "multirotor",
+      items: [
+        { type: "loiter_time", lat: 48, lon: 11, alt: 40, seconds: 30, radius: 120 },
+        { type: "loiter_turns", lat: 48, lon: 11, alt: 40, turns: 2, radius: 80 },
+      ],
+    });
+    const plan = mission.getPlan();
+    assert.strictEqual(plan.aircraft, "multirotor", "the choice is saved with the plan");
+    const [hold, circle] = plan.items;
+    assert.strictEqual(mission._paramApplies(hold, "radius"), false);
+    assert.strictEqual(mission._paramApplies(hold, "direction"), false);
+    assert.strictEqual(mission._paramApplies(hold, "seconds"), true);
+    assert.ok(/hover/i.test(mission._itemHint(hold)),
+      "and the Hold says it hovers rather than that it circles");
+    assert.strictEqual(mission._paramApplies(circle, "radius"), true,
+      "a Circle on a multicopter plan keeps the radius it may well fly");
+    assert.strictEqual(hold.radius, 120, "a hidden radius still stays in the plan");
+
+    mission.setPlan({ aircraft: "fixed_wing", items: [hold] });
+    const fw = mission.getPlan().items[0];
+    assert.strictEqual(mission._paramApplies(fw, "radius"), true);
+    assert.ok(/circle/i.test(mission._itemHint(fw)));
+
+    mission.setPlan({ items: [hold] });
+    assert.strictEqual(mission.getPlan().aircraft, undefined,
+      "a plan that names no aircraft sends none");
+    assert.strictEqual(mission._paramApplies(mission.getPlan().items[0], "radius"), true,
+      "and shows every field its file carries, as before");
+
+    mission.setPlan({ aircraft: "zeppelin", items: [] });
+    assert.strictEqual(mission.getPlan().aircraft, undefined,
+      "an unknown kind is no kind rather than a broken plan");
+  } finally {
+    Corvus.telemetry = was;
+    mission.setPlan({ items: [] });
+  }
+}
+
+function testTheConnectedAircraftSetsThePlansKindAndLocksIt() {
+  const was = Corvus.telemetry;
+  let state = { connected: true, vehicle_type: "QUADROTOR" };
+  Corvus.telemetry = { getState: () => state };
+  try {
+    mission.setPlan({ aircraft: "fixed_wing", items: [] });
+    assert.strictEqual(mission.getPlan().aircraft, "multirotor",
+      "what is flying decides, not what was picked");
+    assert.strictEqual(mission._adoptVehicleAircraft(), false,
+      "an unchanged vehicle changes nothing");
+
+    state = { connected: false, vehicle_type: "QUADROTOR" };
+    assert.strictEqual(mission._adoptVehicleAircraft(), true, "the lock comes off");
+    assert.strictEqual(mission.getPlan().aircraft, "multirotor",
+      "and the plan keeps the kind the vehicle set");
+
+    state = { connected: true, vehicle_type: "GENERIC" };
+    assert.strictEqual(mission._adoptVehicleAircraft(), false,
+      "an airframe that says nothing useful neither sets nor locks it");
+    assert.strictEqual(mission.getPlan().aircraft, "multirotor");
+  } finally {
+    Corvus.telemetry = was;
+    mission.setPlan({ items: [] });
+  }
+}
+
+function testAMulticopterDescendsStraightDownWhereAFixedWingGlides() {
+  /* A multicopter flies a landing or a return in at the height it has and
+     then drops; a fixed wing glides down from the point before. The profile
+     is the one place that shows the flight from the side, so it draws each. */
+  const points = [
+    { id: "home", type: "home", alt: 0, distance: 0 },
+    { id: 1, type: "takeoff", alt: 30, distance: 0 },
+    { id: 2, type: "waypoint", alt: 40, distance: 300 },
+    { id: 3, type: "land", alt: 0, distance: 700 },
+  ];
+  const copter = mission._profileLine(points, "multirotor");
+  assert.deepStrictEqual(copter.x, [0, 0, 0.3, 0.7, 0.7],
+    "one extra corner, right above the landing point");
+  assert.deepStrictEqual(copter.y, [0, 30, 40, 40, 0],
+    "level at the last height, then straight down");
+
+  const plane = mission._profileLine(points, "fixed_wing");
+  assert.deepStrictEqual(plane.y, [0, 30, 40, 0], "a straight glide into the landing");
+  assert.deepStrictEqual(plane.x.slice(2), [0.3, 0.7]);
+  const unnamed = mission._profileLine(points, null);
+  assert.deepStrictEqual([unnamed.x, unnamed.y], [[0, 0, 0.3, 0.7], [0, 30, 40, 0]],
+    "and an aircraft nobody named is drawn as before");
+
+  const home = [
+    { id: "home", type: "home", alt: 0, distance: 0 },
+    { id: 1, type: "waypoint", alt: 25, distance: 200 },
+    { id: 2, type: "rtl", alt: 0, distance: 400 },
+  ];
+  assert.deepStrictEqual(mission._profileLine(home, "multirotor").y, [0, 25, 25, 0],
+    "a return comes down the same way");
+}
+
+function testTheGlideIntoALandingIsMeasuredFromThePointBefore() {
+  const glide = mission._landingApproach([
+    { id: "home", type: "home", alt: 0, distance: 0 },
+    { id: 1, type: "waypoint", alt: 40, distance: 100 },
+    { id: 2, type: "land", alt: 0, distance: 300 },
+  ]);
+  assert.strictEqual(glide.drop, 40);
+  assert.strictEqual(glide.run, 200);
+  assert.ok(Math.abs(glide.degrees - 11.31) < 0.01, `got ${glide.degrees}`);
+
+  assert.strictEqual(mission._landingApproach([
+    { id: 1, type: "waypoint", alt: 40, distance: 0 },
+    { id: 2, type: "land", alt: 0, distance: 0 },
+  ]).degrees, 90, "a landing under the point before it is a drop, not a glide");
+  assert.strictEqual(mission._landingApproach([
+    { id: "home", type: "home", alt: 0, distance: 0 },
+    { id: 1, type: "rtl", alt: 0, distance: 0 },
+  ]), null, "no landing, no approach");
+}
+
+function testOnlyAFixedWingIsWarnedAboutASteepApproach() {
+  // 40 m high and 200 m out is about 11 degrees: PX4 refuses that on upload
+  // with FW_LND_ANG at its default, so the planner says so while drawing.
+  const steep = (aircraft) => ({
+    aircraft,
+    home: { lat: 48, lon: 11 },
+    items: [
+      { type: "takeoff", lat: 48, lon: 11, alt: 40 },
+      { type: "waypoint", lat: 48.009, lon: 11, alt: 40 },
+      { type: "land", lat: 48.0108, lon: 11, alt: 0 },
+    ],
+  });
+  const glideWarnings = () => mission._problemDetails()
+    .filter((issue) => /landing approach/.test(issue.text));
+  try {
+    mission.setPlan(steep("fixed_wing"));
+    const warned = glideWarnings();
+    assert.strictEqual(warned.length, 1, "a fixed wing is told");
+    assert.ok(/\b11° steep/.test(warned[0].text), warned[0].text);
+    // 40 m down over 200 m: 457.2 m out at 5 degrees, or 17.5 m high. Advice
+    // is rounded the safe way, out and down.
+    assert.ok(/at least 458 m away from it, or lower it to 17 m\./.test(warned[0].info),
+      `with both ways out, in numbers: ${warned[0].info}`);
+    assert.strictEqual(mission._glideMaxDeg, 5, "PX4's FW_LND_ANG default");
+
+    mission.setPlan(steep("multirotor"));
+    assert.strictEqual(glideWarnings().length, 0, "a multicopter does not glide in");
+    mission.setPlan(steep(undefined));
+    assert.strictEqual(glideWarnings().length, 0, "nor is an unnamed aircraft judged as one");
+
+    const flat = steep("fixed_wing");
+    flat.items[1].alt = 12;
+    mission.setPlan(flat);
+    assert.strictEqual(glideWarnings().length, 0, "a flat approach is not complained about");
+  } finally {
+    mission.setPlan({ items: [] });
+  }
+}
+
+function testALandingSaysHowThisAircraftComesDown() {
+  try {
+    const land = { type: "land", lat: 48, lon: 11, alt: 0 };
+    mission.setPlan({ aircraft: "multirotor", items: [land] });
+    assert.ok(/straight down/.test(mission._itemHint(mission.getPlan().items[0])));
+    mission.setPlan({ aircraft: "fixed_wing", items: [land] });
+    assert.ok(/Glide/.test(mission._itemHint(mission.getPlan().items[0])));
+    mission.setPlan({ items: [land] });
+    assert.strictEqual(mission._itemHint(mission.getPlan().items[0]), mission._types.land.hint);
+  } finally {
+    mission.setPlan({ items: [] });
+  }
+}
+
+function testAMulticopterLandingHasADescentPointToDragLikeTheTakeoff() {
+  /* At the start the takeoff sits above the start point and its climb is
+     dragged there. The landing mirrors it: the corner above the touchdown is
+     a point of its own, and its height is where the descent starts. */
+  const points = [
+    { id: "home", type: "home", alt: 0, distance: 0 },
+    { id: 1, type: "takeoff", alt: 30, distance: 0 },
+    { id: 2, type: "waypoint", alt: 40, distance: 300 },
+    { id: 3, type: "land", alt: 0, distance: 700 },
+  ];
+  const marks = mission._profileMarks(points, "multirotor");
+  const corner = marks.filter((m) => m.type === "descent");
+  assert.strictEqual(corner.length, 1, "one draggable corner, over the landing");
+  assert.deepStrictEqual(
+    [corner[0].id, corner[0].distance, corner[0].alt, corner[0].number], [3, 700, 40, 3],
+    "until it is set, at the height of the point before, numbered as the landing");
+  assert.strictEqual(marks.indexOf(corner[0]) + 1, marks.findIndex((m) => m.type === "land"),
+    "drawn just before the touchdown it belongs to");
+
+  const set = points.map((p) => (p.type === "land" ? Object.assign({ approach: 12 }, p) : p));
+  assert.strictEqual(mission._profileMarks(set, "multirotor")
+    .find((m) => m.type === "descent").alt, 12);
+  assert.deepStrictEqual(mission._profileLine(set, "multirotor").y, [0, 30, 40, 12, 0],
+    "the line runs to the set height, then straight down");
+
+  assert.strictEqual(mission._profileMarks(set, "fixed_wing")
+    .filter((m) => m.type === "descent").length, 0, "a fixed wing glides, it has no corner");
+  assert.strictEqual(mission._profileMarks(set, null)
+    .filter((m) => m.type === "descent").length, 0);
+}
+
+function testTheDescentHeightRoundTripsAndAnUnsetOneStaysAbsent() {
+  try {
+    mission.setPlan({
+      aircraft: "multirotor",
+      items: [
+        { type: "waypoint", lat: 48, lon: 11, alt: 40 },
+        { type: "land", lat: 48.001, lon: 11, alt: 0, approach_alt: 12 },
+        { type: "land", lat: 48.002, lon: 11, alt: 0 },
+      ],
+    });
+    const plan = mission.getPlan();
+    assert.strictEqual(plan.items[1].approach_alt, 12, "a set height is sent");
+    assert.ok(!("approach_alt" in plan.items[2]), "an unset one is not sent at all");
+    assert.ok(!("approach_alt" in plan.items[0]), "and nothing but a landing carries one");
+
+    const before = mission._planKey();
+    mission.setPlan(Object.assign({}, plan, { aircraft: "fixed_wing" }));
+    assert.notStrictEqual(mission._planKey(), before,
+      "the aircraft decides whether the height is flown, so it is part of what is flown");
+  } finally {
+    mission.setPlan({ items: [] });
+  }
+}
+
+function testAFixedWingClimbsOutAlongTheFirstLegRatherThanStraightUp() {
+  /* A fixed wing cannot climb vertically. It climbs along the first leg at
+     its takeoff pitch, 10 degrees unless the takeoff says otherwise, and is
+     at the takeoff height only after a run: 30 m at 10 degrees is 170 m. */
+  const points = [
+    { id: "home", type: "home", alt: 0, distance: 0 },
+    { id: 1, type: "takeoff", alt: 30, distance: 0 },
+    { id: 2, type: "waypoint", alt: 40, distance: 300 },
+  ];
+  const run = 30 / Math.tan(10 * Math.PI / 180);
+  const takeoff = mission._profileMarks(points, "fixed_wing").find((m) => m.type === "takeoff");
+  assert.ok(Math.abs(takeoff.distance - run) < 1e-9, `reaches its height ${takeoff.distance} m out`);
+  assert.strictEqual(takeoff.alt, 30);
+  assert.strictEqual(mission._profileMarks(points, "multirotor")
+    .find((m) => m.type === "takeoff").distance, 0, "a multicopter still climbs straight up");
+
+  const steep = points.map((p) => (p.type === "takeoff" ? Object.assign({ pitch: 20 }, p) : p));
+  const at20 = mission._profileMarks(steep, "fixed_wing").find((m) => m.type === "takeoff");
+  assert.ok(Math.abs(at20.distance - 30 / Math.tan(20 * Math.PI / 180)) < 1e-9,
+    "a steeper climb pitch needs less run");
+
+  const close = points.map((p) => (p.type === "waypoint" ? Object.assign({}, p, { distance: 100 }) : p));
+  assert.strictEqual(mission._profileMarks(close, "fixed_wing")
+    .find((m) => m.type === "takeoff").distance, 100, "and it cannot climb past the first point");
+}
+
+function testAFixedWingIsToldWhenTheFirstPointIsInsideItsClimbOut() {
+  const plan = (aircraft, north) => ({
+    aircraft,
+    home: { lat: 48, lon: 11 },
+    items: [
+      { type: "takeoff", lat: 48, lon: 11, alt: 30 },
+      { type: "waypoint", lat: 48 + north, lon: 11, alt: 40 },
+    ],
+  });
+  const climbWarnings = () => mission._problems().filter((t) => /climb is done/.test(t));
+  try {
+    mission.setPlan(plan("fixed_wing", 0.0009));        // about 100 m out
+    assert.strictEqual(climbWarnings().length, 1);
+    mission.setPlan(plan("fixed_wing", 0.0027));        // about 300 m out
+    assert.strictEqual(climbWarnings().length, 0, "170 m of climb fits in 300 m");
+    mission.setPlan(plan("multirotor", 0.0009));
+    assert.strictEqual(climbWarnings().length, 0, "a multicopter needs no run");
+  } finally {
+    mission.setPlan({ items: [] });
+  }
+}
+
+function testAClimbPitchIsOfferedOnlyToAnAircraftThatClimbsOut() {
+  try {
+    const takeoff = { type: "takeoff", lat: 48, lon: 11, alt: 30 };
+    mission.setPlan({ aircraft: "multirotor", items: [takeoff] });
+    assert.strictEqual(mission._paramApplies(mission.getPlan().items[0], "pitch"), false);
+    mission.setPlan({ aircraft: "fixed_wing", items: [takeoff] });
+    assert.strictEqual(mission._paramApplies(mission.getPlan().items[0], "pitch"), true);
+    assert.ok(/Climbs out/.test(mission._itemHint(mission.getPlan().items[0])));
+  } finally {
+    mission.setPlan({ items: [] });
+  }
+}
+
+function testAReturnIsDrawnAtTheHeightsTheVehicleFliesItAt() {
+  const points = [
+    { id: "home", type: "home", alt: 0, distance: 0 },
+    { id: 1, type: "waypoint", alt: 40, distance: 300 },
+    { id: 2, type: "rtl", alt: 0, distance: 700 },
+  ];
+  // PX4's defaults: up to 60 m first, home, down to 30 m, then it lands.
+  const px4 = { known: true, climb_to: 60, arrive_at: 30, hold: false };
+  const copter = mission._profileLine(points, "multirotor", px4);
+  assert.deepStrictEqual(copter.x, [0, 0.3, 0.3, 0.7, 0.7, 0.7]);
+  assert.deepStrictEqual(copter.y, [0, 40, 60, 60, 30, 0]);
+  assert.strictEqual(mission._profileMarks(points, "multirotor", px4)
+    .find((m) => m.type === "rtl").alt, 0, "and ends on the ground");
+
+  // ArduCopter's 15 m is below the route: it comes back where it is.
+  assert.deepStrictEqual(mission._profileLine(points, "multirotor",
+    { known: true, climb_to: 15, arrive_at: null, hold: false }).y, [0, 40, 40, 0]);
+  // Set never to land, it ends in the air.
+  assert.strictEqual(mission._profileMarks(points, "multirotor",
+    { known: true, climb_to: 60, arrive_at: 30, hold: true }).find((m) => m.type === "rtl").alt, 30);
+
+  // A fixed wing circles over home at the height it descends to, or, with
+  // nothing read from it, at the height it has.
+  assert.strictEqual(mission._profileMarks(points, "fixed_wing", px4)
+    .find((m) => m.type === "rtl").alt, 30);
+  assert.strictEqual(mission._profileMarks(points, "fixed_wing", null)
+    .find((m) => m.type === "rtl").alt, 40, "a fixed wing's return never ends on the ground");
+}
+
+function testAFixedWingPlanEndingInAReturnIsToldItDoesNotLand() {
+  const plan = (aircraft) => ({
+    aircraft,
+    home: { lat: 48, lon: 11 },
+    items: [
+      { type: "takeoff", lat: 48, lon: 11, alt: 30 },
+      { type: "waypoint", lat: 48.005, lon: 11, alt: 40 },
+      { type: "rtl" },
+    ],
+  });
+  const circling = () => mission._problems().filter((t) => /circling above the start/.test(t));
+  const hovering = () => mission._problems().filter((t) => /hovering above the start/.test(t));
+  try {
+    mission.setPlan(plan("fixed_wing"));
+    assert.strictEqual(circling().length, 1);
+    assert.ok(/circle/.test(mission._itemHint(mission.getPlan().items[2])));
+    mission.setPlan(plan("multirotor"));
+    assert.strictEqual(circling().length, 0);
+    assert.strictEqual(hovering().length, 0, "nothing read, nothing claimed");
+    mission._setReturnProfile({ known: true, climb_to: 60, arrive_at: 30, hold: true });
+    assert.strictEqual(hovering().length, 1, "a vehicle set never to land is said out loud");
+  } finally {
+    mission._setReturnProfile(null);
+    mission.setPlan({ items: [] });
+  }
+}
+
+function testADescentDraggedIntoTheGroundStopsAtTheFloorAndDives() {
+  /* All the way down, the descent point is a straight dive from the point
+     before. It stops at the floor: a waypoint on the ground is flown into at
+     cruise speed, so the last metres stay a vertical touchdown. */
+  try {
+    mission.setPlan({
+      aircraft: "multirotor",
+      items: [
+        { type: "waypoint", lat: 48, lon: 11, alt: 40 },
+        { type: "land", lat: 48.002, lon: 11, alt: 0, approach_alt: 0 },
+      ],
+    });
+    assert.strictEqual(mission.getPlan().items[1].approach_alt, mission._bounds.APPROACH_MIN_M);
+    const points = [
+      { id: 1, type: "waypoint", alt: 40, distance: 0 },
+      { id: 2, type: "land", alt: 0, distance: 200, approach: mission._bounds.APPROACH_MIN_M },
+    ];
+    assert.deepStrictEqual(mission._profileLine(points, "multirotor").y,
+      [40, mission._bounds.APPROACH_MIN_M, 0], "one straight leg down, then the touchdown");
+  } finally {
+    mission.setPlan({ items: [] });
+  }
 }
 
 function testTheOfflineControlsSitWhereTheHomeMapsDo() {
@@ -1512,6 +1915,22 @@ const tests = [
   testOnlyAMultirotorHidesTheLoiterRadius,
   testEveryHoveringTypeIsARotorcraft,
   testAHiddenRadiusIsStillSavedAndUploaded,
+  testThePlanAircraftNamesMatchThePythonModel,
+  testEveryConnectedAirframeMapsToTheRightPlanAircraft,
+  testAMulticopterPlanHoldsWithoutARingEvenWithNothingConnected,
+  testTheConnectedAircraftSetsThePlansKindAndLocksIt,
+  testAMulticopterDescendsStraightDownWhereAFixedWingGlides,
+  testTheGlideIntoALandingIsMeasuredFromThePointBefore,
+  testOnlyAFixedWingIsWarnedAboutASteepApproach,
+  testALandingSaysHowThisAircraftComesDown,
+  testAMulticopterLandingHasADescentPointToDragLikeTheTakeoff,
+  testTheDescentHeightRoundTripsAndAnUnsetOneStaysAbsent,
+  testAFixedWingClimbsOutAlongTheFirstLegRatherThanStraightUp,
+  testAFixedWingIsToldWhenTheFirstPointIsInsideItsClimbOut,
+  testAClimbPitchIsOfferedOnlyToAnAircraftThatClimbsOut,
+  testAReturnIsDrawnAtTheHeightsTheVehicleFliesItAt,
+  testAFixedWingPlanEndingInAReturnIsToldItDoesNotLand,
+  testADescentDraggedIntoTheGroundStopsAtTheFloorAndDives,
   testTheOfflineControlsSitWhereTheHomeMapsDo,
   testTheZoomRailCarriesNeitherOfThem,
   testTheOfflineDialogFollowsWhicheverMapIsShowing,

@@ -1074,6 +1074,165 @@ async function testATerminalWindowKeepsItsOwnButtonsInTheAppsOrder() {
   delete window.corvusNative;
 }
 
+/* The disconnect in a terminal's window of its own ends the session and the
+   window with it. The app's SSH tab is another page: it is told, or its card
+   would go on saying CONNECTED. */
+async function testTheDisconnectInAWindowOfItsOwnTellsTheApp() {
+  await reset();
+  const closed = [];
+  const ended = [];
+  window.corvusNative = {
+    dragStart() {}, dragTo() {}, resizeTo() {}, dragEnd(x, y, cb) { cb("{}"); },
+    toggleMaximize(cb) { cb(false); }, raiseWindow() {}, closeWindow() { closed.push(true); },
+    isPinned(cb) { cb(false); }, setPinned(on, cb) { cb(on); },
+  };
+  Corvus.sshTerm.sessionEnded = (name) => ended.push(name);
+  const root = makeEl("div");
+  body.appendChild(root);
+  try {
+    Corvus.popoutPage.boot(root, "?kind=terminal&key=term%3AProxmoxTest&name=ProxmoxTest&title=ProxmoxTest");
+    await flush(10);
+    answers.push(jsonAnswer({ ok: true }));
+    fire(toolOf(root.children[0], "Disconnect the session"), "click");
+    await flush(10);
+    assert.ok(requests.some((r) => r.url === "/api/ssh/disconnect"), "the session is ended");
+    assert.deepEqual(ended, ["ProxmoxTest"], "and the app is told, before the window goes");
+    assert.equal(closed.length, 1);
+  } finally {
+    body.removeChild(root);
+    delete window.corvusNative;
+    delete Corvus.sshTerm.sessionEnded;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Frosted glass terminals (Settings)
+// ---------------------------------------------------------------------------
+
+/** A root element and a storage the test can read and write. */
+function frostStage(stored) {
+  const store = Object.assign({}, stored || {});
+  const saved = { documentElement: document.documentElement, localStorage: global.localStorage };
+  document.documentElement = makeEl("html");
+  global.localStorage = {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+    removeItem: (k) => { delete store[k]; },
+  };
+  return {
+    store,
+    root: document.documentElement,
+    restore() {
+      document.documentElement = saved.documentElement;
+      global.localStorage = saved.localStorage;
+    },
+  };
+}
+
+async function testTheSwitchFrostsTheTerminalsInTheApp() {
+  await reset();
+  const stage = frostStage();
+  Corvus.popouts.setInApp(true);
+  try {
+    tw.open({ name: "ssh-launcher/f1", title: "Frost", host: "10.0.0.7" });
+    const term = frameOf("Terminal: Frost");
+    assert.ok(term.classList.contains("term-win--terminal"), "a terminal frame says it is one");
+    vw.open(CAM);
+    assert.equal(frameOf("Camera: Gimbal").classList.contains("term-win--terminal"), false,
+      "a camera is not frosted: its picture fills it anyway");
+
+    // Frosted glass is the default: nothing stored, or anything but "0".
+    assert.equal(tw.storedFrosted(), true, "a first start is frosted");
+    stage.store[tw.FROSTED_KEY] = "0";
+    assert.equal(tw.storedFrosted(), false, "a station set to solid starts solid");
+    stage.store[tw.FROSTED_KEY] = "1";
+    assert.equal(tw.storedFrosted(), true);
+
+    tw.setFrosted(true);
+    assert.equal(stage.root.classList.contains("frosted-terminals"), true);
+    assert.equal(stage.store[tw.FROSTED_KEY], "1", "and the windows of their own are told");
+    tw.setFrosted(false);
+    assert.equal(stage.root.classList.contains("frosted-terminals"), false, "Solid terminals on");
+    assert.equal(stage.store[tw.FROSTED_KEY], "0");
+  } finally {
+    Corvus.popouts.setInApp(false);
+    stage.restore();
+  }
+}
+
+async function testAWindowOfItsOwnIsFrostedByDefault() {
+  await reset();
+  const stage = frostStage({});
+  const asked = [];
+  window.corvusNative = {
+    dragStart() {}, dragTo() {}, resizeTo() {}, dragEnd(x, y, cb) { cb("{}"); },
+    toggleMaximize(cb) { cb(false); }, raiseWindow() {}, closeWindow() {},
+    isPinned(cb) { cb(false); }, setPinned(on, cb) { cb(on); },
+    setFrosted(on, dark, radius, cb) { asked.push(on); cb(on); },
+  };
+  const root = makeEl("div");
+  body.appendChild(root);
+  try {
+    Corvus.popoutPage.boot(root, "?kind=terminal&key=term%3Assh-launcher%2Ff3&name=ssh-launcher%2Ff3&title=Default");
+    await flush(10);
+    assert.deepEqual(asked, [true], "nothing stored yet: frosted glass is asked for");
+    assert.equal(stage.root.classList.contains("frosted-terminals"), true);
+  } finally {
+    body.removeChild(root);
+    delete window.corvusNative;
+    stage.restore();
+  }
+}
+
+async function testAWindowOfItsOwnFrostsOnlyOnceTheBlurIsThere() {
+  await reset();
+  const stage = frostStage({ [tw.FROSTED_KEY]: "1" });
+  const asked = [];
+  window.corvusNative = {
+    dragStart() {}, dragTo() {}, resizeTo() {}, dragEnd(x, y, cb) { cb("{}"); },
+    toggleMaximize(cb) { cb(true); }, raiseWindow() {}, closeWindow() {},
+    isPinned(cb) { cb(false); }, setPinned(on, cb) { cb(on); },
+    setFrosted(on, dark, radius, cb) { asked.push({ on, dark, radius, cb }); },
+  };
+  const root = makeEl("div");
+  body.appendChild(root);
+  try {
+    Corvus.popoutPage.boot(root, "?kind=terminal&key=term%3Assh-launcher%2Ff2&name=ssh-launcher%2Ff2&title=Glass");
+    await flush(10);
+    const win = root.children[0];
+    assert.ok(win.classList.contains("term-win--terminal"));
+    assert.equal(asked.length, 1, "the desktop app is asked for the blur");
+    assert.equal(asked[0].on, true);
+    assert.equal(stage.root.classList.contains("frosted-terminals"), false,
+      "and the page stays solid until it answers");
+    asked[0].cb(true);
+    assert.equal(stage.root.classList.contains("frosted-terminals"), true, "blur there: see-through");
+
+    // Maximized: square corners, so the blur is asked for again.
+    fire(toolOf(win, "Maximize the terminal"), "click");
+    assert.equal(asked.length, 2);
+
+    // Settings, "Solid terminals", switched on in the app.
+    stage.store[tw.FROSTED_KEY] = "0";
+    (windowListeners.storage || []).forEach((cb) => cb({ key: tw.FROSTED_KEY, newValue: "0" }));
+    assert.equal(stage.root.classList.contains("frosted-terminals"), false,
+      "solid before the blur goes, so the desktop never shows through sharp");
+    assert.equal(asked[asked.length - 1].on, false);
+    asked[asked.length - 1].cb(false);
+
+    // Frosted again, where the system has no blur to give (Linux, Windows):
+    // it stays solid.
+    stage.store[tw.FROSTED_KEY] = "1";
+    (windowListeners.storage || []).forEach((cb) => cb({ key: tw.FROSTED_KEY, newValue: "1" }));
+    asked[asked.length - 1].cb(false);
+    assert.equal(stage.root.classList.contains("frosted-terminals"), false);
+  } finally {
+    body.removeChild(root);
+    delete window.corvusNative;
+    stage.restore();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The SSH Launcher's terminals: the same windows, and as reliable as before
 // ---------------------------------------------------------------------------
@@ -1243,6 +1402,10 @@ const tests = [
   testAWindowThatOpenedOnItsOwnDoesNotGoBackIn,
   testThePinKeepsTheWindowAboveCorvus,
   testATerminalWindowKeepsItsOwnButtonsInTheAppsOrder,
+  testTheDisconnectInAWindowOfItsOwnTellsTheApp,
+  testTheSwitchFrostsTheTerminalsInTheApp,
+  testAWindowOfItsOwnIsFrostedByDefault,
+  testAWindowOfItsOwnFrostsOnlyOnceTheBlurIsThere,
   testALaunchersTerminalOpensAsAWindowOfItsOwnThroughTheSharedCode,
   testAKeyTheDesktopAppWouldRefuseStaysInTheAppRatherThanNowhere,
   testANewShellReachesAWindowTheAppHasNotHeardFromLately,

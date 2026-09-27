@@ -577,6 +577,7 @@ Corvus.pluginSchwalby = (function () {
     let live = {};                // session name -> true, from /api/ssh/sessions
     const errors = Object.create(null);  // button id -> why its last press failed
     const closing = Object.create(null); // session name -> its disconnect in flight
+    const opening = Object.create(null); // session name -> the arrow's connect in flight
     let pollTimer = null;
     let cancelled = false;        // set by destroy(); gates every late callback
 
@@ -1056,17 +1057,19 @@ Corvus.pluginSchwalby = (function () {
         tools.appendChild(dot);
       }
 
-      // The arrow back to the button's own terminal, only while it is up.
+      // The arrow into the button's own terminal. With nothing running it
+      // connects first and opens a plain shell, the program not started; the
+      // button runs its line into that same shell afterwards.
       if (entry.mode !== MODE_BACKGROUND) {
-        tools.appendChild(ui.iconButton("chevron-right", {
+        const openBtn = ui.iconButton("chevron-right", {
           className: "icon-btn schw-open",
           ariaLabel: `Open the terminal for ${entry.label}`,
           title: running
             ? "Open its terminal window to watch it, or press Ctrl-C to stop it"
-            : "Not running. Launch it to open its terminal.",
-          disabled: !running,
-          onClick: () => openTerminal(entry),
-        }));
+            : "Open its terminal and connect. The program starts with the button.",
+          onClick: () => (running ? openTerminal(entry) : connectAndOpen(entry, openBtn)),
+        });
+        tools.appendChild(openBtn);
       }
 
       tools.appendChild(ui.iconButton("pencil", {
@@ -1454,8 +1457,9 @@ Corvus.pluginSchwalby = (function () {
       const line = terminalLine(entry);
       const send = () => api.postJson("/api/ssh/send", { name: session, data: line + "\n" });
       // A session being closed because the button moved elsewhere must be gone
-      // before the next line is sent, or the line lands in it.
-      const pending = closing[session];
+      // before the next line is sent, or the line lands in it. One the arrow
+      // is opening must be up, or the line would open a second shell over it.
+      const pending = closing[session] || opening[session];
       return (pending ? pending.then(send) : send())
         .then((res) => {
           if (cancelled) return null;
@@ -1469,30 +1473,74 @@ Corvus.pluginSchwalby = (function () {
         });
     }
 
-    /** Open this button's session (a shell here, or over SSH), then type. */
-    function connectThenSend(entry, line, retried) {
+    /**
+     * Open this button's session, a shell here or over SSH. An SSH reply that
+     * says the connection is missing or refused asks for it once and tries
+     * again; any other failure goes on the row. Resolves whether it is up.
+     */
+    function connectSession(entry, retried) {
       const session = sessionName(entry);
-      const opening = isLocal(entry)
+      const request = isLocal(entry)
         ? api.postJson("/api/local/connect", { name: session })
         : api.postJson("/api/ssh/connect", { name: session, from: entry.connection })
           .catch(replyOf);
-      return opening.then((res) => {
-        if (cancelled) return null;
-        if (!(res && res.ok && res.connected)) {
-          if (!retried && !isLocal(entry)) {
-            return setUpConnection(res).then((saved) => {
-              if (cancelled) return null;
-              if (saved) return connectThenSend(entry, line, true);
-              failed(entry, (res && res.error) || "Could not open the terminal");
-              return null;
-            });
-          }
-          failed(entry, (res && res.error) || "Could not open the terminal");
-          return null;
+      return request.then((res) => {
+        if (cancelled) return false;
+        if (res && res.ok && res.connected) return true;
+        if (!retried && !isLocal(entry)) {
+          return setUpConnection(res).then((saved) => {
+            if (cancelled) return false;
+            if (saved) return connectSession(entry, true);
+            failed(entry, (res && res.error) || "Could not open the terminal");
+            return false;
+          });
         }
+        failed(entry, (res && res.error) || "Could not open the terminal");
+        return false;
+      });
+    }
+
+    /** Open this button's session (a shell here, or over SSH), then type. */
+    function connectThenSend(entry, line) {
+      const session = sessionName(entry);
+      return connectSession(entry).then((up) => {
+        if (!up || cancelled) return null;
         return api.postJson("/api/ssh/send", { name: session, data: line + "\n" })
           .then(() => (cancelled ? null : ran(entry, line, true)));
       });
+    }
+
+    /**
+     * The arrow on a button with nothing running: connect, and show the
+     * terminal. The program is not started; the button does that, into this
+     * same shell.
+     */
+    function connectAndOpen(entry, btn) {
+      const session = sessionName(entry);
+      if (opening[session]) return opening[session];
+      status.hide();
+      clearError(entry);
+      ui.setBusy(btn, true);
+      const connect = () => connectSession(entry);
+      const pending = closing[session];
+      const up = (pending ? pending.then(connect) : connect())
+        .catch((error) => {
+          if (!cancelled) failed(entry, error.message || "Could not reach the backend");
+          return false;
+        })
+        .then((ok) => {
+          if (opening[session] === up) delete opening[session];
+          if (cancelled) return false;
+          ui.setBusy(btn, false);
+          if (!ok) return false;
+          live[session] = true;
+          openTerminal(entry, true);
+          status.show(`${entry.label}: connected. The button starts it in this terminal.`, "ok");
+          if (editing === null) renderShelf();
+          return true;
+        });
+      opening[session] = up;
+      return up;
     }
 
     /** Record a launch. A window left open on a replaced shell is quietly

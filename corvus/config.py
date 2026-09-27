@@ -107,15 +107,17 @@ class CorvusConfig:
     the interface size, desktop app icon and top bar (``{"scale": 1.25,
     "inverted_app_icon": false, "app_icon_backplate": false,
     "topbar_status_dots": false, "mission_page": false,
-    "notification_marks": false, "flight_bar_shrink": false, "units": {"length":
+    "notification_marks": false, "flight_bar_shrink": false,
+    "solid_terminals": false, "units": {"length":
     "m", "distance": "km", "speed": "ms", "temperature": "c"}}`` — the multiplier
     the frontend puts on every length in the UI, which cut of the mark the
     Dock / taskbar gets, whether that mark sits on a filled backplate, whether
     the top bar shows its per-block state dots, whether the left rail
     carries the Mission planner, whether a notification draws the severity
-    bar above and below its level icon, and whether the Home flight bar starts
-    narrowing at half the map column rather than only when it must, and the
-    display units for lengths, distances, speeds and temperatures),
+    bar above and below its level icon, whether the Home flight bar starts
+    narrowing at half the map column rather than only when it must, whether
+    terminal windows are solid rather than frosted glass, and the display units for lengths,
+    distances, speeds and temperatures),
     and the update check
     (``{"check": true, "skipped": "2026.09.27"}`` — whether to look at the
     GitHub releases at all, and the one release the operator dismissed),
@@ -600,6 +602,12 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     straight away (see ``src/js/popout.js``). A browser has no such windows, so
     there they are always inside, whatever this says.
 
+    ``solid_terminals`` draws the SSH terminal windows solid. Off unless asked
+    for: by default a terminal window is frosted glass, with the map (or, for a
+    window of its own on macOS, the desktop) showing through blurred. Where
+    nothing can be blurred (a window of its own on Linux or Windows) it is
+    solid whatever this says.
+
     ``units`` is the display unit per quantity (``length``, ``distance``,
     ``speed``, ``temperature``; see ``_UI_UNITS``). Each key is kept only with
     a value the frontend knows, so a typo reads as the metric default rather
@@ -620,7 +628,7 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
             out["scale"] = min(max(scale, _UI_SCALE_MIN), _UI_SCALE_MAX)
     for key in ("inverted_app_icon", "app_icon_backplate", "topbar_status_dots",
                 "mission_page", "notification_marks", "flight_bar_shrink",
-                "windows_in_app"):
+                "windows_in_app", "solid_terminals"):
         if isinstance(raw.get(key), bool):
             out[key] = raw[key]
     return out or None

@@ -6,6 +6,7 @@ PNG bytes, and a real on-disk :class:`TileCache` in ``tmp_path``.
 """
 from __future__ import annotations
 
+import http.client
 import time
 
 import pytest
@@ -36,18 +37,24 @@ class _FakeResp:
     def __exit__(self, *exc) -> bool:
         return False
 
-    def read(self) -> bytes:
-        return self._data
+    def read(self, amt: int | None = None) -> bytes:
+        return self._data if amt is None else self._data[:amt]
+
+
+def _url_of(url_or_req) -> str:
+    """The URL urlopen was asked for, whether given a string or a Request."""
+    return getattr(url_or_req, "full_url", url_or_req)
 
 
 @pytest.fixture
 def stub_urlopen(monkeypatch):
     """Patch urlopen to return fixed bytes and count how often it is called."""
-    counter = {"n": 0, "urls": []}
+    counter = {"n": 0, "urls": [], "user_agents": []}
 
     def fake_urlopen(url, timeout=None):
         counter["n"] += 1
-        counter["urls"].append(url)
+        counter["urls"].append(_url_of(url))
+        counter["user_agents"].append(getattr(url, "get_header", lambda _h: None)("User-agent"))
         return _FakeResp(b"\x89PNG\r\n\x1a\n" + b"tile-bytes")
 
     monkeypatch.setattr(td.urllib.request, "urlopen", fake_urlopen)
@@ -353,4 +360,124 @@ def test_tiles_are_committed_in_batches_not_one_at_a_time(cache, stub_urlopen) -
     assert sum(commits) == tiles
     assert len(commits) < tiles, (
         f"{tiles} tiles took {len(commits)} commits — batching is not happening")
+    dl.shutdown()
+
+
+# ===========================================================================
+# Completion accounting — every tile ends up done or failed, never lost
+# ===========================================================================
+
+def test_a_slow_upstream_still_gets_every_queued_tile(cache, monkeypatch) -> None:
+    """Tiles still queued when the loop ends are fetched, not thrown away.
+
+    The loop submits a tile every _SUBMIT_PAUSE, faster than a slow link
+    fetches them, so at the end of a normal run part of the region is still
+    in the executor's queue. The teardown used cancel_futures=True on every
+    path, which dropped that queue: a live download of six elevation tiles
+    reported "done" with three in the cache and failed=0.
+    """
+    def slow_urlopen(url, timeout=None):
+        time.sleep(0.1)  # twice _SUBMIT_PAUSE, so the queue builds up
+        return _FakeResp(b"\x89PNG\r\n\x1a\n" + b"slow")
+
+    monkeypatch.setattr(td.urllib.request, "urlopen", slow_urlopen)
+    dl = TileDownloader(cache, max_workers=1)
+    bounds = (-180.0, -85.0, 180.0, 85.0)
+    jid = dl.start("satellite", "https://up/{z}/{x}/{y}.png", bounds, 2, 2)
+    assert _wait_until(lambda: dl.status(jid)["state"] != "running", timeout=10.0)
+    st = dl.status(jid)
+    assert st["state"] == "done"
+    assert st["done"] == st["total"] == 16
+    assert st["failed"] == 0
+    assert cache.stats()["count"] == 16
+    dl.shutdown()
+
+
+def test_a_job_where_every_tile_fails_is_failed_not_done(cache, monkeypatch) -> None:
+    """Offline, a download fetches nothing and must say so.
+
+    It used to end in "done", and the dialog answered that with "Download
+    complete. Tiles cached for offline use." for an area with no tile in it.
+    """
+    def offline_urlopen(url, timeout=None):
+        raise OSError("network is unreachable")
+
+    monkeypatch.setattr(td.urllib.request, "urlopen", offline_urlopen)
+    dl = TileDownloader(cache, max_workers=3)
+    bounds = (-180.0, -85.0, 180.0, 85.0)
+    jid = dl.start("satellite", "https://up/{z}/{x}/{y}.png", bounds, 1, 1)
+    assert _wait_until(lambda: dl.status(jid)["state"] != "running")
+    st = dl.status(jid)
+    assert st["state"] == "failed"
+    assert st["failed"] == 4 and st["done"] == 0
+    assert st["error"]
+    dl.shutdown()
+
+
+def test_a_partial_failure_is_done_with_the_failures_counted(cache, monkeypatch) -> None:
+    calls = {"n": 0}
+
+    def flaky_urlopen(url, timeout=None):
+        calls["n"] += 1
+        if "/1/0/" in _url_of(url):
+            raise OSError("reset")
+        return _FakeResp(b"\x89PNG\r\n\x1a\n" + b"ok")
+
+    monkeypatch.setattr(td.urllib.request, "urlopen", flaky_urlopen)
+    dl = TileDownloader(cache, max_workers=1)
+    jid = dl.start("satellite", "https://up/{z}/{x}/{y}.png",
+                   (-180.0, -85.0, 180.0, 85.0), 1, 1)
+    assert _wait_until(lambda: dl.status(jid)["state"] != "running")
+    st = dl.status(jid)
+    assert st["state"] == "done"
+    assert (st["done"], st["failed"]) == (2, 2)
+    dl.shutdown()
+
+
+def test_an_unexpected_exception_counts_as_a_failed_tile(cache, monkeypatch) -> None:
+    """An error outside URLError/OSError used to vanish into its future.
+
+    http.client.IncompleteRead is not an OSError. Raised in a worker it was
+    swallowed by the executor, so the tile was neither done nor failed and the
+    job still ended "done".
+    """
+    def truncated_urlopen(url, timeout=None):
+        raise http.client.IncompleteRead(b"partial")
+
+    monkeypatch.setattr(td.urllib.request, "urlopen", truncated_urlopen)
+    dl = TileDownloader(cache, max_workers=2)
+    jid = dl.start("satellite", "https://up/{z}/{x}/{y}.png",
+                   (-180.0, -85.0, 180.0, 85.0), 1, 1)
+    assert _wait_until(lambda: dl.status(jid)["state"] != "running")
+    st = dl.status(jid)
+    assert st["done"] + st["failed"] == st["total"] == 4
+    assert st["state"] == "failed"
+    dl.shutdown()
+
+
+def test_an_empty_body_is_a_failed_tile_not_a_done_one(cache, monkeypatch) -> None:
+    """put_tiles skips an empty blob, so counting it as done claimed a tile
+    the cache never received."""
+    monkeypatch.setattr(td.urllib.request, "urlopen",
+                        lambda url, timeout=None: _FakeResp(b""))
+    dl = TileDownloader(cache, max_workers=1)
+    jid = dl.start("satellite", "https://up/{z}/{x}/{y}.png",
+                   (-180.0, -85.0, 180.0, 85.0), 0, 0)
+    assert _wait_until(lambda: dl.status(jid)["state"] != "running")
+    st = dl.status(jid)
+    assert (st["done"], st["failed"]) == (0, 1)
+    assert cache.stats()["count"] == 0
+    dl.shutdown()
+
+
+def test_downloads_identify_themselves_like_the_interactive_fill(
+        cache, stub_urlopen) -> None:
+    """OSM's tile policy blocks a library's default User-Agent; the worker
+    sends the same CorvusGCS/<version> the online cache-fill does."""
+    from corvus.version import get_version
+
+    dl = TileDownloader(cache, max_workers=1)
+    jid = dl.start("osm", "https://up/{z}/{x}/{y}.png", (-180.0, -85.0, 180.0, 85.0), 0, 0)
+    assert _wait_until(lambda: dl.status(jid)["state"] == "done")
+    assert stub_urlopen["user_agents"] == [f"CorvusGCS/{get_version()}"]
     dl.shutdown()

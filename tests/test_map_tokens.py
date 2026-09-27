@@ -1,7 +1,8 @@
 """Map service API keys: the credential path from the dialog to the upstream.
 
 A keyed map service (MapTiler, Mapbox) serves nothing without a key the
-operator supplies. That key is a credential, so the properties worth pinning
+operator supplies. Google and Bing take one too, optionally: with it they move
+from their internal endpoints onto the licensed APIs. That key is a credential, so the properties worth pinning
 are not about tiles at all:
 
 * it is stored only in ``~/.corvus/config.json``, which is 0600;
@@ -39,7 +40,7 @@ from corvus.config import (
 # ---------------------------------------------------------------------------
 
 def test_the_keyed_services_are_the_ones_with_a_token_block() -> None:
-    assert tile_sources.keyed_providers() == ["maptiler", "mapbox"]
+    assert tile_sources.keyed_providers() == ["google", "bing", "maptiler", "mapbox"]
     for pid in tile_sources.keyed_providers():
         meta = tile_sources.token_meta(pid)
         assert set(meta) == {"label", "signup", "help"}
@@ -49,9 +50,23 @@ def test_the_keyed_services_are_the_ones_with_a_token_block() -> None:
 
 
 def test_an_unkeyed_service_reports_no_token_block() -> None:
-    for pid in ("esri", "osm", "google", "bing"):
+    for pid in ("esri", "osm"):
         assert tile_sources.token_meta(pid) is None
     assert tile_sources.token_meta("no-such-provider") is None
+
+
+def test_google_and_bing_take_a_key_but_draw_without_one() -> None:
+    for pid in ("google", "bing"):
+        assert tile_sources.token_meta(pid) is not None
+        assert not tile_sources.token_required(pid)
+        for sid in tile_sources.sources_for(pid):
+            assert not tile_sources.needs_token(sid)
+            assert tile_sources.licensed(sid) is not None
+            assert "{k}" not in tile_sources.TILE_SOURCES[sid]["upstream"]
+    for pid in ("maptiler", "mapbox"):
+        assert tile_sources.token_required(pid)
+        for sid in tile_sources.sources_for(pid):
+            assert tile_sources.licensed(sid) is None
 
 
 def test_needs_token_follows_the_provider_not_the_template() -> None:
@@ -542,3 +557,192 @@ def test_a_download_job_snapshot_never_carries_the_key() -> None:
     snapshot = TileDownloader._snapshot(None, job)
     assert "s3cret" not in json.dumps(snapshot)
     assert not any(k.startswith("_") for k in snapshot)
+
+
+# ---------------------------------------------------------------------------
+# Google and Bing: an optional key that moves them onto the licensed API
+# ---------------------------------------------------------------------------
+
+class _Recorder:
+    """A fake upstream: JSON for the licensed API calls, PNG bytes for tiles."""
+
+    def __init__(self) -> None:
+        self.urls: list[str] = []
+        self.session_answer: object = None
+        self.tile_error: Exception | None = None
+
+    def __call__(self, req, *a: object, **k: object):
+        import time as _time
+
+        url = getattr(req, "full_url", req)
+        self.urls.append(url)
+        if "createSession" in url:
+            if isinstance(self.session_answer, Exception):
+                raise self.session_answer
+            body = json.dumps(self.session_answer or {
+                "session": "S1", "expiry": str(int(_time.time()) + 86400 * 14)})
+        elif "/Imagery/Metadata/" in url:
+            body = json.dumps({"resourceSets": [{"resources": [{
+                "imageUrl": "https://ecn.{subdomain}.tiles.virtualearth.net/"
+                            "tiles/a{quadkey}.jpeg?g=1",
+                "imageUrlSubdomains": ["t0", "t1", "t2", "t3"]}]}]})
+        else:
+            if self.tile_error is not None:
+                raise self.tile_error
+            return _BytesResp(b"\x89PNG\r\n\x1a\n" + b"tile")
+        return _BytesResp(body.encode())
+
+
+class _BytesResp:
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    def read(self, *_a: object) -> bytes:
+        return self._body
+
+    def __enter__(self) -> _BytesResp:
+        return self
+
+    def __exit__(self, *_a: object) -> bool:
+        return False
+
+
+@pytest.fixture
+def recorder(monkeypatch):
+    from corvus import tile_sessions
+
+    tile_sessions.clear()
+    rec = _Recorder()
+    monkeypatch.setattr("urllib.request.urlopen", rec)
+    yield rec
+    tile_sessions.clear()
+
+
+def test_google_and_bing_are_listed_as_optionally_keyed(token_server) -> None:
+    server, _ = token_server
+    _status, sources = _call(server, "GET", "/api/tiles/sources")
+    by_id = {p["id"]: p for p in sources["providers"]}
+    for pid in ("google", "bing"):
+        assert by_id[pid]["token"] is not None
+        assert by_id[pid]["token_optional"] is True
+        assert by_id[pid]["token_required"] is False
+        assert by_id[pid]["token_set"] is False
+    assert by_id["maptiler"]["token_optional"] is False
+
+
+def test_google_without_a_key_keeps_its_old_endpoint(fetch_server, recorder) -> None:
+    server, _ = fetch_server
+    status, _ = _raw(server, "/api/tiles/google_satellite/5/1/2.png")
+    assert status == 200
+    assert len(recorder.urls) == 1
+    assert ".google.com/vt/" in recorder.urls[0]
+
+
+def test_google_with_a_key_goes_through_the_map_tiles_api(fetch_server, recorder) -> None:
+    server, _ = fetch_server
+    _call(server, "POST", "/api/tiles/token", {"provider": "google", "token": "AIzaK"})
+    for y in (2, 3):
+        status, body = _raw(server, f"/api/tiles/google_satellite/5/1/{y}.png")
+        assert status == 200 and body.startswith(b"\x89PNG")
+    assert recorder.urls == [
+        "https://tile.googleapis.com/v1/createSession?key=AIzaK",
+        "https://tile.googleapis.com/v1/2dtiles/5/1/2?session=S1&key=AIzaK",
+        "https://tile.googleapis.com/v1/2dtiles/5/1/3?session=S1&key=AIzaK",
+    ]
+
+
+def test_bing_with_a_key_uses_the_metadata_tile_address(fetch_server, recorder) -> None:
+    server, _ = fetch_server
+    _call(server, "POST", "/api/tiles/token", {"provider": "bing", "token": "BingK"})
+    status, _ = _raw(server, "/api/tiles/bing_hybrid/3/4/5.png")
+    assert status == 200
+    assert recorder.urls[0].startswith(
+        "https://dev.virtualearth.net/REST/v1/Imagery/Metadata/AerialWithLabelsOnDemand?")
+    q = tile_sources.quadkey(3, 4, 5)
+    assert recorder.urls[1] == (
+        f"https://ecn.t{tile_sources.server_shard(4, 5)}.tiles.virtualearth.net/"
+        f"tiles/a{q}.jpeg?g=1")
+
+
+def test_a_refused_licensed_key_does_not_trip_the_breaker(fetch_server, recorder) -> None:
+    """A wrong key says nothing about the link. It must not stop the other maps."""
+    import io
+    import urllib.error
+
+    server, breaker = fetch_server
+    _call(server, "POST", "/api/tiles/token", {"provider": "google", "token": "wrong"})
+    recorder.session_answer = urllib.error.HTTPError(
+        "u", 403, "Forbidden", {}, io.BytesIO(b"{}"))
+    for y in range(6):
+        status, _ = _raw(server, f"/api/tiles/google_satellite/5/1/{y}.png")
+        assert status == 404
+    assert breaker.allow()
+    assert sum("createSession" in u for u in recorder.urls) == 1
+
+
+def test_a_refused_tile_opens_a_fresh_session(fetch_server, recorder) -> None:
+    import io
+    import urllib.error
+
+    server, _ = fetch_server
+    _call(server, "POST", "/api/tiles/token", {"provider": "google", "token": "k"})
+    _raw(server, "/api/tiles/google_satellite/5/1/2.png")
+    recorder.tile_error = urllib.error.HTTPError("u", 403, "Forbidden", {}, io.BytesIO(b""))
+    _raw(server, "/api/tiles/google_satellite/5/1/3.png")
+    recorder.tile_error = None
+    _raw(server, "/api/tiles/google_satellite/5/1/4.png")
+    assert sum("createSession" in u for u in recorder.urls) == 2
+
+
+def test_a_licensed_download_gets_the_resolved_template(token_server, recorder) -> None:
+    from corvus.server import CorvusHandler
+
+    server, _ = token_server
+    started: list[tuple] = []
+
+    class _Recording:
+        def start(self, *a: object, **k: object) -> str:
+            started.append((a, k))
+            return "job-1"
+
+        def status(self, _job_id: str) -> dict:
+            return {"job_id": "job-1", "state": "running"}
+
+        def list_jobs(self) -> list:
+            return []
+
+    request = {
+        "source": "google_hybrid",
+        "bounds": {"w": 11.6, "s": 48.0, "e": 11.7, "n": 48.1},
+        "minzoom": 10, "maxzoom": 11,
+    }
+    saved = CorvusHandler.tile_downloader
+    CorvusHandler.tile_downloader = _Recording()
+    try:
+        # No key: the old endpoint, as before.
+        status, _ = _call(server, "POST", "/api/tiles/download", request)
+        assert status == 200
+        assert ".google.com/vt/" in started[-1][0][1]
+
+        _call(server, "POST", "/api/tiles/token", {"provider": "google", "token": "AIzaK"})
+        status, _ = _call(server, "POST", "/api/tiles/download", request)
+        assert status == 200
+        template = started[-1][0][1]
+        assert template.startswith("https://tile.googleapis.com/v1/2dtiles/")
+        assert "session=S1" in template
+        assert started[-1][1]["token"] == "AIzaK"
+
+        # A refused key is reported before any job exists.
+        import io
+        import urllib.error
+        from corvus import tile_sessions
+        tile_sessions.clear()
+        recorder.session_answer = urllib.error.HTTPError(
+            "u", 403, "Forbidden", {}, io.BytesIO(b"{}"))
+        count = len(started)
+        status, data = _call(server, "POST", "/api/tiles/download", request)
+        assert status == 502
+        assert "refused" in data["error"]
+        assert len(started) == count
+    finally:
+        CorvusHandler.tile_downloader = saved

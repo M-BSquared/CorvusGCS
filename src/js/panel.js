@@ -192,7 +192,8 @@ Corvus.panel = (function () {
   function pushLine(rec) {
     lines.push(rec);
     if (lines.length > MAX_LINES) lines.shift();
-    if (passesFilter(rec)) {
+    // Before init there is no output to draw into; the line stays in the buffer.
+    if (output && passesFilter(rec)) {
       output.appendChild(lineEl(rec));
       while (output.children.length > MAX_LINES) output.removeChild(output.firstChild);
       if (autoscroll) output.scrollTop = output.scrollHeight;
@@ -547,19 +548,35 @@ Corvus.panel = (function () {
      readable thing here — the operator should see "Start mission", not the id
      the launcher happens to store. */
   function fillSSHCardHeader(card, conn) {
-    card.querySelector(".ssh-name").textContent = conn.title || conn.name || "";
-    card.querySelector(".ssh-host").textContent = sshAddress(conn);
+    const nameEl = card.querySelector(".ssh-name");
+    const hostEl = card.querySelector(".ssh-host");
+    nameEl.textContent = conn.title || conn.name || "";
+    hostEl.textContent = sshAddress(conn);
+    nameEl.title = nameEl.textContent;
+    hostEl.title = hostEl.textContent;
   }
 
+  // Bumped by every render of the tab, cards or terminal: a card list whose
+  // fetch lands after a newer render (or after a terminal was opened here) is
+  // dropped rather than drawn over it. The list is fetched before the tab is
+  // cleared, so a refresh never flashes an empty tab or doubles the cards.
+  let sshRenderGen = 0;
+
   async function renderSSHCards() {
-    closeSSHTerminal();
-    sshContent.classList.remove("terminal-mode");
-    sshContent.innerHTML = "";
+    const gen = ++sshRenderGen;
     let devices = [];
+    let failed = false;
     try {
       const data = await Corvus.telemetry.requestJson("/api/ssh/connections");
       devices = (data && data.connections) || [];
     } catch (_e) {
+      failed = true;
+    }
+    if (gen !== sshRenderGen) return;
+    closeSSHTerminal();
+    sshContent.classList.remove("terminal-mode");
+    sshContent.innerHTML = "";
+    if (failed) {
       const note = document.createElement("div");
       note.className = "ssh-card";
       note.innerHTML = '<div class="page-card-desc">Could not load connections.</div>';
@@ -585,22 +602,25 @@ Corvus.panel = (function () {
       });
       btn.dataset.name = dev.name;
       actions.appendChild(btn);
-      const rm = Corvus.ui.iconButton("trash-2", {
-        title: `Remove ${dev.name}`,
-        ariaLabel: `Remove ${dev.name}`,
+      // The same connection in a terminal window of its own, over the map or
+      // on another screen, while this tab stays on the list.
+      const toWindow = Corvus.ui.iconButton("chevron-right", {
+        className: "icon-btn ssh-open-window",
+        title: connected
+          ? "Open it in a terminal window of its own"
+          : "Connect and open it in a terminal window of its own",
+        ariaLabel: `Open ${dev.name} in a terminal window`,
+        onClick: () => openSSHWindow(dev, connected, toWindow, btn),
       });
-      rm.addEventListener("click", async () => {
-        if (!confirm(`Remove connection ${dev.name}?`)) return;
-        try {
-          await fetch("/api/ssh/connections/remove", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: dev.name }),
-          }).then((r) => r.json());
-        } catch (_e) {}
-        renderSSHCards();
-      });
-      actions.appendChild(rm);
+      actions.appendChild(toWindow);
+      // Edit rather than a bin: a bin beside CONNECT is one mis-tap from
+      // losing a saved login. Deleting is in the editor, beside Save.
+      actions.appendChild(Corvus.ui.iconButton("pencil", {
+        className: "icon-btn ssh-edit",
+        title: `Edit ${dev.name}`,
+        ariaLabel: `Edit ${dev.name}`,
+        onClick: () => editSSHConnection(dev, () => renderSSHCards()),
+      }));
       card.appendChild(actions);
       sshContent.appendChild(card);
     });
@@ -677,6 +697,63 @@ Corvus.panel = (function () {
   }
 
   /**
+   * The arrow on a connection card: its session in a terminal window of its
+   * own (js/term-window.js) instead of in this tab. A connection that is not
+   * up is connected first, asking once for a login the saved entry lacks,
+   * exactly as CONNECT does; a failure is said on the card, and no window is
+   * opened onto a shell that is not there.
+   *
+   * @param {Object} conn a saved connection {name, host, port, username}
+   * @param {boolean} connected whether its session is up already
+   * @param {Object} [arrow] the arrow, busy while it connects
+   * @param {Object} [connectBtn] the card's CONNECT, where a failure is said
+   * @returns {Promise<boolean>} whether a window is showing it
+   */
+  async function openSSHWindow(conn, connected, arrow, connectBtn, retried) {
+    const tw = Corvus.termWindows;
+    if (!tw || !conn || !conn.name) return false;
+    let target = conn;
+    if (!connected) {
+      Corvus.ui.setBusy(arrow, true);
+      let res;
+      try {
+        res = await fetch("/api/ssh/connect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: conn.name }),   // backend loads saved creds
+        }).then((r) => r.json());
+      } catch (err) {
+        res = { ok: false, error: err.message };
+      }
+      Corvus.ui.setBusy(arrow, false);
+      if (!(res && res.ok && res.connected)) {
+        if (!retried && sshNeeds(res) && await setupSSHConnection(res)) {
+          return openSSHWindow(conn, false, arrow, connectBtn, true);
+        }
+        const why = (res && res.error) || "Connection failed";
+        addConsoleLine("error", `SSH connect failed: ${why}`);
+        showSSHCardError(connectBtn, why);
+        return false;
+      }
+      target = Object.assign({}, conn, {
+        host: res.host || conn.host,
+        port: res.port || conn.port,
+        username: res.username || conn.username,
+      });
+    }
+    // reattach: a window still open on a shell that has ended takes the new one.
+    const shown = tw.open({
+      name: target.name, title: target.name,
+      host: target.host, port: target.port, username: target.username,
+    }, { reattach: !connected });
+    // The card says CONNECTED now, and its button opens the terminal here too.
+    if (!connected && sshContent && !sshContent.classList.contains("terminal-mode")) {
+      renderSSHCards();
+    }
+    return shown;
+  }
+
+  /**
    * Activate one of the panel's tabs by id ("console" | "ssh" | "link" | …).
    *
    * Exported because two callers outside this module need it — the Settings
@@ -718,7 +795,24 @@ Corvus.panel = (function () {
     renderSSHTerminal(c);
   }
 
+  /**
+   * Redraw the cards with what is up now. Not while the tab shows a terminal:
+   * that is the operator's, and it says OFFLINE by itself when its shell ends.
+   */
+  function refreshSSHCards() {
+    if (!sshContent || sshContent.classList.contains("terminal-mode")) return;
+    renderSSHCards();
+  }
+
+  /** Whether the tab has a card for this connection on it. */
+  function showsSSHCard(name) {
+    if (!sshContent) return false;
+    return Array.from(sshContent.querySelectorAll(".ssh-connect"))
+      .some((b) => b.dataset && b.dataset.name === name);
+  }
+
   function renderSSHTerminal(conn, errorMsg) {
+    sshRenderGen += 1;
     // Dispose any prior terminal BEFORE opening a new one. Without this,
     // connecting to device B while A is open leaves A's SSE stream and resize
     // observer alive for the page lifetime, still writing into a terminal that
@@ -736,6 +830,20 @@ Corvus.panel = (function () {
 
     const statusEl = card.querySelector(".ssh-status");
     const top = card.querySelector(".ssh-card-top");
+    // The same session in a terminal window of its own as well, over the map
+    // or on another screen. Both show one shell: what is typed in either
+    // reaches it, and what it prints appears in both.
+    if (Corvus.termWindows) {
+      top.appendChild(Corvus.ui.iconButton("square-arrow-out-up-right", {
+        className: "icon-btn ssh-pop-out",
+        title: "Also open it in a terminal window of its own",
+        ariaLabel: `Open ${conn.title || conn.name} in a terminal window as well`,
+        onClick: () => Corvus.termWindows.open({
+          name: conn.name, title: conn.title || conn.name,
+          host: conn.host, port: conn.port, username: conn.username,
+        }),
+      }));
+    }
     const expand = Corvus.ui.iconButton("maximize-2", {
       title: "Full screen terminal",
       ariaLabel: "Full screen terminal",
@@ -1140,15 +1248,14 @@ Corvus.panel = (function () {
 
   /**
    * Edit a saved SSH connection's name/host/port/username/key file, and
-   * optionally its password. Unlike addSSHConnection this only saves — it
-   * never connects, so editing an entry has no side effect beyond the save
-   * itself.
+   * optionally its password, or delete it. Unlike addSSHConnection this never
+   * connects, so editing an entry has no side effect beyond the save itself.
    *
    * @param {Object} conn        the connection being edited (from a
    *                             /api/ssh/connections list — no password on it)
-   * @param {Function} [onSaved] invoked after a successful save, so the
-   *                             caller (the SSH tab, or the Settings page) can
-   *                             refresh its own list
+   * @param {Function} [onSaved] invoked after a successful save or delete, so
+   *                             the caller (the SSH tab, or the Settings page)
+   *                             can refresh its own list
    */
   function editSSHConnection(conn, onSaved) {
     const onSavedCb = typeof onSaved === "function" ? onSaved : null;
@@ -1180,12 +1287,18 @@ Corvus.panel = (function () {
     const saveBtn = Corvus.ui.button({
       variant: "primary", icon: "check", label: "SAVE", onClick: submit,
     });
+    // Between the two answers to "am I done here", where it is deliberate.
+    const deleteBtn = Corvus.ui.button({
+      variant: "danger", icon: "trash-2", label: "DELETE",
+      title: "Delete this connection from this computer",
+      onClick: remove,
+    });
 
     const dialog = Corvus.ui.modal({
       title: "Edit SSH Connection",
       size: "sm",
       body,
-      actions: [cancelBtn, saveBtn],
+      actions: [cancelBtn, deleteBtn, saveBtn],
     });
     dialog.open();
     if (autofocusEl && typeof autofocusEl.focus === "function") autofocusEl.focus();
@@ -1223,6 +1336,37 @@ Corvus.panel = (function () {
         Corvus.ui.setBusy(saveBtn, false);
         error.show((res && res.error) || "Save failed", "err");
         return;
+      }
+      if (onSavedCb) onSavedCb();
+      dialog.close();
+    }
+
+    /** Delete the saved entry. The backend closes its session first. */
+    async function remove() {
+      const live = !!(conn && conn.connected);
+      if (!confirm(live
+        ? `Delete the connection ${originalName}?\n\nIts session is open and will be closed.`
+        : `Delete the connection ${originalName}?`)) return;
+      error.hide();
+      Corvus.ui.setBusy(deleteBtn, true);
+      let res;
+      try {
+        res = await fetch("/api/ssh/connections/remove", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: originalName }),
+        }).then((r) => r.json());
+      } catch (err) {
+        res = { ok: false, error: (err && err.message) || "Delete failed" };
+      }
+      Corvus.ui.setBusy(deleteBtn, false);
+      if (!res || !res.ok) {
+        error.show((res && res.error) || "Delete failed", "err");
+        return;
+      }
+      // A terminal window still showing it, and the cards, hear it is over.
+      if (live && Corvus.sshTerm && typeof Corvus.sshTerm.sessionEnded === "function") {
+        Corvus.sshTerm.sessionEnded(originalName);
       }
       if (onSavedCb) onSavedCb();
       dialog.close();
@@ -1276,7 +1420,15 @@ Corvus.panel = (function () {
       const tab = e.target.closest(".tab");
       if (!tab) return;
       showTab(tab.dataset.tab);
+      // Opened, the tab shows what is up now, not what was up when it was drawn.
+      if (tab.dataset.tab === "ssh") refreshSSHCards();
     });
+
+    // A session that ended somewhere else (the disconnect in a terminal window
+    // of its own, a shell that exited) must not leave its card saying CONNECTED.
+    if (Corvus.sshTerm && typeof Corvus.sshTerm.onSessionEnded === "function") {
+      Corvus.sshTerm.onSessionEnded((name) => { if (showsSSHCard(name)) refreshSSHCards(); });
+    }
 
     sendBtn.addEventListener("click", sendCommand);
     input.addEventListener("keydown", (e) => {
@@ -1341,7 +1493,7 @@ Corvus.panel = (function () {
 
   return {
     init, toggle, addConsoleLine, addSSHConnection, editSSHConnection, showSSHTerminal, showTab,
-    setupSSHConnection, sshNeeds,
+    setupSSHConnection, sshNeeds, openSSHWindow, refreshSSHCards,
     // Exposed for tests: the pure pieces, assertable without a DOM.
     // The transcript, for screens outside the CONSOLE tab (the Logs page).
     consoleText, consoleLineCount, exportLog,

@@ -560,6 +560,43 @@ async function testLocalTerminalButtonOpensAShellHere() {
   S.destroy(h.container);
 }
 
+/* The arrow before the first press opens the terminal and its connection,
+   and starts nothing: the button does that, into the same shell. */
+async function testTheArrowConnectsBeforeTheFirstPress() {
+  const h = mount({ saved: { buttons: [LOCAL_BUTTON, SSH_BUTTON] } });
+  await flushMicrotasks();
+  const arrow = h.tool("Open the terminal for Ground logger");
+  assert.equal(arrow.disabled, false, "nothing running, and the arrow still works");
+  assert.match(arrow.title, /connect/i);
+
+  click(arrow);
+  await flushMicrotasks();
+  await flushMicrotasks();
+  await flushMicrotasks();
+  assert.deepEqual(h.calls.filter((c) => c.url === "/api/local/connect").map((c) => c.body),
+    [{ name: "schwalby/l" }], "a shell on this computer, under the button's own session");
+  assert.deepEqual(h.sends(), [], "the program is not started by the arrow");
+  assert.deepEqual(h.terminals[h.terminals.length - 1],
+    { name: "schwalby/l", title: "Ground logger", host: "this computer" });
+  assert.deepEqual(h.termOpts[h.termOpts.length - 1], { reattach: true, existingOnly: false });
+
+  click(h.shelf()[0]);
+  await flushMicrotasks();
+  await flushMicrotasks();
+  assert.equal(h.urls().filter((u) => u === "/api/local/connect").length, 1, "no second shell");
+  assert.equal(h.sends().length, 1, "the line went into the shell the arrow opened");
+
+  // Over SSH it connects on the button's saved connection.
+  click(h.tool("Open the terminal for Start mission"));
+  await flushMicrotasks();
+  await flushMicrotasks();
+  await flushMicrotasks();
+  assert.deepEqual(h.calls.find((c) => c.url === "/api/ssh/connect").body,
+    { name: "schwalby/s", from: "companion" });
+  assert.equal(h.terminals[h.terminals.length - 1].name, "schwalby/s");
+  S.destroy(h.container);
+}
+
 async function testLocalBackgroundButtonRunsHere() {
   const h = mount({ saved: { buttons: [LOCAL_BACKGROUND] } });
   await flushMicrotasks();
@@ -1136,6 +1173,7 @@ async function run() {
   testSegment();
   testStylesheetIsItsOwn();
   await testLocalTerminalButtonOpensAShellHere();
+  await testTheArrowConnectsBeforeTheFirstPress();
   await testLocalBackgroundButtonRunsHere();
   await testALocalFailureLandsOnItsRow();
   await testARefusedLocalShellSaysWhy();

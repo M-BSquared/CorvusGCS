@@ -75,6 +75,20 @@ Corvus.mission = (function () {
   const CLEARANCE_WARN_M = 15;
   // Cruise speed used for the duration estimate when the plan pins none.
   const NOMINAL_SPEED_MS = 10;
+  // The steepest landing approach a fixed wing is expected to glide down.
+  // PX4's FW_LND_ANG defaults to exactly this on v1.16 to v1.18 and refuses a
+  // steeper mission on upload; ArduPlane's own advice, a 10 % slope, is about
+  // the same. A warning rather than a gate, like the two above: an aircraft
+  // tuned for a steeper approach is allowed one.
+  const GLIDE_MAX_DEG = 5;
+  // A fixed wing's climb-out when the takeoff names no pitch: PX4's
+  // FW_TKO_PITCH_MIN default on v1.16 to v1.18, and the low end of the 10 to
+  // 15 degrees ArduPlane recommends. The run it needs to reach the takeoff
+  // height is drawn from it, so a steeper real climb only ever adds room.
+  const TAKEOFF_PITCH_DEG = 10;
+  // The lowest a multicopter's landing descent may start. Mirrors
+  // MISSION_APPROACH_MIN_M in corvus/mission.py, which says why.
+  const APPROACH_MIN_M = 3;
 
   // Which way round an orbit is flown. Two things, not a range, so it is a
   // picker rather than a number field — and PX4 carries it as the SIGN of the
@@ -97,6 +111,12 @@ Corvus.mission = (function () {
     takeoff: {
       label: "Takeoff", icon: "plane-takeoff", position: true, color: "healthy",
       hint: "Takes off from the start point and climbs to this height before flying on.",
+      hints: {
+        multirotor: "Climbs straight up from the start point to this height, then flies on.",
+        fixed_wing: "Climbs out from the start point in the direction it is launched, at the "
+          + "climb pitch or steeper, until it is at this height, then flies on. The profile "
+          + "assumes it is launched towards the next point.",
+      },
       params: { pitch: { label: "Climb pitch", unit: "°", min: 0, max: 45, step: 1, def: 0 } },
     },
     waypoint: {
@@ -120,9 +140,17 @@ Corvus.mission = (function () {
     },
     loiter_time: {
       label: "Hold", icon: "timer", position: true, color: "warning",
-      hint: "Circle this point for a set time, then continue.",
-      hoverHint: "Hold position over this point for a set time, then continue. The radius "
-        + "and direction stay in the plan but are not flown.",
+      hint: "Stay at this point for a set time, then continue. A fixed wing circles it, "
+        + "a multicopter hovers over it. Pick the aircraft over the altitude profile to see "
+        + "only what it flies.",
+      // By the plan's aircraft (see AIRCRAFT). A kind with no sentence of its
+      // own uses `hint`.
+      hints: {
+        multirotor: "Hover over this point for a set time, then continue. A multicopter holds "
+          + "the point in place, so the radius and direction stay in the plan but are not flown.",
+        fixed_wing: "Circle this point for a set time, then continue.",
+        vtol: "Circle this point for a set time, then continue.",
+      },
       params: {
         seconds: { label: "Time", unit: "s", min: 0, max: HOLD_MAX_S, step: 1, def: 30 },
         radius: { label: "Radius", unit: "m", min: RADIUS_MIN_M, max: RADIUS_MAX_M, step: 1, def: DEFAULT_RADIUS_M },
@@ -132,11 +160,27 @@ Corvus.mission = (function () {
     land: {
       label: "Land", icon: "plane-landing", position: true, color: "accent",
       hint: "Descend and touch down here. Ends the mission.",
+      hints: {
+        multirotor: "Fly here, then descend straight down and touch down. Ends the mission. "
+          + "Set where the descent starts below, or drag the point above the landing in "
+          + "the altitude profile. All the way down, it dives straight in.",
+        fixed_wing: "Glide down from the point before and touch down here. Ends the mission. "
+          + "The approach has to be long and flat: the altitude profile shows its angle.",
+      },
       params: {},
     },
     rtl: {
       label: "Return", icon: "house", position: false, color: "accent",
-      hint: "Fly home and land there. Ends the mission.",
+      hint: "Fly back to where the aircraft was armed, or to the nearest rally point. Ends "
+        + "the mission. How high it flies and what it does there is set on the vehicle.",
+      hints: {
+        multirotor: "Fly back to where the aircraft was armed, or to the nearest rally point, "
+          + "and land there. Ends the mission. It returns at the height set on the vehicle, "
+          + "which the profile shows while it is connected.",
+        fixed_wing: "Fly back to where the aircraft was armed, or to the nearest rally point, "
+          + "and circle there. Ends the mission but not the flight: a fixed wing does not "
+          + "land after a return. End with LAND to bring it down.",
+      },
       params: {},
     },
   };
@@ -255,18 +299,105 @@ Corvus.mission = (function () {
     "QUADROTOR", "COAXIAL", "HELICOPTER", "HEXAROTOR", "OCTOROTOR", "TRIROTOR",
   ];
 
-  /** Does the connected aircraft hold a loiter point rather than circle it? */
-  function vehicleHovers() {
+  /*
+    WHAT THE PLAN IS FLOWN BY
+
+    A plan is mostly drawn with nothing connected, and then the rule above has
+    nothing to go on: every Hold got a ring, although the multicopter it was
+    drawn for will hover over the point. So the plan carries the aircraft it is
+    for. It never reaches the wire; it only decides what a Hold looks like.
+
+    It covers the Hold alone. MAV_CMD_NAV_LOITER_TIME is flown as a hover by
+    PX4 and ArduPilot multicopters alike, so on a multicopter its radius is
+    never a flight path. A Circle is different: ArduCopter does fly
+    NAV_LOITER_TURNS as a circle of that radius, so hiding one because of a
+    choice made offline would hide a path that is flown. The Circle stays on
+    the connected-vehicle rule above.
+
+    While a recognisable aircraft is connected, the plan takes its kind and the
+    choice is locked: what is flying decides, not what was picked. Names are
+    the contract with PLAN_AIRCRAFT in corvus/mission.py.
+  */
+  const AIRCRAFT = [
+    { value: "multirotor", label: "Multicopter", types: HOVER_TYPES },
+    { value: "fixed_wing", label: "Fixed wing", types: ["FIXED_WING"] },
+    { value: "vtol", label: "VTOL", types: ["VTOL_DUOROTOR", "VTOL_QUADROTOR", "VTOL_TILTROTOR"] },
+  ];
+
+  /** The connected aircraft's state, or null with nothing connected. */
+  function connectedState() {
     const state = Corvus.telemetry && typeof Corvus.telemetry.getState === "function"
       ? Corvus.telemetry.getState() : null;
-    if (!state || !state.connected) return false;
+    return state && state.connected ? state : null;
+  }
+
+  /** Does the connected aircraft hold a loiter point rather than circle it? */
+  function vehicleHovers() {
+    const state = connectedState();
+    if (!state) return false;
     return HOVER_TYPES.indexOf(String(state.vehicle_type || "")) !== -1;
+  }
+
+  /** The plan aircraft a MAV_TYPE name is, or null for one that is none of them. */
+  function aircraftOf(vehicleType) {
+    const type = String(vehicleType || "");
+    const match = AIRCRAFT.find((entry) => entry.types.indexOf(type) !== -1);
+    return match ? match.value : null;
+  }
+
+  /** A plan aircraft as stored, or null for an absent or unknown one. */
+  function cleanAircraft(raw) {
+    return AIRCRAFT.some((entry) => entry.value === raw) ? raw : null;
+  }
+
+  /** Does the aircraft fly this orbit's ring, radius and direction? */
+  function ringFlown(item) {
+    if (!isOrbit(item)) return false;
+    if (item.type === "loiter_time") return aircraft !== "multirotor";
+    return !hovers;
+  }
+
+  /** Take the plan's aircraft from the connected one, and lock or unlock the
+   *  choice as a vehicle comes and goes. True when that changed anything. A
+   *  vehicle leaving keeps the kind it set: the plan is still for it. */
+  function adoptVehicleAircraft() {
+    const state = connectedState();
+    const vehicle = state ? aircraftOf(state.vehicle_type) : null;
+    const locked = vehicle != null;
+    const changed = (locked && vehicle !== aircraft) || locked !== aircraftLocked;
+    if (locked) aircraft = vehicle;
+    aircraftLocked = locked;
+    return changed;
+  }
+
+  /** Ask the connected vehicle how it flies a Return, and redraw with it.
+   *  A newer ask, or a disconnect, wins over a slower older one. */
+  function loadReturnProfile() {
+    const token = ++returnToken;
+    if (!connectedState() || !Corvus.telemetry || typeof Corvus.telemetry.requestJson !== "function") {
+      returnProfile = null;
+      return;
+    }
+    Corvus.telemetry.requestJson("/api/mission/return").then((res) => {
+      if (destroyed || token !== returnToken) return;
+      returnProfile = res && res.connected && res.known ? res : null;
+      refreshPlan();
+    }).catch(() => { if (token === returnToken) returnProfile = null; });
   }
 
   /** Is *key* a field this airframe would actually fly? */
   function paramApplies(item, key) {
+    // A multicopter climbs straight up: it has no climb-out to pitch into.
+    if (key === "pitch") return aircraft !== "multirotor";
     if (key !== "radius" && key !== "direction") return true;
-    return !(isOrbit(item) && hovers);
+    return !isOrbit(item) || ringFlown(item);
+  }
+
+  /** The sentence under an item's heading: what it does on this aircraft. */
+  function itemHint(item) {
+    const spec = TYPES[item.type];
+    if (isOrbit(item) && !ringFlown(item) && spec.hoverHint) return spec.hoverHint;
+    return (aircraft && spec.hints && spec.hints[aircraft]) || spec.hint;
   }
 
   const EARTH_RADIUS_M = 6371008.8;
@@ -346,6 +477,15 @@ Corvus.mission = (function () {
   // Cached rather than read per draw: this decides what the panel and the map
   // show, and telemetry arrives many times a second.
   let hovers = false;
+  // What the plan is flown by (see AIRCRAFT), or null when nobody said. Locked
+  // while the connected aircraft names it.
+  let aircraft = null;
+  let aircraftLocked = false;
+  // How the connected vehicle flies a Return (GET /api/mission/return), or
+  // null with nothing connected. Read once per connection: the heights are
+  // parameters, and parameters do not change under a page that is drawing.
+  let returnProfile = null;
+  let returnToken = 0;
   // True while a move the OPERATOR started is in flight, so only those are
   // reported back as the view this map was left in.
   let aiming = false;
@@ -427,16 +567,134 @@ Corvus.mission = (function () {
       if (!place) return;                       // an RTL with no home to return to
       if (previous) cumulative += distanceM(previous, place);
       previous = { lat: place.lat, lon: place.lon };
-      out.push({
+      const station = {
         id: item.id,
         type: item.type,
         lat: place.lat,
         lon: place.lon,
         alt: spec.position ? Number(item.alt) || 0 : 0,
         distance: cumulative,
-      });
+      };
+      if (item.type === "land" && item.approach_alt != null) station.approach = Number(item.approach_alt);
+      if (item.type === "takeoff" && Number(item.pitch) > 0) station.pitch = Number(item.pitch);
+      out.push(station);
     });
     return out;
+  }
+
+  /**
+   * The route as the altitude profile draws it, in one pass: the line
+   * (kilometres along, metres up) and the marks, the points on it that are
+   * drawn and can be grabbed. How a leg looks is the aircraft's, *kind* being
+   * the plan's (see AIRCRAFT), and *ret* how the connected vehicle flies a
+   * Return (GET /api/mission/return), or null.
+   *
+   * A multicopter climbs straight up and comes straight down; a fixed wing
+   * does neither. Its takeoff is a climb-out along the first leg, which
+   * reaches the takeoff height only after a run, and it glides into a
+   * landing. A multicopter's landing has a corner above it where the descent
+   * starts: the landing's counterpart of the takeoff's climb, set the same way
+   * by dragging it. A Return is flown at the vehicle's own heights: a
+   * multicopter lands at the end of it, a fixed wing circles there.
+   */
+  function profileShape(points, kind, ret) {
+    const x = [];
+    const y = [];
+    const marks = [];
+    const at = (metres, height) => { x.push(metres / 1000); y.push(height); };
+    points.forEach((station, index) => {
+      const before = index > 0 ? points[index - 1] : null;
+      const after = index + 1 < points.length ? points[index + 1] : null;
+      const mark = Object.assign({ number: index }, station);
+
+      if (kind === "fixed_wing" && station.type === "takeoff" && before) {
+        mark.distance = climbOutEnd(before, station, after);
+        at(mark.distance, station.alt);
+      } else if (kind === "multirotor" && station.type === "land" && before) {
+        const from = station.approach != null ? station.approach : before.alt;
+        at(station.distance, from);
+        marks.push({ id: station.id, type: "descent", number: index, distance: station.distance, alt: from });
+        at(station.distance, station.alt);
+      } else if (station.type === "rtl" && before && (kind === "multirotor" || kind === "fixed_wing")) {
+        const path = returnPath(before, station, kind, ret);
+        path.forEach(([distance, height]) => at(distance, height));
+        mark.alt = path[path.length - 1][1];
+      } else {
+        at(station.distance, station.alt);
+      }
+      marks.push(mark);
+    });
+    return { x, y, marks };
+  }
+
+  /** The line of the profile: see profileShape. */
+  function profileLine(points, kind, ret) {
+    const shape = profileShape(points, kind, ret);
+    return { x: shape.x, y: shape.y };
+  }
+
+  /** The drawn and draggable points of the profile: see profileShape. */
+  function profileMarks(points, kind, ret) {
+    return profileShape(points, kind, ret).marks;
+  }
+
+  /** Where a fixed wing's climb-out reaches the takeoff height, in metres
+   *  along the route. It climbs from where it stands along the first leg at
+   *  the takeoff's pitch (or the airframe default) and can only get as far as
+   *  the next point before the mission turns it there, so it stops at that. */
+  function climbOutEnd(before, station, after) {
+    const climb = takeoffClimb(before, station, after);
+    if (!climb) return station.distance;
+    return Math.max(station.distance, before.distance + Math.min(climb.run, climb.room));
+  }
+
+  /** A fixed wing's climb-out: {run, room, height, pitch}, the run it needs
+   *  to reach the takeoff height and the room the first leg gives it, or null
+   *  for a takeoff with nothing to climb. */
+  function takeoffClimb(before, station, after) {
+    const height = station.alt - before.alt;
+    if (!(height > 0)) return null;
+    const pitch = station.pitch > 0 ? station.pitch : TAKEOFF_PITCH_DEG;
+    const run = height / Math.tan(pitch * Math.PI / 180);
+    const room = after ? Math.max(0, after.distance - before.distance) : Infinity;
+    return { run, room, height, pitch };
+  }
+
+  /** A Return as [metres along, metres up] after the point before it. With
+   *  nothing read from the vehicle it is flown at the height it has, which is
+   *  all the planner can know: the heights are the vehicle's, not the plan's. */
+  function returnPath(before, station, kind, ret) {
+    const known = !!(ret && ret.known);
+    const pick = (...values) => values.find((value) => typeof value === "number" && isFinite(value));
+    if (kind === "fixed_wing") {
+      // Straight to the height it circles at. PX4 climbs first and circles
+      // down, ArduPlane changes height on the way; both end up there.
+      const circle = known ? pick(ret.arrive_at, ret.climb_to, before.alt) : before.alt;
+      return [[station.distance, circle]];
+    }
+    const high = known && ret.climb_to != null ? Math.max(before.alt, ret.climb_to) : before.alt;
+    const path = [];
+    if (high > before.alt) path.push([before.distance, high]);
+    path.push([station.distance, high]);
+    if (known && ret.arrive_at != null && ret.arrive_at < high) path.push([station.distance, ret.arrive_at]);
+    if (!(known && ret.hold)) path.push([station.distance, station.alt]);
+    return path;
+  }
+
+  /** The glide into the first landing: {from, to, drop, run, degrees}, from
+   *  the station before it down to it, or null when the plan has no landing
+   *  or does not descend into one. A landing right under the point before it
+   *  is 90 degrees, which is what it would be. */
+  function landingApproach(points) {
+    const index = points.findIndex((station) => station.type === "land");
+    if (index < 1) return null;
+    const from = points[index - 1];
+    const to = points[index];
+    const drop = from.alt - to.alt;
+    if (!(drop > 0)) return null;
+    const run = Math.max(0, to.distance - from.distance);
+    const degrees = Math.atan2(drop, run) * 180 / Math.PI;
+    return { from, to, drop, run, degrees };
   }
 
   /** Ground distance the plan covers, orbit circumferences included. */
@@ -591,6 +849,7 @@ Corvus.mission = (function () {
         // backend has to refuse, and sending 0 would be PX4's "no change"
         // dressed up as a speed.
         if (item.speed != null) out.speed = item.speed;
+        if (item.type === "land" && item.approach_alt != null) out.approach_alt = item.approach_alt;
         if (item.name) out.name = item.name;
         return out;
       }),
@@ -599,6 +858,7 @@ Corvus.mission = (function () {
       plan.home = { lat: home.lat, lon: home.lon };
       if (home.elevation != null) plan.home.elevation = home.elevation;
     }
+    if (aircraft) plan.aircraft = aircraft;
     return plan;
   }
 
@@ -608,6 +868,8 @@ Corvus.mission = (function () {
     nextId = 1;
     selectedId = null;
     planName = (plan && plan.name) || "Mission";
+    aircraft = cleanAircraft(plan && plan.aircraft);
+    adoptVehicleAircraft();
     home = (plan && plan.home)
       ? { lat: plan.home.lat, lon: plan.home.lon,
           elevation: plan.home.elevation != null ? plan.home.elevation : null }
@@ -632,6 +894,10 @@ Corvus.mission = (function () {
       item.speed = raw.speed == null
         ? null : clampNumber(raw.speed, SPEED_MIN_MS, SPEED_MAX_MS, SPEED_MIN_MS);
       item.name = cleanPointName(raw.name);
+      if (raw.type === "land") {
+        item.approach_alt = raw.approach_alt == null
+          ? null : clampNumber(raw.approach_alt, APPROACH_MIN_M, ALT_MAX_M, DEFAULT_ALT_M);
+      }
       snapDirection(item);
       items.push(item);
     });
@@ -846,6 +1112,24 @@ Corvus.mission = (function () {
     return item.alt;
   }
 
+  /** Set the height a landing's descent starts from, or clear it with null so
+   *  the aircraft comes in at the height of the point before. */
+  function setApproach(id, metres) {
+    const item = items.find((entry) => entry.id === id);
+    if (!item || item.type !== "land") return null;
+    // Dragged into the ground it stops at the floor: that is the dive.
+    item.approach_alt = metres == null ? null
+      : Math.round(clampNumber(metres, APPROACH_MIN_M, ALT_MAX_M, heightBefore(item)) * 10) / 10;
+    return item.approach_alt;
+  }
+
+  /** The height of the station before *item*: where it comes in from. */
+  function heightBefore(item) {
+    const points = stations(items, home);
+    const index = points.findIndex((station) => station.id === item.id);
+    return index > 0 ? points[index - 1].alt : DEFAULT_ALT_M;
+  }
+
   /** Say something in the sidebar's status line, or say nothing at all.
    *  Every backend call in this module resolves after an await, by which time
    *  the operator may have left the page and taken the line with them. */
@@ -938,7 +1222,7 @@ Corvus.mission = (function () {
     profileNote.className = "mission-profile-note";
     profileNote.id = "missionProfileNote";
     profileNote.textContent = "Drag a point up or down to set its height.";
-    profileHead.append(profileTitle, profileNote);
+    profileHead.append(profileTitle, profileNote, buildAircraftPicker());
     profileEl = document.createElement("div");
     profileEl.className = "mission-profile-plot";
     profileWrap.append(profileHead, profileEl);
@@ -1020,6 +1304,8 @@ Corvus.mission = (function () {
     // and it can arrive, change or go away while the page is open. Only a
     // CHANGE redraws: the state itself lands on every telemetry frame.
     hovers = vehicleHovers();
+    adoptVehicleAircraft();
+    loadReturnProfile();
     if (Corvus.telemetry && typeof Corvus.telemetry.getState === "function") {
       onVehicleMission(Corvus.telemetry.getState());
     }
@@ -1028,7 +1314,10 @@ Corvus.mission = (function () {
         if (destroyed) return;
         onVehicleMission(frame);
         const next = vehicleHovers();
-        if (next === hovers) return;
+        const wasLocked = aircraftLocked;
+        const adopted = adoptVehicleAircraft();
+        if (aircraftLocked !== wasLocked) loadReturnProfile();
+        if (next === hovers && !adopted) return;
         hovers = next;
         refreshAll();
       });
@@ -1396,6 +1685,31 @@ Corvus.mission = (function () {
   function updateClearButton() {
     if (!clearPlanEl) return;
     clearPlanEl.hidden = !items.length && !home;
+  }
+
+  /** What flies the plan, at the right end of the profile's heading. */
+  function buildAircraftPicker() {
+    const select = Corvus.ui.select({
+      id: "missionAircraft",
+      ariaLabel: "Aircraft",
+      value: aircraft || "",
+      options: [{ value: "", label: "Not set" }].concat(
+        AIRCRAFT.map((entry) => ({ value: entry.value, label: entry.label }))),
+      disabled: aircraftLocked,
+      onChange: (value) => {
+        if (aircraftLocked) return;
+        aircraft = cleanAircraft(value);
+        refreshAll();
+      },
+    });
+    return Corvus.ui.field({
+      label: "Aircraft",
+      control: select,
+      className: "mission-aircraft",
+      info: "What flies this plan. A multicopter hovers at a Hold where a fixed wing "
+        + "circles it, so a Hold's ring, radius and direction are shown only for an "
+        + "aircraft that flies them. While an aircraft is connected, it sets this.",
+    });
   }
 
   // ---- the sidebar -----------------------------------------------------
@@ -2094,7 +2408,7 @@ Corvus.mission = (function () {
   function drawRadiusHandle() {
     if (radiusHandle) { radiusHandle.remove(); radiusHandle = null; }
     const item = selectedItem();
-    if (!isOrbit(item) || hovers || !map) return;
+    if (!ringFlown(item) || !map) return;
 
     const element = buildRadiusHandle();
     radiusHandle = new maplibregl.Marker({ element, anchor: "center", draggable: true })
@@ -2266,8 +2580,8 @@ Corvus.mission = (function () {
     if (!orbitSource) return;
     // A ring the aircraft will not fly is a drawing of a flight path that does
     // not happen. The point itself stays on the map; only the circle goes.
-    const features = (hovers ? [] : items)
-      .filter((item) => item.type === "loiter_turns" || item.type === "loiter_time")
+    const features = items
+      .filter(ringFlown)
       .map((item) => ({
         type: "Feature",
         properties: { id: item.id },
@@ -2294,7 +2608,7 @@ Corvus.mission = (function () {
     let west = Infinity, east = -Infinity, south = Infinity, north = -Infinity;
     points.forEach((station) => {
       const item = byId[station.id];
-      const radius = (isOrbit(item) && !hovers) ? (Number(item.radius) || 0) : 0;
+      const radius = ringFlown(item) ? (Number(item.radius) || 0) : 0;
       const dLat = (radius / EARTH_RADIUS_M) * 180 / Math.PI;
       const dLon = dLat / Math.max(0.01, Math.cos(station.lat * Math.PI / 180));
       west = Math.min(west, station.lon - dLon);
@@ -2420,8 +2734,24 @@ Corvus.mission = (function () {
     if (nameInput && nameInput.value !== planName && document.activeElement !== nameInput) {
       nameInput.value = planName;
     }
+    syncAircraftSelect();
     renderDetail();
     refreshPlan();
+  }
+
+  /** The aircraft picker shows the plan's kind, and is locked while the
+   *  connected aircraft sets it. The app's dropdown sees neither a scripted
+   *  value nor, reliably, a scripted state, so it is told. */
+  function syncAircraftSelect() {
+    const select = document.getElementById("missionAircraft");
+    if (!select) return;
+    const value = aircraft || "";
+    if (select.value === value && select.disabled === aircraftLocked) return;
+    select.value = value;
+    select.disabled = aircraftLocked;
+    if (select.corvusSelect && typeof select.corvusSelect.refresh === "function") {
+      select.corvusSelect.refresh();
+    }
   }
 
   /** Everything a committed VALUE changes, except the panel it was typed into.
@@ -2562,8 +2892,12 @@ Corvus.mission = (function () {
      rest of it is a click away in the detail panel below. */
   function describeItem(item) {
     const spec = TYPES[item.type];
-    if (!spec.position) return "to start";
-    if (item.type === "land") return "ground";
+    if (!spec.position) return aircraft === "fixed_wing" ? "circles at start" : "to start";
+    if (item.type === "land") {
+      if (aircraft !== "multirotor" || item.approach_alt == null) return "ground";
+      return item.approach_alt <= APPROACH_MIN_M
+        ? "straight in" : `down from ${lengthText(item.approach_alt)}`;
+    }
     if (item.type === "takeoff") return `climb to ${lengthText(item.alt)}`;
     const parts = [lengthText(item.alt)];
     if (isOrbit(item)) {
@@ -2571,7 +2905,7 @@ Corvus.mission = (function () {
         ? `${item.turns}×` : `${Math.round(item.seconds)} s`;
       // The radius and the turn arrow only when they mean something: on a
       // multirotor the row would otherwise quote a circle it does not fly.
-      if (!hovers) {
+      if (ringFlown(item)) {
         const turn = item.direction < 0 ? "↺" : "↻";
         parts.push(`${turn}${Corvus.units.formatLength(item.radius)}`);
       }
@@ -2976,8 +3310,7 @@ Corvus.mission = (function () {
 
     // On an aircraft that holds a loiter point rather than circling it, this
     // is also where it says why the radius and direction fields are missing.
-    const note = Corvus.ui.empty(
-      (hovers && spec.hoverHint) ? spec.hoverHint : spec.hint);
+    const note = Corvus.ui.empty(itemHint(item));
     note.className = "field-hint";
     detailEl.appendChild(note);
 
@@ -3025,6 +3358,12 @@ Corvus.mission = (function () {
             return stored;
           },
         }));
+        flight.appendChild(speedField(item));
+        detailEl.appendChild(flight);
+      } else if (aircraft === "multirotor") {
+        const flight = document.createElement("div");
+        flight.className = "mission-detail-grid";
+        flight.appendChild(descentField(item));
         flight.appendChild(speedField(item));
         detailEl.appendChild(flight);
       } else {
@@ -3128,6 +3467,29 @@ Corvus.mission = (function () {
       },
     });
     return Corvus.ui.field({ label: `Speed (${symbolOf("speed")})`, control: input });
+  }
+
+  /** Where a multicopter's landing descent starts, as a number. Empty means
+   *  the height of the point before, which the box shows as its placeholder,
+   *  the way the speed box shows the speed a point inherits. */
+  function descentField(item) {
+    const input = Corvus.ui.input({
+      type: "number",
+      value: shown("length", item.approach_alt),
+      placeholder: String(shown("length", heightBefore(item))),
+      min: shown("length", APPROACH_MIN_M), max: shown("length", ALT_MAX_M),
+      step: 1,
+      mono: true,
+      ariaLabel: `Height the descent starts from in ${symbolOf("length")}`,
+      autocomplete: false,
+      onChange: (value) => {
+        const text = String(value).trim();
+        setApproach(item.id, text ? fromShown("length", text) : null);
+        input.value = shown("length", item.approach_alt);
+        refreshPlan();
+      },
+    });
+    return Corvus.ui.field({ label: `Descend from (${symbolOf("length")})`, control: input });
   }
 
   /** A field whose value is one of a short list rather than a number on a
@@ -3464,26 +3826,36 @@ Corvus.mission = (function () {
     const colors = Corvus.ui.chartColors();
 
     const planX = points.map((p) => p.distance / 1000);
-    const planY = points.map((p) => p.alt);
     const range = profileRange(points, ground);
+    // The line and the points are two traces because they are not the same
+    // list: a multicopter's landing adds a corner, and the corner is a point
+    // of its own only on the marks.
+    const line = profileShape(points, aircraft, returnProfile);
+    const marks = line.marks;
 
     const traces = [
       terrainFillTrace(range),
       terrainLineTrace(colors),
       {
-        x: planX, y: planY,
-        type: "scatter", mode: "lines+markers",
+        x: line.x, y: line.y,
+        type: "scatter", mode: "lines",
         line: { color: colors.accent, width: 2 },
+        hoverinfo: "skip",
+        name: "Route",
+      },
+      {
+        x: marks.map((m) => m.distance / 1000), y: marks.map((m) => m.alt),
+        type: "scatter", mode: "markers",
         marker: {
           size: 9,
-          color: points.map((p) => markerColor(p, colors)),
+          color: marks.map((m) => markerColor(m, colors)),
           line: { color: token("--bg", "#0B0E12"), width: 1.5 },
         },
         hovertemplate: "%{customdata}<extra></extra>",
-        customdata: points.map((p, index) => hoverText(p, index)),
+        customdata: marks.map((m) => hoverText(m, m.number)),
         name: "Plan",
       },
-      highlightTrace(points, colors),
+      highlightTrace(marks, colors),
     ];
 
     const layout = Object.assign({}, theme, {
@@ -3491,6 +3863,7 @@ Corvus.mission = (function () {
       showlegend: false,
       hovermode: "closest",
       dragmode: false,
+      annotations: profileAnnotations(points, marks, colors),
       xaxis: Object.assign({}, theme.xaxis, {
         title: `Distance (${Corvus.units.distanceSymbol()})`,
         fixedrange: true,
@@ -3576,12 +3949,67 @@ Corvus.mission = (function () {
     };
   }
 
-  function highlightTrace(points, colors) {
-    const index = points.findIndex((p) => p.id === selectedId);
-    if (index < 0) return { x: [], y: [], type: "scatter", mode: "markers", hoverinfo: "skip" };
+  /** The glide angle, written on a fixed wing's landing approach. In the
+   *  warning colour once it is steeper than the aircraft is expected to fly,
+   *  which is also when the plan's warnings say so. Nothing for any other
+   *  aircraft: a multicopter does not glide, and an unnamed one might not. */
+  function glideAnnotations(points, colors) {
+    if (aircraft !== "fixed_wing") return [];
+    const approach = landingApproach(points);
+    if (!approach) return [];
+    const steep = approach.degrees > GLIDE_MAX_DEG;
+    return [{
+      x: (approach.from.distance + approach.to.distance) / 2000,
+      y: (approach.from.alt + approach.to.alt) / 2,
+      xref: "x", yref: "y",
+      text: `${formatDegrees(approach.degrees)} glide`,
+      showarrow: false,
+      // Above and to the right of the middle of the leg: the glide falls
+      // away to the right, so that is the side the line leaves clear.
+      xanchor: "left", yanchor: "bottom",
+      xshift: 5, yshift: 3,
+      font: {
+        size: 10,
+        family: token("--mono", "monospace"),
+        color: steep ? colors.warning : token("--text-2", "#8A94A3"),
+      },
+    }];
+  }
+
+  /** What the profile writes on itself: the glide into a fixed wing's
+   *  landing, and where a fixed wing's Return leaves it circling. */
+  function profileAnnotations(points, marks, colors) {
+    const out = glideAnnotations(points, colors);
+    const circling = aircraft === "fixed_wing" && marks.find((m) => m.type === "rtl");
+    if (circling) {
+      out.push({
+        x: circling.distance / 1000, y: circling.alt,
+        xref: "x", yref: "y",
+        text: "circles here",
+        showarrow: false,
+        xanchor: "right", yanchor: "bottom",
+        xshift: -7, yshift: 4,
+        font: { size: 10, family: token("--mono", "monospace"), color: colors.warning },
+      });
+    }
+    return out;
+  }
+
+  /** An angle as the planner writes one: whole degrees from 10 up, one
+   *  decimal below, where the difference between 4.6 and 5.4 matters. */
+  function formatDegrees(value) {
+    const n = Number(value) || 0;
+    return `${n >= 10 ? Math.round(n) : Math.round(n * 10) / 10}°`;
+  }
+
+  /** A ring round the selected item's marks: one, or for a multicopter's
+   *  landing two, the touchdown and the corner the descent starts from. */
+  function highlightTrace(marks, colors) {
+    const picked = marks.filter((m) => m.id === selectedId);
+    if (!picked.length) return { x: [], y: [], type: "scatter", mode: "markers", hoverinfo: "skip" };
     return {
-      x: [points[index].distance / 1000],
-      y: [points[index].alt],
+      x: picked.map((m) => m.distance / 1000),
+      y: picked.map((m) => m.alt),
       type: "scatter",
       mode: "markers",
       marker: {
@@ -3595,18 +4023,31 @@ Corvus.mission = (function () {
 
   function markerColor(station, colors) {
     if (station.type === "home") return colors.healthy;
-    const spec = TYPES[station.type];
+    const spec = TYPES[station.type === "descent" ? "land" : station.type];
     if (!spec) return colors.nav;
     return colors[spec.color] || colors.nav;
   }
 
+  /** What a Return's point says about where its height came from. */
+  function returnNote() {
+    const read = !!(returnProfile && returnProfile.known);
+    if (aircraft === "fixed_wing") return read ? "circles here, height read from the vehicle" : "circles here, at its return height";
+    return read ? "heights read from the vehicle" : "return height is set on the vehicle";
+  }
+
   function hoverText(station, index) {
     const item = station.type === "home" ? null : items.find((entry) => entry.id === station.id);
+    const descent = station.type === "descent";
     // Escaped: Plotly reads hover text as a subset of HTML, and a name is
     // whatever the operator typed.
     const label = station.type === "home" ? "Start"
-      : escapeMarkup(item ? pointName(item) : TYPES[station.type].label);
-    const parts = [`${index === 0 ? "" : index + ". "}${label}`, `${lengthText(station.alt)} above home`];
+      : escapeMarkup(item ? pointName(item) : TYPES[descent ? "land" : station.type].label);
+    const dive = descent && station.alt <= APPROACH_MIN_M;
+    const parts = [
+      `${index === 0 ? "" : index + ". "}${label}${descent ? (dive ? ": straight in" : ": descent starts") : ""}`,
+      `${lengthText(station.alt)} above home`,
+    ];
+    if (station.type === "rtl") parts.push(returnNote());
     if (ground) {
       const under = interpolateAt(ground, station.distance);
       if (under != null) parts.push(`${lengthText(station.alt - under)} over ground`);
@@ -3694,25 +4135,27 @@ Corvus.mission = (function () {
     // Nothing here has a height to set: home is the datum of the frame, a
     // landing ends on the ground, and a return names no place at all. A drag
     // started on one used to run to completion and report a height it had not
-    // moved.
+    // moved. The corner above a multicopter's landing is the exception: it
+    // is where the descent starts, and that height is the landing's own.
     const spec = TYPES[hit.type];
-    if (hit.id === "home" || hit.type === "land" || !spec || !spec.position) return;
+    const descent = hit.type === "descent";
+    if (!descent && (hit.id === "home" || hit.type === "land" || !spec || !spec.position)) return;
 
     event.preventDefault();
-    dragState = { id: hit.id, pointerId: event.pointerId };
+    dragState = { id: hit.id, descent, pointerId: event.pointerId };
     try { profileEl.setPointerCapture(event.pointerId); } catch (_error) { /* older browsers */ }
     profileEl.classList.add("is-dragging");
     profileEl.addEventListener("pointermove", onProfilePointerMove);
     profileEl.addEventListener("pointerup", onProfilePointerUp);
     profileEl.addEventListener("pointercancel", onProfilePointerUp);
-    showDragValue(hit.id);
+    showDragValue(hit.id, descent);
   }
 
   /** The station nearest *(px, py)*, within a grab radius. Distance is
    *  measured in pixels rather than in data units, because that is how a
    *  pointer is aimed. */
   function hitTest(px, py) {
-    const points = stations(items, home);
+    const points = profileMarks(stations(items, home), aircraft, returnProfile);
     let best = null;
     let bestGap = 18;
     points.forEach((station) => {
@@ -3728,15 +4171,27 @@ Corvus.mission = (function () {
     const at = plotPoint(profileEl.getBoundingClientRect(),
       event.clientX, event.clientY, pointerScale());
     const altitude = toAltitude(profileGeom, at.py);
-    if (setAltitude(dragState.id, altitude) == null) return;
+    const stored = dragState.descent
+      ? setApproach(dragState.id, altitude) : setAltitude(dragState.id, altitude);
+    if (stored == null) return;
     // Restyle rather than redraw: a full react() on every pointer sample makes
-    // the drag lag behind the pointer, and nothing but the two altitude traces
+    // the drag lag behind the pointer, and nothing but the altitude traces
     // changes while one is in flight.
     const points = stations(items, home);
-    const index = points.findIndex((station) => station.id === dragState.id);
-    window.Plotly.restyle(profileEl, { y: [points.map((p) => p.alt)] }, [2]);
-    if (index >= 0) window.Plotly.restyle(profileEl, { y: [[points[index].alt]] }, [3]);
-    showDragValue(dragState.id);
+    // x as well as y: a fixed wing's climb-out ends further out the higher
+    // its takeoff is, so that point moves sideways as it is dragged up.
+    const shape = profileShape(points, aircraft, returnProfile);
+    const picked = shape.marks.filter((m) => m.id === selectedId);
+    window.Plotly.restyle(profileEl, {
+      x: [shape.x, shape.marks.map((m) => m.distance / 1000), picked.map((m) => m.distance / 1000)],
+      y: [shape.y, shape.marks.map((m) => m.alt), picked.map((m) => m.alt)],
+    }, [2, 3, 4]);
+    // The point before a landing sets how steep the glide into it is.
+    if (aircraft === "fixed_wing") {
+      window.Plotly.relayout(profileEl,
+        { annotations: profileAnnotations(points, shape.marks, Corvus.ui.chartColors()) });
+    }
+    showDragValue(dragState.id, dragState.descent);
   }
 
   function onProfilePointerUp() {
@@ -3770,15 +4225,17 @@ Corvus.mission = (function () {
   /** What the height is, while it is being dragged. In the chart's own caption
    *  rather than a tooltip: the pointer is on the point, and a label under the
    *  cursor would be the one thing covering what is being aimed at. */
-  function showDragValue(id) {
+  function showDragValue(id, descent) {
     const note = document.getElementById("missionProfileNote");
     const item = items.find((entry) => entry.id === id);
     if (!note || !item) return;
-    const parts = [`${pointName(item)}: ${lengthText(item.alt)} above home`];
+    const height = descent
+      ? (item.approach_alt != null ? item.approach_alt : heightBefore(item)) : item.alt;
+    const parts = [`${pointName(item)}: ${descent ? "descends from " : ""}${lengthText(height)} above home`];
     if (ground) {
       const station = stations(items, home).find((entry) => entry.id === id);
       const under = station ? interpolateAt(ground, station.distance) : null;
-      if (under != null) parts.push(`${lengthText(item.alt - under)} over ground`);
+      if (under != null) parts.push(`${lengthText(height - under)} over ground`);
     }
     note.textContent = parts.join("  ·  ");
   }
@@ -3827,10 +4284,67 @@ Corvus.mission = (function () {
       say(`The plan reaches ${lengthText(highest)}.`,
         `That is above the ${lengthText(CEILING_HINT_M)} ceiling of the open category.`);
     }
-    const gaps = clearances(stations(items, home), ground).filter((value) => value != null);
+    // A fixed wing cannot descend onto its landing point, only glide to it,
+    // and the glide starts at the point before. Said with the two ways out,
+    // in numbers: further out, or lower down.
+    const approach = aircraft === "fixed_wing" ? landingApproach(stations(items, home)) : null;
+    if (approach && approach.degrees > GLIDE_MAX_DEG) {
+      const slope = Math.tan(GLIDE_MAX_DEG * Math.PI / 180);
+      // Rounded the safe way for advice: out to the next whole unit, and
+      // down to the one below.
+      const unit = symbolOf("length");
+      const away = Math.ceil(Number(shown("length", approach.drop / slope)));
+      const lower = Math.floor(Number(shown("length", approach.run * slope)));
+      say(`The landing approach is ${formatDegrees(approach.degrees)} steep.`,
+        `A fixed wing glides in at ${GLIDE_MAX_DEG}° or flatter, and PX4 refuses a steeper `
+        + "approach on upload unless FW_LND_ANG allows it. Move the point before the landing "
+        + `at least ${away} ${unit} away from it, or lower it to ${lower} ${unit}.`);
+    }
+    const points = stations(items, home);
+    // The corner a multicopter's descent starts from is flown like any point,
+    // so it counts; the touchdown under it does not.
+    const gaps = clearances(points, ground).filter((value) => value != null);
     if (gaps.length && Math.min.apply(null, gaps) < CLEARANCE_WARN_M) {
       say(`Only ${lengthText(Math.min.apply(null, gaps))} above the ground.`,
         "The route passes this close to the terrain. Raise the points near the lowest part of the profile.");
+    }
+    // The corner a multicopter's descent starts from is meant to be low, down
+    // to a dive, so it is not held to the route's clearance. Only to not
+    // being lower than the floor over the ground actually under it: the
+    // landing is at the start's height on paper, and terrain need not be.
+    const corners = ground ? profileMarks(points, aircraft, returnProfile)
+      .filter((mark) => mark.type === "descent")
+      .map((mark) => {
+        const under = interpolateAt(ground, mark.distance);
+        return under == null ? null : mark.alt - under;
+      })
+      .filter((value) => value != null) : [];
+    if (corners.length && Math.min.apply(null, corners) < APPROACH_MIN_M) {
+      say(`The descent starts only ${lengthText(Math.min.apply(null, corners))} above the ground.`,
+        "The ground at the landing is higher than the start, and the height the descent "
+        + "starts from is measured from the start. Raise it in the profile.");
+    }
+
+    if (aircraft === "fixed_wing") {
+      const index = points.findIndex((station) => station.type === "takeoff");
+      const climb = index > 0 ? takeoffClimb(points[index - 1], points[index], points[index + 1]) : null;
+      if (climb && climb.run > climb.room) {
+        say("The first point comes before the climb is done.",
+          `At ${formatDegrees(climb.pitch)} a fixed wing needs about ${lengthText(Math.ceil(climb.run))} `
+          + `to climb to ${lengthText(climb.height)}, and the first point is `
+          + `${lengthText(Math.floor(climb.room))} out. Move it further away or lower the takeoff.`);
+      }
+    }
+    const ending = endIndex() >= 0 ? items[endIndex()] : null;
+    if (ending && ending.type === "rtl" && aircraft === "fixed_wing") {
+      say("The mission ends circling above the start.",
+        "A fixed wing does not land after a return. PX4 and ArduPlane both fly back to where "
+        + "it was armed and circle there until you take over. End with LAND to bring it down.");
+    } else if (ending && ending.type === "rtl" && aircraft === "multirotor"
+        && returnProfile && returnProfile.known && returnProfile.hold) {
+      say("The mission ends hovering above the start.",
+        "The vehicle is set to wait there after a return rather than land. Take over, or "
+        + "change its Return settings on the Safety page.");
     }
     return list;
   }
@@ -3913,7 +4427,12 @@ Corvus.mission = (function () {
       delete copy.name;
       return copy;
     });
-    return JSON.stringify({ items: wire, speed: plan.speed == null ? null : plan.speed });
+    // The aircraft too: it decides whether a landing's descent height is
+    // flown, so changing it changes what the vehicle would be sent.
+    return JSON.stringify({
+      items: wire, speed: plan.speed == null ? null : plan.speed,
+      aircraft: plan.aircraft || null,
+    });
   }
 
   /** This plan is now what the vehicle holds, at the backend's `revision`. */
@@ -4366,6 +4885,21 @@ Corvus.mission = (function () {
     _pointScaleFor: pointScaleFor,
     _hoverTypes: HOVER_TYPES,
     _vehicleHovers: vehicleHovers,
+    // test hooks: which kind of aircraft the plan is for, and what that shows.
+    // Wrong silently: a ring drawn round a point the aircraft hovers over, or
+    // none round a circle it flies.
+    _aircraft: AIRCRAFT,
+    _aircraftOf: aircraftOf,
+    _adoptVehicleAircraft: adoptVehicleAircraft,
+    _paramApplies: paramApplies,
+    _itemHint: itemHint,
+    // test hooks: how a landing is drawn and judged for that aircraft.
+    _profileLine: profileLine,
+    _profileMarks: profileMarks,
+    // test hook: what the connected vehicle said about its Return.
+    _setReturnProfile: (value) => { returnProfile = value; },
+    _landingApproach: landingApproach,
+    _glideMaxDeg: GLIDE_MAX_DEG,
     // test hooks: "is the vehicle flying THIS plan, and where". Wrong in the
     // worst way nothing throws over: a leg highlighted on a route the
     // aircraft is not flying.
@@ -4394,7 +4928,7 @@ Corvus.mission = (function () {
     _bounds: {
       ALT_MIN_M, ALT_MAX_M, RADIUS_MIN_M, RADIUS_MAX_M,
       HOLD_MAX_S, TURNS_MAX, SPEED_MIN_MS, SPEED_MAX_MS, MAX_ITEMS,
-      POINT_NAME_MAX,
+      POINT_NAME_MAX, APPROACH_MIN_M,
     },
     // test hooks: a point's name, cleaned as the backend cleans it, and the
     // plan as the vehicle sees it (which has no names in it).

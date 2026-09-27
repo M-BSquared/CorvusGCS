@@ -55,6 +55,63 @@ Corvus.sshTerm = (function () {
   const RECONNECT_MS = 500;
   const MAX_RECONNECT_MS = 5000;
 
+  // ---- a session that ended, told to every page of the app -----------------
+  //
+  // Nothing in the backend pushes "this session is gone", and the places that
+  // show a session's state (the SSH tab's cards) are not always the place it
+  // ended in: a terminal in a window of its own is its own page. So whoever
+  // sees a session end says so here, and it reaches this page and, over a
+  // BroadcastChannel, every other page of the app.
+  const ENDED_CHANNEL = "corvus-ssh";
+  const endedListeners = new Set();
+  let endedChannel = null;
+
+  function tellEnded(name) {
+    endedListeners.forEach((cb) => { try { cb(name); } catch (_e) {} });
+  }
+
+  function channel() {
+    if (endedChannel || typeof window.BroadcastChannel !== "function") return endedChannel;
+    try {
+      endedChannel = new window.BroadcastChannel(ENDED_CHANNEL);
+    } catch (_e) {
+      return null;
+    }
+    // Node has BroadcastChannel too (the test suite); there it must not keep
+    // the process alive.
+    if (typeof endedChannel.unref === "function") endedChannel.unref();
+    endedChannel.onmessage = (e) => {
+      const msg = e && e.data;
+      if (msg && msg.type === "ended" && typeof msg.name === "string") tellEnded(msg.name);
+    };
+    return endedChannel;
+  }
+
+  /**
+   * A session is over: disconnected here, or its shell ended. Every
+   * onSessionEnded listener hears it, in this page and in the others.
+   * @param {string} name the session
+   */
+  function announceEnded(name) {
+    if (!name) return;
+    const n = String(name);
+    tellEnded(n);
+    const c = channel();
+    if (c) { try { c.postMessage({ type: "ended", name: n }); } catch (_e) {} }
+  }
+
+  /**
+   * Hear about sessions that end, wherever they end.
+   * @param {function(string): void} cb called with the session's name
+   * @returns {function(): void} stop listening
+   */
+  function onSessionEnded(cb) {
+    if (typeof cb !== "function") return () => {};
+    channel();
+    endedListeners.add(cb);
+    return () => endedListeners.delete(cb);
+  }
+
   /** The terminal's WebSocket address, or null where there is none to open. */
   function socketUrl(name) {
     const loc = window.location;
@@ -273,6 +330,21 @@ Corvus.sshTerm = (function () {
       lastCols = cols;
       lastRows = rows;
     }
+    // One session can be on screen twice, in the SSH tab and in a window of
+    // its own, and its pty has one size. The terminal being typed in is the
+    // one the shell lays out for: taking the keyboard sends this terminal's
+    // size again, even when it last sent the same one, since the other may
+    // have changed it since. The kernel signals the shell only on a change.
+    function claimSize() {
+      lastCols = 0;
+      lastRows = 0;
+      pushSize();
+    }
+    const keyboard = term.textarea;
+    if (keyboard && typeof keyboard.addEventListener === "function") {
+      keyboard.addEventListener("focus", claimSize);
+    }
+
     function refit() {
       if (disposed) return;
       try { fit.fit(); } catch (_e) {}
@@ -297,8 +369,10 @@ Corvus.sshTerm = (function () {
     }
 
     function sessionClosed() {
+      if (sessionEnded) return;
       sessionEnded = true;
       if (typeof o.onClosed === "function") o.onClosed();
+      announceEnded(name);
     }
 
     function openSocket() {
@@ -401,6 +475,9 @@ Corvus.sshTerm = (function () {
     function dispose() {
       if (disposed) return;
       disposed = true;
+      if (keyboard && typeof keyboard.removeEventListener === "function") {
+        keyboard.removeEventListener("focus", claimSize);
+      }
       if (resizeTimer) clearTimeout(resizeTimer);
       window.removeEventListener("resize", refit);
       if (observer) { try { observer.disconnect(); } catch (_e) {} }
@@ -425,5 +502,8 @@ Corvus.sshTerm = (function () {
     };
   }
 
-  return { available, ensure, create, themeFromTokens, socketUrl, copyText };
+  return {
+    available, ensure, create, themeFromTokens, socketUrl, copyText,
+    sessionEnded: announceEnded, onSessionEnded,
+  };
 })();

@@ -16,7 +16,7 @@ window.Corvus = window.Corvus || {};
   accent, panel surface, page background — the three colors that actually tell
   the themes apart at a glance.
 
-  "light-orange" is the default and the one theme with no block of its own —
+  "light" is the default and the one theme with no block of its own —
   it is what bare `:root` carries in css/themes.css, so it is also what an
   unknown id degrades to. Changing DEFAULT changes only what a fresh install
   gets: an operator who has already picked a theme has it in localStorage and
@@ -29,15 +29,15 @@ window.Corvus = window.Corvus || {};
 */
 Corvus.theme = (function () {
   const KEY = "corvus.theme";
-  const DEFAULT = "light-orange";
+  const DEFAULT = "light";
 
   const THEMES = [
-    { id: "light-orange", label: "Light Orange", desc: "Default",       swatch: ["#C2540A", "#FFFFFF", "#F4F6F8"] },
-    { id: "light",        label: "Light",        desc: "White & black", swatch: ["#1B1F26", "#F1F3F6", "#FFFFFF"] },
-    { id: "green",        label: "Green",        desc: "Dark",          swatch: ["#3DA876", "#171D25", "#0B0E12"] },
-    { id: "blue",         label: "Blue",         desc: "Cool",          swatch: ["#3B9EFF", "#171D25", "#0B0E12"] },
-    { id: "pink",         label: "Pink",         desc: "Magenta",       swatch: ["#F0509B", "#171D25", "#0B0E12"] },
-    { id: "orange",       label: "Orange",       desc: "Amber",         swatch: ["#F58A2B", "#171D25", "#0B0E12"] },
+    { id: "light",        label: "Light",        desc: "Default",          swatch: ["#1B1F26", "#F1F3F6", "#FFFFFF"] },
+    { id: "light-orange", label: "Light Orange", desc: "Corporate Orange", swatch: ["#C2540A", "#FFFFFF", "#F4F6F8"] },
+    { id: "green",        label: "Green",        desc: "Dark",             swatch: ["#3DA876", "#171D25", "#0B0E12"] },
+    { id: "blue",         label: "Blue",         desc: "Cool",             swatch: ["#3B9EFF", "#171D25", "#0B0E12"] },
+    { id: "pink",         label: "Pink",         desc: "Magenta",          swatch: ["#F0509B", "#171D25", "#0B0E12"] },
+    { id: "orange",       label: "Orange",       desc: "Amber",            swatch: ["#F58A2B", "#171D25", "#0B0E12"] },
   ];
 
   const IDS = THEMES.map((t) => t.id);
@@ -980,6 +980,42 @@ Corvus.sidenav = (function () {
         : "Only the desktop app can give a window one of its own. In a " +
           "browser, camera and terminal windows always open inside.",
     }));
+
+    // Solid terminals. Off by default: a terminal window is frosted glass. A
+    // window of its own can only be frosted where the operating system blurs
+    // what is behind it (corvus/app.py, window_support: macOS), so the hint
+    // says where it is solid anyway rather than letting the switch look
+    // broken there.
+    const solid = !!(cfg.ui && cfg.ui.solid_terminals);
+    const tw = Corvus.termWindows;
+    if (tw) tw.setFrosted(!solid);
+    const nativeFrost = desktop && !!(window.corvusNativeSupport || {}).frost;
+    const solidSw = Corvus.ui.toggle({
+      id: "settingsSolidTerminals",
+      value: solid,
+      ariaLabel: "Solid terminals",
+      onChange: (next) => {
+        if (tw) tw.setFrosted(!next);
+        return postConfig({ ui: { solid_terminals: next } }, { strict: true })
+          .catch((error) => {
+            if (tw) tw.setFrosted(next);
+            throw error;
+          });
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Solid terminals",
+      control: solidSw.el,
+      className: "field-switch",
+      hint: "Off (the default): terminal windows are frosted glass and blur " +
+        "what is behind them, the map inside the Corvus window" + (nativeFrost
+          ? " and the desktop behind a window of its own."
+          : (desktop
+            ? ". A terminal in a window of its own is solid here either way, " +
+              "because only macOS blurs what is behind a window."
+            : ".")) +
+        " On: they are solid, which reads best in bright light.",
+    }));
     return card;
   }
 
@@ -1369,11 +1405,17 @@ Corvus.sidenav = (function () {
       fallbackProvider ||
       (providers[0] && providers[0].id);
 
+    // A keyed service only earns a card once it has a key: without one it
+    // cannot draw a single tile. The active service always keeps its card, so
+    // removing its key never leaves the picker with nothing selected.
+    const shown = providers.filter(
+      (p) => !p.token_required || p.token_set || p.id === activeProvider);
+
     const picker = Corvus.ui.optionCards({
       ariaLabel: "Map service",
       columns: 2,
       value: activeProvider,
-      options: providers.map((p) => ({
+      options: shown.map((p) => ({
         id: p.id,
         label: p.label,
         desc: describeProvider(p, byId),
@@ -1456,8 +1498,9 @@ Corvus.sidenav = (function () {
     note.textContent = describeCache(activeLayerId);
 
     // API keys. Only offered when this build actually has a keyed service, so
-    // the button never opens an empty dialog.
-    const keyed = providers.filter((p) => p.token_required);
+    // the button never opens an empty dialog. That includes the services whose
+    // key is optional (Google, Bing): theirs moves them onto the licensed API.
+    const keyed = providers.filter((p) => p.token);
     if (keyed.length) {
       const keysBtn = Corvus.ui.button({
         variant: "secondary",
@@ -1468,13 +1511,23 @@ Corvus.sidenav = (function () {
       });
       keysBtn.className += " settings-map-keys";
       wrap.appendChild(keysBtn);
-      const missing = keyed.filter((p) => !p.token_set).length;
+      const listNames = (list) => list.length > 1
+        ? list.slice(0, -1).join(", ") + " and " + list[list.length - 1]
+        : list[0];
+      const unset = keyed.filter((p) => !p.token_set);
+      const hidden = unset.filter((p) => p.token_required).map((p) => p.label);
+      const optional = unset.filter((p) => !p.token_required).map((p) => p.label);
+      const lines = [];
+      if (hidden.length) {
+        lines.push(`${listNames(hidden)} ${hidden.length === 1 ? "appears" : "appear"} ` +
+                   "as a map service once you add an API key.");
+      }
+      if (optional.length) {
+        lines.push(`${listNames(optional)} ${optional.length === 1 ? "uses its" : "use their"} ` +
+                   "licensed API once you add a key.");
+      }
       const keysNote = Corvus.ui.empty(
-        missing === 0
-          ? "Every keyed map service has a key."
-          : `${missing === keyed.length ? keyed.length : missing} map ` +
-            `${missing === 1 ? "service needs" : "services need"} an API key ` +
-            "before they can show anything.");
+        lines.length ? lines.join(" ") : "Every map service has a key.");
       keysNote.className = "field-hint settings-map-keys-note";
       wrap.appendChild(keysNote);
     }
@@ -1485,15 +1538,17 @@ Corvus.sidenav = (function () {
    *  of those layers already have tiles on disk (what matters in the field).
    *
    *  A keyed service with no key says so instead, and says it first: the layer
-   *  count is true but useless, because none of them will draw. The card stays
-   *  selectable — "this needs a key" is something the operator can act on, a
-   *  service that quietly vanished from the list is not. */
+   *  count is true but useless, because none of them will draw. Such a card
+   *  is only shown while it is the active service; otherwise the service is
+   *  named under API KEYS until it has a key. */
   function describeProvider(prov, byId) {
     const ids = prov.sources || [];
     if (prov.token_required && !prov.token_set) return "Needs an API key";
     const cached = ids.filter((id) => byId[id] && (byId[id].cached_count || 0) > 0).length;
-    const layers = ids.length === 1 ? "1 layer" : `${ids.length} layers`;
-    return cached > 0 ? `${layers} \u00b7 ${cached} cached` : layers;
+    const parts = [ids.length === 1 ? "1 layer" : `${ids.length} layers`];
+    if (cached > 0) parts.push(`${cached} cached`);
+    if (prov.token_optional && prov.token_set) parts.push("licensed API");
+    return parts.join(" \u00b7 ");
   }
 
   /* The API keys dialog: one row per keyed map service.
@@ -1562,7 +1617,7 @@ Corvus.sidenav = (function () {
       el.appendChild(Corvus.ui.field({
         label: meta.label || (prov.label + " API key"),
         control,
-        hint: `${meta.help || ""} Get one at ${meta.signup || ""}`.trim(),
+        info: `${meta.help || ""}${meta.signup ? " Get one at " + meta.signup : ""}`.trim(),
       }));
 
       const state = Corvus.ui.empty("");
