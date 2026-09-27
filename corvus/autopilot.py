@@ -494,6 +494,10 @@ class Dialect:
     # checks as events, and still send this text beside every one of them
     # (HealthAndArmingChecks.cpp, the "LEGACY" pass), whenever the report runs.
     prearm_prefixes: tuple[str, ...] = ("Preflight Fail: ",)
+    # Informational STATUSTEXT that is housekeeping rather than news: PX4's
+    # logger names every log file it opens, on each arm. Kept in the console,
+    # left off the notification board.
+    routine_statustext_prefixes: tuple[str, ...] = ("[logger] ",)
 
     def prearm_failure(self, text: str) -> str | None:
         """The reason in a failing preflight check's STATUSTEXT, or None."""
@@ -501,6 +505,10 @@ class Dialect:
             if text.startswith(prefix):
                 return text[len(prefix):].strip() or None
         return None
+
+    def is_routine_statustext(self, text: str) -> bool:
+        """Is this informational line housekeeping the board can do without?"""
+        return any(text.startswith(p) for p in self.routine_statustext_prefixes)
 
     # --- modes ---------------------------------------------------------
 
@@ -557,6 +565,15 @@ class Dialect:
         nothing to ask for.
         """
         return ""
+
+    def reposition_altitude_frame(self, mav_type: int) -> str:
+        """How ``MAV_CMD_DO_REPOSITION``'s altitude is sent: "amsl" or "relative".
+
+        PX4 v1.16 to v1.18 read the COMMAND_INT z as AMSL whatever frame it is
+        tagged with (the receiver converts relative altitudes only for
+        SET_POSITION_TARGET_GLOBAL_INT), so the station adds home itself.
+        """
+        return "amsl"
 
     def mission_start_params(self, count: int) -> tuple[float, float]:
         """MISSION_START's (first, last) item for *count* uploaded plan items.
@@ -686,6 +703,7 @@ class ArduPilotDialect(Dialect):
     # ArduPilot only ever reports in text: "PreArm: ..." for a check, and
     # "Arm: ..." for the reason an arm command was refused.
     prearm_prefixes = ("PreArm: ", "Arm: ")
+    routine_statustext_prefixes = ()
 
     # --- modes ---------------------------------------------------------
 
@@ -770,6 +788,10 @@ class ArduPilotDialect(Dialect):
         if int(mav_type or 0) == 5:      # antenna tracker: nothing to fly
             return ""
         return ARDUPILOT_GUIDED_MODE
+
+    def reposition_altitude_frame(self, mav_type: int) -> str:
+        """ArduPilot takes DO_REPOSITION in MAV_FRAME_GLOBAL_RELATIVE_ALT."""
+        return "relative"
 
     def mission_start_params(self, count: int) -> tuple[float, float]:
         """Always (0, 0): ArduPilot 4.6 answers any other pair with DENIED.
@@ -900,6 +922,7 @@ class GenericDialect(Dialect):
     param_metadata_cacheable = False
     # Either wording: text is all there is to go on.
     prearm_prefixes = ("Preflight Fail: ", "PreArm: ")
+    routine_statustext_prefixes = ()
 
     def decode_mode(self, custom_mode: int, base_mode: int, mav_type: int) -> str:
         try:

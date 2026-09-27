@@ -761,3 +761,127 @@ def test_noise_is_never_injected_even_with_commanding_on() -> None:
         assert injected == []
     finally:
         fwd.stop()
+
+
+# ---------------------------------------------------------------------------
+# The vehicle link's own port (SITL and QGroundControl both default to 14550)
+# ---------------------------------------------------------------------------
+
+def _recv_all(sock: socket.socket, wait: float) -> list[bytes]:
+    sock.settimeout(0.05)
+    got: list[bytes] = []
+    deadline = time.monotonic() + wait
+    while time.monotonic() < deadline:
+        try:
+            data, _addr = sock.recvfrom(65535)
+        except TimeoutError:
+            continue
+        got.append(data)
+    return got
+
+
+def test_the_vehicle_links_own_port_is_never_mirrored_to() -> None:
+    """Corvus listening on 0.0.0.0:14550 for SITL and mirroring to
+    127.0.0.1:14550 sent every frame straight back into its own vehicle link.
+    With commanding on, that replayed old takeoff and mission commands to PX4
+    thousands of times, and old heartbeats made the mode and armed state
+    flicker. The link's port is skipped, and the reason is shown."""
+    link = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    link.bind(("127.0.0.1", 0))
+    link_port = link.getsockname()[1]
+    station = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    station.bind(("127.0.0.1", 0))
+    fwd = _forwarder(
+        lambda _f: True, listen_port=_free_port(), port=link_port,
+        endpoints=[f"127.0.0.1:{station.getsockname()[1]}"],
+        link_address=lambda: ("0.0.0.0", link_port),
+    )
+    assert fwd.start() is True
+    try:
+        fwd.feed(_v1())
+        assert _recv_all(link, 0.3) == [], "nothing may land on the vehicle link"
+        assert _recv_all(station, 0.3) == [_v1()], "the real station still gets it"
+        status = fwd.status()
+        assert status["loop_blocked"] == f"127.0.0.1:{link_port}"
+        assert f"127.0.0.1:{link_port}" not in status["targets"]
+        assert "Corvus receives the vehicle on that port" in status["notice"]
+        assert status["error"] == "", "a skipped target is not a failed forwarder"
+    finally:
+        fwd.stop()
+        link.close()
+        station.close()
+
+
+def test_a_link_bound_to_one_address_matches_only_that_address() -> None:
+    fwd = MavlinkForwarder(link_address=lambda: ("127.0.0.1", 14550))
+    assert fwd._is_vehicle_link(("127.0.0.1", 14550)) is True
+    assert fwd._is_vehicle_link(("127.0.0.1", 14560)) is False
+    assert fwd._is_vehicle_link(("192.168.1.20", 14550)) is False
+    # A tablet on the LAN listening on 14550 is not this machine's socket.
+    wildcard = MavlinkForwarder(link_address=lambda: ("0.0.0.0", 14550))
+    assert wildcard._is_vehicle_link(("10.99.99.99", 14550)) is False
+    assert wildcard._is_vehicle_link(("127.0.0.1", 14550)) is True
+
+
+def test_no_link_or_a_failing_lookup_blocks_nothing() -> None:
+    assert MavlinkForwarder()._is_vehicle_link(("127.0.0.1", 14550)) is False
+    assert MavlinkForwarder(link_address=lambda: None)._is_vehicle_link(
+        ("127.0.0.1", 14550)) is False
+
+    def broken():
+        raise OSError("socket closed mid-reconnect")
+
+    assert MavlinkForwarder(link_address=broken)._is_vehicle_link(
+        ("127.0.0.1", 14550)) is False
+
+
+def test_frames_from_the_vehicle_link_are_never_a_peer_or_injected() -> None:
+    """The other half of the loop: the vehicle link answering the mirror. It
+    was learned as a peer and, being a configured endpoint, allowed to
+    command, so Corvus' own commands went round again."""
+    injected: list[bytes] = []
+    link = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    link.bind(("127.0.0.1", 0))
+    link_port = link.getsockname()[1]
+    port = _free_port()
+    fwd = _forwarder(
+        lambda f: injected.append(f) or True, listen_port=port, port=link_port,
+        allow_commands=True, link_address=lambda: ("0.0.0.0", link_port),
+    )
+    assert fwd.start() is True
+    try:
+        frame = bytes([0xFE, 3, 0, 1, 1, 0]) + b"\x11" * 3 + b"\xAB\xCD"
+        link.sendto(frame, ("127.0.0.1", port))
+        time.sleep(0.3)
+        assert injected == []
+        assert fwd.status()["peers"] == []
+    finally:
+        fwd.stop()
+        link.close()
+
+
+def test_a_frame_under_corvus_system_id_is_never_injected() -> None:
+    """Under our own id a frame is either a looped copy of what Corvus sent or
+    a station PX4 cannot tell apart from Corvus. Neither goes to the vehicle."""
+    injected: list[bytes] = []
+    port = _free_port()
+    station = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    station.bind(("127.0.0.1", 0))
+    fwd = _forwarder(
+        lambda f: injected.append(f) or True, listen_port=port,
+        port=station.getsockname()[1], allow_commands=True,
+    )
+    assert fwd.start() is True
+    try:
+        ours = bytes([0xFE, 3, 0, 254, 190, 0]) + b"\x11" * 3 + b"\xAB\xCD"
+        theirs = bytes([0xFE, 3, 0, 255, 190, 0]) + b"\x11" * 3 + b"\xAB\xCD"
+        station.sendto(ours + theirs, ("127.0.0.1", port))
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline and not injected:
+            time.sleep(0.02)
+        time.sleep(0.1)
+        assert injected == [theirs]
+        assert fwd.status()["sysid_conflict"] is True
+    finally:
+        fwd.stop()
+        station.close()

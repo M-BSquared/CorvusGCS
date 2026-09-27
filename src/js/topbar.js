@@ -85,6 +85,14 @@ Corvus.topbar = (function () {
   // reboot. 0 until the vehicle reports one.
   let prevBootMs = 0;
   const commandDedupe = Corvus.notificationDedupe.createTracker({ windowMs: 3000 });
+  // A new warning or critical is shown as a toast over the map; the board
+  // keeps it. The same text is toasted at most once per TOAST_REPEAT_MS, since
+  // the store refreshes a repeated message's time and so hands it back as new,
+  // and at most TOAST_MAX toasts stand at once.
+  const TOAST_REPEAT_MS = 10000;
+  const TOAST_MAX = 4;
+  const toastedAt = new Map();
+  const openToasts = [];
 
   /* Top-bar icons are sized by main.css, so they are built without an inline
      size ("auto") — an inline width/height would override those rules. */
@@ -1011,6 +1019,52 @@ Corvus.topbar = (function () {
     window.setTimeout(() => { notificationLive.textContent = message; }, 0);
   }
 
+  /* A notification the operator should see without opening the centre. The
+     centre used to unfold over the map for every critical instead, and a
+     warning only moved the badge, so a refusal the operator was waiting on
+     could land without anything on screen saying so. */
+  function toastNotification(level, message) {
+    if (level !== "warning" && level !== "critical") return;
+    const text = String(message || "");
+    // Keyed on the text alone: a refused command arrives twice, as the HTTP
+    // error and as the backend's own warning, not always at the same level.
+    const key = text;
+    const now = Date.now();
+    const last = toastedAt.get(key);
+    if (last != null && now - last < TOAST_REPEAT_MS) return;
+    toastedAt.set(key, now);
+    if (toastedAt.size > 200) {
+      toastedAt.forEach((at, k) => { if (now - at >= TOAST_REPEAT_MS) toastedAt.delete(k); });
+    }
+    let handle = null;
+    try {
+      if (!Corvus.ui || typeof Corvus.ui.toast !== "function") return;
+      handle = Corvus.ui.toast({ level, message: text });
+    } catch (_e) {
+      return;   // a missing toast layer must never cost the board its entry
+    }
+    if (!handle) return;
+    // Clicking the message opens the centre, where the rest of the history is.
+    const body = handle.el && handle.el.querySelector && handle.el.querySelector(".ui-toast-text");
+    if (body && body.addEventListener) {
+      body.style.cursor = "pointer";
+      body.addEventListener("click", () => {
+        handle.close();
+        setWarningsOpen(true);
+      });
+    }
+    openToasts.push(handle);
+    while (openToasts.length > TOAST_MAX) openToasts.shift().close();
+    const prune = () => {
+      const i = openToasts.indexOf(handle);
+      if (i >= 0) openToasts.splice(i, 1);
+    };
+    const close = handle.close;
+    handle.close = () => { prune(); close(); };
+    const dismiss = handle.el && handle.el.querySelector && handle.el.querySelector(".ui-toast-close");
+    if (dismiss && dismiss.addEventListener) dismiss.addEventListener("click", prune);
+  }
+
   function refreshNotifications() {
     if (!lastState) return;
     updateTopBarValues(lastState);
@@ -1083,9 +1137,7 @@ Corvus.topbar = (function () {
     };
     localNotifications.set(id, notification);
     announceNotification(`${level === "critical" ? "Error" : "Warning"}: ${notification.msg}`);
-    // Only a critical takes the screen. A rejected command is one the operator
-    // just issued and is waiting on, so it earns the interruption.
-    if (notificationLevel(notification) === "critical") setWarningsOpen(true);
+    toastNotification(notificationLevel(notification), notification.msg);
     refreshNotifications();
     return id;
   }
@@ -1123,14 +1175,10 @@ Corvus.topbar = (function () {
     if (!actionable.length) return;
     const newest = actionable[actionable.length - 1];
     announceNotification(`${notificationLevel(newest) === "warning" ? "Warning" : "Error"}: ${newest.msg}`);
-    // Only a critical takes the screen. PX4 emits NOTICE-level lines through
-    // the whole of a normal flight ("Takeoff detected", "RTL: land at home"),
-    // and a popover unfolding over the map for each of them trained operators
-    // to dismiss the centre without reading it. Everything else raises the
-    // badge and is announced to assistive tech, which is what a warning is for.
-    if (actionable.some((warning) => notificationLevel(warning) === "critical")) {
-      setWarningsOpen(true);
-    }
+    // A toast each, never the centre: a popover unfolding over the map
+    // mid-flight covers what the operator is flying by, and trained them to
+    // dismiss it unread. Info lines ("Takeoff detected") only reach the board.
+    actionable.forEach((warning) => toastNotification(notificationLevel(warning), warning.msg));
   }
 
   /**
@@ -1203,7 +1251,8 @@ Corvus.topbar = (function () {
     if (wpClearAll) wpClearAll.addEventListener("click", clearAllNotifications);
 
     document.addEventListener("click", (e) => {
-      if (warningsOpen && !e.target.closest(".warnings-popover") && !e.target.closest(".tb-block.warnings")) {
+      if (warningsOpen && !e.target.closest(".warnings-popover") && !e.target.closest(".tb-block.warnings")
+          && !e.target.closest(".ui-toast")) {
         closeWarnings();
       }
     });

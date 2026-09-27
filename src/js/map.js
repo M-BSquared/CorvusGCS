@@ -117,6 +117,17 @@ Corvus.map = (function () {
   // True while OUR pan is in flight, so the samples arriving during it do not
   // each queue another one. Cleared on moveend.
   let followEasing = false;
+  // The pitch and zoom a move of OURS asked for and the camera has not reached
+  // yet (null when there is nothing pending). MapLibre stops a running
+  // animation whenever another move starts, so on a start with 3D saved on
+  // the tilt, the first zoom onto the aircraft and a follow jump each cut the
+  // one before short: 3D showed as on, the camera stayed flat at the zoom it
+  // opened on. Every programmatic move carries what is still pending (see
+  // cameraMove), an operator gesture drops it, and a moveend that lands short
+  // asks once more.
+  const cameraGoal = { pitch: null, zoom: null };
+  let cameraGoalRetries = 0;
+  const CAMERA_GOAL_RETRIES = 3;
   let controlsEl = null;
   // The place search, the same Corvus.mapSearch the planner mounts. This map
   // lives for the whole session, so the handle is only ever built once.
@@ -1720,8 +1731,8 @@ Corvus.map = (function () {
         { detail: { level: "info", message: why } }));
       return false;
     }
-    if (animate) map.easeTo({ center: target, duration: 600 });
-    else map.setCenter(target);
+    if (animate) cameraMove({ center: target, duration: 600 });
+    else cameraMove({ center: target }, true);
     // Pressing the crosshair IS aiming the map, as much as dragging it is —
     // so the planner opens on the aircraft after it, rather than on wherever
     // the operator had been looking before.
@@ -1784,6 +1795,74 @@ Corvus.map = (function () {
    * position, so by the time the pan lands the marker has caught up to it and
    * the two settle together instead of the camera chasing the marker.
    */
+  /** Easing options plus whatever pitch and zoom are still pending. */
+  function withCameraGoal(opts) {
+    const out = Object.assign({}, opts);
+    if (cameraGoal.pitch !== null && out.pitch === undefined) out.pitch = cameraGoal.pitch;
+    if (cameraGoal.zoom !== null && out.zoom === undefined) out.zoom = cameraGoal.zoom;
+    return out;
+  }
+
+  /** Remember a pitch or zoom as pending, within what the map can reach, so
+   *  an unreachable goal is never chased. */
+  function setCameraGoal(goal) {
+    if (!map) return;
+    if (goal.pitch !== undefined) {
+      const max = typeof map.getMaxPitch === "function" ? map.getMaxPitch() : 60;
+      cameraGoal.pitch = Math.min(Number(goal.pitch), max);
+    }
+    if (goal.zoom !== undefined) {
+      const max = typeof map.getMaxZoom === "function" ? map.getMaxZoom() : 22;
+      cameraGoal.zoom = Math.min(Number(goal.zoom), max);
+    }
+    cameraGoalRetries = 0;
+  }
+
+  /** A programmatic camera move: easeTo, or jumpTo at duration 0, carrying
+   *  the pending goals. Every move this module makes goes through here. */
+  function cameraMove(opts, jump) {
+    if (!map) return;
+    const merged = withCameraGoal(opts);
+    if (jump) {
+      delete merged.duration;
+      map.jumpTo(merged);
+    } else {
+      map.easeTo(merged);
+    }
+  }
+
+  /** On moveend: drop the goals the camera reached, and if one was cut short
+   *  by a move that did not carry it, ask for it again (a few times at most,
+   *  so a goal something keeps refusing is not chased forever). */
+  function settleCameraGoal() {
+    if (!map) return;
+    if (cameraGoal.pitch !== null && Math.abs(map.getPitch() - cameraGoal.pitch) < 0.5) {
+      cameraGoal.pitch = null;
+    }
+    if (cameraGoal.zoom !== null && Math.abs(map.getZoom() - cameraGoal.zoom) < 0.05) {
+      cameraGoal.zoom = null;
+    }
+    if (cameraGoal.pitch === null && cameraGoal.zoom === null) {
+      cameraGoalRetries = 0;
+      return;
+    }
+    if (cameraGoalRetries >= CAMERA_GOAL_RETRIES) {
+      cameraGoal.pitch = null;
+      cameraGoal.zoom = null;
+      return;
+    }
+    cameraGoalRetries += 1;
+    // Out of the moveend handler: MapLibre can fire it from inside its own
+    // frame, and starting a camera move there re-enters the frame ("already
+    // running"). By the time this runs another move may have started, and
+    // that one carries the goals itself.
+    window.setTimeout(() => {
+      if (!map || (cameraGoal.pitch === null && cameraGoal.zoom === null)) return;
+      if (typeof map.isMoving === "function" && map.isMoving()) return;
+      cameraMove({ duration: 600 }, Corvus.anim.reducedMotion());
+    }, 0);
+  }
+
   function applyFollow() {
     if (!map || !followMode || followEasing) return;
     const target = vehTarget && realFix([vehTarget.lng, vehTarget.lat]);
@@ -1850,12 +1929,12 @@ Corvus.map = (function () {
       // setCenter for the plain case, because that is what it means. Only a
       // shifted camera has to go through easeTo, which is the one call that
       // takes a screen offset; at zero duration it lands in the same frame.
-      if (shifted) map.easeTo({ center: target, offset, duration: 0 });
-      else map.setCenter(target);
+      if (shifted) cameraMove({ center: target, offset, duration: 0 });
+      else cameraMove({ center: target }, true);
       return;
     }
     followEasing = true;
-    map.easeTo({ center: target, offset, duration: FOLLOW_EASE_MS });
+    cameraMove({ center: target, offset, duration: FOLLOW_EASE_MS });
   }
 
   /**
@@ -1939,11 +2018,40 @@ Corvus.map = (function () {
   function updateVehicleAltitude(state) {
     const agl = Number(state && state.altitude_agl);
     vehAltAgl = isFinite(agl) ? agl : null;
+    vehOnGround = Number(state && state.landed_state) === LANDED_ON_GROUND;
     vehAltDraw = vehicleDrawAltitude(state);
     // Where the shadow goes. Same reason it lives here rather than in the
     // render hook: it is a terrain-mesh query, and the ground under the
     // aircraft moves at telemetry rate, not at frame rate.
     vehGroundDraw = terrainElevation(realFix(state && state.position));
+    // The aircraft, its line and its readout are placed on frames the map
+    // draws, and a change of height alone draws none: an aircraft that lands
+    // without drifting sideways kept its leader line and its last height on
+    // screen until something else moved the map.
+    const key = `${vehAltAgl === null ? "" : vehAltAgl.toFixed(1)}|${vehOnGround}`;
+    if (key !== vehAltKey) {
+      vehAltKey = key;
+      if (threeD && map && typeof map.triggerRepaint === "function") map.triggerRepaint();
+    }
+  }
+
+  /** Does the aircraft get a leader line, a shadow and a height readout?
+   *  Not on the ground, whatever the height says, and not within a metre of it. */
+  function showsHeightLine(agl, onGround) {
+    if (onGround) return false;
+    return agl !== null && isFinite(agl) && agl > VEH3D_MIN_AGL_M;
+  }
+
+  /** Where the height readout goes: beside the leader line, halfway down it,
+   *  and clear of the aircraft. On the line it covered the aircraft whenever
+   *  the line was shorter than the readout is tall, which at 10 m and a
+   *  normal zoom is always. Returns the readout's left edge and centre y. */
+  function heightLabelPosition(air, base, scale) {
+    const s = isFinite(scale) && scale > 0 ? scale : 1;
+    return {
+      x: air.x + VEH3D_HALF_WIDTH_PX * s + VEH3D_LABEL_GAP_PX,
+      y: air.y + (base.y - air.y) * 0.5,
+    };
   }
 
   function updateVehicle(state) {
@@ -1961,7 +2069,8 @@ Corvus.map = (function () {
       // would ease to "null island" at zoom 16 before the real fix lands.
       firstFix = false;
       followEasing = true;   // cleared on moveend, like any other follow pan
-      map.easeTo({ center: state.position, zoom: 16, duration: 1000 });
+      setCameraGoal({ zoom: 16 });
+      cameraMove({ center: state.position, duration: 1000 });
     }
 
     // A reboot — and only a reboot — discards the track. A link drop must not,
@@ -2446,6 +2555,12 @@ Corvus.map = (function () {
   // line and the shadow are noise under a marker that is already sitting on
   // the shadow.
   const VEH3D_MIN_AGL_M = 1.0;
+  // MAV_LANDED_STATE_ON_GROUND, from EXTENDED_SYS_STATE.
+  const LANDED_ON_GROUND = 1;
+  // Room between the aircraft's edge and the height readout beside it.
+  const VEH3D_LABEL_GAP_PX = 6;
+  // Half the 2D marker's width at scale 1: the readout starts past it.
+  const VEH3D_HALF_WIDTH_PX = 24;
 
   let threeD = false;
   // Which 3D the operator asked for, remembered across off/on so pressing the
@@ -2523,6 +2638,12 @@ Corvus.map = (function () {
   // the DEM lookup behind it is a terrain-mesh query, not an array read.
   let vehAltDraw = null;
   let vehAltAgl = null;
+  // The vehicle says it is on the ground (EXTENDED_SYS_STATE). Outranks the
+  // height, which on a real aircraft drifts a metre or more on the baro over
+  // a flight and would otherwise leave the leader line standing after landing.
+  let vehOnGround = false;
+  // What the last 3D frame was drawn from, so a change asks for a new frame.
+  let vehAltKey = "";
   // Terrain height under the aircraft, same frame, same reason.
   let vehGroundDraw = null;
   // Where the aircraft was last drawn on screen, in CSS pixels, or null. Follow
@@ -3537,7 +3658,9 @@ Corvus.map = (function () {
     // from being drawn inside the hill. It applies only where the ground is
     // actually KNOWN: clamping to a zero that only means "no tile yet" would
     // haul an aircraft over a valley floor up to sea level.
-    const airM = vehAltDraw === null ? groundM
+    // On the ground is on the ground: a baro that has drifted a metre over
+    // the flight must not leave a landed aircraft hovering over its shadow.
+    const airM = (vehAltDraw === null || (vehOnGround && groundKnown)) ? groundM
       : (groundKnown ? Math.max(vehAltDraw, groundM) : vehAltDraw);
     const air = projectAltitude(matrix, lng, lat, airM, width, height);
     const base = groundKnown
@@ -3573,7 +3696,7 @@ Corvus.map = (function () {
 
     // Below this the aircraft is effectively on its own shadow, and a leader
     // line of two pixels reads as a rendering fault.
-    const airborne = vehAltAgl !== null && vehAltAgl > VEH3D_MIN_AGL_M && !!base;
+    const airborne = showsHeightLine(vehAltAgl, vehOnGround) && !!base;
     if (!airborne) {
       if (veh3dShadowEl) veh3dShadowEl.hidden = true;
       if (veh3dLeadEl) veh3dLeadEl.hidden = true;
@@ -3598,8 +3721,9 @@ Corvus.map = (function () {
 
     veh3dAltEl.hidden = false;
     veh3dAltEl.textContent = Corvus.units.formatLength(vehAltAgl);
+    const label = heightLabelPosition(air, base, scale);
     veh3dAltEl.style.transform =
-      `translate(-50%, -50%) translate(${air.x}px, ${(air.y + (base.y - air.y) * 0.5).toFixed(1)}px)`;
+      `translate(0, -50%) translate(${label.x.toFixed(1)}px, ${label.y.toFixed(1)}px)`;
   }
 
   /**
@@ -3681,8 +3805,8 @@ Corvus.map = (function () {
    *  app keeps: an operator who asked for no animation gets the new angle,
    *  not a six-hundred-millisecond swing into it. */
   function tiltTo(pitch) {
-    if (Corvus.anim.reducedMotion()) map.jumpTo({ pitch });
-    else map.easeTo({ pitch, duration: 600 });
+    setCameraGoal({ pitch });
+    cameraMove({ duration: 600 }, Corvus.anim.reducedMotion());
   }
 
   /**
@@ -3947,6 +4071,10 @@ Corvus.map = (function () {
     map.on("movestart", (e) => {
       const source = e && e.originalEvent;
       if (!source) return;
+      // The operator has the camera now: nothing we asked for earlier is
+      // taken back from them. A wheel only zooms, so only the zoom goes.
+      cameraGoal.zoom = null;
+      if (source.type !== "wheel") cameraGoal.pitch = null;
       // Whatever it turns out to be, an input event on this map is the
       // operator aiming it, and that is what the planner opens on — a wheel
       // included, which is a change of view even though it is not a change of
@@ -3959,6 +4087,7 @@ Corvus.map = (function () {
     // interrupts a follow pan must not leave it stuck on.
     map.on("moveend", () => {
       followEasing = false;
+      settleCameraGoal();
       // The camera landed somewhere new: it may have crossed the zoom where
       // the globe hands over to terrain, and its ground height may be stale.
       // Not every way the camera can move interpolates that height — a follow
@@ -4137,6 +4266,8 @@ Corvus.map = (function () {
     // the altitude preference chain — assertable without WebGL or a DEM.
     _transformVec4: transformVec4,
     _vehicleDrawAltitude: (state) => vehicleDrawAltitude(state),
+    _showsHeightLine: (agl, onGround) => showsHeightLine(agl, onGround),
+    _heightLabelPosition: (air, base, scale) => heightLabelPosition(air, base, scale),
     _projectAltitude: projectAltitude,
     // test hook: the building-cell grid as pure geometry — which cells a
     // {w,s,e,n} view around a centre asks for, in which order, and how many.

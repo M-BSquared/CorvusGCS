@@ -188,6 +188,21 @@ def frame_source_system(frame: bytes) -> int:
     return 0
 
 
+def _local_host_addresses() -> frozenset[str]:
+    """This machine's own IPv4 addresses, as far as the stdlib can tell.
+
+    Best effort: a host whose name does not resolve still has loopback, which
+    is where the looping default lives.
+    """
+    found: set[str] = set()
+    try:
+        _name, _aliases, addrs = socket.gethostbyname_ex(socket.gethostname())
+        found.update(addrs)
+    except OSError:
+        pass
+    return frozenset(found)
+
+
 class MavlinkForwarder:
     """Mirrors the vehicle link onto UDP endpoints; optionally accepts theirs.
 
@@ -211,8 +226,13 @@ class MavlinkForwarder:
         listen_port: int = DEFAULT_LISTEN_PORT,
         endpoints: Iterable[str] = (),
         allow_commands: bool = False,
+        link_address: Callable[[], tuple[str, int] | None] | None = None,
     ) -> None:
         self._inject = inject
+        # Where the vehicle link itself is bound, asked afresh each time since
+        # the link reconnects under us. See _is_vehicle_link.
+        self._link_address = link_address
+        self._local_hosts: frozenset[str] = frozenset()
         self._host = host or DEFAULT_HOST
         self._port = int(port or DEFAULT_PORT)
         self._listen_host = listen_host or DEFAULT_LISTEN_HOST
@@ -277,6 +297,9 @@ class MavlinkForwarder:
         # than a station whose commands quietly do nothing.
         self._refused = 0
         self._refused_peers: set[tuple[str, int]] = set()
+        # The endpoint that turned out to be the vehicle link's own socket,
+        # latched so status() can say why it gets nothing.
+        self._loop_blocked: tuple[str, int] | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -308,6 +331,8 @@ class MavlinkForwarder:
         self._sysid_conflict = False
         self._refused = 0
         self._refused_peers = set()
+        self._loop_blocked = None
+        self._local_hosts = _local_host_addresses()
         self._resolve_static(force=True)
         self._stop.clear()
         self._rx_thread = threading.Thread(
@@ -457,13 +482,70 @@ class MavlinkForwarder:
 
     def _targets(self) -> list[tuple[str, int]]:
         """Everywhere one mirrored frame goes: the configured endpoints, plus
-        whoever has dialled in, minus ourselves."""
+        whoever has dialled in, minus ourselves and the vehicle link."""
         bound = self._bound
-        out = [a for a in self._resolved if a != bound]
-        for addr in self._live_peers():
-            if addr not in out and addr != bound:
-                out.append(addr)
+        out: list[tuple[str, int]] = []
+        for addr in (*self._resolved, *self._live_peers()):
+            if addr in out or addr == bound:
+                continue
+            if self._is_vehicle_link(addr):
+                self._note_loop(addr)
+                continue
+            out.append(addr)
         return out
+
+    def _is_vehicle_link(self, addr: tuple[str, int]) -> bool:
+        """Is *addr* the socket Corvus receives the aircraft on?
+
+        SITL and QGroundControl both default to UDP 14550, so "listen on
+        14550 for the vehicle" and "mirror to 127.0.0.1:14550" is the setup an
+        operator gets by accepting both defaults. Every mirrored frame then
+        lands back on the vehicle link, is mirrored again, and with commanding
+        on is sent to the aircraft again: old takeoff and mission commands
+        replayed for as long as the loop runs, and old heartbeats making the
+        mode and armed state flicker.
+        """
+        getter = self._link_address
+        if getter is None:
+            return False
+        try:
+            own = getter()
+        except Exception:  # noqa: BLE001 - a link mid-reconnect has no address
+            return False
+        if not own:
+            return False
+        host, port = str(own[0]), int(own[1])
+        if int(addr[1]) != port:
+            return False
+        peer = str(addr[0])
+        if host in ("", "0.0.0.0"):
+            return peer.startswith("127.") or peer in self._local_hosts
+        if peer == host:
+            return True
+        return peer.startswith("127.") and host.startswith("127.")
+
+    def _note_loop(self, addr: tuple[str, int]) -> None:
+        """Latch (and log once) an endpoint skipped as the vehicle link."""
+        if self._loop_blocked == addr:
+            return
+        self._loop_blocked = addr
+        logger.warning(
+            "not forwarding to %s:%d: that is the port Corvus receives the "
+            "vehicle on, so every frame would come straight back. Set "
+            "forwarding to another port (for example 14560) and point the "
+            "other station's UDP link at it.", addr[0], addr[1],
+        )
+
+    def _loop_text(self) -> str:
+        addr = self._loop_blocked
+        if addr is None:
+            return ""
+        return (
+            f"Not mirroring to {addr[0]}:{addr[1]}: Corvus receives the vehicle "
+            f"on that port, so every frame would come straight back. Choose "
+            f"another forwarding port, for example 14560, and set the other "
+            f"station's UDP link to it."
+        )
 
     def _tx_loop(self) -> None:
         while not self._stop.is_set():
@@ -512,6 +594,11 @@ class MavlinkForwarder:
                 continue
             if addr == self._bound:
                 continue          # our own datagram; never a peer to mirror to
+            if self._is_vehicle_link(addr):
+                # Corvus' own vehicle socket answering the mirror. Neither a
+                # peer nor a station that may command.
+                self._note_loop(addr)
+                continue
             self._received += 1
             # Reassemble per endpoint: UDP preserves datagram boundaries, but a
             # sender is free to split a frame across two of them.
@@ -564,7 +651,11 @@ class MavlinkForwarder:
                 # the second station is only listening — and telemetry-only is
                 # the default, which is where the LINK tab promises to say so.
                 if frame_source_system(frame) == _CORVUS_SYSTEM_ID:
+                    # Also never injected: under our id it is either a looped
+                    # copy of what Corvus itself sent, or a station PX4 could
+                    # not tell apart from Corvus.
                     self._note_sysid_conflict()
+                    continue
                 if not may_command or self._inject is None:
                     continue
                 try:
@@ -670,6 +761,10 @@ class MavlinkForwarder:
             "commands_refused_from": sorted(
                 f"{h}:{p}" for h, p in self._refused_peers
             ),
-            "notice": self._notice,
+            "loop_blocked": (
+                f"{self._loop_blocked[0]}:{self._loop_blocked[1]}"
+                if self._loop_blocked else ""
+            ),
+            "notice": self._notice or self._loop_text(),
             "error": self._error,
         }

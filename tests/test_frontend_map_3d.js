@@ -565,6 +565,41 @@ check("the panel's switch chooses WHICH 3D, never whether", () => {
   assert.equal(map._threeDDetail(), "simple");
 });
 
+// ---------------------------------------------------------------------------
+// The leader line after landing
+// ---------------------------------------------------------------------------
+
+check("the leader line shows in the air", () => {
+  assert.equal(map._showsHeightLine(10, false), true);
+  assert.equal(map._showsHeightLine(1.5, false), true);
+});
+
+check("within a metre of the ground there is no leader line", () => {
+  assert.equal(map._showsHeightLine(0.8, false), false);
+  assert.equal(map._showsHeightLine(1.0, false), false);
+  assert.equal(map._showsHeightLine(null, false), false);
+  assert.equal(map._showsHeightLine(NaN, false), false);
+});
+
+check("a landed aircraft loses its leader line whatever the baro says", () => {
+  // After a real flight the height above home often reads a metre or two on
+  // the ground. The vehicle's own ON_GROUND outranks it.
+  assert.equal(map._showsHeightLine(2.4, true), false);
+  assert.equal(map._showsHeightLine(10, true), false);
+});
+
+check("the height readout sits beside the aircraft, not on it", () => {
+  // At 10 m and zoom 16 the line is about 11 px long: halfway down it is
+  // inside the aircraft, and a readout centred there covered it.
+  const air = { x: 465, y: 343 }, base = { x: 465, y: 354 };
+  const at = map._heightLabelPosition(air, base, 1);
+  assert.ok(at.x >= air.x + 24 + 6, `left edge clear of the marker, was ${at.x}`);
+  assert.ok(Math.abs(at.y - 348.5) < 1e-9, "halfway down the line");
+  const far = map._heightLabelPosition(air, base, 1.6);
+  assert.ok(far.x > at.x, "a larger aircraft pushes it further out");
+  assert.ok(isFinite(map._heightLabelPosition(air, base, NaN).x));
+});
+
 check("choosing a mode without a map is a no-op, not a crash", () => {
   // The rail is built before the style loads, so the menu can be opened and
   // a row pressed before there is anything to apply it to.

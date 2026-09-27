@@ -15,8 +15,9 @@
  *    a change of the armed state MARKS READ, and a disconnect does neither
  *    (state_store synthesises armed=false on one, and a dropped link is the
  *    last moment at which warnings should go quiet);
- *  - only a critical takes the screen, so PX4's NOTICE-level running
- *    commentary no longer unfolds a popover over the map mid-flight.
+ *  - nothing takes the screen: a new warning or critical is a toast (once
+ *    per text in a short window), info only reaches the board, and the
+ *    centre opens when the operator asks for it.
  *
  * The bar's STATUS block is asserted here too, because it shares this harness
  * and the same rule: it may never claim more than the vehicle actually said.
@@ -183,6 +184,21 @@ require("./../src/js/units.js");
 require("./../src/js/notification_dedupe.js");
 require("./../src/js/topbar.js");
 
+// The toast layer, recorded. A toast is the notification the operator sees
+// without opening the centre, so what gets toasted is asserted directly.
+const toasts = [];
+Corvus.ui.toast = (opts) => {
+  const el = makeEl("div");
+  el.className = "ui-toast";
+  const text = makeEl("div");
+  text.className = "ui-toast-text";
+  el.appendChild(text);
+  const entry = { level: opts.level, message: opts.message, closed: false, el };
+  entry.close = () => { entry.closed = true; };
+  toasts.push(entry);
+  return entry;
+};
+
 // ---------------------------------------------------------------------------
 
 const BASE = {
@@ -207,6 +223,7 @@ byId.topBar.id = "topBar";
 
 function mount() {
   posted.length = 0;
+  toasts.length = 0;
   nowMs = 1_700_000_000_000;
   ["warningsPopover", "warningsList", "notificationLive",
    "wpClose", "wpClearAll", "warningsTitle"].forEach((id) => {
@@ -377,19 +394,49 @@ function testReadItemsStayInTheListDimmedRatherThanDisappearing() {
   clickClose();
 }
 
-function testOnlyACriticalTakesTheScreen() {
+function testWarningsAndCriticalsToastWithoutTakingTheScreen() {
   const ui = mount();
   settle(ui);
 
-  // PX4 emits NOTICE-level lines through a whole normal flight; a popover for
-  // each of them is what trained operators to dismiss the centre unread.
-  push({ warnings: [warning("warning", "Takeoff detected")] });
-  assert.equal(ui.open(), false, "a warning raises the badge and nothing else");
-  assert.equal(ui.badge().textContent, "1");
+  push({ warnings: [warning("info", "Takeoff detected")] });
+  assert.equal(toasts.length, 0, "info reaches the board only");
 
-  push({ warnings: [warning("warning", "Takeoff detected"), warning("critical", "Battery critical")] });
-  assert.equal(ui.open(), true, "a critical opens the centre");
+  push({ warnings: [warning("info", "Takeoff detected"), warning("warning", "Wind high")] });
+  assert.deepEqual(toasts.map((t) => [t.level, t.message]), [["warning", "Wind high"]]);
+  assert.equal(ui.open(), false, "a warning is a toast, not the centre");
+
+  push({ warnings: [warning("info", "Takeoff detected"), warning("warning", "Wind high"),
+                    warning("critical", "Battery critical")] });
+  assert.deepEqual(toasts.map((t) => t.level), ["warning", "critical"]);
+  assert.equal(ui.open(), false, "a critical does not unfold the centre over the map");
+  assert.equal(ui.badge().textContent, "3", "every line is still on the board");
+
+  // PX4 repeating a line refreshes its time, which reads as a new entry. It is
+  // one toast, not one per repeat.
+  push({ warnings: [warning("critical", "Battery critical", "10:00:05")] });
+  assert.equal(toasts.length, 2, "the same text is not toasted again straight away");
+  nowMs += 11_000;
+  push({ warnings: [warning("critical", "Battery critical", "10:00:16")] });
+  assert.equal(toasts.length, 3, "after the repeat window it is news again");
+
+  // The toast is the way into the centre.
+  toasts[2].el.querySelector(".ui-toast-text")._listeners.click.forEach((cb) => cb());
+  assert.equal(ui.open(), true, "clicking a toast opens the centre");
+  assert.equal(toasts[2].closed, true, "and takes the toast down");
   clickClose();
+}
+
+function testAtMostAFewToastsStandAtOnce() {
+  const ui = mount();
+  settle(ui);
+  const board = [];
+  for (let i = 0; i < 6; i += 1) {
+    board.push(warning("warning", `Warning ${i}`));
+    push({ warnings: board.slice() });
+  }
+  assert.equal(toasts.length, 6);
+  assert.deepEqual(toasts.map((t) => t.closed),
+    [true, true, false, false, false, false], "the oldest make room");
 }
 
 function testInfoAgesOutButAWarningNeverDoes() {
@@ -413,7 +460,7 @@ function testArmingMarksTheBoardReadWithoutDeletingIt() {
   const ui = mount();
   settle(ui);
   push({ warnings: [warning("critical", "Arming denied: GPS fix required")] });
-  assert.equal(ui.open(), true);
+  openPopover();
   clickClose();
   push({ warnings: [warning("critical", "Arming denied: GPS fix required"), warning("warning", "Compass drift")] });
   assert.equal(ui.badge().textContent, "1", "the second one is unread");
@@ -432,6 +479,7 @@ function testADisconnectDoesNotQuietenTheBoard() {
 
   const seen = [warning("critical", "Engine failure")];
   push({ armed: true, warnings: seen });
+  openPopover();
   clickClose();                                   // acknowledged in the air
   const board = seen.concat(warning("critical", "Link degraded"));
   push({ armed: true, warnings: board });
@@ -511,8 +559,9 @@ function testARejectedCommandIsNotDeletedByATimer() {
   const ui = mount();
   settle(ui);
   Corvus.topbar.notifyError("Takeoff rejected: not armed");
-  assert.equal(ui.open(), true, "a command the operator is waiting on takes the screen");
-  clickClose();
+  assert.deepEqual(toasts.map((t) => [t.level, t.message]),
+    [["critical", "Takeoff rejected: not armed"]], "the refusal is toasted");
+  assert.equal(ui.open(), false, "without the centre unfolding over the map");
 
   // It used to remove itself after eight seconds — the one thing a rejected
   // command must not do.
@@ -747,7 +796,8 @@ const tests = [
   testTheStatusBlockCarriesAToneNotJustAColour,
   testANotificationArrivingWhileOpenStaysNew,
   testReadItemsStayInTheListDimmedRatherThanDisappearing,
-  testOnlyACriticalTakesTheScreen,
+  testWarningsAndCriticalsToastWithoutTakingTheScreen,
+  testAtMostAFewToastsStandAtOnce,
   testInfoAgesOutButAWarningNeverDoes,
   testArmingMarksTheBoardReadWithoutDeletingIt,
   testADisconnectDoesNotQuietenTheBoard,

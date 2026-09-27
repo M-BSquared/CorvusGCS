@@ -1032,6 +1032,7 @@ def _build_forwarder(mavlink: Any, config: Any) -> Any:
             ),
             endpoints=cfg.get("endpoints") or (),
             allow_commands=bool(cfg.get("allow_commands")),
+            link_address=getattr(mavlink, "local_udp_address", None),
         )
     except Exception:  # noqa: BLE001 - never block server creation
         logger.exception("MAVLink forwarder unavailable")

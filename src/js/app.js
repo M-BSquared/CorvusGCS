@@ -328,8 +328,7 @@ Corvus.app = (function () {
       btnArm.classList.toggle("armed", !!s?.armed);
       const span = btnArm.querySelector("span");
       if (span) span.textContent = s?.armed ? "DISARM" : "ARM";
-      const currentMode = s?.mode || "";
-      modeSel.value = currentMode;
+      showVehicleMode(modeSel, s?.mode || "");
       // PLAN mirrors the other flight buttons: only actionable against a
       // connected vehicle. On disconnect, also exit planning so the UI never
       // strands the operator in a click-to-add mode they can no longer commit.
@@ -351,6 +350,38 @@ Corvus.app = (function () {
     return Corvus.telemetry.requestJson("/api/mavlink/modes")
       .then(refreshModesFromData)
       .catch(() => { /* best-effort: keep the existing selector as-is */ });
+  }
+
+  /**
+   * Show the vehicle's mode in the picker.
+   *
+   * Setting .value alone left the themed dropdown's label behind: it only
+   * follows a "change" event or a DOM mutation, and a programmatic value is
+   * neither, so the flight bar read SELECT MODE while the vehicle held. A mode
+   * the list does not carry (one the firmware reports but cannot be commanded
+   * into) gets a disabled row of its own rather than a blank picker.
+   */
+  function showVehicleMode(modeSel, mode) {
+    if (!modeSel) return;
+    const options = Array.from(modeSel.options || []);
+    let reported = options.find((o) => o.dataset && o.dataset.reported === "true");
+    const offered = options.some((o) => o.value === mode && o !== reported);
+    if (mode && !offered) {
+      if (!reported) {
+        reported = document.createElement("option");
+        reported.dataset.reported = "true";
+        reported.disabled = true;
+        modeSel.appendChild(reported);
+      }
+      if (reported.value !== mode) {
+        reported.value = mode;
+        reported.textContent = mode;
+      }
+    } else if (reported) {
+      reported.remove();
+    }
+    if (modeSel.value !== mode) modeSel.value = mode;
+    if (modeSel.corvusSelect) modeSel.corvusSelect.refresh();
   }
 
   function refreshModesFromData(data) {
@@ -494,6 +525,7 @@ Corvus.app = (function () {
   return {
     init,
     refreshModes,
+    showVehicleMode,
     notifyError: (msg, attempt) => Corvus.topbar.notifyError(msg, attempt),
   };
 })();

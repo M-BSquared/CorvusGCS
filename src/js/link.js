@@ -877,6 +877,14 @@ Corvus.link = (function () {
       return `Mirrors this link to ${where}, the UDP link QGroundControl`
         + " opens on its own.";
     }
+    // The target is the port this link receives the vehicle on (SITL and
+    // QGroundControl both default to 14550), so mirroring there would feed
+    // every frame back into the link. The forwarder skips it; the notice
+    // below the field says what to change.
+    if (s.loop_blocked) {
+      return `Not mirroring to ${s.loop_blocked}: that is where Corvus receives`
+        + " the vehicle. Choose another port, for example 14560.";
+    }
     // Both stations transmitting under one MAVLink system id makes the
     // autopilot report packet loss that is not happening, so it is said where
     // the operator is already looking rather than only in the log.

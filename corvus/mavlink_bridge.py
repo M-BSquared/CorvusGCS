@@ -62,6 +62,7 @@ from .mavlink_missions import (  # noqa: F401 - re-exported
     MISSION_UPLOAD_QUIET_S,
     MissionProtocolMixin,
 )
+from .mavlink_forwarder import frame_source_system
 from .mavlink_ftp import FtpClientMixin
 from .mavlink_params import (  # noqa: F401 - re-exported
     PARAM_CACHE_MAX_ENTRIES,
@@ -205,6 +206,12 @@ GCS_COMPONENT_ID = mavutil.mavlink.MAV_COMP_ID_MISSIONPLANNER
 
 # How long _connect waits for the aircraft to introduce itself.
 HEARTBEAT_WAIT_S = 10.0
+
+# A frame whose exact bytes (sequence number included) arrive again inside this
+# window is a copy, not news: a routing loop, or one frame reaching us over two
+# paths. Short against the time a busy PX4 link takes to wrap its 8-bit
+# sequence, long against a loop's round trip.
+DUPLICATE_FRAME_WINDOW_S = 0.3
 
 # How far SYSTEM_TIME.time_boot_ms has to step backwards to mean the vehicle
 # rebooted rather than that two UDP frames arrived out of order.
@@ -434,6 +441,13 @@ class MavlinkBridge(
         # Set by MavlinkForwarder: every raw frame off the link, so a second
         # station (QGroundControl) can share the one physical connection.
         self._frame_sink: Callable[[bytes], None] | None = None
+        # Raw frame -> when it last arrived, for _is_duplicate_frame.
+        self._recent_frames: dict[bytes, float] = {}
+        self._recent_frames_swept = 0.0
+        self._duplicate_frames = 0
+        # Frames a second station asked to put on the uplink that carried our
+        # own or the vehicle's system id; see inject_raw.
+        self._inject_refused_warned = False
         self._send_lock = threading.Lock()
         self._statustext_chunks: dict[tuple[int, int, int], dict[str, Any]] = {}
         self._home_alt_amsl: float | None = None
@@ -1473,6 +1487,20 @@ class MavlinkBridge(
             except Exception as exc:  # noqa: BLE001 - a sink never breaks the link
                 logger.debug("frame forward failed: %s", exc)
 
+    def local_udp_address(self) -> tuple[str, int] | None:
+        """Where a UDP-listening vehicle link is bound, else None.
+
+        The forwarder asks, so it never mirrors into this socket.
+        """
+        conn = self._conn
+        if conn is None or not getattr(conn, "udp_server", False):
+            return None
+        try:
+            host, port = conn.port.getsockname()[:2]
+        except (AttributeError, OSError, TypeError, ValueError):
+            return None
+        return str(host), int(port)
+
     def set_frame_sink(self, sink: Callable[[bytes], None] | None) -> None:
         """Route every raw received frame to *sink* (None detaches)."""
         self._frame_sink = sink
@@ -1488,9 +1516,24 @@ class MavlinkBridge(
 
         Guarded by the same send lock as every other transmit path, so an
         injected frame can never interleave with one Corvus is writing.
+
+        A frame under Corvus' own system id, or under the vehicle's, is
+        refused: no second station speaks as either, and both are what a
+        forwarding loop hands back, which would replay Corvus' commands and
+        the aircraft's own telemetry onto the uplink.
         """
         conn = self._conn
         if conn is None or not frame:
+            return False
+        source = frame_source_system(frame)
+        if source in (GCS_SYSTEM_ID, self._target_system):
+            if not self._inject_refused_warned:
+                self._inject_refused_warned = True
+                logger.warning(
+                    "not forwarding frames from system %d to the vehicle: that "
+                    "is %s", source,
+                    "Corvus' own id" if source == GCS_SYSTEM_ID else "the vehicle's id",
+                )
             return False
         try:
             with self._send_lock:
@@ -2024,6 +2067,8 @@ class MavlinkBridge(
                 # Connection swapped under us during recv: drop this message.
                 if conn is not self._conn:
                     continue
+                if self._is_duplicate_frame(msg):
+                    continue
                 # Capture the raw frame before dispatch; a log write never
                 # blocks the recv loop (TlogWriter.enqueue is non-blocking) and
                 # never breaks the link (guarded).
@@ -2041,6 +2086,39 @@ class MavlinkBridge(
                 if consecutive_errors >= RECV_ERROR_LIMIT:
                     raise ConnectionError(f"link read failed: {exc}") from exc
                 self._interruptible_sleep(RECV_ERROR_BACKOFF_S)
+
+    def _is_duplicate_frame(self, msg: Any) -> bool:
+        """Has this exact frame already arrived in the last few hundred ms?
+
+        A copy is dropped before anything reads it. When a link loops, an old
+        HEARTBEAT decoded again flips the mode and armed state back to what
+        they were, and an old COMMAND_ACK confirms a command the vehicle never
+        acknowledged. It also stops the copy being mirrored again, which is
+        what keeps a loop going.
+        """
+        get_buf = getattr(msg, "get_msgbuf", None)
+        if get_buf is None:
+            return False
+        try:
+            raw = bytes(get_buf())
+        except Exception:  # noqa: BLE001 - an odd message is processed, not dropped
+            return False
+        if not raw:
+            return False
+        now = time.monotonic()
+        recent = self._recent_frames
+        if now - self._recent_frames_swept > DUPLICATE_FRAME_WINDOW_S:
+            self._recent_frames = recent = {
+                frame: seen for frame, seen in recent.items()
+                if now - seen <= DUPLICATE_FRAME_WINDOW_S
+            }
+            self._recent_frames_swept = now
+        seen = recent.get(raw)
+        recent[raw] = now
+        if seen is not None and now - seen <= DUPLICATE_FRAME_WINDOW_S:
+            self._duplicate_frames += 1
+            return True
+        return False
 
     def _note_boot_time(self, boot_ms: int) -> None:
         """Notice a vehicle that rebooted while the link stayed up.
@@ -2513,7 +2591,8 @@ class MavlinkBridge(
         text = text.rstrip()
         level = "critical" if severity <= 3 else ("warning" if severity <= 5 else "info")
         self._console_publish("STATUSTEXT", text, level)
-        self._store_update_warning(text, level)
+        if level != "info" or not self._dialect.is_routine_statustext(text):
+            self._store_update_warning(text, level)
         reason = self._dialect.prearm_failure(text)
         if reason:
             self._note_prearm_failure(reason)

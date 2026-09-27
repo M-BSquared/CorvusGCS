@@ -53,6 +53,12 @@ assert mission_plan.MAV_CMD_DO_CHANGE_SPEED == mavutil.mavlink.MAV_CMD_DO_CHANGE
 # they name no place, and PX4's feasibility checker reads the frame of every
 # item it walks.
 MISSION_DO_FRAME = mavutil.mavlink.MAV_FRAME_MISSION
+
+# MAV_DO_REPOSITION_FLAGS_CHANGE_MODE: switch into the mode that holds the new
+# position (PX4: Hold, ArduPilot: GUIDED) rather than only moving a target the
+# vehicle may not be following. Pinned by number: not every pymavlink build
+# carries the enum.
+DO_REPOSITION_CHANGE_MODE = 1
 # How long the upload waits with no MISSION_REQUEST and no MISSION_ACK before
 # calling it lost. PX4 requests items back to back, so a gap this long means
 # the vehicle has stopped asking — a dropped MISSION_COUNT, or a mission
@@ -672,9 +678,23 @@ class MissionProtocolMixin:
             # ArduPilot's MISSION_START is itself the switch to AUTO, and the
             # vehicle was armed above (or already was).
             return True
-        if not self._enter_mission_mode(action):
-            return False
-        return self.arm(True)
+        # PX4's Commander accepts MISSION_START only after it has switched to
+        # AUTO.MISSION and armed, so the ACK already says both. A DO_SET_MODE
+        # and an arm sent after it used to follow anyway: two more mode events
+        # for the operator, and on a short hop that had already finished, a
+        # second MISSION that restarted the mission. So telemetry is watched
+        # instead, and nothing more is sent.
+        mode = self._dialect.mission_mode
+        if mode and not self._wait_for_mode(mode):
+            snapshot = self._store.get_snapshot()
+            if snapshot.get("mode") != mode:
+                self._console_publish(
+                    "MISSION",
+                    f"{action}: accepted, but the vehicle reports "
+                    f"{snapshot.get('mode') or 'no mode'} rather than {mode}",
+                    "warning",
+                )
+        return True
 
     @staticmethod
     def _mission_ack_to_result(ack_type: int) -> int:
@@ -712,6 +732,46 @@ class MissionProtocolMixin:
                 return lat, lon
         return first[0], first[1]
 
+    def _reposition_to(self, lat: float, lon: float, alt_agl: float) -> bool | None:
+        """Send an airborne vehicle to one point with MAV_CMD_DO_REPOSITION.
+
+        The one point "Fly to this point" asks for does not need a mission:
+        uploading one replaced whatever mission was on board, and flew through
+        MISSION into LOITER, two mode changes and two notifications for a
+        single hop. A reposition moves the Hold target (GUIDED on ArduPilot)
+        and the vehicle stays in the mode it is in when it is already holding.
+
+        Returns None when the vehicle cannot take it (no altitude reference to
+        convert AGL on PX4, or the command is unsupported), so the caller
+        falls back to the mission, which needs neither.
+        """
+        nan = float("nan")
+        if self._dialect.reposition_altitude_frame(self._mav_type_id) == "relative":
+            frame = mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT
+            altitude = float(alt_agl)
+        else:
+            amsl = self._takeoff_altitude_amsl(alt_agl)
+            if amsl is None:
+                return None
+            frame = mavutil.mavlink.MAV_FRAME_GLOBAL
+            altitude = float(amsl)
+        if not self._enter_guided("Fly to point"):
+            return False
+        result = self._send_command_int_and_wait(
+            mavutil.mavlink.MAV_CMD_DO_REPOSITION, frame,
+            [-1.0, float(DO_REPOSITION_CHANGE_MODE), 0.0, nan],
+            x=int(round(lat * 1e7)), y=int(round(lon * 1e7)), z=altitude,
+            timeout=5.0, retries=1,
+        )
+        if result == mavutil.mavlink.MAV_RESULT_UNSUPPORTED:
+            return None
+        if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+            return self._command_failure("Fly to point", result)
+        self._console_publish(
+            "GOTOPOINTS", f"Flying to point at {alt_agl:.0f} m AGL", "success",
+        )
+        return True
+
     def fly_to_points(self, points: list[dict[str, float]]) -> bool:
         """Fly to the given points in order (Punktabflug) by uploading a mission.
 
@@ -722,6 +782,9 @@ class MissionProtocolMixin:
         :meth:`_start_uploaded_mission`). Returns True only when the mission is
         accepted, started, and the vehicle is armed. Works on PX4 v1.16, v1.17
         and v1.18, and on ArduPilot 4.3 to 4.6.
+
+        One point for a vehicle already in the air is a reposition instead
+        (see :meth:`_reposition_to`), which leaves the stored mission alone.
         """
         with self._operation_lock:
             self._set_command_error("")
@@ -737,6 +800,10 @@ class MissionProtocolMixin:
             # away without ever being sent. It refused missions over a
             # conversion the mission does not need.
             on_ground = not self._is_airborne()
+            if not on_ground and len(cleaned) == 1:
+                handled = self._reposition_to(*cleaned[0])
+                if handled is not None:
+                    return handled
             nan = float("nan")
             items: list[dict[str, Any]] = []
             seq = 0

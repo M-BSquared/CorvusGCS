@@ -10,6 +10,7 @@ Corvus.notificationDedupe = (function () {
     if (/\btake[\s-]?off\b/.test(text)) return "takeoff";
     if (/\breturn\s+to\s+launch\b|\brtl\b/.test(text)) return "rtl";
     if (/\bland(?:ed|ing)?\b/.test(text)) return "land";
+    if (/\bfly\s+to\b/.test(text)) return "gotopoints";
     if (/\bmode\b/.test(text)) return "mode";
     return "";
   }

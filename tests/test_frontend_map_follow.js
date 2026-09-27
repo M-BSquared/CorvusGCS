@@ -167,6 +167,13 @@ const mapEvents = {};
 let camera = { lng: HOME[0], lat: HOME[1] };
 let easeCalls = [];
 let setCenterCalls = [];
+let jumpCalls = [];
+// The camera's zoom and pitch, and whether an ease actually gets there. A
+// real easeTo that another move interrupts stops wherever it had reached;
+// `easesLand = false` models that by leaving zoom and pitch where they were.
+let zoom = 13;
+let pitch = 0;
+let easesLand = true;
 /** Pending follow pans: MapLibre fires moveend when the ease lands, and the
  *  module clears its in-flight guard there — so the fake makes that explicit
  *  rather than settling instantly and hiding the guard from the tests. */
@@ -184,10 +191,24 @@ const fakeMap = {
   getCanvas: () => makeEl("canvas"),
   getCanvasContainer: () => makeEl("div"),
   getContainer: () => mapEl,
-  getPitch: () => 0, zoomIn() {}, zoomOut() {}, resize() {}, setPixelRatio() {},
+  getPitch: () => pitch, getZoom: () => zoom, isMoving: () => false,
+  zoomIn() {}, zoomOut() {}, resize() {}, setPixelRatio() {},
   easeTo(opts) {
     easeCalls.push(opts);
     if (opts && opts.center) { camera = { lng: opts.center[0], lat: opts.center[1] }; }
+    if (easesLand && opts && opts.zoom !== undefined) zoom = opts.zoom;
+    if (easesLand && opts && opts.pitch !== undefined) pitch = opts.pitch;
+    pendingMove = true;
+  },
+  // A cut: lands at once, whatever else is running.
+  jumpTo(opts) {
+    jumpCalls.push(opts);
+    if (opts && opts.center) {
+      setCenterCalls.push(opts.center);
+      camera = { lng: opts.center[0], lat: opts.center[1] };
+    }
+    if (opts && opts.zoom !== undefined) zoom = opts.zoom;
+    if (opts && opts.pitch !== undefined) pitch = opts.pitch;
     pendingMove = true;
   },
   setCenter(c) {
@@ -212,6 +233,15 @@ global.maplibregl = {
   },
 };
 
+/** The module defers its "ask again" out of the moveend handler; run what
+ *  it queued now, so a test can see the result without waiting. */
+let deferred = [];
+function runDeferred() {
+  const now = deferred;
+  deferred = [];
+  now.forEach((fn) => fn());
+}
+
 function fireMap(type, payload) {
   (mapEvents[type] || []).slice().forEach((cb) => cb(payload));
 }
@@ -219,7 +249,10 @@ function fireMap(type, payload) {
 function settleMove() {
   if (!pendingMove) return;
   pendingMove = false;
-  fireMap("moveend", {});
+  const real = window.setTimeout;
+  window.setTimeout = (fn, ms) => (ms ? real(fn, ms) : (deferred.push(fn), 0));
+  try { fireMap("moveend", {}); } finally { window.setTimeout = real; }
+  runDeferred();
 }
 
 // Telemetry: init() subscribes, and centerOnVehicle reads getState().
@@ -262,8 +295,10 @@ function resetCamera() {
   camera = { lng: HOME[0], lat: HOME[1] };
   easeCalls = [];
   setCenterCalls = [];
+  jumpCalls = [];
   pendingMove = false;
   reducedMotion = false;
+  easesLand = true;
   map.setFollow(true);
 }
 
@@ -500,6 +535,94 @@ function testNoFixDoesNotMoveTheMap() {
   assert.equal(setCenterCalls.length, 0);
 }
 
+function testACutKeepsThePendingTilt() {
+  // Entering 3D starts a 600 ms tilt; a follow cut during it used to be a
+  // plain setCenter, which stops the tilt where it was. The cut carries it.
+  resetCamera();
+  easesLand = false;               // the tilt ease is interrupted
+  pitch = 0;
+  map.set3D(true);
+  assert.equal(easeCalls.at(-1).pitch, 60, "the tilt is asked for");
+  fly(0.02, 0);                    // far away: a cut
+  assert.equal(jumpCalls.at(-1).pitch, 60, "the cut carries the tilt with it");
+  assert.equal(pitch, 60);
+  settleMove();
+  map.set3D(false);
+  settleMove();
+  easesLand = true;
+  pitch = 0;
+}
+
+function testAGoalCutShortIsAskedForAgain() {
+  // On a start with 3D saved on, the tilt, the first zoom onto the aircraft
+  // and a follow pan each stopped the one before, and the map stayed flat.
+  // A move that lands short of what was asked for asks again.
+  resetCamera();
+  easesLand = false;
+  map.set3D(true);                 // the tilt ease is interrupted
+  settleMove();
+  assert.equal(easeCalls.at(-1).pitch, 60, "a goal cut short is asked for again");
+  easesLand = true;
+  settleMove();
+  assert.equal(pitch, 60, "and reached");
+  const before = easeCalls.length;
+  settleMove();
+  assert.equal(easeCalls.length, before, "a reached goal is not asked for again");
+  map.set3D(false);
+  settleMove();
+  pitch = 0;
+}
+
+function testAGoalThatNeverLandsIsNotChasedForever() {
+  resetCamera();
+  easesLand = false;
+  map.set3D(true);
+  for (let i = 0; i < 10; i += 1) { pendingMove = true; settleMove(); }
+  const asked = easeCalls.filter((o) => o.pitch === 60).length;
+  assert.ok(asked <= 4, `asked ${asked} times`);
+  easesLand = true;
+  map.set3D(false);
+  settleMove();
+  pitch = 0;
+}
+
+function testNoCameraMoveStartsInsideMoveend() {
+  // MapLibre can fire moveend from inside its own frame, and a camera move
+  // started there re-enters it: "Attempting to run(), but is already
+  // running", hundreds of times, with the camera stuck mid-tilt.
+  resetCamera();
+  easesLand = false;
+  map.set3D(true);
+  const before = easeCalls.length + jumpCalls.length;
+  const real = window.setTimeout;
+  window.setTimeout = (fn, ms) => (ms ? real(fn, ms) : (deferred.push(fn), 0));
+  try { fireMap("moveend", {}); } finally { window.setTimeout = real; }
+  assert.equal(easeCalls.length + jumpCalls.length, before,
+    "nothing moves the camera from inside the handler");
+  runDeferred();
+  assert.ok(easeCalls.length > before, "the retry runs just after it");
+  pendingMove = false;
+  easesLand = true;
+  map.set3D(false);
+  settleMove();
+  pitch = 0;
+}
+
+function testADragDropsThePendingGoals() {
+  resetCamera();
+  easesLand = false;
+  map.set3D(true);
+  fireMap("movestart", { originalEvent: { type: "mousedown" } });
+  easeCalls = [];
+  pendingMove = true;
+  settleMove();
+  assert.equal(easeCalls.length, 0, "the operator has the camera; nothing is taken back");
+  easesLand = true;
+  map.set3D(false);
+  settleMove();
+  pitch = 0;
+}
+
 // ---------------------------------------------------------------------------
 
 const tests = [
@@ -524,6 +647,11 @@ const tests = [
   testReducedMotionSnapsInsteadOfEasing,
   testAFarAwayVehicleIsCutTo,
   testNoFixDoesNotMoveTheMap,
+  testACutKeepsThePendingTilt,
+  testAGoalCutShortIsAskedForAgain,
+  testAGoalThatNeverLandsIsNotChasedForever,
+  testNoCameraMoveStartsInsideMoveend,
+  testADragDropsThePendingGoals,
 ];
 
 for (const t of tests) {

@@ -132,3 +132,33 @@ def test_the_coercer_keeps_a_zero_listen_port_and_drops_a_bad_one() -> None:
     assert _coerce_forwarding({"listen_port": -1}) is None
     assert _coerce_forwarding({"listen_port": True}) is None
     assert _coerce_forwarding({"listen_port": "14551"}) is None
+
+
+def test_the_forwarder_is_told_where_the_vehicle_link_listens() -> None:
+    """So it can refuse to mirror into it: SITL and QGroundControl both
+    default to UDP 14550, and forwarding there from a Corvus that listens on
+    14550 sent every frame back into its own link."""
+    from corvus import server as server_module
+
+    class FakeBridge:
+        def __init__(self) -> None:
+            self.sink = None
+
+        def inject_raw(self, _frame: bytes) -> bool:
+            return True
+
+        def local_udp_address(self) -> tuple[str, int]:
+            return ("0.0.0.0", 14550)
+
+        def set_frame_sink(self, sink: Any) -> None:
+            self.sink = sink
+
+    bridge = FakeBridge()
+    config = FakeConfig({"enabled": True, "port": 14550, "listen_port": 0})
+    fwd = server_module._build_forwarder(bridge, config)
+    try:
+        assert fwd is not None
+        assert fwd._is_vehicle_link(("127.0.0.1", 14550)) is True
+        assert "127.0.0.1:14550" not in fwd.status()["targets"]
+    finally:
+        fwd.stop()

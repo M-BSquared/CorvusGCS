@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.61-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.09.61" />
+  <img src="https://img.shields.io/badge/Version-2026.09.62-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.09.62" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -539,6 +539,12 @@ nothing and neither program reports an error. If something else already holds
 Mirroring outward needs no fixed local port, and losing the whole feature over
 one would be the wrong trade.
 
+**With PX4 SITL, pick another port.** SITL sends to UDP 14550 as well, so a
+Corvus connected to `udp:0.0.0.0:14550` that also mirrors to 127.0.0.1:14550
+would be mirroring into its own vehicle link. Corvus skips that target and says
+so on the LINK tab. Set the forwarding port to 14560 (or any free port) and add
+a UDP link on that port in QGroundControl.
+
 By default the second station is a *screen*: telemetry flows out to it and
 nothing flows back. **Let it command the aircraft** is a separate switch,
 because two stations that can both arm and both change mode is a hazard rather
@@ -554,7 +560,8 @@ stations sharing one makes the autopilot report packet loss that is not
 happening, and muddies which station a GCS failsafe is about. In QGroundControl
 it is *Application Settings → MAVLink → Ground Station system ID*; 255 is a
 fine choice. If you forget, the LINK tab says so: Corvus notices a second
-station transmitting under 254 and names the setting to change.
+station transmitting under 254 and names the setting to change, and does not
+pass that station's frames to the aircraft until it has its own ID.
 
 Whether you share the link this way or put **mavlink-router** in front of it,
 the link then carries more than the aircraft: the other station's heartbeat,
@@ -621,6 +628,11 @@ flight produces a steady trickle of those), **amber** for a real warning and
 **red** for a critical. It used to go amber for anything unread at all, which
 taught the operator to ignore the one colour that has to keep working.
 
+A new warning or critical also appears as a toast in the top right corner, once
+per message in a short window, and never opens the notification centre over the
+map. Click a toast to open the centre. Informational lines ("Takeoff detected")
+only go to the board, and PX4's log file announcements stay in the console.
+
 <details>
 <summary>Holybro SiK Telemetry Radio V3, and simulation</summary>
 
@@ -662,7 +674,7 @@ only where an altitude has to be *converted* or *set*:
 | Action | Without a position reference |
 |---|---|
 | Takeoff | Waits briefly, then sends it anyway with the altitude field unspecified, so the **vehicle** picks its own configured takeoff altitude. You get a warning, not a refusal. |
-| Fly to points | Unaffected. Mission items carry your AGL number directly in `MAV_FRAME_GLOBAL_RELATIVE_ALT`, so nothing has to be converted. |
+| Fly to points | Unaffected. Mission items carry your AGL number directly in `MAV_FRAME_GLOBAL_RELATIVE_ALT`, so nothing has to be converted. A single point for an aircraft already in the air is sent as a reposition instead (see below), which on PX4 needs home to convert AGL; without it Corvus uses the mission. |
 | Set home | Waits briefly, then **refuses**. This altitude is not being converted for the wire. It is the altitude home will *have*, and home altitude is what RTL descends to. Guessing it would move the landing point vertically as a side effect of dragging it sideways. |
 
 Whether the aircraft can actually take off stays the autopilot's decision; if it
@@ -736,6 +748,12 @@ you have been.
 
 **Click anywhere on the map** to open a menu: fly to that position, or move the
 home point there.
+
+Flying to one position while airborne sends `MAV_CMD_DO_REPOSITION`, not a
+mission. A PX4 aircraft that is holding stays in LOITER (Hold) and flies there,
+so there is no switch through MISSION and back, and the mission stored on the
+aircraft is left alone. ArduPilot does the same in GUIDED. On the ground, or with
+several points from PLAN, Corvus still uploads a mission with a takeoff first.
 
 The **flight HUD** (compass, attitude indicator, altitude, speeds, heading and
 satellite count) floats over the map in a window you control. Grab it anywhere

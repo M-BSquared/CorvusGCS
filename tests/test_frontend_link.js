@@ -261,6 +261,12 @@ function testForwardingHint() {
     /127\.0\.0\.1:14550/, "on with nobody connected: name the endpoint");
   assert.match(hint({ running: true, host: "127.0.0.1", port: 14550, peers: ["a", "b"] }),
     /2 station/, "on with peers: say how many");
+  // The target is the port this link receives the vehicle on: it is skipped,
+  // and "mirroring to it" would be a false claim.
+  const loopHint = hint({ running: true, host: "127.0.0.1", port: 14550, peers: [],
+                          loop_blocked: "127.0.0.1:14550" });
+  assert.match(loopHint, /Not mirroring to 127\.0\.0\.1:14550/);
+  assert.match(loopHint, /14560/, "and a port that works is suggested");
   // A missing status must not paint "undefined:undefined" at an operator.
   assert.match(hint(null), /QGroundControl/);
   assert.match(hint({ running: true }), /127\.0\.0\.1:14550/,

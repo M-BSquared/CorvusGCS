@@ -14,6 +14,8 @@ assert.equal(actionFromMessage("Take-off failed: no altitude reference"), "takeo
 assert.equal(actionFromMessage("Return to launch failed"), "rtl");
 assert.equal(actionFromMessage("Landing command denied"), "land");
 assert.equal(actionFromMessage("Mode change failed"), "mode");
+assert.equal(actionFromMessage("Fly to point failed: DENIED"), "gotopoints");
+assert.equal(actionFromMessage("Fly to points needs GUIDED mode, which the vehicle refused"), "gotopoints");
 assert.equal(actionFromMessage("Telemetry connection interrupted"), "");
 assert.equal(isFailureMessage("Takeoff failed: DENIED"), true);
 assert.equal(isFailureMessage("Takeoff target accepted"), false);
