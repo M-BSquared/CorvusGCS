@@ -210,6 +210,16 @@ jobs:
         run: |
           chmod +x build.sh build-macos-app.sh
           ./build.sh --dmg
+      - name: Keep the build logs of a failed build
+        # pip, codesign and hdiutil write their reasons to build/*.log, not to
+        # the job log, so without these a failed build names no cause.
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build-logs-${{ github.run_attempt }}
+          path: build/*.log
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Read version and architecture
         id: ver
         # The artifact was named by the runner label (macos-14 / macos-13),

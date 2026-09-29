@@ -663,9 +663,27 @@ if [ "$MAKE_DMG" -eq 1 ]; then
     rm -rf "$STAGE"; mkdir -p "$STAGE"
     cp -R "$APP" "$STAGE/"
     ln -s /Applications "$STAGE/Applications"
-    if ! hdiutil create -volname "$APP_NAME $VERSION" -srcfolder "$STAGE" \
-            -ov -format UDZO "$DMG_WORK" >>"$BUILD_DIR/hdiutil.log" 2>&1; then
+    # hdiutil create fails now and then on a busy machine, typically "Resource
+    # busy" while it detaches the image it just filled; GitHub's macOS runners
+    # do it often enough to fail a release, and a retry a few seconds later
+    # goes through. Its reason only ever reached the log, which CI does not
+    # keep, so a failure there said nothing at all: it is printed now.
+    : > "$BUILD_DIR/hdiutil.log"
+    DMG_MADE=0
+    for attempt in 1 2 3 4; do
+        echo "--- hdiutil create, attempt $attempt" >>"$BUILD_DIR/hdiutil.log"
+        if hdiutil create -volname "$APP_NAME $VERSION" -srcfolder "$STAGE" \
+                -ov -format UDZO "$DMG_WORK" >>"$BUILD_DIR/hdiutil.log" 2>&1; then
+            DMG_MADE=1
+            break
+        fi
+        rm -f "$DMG_WORK"
+        echo "    attempt $attempt failed: $(tail -n 1 "$BUILD_DIR/hdiutil.log")"
+        if [ "$attempt" -lt 4 ]; then sleep $((attempt * 10)); fi
+    done
+    if [ "$DMG_MADE" -ne 1 ]; then
         echo "ERROR: hdiutil failed; log: $BUILD_DIR/hdiutil.log" >&2
+        tail -n 20 "$BUILD_DIR/hdiutil.log" >&2 || true
         exit 1
     fi
     rm -rf "$STAGE"

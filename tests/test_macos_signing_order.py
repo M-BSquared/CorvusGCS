@@ -43,3 +43,16 @@ def test_the_signature_is_verified_as_gatekeeper_would() -> None:
     dmg = SCRIPT.index("hdiutil create")
     assert SCRIPT.index(check, dmg) > dmg
     assert 'hdiutil attach -nobrowse -readonly' in SCRIPT
+
+
+def test_a_failed_dmg_is_retried_and_says_why() -> None:
+    """hdiutil's reason went only to build/hdiutil.log, which CI does not keep.
+
+    A release failed on "ERROR: hdiutil failed" and nothing else, on a runner
+    where hdiutil create fails intermittently.
+    """
+    create = SCRIPT.index("if hdiutil create")
+    loop = SCRIPT.rindex("for attempt in", 0, create)
+    assert create - loop < 400, "hdiutil create is not inside the retry loop"
+    failure = SCRIPT.index('echo "ERROR: hdiutil failed', create)
+    assert 'tail -n 20 "$BUILD_DIR/hdiutil.log"' in SCRIPT[failure:failure + 300]

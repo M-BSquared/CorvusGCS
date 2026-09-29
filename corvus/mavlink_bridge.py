@@ -1318,8 +1318,9 @@ class MavlinkBridge(
     def _start_gcs_heartbeat(self) -> None:
         if self._hb_thread and self._hb_thread.is_alive():
             return
-        self._hb_thread = threading.Thread(target=self._gcs_hb_loop, name="gcs-hb", daemon=True)
-        self._hb_thread.start()
+        hb_thread = threading.Thread(target=self._gcs_hb_loop, name="gcs-hb", daemon=True)
+        hb_thread.start()
+        self._hb_thread = hb_thread
 
     def _send_gcs_heartbeat(self, conn: Any) -> bool:
         """Send one GCS heartbeat on *conn* now. Never raises.
@@ -1717,10 +1718,14 @@ class MavlinkBridge(
             except Exception as exc:
                 logger.debug("GCS authority check failed: %s", exc)
 
-        self._intervals_thread = threading.Thread(
+        # Started before it is published, here and for every worker stop()
+        # joins: stop() runs on another thread, and join() on a thread that is
+        # published but not yet started raises, which aborted the teardown.
+        intervals_thread = threading.Thread(
             target=_runner, name="mavlink-intervals", daemon=True,
         )
-        self._intervals_thread.start()
+        intervals_thread.start()
+        self._intervals_thread = intervals_thread
 
     # The parameter that decides whose sticks an ArduPilot vehicle listens to.
     # ArduPilot renamed it in 4.5; both are asked for and the first answer wins.
@@ -1965,10 +1970,11 @@ class MavlinkBridge(
             except Exception:
                 pass
 
-        self._version_retry_thread = threading.Thread(
+        version_retry_thread = threading.Thread(
             target=_retry, name="px4-ver-retry", daemon=True,
         )
-        self._version_retry_thread.start()
+        version_retry_thread.start()
+        self._version_retry_thread = version_retry_thread
 
     @staticmethod
     def _decode_git_hash(raw: Any) -> str:

@@ -837,3 +837,42 @@ def test_the_armed_confirmation_wait_happens_outside_the_command_lock() -> None:
         "the command lock was held across the armed-state wait, so every "
         "other command was blocked while arm() only read telemetry"
     )
+
+
+# ---------------------------------------------------------------------------
+# stop() on another thread never meets a worker that is not started yet
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(("spawn", "attr", "name"), [
+    ("_start_gcs_heartbeat", "_hb_thread", "gcs-hb"),
+    ("_schedule_message_intervals", "_intervals_thread", "mavlink-intervals"),
+    ("_schedule_version_retry", "_version_retry_thread", "px4-ver-retry"),
+    ("_start_param_watchdog", "_param_watchdog_thread", "param-watchdog"),
+])
+def test_stop_in_the_gap_before_a_worker_starts_does_not_raise(
+    monkeypatch: pytest.MonkeyPatch, spawn: str, attr: str, name: str,
+) -> None:
+    """The MAVLink thread spawns these while stop() runs on the caller's.
+
+    Published before start(), stop() could join a thread that had not started,
+    which raises and abandoned the rest of the teardown. Seen on CI as
+    "cannot join thread before it is started".
+    """
+    b = bridge()
+    b._running.set()
+    real_thread = threading.Thread
+
+    class StopBeforeStart(real_thread):  # type: ignore[misc, valid-type]
+        def start(self) -> None:
+            if self.name == name:
+                b.stop()
+            super().start()
+
+    monkeypatch.setattr(mavlink_bridge.threading, "Thread", StopBeforeStart)
+    getattr(b, spawn)()
+    monkeypatch.undo()
+
+    worker = getattr(b, attr)
+    assert worker is not None and worker.name == name
+    worker.join(timeout=5)
+    assert not worker.is_alive(), f"{name} outlived stop()"

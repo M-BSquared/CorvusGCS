@@ -112,7 +112,13 @@ def test_a_relative_folder_is_read_from_home(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def runner():
+def runner(monkeypatch):
+    # Every test on this fixture expects its program to have ended within the
+    # early-exit window. One second is the product's choice, and a login shell
+    # on a loaded CI runner can take longer than that just to start, so the
+    # answer came back as "still running". wait() returns at the exit, so a
+    # wide window costs a fast program nothing.
+    monkeypatch.setattr(local_shell, "EARLY_EXIT_S", 30.0)
     r = LocalRunner()
     yield r
     r.shutdown()

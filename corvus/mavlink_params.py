@@ -732,11 +732,12 @@ class ParamProtocolMixin:
             # issue, and we deliberately do NOT hold _operation_lock across
             # the loop — that would block every other command for the whole
             # upload.
-            self._param_upload_thread = threading.Thread(
+            param_upload_thread = threading.Thread(
                 target=self.set_params_batch, args=(params,),
                 name="param-upload", daemon=True,
             )
-            self._param_upload_thread.start()
+            param_upload_thread.start()
+            self._param_upload_thread = param_upload_thread
             return True
 
     def set_params_batch(self, params: list[dict]) -> None:
@@ -986,10 +987,11 @@ class ParamProtocolMixin:
             return
         if self._param_watchdog_thread and self._param_watchdog_thread.is_alive():
             return
-        self._param_watchdog_thread = threading.Thread(
+        param_watchdog_thread = threading.Thread(
             target=self._param_watchdog, name="param-watchdog", daemon=True,
         )
-        self._param_watchdog_thread.start()
+        param_watchdog_thread.start()
+        self._param_watchdog_thread = param_watchdog_thread
 
     def _finish_param_download_incomplete(self) -> None:
         """Flip a stuck download to a terminal "incomplete" (partial params kept)."""
