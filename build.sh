@@ -45,7 +45,9 @@ case "$OS" in
         ;;
     Darwin)
         SCRIPT="$REPO_DIR/build-macos-app.sh"
-        ARTIFACT="$REPO_DIR/dist/Corvus GCS.app"
+        # The same default and override build-macos-app.sh delivers to, or a
+        # build redirected with CORVUS_DIST is reported as missing.
+        ARTIFACT="${CORVUS_DIST:-$REPO_DIR/dist}/Corvus GCS.app"
         ARGS=("$@")
         ;;
     MINGW*|MSYS*|CYGWIN*)

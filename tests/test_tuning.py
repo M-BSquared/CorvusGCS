@@ -237,12 +237,54 @@ def test_a_firmware_without_the_autotune_module_offers_no_autotune() -> None:
     assert "autotune" not in _groups(tuning_config.build(values))
 
 
-def test_only_the_fixed_wing_autotune_offers_an_axis_selection() -> None:
-    """PX4's multicopter autotune always tunes all three axes."""
-    mc = _groups(tuning_config.build(_multicopter_values()))["autotune"]
+def test_the_fixed_wing_autotune_offers_each_axis_on_its_own() -> None:
+    """FW_AT_AXES is a bitmask, so every axis is its own switch, and it sits
+    beside the start button rather than a second time among the settings."""
     fw = _groups(tuning_config.build(_fixedwing_values()))["autotune"]
+    axes = fw["axes"]
+    assert axes["selectable"] is True
+    assert axes["field"]["param"] == "FW_AT_AXES"
+    assert axes["field"]["kind"] == "bitmask"
+    assert [(b["bit"], b["label"]) for b in axes["field"]["bits"]] == [
+        (0, "Roll"), (1, "Pitch"), (2, "Yaw")]
+    assert "FW_AT_AXES" not in _params_of(fw)
+
+
+def test_a_fixed_wing_axis_combination_no_preset_named_is_kept() -> None:
+    """Roll and yaw without pitch (5) is valid PX4; an enum of presets had no
+    option for it."""
+    values = _fixedwing_values()
+    values["FW_AT_AXES"] = 5.0
+    axes = _groups(tuning_config.build(values))["autotune"]["axes"]
+    assert axes["field"]["value"] == 5.0
+
+
+def test_the_multicopter_autotune_reports_its_fixed_axes_rather_than_hiding_them() -> None:
+    """PX4 v1.16 to v1.18 tune roll, pitch and yaw in one run and refuse an axis
+    in the command. The page says so instead of leaving the operator to look
+    for QGroundControl's (ArduPilot) per axis checkboxes."""
+    mc = _groups(tuning_config.build(_multicopter_values()))["autotune"]
+    axes = mc["axes"]
+    assert axes["selectable"] is False
+    assert axes["labels"] == ["Roll", "Pitch", "Yaw"]
+    assert "no axis selection" in axes["reason"]
+    assert "field" not in axes
     assert "FW_AT_AXES" not in _params_of(mc)
-    assert "FW_AT_AXES" in _params_of(fw)
+
+
+def test_a_fixed_wing_without_an_axis_parameter_offers_no_axis_row() -> None:
+    values = {n: v for n, v in _fixedwing_values().items() if n != "FW_AT_AXES"}
+    assert _groups(tuning_config.build(values))["autotune"]["axes"] is None
+
+
+def test_the_axis_texts_use_no_dashes() -> None:
+    """AGENTS.md: operator facing prose never uses a dash between words."""
+    texts = [
+        _groups(tuning_config.build(_multicopter_values()))["autotune"]["axes"]["reason"],
+        _groups(tuning_config.build(_fixedwing_values()))["autotune"]["axes"]["field"]["hint"],
+    ]
+    for text in texts:
+        assert "—" not in text and "–" not in text and " - " not in text
 
 
 def test_an_unknown_enum_value_is_preserved_rather_than_snapped() -> None:

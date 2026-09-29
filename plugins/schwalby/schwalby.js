@@ -1625,7 +1625,7 @@ Corvus.pluginSchwalby = (function () {
       live[session] = true;
       if (reconnected) openTerminal(entry, true, true);
       let said = `${entry.label} is running`;
-      if (restarted && !reconnected) said = `${entry.label} restarted (stopped with Ctrl-C)`;
+      if (restarted && !reconnected) said = `${entry.label} restarted`;
       else if (was && !reconnected) said = `${entry.label} sent again to its terminal`;
       status.show(said, "ok");
       api.console(consoleLine(entry, line), "success");

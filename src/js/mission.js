@@ -425,20 +425,17 @@ Corvus.mission = (function () {
   }
 
   /** The aircraft picker's choices. While a connected aircraft sets the kind,
-   *  its entry is named as that aircraft, the way the top bar names it: the
-   *  plan only tells an aircraft that hovers from one that circles, and a
-   *  picker saying "Multicopter" under a bar saying "Quadcopter" read as two
-   *  different answers to one question. */
+   *  its entry is named exactly as the top bar names it: the plan only tells
+   *  an aircraft that hovers from one that circles, and a picker saying
+   *  "Multicopter" under a bar saying "Quadcopter" read as two different
+   *  answers to one question. */
   function aircraftOptions() {
     const state = aircraftLocked ? connectedState() : null;
     const named = state ? vehicleTypeName(state.vehicle_type) : "";
     return [{ value: "", label: "Not set" }].concat(AIRCRAFT.map((entry) => {
       const own = named && entry.value === aircraft
         && named.toLowerCase() !== entry.label.toLowerCase();
-      return {
-        value: entry.value,
-        label: own ? `${named} (${entry.label.toLowerCase()})` : entry.label,
-      };
+      return { value: entry.value, label: own ? named : entry.label };
     }));
   }
 

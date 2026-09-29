@@ -13,6 +13,7 @@
 #
 # Env:
 #   CORVUS_PYTHON      same as --python
+#   CORVUS_DIST        where the .app and .dmg are delivered (default: dist/)
 #   CODESIGN_IDENTITY  Developer ID to sign with (default: "-", ad-hoc)
 
 set -euo pipefail
@@ -20,15 +21,10 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSION="$(cat "$REPO_DIR/VERSION")"
 BUILD_DIR="$REPO_DIR/build"
-# Overridable because a checkout can sit somewhere a .app cannot be signed:
-# iCloud Drive, OneDrive and Dropbox re-apply com.apple.FinderInfo to
-# directories inside the bundle while the build runs, and codesign refuses a
-# bundle carrying it. Nothing can win that race in place, so the way out is to
-# build somewhere the sync agent is not:
-#   CORVUS_DIST=/tmp/corvus-dist ./build-macos-app.sh
 DIST_DIR="${CORVUS_DIST:-$REPO_DIR/dist}"
 APP_NAME="Corvus GCS"
-APP="$DIST_DIR/$APP_NAME.app"
+# The finished bundle lands here. It is not built here: see WORK_DIR below.
+APP_OUT="$DIST_DIR/$APP_NAME.app"
 # Personal reverse-DNS, not the institution's: the bundle identifier is an
 # ownership claim macOS shows to the user, and it follows LICENSE.md.
 BUNDLE_ID="de.mbsquared.corvus.gcs"
@@ -48,7 +44,7 @@ while [ $# -gt 0 ]; do
         --no-verify)  VERIFY=0 ;;
         --python)     PYBIN="${2:?--python needs a path}"; shift ;;
         -h|--help)
-            sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+            sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         *) echo "ERROR: unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -60,7 +56,7 @@ echo "=== CORVUS GCS — macOS .app build ==="
 echo "Repo:    $REPO_DIR"
 echo "Version: $VERSION  (read from VERSION)"
 echo "Arch:    $ARCH"
-echo "Bundle:  $APP"
+echo "Bundle:  $APP_OUT"
 echo ""
 
 [ "$(uname -s)" = "Darwin" ] || { echo "ERROR: this build must run on macOS" >&2; exit 1; }
@@ -183,20 +179,32 @@ LOCK_OUT="$DIST_DIR/Corvus_GCS-${VERSION}-macOS-${ARCH}.lock"
 echo ">>> Runtime deps: $DEPS_LABEL"
 echo ""
 
-# ---- cleanup trap: drop a half-built bundle, keep logs + finished artifacts --
-SUCCESS=0
+# ---- where the bundle is built ----------------------------------------------
+# Assembled, signed and verified in a private folder under the local temp dir,
+# and only moved to $DIST_DIR once all of that passed. A checkout inside
+# iCloud Drive (which includes ~/Documents and ~/Desktop when those are
+# synced), OneDrive or Dropbox has its sync agent re-apply com.apple.FinderInfo
+# to directories inside the bundle while the build runs, and codesign refuses
+# the whole .app with "resource fork, Finder information, or similar detritus
+# not allowed". Nothing wins that race in place; building where the agent does
+# not look avoids it, whatever folder the repository is in.
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/corvus-gcs-build.XXXXXX")"
+APP="$WORK_DIR/$APP_NAME.app"
+MNT=""
+
+# ---- cleanup trap: the work folder goes, logs + delivered artifacts stay -----
 cleanup() {
-    if [ "${SUCCESS:-0}" -ne 1 ]; then
-        rm -rf "$APP" 2>/dev/null || true
+    if [ -n "${MNT:-}" ] && [ -d "$MNT" ]; then
+        hdiutil detach "$MNT" -force -quiet 2>/dev/null || true
     fi
+    rm -rf "$WORK_DIR" 2>/dev/null || true
 }
 trap cleanup EXIT
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
 
 # ---- 1. bundle skeleton -----------------------------------------------------
-echo ">>> Preparing bundle skeleton ..."
-rm -rf "$APP"
+echo ">>> Preparing bundle skeleton in $WORK_DIR ..."
 mkdir -p "$BUILD_DIR" "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 RES="$APP/Contents/Resources"
 PYROOT="$RES/python"
@@ -406,13 +414,15 @@ rsync -a "$REPO_DIR/assets/" "$APPROOT/assets/"
 # root as a sibling of the corvus package, exactly like src/, so it has to land
 # beside it. Operator plugins live in ~/.corvus/plugins and are never bundled.
 rsync -a --exclude '__pycache__' "$REPO_DIR/plugins/" "$APPROOT/plugins/"
-cp -a "$REPO_DIR/VERSION" "$APPROOT/VERSION"
+# -X: rsync -a above leaves extended attributes behind, cp -a does not, and a
+# working copy's (a sync agent's, Finder's) are nothing the bundle should carry.
+cp -aX "$REPO_DIR/VERSION" "$APPROOT/VERSION"
 # The Sustainable Use License requires that anyone who receives a copy of
 # the software also receives a copy of its terms, so the licence ships in
 # the bundle rather than only in the repository.
-cp -a "$REPO_DIR/LICENSE.md" "$APPROOT/LICENSE.md"
+cp -aX "$REPO_DIR/LICENSE.md" "$APPROOT/LICENSE.md"
 if [ -f "$REPO_DIR/serve.py" ]; then
-    cp -a "$REPO_DIR/serve.py" "$APPROOT/serve.py"
+    cp -aX "$REPO_DIR/serve.py" "$APPROOT/serve.py"
 fi
 
 # ---- 7. icon ----------------------------------------------------------------
@@ -524,6 +534,16 @@ echo ">>> Stripping Finder metadata ..."
 xattr -rd com.apple.FinderInfo "$APP" 2>/dev/null || true
 xattr -rd com.apple.ResourceFork "$APP" 2>/dev/null || true
 
+# A symlink to nothing fails `codesign --verify --strict` with a bare "No such
+# file or directory" on the .app, naming neither the link nor its target. The
+# stdlib copy brings two: config-X.Y-darwin/libpythonX.Y.{a,dylib} point at
+# ../../../Python, which is where the dylib sits in the host framework and not
+# where it sits in this bundle. They only serve compiling against Python, and
+# pointing at nothing they serve nothing here either.
+echo ">>> Dropping dangling symlinks ..."
+/usr/bin/find "$APP" -type l ! -exec test -e {} \; -print -delete \
+    | sed "s|^$WORK_DIR/|    |"
+
 # Ad-hoc by default, and inside out: each seal records the signatures of the
 # code nested in it, so a container is signed only after everything in it is
 # final. Mach-O files under Contents/Resources (Qt, the interpreter) are sealed
@@ -542,7 +562,7 @@ echo ">>> Signing bundle (identity: $CODESIGN_IDENTITY) ..."
 SIGNED=1
 for target in "$FW_DST/Resources/Python.app" "$FW_DST" "$APP"; do
     [ -e "$target" ] || continue
-    echo "    ${target#"$DIST_DIR"/}"
+    echo "    ${target#"$WORK_DIR"/}"
     if ! codesign --force --sign "$CODESIGN_IDENTITY" "$target" \
             >>"$BUILD_DIR/codesign.log" 2>&1; then
         SIGNED=0
@@ -552,21 +572,13 @@ done
 if [ "$SIGNED" -ne 1 ]; then
     echo "WARNING: bundle signing failed; see $BUILD_DIR/codesign.log"
     tail -n 5 "$BUILD_DIR/codesign.log" >&2 || true
-    # The one cause that is not a bug in this script, and is not obvious from
-    # codesign's own wording: a cloud-synced working copy. iCloud Drive,
-    # OneDrive and Dropbox re-apply com.apple.FinderInfo to directories inside
-    # dist/ while the build runs, so the strip above wins and then loses again
-    # a moment later. The tell is com.apple.fileprovider.* on the bundle.
-    # grep -c, not grep -q: this script runs under `set -o pipefail`, and a
-    # -q that exits on the first match SIGPIPEs xattr, so the pipeline reports
-    # failure exactly when the answer is yes — and the advice below never
-    # printed for the one person who needed it.
-    if [ "$(xattr -r "$APP" 2>/dev/null | grep -c 'com.apple.fileprovider' || true)" -gt 0 ]; then
-        echo "       This checkout is inside a cloud-synced folder (iCloud Drive," >&2
-        echo "       OneDrive, Dropbox), which re-applies Finder metadata to the" >&2
-        echo "       bundle faster than it can be stripped. Build somewhere the" >&2
-        echo "       sync agent is not:" >&2
-        echo "         CORVUS_DIST=/tmp/corvus-dist $(basename "${BASH_SOURCE[0]}")" >&2
+    # codesign names the bundle, never the file it objected to. `|| true`
+    # because under pipefail a head that stops early SIGPIPEs xattr.
+    detritus="$(xattr -r "$APP" 2>/dev/null \
+        | grep -E 'com\.apple\.(FinderInfo|ResourceFork)' | head -n 5 || true)"
+    if [ -n "$detritus" ]; then
+        echo "       Still carrying Finder metadata after the strip:" >&2
+        printf '%s\n' "$detritus" | sed 's/^/         /' >&2
     fi
 fi
 
@@ -641,19 +653,18 @@ PY
     echo "    $(tail -n 1 "$BUILD_DIR/codesign-verify.log")"
 fi
 
-SUCCESS=1
-
 # ---- 12. optional .dmg ------------------------------------------------------
+# Built in the work folder too, and moved to $DIST_DIR only once the copy
+# inside it verified, so a failed build never leaves a .dmg behind.
+DMG_WORK="$WORK_DIR/$(basename "$DMG")"
 if [ "$MAKE_DMG" -eq 1 ]; then
-    echo ">>> Building $DMG ..."
-    mkdir -p "$DIST_DIR"
-    rm -f "$DMG"
-    STAGE="$BUILD_DIR/dmg-stage"
+    echo ">>> Building $(basename "$DMG") ..."
+    STAGE="$WORK_DIR/dmg-stage"
     rm -rf "$STAGE"; mkdir -p "$STAGE"
     cp -R "$APP" "$STAGE/"
     ln -s /Applications "$STAGE/Applications"
     if ! hdiutil create -volname "$APP_NAME $VERSION" -srcfolder "$STAGE" \
-            -ov -format UDZO "$DMG" >>"$BUILD_DIR/hdiutil.log" 2>&1; then
+            -ov -format UDZO "$DMG_WORK" >>"$BUILD_DIR/hdiutil.log" 2>&1; then
         echo "ERROR: hdiutil failed; log: $BUILD_DIR/hdiutil.log" >&2
         exit 1
     fi
@@ -663,11 +674,10 @@ if [ "$MAKE_DMG" -eq 1 ]; then
     # and hdiutil, and either could have dropped something the seal covers.
     if [ "$VERIFY" -eq 1 ]; then
         echo ">>> Verifying the signature inside the .dmg ..."
-        MNT="$(mktemp -d "$BUILD_DIR/dmg-verify.XXXXXX")"
-        if ! hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$MNT" "$DMG" \
+        MNT="$(mktemp -d "$WORK_DIR/dmg-verify.XXXXXX")"
+        if ! hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$MNT" "$DMG_WORK" \
                 >>"$BUILD_DIR/hdiutil.log" 2>&1; then
-            echo "ERROR: could not mount $DMG to verify it; log: $BUILD_DIR/hdiutil.log" >&2
-            rm -f "$DMG"
+            echo "ERROR: could not mount $DMG_WORK to verify it; log: $BUILD_DIR/hdiutil.log" >&2
             exit 1
         fi
         DMG_OK=1
@@ -677,18 +687,52 @@ if [ "$MAKE_DMG" -eq 1 ]; then
             || hdiutil detach "$MNT" -force -quiet 2>/dev/null || true
         rmdir "$MNT" 2>/dev/null || true
         if [ "$DMG_OK" -ne 1 ]; then
-            echo "ERROR: the .app inside $DMG does not verify; log: $BUILD_DIR/codesign-verify.log" >&2
+            echo "ERROR: the .app inside the .dmg does not verify; log: $BUILD_DIR/codesign-verify.log" >&2
             tail -n 20 "$BUILD_DIR/codesign-verify.log" >&2 || true
-            rm -f "$DMG"
             exit 1
         fi
     fi
 fi
 
+# ---- 13. deliver ------------------------------------------------------------
+# Only now does the previous build in $DIST_DIR get replaced. mv keeps the
+# extended attributes, which is where the launcher script's signature lives.
+echo ">>> Delivering to $DIST_DIR ..."
+mkdir -p "$DIST_DIR"
+rm -rf "$APP_OUT"
+mv "$APP" "$APP_OUT"
+if [ "$MAKE_DMG" -eq 1 ]; then
+    rm -f "$DMG"
+    mv "$DMG_WORK" "$DMG"
+fi
+
 # ---- done -------------------------------------------------------------------
 echo ""
-echo ">>> Built: $APP  ($(du -sh "$APP" | cut -f1))"
+echo ">>> Built: $APP_OUT  ($(du -sh "$APP_OUT" | cut -f1))"
 [ "$MAKE_DMG" -eq 1 ] && echo ">>> Built: $DMG  ($(du -sh "$DMG" | cut -f1))"
+# The .dmg is sealed and safe to hand out from anywhere. The loose .app is not
+# once a sync agent has written Finder metadata into it, which iCloud does the
+# moment it lands: it still runs here, but a copy of it would not verify on
+# another Mac. The file provider marks the root it syncs (~/Documents, say),
+# not every folder below it, hence the walk up. grep -c rather than -q: under
+# pipefail a -q that exits early can SIGPIPE xattr and read as "no".
+in_synced_folder() {  # <dir>
+    local d
+    d="$(cd "$1" 2>/dev/null && pwd -P)" || return 1
+    while [ -n "$d" ] && [ "$d" != "/" ]; do
+        if [ "$(xattr "$d" 2>/dev/null | grep -Ec 'com\.apple\.file-?provider' || true)" -gt 0 ]; then
+            return 0
+        fi
+        d="$(dirname "$d")"
+    done
+    return 1
+}
+if in_synced_folder "$DIST_DIR"; then
+    echo ""
+    echo "    Note: $DIST_DIR is in a cloud-synced folder, which writes Finder"
+    echo "    metadata into the .app and breaks its seal. It runs from here, but"
+    echo "    give other Macs the .dmg (./build.sh --dmg), not a copy of the .app."
+fi
 if [ "$CODESIGN_IDENTITY" = "-" ]; then
     echo ""
     echo "    Note: ad-hoc signed, not notarized. A downloaded copy is blocked on its"

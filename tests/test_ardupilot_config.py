@@ -203,6 +203,35 @@ def test_the_autotune_group_states_it_is_a_mode_not_a_command() -> None:
     assert len(group["steps"]) >= 4
 
 
+def test_a_copter_chooses_its_autotune_axes_beside_the_start_button() -> None:
+    """The per axis checkboxes QGroundControl shows: AUTOTUNE_AXES, one bit per
+    axis, offered with the run and not a second time among the settings."""
+    payload = ardupilot_tuning.build(_all_values(ardupilot_tuning), "copter")
+    group = next(g for g in payload["groups"] if g["id"] == "autotune")
+    axes = group["axes"]
+    assert axes["selectable"] is True
+    assert axes["field"]["param"] == "AUTOTUNE_AXES"
+    assert axes["field"]["kind"] == "bitmask"
+    assert [b["label"] for b in axes["field"]["bits"]] == ["Roll", "Pitch", "Yaw", "Yaw D"]
+    settings = [f["param"] for s in group["sections"] for f in s["fields"]]
+    assert "AUTOTUNE_AXES" not in settings
+
+
+def test_a_plane_is_not_offered_the_copter_only_yaw_d_pass() -> None:
+    payload = ardupilot_tuning.build(_all_values(ardupilot_tuning), "plane")
+    group = next(g for g in payload["groups"] if g["id"] == "autotune")
+    assert [b["label"] for b in group["axes"]["field"]["bits"]] == ["Roll", "Pitch", "Yaw"]
+
+
+def test_a_firmware_without_autotune_axes_offers_no_axis_row() -> None:
+    """Plane before 4.5 has no AUTOTUNE_AXES; it tunes what it tunes."""
+    values = {n: v for n, v in _all_values(ardupilot_tuning).items()
+              if n != "AUTOTUNE_AXES"}
+    payload = ardupilot_tuning.build(values, "plane")
+    group = next(g for g in payload["groups"] if g["id"] == "autotune")
+    assert group["axes"] is None
+
+
 def test_a_rover_is_told_it_has_no_autotune_rather_than_offered_one() -> None:
     payload = ardupilot_tuning.build(_all_values(ardupilot_tuning), "rover")
     assert not any(g["id"] == "autotune" for g in payload["groups"])

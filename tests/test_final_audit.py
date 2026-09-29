@@ -147,6 +147,8 @@ _EXPECTED_POST = {
     "/api/params/export",
     "/api/settings/export",
     "/api/settings/import",
+    # Factory settings, and the first start setup again. Refused while armed.
+    "/api/settings/reset",
     "/api/welcome",
     "/api/params/metadata",
     "/api/params/metadata/cache/clear",

@@ -11,7 +11,7 @@ window.Corvus = window.Corvus || {};
  *   Attitude Controller   angle error to rate setpoint
  *   Velocity Controller   the loop behind a drifting hover (multicopter)
  *   Position Controller   position error to velocity setpoint (multicopter)
- *   Autotune              PX4's own tune: preconditions, settings, and the run
+ *   Autotune              PX4's own tune: preconditions, axes, settings, and the run
  *
  * This page replaces the "PID Tuning" band that used to sit at the bottom of
  * the Calibration page, which was one button and three read-only graphs. That
@@ -472,6 +472,9 @@ Corvus.setupTuning = (function () {
     });
     card.appendChild(steps);
 
+    const axes = buildAutotuneAxes(state, group.axes);
+    if (axes) card.appendChild(axes);
+
     const moduleWarning = S.el("div", "params-banner tune-module-warning");
     moduleWarning.hidden = group.enabled !== false;
     moduleWarning.textContent =
@@ -501,7 +504,10 @@ Corvus.setupTuning = (function () {
     row.classList.add("tune-autotune-actions");
     card.appendChild(row);
 
-    const ctx = { phase, bar, fill, gate, startBtn, stopBtn, moduleWarning, busy: false };
+    const axesField = group.axes && group.axes.selectable ? group.axes.field : null;
+    const ctx = {
+      phase, bar, fill, gate, startBtn, stopBtn, moduleWarning, axesField, busy: false,
+    };
     ctx.paint = () => paintAutotune(state, ctx);
     state.autotune = ctx;
 
@@ -511,11 +517,66 @@ Corvus.setupTuning = (function () {
     return card;
   }
 
+  /**
+   * Which axes the next tune covers, next to the button that starts it.
+   *
+   * A stack that takes a selection gets its bitmask as an ordinary field,
+   * written like any other gain (so only while disarmed). One that does not,
+   * PX4's multicopter autotune, still gets the row, ticked and greyed with the
+   * reason: an operator looking for QGroundControl's per axis checkboxes
+   * learns why they are not there rather than that they are missing.
+   */
+  function buildAutotuneAxes(state, spec) {
+    if (!spec) return null;
+    if (spec.selectable && spec.field) {
+      const grid = S.paramFieldGrid(state, [spec.field], {
+        prefix: "tune",
+        onApplied: () => { if (state.autotune) state.autotune.paint(); },
+      });
+      grid.classList.add("tune-axes");
+      return grid;
+    }
+    const grid = S.el("div", "pform-grid tune-grid tune-axes tune-axes-fixed");
+    const row = S.el("div", "pform-field tune-field");
+    row.appendChild(S.el("span", "pform-field-label tune-field-label",
+      spec.label || "Axes to tune"));
+    const cell = S.el("div", "pform-field-control tune-field-control");
+    const bits = S.el("div", "pform-bits tune-bits");
+    (spec.labels || []).forEach((label) => {
+      const item = S.el("label", "pform-bit tune-bit");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = true;
+      box.disabled = true;
+      box.setAttribute("aria-label", `${label} (always tuned)`);
+      item.appendChild(box);
+      item.appendChild(S.el("span", null, label));
+      bits.appendChild(item);
+    });
+    cell.appendChild(bits);
+    row.appendChild(cell);
+    if (spec.reason) {
+      row.appendChild(S.el("span", "field-hint pform-field-hint tune-field-hint", spec.reason));
+    }
+    grid.appendChild(row);
+    return grid;
+  }
+
+  /** True when the axis selection names none of the axes it offers, which
+   *  would start a tune that has nothing to tune. */
+  function noAxisSelected(field) {
+    if (!field) return false;
+    const value = Number(field.value) || 0;
+    const offered = (field.bits || []).reduce((mask, b) => mask | (1 << b.bit), 0);
+    return offered !== 0 && (value & offered) === 0;
+  }
+
   function paintAutotune(state, ctx) {
     const phase = String(state.snapshot.autotune_state || "");
     const running = phase === "running";
     const progress = Number(state.snapshot.autotune_progress) || 0;
     const flying = isFlying(state);
+    const noAxis = noAxisSelected(ctx.axesField);
 
     ctx.phase.dataset.phase = phase || "idle";
     ctx.phase.textContent = AUTOTUNE_PHASE_TEXT[phase] || phase;
@@ -525,7 +586,7 @@ Corvus.setupTuning = (function () {
     ctx.bar.dataset.phase = phase;
 
     ctx.startBtn.hidden = running;
-    ctx.startBtn.disabled = ctx.busy || !flying;
+    ctx.startBtn.disabled = ctx.busy || !flying || noAxis;
     ctx.stopBtn.hidden = !running;
     ctx.stopBtn.disabled = ctx.busy || !state.connected;
 
@@ -534,6 +595,12 @@ Corvus.setupTuning = (function () {
     let text = "";
     if (!state.connected) {
       text = "No link to the vehicle. Connect before autotuning.";
+    } else if (noAxis) {
+      // Before the flight checks: the boxes only take a write on the ground,
+      // so "take off first" would send the operator up to find this out.
+      text = state.armed
+        ? "No axis is selected. Land and disarm to tick at least one."
+        : "No axis is selected. Tick at least one above before taking off.";
     } else if (!state.armed) {
       text = "The autotune runs in flight. Arm the vehicle and take off first.";
     } else if (state.landed === 1) {
@@ -546,7 +613,7 @@ Corvus.setupTuning = (function () {
   async function runAutotune(state, enable) {
     const ctx = state.autotune;
     if (!ctx || ctx.busy) return;
-    if (enable && !isFlying(state)) return;
+    if (enable && (!isFlying(state) || noAxisSelected(ctx.axesField))) return;
     ctx.busy = true;
     ctx.paint();
     try {

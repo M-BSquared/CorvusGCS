@@ -60,32 +60,57 @@ const AVIATION = { length: "ft", distance: "nmi", speed: "kn", temperature: "c" 
 function testTheConfigOutranksTheScreen() {
   const c = W.choicesFrom(
     { theme: { name: "blue" }, ui: { scale: 1.1, units: AVIATION, mission_page: true },
-      updates: { check: false } },
+      review: { sensitivity: "strict" }, updates: { check: false } },
     { theme: "green", units: METRIC });
-  assert.deepEqual(c, { theme: "blue", units: AVIATION, missionPage: true, updates: false });
+  assert.deepEqual(c, {
+    theme: "blue", units: AVIATION, sensitivity: "strict", missionPage: true, updates: false,
+  });
 }
 
 function testTheScreenFillsInWhatTheConfigLeavesOut() {
   const c = W.choicesFrom({}, { theme: "green", units: AVIATION });
-  assert.deepEqual(c, { theme: "green", units: AVIATION, missionPage: false, updates: true });
+  assert.deepEqual(c, {
+    theme: "green", units: AVIATION, sensitivity: "normal", missionPage: false, updates: true,
+  });
 }
 
 function testNothingKnownFallsBackToTheDefaults() {
   const c = W.choicesFrom(null, { theme: "no-such-theme" });
   assert.equal(c.theme, Corvus.theme.DEFAULT);
   assert.deepEqual(c.units, METRIC);
+  assert.equal(c.sensitivity, "normal");
   assert.equal(c.updates, true);
+}
+
+function testAnUnknownSensitivityFallsBackToNormal() {
+  const c = W.choicesFrom({ review: { sensitivity: "paranoid" } }, {});
+  assert.equal(c.sensitivity, "normal");
+}
+
+function testTheSetupOffersTheSensitivitiesTheSettingsPageOffers() {
+  // One list, owned by Settings > Analysis; the ids are the backend's.
+  assert.deepEqual(Corvus.sidenav.REVIEW_SENSITIVITIES.map((s) => s.id),
+    ["relaxed", "normal", "strict"]);
+  const src = fs.readFileSync(path.join(SRC, "js", "welcome.js"), "utf8");
+  assert.match(src, /Corvus\.sidenav\.REVIEW_SENSITIVITIES/);
+  assert.ok(!/id: "relaxed"/.test(src), "welcome.js keeps its own copy of the list");
+}
+
+function testTheSensitivityCarriesTheCaution() {
+  const src = fs.readFileSync(path.join(SRC, "js", "welcome.js"), "utf8");
+  assert.match(src, /Errors in the analysis cannot be ruled out\./);
 }
 
 function testFinishPostsOnlyTheKeysTheSetupOwns() {
   const patch = W.configPatch({
-    theme: "pink", units: AVIATION, missionPage: true, updates: false,
+    theme: "pink", units: AVIATION, sensitivity: "relaxed", missionPage: true, updates: false,
   });
   // No `ui.scale`: the interface size is not part of the setup, so Finish must
   // leave whatever size the station already has.
   assert.deepEqual(patch, {
     theme: { name: "pink" },
     ui: { units: AVIATION, mission_page: true },
+    review: { sensitivity: "relaxed" },
     updates: { check: false },
   });
   // All four units every time: the backend replaces `ui.units` as one value.
@@ -138,6 +163,9 @@ const tests = [
   testTheConfigOutranksTheScreen,
   testTheScreenFillsInWhatTheConfigLeavesOut,
   testNothingKnownFallsBackToTheDefaults,
+  testAnUnknownSensitivityFallsBackToNormal,
+  testTheSetupOffersTheSensitivitiesTheSettingsPageOffers,
+  testTheSensitivityCarriesTheCaution,
   testFinishPostsOnlyTheKeysTheSetupOwns,
   testNothingOpensWhenTheSetupIsDone,
   testAnUnreachableBackendOpensNothingAndStillResolves,

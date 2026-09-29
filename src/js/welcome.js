@@ -6,9 +6,9 @@ window.Corvus = window.Corvus || {};
 
   Opens once, on a station that had no config file when Corvus started
   (GET /api/welcome, see corvus/server.py). Its first page has three ways out,
-  each one click: set the station up in three short steps (look, units,
-  workspace), take the settings from a file exported on another station, or
-  skip straight to the map with the defaults.
+  each one click: set the station up in three short steps (look, units and
+  flight review, workspace), take the settings from a file exported on another
+  station, or skip straight to the map with the defaults.
 
   Every choice previews live, through the same modules the Settings page
   uses, and nothing is written until Finish: the config is posted once, then
@@ -36,6 +36,12 @@ Corvus.welcome = (function () {
 
   let open = false;
 
+  // Settings > Analysis owns the list; sidenav.js loads after this file, so it
+  // is looked up when the setup opens rather than here.
+  function sensitivities() {
+    return (Corvus.sidenav && Corvus.sidenav.REVIEW_SENSITIVITIES) || [];
+  }
+
   /**
    * What the steps start from: the config where it says something, and what
    * is on screen where it does not. *live* is {theme, units}. Pure.
@@ -44,19 +50,21 @@ Corvus.welcome = (function () {
     const c = cfg || {};
     const l = live || {};
     const ui = c.ui || {};
+    const saved = String((c.review && c.review.sensitivity) || "");
     return {
       theme: Corvus.theme.fromConfig(c) || (Corvus.theme.isKnown(l.theme) ? l.theme : Corvus.theme.DEFAULT),
       units: Corvus.units.fromConfig(c) || Object.assign({}, l.units || Corvus.units.DEFAULTS),
+      sensitivity: sensitivities().some((s) => s.id === saved) ? saved : "normal",
       missionPage: !!ui.mission_page,
       updates: !(c.updates && c.updates.check === false),
     };
   }
 
   /**
-   * The POST /api/config body for *choices*. `ui` and `updates` are merged
-   * per key by the backend, so this sets exactly these and leaves the rest,
-   * the interface size included: that one is under Settings > Appearance.
-   * Pure.
+   * The POST /api/config body for *choices*. `ui`, `review` and `updates` are
+   * merged per key by the backend, so this sets exactly these and leaves the
+   * rest, the interface size included: that one is under Settings >
+   * Appearance. Pure.
    */
   function configPatch(choices) {
     return {
@@ -65,6 +73,7 @@ Corvus.welcome = (function () {
         units: Object.assign({}, choices.units),
         mission_page: !!choices.missionPage,
       },
+      review: { sensitivity: choices.sensitivity },
       updates: { check: !!choices.updates },
     };
   }
@@ -211,7 +220,7 @@ Corvus.welcome = (function () {
           className: "welcome-card welcome-card-primary",
           icon: "sliders-horizontal",
           title: "Set up this station",
-          desc: "Colour theme, units and workspace.",
+          desc: "Colour theme, units, flight review and workspace.",
           onClick: () => go(0),
         });
         const arrow = document.createElement("span");
@@ -339,6 +348,28 @@ Corvus.welcome = (function () {
           note.textContent = "Display only. Parameters, mission files and everything " +
             "sent to the aircraft stay in the units the autopilot uses.";
           wrap.appendChild(note);
+
+          const review = Corvus.ui.optionCards({
+            ariaLabel: "Flight review sensitivity",
+            columns: 3,
+            value: choices.sensitivity,
+            options: sensitivities(),
+            onChange: (id) => { choices.sensitivity = id; },
+          });
+          review.el.classList.add("welcome-review-cards");
+          wrap.appendChild(Corvus.ui.field({
+            label: "Flight review sensitivity",
+            control: review.el,
+            className: "field-ruled",
+            hint: "How readily a number in a flight log or a telemetry recording " +
+                  "becomes a warning. It can be changed later in Settings under Analysis.",
+          }));
+          const caution = document.createElement("div");
+          caution.className = "welcome-review-caution";
+          caution.textContent = "Errors in the analysis cannot be ruled out. A finding can be " +
+            "wrong, and a review without findings does not prove the aircraft is fit " +
+            "to fly. Check the plots and the aircraft yourself.";
+          wrap.appendChild(caution);
           return wrap;
         },
 

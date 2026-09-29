@@ -595,7 +595,7 @@ async function testRestartSendsCtrlCFirst() {
     await new Promise((r) => setTimeout(r, S.RESTART_GRACE_MS + 50));
     await flushMicrotasks();
     assert.deepEqual(mine().slice(2), [{ name: session, data: "\x03" }, { name: session, data: line }]);
-    assert.match(h.status().textContent || "", /restarted \(stopped with Ctrl-C\)/);
+    assert.match(h.status().textContent || "", /restarted$/);
   }
   assert.equal(h.urls().filter((u) => u === "/api/local/connect").length, 1);
   assert.equal(h.urls().filter((u) => u === "/api/ssh/connect").length, 1);

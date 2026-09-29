@@ -36,6 +36,7 @@ from __future__ import annotations
 from typing import Any
 
 from .param_fields import bitmask, enum, number, present
+from .tuning_config import AXES_HINT
 
 # A field table row is (parameter, label, unit, hint) — same tuple the PX4
 # module uses, so the two read the same way side by side.
@@ -289,6 +290,9 @@ AUTOTUNE_AXES_BITS: list[dict[str, Any]] = [
     {"bit": 3, "label": "Yaw D"},
 ]
 
+# Plane's AUTOTUNE_AXES stops at yaw: the separate yaw D pass is Copter's.
+PLANE_AUTOTUNE_AXES_BITS: list[dict[str, Any]] = AUTOTUNE_AXES_BITS[:3]
+
 COPTER_AUTOTUNE_FIELDS: list[FieldRow] = [
     ("AUTOTUNE_AGGR", "Aggressiveness", "",
      "How much bounce-back the tune accepts before it stops raising a gain. "
@@ -438,10 +442,17 @@ def _autotune_group(values: dict[str, float],
     else:
         return None
 
+    # The axis selection sits next to the start button rather than among the
+    # settings: it is the one choice made before every tune, the way
+    # QGroundControl offers it.
+    bits = PLANE_AUTOTUNE_AXES_BITS if vehicle == "plane" else AUTOTUNE_AXES_BITS
+    axes_field = bitmask("AUTOTUNE_AXES", "Axes to tune", values, bits,
+                         hint=AXES_HINT)
+    axes = None if axes_field is None else {
+        "selectable": True, "label": "Axes to tune", "field": axes_field,
+    }
+
     settings = present([
-        bitmask("AUTOTUNE_AXES", "Axes to tune", values, AUTOTUNE_AXES_BITS,
-                hint="One axis at a time takes longer but is far easier to "
-                     "abort if the aircraft misbehaves."),
         enum("AUTOTUNE_OPTIONS", "Options", values, [
             {"value": 0, "label": "Default"},
             {"value": 1, "label": "Re-tune after a failed attempt"},
@@ -460,6 +471,7 @@ def _autotune_group(values: dict[str, float],
         # "module is off" warning the PX4 page shows never applies here.
         "enabled": True,
         "enable_param": None,
+        "axes": axes,
         "steps": list(steps),
         "sections": ([{"id": "settings", "title": "Autotune settings",
                        "fields": settings}] if settings else []),

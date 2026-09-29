@@ -1952,6 +1952,96 @@ async function testAFinishedAutotuneRereadsTheGainsItWrote() {
     "the tune replaced the gains, so the page re-reads them rather than showing the old ones");
 }
 
+/** The autotune tab of a doc whose autotune takes an axis selection. */
+function selectableAxesDoc(value) {
+  const doc = tuningDoc();
+  doc.groups[2].axes = {
+    selectable: true, label: "Axes to tune",
+    field: {
+      param: "AUTOTUNE_AXES", label: "Axes to tune", kind: "bitmask", value: value,
+      bits: [{ bit: 0, label: "Roll" }, { bit: 1, label: "Pitch" }, { bit: 2, label: "Yaw" }],
+      hint: "Choose on the ground.",
+    },
+  };
+  return doc;
+}
+
+function axisBox(container, param, number) {
+  const wrapper = findByDataset(container, "param", param)
+    .filter((e) => e.tagName === "DIV" && e.className.includes("pform-bits"))[0];
+  return wrapper.querySelectorAll("input").filter((b) => b.dataset.bit === String(number))[0];
+}
+
+async function testTheAutotuneAxesAreChosenBesideTheStartButton() {
+  // QGroundControl's per axis checkboxes: one tune can cover roll alone, then
+  // pitch on the next flight. They sit in the card that starts the tune.
+  const fake = makeFakeTelemetry({ state: DISARMED });
+  const container = await openTuning(fake, selectableAxesDoc(1));
+  fire(findByClass(container, "tune-tab")[2], "click");
+
+  const card = findOneByClass(container, "tune-autotune");
+  assert.ok(findOneByClass(card, "tune-axes"), "the axis row is in the autotune card");
+  assert.equal(axisBox(container, "AUTOTUNE_AXES", 0).checked, true, "roll is selected");
+  assert.equal(axisBox(container, "AUTOTUNE_AXES", 1).checked, false, "pitch is not");
+
+  const pitch = axisBox(container, "AUTOTUNE_AXES", 1);
+  pitch.checked = true;
+  fire(pitch, "change");
+  await flushMicrotasks();
+  const write = fake.postCalls.find((c) => c.url === "/api/params/set");
+  assert.deepEqual(write.payload, { name: "AUTOTUNE_AXES", value: 3 },
+    "ticking pitch writes the axis word the autopilot reads when the tune starts");
+
+  fake.getSubCb()(FLYING);
+  assert.ok(axisBox(container, "AUTOTUNE_AXES", 0).disabled,
+    "armed, the selection is read-only like every other parameter");
+}
+
+async function testAnEmptyAxisSelectionBlocksTheStart() {
+  const fake = makeFakeTelemetry({ state: DISARMED });
+  const container = await openTuning(fake, selectableAxesDoc(1));
+  fire(findByClass(container, "tune-tab")[2], "click");
+
+  const roll = axisBox(container, "AUTOTUNE_AXES", 0);
+  roll.checked = false;
+  fire(roll, "change");
+  await flushMicrotasks();
+
+  const gate = findOneByClass(container, "tune-gate");
+  assert.ok(gate.textContent.includes("No axis"),
+    "the gate says the selection is empty before the operator takes off");
+  assert.ok(gate.textContent.includes("before taking off"));
+
+  fake.getSubCb()(FLYING);
+  assert.ok(startBtn(container).disabled, "a tune with nothing to tune is not started");
+  assert.ok(gate.textContent.includes("Land and disarm"),
+    "and in flight the gate says where the selection can be changed");
+  fire(startBtn(container), "click");
+  await flushMicrotasks();
+  assert.equal(fake.postCalls.filter((c) => c.url === "/api/autotune").length, 0);
+}
+
+async function testAFixedAxisSetIsShownWithItsReason() {
+  // PX4's multicopter autotune has no axis selection. The row is still there,
+  // ticked and greyed, so the operator reads why instead of hunting for it.
+  const doc = tuningDoc();
+  doc.groups[2].axes = {
+    selectable: false, label: "Axes to tune", labels: ["Roll", "Pitch", "Yaw"],
+    reason: "PX4 tunes roll, pitch and yaw in a single run.",
+  };
+  const fake = makeFakeTelemetry({ state: FLYING });
+  const container = await openTuning(fake, doc);
+  fire(findByClass(container, "tune-tab")[2], "click");
+
+  const row = findOneByClass(container, "tune-axes-fixed");
+  assert.ok(row, "the fixed row is rendered");
+  const boxes = row.querySelectorAll("input");
+  assert.equal(boxes.length, 3);
+  assert.ok(boxes.every((b) => b.checked && b.disabled), "all three, and not changeable");
+  assert.ok(textOf(row).includes("single run"), "with the reason beside them");
+  assert.ok(!startBtn(container).disabled, "and the tune itself is still available");
+}
+
 async function testAnAutotuneModuleThatIsOffIsCalledOut() {
   const doc = tuningDoc();
   doc.groups[2].enabled = false;
@@ -3106,6 +3196,9 @@ async function run() {
   await withReset(testAnUnreportedLandedStateDoesNotLockTheAutotuneOut);
   await withReset(testStartingAndStoppingTheAutotune);
   await withReset(testAFinishedAutotuneRereadsTheGainsItWrote);
+  await withReset(testTheAutotuneAxesAreChosenBesideTheStartButton);
+  await withReset(testAnEmptyAxisSelectionBlocksTheStart);
+  await withReset(testAFixedAxisSetIsShownWithItsReason);
   await withReset(testAnAutotuneModuleThatIsOffIsCalledOut);
   await withReset(testAFirmwareWithoutAnAutotuneOffersNoAutotuneTab);
   await withReset(testGainsAreReadOnlyWhileArmed);

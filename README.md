@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.62-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.09.62" />
+  <img src="https://img.shields.io/badge/Version-2026.09.63-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.09.63" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -73,8 +73,8 @@
 - [Screenshots](#screenshots)
 - [Install \& run](#install--run)
   - [The easy way: a ready-made app](#the-easy-way-a-ready-made-app)
-  - [From source](#from-source)
   - [The first start](#the-first-start)
+  - [From source](#from-source)
 - [Connect to your aircraft](#connect-to-your-aircraft)
   - [Run QGroundControl at the same time](#run-qgroundcontrol-at-the-same-time)
   - [One Corvus at a time](#one-corvus-at-a-time)
@@ -368,8 +368,11 @@ On a machine that has never run Corvus, a short setup opens over the map. It
 offers three ways on:
 
 - **Set up this station**: the colour theme, the units
-  (metric, imperial, aviation, or each quantity on its own), whether the
-  Mission planner is in the left rail, and whether Corvus looks for updates.
+  (metric, imperial, aviation, or each quantity on its own), how sensitive
+  the flight review is (Relaxed, Normal or Strict), whether the Mission
+  planner is in the left rail, and whether Corvus looks for updates. Errors
+  in the flight review cannot be ruled out, so check its plots and the
+  aircraft yourself.
   Every choice shows at once, and nothing is saved until **Finish**.
 - **Import settings**: take the settings, and plugins, from a file
   exported on another station (see **Export and import** under
@@ -440,15 +443,17 @@ A conda interpreter cannot be relocated into a bundle and is rejected with a
 clear error. The bundle is ad-hoc signed; set
 `CODESIGN_IDENTITY="Developer ID Application: ..."` to sign it properly.
 
-Signing needs a checkout that is *not* inside a cloud-synced folder. iCloud
-Drive, OneDrive and Dropbox re-apply `com.apple.FinderInfo` to directories
-inside the bundle while the build runs, and `codesign` refuses a bundle
-carrying it. Nothing can win that race in place. The build says so when it
-hits this, and the way out is to put the artifact somewhere the sync agent is
-not:
+The bundle is assembled, signed and verified in a private folder under the
+system temp directory and only then moved to `dist/`. That is what lets a
+checkout inside a cloud-synced folder build at all: iCloud Drive (including a
+synced `~/Documents`), OneDrive and Dropbox write Finder metadata into a bundle
+while it is being built, and `codesign` refuses a bundle carrying it. The
+`.dmg` is sealed and safe to hand out from anywhere. A loose `.app` left in a
+synced `dist/` still runs on that Mac, but give other Macs the `.dmg`. To
+deliver somewhere other than `dist/`:
 
 ```bash
-CORVUS_DIST=/tmp/corvus-dist ./build-macos-app.sh --dmg
+CORVUS_DIST=/tmp/corvus-dist ./build.sh --dmg
 ```
 
 **Windows** needs a 64-bit python.org CPython 3.12+ on `PATH` (a conda
@@ -902,9 +907,9 @@ to stay there, so its Hold gets a ring, a radius and a direction; a multicopter
 simply hovers over it, so its Hold gets none. That is the only distinction the
 planner makes: a quadcopter, hexacopter or octocopter is a multicopter, and all
 of them are planned the same way. While an aircraft is connected it sets this
-itself and the list names it the way the top bar does ("Quadcopter
-(multicopter)"), and the choice is saved with the plan, so a mission drawn at
-the desk without the drone already looks the way it will be flown.
+itself and the list names it the way the top bar does ("Quadcopter"), and the
+choice is saved with the plan, so a mission drawn at the desk without the drone
+already looks the way it will be flown.
 
 The same choice decides how the altitude profile draws the start and the end
 of a flight, because the two aircraft do them in opposite ways.
@@ -1204,10 +1209,13 @@ aircraft is no longer flying what you are looking at.
   vehicle has to be armed and hovering. The page says that up front, states the
   preconditions before you take off, and refuses to start on the ground. On PX4
   it is a command, and the page follows its progress to a stop button that works
-  throughout; PX4 v1.16 to v1.18 expose no separate roll, pitch or yaw selection.
-  On ArduPilot the autotune *is* a flight mode, so starting it switches the
-  vehicle into AUTOTUNE, stopping it returns to the mode you were in, and the
-  autopilot narrates the run in the console.
+  throughout. On ArduPilot the autotune *is* a flight mode, so starting it
+  switches the vehicle into AUTOTUNE, stopping it returns to the mode you were
+  in, and the autopilot narrates the run in the console. The axes to tune sit
+  right above the start button: on ArduPilot and on a PX4 fixed wing you tick
+  roll, pitch and yaw separately, so one flight can tune one axis. A PX4
+  multicopter tunes all three in one run (v1.16 to v1.18 have no axis
+  selection), so its row shows the three greyed out with that reason.
 - **Telemetry Radio**: program a SiK radio pair the way Mission Planner's SiK
   Radio page does, without leaving Corvus. Pick the port, press Load, and both
   radios come back side by side: the one on your cable, and the one on the

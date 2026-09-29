@@ -786,6 +786,12 @@ svg { display: block; }
   gap: 12px 14px;
 }
 [data-vw~="max-600"] .welcome-units { grid-template-columns: minmax(0, 1fr); }
+/* The sensitivities are described in a sentence each, too long for one line in
+   a third of the dialog, so here they wrap rather than end in an ellipsis. */
+.welcome-review-cards .option-card { align-items: flex-start; }
+.welcome-review-cards .option-card-desc { white-space: normal; line-height: 1.35; }
+/* A plain sentence, one step louder than the hint above it. */
+.welcome-review-caution { font-size: 11.5px; line-height: 1.45; font-weight: 500; color: var(--text-1); }
 .welcome-outro { margin-top: 4px; }
 
 /* One keyed map service in the API keys dialog: the field, then the saved

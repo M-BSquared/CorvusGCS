@@ -43,6 +43,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .param_fields import bitmask
+
 # MAV_LANDED_STATE, the autopilot's own answer to "is it flying". 0 means the
 # firmware does not publish EXTENDED_SYS_STATE, which is never treated as "on
 # the ground" — an unknown state must not block a command PX4 would accept.
@@ -64,16 +66,25 @@ AUTOTUNE_APPLY_OPTIONS: list[dict[str, Any]] = [
     {"value": 2, "label": "Immediately, in flight"},
 ]
 
-# FW_AT_AXES — the one autotune that does take an axis selection (bitmask:
-# 1 roll, 2 pitch, 4 yaw). The multicopter autotune has no equivalent; it
-# always tunes all three, which is why this page offers no per-axis button.
-FW_AXES_OPTIONS: list[dict[str, Any]] = [
-    {"value": 1, "label": "Roll"},
-    {"value": 2, "label": "Pitch"},
-    {"value": 3, "label": "Roll and pitch"},
-    {"value": 4, "label": "Yaw"},
-    {"value": 7, "label": "Roll, pitch and yaw"},
+# FW_AT_AXES — the one PX4 autotune that takes an axis selection, as a bitmask
+# (bit 0 roll, bit 1 pitch, bit 2 yaw). An enum of the "usual" combinations
+# could not show roll and yaw without pitch, which the firmware accepts.
+FW_AXES_BITS: list[dict[str, Any]] = [
+    {"bit": 0, "label": "Roll"},
+    {"bit": 1, "label": "Pitch"},
+    {"bit": 2, "label": "Yaw"},
 ]
+
+# The multicopter autotune has no selection in v1.16, v1.17 or v1.18: it runs
+# roll, pitch and yaw one after another, and does not start at all when the
+# command names an axis. Shown as a fixed row rather than left out, because an
+# operator who knows QGroundControl's per axis checkboxes (ArduPilot's) will
+# look for them here.
+MC_AUTOTUNE_AXES: list[str] = ["Roll", "Pitch", "Yaw"]
+
+AXES_HINT = ("Choose on the ground: parameters cannot be written while armed. "
+             "One axis per flight takes longer, but a tune that misbehaves is "
+             "easier to abort.")
 
 
 # ---------------------------------------------------------------------------
@@ -308,6 +319,32 @@ def _autotune_family(values: dict[str, float]) -> tuple[str, str] | None:
     return None
 
 
+def _autotune_axes(prefix: str, values: dict[str, float]) -> dict[str, Any] | None:
+    """Which axes the next tune covers, and whether the operator can choose.
+
+    ``{"selectable": True, "label", "field"}`` when the firmware takes
+    a selection (``field`` is an ordinary bitmask field, written through
+    ``POST /api/params/set`` like any other), ``{"selectable": False, "label",
+    "labels", "reason"}`` when it tunes a fixed set, and ``None`` when a fixed
+    wing did not answer for ``FW_AT_AXES``. The same shape comes from
+    :func:`corvus.ardupilot_tuning.build`.
+    """
+    if prefix == "FW":
+        field = bitmask("FW_AT_AXES", "Axes to tune", values, FW_AXES_BITS,
+                        hint=AXES_HINT)
+        if field is None:
+            return None
+        return {"selectable": True, "label": "Axes to tune", "field": field}
+    return {
+        "selectable": False, "label": "Axes to tune",
+        "labels": list(MC_AUTOTUNE_AXES),
+        "reason": "PX4 tunes roll, pitch and yaw one after the other in a single "
+                  "run. Its multicopter autotune has no axis selection, so one "
+                  "axis cannot be tuned on its own. Any gain can still be set by "
+                  "hand on the Rate Controller tab.",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Parameter list
 # ---------------------------------------------------------------------------
@@ -491,12 +528,6 @@ def _autotune_group(values: dict[str, float]) -> dict[str, Any] | None:
               hint="When the result reaches the controller. Applying in flight is "
                    "supported but leaves you flying gains nobody has checked."),
     ])
-    if prefix == "FW":
-        axes = _enum("FW_AT_AXES", "Axes to tune", values, FW_AXES_OPTIONS,
-                     hint="The fixed-wing autotune takes an axis selection; the "
-                          "multicopter one always tunes all three.")
-        if axes is not None:
-            settings.append(axes)
     table = MC_AUTOTUNE_FIELDS if prefix == "MC" else FW_AUTOTUNE_FIELDS
     settings.extend(_fields(table, values))
 
@@ -508,6 +539,7 @@ def _autotune_group(values: dict[str, float]) -> dict[str, Any] | None:
         "family": prefix,
         "enabled": enabled,
         "enable_param": enable_param if enable_param in values else None,
+        "axes": _autotune_axes(prefix, values),
         "steps": list(AUTOTUNE_STEPS),
         "sections": ([{"id": "settings", "title": "Autotune settings",
                        "fields": settings}] if settings else []),
@@ -528,8 +560,9 @@ def build(values: dict[str, float]) -> dict[str, Any]:
 
     ``groups`` — ordered list of ``{id, title, hint, kind, sections, charts}``,
     innermost control loop first. ``kind`` is ``"fields"`` for a controller and
-    ``"autotune"`` for the autotune group, which carries its preconditions and
-    its own settings alongside its fields. Each field carries the PX4 parameter
+    ``"autotune"`` for the autotune group, which carries its preconditions,
+    its axis selection (``axes``, see :func:`_autotune_axes`) and its own
+    settings alongside its fields. Each field carries the PX4 parameter
     name it writes, so the frontend applies edits through the existing
     ``POST /api/params/set``.
     """

@@ -842,7 +842,7 @@ function testTheAircraftPickerNamesTheConnectedAircraftAsTheBarDoes() {
     withVehicle(() => state, () => {
       mission.setPlan({ items: [] });
       const label = (value) => mission._aircraftOptions().find((o) => o.value === value).label;
-      assert.strictEqual(label("multirotor"), "Quadcopter (multicopter)",
+      assert.strictEqual(label("multirotor"), "Quadcopter",
         "the bar says Quadcopter; the picker must not seem to say something else");
       assert.strictEqual(label("fixed_wing"), "Fixed wing", "the others keep their own names");
 

@@ -2295,5 +2295,9 @@ Corvus.sidenav = (function () {
     renderLeftNav();
   }
 
-  return { init, setMissionEnabled, isMissionEnabled: () => missionEnabled };
+  return {
+    init, setMissionEnabled, isMissionEnabled: () => missionEnabled,
+    // The first start setup offers the same choice (welcome.js).
+    REVIEW_SENSITIVITIES,
+  };
 })();
