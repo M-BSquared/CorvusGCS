@@ -17,6 +17,7 @@ Mirrors the fakes in tests/test_mavlink_takeoff.py.
 from __future__ import annotations
 
 import threading
+import time
 from types import SimpleNamespace
 from typing import Any
 from collections.abc import Callable
@@ -24,7 +25,7 @@ from collections.abc import Callable
 import pytest
 from pymavlink import mavutil
 
-from corvus import mission
+from corvus import autopilot, mavlink_missions, mission
 from corvus.mavlink_bridge import (
     MISSION_DO_FRAME,
     PX4_FALLBACK_MODE_VALUES,
@@ -105,18 +106,49 @@ def mission_ack(ack_type: int) -> FakeMessage:
     )
 
 
+# MISSION_STATE values the vehicle reports its verdict in.
+NO_MISSION = 1
+NOT_STARTED = 2
+
+
+def mission_current(total: int, state: int) -> FakeMessage:
+    return FakeMessage(
+        message_type="MISSION_CURRENT", seq=0, total=total,
+        mission_state=state, mission_mode=0, mission_id=0,
+    )
+
+
 def answer_the_handshake(bridge: MavlinkBridge,
-                         ack_type: int = mavutil.mavlink.MAV_MISSION_ACCEPTED) -> None:
+                         ack_type: int = mavutil.mavlink.MAV_MISSION_ACCEPTED,
+                         verdict: int | None = NOT_STARTED,
+                         reason: str = "") -> None:
     """Play the vehicle's side of an upload, on its own thread.
 
     It has to be a thread: the bridge sends MISSION_COUNT while holding its
     send lock, and serving an item request takes that same lock.
+
+    After the ACK the vehicle keeps reporting *verdict* in MISSION_CURRENT,
+    as PX4 does at 1 Hz, until the bridge has stopped waiting for one (None:
+    it says nothing, like a firmware without MISSION_STATE). *reason* goes
+    out as a critical STATUSTEXT first, the way a rejection's reason would.
     """
     def respond(count: int) -> None:
         def run() -> None:
             for seq in range(count):
                 bridge._handle_mission_request(item_request(seq), as_int=True)
             bridge._handle_mission_ack(mission_ack(ack_type))
+            if not count or ack_type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
+                return
+            if reason:
+                bridge._console_publish("STATUSTEXT", reason, "critical")
+            if verdict is None:
+                return
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                time.sleep(0.05)
+                if bridge._mission_verdict is None:
+                    break
+                bridge._handle_mission_current(mission_current(count, verdict))
         threading.Thread(target=run, daemon=True).start()
 
     bridge._conn.mav.on_count = respond
@@ -127,8 +159,8 @@ def sample_items() -> list[dict[str, Any]]:
         "home": {"lat": 48.08, "lon": 11.64},
         "items": [
             {"type": "takeoff", "lat": 48.08, "lon": 11.64, "alt": 25},
-            {"type": "loiter_turns", "lat": 48.09, "lon": 11.65, "alt": 40,
-             "turns": 2, "radius": 60},
+            {"type": "loiter_time", "lat": 48.09, "lon": 11.65, "alt": 40,
+             "seconds": 20, "radius": 60},
             {"type": "rtl"},
         ],
     })
@@ -151,7 +183,7 @@ def test_an_accepted_upload_sends_every_item_in_order() -> None:
     assert [entry[2] for entry in sent] == [0, 1, 2], "sequence numbers in draw order"
     assert [entry[4] for entry in sent] == [
         mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-        mavutil.mavlink.MAV_CMD_NAV_LOITER_TURNS,
+        mavutil.mavlink.MAV_CMD_NAV_LOITER_TIME,
         mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH,
     ]
 
@@ -203,9 +235,150 @@ def test_navigation_items_travel_in_the_relative_altitude_frame() -> None:
     bridge.upload_mission_plan(sample_items())
 
     sent = bridge._conn.mav.items
-    assert [entry[3] for entry in sent] == [RELATIVE_FRAME] * 3
+    assert [entry[3] for entry in sent[:2]] == [RELATIVE_FRAME] * 2
     assert sent[0][13] == pytest.approx(25.0), "takeoff altitude, unconverted"
     assert sent[1][13] == pytest.approx(40.0)
+
+
+def test_a_return_travels_in_the_mission_frame() -> None:
+    """Regression: every plan ending in RETURN failed to upload to PX4.
+
+    PX4 v1.16 to v1.18 parse NAV_RETURN_TO_LAUNCH only in MAV_FRAME_MISSION.
+    Sent in the relative-alt frame it came back UNSUPPORTED, and on v1.18 as
+    INVALID_PARAM5 for the 0/0 it carries as a position.
+    """
+    bridge = ready_bridge()
+    answer_the_handshake(bridge)
+
+    assert bridge.upload_mission_plan(sample_items())
+
+    ret = bridge._conn.mav.items[2]
+    assert ret[4] == mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH
+    assert ret[3] == MISSION_DO_FRAME
+
+
+def test_a_circle_is_refused_on_px4_before_anything_is_sent() -> None:
+    """PX4 has no NAV_LOITER_TURNS in a mission; the whole transfer would
+    fail with a bare UNSUPPORTED that names neither the item nor a way out."""
+    bridge = ready_bridge()
+    answer_the_handshake(bridge)
+    plan, _error = mission.validate_plan({"items": [
+        {"type": "takeoff", "lat": 48.08, "lon": 11.64, "alt": 25},
+        {"type": "loiter_turns", "lat": 48.09, "lon": 11.65, "alt": 40},
+        {"type": "rtl"},
+    ]})
+    assert plan is not None
+
+    assert not bridge.upload_mission_plan(mission.plan_to_items(plan))
+
+    assert bridge._conn.mav.counts == [], "nothing reaches the vehicle"
+    error = bridge.get_last_command_error()
+    assert "Circle (item 2)" in error
+    assert "PX4" in error
+
+
+def test_a_circle_still_goes_to_ardupilot() -> None:
+    """ArduCopter, Plane and Rover all fly NAV_LOITER_TURNS."""
+    bridge = ready_bridge()
+    bridge._dialect = autopilot.dialect_for_stack(autopilot.STACK_ARDUPILOT)
+    answer_the_handshake(bridge, verdict=None)
+    plan, _error = mission.validate_plan({"items": [
+        {"type": "loiter_turns", "lat": 48.09, "lon": 11.65, "alt": 40},
+    ]})
+    assert plan is not None
+
+    assert bridge.upload_mission_plan(mission.plan_to_items(plan))
+    assert bridge._conn.mav.items[1][4] == mavutil.mavlink.MAV_CMD_NAV_LOITER_TURNS
+
+
+def test_the_capabilities_name_the_items_a_stack_will_not_fly() -> None:
+    bridge = ready_bridge()
+    assert set(bridge.capabilities()["mission_unsupported"]) == {"loiter_turns"}
+    bridge._dialect = autopilot.dialect_for_stack(autopilot.STACK_ARDUPILOT)
+    assert bridge.capabilities()["mission_unsupported"] == {}
+
+
+# ---------------------------------------------------------------------------
+# the verdict after the ACK (PX4's feasibility check)
+# ---------------------------------------------------------------------------
+
+def test_a_mission_px4_stores_but_will_not_fly_fails_the_upload() -> None:
+    """PX4 ACKs the transfer and only then checks the mission. A rejection
+    shows as MISSION_STATE NO_MISSION, and used to be reported as a success."""
+    bridge = ready_bridge()
+    bridge._store.update(home=[11.64, 48.08])
+    answer_the_handshake(bridge, verdict=NO_MISSION,
+                         reason="Mission rejected: Landing waypoint/pattern required.")
+
+    assert not bridge.upload_mission_plan(sample_items())
+
+    assert bridge.get_last_command_error() == (
+        "The vehicle rejected the mission: Landing waypoint/pattern required.")
+
+
+def test_a_rejection_with_no_reason_and_no_home_says_so() -> None:
+    """PX4 v1.18 sends the reason as an EVENT only. With no home yet, the
+    station can name the usual cause itself."""
+    bridge = ready_bridge()
+    answer_the_handshake(bridge, verdict=NO_MISSION)
+
+    assert not bridge.upload_mission_plan(sample_items())
+
+    assert "no home position" in bridge.get_last_command_error()
+
+
+def test_a_rejection_with_no_reason_but_a_home_points_at_the_usual_causes() -> None:
+    bridge = ready_bridge()
+    bridge._store.update(home=[11.64, 48.08])
+    answer_the_handshake(bridge, verdict=NO_MISSION)
+
+    assert not bridge.upload_mission_plan(sample_items())
+
+    error = bridge.get_last_command_error()
+    assert error.startswith("The vehicle stored the mission but will not fly it.")
+    assert "event log" in error
+
+
+def test_a_report_from_before_the_navigator_checked_is_not_the_verdict() -> None:
+    """A MISSION_CURRENT put together in the moment after the ACK can still
+    carry the previous mission's rejection. Read as the verdict, it would fail
+    a good upload."""
+    bridge = ready_bridge()
+
+    def respond(count: int) -> None:
+        def run() -> None:
+            for seq in range(count):
+                bridge._handle_mission_request(item_request(seq), as_int=True)
+            bridge._handle_mission_ack(mission_ack(mavutil.mavlink.MAV_MISSION_ACCEPTED))
+            bridge._handle_mission_current(mission_current(count, NO_MISSION))
+            time.sleep(0.5)
+            while bridge._mission_verdict is not None:
+                bridge._handle_mission_current(mission_current(count, NOT_STARTED))
+                time.sleep(0.05)
+        threading.Thread(target=run, daemon=True).start()
+
+    bridge._conn.mav.on_count = respond
+
+    assert bridge.upload_mission_plan(sample_items())
+
+
+def test_a_vehicle_that_reports_no_verdict_is_taken_at_its_ack(monkeypatch) -> None:
+    monkeypatch.setattr(mavlink_missions, "MISSION_VERDICT_WAIT_S", 0.4)
+    bridge = ready_bridge()
+    answer_the_handshake(bridge, verdict=None)
+
+    assert bridge.upload_mission_plan(sample_items())
+    assert bridge._mission_verdict is None, "nothing left armed for the receive thread"
+
+
+def test_a_stack_without_a_verdict_is_not_waited_for() -> None:
+    bridge = ready_bridge()
+    bridge._dialect = autopilot.dialect_for_stack(autopilot.STACK_ARDUPILOT)
+    answer_the_handshake(bridge, verdict=None)
+
+    started = time.monotonic()
+    assert bridge.upload_mission_plan(sample_items())
+    assert time.monotonic() - started < mavlink_missions.MISSION_VERDICT_WAIT_S / 2
 
 
 def test_a_speed_change_travels_in_the_mission_frame() -> None:

@@ -107,9 +107,19 @@ AppImage mount requires.
   stdlib *contains* one; copying it would clobber the venv's).
 - Generates `Info.plist` and the `.icns` from `assets/` at build time, both
   with the version read from `VERSION`.
-- Ships an unsigned, un-notarized bundle. Say so plainly in the build output:
-  first launch needs right-click -> Open (or `xattr -dr com.apple.quarantine`)
-  unless a Developer ID is supplied via `CODESIGN_IDENTITY`.
+- Signs **inside out, last**: `Python.app` stub, then the
+  `Python.framework/Versions/X.Y` it sits in, then the `.app`, after every
+  file in them is final. Anything written into a bundle after its seal
+  (an `Info.plist` edit, an icon) leaves a signature that runs fine on the
+  build machine and reads as "is damaged" on every Mac that downloads it,
+  because only a quarantined copy meets Gatekeeper. The build fails unless
+  `codesign --verify --deep --strict` passes on the `.app` and on the copy
+  inside the `.dmg`; never weaken that check to get a build through.
+- Ships an ad-hoc signed, un-notarized bundle. Say so plainly in the build
+  output: a downloaded copy is blocked on first launch until the operator
+  clicks Open Anyway in System Settings > Privacy & Security (or runs
+  `xattr -dr com.apple.quarantine`), unless a Developer ID is supplied via
+  `CODESIGN_IDENTITY`. Right-click -> Open no longer works on macOS 15.
 
 ## 4. Version control (consumer)
 

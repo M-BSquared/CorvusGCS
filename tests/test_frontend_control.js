@@ -371,7 +371,7 @@ async function testChannelBarsFollowTheTelemetry() {
   const rows = findByClass(container, "rc-channel");
   assert.equal(rows.length, 8, "one bar per delivered channel");
   assert.equal(findOneByClass(rows[0], "rc-channel-value").textContent, "1100 µs");
-  assert.equal(findOneByClass(rows[2], "rc-channel-fill").style.width, "83.3%",
+  assert.equal(findOneByClass(rows[2], "rc-channel-fill").style.transform, "scaleX(0.8333)",
     "1900 us sits five-sixths up the 900-2100 scale");
   assert.equal(findOneByClass(container, "rc-monitor-state").dataset.state, "ok");
   assert.ok(findOneByClass(container, "rc-monitor-state-label").textContent.includes("82%"),

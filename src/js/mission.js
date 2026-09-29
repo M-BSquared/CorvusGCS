@@ -89,6 +89,14 @@ Corvus.mission = (function () {
   // The lowest a multicopter's landing descent may start. Mirrors
   // MISSION_APPROACH_MIN_M in corvus/mission.py, which says why.
   const APPROACH_MIN_M = 3;
+  // How far the drawn start may be from the connected aircraft before the
+  // planner says so. A fix wanders a few metres with the aircraft standing
+  // still; tens of metres is an aircraft standing somewhere else.
+  const START_OFFSET_WARN_M = 25;
+  // How far the aircraft has to move before a start that follows it moves
+  // too. Below this it is the fix wandering, and every move of the start is a
+  // redraw of the route, the terrain under it and the profile.
+  const START_FOLLOW_M = 3;
 
   // Which way round an orbit is flown. Two things, not a range, so it is a
   // picker rather than a number field — and PX4 carries it as the SIGN of the
@@ -130,6 +138,8 @@ Corvus.mission = (function () {
     loiter_turns: {
       label: "Circle", icon: "rotate-cw", position: true, color: "warning",
       hint: "Orbit this point a set number of times, then continue.",
+      // What to use on a stack that will not fly one (see missionRefusals).
+      instead: "Use HOLD to stay at a point for a set time instead.",
       hoverHint: "Hold over this point, then continue. This aircraft holds the point instead "
         + "of circling it, so the radius and direction stay in the plan but are not flown.",
       params: {
@@ -193,9 +203,15 @@ Corvus.mission = (function () {
   // one place, and which one to press first was a question the operator had
   // to be told the answer to. START places both: where the aircraft stands,
   // and the climb from there that is the mission's first item.
+  //
+  // The AIRCRAFT button is the other way to place it: not a tool that waits for a
+  // click but a switch, which puts the start where the connected aircraft
+  // stands and keeps it there (see "WHERE THE AIRCRAFT STARTS").
   const TOOLS = [
     { id: "select", icon: "mouse-pointer-2", label: "SELECT", title: "Select and move points" },
     { id: "home", icon: "plane-takeoff", label: "START", title: "Set the start: the aircraft takes off here" },
+    { id: "vehicle_start", icon: "locate-fixed", label: "AIRCRAFT",
+      title: "Start where the connected aircraft stands, and follow it" },
     { id: "divider" },
     { id: "waypoint", icon: "map-pin", label: "POINT", title: "Add a waypoint" },
     { id: "loiter_turns", icon: "rotate-cw", label: "CIRCLE", title: "Add a circle (orbit)" },
@@ -400,6 +416,119 @@ Corvus.mission = (function () {
     return (aircraft && spec.hints && spec.hints[aircraft]) || spec.hint;
   }
 
+  /** What the top bar calls a MAV_TYPE name ("Quadcopter"), or "". One table
+   *  for the whole app, in topbar.js. */
+  function vehicleTypeName(vehicleType) {
+    const topbar = Corvus.topbar;
+    if (!vehicleType || !topbar || typeof topbar.vehicleTypeLabel !== "function") return "";
+    return String(topbar.vehicleTypeLabel(String(vehicleType)) || "");
+  }
+
+  /** The aircraft picker's choices. While a connected aircraft sets the kind,
+   *  its entry is named as that aircraft, the way the top bar names it: the
+   *  plan only tells an aircraft that hovers from one that circles, and a
+   *  picker saying "Multicopter" under a bar saying "Quadcopter" read as two
+   *  different answers to one question. */
+  function aircraftOptions() {
+    const state = aircraftLocked ? connectedState() : null;
+    const named = state ? vehicleTypeName(state.vehicle_type) : "";
+    return [{ value: "", label: "Not set" }].concat(AIRCRAFT.map((entry) => {
+      const own = named && entry.value === aircraft
+        && named.toLowerCase() !== entry.label.toLowerCase();
+      return {
+        value: entry.value,
+        label: own ? `${named} (${entry.label.toLowerCase()})` : entry.label,
+      };
+    }));
+  }
+
+  /*
+    WHERE THE AIRCRAFT STARTS
+
+    The start used to be only a point the operator clicked, and nothing on
+    this map said where the aircraft actually stands. But the aircraft does
+    not fly to the start before it climbs: a multicopter takes off where it
+    is (PX4 then flies over to the takeoff point, ArduPilot goes straight on
+    to the first waypoint), and every height in the plan is measured from
+    where it armed. A start drawn a hundred metres off is a route flown a
+    hundred metres off, over ground the profile never showed.
+
+    So the aircraft is drawn here, a start away from it is a warning, and the
+    AIRCRAFT button ties the start to it: the start and the takeoff on it
+    move to the aircraft and follow it while it is carried to the field. On
+    the ground that is its position; once armed it is its home, which is
+    where the mission's heights are measured from. Placing the start by hand
+    (START, or a drag) lets go of the aircraft again.
+  */
+
+  /** A telemetry [lon, lat] as {lat, lon}, or null for none or 0/0. */
+  function lngLatPoint(value) {
+    if (!Array.isArray(value) || value.length < 2) return null;
+    const lon = Number(value[0]);
+    const lat = Number(value[1]);
+    if (!isFinite(lat) || !isFinite(lon) || (lat === 0 && lon === 0)) return null;
+    if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+    return { lat, lon };
+  }
+
+  /** Where the connected aircraft takes off from, as {lat, lon}, or null. */
+  function vehicleStart(state) {
+    const s = state === undefined ? connectedState() : (state && state.connected ? state : null);
+    if (!s) return null;
+    if (s.armed) return lngLatPoint(s.home) || lngLatPoint(s.position);
+    return lngLatPoint(s.position);
+  }
+
+  /** How far the drawn start is from the connected aircraft, in metres, or
+   *  null when there is nothing to compare (or the start follows it). */
+  function startOffsetM(state) {
+    if (!home || startAtVehicle) return null;
+    const at = vehicleStart(state);
+    return at ? distanceM(home, at) : null;
+  }
+
+  /** Tie the start to the connected aircraft, or let go of it. Tied, it is
+   *  put where the aircraft is right away. Let go, it stays where it is. */
+  function setStartAtVehicle(on) {
+    startAtVehicle = !!on;
+    if (startAtVehicle) followVehicleStart(null, true);
+    return startAtVehicle;
+  }
+
+  /** Move a start that follows the aircraft to where the aircraft is now.
+   *  True when it moved; *force* moves it however little that is. */
+  function followVehicleStart(state, force) {
+    if (!startAtVehicle) return false;
+    const at = vehicleStart(state == null ? undefined : state);
+    if (!at) return false;
+    if (!force && home && distanceM(home, at) < START_FOLLOW_M) return false;
+    placeStart({ lat: at.lat, lon: at.lon }, true);
+    return true;
+  }
+
+  /** Ask the connected stack which item types it will not fly. Once per
+   *  stack: a vehicle does not change its mission support under a page. */
+  function loadRefusals() {
+    const state = connectedState();
+    const stack = state ? String(state.autopilot_stack || "") : "";
+    if (stack === refusalStack) return;
+    refusalStack = stack;
+    missionRefusals = {};
+    if (!stack || !Corvus.capabilities || typeof Corvus.capabilities.get !== "function") return;
+    Corvus.capabilities.get().then((caps) => {
+      if (destroyed || refusalStack !== stack) return;
+      const refused = caps && caps.mission_unsupported;
+      missionRefusals = refused && typeof refused === "object" ? refused : {};
+      refreshAll();
+    }).catch(() => {});
+  }
+
+  /** Why the connected stack will not fly *type*, or "". */
+  function refusalOf(type) {
+    const reason = missionRefusals[type];
+    return typeof reason === "string" ? reason : "";
+  }
+
   const EARTH_RADIUS_M = 6371008.8;
   const DEFAULT_CENTER = [11.640969, 48.080217];   // same fallback as the Home map
   // Only reached when there is no Home map to take a view from — see
@@ -486,6 +615,21 @@ Corvus.mission = (function () {
   // parameters, and parameters do not change under a page that is drawing.
   let returnProfile = null;
   let returnToken = 0;
+  // The start follows the connected aircraft instead of a point drawn on the
+  // map (see "WHERE THE AIRCRAFT STARTS"). Saved with the plan.
+  let startAtVehicle = false;
+  // The connected aircraft, drawn on this map, or null.
+  let vehicleMarker = null;
+  // Plan item types the connected stack will not fly, with the reason
+  // (GET /api/mavlink/capabilities, mission_unsupported), and the stack that
+  // answer is for. Empty with nothing connected: unknown is allowed, and the
+  // upload still refuses with the same reason.
+  let missionRefusals = {};
+  let refusalStack = null;
+  // What the last telemetry frame said about the aircraft and the start, so
+  // a frame that changes neither costs nothing.
+  let vehicleSeen = false;
+  let offsetFar = false;
   // True while a move the OPERATOR started is in flight, so only those are
   // reported back as the view this map was left in.
   let aiming = false;
@@ -859,6 +1003,7 @@ Corvus.mission = (function () {
       if (home.elevation != null) plan.home.elevation = home.elevation;
     }
     if (aircraft) plan.aircraft = aircraft;
+    if (startAtVehicle) plan.start_at_vehicle = true;
     return plan;
   }
 
@@ -909,6 +1054,10 @@ Corvus.mission = (function () {
     if (start != null && items.length && items[0].speed == null) {
       items[0].speed = clampNumber(start, SPEED_MIN_MS, SPEED_MAX_MS, SPEED_MIN_MS);
     }
+    // A plan saved to start at the aircraft starts at THIS one: the home in
+    // the file is only where an aircraft stood when it was saved.
+    startAtVehicle = !!(plan && plan.start_at_vehicle === true);
+    followVehicleStart(null, true);
   }
 
   /** A point's name as corvus/mission.py's clean_point_name stores it, or ""
@@ -968,6 +1117,15 @@ Corvus.mission = (function () {
    *  rather than letting the operator build one and warning afterwards. */
   function toolBlocked(id) {
     if (id === "select" || id === "home") return null;
+    if (id === "vehicle_start") {
+      // Always free to switch off, whatever the link is doing.
+      if (startAtVehicle) return null;
+      if (!connectedState()) return "Connect an aircraft first. The start is then put where it stands.";
+      if (!vehicleStart()) return "The aircraft has not reported a position yet.";
+      return null;
+    }
+    const refused = refusalOf(id);
+    if (refused && TYPES[id]) return `${refused}. ${TYPES[id].instead || ""}`.trim();
     if (!home) return "Set the start first. The mission begins there.";
     if (ENDS[id]) {
       const end = endIndex();
@@ -1016,7 +1174,7 @@ Corvus.mission = (function () {
    *  standing on the start moves along; a plan with no takeoff at all gets
    *  one as its first item. A takeoff somewhere else (an older file) is left
    *  where it was drawn, since a second one would be a climb in mid air. */
-  function placeStart(lngLat) {
+  function placeStart(lngLat, keepSelection) {
     const lat = lngLat.lat;
     const lon = lngLat.lng != null ? lngLat.lng : lngLat.lon;
     const tied = startTakeoff();
@@ -1025,7 +1183,9 @@ Corvus.mission = (function () {
     if (tied) {
       tied.lat = lat;
       tied.lon = lon;
-      selectedId = tied.id;
+      // A start that follows the aircraft moves on its own, and must not
+      // pull the editor off whatever the operator is working on.
+      if (!keepSelection) selectedId = tied.id;
       return tied;
     }
     if (items.some((item) => item.type === "takeoff")) return null;
@@ -1040,6 +1200,7 @@ Corvus.mission = (function () {
     if (tied) removeItem(tied.id);
     home = null;
     homeElevation = null;
+    startAtVehicle = false;
   }
 
   /** The slots a moved item may land in. The start's takeoff stays first and
@@ -1306,6 +1467,11 @@ Corvus.mission = (function () {
     hovers = vehicleHovers();
     adoptVehicleAircraft();
     loadReturnProfile();
+    loadRefusals();
+    followVehicleStart(null, false);
+    vehicleSeen = vehicleStart() != null;
+    offsetFar = (startOffsetM() || 0) > START_OFFSET_WARN_M;
+    drawVehicle();
     if (Corvus.telemetry && typeof Corvus.telemetry.getState === "function") {
       onVehicleMission(Corvus.telemetry.getState());
     }
@@ -1313,18 +1479,44 @@ Corvus.mission = (function () {
       vehicleUnsub = Corvus.telemetry.subscribe((frame) => {
         if (destroyed) return;
         onVehicleMission(frame);
-        const next = vehicleHovers();
-        const wasLocked = aircraftLocked;
-        const adopted = adoptVehicleAircraft();
-        if (aircraftLocked !== wasLocked) loadReturnProfile();
-        if (next === hovers && !adopted) return;
-        hovers = next;
-        refreshAll();
+        onVehicleFrame(frame);
       });
     }
     // On the DOCUMENT so Escape leaves a placement tool from anywhere on the
     // page — which is also why it cannot stay on while another page is up.
     document.addEventListener("keydown", onKey, true);
+  }
+
+  /** Everything a telemetry frame can change on this page besides the
+   *  mission's progress: the aircraft's mark, a start that follows it, the
+   *  kind of aircraft, what the stack refuses, and the warnings and tools
+   *  that depend on where it stands. Only a CHANGE redraws: frames arrive
+   *  many times a second. */
+  function onVehicleFrame(frame) {
+    drawVehicle(frame);
+    const state = frame && frame.connected ? frame : null;
+    loadRefusals();
+    const moved = followVehicleStart(state, false);
+    const next = vehicleHovers();
+    const wasLocked = aircraftLocked;
+    const adopted = adoptVehicleAircraft();
+    if (aircraftLocked !== wasLocked) loadReturnProfile();
+    if (moved || next !== hovers || adopted) {
+      hovers = next;
+      vehicleSeen = vehicleStart(state) != null;
+      offsetFar = (startOffsetM(state) || 0) > START_OFFSET_WARN_M;
+      refreshAll();
+      return;
+    }
+    const seen = vehicleStart(state) != null;
+    const far = (startOffsetM(state) || 0) > START_OFFSET_WARN_M;
+    if (seen === vehicleSeen && far === offsetFar) return;
+    vehicleSeen = seen;
+    offsetFar = far;
+    // The tool bar (the AIRCRAFT button greyed or not), its hint and the warnings.
+    updateTools();
+    updateHint();
+    renderIssues();
   }
 
   /** arm()'s mirror. Shared by suspend and teardown. */
@@ -1400,6 +1592,7 @@ Corvus.mission = (function () {
     markers.forEach((marker) => marker.remove());
     markers = [];
     if (homeMarker) { homeMarker.remove(); homeMarker = null; }
+    if (vehicleMarker) { vehicleMarker.remove(); vehicleMarker = null; }
     if (radiusHandle) { radiusHandle.remove(); radiusHandle = null; }
     regionMarkers.forEach((marker) => marker.remove());
     regionMarkers = [];
@@ -1453,7 +1646,7 @@ Corvus.mission = (function () {
       button.className = "fa-btn";
       button.title = entry.title;
       button.dataset.tool = entry.id;
-      if (entry.id === tool) button.classList.add("active");
+      if (toolActive(entry.id)) button.classList.add("active");
       button.appendChild(Corvus.ui.icon(entry.icon, 17));
       const caption = document.createElement("span");
       caption.textContent = entry.label;
@@ -1481,8 +1674,23 @@ Corvus.mission = (function () {
         refreshAll();
         return;
       }
+      // A switch, not a tool: it acts at once and arms nothing.
+      if (button.dataset.tool === "vehicle_start") {
+        setStartAtVehicle(!startAtVehicle);
+        setTool("select");
+        refreshAll();
+        if (startAtVehicle && home && map) {
+          map.easeTo({ center: [home.lon, home.lat], duration: 500 });
+        }
+        return;
+      }
       setTool(button.dataset.tool);
     });
+  }
+
+  /** Is the button *id* shown pressed: the armed tool, or a switch that is on. */
+  function toolActive(id) {
+    return id === tool || (id === "vehicle_start" && startAtVehicle);
   }
 
   /** Grey the tools that cannot be used on the plan as it stands, with the
@@ -1496,7 +1704,11 @@ Corvus.mission = (function () {
       const blocked = toolBlocked(id);
       button.classList.toggle("is-blocked", !!blocked);
       button.setAttribute("aria-disabled", blocked ? "true" : "false");
-      button.title = blocked || titles[id] || "";
+      button.title = blocked || (id === "vehicle_start" && startAtVehicle
+        ? "The start follows the connected aircraft. Press to let go of it."
+        : titles[id]) || "";
+      button.classList.toggle("active", toolActive(id));
+      button.setAttribute("aria-pressed", id === "vehicle_start" && startAtVehicle ? "true" : "false");
       button.classList.toggle("is-next", id === "home" && !home);
     });
   }
@@ -1528,7 +1740,7 @@ Corvus.mission = (function () {
     if (toolBlocked(tool)) tool = "select";
     if (!toolsEl) return;
     toolsEl.querySelectorAll(".fa-btn").forEach((button) => {
-      button.classList.toggle("active", button.dataset.tool === tool);
+      button.classList.toggle("active", toolActive(button.dataset.tool));
     });
     if (mapEl) mapEl.classList.toggle("is-placing", tool !== "select");
     updateHint();
@@ -1542,10 +1754,12 @@ Corvus.mission = (function () {
   /** The line under the tool bar: what the next step is, in the order a
    *  mission is drawn in. Start, then the route, then how it ends. */
   function updateHint() {
+    const aboard = vehicleStart() != null;
     if (tool === "home") {
-      setHint(home
+      const where = home
         ? "Click the map to move the start. The aircraft takes off there."
-        : "Click the map where the aircraft takes off.");
+        : "Click the map where the aircraft takes off.";
+      setHint(aboard ? `${where} AIRCRAFT puts it where the aircraft stands.` : where);
       return;
     }
     if (tool !== "select") {
@@ -1555,7 +1769,9 @@ Corvus.mission = (function () {
       return;
     }
     if (!home) {
-      setHint("Press START and click where the aircraft takes off.");
+      setHint(aboard
+        ? "Press AIRCRAFT to start where the connected aircraft stands, or START to click a place."
+        : "Press START and click where the aircraft takes off.");
     } else if (!items.some((item) => TYPES[item.type].position && item.type !== "takeoff")) {
       setHint("Now add points with POINT, CIRCLE or HOLD, then end with LAND or RETURN.");
     } else if (endIndex() < 0) {
@@ -1693,8 +1909,7 @@ Corvus.mission = (function () {
       id: "missionAircraft",
       ariaLabel: "Aircraft",
       value: aircraft || "",
-      options: [{ value: "", label: "Not set" }].concat(
-        AIRCRAFT.map((entry) => ({ value: entry.value, label: entry.label }))),
+      options: aircraftOptions(),
       disabled: aircraftLocked,
       onChange: (value) => {
         if (aircraftLocked) return;
@@ -1706,9 +1921,12 @@ Corvus.mission = (function () {
       label: "Aircraft",
       control: select,
       className: "mission-aircraft",
-      info: "What flies this plan. A multicopter hovers at a Hold where a fixed wing "
-        + "circles it, so a Hold's ring, radius and direction are shown only for an "
-        + "aircraft that flies them. While an aircraft is connected, it sets this.",
+      info: "What flies this plan. The planner only tells an aircraft that hovers from "
+        + "one that circles: a quadcopter, hexacopter or octocopter is a multicopter, and "
+        + "all of them are planned the same way. A multicopter hovers at a Hold where a "
+        + "fixed wing circles it, so a Hold's ring, radius and direction are shown only "
+        + "for an aircraft that flies them. While an aircraft is connected, it sets this "
+        + "and the list names it.",
     });
   }
 
@@ -1854,6 +2072,7 @@ Corvus.mission = (function () {
       setRegions(regions);
       loadRegions();
       drawMap();
+      drawVehicle();
       // NOT a fit any more. The map opens on the view the operator last
       // aimed (openingView), and framing the plan over the top of that would
       // undo it — which is how re-entering the planner used to throw away
@@ -2274,6 +2493,8 @@ Corvus.mission = (function () {
     if (!event || !event.lngLat) return;
     if (tool === "select") return;
     if (tool === "home") {
+      // A start placed by hand is the operator's, not the aircraft's.
+      startAtVehicle = false;
       placeStart(event.lngLat);
       setTool("select");
       refreshAll();
@@ -2318,8 +2539,12 @@ Corvus.mission = (function () {
       homeMarker = new maplibregl.Marker({ element, anchor: "center", draggable: true })
         .setLngLat([home.lon, home.lat]).addTo(map);
       homeMarker.on("dragend", () => {
-        // placeStart carries the takeoff along: the two are one place.
+        // placeStart carries the takeoff along: the two are one place. A
+        // start dragged away from the aircraft no longer follows it.
+        const following = startAtVehicle;
+        startAtVehicle = false;
         placeStart(homeMarker.getLngLat());
+        if (following) setHint("The start stays where you put it. AIRCRAFT ties it to the aircraft again.");
         window.setTimeout(refreshAll, 0);   // see the item markers below
       });
       // The start IS the takeoff on the map, so a click on it opens the
@@ -2451,8 +2676,12 @@ Corvus.mission = (function () {
   function buildHomeMarker(takeoff) {
     const element = document.createElement("div");
     element.className = "home-marker mission-home";
-    element.title = "Start. The aircraft takes off here, and every altitude in the plan "
-      + "is measured from here. Click to set the climb height, drag to move, right-click to remove";
+    element.title = startAtVehicle
+      ? "Start, at the connected aircraft and following it. Every altitude in the plan is "
+        + "measured from here. Click to set the climb height, drag to place it by hand"
+      : "Start. The aircraft takes off here, and every altitude in the plan "
+        + "is measured from here. Click to set the climb height, drag to move, right-click to remove";
+    if (startAtVehicle) element.classList.add("is-following");
     element.innerHTML =
       '<svg class="h-body" viewBox="0 0 32 32" aria-hidden="true">' +
         '<g class="h-ticks">' +
@@ -2684,6 +2913,34 @@ Corvus.mission = (function () {
     if (!plan || boxesOverlap(plan, view)) say(null);
   }
 
+  /** The connected aircraft on this map, with the Home map's own mark so it
+   *  is plainly the same aircraft. Taken off the map when there is none. It
+   *  lets clicks through: placing the start ON the aircraft is exactly the
+   *  click an operator makes. */
+  function drawVehicle(state) {
+    if (!map || !mapReady) return;
+    const s = state === undefined ? connectedState() : (state && state.connected ? state : null);
+    const at = s ? lngLatPoint(s.position) : null;
+    if (!at) {
+      if (vehicleMarker) { vehicleMarker.remove(); vehicleMarker = null; }
+      return;
+    }
+    if (!vehicleMarker) {
+      const element = Corvus.map && typeof Corvus.map.buildVehicleMarker === "function"
+        ? Corvus.map.buildVehicleMarker() : document.createElement("div");
+      element.classList.add("mission-vehicle-mark");
+      element.style.pointerEvents = "none";
+      element.title = "";
+      vehicleMarker = new maplibregl.Marker({ element, anchor: "center", rotationAlignment: "map" })
+        .setLngLat([at.lon, at.lat]).addTo(map);
+    } else {
+      vehicleMarker.setLngLat([at.lon, at.lat]);
+    }
+    const heading = Number(s.heading);
+    const body = vehicleMarker.getElement().querySelector(".v-body");
+    if (body && isFinite(heading)) body.style.transform = `rotate(${heading}deg)`;
+  }
+
   function goToVehicle() {
     const state = Corvus.telemetry && Corvus.telemetry.getState();
     if (!state || !state.position || (!state.position[0] && !state.position[1])) {
@@ -2742,11 +2999,22 @@ Corvus.mission = (function () {
   /** The aircraft picker shows the plan's kind, and is locked while the
    *  connected aircraft sets it. The app's dropdown sees neither a scripted
    *  value nor, reliably, a scripted state, so it is told. */
+  let aircraftOptionsSig = "";
+
   function syncAircraftSelect() {
     const select = document.getElementById("missionAircraft");
     if (!select) return;
     const value = aircraft || "";
-    if (select.value === value && select.disabled === aircraftLocked) return;
+    const options = aircraftOptions();
+    const sig = JSON.stringify(options);
+    if (select.value === value && select.disabled === aircraftLocked
+        && sig === aircraftOptionsSig) return;
+    // The locked entry is named after the connected aircraft, which comes
+    // and goes, so the list itself is rebuilt with it.
+    if (sig !== aircraftOptionsSig) {
+      aircraftOptionsSig = sig;
+      Corvus.ui.setOptions(select, options, value);
+    }
     select.value = value;
     select.disabled = aircraftLocked;
     if (select.corvusSelect && typeof select.corvusSelect.refresh === "function") {
@@ -4254,6 +4522,26 @@ Corvus.mission = (function () {
     if (!items.length) say(EMPTY_PLAN);
     if (items.length && !home) say("No start point.", "Place the start point on the map before uploading.");
 
+    // The aircraft takes off where it stands, whatever the plan says (see
+    // "WHERE THE AIRCRAFT STARTS").
+    const offset = startOffsetM();
+    if (offset != null && offset > START_OFFSET_WARN_M) {
+      say(`The aircraft is ${formatDistance(Math.round(offset))} from the start.`,
+        "It takes off where it stands, not at the start, and every height in the plan is "
+        + "measured from where it takes off. Press AIRCRAFT to start the plan where the "
+        + "aircraft is, or carry the aircraft to the start.");
+    }
+    // Refused by the upload anyway, with the same reason; said here, while
+    // the plan is still being drawn.
+    Object.keys(TYPES).forEach((type) => {
+      const reason = refusalOf(type);
+      const count = items.filter((item) => item.type === type).length;
+      if (!reason || !count) return;
+      const label = TYPES[type].label;
+      say(`${count === 1 ? "A" : count} ${label}${count === 1 ? "" : "s"} this aircraft will not fly.`,
+        `${reason}, so the upload is refused. ${TYPES[type].instead || "Remove it before uploading."}`);
+    });
+
     /* Order is the one thing a mission has that a set of points does not, and
        PX4 flies it literally: it does not refuse a takeoff in the middle or an
        item after a landing, it simply does them in the order given. Said out
@@ -4812,6 +5100,7 @@ Corvus.mission = (function () {
     items = [];
     home = null;
     homeElevation = null;
+    startAtVehicle = false;
     selectedId = null;
     planName = "Mission";
     ground = null;
@@ -4914,6 +5203,19 @@ Corvus.mission = (function () {
     // ending; wrong silently, as a landing with nothing before it.
     _placeStart: placeStart,
     _removeStart: removeStart,
+    // test hooks: where the aircraft starts. Wrong silently: a route flown a
+    // hundred metres from where it was drawn.
+    _vehicleStart: vehicleStart,
+    _startOffsetM: startOffsetM,
+    _setStartAtVehicle: setStartAtVehicle,
+    _startAtVehicle: () => startAtVehicle,
+    _followVehicleStart: followVehicleStart,
+    _startOffsetWarnM: START_OFFSET_WARN_M,
+    _startFollowM: START_FOLLOW_M,
+    // test hooks: what the connected stack will not fly, and how the aircraft
+    // picker names a connected aircraft.
+    _setRefusals: (value) => { missionRefusals = value || {}; },
+    _aircraftOptions: aircraftOptions,
     _addItem: addItem,
     _toolBlocked: toolBlocked,
     _moveItemTo: moveItemTo,

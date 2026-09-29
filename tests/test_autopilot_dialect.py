@@ -280,3 +280,20 @@ def test_the_vehicle_class_is_the_axis_ardupilots_parameters_vary_along(
 def test_each_stack_reads_its_own_preflight_wording(stack: str, text: str,
                                                      reason: str | None) -> None:
     assert autopilot.dialect_for_stack(stack).prearm_failure(text) == reason
+
+
+def test_px4_refuses_a_circle_in_a_mission_and_ardupilot_flies_one() -> None:
+    """PX4 v1.16 to v1.18 answer NAV_LOITER_TURNS with MAV_MISSION_UNSUPPORTED
+    (mavlink_mission.cpp); ArduCopter, Plane and Rover fly it as a circle."""
+    px4 = autopilot.dialect_for_stack(autopilot.STACK_PX4)
+    assert mv.mavlink.MAV_CMD_NAV_LOITER_TURNS in px4.mission_command_refusals
+    assert autopilot.dialect_for_stack(autopilot.STACK_ARDUPILOT).mission_command_refusals == {}
+    assert autopilot.dialect_for_stack(autopilot.STACK_GENERIC).mission_command_refusals == {}
+
+
+def test_only_px4_is_waited_on_for_a_verdict_after_an_upload() -> None:
+    """PX4 checks a stored mission and reports NO_MISSION for one it will not
+    fly; ArduPilot refuses at upload, so there is nothing to wait for."""
+    assert autopilot.dialect_for_stack(autopilot.STACK_PX4).mission_validity_reported is True
+    assert autopilot.dialect_for_stack(autopilot.STACK_ARDUPILOT).mission_validity_reported is False
+    assert autopilot.dialect_for_stack(autopilot.STACK_GENERIC).mission_validity_reported is False

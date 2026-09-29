@@ -1317,3 +1317,30 @@ def test_remove_company_logo_is_idempotent(tmp_path) -> None:
     payload, status = responses[0]
     assert status == 200
     assert payload["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# review.sensitivity: how readily the Flight Review turns a number into a
+# finding. Set once in Settings, read by every review afterwards.
+# ---------------------------------------------------------------------------
+
+def test_the_flight_review_sensitivity_is_persisted(tmp_path) -> None:
+    cfg_path = str(tmp_path / "config.json")
+    handler, responses = _handler(config=CorvusConfig(), config_path=cfg_path)
+    handler._api_config_update({"review": {"sensitivity": "strict"}})
+    payload, status = responses[-1]
+    assert status == 200
+    assert payload["config"]["review"] == {"sensitivity": "strict"}
+    assert load_config(cfg_path).review == {"sensitivity": "strict"}
+
+
+def test_an_unknown_review_sensitivity_falls_back_to_the_default(tmp_path) -> None:
+    """A value the review does not know is dropped rather than stored, so the
+    next review runs at the default instead of at a setting nobody chose."""
+    cfg_path = str(tmp_path / "config.json")
+    handler, responses = _handler(
+        config=CorvusConfig(review={"sensitivity": "relaxed"}), config_path=cfg_path)
+    handler._api_config_update({"review": {"sensitivity": "paranoid"}})
+    assert "review" not in responses[-1][0]["config"]
+    assert load_config(cfg_path).review is None
+    assert handler._review_sensitivity() == "normal"

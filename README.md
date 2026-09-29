@@ -344,7 +344,7 @@ Qt and every dependency are already inside.
 
 | Platform | File | First launch |
 |---|---|---|
-| **macOS** (Apple Silicon) | `Corvus_GCS-<version>-macOS-arm64.dmg` | Drag to `/Applications`. The build is not notarized, so the first time use **right-click → Open**. |
+| **macOS** (Apple Silicon) | `Corvus_GCS-<version>-macOS-arm64.dmg` | Drag to `/Applications`. The build is not notarized, so macOS blocks the first launch: open **System Settings → Privacy & Security** and click **Open Anyway**. Or run `xattr -dr com.apple.quarantine "/Applications/Corvus GCS.app"` once in Terminal. |
 | **Linux** (x86_64) | `Corvus_GCS-<version>-x86_64.AppImage` | `chmod +x` it, then run it. Works on a clean Ubuntu/Debian with no system Python or Qt. |
 | **Windows** (x64) | `Corvus_GCS-<version>-windows-x64.zip` | Unzip anywhere and run `Corvus GCS.exe`. The build is unsigned, so SmartScreen asks once: *More info → Run anyway*. |
 
@@ -615,12 +615,21 @@ the socket is up; link quality tells you whether it is worth flying on.
 | Airborne | **FLYING** in a blue pill, from the vehicle's own `EXTENDED_SYS_STATE`, falling back to height above home on firmware that does not send it |
 | Preflight failing | Amber **NOT READY**: the autopilot would refuse to arm. The failing checks are counted beside it and listed on hover, and Corvus asks the autopilot for them when it has not said |
 | Readiness not reported | Grey **STANDBY**: firmware that does not publish its preflight state |
+| Kill switch engaged | **KILL SWITCH** in a red pill, above ARMED and FLYING: PX4 still reports armed while the switch holds the motors, so the bar says what the motors are actually doing. Read from the heartbeat (`FLIGHT_TERMINATION`) and the vehicle's own kill line (PX4 "Kill engaged", ArduPilot `MotorEStop`) |
+| Flight termination | **TERMINATED** in a red pill: the heartbeat reports termination or lockdown without naming the kill switch. The motor outputs are cut |
 
 The three states worth recognising at a glance (cleared to fly, propellers
 live, airborne) carry a tinted pill as well as a colour, so they are
 distinguishable by shape before the colour is read at all. `NOT READY`
 deliberately gets no pill: it is the absence of a clearance, not an active
 state.
+
+A kill switch and a disarm are toasted under their own title (**Kill switch**,
+**Disarmed**) with the reason the vehicle gave, such as "Disarmed by the kill
+switch" or "Disarmed by auto disarm after landing". An engaged kill switch is
+critical and stays until dismissed. When the vehicle disarms without naming a
+reason (ArduPilot never does), a plain **Disarmed** toast says so, and a reason
+arriving a moment later takes its place.
 
 Notification counts follow the same principle. The badge is **green** when the
 board is empty, **blue** when the only unread lines are informational (a normal
@@ -866,15 +875,35 @@ Pick a tool and click:
 
 - **Start point**: where the flight begins. Every altitude in the plan is
   measured from here, which is the same reference PX4 flies a mission in.
+- **Aircraft**: with an aircraft connected, puts the start (and the takeoff on
+  it) where the aircraft actually stands, and keeps it there while the aircraft
+  is carried to the field. Once it is armed, the start stays at its home, where
+  the mission's heights are measured from. Placing the start by hand lets go of
+  the aircraft again, and a plan saved this way starts at whichever aircraft is
+  connected when it is opened.
 - **Takeoff**, **Waypoint**, **Circle** (orbit a point a set number of times),
   **Hold** (stay at it for a set time), **Land**, and **Return** (which needs no
   click, since it names no place).
 
+The connected aircraft is drawn on the planner's map, with the same mark as on
+the Home tab. That matters because an aircraft does not fly to the start before
+it climbs: a multicopter takes off where it stands (PX4 then flies over to the
+takeoff point, ArduPilot goes straight on to the first waypoint), and every
+height is measured from where it armed. A start more than 25 m from the
+aircraft is called out while you draw, with the **Aircraft** button as the fix.
+
+**Circle** is greyed on PX4, with the reason on the button: PX4 has no mission
+item that orbits a set number of times, and refuses a whole mission that
+carries one. Use **Hold** there. ArduPilot flies a Circle as drawn.
+
 Above the altitude profile, **Aircraft** says what flies the plan: multicopter,
 fixed wing or VTOL. It matters for a Hold. A fixed wing has to circle the point
 to stay there, so its Hold gets a ring, a radius and a direction; a multicopter
-simply hovers over it, so its Hold gets none. While an aircraft is connected it
-sets this itself, and the choice is saved with the plan, so a mission drawn at
+simply hovers over it, so its Hold gets none. That is the only distinction the
+planner makes: a quadcopter, hexacopter or octocopter is a multicopter, and all
+of them are planned the same way. While an aircraft is connected it sets this
+itself and the list names it the way the top bar does ("Quadcopter
+(multicopter)"), and the choice is saved with the plan, so a mission drawn at
 the desk without the drone already looks the way it will be flown.
 
 The same choice decides how the altitude profile draws the start and the end
@@ -950,6 +979,13 @@ a mission it has not been told to run, which is what lets you upload from the
 tent and walk out to it. *Upload and fly* is the one that switches to MISSION,
 arms and takes off, and it asks first, with any warnings the plan raised in
 front of you.
+
+PX4 accepts a mission first and checks it afterwards (a home position for the
+heights to be measured from, a takeoff or landing its mission settings
+require), so an accepted upload is not yet a mission it will fly. Corvus waits
+the moment it takes PX4 to decide, and a mission PX4 will not fly is reported
+as a failed upload, with the reason where it can name one ("it has no home
+position yet"), rather than as a success.
 
 **From vehicle** reads the mission the aircraft already holds into the planner:
 one uploaded by QGroundControl, or by Corvus before a reconnect. Anything the
@@ -1374,6 +1410,19 @@ aircraft is no longer flying what you are looking at.
   Compass interference needs a physically believable swing before the wiring is
   blamed. And a brief innovation spike is filed as an observation rather than a
   warning, because it is only a problem when it lasts.
+
+  **How readily a number becomes a finding is yours to set**, once, under
+  *Settings, Analysis*. *Relaxed* reports only what should keep the aircraft on
+  the ground, *Normal* (the default) leaves a healthy aircraft flown normally
+  with an empty list, and *Strict* reports every early sign, for tuning and new
+  airframes. The plots are the same at every setting, and the page says which
+  one its findings were read at. Whatever the setting, only the time the
+  aircraft was armed is measured: clipping counted on the bench, a refusal to
+  arm, a receiver that never heard a transmitter and a GPS still looking for
+  its first fix are not the flight. The heading alignment PX4 makes after every
+  takeoff is context, not a warning. The battery is judged by the level the
+  pack held rather than the one sample at the hardest punch, and sag is
+  measured over a few seconds, not from full to empty.
 - **Telemetry Review**: the same page, for a recording rather than a ULog.
   The ULog is the better log and, when you can get it, it is the one to read.
   This exists because you cannot always get it: the card was not fitted, the
@@ -1714,6 +1763,8 @@ the app:
 | **Compass calibration** | `PREFLIGHT_CALIBRATION` | `DO_START_MAG_CAL`, with the GCS confirming each accelerometer position |
 | **Autotune** | a command with a progress stream | the AUTOTUNE flight mode |
 | **Mission** | items from 0, flown in `MISSION` | item 0 is home, flown in `AUTO` |
+| **Mission circle** | no such item (greyed, use Hold) | `NAV_LOITER_TURNS`, flown as drawn |
+| **Mission check** | after the upload, reported in `MISSION_CURRENT` | at the upload, in its answer |
 | **On-board log** | ULog (`.ulg`) | DataFlash (`.bin`) |
 
 **What ArduPilot does not get.** Three things, and Corvus says so on the page

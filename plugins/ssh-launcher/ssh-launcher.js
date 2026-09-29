@@ -19,7 +19,9 @@ window.Corvus = window.Corvus || {};
  *     under the last, in one scrollback — because a key on a shelf pressed
  *     twice means "run it again", not "throw this session away and start
  *     over". Three buttons are three sessions, so three terminals can be open
- *     side by side.
+ *     side by side. A button with RESTART on sends Ctrl-C into that shell
+ *     first and types the line a second later, so a press stops the program
+ *     still running there and starts it again.
  *
  *     The terminal window itself opens on the ARROW beside the button, never
  *     on the button: a launch is a launch, and an operator starting four
@@ -48,7 +50,7 @@ window.Corvus = window.Corvus || {};
  * there); what this plugin saves is still only the name.
  *
  * The shelf is the plugin's state: a list of {id, label, connection, directory,
- * command, mode}, saved through api.saveSettings into the plugin's own config
+ * command, mode, restart}, saved through api.saveSettings into the plugin's own config
  * file (~/.corvus/plugins/ssh-launcher/config.json), so the buttons are there
  * on the next start and can be copied to another ground station. A button there
  * naming a connection the station does not have (or has without a working
@@ -91,6 +93,13 @@ Corvus.pluginSshLauncher = (function () {
 
   const MODE_TERMINAL = "terminal";
   const MODE_BACKGROUND = "background";
+
+  // Restart: the key the operator would press to stop the program, and how
+  // long the shell gets to take the prompt back before the line is typed
+  // again. Typed too soon, the line lands on the stdin of the program still
+  // shutting down instead of on the prompt.
+  const CTRL_C = "\x03";
+  const RESTART_GRACE_MS = 1000;
 
   // The connection <select>'s last entry: not a connection but a way to type
   // one in. A button used to require a connection saved in Settings first,
@@ -212,6 +221,7 @@ Corvus.pluginSshLauncher = (function () {
       directory,
       command,
       mode: coerceMode(raw),
+      restart: raw.restart === true,
     };
   }
 
@@ -228,6 +238,21 @@ Corvus.pluginSshLauncher = (function () {
     if (raw.mode === MODE_BACKGROUND || raw.mode === MODE_TERMINAL) return raw.mode;
     if (typeof raw.detach === "boolean") return raw.detach ? MODE_BACKGROUND : MODE_TERMINAL;
     return MODE_TERMINAL;
+  }
+
+  /**
+   * Whether pressing a button whose program is up stops it first (Ctrl-C)
+   * and starts it again, rather than typing the line under it. Only a
+   * terminal has a program to stop; a background run has nothing to press
+   * Ctrl-C into.
+   *
+   * Pure, and exported for the test suite.
+   *
+   * @param {Object} entry
+   * @returns {boolean}
+   */
+  function restarts(entry) {
+    return !!entry && entry.restart === true && coerceMode(entry) === MODE_TERMINAL;
   }
 
   /**
@@ -470,6 +495,7 @@ Corvus.pluginSshLauncher = (function () {
           directory: buttons.length ? buttons[buttons.length - 1].directory : "",
           command: "",
           mode: MODE_TERMINAL,
+          restart: false,
         }, true),
       });
       card.appendChild(ui.actions(addBtn));
@@ -517,11 +543,11 @@ Corvus.pluginSshLauncher = (function () {
         icon: "play",
         label: entry.label,
         className: "sshl-launch",
-        ariaLabel: running ? `Run ${entry.label} again` : `Launch ${entry.label}`,
-        // The composed line as a tooltip: the row shows the label, and the
-        // label is often nothing like the command it stands for.
+        ariaLabel: running ? `${restarts(entry) ? "Restart" : "Run"} ${entry.label}${restarts(entry) ? "" : " again"}`
+          : `Launch ${entry.label}`,
         title: running
-          ? `Run it again in the terminal it is already in.\n${previewLine(entry) || entry.command}`
+          ? `${restarts(entry) ? "Stop it with Ctrl-C and start it again" : "Run it again"} ` +
+            `in the terminal it is already in.\n${previewLine(entry) || entry.command}`
           : (previewLine(entry) || entry.command),
         onClick: () => launch(entry, launchBtn),
       });
@@ -736,7 +762,11 @@ Corvus.pluginSshLauncher = (function () {
       const terminalSwitch = ui.toggle({
         value: draft.mode !== MODE_BACKGROUND,
         ariaLabel: "Run in a terminal",
-        onChange: (on) => { draft.mode = on ? MODE_TERMINAL : MODE_BACKGROUND; paintPreview(); },
+        onChange: (on) => {
+          draft.mode = on ? MODE_TERMINAL : MODE_BACKGROUND;
+          restartField.hidden = draft.mode === MODE_BACKGROUND;
+          paintPreview();
+        },
       });
       card.appendChild(ui.field({
         label: "Run in a terminal",
@@ -751,6 +781,24 @@ Corvus.pluginSshLauncher = (function () {
               "it survives Corvus closing, but there is nothing to watch and " +
               "nothing to stop from here.",
       }));
+
+      const restartField = ui.field({
+        label: "Restart on press",
+        control: ui.toggle({
+          value: draft.restart === true,
+          ariaLabel: "Restart on press",
+          onChange: (on) => { draft.restart = on; },
+        }).el,
+        className: "field-switch",
+        info: "On: pressing the button while its program is still running " +
+              "first sends Ctrl-C to stop it, waits a second, and then starts " +
+              "it again in the same terminal. Off: the line is typed into the " +
+              "terminal as it is, so a program still in the foreground gets " +
+              "it as input.",
+      });
+      // A background run has no terminal to press Ctrl-C into.
+      restartField.hidden = draft.mode === MODE_BACKGROUND;
+      card.appendChild(restartField);
 
       const preview = document.createElement("div");
       preview.className = "sshl-preview";
@@ -913,7 +961,8 @@ Corvus.pluginSshLauncher = (function () {
      *
      * The shell is the shell: if the last program is still in the foreground,
      * the line goes to ITS stdin rather than to a prompt, exactly as it would
-     * for someone typing in that terminal. Ctrl-C first, or let it finish.
+     * for someone typing in that terminal. Ctrl-C first, or let it finish —
+     * or turn on the button's restart, which presses Ctrl-C for them.
      *
      * The window is NOT opened here. A launch is a launch; the arrow beside
      * the button is the request to watch it.
@@ -921,7 +970,14 @@ Corvus.pluginSshLauncher = (function () {
     function launchInTerminal(entry) {
       const session = sessionName(entry);
       const line = remoteLine(entry);
-      const send = () => api.postJson("/api/ssh/send", { name: session, data: line + "\n" });
+      const restart = restarts(entry);
+      const sendLine = () => api.postJson("/api/ssh/send", { name: session, data: line + "\n" });
+      // With restart on, Ctrl-C goes first. Its ok:false means there is no
+      // live shell, and so nothing to stop: that falls through to a connect
+      // like any first press.
+      const send = restart
+        ? () => interrupt(session).then((res) => ((res && res.ok) ? sendLine() : res))
+        : sendLine;
       // The arrow may be opening this session right now: wait for it, or the
       // line would find no shell and open a second one over it.
       const pending = opening[session];
@@ -930,7 +986,7 @@ Corvus.pluginSshLauncher = (function () {
           if (cancelled) return null;
           // ok:false is the backend saying it has no such live session — the
           // first press, or the shell has since ended.
-          if (res && res.ok) return ran(entry, line, false);
+          if (res && res.ok) return ran(entry, line, false, restart);
           return connectThenSend(entry, line);
         })
         .catch((error) => {
@@ -938,6 +994,18 @@ Corvus.pluginSshLauncher = (function () {
           failed(entry, error.message || "Could not reach the backend");
           return null;
         });
+    }
+
+    /**
+     * Press Ctrl-C in a session, then give its shell RESTART_GRACE_MS to take
+     * the prompt back. Resolves the send's reply, so ok:false still says
+     * there is no live shell.
+     */
+    function interrupt(session) {
+      return api.postJson("/api/ssh/send", { name: session, data: CTRL_C }).then((res) => {
+        if (!(res && res.ok)) return res;
+        return new Promise((resolve) => setTimeout(() => resolve(res), RESTART_GRACE_MS));
+      });
     }
 
     /**
@@ -1032,14 +1100,15 @@ Corvus.pluginSshLauncher = (function () {
      * opened, raised or focused, but a window that is already there must not
      * keep showing a shell that has stopped printing.
      */
-    function ran(entry, line, reconnected) {
+    function ran(entry, line, reconnected, restarted) {
       const session = sessionName(entry);
       const was = !!live[session];
       live[session] = true;
       if (reconnected) openTerminal(entry, true, true);
-      status.show(was && !reconnected
-        ? `${entry.label}: sent again to its terminal. The arrow opens it.`
-        : `${entry.label}: running. The arrow opens its terminal.`, "ok");
+      let said = `${entry.label}: running. The arrow opens its terminal.`;
+      if (restarted && !reconnected) said = `${entry.label}: stopped with Ctrl-C and started again. The arrow opens its terminal.`;
+      else if (was && !reconnected) said = `${entry.label}: sent again to its terminal. The arrow opens it.`;
+      status.show(said, "ok");
       // The console is the app's shared record of what was commanded; a
       // program started on a companion computer belongs in it.
       api.console(`ssh-launcher: ${line}`, "success");
@@ -1208,8 +1277,9 @@ Corvus.pluginSshLauncher = (function () {
   return {
     init, destroy,
     previewLine, remoteLine, resultSummary, normalizeButtons, coerceButton, missingConnections,
-    coerceMode, sessionName, derivedName, newConnectionError, newConnectionBody,
+    coerceMode, restarts, sessionName, derivedName, newConnectionError, newConnectionBody,
     MAX_BUTTONS, LIVE_POLL_MS, MODE_TERMINAL, MODE_BACKGROUND, NEW_CONNECTION,
+    CTRL_C, RESTART_GRACE_MS,
   };
 })();
 

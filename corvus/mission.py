@@ -199,6 +199,16 @@ APPROACH_AIRCRAFT = "multirotor"
 # so mavlink_bridge can assert the pairing rather than restate it.
 COMMAND_OF: dict[str, int] = {name: spec["command"] for name, spec in ITEM_SPECS.items()}
 
+# The commands that name no place: a Return and a speed change. They travel in
+# MAV_FRAME_MISSION. PX4 v1.16 to v1.18 parse a Return only there and answer
+# one in a global frame with UNSUPPORTED (v1.18 with INVALID_PARAM5, for the
+# 0/0 it carries as a position), which failed every plan that ended with one.
+# ArduPilot 4.3 to 4.6 read no frame for either command.
+POSITIONLESS_COMMANDS: frozenset[int] = frozenset(
+    {MAV_CMD_DO_CHANGE_SPEED}
+    | {spec["command"] for spec in ITEM_SPECS.values() if not spec["position"]}
+)
+
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9 ._-]+")
 # Control characters (C0, DEL, C1) and the line and paragraph separators. A
 # point name is one line of text on a map; none of these can be part of one.
@@ -260,6 +270,24 @@ def clean_point_name(raw: Any) -> str:
         return ""
     cleaned = re.sub(r"\s+", " ", _POINT_NAME_JUNK_RE.sub(" ", raw)).strip()
     return cleaned[:MISSION_POINT_NAME_MAX].strip()
+
+
+def refused_item_types(refusals: dict[int, str]) -> dict[str, str]:
+    """The plan item types a flight stack will not fly, with the reason.
+
+    *refusals* is the stack's MAV_CMD -> reason table
+    (:attr:`corvus.autopilot.Dialect.mission_command_refusals`); the answer is
+    keyed by the item names the planner uses, which is the only vocabulary the
+    frontend has.
+    """
+    return {name: str(refusals[command])
+            for name, command in COMMAND_OF.items() if command in refusals}
+
+
+def label_of_command(command: int) -> str:
+    """The planner's name for a MAV_CMD, or ``"command N"`` for one it has none for."""
+    kind = _TYPE_OF_COMMAND.get(int(command))
+    return ITEM_SPECS[kind]["label"] if kind else f"command {int(command)}"
 
 
 def missions_dir(configured: str = "") -> str:
@@ -406,6 +434,14 @@ def validate_plan(raw: Any) -> tuple[dict[str, Any] | None, str]:
         plan["home"] = home
     elif home_raw is not None:
         return None, "plan home must be an object"
+
+    # The start is wherever the connected aircraft is, rather than the point
+    # drawn. The drawn home stays in the plan (it is where the aircraft was
+    # when the plan was last on screen), and the planner moves it to the
+    # aircraft while one is connected. Like the aircraft, a label rather than
+    # a flight parameter: anything but ``true`` is simply not set.
+    if raw.get("start_at_vehicle") is True:
+        plan["start_at_vehicle"] = True
 
     speed = raw.get("speed")
     if speed is not None:

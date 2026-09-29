@@ -343,7 +343,10 @@ STUB="$FW_DST/Resources/Python.app/Contents/MacOS/Python"
 if [ -f "$STUB" ]; then
     chmod u+w "$STUB"
     retarget "$STUB" "@executable_path/../../../../Python"
-    sign "$STUB"
+    # Not signed here: its Info.plist is rewritten below and the icon lands
+    # in step 7, and either one breaks a seal made before it. Step 10 signs
+    # it once both are final.
+    #
     # The stub is what actually runs, so [NSBundle mainBundle] resolves to this
     # nested Python.app — give it the product's identity or the menu bar and
     # Dock would read "Python".
@@ -521,12 +524,32 @@ echo ">>> Stripping Finder metadata ..."
 xattr -rd com.apple.FinderInfo "$APP" 2>/dev/null || true
 xattr -rd com.apple.ResourceFork "$APP" 2>/dev/null || true
 
-# Ad-hoc by default. Nested Mach-O files (Qt frameworks, the interpreter) keep
-# the signatures they were shipped/re-signed with; --deep would re-sign them
-# all and is both slow and deprecated, so only the bundle itself is signed.
+# Ad-hoc by default, and inside out: each seal records the signatures of the
+# code nested in it, so a container is signed only after everything in it is
+# final. Mach-O files under Contents/Resources (Qt, the interpreter) are sealed
+# as plain data by the outer signature and keep the ones they shipped with;
+# --deep would re-sign them all and is both slow and deprecated.
+#
+# The framework has to be re-signed rather than kept. It arrives signed by the
+# Python Software Foundation, and that signature seals a
+# Versions/X.Y/_CodeSignature/CodeResources which is not copied, over a
+# Resources/ whose Python.app this build rewrites. Nothing notices on the build
+# machine, because nothing there asks Gatekeeper. A downloaded copy carries
+# com.apple.quarantine, Gatekeeper verifies every nested seal, and the answer
+# for this one was "is damaged and can't be opened", with no way past it.
 echo ">>> Signing bundle (identity: $CODESIGN_IDENTITY) ..."
 : > "$BUILD_DIR/codesign.log"   # one run per log, or a failure reads as four
-if ! codesign --force --sign "$CODESIGN_IDENTITY" "$APP" >>"$BUILD_DIR/codesign.log" 2>&1; then
+SIGNED=1
+for target in "$FW_DST/Resources/Python.app" "$FW_DST" "$APP"; do
+    [ -e "$target" ] || continue
+    echo "    ${target#"$DIST_DIR"/}"
+    if ! codesign --force --sign "$CODESIGN_IDENTITY" "$target" \
+            >>"$BUILD_DIR/codesign.log" 2>&1; then
+        SIGNED=0
+        break
+    fi
+done
+if [ "$SIGNED" -ne 1 ]; then
     echo "WARNING: bundle signing failed; see $BUILD_DIR/codesign.log"
     tail -n 5 "$BUILD_DIR/codesign.log" >&2 || true
     # The one cause that is not a bug in this script, and is not obvious from
@@ -602,6 +625,20 @@ PY
                 ;;
         esac
     done
+
+    # Last, so it also catches anything the import check above wrote into the
+    # bundle. --deep --strict is the check Gatekeeper makes on a downloaded
+    # copy, and the only place a broken seal shows before an operator sees
+    # "is damaged": a local build is never quarantined, so it runs regardless.
+    echo ">>> Verifying the code signature ..."
+    if ! codesign --verify --deep --strict --verbose=2 "$APP" \
+            >"$BUILD_DIR/codesign-verify.log" 2>&1; then
+        echo "ERROR: the bundle's signature does not verify. A downloaded copy" >&2
+        echo "       would refuse to open as damaged. $BUILD_DIR/codesign-verify.log:" >&2
+        tail -n 20 "$BUILD_DIR/codesign-verify.log" >&2 || true
+        exit 1
+    fi
+    echo "    $(tail -n 1 "$BUILD_DIR/codesign-verify.log")"
 fi
 
 SUCCESS=1
@@ -621,6 +658,31 @@ if [ "$MAKE_DMG" -eq 1 ]; then
         exit 1
     fi
     rm -rf "$STAGE"
+
+    # The copy an operator receives, not the one in dist/: it went through cp
+    # and hdiutil, and either could have dropped something the seal covers.
+    if [ "$VERIFY" -eq 1 ]; then
+        echo ">>> Verifying the signature inside the .dmg ..."
+        MNT="$(mktemp -d "$BUILD_DIR/dmg-verify.XXXXXX")"
+        if ! hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$MNT" "$DMG" \
+                >>"$BUILD_DIR/hdiutil.log" 2>&1; then
+            echo "ERROR: could not mount $DMG to verify it; log: $BUILD_DIR/hdiutil.log" >&2
+            rm -f "$DMG"
+            exit 1
+        fi
+        DMG_OK=1
+        codesign --verify --deep --strict --verbose=2 "$MNT/$APP_NAME.app" \
+            >>"$BUILD_DIR/codesign-verify.log" 2>&1 || DMG_OK=0
+        hdiutil detach "$MNT" -quiet 2>/dev/null \
+            || hdiutil detach "$MNT" -force -quiet 2>/dev/null || true
+        rmdir "$MNT" 2>/dev/null || true
+        if [ "$DMG_OK" -ne 1 ]; then
+            echo "ERROR: the .app inside $DMG does not verify; log: $BUILD_DIR/codesign-verify.log" >&2
+            tail -n 20 "$BUILD_DIR/codesign-verify.log" >&2 || true
+            rm -f "$DMG"
+            exit 1
+        fi
+    fi
 fi
 
 # ---- done -------------------------------------------------------------------
@@ -629,7 +691,8 @@ echo ">>> Built: $APP  ($(du -sh "$APP" | cut -f1))"
 [ "$MAKE_DMG" -eq 1 ] && echo ">>> Built: $DMG  ($(du -sh "$DMG" | cut -f1))"
 if [ "$CODESIGN_IDENTITY" = "-" ]; then
     echo ""
-    echo "    Note: ad-hoc signed, not notarized. On another Mac the first launch"
-    echo "    needs right-click -> Open, or:  xattr -dr com.apple.quarantine \"$APP_NAME.app\""
+    echo "    Note: ad-hoc signed, not notarized. A downloaded copy is blocked on its"
+    echo "    first launch: System Settings > Privacy & Security > Open Anyway, or"
+    echo "      xattr -dr com.apple.quarantine \"/Applications/$APP_NAME.app\""
     echo "    Set CODESIGN_IDENTITY=\"Developer ID Application: ...\" to sign properly."
 fi

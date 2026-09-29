@@ -998,7 +998,7 @@ function testSshLauncherNormalizesASavedShelf() {
   assert.equal(list.length, 2);
   assert.deepEqual(list[0], {
     id: "a", label: "Mission", connection: "companion",
-    directory: "/srv", command: "./run.sh", mode: "background",
+    directory: "/srv", command: "./run.sh", mode: "background", restart: false,
   });
   // An unnamed button falls back to its command, and defaults to a terminal.
   assert.equal(list[1].label, "uptime");
@@ -1092,6 +1092,71 @@ async function testSshLauncherPressingItAgainRunsInTheSameSession() {
   assert.deepEqual(h.connects(), []);
   assert.match(h.status().textContent, /sent again/,
     "the message says it went to the terminal that was already open");
+  Corvus.pluginSshLauncher.destroy(h.container);
+}
+
+function testSshLauncherRestartsOnlyAProgramInATerminal() {
+  const L = Corvus.pluginSshLauncher;
+  assert.equal(L.restarts({ restart: true, mode: "terminal" }), true);
+  assert.equal(L.restarts({ restart: true, mode: "background" }), false,
+    "a background run has no terminal to press Ctrl-C into");
+  assert.equal(L.restarts({ mode: "terminal" }), false, "off unless asked for");
+  assert.equal(L.coerceButton({ command: "x", restart: "yes" }).restart, false,
+    "only a real true turns it on");
+  assert.equal(L.coerceButton({ command: "x", restart: true }).restart, true);
+}
+
+/* Restart on: a press on a running program sends Ctrl-C into its shell,
+   waits for the prompt, and only then types the line again. */
+async function testSshLauncherRestartSendsCtrlCFirst() {
+  const L = Corvus.pluginSshLauncher;
+  const line = { name: "ssh-launcher/a", data: "cd -- '/srv' && ./run.sh\n" };
+  const ctrlC = { name: "ssh-launcher/a", data: "\x03" };
+  const h = mountLauncher({ saved: { buttons: [Object.assign({}, TERMINAL_BUTTON, { restart: true })] } });
+  await flushMicrotasks();
+  assert.match(h.shelf()[0].getAttribute("aria-label"), /^Launch /);
+
+  // Nothing running yet: Ctrl-C finds no shell, so it is an ordinary first press.
+  click(h.shelf()[0]);
+  await flushMicrotasks();
+  await flushMicrotasks();
+  await flushMicrotasks();
+  assert.deepEqual(h.sends(), [ctrlC, line]);
+  assert.equal(h.connects().length, 1);
+  assert.equal(h.shelf()[0].getAttribute("aria-label"), "Restart Start mission");
+  assert.match(h.shelf()[0].title, /Ctrl-C/);
+
+  click(h.shelf()[0]);
+  await flushMicrotasks();
+  assert.deepEqual(h.sends().slice(2), [ctrlC],
+    "the line waits until the shell has had time to take the prompt back");
+  await new Promise((r) => setTimeout(r, L.RESTART_GRACE_MS + 50));
+  await flushMicrotasks();
+  assert.deepEqual(h.sends().slice(2), [ctrlC, line], "then it is typed into the same shell");
+  assert.equal(h.connects().length, 1, "no second session");
+  assert.match(h.status().textContent, /stopped with Ctrl-C and started again/);
+  L.destroy(h.container);
+}
+
+async function testSshLauncherRestartSwitchIsSavedAndOnlyForATerminal() {
+  const h = mountLauncher({ saved: { buttons: [TERMINAL_BUTTON] } });
+  await flushMicrotasks();
+  click(h.tool("Edit Start mission"));
+  const switches = querySel(h.container.children, ".field-switch");
+  const toggles = querySel(h.container.children, ".ui-toggle");
+  assert.equal(toggles[1].getAttribute("aria-label"), "Restart on press");
+  assert.equal(toggles[1].getAttribute("aria-checked"), "false");
+  assert.equal(switches[1].hidden, false);
+
+  click(toggles[0]);                       // run in the background
+  assert.equal(switches[1].hidden, true, "no restart without a terminal");
+  click(toggles[0]);                       // back to a terminal
+  assert.equal(switches[1].hidden, false);
+
+  click(toggles[1]);
+  click(h.byLabel("Save")[0]);
+  await flushMicrotasks();
+  assert.equal(h.savedNow().buttons[0].restart, true);
   Corvus.pluginSshLauncher.destroy(h.container);
 }
 
@@ -1802,6 +1867,9 @@ async function run() {
   await testSshLauncherArrowThatCannotConnectSaysWhy();
   await testSshLauncherBackgroundButtonHasNoArrow();
   await testSshLauncherPressingItAgainRunsInTheSameSession();
+  testSshLauncherRestartsOnlyAProgramInATerminal();
+  await testSshLauncherRestartSendsCtrlCFirst();
+  await testSshLauncherRestartSwitchIsSavedAndOnlyForATerminal();
   await testSshLauncherReopensASessionThatHasEnded();
   await testSshLauncherLaunchingOpensNoTerminalWindow();
   await testSshLauncherTwoButtonsUseTwoSeparateSessions();

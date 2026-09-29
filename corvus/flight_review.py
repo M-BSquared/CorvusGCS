@@ -20,11 +20,13 @@ Two properties matter more than breadth here:
 """
 from __future__ import annotations
 
+import bisect
+import dataclasses
 import hashlib
 import math
 import os
 import threading
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from typing import Any
 from collections.abc import Callable, Iterable
 
@@ -33,6 +35,118 @@ from .ulog import ULog, read
 # Points per series handed to the browser. Plotly draws this smoothly and it is
 # far more resolution than a between-flights check needs.
 MAX_POINTS = 1200
+
+
+# ---------------------------------------------------------------------------
+# Sensitivity
+# ---------------------------------------------------------------------------
+# How readily a number becomes a finding. The operator sets it once, in
+# Settings, because the right answer depends on the fleet rather than the log:
+# a test pilot tuning a new airframe wants every early sign, and an operator
+# flying a proven aircraft every day wants only what should keep it on the
+# ground. The plots are the same at every setting; only the list above them
+# changes.
+SENSITIVITIES = ("relaxed", "normal", "strict")
+DEFAULT_SENSITIVITY = "normal"
+
+
+@dataclasses.dataclass(frozen=True)
+class Limits:
+    """Where each finding starts, at one sensitivity.
+
+    One table rather than numbers scattered through the detectors, so what
+    "relaxed" and "strict" mean can be read in one place, and so the ULog and
+    the telemetry review move together when either is retuned.
+    """
+
+    vibration_warn: float       # m/s², accelerometer vibration metric
+    vibration_crit: float
+    clipping_warn: float        # clipped samples added while armed
+    clipping_crit: float
+    innovation_hold_s: float    # an EKF test ratio held above 1.0
+    saturation_warn_s: float    # one motor at its limit while the others were not
+    saturation_crit_s: float
+    reset_events: int           # separate estimator resets in flight
+    gps_lost_s: float
+    rc_lost_s: float
+    attitude_warn_deg: float
+    attitude_crit_deg: float
+    ringing_dps: float
+    motor_spread_us: float
+    mag_correlation: float
+    mag_swing: float
+    cell_warn_v: float          # per cell, held under load
+    cell_crit_v: float
+    cell_hold_s: float
+    sag_per_cell_v: float
+    cpu_pct: float
+    cpu_hold_s: float
+    dropout_ms: float
+    link_drop_pct: float
+    remote_rssi: float
+    unhealthy_s: float
+
+
+_LIMITS: dict[str, Limits] = {
+    # Only what should keep the aircraft on the ground.
+    "relaxed": Limits(
+        vibration_warn=45.0, vibration_crit=80.0,
+        clipping_warn=200.0, clipping_crit=2000.0,
+        innovation_hold_s=5.0,
+        saturation_warn_s=4.0, saturation_crit_s=10.0,
+        reset_events=5, gps_lost_s=5.0, rc_lost_s=1.0,
+        attitude_warn_deg=15.0, attitude_crit_deg=25.0,
+        ringing_dps=20.0, motor_spread_us=120.0,
+        mag_correlation=0.7, mag_swing=0.15,
+        cell_warn_v=3.3, cell_crit_v=3.1, cell_hold_s=5.0, sag_per_cell_v=0.7,
+        cpu_pct=95.0, cpu_hold_s=3.0, dropout_ms=1000.0,
+        link_drop_pct=10.0, remote_rssi=40.0, unhealthy_s=5.0,
+    ),
+    # The default: a proven aircraft flown normally produces an empty list.
+    "normal": Limits(
+        vibration_warn=30.0, vibration_crit=60.0,
+        clipping_warn=25.0, clipping_crit=500.0,
+        innovation_hold_s=2.0,
+        saturation_warn_s=1.5, saturation_crit_s=5.0,
+        reset_events=3, gps_lost_s=2.0, rc_lost_s=0.5,
+        attitude_warn_deg=10.0, attitude_crit_deg=20.0,
+        ringing_dps=12.0, motor_spread_us=80.0,
+        mag_correlation=0.5, mag_swing=0.10,
+        cell_warn_v=3.4, cell_crit_v=3.2, cell_hold_s=3.0, sag_per_cell_v=0.5,
+        cpu_pct=90.0, cpu_hold_s=2.0, dropout_ms=500.0,
+        link_drop_pct=5.0, remote_rssi=55.0, unhealthy_s=2.0,
+    ),
+    # Every early sign, for tuning and for a new airframe.
+    "strict": Limits(
+        vibration_warn=20.0, vibration_crit=45.0,
+        clipping_warn=1.0, clipping_crit=50.0,
+        innovation_hold_s=1.0,
+        saturation_warn_s=0.5, saturation_crit_s=2.0,
+        reset_events=1, gps_lost_s=1.0, rc_lost_s=0.0,
+        attitude_warn_deg=8.0, attitude_crit_deg=15.0,
+        ringing_dps=8.0, motor_spread_us=60.0,
+        mag_correlation=0.4, mag_swing=0.05,
+        cell_warn_v=3.5, cell_crit_v=3.3, cell_hold_s=1.0, sag_per_cell_v=0.35,
+        cpu_pct=85.0, cpu_hold_s=1.0, dropout_ms=200.0,
+        link_drop_pct=2.0, remote_rssi=60.0, unhealthy_s=0.0,
+    ),
+}
+
+
+def normalize_sensitivity(value: Any) -> str:
+    """A known sensitivity name, or the default for anything else.
+
+    Read from a config file an operator may have edited by hand, so a typo
+    reviews at the default rather than failing the review.
+    """
+    if isinstance(value, str) and value.strip().lower() in _LIMITS:
+        return value.strip().lower()
+    return DEFAULT_SENSITIVITY
+
+
+def limits_for(sensitivity: Any) -> Limits:
+    """The thresholds for *sensitivity* (the default for an unknown name)."""
+    return _LIMITS[normalize_sensitivity(sensitivity)]
 
 
 def _decimate(times: list[float], values: list[float]) -> tuple[list[float], list[float]]:
@@ -302,11 +416,8 @@ def _plot_ekf(log: ULog) -> dict | None:
     """EKF innovation test ratios. Above 1.0 the filter is rejecting a sensor."""
     if not log.has("estimator_status"):
         return None
-    names = (("mag_test_ratio", "Magnetometer"), ("vel_test_ratio", "Velocity"),
-             ("pos_test_ratio", "Position"), ("hgt_test_ratio", "Height"),
-             ("tas_test_ratio", "Airspeed"))
     series = []
-    for field, label in names:
+    for field, label in _INNOVATIONS:
         found = _first_field(log, "estimator_status", (field,))
         if found:
             series.append(_series(log, "estimator_status", found, label))
@@ -1454,6 +1565,106 @@ def _time_above(times: list[float], values: list[float], threshold: float,
     return total, first, worst
 
 
+def _during(when: float | None, spans: list[dict[str, float]],
+            grace: float = 0.0) -> bool:
+    """Whether *when* falls inside one of *spans*, or up to *grace* after it.
+
+    No spans means the log never said when it was armed, and then everything
+    counts: a review that drops a finding because arming was not logged would
+    be quieter for the wrong reason.
+    """
+    if not spans:
+        return True
+    if when is None:
+        return False
+    return any(s["start"] <= when <= s["end"] + grace for s in spans)
+
+
+def _rise(times: list[float], values: list[float],
+          spans: list[dict[str, float]]) -> tuple[float, float | None]:
+    """How much a cumulative counter grew inside *spans*, and when it first did.
+
+    Counted span by span, so what the counter did between two flights (on the
+    bench, in the hand, before logging even started) is not charged to either
+    of them. A counter only ever read by its value reports everything since
+    boot, and a single knock while plugging the battery in then reads as an
+    IMU that saturated in the air. A step backwards is a reboot or a sensor
+    swap rather than negative clipping, so it is skipped, not subtracted.
+    """
+    windows = spans or [{"start": float("-inf"), "end": float("inf")}]
+    total = 0.0
+    first: float | None = None
+    for span in windows:
+        index = bisect.bisect_left(times, span["start"])
+        previous: float | None = None
+        while index < len(times) and times[index] <= span["end"]:
+            value = values[index]
+            if previous is not None and value > previous:
+                total += value - previous
+                if first is None:
+                    first = times[index]
+            previous = value
+            index += 1
+    return total, first
+
+
+def _held_floor(times: list[float], values: list[float],
+                hold_s: float) -> tuple[float, float] | None:
+    """The lowest level a signal stayed at or under for *hold_s* in total,
+    and when it first got there. None when it never spent that long anywhere.
+
+    The minimum of a battery voltage is one sample at the hardest punch of the
+    flight, and a pack that dips there and recovers is a pack doing its job.
+    What decides whether it was run too low is the level it *stayed* at, and
+    that is this: sorted from the bottom, the value at which the time spent
+    at or under it first adds up to *hold_s*.
+    """
+    if not values:
+        return None
+    dt = _sample_dt(times)
+    durations = []
+    for index in range(len(values)):
+        step = (times[index + 1] - times[index]) if index + 1 < len(times) else dt
+        durations.append(max(0.0, min(step, 1.0)))
+    spent = 0.0
+    for index in sorted(range(len(values)), key=lambda i: values[i]):
+        spent += durations[index]
+        if spent > 0.0 and spent >= hold_s:
+            level = values[index]
+            when = next(times[i] for i, v in enumerate(values) if v <= level)
+            return level, when
+    return None
+
+
+# Seconds either side of which a drop counts as load rather than discharge.
+_SAG_WINDOW_S = 10.0
+
+
+def _sag(times: list[float], values: list[float],
+         window: float = _SAG_WINDOW_S) -> tuple[float, float | None]:
+    """The largest drop below a recent high, and when it bottomed out.
+
+    Measured against the highest reading of the previous *window* seconds
+    rather than against the start of the flight. Full to empty is discharge,
+    which every flight has; a 6S pack loses well over three volts of it on an
+    ordinary flight. What a pack under load gives up within a few seconds and
+    gets back is sag, and that is the part that says something about its
+    internal resistance.
+    """
+    best, best_at = 0.0, None
+    highs: deque[int] = deque()
+    for index, (moment, value) in enumerate(zip(times, values)):
+        while highs and times[highs[0]] < moment - window:
+            highs.popleft()
+        while highs and values[highs[-1]] <= value:
+            highs.pop()
+        highs.append(index)
+        drop = values[highs[0]] - value
+        if drop > best:
+            best, best_at = drop, moment
+    return best, best_at
+
+
 def _within(times: list[float], values: list[float],
             spans: list[dict[str, float]]) -> tuple[list[float], list[float]]:
     """The part of a signal that falls inside *spans* — normally armed flight.
@@ -1478,7 +1689,7 @@ def _within(times: list[float], values: list[float],
 
 
 def _align(times: list[float], other_t: list[float],
-           other_v: list[float]) -> list[float]:
+           other_v: list[float], max_age: float | None = None) -> list[float]:
     """Sample ``(other_t, other_v)`` at *times*, holding the last known value.
 
     Two PX4 topics are never on the same clock: attitude runs at 250 Hz and its
@@ -1487,15 +1698,25 @@ def _align(times: list[float], other_t: list[float],
     Zero-order hold is what the controller itself saw — the last setpoint it
     was given — so the difference is the real tracking error and not an
     artefact of two sample rates.
+
+    With *max_age*, a value older than that is NaN instead of held. An
+    attitude setpoint stops being published in Acro or Manual, and holding the
+    last one across a whole stretch of hand flying measures the pilot against
+    a target nobody was aiming at.
     """
     out: list[float] = []
     cursor = 0
     last = float("nan")
+    last_t = float("-inf")
     for moment in times:
         while cursor < len(other_t) and other_t[cursor] <= moment:
             last = other_v[cursor]
+            last_t = other_t[cursor]
             cursor += 1
-        out.append(last)
+        if max_age is not None and moment - last_t > max_age:
+            out.append(float("nan"))
+        else:
+            out.append(last)
     return out
 
 
@@ -1642,8 +1863,6 @@ def _peak_of(plot: dict | None) -> tuple[str, float, float | None]:
 # A normalised motor command this close to 1.0 is the mixer asking a motor for
 # everything it has and being told no.
 _SATURATED = 0.95
-# Below this it is a gust, not a finding.
-_SATURATION_S = 0.5
 # A motor under this still has room to give, so a neighbour at its limit
 # is an imbalance rather than an aircraft asked for everything it had.
 _HEADROOM = 0.8
@@ -1657,8 +1876,10 @@ def _longest(spans: list[dict[str, float]]) -> list[dict[str, float]]:
     return [max(spans, key=lambda s: s["end"] - s["start"])]
 
 
-def _saturated_motor(log: ULog, armed: list[dict[str, float]]) -> tuple[str, float, float] | None:
-    """The motor that spent longest at its limit *while the others had not*.
+def _saturated_motor(log: ULog, armed: list[dict[str, float]],
+                     floor_s: float) -> tuple[str, float, float] | None:
+    """The motor that spent longest at its limit *while the others had not*,
+    provided that was at least *floor_s* in total.
 
     Differential saturation only, and that qualification is the whole value of
     the finding. Every motor at its limit together is a pilot asking for full
@@ -1702,8 +1923,10 @@ def _saturated_motor(log: ULog, armed: list[dict[str, float]]) -> tuple[str, flo
     for motor in range(width):
         when, column = _within(times[:span], flags[motor], armed)
         seconds, first, _ = _time_above(when, column, 0.5)
-        if seconds >= _SATURATION_S and (worst is None or seconds > worst[1]):
-            worst = (f"Motor {motor + 1}", seconds, first or 0.0)
+        if first is None or seconds < floor_s:
+            continue
+        if worst is None or seconds > worst[1]:
+            worst = (f"Motor {motor + 1}", seconds, first)
     return worst
 
 
@@ -1718,9 +1941,16 @@ _RESET_COUNTERS = (
 )
 
 
-def _estimator_resets(log: ULog,
-                      armed: list[dict[str, float]]) -> list[tuple[str, int, float]]:
-    """``(what was reset, how many times, when it first happened)``, armed only.
+# Resets closer together than this are one estimator event. The filter
+# re-anchoring on GPS resets position, velocity and heading in the same breath,
+# and that is one thing that happened, not three.
+_RESET_EVENT_S = 1.0
+
+
+def _estimator_resets(log: ULog, armed: list[dict[str, float]]
+                      ) -> tuple[list[tuple[str, int, float]], int]:
+    """``(what was reset, how many times, when it first happened)`` for each
+    counter, armed only, and how many separate events those resets make up.
 
     An estimator that resets on the ground is an estimator starting up: the
     first GPS fix arrives, the filter throws away its dead-reckoned guess and
@@ -1728,8 +1958,13 @@ def _estimator_resets(log: ULog,
     system working. Counting it produced four separate alarms about a perfectly
     ordinary boot, which is worse than counting nothing — after the ground is
     excluded, what is left is the estimator changing its mind in flight.
+
+    Events rather than resets decide the level, because one of those is part
+    of every ordinary flight too: PX4 aligns its heading again once the
+    aircraft is clear of the ground and the magnetic field of the landing site.
     """
     out: list[tuple[str, int, float]] = []
+    moments: list[float] = []
     for field, label in _RESET_COUNTERS:
         times, values = _within(*_raw(log, "vehicle_local_position", field), armed)
         if len(values) < 2:
@@ -1742,11 +1977,18 @@ def _estimator_resets(log: ULog,
             step = (int(values[index]) - int(values[index - 1])) % 256
             if 0 < step < 32:
                 count += step
+                moments.append(times[index])
                 if first is None:
                     first = times[index]
         if count:
             out.append((label, count, first or 0.0))
-    return out
+    events = 0
+    last = float("-inf")
+    for moment in sorted(moments):
+        if moment - last >= _RESET_EVENT_S:
+            events += 1
+        last = moment
+    return out, events
 
 
 # vehicle_status.failure_detector_status, as PX4 packs it. These are the
@@ -1781,10 +2023,76 @@ def _failure_detector(log: ULog) -> tuple[list[str], float | None]:
     return flagged, first
 
 
-def _failsafe(log: ULog) -> tuple[float, float | None]:
-    """``(seconds in failsafe, when it started)``."""
-    times, values = _raw(log, "vehicle_status", "failsafe")
+def _failsafe(log: ULog, armed: list[dict[str, float]]) -> tuple[float, float | None]:
+    """``(seconds in failsafe while armed, when it started)``.
+
+    Armed only: a vehicle sitting on the bench with its transmitter switched
+    off is in failsafe by definition, and saying so about every log recorded
+    that way is noise.
+    """
+    times, values = _within(*_raw(log, "vehicle_status", "failsafe"), armed)
     return _time_above(times, values, 0.5)[:2]
+
+
+def _armed_at_end(log: ULog) -> bool | None:
+    """Whether the vehicle was still armed at the last status it logged, or
+    None when the log does not say."""
+    field = _first_field(log, "vehicle_status", ("arming_state",))
+    if field is None:
+        return None
+    states = log.series("vehicle_status", field, 0)
+    return int(states[-1]) == 2 if states else None
+
+
+def _clipping(log: ULog, armed: list[dict[str, float]]) -> tuple[float, float | None]:
+    """``(clipped samples added while armed, when the first was)`` for the worst
+    IMU. The counters are cumulative since boot, so only their growth inside
+    the armed time is this flight's."""
+    topic = _first_topic(log, ("vehicle_imu_status", "sensor_accel_status"))
+    if topic is None:
+        return 0.0, None
+    worst: tuple[float, float | None] = (0.0, None)
+    for multi_id in log.instances(topic)[:3]:
+        values = log.series(topic, "accel_clipping", multi_id)
+        if values and isinstance(values[0], list):
+            column = [float(sum(row)) for row in values]
+        else:
+            counter = _first_field(log, topic, ("accel_clipping_count",), multi_id)
+            if counter is None:
+                continue
+            column = [float(v) for v in log.series(topic, counter, multi_id)]
+        times = _time_axis(log, topic, multi_id)
+        span = min(len(times), len(column))
+        grown, when = _rise(times[:span], column[:span], armed)
+        if grown > worst[0]:
+            worst = (grown, when)
+    return worst
+
+
+def _vibration_peak(log: ULog, armed: list[dict[str, float]]) -> tuple[float, float | None]:
+    """``(highest accelerometer vibration while armed, when)``.
+
+    Only the accelerometer metric: the gyro one shares the plot but is in
+    rad/s, and holding it to a threshold in m/s² would never mean anything.
+    """
+    columns: list[tuple[list[float], list[float]]] = []
+    if log.has("vehicle_imu_status"):
+        for multi_id in log.instances("vehicle_imu_status")[:3]:
+            columns.append(_raw(log, "vehicle_imu_status", "accel_vibration_metric",
+                                multi_id))
+    elif log.has("estimator_status"):
+        for index in range(3):
+            columns.append(_raw_component(log, "estimator_status", "vibe", index))
+    worst: tuple[float, float | None] = (0.0, None)
+    for times, values in columns:
+        for moment, value in zip(*_within(times, values, armed)):
+            if value > worst[0]:
+                worst = (value, moment)
+    return worst
+
+
+# An attitude setpoint older than this is not being flown towards any more.
+_SETPOINT_MAX_AGE_S = 0.5
 
 
 def _attitude_error(log: ULog, axis: str,
@@ -1812,7 +2120,7 @@ def _attitude_error(log: ULog, axis: str,
     times, column = _within(times[:span], column[:span], armed)
     if len(times) < 50:
         return None
-    held = _align(times, sp_t, sp_v)
+    held = _align(times, sp_t, sp_v, max_age=_SETPOINT_MAX_AGE_S)
     errors: list[float] = []
     peak, peak_at = 0.0, None
     for index, value in enumerate(column):
@@ -1911,7 +2219,8 @@ _RECOVERY_MODES = ("Return", "Descend", "Termination", "Precision land")
 # ---------------------------------------------------------------------------
 
 def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
-              armed: list[dict[str, float]]) -> list[dict[str, Any]]:
+              armed: list[dict[str, float]],
+              sensitivity: str = DEFAULT_SENSITIVITY) -> list[dict[str, Any]]:
     """The few lines worth reading before the plots.
 
     Only things that are actually derivable from this log — no scoring, no
@@ -1925,10 +2234,19 @@ def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
     *alone*, an estimator reset has to happen in the air, and a compass has to
     swing by a believable amount before the wiring is blamed for it.
 
+    Where the log says when the vehicle was armed, only that time is measured.
+    The bench, the walk out to the field and the battery being pulled
+    afterwards are all in the file, and none of them is the flight.
+
     Each finding carries the second of the flight it was measured at and the
     mode flown then, because "vibration peaked at 48" is a number to argue with
     and "48 at 4:12, in Position" is a place to look.
+
+    *sensitivity* picks the thresholds (see :data:`_LIMITS`); what the log
+    contains decides whether a finding exists at all.
     """
+    level_name = normalize_sensitivity(sensitivity)
+    limits = limits_for(level_name)
     out: list[dict[str, Any]] = []
     by_id = {p["id"]: p for p in plots}
 
@@ -1948,10 +2266,10 @@ def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
             "this file. Whatever else is on this page, start here.",
             flagged_at)
 
-    saturated = _saturated_motor(log, armed)
+    saturated = _saturated_motor(log, armed, limits.saturation_warn_s)
     if saturated:
         name, seconds, when = saturated
-        add("critical",
+        add("critical" if seconds >= limits.saturation_crit_s else "warning",
             f"{name} was pinned at full output for {seconds:.1f} s while the "
             "others still had headroom",
             "One motor at its limit alone is the mixer wanting to correct and "
@@ -1962,21 +2280,23 @@ def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
             "hard climb, and is not reported.)",
             when)
 
-    clipping = by_id.get("clipping")
-    if clipping:
-        _, total, when = _peak_of(clipping)
-        if total > 0:
-            add("critical",
-                f"Accelerometer clipping: {int(total)} samples",
-                "The IMU saturated, so for those samples it reported a limit "
-                "rather than a measurement. Treat the attitude and position "
-                "estimates in this log with suspicion, and soften the "
-                "flight-controller mounting before trusting the next one.",
-                when)
+    clipped, clipped_at = _clipping(log, armed)
+    if clipped >= limits.clipping_crit:
+        add("critical", f"Accelerometer clipping: {int(clipped)} samples",
+            "The IMU saturated while armed, so for those samples it reported a "
+            "limit rather than a measurement. Treat the attitude and position "
+            "estimates in this log with suspicion, and soften the "
+            "flight-controller mounting before trusting the next one.",
+            clipped_at)
+    elif clipped >= limits.clipping_warn:
+        add("warning", f"Accelerometer clipping: {int(clipped)} samples",
+            "The IMU saturated for a moment while armed. A few at touchdown are "
+            "a firm landing; more than that in the air is vibration reaching "
+            "the flight controller. Only armed time is counted, because the "
+            "counter itself runs from boot.", clipped_at)
 
-    vibration = by_id.get("vibration")
-    if vibration:
-        _, worst, when = _peak_of(vibration)
+    worst, when = _vibration_peak(log, armed)
+    if worst >= limits.vibration_warn:
         # Whether it rides on the throttle decides where to look, and that is a
         # different answer from how bad it got.
         cause = ""
@@ -1990,53 +2310,25 @@ def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
             cause = (" It does not follow the throttle, so the mounting or a "
                      "loose airframe is a likelier cause than the rotating "
                      "parts.")
-        if worst >= 60.0:
+        if worst >= limits.vibration_crit:
             add("critical", f"Vibration peaked at {worst:.0f} m/s²",
-                "Above about 60 the estimator itself starts to suffer. Check "
+                "High enough for the estimator itself to suffer. Check "
                 "propellers, motor bearings and the flight-controller "
                 "mounting." + cause, when)
-        elif worst >= 30.0:
+        else:
             add("warning", f"Vibration peaked at {worst:.0f} m/s²",
-                "Usable, but past the 30 PX4 treats as the point to act on. "
-                "Worth watching rather than grounding the aircraft for." + cause,
-                when)
+                "Usable, but high enough to act on. Worth watching rather "
+                "than grounding the aircraft for." + cause, when)
 
-    failsafe_s, failsafe_at = _failsafe(log)
+    failsafe_s, failsafe_at = _failsafe(log, armed)
     if failsafe_s >= 0.5:
         add("warning", f"In failsafe for {failsafe_s:.0f} s",
             "What the aircraft did about it is the mode strip above; why it "
             "happened is in the messages below.", failsafe_at)
 
-    ekf = by_id.get("ekf")
-    if ekf:
-        worst_name, worst, when = _peak_of(ekf)
-        if worst >= 1.0:
-            # How LONG the estimator disbelieved a sensor is the finding; the
-            # peak alone cannot tell a bump in the road from a dead compass.
-            field = {"Magnetometer": "mag_test_ratio", "Velocity": "vel_test_ratio",
-                     "Position": "pos_test_ratio", "Height": "hgt_test_ratio",
-                     "Airspeed": "tas_test_ratio"}.get(worst_name)
-            seconds = 0.0
-            if field:
-                times, values = _raw(log, "estimator_status", field)
-                seconds, first, _ = _time_above(times, values, 1.0)
-                when = first if first is not None else when
-            if seconds >= 1.0:
-                add("warning",
-                    f"{worst_name} innovations reached {worst:.2f} and stayed "
-                    f"above 1.0 for {seconds:.1f} s",
-                    "Above 1.0 the estimator is rejecting that sensor "
-                    "outright. Held that long, it was flying without it. "
-                    "read the altitude and velocity comparisons in the "
-                    "Estimator section to see what it used instead.", when)
-            else:
-                add("note",
-                    f"{worst_name} innovations touched {worst:.2f} briefly",
-                    "Above 1.0 the estimator momentarily rejected that sensor. "
-                    "A brief excursion is normal. It is noted rather than flagged "
-                    "because it is only a problem when it lasts.", when)
+    _innovation_finding(log, armed, add, limits)
 
-    resets = _estimator_resets(log, armed)
+    resets, events = _estimator_resets(log, armed)
     if resets:
         # One line, not one per counter. The four counters move together on the
         # same event, and four near-identical paragraphs about a single
@@ -2044,38 +2336,37 @@ def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
         total = sum(count for _, count, _ in resets)
         first = min(when for _, _, when in resets)
         parts = ", ".join(f"{label} {count}×" for label, count, _ in resets)
-        add("warning",
-            f"The estimator reset its state {total} time(s) in flight",
-            f"Which: {parts}. A reset is a step in the estimate and therefore "
-            "in what the controller was flying towards. The track and "
-            "position plots jump there because the aircraft's idea of where it "
-            "was jumped, not because it moved. GPS being re-accepted after a "
-            "glitch is the usual cause.", first)
+        detail = (f"Which: {parts}. A reset is a step in the estimate and "
+                  "therefore in what the controller was flying towards. The "
+                  "track and position plots jump there because the aircraft's "
+                  "idea of where it was jumped, not because it moved.")
+        if events >= limits.reset_events:
+            add("warning",
+                f"The estimator reset its state {total} time(s) in flight",
+                detail + " GPS being re-accepted after a glitch is the usual "
+                "cause.", first)
+        else:
+            add("note",
+                f"The estimator reset its state {total} time(s) in flight",
+                detail + " One or two are part of an ordinary flight: PX4 "
+                "aligns its heading again once the aircraft is clear of the "
+                "ground.", first)
 
-    gps_t, gps_v = _raw(log, _first_topic(log, ("vehicle_gps_position", "sensor_gps")) or "",
-                        "fix_type")
-    if gps_v and armed:
-        in_air_t, in_air_v = _within(gps_t, gps_v, armed)
-        lost, lost_at, _ = _time_above(in_air_t, in_air_v, 3.0, below=True)
-        if lost >= 1.0:
-            add("warning", f"GPS below a 3-D fix for {lost:.0f} s while armed",
-                "Position and ground speed across that stretch are dead "
-                "reckoning, however smooth the line on the plot looks.",
-                lost_at)
+    _gps_finding(log, armed, add, limits)
 
     for axis in ("roll", "pitch"):
         measured = _attitude_error(log, axis, armed)
         if measured is None:
             continue
         typical, peak, when = measured
-        if typical >= 20.0:
+        if typical >= limits.attitude_crit_deg:
             add("critical",
                 f"{axis.capitalize()} missed its setpoint by {typical:.0f}° or "
                 f"more for most of the flight",
                 f"Peak {peak:.0f}°. An aircraft that cannot hold the angle it "
                 "is given is short of control authority, not short of tuning. "
-                "read the motor outputs before touching a gain.", when)
-        elif typical >= 10.0:
+                "Read the motor outputs before touching a gain.", when)
+        elif typical >= limits.attitude_warn_deg:
             add("warning",
                 f"{axis.capitalize()} tracked its setpoint to about {typical:.0f}°",
                 f"Peak {peak:.0f}°. Not alarming on its own; worth a look at "
@@ -2086,7 +2377,7 @@ def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
         if ringing is None:
             continue
         amplitude, frequency = ringing
-        if amplitude >= 12.0 and frequency >= 6.0:
+        if amplitude >= limits.ringing_dps and frequency >= 6.0:
             add("warning",
                 f"The {axis} rate rings at about {frequency:.0f} Hz "
                 f"({amplitude:.0f} deg/s)",
@@ -2106,36 +2397,26 @@ def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
         if len(peaks) >= 3:
             averages = [p[2] for p in peaks]
             spread = max(averages) - min(averages)
-            if spread > 80.0:      # µs, on a ~1000 µs band
-                worst = max(peaks, key=lambda p: p[2])[0]
+            if spread > limits.motor_spread_us:      # µs, on a ~1000 µs band
+                worst_motor = max(peaks, key=lambda p: p[2])[0]
                 add("warning",
-                    f"Motor outputs are uneven: {worst} ran {spread:.0f} µs "
+                    f"Motor outputs are uneven: {worst_motor} ran {spread:.0f} µs "
                     "above the lowest on average",
                     "One corner working harder than the others across a whole "
                     "flight is an airframe imbalance, not a tuning one: a bent "
                     "arm, a heavy corner, a mistrimmed propeller.")
 
-    _magnetic_finding(log, armed, add)
+    _magnetic_finding(log, armed, add, limits)
+    _rc_finding(log, armed, add, limits)
+    _battery_findings(log, armed, add, limits)
 
-    rc = by_id.get("rc")
-    if rc:
-        lost = next((s for s in rc["series"] if "lost" in s["name"].lower()), None)
-        if lost:
-            when = next((lost["x"][i] for i, v in enumerate(lost["y"])
-                         if v is not None and v >= 1), None)
-            if when is not None:
-                add("warning", "The RC link reported a signal loss in flight",
-                    "It recovered and the flight continued, but the next one "
-                    "may reach the failsafe instead.", when)
-
-    _battery_findings(log, by_id, add)
-
-    cpu_t, cpu_v = _raw(log, "cpuload", "load", scale=100.0)
+    cpu_t, cpu_v = _within(*_raw(log, "cpuload", "load", scale=100.0), armed)
     if cpu_v:
-        heavy, heavy_at, worst = _time_above(cpu_t, cpu_v, 90.0)
-        if heavy >= 1.0:
+        heavy, heavy_at, worst_cpu = _time_above(cpu_t, cpu_v, limits.cpu_pct)
+        if heavy_at is not None and heavy >= limits.cpu_hold_s:
             add("warning",
-                f"CPU held above 90% for {heavy:.0f} s (peak {worst:.0f}%)",
+                f"CPU held above {limits.cpu_pct:.0f}% for {heavy:.0f} s "
+                f"(peak {worst_cpu:.0f}%)",
                 "At that load PX4 starts missing control-loop deadlines. Turn "
                 "down a logging or telemetry stream rate before the next "
                 "flight.", heavy_at)
@@ -2144,24 +2425,28 @@ def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
         total_ms = sum(d.get("duration_ms", 0) for d in log.dropouts)
         # A few milliseconds lost to a slow SD card is housekeeping; half a
         # second of it is a hole in the evidence.
-        add("warning" if total_ms >= 500 else "note",
+        add("warning" if total_ms >= limits.dropout_ms else "note",
             f"{len(log.dropouts)} logging dropout(s), {total_ms} ms total",
             "The logger could not keep up with the card. Those gaps are "
             "missing data rather than quiet flight, so a flat stretch there "
             "says nothing about the aircraft.")
 
     if log.truncated:
-        add("warning", "The log ends mid-record",
-            "The aircraft lost power before the file was closed: a crash, a "
-            "battery pulled, or a brownout. Everything up to the cut is shown.")
+        if _armed_at_end(log) is False:
+            # Logging from boot until shutdown ends every flight this way: the
+            # battery is pulled with the file still open. The flight is over by
+            # then, so it is context rather than a crash.
+            add("note", "The log ends mid-record after the aircraft disarmed",
+                "The file was never closed, which is what pulling the battery "
+                "does while PX4 is still logging. Everything up to the cut is "
+                "shown, and the flight itself had already ended.")
+        else:
+            add("warning", "The log ends mid-record",
+                "The aircraft lost power before the file was closed: a crash, "
+                "a battery pulled, or a brownout. Everything up to the cut is "
+                "shown.")
 
-    errors = [m for m in log.messages if m["level"] in ("emergency", "alert", "critical", "error")]
-    if errors:
-        add("warning",
-            f"{len(errors)} error-level message(s) in the flight log",
-            "The aircraft's own commentary, in full at the bottom of this "
-            "page. It is usually the shortest route to why a flight went the "
-            "way it did.")
+    _message_findings(log, armed, add)
 
     recovery = next((m for m in modes if m["mode"] in _RECOVERY_MODES), None)
     if recovery and failsafe_s < 0.5:
@@ -2173,18 +2458,155 @@ def _findings(log: ULog, plots: list[dict], modes: list[dict[str, Any]],
             "it, the reason is in the messages below.", recovery["start"])
 
     if not any(f["level"] in ("critical", "warning") for f in out):
-        out.insert(0, _finding("ok",
-                               "Nothing flagged in this log",
-                               None, modes,
-                               "No clipping, no sustained EKF rejection, no "
-                               "motor imbalance, no RC loss and no in-flight "
-                               "estimator reset. Anything listed below this is "
-                               "context rather than a problem."))
+        out.insert(0, _finding(
+            "ok", "Nothing flagged in this log", None, modes,
+            f"Checked at the {level_name} sensitivity set in Settings. No "
+            "clipping, vibration, estimator rejection, motor imbalance, RC "
+            "loss or low battery reached that level. The plots still show "
+            "everything, and anything listed under this line is context "
+            "rather than a problem."))
     return out
 
 
-def _magnetic_finding(log: ULog, armed: list[dict[str, float]],
+# EKF innovation test ratios, as estimator_status names them.
+_INNOVATIONS = (("mag_test_ratio", "Magnetometer"), ("vel_test_ratio", "Velocity"),
+                ("pos_test_ratio", "Position"), ("hgt_test_ratio", "Height"),
+                ("tas_test_ratio", "Airspeed"))
+
+
+def _innovation_finding(log: ULog, armed: list[dict[str, float]],
+                        add: Callable[..., None], limits: Limits) -> None:
+    """The sensor the estimator rejected longest, if it rejected one at all.
+
+    How LONG it disbelieved a sensor is the finding; the peak alone cannot tell
+    a bump in the road from a dead compass. Armed only, because a magnetometer
+    sitting on a steel workbench is rejected for the whole of the bench test
+    and that is the estimator being right.
+    """
+    worst: tuple[tuple[float, float], str, float, float, float | None] | None = None
+    for field, label in _INNOVATIONS:
+        times, values = _within(*_raw(log, "estimator_status", field), armed)
+        if not values:
+            continue
+        peak = max(values)
+        if peak < 1.0:
+            continue
+        seconds, first, _ = _time_above(times, values, 1.0)
+        rank = (seconds, peak)
+        if worst is None or rank > worst[0]:
+            worst = (rank, label, peak, seconds, first)
+    if worst is None:
+        return
+    _, label, peak, seconds, first = worst
+    if seconds >= limits.innovation_hold_s:
+        add("warning",
+            f"{label} innovations reached {peak:.2f} and stayed above 1.0 for "
+            f"{seconds:.1f} s",
+            "Above 1.0 the estimator is rejecting that sensor outright. Held "
+            "that long, it was flying without it. Read the altitude and "
+            "velocity comparisons in the Estimator section to see what it used "
+            "instead.", first)
+    else:
+        add("note",
+            f"{label} innovations touched {peak:.2f} briefly",
+            "Above 1.0 the estimator momentarily rejected that sensor. A brief "
+            "excursion is normal. It is noted rather than flagged because it is "
+            "only a problem when it lasts.", first)
+
+
+def _gps_finding(log: ULog, armed: list[dict[str, float]],
+                 add: Callable[..., None], limits: Limits) -> None:
+    """A 3-D fix lost in the air, after the receiver had one.
+
+    A flight that never had a fix (indoors, or flown by hand with no GPS
+    fitted) did not lose anything, and calling every second of it dead
+    reckoning would be a warning about a choice the pilot made.
+    """
+    topic = _first_topic(log, ("vehicle_gps_position", "sensor_gps"))
+    if topic is None or not armed:
+        return
+    times, values = _raw(log, topic, "fix_type")
+    fixed_at = next((t for t, v in zip(times, values) if v >= 3), None)
+    if fixed_at is None:
+        return
+    air = [(t, v) for t, v in zip(*_within(times, values, armed)) if t >= fixed_at]
+    lost, lost_at, _ = _time_above([t for t, _ in air], [v for _, v in air],
+                                   3.0, below=True)
+    if lost_at is not None and lost >= limits.gps_lost_s:
+        add("warning", f"GPS below a 3-D fix for {lost:.0f} s while armed",
+            "Position and ground speed across that stretch are dead "
+            "reckoning, however smooth the line on the plot looks.", lost_at)
+
+
+def _rc_finding(log: ULog, armed: list[dict[str, float]],
+                add: Callable[..., None], limits: Limits) -> None:
+    """An RC link that had been up and then dropped while armed.
+
+    A receiver reports "lost" from the moment it powers up until it hears a
+    transmitter, and for the whole flight if the aircraft is flown from the
+    ground station without one. Neither is a loss of anything.
+    """
+    topic = _first_topic(log, ("input_rc", "rc_channels"))
+    if topic is None:
+        return
+    field = _first_field(log, topic, ("rc_lost", "signal_lost"))
+    if field is None:
+        return
+    times, values = _raw(log, topic, field)
+    linked_at = next((t for t, v in zip(times, values) if v < 0.5), None)
+    if linked_at is None:
+        return
+    air = [(t, v) for t, v in zip(*_within(times, values, armed)) if t >= linked_at]
+    seconds, when, _ = _time_above([t for t, _ in air], [v for _, v in air], 0.5)
+    if when is not None and seconds >= limits.rc_lost_s:
+        add("warning", "The RC link reported a signal loss in flight",
+            f"Lost for {seconds:.1f} s in total, after the link had been up. "
+            "The flight carried on, but the next one may reach the failsafe "
+            "instead.", when)
+
+
+# Levels a message has to reach before it counts as the aircraft complaining.
+_ERROR_LEVELS = ("emergency", "alert", "critical", "error")
+# A crash or a failsafe is often only reported in the seconds after disarm.
+_MESSAGE_GRACE_S = 3.0
+
+
+def _message_findings(log: ULog, armed: list[dict[str, float]],
                       add: Callable[..., None]) -> None:
+    """The aircraft's own error messages, split by whether it was flying.
+
+    PX4 prints its refusals to arm at error level ("Preflight Fail: ...").
+    Those are the system working, and a warning about them on every log where
+    the pilot tried to arm a moment too early buried the errors that were
+    printed in the air.
+    """
+    base = _log_start(log)
+    flying: list[dict[str, Any]] = []
+    grounded: list[dict[str, Any]] = []
+    for message in log.messages:
+        if message.get("level") not in _ERROR_LEVELS:
+            continue
+        try:
+            when: float | None = (float(message["t"]) - base) / 1e6
+        except (TypeError, ValueError, KeyError):
+            when = None
+        (flying if _during(when, armed, _MESSAGE_GRACE_S) else grounded).append(message)
+    if flying:
+        add("warning",
+            f"{len(flying)} error-level message(s) in the flight log",
+            f"The first was “{flying[0]['text']}”. The aircraft's own "
+            "commentary is in full at the bottom of this page, and it is "
+            "usually the shortest route to why a flight went the way it did.")
+    if grounded:
+        add("note",
+            f"{len(grounded)} error-level message(s) while disarmed",
+            f"The first was “{grounded[0]['text']}”. Printed on the ground, "
+            "these are usually the pre-arm checks refusing to arm, which is the "
+            "system doing its job. They are listed at the bottom of this page.")
+
+
+def _magnetic_finding(log: ULog, armed: list[dict[str, float]],
+                      add: Callable[..., None], limits: Limits) -> None:
     """Compass interference, but only where the numbers are believable.
 
     The swing is measured between the 5th and 95th percentile rather than
@@ -2202,13 +2624,13 @@ def _magnetic_finding(log: ULog, armed: list[dict[str, float]],
     if middle <= 0:
         return
     swing = (_percentile(finite, 0.95) - _percentile(finite, 0.05)) / middle
-    # Under 5% there is nothing to explain. Over 60% this is not a compass in
-    # flight — a sensor swap, a unit mix-up, a dropout — and blaming the
-    # aircraft's wiring for it would be wrong.
-    if not 0.05 <= swing <= 0.6:
+    # Under the floor there is nothing to explain. Over 60% this is not a
+    # compass in flight — a sensor swap, a unit mix-up, a dropout — and blaming
+    # the aircraft's wiring for it would be wrong.
+    if not limits.mag_swing <= swing <= 0.6:
         return
     follows = _tracks_thrust(log, times, values, armed)
-    if follows is None or follows < 0.5:
+    if follows is None or follows < limits.mag_correlation:
         return
     add("warning",
         f"Compass field strength moves with the throttle (correlation "
@@ -2220,32 +2642,27 @@ def _magnetic_finding(log: ULog, armed: list[dict[str, float]],
         "distance, not another calibration.")
 
 
-def _battery_findings(log: ULog, by_id: dict[str, dict],
-                      add: Callable[..., None]) -> None:
+def _battery_findings(log: ULog, armed: list[dict[str, float]],
+                      add: Callable[..., None], limits: Limits) -> None:
     """What the pack did, in the two ways it can go wrong.
 
     Sag is about the pack's health; the per-cell floor is about whether this
     flight damaged it. They are separate findings because they have separate
     answers — one retires a battery, the other shortens the next flight.
+
+    Both are read from the armed time only. Before arming the voltage can still
+    be settling from the moment the pack was plugged in, and after disarm it is
+    a pack recovering on the ground; neither says anything about how it was
+    flown.
     """
-    battery = by_id.get("battery")
-    if not battery:
+    field = _first_field(log, "battery_status", ("voltage_filtered_v", "voltage_v"))
+    if field is None:
         return
-    voltage = next((s for s in battery["series"] if s["name"] == "Voltage"), None)
-    if not voltage:
+    times, volts = _raw(log, "battery_status", field)
+    kept = [(t, v) for t, v in zip(times, volts) if v > 1.0]
+    if not kept:
         return
-    finite = [(v, voltage["x"][i]) for i, v in enumerate(voltage["y"])
-              if v is not None and v > 1.0]
-    if not finite:
-        return
-    top = max(finite)[0]
-    floor, floor_at = min(finite)
-    sag = top - floor
-    if sag > 3.0:
-        add("warning", f"Pack voltage sagged {sag:.1f} V under load",
-            "The gap between resting and loaded voltage is internal "
-            "resistance, and a pack that dives this far is near the end of "
-            "its useful life.", floor_at)
+    top = max(v for _, v in kept)
 
     # Cell count from the logged value where PX4 has one, and otherwise from
     # the HIGHEST voltage seen: a lithium cell cannot exceed about 4.25 V, so
@@ -2254,20 +2671,39 @@ def _battery_findings(log: ULog, by_id: dict[str, dict],
     # and it hides the one battery finding that matters.
     logged = [int(v) for v in log.series("battery_status", "cell_count", 0) if v]
     cells = logged[0] if logged else max(1, math.ceil(top / 4.25))
-    per_cell = floor / cells
-    if per_cell < 3.3:
+
+    air_t, air_v = _within([t for t, _ in kept], [v for _, v in kept], armed)
+    if not air_v:
+        return
+    sag, sag_at = _sag(air_t, air_v)
+    if sag / cells > limits.sag_per_cell_v:
+        add("warning", f"Pack voltage sagged {sag:.1f} V under load",
+            f"{sag / cells:.2f} V per cell within a few seconds, which is "
+            "internal resistance rather than the pack emptying. A pack that "
+            "dives this far under load is near the end of its useful life.",
+            sag_at)
+
+    # The level the pack STAYED at, not the one sample at the hardest punch:
+    # a pack that dips there and recovers is a pack doing its job.
+    held = _held_floor(air_t, [v / cells for v in air_v], limits.cell_hold_s)
+    if held is None:
+        return
+    per_cell, floor_at = held
+    floor = per_cell * cells
+    if per_cell < limits.cell_crit_v:
         add("critical",
             f"The pack reached {floor:.1f} V ({per_cell:.2f} V per cell "
             f"across {cells})",
-            "That is into the range that permanently costs a lithium pack "
-            "capacity. If it only touched it under load and recovered after "
-            "landing, the damage is smaller, but the next flight should be "
-            "shorter either way.", floor_at)
-    elif per_cell < 3.5:
+            f"It stayed at or under that for {limits.cell_hold_s:.0f} s or "
+            "more, which is into the range that permanently costs a lithium "
+            "pack capacity. If it recovered after landing the damage is "
+            "smaller, but the next flight should be shorter either way.",
+            floor_at)
+    elif per_cell < limits.cell_warn_v:
         add("warning",
             f"The pack reached {floor:.1f} V ({per_cell:.2f} V per cell)",
-            "Read it against the current plot: under load a pack recovers, "
-            "and the number that decides the next flight is where it settles "
+            "Held there under load rather than touched in one punch. The "
+            "number that decides the next flight is where the pack settles "
             "after landing.", floor_at)
 
 
@@ -2337,8 +2773,14 @@ def _timed_messages(log: ULog) -> list[dict[str, Any]]:
     return out
 
 
-def review(log: ULog, name: str = "") -> dict[str, Any]:
-    """Reduce a parsed ULog to the Flight Review payload the UI renders."""
+def review(log: ULog, name: str = "",
+           sensitivity: str = DEFAULT_SENSITIVITY) -> dict[str, Any]:
+    """Reduce a parsed ULog to the Flight Review payload the UI renders.
+
+    *sensitivity* is one of :data:`SENSITIVITIES` and only moves the
+    thresholds of the findings; the plots are the same at every setting.
+    """
+    sensitivity = normalize_sensitivity(sensitivity)
     modes = _flight_modes(log)
     armed = _armed_spans(log)
     plots = [plot for plot in (make(log) for make in _PLOTTERS) if plot]
@@ -2366,6 +2808,7 @@ def review(log: ULog, name: str = "") -> dict[str, Any]:
         "topics": sorted(t for t in log.data if log.has(t)),
         "armed_s": round(sum(s["end"] - s["start"] for s in armed), 1),
         "modes_flown": sorted({m["mode"] for m in modes}),
+        "sensitivity": sensitivity,
     }
     return {
         "summary": summary,
@@ -2374,7 +2817,7 @@ def review(log: ULog, name: str = "") -> dict[str, Any]:
         # different things in Position and in Manual.
         "modes": modes,
         "armed": armed,
-        "findings": _findings(log, plots, modes, armed),
+        "findings": _findings(log, plots, modes, armed, sensitivity),
         "plots": plots,
         # The tail of the flight's own commentary. Capped: an aircraft that
         # spent a flight complaining can produce thousands.
@@ -2395,7 +2838,8 @@ _cache: OrderedDict[tuple, dict[str, Any]] = OrderedDict()
 _cache_lock = threading.Lock()
 
 
-def review_bytes(blob: bytes, name: str) -> dict[str, Any]:
+def review_bytes(blob: bytes, name: str,
+                 sensitivity: str = DEFAULT_SENSITIVITY) -> dict[str, Any]:
     """Review a ULog handed over as its own bytes.
 
     For a file the operator picked from outside the download folder: it arrives
@@ -2403,13 +2847,14 @@ def review_bytes(blob: bytes, name: str) -> dict[str, Any]:
     A digest of the content is the honest substitute — the same file picked
     twice is the same review, and an edited one is not.
     """
-    key = ("sha256", hashlib.sha256(blob).hexdigest(), len(blob))
+    sensitivity = normalize_sensitivity(sensitivity)
+    key = ("sha256", hashlib.sha256(blob).hexdigest(), len(blob), sensitivity)
     with _cache_lock:
         hit = _cache.get(key)
         if hit is not None:
             _cache.move_to_end(key)
             return hit
-    data = review(read(blob, topics=REVIEW_TOPICS), name)
+    data = review(read(blob, topics=REVIEW_TOPICS), name, sensitivity)
     _remember(key, data)
     return data
 
@@ -2422,17 +2867,21 @@ def _remember(key: tuple, data: dict[str, Any]) -> None:
             _cache.popitem(last=False)
 
 
-def review_file(path: str, name: str = "") -> dict[str, Any]:
+def review_file(path: str, name: str = "",
+                sensitivity: str = DEFAULT_SENSITIVITY) -> dict[str, Any]:
     """Review the ULog at *path*, reusing a recent result for the same file.
 
     The cache key carries the file's size and modification time, so a log that
     was re-downloaded over its own name is re-read rather than answered from a
-    stale review — the one mistake a cache here could make that matters.
+    stale review — the one mistake a cache here could make that matters. It
+    carries the sensitivity too: the findings are part of what is cached, and
+    changing the setting has to change them.
     """
     label = name or os.path.basename(path)
+    sensitivity = normalize_sensitivity(sensitivity)
     try:
         stat = os.stat(path)
-        key = (os.path.realpath(path), stat.st_size, stat.st_mtime_ns)
+        key = (os.path.realpath(path), stat.st_size, stat.st_mtime_ns, sensitivity)
     except OSError:
         key = None
     if key is not None:
@@ -2443,7 +2892,7 @@ def review_file(path: str, name: str = "") -> dict[str, Any]:
                 return hit
     with open(path, "rb") as handle:
         parsed = read(handle, topics=REVIEW_TOPICS)
-    data = review(parsed, label)
+    data = review(parsed, label, sensitivity)
     if key is not None:
         _remember(key, data)
     return data

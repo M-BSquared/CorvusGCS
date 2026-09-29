@@ -73,6 +73,7 @@ _CONFIG_FIELD_ORDER: tuple[str, ...] = (
     "video",
     "plugins",
     "parameters",
+    "review",
 )
 
 # Required keys on a saved ssh_connections entry; missing keys default to a
@@ -152,6 +153,9 @@ class CorvusConfig:
     (``{"cache_defaults": false}``: whether a copy of each PX4 firmware's
     parameter metadata is kept on this machine; see
     ``corvus/param_metadata.py``).
+    ``review`` holds the Flight Review's options (``{"sensitivity":
+    "normal"}``: how readily a number in a log becomes a finding, one of
+    ``relaxed``/``normal``/``strict``; see ``corvus/flight_review.py``).
 
     They default to empty/None so an old config file with none of these keys
     still loads cleanly.
@@ -192,6 +196,7 @@ class CorvusConfig:
     video: dict[str, Any] | None = None
     plugins: dict[str, Any] | None = None
     parameters: dict[str, Any] | None = None
+    review: dict[str, Any] | None = None
 
     def apply_overrides(self, **kwargs: Any) -> CorvusConfig:
         """Return a copy with non-None kwargs overriding matching fields.
@@ -754,6 +759,22 @@ def _coerce_parameters(raw: Any) -> dict[str, Any] | None:
     return out or None
 
 
+def _coerce_review(raw: Any) -> dict[str, Any] | None:
+    """Keep a known ``sensitivity``; else None.
+
+    Only one of the names the review knows survives. Anything else, a typo in
+    a hand-edited file included, is dropped so the review runs at its default
+    rather than at a setting nobody chose.
+    """
+    if not isinstance(raw, dict):
+        return None
+    from .flight_review import SENSITIVITIES
+    value = raw.get("sensitivity")
+    if isinstance(value, str) and value.strip().lower() in SENSITIVITIES:
+        return {"sensitivity": value.strip().lower()}
+    return None
+
+
 def _build_config(data: dict[str, Any]) -> CorvusConfig:
     """Build a CorvusConfig from a parsed JSON object, ignoring unknown keys.
 
@@ -823,6 +844,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
     video_cfg = _coerce_video(data.get("video"))
     plugins = _coerce_plugins(data.get("plugins"))
     parameters = _coerce_parameters(data.get("parameters"))
+    review = _coerce_review(data.get("review"))
 
     return CorvusConfig(
         mavlink_connection=mavlink_connection,
@@ -851,6 +873,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         video=video_cfg,
         plugins=plugins,
         parameters=parameters,
+        review=review,
     )
 
 
@@ -947,6 +970,8 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
         out["plugins"] = {k: dict(v) for k, v in cfg.plugins.items()}
     if cfg.parameters is not None:
         out["parameters"] = dict(cfg.parameters)
+    if cfg.review is not None:
+        out["review"] = dict(cfg.review)
     # Stable key order for a readable on-disk diff.
     return {k: out[k] for k in _CONFIG_FIELD_ORDER if k in out}
 

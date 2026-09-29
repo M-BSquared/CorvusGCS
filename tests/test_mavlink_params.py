@@ -17,6 +17,7 @@ from collections.abc import Callable
 import pytest
 from pymavlink import mavutil
 
+from corvus import autopilot
 from corvus.mavlink_bridge import MavlinkBridge
 from corvus.state_store import VehicleStateStore
 
@@ -259,36 +260,76 @@ def test_fetch_params_does_not_disturb_the_download_state_machine() -> None:
 # motor_test — the bench identification spin behind Setup -> Motors
 # ---------------------------------------------------------------------------
 
-def _accepting_bridge() -> MavlinkBridge:
-    """A ready bridge whose fake link ACKs every command it is sent."""
+# What PX4 v1.16 to v1.18 answer: Commander handles ACTUATOR_TEST and has no
+# case for DO_MOTOR_TEST, which falls through to UNSUPPORTED.
+PX4_MOTOR_ACKS = {
+    autopilot.MAV_CMD_ACTUATOR_TEST: mavutil.mavlink.MAV_RESULT_ACCEPTED,
+    mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST: mavutil.mavlink.MAV_RESULT_UNSUPPORTED,
+}
+MOTOR_COMMANDS = (autopilot.MAV_CMD_ACTUATOR_TEST, mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST)
+
+
+def _accepting_bridge(
+    stack: str = autopilot.STACK_PX4, results: dict[int, int] | None = None,
+) -> MavlinkBridge:
+    """A ready bridge on *stack* whose fake link ACKs every command it is sent.
+
+    *results* overrides the ACK per command; anything not in it is ACCEPTED.
+    """
     store = VehicleStateStore()
     store.heartbeat()
     bridge = MavlinkBridge(store)
     bridge._target_system = 1
     bridge._target_component = 1
+    bridge._dialect = autopilot.dialect_for_stack(stack)
+    answers = results or {}
 
     def on_send(args):
         # command_long_send(target_sys, target_comp, command, confirmation, p1..p7)
         if isinstance(args, tuple) and args and not isinstance(args[0], str):
-            bridge._dispatch(ack(int(args[2]), mavutil.mavlink.MAV_RESULT_ACCEPTED))
+            command = int(args[2])
+            bridge._dispatch(ack(command, answers.get(command, mavutil.mavlink.MAV_RESULT_ACCEPTED)))
 
     bridge._conn = FakeConnection(on_send)
     return bridge
 
 
-def _motor_test_commands(bridge: MavlinkBridge) -> list[tuple]:
-    return [c for c in bridge._conn.mav.commands
-            if int(c[2]) == mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST]
+def _motor_test_commands(bridge: MavlinkBridge, command: int | None = None) -> list[tuple]:
+    wanted = MOTOR_COMMANDS if command is None else (command,)
+    return [c for c in bridge._conn.mav.commands if int(c[2]) in wanted]
 
 
-def test_motor_test_sends_do_motor_test_with_percent_throttle_and_a_timeout() -> None:
+def test_px4_motor_test_is_accepted_by_firmware_without_do_motor_test() -> None:
+    """Regression: every spin failed on PX4 v1.16 to v1.18 with UNSUPPORTED."""
+    bridge = _accepting_bridge(results=PX4_MOTOR_ACKS)
+
+    assert bridge.motor_test(1, 15.0, 2.0) is True, bridge.get_last_command_error()
+    assert _motor_test_commands(bridge, mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST) == []
+
+
+def test_px4_motor_test_sends_actuator_test_on_the_motor_function() -> None:
     bridge = _accepting_bridge()
 
     assert bridge.motor_test(3, 20.0, 2.0) is True
 
     commands = _motor_test_commands(bridge)
     assert len(commands) == 1
+    assert int(commands[0][2]) == autopilot.MAV_CMD_ACTUATOR_TEST
     # command_long_send(target_sys, target_comp, command, confirmation, p1..p7)
+    p1, p2, _p3, _p4, p5 = commands[0][4:9]
+    assert p1 == pytest.approx(0.2), "thrust 0 to 1"
+    assert p2 == 2.0, "the vehicle counts the timeout down itself"
+    assert p5 == 3.0, "output function MOTOR3"
+
+
+def test_ardupilot_motor_test_sends_do_motor_test_with_percent_throttle() -> None:
+    bridge = _accepting_bridge(autopilot.STACK_ARDUPILOT)
+
+    assert bridge.motor_test(3, 20.0, 2.0) is True
+
+    commands = _motor_test_commands(bridge)
+    assert len(commands) == 1
+    assert int(commands[0][2]) == mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST
     p1, p2, p3, p4, p5, p6 = commands[0][4:10]
     assert p1 == 3.0, "1-based motor number"
     assert p2 == 0.0, "MOTOR_TEST_THROTTLE_PERCENT"
@@ -297,13 +338,16 @@ def test_motor_test_sends_do_motor_test_with_percent_throttle_and_a_timeout() ->
     assert p5 == 0.0 and p6 == 0.0, "this motor only, default order"
 
 
-def test_a_motor_test_timeout_is_always_bounded() -> None:
+@pytest.mark.parametrize("stack, index", [
+    (autopilot.STACK_PX4, 5), (autopilot.STACK_ARDUPILOT, 7),
+])
+def test_a_motor_test_timeout_is_always_bounded(stack: str, index: int) -> None:
     """A spinning motor with no timeout keeps spinning when the link drops."""
-    bridge = _accepting_bridge()
+    bridge = _accepting_bridge(stack)
 
     bridge.motor_test(1, 10.0, 3600.0)
 
-    timeout = _motor_test_commands(bridge)[0][7]
+    timeout = _motor_test_commands(bridge)[0][index]
     assert timeout == bridge.MOTOR_TEST_MAX_DURATION_S
 
 
@@ -335,13 +379,25 @@ def test_motor_test_returns_false_when_disconnected() -> None:
     assert bridge.motor_test(1, 10.0, 2.0) is False
 
 
-def test_stopping_a_motor_test_zeroes_every_motor() -> None:
+def test_px4_stop_releases_every_motor() -> None:
     """Stop must silence motors this session never started, too."""
-    bridge = _accepting_bridge()
+    bridge = _accepting_bridge(results=PX4_MOTOR_ACKS)
+
+    assert bridge.stop_motor_test() is True, bridge.get_last_command_error()
+
+    commands = _motor_test_commands(bridge)
+    assert all(int(c[2]) == autopilot.MAV_CMD_ACTUATOR_TEST for c in commands)
+    assert [c[8] for c in commands] == [float(n) for n in range(1, 9)]
+    assert all(math.isnan(c[4]) and c[5] == 0.0 for c in commands), "output off, timeout 0"
+
+
+def test_ardupilot_stop_zeroes_every_motor() -> None:
+    bridge = _accepting_bridge(autopilot.STACK_ARDUPILOT)
 
     assert bridge.stop_motor_test() is True
 
     commands = _motor_test_commands(bridge)
+    assert all(int(c[2]) == mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST for c in commands)
     assert [c[4] for c in commands] == [float(n) for n in range(1, 9)]
     assert all(c[6] == 0.0 and c[7] == 0.0 for c in commands), "throttle 0, timeout 0"
 

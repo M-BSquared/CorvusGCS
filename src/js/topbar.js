@@ -93,6 +93,22 @@ Corvus.topbar = (function () {
   const TOAST_MAX = 4;
   const toastedAt = new Map();
   const openToasts = [];
+  // Vehicle events (kill switch, disarm) are toasted even at info level, under
+  // a title that names the event: "Disarmed by auto disarm after landing" is
+  // what the operator needs to see the moment the propellers stop, not an
+  // hour later on the board.
+  const EVENT_TITLES = { kill: "Kill switch", unkill: "Kill switch", disarm: "Disarmed" };
+  // A disarm is toasted once. The vehicle usually names the reason in a
+  // STATUSTEXT that arrives just before or just after the heartbeat that
+  // shows it disarmed; whichever comes second within this window does not
+  // raise a second toast. A reason arriving after a plain "Disarmed" toast
+  // replaces it.
+  const DISARM_EVENT_WINDOW_MS = 3000;
+  let lastDisarmReasonAt = -Infinity;
+  let plainDisarmToast = null;
+  // A disarm marks the board read, but not what arrived with it: the reason
+  // for the disarm lands in the same moment and must still count as new.
+  const MILESTONE_GRACE_MS = 3000;
 
   /* Top-bar icons are sized by main.css, so they are built without an inline
      size ("auto") — an inline width/height would override those rules. */
@@ -208,10 +224,39 @@ Corvus.topbar = (function () {
    *              or nothing received yet. We know the switch is off and
    *              nothing more, so we claim nothing more — READY here would be
    *              a clearance the vehicle never gave.
+   *   KILL SWITCH the kill switch (PX4) or motor emergency stop (ArduPilot)
+   *              is engaged. Outranks ARMED and FLYING: PX4 keeps reporting
+   *              armed while the switch holds the motors, so the armed flag
+   *              alone read "propellers are live" over stopped motors.
+   *   TERMINATED the heartbeat reports flight termination for a reason the
+   *              vehicle has not named. The motor outputs are cut either way.
    *   —          no link
    */
   function readiness(state) {
     if (!state.connected) return { value: "—", cls: "off", tone: "none", title: "No link to a vehicle" };
+    if (state.kill_switch === true) {
+      return {
+        value: "KILL SWITCH",
+        short: "KILL",
+        cls: "critical",
+        tone: "killed",
+        sub: state.armed ? "armed" : "",
+        title: state.armed
+          ? "Kill switch engaged. Motors are stopped, but the vehicle is still armed: "
+            + "releasing the switch lets them spin again"
+          : "Kill switch engaged. Release it before arming",
+      };
+    }
+    if (state.flight_termination === true) {
+      return {
+        value: "TERMINATED",
+        short: "TERM",
+        cls: "critical",
+        tone: "killed",
+        sub: state.armed ? "armed" : "",
+        title: "The autopilot reports flight termination or lockdown. Motor outputs are cut",
+      };
+    }
     if (state.armed) {
       if (isAirborne(state)) {
         return { value: "FLYING", cls: "healthy", tone: "flying", title: "Airborne, motors are live" };
@@ -339,11 +384,12 @@ Corvus.topbar = (function () {
 
   /** Everything on the board has been seen. Never deletes — see the module
    *  comment; this is the "hide as read" half of the contract. */
-  function markAllNotificationsRead(state) {
+  function markAllNotificationsRead(state, seenBefore = Infinity) {
     const items = visibleNotifications(state || lastState || {});
     let changed = false;
     items.forEach((item) => {
       const key = notificationKey(item);
+      if ((notificationFirstSeen.get(key) ?? 0) >= seenBefore) return;
       if (!readNotifications.has(key)) { readNotifications.add(key); changed = true; }
     });
     if (changed) {
@@ -1023,27 +1069,29 @@ Corvus.topbar = (function () {
      centre used to unfold over the map for every critical instead, and a
      warning only moved the badge, so a refusal the operator was waiting on
      could land without anything on screen saying so. */
-  function toastNotification(level, message) {
-    if (level !== "warning" && level !== "critical") return;
+  function toastNotification(level, message, opts = {}) {
+    if (level !== "warning" && level !== "critical" && !opts.event) return null;
     const text = String(message || "");
     // Keyed on the text alone: a refused command arrives twice, as the HTTP
     // error and as the backend's own warning, not always at the same level.
     const key = text;
     const now = Date.now();
     const last = toastedAt.get(key);
-    if (last != null && now - last < TOAST_REPEAT_MS) return;
+    if (last != null && now - last < TOAST_REPEAT_MS) return null;
     toastedAt.set(key, now);
     if (toastedAt.size > 200) {
       toastedAt.forEach((at, k) => { if (now - at >= TOAST_REPEAT_MS) toastedAt.delete(k); });
     }
     let handle = null;
     try {
-      if (!Corvus.ui || typeof Corvus.ui.toast !== "function") return;
-      handle = Corvus.ui.toast({ level, message: text });
+      if (!Corvus.ui || typeof Corvus.ui.toast !== "function") return null;
+      const toastOpts = { level, message: text };
+      if (opts.title) toastOpts.title = opts.title;
+      handle = Corvus.ui.toast(toastOpts);
     } catch (_e) {
-      return;   // a missing toast layer must never cost the board its entry
+      return null;   // a missing toast layer must never cost the board its entry
     }
-    if (!handle) return;
+    if (!handle) return null;
     // Clicking the message opens the centre, where the rest of the history is.
     const body = handle.el && handle.el.querySelector && handle.el.querySelector(".ui-toast-text");
     if (body && body.addEventListener) {
@@ -1063,6 +1111,32 @@ Corvus.topbar = (function () {
     handle.close = () => { prune(); close(); };
     const dismiss = handle.el && handle.el.querySelector && handle.el.querySelector(".ui-toast-close");
     if (dismiss && dismiss.addEventListener) dismiss.addEventListener("click", prune);
+    return handle;
+  }
+
+  /** A kill switch or disarm line from the vehicle, toasted under its title. */
+  function toastVehicleEvent(warning) {
+    const level = notificationLevel(warning);
+    const now = Date.now();
+    if (warning.event === "disarm") {
+      lastDisarmReasonAt = now;
+      if (plainDisarmToast && now - plainDisarmToast.at < DISARM_EVENT_WINDOW_MS) {
+        plainDisarmToast.handle.close();
+      }
+      plainDisarmToast = null;
+    }
+    toastNotification(level, warning.msg, { event: warning.event, title: EVENT_TITLES[warning.event] });
+  }
+
+  /** The heartbeat says disarmed and no reason came with it: say so anyway.
+   *  ArduPilot names no reason at all, and on PX4 the line can be lost. */
+  function toastPlainDisarm() {
+    const now = Date.now();
+    const sinceReason = now - lastDisarmReasonAt;
+    if (sinceReason >= 0 && sinceReason < DISARM_EVENT_WINDOW_MS) return;
+    const handle = toastNotification("info", "The vehicle is disarmed. Motors are off",
+      { event: "disarm", title: EVENT_TITLES.disarm });
+    plainDisarmToast = handle ? { handle, at: now } : null;
   }
 
   function refreshNotifications() {
@@ -1169,12 +1243,17 @@ Corvus.topbar = (function () {
       if (!attempt?.localNotificationId) return;
       if (removeLocalNotification(attempt.localNotificationId)) duplicateRemoteKeys.add(notificationKey(warning));
     });
-    const actionable = added.filter((warning) =>
-      !duplicateRemoteKeys.has(notificationKey(warning)) &&
-      notificationLevel(warning) !== "info");
-    if (!actionable.length) return;
-    const newest = actionable[actionable.length - 1];
-    announceNotification(`${notificationLevel(newest) === "warning" ? "Warning" : "Error"}: ${newest.msg}`);
+    const fresh = added.filter((warning) => !duplicateRemoteKeys.has(notificationKey(warning)));
+    const events = fresh.filter((warning) => EVENT_TITLES[warning.event]);
+    const actionable = fresh.filter((warning) =>
+      !EVENT_TITLES[warning.event] && notificationLevel(warning) !== "info");
+    events.forEach(toastVehicleEvent);
+    const announced = events.concat(actionable);
+    if (!announced.length) return;
+    const newest = announced[announced.length - 1];
+    const newestLevel = notificationLevel(newest);
+    announceNotification(`${EVENT_TITLES[newest.event]
+      || (newestLevel === "warning" ? "Warning" : "Error")}: ${newest.msg}`);
     // A toast each, never the centre: a popover unfolding over the map
     // mid-flight covers what the operator is flying by, and trained them to
     // dismiss it unread. Info lines ("Takeoff detected") only reach the board.
@@ -1213,7 +1292,8 @@ Corvus.topbar = (function () {
     if ((prevConnected === false && connected) || rebooted) {
       clearAllNotifications();
     } else if (prevArmed !== null && prevArmed !== armed && connected && prevConnected) {
-      markAllNotificationsRead(state);
+      markAllNotificationsRead(state, armed ? Infinity : Date.now() - MILESTONE_GRACE_MS);
+      if (!armed) toastPlainDisarm();
     }
     prevConnected = connected;
     prevArmed = armed;
@@ -1276,6 +1356,9 @@ Corvus.topbar = (function () {
     setNotificationMarks,
     notificationMarks,
     notifyError: showCmdError,
+    // What the bar calls an airframe ("Quadcopter"), for the Mission page's
+    // aircraft picker, so the two never name the same aircraft differently.
+    vehicleTypeLabel,
     // The rows behind the GPS and Battery cards, for the tests.
     detail: (key, state) => (DETAILS[key] ? DETAILS[key](state || {}) : null),
     beginCommand: (key) => commandDedupe.begin(key),

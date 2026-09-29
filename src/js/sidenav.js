@@ -1891,6 +1891,51 @@ Corvus.sidenav = (function () {
     container.appendChild(paramDefaultsCacheCard(cfg));
   }
 
+  // --- Section D1: Analysis (how the Flight Review reads a log) ---
+  // One choice: how readily a number in a log becomes a finding. It is set
+  // once rather than per log, because the right answer depends on the fleet
+  // and not on the flight. The ids match SENSITIVITIES in
+  // corvus/flight_review.py, and the backend applies the setting to the next
+  // review opened.
+  const REVIEW_SENSITIVITIES = [
+    { id: "relaxed", label: "Relaxed",
+      desc: "Only what should keep the aircraft on the ground." },
+    { id: "normal", label: "Normal",
+      desc: "A healthy aircraft flown normally shows no findings." },
+    { id: "strict", label: "Strict",
+      desc: "Every early sign, for tuning and new airframes." },
+  ];
+
+  function renderAnalysisSection(container, cfg) {
+    const card = Corvus.ui.card({ title: "Flight review" });
+    const saved = String(((cfg.review || {}).sensitivity) || "");
+    let current = REVIEW_SENSITIVITIES.some((s) => s.id === saved) ? saved : "normal";
+    const picker = Corvus.ui.optionCards({
+      ariaLabel: "Flight review sensitivity",
+      columns: 3,
+      value: current,
+      options: REVIEW_SENSITIVITIES,
+      onChange: (id) => {
+        const previous = current;
+        current = id;
+        // Strict, so a refused write puts the picker back on what the
+        // backend will actually review with.
+        postConfig({ review: { sensitivity: id } }, { strict: true }).catch(() => {
+          current = previous;
+          picker.setValue(previous);
+        });
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Sensitivity",
+      control: picker.el,
+      hint: "How readily a number in a flight log or a telemetry recording becomes a " +
+            "warning. Only time the aircraft was armed is measured. The plots are the " +
+            "same at every setting; only the findings above them change.",
+    }));
+    container.appendChild(Corvus.ui.section({ title: "Analysis", body: card }));
+  }
+
   // The copy of PX4's parameter metadata (corvus/param_metadata.py). Off by
   // default and it says why, in the warning under the switch: a copy is
   // trusted on a 32 bit checksum the vehicle reports, which is what makes it
@@ -2224,6 +2269,7 @@ Corvus.sidenav = (function () {
       renderSSHSection(container, gen);
       renderConnectionSection(container, cfg);
       renderFilesSection(container, cfg);
+      renderAnalysisSection(container, cfg);
       renderPluginsSection(container, gen);
       if (Corvus.settingsTransfer) container.appendChild(Corvus.settingsTransfer.section());
       renderAboutSection(container, gen);

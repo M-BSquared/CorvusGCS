@@ -836,3 +836,49 @@ def test_every_item_a_plan_can_hold_survives_the_round_trip() -> None:
     assert out["plan"]["items"] == plan["items"]
     assert out["plan"]["speed"] == plan["speed"]
     assert out["plan_index"] == [item["item"] for item in mission.plan_to_items(plan)]
+
+
+# ---------------------------------------------------------------------------
+# What travels without a place, and what a stack will not fly
+# ---------------------------------------------------------------------------
+
+def test_a_return_and_a_speed_change_name_no_place() -> None:
+    """They travel in MAV_FRAME_MISSION. PX4 v1.16 to v1.18 refuse a Return
+    in a global frame, which failed every plan that ended with one."""
+    assert mission.MAV_CMD_NAV_RETURN_TO_LAUNCH in mission.POSITIONLESS_COMMANDS
+    assert mission.MAV_CMD_DO_CHANGE_SPEED in mission.POSITIONLESS_COMMANDS
+    for name, spec in mission.ITEM_SPECS.items():
+        if spec["position"]:
+            assert spec["command"] not in mission.POSITIONLESS_COMMANDS, name
+
+
+def test_a_stacks_refusals_are_named_in_the_planners_words() -> None:
+    refusals = {mission.MAV_CMD_NAV_LOITER_TURNS: "not here", 12345: "not a planner item"}
+    assert mission.refused_item_types(refusals) == {"loiter_turns": "not here"}
+    assert mission.refused_item_types({}) == {}
+
+
+def test_a_command_is_labelled_as_the_planner_labels_it() -> None:
+    assert mission.label_of_command(mission.MAV_CMD_NAV_LOITER_TURNS) == "Circle"
+    assert mission.label_of_command(mission.MAV_CMD_NAV_RETURN_TO_LAUNCH) == "Return"
+    assert mission.label_of_command(999) == "command 999"
+
+
+@pytest.mark.parametrize("value, kept", [
+    (True, True), (False, False), (1, False), ("true", False), (None, False),
+])
+def test_start_at_vehicle_is_kept_only_when_it_is_true(value: Any, kept: bool) -> None:
+    raw = plan()
+    raw["start_at_vehicle"] = value
+    cleaned, error = mission.validate_plan(raw)
+    assert error == "" and cleaned is not None
+    assert cleaned.get("start_at_vehicle") is (True if kept else None)
+
+
+def test_start_at_vehicle_never_reaches_the_wire() -> None:
+    raw = plan()
+    cleaned, _error = mission.validate_plan(raw)
+    tied, _error = mission.validate_plan(dict(raw, start_at_vehicle=True))
+    assert cleaned is not None and tied is not None
+    # Compared as text: an unset yaw is NaN, and NaN is never equal to itself.
+    assert json.dumps(mission.plan_to_items(tied)) == json.dumps(mission.plan_to_items(cleaned))

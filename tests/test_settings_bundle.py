@@ -2,7 +2,7 @@
 
 Covers ``corvus/settings_bundle.py`` (sections, redaction, parsing, the merge
 that keeps stored secrets) and ``POST /api/settings/export`` /
-``POST /api/settings/import`` on a handler with its responses captured.
+``POST /api/settings/import`` and the factory reset on a handler with its responses captured.
 """
 from __future__ import annotations
 
@@ -15,7 +15,13 @@ from typing import Any
 import pytest
 
 from corvus import plugin_config, settings_bundle
-from corvus.config import _CONFIG_FIELD_ORDER, CorvusConfig, _build_config, _config_to_dict
+from corvus.config import (
+    _CONFIG_FIELD_ORDER,
+    CorvusConfig,
+    _build_config,
+    _config_to_dict,
+    save_config,
+)
 from corvus.server import CorvusHandler
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
@@ -562,3 +568,53 @@ def test_a_refused_import_leaves_the_first_start_pending(tmp_path):
     handler._api_settings_import({"bundle": settings_bundle.build(_secret_config())})
     assert responses[-1][1] == 409
     assert state == {"pending": True}
+
+
+# ---------------------------------------------------------------------------
+# Factory reset
+# ---------------------------------------------------------------------------
+
+def test_reset_restores_the_defaults_and_reopens_the_first_start_setup(tmp_path):
+    handler, responses = _handler(tmp_path, _build_config(_secret_config()),
+                                  first_start={"pending": False})
+    handler.config.branding = {"logo": "mark.png"}
+    handler._store_logo(PNG)
+    save_config(handler.config, handler.config_path)
+    plugins = tmp_path / "plugins"
+    _user_plugin(plugins)
+    plugin_config.save("mine", {"a": 1}, str(plugins))
+    plugin_config.save("shipped", {"b": 2}, str(plugins))
+
+    handler._api_settings_reset({})
+    data, status = responses[-1]
+    assert status == 200, data
+    assert _config_to_dict(handler.config) == _config_to_dict(CorvusConfig())
+    assert handler.first_start == {"pending": True}
+    assert not (tmp_path / "config.json").exists()
+    assert not (tmp_path / "branding" / "logo.png").exists()
+    assert plugin_config.load_all(str(plugins)) == {}
+    # The plugin itself is software, not a setting: it stays installed.
+    assert (plugins / "mine" / "plugin.json").exists()
+
+
+def test_reset_is_refused_while_armed(tmp_path):
+    handler, responses = _handler(tmp_path, _build_config(_secret_config()),
+                                  store=_Store(armed=True), first_start={"pending": False})
+    save_config(handler.config, handler.config_path)
+    handler._api_settings_reset({})
+    assert responses[-1][1] == 409
+    assert handler.first_start == {"pending": False}
+    assert (tmp_path / "config.json").exists()
+
+
+def test_reset_names_the_settings_that_need_a_restart(tmp_path):
+    handler, responses = _handler(tmp_path, _build_config({"http_port": 9123}))
+    handler._api_settings_reset({})
+    assert responses[-1][0]["restart"] == ["http_port"]
+
+
+def test_the_review_sensitivity_travels_with_the_interface() -> None:
+    assert settings_bundle.section_of("review") == "interface"
+    cfg = _build_config({"review": {"sensitivity": "Strict"}})
+    assert _config_to_dict(cfg)["review"] == {"sensitivity": "strict"}
+    assert _build_config({"review": {"sensitivity": 3}}).review is None

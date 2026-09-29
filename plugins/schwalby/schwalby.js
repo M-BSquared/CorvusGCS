@@ -37,7 +37,7 @@ window.Corvus = window.Corvus || {};
  *     cannot be shut down cleanly between flights.
  *
  * The shelf is the plugin's state: a list of {id, label, target, connection,
- * directory, command, mode}, saved through api.saveSettings into Schwalby's
+ * directory, command, mode, restart}, saved through api.saveSettings into Schwalby's
  * own config file (~/.corvus/plugins/schwalby/config.json), apart from the
  * app's config. Copying that file to another ground station gives it the same
  * shelf. A button there that names an SSH connection the station does not have
@@ -79,6 +79,13 @@ Corvus.pluginSchwalby = (function () {
 
   const MODE_TERMINAL = "terminal";
   const MODE_BACKGROUND = "background";
+
+  // Restart: the key the operator would press to stop the program, and how
+  // long the shell gets to take the prompt back before the line is typed
+  // again. Typed too soon, the line lands on the stdin of the program still
+  // shutting down instead of on the prompt.
+  const CTRL_C = "\x03";
+  const RESTART_GRACE_MS = 1000;
 
   const TARGET_LOCAL = "local";
   const TARGET_SSH = "ssh";
@@ -218,6 +225,21 @@ Corvus.pluginSchwalby = (function () {
   }
 
   /**
+   * Whether pressing a button whose program is up stops it first (Ctrl-C)
+   * and starts it again, rather than typing the line under it. Only a
+   * terminal has a program to stop; a background run has nothing to press
+   * Ctrl-C into.
+   *
+   * Pure, and exported for the test suite.
+   *
+   * @param {Object} entry
+   * @returns {boolean}
+   */
+  function restarts(entry) {
+    return !!entry && entry.restart === true && coerceMode(entry) === MODE_TERMINAL;
+  }
+
+  /**
    * Coerce one saved entry into a complete button, or null to drop it. This
    * reads a JSON file an operator may have edited, so a half-written entry
    * costs that button and not the shelf.
@@ -244,6 +266,7 @@ Corvus.pluginSchwalby = (function () {
       directory: String(raw.directory == null ? "" : raw.directory).trim(),
       command,
       mode: coerceMode(raw),
+      restart: raw.restart === true,
     };
   }
 
@@ -359,7 +382,7 @@ Corvus.pluginSchwalby = (function () {
     }
     // With nohup the stdout is the pid the remote shell echoed.
     const pid = String(r.stdout || "").trim();
-    return { text: pid ? `Started in the background (pid ${pid}).` : "Started in the background.", kind: "ok" };
+    return { text: pid ? `Running in the background (pid ${pid})` : "Running in the background", kind: "ok" };
   }
 
   /**
@@ -376,13 +399,13 @@ Corvus.pluginSchwalby = (function () {
     const r = res || {};
     const firstLine = (text) => String(text || "").trim().split("\n")[0].trim();
     if (r.exited) {
-      if (r.ok) return { text: "Ran and finished.", kind: "ok" };
-      return { text: firstLine(r.output) || `It ended at once with exit code ${r.code}.`, kind: "err" };
+      if (r.ok) return { text: "Ran and finished", kind: "ok" };
+      return { text: firstLine(r.output) || `Ended at once with exit code ${r.code}`, kind: "err" };
     }
     if (!r.ok) return { text: firstLine(r.error) || "The command failed.", kind: "err" };
     return {
-      text: r.pid ? `Started in the background (pid ${r.pid}). It stops when Corvus closes.`
-        : "Started in the background. It stops when Corvus closes.",
+      text: r.pid ? `Running in the background (pid ${r.pid}), stops with Corvus`
+        : "Running in the background, stops with Corvus",
       kind: "ok",
     };
   }
@@ -598,7 +621,10 @@ Corvus.pluginSchwalby = (function () {
     const companionEl = document.createElement("div");
     const shelfEl = document.createElement("div");
     const editorEl = document.createElement("div");
-    const status = ui.message({});
+    const status = ui.message({ className: "schw-status" });
+    // Held to one line; the full text stays reachable on hover.
+    const showStatus = status.show;
+    status.show = (text, kind) => { showStatus(text, kind); status.el.title = status.el.textContent; };
     const output = document.createElement("pre");
     output.className = "schw-output";
     output.hidden = true;
@@ -980,6 +1006,7 @@ Corvus.pluginSchwalby = (function () {
           directory: last ? last.directory : "",
           command: "",
           mode: MODE_TERMINAL,
+          restart: false,
         }, true),
       })));
 
@@ -1021,23 +1048,29 @@ Corvus.pluginSchwalby = (function () {
         icon: "play",
         label: entry.label,
         className: "schw-launch",
-        ariaLabel: running ? `Run ${entry.label} again` : `Launch ${entry.label}`,
+        ariaLabel: running ? `${restarts(entry) ? "Restart" : "Run"} ${entry.label}${restarts(entry) ? "" : " again"}`
+          : `Launch ${entry.label}`,
         title: running
-          ? `Run it again in the terminal it is already in.\n${previewLine(entry) || entry.command}`
+          ? `${restarts(entry) ? "Stop it with Ctrl-C and start it again" : "Run it again"} ` +
+            `in the terminal it is already in.\n${previewLine(entry) || entry.command}`
           : (previewLine(entry) || entry.command),
         onClick: () => launch(entry, launchBtn),
       });
 
-      const tools = document.createElement("div");
-      tools.className = "schw-row-tools";
-
-      // Where it runs, in the segment's words.
+      // Where it runs, as the segment's own icon at the far end of the
+      // button: read at a glance, and it costs the label no width until the
+      // label actually needs it.
+      const target = targetInfo(entry.target);
       const where = document.createElement("span");
       where.className = "schw-where";
-      where.textContent = targetInfo(entry.target).label;
+      where.setAttribute("data-where", target.label);
       where.title = isLocal(entry) ? "Runs on this computer"
         : `Runs on ${entry.connection || "an SSH connection"} over SSH`;
-      tools.appendChild(where);
+      where.appendChild(ui.icon(target.icon, 14));
+      launchBtn.appendChild(where);
+
+      const tools = document.createElement("div");
+      tools.className = "schw-row-tools";
 
       if (failure) {
         tools.appendChild(ui.infoHint({
@@ -1282,6 +1315,7 @@ Corvus.pluginSchwalby = (function () {
         onChange: (on) => {
           wantedMode = on ? MODE_TERMINAL : MODE_BACKGROUND;
           draft.mode = wantedMode;
+          paintRestart();
           paintPreview();
         },
       };
@@ -1294,6 +1328,25 @@ Corvus.pluginSchwalby = (function () {
         hint: " ",
       });
       card.appendChild(termField);
+
+      const restartField = ui.field({
+        label: "Restart on press",
+        control: ui.toggle({
+          value: draft.restart === true,
+          ariaLabel: "Restart on press",
+          onChange: (on) => { draft.restart = on; },
+        }).el,
+        className: "field-switch",
+        info: "On: pressing the button while its program is still running " +
+              "first sends Ctrl-C to stop it, waits a second, and then starts " +
+              "it again in the same terminal. Off: the line is typed into the " +
+              "terminal as it is, so a program still in the foreground gets " +
+              "it as input.",
+      });
+      card.appendChild(restartField);
+
+      /** A background run has no terminal to press Ctrl-C into. */
+      function paintRestart() { restartField.hidden = draft.mode === MODE_BACKGROUND; }
 
       /** Fit the form to where the button runs. */
       function paintTarget() {
@@ -1312,6 +1365,7 @@ Corvus.pluginSchwalby = (function () {
         // Why the switch is off stays under it: that is the state of this
         // computer, not an explanation to go looking for.
         setHint(termField, noTerminal);
+        paintRestart();
       }
       paintTarget();
       repaintTarget = () => { paintTarget(); paintPreview(); };
@@ -1450,12 +1504,20 @@ Corvus.pluginSchwalby = (function () {
      * TERMINAL mode: type the line into the button's own session, and open one
      * only when it has none. Send first, connect only if that fails, so a
      * second press runs it again in the same shell instead of replacing it.
+     * With the button's restart on, that second press sends Ctrl-C first.
      * The window is not opened here; the arrow is the request to watch it.
      */
     function launchInTerminal(entry) {
       const session = sessionName(entry);
       const line = terminalLine(entry);
-      const send = () => api.postJson("/api/ssh/send", { name: session, data: line + "\n" });
+      const restart = restarts(entry);
+      const sendLine = () => api.postJson("/api/ssh/send", { name: session, data: line + "\n" });
+      // With restart on, Ctrl-C goes first. Its ok:false means there is no
+      // live shell, and so nothing to stop: that falls through to a connect
+      // like any first press.
+      const send = restart
+        ? () => interrupt(session).then((res) => ((res && res.ok) ? sendLine() : res))
+        : sendLine;
       // A session being closed because the button moved elsewhere must be gone
       // before the next line is sent, or the line lands in it. One the arrow
       // is opening must be up, or the line would open a second shell over it.
@@ -1463,7 +1525,7 @@ Corvus.pluginSchwalby = (function () {
       return (pending ? pending.then(send) : send())
         .then((res) => {
           if (cancelled) return null;
-          if (res && res.ok) return ran(entry, line, false);
+          if (res && res.ok) return ran(entry, line, false, restart);
           return connectThenSend(entry, line);
         })
         .catch((error) => {
@@ -1471,6 +1533,18 @@ Corvus.pluginSchwalby = (function () {
           failed(entry, error.message || "Could not reach the backend");
           return null;
         });
+    }
+
+    /**
+     * Press Ctrl-C in a session, then give its shell RESTART_GRACE_MS to take
+     * the prompt back. Resolves the send's reply, so ok:false still says
+     * there is no live shell.
+     */
+    function interrupt(session) {
+      return api.postJson("/api/ssh/send", { name: session, data: CTRL_C }).then((res) => {
+        if (!(res && res.ok)) return res;
+        return new Promise((resolve) => setTimeout(() => resolve(res), RESTART_GRACE_MS));
+      });
     }
 
     /**
@@ -1535,7 +1609,7 @@ Corvus.pluginSchwalby = (function () {
           if (!ok) return false;
           live[session] = true;
           openTerminal(entry, true);
-          status.show(`${entry.label}: connected. The button starts it in this terminal.`, "ok");
+          status.show(`${entry.label}: terminal ready, press the button to start`, "ok");
           if (editing === null) renderShelf();
           return true;
         });
@@ -1545,14 +1619,15 @@ Corvus.pluginSchwalby = (function () {
 
     /** Record a launch. A window left open on a replaced shell is quietly
      *  repointed at the new one, without being opened or raised. */
-    function ran(entry, line, reconnected) {
+    function ran(entry, line, reconnected, restarted) {
       const session = sessionName(entry);
       const was = !!live[session];
       live[session] = true;
       if (reconnected) openTerminal(entry, true, true);
-      status.show(was && !reconnected
-        ? `${entry.label}: sent again to its terminal. The arrow opens it.`
-        : `${entry.label}: running. The arrow opens its terminal.`, "ok");
+      let said = `${entry.label} is running`;
+      if (restarted && !reconnected) said = `${entry.label} restarted (stopped with Ctrl-C)`;
+      else if (was && !reconnected) said = `${entry.label} sent again to its terminal`;
+      status.show(said, "ok");
       api.console(consoleLine(entry, line), "success");
       renderShelf();
       return true;
@@ -1744,10 +1819,11 @@ Corvus.pluginSchwalby = (function () {
   return {
     init, destroy,
     previewLine, terminalLine, sshSummary, localSummary, normalizeButtons, missingConnections,
-    coerceButton, coerceMode, coerceTarget, sessionName, derivedName,
+    coerceButton, coerceMode, restarts, coerceTarget, sessionName, derivedName,
     newConnectionError, newConnectionBody, segment,
     hostError, normalizeCompanion, companionState, probeWaitMs,
     MAX_BUTTONS, LIVE_POLL_MS, MODE_TERMINAL, MODE_BACKGROUND, NEW_CONNECTION,
+    CTRL_C, RESTART_GRACE_MS,
     TARGET_LOCAL, TARGET_SSH, LOCAL_HOST,
     INTERVAL_STEPS, TIMEOUT_STEPS, DEFAULT_INTERVAL_S, DEFAULT_TIMEOUT_S,
   };

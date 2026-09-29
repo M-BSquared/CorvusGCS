@@ -193,7 +193,7 @@ Corvus.ui.toast = (opts) => {
   const text = makeEl("div");
   text.className = "ui-toast-text";
   el.appendChild(text);
-  const entry = { level: opts.level, message: opts.message, closed: false, el };
+  const entry = { level: opts.level, message: opts.message, title: opts.title, closed: false, el };
   entry.close = () => { entry.closed = true; };
   toasts.push(entry);
   return entry;
@@ -725,6 +725,94 @@ function testALostLinkOutranksEverything() {
   assert.ok(status().dot.includes("off"));
 }
 
+// --- kill switch and disarm ------------------------------------------------
+
+function testTheKillSwitchOutranksArmedAndFlying() {
+  const ui = mount();
+  settle(ui);
+
+  // PX4 keeps reporting armed while the kill switch holds the motors. The
+  // bar used to say ARMED, "propellers are live", over stopped motors.
+  push({ armed: true, landed_state: 1, kill_switch: true, flight_termination: true });
+  assert.equal(status().text, "KILL SWITCH");
+  assert.ok(status().cls.includes("critical"));
+  assert.equal(status().tone, "killed");
+  assert.match(status().title, /still armed/);
+
+  push({ armed: true, landed_state: 2, altitude_agl: 40, kill_switch: true, flight_termination: true });
+  assert.equal(status().text, "KILL SWITCH", "in the air as well: FLYING would be a lie");
+
+  // It auto-disarms, but the switch still holds.
+  push({ armed: false, prearm_ok: false, kill_switch: true, flight_termination: true });
+  assert.equal(status().text, "KILL SWITCH", "not NOT READY: the reason is the switch");
+  assert.match(status().title, /Release it before arming/);
+
+  push({ armed: false, prearm_ok: true, kill_switch: false, flight_termination: false });
+  assert.equal(status().text, "READY", "released, it is an ordinary vehicle again");
+}
+
+function testTerminationWithoutANamedCauseStillSaysTheMotorsAreCut() {
+  const ui = mount();
+  settle(ui);
+  push({ armed: true, landed_state: 2, altitude_agl: 40, flight_termination: true });
+  assert.equal(status().text, "TERMINATED");
+  assert.ok(status().cls.includes("critical"));
+}
+
+function testAKillAndItsDisarmAreToastedUnderTheirOwnTitle() {
+  const ui = mount();
+  settle(ui);
+  nowMs += 100_000;
+  push({ armed: true, landed_state: 1 });
+
+  const kill = { level: "critical", msg: "Kill switch engaged. Motors stopped", meta: "10:01:00", event: "kill" };
+  push({ armed: true, landed_state: 1, kill_switch: true, warnings: [kill] });
+  assert.deepEqual(toasts.map((t) => [t.level, t.title, t.message]),
+    [["critical", "Kill switch", "Kill switch engaged. Motors stopped"]]);
+
+  // PX4 disarms after COM_KILL_DISARM and names the reason. The line lands
+  // with the heartbeat that shows the disarm: one toast, with the reason.
+  nowMs += 5_000;
+  const disarm = { level: "warning", msg: "Disarmed by the kill switch", meta: "10:01:05", event: "disarm" };
+  push({ armed: false, kill_switch: true, warnings: [kill, disarm] });
+  assert.deepEqual(toasts.slice(1).map((t) => [t.level, t.title, t.message]),
+    [["warning", "Disarmed", "Disarmed by the kill switch"]]);
+  assert.ok(ui.badge().textContent === "1" && ui.badgeLevel() === "warning",
+    "the disarm arrived with the milestone and is still new; the kill is read");
+}
+
+function testADisarmWithoutAReasonIsToastedAndAReasonReplacesIt() {
+  const ui = mount();
+  settle(ui);
+  nowMs += 200_000;
+  push({ armed: true, landed_state: 1 });
+
+  // Heartbeat first, reason not yet (or never: ArduPilot names none).
+  push({ armed: false });
+  assert.deepEqual(toasts.map((t) => [t.level, t.title]), [["info", "Disarmed"]]);
+  assert.equal(toasts[0].closed, false);
+
+  // The reason follows a moment later and takes the plain toast's place.
+  nowMs += 400;
+  const landed = { level: "info", msg: "Disarmed by auto disarm after landing", meta: "10:02:00", event: "disarm" };
+  push({ armed: false, warnings: [landed] });
+  assert.equal(toasts[0].closed, true, "the plain toast makes room");
+  assert.deepEqual(toasts.slice(1).map((t) => [t.level, t.title, t.message]),
+    [["info", "Disarmed", "Disarmed by auto disarm after landing"]]);
+}
+
+function testAReasonBeforeTheHeartbeatIsNotFollowedByAPlainToast() {
+  const ui = mount();
+  settle(ui);
+  nowMs += 300_000;
+  push({ armed: true, landed_state: 1 });
+  const cmd = { level: "info", msg: "Disarmed by command", meta: "10:03:00", event: "disarm" };
+  push({ armed: true, warnings: [cmd] });
+  nowMs += 600;
+  push({ armed: false, warnings: [cmd] });
+  assert.deepEqual(toasts.map((t) => t.message), ["Disarmed by command"]);
+}
+
 /* The severity marks — the coloured bar above the level icon and the one
    below it — are a display preference, so they are an attribute on <html>
    that both stylesheets read (.wp-item in main.css, .ui-toast in
@@ -814,6 +902,11 @@ const tests = [
   testArmedOnTheGroundIsNotTheSameAsFlying,
   testAirborneFallsBackToHeightWhenTheFirmwareIsSilent,
   testALostLinkOutranksEverything,
+  testTheKillSwitchOutranksArmedAndFlying,
+  testTerminationWithoutANamedCauseStillSaysTheMotorsAreCut,
+  testAKillAndItsDisarmAreToastedUnderTheirOwnTitle,
+  testADisarmWithoutAReasonIsToastedAndAReasonReplacesIt,
+  testAReasonBeforeTheHeartbeatIsNotFollowedByAPlainToast,
   testSeverityMarksAreOffUntilSomethingSaysOtherwise,
   testTheCachedChoiceDefaultsToOffNotToOn,
 ];

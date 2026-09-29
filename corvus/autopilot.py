@@ -25,6 +25,7 @@ Verified against PX4 v1.16/v1.17/v1.18 and ArduPilot 4.3-4.6
 from __future__ import annotations
 
 import math
+import re
 import struct
 from dataclasses import dataclass
 from typing import Any, NamedTuple
@@ -281,6 +282,64 @@ class CommandPlan:
 
 
 @dataclass(frozen=True)
+class VehicleEvent:
+    """A STATUSTEXT that reports a change of the vehicle's arming or motor state.
+
+    ``kind`` is ``"kill"``, ``"unkill"`` or ``"disarm"``. ``message`` is the
+    line the operator sees on the board and in the toast; the console keeps
+    the autopilot's own words. ``level`` can be higher than the severity the
+    autopilot sent: PX4 reports a kill on the ground as INFO, and a line that
+    says the motors were cut is not routine chatter on any stack.
+    """
+
+    kind: str
+    level: str
+    message: str
+
+
+# PX4 v1.16 to v1.18 say "Kill engaged" / "Kill disengaged" (Commander.cpp,
+# ACTION_KILL). v1.12 to v1.15 said "Kill-switch engaged".
+_PX4_KILL = re.compile(r"^kill(?:[- ]switch)? (engaged|disengaged)$", re.IGNORECASE)
+# Commander::disarm(): "Disarmed by %s", arm_disarm_reason_str().
+_PX4_DISARMED_BY = re.compile(r"^disarmed by (.+)$", re.IGNORECASE)
+_PX4_DISARM_REASONS: dict[str, tuple[str, str]] = {
+    "kill-switch": ("warning", "the kill switch"),
+    "lockdown": ("warning", "lockdown"),
+    "failure detector": ("warning", "the failure detector"),
+    "failsafe": ("warning", "a failsafe"),
+    "auto preflight disarming": ("info", "auto disarm (no takeoff)"),
+    "landing": ("info", "auto disarm after landing"),
+    "external command": ("info", "command"),
+}
+# ArduPilot announces every aux switch it has a name for (RC_Channel.cpp):
+# "RC7: MotorEStop HIGH" stops the motors, LOW releases them.
+_AP_ESTOP = re.compile(r"^RC\d+: MotorEStop (HIGH|LOW)$")
+
+
+def _px4_vehicle_event(text: str) -> VehicleEvent | None:
+    kill = _PX4_KILL.match(text)
+    if kill:
+        if kill.group(1).lower() == "engaged":
+            return VehicleEvent("kill", "critical", "Kill switch engaged. Motors stopped")
+        return VehicleEvent("unkill", "info", "Kill switch released")
+    disarmed = _PX4_DISARMED_BY.match(text)
+    if disarmed:
+        reason = disarmed.group(1).strip()
+        level, words = _PX4_DISARM_REASONS.get(reason.lower(), ("info", reason))
+        return VehicleEvent("disarm", level, f"Disarmed by {words}")
+    return None
+
+
+def _ardupilot_vehicle_event(text: str) -> VehicleEvent | None:
+    estop = _AP_ESTOP.match(text)
+    if not estop:
+        return None
+    if estop.group(1) == "HIGH":
+        return VehicleEvent("kill", "critical", "Emergency stop engaged. Motors stopped")
+    return VehicleEvent("unkill", "info", "Emergency stop released")
+
+
+@dataclass(frozen=True)
 class TakeoffPlan:
     """How this stack wants a guided takeoff staged.
 
@@ -331,6 +390,29 @@ MAV_CMD_DO_START_MAG_CAL = _cmd("MAV_CMD_DO_START_MAG_CAL", 42424)
 MAV_CMD_DO_ACCEPT_MAG_CAL = _cmd("MAV_CMD_DO_ACCEPT_MAG_CAL", 42425)
 MAV_CMD_DO_CANCEL_MAG_CAL = _cmd("MAV_CMD_DO_CANCEL_MAG_CAL", 42426)
 MAV_CMD_ACCELCAL_VEHICLE_POS = _cmd("MAV_CMD_ACCELCAL_VEHICLE_POS", 42429)
+MAV_CMD_ACTUATOR_TEST = _cmd("MAV_CMD_ACTUATOR_TEST", 310)
+
+
+def _actuator_test(motor: int, value: float, timeout_s: float) -> CommandPlan:
+    """PX4's motor test: ``MAV_CMD_ACTUATOR_TEST`` on output function MOTORn.
+
+    param1 is the output (thrust 0 to 1, NaN for off), param2 the timeout the
+    vehicle counts down (0 hands the output back), param5 the function, where
+    MOTOR1 is 1. PX4 caps the timeout at 3 s on its side.
+    """
+    return CommandPlan(
+        command=MAV_CMD_ACTUATOR_TEST,
+        params=(value, timeout_s, 0.0, 0.0, float(motor), 0.0, 0.0),
+    )
+
+
+def _do_motor_test(motor: int, throttle_pct: float, timeout_s: float) -> CommandPlan:
+    """``MAV_CMD_DO_MOTOR_TEST``: motor, percent throttle (type 0), timeout,
+    this motor only (count 0), default order."""
+    return CommandPlan(
+        command=mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST,
+        params=(float(motor), 0.0, float(throttle_pct), float(timeout_s), 0.0, 0.0, 0.0),
+    )
 
 # The six positions ArduPilot's accelerometer calibration asks for, in the
 # order it asks for them, with the number it wants echoed back. PX4 detects the
@@ -474,6 +556,30 @@ class Dialect:
     mission_seq0_is_home: bool = False
     # The flight mode that runs an uploaded mission.
     mission_mode: str = "MISSION"
+    # MAV_CMDs this stack will not take as a mission item, with the reason the
+    # operator is shown. PX4 v1.16 to v1.18 have no NAV_LOITER_TURNS in their
+    # mission at all: mavlink_mission.cpp answers MAV_MISSION_UNSUPPORTED and
+    # the whole upload fails. So a plan carrying one is refused before
+    # anything is sent, and the planner greys the item out.
+    mission_command_refusals: dict[int, str] = {
+        mavutil.mavlink.MAV_CMD_NAV_LOITER_TURNS:
+            "PX4 does not fly an orbit with a set number of turns in a mission",
+    }
+    # Whether the vehicle says, after it has accepted an upload, that it will
+    # not fly it. PX4's navigator checks a mission once it is stored (no home
+    # for a relative altitude, a required landing missing) and reports the
+    # verdict in MISSION_CURRENT.mission_state, NO_MISSION for a rejected one,
+    # with the reason in a STATUSTEXT. The MISSION_ACK before it says ACCEPTED
+    # either way.
+    mission_validity_reported: bool = True
+    # What to tell the operator about such a rejection when no STATUSTEXT
+    # names the reason. PX4 v1.18's feasibility checker has no log publisher
+    # and says why in an EVENT only, which the station does not decode.
+    mission_rejection_hint: str = (
+        "PX4 names the reason in its event log only. The usual ones are a takeoff "
+        "or a landing the vehicle's mission settings require, or a fixed wing "
+        "landing approach steeper than it allows."
+    )
     # How an integer parameter travels in the float32 field. See the
     # "Parameter value encoding" section above.
     param_encoding: str = PARAM_ENCODING_BYTEWISE
@@ -509,6 +615,10 @@ class Dialect:
     def is_routine_statustext(self, text: str) -> bool:
         """Is this informational line housekeeping the board can do without?"""
         return any(text.startswith(p) for p in self.routine_statustext_prefixes)
+
+    def vehicle_event(self, text: str) -> VehicleEvent | None:
+        """The kill switch or disarm this STATUSTEXT reports, or None."""
+        return _px4_vehicle_event(text)
 
     # --- modes ---------------------------------------------------------
 
@@ -614,6 +724,22 @@ class Dialect:
             "nothing for the ground station to confirm"
         ))
 
+    # --- motor test ----------------------------------------------------
+
+    def motor_test(self, motor: int, throttle_pct: float, duration_s: float) -> CommandPlan:
+        """Spin one motor on the bench.
+
+        Not ``DO_MOTOR_TEST``: PX4 v1.16 to v1.18 have no handler for it and
+        answer UNSUPPORTED (Commander.cpp falls through to ``default``). The
+        actuator test is the only path to the outputs, and it is what
+        QGroundControl's motor sliders send.
+        """
+        return _actuator_test(motor, float(throttle_pct) / 100.0, float(duration_s))
+
+    def motor_stop(self, motor: int) -> CommandPlan:
+        """Stop one motor's test, whether or not one is running."""
+        return _actuator_test(motor, _NAN, 0.0)
+
     # --- autotune ------------------------------------------------------
 
     def autotune_plan(self, mav_type: int, enable: bool) -> CommandPlan:
@@ -691,6 +817,11 @@ class ArduPilotDialect(Dialect):
     firmware_vendor = "ardupilot"
     mission_seq0_is_home = True
     mission_mode = "AUTO"
+    # ArduCopter, Plane and Rover fly NAV_LOITER_TURNS as a circle of the
+    # item's radius, and AP_Mission refuses at upload what it cannot store.
+    mission_command_refusals: dict[int, str] = {}
+    mission_validity_reported = False
+    mission_rejection_hint = ""
     param_encoding = PARAM_ENCODING_C_CAST
     # Generated on request since ArduPilot 4.1; the query adds each
     # parameter's default. There are no descriptions on board, only defaults.
@@ -704,6 +835,9 @@ class ArduPilotDialect(Dialect):
     # "Arm: ..." for the reason an arm command was refused.
     prearm_prefixes = ("PreArm: ", "Arm: ")
     routine_statustext_prefixes = ()
+
+    def vehicle_event(self, text: str) -> VehicleEvent | None:
+        return _ardupilot_vehicle_event(text)
 
     # --- modes ---------------------------------------------------------
 
@@ -869,6 +1003,15 @@ class ArduPilotDialect(Dialect):
             params=(float(value), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
         )
 
+    # --- motor test ----------------------------------------------------
+
+    def motor_test(self, motor: int, throttle_pct: float, duration_s: float) -> CommandPlan:
+        """ArduPilot has no actuator test; DO_MOTOR_TEST is its motor test."""
+        return _do_motor_test(motor, throttle_pct, duration_s)
+
+    def motor_stop(self, motor: int) -> CommandPlan:
+        return _do_motor_test(motor, 0.0, 0.0)
+
     # --- autotune ------------------------------------------------------
 
     def autotune_mode(self, mav_type: int) -> str:
@@ -911,6 +1054,11 @@ class GenericDialect(Dialect):
     accel_cal_positions_are_prompted = False
     autotune_style = "none"
     mission_mode = ""
+    # Nothing is known to be refused, and nothing reports a verdict: the
+    # vehicle's own MISSION_ACK is the only answer.
+    mission_command_refusals: dict[int, str] = {}
+    mission_validity_reported = False
+    mission_rejection_hint = ""
     log_format = "unknown"
     log_suffix = ".log"
     firmware_vendor = ""
@@ -923,6 +1071,9 @@ class GenericDialect(Dialect):
     # Either wording: text is all there is to go on.
     prearm_prefixes = ("Preflight Fail: ", "PreArm: ")
     routine_statustext_prefixes = ()
+
+    def vehicle_event(self, text: str) -> VehicleEvent | None:
+        return _px4_vehicle_event(text) or _ardupilot_vehicle_event(text)
 
     def decode_mode(self, custom_mode: int, base_mode: int, mav_type: int) -> str:
         try:
@@ -949,6 +1100,13 @@ class GenericDialect(Dialect):
         "accel": _cal(0.0, 0.0, 0.0, 0.0, 1.0),
         "level": _cal(0.0, 0.0, 0.0, 0.0, 2.0),
     }
+
+    def motor_test(self, motor: int, throttle_pct: float, duration_s: float) -> CommandPlan:
+        """The common.xml motor test; the actuator test is PX4's own."""
+        return _do_motor_test(motor, throttle_pct, duration_s)
+
+    def motor_stop(self, motor: int) -> CommandPlan:
+        return _do_motor_test(motor, 0.0, 0.0)
 
     def autotune_plan(self, mav_type: int, enable: bool) -> CommandPlan:
         return CommandPlan(unsupported=(

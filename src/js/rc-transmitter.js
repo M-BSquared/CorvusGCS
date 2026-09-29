@@ -74,6 +74,7 @@ window.Corvus = window.Corvus || {};
  *   create(opts) -> {el, update, setStickChannels, setChannelInfo, setMode,
  *                    setPrompt, channelMap, forgetAll, select, refresh,
  *                    destroy}
+ *   createGlide(paint)             eases continuous readings between samples
  *
  * Degrades to a labelled list where `createElementNS` is unavailable (the
  * DOM-stub test harness), following Corvus.calibFigures: the page must never
@@ -104,6 +105,126 @@ Corvus.rcTransmitter = (function () {
    *  still jitters by a handful. */
   const LEARN_TRAVEL_US = 250;
   const LEARN_TIMEOUT_MS = 8000;
+
+  /** Glide bounds, in ms. The glide lasts as long as samples are actually
+   *  arriving apart (measured), held inside this window so a stalled stream
+   *  never turns into a slow drift and a burst never into a no-op. */
+  const GLIDE_MIN_MS = 16;
+  const GLIDE_MAX_MS = 80;
+  const GLIDE_DEFAULT_MS = 50;
+
+  /* ================================================================== */
+  /* Glide between RC samples                                            */
+  /* ================================================================== */
+
+  /**
+   * Moves displayed positions from one RC_CHANNELS sample to the next at a
+   * constant rate, repainting once per display frame.
+   *
+   * RC_CHANNELS arrives at 20 Hz at best, and not evenly: the store coalesces
+   * pushes to 30 Hz, so samples land 33 or 67 ms apart. Painting each one as
+   * it comes makes a smooth sweep look like a stutter. A glide that lasts one
+   * sample interval turns it back into motion, and costs at most that one
+   * interval of lag (50 ms at 20 Hz). Only continuous controls glide:
+   * switch positions and every printed number stay the raw sample, so the
+   * reading itself is never eased.
+   *
+   * `paint(get)` is called with the current displayed value per key. Without
+   * requestAnimationFrame (the test harness) every value snaps.
+   */
+  function createGlide(paint) {
+    const tracks = {};
+    let spacing = GLIDE_DEFAULT_MS;
+    let lastChange = -Infinity;
+    let pending = false;
+    let changed = false;
+    let frame = 0;
+    const clock = () => (window.performance && typeof window.performance.now === "function"
+      ? window.performance.now() : Date.now());
+    const raf = typeof window.requestAnimationFrame === "function"
+      ? window.requestAnimationFrame.bind(window) : null;
+    const caf = typeof window.cancelAnimationFrame === "function"
+      ? window.cancelAnimationFrame.bind(window) : null;
+
+    function valueAt(track, now) {
+      if (track.to == null || track.from == null || track.dur <= 0) return track.to;
+      const t = (now - track.start) / track.dur;
+      if (t >= 1) return track.to;
+      if (t <= 0) return track.from;
+      return track.from + (track.to - track.from) * t;
+    }
+
+    let now = clock();
+    function get(key) {
+      const track = tracks[key];
+      return track ? valueAt(track, now) : null;
+    }
+
+    function tick() {
+      frame = 0;
+      now = clock();
+      paint(get);
+      const moving = Object.keys(tracks).some((key) => {
+        const track = tracks[key];
+        return track.to != null && track.from != null && now < track.start + track.dur;
+      });
+      if (moving && raf) frame = raf(tick);
+    }
+
+    return {
+      /** Set where `key` should be; null means no reading (drawn at rest, at once). */
+      set(key, value) {
+        const next = value == null || !Number.isFinite(value) ? null : value;
+        const track = tracks[key];
+        if (!track) {
+          tracks[key] = { from: next, to: next, start: 0, dur: 0 };
+          changed = true;
+          return;
+        }
+        if (track.to === next) return;
+        const t = clock();
+        const from = next == null || track.to == null ? next : valueAt(track, t);
+        tracks[key] = { from, to: next, start: t, dur: 0, fresh: true };
+        changed = true;
+        pending = true;
+      },
+
+      drop(key) { delete tracks[key]; },
+
+      /** Call after a sample's set()s: starts the glide and schedules frames. */
+      commit() {
+        if (!changed) return;
+        changed = false;
+        const t = clock();
+        if (pending) {
+          const gap = t - lastChange;
+          if (gap >= GLIDE_MIN_MS / 2 && gap <= GLIDE_MAX_MS * 2) {
+            spacing += (gap - spacing) * 0.3;
+          }
+          lastChange = t;
+          const dur = raf ? Math.max(GLIDE_MIN_MS, Math.min(GLIDE_MAX_MS, spacing)) : 0;
+          Object.keys(tracks).forEach((key) => {
+            const track = tracks[key];
+            if (track.fresh) { track.dur = dur; track.fresh = false; }
+          });
+          pending = false;
+        }
+        if (!raf) { tick(); return; }
+        if (!frame) frame = raf(tick);
+      },
+
+      /** Paint now, from wherever each value is at this instant. */
+      paintNow() {
+        if (frame && caf) caf(frame);
+        tick();
+      },
+
+      destroy() {
+        if (frame && caf) caf(frame);
+        frame = 0;
+      },
+    };
+  }
 
   /* ================================================================== */
   /* The drawn model                                                     */
@@ -528,6 +649,7 @@ Corvus.rcTransmitter = (function () {
     const parts = {};
     const gimbalParts = {};
     let screenParts = null;
+    const glide = createGlide(paintMotion);
     let modeLabel = null;
 
     if (svgSupported()) {
@@ -996,10 +1118,11 @@ Corvus.rcTransmitter = (function () {
         }
 
         if (control.kind === "switch") paintSwitch(control, part, index);
-        else if (control.kind === "knob") paintKnob(control, part, travel);
+        else if (control.kind === "knob") glide.set(control.id, travel);
       });
 
       paintGimbals();
+      glide.commit();
       if (selectedId) renderInspector();
       if (learn) learn.sample(state);
     }
@@ -1032,7 +1155,31 @@ Corvus.rcTransmitter = (function () {
     /** Knob sweep, in degrees either side of straight up. */
     const KNOB_SPAN = 140;
 
+    /** Per frame: the parts that glide, from where the glide has them now. */
+    function paintMotion(get) {
+      LAYOUT.controls.forEach((control) => {
+        const part = parts[control.id];
+        if (part && !part.fallback && control.kind === "knob") {
+          paintKnob(control, part, get(control.id));
+        }
+      });
+      LAYOUT.gimbals.forEach((g) => {
+        const part = gimbalParts[g.id];
+        if (!part) return;
+        const fx = get(g.id + "_x");
+        const fy = get(g.id + "_y");
+        const reach = g.r - STICK_R - 8;
+        const dx = fx == null ? 0 : (fx * 2 - 1) * reach;
+        const dy = fy == null ? 0 : -(fy * 2 - 1) * reach;
+        part.cap.setAttribute("transform",
+          "translate(" + dx.toFixed(1) + " " + dy.toFixed(1) + ")");
+        part.shaft.setAttribute("x2", (g.cx + dx).toFixed(1));
+        part.shaft.setAttribute("y2", (g.cy + dy).toFixed(1));
+      });
+    }
+
     function paintKnob(control, part, travel) {
+      if (!part.pointer) return;
       const f = travel == null ? 0.5 : travel;
       const angle = (f * 2 - 1) * KNOB_SPAN;
       part.pointer.setAttribute(
@@ -1047,13 +1194,8 @@ Corvus.rcTransmitter = (function () {
         if (!part) return;
         const fx = travelOf(g.id + "_x");
         const fy = travelOf(g.id + "_y");
-        const reach = g.r - STICK_R - 8;
-        const dx = fx == null ? 0 : (fx * 2 - 1) * reach;
-        const dy = fy == null ? 0 : -(fy * 2 - 1) * reach;
-        part.cap.setAttribute("transform",
-          "translate(" + dx.toFixed(1) + " " + dy.toFixed(1) + ")");
-        part.shaft.setAttribute("x2", (g.cx + dx).toFixed(1));
-        part.shaft.setAttribute("y2", (g.cy + dy).toFixed(1));
+        glide.set(g.id + "_x", fx);
+        glide.set(g.id + "_y", fy);
         part.group.dataset.signal = (fx == null && fy == null) ? "" : "1";
         part.group.dataset.prompted =
           (prompt.controls.indexOf(g.id + "_x") >= 0
@@ -1387,6 +1529,7 @@ Corvus.rcTransmitter = (function () {
       refresh() { inspectorKey = ""; if (selectedId) renderInspector(); },
 
       destroy() {
+        glide.destroy();
         cancelLearn("");
         selectedId = null;
         learnStatusEl = null;
@@ -1398,6 +1541,6 @@ Corvus.rcTransmitter = (function () {
     LAYOUT, MODES, DEFAULT_MODE, ROLE_PARAM, ROLE_LABEL,
     axisRoles, positionIndex, positionLabel, fractionOf, leverLift, LEVER_LEAN,
     loadBindings, saveBindings, loadMode, saveMode,
-    create,
+    create, createGlide,
   };
 })();

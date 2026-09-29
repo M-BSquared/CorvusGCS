@@ -113,13 +113,14 @@
   min-width: 0;
   justify-content: flex-start;
 }
-.schw-launch span {
+.schw-launch > span:not(.schw-where) {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Where it runs, the warning, the live dot, the arrow and the pencil: present,
+/* The warning, the live dot, the arrow and the pencil: present,
    never competing with the launch button, full strength on hover or focus.
    Centred, because they are not all one height. */
 .schw-row-tools {
@@ -133,20 +134,16 @@
 .schw-row:hover .schw-row-tools,
 .schw-row-tools:focus-within { opacity: 1; }
 
-/* Local or SSH, in the segment's words: a quiet tag, not a control. */
+/* Local or SSH: the segment's own icon, pinned to the button's far end and
+   a little quieter than the label, so it reads as a property of the button
+   rather than a second control inside it. */
 .schw-where {
+  display: inline-flex;
+  align-items: center;
   flex: 0 0 auto;
-  margin-right: 4px;
-  padding: 2px 6px;
-  border: 1px solid var(--border-soft);
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.6px;
-  line-height: 1.3;
-  text-transform: uppercase;
-  color: var(--text-3);
-  white-space: nowrap;
+  margin-left: auto;
+  padding-left: 8px;
+  opacity: 0.75;
 }
 
 /* A row whose program is running: a live dot on the card's own surface, and
@@ -286,4 +283,15 @@
   .schw-row-tools,
   .schw-seg-opt,
   .schw-comp { transition: none; }
+}
+
+/* The status under the companion strip: a slim one-liner, never a block. */
+.schw-status {
+  margin: 0 0 8px;
+  padding: 3px 10px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

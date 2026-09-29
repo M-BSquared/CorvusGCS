@@ -248,7 +248,19 @@ function testPluginHintsUseNoDashes() {
 
 // ---------------------------------------------------------------------------
 
+function testClearBrowserRemovesEveryCorvusKeyAndNothingElse() {
+  const store = fakeStorage({
+    "corvus.hud": "{}", "corvus.theme": "light", "corvus.console.history": "[]",
+    "corvus.analysis.sort.logs": "x", "other.app": "keep",
+  });
+  T.clearBrowser(store);
+  assert.deepEqual(store.dump(), { "other.app": "keep" });
+  const broken = { get length() { throw new Error("denied"); } };
+  T.clearBrowser(broken);
+}
+
 const tests = [
+  testClearBrowserRemovesEveryCorvusKeyAndNothingElse,
   testTheHudPositionIsWindowLayout,
   testPrefixKeysMatchTheirWholeFamily,
   testHistoryIsNotASetting,

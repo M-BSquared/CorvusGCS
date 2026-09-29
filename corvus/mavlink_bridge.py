@@ -176,6 +176,7 @@ STATUSTEXT_CHUNK_TIMEOUT_S = 10.0
 # router carries plenty of all three. A cap keeps a link that is misbehaving
 # from growing the table without limit on the receive thread.
 STATUSTEXT_MAX_PARTIALS = 64
+_LEVEL_RANK = {"info": 0, "warning": 1, "critical": 2}
 
 # Two-tier heartbeat staleness (A3). WARN marks the link degraded (socket
 # stays open, parsing continues); DROP tears it down and reconnects. Serial
@@ -2259,9 +2260,20 @@ class MavlinkBridge(
                 self._build_mode_mapping()
             armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
             mode = self._decode_mode(msg)
+            terminated = (
+                int(getattr(msg, "system_status", 0))
+                == mavutil.mavlink.MAV_STATE_FLIGHT_TERMINATION
+            )
+            extra: dict[str, Any] = {}
+            if not terminated and self._store.get_snapshot().get("flight_termination"):
+                # The lockdown the heartbeat reported has lifted. On PX4 that
+                # is the kill switch coming back, even if its "Kill disengaged"
+                # line was lost on the way.
+                extra["kill_switch"] = False
             self._store.update(
                 vehicle_type=vtype, autopilot=autopilot, armed=armed, mode=mode,
-                autopilot_stack=self._dialect.stack,
+                autopilot_stack=self._dialect.stack, flight_termination=terminated,
+                **extra,
             )
             if armed and self._prearm_reasons:
                 # It armed, so whatever held it back no longer does.
@@ -2591,6 +2603,13 @@ class MavlinkBridge(
         text = text.rstrip()
         level = "critical" if severity <= 3 else ("warning" if severity <= 5 else "info")
         self._console_publish("STATUSTEXT", text, level)
+        event = self._dialect.vehicle_event(text)
+        if event is not None:
+            if event.kind in ("kill", "unkill"):
+                self._store.update(kill_switch=event.kind == "kill")
+            worst = max(level, event.level, key=_LEVEL_RANK.__getitem__)
+            self._store_update_warning(event.message, worst, event=event.kind)
+            return
         if level != "info" or not self._dialect.is_routine_statustext(text):
             self._store_update_warning(text, level)
         reason = self._dialect.prearm_failure(text)
@@ -2661,9 +2680,9 @@ class MavlinkBridge(
         except Exception as exc:  # noqa: BLE001 - the next SYS_STATUS asks again
             logger.debug("prearm report request failed: %s", exc)
 
-    def _store_update_warning(self, text: str, level: str) -> None:
+    def _store_update_warning(self, text: str, level: str, event: str | None = None) -> None:
         """Atomically merge a warning into the vehicle state."""
-        self._store.merge_warning(text, level)
+        self._store.merge_warning(text, level, event=event)
 
     def _console_publish(self, name: str, text: str, level: str) -> None:
         """Fan one console line out to every open console stream.
@@ -2746,6 +2765,7 @@ class MavlinkBridge(
         payload = self._dialect.capabilities(self._mav_type_id)
         payload["modes"] = self.get_available_modes()
         payload["vehicle_type"] = self._mav_type_id
+        payload.update(self.mission_capabilities())
         return payload
 
     def get_last_command_error(self) -> str:

@@ -21,7 +21,7 @@ from collections.abc import Callable
 import pytest
 from pymavlink import mavutil
 
-from corvus import autopilot
+from corvus import autopilot, mavlink_missions
 from corvus.mavlink_bridge import MavlinkBridge
 from corvus.state_store import VehicleStateStore
 
@@ -359,7 +359,9 @@ def test_the_home_slot_is_read_from_a_real_home_position() -> None:
     assert home["z"] == 520.0
 
 
-def test_a_px4_mission_upload_still_starts_at_item_zero() -> None:
+def test_a_px4_mission_upload_still_starts_at_item_zero(monkeypatch) -> None:
+    # The stubbed upload has no vehicle behind it to report a verdict.
+    monkeypatch.setattr(mavlink_missions, "MISSION_VERDICT_WAIT_S", 0.0)
     store = VehicleStateStore()
     store.heartbeat()
     store.update(connected=True)

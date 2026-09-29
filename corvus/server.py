@@ -1962,13 +1962,15 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             merged["plugins"] = cfg.plugins
         if cfg.parameters is not None:
             merged["parameters"] = cfg.parameters
+        if cfg.review is not None:
+            merged["review"] = cfg.review
 
         known = {
             "mavlink_connection", "http_port", "tile_cache_dir", "tlog_dir",
             "params_dir", "firmware_dir", "log_download_dir", "missions_dir",
             "tile_sources", "stream_rates", "ssh_connections",
             "theme", "map", "branding", "controls", "ui", "updates",
-            "autoconnect", "battery", "remote_id", "parameters",
+            "autoconnect", "battery", "remote_id", "parameters", "review",
         }
         # Real config keys that belong to their own endpoint. A client that
         # POSTs back a whole GET /api/config body carries them along, and
@@ -2090,6 +2092,12 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 merged["parameters"] = (
                     {**base, **value} if isinstance(base, dict) else dict(value)
                 )
+            elif key == "review":
+                if not isinstance(value, dict):
+                    return None, "review must be an object"
+                # Merged per key, like parameters: one option per POST.
+                base = merged.get("review")
+                merged["review"] = {**base, **value} if isinstance(base, dict) else dict(value)
             elif key == "mavlink_connection":
                 if not isinstance(value, str) or not value:
                     return None, "mavlink_connection must be a non-empty string"
@@ -2590,7 +2598,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             return
         self._send_json(
             autopilot.dialect_for_stack(autopilot.STACK_GENERIC).capabilities()
-            | {"modes": [], "vehicle_type": 0}
+            | {"modes": [], "vehicle_type": 0, "mission_unsupported": {}}
         )
 
     @route("GET", "/api/mavlink/serial-ports")
@@ -4185,6 +4193,76 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             "restart": restart,
             "warnings": warnings,
         })
+
+    @route("POST", "/api/settings/reset")
+    def _api_settings_reset(self, payload: dict) -> None:
+        """Put the station back to factory settings and reopen the first start setup.
+
+        The config goes back to its defaults and its file is removed, the
+        company logo and every plugin's saved settings are deleted, and the
+        first start setup is pending again, for this session and, with no
+        config file on disk, for the next start too. Plugins the operator
+        installed stay installed: they are software, not settings. Refused
+        while armed, for the reasons an import is. The browser half, the
+        interface state in localStorage, is the page's to clear.
+        """
+        if self.store is not None and self.store.get_snapshot().get("armed"):
+            self._send_json({"ok": False,
+                             "error": "Settings cannot be reset while the vehicle is armed."},
+                            409)
+            return
+        warnings: list[str] = []
+        with _config_write_lock:
+            cfg = self._live_config()
+            before = _config_to_dict(cfg)
+            fresh = CorvusConfig()
+            for field in dataclasses.fields(cfg):
+                setattr(cfg, field.name, getattr(fresh, field.name))
+            after = _config_to_dict(cfg)
+            try:
+                Path(self.config_path or default_config_path()).unlink(missing_ok=True)
+            except OSError as exc:
+                logger.error("settings reset: config file not removed: %s", exc)
+                warnings.append("The config file could not be removed. "
+                                "The next start may skip the setup.")
+            try:
+                self._logo_path().unlink(missing_ok=True)
+            except OSError as exc:
+                logger.error("settings reset: company logo not removed: %s", exc)
+                warnings.append("The company logo could not be removed.")
+            for plugin_id in plugin_config.load_all(self.plugin_user_dir):
+                path = plugin_config.config_path(plugin_id, self.plugin_user_dir)
+                if path is None:
+                    continue
+                try:
+                    os.unlink(path)
+                except FileNotFoundError:
+                    pass
+                except OSError as exc:
+                    logger.error("settings reset: plugin %s settings not removed: %s",
+                                 plugin_id, exc)
+                    warnings.append(f"The settings of plugin {plugin_id} could not be removed.")
+            if before.get("forwarding") != after.get("forwarding"):
+                self._restart_forwarder()
+            self._refresh_autoconnect_session(cfg)
+            self._refresh_battery_settings(cfg)
+            self._refresh_remote_id(cfg)
+
+        if before.get("video") != after.get("video"):
+            self._apply_video(video.settings(cfg.video))
+        if before.get("rtk") != after.get("rtk") and self.rtk is not None:
+            try:
+                self.rtk.apply_settings(rtk.settings(cfg.rtk))
+            except Exception:  # noqa: BLE001 - the rest of the reset stands
+                logger.exception("settings reset: RTK settings not applied")
+                warnings.append("The RTK settings are reset but could not be applied.")
+        restart = [key for key in _IMPORT_RESTART_KEYS if before.get(key) != after.get(key)]
+        state = self.first_start
+        if state is not None:
+            state["pending"] = True
+        logger.info("settings reset to factory defaults")
+        self._send_json({"ok": True, "config": to_public_dict(cfg),
+                         "restart": restart, "warnings": warnings})
 
     # ---- First start setup (src/js/welcome.js) ----
     def _finish_first_start(self) -> None:
@@ -6478,6 +6556,20 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self._send_json({"ok": False, "error": error},
                         503 if "not connected" in error else 409)
 
+    def _review_sensitivity(self) -> str:
+        """The Flight Review sensitivity the operator set in Settings.
+
+        Read per request from the live config, so a change on the Settings
+        page applies to the next review opened without a restart. Never
+        raises: an unreadable setting reviews at the default.
+        """
+        from .flight_review import normalize_sensitivity
+        try:
+            block = getattr(self._live_config(), "review", None) or {}
+            return normalize_sensitivity(block.get("sensitivity"))
+        except Exception:  # noqa: BLE001 - a setting must not fail a review
+            return normalize_sensitivity(None)
+
     @route("GET", "/api/logs/review")
     def _api_logs_review(self) -> None:
         """Flight Review for one ULog in the download folder.
@@ -6517,7 +6609,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         try:
             from .flight_review import review_file
             from .ulog import UlogError
-            data = review_file(target, os.path.basename(target))
+            data = review_file(target, os.path.basename(target),
+                               self._review_sensitivity())
         except UlogError as exc:
             self._send_json({"ok": False, "error": str(exc)}, 400)
             return
@@ -6566,7 +6659,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             return
         try:
             from .tlog_review import TlogError, review_file
-            data = review_file(target, os.path.basename(target))
+            data = review_file(target, os.path.basename(target),
+                               self._review_sensitivity())
         except TlogError as exc:
             self._send_json({"ok": False, "error": str(exc)}, 400)
             return
@@ -6619,7 +6713,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         try:
             from .flight_review import review_bytes
             from .ulog import UlogError
-            data = review_bytes(raw, name)
+            data = review_bytes(raw, name, self._review_sensitivity())
         except UlogError as exc:
             self._send_json({"ok": False, "error": str(exc)}, 400)
             return

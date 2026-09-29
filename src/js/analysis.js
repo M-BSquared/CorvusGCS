@@ -1076,6 +1076,15 @@ Corvus.analysis = (function () {
       // Findings before plots: the plots are the evidence, these are the two
       // sentences worth reading if you read nothing else.
       appendFindings(head, (data && data.findings) || []);
+      // Which thresholds produced that list. An empty list at Relaxed and one
+      // at Strict say different things, and the reader should not have to
+      // remember which one they set.
+      const level = String(summary.sensitivity || "");
+      if (level) {
+        head.appendChild(S.el("div", "review-sensitivity",
+          "Findings at " + level.charAt(0).toUpperCase() + level.slice(1)
+          + " sensitivity. Change it under Settings, Analysis."));
+      }
       out.appendChild(head);
 
       const plots = (data && data.plots) || [];

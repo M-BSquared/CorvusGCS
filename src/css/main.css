@@ -205,6 +205,9 @@ svg { display: block; }
 .tb-block[data-tone] { background: var(--surface-2); }
 .tb-block[data-tone="ready"] { background: var(--healthy-dark); }
 .tb-block[data-tone="armed"] { background: var(--warning-dark); }
+/* Kill switch or termination: the motors are cut whatever the armed flag
+   says, the one state on the bar that is louder than ARMED. */
+.tb-block[data-tone="killed"] { background: var(--critical-dark); }
 /* FLYING is the green word on the bare bar: the normal state of a flight,
    so it should be the quietest thing in the bar for as long as it lasts. */
 .tb-block[data-tone="flying"],
@@ -213,6 +216,7 @@ svg { display: block; }
 .tb-block[data-tone]:hover { background: var(--surface-hover); }
 .tb-block[data-tone="ready"]:hover { background: var(--healthy-dark); }
 .tb-block[data-tone="armed"]:hover { background: var(--warning-dark); }
+.tb-block[data-tone="killed"]:hover { background: var(--critical-dark); }
 
 .tb-icon { width: 14px; height: 14px; color: var(--text-3); }
 .tb-spacer { flex: 1; }
@@ -572,6 +576,9 @@ svg { display: block; }
 /* Settings > Export and import (settings-transfer.js). The buttons get the
    12px every card with actions puts under its text. */
 .settings-transfer .ui-actions { margin-top: 12px; }
+/* The factory reset is a different act from moving settings, and the one
+   that cannot be undone, so it sits apart at the far end of the row. */
+.settings-transfer .settings-transfer-reset { margin-left: auto; }
 /* The import dialog: the file's two lines read as one block, and the parts
    sit in a plain block of their own, so the dialog's gap does not stack on
    top of the rows' spacing and each hairline has the same room on both
@@ -3799,10 +3806,13 @@ button.link-card-title:focus-visible {
   background: var(--surface-2); border: 1px solid var(--border-soft); overflow: hidden;
 }
 .rc-channel-fill {
-  position: absolute; inset: 0 auto 0 0; width: 0;
-  background: var(--nav); border-radius: 5px 0 0 5px;
-  /* No transition: the bar is a measurement instrument, and an eased bar lags
-     the stick it is supposed to be showing. */
+  position: absolute; inset: 0 auto 0 0; width: 100%;
+  background: var(--nav);
+  transform: scaleX(0); transform-origin: 0 50%; will-change: transform;
+  /* Scaled, not resized: it is repainted every frame while the stick moves
+     (see createGlide in rc-transmitter.js), and a transform costs no layout.
+     The track's own rounded clip gives it its ends. No CSS transition: the
+     glide is timed to the sample spacing, a transition would add lag on top. */
 }
 .rc-channel-centre {
   position: absolute; top: 0; bottom: 0; left: 50%; width: 1px;
@@ -3831,8 +3841,10 @@ button.link-card-title:focus-visible {
    The one rule the whole thing hangs on: NOTHING here transitions. A switch
    handle that eases into its new position is a handle whose picture disagrees
    with the operator's thumb for 150 ms, which is exactly the window in which
-   they are deciding whether the control works at all. Same reason
-   .rc-channel-fill carries no transition. */
+   they are deciding whether the control works at all. The sticks, knobs and
+   channel bars do glide, but in script and only across one sample interval
+   (createGlide in rc-transmitter.js), which turns a 20 Hz stream into motion
+   without adding a lag the operator can see. */
 /* The drawing and the channel bars share a row once the COLUMN they sit in is
    wide enough — not once the window is. Collapsing the right-hand panel is the
    commonest way an operator makes room on this page, and it never changes the
@@ -5473,6 +5485,9 @@ button.review-finding-head:focus-visible {
 .review-more[aria-expanded="true"] svg,
 .review-more[aria-expanded="true"] i { transform: rotate(90deg); }
 .review-finding-notes { display: flex; flex-direction: column; gap: 8px; }
+/* Which thresholds produced the list above: an empty list at Relaxed and one
+   at Strict say different things. */
+.review-sensitivity { font-size: 11px; color: var(--text-3); letter-spacing: 0.2px; }
 
 @media (prefers-reduced-motion: reduce) {
   .review-finding-head svg, .review-finding-head i,

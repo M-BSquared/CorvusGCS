@@ -251,9 +251,11 @@ function testEveryToolHasACaptionToShow() {
 }
 
 function testEveryPlaceableToolNamesARealItemType() {
+  // SELECT places nothing, START places the start, and AIRCRAFT is a switch
+  // that ties the start to the connected aircraft.
   mission._tools
     .filter((entry) => entry.id.indexOf("divider") !== 0 && entry.id !== "select"
-      && entry.id !== "home")
+      && entry.id !== "home" && entry.id !== "vehicle_start")
     .forEach((entry) => {
       assert.ok(mission._types[entry.id],
         `the "${entry.id}" tool places an item type that does not exist`);
@@ -647,6 +649,221 @@ function testTheConnectedAircraftSetsThePlansKindAndLocksIt() {
     Corvus.telemetry = was;
     mission.setPlan({ items: [] });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Where the aircraft starts
+// ---------------------------------------------------------------------------
+
+/** Run *fn* with the telemetry state *state* (a function of nothing, so a
+ *  test can move the aircraft between two calls). */
+function withVehicle(state, fn) {
+  const was = Corvus.telemetry;
+  Corvus.telemetry = { getState: () => state() };
+  try {
+    fn();
+  } finally {
+    Corvus.telemetry = was;
+    mission._setStartAtVehicle(false);
+    mission.setPlan({ items: [] });
+  }
+}
+
+/** A point *metres* due north of {lat, lon}. */
+function north(point, metres) {
+  return { lat: point.lat + metres / 111195, lon: point.lon };
+}
+
+function testTheStartCanBeTiedToTheConnectedAircraft() {
+  const stand = { lat: 48.0802, lon: 11.6409 };
+  let at = stand;
+  let armed = false;
+  let homeAt = null;
+  withVehicle(() => ({
+    connected: true, vehicle_type: "QUADROTOR", armed,
+    position: [at.lon, at.lat], home: homeAt ? [homeAt.lon, homeAt.lat] : null,
+  }), () => {
+    mission.setPlan({ items: [] });
+    assert.strictEqual(mission._setStartAtVehicle(true), true);
+    let plan = mission.getPlan();
+    assert.ok(mission._distanceM(plan.home, stand) < 0.01, "the start is put on the aircraft");
+    assert.strictEqual(plan.items[0].type, "takeoff", "with the takeoff standing on it");
+    assert.ok(mission._distanceM(plan.items[0], stand) < 0.01);
+    assert.strictEqual(plan.start_at_vehicle, true, "and the plan says so when saved");
+
+    at = north(stand, 1);
+    assert.strictEqual(mission._followVehicleStart(null, false), false,
+      "a fix wandering by a metre does not move the start");
+    at = north(stand, 60);
+    assert.strictEqual(mission._followVehicleStart(null, false), true,
+      "an aircraft carried away takes the start with it");
+    plan = mission.getPlan();
+    assert.ok(mission._distanceM(plan.home, at) < 0.01);
+    assert.ok(mission._distanceM(plan.items[0], at) < 0.01, "and the takeoff");
+
+    // Armed, the heights are measured from home, which is where it armed.
+    armed = true;
+    homeAt = north(stand, 200);
+    mission._followVehicleStart(null, false);
+    assert.ok(mission._distanceM(mission.getPlan().home, homeAt) < 0.01,
+      "once armed the start follows the vehicle's home, not its position");
+  });
+}
+
+function testTheAircraftButtonNeedsAnAircraftToTieTo() {
+  let state = { connected: false };
+  withVehicle(() => state, () => {
+    mission.setPlan({ items: [] });
+    assert.ok(/Connect an aircraft/.test(mission._toolBlocked("vehicle_start")));
+    state = { connected: true, vehicle_type: "QUADROTOR", position: [0, 0] };
+    assert.ok(/not reported a position/.test(mission._toolBlocked("vehicle_start")),
+      "0/0 is no position");
+    state = { connected: true, vehicle_type: "QUADROTOR", position: [11.64, 48.08] };
+    assert.strictEqual(mission._toolBlocked("vehicle_start"), null,
+      "and it is the one thing on an empty plan besides START that can be pressed");
+    mission._setStartAtVehicle(true);
+    state = { connected: false };
+    assert.strictEqual(mission._toolBlocked("vehicle_start"), null,
+      "a tied start can always be let go of, link or no link");
+  });
+}
+
+function testAStartAwayFromTheAircraftIsCalledOut() {
+  const stand = { lat: 48.0802, lon: 11.6409 };
+  const start = north(stand, 180);
+  const plan = {
+    home: start,
+    items: [
+      { type: "takeoff", lat: start.lat, lon: start.lon, alt: 30 },
+      { type: "land", lat: start.lat, lon: start.lon },
+    ],
+  };
+  let connected = true;
+  withVehicle(() => ({ connected, vehicle_type: "QUADROTOR", position: [stand.lon, stand.lat] }), () => {
+    mission.setPlan(plan);
+    const offset = mission._startOffsetM();
+    assert.ok(Math.abs(offset - 180) < 1, `expected about 180 m, got ${offset}`);
+    const line = mission._problems().find((text) => /from the start/.test(text));
+    assert.ok(line, "the operator is told the aircraft is not standing on the start");
+    const detail = mission._problemDetails().find((issue) => issue.text === line);
+    assert.ok(/takes off where it stands/.test(detail.info));
+    assert.ok(/AIRCRAFT/.test(detail.info), "and pointed at the button that fixes it");
+
+    mission._setStartAtVehicle(true);
+    assert.strictEqual(mission._startOffsetM(), null);
+    assert.ok(!mission._problems().some((text) => /from the start/.test(text)),
+      "a start tied to the aircraft is never away from it");
+
+    mission._setStartAtVehicle(false);
+    mission.setPlan(plan);
+    connected = false;
+    assert.ok(!mission._problems().some((text) => /from the start/.test(text)),
+      "with nothing connected there is nothing to be away from");
+  });
+}
+
+function testAStartCloseToTheAircraftIsNotComplainedAbout() {
+  const stand = { lat: 48.0802, lon: 11.6409 };
+  const start = north(stand, mission._startOffsetWarnM - 5);
+  withVehicle(() => ({ connected: true, position: [stand.lon, stand.lat] }), () => {
+    mission.setPlan({ home: start, items: [{ type: "takeoff", lat: start.lat, lon: start.lon, alt: 30 }] });
+    assert.ok(!mission._problems().some((text) => /from the start/.test(text)),
+      "a fix wanders; a start a few metres off is the same place");
+  });
+}
+
+function testAPlanSavedToStartAtTheAircraftStartsAtThisOne() {
+  const stand = { lat: 48.0802, lon: 11.6409 };
+  const saved = north(stand, 500);
+  withVehicle(() => ({ connected: true, position: [stand.lon, stand.lat] }), () => {
+    mission.setPlan({
+      start_at_vehicle: true,
+      home: saved,
+      items: [
+        { type: "takeoff", lat: saved.lat, lon: saved.lon, alt: 30 },
+        { type: "waypoint", lat: 48.09, lon: 11.65, alt: 30 },
+      ],
+    });
+    const plan = mission.getPlan();
+    assert.ok(mission._distanceM(plan.home, stand) < 0.01,
+      "the home in the file is only where some aircraft stood when it was saved");
+    assert.ok(mission._distanceM(plan.items[0], stand) < 0.01);
+    assert.strictEqual(plan.items[1].lat, 48.09, "the route itself stays where it was drawn");
+  });
+}
+
+function testTakingTheStartAwayLetsGoOfTheAircraft() {
+  withVehicle(() => ({ connected: true, position: [11.64, 48.08] }), () => {
+    mission.setPlan({ items: [] });
+    mission._setStartAtVehicle(true);
+    mission._removeStart();
+    assert.strictEqual(mission._startAtVehicle(), false);
+    assert.strictEqual(mission.getPlan().start_at_vehicle, undefined);
+  });
+}
+
+function testStartAtVehicleIsAKeyTheBackendKeeps() {
+  assert.ok(/raw\.get\("start_at_vehicle"\) is True/.test(missionPy),
+    "corvus/mission.py must keep start_at_vehicle, or a saved plan forgets it");
+}
+
+function testAnItemTheStackWillNotFlyIsGreyedWithTheReason() {
+  withVehicle(() => ({ connected: false }), () => {
+    mission.setPlan({ home: { lat: 48, lon: 11 }, items: [] });
+    assert.strictEqual(mission._toolBlocked("loiter_turns"), null, "unknown is allowed");
+    mission._setRefusals({
+      loiter_turns: "PX4 does not fly an orbit with a set number of turns in a mission",
+    });
+    try {
+      const why = mission._toolBlocked("loiter_turns");
+      assert.ok(/PX4 does not fly an orbit/.test(why), "the stack's own reason is on the tool");
+      assert.ok(/HOLD/.test(why), "with what to use instead");
+      assert.strictEqual(mission._toolBlocked("loiter_time"), null, "a Hold is still there");
+
+      mission.setPlan({
+        home: { lat: 48, lon: 11 },
+        items: [{ type: "loiter_turns", lat: 48.001, lon: 11, alt: 30 }],
+      });
+      assert.ok(mission._problems().includes("A Circle this aircraft will not fly."),
+        "a Circle already in the plan is called out before the upload refuses it");
+    } finally {
+      mission._setRefusals({});
+    }
+  });
+}
+
+function testTheAircraftPickerNamesTheConnectedAircraftAsTheBarDoes() {
+  const was = Corvus.topbar;
+  Corvus.topbar = {
+    vehicleTypeLabel: (raw) => ({ QUADROTOR: "Quadcopter", FIXED_WING: "Fixed Wing" }[raw] || raw),
+  };
+  let state = { connected: true, vehicle_type: "QUADROTOR" };
+  try {
+    withVehicle(() => state, () => {
+      mission.setPlan({ items: [] });
+      const label = (value) => mission._aircraftOptions().find((o) => o.value === value).label;
+      assert.strictEqual(label("multirotor"), "Quadcopter (multicopter)",
+        "the bar says Quadcopter; the picker must not seem to say something else");
+      assert.strictEqual(label("fixed_wing"), "Fixed wing", "the others keep their own names");
+
+      state = { connected: true, vehicle_type: "FIXED_WING" };
+      mission._adoptVehicleAircraft();
+      assert.strictEqual(label("fixed_wing"), "Fixed wing",
+        "a name that only differs in case is not said twice");
+
+      state = { connected: false, vehicle_type: "" };
+      mission._adoptVehicleAircraft();
+      assert.strictEqual(label("multirotor"), "Multicopter", "unlocked, the kinds are plain");
+    });
+  } finally {
+    Corvus.topbar = was;
+  }
+}
+
+function testTheTopBarSharesItsAirframeNames() {
+  const topbar = fs.readFileSync(path.join(__dirname, "..", "src", "js", "topbar.js"), "utf-8");
+  assert.ok(/^\s+vehicleTypeLabel,$/m.test(topbar),
+    "Corvus.topbar.vehicleTypeLabel is what the aircraft picker names an aircraft with");
 }
 
 function testAMulticopterDescendsStraightDownWhereAFixedWingGlides() {
@@ -1995,6 +2212,16 @@ const tests = [
   testTheTakeoffStaysFirstAndTheEndingStaysLast,
   testAPlanWithARouteButNoEndingSaysSo,
   testAWarningIsOneLineAndItsReasonSitsBehindTheInfoIcon,
+  testTheStartCanBeTiedToTheConnectedAircraft,
+  testTheAircraftButtonNeedsAnAircraftToTieTo,
+  testAStartAwayFromTheAircraftIsCalledOut,
+  testAStartCloseToTheAircraftIsNotComplainedAbout,
+  testAPlanSavedToStartAtTheAircraftStartsAtThisOne,
+  testTakingTheStartAwayLetsGoOfTheAircraft,
+  testStartAtVehicleIsAKeyTheBackendKeeps,
+  testAnItemTheStackWillNotFlyIsGreyedWithTheReason,
+  testTheAircraftPickerNamesTheConnectedAircraftAsTheBarDoes,
+  testTheTopBarSharesItsAirframeNames,
   testEveryDocumentListenerIsAlsoRemoved,
   testLeavingThePlannerSuspendsItRatherThanRebuildingIt,
   testOnlyTeardownLetsGoOfTheMap,

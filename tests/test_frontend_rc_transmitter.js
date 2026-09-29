@@ -718,6 +718,92 @@ function buttonByLabel(root, label) {
     .some((c) => c._isEl && c.textContent === label));
 }
 
+/**
+ * A fake frame clock for the glide: rAF callbacks are queued and run by
+ * `step(ms)`, and performance.now() is ours. Installed before createGlide is
+ * called because the glide picks its scheduler up at construction.
+ */
+function withFrames(fn) {
+  let t = 0;
+  let queue = [];
+  let nextId = 1;
+  const saved = Object.getOwnPropertyDescriptor(window, "performance");
+  Object.defineProperty(window, "performance", {
+    configurable: true, value: { now: () => t },
+  });
+  window.requestAnimationFrame = (cb) => { const id = nextId++; queue.push({ id, cb }); return id; };
+  window.cancelAnimationFrame = (id) => { queue = queue.filter((f) => f.id !== id); };
+  const frames = {
+    get pending() { return queue.length; },
+    advance(ms) { t += ms; },
+    step(ms) {
+      t += ms;
+      const run = queue; queue = [];
+      run.forEach((f) => f.cb(t));
+    },
+  };
+  try { fn(frames); } finally {
+    delete window.requestAnimationFrame;
+    delete window.cancelAnimationFrame;
+    if (saved) Object.defineProperty(window, "performance", saved);
+  }
+}
+
+function testWithoutFramesTheGlideSnaps() {
+  const painted = [];
+  const glide = TX.createGlide((get) => painted.push(get("a")));
+  glide.set("a", 0.2); glide.commit();
+  glide.set("a", 0.9); glide.commit();
+  assert.deepEqual(painted, [0.2, 0.9], "no rAF: every sample is painted as it is");
+}
+
+function testTheGlideMovesAtAConstantRateBetweenSamples() {
+  withFrames((frames) => {
+    let shown = null;
+    const glide = TX.createGlide((get) => { shown = get("a"); });
+    glide.set("a", 0); glide.commit();
+    frames.step(16);
+    assert.equal(shown, 0, "the first reading is drawn where it is, not eased in");
+
+    // Two samples 50 ms apart set the glide to 50 ms.
+    frames.advance(34);
+    glide.set("a", 0.5); glide.commit();
+    frames.step(50);
+    frames.advance(0);
+    glide.set("a", 1); glide.commit();
+    frames.step(25);
+    assert.ok(shown > 0.6 && shown < 0.9, "half way through the glide is half way there: " + shown);
+    frames.step(25);
+    assert.equal(shown, 1, "one interval later it has arrived");
+    frames.step(16);
+    assert.equal(frames.pending, 0, "a settled glide stops asking for frames");
+  });
+}
+
+function testLosingTheSignalIsDrawnAtOnce() {
+  withFrames((frames) => {
+    let shown = "unset";
+    const glide = TX.createGlide((get) => { shown = get("a"); });
+    glide.set("a", 0.8); glide.commit();
+    frames.step(16);
+    glide.set("a", null); glide.commit();
+    frames.step(1);
+    assert.equal(shown, null, "no reading is not something to glide towards");
+  });
+}
+
+function testDestroyCancelsTheNextFrame() {
+  withFrames((frames) => {
+    let paints = 0;
+    const glide = TX.createGlide(() => { paints += 1; });
+    glide.set("a", 0.1); glide.commit();
+    assert.equal(frames.pending, 1);
+    glide.destroy();
+    assert.equal(frames.pending, 0, "a torn-down page leaves no frame behind");
+    assert.equal(paints, 0);
+  });
+}
+
 // ===========================================================================
 
 function main() {
@@ -746,6 +832,10 @@ function main() {
     testForgettingDropsEveryLearnedControl,
     testThePromptMarksWhatToMoveAndWhatIsDone,
     testTheFunctionPanelIsOnlyOfferedForALearnedChannel,
+    testWithoutFramesTheGlideSnaps,
+    testTheGlideMovesAtAConstantRateBetweenSamples,
+    testLosingTheSignalIsDrawnAtOnce,
+    testDestroyCancelsTheNextFrame,
   ];
   tests.forEach((t) => { t(); console.log("  ok " + t.name); });
   console.log("\n" + tests.length + " passed — Setup > Radio Control > transmitter");

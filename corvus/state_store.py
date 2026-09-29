@@ -108,7 +108,8 @@ class VehicleStateStore:
     # transitions are user-visible safety events, not smooth telemetry.
     IMMEDIATE_KEYS: frozenset[str] = frozenset(
         {"armed", "mode", "link_status", "link_quality", "connected",
-         "landed_state", "autotune_state", "link_auto", "link_suggestion"}
+         "landed_state", "autotune_state", "link_auto", "link_suggestion",
+         "flight_termination", "kill_switch"}
     )
 
     def __init__(self, history_len: int = 600) -> None:
@@ -301,6 +302,17 @@ class VehicleStateStore:
             # derivable from altitude. 0 means the firmware does not publish it
             # or nothing has arrived yet, and the bar falls back to height.
             "landed_state": 0,
+            # HEARTBEAT system_status == MAV_STATE_FLIGHT_TERMINATION. PX4 sets
+            # it for the kill switch, lockdown and flight termination, all of
+            # which cut the motor outputs while the vehicle still reports
+            # armed. The armed flag alone would have the bar saying the
+            # propellers are live over an aircraft whose motors are stopped.
+            "flight_termination": False,
+            # The kill switch (PX4) or motor emergency stop (ArduPilot) is
+            # engaged, as the vehicle's own STATUSTEXT reported it. Names the
+            # cause when flight_termination is set, and is the only signal on
+            # ArduPilot, whose heartbeat does not change for an emergency stop.
+            "kill_switch": False,
             # Autotune, as the autopilot reports it. PX4 answers
             # MAV_CMD_DO_AUTOTUNE_ENABLE with a repeated COMMAND_ACK carrying
             # MAV_RESULT_IN_PROGRESS and a 0-100 progress field for as long as
@@ -452,8 +464,13 @@ class VehicleStateStore:
         level: str,
         meta: str | None = None,
         max_warnings: int = 20,
+        event: str | None = None,
     ) -> None:
         """Atomically insert or refresh a warning and notify listeners.
+
+        ``event`` tags a line that reports a vehicle event (``"kill"``,
+        ``"unkill"``, ``"disarm"``), so the UI can title and toast it even
+        when its level is info.
 
         Warning notifications share the coalesce window with telemetry; the
         warning is always written to state immediately, so ``get_snapshot``
@@ -465,9 +482,14 @@ class VehicleStateStore:
             warnings = [dict(warning) for warning in self._data["warnings"]]
             existing = next((warning for warning in warnings if warning.get("msg") == text), None)
             if existing is None:
-                warnings.append({"level": level, "msg": text, "meta": timestamp})
+                entry = {"level": level, "msg": text, "meta": timestamp}
+                if event:
+                    entry["event"] = event
+                warnings.append(entry)
             else:
                 existing["meta"] = timestamp
+                if event:
+                    existing["event"] = event
                 old_level = str(existing.get("level", "info"))
                 if severity.get(level, 0) > severity.get(old_level, 0):
                     existing["level"] = level
@@ -535,6 +557,8 @@ class VehicleStateStore:
             # just died. Holding "IN_AIR" would leave the bar saying FLYING
             # over a vehicle nobody can see any more.
             self._data["landed_state"] = 0
+            self._data["flight_termination"] = False
+            self._data["kill_switch"] = False
             # A tune in progress on the far side of a dead link is a tune this
             # station can no longer follow or stop, so it is not reported as
             # still running. The setpoint traces stop being live for the same

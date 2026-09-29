@@ -4224,6 +4224,9 @@ Corvus.map = (function () {
     // about which base layer is showing.
     setBaseLayer,
     getBaseLayer: () => activeLayer,
+    // The aircraft's mark, for the Mission planner's map: one drawing of the
+    // aircraft in the app, so the planner's is recognisably the same one.
+    buildVehicleMarker,
     // The layer switcher, built for ANOTHER map's rail. The Mission planner
     // has its own map and its own rail and must offer the same list, the same
     // surface and the same persistence as this one — see createLayerMenu.

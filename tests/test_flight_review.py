@@ -93,7 +93,8 @@ def test_ekf_test_ratios_are_plotted_with_the_rejection_threshold() -> None:
     # 1.0 is the line between "normal" and "the estimator stopped believing a
     # sensor", and a plot of test ratios without it is decoration.
     assert plot["threshold"] == 1.0
-    assert any("innovations reached 1.80" in f["text"] for f in result["findings"])
+    assert any("innovations" in f["text"] and "1.80" in f["text"]
+               for f in result["findings"])
 
 
 def test_clipping_is_reported_as_critical() -> None:
@@ -103,12 +104,13 @@ def test_clipping_is_reported_as_critical() -> None:
         _fmt("vehicle_imu_status:uint64_t timestamp;uint32_t[3] accel_clipping;"),
         _add(1, "vehicle_imu_status"),
         _row(1, struct.pack("<Q3I", 0, 0, 0, 0)),
-        _row(1, struct.pack("<Q3I", 1_000_000, 5, 2, 0)),
+        _row(1, struct.pack("<Q3I", 1_000_000, 500, 200, 0)),
     )
     result = review(read(blob), "x.ulg")
     assert _plot(result, "clipping") is not None
     finding = next(f for f in result["findings"] if "clipping" in f["text"])
     assert finding["level"] == "critical"
+    assert "700 samples" in finding["text"]
 
 
 def test_a_clean_imu_produces_no_clipping_plot_and_no_alarm() -> None:
@@ -1102,7 +1104,10 @@ def test_a_processor_out_of_headroom_is_a_finding_a_busy_one_is_not() -> None:
 def test_a_pack_taken_below_its_cell_floor_is_a_separate_finding_from_sag() -> None:
     """Sag retires a battery; a cell floor shortens the next flight. They have
     different answers, so they are different sentences."""
-    rows = [_row(1, struct.pack("<Qf", i * 200_000, 16.6 - i * 0.2)) for i in range(20)]
+    # A 4S dragged from 16.6 V down to 12.0 V (3.0 V per cell) and held there
+    # for four seconds: long enough that it is the pack, not one punch.
+    rows = [_row(1, struct.pack("<Qf", i * 200_000, max(12.0, 16.6 - i * 0.25)))
+            for i in range(40)]
     blob = _build(
         _fmt("battery_status:uint64_t timestamp;float voltage_filtered_v;"),
         _add(1, "battery_status"), *rows)
@@ -1344,3 +1349,254 @@ def test_every_finding_is_a_headline_short_enough_to_scan() -> None:
         assert len(finding["text"]) <= 110, finding["text"]
         assert not finding["text"].endswith("."), "a headline, not a sentence"
         assert finding.get("detail"), "and the why is still there, behind it"
+
+
+# ---------------------------------------------------------------------------
+# Sensitivity, and what an ordinary flight must not trigger
+# ---------------------------------------------------------------------------
+# The review used to open almost every log with a warning. Each test below is
+# one of the reasons it did: something every healthy flight does, read as a
+# fault because the whole file was measured rather than the flight in it.
+
+_STATUS = "vehicle_status:uint64_t timestamp;uint8_t arming_state;uint8_t nav_state;"
+
+
+def _vibration_log(peak: float) -> bytes:
+    return _build(
+        _fmt("estimator_status:uint64_t timestamp;float[3] vibe;"),
+        _add(1, "estimator_status"),
+        _row(1, struct.pack("<Q3f", 0, 0.0, 0.0, 0.0)),
+        _row(1, struct.pack("<Q3f", 1_000_000, peak, 0.0, 0.0)),
+    )
+
+
+def test_the_sensitivity_moves_the_findings_and_never_the_plots() -> None:
+    """The operator picks how readily a number becomes a finding. What was
+    measured is the same at every setting, so the plots must be too."""
+    log = read(_vibration_log(35.0))
+    relaxed = review(log, "x.ulg", "relaxed")
+    normal = review(log, "x.ulg", "normal")
+    assert [f["level"] for f in relaxed["findings"]] == ["ok"]
+    assert "relaxed" in _says(relaxed["findings"][0])
+    assert next(f for f in normal["findings"]
+                if "Vibration" in f["text"])["level"] == "warning"
+    assert relaxed["plots"] == normal["plots"]
+    assert normal["summary"]["sensitivity"] == "normal"
+
+    strict = review(read(_vibration_log(50.0)), "x.ulg", "strict")
+    assert next(f for f in strict["findings"]
+                if "Vibration" in f["text"])["level"] == "critical"
+
+
+def test_an_unknown_sensitivity_reviews_at_the_default() -> None:
+    """The setting comes out of a config file an operator can edit by hand. A
+    typo there must not cost them the review."""
+    from corvus.flight_review import normalize_sensitivity
+
+    assert normalize_sensitivity(" STRICT ") == "strict"
+    assert normalize_sensitivity("paranoid") == "normal"
+    assert normalize_sensitivity(None) == "normal"
+    assert review(read(_log()), "x.ulg", "paranoid")["summary"]["sensitivity"] == "normal"
+
+
+def test_changing_the_sensitivity_is_not_answered_from_the_cache(tmp_path) -> None:
+    from corvus import flight_review
+
+    flight_review.clear_cache()
+    path = tmp_path / "log_7_flight.ulg"
+    path.write_bytes(_vibration_log(35.0))
+    normal = flight_review.review_file(str(path))
+    relaxed = flight_review.review_file(str(path), sensitivity="relaxed")
+    assert normal is not relaxed
+    assert any("Vibration" in f["text"] for f in normal["findings"])
+    assert not any("Vibration" in f["text"] for f in relaxed["findings"])
+    assert flight_review.review_file(str(path)) is normal, "each setting is cached"
+    flight_review.clear_cache()
+
+
+def test_clipping_from_before_arming_is_not_charged_to_the_flight() -> None:
+    """The counter runs from boot. A knock while the battery went in used to
+    open the review with a critical finding about an IMU saturating in the
+    air, on a flight where it never did."""
+    rows = []
+    for index in range(40):
+        stamp = index * 250_000
+        count = 60 + (3 if index >= 36 else 0)       # 60 on the bench, 3 on touchdown
+        rows.append(_row(1, struct.pack("<Q3I", stamp, count, 0, 0)))
+        rows.append(_row(2, struct.pack("<QBB", stamp, 2 if 8 <= index < 38 else 1, 2)))
+    blob = _build(
+        _fmt("vehicle_imu_status:uint64_t timestamp;uint32_t[3] accel_clipping;"),
+        _fmt(_STATUS), _add(1, "vehicle_imu_status"), _add(2, "vehicle_status"), *rows)
+    assert [f["level"] for f in review(read(blob), "x.ulg")["findings"]] == ["ok"]
+    strict = next(f for f in review(read(blob), "x.ulg", "strict")["findings"]
+                  if "clipping" in f["text"])
+    assert "3 samples" in strict["text"], "only what was added while armed"
+
+
+def test_a_counter_that_goes_backwards_is_a_reboot_not_negative_clipping() -> None:
+    from corvus.flight_review import _rise
+
+    grown, first = _rise([0.0, 1.0, 2.0, 3.0, 4.0], [5.0, 7.0, 0.0, 1.0, 1.0], [])
+    assert grown == 3.0
+    assert first == 1.0
+
+
+def test_a_whole_flight_of_discharge_is_not_sag() -> None:
+    """Full to empty is discharge, and a 6S pack loses over three volts of it
+    on an ordinary flight. That used to be reported as a pack at the end of
+    its life, on every 6S flight there was."""
+    rows = [_row(1, struct.pack("<Qf", second * 1_000_000, 25.2 - second * 0.012))
+            for second in range(300)]
+    blob = _build(_fmt("battery_status:uint64_t timestamp;float voltage_filtered_v;"),
+                  _add(1, "battery_status"), *rows)
+    assert [f["level"] for f in review(read(blob), "x.ulg")["findings"]] == ["ok"]
+
+
+def test_one_punch_below_the_floor_is_not_a_low_pack_and_a_held_one_is() -> None:
+    """The lowest sample of a flight is the hardest punch in it. What decides
+    whether the pack was run too low is the level it stayed at."""
+    def pack(low_from: int) -> bytes:
+        rows = []
+        for index in range(300):                      # 5 Hz, 60 s, a 4S
+            volts = 15.2
+            if index == 150 or index >= low_from:
+                volts = 13.4                          # 3.35 V per cell
+            rows.append(_row(1, struct.pack("<Qf", index * 200_000, volts)))
+        return _build(_fmt("battery_status:uint64_t timestamp;float voltage_filtered_v;"),
+                      _add(1, "battery_status"), *rows)
+
+    punched = review(read(pack(low_from=999)), "x.ulg")["findings"]
+    assert [f["level"] for f in punched] == ["ok"]
+    held = review(read(pack(low_from=275)), "x.ulg")["findings"]
+    floor = next(f for f in held if "per cell" in f["text"])
+    assert floor["level"] == "warning"
+    assert "3.35 V per cell" in floor["text"]
+
+
+def _resets(bump_at: list[int]) -> bytes:
+    rows = []
+    for index in range(40):
+        count = sum(1 for at in bump_at if index >= at)
+        rows.append(_row(1, struct.pack("<QfB", index * 500_000, 1.0, count)))
+        rows.append(_row(2, struct.pack("<QBB", index * 500_000,
+                                        2 if index >= 20 else 1, 2)))
+    return _build(
+        _fmt("vehicle_local_position:uint64_t timestamp;float x;uint8_t heading_reset_counter;"),
+        _fmt(_STATUS), _add(1, "vehicle_local_position"), _add(2, "vehicle_status"), *rows)
+
+
+def test_the_heading_alignment_after_takeoff_is_context_not_a_warning() -> None:
+    """PX4 aligns its heading again once the aircraft is clear of the ground.
+    That is one reset on every ordinary flight, and it used to be a warning on
+    every ordinary flight."""
+    normal = review(read(_resets([25])), "x.ulg")["findings"]
+    reset = next(f for f in normal if "reset its state" in f["text"])
+    assert reset["level"] == "note"
+    assert normal[0]["level"] == "ok"
+    strict = review(read(_resets([25])), "x.ulg", "strict")["findings"]
+    assert next(f for f in strict if "reset its state" in f["text"])["level"] == "warning"
+    # Separate events, well apart, are the estimator changing its mind.
+    repeated = review(read(_resets([24, 28, 32])), "x.ulg")["findings"]
+    assert next(f for f in repeated if "reset its state" in f["text"])["level"] == "warning"
+
+
+def _messages_log(*texts: tuple[int, str]) -> bytes:
+    rows = [_row(1, struct.pack("<QBB", index * 500_000,
+                                2 if 10 <= index < 30 else 1, 2)) for index in range(40)]
+    messages = [_msg("L", b"3" + struct.pack("<Q", stamp) + text.encode())
+                for stamp, text in texts]
+    return _build(_fmt(_STATUS), _add(1, "vehicle_status"), *rows, *messages)
+
+
+def test_a_refusal_to_arm_is_context_and_an_error_in_flight_is_a_warning() -> None:
+    """PX4 prints its pre-arm refusals at error level. Warning about them put
+    the same line at the top of every log where the pilot armed a moment too
+    early, above the errors that were printed in the air."""
+    ground = review(read(_messages_log((2_000_000, "Preflight Fail: GPS"))), "x.ulg")
+    refused = next(f for f in ground["findings"] if "error-level" in f["text"])
+    assert refused["level"] == "note"
+    assert "Preflight Fail: GPS" in _says(refused)
+    assert ground["findings"][0]["level"] == "ok"
+
+    flown = review(read(_messages_log((2_000_000, "Preflight Fail: GPS"),
+                                      (10_000_000, "Motor failure"))), "x.ulg")
+    in_air = next(f for f in flown["findings"] if "in the flight log" in f["text"])
+    assert in_air["level"] == "warning"
+    assert "Motor failure" in _says(in_air)
+
+
+def test_a_transmitter_that_was_never_on_is_not_an_rc_loss() -> None:
+    """A receiver says "lost" until it hears a transmitter, and for the whole
+    flight when the aircraft is flown from the ground station without one."""
+    rows = []
+    for index in range(40):
+        rows.append(_row(1, struct.pack("<Qff", index * 500_000, 0.0, 1.0)))
+        rows.append(_row(2, struct.pack("<QBB", index * 500_000,
+                                        2 if index >= 10 else 1, 2)))
+    blob = _build(_fmt("input_rc:uint64_t timestamp;float rssi;float rc_lost;"),
+                  _fmt(_STATUS), _add(1, "input_rc"), _add(2, "vehicle_status"), *rows)
+    assert all("signal loss" not in f["text"] for f in review(read(blob), "x.ulg")["findings"])
+
+
+def test_a_flight_without_gps_did_not_lose_a_fix() -> None:
+    rows = []
+    for index in range(40):
+        rows.append(_row(1, struct.pack("<QB", index * 500_000, 0)))
+        rows.append(_row(2, struct.pack("<QBB", index * 500_000,
+                                        2 if index >= 10 else 1, 2)))
+    blob = _build(_fmt("vehicle_gps_position:uint64_t timestamp;uint8_t fix_type;"),
+                  _fmt(_STATUS), _add(1, "vehicle_gps_position"), _add(2, "vehicle_status"),
+                  *rows)
+    assert all("3-D fix" not in f["text"] for f in review(read(blob), "x.ulg")["findings"])
+
+
+def test_a_failsafe_on_the_bench_is_not_a_finding() -> None:
+    """With the transmitter off, a disarmed vehicle is in failsafe by
+    definition."""
+    rows = [_row(1, struct.pack("<QBBB", index * 500_000, 2 if index >= 20 else 1, 2,
+                                1 if index < 20 else 0)) for index in range(40)]
+    blob = _build(_fmt(_STATUS + "uint8_t failsafe;"), _add(1, "vehicle_status"), *rows)
+    assert all("failsafe" not in f["text"] for f in review(read(blob), "x.ulg")["findings"])
+
+
+def test_a_log_cut_after_disarm_is_context_and_one_cut_armed_is_not() -> None:
+    """Logging from boot until shutdown ends every flight with the battery
+    pulled and the file still open. That is not a crash."""
+    def cut(armed_at_end: bool) -> bytes:
+        rows = [_row(1, struct.pack("<QBB", index * 500_000,
+                                    2 if 5 <= index < 30 or armed_at_end else 1, 2))
+                for index in range(40)]
+        tail = struct.pack("<HB", 50, ord("D")) + b"\x00" * 5
+        return _build(_fmt(_STATUS), _add(1, "vehicle_status"), *rows) + tail
+
+    after = review(read(cut(armed_at_end=False)), "x.ulg")["findings"]
+    note = next(f for f in after if "mid-record" in f["text"])
+    assert note["level"] == "note"
+    assert after[0]["level"] == "ok"
+    during = review(read(cut(armed_at_end=True)), "x.ulg")["findings"]
+    assert next(f for f in during if "mid-record" in f["text"])["level"] == "warning"
+
+
+def test_a_setpoint_nobody_is_flying_to_is_not_a_tracking_error() -> None:
+    """In Acro or Manual the attitude setpoint stops being published. Holding
+    its last value across the rest of the flight measured the pilot against a
+    target that no longer existed."""
+    half = math.radians(30.0) / 2
+    q = (math.cos(half), math.sin(half), 0.0, 0.0)          # rolled 30°
+
+    def flight(published: int) -> bytes:
+        rows = []
+        for index in range(100):
+            stamp = index * 100_000
+            rows.append(_row(1, struct.pack("<Q4f", stamp, *q)))
+            if index < published:
+                rows.append(_row(2, struct.pack("<Qf", stamp, 0.0)))
+        return _build(
+            _fmt("vehicle_attitude:uint64_t timestamp;float[4] q;"),
+            _fmt("vehicle_attitude_setpoint:uint64_t timestamp;float roll_body;"),
+            _add(1, "vehicle_attitude"), _add(2, "vehicle_attitude_setpoint"), *rows)
+
+    stale = review(read(flight(published=12)), "x.ulg")["findings"]
+    assert all("setpoint" not in f["text"] for f in stale)
+    fresh = review(read(flight(published=100)), "x.ulg")["findings"]
+    assert next(f for f in fresh if "missed its setpoint" in f["text"])["level"] == "critical"

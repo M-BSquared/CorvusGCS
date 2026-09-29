@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import threading
 import time
 from typing import Any
@@ -89,6 +90,33 @@ MISSION_TOTAL_NONE = 65535
 # old mission is taken for one sent before the transfer, not for a change.
 MISSION_CHANGE_GRACE_S = 5.0
 
+# After an accepted upload, how long a stack that reports a verdict (see
+# Dialect.mission_validity_reported) is given to say whether it will fly the
+# mission. PX4 streams MISSION_CURRENT at 1 Hz, so two periods and a margin.
+# A report sooner than the settle time after the ACK may have been put
+# together before the navigator checked the new mission, and is not its
+# verdict: taken as one, an earlier rejected mission would fail a good upload.
+MISSION_VERDICT_WAIT_S = 2.5
+MISSION_VERDICT_SETTLE_S = 0.3
+_REJECTED_PREFIX = re.compile(r"^mission rejected:\s*", re.IGNORECASE)
+
+
+class _MissionVerdict:
+    """What the vehicle says about a mission it has just accepted.
+
+    ``total`` is the item count it was sent, so a MISSION_CURRENT still about
+    the previous mission is not read as the answer. ``reasons`` collects the
+    critical STATUSTEXT lines that arrive meanwhile: a rejection's reason is
+    one of them.
+    """
+
+    def __init__(self, total: int) -> None:
+        self.total = total
+        self.event = threading.Event()
+        self.after = math.inf
+        self.state = ""
+        self.reasons: list[str] = []
+
 
 class _MissionDownload:
     """One download in flight: what the receive thread fills in, and the wake-up."""
@@ -141,6 +169,19 @@ class MissionProtocolMixin:
         self._vehicle_mission_confirmed = False
         self._vehicle_mission_noted_at = 0.0
         self._mission_revision = 0
+        # The verdict an upload in flight is waiting for, filled in by the
+        # receive thread from MISSION_CURRENT.
+        self._mission_verdict: _MissionVerdict | None = None
+
+    def mission_capabilities(self) -> dict[str, Any]:
+        """The planner's part of GET /api/mavlink/capabilities.
+
+        ``mission_unsupported`` maps each plan item type this stack will not
+        fly to the reason, so the Mission page greys the tool with that reason
+        on it rather than letting a plan be drawn that the upload refuses.
+        """
+        return {"mission_unsupported": mission_plan.refused_item_types(
+            self._dialect.mission_command_refusals)}
 
     def _handle_mission_request(self, msg: Any, as_int: bool) -> None:
         """Serve one MISSION_ITEM(_INT) during an upload we initiated."""
@@ -254,6 +295,11 @@ class MissionProtocolMixin:
         state = MISSION_STATE_NAMES.get(int(getattr(msg, "mission_state", 0) or 0))
         if state:
             fields["mission_state"] = state
+        verdict = self._mission_verdict
+        if (verdict is not None and state and total == verdict.total
+                and time.monotonic() >= verdict.after):
+            verdict.state = state
+            verdict.event.set()
         # Somebody else may have put a mission on the vehicle: QGroundControl,
         # a companion, a second Corvus. Then what Corvus thought was there is
         # not, and no leg of its plan is claimed to be flown. Two signals: the
@@ -346,15 +392,8 @@ class MissionProtocolMixin:
                         self._mission_download = None
             if items is None:
                 return None
-            snapshot = self._store.get_snapshot()
-            home = None
-            value = snapshot.get("home") or []
-            try:
-                lon, lat = float(value[0]), float(value[1])
-                if (lat, lon) != (0.0, 0.0):
-                    home = {"lat": lat, "lon": lon}
-            except (TypeError, ValueError, IndexError):
-                home = None
+            known = self._home_lat_lon()
+            home = {"lat": known[0], "lon": known[1]} if known else None
             converted = mission_plan.items_to_plan(
                 items, home=home, home_alt_amsl=self._home_alt_amsl)
             self._note_vehicle_mission(converted["plan_index"])
@@ -875,17 +914,24 @@ class MissionProtocolMixin:
                 return False
             if not self._connection_ready():
                 return self._command_failure("Mission upload", -2)
+            refusal = self._mission_refusal(items)
+            if refusal:
+                self._set_command_error(refusal)
+                self._console_publish("MISSION", refusal, "error")
+                return False
 
             specs: list[dict[str, Any]] = []
             for seq, entry in enumerate(items):
                 params = list(entry.get("params") or [0.0, 0.0, 0.0, 0.0])
                 params += [0.0] * (4 - len(params))
                 command = int(entry["command"])
-                # A DO_ command carries no position, so it carries no altitude
-                # frame either; everything that navigates stays in the
-                # relative-alt frame the plan's altitudes are written in.
+                # A command that names no place (a speed change, a Return)
+                # carries no altitude frame either; everything that navigates
+                # stays in the relative-alt frame the plan's altitudes are
+                # written in. See mission.POSITIONLESS_COMMANDS for why the
+                # Return in particular cannot go in a global frame.
                 frame = (MISSION_DO_FRAME
-                         if command == mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED
+                         if command in mission_plan.POSITIONLESS_COMMANDS
                          else None)
                 specs.append(self._build_mission_item_spec(
                     seq, command,
@@ -898,17 +944,127 @@ class MissionProtocolMixin:
             self._console_publish(
                 "MISSION", f"Uploading {len(specs)} mission item(s) …", "info",
             )
-            ack = self._upload_mission(self._with_mission_home_slot(specs))
-            if ack != mavutil.mavlink.MAV_MISSION_ACCEPTED:
-                result = ack if ack < 0 else self._mission_ack_to_result(ack)
-                return self._command_failure("Mission upload", result)
-            # Which plan item each uploaded item came from, when the caller
-            # lowered a plan (corvus.mission.plan_to_items marks them).
-            index = [entry.get("item") for entry in items]
-            self._note_vehicle_mission(
-                index if all(isinstance(i, int) for i in index) else None)
+            wire = self._with_mission_home_slot(specs)
+            verdict = (_MissionVerdict(len(wire))
+                       if self._dialect.mission_validity_reported else None)
+            listening = self._listen_for_mission_verdict(verdict)
+            try:
+                ack = self._upload_mission(wire)
+                if ack != mavutil.mavlink.MAV_MISSION_ACCEPTED:
+                    result = ack if ack < 0 else self._mission_ack_to_result(ack)
+                    return self._command_failure("Mission upload", result)
+                # Which plan item each uploaded item came from, when the caller
+                # lowered a plan (corvus.mission.plan_to_items marks them).
+                # Noted before the verdict is waited for: the mission is on
+                # the vehicle whatever it thinks of it, and a MISSION_CURRENT
+                # counting it must not read as somebody else's.
+                index = [entry.get("item") for entry in items]
+                self._note_vehicle_mission(
+                    index if all(isinstance(i, int) for i in index) else None)
+                rejection = self._await_mission_verdict(verdict)
+            finally:
+                listening()
+            if rejection:
+                self._set_command_error(rejection)
+                self._console_publish("MISSION", rejection, "error")
+                return False
             self._console_publish("MISSION", "Mission accepted by the vehicle", "success")
             return True
+
+    def _mission_refusal(self, items: list[dict[str, Any]]) -> str:
+        """Why this stack will not take *items*, or "" when it will.
+
+        Checked before anything is sent: an item the firmware does not know
+        fails the whole transfer with a bare UNSUPPORTED, which tells the
+        operator neither which item nor what to use instead.
+        """
+        refusals = self._dialect.mission_command_refusals
+        for number, entry in enumerate(items, start=1):
+            try:
+                command = int(entry.get("command"))
+            except (TypeError, ValueError):
+                continue
+            reason = refusals.get(command)
+            if not reason:
+                continue
+            item = entry.get("item")
+            where = f"item {int(item) + 1}" if isinstance(item, int) else f"item {number}"
+            return (f"Mission upload refused: {mission_plan.label_of_command(command)} "
+                    f"({where}). {reason}.")
+        return ""
+
+    def _listen_for_mission_verdict(self, verdict: _MissionVerdict | None) -> Any:
+        """Arm *verdict* for the receive thread; returns the call that disarms it.
+
+        The critical STATUSTEXT lines seen meanwhile are kept, since the
+        reason for a rejection arrives as one of them.
+        """
+        if verdict is None:
+            return lambda: None
+
+        def collect(entry: dict[str, Any]) -> None:
+            if entry.get("name") == "STATUSTEXT" and entry.get("level") == "critical":
+                text = str(entry.get("text") or "").strip()
+                if text:
+                    verdict.reasons.append(text)
+
+        add = getattr(self, "add_console_sub", None)
+        remove = getattr(self, "remove_console_sub", None)
+        if callable(add):
+            add(collect)
+        with self._mission_lock:
+            self._mission_verdict = verdict
+
+        def stop() -> None:
+            with self._mission_lock:
+                if self._mission_verdict is verdict:
+                    self._mission_verdict = None
+            if callable(remove):
+                remove(collect)
+        return stop
+
+    def _await_mission_verdict(self, verdict: _MissionVerdict | None) -> str:
+        """The vehicle's reason for refusing a mission it has just accepted, or "".
+
+        "" also when it said nothing in time: an older firmware, or a lost
+        MISSION_CURRENT. The upload's own ACK is then all there is, which is
+        what every upload relied on before this check.
+        """
+        if verdict is None:
+            return ""
+        verdict.after = time.monotonic() + MISSION_VERDICT_SETTLE_S
+        deadline = time.monotonic() + MISSION_VERDICT_WAIT_S
+        while not verdict.event.wait(timeout=0.1):
+            if time.monotonic() >= deadline:
+                return ""
+            if self._stop_event.is_set() or self._operation_lock.abort_waiting():
+                return ""
+        if verdict.state != "no_mission":
+            return ""
+        # The line that names the mission, else the last critical one.
+        reasons = [text for text in verdict.reasons if "mission" in text.lower()] \
+            or verdict.reasons
+        if reasons:
+            return f"The vehicle rejected the mission: {_REJECTED_PREFIX.sub('', reasons[-1])}"
+        if self._home_lat_lon() is None:
+            # The one reason the station can see for itself, and the usual one
+            # on a bench: every height in the plan is relative to home.
+            return ("The vehicle rejected the mission: it has no home position yet. "
+                    "Every height in the plan is measured from home, so wait for a "
+                    "GPS fix and upload again.")
+        hint = self._dialect.mission_rejection_hint
+        return "The vehicle stored the mission but will not fly it." + (f" {hint}" if hint else "")
+
+    def _home_lat_lon(self) -> tuple[float, float] | None:
+        """The home the vehicle reported, as (lat, lon), or None before it has one."""
+        value = self._store.get_snapshot().get("home") or []
+        try:
+            lon, lat = float(value[0]), float(value[1])
+        except (TypeError, ValueError, IndexError):
+            return None
+        if (lat, lon) == (0.0, 0.0) or not (math.isfinite(lat) and math.isfinite(lon)):
+            return None
+        return lat, lon
 
     def start_mission(self, count: int) -> bool:
         """Run the mission already on the vehicle: MISSION_START, AUTO, arm.

@@ -58,7 +58,7 @@ MAX_LOGO_BYTES = 4 * 1024 * 1024
 # Section id -> the application config keys it carries. "plugins" and "layout"
 # have none: the first is the plugin files, the second is browser state only.
 SECTIONS: dict[str, tuple[str, ...]] = {
-    "interface": ("theme", "ui", "controls", "branding", "updates"),
+    "interface": ("theme", "ui", "controls", "branding", "updates", "review"),
     "map": ("map", "map_tokens", "tile_sources"),
     "connections": ("mavlink_connection", "autoconnect", "forwarding",
                     "stream_rates", "ssh_connections"),

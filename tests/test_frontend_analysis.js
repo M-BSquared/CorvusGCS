@@ -1553,6 +1553,38 @@ async function testObservationsAreFoldedAwayBehindTheProblems() {
   destroy();
 }
 
+async function testTheReviewSaysWhichSensitivityItWasReadAt() {
+  // An empty list at Relaxed and one at Strict say different things, so the
+  // page names the setting the backend reviewed with.
+  const { container, fake } = reset();
+  fake.setReview(Object.assign({}, REVIEW, {
+    summary: Object.assign({}, REVIEW.summary, { sensitivity: "strict" }),
+  }));
+  let destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "review");
+  fire(buttonByLabel(container, "Review"), "click");
+  await flush();
+  await flush();
+  const line = findOneByClass(container, "review-sensitivity");
+  assert.ok(line, "the setting is named under the findings");
+  assert.match(line.textContent, /Strict sensitivity/);
+  assert.match(line.textContent, /Settings/);
+  destroy();
+
+  // A backend that does not say is not guessed at.
+  const again = reset();
+  again.fake.setReview(REVIEW);
+  destroy = Corvus.analysis.render(again.container);
+  await flush();
+  openTile(again.container, "review");
+  fire(buttonByLabel(again.container, "Review"), "click");
+  await flush();
+  await flush();
+  assert.equal(findByClass(again.container, "review-sensitivity").length, 0);
+  destroy();
+}
+
 async function testDestroyStopsPollingAndUnsubscribes() {
   const { container, fake } = reset();
   const destroy = Corvus.analysis.render(container);
@@ -1631,6 +1663,7 @@ async function run() {
     testTheReasoningBehindAFindingWaitsForAClick,
     testAFindingWithNothingBehindItIsNotAButton,
     testObservationsAreFoldedAwayBehindTheProblems,
+    testTheReviewSaysWhichSensitivityItWasReadAt,
     testDestroyStopsPollingAndUnsubscribes,
   ];
   for (const t of tests) {

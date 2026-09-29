@@ -244,6 +244,8 @@ these differences is a silent wrong answer rather than an error:
 | Mission item 0 | the first item | home |
 | Mission mode | `MISSION` | `AUTO` |
 | Mission start | `MISSION_START` (first, last), which also arms | arm in GUIDED (AUTO on a plane), then `MISSION_START` with 0, 0 |
+| `NAV_LOITER_TURNS` in a mission | unsupported, refused before upload | flown |
+| Mission validity | checked after the ACK, `MISSION_CURRENT` NO_MISSION | the ACK is the answer |
 | MAVLink shell | NSH over `SERIAL_CONTROL` | none |
 | On-board log | ULog (`.ulg`) | DataFlash (`.bin`) |
 

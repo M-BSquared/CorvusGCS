@@ -54,7 +54,8 @@ Corvus.settingsTransfer = (function () {
      corvus/settings_bundle.py. */
   const SECTIONS = [
     { id: "interface", label: "Interface and controls",
-      hint: "Theme, size, units, top bar, joystick and keys, RC transmitter, company logo." },
+      hint: "Theme, size, units, top bar, joystick and keys, RC transmitter, company logo, " +
+            "flight review sensitivity." },
     { id: "layout", label: "Window layout",
       hint: "Where the flight HUD and the virtual joystick sit, and which cards are folded." },
     { id: "map", label: "Map", hint: "Map service, base layer, 3D mode and map keys." },
@@ -680,6 +681,11 @@ Corvus.settingsTransfer = (function () {
       lines.push(`Restart Corvus GCS for the new ${restart.join(", ")}.`);
     }
     (res.warnings || []).forEach((w) => lines.push(w));
+    showNotice("Import settings", lines);
+  }
+
+  /** A dialog of *lines* whose one way out is the reload that applies them. */
+  function showNotice(title, lines) {
     const body = document.createDocumentFragment();
     lines.forEach((text) => {
       const p = document.createElement("div");
@@ -692,13 +698,90 @@ Corvus.settingsTransfer = (function () {
       onClick: () => window.location.reload(),
     });
     const done = Corvus.ui.modal({
-      title: "Import settings",
+      title,
       size: "sm",
       body,
       actions: [reloadBtn],
       dismissable: false,
     });
     done.open();
+  }
+
+  // ---- Factory reset -----------------------------------------------------
+
+  /** Remove every key of this page from *storage*: settings and history alike. */
+  function clearBrowser(storage) {
+    try {
+      storageKeys(storage).forEach((k) => {
+        if (k.startsWith("corvus.")) storage.removeItem(k);
+      });
+    } catch (_e) { /* storage unavailable: the backend half is already reset */ }
+  }
+
+  /** Ask, then put the station back to factory settings and reload into the setup. */
+  function openReset() {
+    const body = document.createDocumentFragment();
+    const desc = document.createElement("div");
+    desc.className = "page-card-desc";
+    desc.textContent = "Every setting of this station goes back to its default: the " +
+      "interface, the layout, the map, the connections, the vehicle settings, the " +
+      "folders, the company logo and the settings of every plugin. Plugins you " +
+      "installed yourself stay installed. Missions, logs, parameter files and map " +
+      "tiles are not touched.";
+    body.appendChild(desc);
+    const warn = Corvus.ui.message();
+    warn.show("This cannot be undone. Export your settings first if you may want " +
+              "them back. The interface then reloads into the first start setup.", "warn");
+    body.appendChild(warn.el);
+    const msg = Corvus.ui.message();
+    body.appendChild(msg.el);
+
+    const cancelBtn = Corvus.ui.button({
+      variant: "secondary", label: "Cancel", onClick: () => dialog.close(),
+    });
+    const resetBtn = Corvus.ui.button({
+      variant: "danger", icon: "rotate-ccw", label: "Reset", onClick: run,
+    });
+    const dialog = Corvus.ui.modal({
+      title: "Reset to factory settings",
+      size: "sm",
+      body,
+      actions: [cancelBtn, resetBtn],
+    });
+    dialog.open();
+
+    async function run() {
+      msg.hide();
+      if (armedNow()) {
+        msg.show("Settings cannot be reset while the vehicle is armed.", "err");
+        return;
+      }
+      Corvus.ui.setBusy(resetBtn, true);
+      let res;
+      try {
+        res = await Corvus.telemetry.requestJson("/api/settings/reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+      } catch (err) {
+        msg.show((err && err.message) || "Reset failed", "err");
+        Corvus.ui.setBusy(resetBtn, false);
+        return;
+      }
+      const store = localStore();
+      if (store) clearBrowser(store);
+      dialog.close();
+      const lines = [];
+      const restart = ((res && res.restart) || []).map((k) => LABELS[k] || k);
+      if (restart.length) lines.push(`Restart Corvus GCS for the default ${restart.join(", ")}.`);
+      ((res && res.warnings) || []).forEach((w) => lines.push(w));
+      if (!lines.length) {
+        window.location.reload();
+        return;
+      }
+      showNotice("Reset to factory settings", ["Settings reset."].concat(lines));
+    }
   }
 
   // ---- Settings page -----------------------------------------------------
@@ -722,6 +805,11 @@ Corvus.settingsTransfer = (function () {
         variant: "secondary", icon: "upload", label: "Import settings",
         onClick: () => pickFile(),
       }),
+      Corvus.ui.button({
+        variant: "danger", icon: "rotate-ccw", label: "Reset to factory settings",
+        className: "settings-transfer-reset",
+        onClick: () => openReset(),
+      }),
     ]));
     return Corvus.ui.section({ title: "Export and import", body: card });
   }
@@ -740,6 +828,7 @@ Corvus.settingsTransfer = (function () {
     openExport,
     openImport,
     pickFile,
+    openReset,
     BROWSER_KEYS,
     NOT_SETTINGS,
     SECTIONS,
@@ -747,6 +836,7 @@ Corvus.settingsTransfer = (function () {
     sectionOfKey,
     collectBrowser,
     applyBrowser,
+    clearBrowser,
     parseBundle,
     sectionsInFile,
     emptySections,

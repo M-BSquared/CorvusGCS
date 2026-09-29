@@ -164,16 +164,12 @@ class VehicleSetupMixin:
     # Motor test
     # ------------------------------------------------------------------
 
-    # MAV_CMD_DO_MOTOR_TEST (209) — verified against PX4 v1.16, v1.17 and v1.18
-    # (mavlink_receiver.cpp -> actuator_test). param1 is the 1-based motor,
-    # param2 the throttle type (0 = percent), param3 the throttle value,
-    # param4 the timeout in seconds, param5 the motor count (0 = this motor
-    # only) and param6 the test order (0 = default).
-    MOTOR_TEST_THROTTLE_PERCENT = 0.0
+    # The command is the dialect's: MAV_CMD_ACTUATOR_TEST on PX4, which dropped
+    # DO_MOTOR_TEST, and DO_MOTOR_TEST on ArduPilot. See corvus.autopilot.
 
     # A spinning motor with no timeout is a hazard: if the link drops mid-test
-    # nothing stops it. Every test therefore carries a bounded timeout that PX4
-    # enforces on the vehicle itself, so the motor stops even if the GCS dies.
+    # nothing stops it. Every test therefore carries a bounded timeout that the
+    # vehicle enforces itself, so the motor stops even if the GCS dies.
     MOTOR_TEST_MAX_DURATION_S = 10.0
 
     def motor_test(self, motor: int, throttle_pct: float, duration_s: float) -> bool:
@@ -203,11 +199,9 @@ class VehicleSetupMixin:
                 return False
             if not self._connection_ready():
                 return self._command_failure(f"Motor test {motor}", -2)
+            plan = self._dialect.motor_test(motor, float(throttle_pct), duration)
             result = self._send_command_and_wait(
-                mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST,
-                [float(motor), self.MOTOR_TEST_THROTTLE_PERCENT, float(throttle_pct),
-                 duration, 0.0, 0.0, 0.0],
-                timeout=5.0, retries=0,
+                plan.command, plan.param_list(), timeout=5.0, retries=0,
             )
             if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
                 return self._command_failure(f"Motor test {motor}", result)
@@ -233,11 +227,9 @@ class VehicleSetupMixin:
             # Stop wants silence, and a test that was started by something else
             # (or before a reload) is exactly when that matters most.
             for motor in range(1, 9):
+                plan = self._dialect.motor_stop(motor)
                 result = self._send_command_and_wait(
-                    mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST,
-                    [float(motor), self.MOTOR_TEST_THROTTLE_PERCENT, 0.0,
-                     0.0, 0.0, 0.0, 0.0],
-                    timeout=2.0, retries=0,
+                    plan.command, plan.param_list(), timeout=2.0, retries=0,
                 )
                 if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
                     ok = False

@@ -294,7 +294,7 @@ def test_the_link_group_is_the_one_a_ulog_cannot_have() -> None:
 def test_clipping_and_vibration_are_called_out() -> None:
     rec = _a_flight()
     for step in range(20):
-        rec.vibration(1_000_000 + step * 100_000, vibe=42.0, clipping=step)
+        rec.vibration(1_000_000 + step * 100_000, vibe=42.0, clipping=step * 50)
     data = review_bytes(rec.blob(), "vibe.tlog")
     text = " ".join(f["text"] for f in data["findings"])
     assert "clipping" in text.lower()
@@ -302,14 +302,37 @@ def test_clipping_and_vibration_are_called_out() -> None:
     assert any(f["level"] == "critical" for f in data["findings"])
 
 
+def _a_flight_on_a_pack(low_mv: int, low_from: int, seconds: int = 30,
+                        hz: int = 5) -> _Recorder:
+    """A flight whose pack reads 16.0 V until *low_from* and *low_mv* after."""
+    rec = _Recorder()
+    for step in range(seconds * hz):
+        boot = 1000 + int(step * 1000 / hz)
+        rec.position(boot, 48.1, 11.5, 100.0)
+        if step % hz == 0:
+            rec.heartbeat()
+            rec.sys_status(volts_mv=low_mv if step >= low_from else 16_000)
+    rec.heartbeat(armed=False)
+    return rec
+
+
 def test_a_sagging_battery_is_reported_per_cell() -> None:
     """Volts alone mean nothing without the cell count — 12 V is healthy on a
     3S and destroyed on a 4S."""
-    rec = _a_flight()
-    rec.sys_status(volts_mv=12_400)     # 4S at 3.10 V/cell
+    rec = _a_flight_on_a_pack(low_mv=12_400, low_from=100)   # 4S at 3.10 V/cell
     data = review_bytes(rec.blob(), "batt.tlog")
     assert any("3.10 V per cell" in f["text"] and f["level"] == "critical"
                for f in data["findings"])
+
+
+def test_one_raw_voltage_dip_is_not_a_pack_run_too_low() -> None:
+    """SYS_STATUS carries the raw pack voltage, so its lowest sample is the
+    hardest punch of the flight. A pack that dips there and recovers is fine."""
+    rec = _a_flight()
+    rec.sys_status(volts_mv=12_400)
+    rec.heartbeat(armed=False)
+    data = review_bytes(rec.blob(), "dip.tlog")
+    assert all("per cell" not in f["text"] for f in data["findings"])
 
 
 def test_the_aircrafts_own_error_messages_are_surfaced() -> None:
@@ -699,3 +722,98 @@ def test_a_stack_no_dialect_covers_still_gets_a_bare_number() -> None:
 
     assert _mode_name(
         SimpleNamespace(custom_mode=7, autopilot=9, base_mode=1, type=2)) == "Mode 7"
+
+
+# ---------------------------------------------------------------------------
+# Sensitivity, and what an ordinary session must not trigger
+# ---------------------------------------------------------------------------
+# A recording starts when the station connects, which is usually power-up on
+# the bench. Everything the vehicle does while it boots is in it, and none of
+# that is the flight.
+
+def test_a_vehicle_starting_up_is_not_a_sensor_failure() -> None:
+    """For the first seconds after power-up the GPS has no fix and the
+    estimator is converging, so SYS_STATUS reports them down. That used to
+    open every recording with a critical finding."""
+    rec = _Recorder()
+    gps, prearm = 1 << 5, 1 << 28
+    for step in range(60):
+        rec.position(1000 + step * 200, 48.1, 11.5, 100.0)
+        if step % 5 == 0:
+            rec.heartbeat(armed=step >= 30)
+            booting = step < 20
+            rec.sys_status(enabled=gps | prearm,
+                           health=0 if booting else gps | prearm)
+    rec.heartbeat(armed=False)
+    data = review_bytes(rec.blob(), "boot.tlog")
+    assert all("unhealthy" not in f["text"] for f in data["findings"])
+    assert data["findings"][0]["level"] == "ok"
+
+
+def test_a_glitch_while_the_receiver_warms_up_is_not_a_finding() -> None:
+    rec = _Recorder()
+    for step in range(40):
+        rec.position(1000 + step * 200, 48.1, 11.5, 100.0)
+        if step == 3:
+            rec.estimator_status(flags=1 << 10)
+        if step == 4:
+            rec.estimator_status(flags=0)
+        if step % 5 == 0:
+            rec.heartbeat(armed=step >= 20)
+    rec.heartbeat(armed=False)
+    findings = review_bytes(rec.blob(), "warmup.tlog")["findings"]
+    assert all("GPS glitch" not in f["text"] for f in findings)
+
+
+def test_a_reboot_between_flights_is_context_not_a_warning() -> None:
+    """A parameter change or a calibration ends in a reboot. On the bench that
+    is routine; only a reboot while armed is worth a warning."""
+    rec = _Recorder()
+    for step in range(20):
+        rec.position(30_000 + step * 200, 48.1, 11.5, 100.0)
+        rec.heartbeat(armed=False)
+    for step in range(20):
+        rec.position(500 + step * 200, 48.1, 11.5, 100.0)
+        rec.heartbeat(armed=False)
+    findings = review_bytes(rec.blob(), "bench.tlog")["findings"]
+    reboot = next(f for f in findings if "rebooted" in f["text"])
+    assert reboot["level"] == "note"
+    assert findings[0]["level"] == "ok"
+
+
+def test_clipping_counted_before_arming_is_not_the_flights() -> None:
+    rec = _Recorder()
+    for step in range(60):
+        boot = 1000 + step * 200
+        rec.position(boot, 48.1, 11.5, 100.0)
+        rec.vibration(boot * 1000, vibe=5.0, clipping=40)   # from the bench
+        if step % 5 == 0:
+            rec.heartbeat(armed=step >= 20)
+    rec.heartbeat(armed=False)
+    findings = review_bytes(rec.blob(), "clip.tlog")["findings"]
+    assert all("clipping" not in f["text"].lower() for f in findings)
+
+
+def test_ardupilots_vibration_scale_is_not_a_warning_at_twenty() -> None:
+    """ArduPilot treats up to 30 m/s² as acceptable. Warning at 15 reported a
+    healthy copter as a vibration problem on every flight."""
+    rec = _a_flight()
+    for step in range(20):
+        rec.vibration(1_000_000 + step * 100_000, vibe=20.0)
+    assert all("Vibration" not in f["text"]
+               for f in review_bytes(rec.blob(), "vibe.tlog")["findings"])
+    strict = review_bytes(rec.blob(), "vibe.tlog", sensitivity="strict")
+    assert any("Vibration" in f["text"] for f in strict["findings"])
+
+
+def test_the_sensitivity_is_reported_and_cached_separately(tmp_path: pathlib.Path) -> None:
+    path = tmp_path / "session.tlog"
+    rec = _a_flight()
+    for step in range(20):
+        rec.vibration(1_000_000 + step * 100_000, vibe=20.0)
+    path.write_bytes(rec.blob())
+    normal = review_file(str(path))
+    strict = review_file(str(path), sensitivity="strict")
+    assert normal["summary"]["sensitivity"] == "normal"
+    assert strict["summary"]["sensitivity"] == "strict"
+    assert normal["findings"] != strict["findings"]

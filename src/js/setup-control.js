@@ -231,6 +231,13 @@ Corvus.setupControl = (function () {
     el.appendChild(empty);
 
     const rows = {};
+    const glide = Corvus.rcTransmitter.createGlide((get) => {
+      Object.keys(rows).forEach((key) => {
+        const f = get(key);
+        rows[key].fill.style.transform = "scaleX(" + (f == null ? 0 : f).toFixed(4) + ")";
+      });
+    });
+
     function rowFor(channel) {
       if (rows[channel]) return rows[channel];
       const row = S.el("div", "rc-channel");
@@ -283,7 +290,7 @@ Corvus.setupControl = (function () {
       for (let i = 0; i < channels.length; i += 1) {
         const entry = rowFor(i + 1);
         const pulse = Number(channels[i]) || 0;
-        entry.fill.style.width = (pwmFraction(pulse) * 100).toFixed(1) + "%";
+        glide.set(String(i + 1), pulse > 0 ? pwmFraction(pulse) : null);
         entry.value.textContent = pulse > 0 ? pulse + " µs" : "—";
         const text = labels[String(i + 1)] || "";
         if (entry.note.textContent !== text) {
@@ -298,8 +305,10 @@ Corvus.setupControl = (function () {
           const entry = rows[key];
           if (entry.row.parentNode) entry.row.parentNode.removeChild(entry.row);
           delete rows[key];
+          glide.drop(key);
         }
       });
+      glide.commit();
     }
 
     function highlight(channel) {
@@ -309,7 +318,7 @@ Corvus.setupControl = (function () {
     }
 
     update(null);
-    return { el, update, setLabels, highlight, rows };
+    return { el, update, setLabels, highlight, rows, destroy: glide.destroy };
   }
 
   /**
@@ -616,6 +625,7 @@ Corvus.setupControl = (function () {
         state.destroyed = true;
         cancelDetect(state, "cancelled");
         transmitter.destroy();
+        monitor.destroy();
       },
     };
   }
@@ -1562,7 +1572,7 @@ Corvus.setupControl = (function () {
         // repainting it rebuilds its table under the operator's cursor.
         if (gateChanged || step !== "review") paint();
       },
-      destroy() { transmitter.destroy(); },
+      destroy() { transmitter.destroy(); monitor.destroy(); },
     };
   }
 

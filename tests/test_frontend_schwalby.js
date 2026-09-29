@@ -325,7 +325,7 @@ function mount(opts) {
     fieldBy: (aria) => all(".field-input").find((i) => i.getAttribute("aria-label") === aria),
     select: () => all(".field-select")[0],
     segments: () => all(".schw-seg-opt"),
-    where: () => all(".schw-where").map((c) => c.textContent),
+    where: () => all(".schw-where").map((c) => c.getAttribute("data-where")),
     sshFields: () => all(".schw-ssh-fields")[0],
     newConnShowing: () => {
       const box = all(".schw-newconn")[0];
@@ -406,8 +406,8 @@ function testNormalize() {
     ],
   });
   assert.deepEqual(list, [
-    { id: "a", label: "Here", target: "local", connection: "", directory: "~/x", command: "./x", mode: "terminal" },
-    { id: "b", label: "./y", target: "ssh", connection: "ground", directory: "", command: "./y", mode: "background" },
+    { id: "a", label: "Here", target: "local", connection: "", directory: "~/x", command: "./x", mode: "terminal", restart: false },
+    { id: "b", label: "./y", target: "ssh", connection: "ground", directory: "", command: "./y", mode: "background", restart: false },
   ], "a button here names no connection; the SSH Launcher's detach still means background");
   assert.deepEqual(S.normalizeButtons(undefined), []);
   const many = [];
@@ -446,17 +446,17 @@ function testPreviewLine() {
 
 function testSummaries() {
   assert.deepEqual(S.localSummary({ ok: true, pid: 4242 }),
-    { text: "Started in the background (pid 4242). It stops when Corvus closes.", kind: "ok" });
+    { text: "Running in the background (pid 4242), stops with Corvus", kind: "ok" });
   assert.deepEqual(S.localSummary({ ok: true, exited: true, code: 0, output: "done" }),
-    { text: "Ran and finished.", kind: "ok" });
+    { text: "Ran and finished", kind: "ok" });
   assert.deepEqual(S.localSummary({ ok: false, exited: true, code: 127, output: "zsh: command not found: ./x\nmore" }),
     { text: "zsh: command not found: ./x", kind: "err" }, "in the program's own words");
   assert.deepEqual(S.localSummary({ ok: false, exited: true, code: 3, output: "" }),
-    { text: "It ended at once with exit code 3.", kind: "err" });
+    { text: "Ended at once with exit code 3", kind: "err" });
   assert.deepEqual(S.localSummary({ ok: false, error: "There is no folder ~/nope on this computer." }),
     { text: "There is no folder ~/nope on this computer.", kind: "err" });
   assert.deepEqual(S.sshSummary({ ok: true, stdout: "4711\n" }),
-    { text: "Started in the background (pid 4711).", kind: "ok" });
+    { text: "Running in the background (pid 4711)", kind: "ok" });
   assert.deepEqual(S.sshSummary({ ok: false, stderr: "sh: ./x: not found\nmore" }),
     { text: "sh: ./x: not found", kind: "err" });
 }
@@ -560,6 +560,67 @@ async function testLocalTerminalButtonOpensAShellHere() {
   S.destroy(h.container);
 }
 
+function testRestartsOnlyAProgramInATerminal() {
+  assert.equal(S.restarts({ restart: true, mode: "terminal" }), true);
+  assert.equal(S.restarts({ restart: true, mode: "background" }), false);
+  assert.equal(S.restarts({ mode: "terminal" }), false);
+  assert.equal(S.coerceButton({ command: "x", restart: 1 }).restart, false);
+  assert.equal(S.coerceButton({ command: "x", restart: true }).restart, true);
+}
+
+/* Restart on, here and over SSH: Ctrl-C into the live shell, a pause for the
+   prompt, then the line again in the same shell. */
+async function testRestartSendsCtrlCFirst() {
+  const buttons = [Object.assign({}, LOCAL_BUTTON, { restart: true }),
+    Object.assign({}, SSH_BUTTON, { restart: true })];
+  const h = mount({ saved: { buttons } });
+  await flushMicrotasks();
+  for (const [index, session, line] of [
+    [0, "schwalby/l", "cd -- ~/'logs' && ./log.sh\n"],
+    [1, "schwalby/s", "cd -- '/srv' && ./run.sh\n"],
+  ]) {
+    const mine = () => h.sends().filter((x) => x.name === session);
+    click(h.shelf()[index]);
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+    assert.deepEqual(mine(), [{ name: session, data: "\x03" }, { name: session, data: line }],
+      "the first press finds nothing to stop and starts it");
+    assert.match(h.shelf()[index].getAttribute("aria-label"), /^Restart /);
+
+    click(h.shelf()[index]);
+    await flushMicrotasks();
+    assert.equal(mine().length, 3, "Ctrl-C, and the line still waiting");
+    assert.equal(mine()[2].data, "\x03");
+    await new Promise((r) => setTimeout(r, S.RESTART_GRACE_MS + 50));
+    await flushMicrotasks();
+    assert.deepEqual(mine().slice(2), [{ name: session, data: "\x03" }, { name: session, data: line }]);
+    assert.match(h.status().textContent || "", /restarted \(stopped with Ctrl-C\)/);
+  }
+  assert.equal(h.urls().filter((u) => u === "/api/local/connect").length, 1);
+  assert.equal(h.urls().filter((u) => u === "/api/ssh/connect").length, 1);
+  S.destroy(h.container);
+}
+
+async function testRestartSwitchIsSavedAndOnlyForATerminal() {
+  const h = mount({ saved: { buttons: [LOCAL_BUTTON] } });
+  await flushMicrotasks();
+  click(h.tool("Edit Ground logger"));
+  const switches = querySel(h.container.children, ".field-switch");
+  const toggles = querySel(h.container.children, ".ui-toggle");
+  assert.equal(toggles[1].getAttribute("aria-label"), "Restart on press");
+  assert.equal(switches[1].hidden, false);
+  click(toggles[0]);
+  assert.equal(switches[1].hidden, true, "no restart without a terminal");
+  click(toggles[0]);
+  assert.equal(switches[1].hidden, false);
+  click(toggles[1]);
+  click(h.byLabel("Save")[0]);
+  await flushMicrotasks();
+  assert.equal(h.savedNow().buttons[0].restart, true);
+  S.destroy(h.container);
+}
+
 /* The arrow before the first press opens the terminal and its connection,
    and starts nothing: the button does that, into the same shell. */
 async function testTheArrowConnectsBeforeTheFirstPress() {
@@ -605,7 +666,7 @@ async function testLocalBackgroundButtonRunsHere() {
   await flushMicrotasks();
   assert.deepEqual(h.calls.find((c) => c.url === "/api/local/run").body, { directory: "", command: "./serve.sh" });
   assert.ok(!h.urls().includes("/api/ssh/run"));
-  assert.match(h.status().textContent || "", /pid 4242\)\. It stops when Corvus closes\./);
+  assert.match(h.status().textContent || "", /pid 4242\), stops with Corvus/);
   S.destroy(h.container);
 }
 
@@ -1173,6 +1234,9 @@ async function run() {
   testSegment();
   testStylesheetIsItsOwn();
   await testLocalTerminalButtonOpensAShellHere();
+  testRestartsOnlyAProgramInATerminal();
+  await testRestartSendsCtrlCFirst();
+  await testRestartSwitchIsSavedAndOnlyForATerminal();
   await testTheArrowConnectsBeforeTheFirstPress();
   await testLocalBackgroundButtonRunsHere();
   await testALocalFailureLandsOnItsRow();

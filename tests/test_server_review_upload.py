@@ -153,3 +153,19 @@ def test_the_same_bytes_are_only_parsed_once(monkeypatch: pytest.MonkeyPatch) ->
     second = flight_review.review_bytes(blob, "a.ulg")
     assert len(reads) == 1
     assert first is second
+
+
+def test_the_review_runs_at_the_sensitivity_set_in_settings() -> None:
+    """The operator sets it once. Every review after that, including one of a
+    file picked from outside the download folder, has to honour it."""
+    from corvus.config import CorvusConfig
+
+    handler, responses = _handler(_ulog(), path="/api/logs/review/upload?name=a.ulg")
+    handler.config = CorvusConfig(review={"sensitivity": "relaxed"})
+    handler.do_POST()
+    assert responses[0][0]["summary"]["sensitivity"] == "relaxed"
+
+    handler, responses = _handler(_ulog(), path="/api/logs/review/upload?name=a.ulg")
+    handler.config = CorvusConfig()
+    handler.do_POST()
+    assert responses[0][0]["summary"]["sensitivity"] == "normal"
