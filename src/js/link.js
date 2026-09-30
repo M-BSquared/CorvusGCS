@@ -39,7 +39,8 @@ window.Corvus = window.Corvus || {};
  * On a transition to "connected" the flight-mode selector is refreshed from
  * GET /api/mavlink/modes (via Corvus.app.refreshModes) so the operator only
  * sees modes the connected firmware supports — and only when the list actually
- * changes (idempotent).
+ * changes (idempotent). It is refreshed again when the firmware version comes
+ * in, because some modes are only offered once the release is known.
  */
 Corvus.link = (function () {
   const RECENT_KEY = "corvus.link.recent";
@@ -106,6 +107,7 @@ Corvus.link = (function () {
   // Local state
   let inFlight = false;          // a connect POST is currently pending
   let lastStatus = "";           // last seen link_status — for transition detection
+  let lastFirmware = "";         // last seen firmware version, same purpose
   let lastSentConnection = "";   // most recently sent connection string (for Reconnect)
   let recent = [];               // recently used connection strings, newest first
   let kind = "serial";           // which branch of the card is showing
@@ -719,13 +721,30 @@ Corvus.link = (function () {
       qualityEl.hidden = !q.label;
     }
 
-    // Transition to "connected" -> refresh flight modes (idempotent).
-    if (status === "connected" && lastStatus !== "connected") {
+    const firmware = String(state.px4_version || "");
+    if (modesNeedRefresh(
+      { status: lastStatus, firmware: lastFirmware },
+      { status, firmware },
+    )) {
       if (Corvus.app && typeof Corvus.app.refreshModes === "function") {
         Corvus.app.refreshModes();
       }
     }
     lastStatus = status;
+    lastFirmware = firmware;
+  }
+
+  /**
+   * Pure: does this state change call for a fresh flight-mode list?
+   *
+   * On the way into "connected", and again whenever the firmware version
+   * appears or changes while connected. AUTOPILOT_VERSION lands a moment after
+   * the link does, and the backend holds back the modes only some releases
+   * accept until it has.
+   */
+  function modesNeedRefresh(prev, next) {
+    if (next.status !== "connected") return false;
+    return prev.status !== "connected" || prev.firmware !== next.firmware;
   }
 
   /* ---------------- the two cards fold ----------------
@@ -986,6 +1005,7 @@ Corvus.link = (function () {
     forwardingHint,
     autoInfo,
     suggestionText,
+    modesNeedRefresh,
     PRESETS,
   };
 })();

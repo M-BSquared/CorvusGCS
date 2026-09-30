@@ -128,6 +128,9 @@ class VehicleStateStore:
             # frontend branches on. See corvus.autopilot.
             "autopilot_stack": "",
             "mode": "",
+            # `mode` as the operator reads it ("POSITION" for PX4's POSCTL),
+            # from the dialect. `mode` stays the name a mode change sends.
+            "mode_label": "",
             # Autopilot firmware version, whichever stack it came from. The key
             # kept its PX4 name because it is on the wire to the frontend and in
             # /api/version; the value is ArduPilot's on an ArduPilot vehicle.
@@ -549,6 +552,7 @@ class VehicleStateStore:
             self._data["connected"] = False
             self._data["armed"] = False
             self._data["mode"] = "DISCONNECTED"
+            self._data["mode_label"] = "DISCONNECTED"
             # Readiness belongs to the link that just died; keeping the last
             # "READY" would leave a stale clearance on the bar.
             self._data["prearm_ok"] = None

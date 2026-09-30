@@ -367,7 +367,11 @@ class TileDownloader:
             try:
                 with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as resp:
                     data = resp.read(_MAX_TILE_BYTES + 1)
-                if data and len(data) <= _MAX_TILE_BYTES:
+                # Not an image is a failed tile, not a stored one: behind a
+                # captive portal every tile of the area would otherwise be its
+                # login page, and a later run would skip them all as present.
+                if (data and len(data) <= _MAX_TILE_BYTES
+                        and tile_sources.looks_like_image(data)):
                     blob = data
                 break
             except Exception:  # noqa: BLE001 - every failure is a failed tile

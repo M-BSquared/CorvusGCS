@@ -54,12 +54,14 @@
    fighting the accent colour behind it. The tools stop fading, because a live
    session is exactly when the arrow matters. */
 .sshl-dot {
-  width: 6px;
-  height: 6px;
+  width: var(--dot-size, 7px);
+  height: var(--dot-size, 7px);
   margin: 0 4px;
   border-radius: 50%;
   flex: 0 0 auto;
-  background: var(--healthy);
+  color: var(--healthy);
+  background: currentColor;
+  box-shadow: var(--dot-halo);
 }
 .sshl-running .sshl-row-tools { opacity: 1; }
 .sshl-running .sshl-open { color: var(--healthy); }
@@ -67,6 +69,12 @@
 /* Nothing running means nothing to open; the button says why in its tooltip
    rather than leading somewhere empty. */
 .sshl-open:disabled { opacity: 0.35; cursor: default; }
+
+/* The pencil's place while the session is up: it ends the program, so it
+   carries the critical colour, and it fades while the stop is under way. */
+.sshl-stop { color: var(--critical); }
+.sshl-stop:hover:not(:disabled) { color: var(--critical-bright); }
+.sshl-stop:disabled { opacity: 0.35; cursor: default; }
 
 /* Why the last press failed, beside the button that failed: the app's own hint
    icon in the critical colour, holding the message in its popover. The row it

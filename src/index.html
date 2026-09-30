@@ -113,7 +113,7 @@
             </button>
             <button class="fa-btn rtl" id="btnRTL" title="Return to Launch">
               <i data-lucide="home"></i>
-              <span>RTL</span>
+              <span>RETURN</span>
             </button>
             <button class="fa-btn plan" id="btnPlan" title="Plan fly-to-points mission" disabled>
               <i data-lucide="route"></i>
@@ -175,6 +175,11 @@
              builds both surfaces and moves the window. -->
         <div class="joystick-pad glass" id="joystickPad" hidden></div>
 
+        <!-- Preflight checklist window: empty and hidden until Settings >
+             Appearance > Preflight checklist turns it on; Corvus.checklist
+             builds and moves it. -->
+        <div class="checklist-panel glass" id="checklistPanel" hidden></div>
+
         <div class="flight-overlay glass" id="flightOverlay">
           <div class="instruments">
             <div class="instrument compass-wrap">
@@ -182,7 +187,9 @@
                    heading, so N is always up and the operator reads a bearing
                    the same way they read the map under it. The digits used to
                    be repeated in a pill on the bezel; they are in the readout
-                   directly below, which is larger and does not crowd the ring. -->
+                   directly below, which is larger and does not crowd the ring.
+                   Settings > Appearance > Compass can lock it nose up
+                   instead: the card turns and the needle stays upright. -->
               <svg class="compass" viewBox="-100 -100 200 200" aria-label="Compass">
                 <circle class="compass-ring" cx="0" cy="0" r="88" />
                 <g id="compassCard"></g>
@@ -576,6 +583,8 @@
 <script src="js/welcome.js" defer></script>
 <script src="js/sidenav.js" defer></script>
 <script src="js/joystick.js" defer></script>
+<script src="js/checklist.js" defer></script>
+<script src="js/checklist-editor.js" defer></script>
 <script src="js/tiles.js" defer></script>
 <script src="js/update.js" defer></script>
 <script src="js/app.js" defer></script>

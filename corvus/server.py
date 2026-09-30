@@ -23,6 +23,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -33,7 +34,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from . import (
     ardupilot_battery, ardupilot_motors, ardupilot_mounting, ardupilot_rc,
     ardupilot_remote_id, ardupilot_safety, ardupilot_tuning, autopilot, battery,
-    battery_config, geocode, mission, motor_config, mounting_config, param_files,
+    battery_config, dem_tiles, geocode, mission, motor_config, mounting_config, param_files,
     param_metadata, rc_config, remote_id,
     remote_id_config,
     local_shell, net_probe, rtk, rtk_service,
@@ -101,6 +102,7 @@ TILE_UPSTREAM_TIMEOUT_S = 4
 # byte past the cap so a body that exceeds it can be recognised and dropped
 # rather than cached and later served as a map tile.
 TILE_UPSTREAM_MAX_BYTES = 4 * 1024 * 1024
+
 
 # Offline circuit breaker for the interactive fill path.
 #
@@ -241,6 +243,7 @@ def content_type(path: str | os.PathLike[str]) -> str:
 # this cell is simply empty and asking again would be a loop.
 _EMPTY_BUILDINGS = b'{"type":"FeatureCollection","features":[]}'
 _PENDING_BUILDINGS = b'{"type":"FeatureCollection","features":[],"pending":true}'
+_UNAVAILABLE_BUILDINGS = b'{"type":"FeatureCollection","features":[],"unavailable":true}'
 # Path-parameter tile route: /api/tiles/<source>/<z>/<x>/<y>.png
 # Checked in _handle_api_get only when the path ends in ".png", so it can
 # never shadow the exact /api/tiles/{sources,jobs,progress,download,cancel}
@@ -580,6 +583,37 @@ class _UpstreamBreaker:
         with self._lock:
             self._failures = 0
             self._open_until = 0.0
+
+
+class _AbsentTiles:
+    """Tiles a regional elevation source said it does not have (HTTP 404).
+
+    Above its ``sparse_above`` zoom a source like Copernicus/Mapterhorn only
+    has tiles where a national model exists, and a tile it lacks means its
+    children are lacking too. Remembering the 404s turns the next few hundred
+    requests over the same ground into an immediate answer instead of a round
+    trip each. Memory only and bounded: a restart, or the cap, just asks again.
+    """
+
+    def __init__(self, limit: int = 20000) -> None:
+        self._limit = max(1, int(limit))
+        self._lock = threading.Lock()
+        self._keys: set[tuple[str, int, int, int]] = set()
+
+    def add(self, source: str, z: int, x: int, y: int) -> None:
+        with self._lock:
+            if len(self._keys) >= self._limit:
+                self._keys.clear()
+            self._keys.add((source, z, x, y))
+
+    def covers(self, source: str, z: int, x: int, y: int, floor: int) -> bool:
+        """Is (*z*, *x*, *y*), or an ancestor finer than *floor*, known absent?"""
+        with self._lock:
+            for level in range(z, floor, -1):
+                shift = z - level
+                if (source, level, x >> shift, y >> shift) in self._keys:
+                    return True
+        return False
 
 
 class _TileProgressBus:
@@ -1503,6 +1537,10 @@ def _validate_tile_zooms(minzoom: Any, maxzoom: Any, src_maxzoom: int) -> str | 
         return "minzoom must be a number"
     if isinstance(maxzoom, bool) or not isinstance(maxzoom, (int, float)):
         return "maxzoom must be a number"
+    # Range first: JSON reads 1e400 as inf, and int(inf) raises rather than
+    # answering, which dropped the connection instead of a 400.
+    if not -1 < minzoom < 23 or not -1 < maxzoom < 23:
+        return "zooms must be in [0, 22]"
     if float(minzoom) != int(minzoom) or float(maxzoom) != int(maxzoom):
         return "zooms must be integers"
     mz, Mz = int(minzoom), int(maxzoom)
@@ -1632,6 +1670,12 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     tile_caches: dict[str, TileCache] | None = None
     # Shared across handler threads: one breaker per process, not per request.
     tile_breaker: _UpstreamBreaker | None = None
+    # Elevation tiles derived from a coarser cached one when the real tile is
+    # neither on disk nor reachable (corvus/dem_tiles.py). Memory only, bounded,
+    # nothing to tear down.
+    dem_fallback: dem_tiles.DemFallback | None = dem_tiles.DemFallback()
+    # Regional elevation tiles known not to exist. Memory only, bounded.
+    tile_absent: _AbsentTiles | None = _AbsentTiles()
     tile_downloader: Any = None
     tile_progress_bus: _TileProgressBus | None = None
     # OSM building footprints for 3D mode. None when the module could not be
@@ -1964,6 +2008,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             merged["parameters"] = cfg.parameters
         if cfg.review is not None:
             merged["review"] = cfg.review
+        if cfg.checklists is not None:
+            merged["checklists"] = cfg.checklists
 
         known = {
             "mavlink_connection", "http_port", "tile_cache_dir", "tlog_dir",
@@ -1971,6 +2017,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             "tile_sources", "stream_rates", "ssh_connections",
             "theme", "map", "branding", "controls", "ui", "updates",
             "autoconnect", "battery", "remote_id", "parameters", "review",
+            "checklists",
         }
         # Real config keys that belong to their own endpoint. A client that
         # POSTs back a whole GET /api/config body carries them along, and
@@ -2098,6 +2145,17 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 # Merged per key, like parameters: one option per POST.
                 base = merged.get("review")
                 merged["review"] = {**base, **value} if isinstance(base, dict) else dict(value)
+            elif key == "checklists":
+                if not isinstance(value, dict):
+                    return None, "checklists must be an object"
+                # Merged per key, like controls: the Settings switch, the Home
+                # window's list picker and the Setup editor each write their
+                # own key. "lists" is one value and replaces the stored lists
+                # whole, because the editor always sends every list.
+                base = merged.get("checklists")
+                merged["checklists"] = (
+                    {**base, **value} if isinstance(base, dict) else dict(value)
+                )
             elif key == "mavlink_connection":
                 if not isinstance(value, str) or not value:
                     return None, "mavlink_connection must be a non-empty string"
@@ -2579,9 +2637,12 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     @route("GET", "/api/mavlink/modes")
     def _api_mavlink_modes(self) -> None:
         if self.mavlink:
-            self._send_json({"modes": self.mavlink.get_available_modes()})
+            self._send_json({
+                "modes": self.mavlink.get_available_modes(),
+                "labels": self.mavlink.get_mode_labels(),
+            })
         else:
-            self._send_json({"modes": []})
+            self._send_json({"modes": [], "labels": {}})
 
     @route("GET", "/api/mavlink/capabilities")
     def _api_mavlink_capabilities(self) -> None:
@@ -7307,6 +7368,9 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # operator can pick", and a DEM in the layer switcher would paint the
         # map in false colour. The frontend builds its raster-dem source from
         # this, encoding included, so the height packing is stated once.
+        # A keyed DEM says whether its key is set, as the map services below
+        # do, so the frontend picks it only when it can actually load.
+        keys_set = self._map_tokens_set()
         terrain = []
         for entry in tile_sources.list_terrain():
             cache = caches.get(entry["id"])
@@ -7319,6 +7383,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 "cached_count": stats["count"],
                 "cached_minzoom": stats["minzoom"],
                 "cached_maxzoom": stats["maxzoom"],
+                "token_required": tile_sources.needs_token(entry["id"]),
+                "token_set": entry["provider"] in keys_set,
             })
         buildings = (self.buildings.stats()
                      if self.buildings is not None else {"cells": 0, "bytes": 0})
@@ -7330,7 +7396,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # vanished would leave the operator with nothing to act on. A service
         # whose key is optional (Google, Bing) draws either way; its key only
         # moves it onto the licensed API.
-        have = self._map_tokens_set()
+        have = keys_set
         providers = []
         for prov in tile_sources.list_providers():
             keyed = prov.get("token") is not None
@@ -7346,6 +7412,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             "default_provider": tile_sources.DEFAULT_PROVIDER,
             "terrain": terrain,
             "default_terrain": tile_sources.DEFAULT_TERRAIN,
+            "preferred_terrain": tile_sources.PREFERRED_TERRAIN,
             "buildings": buildings,
             # The per-job cap POST /api/tiles/download enforces, so the dialog
             # can refuse an area before the operator presses Download rather
@@ -7504,65 +7571,116 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         # Record the region as soon as the job exists, keyed by the job id, so
         # the area shows on the map while it is still downloading. The progress
         # callback patches the final tile count and state when the job ends.
-        if cache is not None:
-            w, s, e, n = bounds
-            try:
-                cache.add_region({
-                    "id": job_id, "name": name, "source": source,
-                    "w": w, "s": s, "e": e, "n": n,
-                    "minzoom": minzoom, "maxzoom": maxzoom,
-                    "tile_count": 0, "state": "running",
-                })
-            except Exception:  # noqa: BLE001 - bookkeeping must not fail the download
-                logger.exception("region record write failed")
+        self._record_region(cache, job_id, name, source, bounds, minzoom, maxzoom)
         # Elevation rides along when asked for, as its own job on its own
         # cache. Without it a pre-downloaded area is flat the moment the
         # laptop leaves the network — imagery cached for the field and terrain
         # that is not is exactly the split that makes 3D mode useless there.
         terrain_job = None
+        chosen_job = None
         if payload.get("terrain") and not tile_sources.is_terrain(source):
             terrain_job = self._start_terrain_companion(bounds, minzoom, maxzoom, name)
-        self._send_json({"job_id": job_id, "name": name, "terrain_job_id": terrain_job})
+            # The free elevation always comes along: it is what every other
+            # DEM falls back to. The one 3D is actually drawing from comes
+            # too, when that is a different one, so the field sees the same
+            # ground the office did.
+            chosen = payload.get("terrain_source")
+            if (isinstance(chosen, str) and chosen != tile_sources.DEFAULT_TERRAIN
+                    and tile_sources.is_terrain(chosen)):
+                chosen_job = self._start_terrain_companion(
+                    bounds, minzoom, maxzoom, name, chosen)
+        # Buildings for 3D, queued behind whatever the map is showing and
+        # fetched in the background. Not a tile job: Overpass is a shared
+        # service with a fair use policy, and a building block is one query,
+        # not a URL template the downloader could walk.
+        building_blocks = 0
+        if payload.get("buildings") and self.buildings is not None:
+            try:
+                building_blocks = int(self.buildings.prefetch(bounds))
+            except Exception:  # noqa: BLE001 - the imagery job is already running
+                logger.exception("building prefetch failed to start")
+        self._send_json({
+            "job_id": job_id, "name": name, "terrain_job_id": terrain_job,
+            "terrain_source_job_id": chosen_job, "building_blocks": building_blocks,
+        })
 
     def _start_terrain_companion(
         self, bounds: tuple, minzoom: int, maxzoom: int, name: str,
+        terrain_id: str | None = None,
     ) -> str | None:
         """Start the elevation half of a region download. None if it cannot run.
 
+        *terrain_id* is the DEM to download, the free default when omitted.
         Best effort on purpose: the imagery job has already been accepted and
         the operator has been shown progress for it, so a DEM that cannot be
         started must not turn their download into an error. It also caps the
         zooms at the DEM's own — elevation is a smooth surface, and asking for
         z19 heights would quadruple the job for tiles the upstream does not
-        even serve.
+        even serve — and, for a DEM that only has its finest levels in some
+        regions, at the last level it has everywhere.
         """
-        default_terrain = tile_sources.DEFAULT_TERRAIN
+        default_terrain = terrain_id or tile_sources.DEFAULT_TERRAIN
         src = tile_sources.get(default_terrain)
-        if src is None or self.tile_downloader is None:
+        if src is None or self.tile_downloader is None or not tile_sources.is_terrain(default_terrain):
             return None
-        hi = min(maxzoom, src["maxzoom"])
-        lo = min(minzoom, hi)
+        token = self._map_token(str(src.get("provider") or ""))
+        if tile_sources.needs_token(default_terrain) and not token:
+            return None
+        hi = min(maxzoom, src["maxzoom"], src.get("sparse_above", src["maxzoom"]))
+        # From zoom 0, whatever the imagery starts at. A pitched view draws
+        # its far ground from coarse tiles, and every missing fine tile is
+        # derived from a coarser ancestor (corvus/dem_tiles.py): an area whose
+        # elevation starts at z14 has neither, and its terrain drops to sea
+        # level at the first tile that is not on disk. Over one area the
+        # levels below the imagery's add a tile or two each. Only an area
+        # already near the per-job cap gives some of them back, so the
+        # elevation job is never refused where it used to be accepted.
+        from .tile_downloader import MAX_TILES_PER_JOB, tile_count
+        lo, floor = 0, min(minzoom, hi)
+        while lo < floor and tile_count(bounds, lo, hi) > MAX_TILES_PER_JOB:
+            lo += 1
         cache = (self.tile_caches or {}).get(default_terrain)
         try:
             job_id = self.tile_downloader.start(
                 default_terrain, src["upstream"], bounds, lo, hi,
-                on_progress=self._make_tile_progress(cache),
+                on_progress=self._make_tile_progress(cache), token=token,
             )
         except Exception:  # noqa: BLE001 - the imagery job is already running
             logger.exception("terrain companion download start failed")
             return None
-        if cache is not None and job_id:
-            w, s, e, n = bounds
-            try:
-                cache.add_region({
-                    "id": job_id, "name": name, "source": default_terrain,
-                    "w": w, "s": s, "e": e, "n": n,
-                    "minzoom": lo, "maxzoom": hi,
-                    "tile_count": 0, "state": "running",
-                })
-            except Exception:  # noqa: BLE001 - bookkeeping must not fail the download
-                logger.exception("terrain region record write failed")
+        if job_id:
+            self._record_region(cache, job_id, name, default_terrain, bounds, lo, hi)
         return job_id
+
+    def _record_region(self, cache: Any, job_id: str, name: str, source: str,
+                       bounds: tuple, minzoom: int, maxzoom: int) -> None:
+        """Write the region row for a download job that is already running.
+
+        The job has to exist first, because its id is the row's key, so a fast
+        job can end before this row does: an area already on disk is walked
+        in milliseconds. Its final update then found no row to patch, and the
+        row written after it said "downloading" until the next launch settled
+        it as cancelled. So the job is read back once the row is in, and one
+        that has already ended is settled here. Never raises: bookkeeping must
+        not fail a download the operator has been shown.
+        """
+        if cache is None:
+            return
+        w, s, e, n = bounds
+        try:
+            cache.add_region({
+                "id": job_id, "name": name, "source": source,
+                "w": w, "s": s, "e": e, "n": n,
+                "minzoom": minzoom, "maxzoom": maxzoom,
+                "tile_count": 0, "state": "running",
+            })
+            status = (self.tile_downloader.status(job_id)
+                      if self.tile_downloader is not None else None)
+            state = status.get("state") if isinstance(status, dict) else None
+            if state in self._SSE_TERMINAL_STATES:
+                cache.update_region(job_id, tile_count=status.get("done", 0), state=state)
+        except Exception:  # noqa: BLE001 - bookkeeping must not fail the download
+            logger.exception("region record write failed")
 
     def _make_tile_progress(self, cache: Any) -> Any:
         """Compose the progress callback handed to the downloader.
@@ -7592,6 +7710,11 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             if state not in ("done", "cancelled", "failed") or finished["done"]:
                 return
             finished["done"] = True
+            # Elevation derived from what was on disk before this job is
+            # stale now that finer tiles may have landed under it.
+            source = progress.get("source")
+            if self.dem_fallback is not None and tile_sources.is_terrain(source):
+                self.dem_fallback.forget(source)
             try:
                 # `done` counts tiles now present in the cache — fetched plus
                 # the ones that were already there — so it is exactly how much
@@ -7682,6 +7805,9 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 logger.exception("region tile deletion failed")
                 self._send_json({"ok": False, "error": f"tile deletion failed: {exc}"}, 500)
                 return
+            # Elevation derived from the tiles just deleted must not outlive them.
+            if removed_tiles and self.dem_fallback is not None and tile_sources.is_terrain(source):
+                self.dem_fallback.forget(source)
         cache.remove_region(region_id)
         self._send_json({"ok": True, "removed_tiles": removed_tiles})
 
@@ -7731,7 +7857,9 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
         Online: a cache miss is filled from the upstream template (short
         timeout) then stored, so the map works and the cache grows in the
-        field. Offline (or fetch failure): a miss is a 404.
+        field. Offline (or fetch failure): a miss is a 404, except for an
+        elevation tile with a coarser ancestor on disk, which is derived from
+        it (see corvus/dem_tiles.py) so 3D terrain has no holes.
         """
         if tile_sources.get(source) is None:
             self._send_json({"error": "not found"}, 404)
@@ -7751,12 +7879,16 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 "tile cache read failed: %s/%d/%d/%d", source, z, x, y, exc_info=True,
             )
             blob = None
+        derived = False
         if blob is None:
             blob = self._fetch_upstream_tile(source, z, x, y)
             if blob is None:
+                blob = self._derive_terrain_tile(source, z, x, y, cache)
+                derived = blob is not None
+            if blob is None:
                 self._send_json({"error": "tile not available"}, 404)
                 return
-            if cache is not None:
+            if cache is not None and not derived:
                 try:
                     cache.put_tile(z, x, y, blob)
                 except Exception:  # noqa: BLE001 - caching is best-effort
@@ -7769,15 +7901,80 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             ctype = "image/png"
         elif blob[:3] == b"\xff\xd8\xff":
             ctype = "image/jpeg"
+        elif blob[:4] == b"RIFF" and blob[8:12] == b"WEBP":
+            ctype = "image/webp"
         else:
             ctype = "image/png"
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(blob)))
         self._send_cors()
-        self.send_header("Cache-Control", "max-age=86400")
+        # A derived tile is a stand-in: the browser must ask again soon, so the
+        # real one replaces it once the link is back.
+        self.send_header("Cache-Control", "max-age=300" if derived else "max-age=86400")
         self.end_headers()
         self.wfile.write(blob)
+
+    def _derive_terrain_tile(self, source: str, z: int, x: int, y: int,
+                             cache: Any) -> bytes | None:
+        """An elevation tile resampled from the nearest cached ancestor, or None.
+
+        Only for elevation sources: a blurred photograph is worse than the
+        coarser one MapLibre already shows, but a missing height is a hole in
+        the terrain. Never stored, see corvus/dem_tiles.py.
+        """
+        fallback = self.dem_fallback
+        if fallback is None or cache is None or not tile_sources.is_terrain(source):
+            return None
+        sparse = tile_sources.sparse_above(source)
+        if sparse is not None and z > sparse:
+            # Above the level such a source covers everywhere, a missing tile
+            # means "use the level above", and MapLibre does exactly that with
+            # a 404. Anything stood in here would be coarser data drawn at a
+            # zoom where the real parent is sharper.
+            return None
+        try:
+            blob = fallback.tile(source, z, x, y, cache.get_tile)
+            if blob is None and source != tile_sources.DEFAULT_TERRAIN:
+                blob = self._terrain_from_default(source, z, x, y)
+            return blob
+        except Exception:  # noqa: BLE001 - a fallback must never 500 the map
+            logger.debug("terrain tile derivation failed: %s/%d/%d/%d",
+                         source, z, x, y, exc_info=True)
+            return None
+
+    def _terrain_from_default(self, source: str, z: int, x: int, y: int) -> bytes | None:
+        """A keyed service's elevation tile, stood in for by the free one.
+
+        The free elevation is what an offline download always carries, so this
+        is what keeps a better model from ever meaning worse terrain: over
+        ground downloaded before the key was set, or with the key refused, the
+        operator still gets the free heights rather than a hole. Cached,
+        fetched or derived, in that order, then re-packed for *source*.
+        """
+        base_id = tile_sources.DEFAULT_TERRAIN
+        base_cache = (self.tile_caches or {}).get(base_id)
+        spec = tile_sources.get(source)
+        base_spec = tile_sources.get(base_id)
+        if base_cache is None or spec is None or base_spec is None:
+            return None
+        try:
+            base = base_cache.get_tile(z, x, y)
+        except Exception:  # noqa: BLE001 - an unreadable cache is a miss
+            base = None
+        if base is None:
+            base = self._fetch_upstream_tile(base_id, z, x, y)
+            if base is not None:
+                try:
+                    base_cache.put_tile(z, x, y, base)
+                except Exception:  # noqa: BLE001 - caching is best-effort
+                    logger.exception("tile cache write failed")
+        if base is None and self.dem_fallback is not None:
+            base = self.dem_fallback.tile(base_id, z, x, y, base_cache.get_tile)
+        if base is None:
+            return None
+        return dem_tiles.transcode(base, base_spec["encoding"], spec["encoding"],
+                                   int(spec.get("tile_size", 256)))
 
     def _fetch_upstream_tile(self, source: str, z: int, x: int, y: int) -> bytes | None:
         """Best-effort online cache-fill for a single tile; None on any failure.
@@ -7789,6 +7986,11 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         """
         src = tile_sources.get(source)
         if src is None:
+            return None
+        sparse = tile_sources.sparse_above(source)
+        absent = self.tile_absent
+        if (sparse is not None and z > sparse and absent is not None
+                and absent.covers(source, z, x, y, sparse)):
             return None
         token = self._map_token(str(src.get("provider") or ""))
         if tile_sources.needs_token(source):
@@ -7827,10 +8029,21 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             )
             with urllib.request.urlopen(req, timeout=TILE_UPSTREAM_TIMEOUT_S) as resp:
                 data = resp.read(TILE_UPSTREAM_MAX_BYTES + 1)
-        except Exception as exc:  # noqa: BLE001 - offline field use must never 500
-            if session_based and getattr(exc, "code", None) in (401, 403):
+        except urllib.error.HTTPError as exc:
+            if session_based and exc.code in (401, 403):
                 # The session was withdrawn early; the next tile opens a new one.
                 tile_sessions.invalidate(source, token)
+            if exc.code == 404 and sparse is not None and z > sparse and absent is not None:
+                absent.add(source, z, x, y)
+            # The upstream ANSWERED, so the link is up: a status code is about
+            # that one service. It must not open the breaker, which every
+            # source shares, or an imagery service throttling us with 429s
+            # would stop the elevation tiles too and leave holes in the 3D
+            # terrain for the whole cooldown.
+            logger.debug("upstream tile refused (%s): %s", exc.code,
+                         tile_sources.redact_url(url))
+            return None
+        except Exception:  # noqa: BLE001 - offline field use must never 500
             # Redacted: this line is the one an operator copies into a bug
             # report when tiles will not load, and for a keyed service the URL
             # carries their credential.
@@ -7839,12 +8052,19 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             if breaker is not None:
                 breaker.record_failure()
             return None
-        if not data or len(data) > TILE_UPSTREAM_MAX_BYTES:
+        if (not data or len(data) > TILE_UPSTREAM_MAX_BYTES
+                or not tile_sources.looks_like_image(data)):
             # A 200 with an empty body is as useless as a failure, and so is an
             # oversized one; counting both keeps a broken-but-reachable
-            # upstream from holding the breaker closed forever.
+            # upstream from holding the breaker closed forever. A body that is
+            # not an image is a captive portal's login page or a proxy's error
+            # page: caching it would serve that page as a map tile, and for
+            # an elevation tile decode it as terrain, forever.
             if len(data) > TILE_UPSTREAM_MAX_BYTES:
                 logger.debug("upstream tile too large, discarding: %s",
+                             tile_sources.redact_url(url))
+            elif data:
+                logger.debug("upstream answered something that is not an image: %s",
                              tile_sources.redact_url(url))
             if breaker is not None:
                 breaker.record_failure()
@@ -7874,16 +8094,21 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self._send_buildings(_EMPTY_BUILDINGS, gzipped=False)
             return
         try:
-            payload = service.cell(z, x, y)
+            lookup = getattr(service, "lookup", None)
+            payload, coming = (lookup(z, x, y) if callable(lookup)
+                               else (service.cell(z, x, y), True))
         except Exception:  # noqa: BLE001 - an overlay must never 500 the map
             logger.exception("building cell lookup failed: %d/%d/%d", z, x, y)
             self._send_buildings(_EMPTY_BUILDINGS, gzipped=False)
             return
         if payload is None:
-            # Not cached: the service has queued it and will have it shortly.
-            # `pending` is the frontend's cue to ask again rather than record
-            # this cell as empty forever.
-            self._send_buildings(_PENDING_BUILDINGS, gzipped=False, cache=False)
+            # Not cached. `pending` when the service has queued it and will
+            # have it shortly: the frontend's cue to ask again. `unavailable`
+            # when nothing is on its way (offline, or Overpass asked us to
+            # back off): the frontend stops asking until the view changes,
+            # rather than polling for a cell no worker will fetch.
+            self._send_buildings(_PENDING_BUILDINGS if coming else _UNAVAILABLE_BUILDINGS,
+                                 gzipped=False, cache=False)
             return
         self._send_buildings(payload, gzipped=True)
 

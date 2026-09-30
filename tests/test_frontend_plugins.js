@@ -1558,16 +1558,17 @@ async function testSshLauncherRemovesAnIdleButtonWithoutAsking() {
   Corvus.pluginSshLauncher.destroy(h.container);
 }
 
+/* A running row has no pencil, so the editor meets a running session only
+   when it was opened before the shelf knew: here, before the first liveness
+   answer came back. Delete still asks there, and still closes it. */
 async function testSshLauncherRemovingARunningButtonAsksAndClosesItsTerminal() {
-  const h = mountLauncher({
-    saved: { buttons: [TERMINAL_BUTTON] },
-    sessions: ["ssh-launcher/a"],
-  });
+  const opts = { saved: { buttons: [TERMINAL_BUTTON] }, sessions: ["ssh-launcher/a"] };
+  const h = mountLauncher(opts);
+  click(h.tool("Edit Start mission"));
   await flushMicrotasks();
 
   // Refused: the button, and the program it is running, both stay.
   window.confirm = () => false;
-  click(h.tool("Edit Start mission"));
   click(h.byLabel("Delete")[0]);
   await flushMicrotasks();
   assert.equal(h.byLabel("Delete").length, 1,
@@ -1575,15 +1576,78 @@ async function testSshLauncherRemovingARunningButtonAsksAndClosesItsTerminal() {
   click(h.byLabel("Cancel")[0]);
   assert.equal(h.shelf().length, 1, "declining the prompt keeps the button");
   assert.ok(!h.calls.some((c) => c.url === "/api/ssh/disconnect"));
+  assert.equal(h.tool("Edit Start mission"), undefined, "back on the shelf it is a running row");
+  assert.ok(h.tool("Stop Start mission"));
+  Corvus.pluginSshLauncher.destroy(h.container);
 
   // Confirmed: the button goes, and so does the session only it could reach.
   window.confirm = () => true;
-  click(h.tool("Edit Start mission"));
-  click(h.byLabel("Delete")[0]);
+  const again = mountLauncher(opts);
+  click(again.tool("Edit Start mission"));
   await flushMicrotasks();
-  assert.equal(h.shelf().length, 0);
-  assert.deepEqual(h.calls.find((c) => c.url === "/api/ssh/disconnect").body,
+  click(again.byLabel("Delete")[0]);
+  await flushMicrotasks();
+  assert.equal(again.shelf().length, 0);
+  assert.deepEqual(again.calls.find((c) => c.url === "/api/ssh/disconnect").body,
     { name: "ssh-launcher/a" });
+  Corvus.pluginSshLauncher.destroy(again.container);
+}
+
+/* While its session is up the row's pencil is a stop button: Ctrl-C, the
+   grace for the program to take it, then the session closed. A background
+   button has no session, so it keeps its pencil. */
+async function testSshLauncherARunningRowStopsInsteadOfEditing() {
+  const L = Corvus.pluginSshLauncher;
+  const h = mountLauncher({
+    saved: { buttons: [TERMINAL_BUTTON, BACKGROUND_BUTTON] },
+    sessions: ["ssh-launcher/a"],
+  });
+  await flushMicrotasks();
+  assert.equal(h.tool("Edit Start mission"), undefined);
+  const stopBtn = h.tool("Stop Start mission");
+  assert.ok(stopBtn.className.split(/\s+/).includes("sshl-stop"));
+  assert.ok(h.tool("Edit Record logs"));
+  assert.equal(h.tool("Stop Record logs"), undefined);
+
+  click(stopBtn);
+  await flushMicrotasks();
+  assert.deepEqual(h.sends(), [{ name: "ssh-launcher/a", data: L.CTRL_C }]);
+  assert.ok(!h.calls.some((c) => c.url === "/api/ssh/disconnect"),
+    "the hang-up waits for the program to take the Ctrl-C");
+  assert.equal(h.dots().length, 0);
+  assert.equal(h.tool("Stop Start mission").disabled, true, "shown stopping");
+
+  await new Promise((r) => setTimeout(r, L.RESTART_GRACE_MS + 50));
+  await flushMicrotasks();
+  assert.deepEqual(h.calls.filter((c) => c.url === "/api/ssh/disconnect").map((c) => c.body),
+    [{ name: "ssh-launcher/a" }]);
+  assert.ok(h.tool("Edit Start mission"), "stopped, the pencil is back");
+  assert.equal(h.tool("Stop Start mission"), undefined);
+  assert.match(h.status().textContent || "", /^Start mission: stopped\./);
+  Corvus.pluginSshLauncher.destroy(h.container);
+}
+
+/* Pressed while it is being stopped, the button waits for the session to be
+   closed and starts the program in a new one, never in the shell that is
+   being hung up. */
+async function testSshLauncherALaunchDuringAStopWaitsForIt() {
+  const L = Corvus.pluginSshLauncher;
+  const h = mountLauncher({ saved: { buttons: [TERMINAL_BUTTON] }, sessions: ["ssh-launcher/a"] });
+  await flushMicrotasks();
+  click(h.tool("Stop Start mission"));
+  await flushMicrotasks();
+  click(h.shelf()[0]);
+  await flushMicrotasks();
+  assert.equal(h.sends().length, 1, "only the Ctrl-C so far");
+
+  await new Promise((r) => setTimeout(r, L.RESTART_GRACE_MS + 50));
+  await flushMicrotasks();
+  await flushMicrotasks();
+  const wire = new Set(["/api/ssh/send", "/api/ssh/disconnect", "/api/ssh/connect"]);
+  assert.deepEqual(h.calls.filter((c) => wire.has(c.url)).map((c) => c.url), [
+    "/api/ssh/send", "/api/ssh/disconnect", "/api/ssh/send", "/api/ssh/connect", "/api/ssh/send",
+  ]);
+  assert.ok(h.tool("Stop Start mission"), "running again, in its new session");
   Corvus.pluginSshLauncher.destroy(h.container);
 }
 
@@ -1880,6 +1944,8 @@ async function run() {
   await testSshLauncherEditsInPlaceWithoutAddingOne();
   await testSshLauncherRemovesAnIdleButtonWithoutAsking();
   await testSshLauncherRemovingARunningButtonAsksAndClosesItsTerminal();
+  await testSshLauncherARunningRowStopsInsteadOfEditing();
+  await testSshLauncherALaunchDuringAStopWaitsForIt();
   await testSshLauncherSaveIsBlockedWithoutACommand();
   await testSshLauncherShowsStderrOfAFailedBackgroundRun();
   testSshLauncherNewConnectionHelpers();

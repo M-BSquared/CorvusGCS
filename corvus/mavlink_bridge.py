@@ -386,9 +386,14 @@ class MavlinkBridge(
         # interval requests must run AFTER the receive loop exists, so they are
         # scheduled here and joined in stop().
         self._intervals_thread: threading.Thread | None = None
-        # Raw-frame tlog: one file per connect cycle, owned by the bridge so a
-        # reconnect closes the old file and starts a fresh one. None = inactive.
+        # Raw-frame tlog: one file per connect cycle and per flight, owned by
+        # the bridge so a reconnect or a disarm closes the old file and starts
+        # a fresh one. None = inactive.
         self._tlog: TlogWriter | None = None
+        # The armed flag the last autopilot heartbeat carried, None until the
+        # first one of a connect cycle. Only an armed to disarmed edge that
+        # this cycle saw itself rolls the tlog over.
+        self._tlog_armed: bool | None = None
         self._running = threading.Event()
         # Complement of _running: set by stop() so daemon workers can sleep via
         # _interruptible_sleep and wake immediately on shutdown (BUG 1, 12).
@@ -429,6 +434,10 @@ class MavlinkBridge(
             autopilot_dialect.STACK_PX4
         )
         self._mav_type_id = 0
+        # (major, minor, patch) from AUTOPILOT_VERSION, None until it arrives.
+        # Some modes exist only from a given release on, and the dialect needs
+        # this to know whether the connected one has them.
+        self._firmware_version: tuple[int, int, int] | None = None
         self._pending_acks: dict[int, _PendingAck] = {}
         self._ack_lock = threading.Lock()
         # Two-tier: routine commands queue, abort commands overtake the queue.
@@ -968,6 +977,7 @@ class MavlinkBridge(
         self._reset_param_metadata()
         self._request_sent = False
         self._param_encoding_declared = ""
+        self._firmware_version = None
         self._last_boot_ms = None
         self._clear_prearm_reasons()
         self._prearm_requested_at = 0.0
@@ -1093,7 +1103,8 @@ class MavlinkBridge(
                     self._target_system, self._target_component)
         self._store.update(
             connected=True, vehicle_type=vtype, autopilot=autopilot,
-            armed=armed, mode=mode, link_status="connected", link_error="",
+            armed=armed, mode=mode, mode_label=self._dialect.mode_label(mode),
+            link_status="connected", link_error="",
             autopilot_stack=self._dialect.stack,
         )
         self._store.heartbeat()
@@ -1122,6 +1133,7 @@ class MavlinkBridge(
         # direct-_connect() unit tests (which never start() the bridge) do not
         # open files or spawn writer threads in ~/.corvus/logs; in production
         # _run only calls _connect while _running is set.
+        self._tlog_armed = None
         self._start_tlog()
 
     def _apply_signing(self) -> None:
@@ -1244,6 +1256,9 @@ class MavlinkBridge(
             type_id = 0
         dialect = autopilot_dialect.dialect_for(autopilot_id)
         changed = dialect is not self._dialect or type_id != self._mav_type_id
+        if dialect is not self._dialect:
+            # Another stack's release number says nothing about this one.
+            self._firmware_version = None
         self._dialect = dialect
         self._mav_type_id = type_id
         if changed:
@@ -1293,7 +1308,9 @@ class MavlinkBridge(
             mapping = self._conn.mode_mapping() or {}
         except Exception as exc:
             logger.debug("mode_mapping error: %s", exc)
-        usable = self._dialect.adopt_live_mapping(mapping, self._mav_type_id)
+        usable = self._dialect.adopt_live_mapping(
+            mapping, self._mav_type_id, self._firmware_version,
+        )
         if usable:
             self._mode_mapping = set(usable)
             self._mode_values = dict(usable)
@@ -1304,7 +1321,7 @@ class MavlinkBridge(
         # get_available_modes cannot disagree), for ArduPilot the per-vehicle
         # table in corvus.autopilot, and for an unrecognised stack nothing at
         # all — which is what sets _modes_unsupported.
-        builtin = self._dialect.mode_table(self._mav_type_id)
+        builtin = self._dialect.mode_table(self._mav_type_id, self._firmware_version)
         self._mode_values = dict(builtin)
         self._mode_mapping = set()
         if not builtin:
@@ -1396,7 +1413,7 @@ class MavlinkBridge(
             self._hb_thread = None
 
     # ------------------------------------------------------------------
-    # Telemetry log (tlog) — one file per connect cycle (F2)
+    # Telemetry log (tlog) — one file per connect cycle and per flight (F2)
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -1447,6 +1464,24 @@ class MavlinkBridge(
         except Exception as exc:
             logger.warning("tlog disabled: %s", exc)
             self._tlog = None
+
+    def _roll_tlog_on_disarm(self, armed: bool) -> None:
+        """Start the next tlog when the vehicle disarms after a flight.
+
+        Two sorties on one battery swap used to share a file, so a log could
+        not be picked by flight. The disarm heartbeat itself is already in the
+        closing file (frames are logged before they are dispatched), so that
+        file holds the whole flight and the new one opens on the ground. The
+        firmware version is asked for again so the new file carries its own
+        AUTOPILOT_VERSION for the flight review.
+        """
+        was_armed = self._tlog_armed
+        self._tlog_armed = armed
+        if not was_armed or armed or self._tlog is None:
+            return
+        self._start_tlog()
+        if self._tlog is not None:
+            self._request_version()
 
     def _stop_tlog(self) -> None:
         """Stop and close the current tlog if active; idempotent."""
@@ -2278,12 +2313,14 @@ class MavlinkBridge(
                 extra["kill_switch"] = False
             self._store.update(
                 vehicle_type=vtype, autopilot=autopilot, armed=armed, mode=mode,
+                mode_label=self._dialect.mode_label(mode),
                 autopilot_stack=self._dialect.stack, flight_termination=terminated,
                 **extra,
             )
             if armed and self._prearm_reasons:
                 # It armed, so whatever held it back no longer does.
                 self._clear_prearm_reasons()
+            self._roll_tlog_on_disarm(armed)
             # A heartbeat recovers a degraded link; recompute quality. When no
             # RADIO_STATUS arrives (UDP SITL), quality is heartbeat-driven.
             self._publish_link_quality()
@@ -2400,6 +2437,12 @@ class MavlinkBridge(
                     px4_version=f"v{major}.{minor}.{patch}",
                     px4_version_detail=detail,
                 )
+                version = (major, minor, patch)
+                if version != self._firmware_version:
+                    # The mode table was built from the heartbeat, before this
+                    # arrived, so it holds only what every release accepts.
+                    self._firmware_version = version
+                    self._build_mode_mapping()
             # Kept on the bridge rather than in the telemetry state: these two
             # identify the board for the firmware picker and are read once, not
             # pushed to the browser on every frame.
@@ -2737,13 +2780,21 @@ class MavlinkBridge(
         selector with ACRO. A live name the dialect has no place for goes
         after the ones it knows, alphabetically.
         """
-        ordered = self._dialect.available_modes(self._mav_type_id)
+        ordered = self._dialect.available_modes(self._mav_type_id, self._firmware_version)
         if self._mode_mapping:
             known = [name for name in ordered if name in self._mode_mapping]
             return known + sorted(self._mode_mapping.difference(known))
         if self._modes_unsupported:
             return []
         return ordered
+
+    def get_mode_labels(self) -> dict[str, str]:
+        """What the operator reads for each mode get_available_modes() offers.
+
+        The connected stack's words ("POSITION" for PX4's POSCTL). The keys stay
+        the names a mode change sends.
+        """
+        return {name: self._dialect.mode_label(name) for name in self.get_available_modes()}
 
     @property
     def vehicle_type_id(self) -> int:

@@ -381,6 +381,108 @@ function testLinkDropDoesNotLookLikeAReboot() {
 }
 
 // ---------------------------------------------------------------------------
+// Earlier flights. The flight in progress is its own line; a takeoff after a
+// landing moves it to the earlier flights, and nothing but the clear button
+// (or the opt-in "clear on restart") discards a flight.
+// ---------------------------------------------------------------------------
+const north = (i) => [8.5, 47.3 + i * 0.0001];  // ~11 m apart
+
+function flyFlight(armedFrom, n, boot) {
+  for (let i = 0; i < n; i++) {
+    map._updateTrack({ armed: true, position: north(armedFrom + i), boot_ms: boot + i * 1000 });
+  }
+  map._updateTrack({ armed: false, position: north(armedFrom + n - 1), boot_ms: boot + n * 1000 });
+}
+
+function testATakeoffAfterALandingStartsANewFlight() {
+  map._resetTrackState();
+  map._updateTrack({ armed: false, position: north(0), boot_ms: 1000 });
+  flyFlight(0, 5, 2000);
+  assert.equal(map.getEarlierFlights().length, 0, "the first flight is still the one in progress after landing");
+  assert.equal(map.getTrack().length, 5);
+  flyFlight(10, 4, 20000);
+  assert.equal(map.getEarlierFlights().length, 1, "taking off again moves the first flight to the earlier ones");
+  assert.equal(map.getEarlierFlights()[0].length, 5);
+  assert.equal(map.getTrack().length, 4, "the new flight starts empty");
+}
+
+function testTheFirstSampleArmedIsNotATakeoff() {
+  map._resetTrackState();
+  assert.equal(map._checkForTakeoff(true), false, "an app opened mid-flight keeps the flight whole");
+  assert.equal(map._checkForTakeoff(true), false);
+  assert.equal(map._checkForTakeoff(false), false, "a landing is not a takeoff");
+  assert.equal(map._checkForTakeoff(true), true);
+  assert.equal(map._checkForTakeoff(undefined), false, "a sample without the flag changes nothing");
+}
+
+function testARebootKeepsTheTrackByDefault() {
+  map._resetTrackState();
+  flyFlight(0, 5, 500000);
+  map._updateTrack({ armed: false, position: north(4), boot_ms: 1200 });
+  assert.equal(map.getEarlierFlights().length, 1, "a reboot closes the flight rather than discarding it");
+  assert.equal(map.getTrack().length, 1, "the new session starts at the sample that showed the reboot");
+}
+
+function testARebootClearsTheTrackWhenAskedTo() {
+  map._resetTrackState();
+  map.setTrackOptions({ clearOnRestart: true });
+  flyFlight(0, 5, 500000);
+  map._updateTrack({ armed: false, position: north(4), boot_ms: 1200 });
+  assert.equal(map.getEarlierFlights().length, 0);
+  assert.equal(map.getTrack().length, 1, "only the sample after the reboot is left");
+}
+
+function testSettingTheOptionsLaterNeverClears() {
+  map._resetTrackState();
+  flyFlight(0, 5, 1000);
+  map.setTrackOptions({ clearOnRestart: true });
+  assert.equal(map.getTrack().length, 5, "turning the switch on in Settings discards nothing");
+  map.setTrackOptions({ clearOnRestart: true }, true);
+  assert.equal(map.getTrack().length, 0, "the startup read with the switch on clears");
+}
+
+function testClearTrackDiscardsEveryFlight() {
+  map._resetTrackState();
+  map._updateTrack({ armed: false, position: north(0), boot_ms: 1000 });
+  flyFlight(0, 3, 2000);
+  flyFlight(10, 3, 20000);
+  map.clearTrack();
+  assert.deepEqual(map.getTrack(), []);
+  assert.deepEqual(map.getEarlierFlights(), []);
+}
+
+function testTheTrackSurvivesARestart() {
+  const store = new Map();
+  window.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, String(v)),
+    removeItem: (k) => store.delete(k),
+  };
+  try {
+    map._resetTrackState();
+    map._updateTrack({ armed: false, position: north(0), boot_ms: 1000 });
+    flyFlight(0, 3, 2000);
+    flyFlight(10, 4, 20000);
+    map._saveTrack();
+    assert.ok(store.has("corvus.map.track"));
+    map._resetTrackState();
+    map._restoreTrack();
+    assert.equal(map.getEarlierFlights().length, 1);
+    assert.equal(map.getTrack().length, 4);
+    const [lng, lat] = map.getTrack()[0];
+    assert.ok(Math.abs(lng - north(10)[0]) < 1e-7 && Math.abs(lat - north(10)[1]) < 1e-7);
+    map.clearTrack();
+    assert.equal(store.has("corvus.map.track"), false, "clearing removes the saved track too");
+    store.set("corvus.map.track", "{not json");
+    map._restoreTrack();
+    assert.deepEqual(map.getTrack(), [], "a damaged entry is ignored");
+  } finally {
+    delete window.localStorage;
+    map._resetTrackState();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // _planRouteCoords: plan-route coordinate computation.
 //
 // The dashed plan line must start at the drone's position, so a single
@@ -771,6 +873,47 @@ function testAFoldMapLibreMakesIsAccepted() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Downloaded areas: off by default, and one box per piece of ground.
+// ---------------------------------------------------------------------------
+function testDownloadedAreasAreHiddenUntilAskedFor() {
+  const mapJs = fs.readFileSync(path.join(__dirname, "..", "src", "js", "map.js"), "utf8");
+  const missionJs = fs.readFileSync(path.join(__dirname, "..", "src", "js", "mission.js"), "utf8");
+  [["map.js", mapJs], ["mission.js", missionJs]].forEach(([name, src]) => {
+    assert.ok(/let regionsVisible = false;/.test(src),
+      `${name}: the downloaded-area overlay must start hidden`);
+    assert.ok(!/id: "regions"[^}]*active: true/.test(src),
+      `${name}: the rail button must not start lit while the overlay is hidden`);
+  });
+}
+
+function testAnAreaDownloadedTwiceIsDrawnOnce() {
+  const box = { w: 11.0, s: 48.0, e: 11.2, n: 48.1 };
+  const drawn = map.mergeRegions([
+    { id: "a", name: "Airfield", source: "satellite", bounds: box, minzoom: 10, maxzoom: 16 },
+    { id: "b", name: "Airfield", source: "osm", bounds: box, minzoom: 12, maxzoom: 18 },
+    { id: "c", name: "Airfield deep", source: "satellite",
+      bounds: { w: 11.001, s: 48.0, e: 11.2, n: 48.1 }, minzoom: 17, maxzoom: 19, state: "running" },
+  ]);
+  assert.equal(drawn.length, 1, "the same ground is one rectangle and one label");
+  assert.deepEqual(drawn[0].ids, ["a", "b", "c"]);
+  assert.equal(drawn[0].name, "Airfield, Airfield deep", "each name once");
+  assert.equal(drawn[0].minzoom, 10);
+  assert.equal(drawn[0].maxzoom, 19);
+  assert.equal(drawn[0].state, "running", "still downloading while any of them is");
+}
+
+function testDifferentAreasStaySeparate() {
+  const drawn = map.mergeRegions([
+    { id: "a", name: "North", bounds: { w: 11.0, s: 48.0, e: 11.2, n: 48.1 } },
+    { id: "b", name: "Half over it", bounds: { w: 11.1, s: 48.0, e: 11.3, n: 48.1 } },
+    { id: "t", name: "Heights", source: "terrain", bounds: { w: 11.0, s: 48.0, e: 11.2, n: 48.1 } },
+    { id: "x", name: "Broken", bounds: { w: "?", s: 48, e: 11, n: 49 } },
+  ], "terrain");
+  assert.deepEqual(drawn.map((r) => r.id), ["a", "b"],
+    "a partial overlap is a different area; elevation and broken bounds are not drawn");
+}
+
 const tests = [
   testTheFlightBarIsFullSizeUntilTheSwitchIsThrown,
   testTheFlightBarIsMeasuredAgainstAShareOfTheMap,
@@ -809,6 +952,13 @@ const tests = [
   testRebootIsDetectedWhenUptimeGoesBackwards,
   testMissingUptimeIsNotAReboot,
   testLinkDropDoesNotLookLikeAReboot,
+  testATakeoffAfterALandingStartsANewFlight,
+  testTheFirstSampleArmedIsNotATakeoff,
+  testARebootKeepsTheTrackByDefault,
+  testARebootClearsTheTrackWhenAskedTo,
+  testSettingTheOptionsLaterNeverClears,
+  testClearTrackDiscardsEveryFlight,
+  testTheTrackSurvivesARestart,
   testPlanRouteHookExists,
   testPlanRouteEmptyWhenNoWaypoints,
   testPlanRoutePrependsVehicleForSingleWaypoint,
@@ -821,6 +971,9 @@ const tests = [
   testAClickOpensTheCreditAndItStaysOpen,
   testTheFoldedDiscIsTheButtonButTheOpenCreditsLinksAreNot,
   testAFoldMapLibreMakesIsAccepted,
+  testDownloadedAreasAreHiddenUntilAskedFor,
+  testAnAreaDownloadedTwiceIsDrawnOnce,
+  testDifferentAreasStaySeparate,
 ];
 
 let failed = 0;

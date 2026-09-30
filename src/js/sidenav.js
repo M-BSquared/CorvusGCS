@@ -345,7 +345,16 @@ Corvus.sidenav = (function () {
       }));
       if (n.after) leftNav.appendChild(railFiller(n.after));
     });
+    paintUpdateBadge(Corvus.update ? Corvus.update.available() : null);
     Corvus.ui.refreshIcons();
+  }
+
+  /** Orange dot on SET while a newer release is waiting (Corvus.update). */
+  function paintUpdateBadge(latest) {
+    const btn = leftNav && leftNav.querySelector('.nav-item[data-nav="settings"]');
+    if (!btn) return;
+    btn.classList.toggle("has-update", !!latest);
+    btn.title = latest ? `Settings. Version ${latest} is available` : "Settings";
   }
 
   /** Rail filler: "divider" is the hairline under HOME, "spacer" the flexible
@@ -617,12 +626,15 @@ Corvus.sidenav = (function () {
     body.appendChild(scaleCard(cfg));
     body.appendChild(unitsCard(cfg));
     body.appendChild(pagesCard(cfg));
+    body.appendChild(checklistCard(cfg));
     body.appendChild(mapServiceCard(cfg, gen));
+    body.appendChild(trackCard(cfg));
     body.appendChild(controlsCard(cfg));
     // The flight bar, the top-bar dots, the notification marks and the Dock
     // icon sit after Controls: all four are small finishing touches on an
     // interface the cards above them decide.
     body.appendChild(flightBarCard(cfg));
+    body.appendChild(compassCard(cfg));
     body.appendChild(topBarCard(cfg));
     body.appendChild(notificationsCard(cfg));
     body.appendChild(windowsCard(cfg));
@@ -669,6 +681,94 @@ Corvus.sidenav = (function () {
             "Missions are drawn, saved and uploaded there. Nothing is " +
             "sent to the aircraft until you press Upload.",
     }));
+    return card;
+  }
+
+  // The preflight checklist: the feature itself, its window on the Home map,
+  // and the button to the dialog the lists are written in. Off by default,
+  // like the Mission planner: a station that does not fly by a checklist
+  // should not carry a window for one.
+  //
+  // Same contract as the Pages switch: live at once, persisted in the
+  // background, and snapped back when the backend refuses. The checklist
+  // module owns the state; this card only tells it.
+  function checklistCard(cfg) {
+    const CL = Corvus.checklist;
+    const card = Corvus.ui.card({ title: "Preflight checklist" });
+    CL.fromConfig(cfg);
+
+    const homeSw = Corvus.ui.toggle({
+      id: "settingsChecklistHome",
+      value: CL.isHomeWindow(),
+      disabled: !CL.isEnabled(),
+      ariaLabel: "Show on the Home map",
+      onChange: (next) => CL.setHomeWindow(next),
+    });
+    const editBtn = Corvus.ui.button({
+      variant: "secondary",
+      size: "sm",
+      icon: "list-checks",
+      label: "Edit checklists",
+      onClick: () => Corvus.checklistEditor.open(),
+    });
+    const summary = document.createElement("span");
+    summary.className = "checklist-summary";
+
+    function sync() {
+      const on = CL.isEnabled();
+      homeSw.setValue(CL.isHomeWindow());
+      homeSw.el.disabled = !on;
+      editBtn.disabled = !on;
+      const all = CL.lists();
+      const active = CL.activeList();
+      summary.textContent = !all.length ? "No checklists."
+        : `${all.length} ${all.length === 1 ? "checklist" : "checklists"}` +
+          (active ? `. On Home: ${active.name}.` : ".");
+    }
+
+    const sw = Corvus.ui.toggle({
+      id: "settingsChecklist",
+      value: CL.isEnabled(),
+      ariaLabel: "Preflight checklist",
+      onChange: (next) => {
+        CL.setEnabled(next);
+        sync();
+        return CL.persist({ enabled: next }).catch((error) => {
+          CL.setEnabled(!next);
+          sync();
+          throw error;
+        });
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Preflight checklist",
+      control: sw.el,
+      className: "field-switch",
+      hint: "A window on the Home map with your own checklist, ticked off " +
+            "item by item before each flight. Write as many lists as you " +
+            "like, in sections, and pick one in the window. Arming with items " +
+            "still open shows a warning and nothing more: the aircraft is " +
+            "never held back. Off by default.",
+    }));
+    card.appendChild(Corvus.ui.field({
+      label: "Show on the Home map",
+      control: homeSw.el,
+      className: "field-switch",
+      hint: "Drag the window by its bar and double-click the bar to send it " +
+            "back to its corner. Its × turns this off.",
+    }));
+    const row = document.createElement("div");
+    row.className = "checklist-settings-row";
+    row.append(summary, editBtn);
+    card.appendChild(row);
+
+    sync();
+    // The Home window's × and its list picker change this card's state too;
+    // the listener goes when the card leaves the page.
+    const unsub = CL.onChange(() => {
+      if (!card.isConnected) { unsub(); return; }
+      sync();
+    });
     return card;
   }
 
@@ -844,10 +944,108 @@ Corvus.sidenav = (function () {
       className: "field-switch",
       hint: "Off, the bar keeps its full size and only narrows when the row "
         + "will not fit, the same rule the Mission planner's tools are "
-        + "under. On, ARM, TAKEOFF, LAND, RTL and PLAN start narrowing as "
+        + "under. On, ARM, TAKEOFF, LAND, RETURN and PLAN start narrowing as "
         + "soon as the row would cover more than half the map: the buttons "
         + "drop to the width of their own word first, then to icons alone. "
         + "Trade the words for map only if you want to.",
+    }));
+    return card;
+  }
+
+  // The flown track on the map. The flight in progress is always the strong
+  // red; the two switches decide how the flights before it look and whether
+  // they outlive a restart. Nothing here deletes a track by itself unless the
+  // operator turns that on: the button on the map is the one way to clear it.
+  // Same contract as the switches around it: live at once, persist awaited, a
+  // refused POST puts the map back.
+  function trackCard(cfg) {
+    const card = Corvus.ui.card({ title: "Flown track" });
+    const ui = cfg.ui || {};
+    const options = {
+      earlierFlights: ui.track_earlier_flights !== false,
+      clearOnRestart: ui.track_clear_on_restart === true,
+    };
+    const apply = (patch) => Corvus.map.setTrackOptions(Object.assign(options, patch));
+
+    const earlier = Corvus.ui.toggle({
+      id: "settingsTrackEarlierFlights",
+      value: options.earlierFlights,
+      ariaLabel: "Earlier flights in their own colour",
+      onChange: (next) => {
+        apply({ earlierFlights: next });
+        return postConfig({ ui: { track_earlier_flights: next } }, { strict: true })
+          .catch((error) => {
+            apply({ earlierFlights: !next });
+            throw error;
+          });
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Earlier flights in their own colour",
+      control: earlier.el,
+      className: "field-switch",
+      hint: "On (the default): when the aircraft lands and takes off again, " +
+            "the track of the flights before turns a lighter red, so the " +
+            "flight in progress stands out. Off: every flight is drawn in " +
+            "the same red.",
+    }));
+
+    const clear = Corvus.ui.toggle({
+      id: "settingsTrackClearOnRestart",
+      value: options.clearOnRestart,
+      ariaLabel: "Clear the track on restart",
+      onChange: (next) => {
+        apply({ clearOnRestart: next });
+        return postConfig({ ui: { track_clear_on_restart: next } }, { strict: true })
+          .catch((error) => {
+            apply({ clearOnRestart: !next });
+            throw error;
+          });
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Clear the track on restart",
+      control: clear.el,
+      className: "field-switch",
+      hint: "Off (the default): the track stays on the map when Corvus or " +
+            "the autopilot restarts, until you clear it with the button on " +
+            "the map. On: it is cleared every time Corvus starts and every " +
+            "time the autopilot reboots.",
+    }));
+    return card;
+  }
+
+  // Which way the flight compass is locked. North up is the default because it
+  // reads the same way as the map under it; nose up turns the rose instead, so
+  // the top of the dial is always straight ahead of the aircraft. Same
+  // contract as the switches around it: live at once, persist awaited, a
+  // refused POST puts the dial back.
+  function compassCard(cfg) {
+    const card = Corvus.ui.card({ title: "Compass" });
+    const on = !!((cfg.ui || {}).compass_nose_up);
+    Corvus.instruments.setNoseUp(on);
+
+    const sw = Corvus.ui.toggle({
+      id: "settingsCompassNoseUp",
+      value: on,
+      ariaLabel: "Lock compass nose up",
+      onChange: (next) => {
+        Corvus.instruments.setNoseUp(next);
+        return postConfig({ ui: { compass_nose_up: next } }, { strict: true })
+          .catch((error) => {
+            Corvus.instruments.setNoseUp(!next);
+            throw error;
+          });
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Lock compass nose up",
+      control: sw.el,
+      className: "field-switch",
+      hint: "On, the compass rose turns and the needle always points to the " +
+            "top, so the top of the dial is where the aircraft is heading. " +
+            "Off (the default), north stays up and the needle turns inside " +
+            "the rose, the same way the map is drawn.",
     }));
     return card;
   }
@@ -1593,7 +1791,15 @@ Corvus.sidenav = (function () {
       size: "md",
       body,
       actions: [closeBtn, saveBtn],
-      onClose: () => { if (changed && typeof onSaved === "function") onSaved(); },
+      onClose: () => {
+        if (!changed) return;
+        if (typeof onSaved === "function") onSaved();
+        // The map picks its layers and its elevation model from the same
+        // catalogue: a key just set can change both.
+        if (Corvus.map && typeof Corvus.map.refreshSources === "function") {
+          Corvus.map.refreshSources();
+        }
+      },
     });
     dialog.open();
 
@@ -2176,7 +2382,10 @@ Corvus.sidenav = (function () {
     const sw = Corvus.ui.toggle({
       value: true,
       ariaLabel: "Check for updates",
-      onChange: (on) => postConfig({ updates: { check: on } }, { strict: true }),
+      onChange: (on) => {
+        if (!on) Corvus.update.note(null);
+        return postConfig({ updates: { check: on } }, { strict: true });
+      },
     });
     // The paragraph is a privacy answer, not an instruction — it is read once
     // and then only when someone wonders what the switch reaches out to. Under
@@ -2241,6 +2450,7 @@ Corvus.sidenav = (function () {
     Corvus.telemetry.requestJson("/api/update").then((data) => {
       if (gen !== undefined && gen !== navGeneration) return;
       paint(data);
+      Corvus.update.note(data);
       if (data.enabled !== false && data.update_available) {
         status.show(`Version ${data.latest} is available.`, "ok");
       }
@@ -2293,6 +2503,7 @@ Corvus.sidenav = (function () {
     mapView = document.getElementById("mapView");
     pageView = document.getElementById("pageView");
     renderLeftNav();
+    if (Corvus.update) Corvus.update.onChange(paintUpdateBadge);
   }
 
   return {

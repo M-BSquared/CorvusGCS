@@ -419,6 +419,66 @@ async function testInitDefersTheCheck() {
   Corvus.update.close();
 }
 
+async function testMarkerFollowsTheStatus() {
+  clearBody();
+  const fake = makeFakeTelemetry(CURRENT);
+  Corvus.update.note(null);
+  const seen = [];
+  const off = Corvus.update.onChange((v) => seen.push(v));
+
+  await Corvus.update.check();
+  assert.equal(Corvus.update.available(), null, "no marker while current");
+
+  fake.setResponse(NEWER);
+  await Corvus.update.check();
+  await flush();
+  assert.equal(Corvus.update.available(), "2000.10.02", "a newer release sets the marker");
+  Corvus.update.close();
+
+  // The marker is quiet, so an armed vehicle does not hold it back.
+  fake.setState({ armed: true });
+  Corvus.update.note(null);
+  await Corvus.update.check();
+  assert.equal(Corvus.update.available(), "2000.10.02", "the marker shows while armed");
+  fake.setState({ armed: false });
+  fake.emitState({ armed: false });
+  Corvus.update.close();
+
+  fake.setResponse(Object.assign({}, NEWER, { skipped: "2000.10.02" }));
+  await Corvus.update.check();
+  assert.equal(Corvus.update.available(), null, "a skipped version carries no marker");
+
+  fake.setResponse(Object.assign({}, NEWER, { enabled: false }));
+  await Corvus.update.check();
+  assert.equal(Corvus.update.available(), null, "a switched off check carries no marker");
+
+  // Offline keeps whatever the last good answer said.
+  fake.setResponse(NEWER);
+  await Corvus.update.check();
+  Corvus.update.close();
+  fake.setResponse(new Error("Network request failed"));
+  await Corvus.update.check();
+  assert.equal(Corvus.update.available(), "2000.10.02", "a failed check leaves the marker alone");
+
+  off();
+  assert.deepEqual(seen.filter((v, i) => i === 0 || v !== seen[i - 1]), seen,
+    "listeners hear changes only, never repeats");
+  assert.deepEqual(seen[0], null, "onChange reports the current value straight away");
+  Corvus.update.note(null);
+}
+
+async function testSkipButtonClearsTheMarker() {
+  clearBody();
+  makeFakeTelemetry(NEWER);
+
+  await Corvus.update.check();
+  await flush();
+  assert.equal(Corvus.update.available(), "2000.10.02");
+  fire(buttonByLabel(openDialog(), "Skip this version"), "click");
+  await flush();
+  assert.equal(Corvus.update.available(), null, "skipping clears the marker at once");
+}
+
 // ---------------------------------------------------------------------------
 
 async function main() {
@@ -434,6 +494,8 @@ async function main() {
     testOpenReleasePageGoesThroughTheBackend,
     testNoBrowserFallsBackToCopy,
     testInitDefersTheCheck,
+    testMarkerFollowsTheStatus,
+    testSkipButtonClearsTheMarker,
   ];
   for (const t of tests) {
     await t();

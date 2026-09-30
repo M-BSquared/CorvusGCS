@@ -414,19 +414,14 @@ function testModesIdempotency() {
 // ---------------------------------------------------------------------------
 function testRefreshModesOnConnectTransition() {
   refreshModesCalls = 0;
-  // link.js subscribed to Corvus.telemetry during its IIFE? No — init() wires
-  // the subscriber. Instead, exercise the exposed transition logic by calling
-  // the subscriber path directly through telemetry's SSE, which is what the
-  // real UI uses. We emulate init's subscribe by re-implementing the
-  // transition guard: this documents the contract link.js relies on.
-
-  // Simulate the transition logic link.js uses (lastStatus !== "connected").
-  let lastStatus = "";
-  function emit(linkStatus) {
-    if (linkStatus === "connected" && lastStatus !== "connected") {
-      Corvus.app.refreshModes();
-    }
-    lastStatus = linkStatus;
+  // init() wires the telemetry subscriber, and init() is never called here.
+  // The decision it makes is Corvus.link.modesNeedRefresh, so that is what is
+  // driven, with the same bookkeeping updateFromState keeps.
+  let last = { status: "", firmware: "" };
+  function emit(linkStatus, firmware = "") {
+    const next = { status: linkStatus, firmware };
+    if (Corvus.link.modesNeedRefresh(last, next)) Corvus.app.refreshModes();
+    last = next;
   }
 
   emit("disconnected"); assert.equal(refreshModesCalls, 0, "no refresh before connect");
@@ -437,6 +432,27 @@ function testRefreshModesOnConnectTransition() {
   emit("reconnecting"); assert.equal(refreshModesCalls, 1);
   emit("connected");    assert.equal(refreshModesCalls, 2, "refresh again after a real disconnect");
   emit("connected");    assert.equal(refreshModesCalls, 2, "still idempotent within one connect");
+}
+
+// ---------------------------------------------------------------------------
+// LINK tab: the firmware version arriving refreshes the modes once more.
+//
+// PX4 modes such as Altitude Cruise exist only from a given release on, and
+// the backend offers them only once AUTOPILOT_VERSION has named the release,
+// which is a moment after the link comes up. Without a second fetch the
+// selector kept the pre-version list until the next reconnect.
+// ---------------------------------------------------------------------------
+function testRefreshModesWhenTheFirmwareVersionArrives() {
+  const need = Corvus.link.modesNeedRefresh;
+  const connected = { status: "connected", firmware: "" };
+  assert.equal(need(connected, { status: "connected", firmware: "v1.17.0" }), true,
+    "version reported after the link came up");
+  assert.equal(need({ status: "connected", firmware: "v1.17.0" },
+    { status: "connected", firmware: "v1.17.0" }), false, "same version, nothing to do");
+  assert.equal(need({ status: "connected", firmware: "v1.16.2" },
+    { status: "connected", firmware: "v1.18.0" }), true, "vehicle swapped behind a router");
+  assert.equal(need({ status: "reconnecting", firmware: "" },
+    { status: "reconnecting", firmware: "v1.17.0" }), false, "not while the link is down");
 }
 
 // ---------------------------------------------------------------------------
@@ -689,6 +705,7 @@ function run() {
   testSuggestionText();
   testModesIdempotency();
   testRefreshModesOnConnectTransition();
+  testRefreshModesWhenTheFirmwareVersionArrives();
   testHeadingShortestPath();
   testApproachNoOvershoot();
   testNormAngle();

@@ -300,10 +300,12 @@ Corvus.topbar = (function () {
     };
   }
 
+  /* mode_label is the word the dialect gives the mode ("POSITION" for PX4's
+     POSCTL); mode is the name a mode change sends. */
   function modeLabel(state) {
     if (!state.connected) return "—";
     if (state.armed && !state.mode) return isAirborne(state) ? "FLYING" : "ARMED";
-    return state.mode || "STANDBY";
+    return state.mode_label || state.mode || "STANDBY";
   }
 
   function notificationKey(notification) {

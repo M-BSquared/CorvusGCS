@@ -7,11 +7,12 @@ laptop lid is closed.
 
 Plug and play, and what that costs
 ----------------------------------
-The default is that this runs. An operator who plugs a base station into the
-ground station and never opens the RTK page gets an RTK fix, because that is
-what every other station does and an option nobody turns on is an option nobody
-has. The price of a default that *acts* is that it must be impossible for it to
-act on the wrong thing, so the search is narrow in three separate ways:
+This runs only once the operator has switched RTK on; a station that has never
+been configured opens no serial port looking for a base. Once on, it needs
+nothing else: a base plugged into the ground station is found, surveyed and
+streaming without another setting being touched. The price of a search that
+*acts* is that it must be impossible for it to act on the wrong thing, so it is
+narrow in three separate ways:
 
 1. Only a port whose USB descriptor identifies it as a GNSS receiver is
    considered (:func:`corvus.mavlink_bridge.is_rtk_device`). A Pixhawk is never

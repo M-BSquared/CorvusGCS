@@ -29,6 +29,8 @@ window.Corvus = window.Corvus || {};
  *     again into the SAME shell, because a key on a shelf pressed twice means
  *     "run it again", not "throw this session away". The window opens on the
  *     ARROW beside the button, never on the button: a launch is a launch.
+ *     While the session is up, the row's pencil is a stop button: Ctrl-C,
+ *     then the session closed, which ends the program and the connection.
  *
  *   BACKGROUND  One shot, nothing to watch. Over SSH it is `POST /api/ssh/run`
  *     with nohup, so the program outlives Corvus on the companion computer.
@@ -83,7 +85,8 @@ Corvus.pluginSchwalby = (function () {
   // Restart: the key the operator would press to stop the program, and how
   // long the shell gets to take the prompt back before the line is typed
   // again. Typed too soon, the line lands on the stdin of the program still
-  // shutting down instead of on the prompt.
+  // shutting down instead of on the prompt. Stop waits as long before it
+  // hangs up, so the program can finish what Ctrl-C asked of it.
   const CTRL_C = "\x03";
   const RESTART_GRACE_MS = 1000;
 
@@ -949,8 +952,10 @@ Corvus.pluginSchwalby = (function () {
       return api.requestJson("/api/ssh/sessions").then((data) => {
         if (cancelled) return;
         const next = {};
+        // A session being stopped is still up for the second Ctrl-C gets,
+        // and reading it as running would put the row back as it goes.
         ((data && data.sessions) || []).forEach((sess) => {
-          if (sess && sess.connected) next[sess.name] = true;
+          if (sess && sess.connected && !closing[sess.name]) next[sess.name] = true;
         });
         const changed = buttons.some((b) => !!live[sessionName(b)] !== !!next[sessionName(b)]);
         live = next;
@@ -1033,11 +1038,13 @@ Corvus.pluginSchwalby = (function () {
     }
 
     /** One row: the launch button, where it runs, why it last failed, the
-     *  arrow into its terminal, and the way into its settings. */
+     *  arrow into its terminal, and the way into its settings, or the stop
+     *  button while its session is up. */
     function shelfRow(entry) {
       const row = document.createElement("div");
       row.className = "schw-row";
       const running = !!live[sessionName(entry)];
+      const stopping = !!closing[sessionName(entry)];
       if (running) row.classList.add("schw-running");
       const failure = errors[entry.id];
       if (failure) row.classList.add("schw-failed");
@@ -1105,11 +1112,27 @@ Corvus.pluginSchwalby = (function () {
         tools.appendChild(openBtn);
       }
 
-      tools.appendChild(ui.iconButton("pencil", {
-        ariaLabel: `Edit ${entry.label}`,
-        title: "Edit",
-        onClick: () => renderEditor(Object.assign({}, entry), false),
-      }));
+      // While the session is up the pencil is a stop button: editing a button
+      // changes nothing about the program it is running, and ending that
+      // program is what the operator wants from the row then.
+      if (running || stopping) {
+        const stopBtn = ui.iconButton("square", {
+          className: "icon-btn schw-stop",
+          ariaLabel: `Stop ${entry.label}`,
+          title: stopping ? "Stopping"
+            : isLocal(entry) ? "Stop the program with Ctrl-C and close its terminal"
+              : "Stop the program with Ctrl-C and close its terminal connection",
+          onClick: () => stop(entry),
+        });
+        if (stopping) ui.setBusy(stopBtn, true);
+        tools.appendChild(stopBtn);
+      } else {
+        tools.appendChild(ui.iconButton("pencil", {
+          ariaLabel: `Edit ${entry.label}`,
+          title: "Edit",
+          onClick: () => renderEditor(Object.assign({}, entry), false),
+        }));
+      }
 
       row.appendChild(launchBtn);
       row.appendChild(tools);
@@ -1131,8 +1154,9 @@ Corvus.pluginSchwalby = (function () {
                   "this computer, and pressing the button again runs it again " +
                   "in that same terminal. The arrow beside the button opens the " +
                   "window to watch it in. Read its output there, and stop it " +
-                  "with Ctrl-C or the window's disconnect button. Off: the " +
-                  "program starts in the background, with nothing to watch. " +
+                  "with Ctrl-C, the window's disconnect button, or the stop " +
+                  "button that takes the place of the pencil while it runs. " +
+                  "Off: the program starts in the background, with nothing to watch. " +
                   "Either way it is stopped when Corvus closes.",
       },
       ssh: {
@@ -1145,8 +1169,9 @@ Corvus.pluginSchwalby = (function () {
         terminal: "On: the program runs in an SSH session of this button's own, " +
                   "and pressing the button again runs it again in that same " +
                   "terminal. The arrow beside the button opens the window to " +
-                  "watch it in. Read its output there, and stop it with Ctrl-C " +
-                  "or the window's disconnect button. The session lasts as long " +
+                  "watch it in. Read its output there, and stop it with Ctrl-C, " +
+                  "the window's disconnect button, or the stop button that " +
+                  "takes the place of the pencil while it runs. The session lasts as long " +
                   "as Corvus does. Off: the program is started with nohup and " +
                   "detached, so it survives Corvus closing, but there is nothing " +
                   "to watch and nothing to stop from here.",
@@ -1700,14 +1725,53 @@ Corvus.pluginSchwalby = (function () {
       });
     }
 
-    /** Close a button's session, remembering it until the backend has. */
-    function closeSession(entry) {
+    /**
+     * Close a button's session, remembering it until the backend has. With
+     * `first`, the hang-up waits for that to settle.
+     *
+     * @param {Object} entry
+     * @param {Promise} [first] what has to happen before the hang-up
+     * @returns {Promise<boolean>} whether the backend was reached
+     */
+    function closeSession(entry, first) {
       const session = sessionName(entry);
       delete live[session];
-      const done = api.postJson("/api/ssh/disconnect", { name: session })
-        .catch(() => {})
-        .then(() => { if (closing[session] === done) delete closing[session]; });
+      const disconnect = () => api.postJson("/api/ssh/disconnect", { name: session });
+      const done = (first ? first.then(disconnect, disconnect) : disconnect())
+        .then(() => true, () => false)
+        .then((reached) => {
+          if (closing[session] === done) delete closing[session];
+          // The row showed it stopping; now it is not.
+          if (!cancelled && editing === null) renderShelf();
+          return reached;
+        });
       closing[session] = done;
+      return done;
+    }
+
+    /**
+     * The stop button a running row shows in place of its pencil: Ctrl-C
+     * first, so the program can shut down as it would under the operator's
+     * own hand, then the session closed, which hangs up whatever still runs
+     * in that shell and ends the connection.
+     */
+    function stop(entry) {
+      const session = sessionName(entry);
+      if (closing[session]) return closing[session];
+      status.hide();
+      clearError(entry);
+      const done = closeSession(entry, interrupt(session));
+      renderShelf();
+      return done.then((reached) => {
+        if (cancelled) return false;
+        if (!reached) {
+          failed(entry, "Could not reach the backend to stop it");
+          return false;
+        }
+        status.show(`${entry.label} stopped`, "ok");
+        api.console(consoleLine(entry, `stopped ${entry.label}`), "info");
+        return true;
+      });
     }
 
     /**

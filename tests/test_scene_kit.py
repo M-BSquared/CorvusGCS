@@ -178,6 +178,42 @@ def test_mode_encoding_round_trips() -> None:
     assert vehicle._mode_name(sim._custom_mode()) == "POSCTL"
 
 
+def test_every_mode_corvus_sends_is_flown_and_reported_back() -> None:
+    """Corvus asks for Position Slow as (81, 3, 2) and Altitude Cruise as
+    (81, 11, 0). A vehicle that reads only the AUTO sub mode lands both in the
+    wrong mode, and the screenshot shows a mode change that never happened."""
+    from corvus import autopilot
+
+    px4 = autopilot.dialect_for_stack(autopilot.STACK_PX4)
+    sim = vehicle.SimVehicle()
+    for name, (base, main, sub) in autopilot.PX4_MODE_VALUES.items():
+        sim.mode = vehicle._mode_from_triple(main, sub)
+        assert sim.mode == name
+        assert px4.decode_mode(sim._custom_mode(), base, 2) == name
+
+
+def test_every_mode_the_vehicle_reports_decodes_to_its_own_name() -> None:
+    """The simulated vehicle keeps its own tables on purpose, so they are held
+    to the dialect's here rather than shared with it."""
+    from corvus import autopilot
+
+    px4 = autopilot.dialect_for_stack(autopilot.STACK_PX4)
+    sim = vehicle.SimVehicle()
+    names = ([m for m in vehicle.MAIN_MODES if m != "AUTO"]
+             + list(vehicle.POSCTL_SUBMODES) + list(vehicle.AUTO_SUBMODES))
+    for name in names:
+        sim.mode = name
+        assert px4.decode_mode(sim._custom_mode(), 81, 2) == name
+        assert vehicle._mode_name(sim._custom_mode()) == name
+
+
+def test_an_orbit_mode_change_lands_in_position() -> None:
+    """PX4 enters Orbit through DO_ORBIT only; a mode change asking for POSCTL
+    sub mode 1 flies plain POSCTL."""
+    assert vehicle._mode_from_triple(3, 1) == "POSCTL"
+    assert vehicle._requested_mode((3 << 16) | (1 << 24)) == "POSCTL"
+
+
 def test_rc_pulses_are_in_range_and_follow_the_sticks() -> None:
     rc = vehicle.RcState(roll=1.0, throttle=0.0, jitter_us=0.0)
     pulses = rc.pulses(16)

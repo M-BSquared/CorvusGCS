@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.64-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.09.64" />
+  <img src="https://img.shields.io/badge/Version-2026.09.65-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.09.65" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -190,14 +190,14 @@ Everything here is **built and working today**.
 | | What you get | |
 |---|---|:--:|
 | ⚡ **Ready fast** | On connect Corvus loads only flight telemetry. Parameters are fetched when *you* ask for them, so you are flying in seconds, not minutes | ✅ |
-| 🛩️ **Fly** | Live map, floating flight HUD, arm / takeoff / land / RTL, flight-mode selection, on-screen joystick and arrow-key control with adjustable key strength | ✅ |
+| 🛩️ **Fly** | Live map, floating flight HUD, arm / takeoff / land / return, flight-mode selection, on-screen joystick and arrow-key control with adjustable key strength | ✅ |
 | 🗺️ **Navigate** | 6 map services with 20 layers (four that need nothing, two that take your own API key), plus vehicle heading, home point, the flown track, and click-the-map to fly there or move home | ✅ |
 | 🧭 **Plan a mission** | An optional planning screen: draw a start point, a takeoff, waypoints, orbits and a landing on their own map, then read the whole flight as an altitude profile against the real terrain under it, and drag any point's height straight on that chart. Save missions to disk, upload to the aircraft, and fly only when you press the second button | ✅ |
 | 🌍 **See in 3D** | A spinnable globe when you zoom out, real terrain relief and extruded OpenStreetMap buildings when you zoom in, and the aircraft drawn at the altitude it is actually flying. Or switch terrain and buildings off and keep just the camera tilt, for a slow link or a low battery | ✅ |
 | 📴 **Work offline** | Nothing loads from the internet. Download named map areas in advance and the whole app keeps working with no connection | ✅ |
 | 📡 **Connect** | Connects on its own to whatever is plugged in (flight controller on USB first, then telemetry radio, then the simulator port), plus serial, UDP and TCP by hand, a live port picker, saved recent connections, link-quality display and automatic reconnect | ✅ |
 | 🎥 **Watch the camera** | Add the camera on the aircraft by its RTSP address (or a udp://, srt:// or http:// stream), or by its WebRTC (WHEP) address on a media server such as MediaMTX, and it opens in a floating window over the map, the same kind of window the SSH Launcher's terminals use: drag it, size it, maximize it, keep several side by side, and put it on another screen: each is a window of its own that looks exactly like the frame inside the app (or, if you prefer, starts inside the app and goes out when you drag it past the edge). A button on the map opens them: one camera directly, several from a list. Cameras reconnect by themselves, and a frozen picture is greyed out rather than passed off as live. RTSP is decoded with ffmpeg, which has to be installed on the computer | ✅ |
-| 🛰️ **RTK GPS** | Plug a base station into this computer and Corvus finds it, surveys it in, and streams RTCM 3 corrections to the aircraft. No port to pick, no protocol to know. An NTRIP caster works the same way, over the network instead of a second receiver | ✅ |
+| 🛰️ **RTK GPS** | Switch RTK on, plug a base station into this computer and Corvus finds it, surveys it in, and streams RTCM 3 corrections to the aircraft. No port to pick, no protocol to know. An NTRIP caster works the same way, over the network instead of a second receiver | ✅ |
 | 🔧 **Set up** | Airframe drawn to scale: click a motor to wire, position or spin-test it; ESC protocol; parameter editor with each value's default and import / export in QGroundControl and Mission Planner formats; guided sensor calibration, ESC calibration, PID tuning by hand or by in-flight autotune, and firmware flashing for both stacks, with every build target of a release laid out as a searchable list grouped by vendor, your own board detected and put first, and the developer builds folded away until you ask for them | ✅ |
 | 🛡️ **Set limits** | Maximum distance and height, the return-to-launch profile, and a failsafe action for every loss the autopilot can detect, plus a distance sensor or optical-flow camera brought up by one switch, driver and estimator together | ✅ |
 | 📊 **Review flights** | Download the vehicle's logs and record the live stream, then read either on your own machine: Flight Review for a ULog, Telemetry Review for the recording that exists even when the ULog does not, including the radio link, which an onboard log cannot see | ✅ |
@@ -781,35 +781,49 @@ against the right edge travels in with it rather than disappearing behind it.
 
 ### 3D and the globe
 
-The cube button on the map's control rail turns 3D on and off. Rest the pointer
-on it (or long-press it on a touch screen) and a small panel appears with the
-one thing the button cannot say: **which** 3D it gives you:
+The cube button on the map's control rail turns 3D on and off. 3D always shows
+the ground with **its real shape** wherever elevation data is available: hills
+are hills and a valley is a valley, drawn at true scale rather than
+exaggerated, with light shading so slopes read on any map style. What you are
+judging is clearance, and a hill drawn half again too tall is a hill you
+misjudge.
 
-- **Terrain & buildings on** is the full picture below: elevation relief,
-  extruded buildings and the globe. It fetches elevation tiles and building
-  footprints.
-- **Off** is the camera tilt alone, over flat ground, and nothing downloaded
-  that a flat map does not already download. This is the one to pick on a
-  laptop that is low on battery, or on a link you would rather keep for
-  telemetry, and it is how the switch starts: the expensive picture is a
-  choice you make, not one you discover after the download.
+Rest the pointer on the button (or long-press it on a touch screen) and a small
+panel appears with a switch, **Buildings**, and a list, **Elevation**. On,
+**buildings** are extruded
+from OpenStreetMap footprints at their tagged heights, so the things actually
+in your way are in your way on screen too. They are fetched once per area and
+then kept. Off, 3D shows the terrain alone and asks for no building data, which
+is the one to pick on a link you would rather keep for telemetry.
 
-The switch chooses; it never turns 3D on by itself, so you can set it before
-you press the button. Both the switch and whether 3D was on come back the next
-time you open Corvus.
+The panel chooses; it never turns 3D on by itself, so you can set it before
+you press the button. The switch, the elevation model and whether 3D was on all
+come back the next time you open Corvus.
 
-With terrain and buildings on, zoomed out you get **the globe**: the Earth as
-a sphere, with an atmosphere around its rim, that you can spin. Zoom in and it
-hands over to the close-up view with no mode to switch and nothing to press:
+Zoomed out you get **the globe**: the Earth as a sphere, with an atmosphere
+around its rim, that you can spin, with the mountains still on it. Zoom in and
+it hands over to the close-up view with no mode to switch and nothing to press:
 from the whole planet down to the far end of the runway is one continuous
 movement.
 
-Close up, the ground has **its real shape**. Terrain comes from an elevation
-model, so hills are hills and a valley is a valley, drawn at true scale rather
-than exaggerated: what you are judging is clearance, and a hill drawn half again
-too tall is a hill you misjudge. **Buildings** are extruded from OpenStreetMap
-footprints at their tagged heights, so the things actually in your way are in
-your way on screen too.
+**Which elevation model** is the Elevation list in the panel:
+
+- **Automatic**, the default, uses the map service's own model when it has one
+  and its key is set (MapTiler, Mapbox), and **Copernicus GLO-30** otherwise.
+  The row says which one that is right now.
+- **Copernicus GLO-30** is the European 30 m model, noticeably sharper than
+  SRTM on ridges and in narrow valleys, with national survey models (lidar, 1
+  to 10 m) where a country publishes one, for example Austria, Switzerland and
+  parts of Germany. It is a surface model: forest and large buildings are part
+  of the heights, which is what an aircraft has to clear. No key needed; served
+  by the Mapterhorn project.
+- **SRTM (AWS Terrain Tiles)** is the older free model.
+- **MapTiler Terrain** and **Mapbox Terrain** appear once that service's key is
+  set.
+
+Whatever you pick, a tile that cannot be had (offline, or with a key refused)
+is filled in from the free SRTM model, so a better model never means a worse
+picture. Google publishes no elevation tiles.
 
 Your aircraft flies in that scene rather than sliding along the ground. It is
 drawn at the altitude it is really at, with a dashed line down to a shadow on
@@ -818,14 +832,29 @@ high am I over that ridge" is something you can see instead of work out from two
 numbers.
 
 Elevation and building data are cached exactly like map tiles, and **Download
-offline map** includes the elevation for the area by default. 3D therefore keeps
-its relief in the field with no connection. Without a connection over ground you
-never downloaded, the terrain flattens and the buildings stay away; everything
-else on the map keeps working.
+offline map** includes the elevation (the free model plus the one 3D is using)
+and the buildings for the area by default, the elevation from the whole world
+view down to the deepest zoom you download. The buildings are fetched in the
+background after the tiles, nearest the centre first, so leave Corvus online
+for a few more minutes after a large download. 3D therefore keeps its relief
+in the field with no connection, also when you zoom in further than you
+downloaded: finer elevation is then worked out from the coarser tiles you have,
+and where coarse and fine ground meet it is joined into a slope instead of a
+step. Beyond the downloaded area the terrain is drawn from the coarse tiles
+without imagery, and the buildings stay away; everything else on the map keeps
+working.
+
+Buildings come from OpenStreetMap through the Overpass service, a block of
+about 1.5 km at a time. Online, a block can take a few seconds to arrive and
+the map keeps asking until it has, so buildings fill in over a moment rather
+than all at once. Where a building is missing although you are online, it is
+usually missing from OpenStreetMap itself, and a building without a height
+tag is drawn two storeys high.
 
 A note on what this is not: the photorealistic 3D buildings in Google Earth are
-a licensed product that needs a Google API key and a different renderer. Corvus
-draws real footprints at real heights, not photographed models.
+a licensed product that needs a Google API key and a different renderer, and
+Google does not allow them to be stored for offline use. Corvus draws real
+footprints at real heights, not photographed models.
 
 ### Offline maps
 
@@ -1236,9 +1265,10 @@ aircraft is no longer flying what you are looking at.
   few seconds a session takes (Corvus stops the link itself and reconnects),
   and a radio on any other port does not touch the link at all. Refused while
   armed.
-- **RTK GPS**: centimetre positioning, set up by plugging it in. An RTK base
-  station connected to this computer is found on its own, surveyed, and put on
-  the link without the page being opened: Corvus recognises a GNSS receiver by
+- **RTK GPS**: centimetre positioning, set up by plugging it in. RTK is off
+  until switched on in the RTK page, so a fresh install opens no serial port
+  looking for a base. Once on, an RTK base station connected to this computer
+  is found on its own, surveyed, and put on the link: Corvus recognises a GNSS receiver by
   its USB descriptor, configures it as a base over UBX, waits out the
   survey-in, then forwards its RTCM 3 corrections to the aircraft as
   `GPS_RTCM_DATA`. The flight controller's own port is never a candidate, so
@@ -1536,7 +1566,7 @@ instantly and is saved.
 - **Pages**: one switch, **off by default**, that adds **MISSION** under HOME
   in the left rail. See [Mission planner](#mission-planner).
 - **Flight bar**: one switch, **off by default**. Off, the **ARM / TAKEOFF /
-  LAND / RTL / PLAN** bar keeps its full size and narrows only when the row
+  LAND / RETURN / PLAN** bar keeps its full size and narrows only when the row
   genuinely will not fit, the same rule, at the same size, as the Mission
   planner's tool bar, which reaches that point sooner only because its sidebar
   takes half the window. On, the bar starts stepping down as soon as the row
@@ -1608,7 +1638,9 @@ Three ship with Corvus:
   (or the window's disconnect button) is how you stop it; closing the window
   with × leaves the program running, and the arrow brings the window back with
   its scrollback intact. A green dot marks the buttons that have something
-  running. Turn *Run in a terminal* off for a program that has to outlive
+  running, and on those rows the pencil becomes a red **stop** button: it
+  sends Ctrl-C, gives the program a second to finish, then closes the session,
+  which ends the program and the connection. Stop it first to edit it. Turn *Run in a terminal* off for a program that has to outlive
   Corvus itself: it is then started with `nohup` and detached, with nothing to
   watch and nothing to stop from here.
 
@@ -1629,7 +1661,8 @@ Three ship with Corvus:
 
   - **Local** runs the command on this computer, as you, in your own login
     shell. In a terminal it gets a window of its own like any other terminal
-    (arrow, pin, disconnect, Ctrl-C); in the background it starts without one.
+    (arrow, pin, disconnect, Ctrl-C, and the stop button on its row, as in the
+    SSH Launcher); in the background it starts without one.
     Either way it is stopped when Corvus closes, so nothing is left running
     after you shut down. Only this computer can start anything locally, even
     when Corvus is reachable from the network.

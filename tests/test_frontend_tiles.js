@@ -218,6 +218,56 @@ test("cancel stops the elevation job as well as the imagery", async () => {
   assert.equal(followed[followed.length - 1], null, "stopped following");
 });
 
+test("the second elevation job is followed, reported and cancelled too", async () => {
+  await openDialog();
+  await startDownload({ job_id: "img", terrain_job_id: "dem", terrain_source_job_id: "cop" });
+  emit({ job_id: "img", state: "done", done: 15, total: 15, failed: 0 });
+  await settle();
+  emit({ job_id: "dem", state: "done", done: 6, total: 6, failed: 0 });
+  await settle();
+  assert.equal(followed[followed.length - 1], "cop", "the chosen model is followed next");
+  assert.ok(built.Download.classList.contains("is-busy"), "not finished while it downloads");
+
+  built.Cancel.click();
+  await settle();
+  const cancelled = requests.filter((r) => r.url === "/api/tiles/cancel").map((r) => r.body.id);
+  assert.deepEqual(cancelled.sort(), ["cop", "dem", "img"]);
+
+  emit({ job_id: "cop", state: "done", done: 10, total: 13, failed: 3 });
+  await settle();
+  assert.equal(message.kind, "warn");
+  assert.match(message.text, /3 tiles could not be fetched/);
+});
+
+test("a view with world copies is cut to one world before it is sent", async () => {
+  // Zoomed out, MapLibre reports the view as drawn: east of the date line
+  // here, and past the poles' tile edge. The backend refuses both.
+  await openDialog({ w: 27.7, s: -89, e: 312.3, n: 88, zoom: 1 });
+  await startDownload({ job_id: "img", terrain_job_id: null });
+  let sent = requests.find((r) => r.url === "/api/tiles/download").body.bounds;
+  assert.equal(sent.w, 27.7);
+  assert.equal(sent.e, 180);
+  assert.ok(sent.n < 85.06 && sent.s > -85.06, JSON.stringify(sent));
+  emit({ job_id: "img", state: "done", done: 1, total: 1, failed: 0 });
+  await settle();
+
+  // Panned onto the next world copy: shifted back, not refused.
+  await openDialog({ w: 190, s: 47, e: 200, n: 48, zoom: 8 });
+  await startDownload({ job_id: "img2", terrain_job_id: null });
+  sent = requests.find((r) => r.url === "/api/tiles/download").body.bounds;
+  assert.deepEqual([sent.w, sent.e], [-170, -160]);
+  emit({ job_id: "img2", state: "done", done: 1, total: 1, failed: 0 });
+  await settle();
+
+  // More than one whole world across is the whole world.
+  await openDialog({ w: -300, s: -60, e: 400, n: 60, zoom: 0 });
+  await startDownload({ job_id: "img3", terrain_job_id: null });
+  sent = requests.find((r) => r.url === "/api/tiles/download").body.bounds;
+  assert.deepEqual([sent.w, sent.e], [-180, 180]);
+  emit({ job_id: "img3", state: "done", done: 1, total: 1, failed: 0 });
+  await settle();
+});
+
 test("tiles that could not be fetched are reported, not called complete", async () => {
   await openDialog();
   await startDownload({ job_id: "img", terrain_job_id: "dem" });

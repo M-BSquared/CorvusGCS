@@ -790,14 +790,13 @@ MODES: tuple[str, ...] = ("survey", "fixed")
 def defaults() -> dict[str, Any]:
     """The settings a station with no config file runs with.
 
-    ``enabled`` is true and ``source`` is ``usb``, which together are the
-    whole of "plug and play": a base plugged into a station that has never
-    been configured is found, surveyed and streaming without anybody opening
-    the page. Everything else here is a default that only matters once one of
-    those two has been changed.
+    ``enabled`` is false: a station that has never been configured opens no
+    serial port looking for a base. Switching it on is all it takes, because
+    ``source`` defaults to ``usb`` and a base plugged in is then found,
+    surveyed and streaming without any other setting being touched.
     """
     return {
-        "enabled": True,
+        "enabled": False,
         "source": "usb",
         "device": "",
         "baud": 0,

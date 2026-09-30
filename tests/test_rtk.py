@@ -308,11 +308,11 @@ def test_progress_never_reads_complete_before_the_receiver_says_so():
     assert rtk.survey_progress(nearly, 180, 2.0) == 99
 
 
-def test_the_defaults_are_plug_and_play():
-    """The feature is the default. Changing either of these first two lines
-    turns RTK back into an option nobody switches on."""
+def test_the_defaults_are_off_but_plug_and_play_once_on():
+    """A fresh station opens no serial port for a base. Switching RTK on is
+    the only step: the source is already USB and the mode survey."""
     defaults = rtk.defaults()
-    assert defaults["enabled"] is True
+    assert defaults["enabled"] is False
     assert defaults["source"] == "usb"
     assert defaults["mode"] == "survey"
     # QGroundControl's numbers, kept so the same hardware behaves the same way.
@@ -328,7 +328,7 @@ def test_settings_survive_a_hand_edited_config_file():
         "survey_accuracy": 0, "survey_duration": -1,
         "fixed": {"latitude": 900.0}, "ntrip": {"port": 99999},
     })
-    assert resolved["enabled"] is True          # not a bool -> default
+    assert resolved["enabled"] is False         # not a bool -> default
     assert resolved["source"] == "usb"
     assert resolved["mode"] == "survey"
     assert resolved["survey_accuracy"] >= rtk.SURVEY_ACCURACY_MIN_M

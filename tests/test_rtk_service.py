@@ -228,6 +228,8 @@ def _service(receiver: FakeReceiver | None, bridge: FakeBridge | None = None,
         receiver.closed = False
         return receiver
 
+    # RTK is off by default; these tests are about what it does once on.
+    settings = {"enabled": True, **(settings or {})}
     default_ports = [{
         "device": receiver.device if receiver else "/dev/ttyACM9",
         "description": "u-blox GNSS receiver",
@@ -255,8 +257,35 @@ def _wait_for(predicate, timeout: float = 6.0) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def test_rtk_left_at_its_default_opens_no_port():
+    """A fresh station is off: a receiver plugged in is never touched."""
+    receiver = FakeReceiver()
+    opened: list[tuple[str, int]] = []
+
+    def open_port(device: str, baud: int):
+        opened.append((device, baud))
+        return receiver
+
+    service = RtkService(
+        FakeBridge(), FakeStore(), None,
+        open_port=open_port,
+        list_ports=lambda: [{
+            "device": receiver.device,
+            "description": "u-blox GNSS receiver",
+            "hwid": "USB VID:PID=1546:01A9",
+        }],
+    )
+    service.start()
+    try:
+        time.sleep(0.5)
+        assert service.status()["state"] == "off"
+        assert opened == []
+    finally:
+        service.stop()
+
+
 def test_a_base_plugged_in_is_surveyed_and_streamed_without_being_asked():
-    """The default is the feature: nobody opened the page in this test."""
+    """Once switched on, nothing else is needed: no port, no protocol."""
     receiver = FakeReceiver()
     service, bridge, store, _opened = _service(receiver)
     service.start()

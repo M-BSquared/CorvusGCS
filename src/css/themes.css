@@ -40,6 +40,19 @@
   --radius-btn: 6px;
   --radius-lg: 12px;
 
+  /* --- Status dots ---
+     Every coloured dot in the app draws its halo from these, so a dot in the
+     top bar, the link card and a plugin row all shine the same amount. They
+     are written against currentColor, which a var() resolves where it is
+     used, not here: a dot sets `color` to its state and `background:
+     currentColor`, and the ring and glow follow. --dot-ring alone is for a
+     dot that is off, which has an edge but does not shine. */
+  --dot-size: 7px;
+  --dot-halo:
+    0 0 0 2px color-mix(in srgb, currentColor 20%, transparent),
+    0 0 4px color-mix(in srgb, currentColor 45%, transparent);
+  --dot-ring: 0 0 0 2px color-mix(in srgb, currentColor 20%, transparent);
+
   /* --- The planned route, on the map ---
      One value for every theme, deliberately, and the only colour in this file
      that is not retuned per palette. It lies on photographic imagery and never
@@ -247,6 +260,9 @@
   --healthy-bright: #0B7343;
   --warning: #B07600;
   --warning-dark: #FAEDCC;
+  /* Something waiting for the operator (an update), not a fault: orange so
+     it never reads as the amber warning next to it. */
+  --notice: #CE5E00;
   --critical: #D62B26;
   --critical-dark: #FBDCDB;
   --critical-bright: #B32020;
@@ -266,6 +282,9 @@
      light imagery. */
   --track: #B81E1B;
   --track-rgb: 184 30 27;
+  /* Earlier flights: the same red family, lighter and softer, so the flight
+     in progress keeps the strong red and the ones before it read as history. */
+  --track-past: #D4675F;
 
   --text-1: #12151A;
   --text-2: #4C555F;
@@ -412,6 +431,7 @@
   --healthy-bright: #63E89A;
   --warning: #F5C842;
   --warning-dark: #403716;
+  --notice: #F58A2B;
   --critical: #FF514D;
   --critical-dark: #421D1C;
   --critical-bright: #FF726E;
@@ -426,6 +446,7 @@
   /* Holds up over both bright and dark satellite imagery. */
   --track: #E4322F;
   --track-rgb: 228 50 47;
+  --track-past: #F0958A;
 
   --text-1: #F2F4F7;
   --text-2: #A5ADB8;

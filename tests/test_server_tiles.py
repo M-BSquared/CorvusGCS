@@ -240,6 +240,23 @@ def test_tiles_download_bad_zoom_returns_400(tile_server) -> None:
     assert json.loads(body)["ok"] is False
 
 
+def test_tiles_download_overflowing_zoom_returns_400(tile_server) -> None:
+    """JSON reads 1e400 as inf, and int(inf) raised inside the validator, so
+    the request got a dropped connection instead of an answer."""
+    server, _, _ = tile_server
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=5)
+    conn.request(
+        "POST", "/api/tiles/download",
+        '{"source": "satellite", "bounds": {"w": 0, "s": 0, "e": 1, "n": 1}, '
+        '"minzoom": 0, "maxzoom": 1e400}',
+        {"Content-Type": "application/json"})
+    resp = conn.getresponse()
+    body = resp.read()
+    conn.close()
+    assert resp.status == 400
+    assert json.loads(body)["error"] == "zooms must be in [0, 22]"
+
+
 def test_tiles_download_maxzoom_above_source_cap_returns_400(tile_server) -> None:
     server, _, _ = tile_server
     status, body = _post(server, "/api/tiles/download", {

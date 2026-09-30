@@ -169,18 +169,18 @@ svg { display: block; }
    with it and the caption does not sit beside an empty 7px hole. */
 .tb-dot {
   display: none;
-  width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto;
-  background: var(--text-disabled);
+  width: var(--dot-size); height: var(--dot-size); border-radius: 50%; flex: 0 0 auto;
+  color: var(--text-disabled); background: currentColor; box-shadow: var(--dot-ring);
 }
 :root[data-topbar-dots="on"] .tb-dot { display: block; }
-.tb-dot.healthy { background: var(--healthy); box-shadow: 0 0 7px var(--healthy); }
-.tb-dot.warning { background: var(--warning); box-shadow: 0 0 7px var(--warning); }
-.tb-dot.critical { background: var(--critical); box-shadow: 0 0 7px var(--critical); }
-.tb-dot.nav { background: var(--nav); box-shadow: 0 0 7px var(--nav); }
+.tb-dot.healthy { color: var(--healthy); box-shadow: var(--dot-halo); }
+.tb-dot.warning { color: var(--warning); box-shadow: var(--dot-halo); }
+.tb-dot.critical { color: var(--critical); box-shadow: var(--dot-halo); }
+.tb-dot.nav { color: var(--nav); box-shadow: var(--dot-halo); }
 /* Armed on the ground. Amber because live propellers are a caution, and the
    pill below is what keeps it from reading as the same thing as NOT READY. */
-.tb-dot.armed { background: var(--warning); box-shadow: 0 0 7px var(--warning); }
-.tb-dot.off { background: var(--text-disabled); }
+.tb-dot.armed { color: var(--warning); box-shadow: var(--dot-halo); }
+.tb-dot.off { color: var(--text-disabled); box-shadow: var(--dot-ring); }
 
 .tb-value.healthy { color: var(--healthy); }
 .tb-value.warning { color: var(--warning); }
@@ -1157,10 +1157,16 @@ svg { display: block; }
 /* Scoped past .ui-menu-head, the shared caption it is a variant of: a
    coordinate is read digit by digit, so this one is mono and tabular rather
    than the uppercase label a menu head usually carries. */
-.map-context-menu .map-context-coords {
-  padding: 3px 7px 6px;
+.map-context-menu .map-context-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 3px 6px 7px;
   margin: 0 0 3px;
   border-bottom: 1px solid rgb(var(--tint-rgb) / 0.08);
+}
+.map-context-menu .map-context-coords {
+  flex: 1 1 auto;
   font-family: var(--mono);
   font-size: 10px;
   font-weight: 500;
@@ -1169,6 +1175,25 @@ svg { display: block; }
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* Copy the coordinates. Sized to the caption line so the head does not grow;
+   the tick in the accent colour is the confirmation that they are on the
+   clipboard, and it reverts on its own. */
+.map-context-copy {
+  flex: 0 0 auto;
+  width: 22px; height: 22px;
+  display: grid; place-items: center;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--text-3);
+  transition: background 130ms, color 130ms;
+}
+.map-context-copy:hover { background: var(--surface-hover); color: var(--text-1); }
+.map-context-copy:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: -2px; }
+.map-context-copy svg, .map-context-copy i { width: 13px; height: 13px; }
+.map-context-copy .map-context-copy-done { display: none; }
+.map-context-copy.is-copied { color: var(--accent-bright); }
+.map-context-copy.is-copied .map-context-copy-idle { display: none; }
+.map-context-copy.is-copied .map-context-copy-done { display: block; }
 
 /* The rows are .option-item (components.css): the icon, the label, the note
    under it and the disabled treatment are the shared recipe, so an action on
@@ -1759,6 +1784,140 @@ svg { display: block; }
 .js-sticks { display: flex; gap: 14px; }
 .js-sticks[hidden] { display: none; }
 
+/* ===== PREFLIGHT CHECKLIST WINDOW =====
+   A movable window over the map with the operator's own checklist. Hidden
+   unless Settings > Appearance > Preflight checklist turns it on. It rests
+   under the flight bar at the top left until it is dragged; .is-placed then
+   drops that anchoring so the dragged left/top wins, as on the joystick pad.
+   The list scrolls inside the window, so a long checklist never pushes the
+   window off the map. */
+.checklist-panel {
+  position: absolute; left: var(--map-rail-inset); top: 76px;
+  z-index: var(--z-map-panel);
+  width: 272px;
+  max-height: calc(100% - 92px);
+  display: flex; flex-direction: column;
+  border-radius: 14px;
+  padding: 6px 8px 8px;
+  touch-action: none;
+}
+.checklist-panel.is-dragging { cursor: grabbing; user-select: none; }
+.checklist-panel.is-collapsed { padding-bottom: 6px; }
+.checklist-panel[hidden],
+.checklist-body[hidden] { display: none; }
+.checklist-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 0 6px 2px;
+  color: var(--text-3);
+  cursor: grab;
+  touch-action: none;
+}
+.checklist-panel.is-collapsed .checklist-bar { padding-bottom: 0; }
+.checklist-panel.is-dragging .checklist-bar { cursor: grabbing; }
+.checklist-bar > i, .checklist-bar > svg { width: 14px; height: 14px; flex: none; }
+.checklist-panel.is-complete .checklist-bar > svg { color: var(--healthy); }
+.checklist-title {
+  flex: 1; min-width: 0;
+  font-size: 11px; font-weight: 650; letter-spacing: 0.4px; text-transform: uppercase;
+  color: var(--text-1);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.checklist-count {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 11px; color: var(--text-2);
+}
+.checklist-count.is-complete { color: var(--healthy); font-weight: 600; }
+.checklist-bar .checklist-bar-btn {
+  width: 20px; height: 20px; border-radius: 5px; flex: none; color: var(--text-3);
+}
+.checklist-bar .checklist-bar-btn:hover { color: var(--text-1); background: var(--panel-wash); }
+.checklist-bar .checklist-bar-btn svg, .checklist-bar .checklist-bar-btn i { width: 13px; height: 13px; }
+.checklist-body {
+  display: flex; flex-direction: column; gap: 6px;
+  min-height: 0; overflow-y: auto;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 6px;
+}
+.checklist-picker { width: 100%; }
+.checklist-items { display: flex; flex-direction: column; gap: 1px; }
+.checklist-heading {
+  padding: 8px 4px 3px;
+  font-size: 9.5px; font-weight: 650; letter-spacing: 0.7px; text-transform: uppercase;
+  color: var(--text-3);
+}
+.checklist-heading:first-child { padding-top: 2px; }
+.checklist-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  width: 100%; padding: 5px 4px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 12.5px; line-height: 1.35; color: var(--text-1);
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+.checklist-item:hover { background: var(--panel-wash); }
+.checklist-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.checklist-box {
+  flex: none; width: 16px; height: 16px; margin-top: 1px;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--border); border-radius: 4px;
+  color: var(--text-inverted);
+  transition: background 120ms, border-color 120ms;
+}
+.checklist-box svg, .checklist-box i { width: 12px; height: 12px; stroke-width: 3; }
+.checklist-item.is-checked .checklist-box { background: var(--healthy); border-color: var(--healthy); }
+.checklist-item.is-checked .checklist-text { color: var(--text-3); text-decoration: line-through; }
+.checklist-empty { padding: 4px; font-size: 12px; line-height: 1.45; color: var(--text-3); }
+.checklist-done {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 4px 2px;
+  font-size: 12px; font-weight: 600; color: var(--healthy);
+}
+.checklist-done svg, .checklist-done i { width: 14px; height: 14px; }
+
+/* Settings card: the summary line and the button to the editor dialog. */
+.checklist-settings-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding-top: 10px; border-top: 1px solid var(--border-soft);
+}
+.checklist-summary { font-size: 12px; color: var(--text-2); }
+
+/* The editor dialog. Same two views as the Video page: the list and one
+   list's editor, never both, so the hidden attribute has to win. */
+.checklist-dialog { display: flex; flex-direction: column; gap: 12px; }
+.checklist-lists-card, .checklist-editor-card { display: flex; flex-direction: column; gap: 12px; }
+.checklist-lists-card[hidden], .checklist-editor[hidden] { display: none; }
+.checklist-list { display: flex; flex-direction: column; }
+.checklist-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid var(--border-soft);
+}
+.checklist-row:first-child { padding-top: 0; }
+.checklist-row:last-child { border-bottom: none; }
+.checklist-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.checklist-row-name-line { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.checklist-row-name {
+  font-size: 13px; font-weight: 600; color: var(--text-1);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.checklist-row-badge {
+  flex: 0 0 auto; font-size: 9px; font-weight: 600; letter-spacing: 0.6px;
+  text-transform: uppercase; color: var(--healthy);
+  padding: 1px 5px; border: 1px solid var(--healthy); border-radius: 4px;
+}
+.checklist-row-detail { font-size: 11px; color: var(--text-3); }
+.checklist-items-label { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.checklist-edit-items {
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: calc(46 * var(--vh)); overflow-y: auto;
+}
+.checklist-edit-row { display: flex; align-items: center; gap: 2px; }
+.checklist-edit-row .field-input { flex: 1; min-width: 0; margin-right: 4px; }
+.checklist-edit-row.is-heading .field-input {
+  font-weight: 650; text-transform: uppercase; letter-spacing: 0.5px; font-size: 11.5px;
+}
+.checklist-edit-row .icon-btn[disabled] { opacity: 0.35; pointer-events: none; }
+
 .js-stick { display: flex; flex-direction: column; align-items: center; gap: 7px; }
 .js-base {
   position: relative;
@@ -2326,12 +2485,15 @@ svg { display: block; }
   display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 600;
   letter-spacing: 0.7px; color: var(--text-3); text-transform: uppercase;
 }
-.ssh-status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+.ssh-status .dot {
+  width: var(--dot-size); height: var(--dot-size); border-radius: 50%;
+  background: currentColor; box-shadow: var(--dot-ring);
+}
 .ssh-status.connected { color: var(--healthy); }
-.ssh-status.connected .dot { background: var(--healthy); box-shadow: 0 0 6px var(--healthy); }
+.ssh-status.connected .dot { box-shadow: var(--dot-halo); }
 /* On its way: a camera connecting, or live but with no new picture. */
 .ssh-status.pending { color: var(--warning); }
-.ssh-status.pending .dot { background: var(--warning); }
+.ssh-status.pending .dot { box-shadow: var(--dot-halo); }
 .ssh-status[hidden] { display: none; }
 /* A terminal's header carries its buttons as well, so the name and address
    keep to one line there and shorten, rather than wrapping into the status
@@ -2722,13 +2884,15 @@ button.link-card-title:focus-visible {
    operator's cursor. The label is the part allowed to shrink. */
 .link-status-main { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .link-status-dot {
-  width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto;
-  background: var(--text-disabled); transition: background 140ms, box-shadow 140ms;
+  width: var(--dot-size); height: var(--dot-size); border-radius: 50%; flex: 0 0 auto;
+  color: var(--text-disabled); background: currentColor; box-shadow: var(--dot-halo);
+  transition: color 140ms, box-shadow 140ms;
 }
-.link-status-dot.healthy { background: var(--healthy); box-shadow: 0 0 8px var(--healthy); }
-.link-status-dot.warning { background: var(--warning); box-shadow: 0 0 8px var(--warning); }
-.link-status-dot.critical { background: var(--critical); box-shadow: 0 0 8px var(--critical); }
-.link-status-dot.off { background: var(--text-disabled); }
+.link-status-dot.healthy { color: var(--healthy); }
+.link-status-dot.warning { color: var(--warning); }
+.link-status-dot.critical { color: var(--critical); }
+/* Off is not a state that shines: ring only. */
+.link-status-dot.off { box-shadow: var(--dot-ring); }
 .link-status-label {
   font-size: 12px; font-weight: 700; letter-spacing: 0.4px; color: var(--text-1);
   font-variant-numeric: tabular-nums;
@@ -2832,12 +2996,12 @@ button.link-card-title:focus-visible {
   font-size: 11px; font-weight: 600; letter-spacing: 0.2px; color: var(--text-2);
 }
 .calib-ready-dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--text-3); flex: 0 0 auto;
+  width: var(--dot-size); height: var(--dot-size); border-radius: 50%;
+  color: var(--text-3); background: currentColor; box-shadow: var(--dot-ring); flex: 0 0 auto;
 }
-.calib-ready-chip[data-state="ok"] .calib-ready-dot { background: var(--healthy); }
+.calib-ready-chip[data-state="ok"] .calib-ready-dot { color: var(--healthy); box-shadow: var(--dot-halo); }
 .calib-ready-chip[data-state="ok"] { color: var(--text-1); }
-.calib-ready-chip[data-state="bad"] .calib-ready-dot { background: var(--critical); }
+.calib-ready-chip[data-state="bad"] .calib-ready-dot { color: var(--critical); box-shadow: var(--dot-halo); }
 .calib-ready-chip[data-state="bad"] {
   color: var(--critical-bright); border-color: var(--critical);
   background: var(--critical-dark);
@@ -3223,8 +3387,8 @@ button.link-card-title:focus-visible {
    because components.css already references the dot's animation by that name. */
 .autotune-live { display: inline-flex; align-items: center; gap: 5px; font-size: 9.5px; color: var(--text-3); letter-spacing: 0.6px; text-transform: uppercase; }
 .autotune-live-dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--healthy); box-shadow: 0 0 6px var(--healthy);
+  width: var(--dot-size); height: var(--dot-size); border-radius: 50%;
+  color: var(--healthy); background: currentColor; box-shadow: var(--dot-halo);
   animation: livePulse 1.6s ease-in-out infinite;
 }
 @keyframes livePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
@@ -3787,11 +3951,12 @@ button.link-card-title:focus-visible {
   font-size: 11px; font-weight: 600; color: var(--text-2); white-space: nowrap;
 }
 .rc-monitor-dot {
-  width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); flex: 0 0 auto;
+  width: var(--dot-size); height: var(--dot-size); border-radius: 50%; flex: 0 0 auto;
+  color: var(--text-3); background: currentColor; box-shadow: var(--dot-ring);
 }
-.rc-monitor-state[data-state="ok"] .rc-monitor-dot { background: var(--healthy); }
+.rc-monitor-state[data-state="ok"] .rc-monitor-dot { color: var(--healthy); box-shadow: var(--dot-halo); }
 .rc-monitor-state[data-state="ok"] { color: var(--text-1); }
-.rc-monitor-state[data-state="bad"] .rc-monitor-dot { background: var(--critical); }
+.rc-monitor-state[data-state="bad"] .rc-monitor-dot { color: var(--critical); box-shadow: var(--dot-halo); }
 .rc-monitor-empty { font-size: 11.5px; line-height: 1.5; color: var(--text-3); }
 .rc-monitor-empty[hidden] { display: none; }
 
@@ -5321,16 +5486,16 @@ button.link-card-title:focus-visible {
 /* Per-row state, so a long queue is readable at a glance rather than only
    through the status line. */
 .logs-row-mark {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: transparent; flex: 0 0 auto;
+  width: var(--dot-size); height: var(--dot-size); border-radius: 50%;
+  color: transparent; background: currentColor; flex: 0 0 auto;
 }
 .logs-row[data-state="active"] { background: var(--nav-dark); }
 .logs-row[data-state="active"] .logs-row-mark {
-  background: var(--nav);
+  color: var(--nav); box-shadow: var(--dot-halo);
   animation: calibMarkerPulse 1.4s ease-in-out infinite;
 }
-.logs-row[data-state="done"] .logs-row-mark { background: var(--healthy); }
-.logs-row[data-state="failed"] .logs-row-mark { background: var(--critical); }
+.logs-row[data-state="done"] .logs-row-mark { color: var(--healthy); box-shadow: var(--dot-halo); }
+.logs-row[data-state="failed"] .logs-row-mark { color: var(--critical); box-shadow: var(--dot-halo); }
 /* Straight from a downloaded log into its review. Row-reverse so the arrow
    trails the word — it points at where the click goes, not back at the row.
    Always drawn, never hover-revealed: a shortcut nobody can see is a shortcut

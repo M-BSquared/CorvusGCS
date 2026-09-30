@@ -1228,6 +1228,18 @@ function testTheDownloadedAreasSurviveALayerSwitch() {
     "and the downloaded-area layers must be in that list");
 }
 
+function testEveryElevationDownloadIsLeftOffThePlannerMap() {
+  // A download can carry two elevation models: the free one and the one 3D
+  // draws from. Only the first was left off this map, so the second merged
+  // into the imagery's box and its zoom 0 start became the area's label.
+  assert.ok(/terrainIds = new Set\(dems\.map\(\(d\) => d\.id\)\)/.test(missionJs),
+    "the planner must know every elevation source, not only the first");
+  assert.ok(/terrainIds\.has\(region\.source\)/.test(missionJs),
+    "and leave all of their areas off the map");
+  assert.ok(/d\.id === \(data && data\.default_terrain\)/.test(missionJs),
+    "the profile reads the free default by name: it decodes 256 px Terrarium");
+}
+
 function testTheToolBarKeepsTheHomeFlightBarsSize() {
   const rules = topLevelRules(mainCss);
   const base = rules.find((rule) => /(^|,)\s*\.fa-btn\s*$/.test(rule.selector));
@@ -1976,6 +1988,20 @@ function testTheStartCarriesItsTakeoff() {
   assert.deepStrictEqual(types(), [], "the takeoff on the start goes with it");
 }
 
+function testANewStartArmsPointAndAMovedOneDoesNot() {
+  mission.setPlan({ items: [] });
+  mission._setTool("home");
+  mission._onMapClick({ lngLat: at(48, 11) });
+  assert.strictEqual(mission._tool(), "waypoint",
+    "after the first start the route comes next, so POINT is armed");
+
+  mission._setTool("home");
+  mission._onMapClick({ lngLat: at(48.001, 11) });
+  assert.strictEqual(mission._tool(), "select",
+    "moving a start must not leave the next click adding a waypoint");
+  mission._setTool("select");
+}
+
 function testAStartDoesNotAddATakeoffToAPlanThatHasOneElsewhere() {
   mission.setPlan({
     items: [
@@ -2152,6 +2178,7 @@ const tests = [
   testTheZoomRailCarriesNeitherOfThem,
   testTheOfflineDialogFollowsWhicheverMapIsShowing,
   testTheDownloadedAreasSurviveALayerSwitch,
+  testEveryElevationDownloadIsLeftOffThePlannerMap,
   testTheToolBarKeepsTheHomeFlightBarsSize,
   testTheMarksAreSizedRatherThanTransformed,
   testNothingOverridesMapLibresMarkerPositioning,
@@ -2207,6 +2234,7 @@ const tests = [
   testNothingButTheStartCanBePlacedOnAnEmptyPlan,
   testThereIsNoSeparateTakeoffTool,
   testTheStartCarriesItsTakeoff,
+  testANewStartArmsPointAndAMovedOneDoesNot,
   testAStartDoesNotAddATakeoffToAPlanThatHasOneElsewhere,
   testOnlyOneEndingAndNewPointsGoInBeforeIt,
   testTheTakeoffStaysFirstAndTheEndingStaysLast,

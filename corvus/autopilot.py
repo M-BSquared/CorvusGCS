@@ -82,15 +82,34 @@ def stack_for_autopilot(value: Any) -> str:
 # ---------------------------------------------------------------------------
 # PX4 modes
 # ---------------------------------------------------------------------------
+#
+# Checked against src/modules/commander/px4_custom_mode.h and the DO_SET_MODE
+# handler in Commander.cpp at v1.16.2, v1.17.0 and v1.18.0-rc1, and at v1.12.3
+# to v1.15.4 for the best-effort range. PX4 only ever appends to these enums, so
+# a number keeps its meaning; what moves between releases is which numbers
+# exist and which of them a mode change is allowed to ask for.
 
-# PX4 main_mode values (bits 16-23 of custom_mode).
+# PX4 main_mode values (bits 16-23 of custom_mode). 8 is RATTITUDE_LEGACY in
+# every supported release and no vehicle state reports it any more; the name is
+# kept for logs from firmware old enough to have flown it. 9 (SIMPLE) is
+# reserved and never sent. ALTITUDE_CRUISE is new in v1.17.
 PX4_MAIN_MODE: dict[int, str] = {
     1: "MANUAL", 2: "ALTCTL", 3: "POSCTL", 4: "AUTO",
     5: "ACRO", 6: "OFFBOARD", 7: "STABILIZED", 8: "RATTITUDE",
+    10: "TERMINATION", 11: "ALTITUDE_CRUISE",
+}
+
+# PX4 POSCTL sub_mode values (bits 24-31 when main_mode == 3). Orbit and
+# Position Slow are reported as POSCTL with a sub mode, so reading the main mode
+# alone showed an orbiting vehicle as POSITION. Position Slow is new in v1.15.
+PX4_POSCTL_SUBMODE: dict[int, str] = {
+    0: "POSCTL", 1: "ORBIT", 2: "POSITION_SLOW",
 }
 
 # PX4 AUTO sub_mode values (bits 24-31 when main_mode == 4). Prefix-less so a
 # decoded mode name matches the names in PX4_MODE_VALUES and the selector.
+# 7 is AUTO_RESERVED_DO_NOT_USE: RTGS was deleted in March 2020 and is kept here
+# for older logs only. GUIDED_COURSE is new in v1.18.
 PX4_AUTO_SUBMODE: dict[int, str] = {
     1: "READY", 2: "TAKEOFF", 3: "LOITER",
     4: "MISSION", 5: "RTL", 6: "LAND",
@@ -98,25 +117,78 @@ PX4_AUTO_SUBMODE: dict[int, str] = {
     9: "PRECLAND", 10: "VTOL_TAKEOFF",
     11: "EXTERNAL1", 12: "EXTERNAL2", 13: "EXTERNAL3",
     14: "EXTERNAL4", 15: "EXTERNAL5", 16: "EXTERNAL6",
-    17: "EXTERNAL7", 18: "EXTERNAL8",
+    17: "EXTERNAL7", 18: "EXTERNAL8", 19: "GUIDED_COURSE",
 }
 
-# (base_mode, main_mode, sub_mode) triples keyed by mode name, mirroring
-# pymavlink's px4_map. 81/65/29 are the base_mode bytes PX4 itself sends for
-# each family; DO_SET_MODE wants them back verbatim.
+# (base_mode, main_mode, sub_mode) triples keyed by mode name, as pymavlink's
+# px4_map spells them. 81/65/29 are the base_mode bytes PX4 itself sends for
+# each family; DO_SET_MODE wants them back verbatim. Only modes PX4's
+# DO_SET_MODE handler actually switches to are here: Orbit is entered with
+# DO_ORBIT (a POSCTL sub mode 1 request lands in plain POSCTL), and Guided
+# Course needs heading commands the station does not send.
 PX4_MODE_VALUES: dict[str, tuple[int, int, int]] = {
     "MANUAL": (81, 1, 0), "ALTCTL": (81, 2, 0), "POSCTL": (81, 3, 0),
-    "STABILIZED": (81, 7, 0), "ACRO": (65, 5, 0), "RATTITUDE": (65, 8, 0),
+    "POSITION_SLOW": (81, 3, 2), "ALTITUDE_CRUISE": (81, 11, 0),
+    "STABILIZED": (81, 7, 0), "ACRO": (65, 5, 0),
     "LOITER": (29, 4, 3), "MISSION": (29, 4, 4), "RTL": (29, 4, 5),
     "LAND": (29, 4, 6), "TAKEOFF": (29, 4, 2), "OFFBOARD": (29, 6, 0),
-    "RTGS": (29, 4, 7), "FOLLOWME": (29, 4, 8),
+    "FOLLOWME": (29, 4, 8),
 }
 
 PX4_AVAILABLE_MODES: list[str] = [
-    "MANUAL", "ALTCTL", "POSCTL", "STABILIZED", "ACRO", "RATTITUDE",
+    "MANUAL", "ALTCTL", "ALTITUDE_CRUISE", "POSCTL", "POSITION_SLOW",
+    "STABILIZED", "ACRO",
     "LOITER", "MISSION", "RTL", "LAND", "TAKEOFF",
-    "OFFBOARD", "RTGS", "FOLLOWME",
+    "OFFBOARD", "FOLLOWME",
 ]
+
+# Names pymavlink's px4_map still offers that no supported PX4 will fly. RTGS
+# (AUTO sub mode 7) is refused with "Unsupported auto mode". RATTITUDE (main
+# mode 8) has no branch in the handler: v1.16 and v1.17 answer ACCEPTED and
+# change nothing, v1.18 refuses it as "Unsupported main mode". Both still
+# decode, so an old log reads right, but neither is ever offered or sent.
+PX4_RETIRED_MODES: frozenset[str] = frozenset({"RTGS", "RATTITUDE"})
+
+# The first (major, minor) whose DO_SET_MODE handler switches to the mode.
+# Older firmware answers ACCEPTED either way: a Position Slow request before
+# v1.15 flies on in plain POSCTL, and Altitude Cruise before v1.17 changes
+# nothing at all. An acknowledged mode change that did not happen is the one
+# answer the operator cannot see through, so these wait for AUTOPILOT_VERSION.
+PX4_MODE_SINCE: dict[str, tuple[int, int]] = {
+    "POSITION_SLOW": (1, 15),
+    "ALTITUDE_CRUISE": (1, 17),
+}
+
+# The word the operator reads for a PX4 mode, as PX4's own documentation names
+# it. Display only: a mode change still sends the name on the left.
+PX4_MODE_LABELS: dict[str, str] = {
+    "ALTCTL": "ALTITUDE", "POSCTL": "POSITION", "LOITER": "HOLD",
+    "RTL": "RETURN", "FOLLOWME": "FOLLOW ME", "PRECLAND": "PRECISION LAND",
+    "POSITION_SLOW": "POSITION SLOW", "ALTITUDE_CRUISE": "ALTITUDE CRUISE",
+    "ORBIT": "ORBIT", "TERMINATION": "TERMINATION",
+    "GUIDED_COURSE": "GUIDED COURSE",
+}
+
+
+def px4_mode_supported(name: str, firmware: tuple[int, ...] | None) -> bool:
+    """Will a PX4 of this version switch to *name* on DO_SET_MODE?
+
+    ``firmware`` is ``(major, minor, patch)`` from AUTOPILOT_VERSION, or None
+    before it has arrived. An unknown version gets only the modes every
+    supported release accepts: a mode offered a second late is harmless, one
+    offered to firmware that ignores it is not.
+    """
+    if name in PX4_RETIRED_MODES:
+        return False
+    since = PX4_MODE_SINCE.get(name)
+    if since is None:
+        return True
+    return firmware is not None and tuple(firmware[:2]) >= since
+
+
+def _plain_mode_label(name: str) -> str:
+    """A mode name with its underscores read as spaces ("ALT_HOLD" -> "ALT HOLD")."""
+    return str(name or "").replace("_", " ")
 
 
 # ---------------------------------------------------------------------------
@@ -632,20 +704,41 @@ class Dialect:
         sub_mode = (custom >> 24) & 0xFF
         if main_mode == 4:
             return PX4_AUTO_SUBMODE.get(sub_mode, f"SUBMODE_{sub_mode}")
+        if main_mode == 3:
+            return PX4_POSCTL_SUBMODE.get(sub_mode, f"POSCTL_SUBMODE_{sub_mode}")
         return PX4_MAIN_MODE.get(main_mode, f"MODE_{custom}")
 
-    def mode_table(self, mav_type: int) -> dict[str, ModeCommand]:
-        """Every mode this vehicle can be commanded into, by name."""
+    def mode_label(self, name: str) -> str:
+        """The mode name as the operator reads it: a word, not a short form.
+
+        Display only. ``name`` stays the stack's own spelling everywhere else,
+        because it is what a mode change sends back.
+        """
+        return PX4_MODE_LABELS.get(str(name or "")) or _plain_mode_label(name)
+
+    def mode_table(
+        self, mav_type: int, firmware: tuple[int, ...] | None = None,
+    ) -> dict[str, ModeCommand]:
+        """Every mode this vehicle can be commanded into, by name.
+
+        ``firmware`` is the ``(major, minor, patch)`` the vehicle reported in
+        AUTOPILOT_VERSION, or None before it has.
+        """
         return {
             name: ModeCommand(base, main, sub)
             for name, (base, main, sub) in PX4_MODE_VALUES.items()
+            if px4_mode_supported(name, firmware)
         }
 
-    def available_modes(self, mav_type: int) -> list[str]:
-        return list(PX4_AVAILABLE_MODES)
+    def available_modes(
+        self, mav_type: int, firmware: tuple[int, ...] | None = None,
+    ) -> list[str]:
+        """The selector's modes, most manual first, for this firmware."""
+        return [name for name in PX4_AVAILABLE_MODES if px4_mode_supported(name, firmware)]
 
     def adopt_live_mapping(
         self, mapping: dict[str, Any], mav_type: int,
+        firmware: tuple[int, ...] | None = None,
     ) -> dict[str, ModeCommand]:
         """Turn pymavlink's ``mode_mapping()`` into commands, or {} if it cannot.
 
@@ -655,12 +748,24 @@ class Dialect:
         those are adopted here; a flat mapping reaching this method means
         pymavlink guessed a different stack than the heartbeat did, and the
         built-in table is the safer answer.
+
+        px4_map is a fixed table and an old one. It still names RTGS and
+        RATTITUDE, which no supported PX4 flies, and has neither Position Slow
+        nor Altitude Cruise. So its names go through the same version check as
+        the built-in table, and the built-in table fills in what it lacks.
         """
-        usable = {
+        live = {
             str(name): ModeCommand(int(value[0]), int(value[1]), int(value[2]))
             for name, value in (mapping or {}).items()
             if isinstance(value, tuple) and len(value) >= 3
         }
+        if not live:
+            return {}
+        usable = self.mode_table(mav_type, firmware)
+        usable.update(
+            (name, command) for name, command in live.items()
+            if px4_mode_supported(name, firmware)
+        )
         return usable
 
     # --- flight --------------------------------------------------------
@@ -871,7 +976,14 @@ class ArduPilotDialect(Dialect):
             return "MANUAL" if flags & mavutil.mavlink.MAV_MODE_FLAG_MANUAL_INPUT_ENABLED else ""
         return self._table(mav_type).get(custom, f"MODE_{custom}")
 
-    def mode_table(self, mav_type: int) -> dict[str, ModeCommand]:
+    def mode_label(self, name: str) -> str:
+        # ALT_HOLD, FBWA and QLOITER are the names on ArduPilot's own pages and
+        # in its FLTMODE parameters, so they are kept; only the underscores go.
+        return _plain_mode_label(name)
+
+    def mode_table(
+        self, mav_type: int, firmware: tuple[int, ...] | None = None,
+    ) -> dict[str, ModeCommand]:
         custom_enabled = mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED
         return {
             name: ModeCommand(custom_enabled, number, 0)
@@ -879,11 +991,14 @@ class ArduPilotDialect(Dialect):
             if name not in ARDUPILOT_RETIRED_MODES
         }
 
-    def available_modes(self, mav_type: int) -> list[str]:
+    def available_modes(
+        self, mav_type: int, firmware: tuple[int, ...] | None = None,
+    ) -> list[str]:
         return sorted(self.mode_table(mav_type))
 
     def adopt_live_mapping(
         self, mapping: dict[str, Any], mav_type: int,
+        firmware: tuple[int, ...] | None = None,
     ) -> dict[str, ModeCommand]:
         """Take pymavlink's flat ``{name: number}`` table for this vehicle.
 
@@ -1082,14 +1197,22 @@ class GenericDialect(Dialect):
             return ""
         return f"MODE_{custom}" if custom else ""
 
-    def mode_table(self, mav_type: int) -> dict[str, ModeCommand]:
+    def mode_label(self, name: str) -> str:
+        return _plain_mode_label(name)
+
+    def mode_table(
+        self, mav_type: int, firmware: tuple[int, ...] | None = None,
+    ) -> dict[str, ModeCommand]:
         return {}
 
-    def available_modes(self, mav_type: int) -> list[str]:
+    def available_modes(
+        self, mav_type: int, firmware: tuple[int, ...] | None = None,
+    ) -> list[str]:
         return []
 
     def adopt_live_mapping(
         self, mapping: dict[str, Any], mav_type: int,
+        firmware: tuple[int, ...] | None = None,
     ) -> dict[str, ModeCommand]:
         return {}
 

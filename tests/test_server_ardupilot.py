@@ -33,7 +33,9 @@ from corvus import (  # noqa: E402
     safety_config,
     tuning_config,
 )
+from corvus.mavlink_bridge import MavlinkBridge  # noqa: E402
 from corvus.server import CorvusHandler  # noqa: E402
+from corvus.state_store import VehicleStateStore  # noqa: E402
 
 
 class FakeBridge:
@@ -204,6 +206,34 @@ def test_capabilities_answer_before_a_vehicle_is_connected() -> None:
     data, status = responses[0]
     assert status == 200
     assert data["modes"] == []
+
+
+@pytest.mark.parametrize(("stack_id", "name", "label"), [
+    (mv.mavlink.MAV_AUTOPILOT_PX4, "POSCTL", "POSITION"),
+    (mv.mavlink.MAV_AUTOPILOT_PX4, "RTL", "RETURN"),
+    (mv.mavlink.MAV_AUTOPILOT_ARDUPILOTMEGA, "RTL", "RTL"),
+    (mv.mavlink.MAV_AUTOPILOT_ARDUPILOTMEGA, "ALT_HOLD", "ALT HOLD"),
+])
+def test_the_mode_list_carries_the_word_for_each_mode(
+    stack_id: int, name: str, label: str,
+) -> None:
+    """The picker sends the name and shows the word, in the connected stack's
+    own vocabulary."""
+    bridge = MavlinkBridge(VehicleStateStore())
+    bridge._latch_dialect(stack_id, mv.mavlink.MAV_TYPE_QUADROTOR)
+    handler, responses = _handler(bridge)
+    handler._api_mavlink_modes()
+    data, status = responses[0]
+    assert status == 200
+    assert name in data["modes"]
+    assert set(data["labels"]) == set(data["modes"])
+    assert data["labels"][name] == label
+
+
+def test_the_mode_list_answers_before_a_vehicle_is_connected() -> None:
+    handler, responses = _handler(None)
+    handler._api_mavlink_modes()
+    assert responses[0] == ({"modes": [], "labels": {}}, 200)
 
 
 def test_a_calibration_position_reaches_the_bridge() -> None:

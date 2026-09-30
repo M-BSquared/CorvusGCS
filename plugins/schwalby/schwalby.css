@@ -149,16 +149,24 @@
 /* A row whose program is running: a live dot on the card's own surface, and
    tools that stop fading, because that is when the arrow matters. */
 .schw-dot {
-  width: 6px;
-  height: 6px;
+  width: var(--dot-size, 7px);
+  height: var(--dot-size, 7px);
   margin: 0 4px;
   border-radius: 50%;
   flex: 0 0 auto;
-  background: var(--healthy);
+  color: var(--healthy);
+  background: currentColor;
+  box-shadow: var(--dot-halo);
 }
 .schw-running .schw-row-tools { opacity: 1; }
 .schw-running .schw-open { color: var(--healthy); }
 .schw-open:disabled { opacity: 0.35; cursor: default; }
+
+/* The pencil's place while the session is up: it ends the program, so it
+   carries the critical colour, and it fades while the stop is under way. */
+.schw-stop { color: var(--critical); }
+.schw-stop:hover:not(:disabled) { color: var(--critical-bright); }
+.schw-stop:disabled { opacity: 0.35; cursor: default; }
 
 /* Why the last press failed: the app's hint icon in the critical colour, in
    the tools' 28px box so it sits on their centre line. Qualified with .ui-info

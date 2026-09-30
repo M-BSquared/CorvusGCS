@@ -49,6 +49,7 @@ stdlib only.
 """
 from __future__ import annotations
 
+import collections
 import gzip
 import json
 import logging
@@ -62,7 +63,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 logger = logging.getLogger("corvus.buildings")
 
@@ -71,16 +72,24 @@ logger = logging.getLogger("corvus.buildings")
 # that one query is quick and a cell is worth caching on its own, large enough
 # that a typical operating view is a handful of cells rather than a hundred.
 CELL_ZOOM = 15
+# Cells are fetched a block at a time: the z14 parent of a requested cell, its
+# four z15 cells in one Overpass query. Overpass pays mostly per query, not
+# per square metre, so a block costs little more than a cell, and a view fills
+# in a quarter of the round trips. Splitting the answer by footprint centre
+# also puts a building that straddles a cell edge in exactly one cell instead
+# of both, where it used to be drawn twice.
+BLOCK_ZOOM = CELL_ZOOM - 1
 
 # Overpass endpoint. The main instance is a volunteer-run service with a fair
 # use policy, which the cell grid plus the cache is what keeps us inside:
 # a cell is fetched once and then answered from disk forever.
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
-# Wall-clock budget for one Overpass round trip. Generous compared to a tile
-# fetch because Overpass genuinely takes seconds on a cold cell, but bounded
-# so a hung endpoint cannot hold a request thread for a minute.
-OVERPASS_TIMEOUT_S = 25.0
+# Server-side budget for one Overpass query, and (plus a margin) the socket
+# timeout for it. Generous: a dense city block takes Overpass tens of seconds
+# on a busy day, and a query cut short answers 200 with half its buildings.
+# Only the background workers wait this long, never a request thread.
+OVERPASS_TIMEOUT_S = 60.0
 # Ceiling on one response body. A dense city cell is a few MB; anything past
 # this is a query that went wrong, and parsing it would cost more memory than
 # the whole tile cache.
@@ -95,6 +104,16 @@ MAX_CONCURRENT_FETCHES = 2
 # longer looking at, which the frontend will simply ask for again if they
 # return to it.
 FETCH_QUEUE_DEPTH = 64
+# Blocks one offline download may queue for its buildings. 256 blocks is about
+# 25 by 25 km at European latitudes; a bigger area gets the part nearest its
+# centre, which is where the flying is.
+PREFETCH_MAX_BLOCKS = 256
+# Blocks a download's prefetch may look at to find those. Bounds the walk over
+# a wide area whose centre is already on disk; each look is four cache reads.
+PREFETCH_MAX_EXAMINED = 16 * PREFETCH_MAX_BLOCKS
+# Attempts a download's block gets before it is let go. Offline they are not
+# spent: nothing is taken from the download's list while backing off.
+BULK_MAX_TRIES = 3
 
 # A cached cell is served whatever its age (offline is the point). This is only
 # how old it may be before an ONLINE request refreshes it in place.
@@ -119,7 +138,7 @@ MAX_HEIGHT_M = 900.0
 # holds a few thousand buildings; this is the ceiling that keeps a cell from
 # being megabytes on the laptop's disk and tens of thousands of extrusions on
 # its frame budget. The map already draws terrain and imagery on that budget.
-MAX_FEATURES_PER_CELL = 4000
+MAX_FEATURES_PER_CELL = 8000
 
 # Decimal places kept on every coordinate. Six is about 0.1 m at these
 # latitudes — finer than an OSM footprint is surveyed to, and it roughly halves
@@ -245,10 +264,16 @@ def to_geojson(overpass: Any) -> dict:
     rings produce inside-out geometry that renders as a black smear.
     """
     features: list[dict] = []
+    seen: set[tuple[Any, Any]] = set()
     elements = overpass.get("elements") if isinstance(overpass, dict) else None
     for element in elements or []:
         if not isinstance(element, dict):
             continue
+        ident = (element.get("type"), element.get("id"))
+        if ident[1] is not None:
+            if ident in seen:
+                continue
+            seen.add(ident)
         tags = element.get("tags")
         if not isinstance(tags, dict) or not tags.get("building"):
             continue
@@ -282,6 +307,75 @@ def to_geojson(overpass: Any) -> dict:
             logger.debug("building cell truncated at %d features", MAX_FEATURES_PER_CELL)
             break
     return {"type": "FeatureCollection", "features": features}
+
+
+def overpass_failed(overpass: Any) -> bool:
+    """Did Overpass give up on the query while still answering 200?
+
+    A query that runs out of time or memory is not an HTTP error: Overpass
+    returns the elements it had collected so far and says what went wrong in
+    a ``remark``. Taken at face value that is a block with half its
+    buildings, cached for a month, and it is exactly the "some buildings, not
+    all of them" an operator sees over a dense town.
+    """
+    if not isinstance(overpass, dict):
+        return True
+    remark = overpass.get("remark")
+    if isinstance(remark, str) and remark.strip():
+        text = remark.lower()
+        return "error" in text or "timed out" in text or "out of memory" in text
+    return False
+
+
+def cell_of(lon: float, lat: float, zoom: int = CELL_ZOOM) -> tuple[int, int, int]:
+    """The ``(z, x, y)`` grid cell containing a point."""
+    count = 1 << zoom
+    lat = max(-85.05112878, min(85.05112878, lat))
+    rad = math.radians(lat)
+    x = int((lon + 180.0) / 360.0 * count)
+    y = int((1.0 - math.log(math.tan(rad) + 1.0 / math.cos(rad)) / math.pi) / 2.0 * count)
+    return (zoom, max(0, min(count - 1, x)), max(0, min(count - 1, y)))
+
+
+def split_by_cell(collection: dict, cells: Iterable[tuple[int, int, int]]) -> dict:
+    """Share a block's features out to its cells, each to exactly one.
+
+    A footprint goes to the cell its vertex average falls in. The block query
+    also returns buildings that only clip the block's edge; those belong to a
+    neighbouring block and are dropped here, to be kept by that block's own
+    query. Returns ``{cell: FeatureCollection}`` for every cell in *cells*,
+    empty ones included, so an empty cell is recorded as looked at.
+    """
+    wanted = list(cells)
+    out: dict[tuple[int, int, int], list[dict]] = {cell: [] for cell in wanted}
+    zoom = wanted[0][0] if wanted else CELL_ZOOM
+    for feature in (collection or {}).get("features") or []:
+        try:
+            ring = feature["geometry"]["coordinates"][0]
+            points = ring[:-1] if len(ring) > 1 and ring[0] == ring[-1] else ring
+            lon = sum(p[0] for p in points) / len(points)
+            lat = sum(p[1] for p in points) / len(points)
+        except (KeyError, IndexError, TypeError, ZeroDivisionError):
+            continue
+        bucket = out.get(cell_of(lon, lat, zoom))
+        if bucket is not None and len(bucket) < MAX_FEATURES_PER_CELL:
+            bucket.append(feature)
+    return {cell: {"type": "FeatureCollection", "features": features}
+            for cell, features in out.items()}
+
+
+def block_of(z: int, x: int, y: int) -> tuple[int, int, int]:
+    """The block a cell is fetched with. Off-grid zooms are their own block."""
+    if z != CELL_ZOOM:
+        return (z, x, y)
+    return (BLOCK_ZOOM, x >> 1, y >> 1)
+
+
+def cells_of_block(z: int, x: int, y: int) -> list[tuple[int, int, int]]:
+    """The cells a block holds."""
+    if z != BLOCK_ZOOM:
+        return [(z, x, y)]
+    return [(CELL_ZOOM, 2 * x + dx, 2 * y + dy) for dy in (0, 1) for dx in (0, 1)]
 
 
 def overpass_query(w: float, s: float, e: float, n: float) -> str:
@@ -395,18 +489,28 @@ class BuildingService:
     the cache in the background.
 
     One instance per process, held by the HTTP handler class the way the tile
-    caches are. Three things it guarantees:
+    caches are. Four things it guarantees:
 
-    * **The request thread never waits on Overpass.** :meth:`cell` answers out
-      of the cache or says "pending" and returns. See the module docstring:
-      a handler blocked on Overpass holds one of the browser's handful of
-      connections to this origin, and the map needs those to draw the ground.
-    * **Never two requests for the same cell at once.** A pan asks for the
-      same cell from several connections, and every one of them would
-      otherwise queue its own identical query.
+    * **The request thread never waits on Overpass.** :meth:`lookup` answers
+      out of the cache, or says whether a fetch is on its way, and returns.
+      See the module docstring: a handler blocked on Overpass holds one of the
+      browser's handful of connections to this origin, and the map needs
+      those to draw the ground.
+    * **Never two requests for the same block at once.** A pan asks for the
+      four cells of one block from several connections, and every one of them
+      would otherwise queue its own identical query.
     * **A hard ceiling on concurrent fetches.** Overpass is a shared volunteer
       service, and a rate-limit ban would take the feature out for every
       operator, not just the one who panned too fast.
+    * **"Not coming" is said, not implied.** Offline, or while Overpass has
+      asked us to back off, nothing is queued, and :meth:`lookup` says so.
+      The map then stops asking until the view changes, instead of polling a
+      cell that no worker will ever fetch, or worse, giving up on it for the
+      rest of the session.
+
+    Blocks an offline download asks for wait in a second, unbounded-by-age
+    list that the workers take from only when no view is waiting: the operator
+    looking at the map always goes first.
 
     The workers are daemon threads over a bounded queue rather than a
     ``ThreadPoolExecutor``: that class registers an interpreter-exit hook that
@@ -431,7 +535,13 @@ class BuildingService:
         self._queue: queue.Queue[tuple[int, int, int] | None] = queue.Queue(
             maxsize=FETCH_QUEUE_DEPTH)
         self._lock = threading.Lock()
+        # Blocks queued or being fetched, interactive and bulk alike.
         self._queued: set[tuple[int, int, int]] = set()
+        # Blocks an offline download asked for, oldest first, and how many
+        # times each has been tried: a download's block that fails goes back
+        # in line (it was asked for so it would be there offline), a few times.
+        self._bulk: collections.deque[tuple[int, int, int]] = collections.deque()
+        self._bulk_tries: dict[tuple[int, int, int], int] = {}
         self._stop = threading.Event()
         # Set while the network is known to be unreachable, so an offline pan
         # over uncached ground stops queueing work nobody can do. Cleared by
@@ -446,11 +556,13 @@ class BuildingService:
 
     # -- public ------------------------------------------------------------
 
-    def cell(self, z: int, x: int, y: int) -> bytes | None:
-        """Gzipped GeoJSON for a cell, or None when it is not cached yet.
+    def lookup(self, z: int, x: int, y: int) -> tuple[bytes | None, bool]:
+        """``(payload, coming)`` for a cell.
 
-        None also queues the fetch. It never raises and never blocks: the
-        caller is an HTTP handler on the map's render path.
+        *payload* is the gzipped GeoJSON when cached, else None. *coming* is
+        True while a fetch that will fill the cell is queued or running. It
+        never raises and never blocks: the caller is an HTTP handler on the
+        map's render path.
         """
         cached = self.cache.get(z, x, y)
         if cached is not None:
@@ -458,13 +570,57 @@ class BuildingService:
             # a building, and offline it is all there will ever be. The
             # refresh happens behind the answer.
             if (time.time() - cached[1]) >= CELL_TTL_S:
-                self._enqueue(z, x, y)
-            return cached[0]
-        self._enqueue(z, x, y)
-        return None
+                self._enqueue(*block_of(z, x, y))
+            return cached[0], False
+        return None, self._enqueue(*block_of(z, x, y))
+
+    def cell(self, z: int, x: int, y: int) -> bytes | None:
+        """Gzipped GeoJSON for a cell, or None when it is not cached yet.
+
+        None also queues the fetch. See :meth:`lookup` for whether it is
+        coming.
+        """
+        return self.lookup(z, x, y)[0]
+
+    def prefetch(self, bounds: Iterable[float], limit: int = PREFETCH_MAX_BLOCKS) -> int:
+        """Queue the buildings of an area for offline use. Returns blocks queued.
+
+        Nearest the area's centre first, capped at *limit*, and skipping blocks
+        whose cells are all cached and fresh already. Fetched in the
+        background whenever no view is waiting; offline they simply wait.
+
+        The blocks are walked outward from the centre and the walk stops at
+        the cap. It used to list and sort every cell of the area first: a
+        download framed on a zoomed-out view covers millions of them, and the
+        backend ran out of memory before it got to the few hundred it keeps.
+        """
+        queued = 0
+        examined = 0
+        now = time.time()
+        for block in blocks_outward(bounds):
+            if queued >= max(0, int(limit)) or examined >= PREFETCH_MAX_EXAMINED:
+                break
+            examined += 1
+            fresh = all(
+                (hit := self.cache.get(*cell)) is not None and now - hit[1] < CELL_TTL_S
+                for cell in cells_of_block(*block))
+            if fresh:
+                continue
+            with self._lock:
+                if block in self._queued:
+                    continue
+                self._queued.add(block)
+                self._bulk.append(block)
+                self._bulk_tries.setdefault(block, 0)
+            queued += 1
+        return queued
 
     def stats(self) -> dict:
-        return self.cache.stats()
+        """What is on disk, and how many blocks are still waiting to be fetched."""
+        stats = self.cache.stats()
+        with self._lock:
+            stats["queued"] = len(self._queued)
+        return stats
 
     def close(self) -> None:
         """Stop the workers and close the cache. Idempotent, never raises.
@@ -474,6 +630,9 @@ class BuildingService:
         exactly the shutdown stall this design exists to avoid.
         """
         self._stop.set()
+        with self._lock:
+            self._bulk.clear()
+            self._bulk_tries.clear()
         for _ in self._workers:
             try:
                 self._queue.put_nowait(None)
@@ -483,14 +642,14 @@ class BuildingService:
 
     # -- internals ---------------------------------------------------------
 
-    def _enqueue(self, z: int, x: int, y: int) -> None:
-        """Queue a cell for fetching, unless it is already queued or offline."""
+    def _enqueue(self, z: int, x: int, y: int) -> bool:
+        """Queue a block for fetching. True when a fetch for it is on its way."""
         if self._stop.is_set() or time.time() < self._offline_until:
-            return
+            return False
         key = (z, x, y)
         with self._lock:
             if key in self._queued:
-                return
+                return True
             self._queued.add(key)
         try:
             self._queue.put_nowait(key)
@@ -499,27 +658,63 @@ class BuildingService:
             # Forget the claim so a later request can queue it again.
             with self._lock:
                 self._queued.discard(key)
+            return False
+        return True
+
+    def _next(self) -> tuple[int, int, int] | None:
+        """The next block to fetch: a view's first, then a download's."""
+        try:
+            return self._queue.get_nowait()
+        except queue.Empty:
+            pass
+        if time.time() >= self._offline_until:
+            with self._lock:
+                if self._bulk:
+                    return self._bulk.popleft()
+        try:
+            return self._queue.get(timeout=0.5)
+        except queue.Empty:
+            return ()  # type: ignore[return-value]
 
     def _worker(self) -> None:
         while not self._stop.is_set():
-            try:
-                key = self._queue.get(timeout=0.5)
-            except queue.Empty:
-                continue
+            key = self._next()
             if key is None:
                 return
+            if not key:
+                continue
+            fetched = False
             try:
-                payload = self._request(*key)
-                if payload is not None:
-                    self.cache.put(key[0], key[1], key[2], payload)
-            except Exception:  # noqa: BLE001 - a worker must outlive one bad cell
-                logger.exception("building cell fetch failed: %s", key)
+                cells = self._request(*key)
+                if cells is not None:
+                    fetched = True
+                    for cell, payload in cells.items():
+                        self.cache.put(cell[0], cell[1], cell[2], payload)
+            except Exception:  # noqa: BLE001 - a worker must outlive one bad block
+                logger.exception("building block fetch failed: %s", key)
             finally:
-                with self._lock:
-                    self._queued.discard(key)
+                self._settle(key, fetched)
 
-    def _request(self, z: int, x: int, y: int) -> bytes | None:
-        """One Overpass round trip. None on any failure — offline is normal."""
+    def _settle(self, key: tuple[int, int, int], fetched: bool) -> None:
+        """Release a block's claim; put a download's failed block back in line."""
+        with self._lock:
+            self._queued.discard(key)
+            tries = self._bulk_tries.get(key)
+            if tries is None:
+                return
+            if fetched or self._stop.is_set() or tries + 1 >= BULK_MAX_TRIES:
+                del self._bulk_tries[key]
+                return
+            self._bulk_tries[key] = tries + 1
+            self._queued.add(key)
+            self._bulk.append(key)
+
+    def _request(self, z: int, x: int, y: int) -> dict[tuple[int, int, int], bytes] | None:
+        """One Overpass round trip for a block: ``{cell: gzipped GeoJSON}``.
+
+        None on any failure — offline is normal — and on an answer Overpass
+        itself marked as cut short, which must not be cached as the truth.
+        """
         w, s, e, n = cell_bounds(z, x, y)
         body = urllib.parse.urlencode({"data": overpass_query(w, s, e, n)}).encode()
         request = urllib.request.Request(
@@ -531,14 +726,17 @@ class BuildingService:
             },
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with urllib.request.urlopen(request, timeout=self.timeout + 5.0) as response:
                 raw = response.read(OVERPASS_MAX_BYTES + 1)
         except urllib.error.HTTPError as exc:
             # 429/504 are Overpass saying "slow down" or "that took too long",
             # not "there are no buildings" — back off rather than caching a
-            # miss that would then be served for a month.
+            # miss that would then be served for a month. Any other refusal
+            # (a 403 ban, a 5xx) backs off too: without a pause every cell the
+            # map re-asks for queued the same failing query again, a few
+            # hundred of them per view against a shared service.
             logger.debug("overpass HTTP %s for %d/%d/%d", exc.code, z, x, y)
-            self._back_off(seconds=60.0 if exc.code in (429, 504) else 0.0)
+            self._back_off(seconds=60.0 if exc.code in (429, 504) else 30.0)
             return None
         except Exception:  # noqa: BLE001 - offline field use must never 500
             logger.debug("overpass request failed for %d/%d/%d", z, x, y, exc_info=True)
@@ -553,8 +751,14 @@ class BuildingService:
         except ValueError:
             logger.debug("overpass response was not JSON for %d/%d/%d", z, x, y)
             return None
+        if overpass_failed(parsed):
+            logger.debug("overpass cut the query short for %d/%d/%d: %s",
+                         z, x, y, parsed.get("remark") if isinstance(parsed, dict) else "")
+            self._back_off(seconds=15.0)
+            return None
         self._offline_until = 0.0
-        return _gzip_json(to_geojson(parsed))
+        split = split_by_cell(to_geojson(parsed), cells_of_block(z, x, y))
+        return {cell: _gzip_json(collection) for cell, collection in split.items()}
 
     def _back_off(self, seconds: float) -> None:
         if seconds > 0:
@@ -590,13 +794,22 @@ def cells_for_bounds(bounds: Iterable[float], zoom: int = CELL_ZOOM) -> list[tup
     Shared by whatever wants to pre-warm an area (a region download) and by
     tests; the frontend computes the same set for the current viewport.
     """
+    span = _cell_span(bounds, zoom)
+    if span is None:
+        return []
+    x0, x1, y0, y1 = span
+    return [(zoom, x, y) for x in range(x0, x1 + 1) for y in range(y0, y1 + 1)]
+
+
+def _cell_span(bounds: Iterable[float], zoom: int) -> tuple[int, int, int, int] | None:
+    """``(x0, x1, y0, y1)`` of the grid cells covering *bounds*, or None."""
     w, s, e, n = (float(v) for v in bounds)
     if not all(math.isfinite(v) for v in (w, s, e, n)):
-        return []
+        return None
     s = max(s, -85.05112878)
     n = min(n, 85.05112878)
     if n < s or e < w:
-        return []
+        return None
     count = 1 << zoom
 
     def _x(lon: float) -> int:
@@ -607,8 +820,35 @@ def cells_for_bounds(bounds: Iterable[float], zoom: int = CELL_ZOOM) -> list[tup
         frac = (1.0 - math.log(math.tan(rad) + 1.0 / math.cos(rad)) / math.pi) / 2.0
         return max(0, min(count - 1, int(frac * count)))
 
-    return [
-        (zoom, x, y)
-        for x in range(_x(w), _x(e) + 1)
-        for y in range(_y(n), _y(s) + 1)
-    ]
+    return (_x(w), _x(e), _y(n), _y(s))
+
+
+def blocks_outward(bounds: Iterable[float]) -> Iterator[tuple[int, int, int]]:
+    """The blocks covering *bounds*, nearest its centre first, one at a time.
+
+    Square rings grow out from the centre's block, each ring in order of
+    distance, and nothing past the ring being walked is ever computed: a
+    caller that stops after a few hundred blocks has done a few hundred
+    blocks' work, however big the area.
+    """
+    w, s, e, n = (float(v) for v in bounds)
+    span = _cell_span((w, s, e, n), BLOCK_ZOOM)
+    if span is None:
+        return
+    x0, x1, y0, y1 = span
+    _, cx, cy = cell_of((w + e) / 2.0, (s + n) / 2.0, BLOCK_ZOOM)
+    cx = min(max(cx, x0), x1)
+    cy = min(max(cy, y0), y1)
+    reach = max(cx - x0, x1 - cx, cy - y0, y1 - cy)
+    for ring in range(reach + 1):
+        edge: set[tuple[int, int]] = set()
+        xs = range(max(x0, cx - ring), min(x1, cx + ring) + 1)
+        ys = range(max(y0, cy - ring), min(y1, cy + ring) + 1)
+        for y in {cy - ring, cy + ring}:
+            if y0 <= y <= y1:
+                edge.update((x, y) for x in xs)
+        for x in {cx - ring, cx + ring}:
+            if x0 <= x <= x1:
+                edge.update((x, y) for y in ys)
+        for x, y in sorted(edge, key=lambda p: ((p[0] - cx) ** 2 + (p[1] - cy) ** 2, p)):
+            yield (BLOCK_ZOOM, x, y)

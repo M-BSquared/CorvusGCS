@@ -74,6 +74,7 @@ _CONFIG_FIELD_ORDER: tuple[str, ...] = (
     "plugins",
     "parameters",
     "review",
+    "checklists",
 )
 
 # Required keys on a saved ssh_connections entry; missing keys default to a
@@ -98,7 +99,7 @@ class CorvusConfig:
     ``{"accent": "#RRGGBB"}`` from the old accent picker is still parsed), and
     the map service, base layer and 3D mode
     (``{"provider": ..., "base_layer": ..., "three_d": "off"|"simple"|"full",
-    "three_d_detail": "simple"|"full"}``,
+    "three_d_detail": "simple"|"full", "terrain_source": "auto"|<DEM id>}``,
     see ``corvus/tile_sources.py``), and the optional operator-supplied
     company logo (``{"logo": "<original filename>"}``; the bytes live beside
     the config file, never in it), and the optional input controls
@@ -109,7 +110,9 @@ class CorvusConfig:
     "inverted_app_icon": false, "app_icon_backplate": false,
     "topbar_status_dots": false, "mission_page": false,
     "notification_marks": false, "flight_bar_shrink": false,
-    "solid_terminals": false, "units": {"length":
+    "compass_nose_up": false, "solid_terminals": false,
+    "track_earlier_flights": true, "track_clear_on_restart": false,
+    "units": {"length":
     "m", "distance": "km", "speed": "ms", "temperature": "c"}}`` — the multiplier
     the frontend puts on every length in the UI, which cut of the mark the
     Dock / taskbar gets, whether that mark sits on a filled backplate, whether
@@ -117,7 +120,7 @@ class CorvusConfig:
     carries the Mission planner, whether a notification draws the severity
     bar above and below its level icon, whether the Home flight bar starts
     narrowing at half the map column rather than only when it must, whether
-    terminal windows are solid rather than frosted glass, and the display units for lengths,
+    the compass rose turns under a fixed needle, whether terminal windows are solid rather than frosted glass, and the display units for lengths,
     distances, speeds and temperatures),
     and the update check
     (``{"check": true, "skipped": "2026.09.27"}`` — whether to look at the
@@ -134,13 +137,13 @@ class CorvusConfig:
     classification, none of which is stored on the vehicle; see
     ``corvus/remote_id.py``),
     and the RTK base station
-    (``{"enabled": true, "source": "usb", "mode": "survey",
+    (``{"enabled": false, "source": "usb", "mode": "survey",
     "survey_accuracy": 2.0, "survey_duration": 180, "fixed": {...},
     "ntrip": {...}}`` — where the corrections come from and, for a base on a
     USB cable, how long it surveys and how well before it starts correcting;
-    see ``corvus/rtk.py``. ``enabled`` is true when the key is absent, which is
-    what makes a plugged-in base work on a station that has never been
-    configured).
+    see ``corvus/rtk.py``. ``enabled`` is false when the key is absent, so a
+    station that has never been configured opens no serial port looking for a
+    base).
     ``video`` is the camera list (``{"streams": [{"id", "name", "url",
     "username", "password", "transport"}], "ffmpeg": ""}``; see
     ``corvus/video.py``). A stream password is a secret like the SSH ones and
@@ -156,6 +159,9 @@ class CorvusConfig:
     ``review`` holds the Flight Review's options (``{"sensitivity":
     "normal"}``: how readily a number in a log becomes a finding, one of
     ``relaxed``/``normal``/``strict``; see ``corvus/flight_review.py``).
+    ``checklists`` holds the operator's preflight checklists and whether
+    they are shown (``{"enabled": false, "home_window": true, "active":
+    "<id>", "lists": [...]}``; see ``corvus/checklists.py``).
 
     They default to empty/None so an old config file with none of these keys
     still loads cleanly.
@@ -197,6 +203,7 @@ class CorvusConfig:
     plugins: dict[str, Any] | None = None
     parameters: dict[str, Any] | None = None
     review: dict[str, Any] | None = None
+    checklists: dict[str, Any] | None = None
 
     def apply_overrides(self, **kwargs: Any) -> CorvusConfig:
         """Return a copy with non-None kwargs overriding matching fields.
@@ -327,13 +334,15 @@ def _coerce_map(raw: Any) -> dict[str, Any] | None:
     (the camera tilt alone) or ``"full"`` (elevation relief, buildings and the
     globe) — and ``three_d_detail`` is which of the two the map's 3D button
     hands back, kept separately because it has to survive the mode being off.
+    ``terrain_source`` is the elevation model 3D reads from: a DEM id from
+    ``corvus/tile_sources.TERRAIN_SOURCES``, or ``"auto"``.
 
     None is validated against anything here: an unknown value must not stop
     the config from loading, so the frontend falls back to its defaults — a
     flat map, and the bootstrap layer — when it cannot resolve one.
     """
     return _coerce_str_keys(
-        raw, ("base_layer", "provider", "three_d", "three_d_detail"))
+        raw, ("base_layer", "provider", "three_d", "three_d_detail", "terrain_source"))
 
 
 # An API key goes into a URL query value, and it is typed (or pasted) by hand.
@@ -601,6 +610,10 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     rule, at the same size, as the Mission planner's tool bar — and trading
     the labels for map earlier than that is a preference, not a default.
 
+    ``compass_nose_up`` locks the flight compass nose up: the rose turns and
+    the needle stays pointing at the top. Off unless asked for: north up is
+    the default because it reads the same way as the map under it.
+
     ``windows_in_app`` keeps camera and terminal windows inside the Corvus
     window, where a drag past its edge takes one out into a window of its own.
     Off unless asked for: in the desktop app they open as windows of their own
@@ -612,6 +625,15 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     window of its own on macOS, the desktop) showing through blurred. Where
     nothing can be blurred (a window of its own on Linux or Windows) it is
     solid whatever this says.
+
+    ``track_earlier_flights`` draws the track of every earlier flight in a
+    second, quieter colour, so the flight in progress stands out from the ones
+    before it. On unless turned off, which is why it is the one ``ui`` switch
+    whose absent key reads as true.
+
+    ``track_clear_on_restart`` discards the flown track when the app starts
+    and when the autopilot reboots. Off unless asked for: the track is kept
+    until the operator clears it with the button on the map.
 
     ``units`` is the display unit per quantity (``length``, ``distance``,
     ``speed``, ``temperature``; see ``_UI_UNITS``). Each key is kept only with
@@ -633,7 +655,8 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
             out["scale"] = min(max(scale, _UI_SCALE_MIN), _UI_SCALE_MAX)
     for key in ("inverted_app_icon", "app_icon_backplate", "topbar_status_dots",
                 "mission_page", "notification_marks", "flight_bar_shrink",
-                "windows_in_app", "solid_terminals"):
+                "compass_nose_up", "windows_in_app", "solid_terminals",
+                "track_earlier_flights", "track_clear_on_restart"):
         if isinstance(raw.get(key), bool):
             out[key] = raw[key]
     return out or None
@@ -775,6 +798,17 @@ def _coerce_review(raw: Any) -> dict[str, Any] | None:
     return None
 
 
+def _coerce_checklists(raw: Any) -> dict[str, Any] | None:
+    """Keep the preflight checklists; bound every field.
+
+    The bounds live in :mod:`corvus.checklists` with the description of what
+    a checklist is, so the one place that says how long an item may be is
+    also the one that says what an item is.
+    """
+    from .checklists import coerce
+    return coerce(raw)
+
+
 def _build_config(data: dict[str, Any]) -> CorvusConfig:
     """Build a CorvusConfig from a parsed JSON object, ignoring unknown keys.
 
@@ -845,6 +879,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
     plugins = _coerce_plugins(data.get("plugins"))
     parameters = _coerce_parameters(data.get("parameters"))
     review = _coerce_review(data.get("review"))
+    checklists = _coerce_checklists(data.get("checklists"))
 
     return CorvusConfig(
         mavlink_connection=mavlink_connection,
@@ -874,6 +909,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         plugins=plugins,
         parameters=parameters,
         review=review,
+        checklists=checklists,
     )
 
 
@@ -972,6 +1008,11 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
         out["parameters"] = dict(cfg.parameters)
     if cfg.review is not None:
         out["review"] = dict(cfg.review)
+    if cfg.checklists is not None:
+        # Lists of lists: a shallow dict() would hand the caller the stored
+        # items to mutate.
+        from .checklists import copy as copy_checklists
+        out["checklists"] = copy_checklists(cfg.checklists)
     # Stable key order for a readable on-disk diff.
     return {k: out[k] for k in _CONFIG_FIELD_ORDER if k in out}
 

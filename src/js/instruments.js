@@ -21,6 +21,12 @@ Corvus.instruments = (function () {
   const HDG_EPS = 0.05;
   const PR_EPS = 0.05;
 
+  // Nose-up: the rose turns under a fixed needle instead of the needle turning
+  // over a fixed rose. The letters and digits turn back by the same angle so
+  // they stay upright and readable wherever they sit on the ring.
+  let noseUp = false;
+  const compassLabels = [];
+
   function el(name, attrs, text) {
     const e = document.createElementNS(NS, name);
     if (attrs) for (const k in attrs) e.setAttribute(k, attrs[k]);
@@ -31,6 +37,7 @@ Corvus.instruments = (function () {
   function buildCompass() {
     const card = compassCard;
     card.innerHTML = "";
+    compassLabels.length = 0;
 
     // A face disc under the tick band, so the ticks read as a raised ring
     // around a dial rather than as marks floating on the bezel fill.
@@ -72,7 +79,7 @@ Corvus.instruments = (function () {
     ];
     cardinals.forEach(({ d, t }) => {
       const rad = ((d - 90) * Math.PI) / 180;
-      card.appendChild(
+      compassLabels.push(card.appendChild(
         el("text", {
           x: (Math.cos(rad) * LABEL_R).toFixed(1),
           y: (Math.sin(rad) * LABEL_R).toFixed(1),
@@ -80,12 +87,12 @@ Corvus.instruments = (function () {
           "text-anchor": "middle",
           "dominant-baseline": "central",
         }, t)
-      );
+      ));
     });
 
     for (const d of [30, 60, 120, 150, 210, 240, 300, 330]) {
       const rad = ((d - 90) * Math.PI) / 180;
-      card.appendChild(
+      compassLabels.push(card.appendChild(
         el("text", {
           x: (Math.cos(rad) * LABEL_R).toFixed(1),
           y: (Math.sin(rad) * LABEL_R).toFixed(1),
@@ -93,7 +100,7 @@ Corvus.instruments = (function () {
           "text-anchor": "middle",
           "dominant-baseline": "central",
         }, String(d / 10).padStart(2, "0"))
-      );
+      ));
     }
   }
 
@@ -187,10 +194,35 @@ Corvus.instruments = (function () {
     }
   }
 
+  function renderCompass(h) {
+    if (!compassCard || !compassArrow) return;
+    if (noseUp) {
+      compassCard.setAttribute("transform", `rotate(${-h})`);
+      compassArrow.setAttribute("transform", "rotate(0)");
+      for (const t of compassLabels) {
+        t.setAttribute("transform", `rotate(${h} ${t.getAttribute("x")} ${t.getAttribute("y")})`);
+      }
+    } else {
+      compassCard.setAttribute("transform", "rotate(0)");
+      compassArrow.setAttribute("transform", `rotate(${h})`);
+      for (const t of compassLabels) t.removeAttribute("transform");
+    }
+  }
+
+  /**
+   * Lock the compass nose up (true) or north up (false, the default).
+   * Safe to call before init(): the choice is kept and applied on build.
+   */
+  function setNoseUp(on) {
+    noseUp = !!on;
+    if (insInit) renderInstruments();
+    else renderCompass(0);
+  }
+
   /** Render the SVG transforms from the interpolated DISPLAYED values. */
   function renderInstruments() {
     const h = Math.round(Corvus.anim.normAngle(insDisplay.heading)) % 360;
-    if (compassArrow) compassArrow.setAttribute("transform", `rotate(${h})`);
+    renderCompass(h);
     if (compassValue) compassValue.textContent = String(h).padStart(3, "0") + "\u00B0";
     updateAttitude(insDisplay.pitch, insDisplay.roll);
   }
@@ -272,6 +304,7 @@ Corvus.instruments = (function () {
     ftGrid = document.getElementById("flightTelemetry");
     buildCompass();
     buildCompassArrow();
+    setNoseUp(noseUp);
     buildAttitude();
     buildFlightTelemetry();
 
@@ -305,5 +338,5 @@ Corvus.instruments = (function () {
     });
   }
 
-  return { init };
+  return { init, setNoseUp, noseUp: () => noseUp };
 })();

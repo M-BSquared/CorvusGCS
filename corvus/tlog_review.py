@@ -66,40 +66,26 @@ _CHUNK_BYTES = 1 << 20
 
 # MAV_MODE_FLAG_SAFETY_ARMED.
 _ARMED_FLAG = 128
-# MAV_AUTOPILOT_PX4. Every autopilot packs custom_mode differently, and guessing
-# at one produces confidently mislabelled bands — so the tlog's own HEARTBEAT
-# decides, through the dialect tables in corvus.autopilot, and a stack neither
-# of them covers still gets a bare number.
-_AUTOPILOT_PX4 = 12
 
-# PX4 packs px4_custom_mode into HEARTBEAT.custom_mode as
-# (main_mode << 16) | (sub_mode << 24). The names match the ones the ULog
-# review uses, so a mode band is the same colour and the same word whichever
-# log it came from.
-# MAV_AUTOPILOT_ARDUPILOTMEGA.
-_AUTOPILOT_ARDUPILOT = 3
-
-
-def _ardupilot_dialect() -> Any:
-    """ArduPilot's mode tables, imported on first use.
-
-    Lazy because the review runs in a worker for a file that may well be a PX4
-    log, and the import is only worth paying for once a heartbeat says
-    otherwise.
-    """
-    from . import autopilot
-    return autopilot.dialect_for_stack(autopilot.STACK_ARDUPILOT)
-
-
-_PX4_MAIN = {
-    1: "Manual", 2: "Altitude", 3: "Position", 4: "Mission", 5: "Acro",
-    6: "Offboard", 7: "Stabilized", 8: "Rattitude", 9: "Simple",
-    10: "Position slow",
-}
-_PX4_AUTO_SUB = {
-    1: "Loiter", 2: "Takeoff", 3: "Loiter", 4: "Mission", 5: "Return",
-    6: "Land", 7: "Return", 8: "Follow target", 9: "Precision land",
-    10: "VTOL takeoff",
+# The review's word for each mode PX4Dialect.decode_mode names. What a
+# custom_mode means is corvus.autopilot's to say, not this module's: PX4 reports
+# Orbit and Position Slow as POSCTL sub modes, and a table of main modes alone
+# cannot see them. Only the wording lives here, and it is the ULog review's, so
+# a mode band is the same colour and the same word whichever log it came from:
+# "Return", not "RTL".
+_PX4_WORDS: dict[str, str] = {
+    "MANUAL": "Manual", "ALTCTL": "Altitude",
+    "ALTITUDE_CRUISE": "Altitude cruise", "POSCTL": "Position",
+    "POSITION_SLOW": "Position slow", "ORBIT": "Orbit",
+    "STABILIZED": "Stabilized", "ACRO": "Acro", "RATTITUDE": "Rattitude",
+    "OFFBOARD": "Offboard", "TERMINATION": "Termination",
+    "READY": "Ready", "TAKEOFF": "Takeoff", "LOITER": "Loiter",
+    "MISSION": "Mission", "RTL": "Return", "LAND": "Land",
+    # AUTO sub mode 7, gone from PX4 since 2020: only an old log carries it.
+    "RTGS": "Return",
+    "FOLLOWME": "Follow target", "PRECLAND": "Precision land",
+    "VTOL_TAKEOFF": "VTOL takeoff", "GUIDED_COURSE": "Guided course",
+    **{f"EXTERNAL{n}": f"External {n}" for n in range(1, 9)},
 }
 _MAV_TYPE = {
     1: "Fixed wing", 2: "Quadrotor", 3: "Coaxial helicopter",
@@ -624,28 +610,27 @@ def _mode_name(msg: Any) -> str:
 
     Read against the stack the log itself names, because ``custom_mode`` means
     something different on each and a confidently mislabelled band is worse
-    than a number — the whole point of the mode strip is that the reader trusts
-    it. An autopilot no dialect covers therefore still gets ``Mode 5`` rather
-    than somebody else's word for 5.
+    than a number: the whole point of the mode strip is that the reader trusts
+    it. So the dialect in :mod:`corvus.autopilot` decodes it, and anything it
+    cannot name (a stack no dialect covers, a PX4 sub mode newer than this
+    build) still gets ``Mode 5`` rather than somebody else's word for 5.
 
-    PX4 keeps its own table here rather than borrowing the bridge's: these are
-    the *review's* names, chosen to match the ULog review so a mode band is the
-    same word whichever log it came from ("Return", not "RTL").
+    The words are the *review's*, chosen to match the ULog review so a mode
+    band is the same word whichever log it came from ("Return", not "RTL").
     """
+    # Here rather than at the top: it brings pymavlink, which this module
+    # otherwise loads only once a file is actually read.
+    from . import autopilot
+
     custom = int(getattr(msg, "custom_mode", 0) or 0)
-    autopilot = int(getattr(msg, "autopilot", 0) or 0)
-    if autopilot == _AUTOPILOT_PX4:
-        main = (custom >> 16) & 0xFF
-        sub = (custom >> 24) & 0xFF
-        if main == 4:
-            return _PX4_AUTO_SUB.get(sub, "Mission")
-        return _PX4_MAIN.get(main, f"Mode {custom}")
-    if autopilot == _AUTOPILOT_ARDUPILOT:
-        name = _ardupilot_dialect().decode_mode(
-            custom, getattr(msg, "base_mode", 0), getattr(msg, "type", 0))
-        if name and not name.startswith("MODE_"):
-            # ALT_HOLD -> "Alt hold": the strip is prose, not parameter names.
-            return name.replace("_", " ").capitalize()
+    dialect = autopilot.dialect_for(int(getattr(msg, "autopilot", 0) or 0))
+    name = dialect.decode_mode(
+        custom, getattr(msg, "base_mode", 0), getattr(msg, "type", 0))
+    if dialect.stack == autopilot.STACK_PX4:
+        return _PX4_WORDS.get(name, f"Mode {custom}")
+    if name and not name.startswith("MODE_"):
+        # ALT_HOLD -> "Alt hold": the strip is prose, not parameter names.
+        return name.replace("_", " ").capitalize()
     return f"Mode {custom}"
 
 

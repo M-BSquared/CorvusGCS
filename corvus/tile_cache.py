@@ -176,10 +176,10 @@ class TileCache:
         # connection while an in-flight HTTP handler thread (daemon, not
         # joined) still calls get_tile. Bail to the safe default instead of
         # hitting sqlite3.ProgrammingError on a closed connection.
-        if self._closed:
-            return None
         row_num = xyz_to_tms(z, y)
         with self._lock:
+            if self._closed:
+                return None
             cur = self._conn.execute(
                 "SELECT tile_data FROM tiles "
                 "WHERE zoom_level=? AND tile_column=? AND tile_row=?",
@@ -190,12 +190,12 @@ class TileCache:
 
     def put_tile(self, z: int, x: int, y: int, blob: bytes) -> None:
         """Insert or replace the tile for XYZ (z,x,y). No-op on an empty blob."""
-        if self._closed:
-            return
         if not blob:
             return
         row_num = xyz_to_tms(z, y)
         with self._lock:
+            if self._closed:
+                return
             self._conn.execute(
                 "INSERT OR REPLACE INTO tiles "
                 "(zoom_level, tile_column, tile_row, tile_data) VALUES (?,?,?,?)",
@@ -222,8 +222,6 @@ class TileCache:
         as downloaded only once this has returned, so a failed batch is
         reported as failed tiles rather than as progress that did not happen.
         """
-        if self._closed:
-            return 0
         rows = [
             (z, x, xyz_to_tms(z, y), blob)
             for z, x, y, blob in tiles
@@ -232,6 +230,8 @@ class TileCache:
         if not rows:
             return 0
         with self._lock:
+            if self._closed:
+                return 0
             self._conn.executemany(
                 "INSERT OR REPLACE INTO tiles "
                 "(zoom_level, tile_column, tile_row, tile_data) VALUES (?,?,?,?)",
@@ -242,10 +242,10 @@ class TileCache:
 
     def has_tile(self, z: int, x: int, y: int) -> bool:
         """Return True if a tile for XYZ (z,x,y) is present in the cache."""
-        if self._closed:
-            return False
         row_num = xyz_to_tms(z, y)
         with self._lock:
+            if self._closed:
+                return False
             cur = self._conn.execute(
                 "SELECT 1 FROM tiles "
                 "WHERE zoom_level=? AND tile_column=? AND tile_row=?",
@@ -268,10 +268,10 @@ class TileCache:
         missing ones take a benign default, so a partially-built record can
         never raise here and lose the download that produced it.
         """
-        if self._closed:
-            return dict(region)
         row = _clean_region(region)
         with self._lock:
+            if self._closed:
+                return row
             self._conn.execute(
                 """INSERT OR REPLACE INTO corvus_regions
                    (id, name, source, w, s, e, n, minzoom, maxzoom,
@@ -292,14 +292,14 @@ class TileCache:
         area shows up as in-progress) and patched with the real tile count and
         final state when the job ends.
         """
-        if self._closed:
-            return False
         allowed = {"name", "tile_count", "state"}
         sets = {k: v for k, v in fields.items() if k in allowed}
         if not sets:
             return False
         cols = ", ".join(f"{k}=?" for k in sets)
         with self._lock:
+            if self._closed:
+                return False
             cur = self._conn.execute(
                 f"UPDATE corvus_regions SET {cols} WHERE id=?",
                 (*sets.values(), region_id),
@@ -309,9 +309,9 @@ class TileCache:
 
     def list_regions(self) -> list[dict]:
         """Return every region record, newest first."""
-        if self._closed:
-            return []
         with self._lock:
+            if self._closed:
+                return []
             cur = self._conn.execute(
                 """SELECT id, name, source, w, s, e, n, minzoom, maxzoom,
                           tile_count, created_at, state
@@ -342,9 +342,9 @@ class TileCache:
         another region may need them. :meth:`delete_region_tiles` is the
         explicit, separate step for reclaiming disk.
         """
-        if self._closed:
-            return False
         with self._lock:
+            if self._closed:
+                return False
             cur = self._conn.execute(
                 "DELETE FROM corvus_regions WHERE id=?", (region_id,)
             )
@@ -357,10 +357,10 @@ class TileCache:
         Deleted in one transaction so a half-deleted region can never be left
         behind. XYZ→TMS conversion happens here, exactly as in put/get.
         """
-        if self._closed:
-            return 0
         removed = 0
         with self._lock:
+            if self._closed:
+                return 0
             for z, x, y in tiles:
                 cur = self._conn.execute(
                     "DELETE FROM tiles "
@@ -377,10 +377,10 @@ class TileCache:
         One indexed range query per zoom, so the answer for a region costs
         nothing like enumerating it tile by tile.
         """
-        if self._closed:
-            return 0
         total = 0
         with self._lock:
+            if self._closed:
+                return 0
             for z, x_min, x_max, y_min, y_max in ranges:
                 cur = self._conn.execute(
                     "SELECT COUNT(*) FROM tiles WHERE zoom_level=? "
@@ -395,9 +395,9 @@ class TileCache:
 
         ``minzoom``/``maxzoom`` are None when the cache is empty.
         """
-        if self._closed:
-            return {"count": 0, "minzoom": None, "maxzoom": None}
         with self._lock:
+            if self._closed:
+                return {"count": 0, "minzoom": None, "maxzoom": None}
             cur = self._conn.execute(
                 "SELECT COUNT(*), MIN(zoom_level), MAX(zoom_level) FROM tiles"
             )
@@ -428,9 +428,9 @@ class TileCache:
 
     def set_metadata(self, name: str, value: str) -> None:
         """Insert or replace a metadata row keyed by *name*."""
-        if self._closed:
-            return
         with self._lock:
+            if self._closed:
+                return
             self._conn.execute(
                 "INSERT OR REPLACE INTO metadata (name, value) VALUES (?,?)",
                 (name, value),
@@ -439,9 +439,9 @@ class TileCache:
 
     def get_metadata(self, name: str) -> str | None:
         """Return the metadata value for *name*, or None if absent."""
-        if self._closed:
-            return None
         with self._lock:
+            if self._closed:
+                return None
             cur = self._conn.execute(
                 "SELECT value FROM metadata WHERE name=?", (name,)
             )

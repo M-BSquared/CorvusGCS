@@ -62,6 +62,78 @@ def test_px4_packs_a_main_mode_and_a_sub_mode() -> None:
     assert px4.decode_mode(3 << 16, 81, 2) == "POSCTL"
 
 
+def _px4_word(main: int, sub: int = 0) -> int:
+    return (main << 16) | (sub << 24)
+
+
+@pytest.mark.parametrize(("main", "sub", "name"), [
+    # px4_custom_mode.h, PX4_CUSTOM_SUB_MODE_POSCTL, v1.16 to v1.18. Reading
+    # the main mode alone showed both of these as POSITION.
+    (3, 0, "POSCTL"),
+    (3, 1, "ORBIT"),
+    (3, 2, "POSITION_SLOW"),
+    (3, 9, "POSCTL_SUBMODE_9"),
+    # PX4_CUSTOM_MAIN_MODE_TERMINATION (v1.16+) and ALTITUDE_CRUISE (v1.17+)
+    # used to decode as MODE_655360 and MODE_720896.
+    (10, 0, "TERMINATION"),
+    (11, 0, "ALTITUDE_CRUISE"),
+    # PX4_CUSTOM_SUB_MODE_GUIDED_COURSE, new in v1.18.
+    (4, 19, "GUIDED_COURSE"),
+])
+def test_every_mode_px4_reports_is_decoded_by_name(main: int, sub: int, name: str) -> None:
+    px4 = autopilot.dialect_for(mv.mavlink.MAV_AUTOPILOT_PX4)
+    assert px4.decode_mode(_px4_word(main, sub), 81, 2) == name
+
+
+def test_retired_px4_modes_still_decode_for_old_logs() -> None:
+    """Main mode 8 and AUTO sub mode 7 are reserved in every supported
+    release, but a log from before 2020 can carry them."""
+    px4 = autopilot.dialect_for(mv.mavlink.MAV_AUTOPILOT_PX4)
+    assert px4.decode_mode(_px4_word(8), 65, 2) == "RATTITUDE"
+    assert px4.decode_mode(_px4_word(4, 7), 29, 2) == "RTGS"
+
+
+@pytest.mark.parametrize(("name", "label"), [
+    ("POSCTL", "POSITION"),
+    ("ALTCTL", "ALTITUDE"),
+    ("LOITER", "HOLD"),
+    ("RTL", "RETURN"),
+    ("FOLLOWME", "FOLLOW ME"),
+    ("PRECLAND", "PRECISION LAND"),
+    ("VTOL_TAKEOFF", "VTOL TAKEOFF"),
+    ("MISSION", "MISSION"),
+    ("ORBIT", "ORBIT"),
+    ("POSITION_SLOW", "POSITION SLOW"),
+    ("ALTITUDE_CRUISE", "ALTITUDE CRUISE"),
+    ("TERMINATION", "TERMINATION"),
+    ("GUIDED_COURSE", "GUIDED COURSE"),
+    ("", ""),
+])
+def test_px4_modes_are_shown_by_the_word_px4_uses(name: str, label: str) -> None:
+    """POSCTL is what a mode change sends; POSITION is what the operator reads."""
+    px4 = autopilot.dialect_for(mv.mavlink.MAV_AUTOPILOT_PX4)
+    assert px4.mode_label(name) == label
+
+
+@pytest.mark.parametrize(("name", "label"), [
+    ("LOITER", "LOITER"),
+    ("RTL", "RTL"),
+    ("ALT_HOLD", "ALT HOLD"),
+    ("SMART_RTL", "SMART RTL"),
+    ("FBWA", "FBWA"),
+])
+def test_ardupilot_keeps_its_own_mode_names(name: str, label: str) -> None:
+    """LOITER and RTL are ArduPilot's own modes under ArduPilot's own names.
+    PX4's words for them would name a different mode; only the underscores go."""
+    apm = autopilot.dialect_for(mv.mavlink.MAV_AUTOPILOT_ARDUPILOTMEGA)
+    assert apm.mode_label(name) == label
+
+
+def test_an_unknown_stack_shows_the_mode_it_decoded() -> None:
+    generic = autopilot.dialect_for(99)
+    assert generic.mode_label(generic.decode_mode(7, 0, 2)) == "MODE 7"
+
+
 def test_ardupilot_reads_one_flat_number_against_its_vehicle_table() -> None:
     """The same number is a different mode on a different airframe, which is
     why MAV_TYPE has to reach the decoder at all."""
@@ -96,9 +168,75 @@ def test_retired_ardupilot_modes_decode_but_are_never_offered() -> None:
 
 def test_a_px4_mode_command_is_the_pymavlink_triple() -> None:
     px4 = autopilot.dialect_for(mv.mavlink.MAV_AUTOPILOT_PX4)
-    table = px4.mode_table(mv.mavlink.MAV_TYPE_QUADROTOR)
+    table = px4.mode_table(mv.mavlink.MAV_TYPE_QUADROTOR, (1, 18, 0))
     for name, value in mv.px4_map.items():
+        if name in autopilot.PX4_RETIRED_MODES:
+            continue
         assert table[name] == value, name
+
+
+def test_px4_modes_newer_than_px4_map_are_the_commanders_own_triples() -> None:
+    """Commander.cpp: POSCTL with sub mode 2 is Position Slow, and main mode 11
+    is Altitude Cruise. The base_mode only has to carry the custom mode flag."""
+    px4 = autopilot.dialect_for(mv.mavlink.MAV_AUTOPILOT_PX4)
+    table = px4.mode_table(mv.mavlink.MAV_TYPE_QUADROTOR, (1, 18, 0))
+    assert table["POSITION_SLOW"] == (81, 3, 2)
+    assert table["ALTITUDE_CRUISE"] == (81, 11, 0)
+    for command in table.values():
+        assert command.base_mode & CUSTOM
+
+
+@pytest.mark.parametrize("firmware", [None, (1, 12, 3), (1, 16, 0), (1, 17, 0), (1, 18, 0)])
+def test_retired_px4_modes_are_never_offered_or_sent(firmware: tuple[int, ...] | None) -> None:
+    """RTGS is AUTO_RESERVED_DO_NOT_USE and refused. RATTITUDE is
+    RATTITUDE_LEGACY: v1.16 and v1.17 ACK it and change nothing, which is
+    worse than a refusal because the operator is told it worked."""
+    px4 = autopilot.dialect_for(mv.mavlink.MAV_AUTOPILOT_PX4)
+    for name in ("RTGS", "RATTITUDE"):
+        assert name not in px4.available_modes(2, firmware)
+        assert name not in px4.mode_table(2, firmware)
+        assert name not in px4.adopt_live_mapping(dict(mv.px4_map), 2, firmware)
+
+
+@pytest.mark.parametrize(("firmware", "slow", "cruise"), [
+    # Unknown: only what every supported release switches to.
+    (None, False, False),
+    # Best effort range. v1.14 lands a sub mode 2 request in plain POSCTL.
+    ((1, 14, 3), False, False),
+    ((1, 15, 4), True, False),
+    # Target range. v1.16 ACKs main mode 11 and does nothing.
+    ((1, 16, 2), True, False),
+    ((1, 17, 0), True, True),
+    ((1, 18, 0), True, True),
+])
+def test_px4_modes_are_offered_only_by_the_releases_that_fly_them(
+    firmware: tuple[int, ...] | None, slow: bool, cruise: bool,
+) -> None:
+    px4 = autopilot.dialect_for(mv.mavlink.MAV_AUTOPILOT_PX4)
+    offered = px4.available_modes(2, firmware)
+    table = px4.mode_table(2, firmware)
+    live = px4.adopt_live_mapping(dict(mv.px4_map), 2, firmware)
+    for modes in (offered, table, live):
+        assert ("POSITION_SLOW" in modes) is slow
+        assert ("ALTITUDE_CRUISE" in modes) is cruise
+        assert {"MANUAL", "POSCTL", "LOITER", "MISSION", "RTL"} <= set(modes)
+
+
+def test_px4_modes_that_cannot_be_selected_are_never_offered() -> None:
+    """Orbit is started by DO_ORBIT (a POSCTL sub mode 1 request lands in
+    POSCTL), and Guided Course is steered by heading commands the station does
+    not send. Both decode; neither is a selector entry."""
+    px4 = autopilot.dialect_for(mv.mavlink.MAV_AUTOPILOT_PX4)
+    for name in ("ORBIT", "GUIDED_COURSE"):
+        assert name not in px4.available_modes(2, (1, 18, 0))
+        assert name not in px4.mode_table(2, (1, 18, 0))
+
+
+def test_the_px4_selector_order_is_manual_first() -> None:
+    px4 = autopilot.dialect_for(mv.mavlink.MAV_AUTOPILOT_PX4)
+    offered = px4.available_modes(2, (1, 17, 0))
+    assert offered[:5] == ["MANUAL", "ALTCTL", "ALTITUDE_CRUISE", "POSCTL", "POSITION_SLOW"]
+    assert set(offered) == set(px4.mode_table(2, (1, 17, 0)))
 
 
 def test_the_live_mapping_is_adopted_only_in_the_shape_its_stack_sends() -> None:

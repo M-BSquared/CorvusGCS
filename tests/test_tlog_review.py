@@ -714,6 +714,77 @@ def test_a_px4_tlog_keeps_the_reviews_own_wording() -> None:
     assert _mode_name(rtl) == "Return"
 
 
+def _px4(main: int, sub: int = 0) -> object:
+    from types import SimpleNamespace
+    return SimpleNamespace(custom_mode=(main << 16) | (sub << 24), autopilot=12,
+                           base_mode=81, type=2)
+
+
+@pytest.mark.parametrize(("main", "sub", "word"), [
+    (3, 0, "Position"),
+    # Orbit and Position Slow are POSCTL sub modes, not main modes: reading
+    # the main mode alone showed both as plain Position.
+    (3, 1, "Orbit"),
+    (3, 2, "Position slow"),
+    # Main mode 10 is TERMINATION. The review used to call it Position slow,
+    # which hid a flight termination behind the name of a gentle manual mode.
+    (10, 0, "Termination"),
+    (11, 0, "Altitude cruise"),          # v1.17
+    (4, 1, "Ready"),                     # AUTO sub 1 is READY, not Loiter
+    (4, 3, "Loiter"),
+    (4, 5, "Return"),
+    (4, 19, "Guided course"),            # v1.18
+])
+def test_px4_modes_decode_as_px4_1_16_to_1_18_report_them(
+        main: int, sub: int, word: str) -> None:
+    """Checked against px4_custom_mode.h at v1.16.2, v1.17.0 and v1.18.0-rc1,
+    through the dialect in corvus.autopilot rather than a table of the review's
+    own."""
+    from corvus.tlog_review import _mode_name
+
+    assert _mode_name(_px4(main, sub)) == word
+
+
+def test_an_unknown_px4_auto_sub_mode_is_a_number_not_mission() -> None:
+    """A sub mode newer than this build is not a mission. A confidently
+    mislabelled band is worse than a number."""
+    from corvus.tlog_review import _mode_name
+
+    msg = _px4(4, 42)
+    assert _mode_name(msg) == f"Mode {msg.custom_mode}"
+
+
+def test_every_px4_mode_the_dialect_names_has_a_review_word() -> None:
+    """A mode added to the dialect without a word here would read as a bare
+    number in the review, so the two tables are held together."""
+    from corvus import autopilot
+    from corvus.tlog_review import _PX4_WORDS
+
+    named = (
+        {v for k, v in autopilot.PX4_MAIN_MODE.items() if k not in (3, 4)}
+        | set(autopilot.PX4_POSCTL_SUBMODE.values())
+        | set(autopilot.PX4_AUTO_SUBMODE.values())
+    )
+    assert named - set(_PX4_WORDS) == set()
+    for word in _PX4_WORDS.values():
+        assert "—" not in word and "–" not in word and " - " not in word
+
+
+def test_a_px4_termination_is_named_and_reported() -> None:
+    """Main mode 10 used to read as Position slow, so a terminated flight got
+    neither the right band nor the finding every recovery mode gets."""
+    rec = _Recorder()
+    for step in range(60):
+        boot = 1000 + step * 200
+        rec.position(boot, 48.1, 11.5, 100.0)
+        if step % 5 == 0:
+            rec.heartbeat(custom_mode=10 << 16 if step >= 40
+                          else (3 << 16) | (2 << 24))
+    data = review_bytes(rec.blob(), "termination.tlog")
+    assert [m["mode"] for m in data["modes"]] == ["Position slow", "Termination"]
+    assert any("flew Termination" in f["text"] for f in data["findings"])
+
+
 def test_a_stack_no_dialect_covers_still_gets_a_bare_number() -> None:
     """A confidently mislabelled band is worse than a number."""
     from types import SimpleNamespace

@@ -31,6 +31,7 @@ from types import SimpleNamespace as NS
 import pytest
 from pymavlink import mavutil as mv
 
+from corvus import autopilot as autopilot_dialect
 from corvus.mavlink_bridge import (
     MAV_AUTOPILOT_MAP,
     PX4_AVAILABLE_MODES,
@@ -110,9 +111,8 @@ def test_the_live_px4_modes_keep_the_dialects_order(bridge: MavlinkBridge) -> No
     _with_mapping(bridge, dict(mv.px4_map))
     offered = bridge.get_available_modes()
     assert offered[0] == "MANUAL"
-    known = [m for m in PX4_AVAILABLE_MODES if m in mv.px4_map]
-    assert offered[:len(known)] == known
-    assert offered[len(known):] == sorted(set(mv.px4_map) - set(known))
+    known = [m for m in PX4_AVAILABLE_MODES if m in offered]
+    assert offered == known
 
 
 def test_a_live_mode_the_dialect_does_not_know_is_still_offered(
@@ -126,8 +126,10 @@ def test_a_missing_mapping_still_falls_back_to_px4(bridge: MavlinkBridge) -> Non
     """BUG 9's fallback: PX4 is the target, and a link that answers nothing
     must not leave the selector empty."""
     _with_mapping(bridge, None)
-    assert bridge.get_available_modes() == PX4_AVAILABLE_MODES
-    assert bridge._mode_values, "set_mode needs values, not just names"
+    offered = bridge.get_available_modes()
+    assert offered == [m for m in PX4_AVAILABLE_MODES if m in offered]
+    assert {"MANUAL", "POSCTL", "LOITER", "MISSION", "RTL"} <= set(offered)
+    assert set(bridge._mode_values) == set(offered), "set_mode needs values, not just names"
 
 
 def test_an_ardupilot_vehicle_is_offered_its_own_modes(
@@ -283,3 +285,130 @@ def test_an_unknown_name_on_ardupilot_is_named_for_ardupilot(
     assert bridge.set_mode("NOT_A_MODE") is False
     error = bridge.get_last_command_error()
     assert "ArduPilot" in error and "PX4" not in error
+
+
+# ---------------------------------------------------------------------------
+# PX4 modes the connected release will not fly, checked against
+# px4_custom_mode.h and Commander.cpp at v1.16.2, v1.17.0 and v1.18.0-rc1
+# ---------------------------------------------------------------------------
+
+class _Message(NS):
+    def get_type(self) -> str:
+        return self.message_type
+
+
+def _report_px4(bridge: MavlinkBridge, major: int, minor: int, patch: int) -> None:
+    """AUTOPILOT_VERSION as PX4 packs it: one byte each, type in the low byte."""
+    bridge._dispatch(_Message(
+        message_type="AUTOPILOT_VERSION",
+        flight_sw_version=(major << 24) | (minor << 16) | (patch << 8) | 0xFF,
+    ))
+
+
+def _capture_commands(bridge: MavlinkBridge) -> list[tuple[int, list[float]]]:
+    sent: list[tuple[int, list[float]]] = []
+
+    def _send(command: int, params: list[float] | None = None, **_: object) -> int:
+        sent.append((command, list(params or [])))
+        return mv.mavlink.MAV_RESULT_ACCEPTED
+
+    bridge._connection_ready = lambda: True   # type: ignore[method-assign]
+    bridge._send_command_and_wait = _send     # type: ignore[method-assign]
+    return sent
+
+
+@pytest.mark.parametrize("name", ["RTGS", "RATTITUDE"])
+def test_px4_modes_pymavlink_still_lists_are_neither_offered_nor_sent(
+    bridge: MavlinkBridge, name: str,
+) -> None:
+    """px4_map still carries both. RTGS is refused on every target; RATTITUDE
+    is ACKed by v1.16 and v1.17 and changes nothing, so an operator reaching
+    for it would be told the mode change worked."""
+    assert name in mv.px4_map, "guard: pymavlink still lists it"
+    _with_mapping(bridge, dict(mv.px4_map))
+    _report_px4(bridge, 1, 18, 0)
+    assert name not in bridge.get_available_modes()
+    sent = _capture_commands(bridge)
+    assert bridge.set_mode(name) is False
+    assert sent == []
+
+
+def test_altitude_cruise_waits_for_a_release_that_has_it(bridge: MavlinkBridge) -> None:
+    """Main mode 11 arrives in v1.17. v1.16's handler has no branch for it and
+    ACKs the request unchanged, so it is offered only once the version says so,
+    and refused before that without anything being sent."""
+    _with_mapping(bridge, dict(mv.px4_map))
+    sent = _capture_commands(bridge)
+    assert "ALTITUDE_CRUISE" not in bridge.get_available_modes()
+    assert bridge.set_mode("ALTITUDE_CRUISE") is False
+
+    _report_px4(bridge, 1, 16, 2)
+    assert "ALTITUDE_CRUISE" not in bridge.get_available_modes()
+    assert bridge.set_mode("ALTITUDE_CRUISE") is False
+    assert sent == []
+
+    _report_px4(bridge, 1, 17, 0)
+    offered = bridge.get_available_modes()
+    assert offered.index("ALTITUDE_CRUISE") == offered.index("ALTCTL") + 1
+    assert bridge.get_mode_labels()["ALTITUDE_CRUISE"] == "ALTITUDE CRUISE"
+    assert bridge.set_mode("ALTITUDE_CRUISE") is True
+    command, params = sent[0]
+    assert command == mv.mavlink.MAV_CMD_DO_SET_MODE
+    assert params[:3] == [81.0, 11.0, 0.0]
+
+
+def test_position_slow_goes_out_as_posctl_sub_mode_two(bridge: MavlinkBridge) -> None:
+    """Before v1.15 the same request lands in plain POSCTL and is ACKed."""
+    _with_mapping(bridge, dict(mv.px4_map))
+    _report_px4(bridge, 1, 14, 3)
+    assert "POSITION_SLOW" not in bridge.get_available_modes()
+
+    _report_px4(bridge, 1, 16, 0)
+    assert bridge.get_mode_labels()["POSITION_SLOW"] == "POSITION SLOW"
+    sent = _capture_commands(bridge)
+    assert bridge.set_mode("POSITION_SLOW") is True
+    assert sent[0][1][:3] == [81.0, 3.0, 2.0]
+
+
+def test_a_new_link_forgets_the_last_vehicles_release(bridge: MavlinkBridge) -> None:
+    """A PX4 v1.17 on the bench, then an ArduPilot, then a PX4 of unknown
+    release: ArduPilot's 4.x must not unlock v1.17 modes on the second PX4."""
+    _with_mapping(bridge, dict(mv.px4_map))
+    _report_px4(bridge, 1, 17, 0)
+    assert "ALTITUDE_CRUISE" in bridge.get_available_modes()
+    _with_mapping(
+        bridge, mv.mode_mapping_byname(mv.mavlink.MAV_TYPE_QUADROTOR), autopilot=_APM,
+    )
+    _report_px4(bridge, 4, 5, 7)
+    _with_mapping(bridge, dict(mv.px4_map))
+    assert "ALTITUDE_CRUISE" not in bridge.get_available_modes()
+
+
+@pytest.mark.parametrize(("sub", "mode", "label"), [
+    (1, "ORBIT", "ORBIT"),
+    (2, "POSITION_SLOW", "POSITION SLOW"),
+])
+def test_a_posctl_sub_mode_reaches_the_top_bar_by_name(
+    bridge: MavlinkBridge, sub: int, mode: str, label: str,
+) -> None:
+    """An orbiting vehicle used to read POSITION: the sub mode was dropped."""
+    store = bridge._store
+    bridge._latch_dialect(mv.mavlink.MAV_AUTOPILOT_PX4, mv.mavlink.MAV_TYPE_QUADROTOR)
+    bridge._conn = NS(mode_mapping=lambda: dict(mv.px4_map))
+    hb = _Message(
+        message_type="HEARTBEAT", type=mv.mavlink.MAV_TYPE_QUADROTOR,
+        autopilot=mv.mavlink.MAV_AUTOPILOT_PX4, base_mode=_CUSTOM | 0x80,
+        custom_mode=(3 << 16) | (sub << 24), system_status=4,
+    )
+    bridge._dispatch(hb)
+    snap = store.get_snapshot()
+    assert snap["mode"] == mode
+    assert snap["mode_label"] == label
+
+
+def test_the_dialect_is_what_decides_px4_mode_support() -> None:
+    """One place knows which PX4 release flies which mode. The bridge only
+    hands it the version."""
+    assert autopilot_dialect.px4_mode_supported("ALTITUDE_CRUISE", (1, 17, 0))
+    assert not autopilot_dialect.px4_mode_supported("ALTITUDE_CRUISE", (1, 16, 9))
+    assert not autopilot_dialect.px4_mode_supported("RTGS", (1, 18, 0))

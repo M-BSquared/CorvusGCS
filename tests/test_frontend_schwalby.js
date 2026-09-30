@@ -953,13 +953,16 @@ async function testALateStatusRepaintsTheOpenEditor() {
   S.destroy(h.container);
 }
 
+/* A running row has no pencil, so the editor meets a running session only
+   when it was opened before the shelf knew. These open it before the first
+   liveness answer comes back, which is that case. */
 async function testMovingARunningButtonClosesItsSessionFirst() {
   const h = mount({ saved: { buttons: [SSH_BUTTON] }, sessions: ["schwalby/s"], holdDisconnect: true });
+  click(h.tool("Edit Start mission"));
   await flushMicrotasks();
 
   // Declined: nothing is saved, the editor stays, the program keeps running.
   window.confirm = () => false;
-  click(h.tool("Edit Start mission"));
   pickTarget(h, "Local");
   click(h.byLabel("Save")[0]);
   await flushMicrotasks();
@@ -992,36 +995,79 @@ async function testMovingARunningButtonClosesItsSessionFirst() {
 }
 
 async function testARenameKeepsTheSession() {
-  const h = mount({ saved: { buttons: [SSH_BUTTON] }, sessions: ["schwalby/s"] });
+  const opts = { saved: { buttons: [SSH_BUTTON] }, sessions: ["schwalby/s"] };
+  const h = mount(opts);
+  click(h.tool("Edit Start mission"));
   await flushMicrotasks();
   let asked = 0;
   window.confirm = () => { asked += 1; return true; };
-  click(h.tool("Edit Start mission"));
   typeInto(h.fieldBy("Button label"), "Mission A");
   click(h.byLabel("Save")[0]);
   await flushMicrotasks();
   assert.equal(asked, 0);
   assert.ok(!h.urls().includes("/api/ssh/disconnect"));
+  assert.ok(h.tool("Stop Mission A"), "still running, under its new name");
+  S.destroy(h.container);
 
   // Another connection is a move: asked, then closed.
-  click(h.tool("Edit Mission A"));
-  changeTo(h.select(), "ground");
-  click(h.byLabel("Save")[0]);
+  const moved = mount(opts);
+  click(moved.tool("Edit Start mission"));
+  await flushMicrotasks();
+  changeTo(moved.select(), "ground");
+  click(moved.byLabel("Save")[0]);
   await flushMicrotasks();
   assert.equal(asked, 1);
-  assert.deepEqual(h.calls.find((c) => c.url === "/api/ssh/disconnect").body, { name: "schwalby/s" });
+  assert.deepEqual(moved.calls.find((c) => c.url === "/api/ssh/disconnect").body, { name: "schwalby/s" });
   window.confirm = () => true;
-  S.destroy(h.container);
+  S.destroy(moved.container);
 }
 
 async function testRemovingARunningButtonClosesItsSession() {
   const h = mount({ saved: { buttons: [LOCAL_BUTTON] }, sessions: ["schwalby/l"] });
-  await flushMicrotasks();
   click(h.tool("Edit Ground logger"));
+  await flushMicrotasks();
   click(h.byLabel("Delete")[0]);
   await flushMicrotasks();
   assert.equal(h.shelf().length, 0);
   assert.deepEqual(h.calls.find((c) => c.url === "/api/ssh/disconnect").body, { name: "schwalby/l" });
+  S.destroy(h.container);
+}
+
+/* While its session is up the row's pencil is a stop button: Ctrl-C, the
+   grace for the program to take it, then the session closed. Here and over
+   SSH alike; a background button has no session, so it keeps its pencil. */
+async function testARunningRowStopsInsteadOfEditing() {
+  const h = mount({
+    saved: { buttons: [LOCAL_BUTTON, SSH_BUTTON, LOCAL_BACKGROUND] },
+    sessions: ["schwalby/l", "schwalby/s"],
+  });
+  await flushMicrotasks();
+  assert.ok(h.tool("Edit Tile server"));
+  assert.equal(h.tool("Stop Tile server"), undefined);
+
+  for (const [label, session, where] of [
+    ["Ground logger", "schwalby/l", "this computer"],
+    ["Start mission", "schwalby/s", "companion"],
+  ]) {
+    const disconnects = () => h.calls.filter((c) => c.url === "/api/ssh/disconnect" && c.body.name === session);
+    assert.equal(h.tool(`Edit ${label}`), undefined);
+    const stopBtn = h.tool(`Stop ${label}`);
+    assert.ok(stopBtn.className.split(/\s+/).includes("schw-stop"));
+
+    click(stopBtn);
+    await flushMicrotasks();
+    assert.deepEqual(h.sends().filter((x) => x.name === session), [{ name: session, data: S.CTRL_C }]);
+    assert.equal(disconnects().length, 0, "the hang-up waits for the program to take the Ctrl-C");
+    assert.equal(h.tool(`Stop ${label}`).disabled, true, "shown stopping");
+
+    await new Promise((r) => setTimeout(r, S.RESTART_GRACE_MS + 50));
+    await flushMicrotasks();
+    assert.equal(disconnects().length, 1);
+    assert.ok(h.tool(`Edit ${label}`), "stopped, the pencil is back");
+    assert.equal(h.tool(`Stop ${label}`), undefined);
+    assert.equal(h.status().textContent, `${label} stopped`);
+    assert.ok(h.consoleLines.some((l) => l.line === `schwalby (${where}): stopped ${label}` && l.level === "info"));
+  }
   S.destroy(h.container);
 }
 
@@ -1259,6 +1305,7 @@ async function run() {
   await testMovingARunningButtonClosesItsSessionFirst();
   await testARenameKeepsTheSession();
   await testRemovingARunningButtonClosesItsSession();
+  await testARunningRowStopsInsteadOfEditing();
   await testDestroyStopsLateCallbacks();
   testCompanionHelpers();
   await testNoCompanionIsNotPinged();

@@ -29,6 +29,9 @@ window.Corvus = window.Corvus || {};
  *     program's output is theirs to read there and Ctrl-C theirs to press —
  *     this is a real shell, not a captured one. Closing the window leaves the
  *     program running; the window's disconnect button, like Ctrl-C, stops it.
+ *     So does the row itself: while its session is up, the pencil is a stop
+ *     button that presses Ctrl-C and then closes the session and the
+ *     connection with it.
  *     The session lives in the backend's SSH bridge for as long as Corvus runs.
  *
  *   BACKGROUND  One-shot `POST /api/ssh/run` with nohup. Nothing to watch and
@@ -97,7 +100,8 @@ Corvus.pluginSshLauncher = (function () {
   // Restart: the key the operator would press to stop the program, and how
   // long the shell gets to take the prompt back before the line is typed
   // again. Typed too soon, the line lands on the stdin of the program still
-  // shutting down instead of on the prompt.
+  // shutting down instead of on the prompt. Stop waits as long before it
+  // hangs up, so the program can finish what Ctrl-C asked of it.
   const CTRL_C = "\x03";
   const RESTART_GRACE_MS = 1000;
 
@@ -375,6 +379,7 @@ Corvus.pluginSshLauncher = (function () {
     let live = {};               // session name -> true, from /api/ssh/sessions
     let errors = Object.create(null);  // button id -> why its last press failed
     const opening = Object.create(null); // session name -> the arrow's connect in flight
+    const closing = Object.create(null); // session name -> its disconnect in flight
     let pollTimer = null;
     let cancelled = false;       // set by destroy(); gates every late callback
 
@@ -439,8 +444,10 @@ Corvus.pluginSshLauncher = (function () {
       return api.requestJson("/api/ssh/sessions").then((data) => {
         if (cancelled) return;
         const next = {};
+        // A session being stopped is still up for the second Ctrl-C gets,
+        // and reading it as running would put the row back as it goes.
         ((data && data.sessions) || []).forEach((s) => {
-          if (s && s.connected) next[s.name] = true;
+          if (s && s.connected && !closing[s.name]) next[s.name] = true;
         });
         const changed = buttons.some((b) => !!live[sessionName(b)] !== !!next[sessionName(b)]);
         live = next;
@@ -526,11 +533,13 @@ Corvus.pluginSshLauncher = (function () {
     }
 
     /** One row: the launch button, why it last failed, the arrow into its
-     *  terminal, and the way into its settings. */
+     *  terminal, and the way into its settings, or the stop button while
+     *  its session is up. */
     function shelfRow(entry) {
       const row = document.createElement("div");
       row.className = "sshl-row";
       const running = !!live[sessionName(entry)];
+      const stopping = !!closing[sessionName(entry)];
       if (running) row.classList.add("sshl-running");
       const failure = errors[entry.id];
       if (failure) row.classList.add("sshl-failed");
@@ -606,11 +615,28 @@ Corvus.pluginSshLauncher = (function () {
       // that deletes a button and kills what it is running. Removing is in the
       // button's own settings now, beside Save and Cancel, which is where the
       // operator already is when they have decided they are done with it.
-      tools.appendChild(ui.iconButton("pencil", {
-        ariaLabel: `Edit ${entry.label}`,
-        title: "Edit",
-        onClick: () => renderEditor(Object.assign({}, entry), false),
-      }));
+      //
+      // While the session is up the pencil is a stop button instead. Editing
+      // a button whose program is running changes nothing about that program,
+      // and the one thing the operator wants from the row then is a way to end
+      // it without hunting for its terminal window first.
+      if (running || stopping) {
+        const stopBtn = ui.iconButton("square", {
+          className: "icon-btn sshl-stop",
+          ariaLabel: `Stop ${entry.label}`,
+          title: stopping ? "Stopping"
+            : "Stop the program with Ctrl-C and close its terminal connection",
+          onClick: () => stop(entry),
+        });
+        if (stopping) ui.setBusy(stopBtn, true);
+        tools.appendChild(stopBtn);
+      } else {
+        tools.appendChild(ui.iconButton("pencil", {
+          ariaLabel: `Edit ${entry.label}`,
+          title: "Edit",
+          onClick: () => renderEditor(Object.assign({}, entry), false),
+        }));
+      }
 
       row.appendChild(launchBtn);
       row.appendChild(tools);
@@ -775,8 +801,9 @@ Corvus.pluginSshLauncher = (function () {
         info: "On: the program runs in an SSH session of this button's own, " +
               "and pressing the button again runs it again in that same " +
               "terminal. The arrow beside the button opens the window to watch " +
-              "it in. Read its output there, and stop it with Ctrl-C or the " +
-              "window's disconnect button. The session lasts as long as Corvus " +
+              "it in. Read its output there, and stop it with Ctrl-C, the " +
+              "window's disconnect button, or the stop button that takes the " +
+              "place of the pencil while it runs. The session lasts as long as Corvus " +
               "does. Off: the program is started with nohup and detached, so " +
               "it survives Corvus closing, but there is nothing to watch and " +
               "nothing to stop from here.",
@@ -980,7 +1007,9 @@ Corvus.pluginSshLauncher = (function () {
         : sendLine;
       // The arrow may be opening this session right now: wait for it, or the
       // line would find no shell and open a second one over it.
-      const pending = opening[session];
+      // One being stopped must be gone first, or the line lands in the shell
+      // that is about to be hung up.
+      const pending = closing[session] || opening[session];
       return (pending ? pending.then(send) : send())
         .then((res) => {
           if (cancelled) return null;
@@ -1069,7 +1098,9 @@ Corvus.pluginSshLauncher = (function () {
       status.hide();
       clearError(entry);
       ui.setBusy(btn, true);
-      const up = connectSession(entry)
+      const connect = () => connectSession(entry);
+      const pending = closing[session];
+      const up = (pending ? pending.then(connect) : connect())
         .catch((error) => {
           if (!cancelled) failed(entry, error.message || "Could not reach the backend");
           return false;
@@ -1198,12 +1229,59 @@ Corvus.pluginSshLauncher = (function () {
       buttons = buttons.filter((b) => b.id !== entry.id);
       clearError(entry);
       persist();
-      if (running) {
-        const session = sessionName(entry);
-        delete live[session];
-        api.postJson("/api/ssh/disconnect", { name: session }).catch(() => {});
-      }
+      if (running) closeSession(entry);
       renderShelf();
+    }
+
+    /**
+     * Close a button's session, remembering it until the backend has, so a
+     * press in the meantime waits for it rather than typing into a shell that
+     * is about to be hung up.
+     *
+     * @param {Object} entry
+     * @param {Promise} [first] what has to happen before the hang-up
+     * @returns {Promise<boolean>} whether the backend was reached
+     */
+    function closeSession(entry, first) {
+      const session = sessionName(entry);
+      delete live[session];
+      const disconnect = () => api.postJson("/api/ssh/disconnect", { name: session });
+      const done = (first ? first.then(disconnect, disconnect) : disconnect())
+        .then(() => true, () => false)
+        .then((reached) => {
+          if (closing[session] === done) delete closing[session];
+          if (!cancelled && editing === null) renderShelf();
+          return reached;
+        });
+      closing[session] = done;
+      return done;
+    }
+
+    /**
+     * The stop button a running row shows in place of its pencil.
+     *
+     * Ctrl-C first, so the program gets the interrupt the operator's own hand
+     * would give it and can shut down cleanly; then the session is closed,
+     * which hangs up whatever is still running in that shell and ends the
+     * connection. The row shows it stopping until the backend has closed it.
+     */
+    function stop(entry) {
+      const session = sessionName(entry);
+      if (closing[session]) return closing[session];
+      status.hide();
+      clearError(entry);
+      const done = closeSession(entry, interrupt(session));
+      renderShelf();
+      return done.then((reached) => {
+        if (cancelled) return false;
+        if (!reached) {
+          failed(entry, "Could not reach the backend to stop it");
+          return false;
+        }
+        status.show(`${entry.label}: stopped. Its terminal connection is closed.`, "ok");
+        api.console(`ssh-launcher: stopped ${entry.label}`, "info");
+        return true;
+      });
     }
 
     /**

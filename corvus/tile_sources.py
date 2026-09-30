@@ -318,20 +318,86 @@ TILE_SOURCES: dict[str, dict[str, Any]] = {
 # grid's own limit (~4 m/px at the equator); the underlying data is coarser
 # than that almost everywhere, which is why 3D terrain still reads correctly
 # when only z12 tiles were cached for a region.
+#
+# The keyed entries are the map services' own elevation models, used in place
+# of the default while that service's map is showing and its key is set.
+# They are better where it matters most for low flying: MapTiler's merges
+# national lidar models across much of Europe, Mapbox's is refined well past
+# SRTM in many regions. The default stays the safety net: an offline download
+# always carries it, and a keyed DEM tile that cannot be had is derived from it
+# (corvus/dem_tiles.py), so choosing a better model can never make the
+# terrain worse than the free one.
+#
+# ``copernicus`` is Copernicus GLO-30 (a 30 m model from the TanDEM-X mission,
+# markedly better than SRTM in steep terrain), cut into tiles by the Mapterhorn
+# project, with national survey models (lidar, 1 to 10 m) above zoom 12 where
+# a country publishes one: Austria, Switzerland and parts of Germany among
+# them. No key.
+# Those finer levels exist only where such a model does, which is what
+# ``sparse_above`` says: above it a missing tile is not an error or a hole but
+# "use the level above", and the backend answers it so (see
+# ``_derive_terrain_tile``). It is a surface model: forest canopy and large
+# buildings are in the heights, which is what an aircraft has to clear.
+#
+# ``tile_size`` is the pixel size MapLibre must be told: MapTiler's are 512 px
+# tiles on the standard grid, and a raster-dem source told the wrong size
+# halves or doubles every height. Google has no entry: it publishes no
+# elevation tiles, only a per-point Elevation API and photorealistic 3D meshes
+# that need a different renderer and may not be stored for offline use.
 TERRAIN_SOURCES: dict[str, dict[str, Any]] = {
     "terrain": {
-        "label": "Elevation",
+        "label": "SRTM (AWS Terrain Tiles)",
         "provider": "terrain",
         "style": "dem",
         "encoding": "terrarium",
+        "tile_size": 256,
         "upstream": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
         "maxzoom": 15,
         "attribution": "Elevation: AWS Terrain Tiles: SRTM, USGS NED, and national datasets",
     },
+    "copernicus": {
+        "label": "Copernicus GLO-30",
+        "provider": "copernicus",
+        "style": "dem",
+        "encoding": "terrarium",
+        "tile_size": 512,
+        "upstream": "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp",
+        "maxzoom": 17,
+        "sparse_above": 12,
+        "attribution": "Elevation: © Mapterhorn (mapterhorn.com/attribution), "
+                       "Copernicus GLO-30 © DLR e.V. 2010 to 2014 and © Airbus "
+                       "Defence and Space GmbH 2014 to 2018, provided under "
+                       "COPERNICUS by the European Union and ESA",
+    },
+    "maptiler_terrain": {
+        "label": "MapTiler Terrain",
+        "provider": "maptiler",
+        "style": "dem",
+        "encoding": "mapbox",
+        "tile_size": 512,
+        "upstream": "https://api.maptiler.com/tiles/terrain-rgb-v2/{z}/{x}/{y}.webp?key={k}",
+        "maxzoom": 14,
+        "attribution": "Elevation: © MapTiler",
+    },
+    "mapbox_terrain": {
+        "label": "Mapbox Terrain",
+        "provider": "mapbox",
+        "style": "dem",
+        "encoding": "mapbox",
+        "tile_size": 256,
+        "upstream": "https://api.mapbox.com/v4/mapbox.terrain-rgb/{z}/{x}/{y}.pngraw?access_token={k}",
+        "maxzoom": 15,
+        "attribution": "Elevation: © Mapbox",
+    },
 }
 
-# The DEM 3D mode reads from when the operator has not chosen otherwise.
+# The DEM every other one falls back to, and the one an offline download
+# always carries: keyless, PNG (so the backend can derive and re-pack it) and
+# complete at every level it serves.
 DEFAULT_TERRAIN = "terrain"
+# The DEM 3D draws from when the operator has not chosen one and the map
+# service showing has none of its own.
+PREFERRED_TERRAIN = "copernicus"
 
 # Provider grouping. ``sources`` lists the source ids this service serves, in
 # the order the UI should present them; the first entry is the provider's
@@ -442,6 +508,7 @@ assert sorted(
 assert not (set(TERRAIN_SOURCES) & set(TILE_SOURCES)), \
     "a terrain source id must not shadow a base layer id"
 assert DEFAULT_TERRAIN in TERRAIN_SOURCES, "DEFAULT_TERRAIN must name a real DEM"
+assert PREFERRED_TERRAIN in TERRAIN_SOURCES, "PREFERRED_TERRAIN must name a real DEM"
 
 
 def quadkey(z: int, x: int, y: int) -> str:
@@ -514,6 +581,7 @@ _TOKEN_QUERY_PARAMS: frozenset[str] = frozenset(
     match.group(1)
     for template in (
         *(entry["upstream"] for entry in TILE_SOURCES.values()),
+        *(entry["upstream"] for entry in TERRAIN_SOURCES.values()),
         GOOGLE_TILES_SESSION_URL, GOOGLE_TILES_URL, BING_METADATA_URL,
     )
     for match in re.finditer(r"[?&]([A-Za-z0-9_.\-]+)=\{(?:k|session)\}", template)
@@ -542,6 +610,20 @@ def redact_url(url: str) -> str:
             text = text[:head] + "REDACTED" + text[end:]
             start = text.find(marker, head + len("REDACTED"))
     return text
+
+
+def looks_like_image(blob: bytes) -> bool:
+    """True when *blob* starts like a PNG, JPEG, WebP or GIF tile.
+
+    Both the interactive cache-fill and the region downloader ask this before
+    storing an upstream answer: a 200 that is not an image is a captive
+    portal's login page or a proxy's error page, and once cached it would be
+    served as a map tile (or decoded as terrain) forever.
+    """
+    return (blob[:8] == b"\x89PNG\r\n\x1a\n"
+            or blob[:3] == b"\xff\xd8\xff"
+            or (blob[:4] == b"RIFF" and blob[8:12] == b"WEBP")
+            or blob[:6] in (b"GIF87a", b"GIF89a"))
 
 
 def token_meta(provider_id: str) -> dict[str, str] | None:
@@ -581,7 +663,8 @@ def needs_token(source_id: str) -> bool:
     the question callers are really asking is "will this 401 without a key".
     A service whose key is optional is not: it draws without one.
     """
-    provider = provider_of(source_id)
+    entry = get(source_id)
+    provider = entry.get("provider") if entry is not None else None
     return provider is not None and token_required(provider)
 
 
@@ -618,24 +701,35 @@ def get(source_id: str) -> dict | None:
     return dict(entry) if entry is not None else None
 
 
+def sparse_above(source_id: str) -> int | None:
+    """The last zoom *source_id* covers everywhere, when finer ones are regional."""
+    entry = TERRAIN_SOURCES.get(source_id)
+    value = entry.get("sparse_above") if entry is not None else None
+    return int(value) if isinstance(value, int) else None
+
+
 def is_terrain(source_id: str) -> bool:
     """True when *source_id* names an elevation source rather than a layer."""
     return source_id in TERRAIN_SOURCES
 
 
 def list_terrain() -> list[dict]:
-    """Return ``[{id, label, encoding, maxzoom, attribution}, ...]``.
+    """Return ``[{id, label, provider, encoding, tile_size, maxzoom, sparse_above, attribution}, ...]``.
 
     Served next to :func:`list_sources` so the frontend can build its
-    ``raster-dem`` source — including the height packing — without a
-    hand-mirrored copy of this registry, exactly as it does for base layers.
+    ``raster-dem`` source — including the height packing and the tile size —
+    without a hand-mirrored copy of this registry, exactly as it does for base
+    layers. ``provider`` is what pairs a map service with its own elevation.
     """
     return [
         {
             "id": sid,
             "label": s["label"],
+            "provider": s["provider"],
             "encoding": s["encoding"],
+            "tile_size": s["tile_size"],
             "maxzoom": s["maxzoom"],
+            "sparse_above": s.get("sparse_above"),
             "attribution": s["attribution"],
         }
         for sid, s in TERRAIN_SOURCES.items()

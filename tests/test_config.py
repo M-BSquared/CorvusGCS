@@ -11,6 +11,8 @@ import json
 import logging
 import os
 
+import pytest
+
 from corvus.config import (
     CorvusConfig,
     default_config_path,
@@ -464,6 +466,33 @@ def test_flight_bar_shrink_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
     p.write_text(json.dumps(
         {"ui": {"flight_bar_shrink": False, "mission_page": True}}), encoding="utf-8")
     assert load_config(str(p)).ui == {"flight_bar_shrink": False, "mission_page": True}
+
+
+@pytest.mark.parametrize("key", ["track_earlier_flights", "track_clear_on_restart"])
+def test_track_switches_are_kept_only_as_genuine_booleans(tmp_path, key) -> None:
+    """The two track switches: a real boolean round-trips, anything else is
+    dropped so the frontend falls back to its default (earlier flights in their
+    own colour, the track kept across restarts)."""
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({"ui": {key: "false"}}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get(key) is None
+    for value in (True, False):
+        p.write_text(json.dumps({"ui": {key: value}}), encoding="utf-8")
+        assert load_config(str(p)).ui == {key: value}
+
+
+def test_compass_nose_up_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
+    """Opt-in: absent or a hand-edited string leaves the compass north up."""
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("compass_nose_up") is None
+    p.write_text(json.dumps({"ui": {"compass_nose_up": "true"}}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("compass_nose_up") is None
+    p.write_text(json.dumps({"ui": {"compass_nose_up": True}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"compass_nose_up": True}
+    p.write_text(json.dumps(
+        {"ui": {"compass_nose_up": False, "mission_page": True}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"compass_nose_up": False, "mission_page": True}
 
 
 def test_display_units_keep_only_known_values_per_quantity(tmp_path) -> None:

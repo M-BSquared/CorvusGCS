@@ -161,14 +161,14 @@ Corvus.setupRtk = (function () {
     settingsCard.appendChild(intro);
 
     const enabledToggle = Corvus.ui.toggle({
-      value: true,
+      value: false,
       ariaLabel: "RTK corrections",
       onChange: () => { markEdited(); return save(); },
     });
     enabledToggle.el.dataset.role = "enabled";
     settingsCard.appendChild(Corvus.ui.field({
       label: "RTK corrections", control: enabledToggle.el, inline: true,
-      hint: "On by default. Turned off, Corvus opens no serial port looking for a base.",
+      hint: "Off by default. While off, Corvus opens no serial port looking for a base.",
     }));
 
     const sourceSelect = Corvus.ui.select({
@@ -315,7 +315,7 @@ Corvus.setupRtk = (function () {
     /** Fill the form from the stored settings. Never runs mid-edit. */
     function fillForm(settings) {
       if (!settings || editing) return;
-      enabledToggle.setValue(settings.enabled !== false);
+      enabledToggle.setValue(settings.enabled === true);
       sourceSelect.value = settings.source || "usb";
       modeSelect.value = settings.mode || "survey";
       accuracyInput.value = String(settings.survey_accuracy);

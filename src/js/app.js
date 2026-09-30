@@ -8,7 +8,7 @@ window.Corvus = window.Corvus || {};
     maplibre-gl, lucide, plotly-basic, ui, telemetry, notification_dedupe,
     topbar, map, instruments, panel, link, plugins,
     setup-shared, setup-calibration, setup-parameters, setup, sidenav,
-    joystick, tiles, update, app (this file).
+    joystick, checklist, checklist-editor, tiles, update, app (this file).
 
   Contract: every Corvus.<module> exposes a no-arg init() (some take a few
   DOM roots) and owns a narrow public API; nothing imports another module's
@@ -106,7 +106,7 @@ Corvus.app = (function () {
         Corvus.topbar.succeedCommand(attempt);
       } catch (error) {
         Corvus.topbar.failCommand(attempt);
-        Corvus.topbar.notifyError(error.message || "RTL rejected", attempt);
+        Corvus.topbar.notifyError(error.message || "Return rejected", attempt);
       } finally {
         Corvus.ui.setBusy(btnRTL, false);
       }
@@ -310,7 +310,7 @@ Corvus.app = (function () {
           // needed for. It only needs a vehicle to talk to.
           enabled: () => !!state().connected,
           note: (_point, enabled) =>
-            (enabled ? "Moves the RTL target" : "Not connected"),
+            (enabled ? "Moves the return target" : "Not connected"),
           run: (point) => runMapCommand(
             "sethome", "/api/mavlink/sethome",
             { lat: point.lat, lon: point.lng },
@@ -328,7 +328,7 @@ Corvus.app = (function () {
       btnArm.classList.toggle("armed", !!s?.armed);
       const span = btnArm.querySelector("span");
       if (span) span.textContent = s?.armed ? "DISARM" : "ARM";
-      showVehicleMode(modeSel, s?.mode || "");
+      showVehicleMode(modeSel, s?.mode || "", s?.mode_label || "");
       // PLAN mirrors the other flight buttons: only actionable against a
       // connected vehicle. On disconnect, also exit planning so the UI never
       // strands the operator in a click-to-add mode they can no longer commit.
@@ -359,9 +359,10 @@ Corvus.app = (function () {
    * follows a "change" event or a DOM mutation, and a programmatic value is
    * neither, so the flight bar read SELECT MODE while the vehicle held. A mode
    * the list does not carry (one the firmware reports but cannot be commanded
-   * into) gets a disabled row of its own rather than a blank picker.
+   * into) gets a disabled row of its own rather than a blank picker, named
+   * by `label`, the word the top bar shows for it.
    */
-  function showVehicleMode(modeSel, mode) {
+  function showVehicleMode(modeSel, mode, label) {
     if (!modeSel) return;
     const options = Array.from(modeSel.options || []);
     let reported = options.find((o) => o.dataset && o.dataset.reported === "true");
@@ -373,10 +374,9 @@ Corvus.app = (function () {
         reported.disabled = true;
         modeSel.appendChild(reported);
       }
-      if (reported.value !== mode) {
-        reported.value = mode;
-        reported.textContent = mode;
-      }
+      if (reported.value !== mode) reported.value = mode;
+      const text = label || mode;
+      if (reported.textContent !== text) reported.textContent = text;
     } else if (reported) {
       reported.remove();
     }
@@ -384,9 +384,15 @@ Corvus.app = (function () {
     if (modeSel.corvusSelect) modeSel.corvusSelect.refresh();
   }
 
+  /**
+   * Fill the picker from GET /api/mavlink/modes. Each row's value is the name
+   * a mode change sends; its text is the word the backend's dialect gives it
+   * ("POSITION" for PX4's POSCTL), the same one the top bar shows.
+   */
   function refreshModesFromData(data) {
     const modes = (data && data.modes) || [];
-    const sig = modes.join(",");
+    const labels = (data && data.labels) || {};
+    const sig = JSON.stringify([modes, labels]);
     if (sig === loadedModesSignature) return;   // idempotent
     loadedModesSignature = sig;
     const modeSel = document.getElementById("modeSelector");
@@ -397,7 +403,7 @@ Corvus.app = (function () {
     modes.forEach((m) => {
       const opt = document.createElement("option");
       opt.value = m;
-      opt.textContent = m;
+      opt.textContent = labels[m] || m;
       modeSel.appendChild(opt);
     });
     // Restore the selection if the firmware still offers it.
@@ -451,6 +457,15 @@ Corvus.app = (function () {
       // config that has never been asked must not shrink a bar nobody asked to
       // shrink.
       Corvus.map.setFlightBarShrink(!!(cfg.ui && cfg.ui.flight_bar_shrink));
+      // The flown track. Earlier flights get their own colour unless the
+      // config turns that off, and the track the last session left is kept
+      // unless the config asks for it to go on every restart.
+      Corvus.map.setTrackOptions({
+        earlierFlights: !(cfg.ui && cfg.ui.track_earlier_flights === false),
+        clearOnRestart: !!(cfg.ui && cfg.ui.track_clear_on_restart),
+      }, true);
+      // The flight compass is north up unless the config locks it nose up.
+      Corvus.instruments.setNoseUp(!!(cfg.ui && cfg.ui.compass_nose_up));
       // The optional Mission entry in the left rail. Off unless the config
       // asks for it, and asked for here rather than inside sidenav.init()
       // because the rail is built before this fetch can land — the rail
@@ -462,6 +477,9 @@ Corvus.app = (function () {
       // Terminal windows are frosted glass unless the config asks for solid
       // ones. Where nothing behind them can be blurred they are solid anyway.
       if (Corvus.termWindows) Corvus.termWindows.setFrosted(!(cfg.ui && cfg.ui.solid_terminals));
+      // The preflight checklist and its Home window. Off unless the config
+      // asks for it, like the Mission planner.
+      Corvus.checklist.fromConfig(cfg);
     }).catch(() => {});
 
     /* Before any module builds its DOM: this replaces the operating system's
@@ -491,6 +509,8 @@ Corvus.app = (function () {
     // Builds the pad hidden; the /api/config read above decides which of its
     // surfaces are shown, and Settings toggles them live from there on.
     Corvus.joystick.init(document.getElementById("joystickPad"));
+    // Built hidden too; the /api/config read above decides whether it shows.
+    Corvus.checklist.init(document.getElementById("checklistPanel"));
 
     Corvus.telemetry.connect();
     Corvus.ui.refreshIcons();
@@ -525,6 +545,7 @@ Corvus.app = (function () {
   return {
     init,
     refreshModes,
+    refreshModesFromData,
     showVehicleMode,
     notifyError: (msg, attempt) => Corvus.topbar.notifyError(msg, attempt),
   };

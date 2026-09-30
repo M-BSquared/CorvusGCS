@@ -39,6 +39,7 @@ Corvus.settingsTransfer = (function () {
     { key: "corvus.rc.transmitter.mode.v1", section: "interface" },
     { key: "corvus.hud", section: "layout" },
     { key: "corvus.joystick", section: "layout" },
+    { key: "corvus.checklist", section: "layout" },
     { key: "corvus.link.cards", section: "layout" },
     { key: "corvus.map.lastCamera", section: "layout" },
     { key: "corvus.analysis.sort.", section: "layout" },
@@ -48,7 +49,10 @@ Corvus.settingsTransfer = (function () {
   // corvus.frostedTerminals mirrors the config's ui.solid_terminals for
   // the windows of their own (js/term-window.js), rewritten on every start;
   // the setting itself travels with the config.
-  const NOT_SETTINGS = ["corvus.console.history", "corvus.mission.last", "corvus.frostedTerminals"];
+  // corvus.checklist.ticks is what was checked for the flight at hand, not
+  // how the station is set up. corvus.map.track is the flown track itself.
+  const NOT_SETTINGS = ["corvus.console.history", "corvus.mission.last", "corvus.frostedTerminals",
+    "corvus.checklist.ticks", "corvus.map.track"];
 
   /* The parts an import is chosen by. The ids match SECTIONS in
      corvus/settings_bundle.py. */
@@ -57,12 +61,12 @@ Corvus.settingsTransfer = (function () {
       hint: "Theme, size, units, top bar, joystick and keys, RC transmitter, company logo, " +
             "flight review sensitivity." },
     { id: "layout", label: "Window layout",
-      hint: "Where the flight HUD and the virtual joystick sit, and which cards are folded." },
+      hint: "Where the flight HUD, the virtual joystick and the checklist sit, and which cards are folded." },
     { id: "map", label: "Map", hint: "Map service, base layer, 3D mode and map keys." },
     { id: "connections", label: "Connections",
       hint: "Default link, auto connect, forwarding to a second station, SSH connections." },
     { id: "vehicle", label: "Vehicle",
-      hint: "Battery estimate, Remote ID, RTK base, cameras, extra safety parameters." },
+      hint: "Battery estimate, Remote ID, RTK base, cameras, extra safety parameters, preflight checklists." },
     { id: "folders", label: "Folders and port",
       hint: "Where Corvus keeps tiles, logs, parameters, firmware and missions. " +
             "Paths from another machine may not exist on this one." },

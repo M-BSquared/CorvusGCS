@@ -421,6 +421,28 @@ def test_a_cancelled_download_is_recorded_as_cancelled(region_server) -> None:
     assert listing["regions"][0]["tile_count"] == 9
 
 
+def test_a_job_that_ends_before_its_region_is_written_is_still_settled(
+        region_server, monkeypatch) -> None:
+    """The row is keyed by the job id, so it is written after the job starts.
+    An area already on disk is walked in milliseconds: its final update found
+    no row, and the row written after it said "downloading" until the next
+    launch settled it as cancelled."""
+    server, downloader, _ = region_server
+    real_start = downloader.start
+
+    def start_and_finish(*args, **kwargs):
+        jid = real_start(*args, **kwargs)
+        downloader.finish(jid, state="done", done=21)
+        return jid
+
+    monkeypatch.setattr(downloader, "start", start_and_finish)
+    status, data = _req(server, "POST", "/api/tiles/download", dict(_DOWNLOAD, name="Cached"))
+    assert status == 200
+    _, listing = _req(server, "GET", "/api/tiles/regions")
+    region = listing["regions"][0]
+    assert (region["state"], region["tile_count"]) == ("done", 21)
+
+
 def test_progress_still_reaches_sse_subscribers(region_server) -> None:
     """Region bookkeeping shares the downloader's single on_progress callback
     with the SSE bus; the bus half must not be displaced by it."""

@@ -470,6 +470,28 @@ def test_an_empty_body_is_a_failed_tile_not_a_done_one(cache, monkeypatch) -> No
     dl.shutdown()
 
 
+def test_a_body_that_is_not_an_image_is_a_failed_tile_not_a_stored_one(
+        cache, monkeypatch) -> None:
+    """Behind a captive portal every request answers 200 with its login page.
+
+    The interactive fill already refused to cache that; the downloader stored
+    it for every tile of the area, and because a later run skips what is
+    present, the area could never be repaired by downloading it again.
+    """
+    monkeypatch.setattr(
+        td.urllib.request, "urlopen",
+        lambda url, timeout=None: _FakeResp(b"<!DOCTYPE html><html>Please log in</html>"))
+    dl = TileDownloader(cache, max_workers=1)
+    jid = dl.start("satellite", "https://up/{z}/{x}/{y}.png",
+                   (-180.0, -85.0, 180.0, 85.0), 1, 1)
+    assert _wait_until(lambda: dl.status(jid)["state"] != "running")
+    st = dl.status(jid)
+    assert (st["done"], st["failed"]) == (0, 4)
+    assert st["state"] == "failed"
+    assert cache.stats()["count"] == 0
+    dl.shutdown()
+
+
 def test_downloads_identify_themselves_like_the_interactive_fill(
         cache, stub_urlopen) -> None:
     """OSM's tile policy blocks a library's default User-Agent; the worker

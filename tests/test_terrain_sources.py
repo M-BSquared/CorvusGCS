@@ -68,10 +68,44 @@ def test_list_terrain_shape() -> None:
     entries = list_terrain()
     assert entries, "3D mode needs at least one DEM"
     for entry in entries:
-        assert set(entry) == {"id", "label", "encoding", "maxzoom", "attribution"}
+        assert set(entry) == {
+            "id", "label", "provider", "encoding", "tile_size", "maxzoom", "sparse_above",
+            "attribution",
+        }
         # The height packing. MapLibre takes this verbatim; a wrong value does
         # not fail, it silently renders the wrong mountains.
         assert entry["encoding"] in {"terrarium", "mapbox", "custom"}
+        # So is the tile size: a 512 px DEM declared as 256 doubles every
+        # height, and the reverse halves them.
+        assert entry["tile_size"] in {256, 512}
+
+
+def test_the_free_dem_comes_first_and_needs_no_key() -> None:
+    """The default is the safety net every other DEM falls back to, and the
+    one an offline download always carries: it must work with no key at all."""
+    assert list(TERRAIN_SOURCES)[0] == DEFAULT_TERRAIN
+    assert not tile_sources.needs_token(DEFAULT_TERRAIN)
+
+
+@pytest.mark.parametrize("dem,provider", [
+    ("maptiler_terrain", "maptiler"),
+    ("mapbox_terrain", "mapbox"),
+])
+def test_a_keyed_service_brings_its_own_elevation(dem: str, provider: str) -> None:
+    entry = TERRAIN_SOURCES[dem]
+    assert entry["provider"] == provider
+    assert provider in tile_sources.PROVIDERS
+    assert tile_sources.needs_token(dem), "without the key it is a 401, not a tile"
+    assert "{k}" in entry["upstream"]
+    url = tile_sources.build_tile_url(entry["upstream"], 12, 2145, 1436, "secret-key")
+    assert "/12/2145/1436." in url
+    assert "secret-key" not in tile_sources.redact_url(url), "the key never reaches a log"
+
+
+def test_google_has_no_elevation_entry() -> None:
+    """Google publishes no elevation tiles; a DEM claiming to be Google's would
+    be fetching something else."""
+    assert not any(e["provider"] == "google" for e in TERRAIN_SOURCES.values())
 
 
 def test_the_default_dem_exists_and_is_resolvable() -> None:

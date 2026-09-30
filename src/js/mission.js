@@ -566,7 +566,7 @@ Corvus.mission = (function () {
   let regionSource = null;
   let regionMarkers = [];
   let regions = [];
-  let regionsVisible = true;
+  let regionsVisible = false;
   let mapReady = false;
   let activeLayerId = "satellite";
   let pendingLayer = null;
@@ -580,6 +580,9 @@ Corvus.mission = (function () {
   // ground does not move) and is dropped with the page.
   let terrainTiles = new Map();
   let terrainSpec = null;
+  // Every elevation source's id: their downloaded areas ride along with an
+  // imagery download and are not drawn as areas of their own.
+  let terrainIds = new Set();
   let ground = null;       // {distances: number[], elevations: number[]} | null
   let groundToken = 0;     // guards a slow sample pass against a newer edit
   let homeElevation = null;
@@ -1794,7 +1797,7 @@ Corvus.mission = (function () {
     { id: "divider" },
     { id: "vehicle", icon: "crosshair", title: "Go to the aircraft" },
     { id: "layers", icon: "layers", title: "Map layer" },
-    { id: "regions", icon: "frame", title: "Show downloaded areas", active: true },
+    { id: "regions", icon: "frame", title: "Show downloaded areas" },
   ];
 
   function buildMapControls(container) {
@@ -2120,7 +2123,12 @@ Corvus.mission = (function () {
     // needs is re-applied below rather than fetched a second time.
     Corvus.telemetry.requestJson("/api/tiles/sources").then((data) => {
       if (destroyed || !map) return;
-      terrainSpec = ((data && data.terrain) || [])[0] || null;
+      const dems = (data && data.terrain) || [];
+      // The free default by name, not the list's first entry: the profile
+      // decodes 256 px Terrarium tiles, which is what that one serves.
+      terrainSpec = dems.find((d) => d.id === (data && data.default_terrain)) || dems[0] || null;
+      terrainIds = new Set(dems.map((d) => d.id));
+      setRegions(regions);
       sampleGround();
       // The catalogue has certainly landed by now, so the layer opened on the
       // bootstrap maxzoom and attribution can be re-applied with its real ones.
@@ -2426,10 +2434,12 @@ Corvus.mission = (function () {
   function setRegions(list) {
     regions = Array.isArray(list) ? list.slice() : [];
     if (!map || !mapReady || !regionSource) return;
-    // The elevation download rides along with the imagery over the same
-    // ground, so drawing it would claim the same area twice.
-    const terrainId = terrainSpec && terrainSpec.id;
-    const drawn = regions.filter((region) => !terrainId || region.source !== terrainId);
+    // The elevation downloads ride along with the imagery over the same
+    // ground, so drawing them would claim the same area twice. A second
+    // download of the same ground is one box, not two stacked ones.
+    const drawn = Corvus.map.mergeRegions(regions.filter((region) =>
+      !(region && (terrainIds.has(region.source)
+        || (terrainSpec && region.source === terrainSpec.id)))));
 
     regionSource.setData({
       type: "FeatureCollection",
@@ -2444,9 +2454,8 @@ Corvus.mission = (function () {
     regionMarkers = [];
     if (!regionsVisible) return;
     drawn.forEach((region) => {
-      const b = region.bounds || {};
+      const b = region.bounds;
       const centre = [(b.w + b.e) / 2, (b.s + b.n) / 2];
-      if (!isFinite(centre[0]) || !isFinite(centre[1])) return;
       regionMarkers.push(new maplibregl.Marker({
         element: buildRegionLabel(region), anchor: "center",
       }).setLngLat(centre).addTo(map));
@@ -2492,8 +2501,12 @@ Corvus.mission = (function () {
     if (tool === "home") {
       // A start placed by hand is the operator's, not the aircraft's.
       startAtVehicle = false;
+      const first = !home;
       placeStart(event.lngLat);
-      setTool("select");
+      // A new start is followed by the route, so POINT is armed for it. A
+      // start that was only moved goes back to select, so the next click on
+      // a finished plan does not add a waypoint by accident.
+      setTool(first ? "waypoint" : "select");
       refreshAll();
       return;
     }
@@ -5215,6 +5228,9 @@ Corvus.mission = (function () {
     _aircraftOptions: aircraftOptions,
     _addItem: addItem,
     _toolBlocked: toolBlocked,
+    _onMapClick: onMapClick,
+    _setTool: setTool,
+    _tool: () => tool,
     _moveItemTo: moveItemTo,
     // The live chart geometry and the grab test that reads it. Exported
     // because "the drag does nothing" is otherwise invisible from outside: it

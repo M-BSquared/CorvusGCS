@@ -21,6 +21,7 @@ from __future__ import annotations
 import gzip
 import json
 import time
+import urllib.error
 
 import pytest
 
@@ -277,19 +278,264 @@ def test_close_is_idempotent(tmp_path) -> None:
     svc.close()
 
 
-def test_a_fetched_cell_lands_in_the_cache_as_gzipped_geojson(tmp_path) -> None:
-    """The worker path end to end, with Overpass stubbed out."""
+def _square_at(lon: float, lat: float, size: float = 0.0002) -> list[tuple[float, float]]:
+    return [(lon, lat), (lon + size, lat), (lon + size, lat + size), (lon, lat + size)]
+
+
+def _centre_of(cell: tuple[int, int, int]) -> tuple[float, float]:
+    w, s, e, n = cell_bounds(*cell)
+    return ((w + e) / 2, (s + n) / 2)
+
+
+class _Answer:
+    """urlopen stand-in: one canned Overpass body, counting requests."""
+
+    def __init__(self, payload: dict) -> None:
+        self.body = json.dumps(payload).encode()
+        self.calls = 0
+
+    def __call__(self, request, timeout=None):
+        self.calls += 1
+        body = self.body
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self, amt=None):
+                return body if amt is None else body[:amt]
+
+        return _Resp()
+
+
+def _wait_for(predicate, seconds: float = 5.0) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.02)
+    return predicate()
+
+
+BLOCK = (buildings.BLOCK_ZOOM, 8710, 5741)
+BLOCK_CELLS = buildings.cells_of_block(*BLOCK)
+
+
+def test_a_block_is_four_cells_fetched_in_one_query(tmp_path, monkeypatch) -> None:
+    """The worker path end to end, with Overpass stubbed at the socket: one
+    request fills all four cells, each with the buildings whose centre is in it."""
+    elements = []
+    for i, cell in enumerate(BLOCK_CELLS):
+        lon, lat = _centre_of(cell)
+        way = _way({"building": "yes", "height": str(9 + i)}, _square_at(lon, lat))
+        way["id"] = 100 + i
+        elements.append(way)
+    answer = _Answer({"elements": elements})
+    monkeypatch.setattr(buildings.urllib.request, "urlopen", answer)
     svc = BuildingService(str(tmp_path / "b.sqlite"), url=DEAD_URL, timeout=0.5)
     try:
-        svc._request = lambda z, x, y: buildings._gzip_json(  # noqa: SLF001
-            to_geojson({"elements": [_way({"building": "yes", "height": "9"}, SQUARE)]}))
-        svc.cell(CELL_ZOOM, 3, 3)
-        deadline = time.monotonic() + 5
-        while svc.cache.get(CELL_ZOOM, 3, 3) is None and time.monotonic() < deadline:
-            time.sleep(0.02)
-        stored = svc.cell(CELL_ZOOM, 3, 3)
-        assert stored is not None
-        parsed = json.loads(gzip.decompress(stored))
-        assert parsed["features"][0]["properties"]["height"] == 9.0
+        payload, coming = svc.lookup(*BLOCK_CELLS[0])
+        assert payload is None and coming
+        for cell in BLOCK_CELLS[1:]:
+            svc.lookup(*cell)
+        assert _wait_for(lambda: all(svc.cache.get(*c) for c in BLOCK_CELLS))
+        assert answer.calls == 1, "four cells, one Overpass query"
+        for i, cell in enumerate(BLOCK_CELLS):
+            parsed = json.loads(gzip.decompress(svc.cell(*cell)))
+            assert [f["properties"]["height"] for f in parsed["features"]] == [9.0 + i]
+    finally:
+        svc.close()
+
+
+def test_a_building_on_a_cell_edge_lands_in_exactly_one_cell() -> None:
+    """Fetched per cell, a building straddling the edge came back in both and
+    was drawn twice, flickering where the two copies fought."""
+    west, east = BLOCK_CELLS[0], BLOCK_CELLS[1]
+    edge = cell_bounds(*west)[2]
+    lat = _centre_of(west)[1]
+    straddler = _way({"building": "yes"}, [(edge - 0.0003, lat), (edge + 0.0001, lat),
+                                           (edge + 0.0001, lat + 0.0002),
+                                           (edge - 0.0003, lat + 0.0002)])
+    split = buildings.split_by_cell(to_geojson({"elements": [straddler]}), BLOCK_CELLS)
+    counts = {cell: len(fc["features"]) for cell, fc in split.items()}
+    assert counts[west] == 1 and counts[east] == 0
+    assert sum(counts.values()) == 1
+
+
+def test_a_building_that_belongs_to_a_neighbouring_block_is_left_to_it() -> None:
+    outside = _centre_of((CELL_ZOOM, BLOCK_CELLS[0][1] - 1, BLOCK_CELLS[0][2]))
+    way = _way({"building": "yes"}, _square_at(*outside))
+    split = buildings.split_by_cell(to_geojson({"elements": [way]}), BLOCK_CELLS)
+    assert all(not fc["features"] for fc in split.values())
+    assert set(split) == set(BLOCK_CELLS), "empty cells are recorded as looked at"
+
+
+def test_the_same_element_twice_is_one_building() -> None:
+    way = _way({"building": "yes"}, SQUARE)
+    assert len(to_geojson({"elements": [way, dict(way)]})["features"]) == 1
+
+
+@pytest.mark.parametrize("remark,failed", [
+    ("runtime error: Query timed out in \"query\" at line 1 after 26 seconds.", True),
+    ("runtime error: Query run out of memory using about 2048 MB of RAM.", True),
+    ("", False),
+    (None, False),
+])
+def test_an_answer_overpass_cut_short_is_a_failure(remark, failed) -> None:
+    payload = {"elements": []}
+    if remark is not None:
+        payload["remark"] = remark
+    assert buildings.overpass_failed(payload) is failed
+
+
+def test_a_cut_short_answer_is_never_cached(tmp_path, monkeypatch) -> None:
+    """Overpass answers 200 with the buildings it had when time ran out. Cached,
+    that was a block with half its buildings for a month."""
+    lon, lat = _centre_of(BLOCK_CELLS[0])
+    answer = _Answer({
+        "elements": [_way({"building": "yes"}, _square_at(lon, lat))],
+        "remark": "runtime error: Query timed out in \"query\" at line 1 after 61 seconds.",
+    })
+    monkeypatch.setattr(buildings.urllib.request, "urlopen", answer)
+    svc = BuildingService(str(tmp_path / "b.sqlite"), url=DEAD_URL, timeout=0.5)
+    try:
+        assert svc._request(*BLOCK) is None  # noqa: SLF001
+        assert all(svc.cache.get(*cell) is None for cell in BLOCK_CELLS)
+    finally:
+        svc.close()
+
+
+@pytest.mark.parametrize("code", [403, 500, 502])
+def test_any_refusal_from_overpass_pauses_the_queue(tmp_path, monkeypatch, code) -> None:
+    """Only 429 and 504 used to back off. A 403 or a 5xx released the block
+    at once, the map's next re-ask queued the same failing query again, and a
+    view kept a shared service busy refusing it."""
+    def refuse(request, timeout=None):
+        raise urllib.error.HTTPError(DEAD_URL, code, "refused", None, None)
+
+    monkeypatch.setattr(buildings.urllib.request, "urlopen", refuse)
+    svc = BuildingService(str(tmp_path / "b.sqlite"), url=DEAD_URL, timeout=0.5)
+    try:
+        assert svc._request(*BLOCK) is None  # noqa: SLF001
+        assert svc.lookup(*BLOCK_CELLS[0]) == (None, False)
+    finally:
+        svc.close()
+
+
+def test_offline_the_service_says_nothing_is_coming(service) -> None:
+    """The map used to poll a cell nobody would fetch, give up, and never ask
+    again for the rest of the session."""
+    service._back_off(60.0)  # noqa: SLF001
+    assert service.lookup(CELL_ZOOM, 17420, 11490) == (None, False)
+
+
+def test_a_download_queues_its_blocks_nearest_the_centre_first(service) -> None:
+    service._back_off(60.0)  # noqa: SLF001 - hold the workers off the list
+    bounds = (11.60, 48.06, 11.68, 48.10)
+    queued = service.prefetch(bounds)
+    blocks = list(service._bulk)  # noqa: SLF001
+    assert queued == len(blocks) > 1
+    assert len(set(blocks)) == len(blocks), "no block queued twice"
+    centre = buildings.block_of(*buildings.cell_of(11.64, 48.08))
+    assert blocks[0] == centre
+    assert service.stats()["queued"] == queued
+    assert service.prefetch(bounds) == 0, "asking again queues nothing new"
+
+
+def test_a_download_skips_what_is_already_on_disk_and_respects_its_cap(service) -> None:
+    service._back_off(60.0)  # noqa: SLF001
+    for cell in BLOCK_CELLS:
+        service.cache.put(*cell, gzip.compress(b"{}"))
+    w, s, e, n = cell_bounds(*BLOCK)
+    assert service.prefetch((w + 1e-6, s + 1e-6, e - 1e-6, n - 1e-6)) == 0
+    assert service.prefetch((11.0, 47.0, 12.0, 48.0), limit=5) == 5
+
+
+def test_a_download_over_a_huge_area_does_not_list_the_whole_area(service, monkeypatch) -> None:
+    """Framed on a zoomed-out view, a download's area is millions of cells.
+    Every one of them was listed and sorted to keep the nearest 256, and the
+    backend ran out of memory before it got there."""
+    service._back_off(60.0)  # noqa: SLF001
+    monkeypatch.setattr(buildings, "cells_for_bounds",
+                        lambda *_a, **_k: pytest.fail("the whole area was listed"))
+    started = time.monotonic()
+    assert service.prefetch((-180.0, -85.0, 180.0, 85.0)) == buildings.PREFETCH_MAX_BLOCKS
+    assert time.monotonic() - started < 2.0
+    assert service._bulk[0] == buildings.block_of(*buildings.cell_of(0.0, 0.0))  # noqa: SLF001
+
+
+def test_the_outward_walk_covers_the_area_once_nearest_first() -> None:
+    bounds = (11.0, 47.0, 12.0, 48.0)
+    blocks = list(buildings.blocks_outward(bounds))
+    expected = {buildings.block_of(*cell) for cell in cells_for_bounds(bounds)}
+    assert len(blocks) == len(set(blocks)) and set(blocks) == expected
+    _, cx, cy = buildings.cell_of(11.5, 47.5, buildings.BLOCK_ZOOM)
+    rings = [max(abs(x - cx), abs(y - cy)) for _z, x, y in blocks]
+    assert rings == sorted(rings), "never a farther ring before a nearer one"
+
+
+def test_a_view_is_served_before_a_download(service) -> None:
+    service._back_off(60.0)  # noqa: SLF001
+    service.prefetch((11.60, 48.06, 11.68, 48.10))
+    service._offline_until = 0.0  # noqa: SLF001
+    service._queue.put_nowait(BLOCK)  # noqa: SLF001
+    assert service._next() == BLOCK  # noqa: SLF001
+
+
+def test_a_failed_download_block_is_retried_a_few_times_then_let_go(service) -> None:
+    service._back_off(60.0)  # noqa: SLF001
+    service.prefetch((11.60, 48.06, 11.61, 48.061), limit=1)
+    block = service._bulk.popleft()  # noqa: SLF001
+    for _ in range(buildings.BULK_MAX_TRIES - 1):
+        service._settle(block, fetched=False)  # noqa: SLF001
+        assert service._bulk[-1] == block  # noqa: SLF001
+        service._bulk.pop()  # noqa: SLF001
+    service._settle(block, fetched=False)  # noqa: SLF001
+    assert block not in service._bulk  # noqa: SLF001
+    assert block not in service._queued  # noqa: SLF001
+
+
+def test_the_route_says_unavailable_when_nothing_is_coming(tmp_path) -> None:
+    """Offline the map must stop asking until the view changes, not poll a
+    cell no worker will fetch and then give up on it for good."""
+    from corvus.server import CorvusHandler
+
+    svc = BuildingService(str(tmp_path / "b.sqlite"), url=DEAD_URL, timeout=0.5)
+    svc._back_off(60.0)  # noqa: SLF001
+
+    class _Rec:
+        _api_buildings_serve = CorvusHandler._api_buildings_serve
+        _send_buildings = CorvusHandler._send_buildings
+
+        def __init__(self):
+            self.buildings = svc
+            self.headers = {}
+            self.body = b""
+            self.wfile = self
+
+        def send_response(self, status):
+            self.status = status
+
+        def send_header(self, name, value):
+            self.headers[name] = value
+
+        def end_headers(self):
+            pass
+
+        def write(self, data):
+            self.body += data
+
+        def _send_cors(self):
+            pass
+
+    try:
+        rec = _Rec()
+        rec._api_buildings_serve(CELL_ZOOM, 17420, 11490)
+        payload = json.loads(rec.body)
+        assert payload.get("unavailable") is True and "pending" not in payload
+        assert rec.headers["Cache-Control"] == "no-store"
     finally:
         svc.close()

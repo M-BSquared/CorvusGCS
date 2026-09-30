@@ -82,12 +82,23 @@ Corvus.tiles = (function () {
   // The elevation job the backend starts alongside the imagery, or null. It
   // is followed once the imagery is done and cancelled together with it.
   let terrainJobId = null;
+  // The second elevation job, for the model 3D is drawing from when that is
+  // not the free one, or null. Followed and cancelled like the first.
+  let terrainSourceJobId = null;
+  // The free elevation model every download carries, from the catalogue.
+  let defaultTerrainId = null;
+  // Building blocks the backend queued for this download, fetched in the
+  // background after the tile jobs; said in the completion message.
+  let buildingBlocks = 0;
   let followId = null; // the job whose progress is on screen
   let jobState = null; // "running" until both jobs have ended, then the outcome
   let results = {};    // job id -> terminal progress snapshot
   let maxTilesPerJob = FALLBACK_MAX_TILES;
   let dialog = null;   // Corvus.ui.modal handle while the dialog is open
   let dom = {};        // populated by buildDialog
+
+  // Web Mercator's latitude limit, the edge of every tile grid.
+  const MERCATOR_LAT = 85.05112878;
 
   // ---- slippy-map tile math (Web Mercator / XYZ) ----
   function lonToX(lon, z) { return Math.floor(((lon + 180) / 360) * Math.pow(2, z)); }
@@ -171,15 +182,44 @@ Corvus.tiles = (function () {
   function sourceLabelById(id) {
     const dem = terrainSources.find((d) => d.id === id);
     // An elevation area is labelled for what it is rather than by a service
-    // name: it belongs to no map service, and "Elevation" is what the
-    // operator chose when they ticked the box.
-    if (dem) return dem.label || "Elevation";
+    // name: "Elevation" is what the operator chose when they ticked the box,
+    // and the model's name tells two of them over the same ground apart.
+    if (dem) return dem.label ? `Elevation · ${dem.label}` : "Elevation";
     return sourceLabel(sources.find((s) => s.id === id)) || id || "";
   }
 
-  /** The DEM a download would carry along, or null when none is served. */
+  /** The DEM a download always carries (the backend's DEFAULT_TERRAIN), or
+   *  null when none is served. */
   function terrainSpec() {
-    return terrainSources[0] || null;
+    return terrainSources.find((d) => d.id === defaultTerrainId) || terrainSources[0] || null;
+  }
+
+  /** Tiles of one elevation job over the captured area, zoomed like the
+   *  backend's _start_terrain_companion: from zoom 0 (or as low as the
+   *  per-job cap allows) up to the DEM's last level it has everywhere. */
+  function demCount(dem, lo, hi) {
+    const cap = Number.isFinite(dem.sparse_above) ? dem.sparse_above : dem.maxzoom;
+    const top = Math.min(hi, dem.maxzoom, cap);
+    let low = 0;
+    while (low < Math.min(lo, top) && estimateTileCount(
+      captured.w, captured.s, captured.e, captured.n, low, top) > maxTilesPerJob) {
+      low += 1;
+    }
+    return estimateTileCount(captured.w, captured.s, captured.e, captured.n, low, top);
+  }
+
+  /** Every job of the current download, in the order they are followed. */
+  function jobChain() {
+    return [jobId, terrainJobId, terrainSourceJobId].filter(Boolean);
+  }
+
+  /** The elevation model 3D is drawing from right now, as the catalogue
+   *  describes it, or null. The download carries it along with the free one. */
+  function chosenTerrain() {
+    const spec = Corvus.map && typeof Corvus.map.getTerrainSpec === "function"
+      ? Corvus.map.getTerrainSpec() : null;
+    const id = spec && spec.id;
+    return (id && terrainSources.find((d) => d.id === id)) || null;
   }
 
   /** True when the operator has asked for elevation with this download. */
@@ -225,15 +265,34 @@ Corvus.tiles = (function () {
       && owner.getMap() && typeof owner.getMap().getBounds === "function");
   }
 
+  /**
+   * A view's bounds cut to one world, as {w,s,e,n}.
+   *
+   * MapLibre reports the view as drawn, world copies included: zoomed out, or
+   * panned across the date line, a longitude can be -250 or 312, and the
+   * backend refuses anything outside [-180, 180]. The view is shifted onto
+   * the world copy its centre is in and cut at that copy's edges, and the
+   * latitudes at Web Mercator's, beyond which there are no tiles.
+   */
+  function oneWorld(w, s, e, n) {
+    if (!(e - w < 360)) return { w: -180, s: clampLat(s), e: 180, n: clampLat(n) };
+    const shift = Math.round((w + e) / 2 / 360) * 360;
+    return {
+      w: Math.max(-180, w - shift), s: clampLat(s),
+      e: Math.min(180, e - shift), n: clampLat(n),
+    };
+  }
+
+  function clampLat(lat) { return Math.max(-MERCATOR_LAT, Math.min(MERCATOR_LAT, lat)); }
+
   /** Read + store the current view bounds; returns null if the map isn't ready. */
   function captureBounds() {
     if (!mapReady()) return null;
     const b = mapHost().getMap().getBounds();
     const z = mapHost().getMap().getZoom();
-    captured = {
-      w: b.getWest(), s: b.getSouth(), e: b.getEast(), n: b.getNorth(),
-      zoom: Math.floor(z),
-    };
+    const box = oneWorld(b.getWest(), b.getSouth(), b.getEast(), b.getNorth());
+    if (![box.w, box.s, box.e, box.n].every(isFinite)) return null;
+    captured = Object.assign(box, { zoom: Math.floor(z) });
     return captured;
   }
 
@@ -304,6 +363,21 @@ Corvus.tiles = (function () {
     terrainField.hidden = true;   // until the catalogue says a DEM is served
     body.appendChild(terrainField);
 
+    // Buildings for 3D. On by default for the same reason as elevation: an
+    // area flown offline has only the buildings someone happened to look at
+    // online, which is some of them, never all.
+    const buildingsToggle = Corvus.ui.toggle({
+      value: true,
+      ariaLabel: "Include buildings",
+    });
+    body.appendChild(Corvus.ui.field({
+      label: "Buildings (3D)",
+      control: buildingsToggle.el,
+      className: "field-switch",
+      hint: "Fetches the OpenStreetMap buildings of the area in the background, "
+        + "nearest the centre first, so 3D shows them offline.",
+    }));
+
     // Estimate
     const est = el("div", "tiles-estimate");
     est.appendChild(Corvus.ui.label("Estimate"));
@@ -338,6 +412,7 @@ Corvus.tiles = (function () {
 
     dom = {
       srcSelect, nameInput, bndValue, dlBtn, cancelBtn, terrainToggle, terrainField,
+      buildingsToggle,
       progress, msg, regionList, regionsCount, minZoom, maxZoom, estVal, estSub,
     };
 
@@ -374,6 +449,7 @@ Corvus.tiles = (function () {
         sources = (data && data.sources) || [];
         providers = (data && data.providers) || [];
         terrainSources = (data && data.terrain) || [];
+        defaultTerrainId = (data && data.default_terrain) || null;
         maxTilesPerJob = (data && data.max_tiles_per_job) || FALLBACK_MAX_TILES;
         renderSourceSelect();
         renderTerrainOption();
@@ -566,7 +642,7 @@ Corvus.tiles = (function () {
       Corvus.ui.setBusy(dom.dlBtn, true);
       dom.cancelBtn.disabled = false;
       dom.progress.el.hidden = false;
-      if (followId === terrainJobId) showMsg(TERRAIN_PHASE_MSG);
+      if (followId !== jobId) showMsg(TERRAIN_PHASE_MSG);
       openProgress(followId);
     }
   }
@@ -655,12 +731,16 @@ Corvus.tiles = (function () {
     let count = imagery;
     // The elevation job is a second download over the same ground, capped at
     // the DEM's own maxzoom — so it has to be in the number the operator
-    // decides on, not a surprise on their disk afterwards.
+    // decides on, not a surprise on their disk afterwards. It starts at zoom
+    // 0 whatever the imagery starts at (the backend's
+    // _start_terrain_companion), because 3D draws distant ground from coarse
+    // elevation and derives missing fine tiles from it.
     const dem = terrainWanted() ? terrainSpec() : null;
     if (dem) {
-      const demHi = Math.min(hi, dem.maxzoom);
-      count += estimateTileCount(
-        captured.w, captured.s, captured.e, captured.n, Math.min(lo, demHi), demHi);
+      count += demCount(dem, lo, hi);
+      // The model 3D is drawing from rides along too when it is another one.
+      const chosen = chosenTerrain();
+      if (chosen && chosen.id !== dem.id) count += demCount(chosen, lo, hi);
     }
     dom.estVal.textContent = `≈ ${fmtCount(count)} tiles`;
     dom.estSub.textContent = `~ ${fmtSize(count * AVG_TILE_KB)}`;
@@ -668,7 +748,7 @@ Corvus.tiles = (function () {
     if (dom.dlBtn.classList.contains("is-busy")) return;
     // The server refuses an imagery job over its cap. Said here, before the
     // press, with the two settings that bring it down; the elevation job
-    // never exceeds the imagery one, so only the imagery count decides.
+    // starts only as low as the cap allows, so only the imagery count decides.
     const tooBig = imagery > maxTilesPerJob;
     dom.dlBtn.disabled = tooBig;
     if (tooBig) {
@@ -693,6 +773,7 @@ Corvus.tiles = (function () {
 
     jobId = null;
     terrainJobId = null;
+    terrainSourceJobId = null;
     followId = null;
     results = {};
     Corvus.ui.setBusy(dom.dlBtn, true);
@@ -711,12 +792,16 @@ Corvus.tiles = (function () {
         bounds: { w: captured.w, s: captured.s, e: captured.e, n: captured.n },
         minzoom, maxzoom,
         terrain: terrainWanted(),
+        terrain_source: terrainWanted() && chosenTerrain() ? chosenTerrain().id : undefined,
+        buildings: !!(dom.buildingsToggle && dom.buildingsToggle.getValue()),
       }),
     }).then((data) => {
       const id = data && data.job_id;
       if (!id) throw new Error("No job id returned");
       jobId = id;
       terrainJobId = (data && data.terrain_job_id) || null;
+      terrainSourceJobId = (data && data.terrain_source_job_id) || null;
+      buildingBlocks = Number(data && data.building_blocks) || 0;
       jobState = "running";
       openProgress(id);
       // The area is recorded the moment the job exists, so it appears on the
@@ -755,24 +840,26 @@ Corvus.tiles = (function () {
     const state = data.state;
     if (state !== "done" && state !== "failed" && state !== "cancelled") return;
     results[data.job_id || followId] = data;
-    // The elevation job runs alongside the imagery. The download is not
+    // The elevation jobs run alongside the imagery. The download is not
     // finished while the heights 3D mode needs offline are still coming in,
-    // so it is followed next rather than left running unseen.
-    if (state !== "cancelled" && followId === jobId && terrainJobId) {
+    // so each is followed in turn rather than left running unseen.
+    const chain = jobChain();
+    const next = chain[chain.indexOf(followId) + 1];
+    if (state !== "cancelled" && chain.includes(followId) && next) {
       if (dom.progress) dom.progress.reset();
       showMsg(TERRAIN_PHASE_MSG);
-      openProgress(terrainJobId);
+      openProgress(next);
       loadRegions();
       return;
     }
     finishJobs();
   }
 
-  /** Report the outcome of the imagery job and its elevation companion. */
+  /** Report the outcome of the imagery job and its elevation companions. */
   function finishJobs() {
     closeEventSource();
     resetButtons();
-    const ended = [jobId, terrainJobId].filter(Boolean).map((id) => results[id]).filter(Boolean);
+    const ended = jobChain().map((id) => results[id]).filter(Boolean);
     const imagery = results[jobId] || {};
     // A job "done" with failed tiles still has holes: the operator must hear
     // that before driving out, not find it in the field.
@@ -789,7 +876,10 @@ Corvus.tiles = (function () {
         "Start the same download again to fill the gaps.", "warn");
     } else {
       jobState = "done";
-      showMsg("Download complete. Tiles cached for offline use.", "ok");
+      showMsg("Download complete. Tiles cached for offline use." + (buildingBlocks
+        ? ` Buildings for ${fmtCount(buildingBlocks)} blocks are still being fetched `
+          + "in the background; leave Corvus running and online for a few minutes."
+        : ""), "ok");
     }
     loadRegions();
   }
@@ -812,9 +902,9 @@ Corvus.tiles = (function () {
   function cancelDownload() {
     if (!jobId) return;
     Corvus.ui.setBusy(dom.cancelBtn, true);
-    // Both jobs: cancelling only the imagery left the elevation download
+    // Every job: cancelling only the imagery left the elevation downloads
     // running in the background after the operator had said stop.
-    const ids = [jobId, terrainJobId].filter(Boolean);
+    const ids = jobChain();
     Promise.all(ids.map((id) => Corvus.telemetry.requestJson("/api/tiles/cancel", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

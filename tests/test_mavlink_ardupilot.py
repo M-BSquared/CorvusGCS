@@ -139,6 +139,45 @@ def test_a_heartbeat_relatches_the_dialect_mid_session() -> None:
     assert snapshot["mode"] == "RTL"
 
 
+def test_the_heartbeat_names_the_mode_in_the_stacks_own_words() -> None:
+    """RTL is RTL on ArduPilot and RETURN on PX4. The label comes from the
+    dialect that decoded the mode, never from the name alone."""
+    store = VehicleStateStore()
+    store.heartbeat()
+    bridge = MavlinkBridge(store)
+    bridge._target_system = 1
+    bridge._target_component = 1
+    bridge._dispatch(FakeMessage(
+        message_type="HEARTBEAT",
+        type=mavutil.mavlink.MAV_TYPE_QUADROTOR,
+        autopilot=mavutil.mavlink.MAV_AUTOPILOT_ARDUPILOTMEGA,
+        base_mode=CUSTOM, custom_mode=6, source_system=1, source_component=1,
+    ))
+    snapshot = store.get_snapshot()
+    assert (snapshot["mode"], snapshot["mode_label"]) == ("RTL", "RTL")
+
+    bridge._dispatch(FakeMessage(
+        message_type="HEARTBEAT",
+        type=mavutil.mavlink.MAV_TYPE_QUADROTOR,
+        autopilot=mavutil.mavlink.MAV_AUTOPILOT_PX4,
+        base_mode=29, custom_mode=(4 << 16) | (5 << 24),
+        source_system=1, source_component=1,
+    ))
+    snapshot = store.get_snapshot()
+    assert (snapshot["mode"], snapshot["mode_label"]) == ("RTL", "RETURN")
+
+    store.set_disconnected()
+    assert store.get_snapshot()["mode_label"] == "DISCONNECTED"
+
+
+def test_every_offered_mode_comes_with_its_label() -> None:
+    bridge = ardupilot_bridge()
+    labels = bridge.get_mode_labels()
+    assert list(labels) == bridge.get_available_modes()
+    assert labels["ALT_HOLD"] == "ALT HOLD"
+    assert labels["GUIDED"] == "GUIDED"
+
+
 # ---------------------------------------------------------------------------
 # Takeoff
 # ---------------------------------------------------------------------------

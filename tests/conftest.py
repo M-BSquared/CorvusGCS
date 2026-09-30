@@ -69,6 +69,7 @@ def fake_bridge() -> MagicMock:
     """
     bridge = MagicMock()
     bridge.get_available_modes.return_value = ["MANUAL", "MISSION"]
+    bridge.get_mode_labels.return_value = {"MANUAL": "MANUAL", "MISSION": "MISSION"}
     bridge.get_last_command_error.return_value = ""
     bridge.param_status.return_value = {"state": "idle", "count": 0, "received": 0}
     bridge.get_params.return_value = []

@@ -81,7 +81,12 @@ all child processes (e.g. MAVLink bridges) and guarantees clean teardown.
   every chart (`plotly-basic.min.js`) and every terminal selection
   (`xterm.js`) answers the pointer in the wrong place above 100%. Replacing
   either file drops its patch; `tests/test_frontend_vendor_zoom.js` fails when
-  that happens and prints the exact edit to re-apply.
+  that happens and prints the exact edit to re-apply. `maplibre-gl.min.js`
+  carries one more, `CORVUS-QUEUE-PATCH`: MapLibre 5.24 queues an image
+  request without its AbortController when the tile is aborted mid-request,
+  and the queue then throws inside an unrelated tile's request, marking that
+  tile (often an elevation tile) failed for good.
+  `tests/test_frontend_vendor_maplibre_queue.js` guards it the same way.
 
 ## Platforms & packaging
 

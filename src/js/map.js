@@ -95,11 +95,22 @@ Corvus.map = (function () {
   let vehicleMarker = null;
   let homeMarker = null;
   let pathSource = null;
+  let pastSource = null;
+  // The flight in progress. Every flight before it on this station is in
+  // pastFlights, oldest first, until the operator clears the track.
   let pathCoords = [];
+  let pastFlights = [];
   // Autopilot uptime last seen. A value that moves BACKWARDS means the vehicle
-  // rebooted, which is the only thing that should discard a flown track — a
-  // link drop must not throw away the flight in progress.
+  // rebooted: a new flight session, never a link drop.
   let lastBootMs = null;
+  // The armed flag of the last sample, null until one arrives. Disarmed to
+  // armed is where a new flight begins.
+  let lastArmed = null;
+  // Settings (ui.track_earlier_flights / ui.track_clear_on_restart), applied
+  // by app.js once the config lands. Earlier flights get their own colour
+  // unless turned off; the track outlives a restart unless asked otherwise.
+  let trackEarlierFlights = true;
+  let trackClearOnRestart = false;
   let started = false;
   let firstFix = true;
 
@@ -231,7 +242,12 @@ Corvus.map = (function () {
   // one adds a point every few metres — which makes the cap an hours-long
   // budget rather than a stopwatch.
   const TRACK_MIN_MOVE_M = 2.0;   // metres before a new point is recorded
-  const TRACK_MAX_POINTS = 20000; // ~40 km of track at the spacing above
+  const TRACK_MAX_POINTS = 20000; // ~40 km of track at the spacing above, all flights
+  // The track survives a restart of the app in localStorage. History, not a
+  // setting, so it is in settings-transfer.js's NOT_SETTINGS.
+  const TRACK_KEY = "corvus.map.track";
+  const TRACK_SAVE_DELAY_MS = 5000;
+  let trackSaveTimer = null;
 
   // Dead-zone rectangle, as a fraction of the map container. 40% leaves the
   // aircraft a generous middle to manoeuvre in while keeping it well clear of
@@ -429,6 +445,7 @@ Corvus.map = (function () {
   let contextPinEl = null;
   let contextPoint = null;      // {lng, lat} the open menu refers to, or null
   let contextHostEl = null;     // the map container the menu is positioned in
+  let contextCopyTimer = null;  // reverts the copy button's "copied" tick
 
   // Downloaded-area overlay: the named regions from GET /api/tiles/regions,
   // drawn as outlined rectangles with a DOM label at each centre. Labels are
@@ -438,7 +455,9 @@ Corvus.map = (function () {
   let regions = [];
   let regionSource = null;
   let regionMarkers = [];
-  let regionsVisible = true;
+  // Off until asked for: the rectangles are for deciding what to download,
+  // not something to fly over.
+  let regionsVisible = false;
 
   function tileUrl(key) {
     return "/api/tiles/" + key + "/{z}/{x}/{y}.png";
@@ -521,10 +540,33 @@ Corvus.map = (function () {
    * takes literals, so repaintTrack() re-reads them when the theme changes.
    */
   function addPathLayer() {
-    map.addSource("vehicle-path", {
-      type: "geojson",
-      data: { type: "Feature", geometry: { type: "LineString", coordinates: [] }, properties: {} },
+    // Earlier flights first, so the flight in progress is drawn over them
+    // where the two cross. Narrower and fainter as well as another colour:
+    // the difference must hold where colour alone does not.
+    map.addSource("vehicle-path-past", { type: "geojson", data: pastGeometry() });
+    map.addLayer({
+      id: "path-past-glow",
+      source: "vehicle-path-past",
+      type: "line",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-width": 9, "line-blur": 7, "line-opacity": 0.18 },
     });
+    map.addLayer({
+      id: "path-past-casing",
+      source: "vehicle-path-past",
+      type: "line",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-width": 4.6, "line-opacity": 0.45 },
+    });
+    map.addLayer({
+      id: "path-past-line",
+      source: "vehicle-path-past",
+      type: "line",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-width": 2.2, "line-opacity": 0.85 },
+    });
+    pastSource = map.getSource("vehicle-path-past");
+    map.addSource("vehicle-path", { type: "geojson", data: currentGeometry() });
     map.addLayer({
       id: "path-glow",
       source: "vehicle-path",
@@ -584,10 +626,118 @@ Corvus.map = (function () {
     if (last && metresBetween(last, [lng, lat]) < TRACK_MIN_MOVE_M) return false;
 
     pathCoords.push([lng, lat]);
-    // shift-on-overflow rather than slice: drop ONE point when over cap instead
-    // of re-allocating the whole array on every sample.
-    if (pathCoords.length > TRACK_MAX_POINTS) pathCoords.shift();
+    // Over the cap, the OLDEST point goes, which is the first flight's before
+    // it is the current one's. shift() rather than slice: one point per
+    // sample, not a re-allocation of the whole array.
+    if (trackPointCount() > TRACK_MAX_POINTS) {
+      if (pastFlights.length) {
+        pastFlights[0].shift();
+        if (pastFlights[0].length < 2) pastFlights.shift();
+        paintPast();
+      } else {
+        pathCoords.shift();
+      }
+    }
+    scheduleTrackSave();
     return true;
+  }
+
+  function trackPointCount() {
+    return pastFlights.reduce((n, f) => n + f.length, pathCoords.length);
+  }
+
+  /**
+   * Close the flight in progress and start the next one.
+   *
+   * The closed flight moves to pastFlights, where it is drawn in the earlier
+   * flights' colour. A single point is not a flight and is simply dropped.
+   * Returns true when a flight was closed.
+   */
+  function startNewFlight() {
+    const closed = pathCoords.length >= 2;
+    if (closed) pastFlights.push(pathCoords);
+    pathCoords = [];
+    if (closed) {
+      paintPast();
+      paintCurrent();
+      scheduleTrackSave();
+    }
+    return closed;
+  }
+
+  /**
+   * Has a new flight begun with this sample? True on the disarmed to armed
+   * edge only: the first sample after a start is a baseline, like the uptime
+   * in checkForReboot, so an app opened mid-flight does not split the track.
+   */
+  function checkForTakeoff(armed) {
+    if (typeof armed !== "boolean") return false;
+    const previous = lastArmed;
+    lastArmed = armed;
+    return previous === false && armed;
+  }
+
+  function currentGeometry() {
+    return {
+      type: "Feature", geometry: { type: "LineString", coordinates: pathCoords }, properties: {},
+    };
+  }
+
+  function pastGeometry() {
+    return {
+      type: "Feature", geometry: { type: "MultiLineString", coordinates: pastFlights }, properties: {},
+    };
+  }
+
+  function paintCurrent() {
+    if (pathSource) pathSource.setData(currentGeometry());
+  }
+
+  function paintPast() {
+    if (pastSource) pastSource.setData(pastGeometry());
+  }
+
+  function trackStorage() {
+    try { return window.localStorage || null; } catch (_e) { return null; }
+  }
+
+  /** Write the track a few seconds after it changed, not on every point. */
+  function scheduleTrackSave() {
+    if (trackSaveTimer !== null) return;
+    trackSaveTimer = window.setTimeout(saveTrack, TRACK_SAVE_DELAY_MS);
+  }
+
+  function saveTrack() {
+    if (trackSaveTimer !== null) window.clearTimeout(trackSaveTimer);
+    trackSaveTimer = null;
+    const storage = trackStorage();
+    if (!storage) return;
+    // Seven decimals is about a centimetre, far below the 2 m spacing, and
+    // keeps a full track well inside the storage quota.
+    const round = (flight) => flight.map((c) => [+c[0].toFixed(7), +c[1].toFixed(7)]);
+    try {
+      if (!pastFlights.length && pathCoords.length < 2) {
+        storage.removeItem(TRACK_KEY);
+      } else {
+        storage.setItem(TRACK_KEY, JSON.stringify({
+          v: 1, past: pastFlights.map(round), current: round(pathCoords),
+        }));
+      }
+    } catch (_e) { /* quota or storage off: the track still lives in memory */ }
+  }
+
+  /** The track the last session left, read back once at init. */
+  function restoreTrack() {
+    const storage = trackStorage();
+    if (!storage) return;
+    let saved = null;
+    try { saved = JSON.parse(storage.getItem(TRACK_KEY) || "null"); } catch (_e) { return; }
+    if (!saved || saved.v !== 1) return;
+    const valid = (flight) => Array.isArray(flight) && flight.every((c) =>
+      Array.isArray(c) && c.length === 2 && isFinite(c[0]) && isFinite(c[1]));
+    pastFlights = (Array.isArray(saved.past) ? saved.past : [])
+      .filter((f) => valid(f) && f.length >= 2);
+    pathCoords = valid(saved.current) ? saved.current : [];
   }
 
   /**
@@ -604,14 +754,13 @@ Corvus.map = (function () {
     return previous !== null && bootMs < previous;
   }
 
-  /** Discard the flown track and repaint. */
+  /** Discard the flown track, every flight of it, and repaint. */
   function clearTrack() {
     pathCoords = [];
-    if (pathSource) {
-      pathSource.setData({
-        type: "Feature", geometry: { type: "LineString", coordinates: [] }, properties: {},
-      });
-    }
+    pastFlights = [];
+    paintCurrent();
+    paintPast();
+    saveTrack();
     updateTrackControl();
     // The plan line starts at the vehicle, not at the track, so it is
     // unaffected — but it shares the source update cadence, so keep it honest.
@@ -621,10 +770,22 @@ Corvus.map = (function () {
   /** Show the clear-track control only while there is a track to clear. */
   function updateTrackControl() {
     if (!trackClearEl) return;
-    trackClearEl.hidden = pathCoords.length < 2;
+    trackClearEl.hidden = pathCoords.length < 2 && pastFlights.length === 0;
   }
 
-  /** Push the current theme's track colours onto the three track layers. */
+  /**
+   * Apply the two track settings. *startup* is true for the config read when
+   * the app starts, the one moment "clear on restart" means discarding what
+   * the last session left.
+   */
+  function setTrackOptions(opts, startup) {
+    const o = opts || {};
+    trackEarlierFlights = o.earlierFlights !== false;
+    trackClearOnRestart = o.clearOnRestart === true;
+    if (startup && trackClearOnRestart) clearTrack();
+    repaintTrack();
+  }
+
   /* Keep the map's drawing buffer at the screen's real resolution whatever
      the interface scale is. MapLibre sizes it from the container's UNSCALED
      size, so `zoom` alone would leave the map soft at 150% (the same buffer
@@ -646,9 +807,11 @@ Corvus.map = (function () {
     }
   }
 
+  /** Push the current theme's track colours onto the track layers. */
   function repaintTrack() {
     if (!map) return;
     const track = Corvus.ui.token("--track", "#E4322F");
+    const past = trackEarlierFlights ? Corvus.ui.token("--track-past", "#E88A7E") : track;
     // The casing is the page background, not black: on the light theme a black
     // outline would be heavier than the track it is meant to support.
     const casing = Corvus.ui.token("--bg", "#0B0E12");
@@ -658,6 +821,9 @@ Corvus.map = (function () {
     set("path-glow", "line-color", track);
     set("path-casing", "line-color", casing);
     set("path-line", "line-color", track);
+    set("path-past-glow", "line-color", past);
+    set("path-past-casing", "line-color", casing);
+    set("path-past-line", "line-color", past);
     // The sky is literal colours too, and it exists only while 3D is on.
     if (threeD) setSky(true);
   }
@@ -714,6 +880,61 @@ Corvus.map = (function () {
     return el;
   }
 
+  /** Two {w,s,e,n} boxes cover nearly the same ground: their overlap is at
+   *  least `share` of the larger one. */
+  function sameGround(a, b, share) {
+    const area = (x) => Math.max(0, x.e - x.w) * Math.max(0, x.n - x.s);
+    const overlap = area({
+      w: Math.max(a.w, b.w), e: Math.min(a.e, b.e),
+      s: Math.max(a.s, b.s), n: Math.min(a.n, b.n),
+    });
+    const larger = Math.max(area(a), area(b));
+    if (larger === 0) return a.w === b.w && a.s === b.s && a.e === b.e && a.n === b.n;
+    return overlap / larger >= share;
+  }
+
+  /**
+   * The downloaded areas as they are drawn: one entry per piece of ground.
+   * Downloading an area again (another source, a deeper zoom, a retry) used
+   * to stack a second rectangle and a second label on the same spot, which
+   * made both unreadable. Areas that cover nearly the same ground are merged
+   * into one box with one label: the names once each, the zoom range of all
+   * of them, and "downloading" while any of them still is. Pure, so both
+   * maps draw the same thing.
+   */
+  function mergeRegions(list, skipSource) {
+    const groups = [];
+    (Array.isArray(list) ? list : []).forEach((r) => {
+      if (!r || (skipSource && r.source === skipSource)) return;
+      const b = r.bounds || {};
+      const box = { w: Number(b.w), s: Number(b.s), e: Number(b.e), n: Number(b.n) };
+      if (![box.w, box.s, box.e, box.n].every(isFinite)) return;
+      const group = groups.find((g) => sameGround(g.bounds, box, 0.9));
+      if (!group) {
+        groups.push({
+          id: r.id, ids: [r.id], names: [r.name || "Region"], bounds: box,
+          minzoom: r.minzoom, maxzoom: r.maxzoom, state: r.state,
+        });
+        return;
+      }
+      group.ids.push(r.id);
+      const name = r.name || "Region";
+      if (group.names.indexOf(name) < 0) group.names.push(name);
+      group.bounds = {
+        w: Math.min(group.bounds.w, box.w), s: Math.min(group.bounds.s, box.s),
+        e: Math.max(group.bounds.e, box.e), n: Math.max(group.bounds.n, box.n),
+      };
+      if (isFinite(r.minzoom)) {
+        group.minzoom = isFinite(group.minzoom) ? Math.min(group.minzoom, r.minzoom) : r.minzoom;
+      }
+      if (isFinite(r.maxzoom)) {
+        group.maxzoom = isFinite(group.maxzoom) ? Math.max(group.maxzoom, r.maxzoom) : r.maxzoom;
+      }
+      if (r.state === "running") group.state = "running";
+    });
+    return groups.map((g) => Object.assign(g, { name: g.names.join(", ") }));
+  }
+
   /**
    * Replace the drawn set of downloaded areas. Safe before the map has loaded
    * (the list is stored and drawn on "load"), and safe to call repeatedly —
@@ -728,13 +949,13 @@ Corvus.map = (function () {
     // drawing it would put a second rectangle and a second label on top of
     // the first — the same area, claimed twice. The offline-map dialog still
     // lists it, which is where an operator manages what is on their disk.
-    const drawn = regions.filter((r) => r.source !== terrainSourceId());
+    const drawn = mergeRegions(regions.filter((r) => !isTerrainSource(r && r.source)));
 
     regionSource.setData({
       type: "FeatureCollection",
       features: regionsVisible ? drawn.map((r) => ({
         type: "Feature",
-        geometry: { type: "Polygon", coordinates: boundsRing(r.bounds || {}) },
+        geometry: { type: "Polygon", coordinates: boundsRing(r.bounds) },
         properties: { id: r.id, name: r.name || "" },
       })) : [],
     });
@@ -743,9 +964,8 @@ Corvus.map = (function () {
     regionMarkers = [];
     if (!regionsVisible) return;
     drawn.forEach((r) => {
-      const b = r.bounds || {};
+      const b = r.bounds;
       const centre = [((b.w + b.e) / 2), ((b.s + b.n) / 2)];
-      if (!isFinite(centre[0]) || !isFinite(centre[1])) return;
       regionMarkers.push(
         new maplibregl.Marker({ element: buildRegionLabel(r), anchor: "center" })
           .setLngLat(centre).addTo(map));
@@ -841,6 +1061,8 @@ Corvus.map = (function () {
     // base is showing, so a later re-insert before path-glow landed the
     // imagery on top of them and they vanished.
     map.addLayer({ id: "base", type: "raster", source: "base" }, firstOverlayLayer());
+    // A map service with its own elevation model brings it along.
+    chooseTerrain();
   }
 
   /** The lowest layer the base imagery must stay beneath, or undefined when
@@ -854,8 +1076,10 @@ Corvus.map = (function () {
    * still needs downloading.
    */
   const OVERLAY_LAYERS = [
+    "terrain-hillshade",
     "offline-regions-fill", "offline-regions-line",
     "buildings-3d",
+    "path-past-glow", "path-past-casing", "path-past-line",
     "path-glow", "path-casing", "path-line",
     "waypoints-route",
   ];
@@ -873,7 +1097,7 @@ Corvus.map = (function () {
         active: true },
       { id: "divider" },
       { id: "layers", icon: "layers", title: "Map layers" },
-      { id: "regions", icon: "frame", title: "Show downloaded areas", active: true },
+      { id: "regions", icon: "frame", title: "Show downloaded areas" },
       { id: "three", icon: "box", title: "3D mode" },
       { id: "divider", group: "video" },
       { id: "video", icon: "video", title: "Camera windows (set up under Setup, Video)" },
@@ -1489,19 +1713,19 @@ Corvus.map = (function () {
   }
 
   /**
-   * Fill the open 3D panel: one switch, for the one thing the button itself
-   * cannot say.
+   * Fill the open 3D panel: the buildings switch and the elevation model,
+   * the two things the button itself cannot say.
    *
    * There is no "off" row. Off is what the button does — a mode that can be
    * reached two ways is a mode the operator has to work out which way they
    * reached, and the panel exists to answer a different question: WHICH 3D
    * the button will give them.
    *
-   * The hint is the point of the panel, not decoration. The two modes look
-   * almost the same over flat ground; what actually separates them is that
-   * one downloads elevation tiles and asks the backend for buildings and the
-   * other touches the network not at all. On a field laptop over a radio link
-   * that is the whole decision, and it is invisible unless it is written down.
+   * The hint is the point of the panel, not decoration. Both modes draw the
+   * terrain; what separates them is that one asks the backend for building
+   * footprints, which the first time over an area is an Overpass round trip
+   * per cell. On a field laptop over a radio link that is the whole
+   * decision, and it is invisible unless it is written down.
    *
    * Built on every open, so a mode changed from anywhere else (a restored
    * config, a test) is simply already showing.
@@ -1514,7 +1738,7 @@ Corvus.map = (function () {
 
     threeDPicker = Corvus.ui.toggle({
       value: threeDDetail === THREE_D_FULL,
-      ariaLabel: "Terrain and buildings",
+      ariaLabel: "Buildings",
       onChange: (on) => {
         // Which 3D, never whether. The button is on/off and this is the
         // setting behind it, so flipping this while 3D is off records the
@@ -1527,17 +1751,72 @@ Corvus.map = (function () {
     });
 
     const field = Corvus.ui.field({
-      label: "Terrain & buildings",
+      label: "Buildings",
       control: threeDPicker.el,
       className: "field-switch",
-      hint: "Elevation relief, extruded buildings and the globe. Off is the "
-        + "camera tilt alone, over flat ground, and nothing downloaded "
-        + "that a flat map does not already download.",
+      hint: "Extruded OpenStreetMap buildings, fetched once per area and "
+        + "then kept for offline use. Terrain relief is always on in 3D "
+        + "wherever elevation data is available.",
     });
     surface.appendChild(field);
-    // The one row the keyboard walks. A menu with nothing to walk does not
-    // open at all (see Corvus.ui.menu), so this is load-bearing.
-    return [threeDPicker.el];
+
+    const rows = renderTerrainRows(surface);
+    // The rows the keyboard walks. A menu with nothing to walk does not open
+    // at all (see Corvus.ui.menu), so the switch alone is load-bearing.
+    return [threeDPicker.el, ...rows];
+  }
+
+  /**
+   * The elevation model list in the 3D panel.
+   *
+   * "Automatic" first, with what it resolves to right now as its second line:
+   * the rule (the map service's own model, else Copernicus) is only useful if
+   * the operator can see where it landed. A keyed model is listed only while
+   * its key is set, the same rule the layer switcher applies to keyed map
+   * services: offered without its key it would only ever draw the fallback.
+   */
+  function renderTerrainRows(surface) {
+    if (!terrainCatalogue.length) return [];
+    const head = document.createElement("div");
+    head.className = "ui-menu-head";
+    head.textContent = "Elevation";
+    surface.appendChild(head);
+
+    const provider = activeLayer && sources[activeLayer]
+      ? sources[activeLayer].provider : null;
+    const auto = terrainFor(terrainCatalogue, provider, defaultTerrainId,
+      TERRAIN_AUTO, preferredTerrainId);
+    const options = [{
+      id: TERRAIN_AUTO,
+      label: auto ? `Automatic (${auto.label || auto.id})` : "Automatic",
+    }];
+    // The preferred model first: it is the one "Automatic" usually lands on.
+    const usable = terrainCatalogue.filter(terrainUsable);
+    usable.sort((a, b) => (b.id === preferredTerrainId) - (a.id === preferredTerrainId));
+    usable.forEach((d) => {
+      options.push({ id: d.id, label: d.label || d.id });
+    });
+    const picker = Corvus.ui.optionList({
+      ariaLabel: "Elevation model",
+      value: options.some((o) => o.id === terrainChoice) ? terrainChoice : TERRAIN_AUTO,
+      options,
+      onChange: (id) => {
+        setTerrainSource(id);
+        persistThreeD();
+      },
+    });
+    surface.appendChild(picker.el);
+    return Array.from(picker.el.children);
+  }
+
+  /**
+   * Choose the elevation model: a DEM id, or "auto". Applied at once when 3D
+   * is showing, remembered otherwise. Returns the choice that stands.
+   */
+  function setTerrainSource(id) {
+    terrainChoice = (typeof id === "string" && id) ? id : TERRAIN_AUTO;
+    chooseTerrain();
+    return terrainChoice;
   }
 
   /**
@@ -1557,7 +1836,7 @@ Corvus.map = (function () {
     if (open !== undefined) b.setAttribute("aria-expanded", open ? "true" : "false");
     b.title = threeD
       ? (threeDDetail === THREE_D_FULL
-        ? "3D: terrain & buildings" : "3D: simple")
+        ? "3D: terrain & buildings" : "3D: terrain")
       : "3D mode";
   }
 
@@ -1676,23 +1955,89 @@ Corvus.map = (function () {
       list.forEach((s) => { next[s.id] = s; });
       sources = next;
       providers = (data && data.providers) || [];
-      // The DEM 3D mode reads heights from, including its encoding — stated
-      // once in corvus/tile_sources.py and never mirrored here. A backend
-      // that serves none leaves terrainSpec null, and 3D degrades to a tilt
-      // over flat ground rather than failing.
-      const dems = (data && data.terrain) || [];
-      const wanted = (data && data.default_terrain) || (dems[0] && dems[0].id);
-      terrainSpec = dems.find((d) => d.id === wanted) || dems[0] || null;
+      // The DEMs 3D mode can read heights from, including their encoding and
+      // tile size — stated once in corvus/tile_sources.py and never mirrored
+      // here. A backend that serves none leaves terrainSpec null, and 3D
+      // degrades to a tilt over flat ground rather than failing.
+      terrainCatalogue = (data && data.terrain) || [];
+      defaultTerrainId = (data && data.default_terrain)
+        || (terrainCatalogue[0] && terrainCatalogue[0].id) || null;
+      preferredTerrainId = (data && data.preferred_terrain) || null;
       // 3D may already be on: the rail works from the first frame, and this
       // catalogue arrives over the network. Re-applying the mode is how a
       // press that landed before the DEM was known still gets its terrain,
       // instead of a tilt over flat ground for the rest of the session.
-      if (threeD) set3D(true);
+      if (!chooseTerrain() && threeD) set3D(true);
+      // Which regions are elevation (and so not drawn) is only known now.
+      setRegions(regions);
       if (layersMenuHandle) layersMenuHandle.rebuild();
       // The active layer's attribution/maxzoom may have been the bootstrap
       // fallback until now; re-apply so MapLibre credits the real source.
       if (started && activeLayer !== BOOTSTRAP_LAYER) setBaseLayer(activeLayer);
     }).catch(() => {});
+  }
+
+  /** Can this DEM load at all: keyless, or its key is set. */
+  function terrainUsable(dem) {
+    return !!dem && (!dem.token_required || dem.token_set);
+  }
+
+  /**
+   * The DEM to draw the terrain from while *provider*'s map is showing.
+   *
+   * *choice* is the operator's pick from the 3D panel: a DEM id, or "auto"
+   * (also what anything unknown means). A pick that cannot load (a keyed
+   * model whose key was removed) falls back to the automatic rule rather
+   * than to flat ground.
+   *
+   * Automatic: a map service with its own elevation model and a key for it
+   * gets that model, since its imagery was made to sit on it. Otherwise the
+   * preferred model (Copernicus, finer than SRTM in steep ground and with
+   * national survey models where they exist), and failing that the free
+   * default every other DEM falls back to on the backend. Pure, so the
+   * choice is checkable without a map.
+   */
+  function terrainFor(dems, provider, defaultId, choice, preferredId) {
+    const list = Array.isArray(dems) ? dems : [];
+    const fallback = list.find((d) => d.id === defaultId) || list[0] || null;
+    if (choice && choice !== TERRAIN_AUTO) {
+      const picked = list.find((d) => d && d.id === choice);
+      if (terrainUsable(picked)) return picked;
+    }
+    const own = list.find((d) => d && d !== fallback && d.provider === provider
+      && terrainUsable(d));
+    if (own) return own;
+    const preferred = list.find((d) => d && d.id === preferredId);
+    return terrainUsable(preferred) ? preferred : fallback;
+  }
+
+  /**
+   * Point the terrain at the DEM the active map service calls for, and swap
+   * it under a running 3D view when that changed. Returns true when it
+   * re-applied 3D itself.
+   */
+  function chooseTerrain() {
+    const provider = activeLayer && sources[activeLayer]
+      ? sources[activeLayer].provider : null;
+    const next = terrainFor(terrainCatalogue, provider, defaultTerrainId,
+      terrainChoice, preferredTerrainId);
+    if ((next && next.id) === (terrainSpec && terrainSpec.id)) {
+      terrainSpec = next;   // same DEM, fresher descriptor (a key just set)
+      return false;
+    }
+    // The old DEM's source, shading and binding go under its own id, before
+    // the spec that names them changes.
+    disableTerrain();
+    terrainSpec = next;
+    if (!threeD || !map) return false;
+    set3D(true);
+    return true;
+  }
+
+  /** Re-read the source catalogue: a key saved in Settings changes which
+   *  layers can draw and which elevation model 3D reads from. */
+  function refreshSources() {
+    return loadSources();
   }
 
   /** A [lng, lat] pair with a real fix behind it, or null. [0,0] is the state
@@ -2073,28 +2418,34 @@ Corvus.map = (function () {
       cameraMove({ center: state.position, duration: 1000 });
     }
 
-    // A reboot — and only a reboot — discards the track. A link drop must not,
-    // or a radio glitch would erase the flight so far.
-    if (checkForReboot(state.boot_ms)) clearTrack();
+    updateTrack(state);
+    updateHome(state);
+  }
+
+  /** One telemetry sample's part in the flown track: a reboot or a takeoff
+   *  closes the flight in progress, and a real move extends it. */
+  function updateTrack(state) {
+    // A reboot is a new flight session: the track is discarded if Settings
+    // asks for that, and otherwise the last flight joins the earlier ones. A
+    // link drop is neither, or a radio glitch would split or erase a flight.
+    if (checkForReboot(state.boot_ms)) {
+      if (trackClearOnRestart) clearTrack();
+      else startNewFlight();
+    }
+    // Arming after a landing starts the next flight, so the one before it
+    // turns into the earlier flights' colour as this one takes off.
+    if (checkForTakeoff(state.armed)) startNewFlight();
 
     // Track recording stays on the TARGET (latest telemetry) so the track is
     // accurate; interpolation is purely a rendering concern.
     if (recordTrackPoint(state.position)) {
-      if (pathSource) {
-        pathSource.setData({
-          type: "Feature",
-          geometry: { type: "LineString", coordinates: pathCoords },
-          properties: {},
-        });
-      }
+      paintCurrent();
       updateTrackControl();
       // The plan line's first segment starts at the vehicle, so it must track
       // the vehicle too. Only when a plan exists — avoids repainting the route
       // source on every telemetry sample when no waypoints are planned.
       if (waypoints.length > 0) updateRoute();
     }
-
-    updateHome(state);
   }
 
   /**
@@ -2339,10 +2690,14 @@ Corvus.map = (function () {
   function renderContextRows(surface) {
     const point = { lng: contextPoint.lng, lat: contextPoint.lat };
 
+    const head = document.createElement("div");
+    head.className = "ui-menu-head map-context-head";
     const coords = document.createElement("span");
-    coords.className = "ui-menu-head map-context-coords";
+    coords.className = "map-context-coords";
     coords.textContent = formatLngLat(point);
-    surface.appendChild(coords);
+    head.appendChild(coords);
+    head.appendChild(buildCopyButton(coords.textContent));
+    surface.appendChild(head);
 
     return contextActions.map((action) => {
       const enabled = typeof action.enabled === "function"
@@ -2371,6 +2726,64 @@ Corvus.map = (function () {
     });
   }
 
+  /**
+   * The button beside the coordinates that puts them on the clipboard. Both
+   * icons are drawn up front and CSS shows one, so the tick needs no Lucide
+   * pass of its own. It only turns into the tick once the copy has actually
+   * landed: a refused clipboard leaves the copy icon, not a false "copied".
+   */
+  function buildCopyButton(text) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "map-context-copy";
+    btn.title = "Copy coordinates";
+    btn.setAttribute("aria-label", "Copy coordinates");
+    const copyIcon = Corvus.ui.icon("copy", "auto");
+    copyIcon.classList.add("map-context-copy-idle");
+    const doneIcon = Corvus.ui.icon("check", "auto");
+    doneIcon.classList.add("map-context-copy-done");
+    btn.appendChild(copyIcon);
+    btn.appendChild(doneIcon);
+    btn.addEventListener("click", () => {
+      copyToClipboard(text).then(() => {
+        btn.classList.add("is-copied");
+        btn.title = "Copied";
+        btn.setAttribute("aria-label", "Coordinates copied");
+        if (contextCopyTimer) clearTimeout(contextCopyTimer);
+        contextCopyTimer = setTimeout(() => {
+          contextCopyTimer = null;
+          btn.classList.remove("is-copied");
+          btn.title = "Copy coordinates";
+          btn.setAttribute("aria-label", "Copy coordinates");
+        }, 1800);
+      }, (err) => console.warn("copy coordinates failed:", err));
+    });
+    return btn;
+  }
+
+  /** Resolve once *text* is on the clipboard. The asynchronous clipboard
+   *  first; the copy command on a hidden field where an embedding refuses it. */
+  function copyToClipboard(text) {
+    const byCommand = () => new Promise((resolve, reject) => {
+      const box = document.createElement("textarea");
+      box.value = text;
+      box.setAttribute("readonly", "");
+      box.style.position = "fixed";
+      box.style.left = "-9999px";
+      document.body.appendChild(box);
+      let ok = false;
+      try { box.select(); ok = document.execCommand("copy"); } catch (_e) { ok = false; }
+      document.body.removeChild(box);
+      if (ok) resolve(); else reject(new Error("copy refused"));
+    });
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+        return navigator.clipboard.writeText(text).catch(byCommand);
+      }
+    } catch (_e) { /* fall through to the copy command */ }
+    return byCommand();
+  }
+
   /** Take the pin off the map and forget the point. Idempotent: it runs both
    *  from closeContextMenu() and from the menu closing itself (Escape, an
    *  outside press, another dropdown opening). */
@@ -2380,6 +2793,7 @@ Corvus.map = (function () {
     }
     contextPinEl = null;
     contextPoint = null;
+    if (contextCopyTimer) { clearTimeout(contextCopyTimer); contextCopyTimer = null; }
   }
 
   /** Close the menu and clear what it was about. Idempotent — every close path
@@ -2516,12 +2930,23 @@ Corvus.map = (function () {
   const TERRAIN_PROBE_TIMEOUT_MS = 1500;
   // Attempts the settle poll makes before giving up — a few seconds' worth.
   const TERRAIN_SYNC_TRIES = 20;
-  // Where the globe hands over to terrain. MapLibre's own globe is already
-  // fading into Mercator across zoom 12-13, so switching at 12 happens while
-  // the sphere is visually flat — the operator sees a continuous zoom, not a
-  // mode change. The band is hysteresis for a zoom sitting on the threshold.
+  // Where the globe hands over to the flat map. MapLibre's own globe fades
+  // into Mercator across zoom 11 to 12, so switching at 12 happens while the
+  // sphere is visually flat: the operator sees a continuous zoom, not a mode
+  // change. The band is hysteresis for a zoom sitting on the threshold. The
+  // terrain is not part of this handover; it stays on under both.
   const GLOBE_MAX_ZOOM = 12;
   const GLOBE_ZOOM_BAND = 0.5;
+  // The shading laid over the terrain (see addHillshade). Relief draped with
+  // imagery shows its shape only through the shadows photographed into it,
+  // which a street or topo map does not have, and which satellite imagery
+  // only has for the hour it was taken. A light hillshade gives every slope
+  // the same readable side whatever is under it. Light enough that imagery
+  // stays imagery: this is a reading aid, not a style.
+  const HILLSHADE_EXAGGERATION = 0.35;
+  const HILLSHADE_SHADOW = "rgba(10, 18, 30, 0.55)";
+  const HILLSHADE_HIGHLIGHT = "rgba(255, 255, 255, 0.18)";
+  const HILLSHADE_ACCENT = "rgba(10, 18, 30, 0.25)";
   // The slippy-grid zoom building cells are addressed on. Must match
   // corvus/buildings.CELL_ZOOM — the backend answers that zoom and nothing
   // else, because the cache is keyed by it.
@@ -2530,20 +2955,26 @@ Corvus.map = (function () {
   // dozens of cells, so the fetching would cost far more than it shows.
   const BUILDING_MIN_ZOOM = 14;
   // Hard cap on cells requested for one view. A zoomed-out 3D view would
-  // otherwise queue a hundred Overpass cells in one gesture.
-  const BUILDING_MAX_CELLS = 24;
-  // In-memory cell budget. ~24 cells cover a view; 240 is ten views' worth of
+  // otherwise queue a hundred Overpass cells in one gesture. The backend
+  // fetches them four to a query (a z14 block), so 36 cells is nine queries.
+  const BUILDING_MAX_CELLS = 36;
+  // In-memory cell budget. ~36 cells cover a view; 240 is several views' worth of
   // panning before the oldest is dropped and re-fetched from the backend
   // cache (which is on disk and keeps it).
   const BUILDING_CACHE_CELLS = 240;
   // Polygons the extrusion source may hold at once. A dense European centre
   // fills this from a handful of cells; past it the cost is a visibly slower
   // map, and what is being paid for is buildings near the horizon.
-  const BUILDING_MAX_FEATURES = 12000;
+  const BUILDING_MAX_FEATURES = 20000;
   // Re-asking for a cell the backend has queued. The delay grows with the
   // attempt, so a slow upstream is waited out rather than hammered.
+  // Capped, and many enough to outlast a queue of a view's blocks against a
+  // slow Overpass (a minute or two). Cheap: each is a loopback request the
+  // backend answers from memory, and the backend says "unavailable" rather
+  // than "pending" when nothing is actually on its way.
   const BUILDING_RETRY_MS = 2500;
-  const BUILDING_MAX_RETRIES = 4;
+  const BUILDING_RETRY_MAX_MS = 8000;
+  const BUILDING_MAX_RETRIES = 20;
   // See addBuildingLayer: chosen against map imagery, not against the theme.
   const BUILDING_COLOR = "#A7B0BD";
   // Perspective scaling of the airborne marker, as a fraction of its 2D size.
@@ -2566,32 +2997,38 @@ Corvus.map = (function () {
   // Which 3D the operator asked for, remembered across off/on so pressing the
   // mode they were last in does not first hand them the other one.
   //
-  //   "simple" — the camera tilt and the sky, over flat ground. No DEM, no
-  //              Overpass, no globe: nothing is fetched that a 2D map does
-  //              not already fetch, which is the whole point of it. The
-  //              aircraft is still drawn at its height above that flat
-  //              ground, because that costs nothing and is what the mode is
-  //              being entered to see.
-  //   "full"   — the tilt plus everything that makes the ground real:
-  //              elevation relief, extruded buildings, and the globe at the
-  //              far end of the zoom. It fetches elevation tiles and asks the
-  //              backend for building footprints.
+  //   "simple" — the camera tilt, the sky, the terrain relief and the globe
+  //              at the far end of the zoom. Elevation tiles come through the
+  //              same cache as the imagery and cost about as much, so they
+  //              are not optional: a tilted map over flat ground is exactly
+  //              the picture that makes an operator misjudge a ridge.
+  //   "full"   — all of that plus extruded buildings, which the first time
+  //              over an area are an Overpass round trip per cell.
   //
-  // The split exists because the second one has a cost — tiles over a radio
-  // link, Overpass round trips, a terrain mesh on a field laptop's GPU — and
-  // an operator who only wants to see the camera angle should not pay it.
+  // The split exists because the second one has a cost a radio link notices,
+  // and an operator who only wants the ground should not pay it. The names
+  // predate the terrain being in both and are kept because saved configs
+  // carry them.
   const THREE_D_SIMPLE = "simple";
   const THREE_D_FULL = "full";
   const THREE_D_OFF = "off";
-  // Simple is where an operator starts. The expensive mode is a choice they
-  // make, not one they discover after a field laptop has spent a radio link
-  // on elevation tiles and Overpass round trips they never asked for.
+  // Terrain without buildings is where an operator starts. Buildings are a
+  // choice they make, not one they discover after a field laptop has spent a
+  // radio link on Overpass round trips they never asked for.
   let threeDDetail = THREE_D_SIMPLE;
-  // The DEM descriptor from GET /api/tiles/sources ({id, encoding, maxzoom,
-  // attribution}). Null until the catalogue lands — and stays null on a
-  // backend that does not serve one, which is what makes 3D degrade to a
-  // plain tilt rather than break.
+  // The DEM descriptor from GET /api/tiles/sources ({id, provider, encoding,
+  // tile_size, maxzoom, attribution}). Null until the catalogue lands — and
+  // stays null on a backend that does not serve one, which is what makes 3D
+  // degrade to a plain tilt rather than break. Which one of the catalogue it
+  // is follows the map service showing (see chooseTerrain).
   let terrainSpec = null;
+  let terrainCatalogue = [];
+  let defaultTerrainId = null;
+  let preferredTerrainId = null;
+  // The operator's pick of elevation model in the 3D panel: a DEM id, or
+  // "auto" for the rule in terrainFor. Saved as map.terrain_source.
+  const TERRAIN_AUTO = "auto";
+  let terrainChoice = TERRAIN_AUTO;
   // Whether the terrain is attached right now. terrainWanted is the mode's
   // INTENT, which is set the moment the operator asks and stays set across
   // the elevation probe that runs before the attach — the two differ for
@@ -2613,6 +3050,10 @@ Corvus.map = (function () {
   // landing mid-poll continues it rather than restarting it — see
   // scheduleTerrainSync.
   let terrainSyncTries = 0;
+  // The centre an elevation probe is running for (seedCameraElevation), and
+  // whether MapLibre's own ground clamp is set aside while it lands.
+  let terrainSeedKey = null;
+  let clampSuspended = false;
   let buildingSource = null;
   // "z/x/y" -> feature array. An empty array is a cell that is either genuinely
   // empty or still in flight; either way it must not be requested twice.
@@ -2807,6 +3248,12 @@ Corvus.map = (function () {
 
   // ---- terrain ----
 
+  /** Is *id* one of the elevation sources rather than a map layer? */
+  function isTerrainSource(id) {
+    return !!id && (terrainCatalogue.some((d) => d.id === id)
+      || (!!terrainSpec && terrainSpec.id === id));
+  }
+
   /** The raster-dem source id, or null when the backend serves no DEM. */
   function terrainSourceId() {
     return terrainSpec ? terrainSpec.id : null;
@@ -2816,9 +3263,10 @@ Corvus.map = (function () {
    * Put the DEM into the style and switch terrain on. Idempotent, and a no-op
    * without a DEM descriptor — the tilt then still works, on flat ground.
    *
-   * tileSize 256 is not a default: MapLibre assumes 512 for raster-dem, and
-   * the terrarium tiles are 256, so leaving it out halves every elevation and
-   * quietly flattens the world.
+   * The tile size is the DEM's own (terrainTileSize), never MapLibre's
+   * default: it assumes 512 for raster-dem, and the free terrarium tiles are
+   * 256, so leaving it out halves every elevation and quietly flattens the
+   * world.
    */
   /**
    * Bring terrain up, and call *onReady* once the camera has been placed.
@@ -2972,7 +3420,7 @@ Corvus.map = (function () {
       map.addSource(id, {
         type: "raster-dem",
         tiles: [tileUrl(id)],
-        tileSize: 256,
+        tileSize: terrainTileSize(),
         maxzoom: terrainSpec.maxzoom,
         encoding: terrainSpec.encoding || "terrarium",
         attribution: terrainSpec.attribution,
@@ -2985,11 +3433,80 @@ Corvus.map = (function () {
       return;
     }
     terrainOn = true;
+    addHillshade(id);
     // From here on, DEM tiles landing are the cue to reconcile the camera's
     // idea of the ground height with the real one — see syncTerrainElevation.
     terrainSyncAt = 0;
     map.on("data", onTerrainData);
     scheduleTerrainSync(true);
+  }
+
+  /** The DEM's pixel size. Not a default to lean on: MapLibre assumes 512
+   *  for raster-dem, and the free tiles are 256, so a wrong size halves or
+   *  doubles every height and quietly flattens (or stretches) the world. */
+  function terrainTileSize() {
+    const size = Number(terrainSpec && terrainSpec.tile_size);
+    return size === 512 ? 512 : 256;
+  }
+
+  /** The hillshade's own raster-dem source id. */
+  function hillshadeSourceId(id) {
+    return id + "-shade";
+  }
+
+  /**
+   * Shade the terrain, so its shape reads on any base layer.
+   *
+   * Its own source rather than the terrain's: MapLibre renders the terrain
+   * mesh from a DEM one zoom coarser than the view, which is right for a
+   * mesh and too soft for shading, and it warns when one source serves both.
+   * The tiles are the same URLs, so the second source is answered from the
+   * browser's cache or ours, never a second download.
+   *
+   * Under every overlay (it is first in OVERLAY_LAYERS): the downloaded
+   * areas, the track and the buildings must not be darkened by a slope.
+   * Best effort: a MapLibre without hillshade still has the relief itself.
+   */
+  function addHillshade(id) {
+    if (!map || !terrainSpec) return;
+    const shade = hillshadeSourceId(id);
+    try {
+      if (map.getLayer("terrain-hillshade")) map.removeLayer("terrain-hillshade");
+      if (map.getSource(shade)) map.removeSource(shade);
+      map.addSource(shade, {
+        type: "raster-dem",
+        tiles: [tileUrl(id)],
+        tileSize: terrainTileSize(),
+        maxzoom: terrainSpec.maxzoom,
+        encoding: terrainSpec.encoding || "terrarium",
+      });
+      map.addLayer({
+        id: "terrain-hillshade",
+        type: "hillshade",
+        source: shade,
+        paint: {
+          "hillshade-exaggeration": HILLSHADE_EXAGGERATION,
+          "hillshade-shadow-color": HILLSHADE_SHADOW,
+          "hillshade-highlight-color": HILLSHADE_HIGHLIGHT,
+          "hillshade-accent-color": HILLSHADE_ACCENT,
+          // Lit from the map's north-west whatever way the camera faces, the
+          // way every printed map is: a light that turned with the bearing
+          // would make a valley read as a ridge halfway through a turn.
+          "hillshade-illumination-anchor": "map",
+        },
+      }, firstOverlayLayer());
+    } catch (error) {
+      console.warn("Corvus: terrain shading unavailable", error);
+    }
+  }
+
+  function removeHillshade() {
+    if (!map) return;
+    const id = terrainSourceId();
+    try {
+      if (map.getLayer("terrain-hillshade")) map.removeLayer("terrain-hillshade");
+      if (id && map.getSource(hillshadeSourceId(id))) map.removeSource(hillshadeSourceId(id));
+    } catch (_error) { /* already gone */ }
   }
 
   /**
@@ -3023,7 +3540,14 @@ Corvus.map = (function () {
     try { centre = map.getCenter(); } catch (_error) { return false; }
     if (!centre || !isFinite(centre.lng) || !isFinite(centre.lat)) return false;
     const ground = terrainElevation([centre.lng, centre.lat]);
-    if (ground === null) return false;   // the DEM under the centre has not arrived
+    if (ground === null) {
+      // The DEM under the centre has not arrived, and after a long jump it
+      // may never: see seedCameraElevation.
+      seedCameraElevation(centre);
+      return false;
+    }
+    // The ground is known again: MapLibre can hold the camera on it itself.
+    resumeCenterClamp();
     // A literal zero is not an answer yet. A terrain with no DEM loaded under
     // the centre reports 0 rather than null, which is exactly what the camera
     // already believes — so taking it at face value declares success, stops
@@ -3038,6 +3562,54 @@ Corvus.map = (function () {
       return true;
     } catch (_error) {
       return false;   // a camera mid-change; the retry below tries again
+    }
+  }
+
+  /**
+   * Lift the camera out of the ground after a long jump.
+   *
+   * MapLibre keeps the camera's focus on the terrain under the centre
+   * (centerClampedToGround), and where that terrain is not loaded it uses 0.
+   * After a jump of a few kilometres into a valley, say from a follow cut or a
+   * place search, that is a camera hundreds of metres underground. It then
+   * asks for the elevation tiles IT can see, which are not the ones under the
+   * centre, so the centre never loads and the map stays blank: the same
+   * deadlock primeCameraElevation breaks when terrain is first attached.
+   *
+   * Broken the same way: the height is read straight from one elevation tile.
+   * The clamp is set aside meanwhile, or MapLibre would put the camera back to
+   * 0 on its next frame; resumeCenterClamp restores it as soon as the terrain
+   * under the centre is known. One probe per centre at a time.
+   */
+  function seedCameraElevation(centre) {
+    if (!map || typeof map.setCenterElevation !== "function") return;
+    const key = `${centre.lng.toFixed(4)},${centre.lat.toFixed(4)}`;
+    if (terrainSeedKey === key) return;
+    terrainSeedKey = key;
+    const generation = terrainGeneration;
+    demElevationAt([centre.lng, centre.lat]).then((height) => {
+      if (generation !== terrainGeneration || !terrainOn) return;
+      if (height === null || !isFinite(height)) return;
+      let now;
+      try { now = map.getCenter(); } catch (_error) { return; }
+      // Only if the camera is still where the probe was for and still blind.
+      if (!now || Math.abs(now.lng - centre.lng) > 1e-3 || Math.abs(now.lat - centre.lat) > 1e-3) return;
+      if (terrainElevation([now.lng, now.lat]) !== null) return;
+      if (typeof map.setCenterClampedToGround === "function") {
+        try { map.setCenterClampedToGround(false); clampSuspended = true; } catch (_error) { /* keep going */ }
+      }
+      try { map.setCenterElevation(height); } catch (_error) { return; }
+      scheduleTerrainSync(true);
+    });
+  }
+
+  /** Hand the camera's height back to MapLibre. Idempotent. */
+  function resumeCenterClamp() {
+    terrainSeedKey = null;
+    if (!clampSuspended || !map) return;
+    clampSuspended = false;
+    if (typeof map.setCenterClampedToGround === "function") {
+      try { map.setCenterClampedToGround(true); } catch (_error) { /* already */ }
     }
   }
 
@@ -3174,29 +3746,13 @@ Corvus.map = (function () {
   }
 
   /**
-   * Choose the projection for the current zoom: globe far out, terrain close
-   * in, and nothing for the operator to press in between.
-   *
-   * This is how Google Earth behaves, and here it is also a necessity.
-   * MapLibre 5.24 answers queryTerrainElevation with 0 under the globe
-   * projection, so terrain and globe cannot both be on: the camera would be
-   * told the ground is at sea level, look at a point six hundred metres
-   * underground, and render nothing. The split costs nothing real, because
-   * the two are useful at opposite ends of the zoom range — from orbit a 600
-   * m hill is well under a pixel, and a globe at street level is a flat map
-   * with extra maths.
-   *
-   * The band is hysteresis: without it a zoom hovering on the threshold would
-   * tear the terrain down and build it back up on every wheel click.
-   */
-  /**
    * Should the globe be showing at *zoom*, given that it *currentlyGlobe*?
    *
    * Pure, and split out for the same reason followAction is: the rule is the
    * thing worth asserting, and it should not need a renderer to check. The
    * band is hysteresis — the threshold sits further away in whichever
    * direction would mean changing — so a zoom resting on the boundary does
-   * not tear the terrain down and build it back up on every wheel click.
+   * not swap the projection back and forth on every wheel click.
    *
    * A zoom that is not a number keeps whatever is showing: a transform
    * mid-change is not a reason to rebuild the world.
@@ -3206,27 +3762,31 @@ Corvus.map = (function () {
     return zoom < GLOBE_MAX_ZOOM + (currentlyGlobe ? GLOBE_ZOOM_BAND : -GLOBE_ZOOM_BAND);
   }
 
+  /**
+   * Choose the projection for the current zoom: the globe far out, the flat
+   * map close in, and nothing for the operator to press in between.
+   *
+   * The TERRAIN is not part of this. It used to be: the globe once came with
+   * the terrain switched off, on the belief that MapLibre could not draw
+   * both, so every zoom below 12 showed the Alps as a photograph of the Alps
+   * on a smooth ball. MapLibre 5.24 draws relief on the globe and keeps the
+   * camera above it by itself (centerClampedToGround), checked against the
+   * Zugspitze from zoom 3 to 16. Zoom 8 to 11, where a whole valley and its
+   * ridges fit on screen, is exactly where relief is worth the most.
+   *
+   * The projection still changes, because the aircraft is drawn differently
+   * on each (see renderVehicle3D): the flat map's render matrix takes
+   * Mercator coordinates, the globe's does not.
+   */
   function applyProjectionForZoom() {
-    // Simple 3D has neither half of this handover: it is the camera angle and
-    // nothing else, so the flat map stays flat all the way out.
-    if (!map || !started || !threeD || threeDDetail !== THREE_D_FULL) return;
+    if (!map || !started || !threeD) return;
     let zoom;
     try { zoom = map.getZoom(); } catch (_error) { return; }
     const wantGlobe = wantsGlobe(zoom, globeOn);
     if (wantGlobe === globeOn) return;
     globeOn = wantGlobe;
-    if (wantGlobe) {
-      // Terrain first: leaving it on under the globe is the blank map above.
-      disableTerrain();
-      setGlobe(true);
-    } else {
-      setGlobe(false);
-      // enableTerrain starts its own settle poll once it has attached; this
-      // is for the case where terrain was already on and only the projection
-      // changed under it.
-      enableTerrain();
-      scheduleTerrainSync(true);
-    }
+    setGlobe(wantGlobe);
+    scheduleTerrainSync(true);
   }
 
   /**
@@ -3251,8 +3811,10 @@ Corvus.map = (function () {
     // a settle poll running, and that poll outliving the mode is a timer
     // nobody is waiting for on a field laptop's battery.
     stopTerrainSync();
+    resumeCenterClamp();
     if (!map || !terrainOn) return;
     map.off("data", onTerrainData);
+    removeHillshade();
     // Order matters: MapLibre refuses to remove a source the terrain is still
     // bound to, so the binding goes first.
     try { map.setTerrain(null); } catch (_error) { /* already gone */ }
@@ -3296,7 +3858,7 @@ Corvus.map = (function () {
         // these are volumes rather than flat polygons lying on a slope.
         "fill-extrusion-vertical-gradient": true,
       },
-    }, map.getLayer("path-glow") ? "path-glow" : undefined);
+    }, ["path-past-glow", "path-glow"].find((id) => map.getLayer(id)));
     buildingSource = map.getSource("buildings");
   }
 
@@ -3364,7 +3926,7 @@ Corvus.map = (function () {
    * It grows OUTWARD from the centre rather than enumerating the box. A
    * pitched camera sees to the horizon and MapLibre's bounds say so: at 60
    * degrees the visible ground can be hundreds of cells across, so walking
-   * that rectangle to then keep the nearest two dozen means materialising a
+   * that rectangle to then keep the nearest few dozen means materialising a
    * five-figure array on every pan, on the frame budget of a field laptop.
    * Square rings visit the cells that would have been kept, in the order they
    * would have been kept, and stop.
@@ -3413,6 +3975,14 @@ Corvus.map = (function () {
     buildingCells.set(key, []);
     Corvus.telemetry.requestJson(`/api/buildings/${key}.json`)
       .then((data) => {
+        if (data && data.unavailable) {
+          // Nothing is on its way (offline, or Overpass asked for a pause).
+          // Release the claim and do not poll: the next change of view asks
+          // again, which is when it can have become available.
+          buildingCells.delete(key);
+          buildingRetries.delete(key);
+          return;
+        }
         const features = (data && data.features) || [];
         const pending = !!(data && data.pending);
         buildingCells.set(key, features);
@@ -3440,26 +4010,53 @@ Corvus.map = (function () {
       });
   }
 
-  /** Re-ask for a cell the backend is still fetching, up to a few times. */
+  /**
+   * Re-ask for a cell the backend is still fetching, a bounded number of
+   * times, then let it go WITHOUT keeping the empty claim.
+   *
+   * Keeping the claim was the bug behind "buildings in some places, not
+   * others": a view asks for a few dozen cells, two workers fetch them from
+   * Overpass a few seconds each, and the cells at the back of that queue
+   * outlasted the retries. Each then sat in the map as an empty answer for
+   * the rest of the session, and panning back never asked again, although
+   * the backend had long since fetched it. Released, the next change of view
+   * picks it up from the backend's cache.
+   */
   function retryBuildingCell(key) {
     const tries = (buildingRetries.get(key) || 0) + 1;
-    if (tries > BUILDING_MAX_RETRIES) return;
+    if (tries > BUILDING_MAX_RETRIES) {
+      releaseBuildingCell(key);
+      return;
+    }
     buildingRetries.set(key, tries);
     window.setTimeout(() => {
       // Only if 3D is still on and the cell is still worth having: an
       // operator who left the area (or left 3D) must not be paying for
-      // requests about ground they are not looking at.
-      if (!threeD || !buildingSource) return;
-      if (!viewBuildingCells().includes(key)) return;
+      // requests about ground they are not looking at. Released, not
+      // abandoned: the empty claim would otherwise stand for the rest of the
+      // session, and panning back (or pressing 3D again) would never ask for
+      // the cell the backend has meanwhile fetched.
+      if (!threeD || !buildingSource || !viewBuildingCells().includes(key)) {
+        releaseBuildingCell(key);
+        return;
+      }
       buildingCells.delete(key);
       fetchBuildingCell(key);
-    }, BUILDING_RETRY_MS * tries);
+    }, Math.min(BUILDING_RETRY_MS * tries, BUILDING_RETRY_MAX_MS));
+  }
+
+  /** Forget a cell that is still only claimed, so the next view asks again.
+   *  A cell holding buildings is kept. */
+  function releaseBuildingCell(key) {
+    buildingRetries.delete(key);
+    const cell = buildingCells.get(key);
+    if (cell && !cell.length) buildingCells.delete(key);
   }
 
   /**
    * Coalesce the repaints a burst of arriving cells would otherwise cause.
    *
-   * A pan asks for up to two dozen cells and they land within a second of
+   * A pan asks for a few dozen cells and they land within a second of
    * each other; repainting per cell re-tiles a collection of thousands of
    * polygons that many times, for the same final picture. One frame's delay
    * turns that into one repaint.
@@ -3635,11 +4232,11 @@ Corvus.map = (function () {
     // On the GLOBE the render matrix is the globe's own, and it takes points
     // on a sphere — feeding it the mercator coordinates every other
     // projection wants put the aircraft in the bottom-right corner of the
-    // viewport while the map drew it in the middle. There is no altitude to
-    // show at that zoom anyway: terrain is off (see applyProjectionForZoom)
-    // and a kilometre of height is well under a pixel when a continent fits
-    // on screen. So the globe gets the aircraft where MapLibre itself says it
-    // is, and nothing else.
+    // viewport while the map drew it in the middle. There is no altitude
+    // worth showing at that zoom anyway: below zoom 12 a pixel is a hundred
+    // metres of ground or more, so a drone's height above the terrain is a
+    // pixel or two. So the globe gets the aircraft where MapLibre itself
+    // says it is, on the terrain, and nothing else.
     if (usingGlobe()) { renderVehicleOnGlobe(lng, lat); return; }
 
     // vehGroundDraw, not a terrain query: this runs on every rendered frame,
@@ -3830,8 +4427,8 @@ Corvus.map = (function () {
    * Ask for one of the three modes. Returns the one that resulted.
    *
    * Switching BETWEEN the two 3D modes is a real transition, not a no-op:
-   * going to "simple" has to take the terrain, the buildings and the globe
-   * back out, and going to "full" has to build them. Both directions run
+   * going to "simple" has to take the buildings back out, and going to
+   * "full" has to build them. Both directions run
    * through the same body, so there is one place that decides what a mode
    * consists of.
    */
@@ -3880,45 +4477,24 @@ Corvus.map = (function () {
       // during the first tile fetch), which means this can be pressed before
       // there is a style to add a source to; the "load" handler re-applies.
       if (started) {
+        // Which projection the zoom calls for: the globe zoomed out to the
+        // country, the flat map over the field. Through wantsGlobe and the
+        // CURRENT state, so entering 3D at a zoom near the line does not
+        // pick the one applyProjectionForZoom would take straight back.
+        const wantGlobe = wantsGlobe(map.getZoom(), globeOn);
+        if (wantGlobe !== globeOn) setGlobe(wantGlobe);
+        globeOn = wantGlobe;
+        // Terrain in both modes, on both projections. The tilt is handed to
+        // enableTerrain so it runs after the camera has been placed above
+        // the ground (see there). When there is no terrain to wait for (no
+        // DEM served, or it is already on) it happens immediately below.
+        tiltHandled = enableTerrain(() => tiltTo(THREE_D_PITCH));
         if (full) {
-          // Which of the two the zoom calls for. Entering 3D over the field
-          // is terrain; entering it zoomed out to the country is the globe.
-          //
-          // Through wantsGlobe, and through the CURRENT state, for two
-          // reasons. A bare threshold could enter on the globe at a zoom
-          // applyProjectionForZoom would have taken straight back off it — a
-          // mode change the operator watches happen for no reason they asked
-          // for. And this runs again on an already-3D map (the style
-          // finishing, the source catalogue landing, the other 3D mode being
-          // chosen), where deciding "terrain" while the globe is still the
-          // projection used to attach terrain UNDER the globe: the camera is
-          // then told the ground is at sea level, looks at a point far
-          // underground, and the map renders empty.
-          const wantGlobe = wantsGlobe(map.getZoom(), globeOn);
-          if (wantGlobe) {
-            if (!globeOn) setGlobe(true);
-            globeOn = true;
-            // The two cannot both be on — see applyProjectionForZoom.
-            disableTerrain();
-          } else {
-            if (globeOn) setGlobe(false);
-            globeOn = false;
-            // The tilt is handed to enableTerrain so it runs after the camera
-            // has been placed above the ground — see there. When there is no
-            // terrain to wait for, it happens immediately below instead.
-            tiltHandled = enableTerrain(() => tiltTo(THREE_D_PITCH));
-          }
           addBuildingLayer();
           refreshBuildings();
         } else {
-          // Simple: the tilt and the sky, and nothing that costs a fetch.
-          // Written as a teardown rather than as "do less", because this is
-          // also the path from "full" to "simple" — the ground has to lose
-          // its relief, the buildings have to go, and the globe has to hand
-          // back to the flat map, all while 3D stays on.
-          if (globeOn) setGlobe(false);
-          globeOn = false;
-          disableTerrain();
+          // Also the path from "full" to "simple" with 3D staying on, which
+          // is why it removes rather than merely not adding.
           removeBuildingLayer();
         }
         setSky(true);
@@ -3981,7 +4557,10 @@ Corvus.map = (function () {
   function persistThreeD() {
     if (!Corvus.telemetry || typeof Corvus.telemetry.postAction !== "function") return;
     Corvus.telemetry.postAction("/api/config", {
-      map: { three_d: threeDMode(), three_d_detail: threeDDetail },
+      map: {
+        three_d: threeDMode(), three_d_detail: threeDDetail,
+        terrain_source: terrainChoice,
+      },
     }).catch(() => {});
   }
 
@@ -4002,6 +4581,10 @@ Corvus.map = (function () {
    */
   function restoreThreeD(saved) {
     const map3d = saved || {};
+    if (typeof map3d.terrain_source === "string" && map3d.terrain_source) {
+      terrainChoice = map3d.terrain_source;
+      chooseTerrain();
+    }
     set3DDetail(map3d.three_d_detail || map3d.three_d);
     const mode = normaliseThreeDMode(map3d.three_d);
     if (mode === THREE_D_OFF || threeD) return;
@@ -4039,7 +4622,12 @@ Corvus.map = (function () {
     // on the map object (which exists from the constructor), and setBaseLayer
     // already defers its own work until `started`.
     buildControls(controlsEl);
+    restoreTrack();
+    // Written on the way out as well, so the last few seconds of a flight are
+    // not lost to the save delay when the app is closed straight after it.
+    window.addEventListener("pagehide", saveTrack);
     buildTrackControl(mapEl);
+    updateTrackControl();
     buildSearch(mapEl);
     watchFlightBar(mapEl);
     // Pure DOM, like the rail and the clear-track button, so it is built
@@ -4089,7 +4677,8 @@ Corvus.map = (function () {
       followEasing = false;
       settleCameraGoal();
       // The camera landed somewhere new: it may have crossed the zoom where
-      // the globe hands over to terrain, and its ground height may be stale.
+      // the globe hands over to the flat map, and its ground height may be
+      // stale.
       // Not every way the camera can move interpolates that height — a follow
       // jump and a plain setCenter do not — so reconcile it here as well as
       // on DEM tiles.
@@ -4208,6 +4797,10 @@ Corvus.map = (function () {
     get3DMode: threeDMode,
     // Which 3D the button will give you, without turning it on.
     set3DDetail,
+    // The elevation model 3D reads from: a DEM id, or "auto".
+    setTerrainSource,
+    getTerrainSource: () => terrainChoice,
+    getTerrainSpec: () => terrainSpec,
     hasTerrain: () => terrainOn,
     getWaypoints,
     clearWaypoints,
@@ -4218,6 +4811,8 @@ Corvus.map = (function () {
     setContextActions,
     closeContextMenu,
     getSources,
+    // Re-read the catalogue after a map key was saved in Settings.
+    refreshSources,
     getCacheStats,
     // Settings' map-service picker drives the live map through this, so the
     // Home tab's layer switcher and the Appearance page can never disagree
@@ -4246,9 +4841,14 @@ Corvus.map = (function () {
     // Downloaded-area overlay, driven by the offline-map dialog.
     clearTrack,
     getTrack: () => pathCoords.map((c) => c.slice()),
+    getEarlierFlights: () => pastFlights.map((f) => f.map((c) => c.slice())),
+    // Settings' two track switches; app.js applies the config's answer with
+    // startup = true once that fetch lands.
+    setTrackOptions,
     setRegions,
     loadRegions,
     setRegionsVisible,
+    mergeRegions,
     getRegions: () => regions.slice(),
     fitBounds,
     // test hook: the hydrated source catalogue (id -> descriptor). Before
@@ -4283,7 +4883,7 @@ Corvus.map = (function () {
     // test hook: which 3D the operator last chose, remembered across off/on
     // so pressing 3D hands back the mode they were in, not the other one.
     _threeDDetail: () => threeDDetail,
-    // test hook: the globe/terrain handover rule, including its hysteresis.
+    // test hook: the globe/flat-map handover rule, including its hysteresis.
     _wantsGlobe: (zoom, currentlyGlobe) => wantsGlobe(zoom, currentlyGlobe),
     // test hook: what a raw terrain reading means. A literal 0 is MapLibre's
     // answer for a DEM tile that is not loaded, not a claim about sea level,
@@ -4303,7 +4903,14 @@ Corvus.map = (function () {
     // is what keeps the map from going white over high ground, and it is
     // plain arithmetic, so it is assertable without a canvas.
     _decodeDemPixel: (r, g, b) => decodeDemPixel(r, g, b),
-    _setTerrainSpec: (spec) => { terrainSpec = spec; },
+    _setTerrainSpec: (spec) => {
+      terrainSpec = spec;
+      terrainCatalogue = spec ? [spec] : [];
+      defaultTerrainId = spec ? spec.id : null;
+    },
+    // test hook: which DEM a map service gets, as a pure rule.
+    _terrainFor: (dems, provider, defaultId, choice, preferredId) =>
+      terrainFor(dems, provider, defaultId, choice, preferredId),
     _globeZooms: () => ({ max: GLOBE_MAX_ZOOM, band: GLOBE_ZOOM_BAND }),
     _buildingLimits: () => ({
       cellZoom: BUILDING_CELL_Z,
@@ -4324,6 +4931,10 @@ Corvus.map = (function () {
       try { updateHome(state); } finally { homeMarker = saved; }
     },
     _checkForReboot: (ms) => checkForReboot(ms),
+    _checkForTakeoff: (armed) => checkForTakeoff(armed),
+    _updateTrack: (state) => updateTrack(state),
+    _saveTrack: () => saveTrack(),
+    _restoreTrack: () => restoreTrack(),
     // test hook: push one telemetry sample through the whole marker path
     // (target, altitude, follow, track) without an SSE stream behind it.
     // Mirrors the _updateHome convention.
@@ -4332,7 +4943,16 @@ Corvus.map = (function () {
     // without a layout engine.
     _contextPoint: () => (contextPoint ? { lng: contextPoint.lng, lat: contextPoint.lat } : null),
     _openContextMenu: (lngLat) => openContextMenu(lngLat),
-    _resetTrackState: () => { pathCoords = []; lastBootMs = null; },
+    _resetTrackState: () => {
+      pathCoords = [];
+      pastFlights = [];
+      lastBootMs = null;
+      lastArmed = null;
+      trackEarlierFlights = true;
+      trackClearOnRestart = false;
+      if (trackSaveTimer !== null) window.clearTimeout(trackSaveTimer);
+      trackSaveTimer = null;
+    },
     // test hook: pure coordinate computation for the plan route (vehicle
     // position prefix + operator waypoints, or []). Accepts an optional
     // waypoint list for testing in Node, where the internal `waypoints` array

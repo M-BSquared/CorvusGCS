@@ -54,15 +54,22 @@ from pymavlink.dialects.v20 import common as mavlink2  # noqa: E402
 from . import flight as flight_mod  # noqa: E402
 from . import params as params_mod  # noqa: E402
 
-# PX4's custom_mode layout: main mode in bits 16-23, AUTO sub-mode in 24-31.
-# Mirrors corvus/mavlink_bridge.py's decoder, which is what reads it back.
+# PX4's custom_mode layout: main mode in bits 16-23, sub mode in 24-31, and
+# both POSCTL and AUTO carry one. Written from px4_custom_mode.h (v1.16 to
+# v1.18) rather than imported from corvus.autopilot, because this is the other
+# end of the wire: a table shared with the decoder under test would agree with
+# it however wrong both were. tests/test_scene_kit.py holds the two together.
+# RATTITUDE (8) and RTGS (AUTO 7) are left out: no supported PX4 flies either.
 MAIN_MODES = {
     "MANUAL": 1, "ALTCTL": 2, "POSCTL": 3, "AUTO": 4,
-    "ACRO": 5, "OFFBOARD": 6, "STABILIZED": 7, "RATTITUDE": 8,
+    "ACRO": 5, "OFFBOARD": 6, "STABILIZED": 7,
+    "TERMINATION": 10, "ALTITUDE_CRUISE": 11,
 }
+POSCTL_SUBMODES = {"ORBIT": 1, "POSITION_SLOW": 2}
 AUTO_SUBMODES = {
     "READY": 1, "TAKEOFF": 2, "LOITER": 3, "MISSION": 4,
-    "RTL": 5, "LAND": 6, "RTGS": 7, "FOLLOWME": 8, "PRECLAND": 9,
+    "RTL": 5, "LAND": 6, "FOLLOWME": 8, "PRECLAND": 9,
+    "VTOL_TAKEOFF": 10, "GUIDED_COURSE": 19,
 }
 
 # The six accelerometer positions, in the order PX4 asks for them, spelled the
@@ -369,12 +376,14 @@ class SimVehicle:
 
     def _custom_mode(self) -> int:
         mode = (self.mode or "").upper()
+        if mode == "HOLD":
+            mode = "LOITER"
         if mode in MAIN_MODES:
             return MAIN_MODES[mode] << 16
+        if mode in POSCTL_SUBMODES:
+            return (MAIN_MODES["POSCTL"] << 16) | (POSCTL_SUBMODES[mode] << 24)
         if mode in AUTO_SUBMODES:
             return (MAIN_MODES["AUTO"] << 16) | (AUTO_SUBMODES[mode] << 24)
-        if mode in ("HOLD", "LOITER"):
-            return (MAIN_MODES["AUTO"] << 16) | (AUTO_SUBMODES["LOITER"] << 24)
         return MAIN_MODES["POSCTL"] << 16
 
     def _send_heartbeat(self) -> None:
@@ -571,7 +580,7 @@ class SimVehicle:
         elif kind == "FILE_TRANSFER_PROTOCOL":
             self._answer_ftp(msg)
         elif kind == "SET_MODE":
-            self.mode = _mode_name(getattr(msg, "custom_mode", 0))
+            self.mode = _requested_mode(int(getattr(msg, "custom_mode", 0) or 0))
             self._on_event(f"mode -> {self.mode}")
 
     # -- parameters -------------------------------------------------------
@@ -1099,18 +1108,30 @@ def _param_id(msg: Any) -> str:
 def _mode_name(custom_mode: int) -> str:
     main = (int(custom_mode) >> 16) & 0xFF
     sub = (int(custom_mode) >> 24) & 0xFF
-    if main == MAIN_MODES["AUTO"]:
-        for name, value in AUTO_SUBMODES.items():
-            if value == sub:
-                return name
+    sub_modes = {
+        MAIN_MODES["POSCTL"]: POSCTL_SUBMODES, MAIN_MODES["AUTO"]: AUTO_SUBMODES,
+    }.get(main, {})
+    for name, value in sub_modes.items():
+        if value == sub:
+            return name
     for name, value in MAIN_MODES.items():
         if value == main:
             return name
     return "POSCTL"
 
 
+def _requested_mode(custom_mode: int) -> str:
+    """The mode a mode change asking for *custom_mode* lands in.
+
+    PX4 enters Orbit through DO_ORBIT only: a mode change asking for POSCTL
+    sub mode 1 flies plain POSCTL.
+    """
+    name = _mode_name(custom_mode)
+    return "POSCTL" if name == "ORBIT" else name
+
+
 def _mode_from_triple(main: float, sub: float) -> str:
-    return _mode_name((int(main) << 16) | (int(sub) << 24))
+    return _requested_mode((int(main) << 16) | (int(sub) << 24))
 
 
 def _wrap_pi(angle: float) -> float:

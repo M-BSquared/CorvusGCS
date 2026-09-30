@@ -253,7 +253,7 @@ check("nonsense in, nothing out", () => {
 
 check("a horizon-wide view is capped at the cell budget", () => {
   // Twenty degrees of longitude is thousands of z15 columns. Enumerating the
-  // rectangle first would materialise every one of them to then keep 24.
+  // rectangle first would materialise every one of them to then keep a few dozen.
   const limits = map._buildingLimits();
   const cells = map._buildingCellsIn(box(1, 40, 21, 55), [11, 47]);
   assert.ok(cells.length <= limits.maxCells,
@@ -482,13 +482,16 @@ check("a degenerate viewport asks for nothing rather than for NaN", () => {
 // 9. What the base imagery has to stay underneath
 // ---------------------------------------------------------------------------
 
-check("every overlay is above the base imagery, regions first", () => {
+check("every overlay is above the base imagery, the terrain shading first", () => {
   const overlays = map._overlayLayers();
   const at = (id) => overlays.indexOf(id);
-  assert.ok(at("offline-regions-fill") === 0,
-    "the downloaded-area rectangles are added first, so they are the floor " +
-    "the imagery must stay under — a list starting at the track re-inserted " +
-    "the imagery on top of them and switching map service erased them");
+  assert.ok(at("terrain-hillshade") === 0,
+    "the shading sits directly on the imagery: switching map service must " +
+    "put the new imagery under it, and it must not darken anything drawn on top");
+  assert.ok(at("offline-regions-fill") === 1,
+    "the downloaded-area rectangles are the next floor the imagery must stay " +
+    "under — a list starting at the track re-inserted the imagery on top of " +
+    "them and switching map service erased them");
   assert.ok(at("offline-regions-line") < at("buildings-3d"));
   assert.ok(at("buildings-3d") < at("path-glow"), "a building never hides the track");
   assert.ok(at("path-line") < at("waypoints-route"));
@@ -510,11 +513,11 @@ check("3D exposes a state that starts off", () => {
 // 11. The three modes
 // ---------------------------------------------------------------------------
 //
-// "simple" is the camera tilt and the sky, over flat ground: no elevation
-// tiles, no building requests, no globe. "full" is the tilt over ground that
-// is really shaped, with buildings on it. The split is not cosmetic — the
-// second one downloads, and a field laptop on a radio link is exactly where
-// that is worth being able to decline.
+// "simple" is the camera tilt over ground that is really shaped, with the
+// globe far out: no building requests. "full" is the same with buildings on
+// it. The split is not cosmetic — the buildings are an Overpass round trip
+// per cell, and a field laptop on a radio link is exactly where that is
+// worth being able to decline.
 
 check("only the two 3D modes are modes; anything else is flat", () => {
   assert.equal(map._normaliseThreeDMode("simple"), "simple");

@@ -294,6 +294,74 @@ function testMenuShowsTheCoordinatesItActsOn() {
   assert.equal(mapEl.querySelector(".map-context-coords").textContent, "48.086100, 11.640500");
 }
 
+/* Recent Node defines a read-only global navigator, so it is redefined. */
+function setClipboard(clipboard) {
+  Object.defineProperty(global, "navigator", { value: { clipboard }, configurable: true, writable: true });
+}
+
+function copyButton() { return mapEl.querySelector(".map-context-copy"); }
+
+/** Let the clipboard promise chain settle. */
+function settle() { return new Promise((resolve) => setImmediate(resolve)); }
+
+async function testCopyButtonPutsTheCoordinatesOnTheClipboard() {
+  reset();
+  withActions();
+  const written = [];
+  setClipboard({ writeText: (t) => { written.push(t); return Promise.resolve(); } });
+  fireMap("click", { lngLat: { lng: 11.6405, lat: 48.0861 } });
+  const btn = copyButton();
+  assert.ok(btn, "the coordinates carry a copy button");
+  assert.equal(btn.classList.contains("is-copied"), false);
+  btn.fire("click");
+  await settle();
+  assert.deepEqual(written, ["48.086100, 11.640500"], "the same text the head shows");
+  assert.equal(btn.classList.contains("is-copied"), true, "the button turns into the tick");
+  assert.equal(btn.title, "Copied");
+  assert.ok(menuEl(), "copying does not close the menu");
+  reset();
+}
+
+async function testCopyFallsBackToTheCopyCommand() {
+  reset();
+  withActions();
+  setClipboard({ writeText: () => Promise.reject(new Error("denied")) });
+  const commands = [];
+  document.body = makeEl("body");
+  document.execCommand = (c) => { commands.push(c); return true; };
+  const create = document.createElement;
+  document.createElement = (tag) => Object.assign(create(tag), { select() {} });
+  fireMap("click", { lngLat: { lng: 11.0, lat: 48.5 } });
+  const btn = copyButton();
+  btn.fire("click");
+  await settle();
+  assert.deepEqual(commands, ["copy"], "a refused async clipboard falls back to the command");
+  assert.equal(document.body.children.length, 0, "the hidden field is removed again");
+  assert.equal(btn.classList.contains("is-copied"), true);
+  document.createElement = create;
+  reset();
+}
+
+async function testARefusedCopyDoesNotClaimCopied() {
+  reset();
+  withActions();
+  setClipboard({ writeText: () => Promise.reject(new Error("denied")) });
+  document.body = makeEl("body");
+  document.execCommand = () => false;
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    fireMap("click", { lngLat: { lng: 11.0, lat: 48.5 } });
+    const btn = copyButton();
+    btn.fire("click");
+    await settle();
+    assert.equal(btn.classList.contains("is-copied"), false, "no tick when nothing was copied");
+  } finally {
+    console.warn = warn;
+    reset();
+  }
+}
+
 function testNoActionsMeansNoMenu() {
   reset();
   map.setContextActions([]);
@@ -562,20 +630,29 @@ const tests = [
   testMenuTracksItsGroundPointWhenTheMapPans,
 ];
 
-let failed = 0;
-for (const t of tests) {
-  try {
-    t();
-    console.log(`ok   - ${t.name}`);
-  } catch (err) {
-    failed++;
-    console.error(`FAIL - ${t.name}`);
-    console.error(`      ${err && err.stack ? err.stack.split("\n").join("\n      ") : err}`);
-  }
-}
+const asyncTests = [
+  testCopyButtonPutsTheCoordinatesOnTheClipboard,
+  testCopyFallsBackToTheCopyCommand,
+  testARefusedCopyDoesNotClaimCopied,
+];
 
-if (failed) {
-  console.error(`\n${failed}/${tests.length} map context-menu test(s) FAILED`);
-  process.exit(1);
-}
-console.log(`\nAll ${tests.length} map context-menu tests passed.`);
+(async () => {
+  let failed = 0;
+  for (const t of tests.concat(asyncTests)) {
+    try {
+      await t();
+      console.log(`ok   - ${t.name}`);
+    } catch (err) {
+      failed++;
+      console.error(`FAIL - ${t.name}`);
+      console.error(`      ${err && err.stack ? err.stack.split("\n").join("\n      ") : err}`);
+    }
+  }
+
+  const total = tests.length + asyncTests.length;
+  if (failed) {
+    console.error(`\n${failed}/${total} map context-menu test(s) FAILED`);
+    process.exit(1);
+  }
+  console.log(`\nAll ${total} map context-menu tests passed.`);
+})();

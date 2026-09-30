@@ -8,6 +8,10 @@
  * programmatically, which is neither, so the bar used to read SELECT MODE
  * while the vehicle held in LOITER.
  *
+ * A row's value is the name a mode change sends (PX4's POSCTL); its text is
+ * the word the backend's dialect gives it (POSITION), the one the top bar
+ * shows too.
+ *
  * Run:
  *   node tests/test_frontend_mode_picker.js
  */
@@ -16,9 +20,11 @@ const assert = require("node:assert/strict");
 
 global.window = global;
 global.Corvus = {};
+let pickerOnPage = null;
 global.document = {
   addEventListener: () => {},
   createElement: (tag) => makeOption(tag),
+  getElementById: (id) => (id === "modeSelector" ? pickerOnPage : null),
 };
 
 function makeOption(tag, value = "", text = "") {
@@ -41,6 +47,8 @@ function makeSelect(values) {
       this._value = this.options.some((o) => o.value === v) ? v : "";
     },
     appendChild(o) { o.parent = sel; sel.options.push(o); return o; },
+    // Only the one selector app.js asks for: every row but the placeholder.
+    querySelectorAll: () => sel.options.filter((o) => o.value !== ""),
     _remove(o) { sel.options = sel.options.filter((x) => x !== o); o.parent = null; },
   };
   sel.corvusSelect = { refresh: () => { sel.refreshed += 1; } };
@@ -50,7 +58,7 @@ function makeSelect(values) {
 }
 
 require("./../src/js/app.js");
-const { showVehicleMode } = Corvus.app;
+const { showVehicleMode, refreshModesFromData } = Corvus.app;
 
 function testTheLabelFollowsTheVehicle() {
   const sel = makeSelect(["POSCTL", "LOITER", "MISSION"]);
@@ -87,10 +95,52 @@ function testNoModeIsThePlaceholder() {
   assert.equal(sel.value, "");
 }
 
+function testRowsShowTheWordAndSendTheName() {
+  pickerOnPage = makeSelect([]);
+  refreshModesFromData({
+    modes: ["POSCTL", "LOITER", "MISSION"],
+    labels: { POSCTL: "POSITION", LOITER: "HOLD", MISSION: "MISSION" },
+  });
+  const rows = pickerOnPage.options.filter((o) => o.value);
+  assert.deepEqual(rows.map((o) => o.value), ["POSCTL", "LOITER", "MISSION"]);
+  assert.deepEqual(rows.map((o) => o.textContent), ["POSITION", "HOLD", "MISSION"]);
+}
+
+function testNewLabelsForTheSameModesAreApplied() {
+  pickerOnPage = makeSelect([]);
+  refreshModesFromData({ modes: ["RTL"], labels: { RTL: "RETURN" } });
+  refreshModesFromData({ modes: ["RTL"], labels: { RTL: "RTL" } });
+  const rows = pickerOnPage.options.filter((o) => o.value);
+  assert.deepEqual(rows.map((o) => o.textContent), ["RTL"],
+    "another stack's word for the same name is not held over");
+}
+
+function testARowWithoutALabelShowsTheName() {
+  pickerOnPage = makeSelect([]);
+  refreshModesFromData({ modes: ["ZZ_CUSTOM"] });
+  assert.equal(pickerOnPage.options.find((o) => o.value === "ZZ_CUSTOM").textContent, "ZZ_CUSTOM");
+}
+
+function testAReportedModeIsShownByItsWord() {
+  const sel = makeSelect(["LOITER"]);
+  showVehicleMode(sel, "PRECLAND", "PRECISION LAND");
+  const row = sel.options.find((o) => o.dataset.reported === "true");
+  assert.equal(row.textContent, "PRECISION LAND");
+  assert.equal(row.value, "PRECLAND");
+  assert.equal(sel.value, "PRECLAND");
+
+  showVehicleMode(sel, "VTOL_TAKEOFF", "");
+  assert.equal(row.textContent, "VTOL_TAKEOFF", "no label: the name, not a blank row");
+}
+
 const tests = [
   testTheLabelFollowsTheVehicle,
   testAModeTheListLacksIsShownButCannotBePicked,
   testNoModeIsThePlaceholder,
+  testRowsShowTheWordAndSendTheName,
+  testNewLabelsForTheSameModesAreApplied,
+  testARowWithoutALabelShowsTheName,
+  testAReportedModeIsShownByItsWord,
 ];
 let failed = 0;
 for (const t of tests) {

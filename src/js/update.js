@@ -23,6 +23,11 @@ window.Corvus = window.Corvus || {};
   The release page is opened through POST /api/update/open rather than a
   link, because the desktop build runs inside QtWebEngine where an external
   link goes nowhere. "Copy link" is the fallback when no browser opens.
+
+  Besides the dialog there is a quiet marker: onChange() reports the pending
+  version (or null) so the rail can put a dot on Settings. It follows the same
+  skip rule as the dialog, but not the armed rule, because a dot interrupts
+  nothing.
 */
 Corvus.update = (function () {
   /* Long enough that the map, telemetry stream and panels have settled — the
@@ -34,9 +39,31 @@ Corvus.update = (function () {
   let dialog = null;        // Corvus.ui.modal handle while the dialog is open
   let armedUnsubscribe = null;   // telemetry subscription while we wait to disarm
   let pending = null;       // status held back because the vehicle was armed
+  let available = null;     // version the marker points at, or null
+  const listeners = new Set();
 
   function request(refresh) {
     return Corvus.telemetry.requestJson("/api/update" + (refresh ? "?refresh=1" : ""));
+  }
+
+  /** Update the marker from a GET /api/update answer; null clears it. */
+  function note(status) {
+    const s = status || {};
+    const worth = s.enabled !== false && !!s.update_available && !!s.latest &&
+      s.skipped !== s.latest;
+    const next = worth ? s.latest : null;
+    if (next === available) return;
+    available = next;
+    listeners.forEach((fn) => {
+      try { fn(available); } catch (err) { console.error("update listener failed:", err); }
+    });
+  }
+
+  /** Call *fn* with the pending version (or null) now and on every change. */
+  function onChange(fn) {
+    listeners.add(fn);
+    fn(available);
+    return () => listeners.delete(fn);
   }
 
   /** True while the vehicle is armed — the one state that suppresses the dialog. */
@@ -178,6 +205,7 @@ Corvus.update = (function () {
            write must not trap the operator in a dialog they dismissed. */
         Corvus.telemetry.postAction("/api/update/skip", { version: status.latest })
           .catch(() => {});
+        note(Object.assign({}, status, { skipped: status.latest }));
         dialog.close();
       },
     });
@@ -233,6 +261,7 @@ Corvus.update = (function () {
     const o = opts || {};
     return request(!!o.refresh).then((status) => {
       if (!status) return null;
+      note(status);
       if (!status.update_available) return status;
       const skipped = !o.manual && status.skipped && status.skipped === status.latest;
       if (skipped) return status;
@@ -250,5 +279,9 @@ Corvus.update = (function () {
     window.setTimeout(() => { check(); }, AUTO_DELAY_MS);
   }
 
-  return { init, check, show, close: () => { if (dialog) dialog.close(); } };
+  return {
+    init, check, show, note, onChange,
+    available: () => available,
+    close: () => { if (dialog) dialog.close(); },
+  };
 })();
