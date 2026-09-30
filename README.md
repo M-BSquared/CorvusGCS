@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.09.65-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.09.65" />
+  <img src="https://img.shields.io/badge/Version-2026.09.66-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.09.66" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -756,9 +756,12 @@ and a white separating ring so it stays visible over any imagery, the **home
 point** is a landing-pad mark on the exact coordinate, and the **flown track**
 trails behind you in red.
 
-The track survives a link drop. Only an actual vehicle reboot clears it, or the
-small clear button in the map's corner. That way a dropout does not erase where
-you have been.
+The track stays until you clear it with the small button in the map's corner.
+A link drop, a vehicle reboot and a restart of Corvus all keep it. When the
+aircraft lands and takes off again, the flights before turn a lighter red, so
+the flight in progress stands out. Both are switches under Settings, Flown
+track: earlier flights in their own colour (on by default), and clearing the
+track whenever Corvus starts or the autopilot reboots (off by default).
 
 **Click anywhere on the map** to open a menu: fly to that position, or move the
 home point there.
@@ -1403,8 +1406,9 @@ aircraft is no longer flying what you are looking at.
   progress bar and a Cancel that works throughout. Files land as
   `log_<id>_<UTC date>.ulg`, still readable a month later.
 - **Recorded tlogs**: the MAVLink stream Corvus recorded on this laptop, one
-  file per flight session, written from the first frame of every connection
-  without being asked. This is the log that always exists.
+  file per flight, written from the first frame of every connection without
+  being asked. When the aircraft disarms after a flight, the file is closed and
+  the next one begins. This is the log that always exists.
 - **Flight Review**: pick a downloaded log and Corvus reduces it to the plots
   that answer *"was that flight healthy?"* (motors, clipping, EKF, battery),
   with findings above the plots and the aircraft's own messages below, filtered
