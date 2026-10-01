@@ -377,7 +377,7 @@ def prune(site: Path, dry_run: bool = False, log: Callable[[str], None] = print)
             raise BundleError(f"refusing to remove {path}, outside {site}")
     if dry_run:
         for path in decided.remove:
-            log(f"    would remove {path.relative_to(site)}  ({_size(path) >> 20} MB)")
+            log(f"    would remove {path.relative_to(site).as_posix()}  ({_size(path) >> 20} MB)")
     else:
         for path in decided.remove:
             if path.is_dir() and not path.is_symlink():

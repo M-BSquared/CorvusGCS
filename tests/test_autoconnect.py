@@ -16,6 +16,7 @@ sequence stop/set_connection/start actually happened, not by a log line.
 """
 from __future__ import annotations
 
+import os
 import threading
 from typing import Any
 
@@ -968,6 +969,11 @@ def test_one_node_has_many_spellings(tmp_path):
     assert same_port("COM3", "\\\\.\\COM3")
     assert same_port("com3", "COM3")
     assert not same_port("COM3", "COM13")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a Windows serial port is a COM name, never a file link")
+def test_a_by_id_link_is_the_node_it_points_at(tmp_path):
+    from corvus.serial_ports import same_port
     target = tmp_path / "ttyACM0"
     target.write_text("")
     link = tmp_path / "usb-Holybro_PX4_FMU_v6C.x_0-if00"

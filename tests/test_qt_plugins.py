@@ -35,7 +35,9 @@ def _all_hidden(_path: Path) -> bool:
 
 
 def _listing(links: Path) -> dict[str, str]:
-    return {str(p.relative_to(links)): os.readlink(p) for p in links.rglob("*") if p.is_symlink()}
+    # Windows reads a link back with the \\?\ long path prefix it was not made with.
+    return {p.relative_to(links).as_posix(): os.readlink(p).removeprefix("\\\\?\\")
+            for p in links.rglob("*") if p.is_symlink()}
 
 
 def test_nothing_happens_while_qt_can_see_its_plugins(tmp_path):
