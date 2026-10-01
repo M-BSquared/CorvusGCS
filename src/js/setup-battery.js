@@ -113,6 +113,7 @@ Corvus.setupBattery = (function () {
         state.live = s;
         applyArmed(state, !!s.armed);
         applyLive(state);
+        S.reloadOnLink(state, s, () => load(state));
       });
     }
 
@@ -136,8 +137,8 @@ Corvus.setupBattery = (function () {
 
     const page = S.el("div", "setup-page");
     page.appendChild(S.backButton(state.navigateBack));
-    page.appendChild(S.pageHeader("Battery & Power",
-      "The pack, how the autopilot measures it, and how much of it is left"));
+    const header = S.pageHeader("Battery & Power",
+      "The pack, how the autopilot measures it, and how much of it is left");
 
     const actions = S.el("div", "params-actions");
     const reloadBtn = Corvus.ui.button({
@@ -154,7 +155,7 @@ Corvus.setupBattery = (function () {
     actions.appendChild(reloadBtn);
     actions.appendChild(checkBtn);
     actions.appendChild(actionsStatus);
-    page.appendChild(actions);
+    page.appendChild(S.pageHead(header, actions));
 
     // Only the vehicle's own parameters are refused while armed. The estimator
     // settings below are Corvus's and stay live — see the module comment.

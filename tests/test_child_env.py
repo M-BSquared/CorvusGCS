@@ -9,6 +9,8 @@ and a run from a checkout.
 from __future__ import annotations
 
 import os
+import sys
+import types
 
 from corvus import child_env as ce
 from corvus.child_env import QPA_DEFAULT_ENV, bundle_dirs, child_env
@@ -32,7 +34,7 @@ CHECKOUT = _p("home", "pilot", "CorvusGCS")
 
 def test_the_appimage_launcher_variables_do_not_reach_a_child():
     site = os.path.join(MOUNT, "usr", "lib", "python3.12", "site-packages")
-    qt = os.path.join(site, "PyQt6", "Qt6")
+    qt = os.path.join(site, "PySide6", "Qt")
     ros = _p("opt", "ros", "jazzy", "lib")
     env = {
         "HOME": _p("home", "pilot"),
@@ -105,11 +107,49 @@ def test_the_windows_bootloader_variables_do_not_reach_a_child():
         "_PYI_APPLICATION_HOME_DIR": internal,
         "_PYI_PARENT_PROCESS_LEVEL": "1",
         "_MEIPASS2": internal,
-        "QT_PLUGIN_PATH": os.path.join(internal, "PyQt6", "Qt6", "plugins"),
+        "QT_PLUGIN_PATH": os.path.join(internal, "PySide6", "plugins"),
         "SystemRoot": _p("Windows"),
     }
     out = child_env(env, root=internal, prefixes=(), meipass=internal)
     assert out == {"SystemRoot": env["SystemRoot"]}
+
+
+def test_pyside6s_own_path_entry_does_not_reach_a_child():
+    """PySide6 puts its package folder first on PATH on Windows. Only that goes.
+
+    An activated .venv inside the checkout is the operator's own entry, under
+    the app folder or not, so it stays.
+    """
+    pyside = os.path.join(CHECKOUT, ".venv", "Lib", "site-packages", "PySide6")
+    venv = os.path.join(CHECKOUT, ".venv", "Scripts")
+    system = _p("Windows", "System32")
+    env = {"PATH": _join(pyside, venv, system)}
+    out = child_env(env, root=CHECKOUT, prefixes=(), meipass="", qt_dirs=(pyside,))
+    assert out == {"PATH": _join(venv, system)}
+
+
+def test_pyside6s_path_entry_in_the_windows_build_does_not_reach_a_child():
+    internal = _p("Program Files", "Corvus GCS", "_internal")
+    pyside = os.path.join(internal, "PySide6")
+    system = _p("Windows", "System32")
+    env = {"PATH": _join(pyside, system), "SystemRoot": _p("Windows")}
+    out = child_env(env, root=internal, prefixes=(), meipass=internal, qt_dirs=(pyside,))
+    assert out == {"PATH": system, "SystemRoot": env["SystemRoot"]}
+
+
+def test_path_is_left_alone_without_pyside6():
+    env = {"PATH": _join(_p("usr", "bin"), "", _p("bin"))}
+    assert child_env(env, root=CHECKOUT, prefixes=(), meipass="", qt_dirs=()) == env
+
+
+def test_the_binding_folder_is_read_without_importing_qt(monkeypatch):
+    monkeypatch.delitem(sys.modules, "PySide6", raising=False)
+    assert ce.qt_binding_dirs() == ()
+    assert "PySide6" not in sys.modules
+    fake = types.ModuleType("PySide6")
+    fake.__file__ = os.path.join(CHECKOUT, "PySide6", "__init__.py")
+    monkeypatch.setitem(sys.modules, "PySide6", fake)
+    assert ce.qt_binding_dirs() == (os.path.join(CHECKOUT, "PySide6"),)
 
 
 def test_an_appdir_that_is_not_ours_is_left_alone():

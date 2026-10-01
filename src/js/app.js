@@ -445,6 +445,9 @@ Corvus.app = (function () {
       // the control switches above: the backend is the authority, and an
       // absent key is the default (no dots), not the cached value.
       Corvus.topbar.setStatusDots(!!(cfg.ui && cfg.ui.topbar_status_dots));
+      // The ALTITUDE block's reference. AMSL unless the config asks for the
+      // altitude above home.
+      Corvus.topbar.setAltitudeRef(cfg.ui && cfg.ui.topbar_altitude);
       // The severity marks on notifications. Off unless the config says
       // otherwise, like the control switches above: the icon and its colour
       // already carry the level, so an absent key leaves the marks off rather
@@ -466,6 +469,8 @@ Corvus.app = (function () {
       }, true);
       // The flight compass is north up unless the config locks it nose up.
       Corvus.instruments.setNoseUp(!!(cfg.ui && cfg.ui.compass_nose_up));
+      // The flight HUD is on the Home map unless the config takes it off.
+      Corvus.hudPanel.setShown(!(cfg.ui && cfg.ui.flight_hud === false));
       // The optional Mission entry in the left rail. Off unless the config
       // asks for it, and asked for here rather than inside sidenav.init()
       // because the rail is built before this fetch can land — the rail

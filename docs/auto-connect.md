@@ -3,8 +3,9 @@
 What Corvus GCS connects to when nobody tells it, and the contract anything
 building on that behaviour can rely on.
 
-For the operator's version of this, see **Connect to your aircraft** in
-`README.md`. This file is the interface: the resolution order, the two state
+For the operator's version of this, see
+[Connect to the aircraft](https://m-bsquared.github.io/CorvusGCS/guide/connect.html)
+in the documentation. This file is the interface: the resolution order, the two state
 fields, the endpoint, the config block, and the reason strings. Implementation
 lives in `corvus/autoconnect.py`, whose module docstring carries the reasoning
 behind each rule.
@@ -20,7 +21,7 @@ produces one wins:
 | # | Rule | `reason` | Notes |
 |---|---|---|---|
 | 1 | Command-line argument | `cli` | `serve.py <port> <connection>` or `corvus/app.py <port> <connection>`. Only a person types this, so it outranks hardware. An unusable value falls through rather than failing the launch. |
-| 2 | Direct USB flight controller | `usb-direct` | A CDC ACM node, or a `/dev/serial/by-id/` name matching a Pixhawk-class vendor. Dialled as `serial:<device>:57600`. |
+| 2 | Direct USB flight controller | `usb-direct` | A CDC ACM node, or a `/dev/serial/by-id/` name matching a Pixhawk-class vendor. Dialled as `serial:<device>:<baud>`, where the baud rate is the configured connection's when that names the same port, and 57600 otherwise. |
 | 3 | SiK telemetry radio | `sik` | A USB-to-serial bridge (FTDI / CP210x / CH340). Same string shape. |
 | 4 | Configured connection | `configured` | `mavlink_connection` from `~/.corvus/config.json`. Honoured **verbatim**, including a stale `14540`, which is warned about and never rewritten. |
 | 5 | UDP fallback | `udp-fallback` | `udp:0.0.0.0:14550`. The ground-station port, which is where PX4 SITL publishes. |
@@ -42,7 +43,11 @@ Ports excluded before any rule sees them:
 - **Bootloaders**: a board in DFU / PX4 bootloader mode speaks the bootloader
   protocol, not MAVLink, and the flasher is about to want the port
   (`is_bootloader_port`). Closed-world: only a positive descriptor match skips,
-  so an unknown board is never starved.
+  so an unknown board is never starved. The match is on the product string
+  (`PX4 BL FMU ...`, ArduPilot's `<board>-BL`, `bootloader`, `DFU`) and on
+  STM32 DFU's `0483:DF11`, never on a PX4 vendor/product id: PX4 boards use
+  the same id in the bootloader and in the firmware (`26AC:0011` on
+  FMUv2/v3), so matching it skipped every running Pixhawk 1 and Cube Black.
 - **RTK base stations**: a GNSS receiver is a serial port that never sends a
   heartbeat, and on Linux a u-blox ZED-F9P on a USB lead enumerates as a
   `/dev/ttyACM*` node indistinguishable from a Pixhawk's. Without this the
@@ -74,8 +79,10 @@ Each tick:
 | Condition | Action |
 |---|---|
 | Auto-connect disabled | nothing |
-| `manual_override` set | nothing |
 | Bridge not running | nothing |
+| The link's serial device is gone and `link_status` is still `connected`/`degraded`/`connecting` | nothing until the bridge notices (about 2 s) |
+| The link's serial device is gone, `link_status` is `disconnected`/`reconnecting`, and exactly one present port has the USB identity it had | **follow**: re-dial that port at the link's own baud rate, also when `manual_override` is set |
+| `manual_override` set | nothing |
 | No serial candidate | clear any suggestion; reset the dial latch |
 | `link_status` in `disconnected`/`reconnecting` **and** heartbeat older than 8 s | **dial**: `stop` → `validate` → `set_connection` → `start`, once per device appearance |
 | anything else (connected, or degraded with a fresh heartbeat) | **suggest**: publish `link_suggestion`, never touch the link |
@@ -86,6 +93,17 @@ exactly as they do for a manual connect.
 
 The "once per device appearance" latch is cleared when the device disappears:
 an operator who unplugs a cable and plugs it back in is asking again.
+
+**Following a device to its new name.** One device does not keep one device
+node: macOS names a device without a USB serial number after the socket it is
+in, Windows may give it a new COM number per socket, and Linux hands out
+`ttyACM1` when the cable comes back while `ttyACM0` is still held open. The
+bridge would retry the vanished name forever, so the watcher remembers the USB
+identity of the link's port (`VID:PID` plus the serial number from `hwid`,
+`usb_identity()`) whenever it sees it, and follows that identity once the old
+name is gone. Two ports with the same identity is no answer and nothing
+happens. A bootloader port is neither remembered nor followed. An auto-dial
+keeps the baud rate of the current connection when it names the same port.
 
 ---
 

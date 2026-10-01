@@ -265,7 +265,14 @@ $PyiArgs = @(
     "--hidden-import", "corvus.app",
     # pymavlink generates its dialects at import time from data the analyser
     # cannot see, so the whole package is collected rather than guessed at.
-    "--collect-all", "pymavlink"
+    "--collect-all", "pymavlink",
+    # QtWebEngine links the QtQml and QtQuick libraries, and PyInstaller
+    # collects those as libraries either way. Their Python modules are never
+    # imported, and their hooks would add PySide6's whole QML tree (Qt3D,
+    # Charts, Location and more) to the bundle for nothing.
+    "--exclude-module", "PySide6.QtQml",
+    "--exclude-module", "PySide6.QtQuick",
+    "--exclude-module", "PySide6.QtQuickWidgets"
 )
 if ($Ico) { $PyiArgs += @("--icon", $Ico) }
 $PyiArgs += $Entry

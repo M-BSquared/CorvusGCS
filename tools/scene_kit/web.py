@@ -132,7 +132,7 @@ def _application() -> None:
     if plugins:
         os.environ["QT_PLUGIN_PATH"] = os.pathsep.join(
             p for p in (plugins, os.environ.get("QT_PLUGIN_PATH", "")) if p)
-    from PyQt6.QtGui import QGuiApplication
+    from PySide6.QtGui import QGuiApplication
 
     if QGuiApplication.instance() is None:
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -160,8 +160,8 @@ def publish(scenes: Iterable[Scene], source_dir: Path | None = None,
         if scene.id == SOCIAL_SCENE:
             written.append(social_card(source_of(scene), log))
     _application()
-    from PyQt6.QtCore import Qt
-    from PyQt6.QtGui import QImage, QImageWriter
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QImage, QImageWriter
 
     def scaled(image: QImage, size: tuple[int, int]) -> QImage:
         return image.scaled(size[0], size[1], Qt.AspectRatioMode.IgnoreAspectRatio,

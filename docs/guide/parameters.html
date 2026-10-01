@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<!-- Written by tools/guide.py around the content block below. Edit the text
+     between the guide:content markers; run the script for everything else. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parameters and calibration · Corvus GCS documentation</title>
+<meta name="description" content="The parameter editor with firmware defaults, import and export, checking written values, rebooting the autopilot, and sensor calibration.">
+<link rel="canonical" href="https://m-bsquared.github.io/CorvusGCS/guide/parameters.html">
+<meta name="theme-color" content="#0B0E12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="dark light">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Corvus GCS">
+<meta property="og:title" content="Parameters and calibration · Corvus GCS documentation">
+<meta property="og:description" content="The parameter editor with firmware defaults, import and export, checking written values, rebooting the autopilot, and sensor calibration.">
+<meta property="og:url" content="https://m-bsquared.github.io/CorvusGCS/guide/parameters.html">
+<meta property="og:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/icons/apple-touch-icon.png">
+<link rel="preload" as="font" type="font/woff2" href="../assets/fonts/Inter-latin.woff2" crossorigin>
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="guide.css">
+<script>
+  document.documentElement.classList.add('js');
+  try {
+    var t = localStorage.getItem('corvus-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+</script>
+<script src="../script.js" defer></script>
+<script src="guide.js" defer></script>
+</head>
+
+<body class="guide">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <g id="i-github" fill="currentColor" stroke="none" transform="scale(1.5)"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></g>
+    <g id="i-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></g>
+    <g id="i-moon"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></g>
+    <g id="i-menu"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></g>
+    <g id="i-close"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></g>
+    <g id="i-prev"><path d="m15 18-6-6 6-6"/></g>
+    <g id="i-next"><path d="m9 18 6-6-6-6"/></g>
+    <g id="i-book"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></g>
+    <g id="i-info"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></g>
+    <g id="i-alert"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></g>
+    <g id="i-edit"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></g>
+  </defs>
+</svg>
+
+<header class="site-header" id="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="../index.html" aria-label="Corvus GCS, project website">
+      <span class="brand-mark" role="img" aria-hidden="true"></span>
+      <span class="brand-text">
+        <span class="brand-name">Corvus GCS</span>
+        <span class="brand-sub">Documentation</span>
+      </span>
+    </a>
+
+    <nav class="site-nav" id="site-nav" aria-label="Main">
+      <ul class="nav-list">
+        <li><a href="../index.html">Website</a></li>
+        <li><a href="index.html">Documentation</a></li>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS/releases/latest" target="_blank" rel="noopener">Download</a></li>
+        <li><a class="nav-github" href="https://github.com/M-BSquared/CorvusGCS" target="_blank" rel="noopener">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-github"></use></svg>GitHub</a></li>
+      </ul>
+    </nav>
+
+    <div class="header-actions">
+      <button class="icon-btn theme-toggle" id="theme-toggle" type="button" aria-label="Switch to the light theme" aria-pressed="false">
+        <svg class="icon icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-sun"></use></svg>
+        <svg class="icon icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-moon"></use></svg>
+      </button>
+      <button class="icon-btn nav-toggle" id="nav-toggle" type="button" aria-label="Open the menu" aria-expanded="false" aria-controls="site-nav">
+        <svg class="icon icon-open" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-menu"></use></svg>
+        <svg class="icon icon-shut" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap guide-layout">
+<nav class="guide-nav" id="guide-nav" aria-label="Documentation">
+  <button class="guide-nav-toggle" id="guide-nav-toggle" type="button" aria-expanded="false" aria-controls="guide-nav-body">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-book"></use></svg><span>Contents</span><span class="guide-nav-here">Parameters and calibration</span><svg class="icon guide-nav-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg>
+  </button>
+  <div class="guide-nav-body" id="guide-nav-body">
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Start</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="install.html">Install and run</a></li>
+        <li><a href="connect.html">Connect to the aircraft</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Fly</p>
+      <ul>
+        <li><a href="flying.html">Map, HUD and flight controls</a></li>
+        <li><a href="3d-offline.html">3D, terrain and offline maps</a></li>
+        <li><a href="mission.html">Mission planner</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Set up</p>
+      <ul>
+        <li><a href="airframe.html">Airframe and motors</a></li>
+        <li><a href="safety.html">Safety, sensors and battery</a></li>
+        <li><a href="parameters.html" aria-current="page">Parameters and calibration</a></li>
+        <li><a href="radio-tuning.html">Radio control and tuning</a></li>
+        <li><a href="hardware.html">Telemetry radio, RTK and Remote ID</a></li>
+        <li><a href="firmware.html">Firmware</a></li>
+        <li><a href="video.html">Video and windows</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Review</p>
+      <ul>
+        <li><a href="analysis.html">Logs and Flight Review</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Tools</p>
+      <ul>
+        <li><a href="workspace.html">Console and SSH</a></li>
+        <li><a href="plugins.html">Plugins</a></li>
+        <li><a href="settings.html">Settings</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Reference</p>
+      <ul>
+        <li><a href="compatibility.html">PX4 and ArduPilot</a></li>
+        <li><a href="security.html">Network and security</a></li>
+        <li><a href="reference.html">Files, settings and variables</a></li>
+        <li><a href="build.html">Build the apps</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main id="main" class="guide-main">
+<article class="doc">
+<p class="eyebrow">Set up</p>
+<!-- guide:content -->
+<h1>Parameters and calibration</h1>
+<p class="doc-lead">
+  The parameter editor shows every value on the aircraft beside its firmware
+  default. The calibration page walks through each sensor with the aircraft
+  drawn in the position the autopilot is asking for.
+</p>
+
+<figure class="doc-shot">
+  <a href="../assets/images/parameters.jpg"><img src="../assets/images/parameters-800.jpg"
+     srcset="../assets/images/parameters-800.jpg 800w, ../assets/images/parameters.jpg 1600w"
+     sizes="(max-width: 900px) calc(100vw - 40px), 760px" width="1600" height="1000" loading="lazy" decoding="async"
+     alt="The parameter editor in the pink theme, filtered to the modified parameters: battery and sensor calibration values, each next to its PX4 default and a reset button."></a>
+  <figcaption>The Modified view: only what this aircraft changed, each beside its default with a reset button.</figcaption>
+</figure>
+
+<h2 id="loading">Loading the parameters</h2>
+<p>
+  The full parameter set is downloaded only when you open this page, with a
+  live progress bar. Nothing else in Corvus waits on it, which is why the rest
+  of the app is ready in seconds (see <a href="index.html#ready-in-seconds">Ready
+  in seconds</a>).
+</p>
+
+<h2 id="editing">Editing</h2>
+<p>
+  Edit any value and it is written to the aircraft. A write counts only when
+  the aircraft confirms it, and writes are <strong>refused while
+  armed</strong>. A value the aircraft rejected is never shown as applied.
+</p>
+<p>
+  Corvus never writes a parameter the connected firmware does not have. The
+  firmware version is read when the aircraft connects, and the matching
+  parameter set is used from then on.
+</p>
+
+<h2 id="defaults">Defaults and the Modified view</h2>
+<p>
+  Corvus reads each parameter's <strong>default</strong> from the vehicle over
+  MAVLink FTP; on PX4 it gets the description, unit and list of allowed values
+  as well. So the list has:
+</p>
+<ul>
+  <li>a <strong>Default</strong> column,</li>
+  <li>a one click <strong>reset</strong> per row,</li>
+  <li>and a <strong>Modified</strong> view with only what differs from the firmware, which is usually the short list you actually care about.</li>
+</ul>
+<p>
+  Whether Corvus keeps a copy of each PX4 firmware's parameter descriptions
+  on this computer, so they are there without asking the aircraft again, is an
+  option under Settings.
+</p>
+
+<h2 id="import-export">Import and export</h2>
+<p><strong>Export</strong> and <strong>Import</strong> read and write three formats:</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Format</th><th>Extension</th><th>Written by</th></tr></thead>
+  <tbody>
+    <tr><td>QGroundControl</td><td><code>.params</code></td><td>QGroundControl</td></tr>
+    <tr><td>Mission Planner</td><td><code>.param</code></td><td>Mission Planner</td></tr>
+    <tr><td>Corvus</td><td><code>.json</code></td><td>Corvus</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  An export can hold every value or only the changed ones. After an import the
+  list shows the values it wrote. Exports go to <code>~/.corvus/params</code>
+  unless you choose another folder under <a href="settings.html#files">Settings,
+  Files</a>.
+</p>
+
+<h2 id="reboot">Rebooting the autopilot</h2>
+<p>
+  Some settings are only read when the autopilot starts: the airframe, a
+  sensor driver, a serial port, the output protocol. An accelerometer or
+  compass calibration also takes effect after a restart. The Parameters page,
+  and any calibration that needs it, offer the reboot. It asks first and is
+  refused while armed.
+</p>
+
+<h2 id="calibration">Sensor calibration</h2>
+<figure class="doc-shot">
+  <a href="../assets/images/calibration.jpg"><img src="../assets/images/calibration-800.jpg"
+     srcset="../assets/images/calibration-800.jpg 800w, ../assets/images/calibration.jpg 1600w"
+     sizes="(max-width: 900px) calc(100vw - 40px), 760px" width="1600" height="1000" loading="lazy" decoding="async"
+     alt="The accelerometer calibration page, with the aircraft drawn in each of the six orientations PX4 asks for and the completed ones ticked off."></a>
+  <figcaption>Each position drawn: hold the aircraft the way the bird is held.</figcaption>
+</figure>
+<p>
+  A guided wizard for the compass, gyroscope, accelerometer, level horizon,
+  airspeed sensor and barometer.
+</p>
+<ul>
+  <li>The aircraft is drawn in the position the autopilot is asking for.</li>
+  <li>Each orientation is ticked off as the autopilot accepts it.</li>
+  <li>The autopilot's own messages run underneath.</li>
+  <li>A calibration in progress can be cancelled on the vehicle.</li>
+</ul>
+
+<h3 id="why-drawn">Why the positions are drawn</h3>
+<p>
+  PX4 names the six accelerometer positions in its own order and its own
+  words, and it names the side facing <em>down</em>, so "up" means upside
+  down. Drawing each one removes the translation step: hold the aircraft the
+  way the bird on screen is held.
+</p>
+
+<h3 id="stack-differences">PX4 and ArduPilot</h3>
+<p>
+  PX4 recognises each position by itself. ArduPilot asks to be told, so on an
+  ArduPilot aircraft a confirm button appears under the figure and the
+  calibration waits for it. The compass calibration is also started
+  differently on the two stacks; Corvus sends the right command for the one
+  connected.
+</p>
+
+<h3 id="board-rotation">Board rotation</h3>
+<p>
+  Above the calibrations sits the flight controller's rotation on the
+  airframe, because every accelerometer and compass calibration is measured
+  through it. Change it and the page offers the reboot and names the
+  calibrations you now have to repeat.
+</p>
+<!-- /guide:content -->
+</article>
+
+<nav class="doc-pager" aria-label="Previous and next page">
+  <a class="doc-pager-prev" href="safety.html" rel="prev"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-prev"></use></svg><span><small>Previous</small>Safety, sensors and battery</span></a>
+  <a class="doc-pager-next" href="radio-tuning.html" rel="next"><span><small>Next</small>Radio control and tuning</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg></a>
+</nav>
+
+<p class="doc-edit">
+  <a href="https://github.com/M-BSquared/CorvusGCS/edit/master/docs/guide/parameters.html" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-edit"></use></svg>Suggest a change to this page</a>
+</p>
+</main>
+
+<aside class="guide-toc" aria-labelledby="toc-title">
+  <p class="guide-toc-title" id="toc-title">On this page</p>
+  <ul>
+    <li><a href="#loading">Loading the parameters</a></li>
+    <li><a href="#editing">Editing</a></li>
+    <li><a href="#defaults">Defaults and the Modified view</a></li>
+    <li><a href="#import-export">Import and export</a></li>
+    <li><a href="#reboot">Rebooting the autopilot</a></li>
+    <li><a href="#calibration">Sensor calibration</a></li>
+  </ul>
+</aside>
+</div>
+
+<footer class="site-footer guide-footer">
+  <div class="wrap footer-base">
+    <p class="copyright">&copy; <span id="year">2026</span> Maximilian Böck. Developed with the Universität der Bundeswehr München.</p>
+    <p class="footer-meta">
+      Source available under the Sustainable Use License 1.0 (<em>fair-code</em>).
+      <a href="https://github.com/M-BSquared/CorvusGCS/blob/master/LICENSE.md" target="_blank" rel="noopener">License</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

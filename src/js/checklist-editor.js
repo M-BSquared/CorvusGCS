@@ -4,7 +4,7 @@ window.Corvus = window.Corvus || {};
 /**
  * Corvus.checklistEditor — the dialog the preflight checklists are written in.
  *
- * Opened from Settings > Appearance > Preflight checklist. Add, rename,
+ * Opened from Setup > Safety & Sensors > Preflight checklist. Add, rename,
  * reorder, split into sections, delete. The lists themselves and the Home
  * window's state belong to Corvus.checklist; this dialog only edits them
  * through it.

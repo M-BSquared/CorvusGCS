@@ -434,3 +434,57 @@ def test_an_ardupilot_download_must_be_https() -> None:
     assert host_allowed("https://firmware.ardupilot.org/Copter/stable/x/arducopter.apj")
     assert not host_allowed("http://firmware.ardupilot.org/Copter/stable/x/arducopter.apj")
     assert not host_allowed("https://evil.example/arducopter.apj")
+
+
+# ---------------------------------------------------------------------------
+# Both stacks in one catalogue
+# ---------------------------------------------------------------------------
+
+def _two_stack_cache(tmp_path: pathlib.Path) -> None:
+    from corvus import ardupilot_firmware as af
+
+    (tmp_path / "catalog.json").write_text(json.dumps({"releases": [{
+        "tag": "v1.17.0", "name": "v1.17.0", "prerelease": False, "published": "",
+        "boards": [{"name": b["name"], "label": b["label"], "size": 1} for b in _BOARDS],
+    }]}), encoding="utf-8")
+    (tmp_path / "catalog-ardupilot.json").write_text(json.dumps({"releases": [
+        {
+            "tag": af.release_tag(vehicle, "stable"),
+            "name": f"{vehicle} (stable)", "prerelease": False,
+            "boards": [{"name": af.asset_name(vehicle, "stable", b), "board": b,
+                        "label": b, "size": 0} for b in ("CubeOrange", "Pixhawk6X")],
+        }
+        for vehicle in ("Copter", "Plane")
+    ]}), encoding="utf-8")
+
+
+def test_a_board_is_keyed_by_what_stays_the_same_across_its_stacks_releases(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A PX4 target keeps its file name from release to release; an ArduPilot
+    build is named after its vehicle and channel too, so only its board names
+    it everywhere. The key is what lets a picked board survive a release change."""
+    _two_stack_cache(tmp_path)
+    data = FirmwareCatalog(str(tmp_path)).catalog(refresh=False)
+    px4 = data["releases"][0]
+    assert px4["vendor"] == "px4"
+    assert all(b["key"] == b["name"] for b in px4["boards"])
+    copter, plane = data["releases"][1:]
+    assert (copter["vehicle"], plane["vehicle"]) == ("Copter", "Plane")
+    assert [b["key"] for b in copter["boards"]] == [b["key"] for b in plane["boards"]]
+    assert copter["boards"][0]["name"] != plane["boards"][0]["name"]
+
+
+def test_the_connected_board_is_detected_once_per_stack(tmp_path: pathlib.Path) -> None:
+    """A Cube on PX4 is still a Cube when it is being moved to ArduPilot, and
+    the two stacks call it by different names."""
+    from corvus.firmware_catalog import detect_boards
+
+    _two_stack_cache(tmp_path)
+    releases = FirmwareCatalog(str(tmp_path)).catalog(refresh=False)["releases"]
+    found = detect_boards({"description": "PX4 FMU v6X.x", "hwid": ""}, releases)
+    assert found["px4"]["key"] == "px4_fmu-v6x_default.px4"
+    assert found["ardupilot"]["key"] == "Pixhawk6X"
+    found = detect_boards({"description": "FT232R USB UART"}, releases)
+    assert found == {"px4": None, "ardupilot": None}
+    assert detect_boards({"description": "CubeOrange"}, []) == {"px4": None, "ardupilot": None}

@@ -42,11 +42,14 @@ headless = [
     # of the bootloader device.
     "pyserial>=3.5",
 ]
-# The desktop app: what every packaged build ships.
+# The desktop app: what every packaged build ships. PySide6 (LGPL v3), not
+# PyQt6 (GPL v3), because the GPL does not combine with the Sustainable Use
+# License. Essentials carries QtCore/Gui/Widgets, Addons QtWebEngine and
+# QtWebChannel. 6.11 keeps the Qt, and so the Chromium, the app was tested on.
 app = [
     { include-group = "headless" },
-    "PyQt6>=6.6",
-    "PyQt6-WebEngine>=6.6",
+    "PySide6-Essentials>=6.11",
+    "PySide6-Addons>=6.11",
 ]
 # The CI test jobs.
 test = [

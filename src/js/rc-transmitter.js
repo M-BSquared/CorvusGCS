@@ -604,6 +604,8 @@ Corvus.rcTransmitter = (function () {
    *   renderFunctions(channel, controlId, armed) -> node|null
    *                what this channel does on the vehicle, shown in the
    *                inspector under a learned control
+   *   below        a node placed right under the drawing, above the
+   *                inspector (the overview's Calibrate button)
    */
   function create(opts) {
     const o = opts || {};
@@ -642,6 +644,7 @@ Corvus.rcTransmitter = (function () {
 
     const figure = el("div", "rc-tx-figure");
     root.appendChild(figure);
+    if (o.below) root.appendChild(o.below);
 
     // Per-control handles for the update loop: the pieces whose attributes
     // change every frame, looked up by control id rather than queried. At

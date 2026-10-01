@@ -450,6 +450,28 @@ async function testFailureOffersARetryWithoutReopeningTheWizard() {
   destroy();
 }
 
+async function testTheChecklistAndTheNextStepSitBesideTheFigure() {
+  // The wizard has to fit one screen. A checklist and a Try again below the
+  // positions and the log were both below the fold on a laptop, so they live
+  // in the stage's text column, under the instruction they belong to.
+  const { container, fake } = reset({ state: { armed: false, connected: true } });
+  const destroy = openWizard(container, "accel");
+  const column = findOneByClass(container, "calib-stage-text");
+  assert.equal(findOneByClass(container, "calib-prep").parentNode, column,
+    "the checklist is in the stage, beside the figure");
+  const actions = findOneByClass(container, "calib-actions");
+  assert.equal(actions.parentNode, column, "so are the follow-up buttons");
+  assert.ok(actions.hidden, "an empty button row takes no space before the start");
+
+  fire(actionButton(container, "Start"), "click");
+  await flushMicrotasks();
+  fake.statustext("[cal] calibration failed: accel", "critical");
+  assert.ok(!actions.hidden, "the row comes back with the retry");
+  assert.equal(actionButton(container, "Try again").parentNode, actions);
+
+  destroy();
+}
+
 async function testAbortCancelsOnTheVehicle() {
   const { container, fake } = reset({ state: { armed: false, connected: true } });
   const destroy = openWizard(container, "compass");
@@ -666,6 +688,7 @@ async function run() {
     testStatustextDrivesTheInstructionAndTheStrip,
     testSuccessEndsTheRunAndOffersTheWayBack,
     testFailureOffersARetryWithoutReopeningTheWizard,
+    testTheChecklistAndTheNextStepSitBesideTheFigure,
     testAbortCancelsOnTheVehicle,
     testRejectedStartIsReportedNotSwallowed,
     testTheCueIconFollowsTheAutopilot,

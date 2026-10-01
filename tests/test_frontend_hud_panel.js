@@ -516,8 +516,62 @@ function testShrinkingTheWindowPullsThePanelBackIntoView() {
   assert.ok(after <= 400 - 64, "still inside the smaller map");
 }
 
+// Settings > Appearance > Flight HUD. The config owns the switch, so the
+// panel's own localStorage must not learn about it, and the window has to come
+// back where it was, including when the map changed size while it was away.
+function testSettingsTakeTheHudOffAndBringItBackWhereItWas() {
+  const { host, panel } = mount();
+  try {
+    Corvus.hudPanel.init(panel);
+    assert.equal(panel.hidden, false, "shown by default");
+    assert.equal(Corvus.hudPanel.shown(), true);
+    const h = dragSurface(panel);
+    fire(h, "pointerdown", { clientX: 740, clientY: 390 });
+    fire(h, "pointermove", { clientX: 810, clientY: 400 });
+    fire(h, "pointerup", {});
+    assert.equal(panel.style.left, "700px");
+    const saved = store.get(KEY);
+
+    assert.equal(Corvus.hudPanel.setShown(false), false);
+    assert.equal(panel.hidden, true, "off the map");
+    assert.equal(store.get(KEY), saved, "the switch is not written to the panel's own storage");
+
+    // While hidden the box is 0x0; the sidebar opening must not reflow it.
+    panel._rect = { left: 0, top: 0, width: 0, height: 0 };
+    host._rect = { left: 70, top: 60, width: 620, height: 700 };
+    (windowListeners.resize || []).forEach((cb) => cb());
+    assert.equal(panel.style.left, "700px", "a hidden panel is not moved");
+
+    panel._rect = { left: 700, top: 380, width: 320, height: 380 };
+    Corvus.hudPanel.setShown(true);
+    assert.equal(panel.hidden, false, "back on the map");
+    assert.equal(parseInt(panel.style.left, 10), 620 - 320 - 8,
+      "it caught up with the right edge it was parked against");
+  } finally {
+    Corvus.hudPanel.setShown(true);
+  }
+}
+
+// app.js applies the config whenever its fetch lands, which may be before the
+// panel is built. init must then come up hidden rather than flash on the map.
+function testAHudSwitchedOffBeforeInitStartsHidden() {
+  const { panel, instruments } = mount();
+  try {
+    Corvus.hudPanel.setShown(false);
+    Corvus.hudPanel.init(panel);
+    assert.equal(panel.hidden, true, "init honours the earlier switch");
+    assert.equal(panel.querySelector(".hud-body").children[0], instruments,
+      "the instruments are still built, only out of sight");
+  } finally {
+    Corvus.hudPanel.setShown(true);
+  }
+  assert.equal(panel.hidden, false);
+}
+
 const tests = [
   testInitReparentsInstrumentsInsteadOfRebuilding,
+  testSettingsTakeTheHudOffAndBringItBackWhereItWas,
+  testAHudSwitchedOffBeforeInitStartsHidden,
   testPanelExposesItsFourControls,
   testReadoutsFoldWithoutTakingTheDialsWithThem,
   testAPanelSavedBeforeTheFoldExistedComesBackWithItsReadoutsUp,

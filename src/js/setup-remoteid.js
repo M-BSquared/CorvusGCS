@@ -244,8 +244,8 @@ Corvus.setupRemoteId = (function () {
 
     const page = S.el("div", "setup-page rid-page");
     page.appendChild(S.backButton(state.navigateBack));
-    page.appendChild(S.pageHeader("Remote ID",
-      "The identity this station broadcasts for the aircraft"));
+    const header = S.pageHeader("Remote ID",
+      "The identity this station broadcasts for the aircraft");
 
     const actions = S.el("div", "params-actions");
     const reloadBtn = Corvus.ui.button({
@@ -262,7 +262,7 @@ Corvus.setupRemoteId = (function () {
     actions.appendChild(reloadBtn);
     actions.appendChild(checkBtn);
     actions.appendChild(actionsStatus);
-    page.appendChild(actions);
+    page.appendChild(S.pageHead(header, actions));
 
     // Only the vehicle's own parameters are refused while armed. Everything
     // above them is Corvus's own identity and stays live — see the module

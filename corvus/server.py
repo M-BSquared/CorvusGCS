@@ -5678,12 +5678,16 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
     @route("GET", "/api/firmware/catalog")
     def _api_firmware_catalog(self) -> None:
-        """PX4 releases and their flashable boards, plus what is already cached.
+        """PX4 and ArduPilot releases and their flashable boards, plus the cache.
 
         Served from the on-disk cache unless ``?refresh=1``, so opening the page
         in the field is instant and needs no network. A failed refresh returns
         200 with the cached list and a non-empty ``error`` — going blank because
         there is no internet is exactly the wrong answer for this app.
+
+        ``detected`` is the board on the USB port per stack, and ``suggested``
+        the stack and ArduPilot vehicle of the connected aircraft: what the page
+        opens on, never what it flashes without being told.
         """
         if self.flash is None or getattr(self.flash, "catalog", None) is None:
             self._send_json({"releases": [], "cached": [], "error":
@@ -5694,30 +5698,47 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         try:
             data = self.flash.catalog.catalog(refresh=refresh)
             data["detected"] = self._detect_connected_board(data.get("releases") or [])
+            data["suggested"] = self._suggested_firmware()
             self._send_json(data)
         except Exception:  # noqa: BLE001 - a catalogue failure must not 500
             logger.exception("firmware catalogue failed")
             self._send_json({"releases": [], "cached": [],
                              "error": "firmware catalogue failed", "dir": "",
-                             "detected": None})
+                             "detected": {"px4": None, "ardupilot": None},
+                             "suggested": {"stack": "", "vehicle": ""}})
 
-    def _detect_connected_board(self, releases: list) -> dict | None:
-        """Which board is plugged in, matched against the release build targets.
+    def _detect_connected_board(self, releases: list) -> dict:
+        """Which board is plugged in, per stack, matched against the catalogue.
 
-        Matched against the newest stable release's target list because a build
-        target keeps its name across releases, so the answer is valid whichever
-        release the operator then picks. A suggestion only — it preselects, it
-        does not decide.
+        A suggestion only — it preselects, it does not decide.
         """
+        from .firmware_catalog import detect_boards
+        nothing: dict = {"px4": None, "ardupilot": None}
         if self.mavlink is None or not releases:
-            return None
+            return nothing
         try:
-            from .firmware_catalog import detect_board
-            stable = next((r for r in releases if not r.get("prerelease")), releases[0])
-            return detect_board(self.mavlink.board_identity(), stable.get("boards") or [])
+            return detect_boards(self.mavlink.board_identity(), releases)
         except Exception:  # noqa: BLE001 - detection is a convenience, never a gate
             logger.debug("board detection failed", exc_info=True)
-            return None
+            return nothing
+
+    def _suggested_firmware(self) -> dict:
+        """The connected aircraft's stack and ArduPilot vehicle, or blanks.
+
+        The vehicle is offered whichever stack is flying now: a quad moving from
+        PX4 to ArduPilot wants ArduCopter just as much as one already on it.
+        """
+        from .ardupilot_firmware import vehicle_for_mav_type
+        out = {"stack": "", "vehicle": ""}
+        if self.mavlink is None:
+            return out
+        try:
+            stack = str(getattr(self.mavlink, "stack", "") or "")
+            out["stack"] = stack if stack in ("px4", "ardupilot") else ""
+            out["vehicle"] = vehicle_for_mav_type(getattr(self.mavlink, "vehicle_type_id", 0))
+        except Exception:  # noqa: BLE001 - a default is a convenience, never a gate
+            logger.debug("firmware suggestion failed", exc_info=True)
+        return out
 
     @route("POST", "/api/firmware/flash")
     def _api_firmware_flash(self, payload: dict) -> None:
@@ -8318,6 +8339,10 @@ class CorvusServer(socketserver.ThreadingTCPServer):
         stopping = getattr(self, "stopping", None)
         if stopping is not None:
             stopping.set()
+        # The watcher re-dials the bridge on its own, so a caller that only has
+        # the server must not be left with it running. Joining it twice (the
+        # launchers' stop_backend did already) is harmless.
+        stop_autoconnect_watcher(self)
         downloader = getattr(self, "tile_downloader", None)
         if downloader is not None:
             try:

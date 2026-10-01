@@ -637,10 +637,8 @@ async function testEveryFormPartCarriesTheSharedBaseClass() {
     ["pform-field", "motors-field"],
     ["pform-field-label", "motors-field-label"],
     ["pform-field-control", "motors-field-control"],
-    ["pform-unit", "motors-unit"],
     ["pform-select", "motors-select"],
     ["pform-input", "motors-input"],
-    ["pform-field-hint", "motors-field-hint"],
   ];
   for (const [base, modifier] of pairs) {
     const found = findByClass(container, base);
@@ -648,6 +646,22 @@ async function testEveryFormPartCarriesTheSharedBaseClass() {
     assert.ok(found.every((e) => e.className.split(/\s+/).includes(modifier)),
       `every .${base} also carries .${modifier}`);
   }
+}
+
+// The forms on this page share rows with each other, so a field's hint sits
+// behind an icon beside its label instead of a paragraph under the control.
+async function testMotorsFieldHintsSitBehindAnIcon() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+
+  assert.equal(findByClass(container, "pform-field-hint").length, 0,
+    "no hint is printed under a control");
+  const row = findByDataset(findOneByClass(container, "motors-airframe-card"),
+    "param", "CA_ROTOR_COUNT").filter((e) => e.className.includes("pform-field"))[0];
+  const labelRow = findOneByClass(row, "pform-label-row");
+  assert.ok(labelRow, "the hinted field's label carries an info icon");
+  assert.equal(textOf(findOneByClass(labelRow, "motors-field-label")), "Motor count");
+  assert.ok(findOneByClass(labelRow, "ui-info"), "the hint is one hover away");
 }
 
 // The schema's own bounds are enforced before the write leaves the browser.
@@ -772,24 +786,64 @@ async function testAnUnassignedMotorIsMarkedOnTheDrawing() {
   assert.equal(findByClass(container, "motors-node-output")[1].textContent, "unassigned");
 }
 
-async function testClickingAMotorSelectsItAndOpensItsPanel() {
+/** The table row for one motor number. */
+function motorRow(container, number) {
+  return findByDataset(container, "motorRow", String(number))[0];
+}
+
+/** The output list in one motor's row. */
+function outputSelect(container, number) {
+  return findOneByClass(motorRow(container, number), "motors-output-select");
+}
+
+// Every motor is a row of its own, so comparing two is a glance down a column
+// rather than a click on each and a memory of the first.
+async function testEveryMotorsParametersAreOnScreenAtOnce() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+
+  const rows = findByClass(container, "motors-row");
+  assert.deepEqual(rows.map((r) => r.dataset.motorRow), ["1", "2", "3", "4"]);
+  for (const [number, param] of [[1, "CA_ROTOR0_PX"], [3, "CA_ROTOR2_PX"]]) {
+    assert.ok(findByDataset(motorRow(container, number), "param", param).length,
+      `motor ${number}'s position is in its own row`);
+  }
+  assert.deepEqual(rows.map((r) => findOneByClass(r, "motors-output-select").value),
+    ["MAIN:1", "MAIN:2", "MAIN:3", "MAIN:4"], "each row shows the pin its motor is on");
+
+  // A field only motor 1 has leaves an empty cell in the other rows, so the
+  // columns stay aligned.
+  assert.ok(findByDataset(motorRow(container, 1), "param", "CA_ROTOR0_KM").length);
+  assert.ok(findOneByClass(motorRow(container, 2), "motors-cell-none"),
+    "motor 2 has no spin field, and its cell says so");
+  const heads = findByClass(container, "motors-th").map(textOf);
+  assert.deepEqual(heads, ["Motor", "Output", "Xm", "Spin"],
+    "one column per field, with its unit");
+}
+
+// The row and the disc on the drawing are one motor: selecting either marks
+// both, and it is the one the motor test spins.
+async function testSelectingAMotorMarksItsRowAndItsDisc() {
   const fake = makeFakeTelemetry();
   const container = await openMotors(fake);
 
   assert.ok(motorNode(container, 1).className.includes("selected"),
     "the first motor is selected on open");
-  assert.equal(findOneByClass(container, "motors-panel-title").textContent, "Motor 1");
+  assert.ok(motorRow(container, 1).className.includes("selected"));
 
   fire(motorNode(container, 3), "click");
   assert.ok(motorNode(container, 3).className.includes("selected"), "motor 3 selected");
+  assert.ok(motorRow(container, 3).className.includes("selected"), "and so is its row");
   assert.ok(!motorNode(container, 1).className.includes("selected"), "motor 1 deselected");
-  assert.equal(findOneByClass(container, "motors-panel-title").textContent, "Motor 3");
-  assert.equal(findOneByClass(container, "motors-panel-sub").textContent, "wired to MAIN 3");
-  // The panel shows THAT motor's parameters, not the previous one's.
+  assert.ok(!motorRow(container, 1).className.includes("selected"));
+
+  fire(motorRow(container, 2), "click");
+  assert.ok(motorNode(container, 2).className.includes("selected"),
+    "a click in the table selects the motor on the drawing");
+  assert.ok(textOf(buttonByLabel(container, "Spin")).includes("Motor 2"),
+    "and the test spins that one");
   assert.ok(findByDataset(container, "param", "CA_ROTOR2_PX").length,
-    "the panel shows motor 3's position parameter");
-  assert.equal(findByDataset(container, "param", "CA_ROTOR0_PX").length, 0,
-    "motor 1's parameter is gone from the panel");
+    "selecting redraws nothing in the table: every row is still there");
 }
 
 async function testAMotorCanBeSelectedFromTheKeyboard() {
@@ -808,38 +862,34 @@ async function testAMotorCanBeSelectedFromTheKeyboard() {
 }
 
 // Assignment is the point of clicking a motor: pick the pin it is plugged into.
-async function testAssigningTheSelectedMotorPostsBankAndPin() {
+async function testAssigningAMotorPostsBankAndPin() {
   const fake = makeFakeTelemetry();
   const container = await openMotors(fake);
 
-  const assign = findOneByClass(container, "motors-assign");
-  const [bank, pin] = findByTag(assign, "select");
-  assert.equal(bank.value, "MAIN", "the bank shows where motor 1 is wired");
-  assert.equal(pin.value, "1", "the pin shows where motor 1 is wired");
+  const pin = outputSelect(container, 3);
+  assert.equal(pin.value, "MAIN:3", "the list shows where motor 3 is wired");
 
-  pin.value = "5";
+  pin.value = "MAIN:5";
   fire(pin, "change");
   await flushMicrotasks();
 
   const posts = fake.postCalls.filter((c) => c.url === "/api/motors/assign");
   assert.equal(posts.length, 1);
-  assert.deepEqual(posts[0].payload, { motor: 1, bank: "MAIN", pin: 5 });
+  assert.deepEqual(posts[0].payload, { motor: 3, bank: "MAIN", pin: 5 });
 }
 
-async function testTheOutputBankCanBeChangedToAux() {
+// Every bank the board has is in the one list, so moving a motor to AUX is a
+// single choice rather than a bank and then a pin.
+async function testAnAuxPinIsOfferedInTheSameList() {
   const fake = makeFakeTelemetry();
   const container = await openMotors(fake);
 
-  const [bank, pin] = findByTag(findOneByClass(container, "motors-assign"), "select");
-  bank.value = "AUX";
-  fire(bank, "change");
-  // Switching bank alone assigns nothing — it re-filters the pin list.
-  assert.equal(fake.postCalls.filter((c) => c.url === "/api/motors/assign").length, 0,
-    "changing the bank does not move the motor on its own");
-  const labels = findByTag(pin, "option").map((o) => o.textContent);
-  assert.deepEqual(labels, ["Choose a pin…", "AUX 1"], "the pin list follows the bank");
+  const pin = outputSelect(container, 1);
+  const values = findByTag(pin, "option").map((o) => o.value);
+  assert.equal(values[0], "", "Unassigned comes first");
+  assert.ok(values.includes("MAIN:6") && values.includes("AUX:1"), "both banks are listed");
 
-  pin.value = "1";
+  pin.value = "AUX:1";
   fire(pin, "change");
   await flushMicrotasks();
   assert.deepEqual(
@@ -851,8 +901,7 @@ async function testAPinAlreadyDrivingSomethingSaysSoInTheList() {
   const fake = makeFakeTelemetry();
   const container = await openMotors(fake);
 
-  const [, pin] = findByTag(findOneByClass(container, "motors-assign"), "select");
-  const labels = findByTag(pin, "option").map((o) => o.textContent);
+  const labels = findByTag(outputSelect(container, 1), "option").map((o) => o.textContent);
   assert.ok(labels.includes("MAIN 2 (Motor 2)"),
     "a taken pin names what is on it, so a swap is a decision not a surprise");
   assert.ok(labels.includes("MAIN 1"), "the motor's own pin is not marked as taken");
@@ -872,7 +921,7 @@ async function testMotorsCheckValuesConfirmsAnOutputLimitAndRedrawsFresh() {
   const check = findOneByClass(container, "motors-check");
   assert.ok(check && !check.disabled, "Check values is offered once the motors are read");
 
-  const input = findByDataset(findOneByClass(container, "motors-panel"), "param", "PWM_MAIN_MIN1")
+  const input = findByDataset(motorRow(container, 1), "param", "PWM_MAIN_MIN1")
     .filter((e) => e.tagName === "INPUT")[0];
   input.value = "1100";
   fire(input, "change");
@@ -902,34 +951,55 @@ async function testTheMotorCountIsKeptForTheCheck() {
   assert.deepEqual(verify.payload.params, [{ name: "CA_ROTOR_COUNT", value: 5 }]);
 }
 
-async function testTheSelectedMotorShowsTheLimitsOfItsOwnPin() {
+async function testEachMotorRowShowsTheLimitsOfItsOwnPin() {
   const fake = makeFakeTelemetry();
   const doc = motorsDoc();
   doc.motors[0].output_fields = [
     { param: "PWM_MAIN_MIN1", label: "Minimum", kind: "number", value: 1100, unit: "us" },
     { param: "PWM_MAIN_DIS1", label: "Disarmed", kind: "number", value: 900, unit: "us" },
   ];
+  doc.motors[2].output_fields = [
+    { param: "PWM_MAIN_MIN3", label: "Minimum", kind: "number", value: 1050, unit: "us" },
+  ];
   const container = await openMotors(fake, doc);
 
-  const panel = findOneByClass(container, "motors-panel");
-  const head = findOneByClass(panel, "motors-output-head");
-  assert.ok(head, "a motor on a pin with limits gets its own limits block");
-  assert.equal(textOf(head), "Output limits of MAIN 1");
-  const params = findByDataset(panel, "param", "PWM_MAIN_MIN1");
-  assert.ok(params.length, "the per-pin minimum is an editable field");
+  const group = findOneByClass(container, "motors-th-group");
+  assert.equal(textOf(group), "Output pin limits", "the limits are headed as the pin's");
+  assert.equal(group.getAttribute("colspan"), "2", "over both limit columns");
+  assert.ok(findByDataset(motorRow(container, 1), "param", "PWM_MAIN_MIN1").length,
+    "motor 1's row holds its pin's minimum");
+  assert.ok(findByDataset(motorRow(container, 3), "param", "PWM_MAIN_MIN3").length,
+    "motor 3's row holds its own pin's minimum, in the same column");
+  // Motor 2's pin reports no limits: its cells are empty, not missing.
+  const cells = findByClass(motorRow(container, 2), "motors-cell-none");
+  assert.ok(cells.length >= 2, "motor 2 has empty limit cells");
+}
 
-  // Motor 2 has no limits in this doc: no empty heading is drawn for it.
-  fire(motorNode(container, 2), "click");
-  assert.equal(findOneByClass(findOneByClass(container, "motors-panel"), "motors-output-head"), null);
+// A motor on no pin has no limits to show, whatever its fields say.
+async function testAnUnassignedMotorShowsNoPinLimits() {
+  const fake = makeFakeTelemetry();
+  const doc = motorsDoc();
+  doc.motors[0].output_fields = [
+    { param: "PWM_MAIN_MIN1", label: "Minimum", kind: "number", value: 1100, unit: "us" },
+  ];
+  doc.motors[1].output = null;
+  doc.motors[1].output_fields = [
+    { param: "PWM_MAIN_MIN2", label: "Minimum", kind: "number", value: 1100, unit: "us" },
+  ];
+  const container = await openMotors(fake, doc);
+  assert.equal(findByDataset(container, "param", "PWM_MAIN_MIN2").length, 0);
+  assert.equal(outputSelect(container, 2).value, "", "the list says Unassigned");
+  assert.ok(motorRow(container, 2).className.includes("unassigned"),
+    "and the row is flagged like the disc");
 }
 
 async function testUnassigningAMotorPostsANullOutput() {
   const fake = makeFakeTelemetry();
   const container = await openMotors(fake);
 
-  const [bank] = findByTag(findOneByClass(container, "motors-assign"), "select");
-  bank.value = "";
-  fire(bank, "change");
+  const pin = outputSelect(container, 1);
+  pin.value = "";
+  fire(pin, "change");
   await flushMicrotasks();
 
   assert.deepEqual(
@@ -941,8 +1011,8 @@ async function testARefusedAssignmentIsReportedAndNotShownAsApplied() {
   const fake = makeFakeTelemetry({ postReject: { "/api/motors/assign": "MAIN 5 drives Servo 1" } });
   const container = await openMotors(fake);
 
-  const [, pin] = findByTag(findOneByClass(container, "motors-assign"), "select");
-  pin.value = "5";
+  const pin = outputSelect(container, 1);
+  pin.value = "MAIN:5";
   fire(pin, "change");
   await flushMicrotasks();
   await flushMicrotasks();
@@ -950,8 +1020,7 @@ async function testARefusedAssignmentIsReportedAndNotShownAsApplied() {
   const note = dispatched.filter((e) => e.type === "corvus:notification").pop();
   assert.equal(note.detail.level, "critical");
   assert.ok(note.detail.message.includes("Servo 1"), "the reason reaches the operator");
-  assert.equal(findOneByClass(container, "motors-panel-sub").textContent, "wired to MAIN 1",
-    "the panel still shows where the motor actually is");
+  assert.equal(pin.value, "MAIN:1", "the list goes back to where the motor actually is");
 }
 
 // --- motor test: the only control on this page that moves hardware ---
@@ -1088,6 +1157,16 @@ async function testTheMotorCountCannotBeDrivenOutOfRange() {
   const c2 = await openMotors(fake, single);
   const remove = buttonByLabel(c2, "Remove last");
   assert.ok(remove.disabled, "the last motor cannot be removed");
+}
+
+// ArduPilot's motor count follows FRAME_CLASS: there is no count parameter
+// for the buttons to write, so they are not offered.
+async function testAFixedMotorCountOffersNoAddOrRemove() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake, motorsDoc({ fixed_motor_count: true }));
+  assert.equal(buttonByLabel(container, "Add motor"), undefined);
+  assert.equal(buttonByLabel(container, "Remove last"), undefined);
+  assert.equal(findByClass(container, "motors-row").length, 4, "the motors are still listed");
 }
 
 // --- generic fields, still ---
@@ -1356,7 +1435,13 @@ async function testMovingTheGpsWritesItsParameterAndRedraws() {
     sensors: sensorsFor([0, 0, 0], [0, 0, 0]),
     position_hint: "Metres from the centre of gravity.",
   }));
-  assert.ok(findOneByClass(container, "motors-sensor-card"), "the positions have a card");
+  const block = findOneByClass(findOneByClass(container, "motors-airframe-card"), "motors-sensors");
+  assert.ok(block, "the positions sit on the airframe card, under the drawing they mark");
+  const rows = findByClass(block, "motors-sensor-row");
+  assert.deepEqual(rows.map((r) => r.dataset.sensorRow), ["fc", "gps1"], "one row per sensor");
+  assert.deepEqual(findByClass(block, "motors-th").map(textOf), ["", "Forwardm", "Rightm", "Downm"],
+    "one column per axis");
+  assert.ok(findByDataset(rows[1], "param", "EKF2_GPS_POS_Z").length, "the GPS row holds its height");
   const before = fake.requests.filter((u) => u === "/api/motors").length;
   const input = findByDataset(container, "param", "EKF2_GPS_POS_Z")
     .filter((e) => e.tagName === "INPUT")[0];
@@ -1371,6 +1456,18 @@ async function testMovingTheGpsWritesItsParameterAndRedraws() {
 
 // ArduPilot keeps a position per IMU. One field moves the IMUs of the board
 // together, and the check afterwards covers all of them.
+// A firmware with sensor offsets but no motor geometry still shows them.
+async function testSensorsWithoutMotorsGetACardOfTheirOwn() {
+  const fake = makeFakeTelemetry();
+  const doc = motorsDoc({ sensors: sensorsFor([0, 0, 0], [0, 0, 0]) });
+  doc.motors = [];
+  const container = await openMotors(fake, doc);
+  assert.equal(findOneByClass(container, "motors-airframe-card"), null);
+  const card = findOneByClass(container, "motors-sensor-card");
+  assert.ok(card && findOneByClass(card, "motors-sensors"), "the positions have a card");
+  assert.ok(findByDataset(card, "param", "EKF2_IMU_POS_X").length);
+}
+
 async function testAPositionFieldAlsoWritesTheOtherImus() {
   const fake = makeFakeTelemetry();
   const sensors = sensorsFor([0, 0, 0], [0, 0, 0]);
@@ -1477,6 +1574,52 @@ async function testMotorsDisconnectedRendersAnExplanationNotAnError() {
   assert.ok(findOneByClass(container, "params-desc"), "an explanation is shown instead");
   assert.ok(findOneByClass(container, "params-actions-status").className.includes("err"),
     "the status line reports the failure");
+}
+
+// The actions share the title's row instead of a row of their own.
+async function testMotorsActionsSitInTheTitleRow() {
+  const fake = makeFakeTelemetry();
+  const container = await openMotors(fake);
+  const head = findOneByClass(container, "setup-head");
+  assert.ok(head, "the page has a title row");
+  assert.equal(textOf(findOneByClass(head, "page-title")), "Motors");
+  const actions = findOneByClass(head, "params-actions");
+  assert.ok(buttonByLabel(actions, "Reload") && findOneByClass(actions, "motors-check"));
+  assert.ok(findOneByClass(actions, "params-actions-status"), "the status sits beside them");
+}
+
+// With no link, a failed read is a state that ends when the vehicle appears,
+// not an error in what was read: a chip, and the page reads itself again the
+// moment the link is back.
+async function testMotorsWithoutALinkShowsAChipAndReloadsWhenTheLinkIsBack() {
+  const fake = makeFakeTelemetry({ state: { connected: false, armed: false } });
+  const container = await openMotors(fake, {
+    connected: false, error: "not connected", sections: [], geometry: [], motors: [],
+    outputs: [], banks: [], airframe_family: "multirotor", airframe_preset: null,
+    rotor_count: 0, received: 0,
+  });
+  const status = findOneByClass(container, "params-actions-status");
+  assert.ok(status.className.includes("offline"));
+  const chip = findOneByClass(status, "calib-ready-chip");
+  assert.ok(chip, "the missing link is a chip");
+  assert.equal(chip.dataset.state, "bad");
+  assert.equal(textOf(chip), "Not connected");
+  assert.equal(status.title, "not connected", "the read's own words stay on the chip");
+
+  const reads = () => fake.requests.filter((u) => u === "/api/motors").length;
+  const before = reads();
+  fake.getSubCb()({ connected: false, armed: false });
+  assert.equal(reads(), before, "nothing is read while the link is still down");
+
+  fake.setResponse("/api/motors", motorsDoc());
+  fake.setState({ connected: true, armed: false });
+  fake.getSubCb()({ connected: true, armed: false });
+  assert.equal(reads(), before + 1, "the page reads itself when the link comes up");
+  await flushMicrotasks();
+  assert.equal(findByClass(container, "motors-row").length, 4, "and the motors appear");
+  fake.getSubCb()({ connected: true, armed: false });
+  assert.equal(reads(), before + 1, "once, not on every frame");
+  assert.ok(!findOneByClass(container, "params-actions-status").className.includes("offline"));
 }
 
 async function testMotorsArmedGatingDisablesEveryControl() {
@@ -2091,8 +2234,24 @@ async function testTuningDisconnectedRendersAnExplanationNotAnError() {
 
   assert.equal(findByClass(container, "tune-tab").length, 0, "no tabs to offer");
   assert.ok(findOneByClass(container, "params-desc"), "an explanation is shown instead");
-  assert.ok(findOneByClass(container, "params-actions-status").className.includes("err"),
-    "the status line reports the failure");
+  const status = findOneByClass(container, "params-actions-status");
+  assert.ok(status.className.includes("offline"), "the status knows the link is missing");
+  assert.equal(findByClass(status, "calib-ready-chip").length, 0,
+    "and adds no second chip: the page's own link chip already says so");
+  const link = findByClass(container, "calib-ready-chip").filter((c) => c.dataset.key === "link")[0];
+  assert.equal(link.dataset.state, "bad");
+  assert.equal(textOf(link), "No link");
+}
+
+// Tuning's readiness chips sit in the title row with the actions.
+async function testTuningChipsSitInTheTitleRow() {
+  const fake = makeFakeTelemetry();
+  const container = await openTuning(fake);
+  const head = findOneByClass(container, "setup-head");
+  assert.ok(findOneByClass(head, "page-header"), "the title is in the row");
+  const actions = findOneByClass(head, "params-actions");
+  assert.ok(findOneByClass(actions, "tune-ready"), "the chips sit with the actions");
+  assert.ok(buttonByLabel(actions, "Reload"));
 }
 
 // ===========================================================================
@@ -2594,7 +2753,7 @@ async function testParametersTeardownOnReRender() {
 // PART G — Firmware sub-page (Corvus.setupFirmware)
 // ===========================================================================
 //
-// The firmware page flashes PX4 firmware over a direct USB connection only.
+// The firmware page flashes PX4 or ArduPilot firmware over a direct USB connection only.
 // It renders a Connection card (transport + the USB-only gate banner + an
 // armed banner) and a Firmware File card (file input + Upload + progress +
 // flash log). The backend gate (can_flash) drives the UI; live telemetry's
@@ -2972,6 +3131,154 @@ async function testFirmwareCatalogOfflineKeepsThePageUsable() {
     "the local file picker is still available offline");
 }
 
+// Both stacks in one catalogue, as the backend serves it: a release's `vendor`
+// is its flight stack, an ArduPilot release names the vehicle it is for, and
+// every board carries the key that names it in each release of its stack.
+function apRelease(vehicle, channel, prerelease) {
+  const stem = { Copter: "arducopter", Heli: "arducopter-heli", Plane: "arduplane" }[vehicle];
+  const label = { Copter: "ArduCopter", Heli: "ArduCopter Heli", Plane: "ArduPlane" }[vehicle];
+  return {
+    tag: "ardupilot:" + vehicle + "/" + channel,
+    name: label + " (" + channel + ")",
+    prerelease, vendor: "ardupilot", vehicle,
+    boards: ["CubeOrange", "Pixhawk6X"].map((b) => ({
+      name: stem + "-" + channel + "-" + b + ".apj", key: b, board: b, label: b, title: b,
+      size: 0, cached: false, vendor: b === "CubeOrange" ? "CubePilot" : "Pixhawk",
+      variant: "default", peripheral: false,
+    })),
+  };
+}
+
+function twoStackCatalog(extra) {
+  return Object.assign({
+    dir: "/home/pilot/.corvus/firmware",
+    error: "",
+    cached: [],
+    releases: FAKE_CATALOG.releases.map((r) => Object.assign({ vendor: "px4" }, r)).concat([
+      apRelease("Copter", "beta", true),
+      apRelease("Copter", "stable", false),
+      apRelease("Heli", "stable", false),
+      apRelease("Plane", "stable", false),
+    ]),
+  }, extra || {});
+}
+
+function firmwareStackButton(container, id) {
+  const btn = findByClass(container, "firmware-stack-btn").find((b) => b.dataset.stack === id);
+  assert.ok(btn, "flight stack button " + id + " present");
+  return btn;
+}
+
+async function testFirmwareListsOnlyTheChosenStacksReleases() {
+  const { container } = await renderFirmware({ catalog: twoStackCatalog() });
+  await flushMicrotasks();
+
+  // PX4 and ArduPilot builds for the same board are different images under
+  // different names. One list holding both is how a Cube gets the wrong one.
+  assert.equal(firmwareStackButton(container, "px4")._attrs["aria-pressed"], "true",
+    "PX4 is the stack a page with no aircraft opens on");
+  assert.deepEqual(optionValues(firmwareRelease(container)), ["v1.18.0-beta1", "v1.17.0"],
+    "only PX4 releases are listed under PX4");
+
+  fire(firmwareStackButton(container, "ardupilot"), "click");
+  const release = firmwareRelease(container);
+  assert.ok(optionValues(release).every((v) => v.indexOf("ardupilot:") === 0),
+    "only ArduPilot releases are listed under ArduPilot");
+  assert.equal(release.value, "ardupilot:Copter/stable",
+    "the first stable build is preselected, never the beta listed before it");
+  assert.equal(optionLabels(release)[optionValues(release).indexOf("ardupilot:Copter/stable")],
+    "ArduCopter (stable)", "an ArduPilot release reads as its name, not its routing tag");
+  assert.deepEqual(optionValues(firmwareVendorSelect(container)), ["", "CubePilot", "Pixhawk"],
+    "and the manufacturers are that release's");
+}
+
+async function testFirmwareFlashesAnArduPilotBuildByReleaseAndBoard() {
+  const { container, fake } = await renderFirmware({ catalog: twoStackCatalog() });
+  await flushMicrotasks();
+
+  fire(firmwareStackButton(container, "ardupilot"), "click");
+  pickFirmwareBoard(container, "CubePilot", "arducopter-stable-CubeOrange.apj");
+  const uploadBtn = findByClass(container, "params-download-btn")[0];
+  assert.equal(uploadBtn.disabled, false, "flash enabled once an ArduPilot board is picked");
+  fire(uploadBtn, "click");
+  await flushMicrotasks();
+
+  const call = fake.postCalls.find((c) => c.url === "/api/firmware/flash");
+  assert.deepEqual(call.payload, {
+    release: "ardupilot:Copter/stable", board: "arducopter-stable-CubeOrange.apj",
+  }, "the same request as a PX4 flash: a release and a board, never a URL");
+}
+
+async function testFirmwareOpensOnTheConnectedAircraftsStackAndVehicle() {
+  const { container } = await renderFirmware({
+    catalog: twoStackCatalog({ suggested: { stack: "ardupilot", vehicle: "Plane" } }),
+  });
+  await flushMicrotasks();
+
+  // Re-flashing a plane must not start from the copter build just because
+  // ArduCopter sorts first.
+  assert.equal(firmwareStackButton(container, "ardupilot")._attrs["aria-pressed"], "true",
+    "the page opens on the stack the aircraft runs");
+  assert.equal(firmwareRelease(container).value, "ardupilot:Plane/stable",
+    "and on the firmware for its vehicle");
+}
+
+async function testFirmwareKeepsTheBoardAcrossArduPilotVehicles() {
+  const { container } = await renderFirmware({ catalog: twoStackCatalog() });
+  await flushMicrotasks();
+
+  fire(firmwareStackButton(container, "ardupilot"), "click");
+  pickFirmwareBoard(container, "CubePilot", "arducopter-stable-CubeOrange.apj");
+  const release = firmwareRelease(container);
+  release.value = "ardupilot:Heli/stable";
+  fire(release, "change");
+  // Every ArduPilot build is named after its vehicle, so matching by file name
+  // would drop the board the operator just chose.
+  assert.equal(firmwareBoardSelect(container).value, "arducopter-heli-stable-CubeOrange.apj",
+    "the same board, in the helicopter build");
+}
+
+async function testFirmwareDetectionFollowsTheStack() {
+  const { container } = await renderFirmware({
+    catalog: twoStackCatalog({
+      detected: {
+        px4: { name: "cubepilot_cubeorange_default.px4", key: "cubepilot_cubeorange_default.px4",
+          label: "Cube Orange", source: "USB descriptor" },
+        ardupilot: { name: "arducopter-stable-Pixhawk6X.apj", key: "Pixhawk6X",
+          label: "Pixhawk6X", source: "USB descriptor" },
+      },
+    }),
+  });
+  await flushMicrotasks();
+
+  assert.equal(firmwareBoardSelect(container).value, "cubepilot_cubeorange_default.px4",
+    "PX4 lands on the PX4 build of the detected board");
+  fire(firmwareStackButton(container, "ardupilot"), "click");
+  assert.equal(firmwareBoardSelect(container).value, "arducopter-stable-Pixhawk6X.apj",
+    "ArduPilot lands on the ArduPilot build of the board it detected");
+  const note = findOneByClass(container, "firmware-detected");
+  assert.ok(!note.hidden, "the detection is stated");
+  assert.match(note.children.map((c) => c.textContent).join(""), /Pixhawk6X/,
+    "and the note names that board");
+}
+
+async function testFirmwareSaysWhatToDoWhenOneStackHasNoList() {
+  const { container } = await renderFirmware({ catalog: FAKE_CATALOG });
+  await flushMicrotasks();
+
+  // A laptop that fetched the PX4 list before ArduPilot's was ever read. The
+  // page must say that the list is missing, not that ArduPilot has no firmware.
+  fire(firmwareStackButton(container, "ardupilot"), "click");
+  const note = findOneByClass(container, "firmware-catalog-note");
+  assert.match(note.textContent, /ArduPilot/, "the note names the stack");
+  assert.match(note.textContent, /Refresh/, "and says how to get the list");
+  assert.match(note.textContent, /\.apj/, "and what file to use instead");
+  assert.equal(firmwareRelease(container).disabled, true, "nothing to pick meanwhile");
+
+  fire(firmwareStackButton(container, "px4"), "click");
+  assert.equal(firmwareRelease(container).value, "v1.17.0", "PX4 is untouched by it");
+}
+
 async function testDownloadingCountsAsBusy() {
   const { container } = await renderFirmware({
     catalog: FAKE_CATALOG,
@@ -3141,18 +3448,21 @@ async function run() {
   await withReset(testAPusherIsDrawnWithAThrustArrowAndNoBoom);
   await withReset(testAFirmwareWithoutRotorAxesDrawsPlainDiscs);
   await withReset(testEveryFormPartCarriesTheSharedBaseClass);
+  await withReset(testMotorsFieldHintsSitBehindAnIcon);
   await withReset(testATypedValueOutsideTheSchemaBoundsIsRefused);
   await withReset(testMotorsDrawsTheAirframeFromTheRealPositions);
   await withReset(testTheDiagramIsDrawnToScale);
   await withReset(testAGeometryWithNoPositionsIsSpreadOutAndSaysSo);
   await withReset(testEachMotorShowsItsOutputAndSpinOnTheDrawing);
   await withReset(testAnUnassignedMotorIsMarkedOnTheDrawing);
-  await withReset(testClickingAMotorSelectsItAndOpensItsPanel);
+  await withReset(testEveryMotorsParametersAreOnScreenAtOnce);
+  await withReset(testSelectingAMotorMarksItsRowAndItsDisc);
   await withReset(testAMotorCanBeSelectedFromTheKeyboard);
-  await withReset(testAssigningTheSelectedMotorPostsBankAndPin);
-  await withReset(testTheOutputBankCanBeChangedToAux);
+  await withReset(testAssigningAMotorPostsBankAndPin);
+  await withReset(testAnAuxPinIsOfferedInTheSameList);
   await withReset(testAPinAlreadyDrivingSomethingSaysSoInTheList);
-  await withReset(testTheSelectedMotorShowsTheLimitsOfItsOwnPin);
+  await withReset(testEachMotorRowShowsTheLimitsOfItsOwnPin);
+  await withReset(testAnUnassignedMotorShowsNoPinLimits);
   await withReset(testMotorsCheckValuesConfirmsAnOutputLimitAndRedrawsFresh);
   await withReset(testTheMotorCountIsKeptForTheCheck);
   await withReset(testUnassigningAMotorPostsANullOutput);
@@ -3164,6 +3474,7 @@ async function run() {
   await withReset(testLeavingThePageStopsARunningMotor);
   await withReset(testAddingAMotorWritesTheRotorCountAndRedraws);
   await withReset(testTheMotorCountCannotBeDrivenOutOfRange);
+  await withReset(testAFixedMotorCountOffersNoAddOrRemove);
   await withReset(testAProtocolFieldWriteGoesThroughTheParameterEndpoint);
   await withReset(testMotorsNumberFieldAppliesOnChangeAndRejectsGarbage);
   await withReset(testMotorsSpinFlipKeepsTheMomentMagnitude);
@@ -3171,6 +3482,7 @@ async function run() {
   await withReset(testAGpsMastPastTheArmsWidensTheView);
   await withReset(testWithNoMotorPositionsTheSensorsKeepOnlyTheirDirection);
   await withReset(testMovingTheGpsWritesItsParameterAndRedraws);
+  await withReset(testSensorsWithoutMotorsGetACardOfTheirOwn);
   await withReset(testAPositionFieldAlsoWritesTheOtherImus);
   await withReset(testTheFrameDiagonalRescalesEveryLiftRotor);
   await withReset(testFrameLengthMovesOnlyTheXAndKeepsTheCentreOfGravityOffset);
@@ -3178,6 +3490,8 @@ async function run() {
   await withReset(testAFrameThatCannotBeScaledSaysWhy);
   await withReset(testTheFrameSizeIsReadOnlyWhileArmed);
   await withReset(testMotorsDisconnectedRendersAnExplanationNotAnError);
+  await withReset(testMotorsActionsSitInTheTitleRow);
+  await withReset(testMotorsWithoutALinkShowsAChipAndReloadsWhenTheLinkIsBack);
   await withReset(testMotorsArmedGatingDisablesEveryControl);
   await withReset(testMotorsTeardownReleasesTheSubscription);
 
@@ -3203,6 +3517,7 @@ async function run() {
   await withReset(testAFirmwareWithoutAnAutotuneOffersNoAutotuneTab);
   await withReset(testGainsAreReadOnlyWhileArmed);
   await withReset(testTuningDisconnectedRendersAnExplanationNotAnError);
+  await withReset(testTuningChipsSitInTheTitleRow);
 
   await withReset(testChartsPlotTheSetpointBesideTheResponse);
   await withReset(testEveryRedrawHandsPlotlyFreshArrays);
@@ -3237,6 +3552,12 @@ async function run() {
   await withReset(testFirmwareRefreshAsksTheBackendToGoToTheNetwork);
   await withReset(testFirmwareFlashPostsReleaseAndBoardNotAUrl);
   await withReset(testFirmwareCatalogOfflineKeepsThePageUsable);
+  await withReset(testFirmwareListsOnlyTheChosenStacksReleases);
+  await withReset(testFirmwareFlashesAnArduPilotBuildByReleaseAndBoard);
+  await withReset(testFirmwareOpensOnTheConnectedAircraftsStackAndVehicle);
+  await withReset(testFirmwareKeepsTheBoardAcrossArduPilotVehicles);
+  await withReset(testFirmwareDetectionFollowsTheStack);
+  await withReset(testFirmwareSaysWhatToDoWhenOneStackHasNoList);
   await withReset(testDownloadingCountsAsBusy);
   await withReset(testFirmwareArmedGateDisablesUploadAndShowsBanner);
   await withReset(testFirmwareUploadCallsFetchAndOpensSse);

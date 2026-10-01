@@ -1935,12 +1935,19 @@ Corvus.ui = (function () {
     the app can call this; it mounts its own stack on <body> the first time it
     is used.
 
-    opts: {level: "info" | "warning" | "critical", title, message, duration}
+    opts: {level: "info" | "warning" | "critical", title, message, duration, onClose}
       level     picks the icon, accent colour and default title/duration.
       title     overrides the default ("Info" / "Warning" / "Error").
-      duration  ms before it auto-dismisses; 0 pins it open (the default for
-                "critical" — an error is the operator's to dismiss). Omit to
-                use the level's default.
+      duration  ms before it auto-dismisses; 0 pins it open. Omit to use the
+                level's default. A critical stands longest, but it goes too:
+                the board and its red badge are what keep an error, and a
+                stack of pinned cards over the map was the operator's to clear
+                by hand, one by one, before they could see the map again.
+      onClose   called once when the toast goes, however it goes.
+
+    At most TOAST_STACK_MAX stand at once. A new one always shows; the one
+    that makes room is the oldest that is not critical, or the oldest of all
+    when every one of them is.
 
     Returns {el, close}.
   */
@@ -1969,13 +1976,21 @@ Corvus.ui = (function () {
     const rect = unscaledRect(popover, uiScale());
     stack.style.top = rect.height > 0 ? Math.round(rect.bottom + 10) + "px" : "";
   }
+  /* The popover opens, grows and closes after a toast has been placed, and a
+     stack placed for a closed or shorter board then covers its last rows. The
+     board calls this whenever its size changes. */
+  function repositionToasts() {
+    if (toastStack && toastStack.isConnected) repositionToastStack(toastStack);
+  }
   /* The level's icon, default title and default lifetime. The icons are the
      same three the notification board picks from (src/js/topbar.js) — a
      warning may not be a triangle in one place and something else in the
      other. */
   const TOAST_ICON = { info: "info", warning: "triangle-alert", critical: "octagon-alert" };
   const TOAST_TITLE = { info: "Info", warning: "Warning", critical: "Error" };
-  const TOAST_DURATION = { info: 4500, warning: 6000, critical: 0 };
+  const TOAST_DURATION = { info: 4500, warning: 6000, critical: 20000 };
+  const TOAST_STACK_MAX = 3;
+  const standingToasts = [];
 
   function toast(opts) {
     const o = opts || {};
@@ -2021,17 +2036,30 @@ Corvus.ui = (function () {
 
     let closed = false;
     let timer = null;
+    const standing = { level, close: null };
     function close() {
       if (closed) return;
       closed = true;
       if (timer != null) window.clearTimeout(timer);
+      const i = standingToasts.indexOf(standing);
+      if (i >= 0) standingToasts.splice(i, 1);
       el.classList.add("is-leaving");
       window.setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 160);
+      if (typeof o.onClose === "function") {
+        try { o.onClose(); } catch (_e) { /* the caller's bookkeeping, not ours */ }
+      }
     }
+    standing.close = close;
     closeBtn.addEventListener("click", close);
 
     const duration = o.duration != null ? o.duration : TOAST_DURATION[level];
     if (duration > 0) timer = window.setTimeout(close, duration);
+
+    while (standingToasts.length >= TOAST_STACK_MAX) {
+      const victim = standingToasts.find((t) => t.level !== "critical") || standingToasts[0];
+      victim.close();
+    }
+    standingToasts.push(standing);
 
     return { el, close };
   }
@@ -2322,6 +2350,7 @@ Corvus.ui = (function () {
     progress,
     message,
     toast,
+    repositionToasts,
     setBusy,
     setActive,
     fitBar,

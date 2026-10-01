@@ -25,7 +25,7 @@ from typing import Any, TYPE_CHECKING
 from collections.abc import Callable
 
 from .firmware_catalog import FirmwareCatalog
-from .firmware_uploader import FirmwareUploader, parse_firmware
+from .firmware_uploader import FirmwareUploader, parse_firmware_image
 
 if TYPE_CHECKING:  # avoid an import cycle at runtime
     from .mavlink_bridge import MavlinkBridge
@@ -140,7 +140,7 @@ class FlashService:
             return False
         # Parse now so an invalid archive is rejected before we reboot the FC.
         try:
-            image = parse_firmware(firmware_bytes)
+            image, board_id = parse_firmware_image(firmware_bytes)
         except ValueError as exc:
             self.last_error = str(exc)
             return False
@@ -160,7 +160,8 @@ class FlashService:
             self._percent = 0
             self._message = "Preparing to flash…"
             self._worker = threading.Thread(
-                target=self._run, args=(conn, image), name="firmware-flash", daemon=True,
+                target=self._run, args=(conn, image, board_id), name="firmware-flash",
+                daemon=True,
             )
             self._worker.start()
         self._notify_listeners({"state": "flashing", "percent": 0, "message": "Preparing to flash…"})
@@ -229,7 +230,7 @@ class FlashService:
             if self._cancel.is_set():
                 self._set("cancelled", 0, "Download cancelled")
                 return
-            image = parse_firmware(raw)
+            image, board_id = parse_firmware_image(raw)
             if not image:
                 self._set("failed", 0, "empty firmware image")
                 return
@@ -248,7 +249,7 @@ class FlashService:
             self._set("failed", 0, refusal)
             return
         self._set("flashing", 0, "Preparing to flash…")
-        self._run(conn, image)
+        self._run(conn, image, board_id)
 
     def _gate_for_resume(self) -> str | None:
         """The gate, minus the busy check — this job IS the busy one."""
@@ -264,8 +265,12 @@ class FlashService:
     # Worker
     # ------------------------------------------------------------------
 
-    def _run(self, conn: str, image: bytes) -> None:
-        """Upload worker: reboot -> stop bridge -> flash -> (re)connect bridge."""
+    def _run(self, conn: str, image: bytes, board_id: int | None = None) -> None:
+        """Upload worker: reboot -> stop bridge -> flash -> (re)connect bridge.
+
+        *board_id* is the board the image was built for, or None for a raw
+        binary; the uploader checks it against the bootloader before erasing.
+        """
         self._set("flashing", 0, "Rebooting autopilot into bootloader…")
         uploader: FirmwareUploader | None = None
         try:
@@ -284,7 +289,7 @@ class FlashService:
             uploader = FirmwareUploader(on_progress=self._on_uploader_progress, cancel=self._cancel)
             with self._lock:
                 self._uploader = uploader
-            ok = uploader.run(device, image)
+            ok = uploader.run(device, image, board_id=board_id)
             if self._cancel.is_set():
                 self._set("cancelled", self._percent, "Flash cancelled")
             elif ok:

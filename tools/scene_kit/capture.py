@@ -19,9 +19,7 @@ from __future__ import annotations
 
 import json
 import os
-import stat
 import sys
-import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -46,10 +44,10 @@ _RUN = (
 def qt_problem() -> str | None:
     """Why pictures cannot be taken here, or None when they can."""
     try:
-        import PyQt6  # noqa: F401
-        from PyQt6 import QtWebEngineWidgets  # noqa: F401
+        import PySide6  # noqa: F401
+        from PySide6 import QtWebEngineWidgets  # noqa: F401
     except ImportError as exc:
-        return (f"PyQt6 with QtWebEngine is needed to take pictures ({exc}). It is the "
+        return (f"PySide6 with QtWebEngine is needed to take pictures ({exc}). It is the "
                 "desktop app's own dependency group: pip install --group app")
     return None
 
@@ -57,41 +55,18 @@ def qt_problem() -> str | None:
 def _visible_plugins() -> str | None:
     """A plugin folder Qt can list, when the installed one is flagged hidden.
 
-    Qt skips hidden files when it looks for plugins, and on some macOS setups
-    everything under a dot-directory such as ``.venv`` carries the hidden
-    flag, set again by the system after it is cleared. Qt then has no platform
-    plugin at all, and it does not raise: it prints a line and aborts the
-    process. So each plugin is linked into a folder outside the dot-directory
-    and Qt is pointed there. The links resolve to the real files, so the
-    plugins still find their own Qt libraries, and the installation itself is
-    not touched.
+    Under ``.venv`` in an iCloud synced checkout, macOS flags every file
+    hidden, and Qt then has no platform plugin: it prints a line and aborts
+    the process. :mod:`corvus.qt_plugins` links the plugins into a folder Qt
+    can see; the desktop app uses the same.
     """
-    hidden = getattr(stat, "UF_HIDDEN", 0)
-    if not hidden:
-        return None
-    from PyQt6.QtCore import QT_VERSION_STR, QLibraryInfo
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from PySide6.QtCore import QLibraryInfo
 
-    root = Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.PluginsPath))
-    platforms = root / "platforms"
-    try:
-        flagged = any(entry.stat().st_flags & hidden for entry in platforms.iterdir())
-    except OSError:
-        return None
-    if not flagged:
-        return None
-    links = Path(tempfile.gettempdir()) / f"corvus-scene-qt-plugins-{QT_VERSION_STR}"
-    for folder in root.iterdir():
-        if not folder.is_dir():
-            continue
-        (links / folder.name).mkdir(parents=True, exist_ok=True)
-        for plugin in folder.iterdir():
-            link = links / folder.name / plugin.name
-            if not link.is_symlink():
-                try:
-                    link.symlink_to(plugin)
-                except OSError:
-                    continue
-    return str(links)
+    from corvus.qt_plugins import visible_plugin_dir
+
+    return visible_plugin_dir(QLibraryInfo.path(QLibraryInfo.LibraryPath.PluginsPath))
 
 
 class Camera:
@@ -116,10 +91,10 @@ class Camera:
             os.environ["QT_PLUGIN_PATH"] = os.pathsep.join(
                 p for p in (plugins, os.environ.get("QT_PLUGIN_PATH", "")) if p)
 
-        from PyQt6.QtCore import QEventLoop, Qt, QTimer, QUrl
-        from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
-        from PyQt6.QtWebEngineWidgets import QWebEngineView
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtCore import QEventLoop, Qt, QTimer, QUrl
+        from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
+        from PySide6.QtWebEngineWidgets import QWebEngineView
+        from PySide6.QtWidgets import QApplication
 
         self._Qt, self._QTimer, self._QEventLoop, self._QUrl = Qt, QTimer, QEventLoop, QUrl
         self._QWebEnginePage, self._QWebEngineProfile = QWebEnginePage, QWebEngineProfile

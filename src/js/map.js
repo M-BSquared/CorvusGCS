@@ -2692,6 +2692,9 @@ Corvus.map = (function () {
 
     const head = document.createElement("div");
     head.className = "ui-menu-head map-context-head";
+    const pinIcon = Corvus.ui.icon("map-pin", "auto");
+    pinIcon.classList.add("map-context-pin-icon");
+    head.appendChild(pinIcon);
     const coords = document.createElement("span");
     coords.className = "map-context-coords";
     coords.textContent = formatLngLat(point);

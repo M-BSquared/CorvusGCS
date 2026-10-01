@@ -12,8 +12,11 @@ cache, so a rewritten index cannot redirect a flash.
 """
 from __future__ import annotations
 
+import io
 import json
 import pathlib
+import urllib.error
+import urllib.parse
 
 import pytest
 
@@ -225,3 +228,221 @@ def test_a_vendor_prefix_groups_a_board_without_filtering_it() -> None:
     # A board nobody has a prefix for is still listed, under Other.
     assert af.describe_board("SomeNewBoard")["vendor"] == "Other"
     assert af.describe_board("SomeNewBoard")["board"] == "SomeNewBoard"
+
+
+# ---------------------------------------------------------------------------
+# The listing as firmware.ardupilot.org actually serves it
+# ---------------------------------------------------------------------------
+# Every board is linked by its absolute path and without a trailing slash, next
+# to the site navigation and the parent directory. The fixture above is an
+# Apache-style listing; this one is the real shape, and parsing only the first
+# is how the ArduPilot half of the catalogue came back empty from every refresh.
+
+REAL_INDEX = """
+<html><head><title>ArduPilot firmware : /Copter/stable</title></head>
+<a href="/"><img src="https://firmware.ardupilot.org/Tools/Logos/x.png"></a>
+<a href="http://www.ardupilot.org">Home</a> |
+<a href="http://firmware.ardupilot.org/">Firmware</a>
+<a href="http://ardupilot.org/dev/docs/pre-built-binaries.html">guide</a>
+<table>
+<tr><td><img src="/icons/back.gif"></td><td><a href="/Copter"><b>Parent Directory</B> </a></td></tr>
+<tr><td><img src="/icons/folder.gif"></td><td><a href="/Copter/stable/CubeBlack+">CubeBlack+</A></td></tr>
+<tr><td><img src="/icons/folder.gif"></td><td><a href="/Copter/stable/CubeOrange">CubeOrange</A></td></tr>
+<tr><td><img src="/icons/folder.gif"></td><td><a href="/Copter/stable/CubeOrange-heli">CubeOrange-heli</A></td></tr>
+<tr><td><img src="/icons/folder.gif"></td><td><a href="/Copter/stable/CubeOrange-SimOnHardWare">CubeOrange-SimOnHardWare</A></td></tr>
+<tr><td><img src="/icons/folder.gif"></td><td><a href="/Copter/stable/MatekH743-bdshot">MatekH743-bdshot</A></td></tr>
+<tr><td><img src="/icons/folder.gif"></td><td><a href="/Copter/stable/Pixhawk6X">Pixhawk6X</A></td></tr>
+<tr><td><img src="/icons/folder.gif"></td><td><a href="/Copter/stable/Pixhawk6X-heli">Pixhawk6X-heli</A></td></tr>
+<tr><td><img src="/icons/folder.gif"></td><td><a href="/Copter/stable/SITL_x86_64_linux_gnu">SITL_x86_64_linux_gnu</A></td></tr>
+<tr><td><img src="/icons/folder.gif"></td><td><a href="/Copter/stable/apm2-quad">apm2-quad</A></td></tr>
+<tr><td><img src="/icons/folder.gif"></td><td><a href="/Copter/stable/navio2">navio2</A></td></tr>
+<tr><td><img src="/icons/folder.gif"></td><td><a href="/Copter/stable/navio2-heli">navio2-heli</A></td></tr>
+<tr><td><img src="/icons/folder.gif"></td><td><a href="/Copter/stable/fmuv3">fmuv3</A></td></tr>
+<tr><td><a href="/Copter/beta/Pixhawk1">elsewhere</A></td></tr>
+<tr><td><a href="/Copter/stable/CubeOrange/arducopter.apj">a file</A></td></tr>
+</table></html>
+"""
+
+
+def test_the_real_listing_yields_its_boards() -> None:
+    assert af.parse_index(REAL_INDEX, base="/Copter/stable/") == [
+        "apm2-quad", "CubeBlack+", "CubeOrange", "CubeOrange-heli",
+        "CubeOrange-SimOnHardWare", "fmuv3", "MatekH743-bdshot", "navio2",
+        "navio2-heli", "Pixhawk6X", "Pixhawk6X-heli", "SITL_x86_64_linux_gnu",
+    ]
+
+
+def test_only_links_under_the_listings_own_path_are_boards() -> None:
+    """The parent directory, the navigation, another channel and a file one
+    level down are all links on the same page, and none of them is a board."""
+    boards = af.parse_index(REAL_INDEX, base="/Copter/stable/")
+    assert "Copter" not in boards
+    assert "Pixhawk1" not in boards
+    assert not any("/" in b or b.endswith(".apj") for b in boards)
+
+
+def _copter(name: str) -> af.Vehicle:
+    return next(v for v in af.VEHICLES if v.key == name)
+
+
+def test_a_helicopter_is_its_own_firmware_not_a_second_copy_of_every_board() -> None:
+    listing = af.parse_index(REAL_INDEX, base="/Copter/stable/")
+    copter = af.vehicle_boards(_copter("Copter"), listing)
+    heli = af.vehicle_boards(_copter("Heli"), listing)
+    assert not any(b.endswith("-heli") for b in copter)
+    # Same name under both, so a board picked under one is found under the other.
+    assert heli == ["CubeOrange", "Pixhawk6X"]
+    assert af.asset_url("Heli", "stable", "CubeOrange") == (
+        "https://firmware.ardupilot.org/Copter/stable/CubeOrange-heli/arducopter-heli.apj")
+    assert af.asset_name("Heli", "stable", "CubeOrange") != af.asset_name(
+        "Copter", "stable", "CubeOrange")
+
+
+def test_boards_with_no_apj_are_not_offered() -> None:
+    """Linux autopilots, the simulator and the AVR boards have directories on
+    the server but no image a USB bootloader takes. Offering one ends in a 404
+    after the operator has already committed to the flash."""
+    listing = af.parse_index(REAL_INDEX, base="/Copter/stable/")
+    copter = af.vehicle_boards(_copter("Copter"), listing)
+    for gone in ("navio2", "SITL_x86_64_linux_gnu", "apm2-quad"):
+        assert gone not in copter
+    assert "navio2" not in af.vehicle_boards(_copter("Heli"), listing)
+    # Exact names, not prefixes: a board that merely starts like one stays.
+    assert af.is_flashable_board("AEROFOX-H7")
+    assert af.is_flashable_board("GreenSightUltraBlue")
+    assert not af.is_flashable_board("aero")
+
+
+def test_a_plus_in_a_board_name_is_escaped_in_the_url() -> None:
+    assert af.asset_url("Copter", "stable", "CubeBlack+") == (
+        "https://firmware.ardupilot.org/Copter/stable/CubeBlack%2B/arducopter.apj")
+
+
+def test_a_sim_on_hardware_build_is_a_developer_build() -> None:
+    """It flies a simulation instead of the aircraft it is flashed onto."""
+    described = af.describe_board("CubeOrange-SimOnHardWare")
+    assert described["variant"] == "SimOnHardWare"
+    assert described["title"] == "CubeOrange"
+    # The directory name stays whole: the URL is built from it.
+    assert described["board"] == "CubeOrange-SimOnHardWare"
+    assert af.describe_board("MatekH743-bdshot")["variant"] == "default"
+
+
+class _Response(io.BytesIO):
+    def __enter__(self) -> _Response:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
+
+
+def _serve(pages: dict[str, str]):
+    def urlopen(request, timeout=None):  # noqa: ARG001 - urlopen's signature
+        url = request.full_url
+        if url not in pages:
+            raise urllib.error.URLError("no route")
+        path = urllib.parse.urlparse(url).path
+        return _Response(pages[url].replace("/Copter/stable/", path).encode())
+    return urlopen
+
+
+def test_fetching_builds_one_release_per_vehicle_and_channel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pages = {af.index_url(d, c): REAL_INDEX
+             for d in ("Copter", "Plane", "Rover", "Sub") for c in ("stable", "beta")}
+    monkeypatch.setattr(af.urllib.request, "urlopen", _serve(pages))
+    releases, error = af.fetch_releases()
+    assert error == ""
+    tags = [r["tag"] for r in releases]
+    assert tags[:5] == [af.release_tag(v, "stable")
+                        for v in ("Copter", "Heli", "Plane", "Rover", "Sub")]
+    assert all(r["prerelease"] for r in releases[5:])
+    heli = next(r for r in releases if r["tag"] == af.release_tag("Heli", "stable"))
+    assert heli["vehicle"] == "Heli"
+    assert heli["name"] == "ArduCopter Heli (stable)"
+    assert [b["board"] for b in heli["boards"]] == ["CubeOrange", "Pixhawk6X"]
+    plane = next(r for r in releases if r["tag"] == af.release_tag("Plane", "beta"))
+    assert plane["boards"][0]["url"].startswith("https://firmware.ardupilot.org/Plane/beta/")
+
+
+def test_a_server_that_answers_with_no_boards_is_an_error_not_an_empty_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """This is what a changed listing format looks like. Reported as nothing
+    at all, it read as "ArduPilot publishes no firmware" and hid the bug."""
+    pages = {af.index_url(d, c): "<html>moved</html>"
+             for d in ("Copter", "Plane", "Rover", "Sub") for c in ("stable", "beta")}
+    monkeypatch.setattr(af.urllib.request, "urlopen", _serve(pages))
+    releases, error = af.fetch_releases()
+    assert releases == []
+    assert "no boards" in error
+
+
+def test_an_unreachable_server_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(af.urllib.request, "urlopen", _serve({}))
+    releases, error = af.fetch_releases()
+    assert releases == []
+    assert "could not reach" in error
+
+
+def test_a_tampered_cache_cannot_aim_a_flash_at_a_board_with_no_image(
+    tmp_path: pathlib.Path,
+) -> None:
+    _seed(tmp_path)
+    path = tmp_path / "catalog-ardupilot.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["releases"][0]["boards"][0]["board"] = "navio2"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    catalog = FirmwareCatalog(str(tmp_path))
+    assert catalog.resolve(af.release_tag("Copter", "stable"),
+                           af.asset_name("Copter", "stable", "CubeOrange")) is None
+
+
+# ---------------------------------------------------------------------------
+# Which board, and which vehicle
+# ---------------------------------------------------------------------------
+
+_AP_BOARDS = [
+    {"name": af.asset_name("Copter", "stable", b), "board": b, "title": b}
+    for b in ("CubeOrange", "CubeOrangePlus", "Pixhawk6X", "MatekH743", "fmuv3")
+]
+
+
+@pytest.mark.parametrize("description,expected", [
+    # ArduPilot's USB product string is the board's own name.
+    ("CubeOrange", "CubeOrange"),
+    ("CubeOrangePlus", "CubeOrangePlus"),
+    ("MatekH743", "MatekH743"),
+    # A board still on PX4 names its FMU generation instead.
+    ("PX4 FMU v6X.x", "Pixhawk6X"),
+    ("PX4 BL FMU v3.x", "fmuv3"),
+    # PX4's spelling of the product, on a board moving to ArduPilot.
+    ("Cube Orange+", "CubeOrangePlus"),
+])
+def test_the_usb_descriptor_names_the_ardupilot_board(description: str, expected: str) -> None:
+    found = af.detect_board({"description": description, "hwid": ""}, _AP_BOARDS)
+    assert found is not None and found["key"] == expected
+    assert found["name"] == af.asset_name("Copter", "stable", expected)
+
+
+def test_an_unrecognised_descriptor_suggests_no_ardupilot_board() -> None:
+    assert af.detect_board({"description": "FT232R USB UART"}, _AP_BOARDS) is None
+    assert af.detect_board({"description": ""}, _AP_BOARDS) is None
+    assert af.detect_board({"description": "CubeOrange"}, []) is None
+
+
+@pytest.mark.parametrize("mav_type,expected", [
+    (2, "Copter"),     # QUADROTOR
+    (13, "Copter"),    # HEXAROTOR
+    (4, "Heli"),       # HELICOPTER: a separate image
+    (1, "Plane"),      # FIXED_WING
+    (20, "Plane"),     # VTOL_TAILSITTER_QUADROTOR: QuadPlane is ArduPlane
+    (10, "Rover"),     # GROUND_ROVER
+    (11, "Rover"),     # SURFACE_BOAT
+    (12, "Sub"),       # SUBMARINE
+    (0, ""),           # no heartbeat yet
+    ("x", ""),
+])
+def test_the_connected_airframe_names_its_firmware(mav_type: object, expected: str) -> None:
+    assert af.vehicle_for_mav_type(mav_type) == expected

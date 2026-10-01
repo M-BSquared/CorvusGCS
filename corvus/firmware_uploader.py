@@ -37,7 +37,7 @@ import threading
 import time
 import zipfile
 import zlib
-from typing import Any
+from typing import Any, NamedTuple
 from collections.abc import Callable
 
 from .mavlink_bridge import MavlinkBridge
@@ -102,6 +102,17 @@ READ_TIMEOUT_S = 1.0
 MAX_FIRMWARE_IMAGE_BYTES = 32 * 1024 * 1024
 MAX_BOOTLOADER_FLASH_BYTES = 64 * 1024 * 1024
 
+# How long one GET_DEVICE query may take before the board is treated as not
+# answering it.
+INFO_TIMEOUT_S = 2.0
+
+# Bootloader board id -> the one other firmware board id it runs. Taken from
+# ArduPilot Tools/scripts/uploader.py ``compatible_IDs``; PX4's px_uploader.py
+# (v1.16, v1.17) has no exceptions and requires an exact match.
+COMPATIBLE_BOARD_IDS: dict[int, int] = {
+    33: 9,  # AUAVX2.1 runs fmu-v2/v3 firmware
+}
+
 
 def _bl_crc32(data: bytes, state: int = 0) -> int:
     """Bootloader CRC-32 (poly 0xEDB88320, init=state, no final XOR).
@@ -119,21 +130,45 @@ def _bl_crc32(data: bytes, state: int = 0) -> int:
     return (zlib.crc32(data, state ^ 0xFFFFFFFF) ^ 0xFFFFFFFF) & 0xFFFFFFFF
 
 
+class FirmwareImage(NamedTuple):
+    """A decoded firmware file: the bytes to flash and the board they are for.
+
+    ``board_id`` comes from the ``.px4``/``.apj`` container and is ``None`` for
+    a raw binary, which carries no board information.
+    """
+
+    image: bytes
+    board_id: int | None = None
+
+
+def board_ids_compatible(bootloader_id: int, firmware_id: int) -> bool:
+    """May firmware built for *firmware_id* run on a board reporting *bootloader_id*?"""
+    return bootloader_id == firmware_id or COMPATIBLE_BOARD_IDS.get(bootloader_id) == firmware_id
+
+
 def parse_firmware(data: bytes) -> bytes:
     """Return the raw firmware binary from *data*.
 
+    See :func:`parse_firmware_image`, which also returns the board id.
+    """
+    return parse_firmware_image(data).image
+
+
+def parse_firmware_image(data: bytes) -> FirmwareImage:
+    """Decode *data* into the firmware binary and its target board id.
+
     Real PX4 ``.px4`` files (as produced by the v1.16/v1.17 build and consumed
     by ``px_uploader.py``) are a JSON object whose ``image`` field is
-    base64-encoded, zlib-compressed binary — not a ZIP. We therefore handle
-    three shapes, in order:
+    base64-encoded, zlib-compressed binary — not a ZIP. ArduPilot's ``.apj``
+    uses the same container. We therefore handle three shapes, in order:
 
-    1. JSON ``.px4`` (the canonical format) — decode ``image`` via
-       base64 + zlib.
+    1. JSON ``.px4``/``.apj`` (the canonical format) — decode ``image`` via
+       base64 + zlib, and read ``board_id``.
     2. ZIP (``PK\\x03\\x04`` magic) — extract the binary image entry (prefer one
        named ``firmware.px4``/``image.px4``, else the largest ``.px4``/``.bin``
        entry, else the largest entry). Kept as a defensive fallback for any
-       toolchain that wraps the image in a ZIP.
-    3. Raw binary (``.bin``) — returned unchanged.
+       toolchain that wraps the image in a ZIP. No board id.
+    3. Raw binary (``.bin``) — returned unchanged. No board id.
 
     Raises ``ValueError`` on an empty or invalid payload.
     """
@@ -152,6 +187,12 @@ def parse_firmware(data: bytes) -> bytes:
         encoded = desc["image"]
         if not isinstance(encoded, str):
             raise ValueError("firmware JSON 'image' must be a base64 string")
+        board_id = desc.get("board_id")
+        if board_id is not None and (
+            isinstance(board_id, bool) or not isinstance(board_id, int)
+            or not 0 <= board_id <= 0xFFFFFFFF
+        ):
+            raise ValueError("firmware JSON 'board_id' must be an unsigned integer")
         try:
             import base64
             raw = base64.b64decode(encoded.encode("ascii"), validate=True)
@@ -172,7 +213,7 @@ def parse_firmware(data: bytes) -> bytes:
             raise ValueError(f"could not decode firmware image: {exc}") from exc
         if not image:
             raise ValueError("firmware image is empty")
-        return image
+        return FirmwareImage(image, board_id)
 
     # 2. ZIP wrapper (defensive; some toolchains bundle the binary).
     if data[:2] == b"PK":
@@ -191,7 +232,7 @@ def parse_firmware(data: bytes) -> bytes:
                 blob = zf.read(info)
                 if not blob:
                     raise ValueError(f"firmware archive entry {preferred!r} is empty")
-                return blob
+                return FirmwareImage(blob)
         candidates = [n for n in names if n.lower().endswith((".px4", ".bin"))]
         pool = candidates or names
         best = max(pool, key=lambda n: zf.getinfo(n).file_size)
@@ -201,12 +242,12 @@ def parse_firmware(data: bytes) -> bytes:
         blob = zf.read(info)
         if not blob:
             raise ValueError("firmware archive contains an empty image")
-        return blob
+        return FirmwareImage(blob)
 
     # 3. Raw binary (.bin).
     if len(data) > MAX_FIRMWARE_IMAGE_BYTES:
         raise ValueError("firmware image exceeds size limit")
-    return data
+    return FirmwareImage(data)
 
 
 class FirmwareUploader:
@@ -242,6 +283,10 @@ class FirmwareUploader:
         # the verify CRC can be computed over the same padded area the
         # bootloader CRCs. None until/unless identified.
         self._fw_maxsize: int | None = None
+        # The board id the bootloader reports, and the one the image was built
+        # for. Either may stay None; the check needs both.
+        self._board_id: int | None = None
+        self._image_board_id: int | None = None
 
     # ------------------------------------------------------------------
     # Public surface
@@ -261,8 +306,12 @@ class FirmwareUploader:
         self._cancel.set()
         self._close_serial()
 
-    def run(self, device: str, firmware_bytes: bytes) -> bool:
+    def run(self, device: str, firmware_bytes: bytes, board_id: int | None = None) -> bool:
         """Run the full erase/program/verify/reset sequence synchronously.
+
+        *board_id* is the board the image was built for (from its container).
+        When it and the bootloader's own board id are both known and are not
+        compatible, the upload stops before anything is erased.
 
         Returns ``True`` on ``done``, ``False`` on ``failed``/``cancelled``.
         The serial handle is closed in a ``finally`` so it is never leaked.
@@ -276,6 +325,8 @@ class FirmwareUploader:
             self._set("failed", 0, "firmware image exceeds size limit")
             return False
         self._fw_maxsize = None
+        self._board_id = None
+        self._image_board_id = board_id
         # The bootloader requires PROG_MULTI counts to be a multiple of 4; pad
         # the image to a 4-byte boundary with 0xFF (erased-flash value), which
         # also matches the padding used by the verify CRC.
@@ -422,26 +473,44 @@ class FirmwareUploader:
             time.sleep(0.1)
         return False
 
-    def _identify_best_effort(self) -> None:
-        """Fetch board info for the verify CRC; tolerate any failure.
+    def _get_device_info(self, info_id: int) -> int | None:
+        """One GET_DEVICE query: the 4-byte value, or None when not answered.
 
-        Sends GET_DEVICE(INFO_FLASH_SIZE) to learn ``fw_maxsize`` (needed by the
+        A refused, short or missing reply drains the input so its leftovers
+        cannot be read as the answer to the next command.
+        """
+        try:
+            self._serial.write(bytes([GET_DEVICE, info_id, EOC]))
+            self._serial.flush()
+            raw = self._recv_exact(4, timeout_s=INFO_TIMEOUT_S)
+            if raw is not None and self._expect_insync_ok(timeout_s=1.0):
+                return int.from_bytes(raw, "little")
+        except Exception:  # noqa: BLE001 - best-effort
+            pass
+        self._drain()
+        return None
+
+    def _identify_best_effort(self) -> None:
+        """Fetch board info for the board check and the verify CRC.
+
+        Sends GET_DEVICE(INFO_BOARD_ID) for the board check,
+        GET_DEVICE(INFO_FLASH_SIZE) to learn ``fw_maxsize`` (needed by the
         verify step) and a best-effort GET_CHIP for the log message. All failures
         are swallowed and the input buffer is drained afterwards so a partial
         reply cannot desync the subsequent CHIP_ERASE.
         """
-        try:
-            self._serial.write(bytes([GET_DEVICE, INFO_FLASH_SIZE, EOC]))
-            self._serial.flush()
-            raw = self._recv_exact(4, timeout_s=2.0)
-            if raw is not None and self._expect_insync_ok(timeout_s=1.0):
-                size = int.from_bytes(raw, "little")
-                if 0 < size <= MAX_BOOTLOADER_FLASH_BYTES:
-                    self._fw_maxsize = size
-                else:
-                    logger.error("bootloader reported invalid flash size: %d", size)
-        except Exception:  # noqa: BLE001 - best-effort
-            pass
+        board_id = self._get_device_info(INFO_BOARD_ID)
+        if board_id is None:
+            logger.warning("bootloader did not report a board id; board check skipped")
+        else:
+            self._board_id = board_id
+            logger.info("bootloader board id: %d", board_id)
+        size = self._get_device_info(INFO_FLASH_SIZE)
+        if size is not None:
+            if 0 < size <= MAX_BOOTLOADER_FLASH_BYTES:
+                self._fw_maxsize = size
+            else:
+                logger.error("bootloader reported invalid flash size: %d", size)
         try:
             self._serial.write(bytes([GET_CHIP, EOC]))
             self._serial.flush()
@@ -452,6 +521,26 @@ class FirmwareUploader:
         except Exception:  # noqa: BLE001 - best-effort
             pass
         self._drain()
+
+    def _board_refusal(self) -> str | None:
+        """Operator message when the image is for another board, else None.
+
+        Two boards with the same MCU accept each other's image, and it boots
+        and drives the wrong pins, so the bootloader's own id is the only
+        reliable answer. Unknown on either side keeps the old behaviour.
+        """
+        board, wanted = self._board_id, self._image_board_id
+        if board is None or wanted is None:
+            return None
+        if board_ids_compatible(board, wanted):
+            if board != wanted:
+                logger.info("board id %d accepts firmware for board id %d", board, wanted)
+            return None
+        logger.error("firmware board id %d does not match bootloader board id %d", wanted, board)
+        return (
+            f"This firmware is for board id {wanted}, but the connected bootloader "
+            f"reports board id {board}. Nothing was erased."
+        )
 
     def _erase(self) -> bool:
         """Send CHIP_ERASE and wait (up to ERASE_TIMEOUT_S) for INSYNC OK."""
@@ -573,6 +662,11 @@ class FirmwareUploader:
             return False
 
         self._identify_best_effort()
+
+        refusal = self._board_refusal()
+        if refusal:
+            self._set("failed", 0, refusal)
+            return False
 
         if self._fw_maxsize is None:
             self._set("failed", 0, "could not determine bootloader flash size")

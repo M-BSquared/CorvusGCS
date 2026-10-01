@@ -1,6 +1,6 @@
 """The desktop wrapper's Dock / taskbar icon selection.
 
-``corvus.app`` imports cleanly without PyQt6 (its Qt imports are all
+``corvus.app`` imports cleanly without PySide6 (its Qt imports are all
 function-local), so the helpers that decide how the app draws the mark it
 hands the operating system are tested headless — no QApplication, no display.
 The painting itself needs Qt and is therefore not exercised here; what is

@@ -25,6 +25,16 @@ and nothing auto-dials again until the process restarts. Both exist because the
 one thing worse than a ground station that will not connect is one that
 disconnects itself from a flying aircraft.
 
+One case is not a choice at all, so neither rule holds it back: **the device
+the link is on came back under another name**. Plugged into a different USB
+socket, or replugged on Linux while the old node was still held open (ttyACM0
+comes back as ttyACM1), the same flight controller or radio gets a new device
+node. The bridge would retry the vanished name forever. The watcher remembers
+the USB identity of the link's port (vendor/product id and serial number) and,
+once that name is gone and exactly one port with the same identity is present,
+moves the link there at the same baud rate, manual override or not: it is the
+device the operator chose.
+
 Everything that decides is a pure function taking an already-enumerated port
 list, so the policy is testable without a socket, a thread or a serial device.
 The watcher is the only moving part: one daemon thread, one ``Event``-driven
@@ -42,7 +52,16 @@ from typing import Any
 from collections.abc import Callable, Iterable, Sequence
 
 from .mavlink_bridge import MavlinkBridge
-from .serial_ports import classify_serial_device, is_bootloader_port, is_phantom_device
+from .serial_ports import (
+    DEFAULT_SERIAL_BAUD,
+    classify_serial_device,
+    is_bootloader_port,
+    is_phantom_device,
+    port_present,
+    same_port,
+    split_serial_connection,
+    usb_identity,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,8 +95,9 @@ UDP_FALLBACK_CONNECTION = "udp:0.0.0.0:14550"
 
 # SiK Telemetry Radio V3 factory default, the same one _parse_serial falls back
 # to. Auto-connect never probes for a baud rate: opening a port to find out is
-# exactly the behaviour this module promises not to have.
-DEFAULT_BAUD = 57600
+# exactly the behaviour this module promises not to have. A rate the operator
+# already gave for the same port is kept instead; see _baud_for.
+DEFAULT_BAUD = DEFAULT_SERIAL_BAUD
 
 # How long without a vehicle heartbeat before the watcher considers the link
 # genuinely gone. Derived from the A3 drop timeouts (UDP 8 s, serial 15 s): at
@@ -257,6 +277,27 @@ def serial_connection_string(device: str, baud: int = DEFAULT_BAUD) -> str:
     return f"serial:{device}:{int(baud)}"
 
 
+def _serial_device(conn: Any) -> str:
+    """The device of a ``serial:`` connection string, or "" for anything else."""
+    if not isinstance(conn, str) or not conn.startswith("serial:"):
+        return ""
+    return split_serial_connection(conn)[0]
+
+
+def _baud_for(device: str, *known: Any) -> int:
+    """The baud rate already chosen for *device*, else the factory default.
+
+    A radio set to 115200 and named that way in the config file, or connected
+    at that rate by hand, would otherwise be dialled at 57600 the next time
+    auto-connect found it, and never answer.
+    """
+    for conn in known:
+        other = _serial_device(conn)
+        if other and same_port(device, other):
+            return split_serial_connection(conn)[1]
+    return DEFAULT_BAUD
+
+
 def pick_usb_serial(
     ports: Sequence[PortInfo],
     *,
@@ -323,8 +364,8 @@ def resolve_startup_connection(
 
     pick = pick_usb_serial(ports, usb_enabled=usb_enabled, sik_enabled=sik_enabled)
     if pick is not None:
-        device, baud, kind = pick
-        conn = serial_connection_string(device, baud)
+        device, _, kind = pick
+        conn = serial_connection_string(device, _baud_for(device, configured))
         reason = REASON_USB if kind == "usb" else REASON_SIK
         candidates = [p.device for p in ports if p.kind == kind and _usable(p)]
         detail = device if len(candidates) < 2 else (
@@ -358,11 +399,14 @@ def suggest_connection(
     pick = pick_usb_serial(ports, usb_enabled=session.usb, sik_enabled=session.sik)
     if pick is None:
         return None
-    device, baud, kind = pick
-    conn = serial_connection_string(device, baud)
-    # Already connected on it: there is nothing to suggest.
-    if str(snapshot.get("link_connection", "") or "") == conn:
+    device, _, kind = pick
+    link = str(snapshot.get("link_connection", "") or "")
+    # Already connected on it, at whatever rate: there is nothing to suggest.
+    # Comparing whole strings offered a radio linked at 115200 back to its own
+    # operator at 57600.
+    if same_port(device, _serial_device(link)):
         return None
+    conn = serial_connection_string(device, DEFAULT_BAUD)
     return Suggestion(
         connection_string=conn,
         kind="usb-direct" if kind == "usb" else "sik",
@@ -405,6 +449,10 @@ class AutoConnectWatcher:
         self._stale_after_s = float(stale_after_s)
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        # (connection string, usb_identity) of the port the link was last seen
+        # on. Keyed by the string so a link the operator moved elsewhere never
+        # inherits the identity of the one before it.
+        self._link_identity: tuple[str, str] | None = None
 
     # ---- lifecycle ----
 
@@ -456,16 +504,33 @@ class AutoConnectWatcher:
         """
         if self._stop_event.is_set() or not self._session.enabled:
             return "disabled"
-        if self._session.manual_override:
-            return "noop: manual-override"
+        manual = self._session.manual_override
         if not self._bridge.is_running():
-            return "noop: bridge-stopped"
+            return "noop: manual-override" if manual else "noop: bridge-stopped"
 
         snapshot = self._snapshot()
         status = str(snapshot.get("link_status", "") or "").lower()
+        ports = classify_ports(self._list_ports())
+
+        link = self._link_connection(snapshot)
+        device = _serial_device(link)
+        if device:
+            if port_present(device, [p.device for p in ports]):
+                self._remember_identity(link, device, ports)
+            elif status not in IDLE_STATES:
+                # Unplugged, and the bridge has not noticed yet (it takes about
+                # two seconds). Deciding now would offer the same device back
+                # under its new name as if it were a second one.
+                return "noop: link-device-gone"
+            else:
+                moved = self._moved_port(link, device, ports)
+                if moved is not None:
+                    return self._follow(link, moved)
+
+        if manual:
+            return "noop: manual-override"
         idle = status in IDLE_STATES and self._is_stale()
 
-        ports = classify_ports(self._list_ports())
         pick = pick_usb_serial(
             ports, usb_enabled=self._session.usb, sik_enabled=self._session.sik,
         )
@@ -491,8 +556,10 @@ class AutoConnectWatcher:
     # ---- actions ----
 
     def _auto_dial(self, pick: tuple[str, int, str]) -> str:
-        device, baud, kind = pick
-        conn = serial_connection_string(device, baud)
+        device, _, kind = pick
+        conn = serial_connection_string(
+            device, _baud_for(device, self._link_connection(self._snapshot())),
+        )
         if conn == self._session.last_dial_key:
             # One attempt per device. The bridge's own backoff owns the retry;
             # re-dialling every poll would tear a half-open link down mid-
@@ -522,6 +589,76 @@ class AutoConnectWatcher:
         self._publish_auto()
         return f"dialled: {reason}"
 
+    def _follow(self, link: str, port: PortInfo) -> str:
+        """Move the link to the node its device came back on.
+
+        Same baud rate, same manual-override flag: this is the operator's link,
+        renamed by the operating system, not a new choice.
+        """
+        old = _serial_device(link)
+        conn = serial_connection_string(port.device, split_serial_connection(link)[1])
+        try:
+            self._bridge.validate_connection(conn)
+        except ValueError as exc:
+            logger.warning("autoconnect: refusing %s (%s)", conn, exc)
+            return "noop: invalid"
+        logger.info(
+            "autoconnect: %s is gone, following the same device to %s", old, port.device,
+        )
+        self._session.last_dial_key = conn
+        try:
+            self._bridge.stop()
+            self._bridge.set_connection(conn)
+            self._bridge.start()
+        except Exception:  # noqa: BLE001 - a failed dial must not kill the watcher
+            logger.exception("autoconnect: dial of %s failed", conn)
+            return "dial-failed"
+        if self._link_identity is not None:
+            self._link_identity = (conn, self._link_identity[1])
+        if self._session.manual_override:
+            reason = REASON_MANUAL
+        else:
+            reason = {"usb": REASON_USB, "sik": REASON_SIK}.get(
+                port.kind, self._session.reason,
+            )
+        self._session.note_decision(reason, conn)
+        self._publish_suggestion(None)
+        self._publish_auto()
+        return "followed"
+
+    def _remember_identity(self, link: str, device: str, ports: Sequence[PortInfo]) -> None:
+        """Note the USB identity of the port the link is on, while it is there.
+
+        A bootloader is never remembered: a board replugged on Linux can sit on
+        the link's old name in its bootloader for a few seconds, and its
+        identity is not the one the firmware comes back with.
+        """
+        for port in ports:
+            if same_port(device, port.device):
+                identity = usb_identity(port.hwid)
+                if identity and _usable(port):
+                    self._link_identity = (link, identity)
+                return
+
+    def _moved_port(
+        self, link: str, device: str, ports: Sequence[PortInfo],
+    ) -> PortInfo | None:
+        """The one present port carrying the identity the link's device had.
+
+        Two candidates is no answer: with two boards of one model and no
+        serial number between them, picking either could be the other aircraft.
+        """
+        remembered = self._link_identity
+        if remembered is None or remembered[0] != link:
+            return None
+        matches = [
+            p for p in ports
+            if usb_identity(p.hwid) == remembered[1]
+            and not same_port(p.device, device)
+            and _usable(p)
+        ]
+        return matches[0] if len(matches) == 1 else None
+
     def _publish_suggestion(self, suggestion: Suggestion | None) -> bool:
         """Push (or clear) ``link_suggestion``; True when the store changed.
 
@@ -545,6 +682,13 @@ class AutoConnectWatcher:
         self._update_store(link_auto=self._session.as_dict())
 
     # ---- read-only helpers ----
+
+    def _link_connection(self, snapshot: dict) -> str:
+        """The connection string the bridge is set to, whatever its state."""
+        try:
+            return str(self._bridge.connection_string() or "")
+        except Exception:  # noqa: BLE001
+            return str(snapshot.get("link_connection", "") or "")
 
     def _snapshot(self) -> dict:
         try:

@@ -59,6 +59,9 @@ Corvus.hudPanel = (function () {
     readouts: true,
   };
   let state = Object.assign({}, DEFAULTS);
+  // Whether the panel is on the map at all. The config owns this (Settings >
+  // Appearance > Flight HUD), not localStorage, so it stays out of `state`.
+  let shown = true;
   let drag = null;   // {pointerId, dx, dy} while a drag is in flight
   // The map's size at the last reflow, so a change in it can be told from a
   // re-render. See onHostResize.
@@ -171,7 +174,9 @@ Corvus.hudPanel = (function () {
    * rather than merely clamped, because this move is not the operator's doing.
    */
   function onHostResize() {
-    if (!panelEl) return;
+    // A hidden panel measures 0x0 and would be reflowed as a point. It catches
+    // up against `lastHost` when it is shown again (see setShown).
+    if (!panelEl || panelEl.hidden) return;
     const size = hostSize();
     // A hidden map — the operator is on Setup, Options or any other page —
     // reports 0x0, and a box with no size says nothing about where a panel
@@ -209,7 +214,9 @@ Corvus.hudPanel = (function () {
   /** Write the current position to the element. A null position means "leave
    *  it at the CSS default corner" — the panel has never been moved. */
   function applyPosition() {
-    if (!panelEl) return;
+    // Not while hidden: clamping a 0x0 box would pull a panel parked over the
+    // map's edge back inside it.
+    if (!panelEl || panelEl.hidden) return;
     if (state.x === null || state.y === null) {
       panelEl.style.left = "";
       panelEl.style.top = "";
@@ -354,6 +361,19 @@ Corvus.hudPanel = (function () {
     });
   }
 
+  /**
+   * Put the panel on the Home map or take it off (Settings > Appearance >
+   * Flight HUD). Position and folds are left alone, so it comes back exactly
+   * as it was. Safe before init, which applies the last value. Returns it.
+   */
+  function setShown(on) {
+    shown = on !== false;
+    if (!panelEl) return shown;
+    panelEl.hidden = !shown;
+    if (shown) onHostResize();
+    return shown;
+  }
+
   function togglePin() { state.pinned = !state.pinned; applyState(); save(); }
   function toggleCompact() { state.compact = !state.compact; applyState(); save(); }
   function toggleReadouts() { state.readouts = !state.readouts; applyState(); save(); }
@@ -391,6 +411,7 @@ Corvus.hudPanel = (function () {
     wireDragSurface();
 
     lastHost = hostSize();
+    panelEl.hidden = !shown;
     applyState();
 
     // A map that shrinks must not strand the panel outside it — or, when the
@@ -412,6 +433,8 @@ Corvus.hudPanel = (function () {
   return {
     init,
     resetPosition,
+    setShown,
+    shown: () => shown,
     // test hooks: the persisted state and the clamp, both pure enough to
     // assert on without a layout engine.
     _state: () => Object.assign({}, state),

@@ -5,8 +5,8 @@
  *
  * What is pinned: a card says nothing while disconnected (the popover then
  * refuses to open), a row the vehicle has no answer for is left out rather
- * than printed as zero, jamming says "Not reported" rather than "None" when
- * the receiver cannot tell, and flight time left appears only when there is
+ * than printed as zero (jamming and spoofing included, when the receiver
+ * cannot tell), and flight time left appears only when there is
  * an honest figure: armed, and either the autopilot's own or Corvus's drain
  * estimate.
  *
@@ -64,10 +64,17 @@ test("GPS card: satellites, reception, geometry, accuracy", () => {
   assert.deepEqual(row(d, "Receiver health"), ["Receiver health", "OK", "healthy"]);
 });
 
-test("jamming not reported is said, not dressed up as fine", () => {
+test("jamming and spoofing are left out when the receiver does not report them", () => {
   const d = detail("gps", GPS);
-  assert.deepEqual(row(d, "Jamming"), ["Jamming", "Not reported", "muted"]);
-  assert.ok(d.notes.some((n) => /GNSS integrity/.test(n)));
+  assert.equal(row(d, "Jamming"), undefined);
+  assert.equal(row(d, "Spoofing"), undefined);
+  assert.equal(d.notes.length, 0);
+});
+
+test("only the integrity verdict the receiver gives is shown", () => {
+  const d = detail("gps", { ...GPS, gps_jamming: "mitigated" });
+  assert.deepEqual(row(d, "Jamming"), ["Jamming", "Detected, mitigated", "warning"]);
+  assert.equal(row(d, "Spoofing"), undefined);
 });
 
 test("jamming detected is critical", () => {

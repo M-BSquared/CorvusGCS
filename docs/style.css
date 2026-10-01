@@ -892,6 +892,9 @@ a:hover { color: var(--accent); }
   :root { --gutter: 20px; }
 
   .nav-toggle { display: inline-grid; }
+  /* The nav leaves the row here, and with it the auto margin that pushed
+     these buttons to the right edge. */
+  .header-actions { margin-left: auto; }
 
   .site-nav {
     position: fixed; inset: var(--header-h) 0 auto 0;

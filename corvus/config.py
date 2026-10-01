@@ -111,8 +111,9 @@ class CorvusConfig:
     "topbar_status_dots": false, "mission_page": false,
     "notification_marks": false, "flight_bar_shrink": false,
     "compass_nose_up": false, "solid_terminals": false,
+    "topbar_altitude": "amsl",
     "track_earlier_flights": true, "track_clear_on_restart": false,
-    "units": {"length":
+    "flight_hud": true, "units": {"length":
     "m", "distance": "km", "speed": "ms", "temperature": "c"}}`` — the multiplier
     the frontend puts on every length in the UI, which cut of the mark the
     Dock / taskbar gets, whether that mark sits on a filled backplate, whether
@@ -120,7 +121,7 @@ class CorvusConfig:
     carries the Mission planner, whether a notification draws the severity
     bar above and below its level icon, whether the Home flight bar starts
     narrowing at half the map column rather than only when it must, whether
-    the compass rose turns under a fixed needle, whether terminal windows are solid rather than frosted glass, and the display units for lengths,
+    the compass rose turns under a fixed needle, whether terminal windows are solid rather than frosted glass, whether the flight HUD is on the Home map, which altitude the top bar shows, and the display units for lengths,
     distances, speeds and temperatures),
     and the update check
     (``{"check": true, "skipped": "2026.09.27"}`` — whether to look at the
@@ -468,6 +469,9 @@ _UI_UNITS: dict[str, tuple[str, ...]] = {
     "temperature": ("c", "f"),
 }
 
+# The altitude the top bar's ALTITUDE block reads (see src/js/topbar.js).
+_UI_TOPBAR_ALTITUDE = ("amsl", "relative")
+
 
 _FORWARD_PORT_MIN = 1
 _FORWARD_PORT_MAX = 65535
@@ -592,6 +596,10 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     dots are opt-in rather than something an old config file turns on by
     saying nothing.
 
+    ``topbar_altitude`` is the altitude the top bar's ALTITUDE block shows:
+    ``"amsl"`` (above mean sea level) or ``"relative"`` (above home). Any
+    other value is dropped, and absent reads as AMSL.
+
     ``mission_page`` puts the Mission planner in the left rail under HOME. Off
     unless asked for: a station flown by hand has no use for a route editor,
     and a rail entry that leads somewhere the operator never goes is one more
@@ -628,12 +636,16 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
 
     ``track_earlier_flights`` draws the track of every earlier flight in a
     second, quieter colour, so the flight in progress stands out from the ones
-    before it. On unless turned off, which is why it is the one ``ui`` switch
-    whose absent key reads as true.
+    before it. On unless turned off, so its absent key reads as true.
 
     ``track_clear_on_restart`` discards the flown track when the app starts
     and when the autopilot reboots. Off unless asked for: the track is kept
     until the operator clears it with the button on the map.
+
+    ``flight_hud`` puts the flight HUD (compass, attitude indicator and
+    readouts) on the Home map. On unless turned off, like
+    ``track_earlier_flights``: a config that has never been asked must not
+    take the instruments away.
 
     ``units`` is the display unit per quantity (``length``, ``distance``,
     ``speed``, ``temperature``; see ``_UI_UNITS``). Each key is kept only with
@@ -648,6 +660,8 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
         kept = {q: units[q] for q, allowed in _UI_UNITS.items() if units.get(q) in allowed}
         if kept:
             out["units"] = kept
+    if raw.get("topbar_altitude") in _UI_TOPBAR_ALTITUDE:
+        out["topbar_altitude"] = raw["topbar_altitude"]
     value = raw.get("scale")
     if not isinstance(value, bool) and isinstance(value, (int, float)):
         scale = float(value)
@@ -656,7 +670,7 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     for key in ("inverted_app_icon", "app_icon_backplate", "topbar_status_dots",
                 "mission_page", "notification_marks", "flight_bar_shrink",
                 "compass_nose_up", "windows_in_app", "solid_terminals",
-                "track_earlier_flights", "track_clear_on_restart"):
+                "track_earlier_flights", "track_clear_on_restart", "flight_hud"):
         if isinstance(raw.get(key), bool):
             out[key] = raw[key]
     return out or None

@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<!-- Written by tools/guide.py around the content block below. Edit the text
+     between the guide:content markers; run the script for everything else. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video and windows · Corvus GCS documentation</title>
+<meta name="description" content="Cameras over RTSP or WebRTC, floating camera and terminal windows, second screens, and how camera passwords are kept.">
+<link rel="canonical" href="https://m-bsquared.github.io/CorvusGCS/guide/video.html">
+<meta name="theme-color" content="#0B0E12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="dark light">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Corvus GCS">
+<meta property="og:title" content="Video and windows · Corvus GCS documentation">
+<meta property="og:description" content="Cameras over RTSP or WebRTC, floating camera and terminal windows, second screens, and how camera passwords are kept.">
+<meta property="og:url" content="https://m-bsquared.github.io/CorvusGCS/guide/video.html">
+<meta property="og:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/icons/apple-touch-icon.png">
+<link rel="preload" as="font" type="font/woff2" href="../assets/fonts/Inter-latin.woff2" crossorigin>
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="guide.css">
+<script>
+  document.documentElement.classList.add('js');
+  try {
+    var t = localStorage.getItem('corvus-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+</script>
+<script src="../script.js" defer></script>
+<script src="guide.js" defer></script>
+</head>
+
+<body class="guide">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <g id="i-github" fill="currentColor" stroke="none" transform="scale(1.5)"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></g>
+    <g id="i-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></g>
+    <g id="i-moon"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></g>
+    <g id="i-menu"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></g>
+    <g id="i-close"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></g>
+    <g id="i-prev"><path d="m15 18-6-6 6-6"/></g>
+    <g id="i-next"><path d="m9 18 6-6-6-6"/></g>
+    <g id="i-book"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></g>
+    <g id="i-info"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></g>
+    <g id="i-alert"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></g>
+    <g id="i-edit"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></g>
+  </defs>
+</svg>
+
+<header class="site-header" id="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="../index.html" aria-label="Corvus GCS, project website">
+      <span class="brand-mark" role="img" aria-hidden="true"></span>
+      <span class="brand-text">
+        <span class="brand-name">Corvus GCS</span>
+        <span class="brand-sub">Documentation</span>
+      </span>
+    </a>
+
+    <nav class="site-nav" id="site-nav" aria-label="Main">
+      <ul class="nav-list">
+        <li><a href="../index.html">Website</a></li>
+        <li><a href="index.html">Documentation</a></li>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS/releases/latest" target="_blank" rel="noopener">Download</a></li>
+        <li><a class="nav-github" href="https://github.com/M-BSquared/CorvusGCS" target="_blank" rel="noopener">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-github"></use></svg>GitHub</a></li>
+      </ul>
+    </nav>
+
+    <div class="header-actions">
+      <button class="icon-btn theme-toggle" id="theme-toggle" type="button" aria-label="Switch to the light theme" aria-pressed="false">
+        <svg class="icon icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-sun"></use></svg>
+        <svg class="icon icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-moon"></use></svg>
+      </button>
+      <button class="icon-btn nav-toggle" id="nav-toggle" type="button" aria-label="Open the menu" aria-expanded="false" aria-controls="site-nav">
+        <svg class="icon icon-open" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-menu"></use></svg>
+        <svg class="icon icon-shut" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap guide-layout">
+<nav class="guide-nav" id="guide-nav" aria-label="Documentation">
+  <button class="guide-nav-toggle" id="guide-nav-toggle" type="button" aria-expanded="false" aria-controls="guide-nav-body">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-book"></use></svg><span>Contents</span><span class="guide-nav-here">Video and windows</span><svg class="icon guide-nav-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg>
+  </button>
+  <div class="guide-nav-body" id="guide-nav-body">
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Start</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="install.html">Install and run</a></li>
+        <li><a href="connect.html">Connect to the aircraft</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Fly</p>
+      <ul>
+        <li><a href="flying.html">Map, HUD and flight controls</a></li>
+        <li><a href="3d-offline.html">3D, terrain and offline maps</a></li>
+        <li><a href="mission.html">Mission planner</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Set up</p>
+      <ul>
+        <li><a href="airframe.html">Airframe and motors</a></li>
+        <li><a href="safety.html">Safety, sensors and battery</a></li>
+        <li><a href="parameters.html">Parameters and calibration</a></li>
+        <li><a href="radio-tuning.html">Radio control and tuning</a></li>
+        <li><a href="hardware.html">Telemetry radio, RTK and Remote ID</a></li>
+        <li><a href="firmware.html">Firmware</a></li>
+        <li><a href="video.html" aria-current="page">Video and windows</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Review</p>
+      <ul>
+        <li><a href="analysis.html">Logs and Flight Review</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Tools</p>
+      <ul>
+        <li><a href="workspace.html">Console and SSH</a></li>
+        <li><a href="plugins.html">Plugins</a></li>
+        <li><a href="settings.html">Settings</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Reference</p>
+      <ul>
+        <li><a href="compatibility.html">PX4 and ArduPilot</a></li>
+        <li><a href="security.html">Network and security</a></li>
+        <li><a href="reference.html">Files, settings and variables</a></li>
+        <li><a href="build.html">Build the apps</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main id="main" class="guide-main">
+<article class="doc">
+<p class="eyebrow">Set up</p>
+<!-- guide:content -->
+<h1>Video and windows</h1>
+<p class="doc-lead">
+  Add the aircraft's camera by its address and it opens in a floating window
+  over the map, or in a window of its own on a second screen. The same kind of
+  window holds SSH terminals.
+</p>
+
+<h2 id="cameras">Adding a camera</h2>
+<p>
+  On the <strong>Video</strong> page, each camera is an address with an
+  optional user and password. A camera is one of two types:
+</p>
+<dl>
+  <dt>RTSP</dt>
+  <dd>Also <code>udp://</code>, <code>srt://</code> and <code>http://</code> streams. Decoded by Corvus with <strong>ffmpeg</strong>, which has to be installed on the computer (see below). TCP is the default transport because it survives a lossy link; UDP is there for cameras that only do that.</dd>
+  <dt>WebRTC</dt>
+  <dd>The WHEP address of a stream on a media server such as MediaMTX (<code>http://host:8889/&lt;stream&gt;/whep</code>), go2rtc or Janus. The video goes straight from there to the window, with the lowest delay, and needs no ffmpeg.</dd>
+</dl>
+<p>
+  The page lists the codecs the window can play over WebRTC, because the
+  desktop app's browser engine may lack H.264. An H.264 camera then comes in
+  over RTSP instead.
+</p>
+<p>
+  A user and password written into the address are moved into their own
+  fields, and the password is never shown again.
+</p>
+
+<h2 id="ffmpeg">Installing ffmpeg</h2>
+<p>
+  A browser cannot play RTSP, so Corvus decodes it with ffmpeg, which is not
+  bundled. Install it with Homebrew (<code>brew install ffmpeg</code>), your
+  distribution's package manager (<code>sudo apt install ffmpeg</code>), or
+  from ffmpeg.org, or give its path on the page. The environment variable
+  <code>CORVUS_FFMPEG</code> works as well. ffmpeg runs only while a camera
+  window is open, and stops a few seconds after the last one closes.
+</p>
+
+<h2 id="opening">Opening a camera</h2>
+<p>
+  <strong>Open</strong> on the Video page puts the camera in a floating window.
+  A camera button also appears on the map once a camera is set up: with one
+  camera it opens and closes it, with several it opens a list to pick from, or
+  to open and close them all.
+</p>
+<p>The window's title bar says what the picture is:</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Title bar</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><strong>LIVE</strong></td><td>Frames are arriving.</td></tr>
+    <tr><td><strong>CONNECTING</strong></td><td>Opening the stream.</td></tr>
+    <tr><td><strong>NO PICTURE</strong></td><td>Connected, but no frames.</td></tr>
+    <tr><td><strong>OFFLINE</strong></td><td>The camera cannot be reached.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  When the picture stops, the last frame stays up greyed out with the reason
+  over it, so a frozen picture can never pass for a live one. Cameras
+  reconnect by themselves.
+</p>
+
+<h2 id="windows">Floating windows</h2>
+<p>
+  Camera windows and terminal windows (from the SSH tab and the
+  <a href="plugins.html">launcher plugins</a>) all work the same way. Drag them,
+  resize them, maximise them, and keep several side by side.
+</p>
+<dl>
+  <dt>In the desktop app</dt>
+  <dd>Each opens as a window of its own: the same frame, bar, buttons and grip as inside the app, with nothing of the operating system around it, free to go anywhere, including a second screen, and back where you left it the next time it opens. The pin in its title bar keeps it above the Corvus window; other programs can still cover it when they are in front.</dd>
+  <dt>Inside the Corvus window</dt>
+  <dd>With <strong>Settings, Camera and terminal windows, Open inside the Corvus window</strong> on, windows open inside the app instead. Drag one past the edge by its title bar and it carries on outside; let go of it over the app and it is back in.</dd>
+  <dt>In a browser</dt>
+  <dd>A page cannot make windows of its own, so they always open inside, and the title bar has a button that opens one in a pop-up.</dd>
+</dl>
+
+<h3 id="frosted">Frosted and solid terminals</h3>
+<p>
+  Terminal windows are frosted glass, with what is behind them blurred: the map
+  inside the app, and on macOS the desktop behind a window of its own. Linux
+  and Windows offer no blur behind a program's window, so there a terminal in
+  a window of its own is solid; inside the app it is frosted everywhere.
+  <strong>Solid terminals</strong>, in the same Settings card, makes them all
+  solid.
+</p>
+
+<h2 id="passwords">Camera passwords</h2>
+<p>Camera passwords stay on this computer:</p>
+<ul>
+  <li><strong>They never reach the browser.</strong> A WebRTC connection is opened through Corvus, and the window only ever holds a session token.</li>
+  <li><strong>They never appear on ffmpeg's command line</strong>, where other accounts on the computer could read them. This needs ffmpeg 5 or later; the page warns when an older one would expose them.</li>
+  <li><strong>A camera moved to another host does not take its password along.</strong></li>
+</ul>
+<p>
+  ffmpeg may only open the protocols the camera's address needs, never a local
+  file, and every network wait has a timeout, so a camera that stops answering
+  is reconnected instead of hanging.
+</p>
+<!-- /guide:content -->
+</article>
+
+<nav class="doc-pager" aria-label="Previous and next page">
+  <a class="doc-pager-prev" href="firmware.html" rel="prev"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-prev"></use></svg><span><small>Previous</small>Firmware</span></a>
+  <a class="doc-pager-next" href="analysis.html" rel="next"><span><small>Next</small>Logs and Flight Review</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg></a>
+</nav>
+
+<p class="doc-edit">
+  <a href="https://github.com/M-BSquared/CorvusGCS/edit/master/docs/guide/video.html" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-edit"></use></svg>Suggest a change to this page</a>
+</p>
+</main>
+
+<aside class="guide-toc" aria-labelledby="toc-title">
+  <p class="guide-toc-title" id="toc-title">On this page</p>
+  <ul>
+    <li><a href="#cameras">Adding a camera</a></li>
+    <li><a href="#ffmpeg">Installing ffmpeg</a></li>
+    <li><a href="#opening">Opening a camera</a></li>
+    <li><a href="#windows">Floating windows</a></li>
+    <li><a href="#passwords">Camera passwords</a></li>
+  </ul>
+</aside>
+</div>
+
+<footer class="site-footer guide-footer">
+  <div class="wrap footer-base">
+    <p class="copyright">&copy; <span id="year">2026</span> Maximilian Böck. Developed with the Universität der Bundeswehr München.</p>
+    <p class="footer-meta">
+      Source available under the Sustainable Use License 1.0 (<em>fair-code</em>).
+      <a href="https://github.com/M-BSquared/CorvusGCS/blob/master/LICENSE.md" target="_blank" rel="noopener">License</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

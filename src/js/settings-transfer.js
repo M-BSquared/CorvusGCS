@@ -34,6 +34,7 @@ Corvus.settingsTransfer = (function () {
     { key: "corvus.scale", section: "interface" },
     { key: "corvus.units", section: "interface" },
     { key: "corvus.topbarDots", section: "interface" },
+    { key: "corvus.topbarAltitude", section: "interface" },
     { key: "corvus.notificationMarks", section: "interface" },
     { key: "corvus.rc.transmitter.bindings.v2", section: "interface" },
     { key: "corvus.rc.transmitter.mode.v1", section: "interface" },

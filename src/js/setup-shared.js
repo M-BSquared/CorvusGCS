@@ -252,11 +252,70 @@ Corvus.setupShared = (function () {
     status.textContent = text || "";
   }
 
-  /** The page-level status line above the cards. */
+  /**
+   * The row under the back button: title and subtitle on the left, the page's
+   * actions (and its readiness chips) on the right, bottom edges aligned. A
+   * row of its own under the title cost every setup page a band of height for
+   * two or three buttons.
+   */
+  function pageHead(header, actions) {
+    const head = el("div", "setup-head");
+    head.appendChild(header);
+    if (actions) head.appendChild(actions);
+    return head;
+  }
+
+  /** Whether the vehicle link is up, as far as telemetry knows. Unknown is up. */
+  function linkUp() {
+    const t = window.Corvus && Corvus.telemetry;
+    const s = t && typeof t.getState === "function" ? t.getState() : null;
+    return !s || s.connected !== false;
+  }
+
+  /** The chip the calibration and tuning pages show for a missing link. */
+  function offlineChip() {
+    const chip = el("span", "calib-ready-chip");
+    chip.dataset.state = "bad";
+    chip.appendChild(el("span", "calib-ready-dot"));
+    chip.appendChild(el("span", "calib-ready-label", "Not connected"));
+    return chip;
+  }
+
+  /**
+   * The page-level status beside the actions.
+   *
+   * A read that failed with no link to the vehicle is shown as a "Not
+   * connected" chip rather than the read's error: it is a state that ends when
+   * the vehicle appears (reloadOnLink), not something wrong with what was read.
+   * The error itself stays on the chip's title. A page that already shows a
+   * live link chip marks its status `data-link-chip="1"` and gets no second one.
+   */
   function setActionsStatus(status, cls, text) {
     if (!status) return;
+    status.innerHTML = "";
+    if (cls === "err" && !linkUp()) {
+      status.className = "params-actions-status offline";
+      status.textContent = "";
+      status.title = text || "";
+      if (!status.dataset || status.dataset.linkChip !== "1") status.appendChild(offlineChip());
+      return;
+    }
     status.className = "params-actions-status" + (cls ? " " + cls : "");
+    status.title = "";
     status.textContent = text || "";
+  }
+
+  /**
+   * Read the page again once the link it was missing is back, so "Not
+   * connected" gives way to the page by itself. Called from the page's own
+   * telemetry subscription with each frame; it acts only while the status
+   * says the last read failed for want of a link, so it fires once.
+   */
+  function reloadOnLink(state, s, reload) {
+    if (!s || !s.connected || state.destroyed || state.loading || state.checking) return;
+    const status = state.actionsStatus;
+    if (!status || !status.classList || !status.classList.contains("offline")) return;
+    reload();
   }
 
   /**
@@ -490,22 +549,29 @@ Corvus.setupShared = (function () {
     return { el: control, status };
   }
 
-  /** A plain form: one labelled control per field. opts as paramControl. */
+  /**
+   * A plain form: one labelled control per field. opts as paramControl, plus
+   * `hintAsInfo`, which puts each hint behind an icon beside its label
+   * instead of printing it under the control, for a page that shows several
+   * forms side by side.
+   */
   function paramFieldGrid(state, fields, opts) {
     const o = opts || {};
     const grid = el("div", pformClass(o.prefix, "grid"));
     (fields || []).forEach((field) => {
       const row = el("div", pformClass(o.prefix, "field"));
       row.dataset.param = field.param || "";
-      row.appendChild(el("span", pformClass(o.prefix, "field-label"),
-        field.label || field.param || ""));
+      const text = field.label || field.param || "";
+      row.appendChild(o.hintAsInfo
+        ? rowLabel(pformClass(o.prefix, "field-label"), text, field.hint)
+        : el("span", pformClass(o.prefix, "field-label"), text));
       const cell = el("div", pformClass(o.prefix, "field-control"));
       const built = paramControl(state, field, o);
       cell.appendChild(built.el);
       if (field.unit) cell.appendChild(el("span", pformClass(o.prefix, "unit"), field.unit));
       cell.appendChild(built.status);
       row.appendChild(cell);
-      if (field.hint) {
+      if (field.hint && !o.hintAsInfo) {
         row.appendChild(el("span", "field-hint " + pformClass(o.prefix, "field-hint"),
           field.hint));
       }
@@ -728,7 +794,7 @@ Corvus.setupShared = (function () {
     backButton, plotlyLayout, plotlyConfig,
     // Schema-driven parameter forms (Motors, Safety & Sensors).
     notify, formatNumber, isNumeric, rangeProblem,
-    setFieldStatus, setActionsStatus,
+    setFieldStatus, setActionsStatus, pageHead, reloadOnLink,
     registerControl, dropControls, recheckAll, applyArmed,
     restoreControl, applyParam, signedValue, paramControl, paramFieldGrid,
     pformClass, rebootButton,

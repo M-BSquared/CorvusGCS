@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<!-- Written by tools/guide.py around the content block below. Edit the text
+     between the guide:content markers; run the script for everything else. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect to the aircraft · Corvus GCS documentation</title>
+<meta name="description" content="How Corvus finds a link on its own, connecting by hand over serial, UDP or TCP, sharing the link with QGroundControl, and what the status bar says.">
+<link rel="canonical" href="https://m-bsquared.github.io/CorvusGCS/guide/connect.html">
+<meta name="theme-color" content="#0B0E12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="dark light">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Corvus GCS">
+<meta property="og:title" content="Connect to the aircraft · Corvus GCS documentation">
+<meta property="og:description" content="How Corvus finds a link on its own, connecting by hand over serial, UDP or TCP, sharing the link with QGroundControl, and what the status bar says.">
+<meta property="og:url" content="https://m-bsquared.github.io/CorvusGCS/guide/connect.html">
+<meta property="og:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/icons/apple-touch-icon.png">
+<link rel="preload" as="font" type="font/woff2" href="../assets/fonts/Inter-latin.woff2" crossorigin>
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="guide.css">
+<script>
+  document.documentElement.classList.add('js');
+  try {
+    var t = localStorage.getItem('corvus-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+</script>
+<script src="../script.js" defer></script>
+<script src="guide.js" defer></script>
+</head>
+
+<body class="guide">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <g id="i-github" fill="currentColor" stroke="none" transform="scale(1.5)"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></g>
+    <g id="i-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></g>
+    <g id="i-moon"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></g>
+    <g id="i-menu"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></g>
+    <g id="i-close"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></g>
+    <g id="i-prev"><path d="m15 18-6-6 6-6"/></g>
+    <g id="i-next"><path d="m9 18 6-6-6-6"/></g>
+    <g id="i-book"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></g>
+    <g id="i-info"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></g>
+    <g id="i-alert"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></g>
+    <g id="i-edit"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></g>
+  </defs>
+</svg>
+
+<header class="site-header" id="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="../index.html" aria-label="Corvus GCS, project website">
+      <span class="brand-mark" role="img" aria-hidden="true"></span>
+      <span class="brand-text">
+        <span class="brand-name">Corvus GCS</span>
+        <span class="brand-sub">Documentation</span>
+      </span>
+    </a>
+
+    <nav class="site-nav" id="site-nav" aria-label="Main">
+      <ul class="nav-list">
+        <li><a href="../index.html">Website</a></li>
+        <li><a href="index.html">Documentation</a></li>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS/releases/latest" target="_blank" rel="noopener">Download</a></li>
+        <li><a class="nav-github" href="https://github.com/M-BSquared/CorvusGCS" target="_blank" rel="noopener">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-github"></use></svg>GitHub</a></li>
+      </ul>
+    </nav>
+
+    <div class="header-actions">
+      <button class="icon-btn theme-toggle" id="theme-toggle" type="button" aria-label="Switch to the light theme" aria-pressed="false">
+        <svg class="icon icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-sun"></use></svg>
+        <svg class="icon icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-moon"></use></svg>
+      </button>
+      <button class="icon-btn nav-toggle" id="nav-toggle" type="button" aria-label="Open the menu" aria-expanded="false" aria-controls="site-nav">
+        <svg class="icon icon-open" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-menu"></use></svg>
+        <svg class="icon icon-shut" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap guide-layout">
+<nav class="guide-nav" id="guide-nav" aria-label="Documentation">
+  <button class="guide-nav-toggle" id="guide-nav-toggle" type="button" aria-expanded="false" aria-controls="guide-nav-body">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-book"></use></svg><span>Contents</span><span class="guide-nav-here">Connect to the aircraft</span><svg class="icon guide-nav-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg>
+  </button>
+  <div class="guide-nav-body" id="guide-nav-body">
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Start</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="install.html">Install and run</a></li>
+        <li><a href="connect.html" aria-current="page">Connect to the aircraft</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Fly</p>
+      <ul>
+        <li><a href="flying.html">Map, HUD and flight controls</a></li>
+        <li><a href="3d-offline.html">3D, terrain and offline maps</a></li>
+        <li><a href="mission.html">Mission planner</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Set up</p>
+      <ul>
+        <li><a href="airframe.html">Airframe and motors</a></li>
+        <li><a href="safety.html">Safety, sensors and battery</a></li>
+        <li><a href="parameters.html">Parameters and calibration</a></li>
+        <li><a href="radio-tuning.html">Radio control and tuning</a></li>
+        <li><a href="hardware.html">Telemetry radio, RTK and Remote ID</a></li>
+        <li><a href="firmware.html">Firmware</a></li>
+        <li><a href="video.html">Video and windows</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Review</p>
+      <ul>
+        <li><a href="analysis.html">Logs and Flight Review</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Tools</p>
+      <ul>
+        <li><a href="workspace.html">Console and SSH</a></li>
+        <li><a href="plugins.html">Plugins</a></li>
+        <li><a href="settings.html">Settings</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Reference</p>
+      <ul>
+        <li><a href="compatibility.html">PX4 and ArduPilot</a></li>
+        <li><a href="security.html">Network and security</a></li>
+        <li><a href="reference.html">Files, settings and variables</a></li>
+        <li><a href="build.html">Build the apps</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main id="main" class="guide-main">
+<article class="doc">
+<p class="eyebrow">Start</p>
+<!-- guide:content -->
+<h1>Connect to the aircraft</h1>
+<p class="doc-lead">
+  Usually you do not have to do anything. Corvus looks for a link when it
+  starts and takes the first one it finds. This page explains how it chooses,
+  how to connect by hand, how to share the link with a second ground station,
+  and how to read the status bar once you are connected.
+</p>
+
+<h2 id="automatic">Automatic connection</h2>
+<p>At launch Corvus goes through this list and takes the first rule that produces a link:</p>
+<ol>
+  <li><strong>A connection on the command line.</strong> Only a person types one, so it outranks any hardware.</li>
+  <li><strong>A flight controller on a USB cable</strong>, recognised by its USB descriptor.</li>
+  <li><strong>A SiK telemetry radio</strong>, recognised as a USB serial adapter (FTDI, CP210x or CH340).</li>
+  <li><strong>The connection saved in the config file</strong>, used exactly as written.</li>
+  <li><strong>The ground station UDP port</strong>, <code>udp:0.0.0.0:14550</code>. This is where PX4 SITL publishes, so a simulator connects with no clicking either.</li>
+</ol>
+<p>
+  The LINK tab says which rule won, with an <code>AUTO</code> chip beside the
+  status, and <code>AUTO · SCANNING</code> while it is still looking. Serial
+  ports are never opened just to find out what is behind them: the choice is
+  made from the USB descriptors alone. Some ports are left out before any rule
+  sees them:
+</p>
+<ul>
+  <li><strong>Phantom ports</strong> that exist whether or not anything is plugged in, such as <code>/dev/ttyS*</code> on Linux.</li>
+  <li><strong>A board in its bootloader</strong>, which speaks the bootloader protocol rather than MAVLink and is about to be wanted by the firmware flasher.</li>
+  <li><strong>An RTK base station.</strong> On Linux a u-blox receiver on USB looks exactly like a flight controller's port, and it never sends a heartbeat. Corvus recognises it and leaves it to the <a href="hardware.html#rtk">RTK service</a>.</li>
+</ul>
+<p>
+  With two devices of the same kind, the first by device name wins, so the
+  same aircraft is picked on every launch regardless of the order in which USB
+  happened to enumerate them.
+</p>
+
+<h3 id="never-steals">What it will not do</h3>
+<ul>
+  <li><strong>It never takes a link that is up.</strong> Plug a second device in while connected and the LINK tab offers it as a row with a <strong>Connect</strong> button instead of switching, because the link it would replace may be carrying an aircraft that is flying. It only dials by itself when the current link is down and has had no heartbeat for 8 seconds.</li>
+  <li><strong>Your choice wins for the session.</strong> Once you connect or disconnect by hand, nothing is dialled automatically until the next launch. Then it starts fresh, so tomorrow's cable wins again on its own. The one thing it still does is follow the device you chose when it comes back under a new port name (see below).</li>
+  <li><strong>It never picks PX4's onboard ports</strong> (14540 to 14549), which belong to MAVSDK and MAVROS. A saved connection on one of them is honoured but warned about.</li>
+</ul>
+<p>
+  Unplugging a device and plugging it back in counts as asking again: if the
+  link is down, it will be dialled.
+</p>
+<p>
+  Plugging it into a different USB socket can give the same device a new port
+  name (a new COM number on Windows, a new <code>/dev/cu.usbserial</code> name
+  on macOS, <code>ttyACM1</code> instead of <code>ttyACM0</code> on Linux after
+  a quick replug). Corvus recognises the device by its USB vendor, product and
+  serial number and moves the link to the new name at the same baud rate,
+  within a few seconds, also when you connected by hand. With two identical
+  devices that carry no serial number it cannot tell which one is yours, and
+  leaves the choice to you.
+</p>
+<p>To switch any part of it off, add an <code>autoconnect</code> block to <code>~/.corvus/config.json</code>. Every key is optional and must be a real <code>true</code> or <code>false</code>:</p>
+<pre><code>{ "autoconnect": { "enabled": true, "usb": true, "sik": true, "udp_fallback": true } }</code></pre>
+<p>
+  The complete contract (every reason string, the state fields and the
+  endpoints) is in the
+  <a href="https://github.com/M-BSquared/CorvusGCS/blob/master/docs/auto-connect.md">auto-connect interface reference</a>.
+</p>
+
+<h2 id="manual">Connecting by hand</h2>
+<p>
+  Open the <strong>LINK</strong> tab in the side panel. This is the normal way
+  to override the automatic choice; a command-line connection is only for
+  scripting. Serial and UDP/TCP share one card and one <strong>Connect</strong>
+  button. The switch at the top chooses which, and it opens on the kind you
+  connected with last.
+</p>
+<dl>
+  <dt>Serial</dt>
+  <dd>
+    <p>Choose the port from the dropdown and a baud rate. The list is read again every time you open the tab, so a radio plugged in after launch simply appears. 57600 is the default, labelled for the Holybro SiK Radio V3.</p>
+    <p>The port you last flew on stays in the list even when it is unplugged, marked <em>not connected</em>, so an empty dropdown is never the whole answer.</p>
+  </dd>
+  <dt>UDP and TCP</dt>
+  <dd>
+    <p>Type a connection string, or use one of the presets for the endpoints PX4 publishes. Presets fill the field rather than connecting outright, so you can edit before you commit.</p>
+    <ul>
+      <li><code>udp:</code> and <code>udpin:</code> bind a local port and wait for the aircraft to speak.</li>
+      <li><code>udpout:</code> dials out and speaks first. This is what a <strong>mavlink-router</strong> <code>UdpEndpoint</code> in <code>Mode = Server</code> needs, and what reaches a router behind NAT.</li>
+      <li><code>tcp:</code> connects to a <code>TcpEndpoint</code>; <code>tcpin:</code> listens for one.</li>
+    </ul>
+  </dd>
+  <dt>Recent connections</dt>
+  <dd>At the top of the tab, one click to reuse. They are kept exact: <code>:57600</code> and <code>:115200</code> on the same port are two entries, because merging them would silently reconnect at the wrong baud rate. The newest one is also the tab's memory, so a laptop opened at the field is one button away from the link it had.</dd>
+  <dt>Disconnect</dt>
+  <dd>Frees the radio without quitting the app. It also works <em>during</em> a connection attempt, which is exactly when a retry loop needs stopping. After a disconnect nothing reconnects behind your back.</dd>
+</dl>
+
+<h2 id="sik-and-sitl">SiK radios, simulators and ROS</h2>
+<h3 id="sik">Holybro SiK Telemetry Radio V3</h3>
+<p>On Linux the radio shows up as <strong>two</strong> devices, for example <code>/dev/ttyUSB0</code> and <code>/dev/ttyUSB1</code>. The lower numbered one is the MAVLink data port.</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Setting</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Device path</td><td><code>/dev/ttyUSB0</code> (the lower of the two)</td></tr>
+    <tr><td>Baud rate</td><td>57600 (factory default)</td></tr>
+    <tr><td>Connection string</td><td><code>serial:/dev/ttyUSB0:57600</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  On a serial link Corvus asks for conservative MAVLink stream rates so a
+  57 kbps radio is not saturated, allows a longer heartbeat timeout (10 s), and
+  reconnects with backoff if the link drops. To program the radios themselves
+  (network ID, air rate, power), see <a href="hardware.html#sik-radio">Telemetry radio</a>.
+</p>
+
+<h3 id="sitl">PX4 SITL</h3>
+<p>PX4's simulator sends to UDP 14550, which Corvus listens on by default. Start it and Corvus connects:</p>
+<pre><code>make px4_sitl     # in the PX4-Autopilot directory</code></pre>
+
+<h3 id="ros">Next to MAVROS, MAVSDK or ROS</h3>
+<p>
+  Those use UDP <strong>14540</strong>, PX4's <em>onboard</em> link, which is
+  a different socket from the 14550 one Corvus uses. Only one process can hold
+  a UDP port, so pointing Corvus at 14540 while MAVROS runs (or the other way
+  round) leaves one of them with no telemetry at all. On a simulator that looks
+  like a broken vehicle rather than a port clash, which is why Corvus names the
+  conflict when the bind fails. Leave Corvus on 14550. If both really need the
+  same endpoint, put a mavlink-router in front and give each its own port.
+</p>
+
+<h2 id="qgroundcontrol">Running QGroundControl at the same time</h2>
+<p>
+  A serial port, a USB autopilot or a SiK radio can be opened by exactly one
+  program, so a second ground station has always meant closing the first. It
+  does not have to. Tick <strong>Mirror this link over UDP</strong> on the LINK
+  tab, then start QGroundControl. There is nothing to configure on either end
+  and nothing to install: 14550 is the UDP link QGroundControl opens by itself,
+  Corvus mirrors every frame there from the first one, and the router is part
+  of Corvus and stops when Corvus does.
+</p>
+
+<h3 id="why-14551">Why Corvus listens on 14551</h3>
+<p>
+  Corvus deliberately does not bind 14550 itself. It listens on 14551 and
+  speaks first. QGroundControl's default link <em>binds</em> 14550 and waits to
+  be spoken to, so a Corvus binding it too would leave two listeners and no
+  talker. On Linux the second bind fails and QGroundControl has no link. On
+  macOS both binds succeed and one socket silently receives every datagram, so
+  QGroundControl shows a connected link that receives nothing and neither
+  program reports an error. If something else holds 14551, Corvus takes any
+  free port instead and says which on the LINK tab.
+</p>
+
+<div class="callout callout-warn">
+  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-alert"></use></svg>
+  <div><p><strong>With PX4 SITL, pick another port.</strong> SITL also sends to UDP 14550, so a Corvus listening there that also mirrors to 127.0.0.1:14550 would be mirroring into its own vehicle link. Corvus skips that target and says so on the LINK tab. Set the forwarding port to 14560 (or any free port) and add a UDP link on that port in QGroundControl.</p></div>
+</div>
+
+<h3 id="commands-from-second-station">Letting the second station command</h3>
+<p>
+  By default the second station is a <em>screen</em>: telemetry flows out to
+  it and nothing flows back. <strong>Let it command the aircraft</strong> is a
+  separate switch, because two stations that can both arm and both change mode
+  is a hazard rather than a convenience, and only you know whether you want it.
+  Turn it on and QGroundControl's frames reach the aircraft unchanged (mission
+  uploads, mode changes, parameter writes), and Corvus still records the whole
+  stream to its tlog.
+</p>
+
+<h3 id="system-id">Give QGroundControl its own system ID</h3>
+<p>
+  Corvus identifies itself as system 254, component 190. PX4 counts message
+  sequence numbers per system ID, so two stations sharing one make the
+  autopilot report packet loss that is not happening, and blur which station a
+  GCS failsafe is about. In QGroundControl set <em>Application Settings,
+  MAVLink, Ground Station system ID</em> to something else; 255 is a fine
+  choice. If you forget, the LINK tab says so: Corvus notices a second station
+  sending as 254, names the setting to change, and does not pass that
+  station's frames to the aircraft until it has its own ID.
+</p>
+
+<h3 id="shared-links">What Corvus reads off a shared link</h3>
+<p>
+  Whether you share the link this way or put mavlink-router in front of it, the
+  link then carries more than the aircraft: the other station's heartbeat, a
+  companion computer, a gimbal, sometimes a second vehicle. Corvus reads only
+  its own aircraft. Another node's heartbeat cannot change the armed state or
+  the flight mode, and cannot keep a lost aircraft looking connected. The
+  aircraft to command is taken from the first heartbeat sent by an actual
+  autopilot, not the first heartbeat of any kind. An identical frame arriving
+  twice within 0.3 s (the signature of a routing loop) is dropped before it is
+  read, so a looped acknowledgement cannot confirm a command twice.
+</p>
+
+<h2 id="one-at-a-time">One Corvus at a time</h2>
+<p>
+  Starting Corvus while it is already running shows a message saying so,
+  including where the first one is listening, rather than opening a second
+  window. The reason is the same as above: a serial port can be used by exactly
+  one program, but on Linux and macOS the operating system does not enforce
+  it. Two copies both open <code>/dev/ttyUSB0</code> without an error and each
+  reads whatever bytes it gets to first. Both windows then show the same
+  aircraft with half its telemetry missing: attitude updates while position
+  freezes, and a command's acknowledgement arrives in the other window.
+  Neither reports a disconnect, because from each program's point of view
+  nothing failed.
+</p>
+<p>
+  If you really want two (two aircraft, two radios, two separate links on one
+  laptop), set <code>CORVUS_ALLOW_MULTI=1</code>. Give the second one its own
+  connection string and its own forwarding port. They still cannot share a
+  radio, and they will write over each other's settings.
+</p>
+<pre><code>CORVUS_ALLOW_MULTI=1 ./run.sh</code></pre>
+<p>
+  The guard is a lock the operating system holds for the running process, not
+  a file left on disk, so a Corvus that crashed or was force quit leaves nothing
+  to clean up. The next launch just works.
+</p>
+
+<h2 id="status">Reading the status bar</h2>
+<p>
+  Next to the connection state you get <strong>link quality</strong>, not only
+  "connected": signal strength, heartbeat regularity and receive errors.
+  Connected tells you the socket is up; link quality tells you whether it is
+  worth flying on.
+</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>State</th><th>What you see</th></tr></thead>
+  <tbody>
+    <tr><td>Connecting or reconnecting</td><td>Yellow dot, with the last error</td></tr>
+    <tr><td>Connected</td><td>Green dot</td></tr>
+    <tr><td>Disconnected</td><td>Grey dot</td></tr>
+    <tr><td>Ready to fly</td><td><strong>READY</strong> in a green pill: the autopilot's own preflight checks pass</td></tr>
+    <tr><td>Armed, on the ground</td><td><strong>ARMED</strong> in an amber pill: propellers are live and the aircraft is still within reach</td></tr>
+    <tr><td>Airborne</td><td><strong>FLYING</strong> in a blue pill, from the vehicle's own <code>EXTENDED_SYS_STATE</code>, or from height above home on firmware that does not send it</td></tr>
+    <tr><td>Preflight failing</td><td>Amber <strong>NOT READY</strong>: the autopilot would refuse to arm. The failing checks are counted beside it and listed on hover, and Corvus asks the autopilot for them when it has not said</td></tr>
+    <tr><td>Readiness not reported</td><td>Grey <strong>STANDBY</strong>: firmware that does not publish its preflight state</td></tr>
+    <tr><td>Kill switch engaged</td><td><strong>KILL SWITCH</strong> in a red pill, shown above ARMED and FLYING. PX4 still reports armed while the switch holds the motors, so the bar says what the motors are actually doing. A switch that was already engaged when Corvus connected is recognised too, by the preflight check it fails</td></tr>
+    <tr><td>Flight termination</td><td><strong>TERMINATED</strong> in a red pill: the vehicle reports termination or lockdown and has not said why. The motor outputs are cut</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  The three states worth recognising at a glance (cleared to fly, propellers
+  live, airborne) carry a tinted pill as well as a colour, so they can be told
+  apart by shape before the colour is read. NOT READY deliberately gets no
+  pill: it is the absence of a clearance, not an active state.
+</p>
+<p>
+  Notifications, toasts and the kill switch messages are explained on
+  <a href="flying.html#notifications">Map, HUD and flight controls</a>.
+</p>
+<!-- /guide:content -->
+</article>
+
+<nav class="doc-pager" aria-label="Previous and next page">
+  <a class="doc-pager-prev" href="install.html" rel="prev"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-prev"></use></svg><span><small>Previous</small>Install and run</span></a>
+  <a class="doc-pager-next" href="flying.html" rel="next"><span><small>Next</small>Map, HUD and flight controls</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg></a>
+</nav>
+
+<p class="doc-edit">
+  <a href="https://github.com/M-BSquared/CorvusGCS/edit/master/docs/guide/connect.html" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-edit"></use></svg>Suggest a change to this page</a>
+</p>
+</main>
+
+<aside class="guide-toc" aria-labelledby="toc-title">
+  <p class="guide-toc-title" id="toc-title">On this page</p>
+  <ul>
+    <li><a href="#automatic">Automatic connection</a></li>
+    <li><a href="#manual">Connecting by hand</a></li>
+    <li><a href="#sik-and-sitl">SiK radios, simulators and ROS</a></li>
+    <li><a href="#qgroundcontrol">Running QGroundControl at the same time</a></li>
+    <li><a href="#one-at-a-time">One Corvus at a time</a></li>
+    <li><a href="#status">Reading the status bar</a></li>
+  </ul>
+</aside>
+</div>
+
+<footer class="site-footer guide-footer">
+  <div class="wrap footer-base">
+    <p class="copyright">&copy; <span id="year">2026</span> Maximilian Böck. Developed with the Universität der Bundeswehr München.</p>
+    <p class="footer-meta">
+      Source available under the Sustainable Use License 1.0 (<em>fair-code</em>).
+      <a href="https://github.com/M-BSquared/CorvusGCS/blob/master/LICENSE.md" target="_blank" rel="noopener">License</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

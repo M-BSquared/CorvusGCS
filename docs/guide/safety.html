@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<!-- Written by tools/guide.py around the content block below. Edit the text
+     between the guide:content markers; run the script for everything else. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Safety, sensors and battery · Corvus GCS documentation</title>
+<meta name="description" content="Geofence limits, return to launch, failsafe actions, distance sensors and optical flow, the preflight checklist, and the battery and power page.">
+<link rel="canonical" href="https://m-bsquared.github.io/CorvusGCS/guide/safety.html">
+<meta name="theme-color" content="#0B0E12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="dark light">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Corvus GCS">
+<meta property="og:title" content="Safety, sensors and battery · Corvus GCS documentation">
+<meta property="og:description" content="Geofence limits, return to launch, failsafe actions, distance sensors and optical flow, the preflight checklist, and the battery and power page.">
+<meta property="og:url" content="https://m-bsquared.github.io/CorvusGCS/guide/safety.html">
+<meta property="og:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/icons/apple-touch-icon.png">
+<link rel="preload" as="font" type="font/woff2" href="../assets/fonts/Inter-latin.woff2" crossorigin>
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="guide.css">
+<script>
+  document.documentElement.classList.add('js');
+  try {
+    var t = localStorage.getItem('corvus-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+</script>
+<script src="../script.js" defer></script>
+<script src="guide.js" defer></script>
+</head>
+
+<body class="guide">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <g id="i-github" fill="currentColor" stroke="none" transform="scale(1.5)"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></g>
+    <g id="i-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></g>
+    <g id="i-moon"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></g>
+    <g id="i-menu"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></g>
+    <g id="i-close"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></g>
+    <g id="i-prev"><path d="m15 18-6-6 6-6"/></g>
+    <g id="i-next"><path d="m9 18 6-6-6-6"/></g>
+    <g id="i-book"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></g>
+    <g id="i-info"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></g>
+    <g id="i-alert"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></g>
+    <g id="i-edit"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></g>
+  </defs>
+</svg>
+
+<header class="site-header" id="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="../index.html" aria-label="Corvus GCS, project website">
+      <span class="brand-mark" role="img" aria-hidden="true"></span>
+      <span class="brand-text">
+        <span class="brand-name">Corvus GCS</span>
+        <span class="brand-sub">Documentation</span>
+      </span>
+    </a>
+
+    <nav class="site-nav" id="site-nav" aria-label="Main">
+      <ul class="nav-list">
+        <li><a href="../index.html">Website</a></li>
+        <li><a href="index.html">Documentation</a></li>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS/releases/latest" target="_blank" rel="noopener">Download</a></li>
+        <li><a class="nav-github" href="https://github.com/M-BSquared/CorvusGCS" target="_blank" rel="noopener">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-github"></use></svg>GitHub</a></li>
+      </ul>
+    </nav>
+
+    <div class="header-actions">
+      <button class="icon-btn theme-toggle" id="theme-toggle" type="button" aria-label="Switch to the light theme" aria-pressed="false">
+        <svg class="icon icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-sun"></use></svg>
+        <svg class="icon icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-moon"></use></svg>
+      </button>
+      <button class="icon-btn nav-toggle" id="nav-toggle" type="button" aria-label="Open the menu" aria-expanded="false" aria-controls="site-nav">
+        <svg class="icon icon-open" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-menu"></use></svg>
+        <svg class="icon icon-shut" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap guide-layout">
+<nav class="guide-nav" id="guide-nav" aria-label="Documentation">
+  <button class="guide-nav-toggle" id="guide-nav-toggle" type="button" aria-expanded="false" aria-controls="guide-nav-body">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-book"></use></svg><span>Contents</span><span class="guide-nav-here">Safety, sensors and battery</span><svg class="icon guide-nav-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg>
+  </button>
+  <div class="guide-nav-body" id="guide-nav-body">
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Start</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="install.html">Install and run</a></li>
+        <li><a href="connect.html">Connect to the aircraft</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Fly</p>
+      <ul>
+        <li><a href="flying.html">Map, HUD and flight controls</a></li>
+        <li><a href="3d-offline.html">3D, terrain and offline maps</a></li>
+        <li><a href="mission.html">Mission planner</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Set up</p>
+      <ul>
+        <li><a href="airframe.html">Airframe and motors</a></li>
+        <li><a href="safety.html" aria-current="page">Safety, sensors and battery</a></li>
+        <li><a href="parameters.html">Parameters and calibration</a></li>
+        <li><a href="radio-tuning.html">Radio control and tuning</a></li>
+        <li><a href="hardware.html">Telemetry radio, RTK and Remote ID</a></li>
+        <li><a href="firmware.html">Firmware</a></li>
+        <li><a href="video.html">Video and windows</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Review</p>
+      <ul>
+        <li><a href="analysis.html">Logs and Flight Review</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Tools</p>
+      <ul>
+        <li><a href="workspace.html">Console and SSH</a></li>
+        <li><a href="plugins.html">Plugins</a></li>
+        <li><a href="settings.html">Settings</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Reference</p>
+      <ul>
+        <li><a href="compatibility.html">PX4 and ArduPilot</a></li>
+        <li><a href="security.html">Network and security</a></li>
+        <li><a href="reference.html">Files, settings and variables</a></li>
+        <li><a href="build.html">Build the apps</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main id="main" class="guide-main">
+<article class="doc">
+<p class="eyebrow">Set up</p>
+<!-- guide:content -->
+<h1>Safety, sensors and battery</h1>
+<p class="doc-lead">
+  The envelope the aircraft is allowed to use and what it does when something
+  is lost, the sensors that many of those limits depend on, and the battery
+  that ends every flight.
+</p>
+
+<figure class="doc-shot">
+  <a href="../assets/images/safety.jpg"><img src="../assets/images/safety-800.jpg"
+     srcset="../assets/images/safety-800.jpg 800w, ../assets/images/safety.jpg 1600w"
+     sizes="(max-width: 900px) calc(100vw - 40px), 760px" width="1600" height="1000" loading="lazy" decoding="async"
+     alt="The Safety and Sensors page: the maximum distance and height, the action at the limit, and the return to launch type and heights."></a>
+  <figcaption>Maximum distance and height, the action at the limit, and the return profile.</figcaption>
+</figure>
+
+<h2 id="limits">Limits</h2>
+<p>
+  The <strong>Safety &amp; Sensors</strong> page starts with the maximum
+  distance and height from home, and what the aircraft does when it reaches
+  either one.
+</p>
+
+<h2 id="return">Return to launch</h2>
+<p>
+  The return profile: the height to return at and to descend to, the climb
+  cone, and the time spent loitering above home before landing. These are the
+  heights the <a href="mission.html#aircraft-type">Mission planner</a> reads to
+  draw a Return item the way it will actually be flown.
+</p>
+
+<h2 id="failsafes">Failsafe actions</h2>
+<p>
+  One action for every loss the autopilot can detect: RC, data link, position,
+  battery and actuator. The <em>levels</em> the battery action reacts to are on
+  the <a href="#battery">Battery &amp; Power</a> page with the rest of the pack,
+  so that one number has one place where it is edited.
+</p>
+
+<h2 id="sensors">Distance sensor and optical flow</h2>
+<p>
+  A <strong>Sensors</strong> card on the same page, because a ground lidar is
+  what half those limits lean on. Each sensor is a tile that says whether it is
+  up and what is feeding it, and opens onto its own page.
+</p>
+
+<h3 id="one-switch">One switch</h3>
+<p>
+  On the sensor's page, one switch brings it up. Corvus starts the driver
+  <em>and</em> tells the estimator to use it, which is the step usually
+  missed: a rangefinder reading perfectly while the EKF ignores it looks exactly
+  like a working sensor. The state line always names both halves.
+</p>
+<p>
+  A sensor that is only half set up is shown as <strong>Incomplete</strong>,
+  with one line for each missing piece: the estimator ignoring it, no serial
+  port set to it, the wrong baud rate, a CAN port not running DroneCAN. One
+  press of the switch completes it.
+</p>
+
+<h3 id="wiring">Where to plug it in</h3>
+<p>
+  Every sensor model says which connector it belongs on (I2C, CAN or a serial
+  port), and the serial port picker shows what already runs on each port, so a
+  lidar is never put on the port your telemetry radio uses. On PX4 a port
+  another driver already holds is refused with the reason.
+</p>
+
+<h3 id="presets">Hardware presets</h3>
+<p>
+  You do not own a <code>SENS_TFMINI_CFG</code>, you own a TFmini-S. One
+  dropdown lists the modules Corvus knows: Holybro H-Flow, Benewake TFmini-S,
+  TFmini Plus and TF03, and on ArduPilot the Matek 3901-L0X. Each row names
+  its bus and model, because picking "UART" when the module on the bench has a
+  CAN plug is exactly the mistake a list like this can prevent.
+</p>
+<p>
+  Choose one and Corvus writes its whole chain: the driver, the estimator, and
+  the numbers from that module's datasheet (the height band a flow camera can
+  track in, the noise a lidar's accuracy implies).
+</p>
+<ul>
+  <li>Every parameter it would write is listed with its value and its reason <em>before</em> anything is sent.</li>
+  <li>A module this firmware cannot run says so in its row, rather than failing once chosen.</li>
+  <li>A parameter your firmware does not carry is named rather than silently skipped.</li>
+</ul>
+
+<h3 id="custom">Custom, and your own parameters</h3>
+<p>
+  The first row of that dropdown writes nothing and leaves everything to you:
+  the model picker (Lightware, Lidar-Lite, Benewake, PMW3901, DroneCAN and the
+  rest, or a sensor arriving over MAVLink), the serial port if it needs one,
+  and the settings that really are per airframe: mounting offset, height limits
+  and quality gates.
+</p>
+<p>
+  You can also name any parameter and it joins the form, read in the same
+  batch and written the same way as everything else. The list is remembered in
+  this browser profile, so a row you added because this aircraft needs it is
+  still there next time.
+</p>
+
+<h3 id="ardupilot-sensors">On ArduPilot</h3>
+<p>
+  The switch also sets what the driver depends on (the serial port and its
+  baud rate, the CAN port, or the sensor's I2C address) and leaves the height
+  source on the barometer, as ArduPilot's documentation asks. Optical flow goes
+  into an EKF source set the way the ArduPilot wiki describes: the primary one
+  on an aircraft without GPS, source set 2 beside the GPS otherwise, selected
+  in flight with an RC switch.
+</p>
+
+<h2 id="checklist">Preflight checklist</h2>
+<p>
+  The last card on the page is your own preflight checklist, because it asks
+  the same question as the failsafes: is everything right before the aircraft
+  leaves the ground. It turns the checklist window on the Home map on, puts
+  that window away or brings it back, and <strong>Edit checklists</strong>
+  opens the editor. The lists belong to the station, not to the aircraft, so
+  the card works with no vehicle connected and stays editable while armed.
+  How the window itself works is under
+  <a href="flying.html#checklist">Preflight checklist</a>.
+</p>
+
+<h2 id="battery">Battery &amp; Power</h2>
+<figure class="doc-shot">
+  <a href="../assets/images/battery.jpg"><img src="../assets/images/battery-800.jpg"
+     srcset="../assets/images/battery-800.jpg 800w, ../assets/images/battery.jpg 1600w"
+     sizes="(max-width: 900px) calc(100vw - 40px), 760px" width="1600" height="1000" loading="lazy" decoding="async"
+     alt="The Battery and Power page: the pack drawn with its warning thresholds and per cell voltages, its live readings, and the settings for how Corvus reads it."></a>
+  <figcaption>The pack drawn with its cells and failsafe levels, the live readings, and the settings.</figcaption>
+</figure>
+<p>
+  The pack on one page, split the way the job is: the aircraft on the left,
+  everything you can change on the right.
+</p>
+<dl>
+  <dt>Left: the pack as it is</dt>
+  <dd>A battery drawn with the cells it actually has, filled to what is left, each cell's voltage under it and the failsafe levels marked along the bar. Underneath, the live numbers: pack voltage, current, watts, mAh used, temperature, and the spread between the best and worst cell, which is the first thing a tired pack tells you.</dd>
+  <dt>Right: the settings</dt>
+  <dd>Cells and capacity, the voltage a cell holds full and empty, the power module's voltage divider and amps per volt, and the levels the low battery failsafe fires at.</dd>
+</dl>
+<p>
+  Every <code>BAT_</code> parameter on PX4 and every <code>BATT_</code> one on
+  ArduPilot lives here. That prefix is the whole rule for what is on this page
+  and what is on Safety &amp; Sensors.
+</p>
+
+<h3 id="charge-estimate">A second opinion on "how much is left"</h3>
+<p>
+  The percentage an autopilot publishes is a capacity count that starts from a
+  guess. A pack flown, charged to storage and flown again reads full on the
+  second takeoff. ArduPilot publishes no percentage at all unless a capacity is
+  set.
+</p>
+<p>
+  Corvus can read the cell voltage against a real discharge curve instead,
+  with a table each for LiPo, Li-ion and LiFePO₄ (3.3 V per cell is a flat
+  LiPo and a nearly full LiFePO₄). It corrects the voltage back to rest through
+  the pack's internal resistance, since a 6S pulling 60 A through 5 mΩ per cell
+  reads 1.8 V low in a climb.
+</p>
+<p>
+  Neither reading is right in every case, so both are computed on every frame
+  and both are on screen. One switch chooses which one the top bar, the map and
+  the logs go by, and the top bar says on hover which one you are reading and
+  what the other one thinks.
+</p>
+<ul>
+  <li><strong>Cell count</strong> is worked out the moment the battery is plugged in, the one moment the reading is unambiguous (19.8 V is a fresh 5S and a tired 6S), then held for the flight. You can also pin it by hand.</li>
+  <li><strong>A smart or DroneCAN battery</strong> that reports its own cells is believed over any of this, and its weakest cell is drawn where you can see it.</li>
+</ul>
+<!-- /guide:content -->
+</article>
+
+<nav class="doc-pager" aria-label="Previous and next page">
+  <a class="doc-pager-prev" href="airframe.html" rel="prev"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-prev"></use></svg><span><small>Previous</small>Airframe and motors</span></a>
+  <a class="doc-pager-next" href="parameters.html" rel="next"><span><small>Next</small>Parameters and calibration</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg></a>
+</nav>
+
+<p class="doc-edit">
+  <a href="https://github.com/M-BSquared/CorvusGCS/edit/master/docs/guide/safety.html" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-edit"></use></svg>Suggest a change to this page</a>
+</p>
+</main>
+
+<aside class="guide-toc" aria-labelledby="toc-title">
+  <p class="guide-toc-title" id="toc-title">On this page</p>
+  <ul>
+    <li><a href="#limits">Limits</a></li>
+    <li><a href="#return">Return to launch</a></li>
+    <li><a href="#failsafes">Failsafe actions</a></li>
+    <li><a href="#sensors">Distance sensor and optical flow</a></li>
+    <li><a href="#checklist">Preflight checklist</a></li>
+    <li><a href="#battery">Battery &amp; Power</a></li>
+  </ul>
+</aside>
+</div>
+
+<footer class="site-footer guide-footer">
+  <div class="wrap footer-base">
+    <p class="copyright">&copy; <span id="year">2026</span> Maximilian Böck. Developed with the Universität der Bundeswehr München.</p>
+    <p class="footer-meta">
+      Source available under the Sustainable Use License 1.0 (<em>fair-code</em>).
+      <a href="https://github.com/M-BSquared/CorvusGCS/blob/master/LICENSE.md" target="_blank" rel="noopener">License</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

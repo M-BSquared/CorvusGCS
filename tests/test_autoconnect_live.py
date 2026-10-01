@@ -23,10 +23,11 @@ is covered by the version, parameter and stream-fallback suites against real
 firmware, and the plan's L1-L6 live smoke against Gazebo is still the only
 thing that exercises all of it at once.
 
-The serial half of auto-connect — the USB and SiK priority, the bootloader
-skip — cannot be reached from a test at all: it needs a flight controller on a
-cable. It is covered by the policy tests against the real classifier, which is
-the same one the firmware flasher trusts.
+The serial half of auto-connect (the USB and SiK priority, the bootloader
+skip) is covered by the policy tests against the real classifier, which is the
+same one the firmware flasher trusts. What a pulled and replugged cable does to
+a real serial link, including the watcher following a board to a new port
+name, is ``tests/test_serial_hotplug_live.py``, over pseudo-terminals.
 """
 from __future__ import annotations
 

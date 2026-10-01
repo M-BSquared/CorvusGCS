@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<!-- Written by tools/guide.py around the content block below. Edit the text
+     between the guide:content markers; run the script for everything else. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Firmware · Corvus GCS documentation</title>
+<meta name="description" content="Flashing PX4 or ArduPilot over USB: picking the right board from a release, developer builds, peripherals and working offline.">
+<link rel="canonical" href="https://m-bsquared.github.io/CorvusGCS/guide/firmware.html">
+<meta name="theme-color" content="#0B0E12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="dark light">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Corvus GCS">
+<meta property="og:title" content="Firmware · Corvus GCS documentation">
+<meta property="og:description" content="Flashing PX4 or ArduPilot over USB: picking the right board from a release, developer builds, peripherals and working offline.">
+<meta property="og:url" content="https://m-bsquared.github.io/CorvusGCS/guide/firmware.html">
+<meta property="og:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/icons/apple-touch-icon.png">
+<link rel="preload" as="font" type="font/woff2" href="../assets/fonts/Inter-latin.woff2" crossorigin>
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="guide.css">
+<script>
+  document.documentElement.classList.add('js');
+  try {
+    var t = localStorage.getItem('corvus-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+</script>
+<script src="../script.js" defer></script>
+<script src="guide.js" defer></script>
+</head>
+
+<body class="guide">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <g id="i-github" fill="currentColor" stroke="none" transform="scale(1.5)"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></g>
+    <g id="i-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></g>
+    <g id="i-moon"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></g>
+    <g id="i-menu"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></g>
+    <g id="i-close"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></g>
+    <g id="i-prev"><path d="m15 18-6-6 6-6"/></g>
+    <g id="i-next"><path d="m9 18 6-6-6-6"/></g>
+    <g id="i-book"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></g>
+    <g id="i-info"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></g>
+    <g id="i-alert"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></g>
+    <g id="i-edit"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></g>
+  </defs>
+</svg>
+
+<header class="site-header" id="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="../index.html" aria-label="Corvus GCS, project website">
+      <span class="brand-mark" role="img" aria-hidden="true"></span>
+      <span class="brand-text">
+        <span class="brand-name">Corvus GCS</span>
+        <span class="brand-sub">Documentation</span>
+      </span>
+    </a>
+
+    <nav class="site-nav" id="site-nav" aria-label="Main">
+      <ul class="nav-list">
+        <li><a href="../index.html">Website</a></li>
+        <li><a href="index.html">Documentation</a></li>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS/releases/latest" target="_blank" rel="noopener">Download</a></li>
+        <li><a class="nav-github" href="https://github.com/M-BSquared/CorvusGCS" target="_blank" rel="noopener">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-github"></use></svg>GitHub</a></li>
+      </ul>
+    </nav>
+
+    <div class="header-actions">
+      <button class="icon-btn theme-toggle" id="theme-toggle" type="button" aria-label="Switch to the light theme" aria-pressed="false">
+        <svg class="icon icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-sun"></use></svg>
+        <svg class="icon icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-moon"></use></svg>
+      </button>
+      <button class="icon-btn nav-toggle" id="nav-toggle" type="button" aria-label="Open the menu" aria-expanded="false" aria-controls="site-nav">
+        <svg class="icon icon-open" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-menu"></use></svg>
+        <svg class="icon icon-shut" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap guide-layout">
+<nav class="guide-nav" id="guide-nav" aria-label="Documentation">
+  <button class="guide-nav-toggle" id="guide-nav-toggle" type="button" aria-expanded="false" aria-controls="guide-nav-body">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-book"></use></svg><span>Contents</span><span class="guide-nav-here">Firmware</span><svg class="icon guide-nav-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg>
+  </button>
+  <div class="guide-nav-body" id="guide-nav-body">
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Start</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="install.html">Install and run</a></li>
+        <li><a href="connect.html">Connect to the aircraft</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Fly</p>
+      <ul>
+        <li><a href="flying.html">Map, HUD and flight controls</a></li>
+        <li><a href="3d-offline.html">3D, terrain and offline maps</a></li>
+        <li><a href="mission.html">Mission planner</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Set up</p>
+      <ul>
+        <li><a href="airframe.html">Airframe and motors</a></li>
+        <li><a href="safety.html">Safety, sensors and battery</a></li>
+        <li><a href="parameters.html">Parameters and calibration</a></li>
+        <li><a href="radio-tuning.html">Radio control and tuning</a></li>
+        <li><a href="hardware.html">Telemetry radio, RTK and Remote ID</a></li>
+        <li><a href="firmware.html" aria-current="page">Firmware</a></li>
+        <li><a href="video.html">Video and windows</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Review</p>
+      <ul>
+        <li><a href="analysis.html">Logs and Flight Review</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Tools</p>
+      <ul>
+        <li><a href="workspace.html">Console and SSH</a></li>
+        <li><a href="plugins.html">Plugins</a></li>
+        <li><a href="settings.html">Settings</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Reference</p>
+      <ul>
+        <li><a href="compatibility.html">PX4 and ArduPilot</a></li>
+        <li><a href="security.html">Network and security</a></li>
+        <li><a href="reference.html">Files, settings and variables</a></li>
+        <li><a href="build.html">Build the apps</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main id="main" class="guide-main">
+<article class="doc">
+<p class="eyebrow">Set up</p>
+<!-- guide:content -->
+<h1>Firmware</h1>
+<p class="doc-lead">
+  Flash PX4 or ArduPilot onto a flight controller from the same window. The
+  hard part is picking the right image, so the page is built around that.
+</p>
+
+<h2 id="requirements">Requirements</h2>
+<ul>
+  <li><strong>A direct USB connection only.</strong> Flashing is refused over a telemetry radio, UDP or TCP.</li>
+  <li><strong>Disarmed.</strong> Refused while armed.</li>
+</ul>
+<p>
+  Both formats are supported. ArduPilot's <code>.apj</code> and PX4's
+  <code>.px4</code> are the same kind of container and go through the same
+  USB bootloader, so a local file of either kind flashes the same way.
+</p>
+
+<h2 id="stack">PX4 or ArduPilot</h2>
+<p>
+  The download picker starts with a <strong>Flight stack</strong> switch. The
+  two stacks publish different images for the same board, so only one of them
+  is listed at a time. The page opens on the stack the connected aircraft is
+  running, and moving a board from one stack to the other is one click.
+</p>
+<dl>
+  <dt>PX4</dt>
+  <dd>The release list is PX4's recent versions. The newest stable one is preselected, never a beta.</dd>
+  <dt>ArduPilot</dt>
+  <dd>The release list is one entry per firmware and channel: ArduCopter, ArduCopter Heli, ArduPlane, Rover and ArduSub, each in <em>stable</em> and <em>beta</em>. It opens on the stable build for the connected aircraft, so a plane does not start from the copter build. A traditional helicopter has its own entry because it is a separate image. Boards with nothing to flash over USB (Linux autopilots, the simulator, the old APM1 and APM2) are left out.</dd>
+</dl>
+<p>
+  A board you picked stays picked when you change release, including from
+  ArduCopter to ArduCopter Heli.
+</p>
+
+<h2 id="boards">Picking the board</h2>
+<p>
+  A PX4 release ships around 150 build targets, and a dropdown that shows one
+  of them at a time answers neither "which boards can I flash?" nor "which do I
+  already have?". So the boards are a list:
+</p>
+<ul>
+  <li><strong>Grouped by vendor</strong>, under the vendor's real spelling.</li>
+  <li><strong>Named by the board</strong>, rather than by the target string.</li>
+  <li><strong>Searchable by any of it.</strong> Type <code>pixhawk</code>, <code>cube</code> or <code>v6x</code> and all three land on the row you meant.</li>
+  <li><strong>Your board first.</strong> The board Corvus detected on the USB port leads the list, and its vendor's group comes first.</li>
+  <li><strong>Downloaded images marked.</strong> Images already on disk are marked <em>downloaded</em>, and those flash with no network at all.</li>
+</ul>
+<p>
+  A count under the list says how many targets the filter shows out of the
+  release's total, and how many of them you already hold.
+</p>
+
+<h2 id="developer-builds">Developer builds and peripherals</h2>
+<p>Two kinds of target are set aside rather than removed:</p>
+<dl>
+  <dt>Developer builds</dt>
+  <dd>PX4's <code>_rover</code>, <code>_multicopter</code>, <code>_debug</code> and similar targets, roughly a third of every release, are folded away behind one button. None of them is what an operator flashing an aircraft wants, and all of them are one click away for whoever came for one.</dd>
+  <dt>Peripherals</dt>
+  <dd>The IO coprocessor, CAN nodes and GNSS modules are published in the same release with the same <code>.px4</code> extension. They are sorted last and labelled <em>peripheral</em>, never hidden. A board wrongly called a peripheral is merely listed late; the reverse would invite writing the IO firmware to a flight controller.</dd>
+</dl>
+
+<h2 id="offline">Working offline</h2>
+<p>
+  The list of releases is fetched once (PX4's from GitHub, ArduPilot's from
+  firmware.ardupilot.org) and then read from disk, which is right in the field
+  and wrong on the day a new version comes out. <strong>Refresh</strong> next
+  to it fetches both lists again; it is the only control on the page that
+  needs the network on purpose. If the ArduPilot list has never been fetched on
+  this laptop, the page says so and asks for a Refresh. Downloaded
+  images are kept in <code>~/.corvus/firmware</code> (see
+  <a href="reference.html#folders">where Corvus keeps its files</a>), so
+  download before you go to the field and flash there.
+</p>
+<!-- /guide:content -->
+</article>
+
+<nav class="doc-pager" aria-label="Previous and next page">
+  <a class="doc-pager-prev" href="hardware.html" rel="prev"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-prev"></use></svg><span><small>Previous</small>Telemetry radio, RTK and Remote ID</span></a>
+  <a class="doc-pager-next" href="video.html" rel="next"><span><small>Next</small>Video and windows</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg></a>
+</nav>
+
+<p class="doc-edit">
+  <a href="https://github.com/M-BSquared/CorvusGCS/edit/master/docs/guide/firmware.html" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-edit"></use></svg>Suggest a change to this page</a>
+</p>
+</main>
+
+<aside class="guide-toc" aria-labelledby="toc-title">
+  <p class="guide-toc-title" id="toc-title">On this page</p>
+  <ul>
+    <li><a href="#requirements">Requirements</a></li>
+    <li><a href="#stack">PX4 or ArduPilot</a></li>
+    <li><a href="#boards">Picking the board</a></li>
+    <li><a href="#developer-builds">Developer builds and peripherals</a></li>
+    <li><a href="#offline">Working offline</a></li>
+  </ul>
+</aside>
+</div>
+
+<footer class="site-footer guide-footer">
+  <div class="wrap footer-base">
+    <p class="copyright">&copy; <span id="year">2026</span> Maximilian Böck. Developed with the Universität der Bundeswehr München.</p>
+    <p class="footer-meta">
+      Source available under the Sustainable Use License 1.0 (<em>fair-code</em>).
+      <a href="https://github.com/M-BSquared/CorvusGCS/blob/master/LICENSE.md" target="_blank" rel="noopener">License</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

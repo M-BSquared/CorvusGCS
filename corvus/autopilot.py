@@ -386,14 +386,16 @@ _PX4_DISARM_REASONS: dict[str, tuple[str, str]] = {
 # ArduPilot announces every aux switch it has a name for (RC_Channel.cpp):
 # "RC7: MotorEStop HIGH" stops the motors, LOW releases them.
 _AP_ESTOP = re.compile(r"^RC\d+: MotorEStop (HIGH|LOW)$")
+_PX4_KILLED = VehicleEvent("kill", "critical", "Kill switch engaged. Motors stopped")
+_PX4_RELEASED = VehicleEvent("unkill", "info", "Kill switch released")
+_AP_STOPPED = VehicleEvent("kill", "critical", "Emergency stop engaged. Motors stopped")
+_AP_RELEASED = VehicleEvent("unkill", "info", "Emergency stop released")
 
 
 def _px4_vehicle_event(text: str) -> VehicleEvent | None:
     kill = _PX4_KILL.match(text)
     if kill:
-        if kill.group(1).lower() == "engaged":
-            return VehicleEvent("kill", "critical", "Kill switch engaged. Motors stopped")
-        return VehicleEvent("unkill", "info", "Kill switch released")
+        return _PX4_KILLED if kill.group(1).lower() == "engaged" else _PX4_RELEASED
     disarmed = _PX4_DISARMED_BY.match(text)
     if disarmed:
         reason = disarmed.group(1).strip()
@@ -406,9 +408,24 @@ def _ardupilot_vehicle_event(text: str) -> VehicleEvent | None:
     estop = _AP_ESTOP.match(text)
     if not estop:
         return None
-    if estop.group(1) == "HIGH":
-        return VehicleEvent("kill", "critical", "Emergency stop engaged. Motors stopped")
-    return VehicleEvent("unkill", "info", "Emergency stop released")
+    return _AP_STOPPED if estop.group(1) == "HIGH" else _AP_RELEASED
+
+
+# The line above is sent once, when the switch moves. A switch that was already
+# engaged when the station connected, or whose line was lost on the radio, is
+# only named by the preflight check it fails, which is repeated on request.
+# PX4 v1.16 to v1.18: manualControlCheck.cpp, and only while disarmed.
+# ArduPilot 4.3 to 4.6: AP_Arming::estop_checks.
+_PX4_KILL_PREARM = "kill switch engaged"
+_AP_ESTOP_PREARM = "motors emergency stopped"
+
+
+def _px4_prearm_event(reason: str) -> VehicleEvent | None:
+    return _PX4_KILLED if reason.strip().lower() == _PX4_KILL_PREARM else None
+
+
+def _ardupilot_prearm_event(reason: str) -> VehicleEvent | None:
+    return _AP_STOPPED if reason.strip().lower() == _AP_ESTOP_PREARM else None
 
 
 @dataclass(frozen=True)
@@ -692,6 +709,13 @@ class Dialect:
         """The kill switch or disarm this STATUSTEXT reports, or None."""
         return _px4_vehicle_event(text)
 
+    def prearm_event(self, reason: str) -> VehicleEvent | None:
+        """The kill switch a failing preflight check names, or None.
+
+        ``reason`` is what :meth:`prearm_failure` returned.
+        """
+        return _px4_prearm_event(reason)
+
     # --- modes ---------------------------------------------------------
 
     def decode_mode(self, custom_mode: int, base_mode: int, mav_type: int) -> str:
@@ -944,6 +968,9 @@ class ArduPilotDialect(Dialect):
     def vehicle_event(self, text: str) -> VehicleEvent | None:
         return _ardupilot_vehicle_event(text)
 
+    def prearm_event(self, reason: str) -> VehicleEvent | None:
+        return _ardupilot_prearm_event(reason)
+
     # --- modes ---------------------------------------------------------
 
     @staticmethod
@@ -1189,6 +1216,9 @@ class GenericDialect(Dialect):
 
     def vehicle_event(self, text: str) -> VehicleEvent | None:
         return _px4_vehicle_event(text) or _ardupilot_vehicle_event(text)
+
+    def prearm_event(self, reason: str) -> VehicleEvent | None:
+        return _px4_prearm_event(reason) or _ardupilot_prearm_event(reason)
 
     def decode_mode(self, custom_mode: int, base_mode: int, mav_type: int) -> str:
         try:

@@ -796,7 +796,7 @@ def _failsafe_section(values: dict[str, float]) -> dict[str, Any] | None:
     return {
         "id": "failsafe", "title": "Failsafe actions", "kind": "fields", "fields": fields,
         "hint": "What the autopilot does on its own when something is lost. Every action "
-                "named Return flies the profile above. The levels the low-battery "
+                "named Return flies the Return to Launch profile. The levels the low-battery "
                 "action reacts to are on the Battery & Power page. Every BAT_ "
                 "parameter lives there.",
     }

@@ -2,7 +2,7 @@
 # Build Corvus GCS as a macOS application bundle (.app, optionally a .dmg).
 #
 # Mirrors build-appimage.sh: a relocatable CPython (venv --copies + host stdlib
-# + the framework's Python dylib) plus the PyQt6/QtWebEngine wheels, packed into
+# + the framework's Python dylib) plus the PySide6/QtWebEngine wheels, packed into
 # a standard .app layout. No conda on the build host; only a framework python3
 # with `-m venv` + pip is used.
 #
@@ -60,7 +60,7 @@ echo "Bundle:  $APP_OUT"
 echo ""
 
 [ "$(uname -s)" = "Darwin" ] || { echo "ERROR: this build must run on macOS" >&2; exit 1; }
-for tool in rsync install_name_tool otool codesign sips iconutil; do
+for tool in rsync install_name_tool otool codesign sips iconutil ditto; do
     command -v "$tool" >/dev/null 2>&1 || {
         echo "ERROR: '$tool' not found — install the Xcode command line tools:" >&2
         echo "       xcode-select --install" >&2
@@ -244,6 +244,25 @@ mkdir -p "$DIST_DIR"
     rm -f "$LOCK_OUT"
 }
 if [ -f "$LOCK_OUT" ]; then echo "    (resolved set: $LOCK_OUT)"; fi
+
+# ---- 3b. Qt: this architecture, the modules Corvus loads --------------------
+# The PySide6 wheels are universal2: every Qt binary carries an arm64 and an
+# x86_64 slice, and the bundle is built for one of them. ditto keeps the slice
+# for $ARCH and drops the other, which halves Qt without touching a byte of
+# the slice that stays, its signature included. Then tools/qt_bundle.py takes
+# out the Qt modules, plugins and tools nothing in Corvus loads, and fails the
+# build if anything left would miss a library it links.
+SITE_PKGS="$PYROOT/lib/python$PY_MM/site-packages"
+echo ">>> Thinning PySide6 to $ARCH ..."
+for pkg in PySide6 shiboken6; do
+    [ -d "$SITE_PKGS/$pkg" ] || { echo "ERROR: $pkg is not installed in the bundle" >&2; exit 1; }
+    rm -rf "$SITE_PKGS/$pkg.thin"
+    ditto --arch "$ARCH" "$SITE_PKGS/$pkg" "$SITE_PKGS/$pkg.thin"
+    rm -rf "$SITE_PKGS/$pkg"
+    mv "$SITE_PKGS/$pkg.thin" "$SITE_PKGS/$pkg"
+done
+echo ">>> Trimming PySide6 to the Qt modules Corvus loads ..."
+"$PYBIN" "$REPO_DIR/tools/qt_bundle.py" prune "$SITE_PKGS"
 
 # ---- 4. stdlib --------------------------------------------------------------
 # pyvenv.cfg `home =` points at the build host and breaks on another Mac.
@@ -459,7 +478,9 @@ pl = {
     "CFBundleShortVersionString": version,
     "CFBundleVersion": version,
     "LSApplicationCategoryType": "public.app-category.utilities",
-    "LSMinimumSystemVersion": "11.0",
+    # PySide6 6.10 and later is built for macOS 15 (its own binaries say so,
+    # whatever its wheel tag claims), and 15 is the oldest macOS supported.
+    "LSMinimumSystemVersion": "15.0",
     "NSHighResolutionCapable": True,
     "NSRequiresAquaSystemAppearance": False,
     # Follows LICENSE.md: the copyright is the author's. ASCII-folded because
@@ -598,12 +619,19 @@ if [ "$VERIFY" -eq 1 ]; then
 import sys
 import serial, paramiko                      # noqa: F401
 from pymavlink import mavutil                # noqa: F401
-from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401
+# Every module corvus/app.py imports, from the trimmed Qt.
+from PySide6 import QtCore, QtGui, QtWidgets, QtNetwork  # noqa: F401
+from PySide6 import QtWebChannel, QtWebEngineCore, QtWebEngineWidgets  # noqa: F401
+# The windows out of the app need qwebchannel.js, which Qt keeps inside the
+# QtWebChannel library as a resource.
+channel_js = QtCore.QFile(":/qtwebchannel/qwebchannel.js")
+assert channel_js.open(QtCore.QIODevice.OpenModeFlag.ReadOnly), "qwebchannel.js missing"
 from corvus.version import get_version
 print("    interpreter : %s" % sys.version.split()[0])
 print("    prefix      : %s" % sys.prefix)
 print("    corvus      : %s" % get_version())
-print("    imports     : pyserial, paramiko, pymavlink, PyQt6 QtWebEngine OK")
+print("    qt          : %s (PySide6 %s)" % (QtCore.qVersion(), __import__("PySide6").__version__))
+print("    imports     : pyserial, paramiko, pymavlink, PySide6 QtWebEngine OK")
 PY
     then
         echo "ERROR: the bundled runtime failed its import check" >&2
@@ -623,7 +651,7 @@ PY
         lipo -archs "$1" 2>/dev/null || file -b "$1"
     }
     SITE="$PYROOT/lib/python$PY_MM/site-packages"
-    QT_CORE="$(/usr/bin/find "$SITE/PyQt6" -name 'QtWebEngineCore' -type f 2>/dev/null | head -1)"
+    QT_CORE="$(/usr/bin/find "$SITE/PySide6" -name 'QtWebEngineCore' -type f 2>/dev/null | head -1)"
     for binary in "$PYROOT/bin/python3" ${QT_CORE:+"$QT_CORE"}; do
         [ -f "$binary" ] || continue
         archs="$(arch_of "$binary")"

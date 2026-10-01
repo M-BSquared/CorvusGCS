@@ -151,3 +151,142 @@ def test_a_disconnect_forgets_the_lockdown() -> None:
     store.set_disconnected()
     snap = store.get_snapshot()
     assert snap["kill_switch"] is False and snap["flight_termination"] is False
+
+
+# --- a switch the station never saw move ------------------------------------
+
+def sys_status(ready: bool):
+    """SYS_STATUS with the prearm check published, passing or failing."""
+    bit = mv.mavlink.MAV_SYS_STATUS_PREARM_CHECK
+    return mv.mavlink.MAVLink_sys_status_message(
+        bit, bit, bit if ready else 0, 0, 12600, 350, 87, 0, 0, 0, 0, 0, 0)
+
+
+def test_the_check_an_engaged_switch_fails_is_recognised_per_stack() -> None:
+    killed = PX4.prearm_event("Kill switch engaged")
+    assert killed is not None and killed == PX4.vehicle_event("Kill engaged"), (
+        "the same line as the switch's own announcement, so the board merges them")
+    stopped = ARDUPILOT.prearm_event("Motors Emergency Stopped")
+    assert stopped is not None and stopped == ARDUPILOT.vehicle_event("RC7: MotorEStop HIGH")
+    assert PX4.prearm_event("Accel 0 uncalibrated") is None
+    assert PX4.prearm_event("Motors Emergency Stopped") is None, "ArduPilot's words are not PX4's"
+    assert ARDUPILOT.prearm_event("Kill switch engaged") is None
+    assert GENERIC.prearm_event("Kill switch engaged") is not None
+    assert GENERIC.prearm_event("Motors Emergency Stopped") is not None
+
+
+def test_a_switch_engaged_before_the_link_came_up_reads_kill_switch() -> None:
+    """The announcement went out before this station was listening. The
+    heartbeat alone said TERMINATED; the preflight check names the switch."""
+    b = bridge()
+    b._dispatch(heartbeat(False, mv.mavlink.MAV_STATE_FLIGHT_TERMINATION))
+    assert b._store.get_snapshot()["kill_switch"] is False
+
+    b._publish_statustext("Preflight Fail: Kill switch engaged", 2)
+    snap = b._store.get_snapshot()
+    assert snap["kill_switch"] is True
+    assert snap["prearm_reasons"] == ["Kill switch engaged"], "still counted as a failing check"
+    assert warnings(b) == [("critical", "Kill switch engaged. Motors stopped", "kill")]
+
+    # PX4 repeats the report whenever it is asked. The board says it once.
+    b._publish_statustext("Preflight Fail: Kill switch engaged", 2)
+    assert len(warnings(b)) == 1
+
+
+def test_a_switch_seen_moving_is_not_said_twice_by_its_check() -> None:
+    b = bridge()
+    b._publish_statustext("Kill engaged", 6)
+    b._publish_statustext("Preflight Fail: Kill switch engaged", 2)
+    assert warnings(b) == [("critical", "Kill switch engaged. Motors stopped", "kill")]
+
+
+def test_ardupilot_names_an_emergency_stop_by_its_check_as_well() -> None:
+    b = bridge(autopilot.STACK_ARDUPILOT)
+    b._publish_statustext("PreArm: Motors Emergency Stopped", 4)
+    assert b._store.get_snapshot()["kill_switch"] is True
+    assert warnings(b) == [("critical", "Emergency stop engaged. Motors stopped", "kill")]
+
+
+def test_a_release_clears_the_termination_it_explains_at_once() -> None:
+    """The heartbeat comes once a second. Waiting for it after a release had
+    the bar flash TERMINATED between KILL SWITCH and READY."""
+    b = bridge()
+    b._publish_statustext("Kill engaged", 6)
+    b._dispatch(heartbeat(False, mv.mavlink.MAV_STATE_FLIGHT_TERMINATION))
+    b._publish_statustext("Kill disengaged", 6)
+    snap = b._store.get_snapshot()
+    assert snap["kill_switch"] is False and snap["flight_termination"] is False
+
+
+def test_a_release_does_not_clear_a_termination_it_does_not_explain() -> None:
+    b = bridge()
+    b._dispatch(heartbeat(True, mv.mavlink.MAV_STATE_FLIGHT_TERMINATION))
+    b._publish_statustext("Kill disengaged", 6)
+    assert b._store.get_snapshot()["flight_termination"] is True
+
+
+# --- resolved lines ---------------------------------------------------------
+
+def resolved(b: MavlinkBridge) -> dict[str, bool]:
+    return {w["msg"]: bool(w.get("resolved")) for w in b._store.get_snapshot()["warnings"]}
+
+
+def test_a_release_resolves_the_kill_line_and_keeps_it_on_the_board() -> None:
+    b = bridge()
+    b._publish_statustext("Kill engaged", 6)
+    b._publish_statustext("Kill disengaged", 6)
+    assert resolved(b) == {
+        "Kill switch engaged. Motors stopped": True,
+        "Kill switch released": False,
+    }
+
+
+def test_a_lifted_lockdown_resolves_the_kill_line_too() -> None:
+    b = bridge()
+    b._publish_statustext("Kill engaged", 6)
+    b._dispatch(heartbeat(False, mv.mavlink.MAV_STATE_FLIGHT_TERMINATION))
+    b._dispatch(heartbeat(False, mv.mavlink.MAV_STATE_STANDBY))
+    assert resolved(b) == {"Kill switch engaged. Motors stopped": True}
+
+
+def test_ready_to_fly_resolves_every_failed_check_and_the_switch() -> None:
+    b = bridge()
+    b._publish_statustext("Preflight Fail: Accel 0 uncalibrated", 2)
+    b._publish_statustext("Preflight Fail: Kill switch engaged", 2)
+    b._publish_statustext("Battery low, land soon", 4)
+    b._dispatch(sys_status(ready=False))
+    assert not any(resolved(b).values())
+
+    b._dispatch(sys_status(ready=True))
+    assert resolved(b) == {
+        "Preflight Fail: Accel 0 uncalibrated": True,
+        "Kill switch engaged. Motors stopped": True,
+        "Battery low, land soon": False,
+    }, "a warning ready does not answer stays live"
+    assert b._store.get_snapshot()["kill_switch"] is False
+
+
+def test_ready_while_armed_says_nothing_about_the_switch() -> None:
+    """PX4 skips the kill switch check while armed, so a pass then is no
+    evidence the switch is off."""
+    b = bridge()
+    b._dispatch(heartbeat(True, mv.mavlink.MAV_STATE_ACTIVE))
+    b._publish_statustext("Kill engaged", 2)
+    b._dispatch(sys_status(ready=True))
+    assert b._store.get_snapshot()["kill_switch"] is True
+    assert resolved(b) == {"Kill switch engaged. Motors stopped": False}
+
+
+def test_arming_resolves_the_failed_checks() -> None:
+    b = bridge()
+    b._publish_statustext("Preflight Fail: Compass not calibrated", 2)
+    b._dispatch(heartbeat(True, mv.mavlink.MAV_STATE_ACTIVE))
+    assert resolved(b) == {"Preflight Fail: Compass not calibrated": True}
+
+
+def test_a_check_that_fails_again_is_live_again() -> None:
+    b = bridge()
+    b._publish_statustext("Preflight Fail: Compass not calibrated", 2)
+    b._dispatch(sys_status(ready=True))
+    b._publish_statustext("Preflight Fail: Compass not calibrated", 2)
+    assert resolved(b) == {"Preflight Fail: Compass not calibrated": False}

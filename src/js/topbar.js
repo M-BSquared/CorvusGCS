@@ -13,18 +13,24 @@ window.Corvus = window.Corvus || {};
              here, deduplicated against the remote failure that usually
              follows (see Corvus.notificationDedupe).
 
-  Each notification is in one of three states, and the distinction is what
+  Each notification is in one of four states, and the distinction is what
   keeps the badge honest:
 
     unread     never been looked at — this is what the badge counts
     read       still on the board, dimmed; the operator has seen it
+    resolved   the vehicle has said the condition is over (the kill switch
+               was released, the preflight checks pass). Grey, not counted,
+               and gone a minute later
     dismissed  gone from the list (per item, or via "clear all")
 
-  Nothing warning-level or worse is ever deleted by a timer. Acknowledging a
-  warning is the operator's call; a notification centre that quietly drops the
-  one thing that mattered is worse than one that shows too much. What DOES age
-  out is info — PX4's routine chatter, which is already in the CONSOLE tab
-  verbatim and only inflates the badge here.
+  Nothing warning-level or worse is deleted by a timer while it still stands.
+  Acknowledging a warning is the operator's call; a notification centre that
+  quietly drops the one thing that mattered is worse than one that shows too
+  much. What DOES age out is what needs nothing more from anybody: info, which
+  is PX4's routine chatter and already in the CONSOLE tab verbatim, and a
+  warning the vehicle itself has resolved. The backend decides which lines
+  resolve (see VehicleStateStore.resolve_warnings), because only it knows which
+  line a condition was reported in.
 
   Read is set at two moments, both of them "you have had your chance to look":
   closing the popover, and any change of the armed state — arming means every
@@ -68,14 +74,26 @@ Corvus.topbar = (function () {
   // hiding is CSS (the :root[data-notification-marks="off"] rules beside
   // .wp-item in main.css and .ui-toast in components.css).
   const MARKS_KEY = "corvus.notificationMarks";
+  // Which altitude the ALTITUDE block reads: AMSL (the default) or relative to
+  // home. Same localStorage cache as the two above, so the first frame already
+  // reads the chosen reference before the config lands.
+  const ALT_REF_KEY = "corvus.topbarAltitude";
+  const ALT_REFS = {
+    amsl: { field: "altitude_amsl", caption: "AMSL", title: "Altitude above mean sea level" },
+    relative: { field: "altitude_agl", caption: "REL", title: "Altitude relative to home" },
+  };
+  let altitudeReference = "amsl";
   const localNotifications = new Map();
   const dismissedNotifications = new Set();
   const readNotifications = new Set();
   // key -> ms first observed, so info can age out. Pruned with the sets above.
   const notificationFirstSeen = new Map();
-  // How long a routine info line stays on the board. Warning and critical have
-  // no equivalent — see the module comment.
+  // key -> ms first seen resolved, so a resolved line can age out.
+  const notificationResolvedAt = new Map();
+  // How long a routine info line, and a resolved one, stays on the board. A
+  // warning that still stands has no equivalent — see the module comment.
   const INFO_TTL_MS = 60000;
+  const RESOLVED_TTL_MS = 60000;
   // Vehicle state at the previous telemetry push, for the transitions that
   // drive the read/clear milestones. null until the first snapshot arrives, so
   // a page opened against an already-flying vehicle triggers nothing.
@@ -87,12 +105,19 @@ Corvus.topbar = (function () {
   const commandDedupe = Corvus.notificationDedupe.createTracker({ windowMs: 3000 });
   // A new warning or critical is shown as a toast over the map; the board
   // keeps it. The same text is toasted at most once per TOAST_REPEAT_MS, since
-  // the store refreshes a repeated message's time and so hands it back as new,
-  // and at most TOAST_MAX toasts stand at once.
+  // the store refreshes a repeated message's time and so hands it back as new.
+  // How many stand at once is the toast stack's own limit (Corvus.ui.toast).
   const TOAST_REPEAT_MS = 10000;
-  const TOAST_MAX = 4;
   const toastedAt = new Map();
+  // The toasts standing now, so one can be taken down when its line resolves.
   const openToasts = [];
+  // READY has to hold this long before it is announced, so a preflight check
+  // that flickers does not toast every time it passes.
+  const READY_HOLD_MS = 1500;
+  let prevReadyTone = null;
+  let readyFromTone = null;
+  let readySince = 0;
+  let readyAnnounced = false;
   // Vehicle events (kill switch, disarm) are toasted even at info level, under
   // a title that names the event: "Disarmed by auto disarm after landing" is
   // what the operator needs to see the moment the propellers stop, not an
@@ -308,6 +333,10 @@ Corvus.topbar = (function () {
     return state.mode_label || state.mode || "STANDBY";
   }
 
+  function isResolved(notification) {
+    return notification?.resolved === true;
+  }
+
   function notificationKey(notification) {
     if (notification.localId) return `local:${notification.localId}`;
     return `remote:${notification.level || "info"}:${notification.msg || ""}:${notification.meta || ""}`;
@@ -337,8 +366,8 @@ Corvus.topbar = (function () {
     [dismissedNotifications, readNotifications].forEach((set) => {
       Array.from(set).forEach((key) => { if (!activeKeys.has(key)) set.delete(key); });
     });
-    Array.from(notificationFirstSeen.keys()).forEach((key) => {
-      if (!activeKeys.has(key)) notificationFirstSeen.delete(key);
+    [notificationFirstSeen, notificationResolvedAt].forEach((map) => {
+      Array.from(map.keys()).forEach((key) => { if (!activeKeys.has(key)) map.delete(key); });
     });
 
     const now = Date.now();
@@ -346,7 +375,12 @@ Corvus.topbar = (function () {
       const key = notificationKey(notification);
       if (dismissedNotifications.has(key)) return false;
       if (!notificationFirstSeen.has(key)) notificationFirstSeen.set(key, now);
-      // Info only. A warning or a critical stays until somebody acts on it.
+      if (isResolved(notification)) {
+        if (!notificationResolvedAt.has(key)) notificationResolvedAt.set(key, now);
+        return now - notificationResolvedAt.get(key) < RESOLVED_TTL_MS;
+      }
+      notificationResolvedAt.delete(key);
+      // A warning or a critical that still stands stays until somebody acts on it.
       if (notificationLevel(notification) !== "info") return true;
       return now - notificationFirstSeen.get(key) < INFO_TTL_MS;
     });
@@ -371,17 +405,20 @@ Corvus.topbar = (function () {
    */
   function notificationSummary(state) {
     const items = visibleNotifications(state);
-    const unread = items.filter((item) => !readNotifications.has(notificationKey(item)));
+    // A resolved line is on the board and nowhere else: it is not new, and it
+    // is not something still wrong, so it neither counts nor colours.
+    const standing = items.filter((item) => !isResolved(item));
+    const unread = standing.filter((item) => !readNotifications.has(notificationKey(item)));
     let level = "healthy";
     if (unread.length) {
       const levels = unread.map(notificationLevel);
       if (levels.includes("critical")) level = "critical";
       else if (levels.includes("warning")) level = "warning";
       else level = "info";
-    } else if (items.length) {
+    } else if (standing.length) {
       level = "read";
     }
-    return { items, unread, count: unread.length || items.length, level };
+    return { items, unread, count: unread.length || standing.length, level };
   }
 
   /** Everything on the board has been seen. Never deletes — see the module
@@ -407,9 +444,9 @@ Corvus.topbar = (function () {
      number: how many satellites and how good the geometry is, whether the
      receiver says it is being jammed, what the pack is actually doing.
      Each card is a list of [label, value, tone] rows; a row the vehicle has
-     no answer for is left out rather than printed as a zero, except where
-     "not reported" is itself the answer (jamming, on a receiver that cannot
-     tell). Nothing is shown while disconnected: there is nothing to say. */
+     no answer for is left out rather than printed as a zero. That includes
+     jamming and spoofing, which most receivers never report. Nothing is
+     shown while disconnected: there is nothing to say. */
 
   const FIX_LABELS = {
     NO_GPS: "No receiver", NO_FIX: "No fix", "2D_FIX": "2D fix", "3D_FIX": "3D fix",
@@ -455,7 +492,7 @@ Corvus.topbar = (function () {
     if (value === "ok") return ["None detected", "healthy"];
     if (value === "mitigated") return ["Detected, mitigated", "warning"];
     if (value === "detected") return ["Detected", "critical"];
-    return ["Not reported", "muted"];
+    return null;
   }
 
   function metres(value) {
@@ -484,16 +521,12 @@ Corvus.topbar = (function () {
     const vAcc = metres(state.gps_v_acc);
     if (vAcc) rows.push(["Vertical accuracy", vAcc, ""]);
     const jam = integrityRow(state.gps_jamming);
-    rows.push(["Jamming", jam[0], jam[1]]);
+    if (jam) rows.push(["Jamming", jam[0], jam[1]]);
     const spoof = integrityRow(state.gps_spoofing);
-    rows.push(["Spoofing", spoof[0], spoof[1]]);
+    if (spoof) rows.push(["Spoofing", spoof[0], spoof[1]]);
     if (state.gps_health === "ok") rows.push(["Receiver health", "OK", "healthy"]);
     else if (state.gps_health === "fault") rows.push(["Receiver health", "Fault", "critical"]);
-    const notes = [];
-    if (!state.gps_jamming && !state.gps_spoofing) {
-      notes.push("Jamming and spoofing need a receiver that reports GNSS integrity.");
-    }
-    return { title: "GPS", rows, notes };
+    return { title: "GPS", rows, notes: [] };
   }
 
   /** "about 12 min", "about 1 h 05 min", "under 1 min". Rounded to the
@@ -641,6 +674,7 @@ Corvus.topbar = (function () {
     const gpsSub = state.connected ? (FIX_SHORT[gpsFix] ?? gpsFix) : "";
     const fw = vehicleFirmware(state);
     const units = Corvus.units;
+    const alt = ALT_REFS[altitudeReference];
 
     return [
       { type: "logo" },
@@ -649,7 +683,7 @@ Corvus.topbar = (function () {
       { key: "armed", label: "Status", value: ready.value, short: ready.short || ready.value, sub: ready.sub || "", cls: ready.cls, dot: ready.cls, tone: ready.tone, title: ready.title, priority: "high" },
       { key: "gps", label: "GPS", value: state.connected ? "GPS" : "—", sub: gpsSub, cls: gpsCls, dot: gpsCls, detail: true, priority: "high" },
       { key: "battery", label: "Battery", value: state.connected ? `${state.battery_voltage.toFixed(1)} V` : "—", sub: state.connected ? `${battPct}%` : "", cls: battCls, dot: battCls, detail: true, priority: "high" },
-      { key: "altitude", label: "Altitude", value: state.connected ? units.formatLength(state.altitude_amsl, { bare: true }) : "—", sub: `${units.lengthSymbol()} AMSL`, priority: "mid" },
+      { key: "altitude", label: "Altitude", value: state.connected ? units.formatLength(state[alt.field], { bare: true }) : "—", sub: `${units.lengthSymbol()} ${alt.caption}`, title: alt.title, priority: "mid" },
       { key: "groundspeed", label: "Groundspeed", value: state.connected ? units.formatSpeed(state.groundspeed, { bare: true }) : "—", sub: units.speedSymbol(), priority: "mid" },
       { key: "vspeed", label: "Vertical speed", value: state.connected ? units.formatSpeed(state.vspeed, { bare: true, signed: true }) : "—", sub: units.speedSymbol(), priority: "mid" },
       { key: "warnings", type: "warnings", label: "Notifications", value: notifications.count, level: notifications.level, priority: "high" },
@@ -688,6 +722,28 @@ Corvus.topbar = (function () {
   function statusDots() {
     try { return document.documentElement.getAttribute("data-topbar-dots") === "on"; }
     catch (_e) { return false; }
+  }
+
+  /**
+   * Pick the altitude the ALTITUDE block shows: "amsl" or "relative" (above
+   * home). Anything else is AMSL, the default. Returns the reference applied,
+   * so a caller can undo itself with the return value.
+   */
+  function setAltitudeRef(ref) {
+    const v = Object.prototype.hasOwnProperty.call(ALT_REFS, ref) ? ref : "amsl";
+    altitudeReference = v;
+    try { localStorage.setItem(ALT_REF_KEY, v); } catch (_e) {}
+    if (topBarBuilt && lastState) updateTopBarValues(lastState);
+    return v;
+  }
+
+  /** The altitude reference the ALTITUDE block currently shows. */
+  function altitudeRef() { return altitudeReference; }
+
+  function applySavedAltitudeRef() {
+    let v = null;
+    try { v = localStorage.getItem(ALT_REF_KEY); } catch (_e) {}
+    return setAltitudeRef(v);
   }
 
   /** Apply the locally cached choice (called before the config fetch lands).
@@ -956,7 +1012,7 @@ Corvus.topbar = (function () {
     const unreadKeys = new Set(unread.map(notificationKey));
     const signature = JSON.stringify(notifications.map((item) => [
       notificationKey(item), item.level, item.msg, item.meta,
-      unreadKeys.has(notificationKey(item)),
+      unreadKeys.has(notificationKey(item)), isResolved(item),
     ]));
     if (!force && signature === renderedWarningSignature) return;
 
@@ -989,18 +1045,22 @@ Corvus.topbar = (function () {
       notifications.forEach((notification) => {
         const level = notificationLevel(notification);
         const key = notificationKey(notification);
+        const resolved = isResolved(notification);
         const isRead = !unreadKeys.has(key);
         const item = document.createElement("div");
         // Read is a dimming, not a removal: the line stays exactly where it
         // was so the board reads as a log rather than a queue that empties
-        // itself while the operator is looking at it.
-        item.className = isRead ? "wp-item is-read" : "wp-item";
+        // itself while the operator is looking at it. Resolved goes further
+        // and drops the colour: nothing about it is asking any more. It keeps
+        // its level's symbol, though. A check mark beside "Kill switch
+        // engaged" read as "engaged, all good", the opposite of what it says.
+        item.className = resolved ? "wp-item is-resolved" : isRead ? "wp-item is-read" : "wp-item";
         item.dataset.level = level;
         item.setAttribute("role", "listitem");
         item.dataset.notificationKey = key;
 
         const itemIcon = document.createElement("div");
-        itemIcon.className = `wp-icon ${level}`;
+        itemIcon.className = resolved ? "wp-icon resolved" : `wp-icon ${level}`;
         itemIcon.setAttribute("aria-hidden", "true");
         const iconEl = icon(level === "critical" ? "octagon-alert" : level === "warning" ? "triangle-alert" : "info");
         itemIcon.appendChild(iconEl);
@@ -1012,7 +1072,9 @@ Corvus.topbar = (function () {
         message.textContent = notification.msg || "Unknown notification";
         const meta = document.createElement("span");
         meta.className = "wp-meta";
-        meta.textContent = notification.meta || "";
+        meta.textContent = resolved
+          ? [notification.meta, "resolved"].filter(Boolean).join(" \u00b7 ")
+          : notification.meta || "";
         body.append(message, meta);
 
         const dismiss = document.createElement("button");
@@ -1028,6 +1090,7 @@ Corvus.topbar = (function () {
     }
     warningsList.scrollTop = Math.min(scrollTop, warningsList.scrollHeight);
     Corvus.ui.refreshIcons({ attrs: { "aria-hidden": "true" } });
+    placeToasts();
     if (focusedKey) {
       const focusedItem = Array.from(warningsList.querySelectorAll(".wp-item"))
         .find((item) => item.dataset.notificationKey === focusedKey);
@@ -1050,7 +1113,14 @@ Corvus.topbar = (function () {
       if (focusClose) document.getElementById("wpClose").focus();
     } else if (wasOpen) {
       markAllNotificationsRead(lastState);
+      placeToasts();
     }
+  }
+
+  /** Keep the toast stack clear of the board: below it while it is open, back
+   *  in the corner once it closes. */
+  function placeToasts() {
+    if (Corvus.ui && typeof Corvus.ui.repositionToasts === "function") Corvus.ui.repositionToasts();
   }
 
   function toggleWarnings() {
@@ -1085,15 +1155,20 @@ Corvus.topbar = (function () {
       toastedAt.forEach((at, k) => { if (now - at >= TOAST_REPEAT_MS) toastedAt.delete(k); });
     }
     let handle = null;
+    const prune = () => {
+      const i = openToasts.indexOf(handle);
+      if (i >= 0) openToasts.splice(i, 1);
+    };
     try {
       if (!Corvus.ui || typeof Corvus.ui.toast !== "function") return null;
-      const toastOpts = { level, message: text };
+      const toastOpts = { level, message: text, onClose: prune };
       if (opts.title) toastOpts.title = opts.title;
       handle = Corvus.ui.toast(toastOpts);
     } catch (_e) {
       return null;   // a missing toast layer must never cost the board its entry
     }
     if (!handle) return null;
+    handle.text = text;
     // Clicking the message opens the centre, where the rest of the history is.
     const body = handle.el && handle.el.querySelector && handle.el.querySelector(".ui-toast-text");
     if (body && body.addEventListener) {
@@ -1104,16 +1179,21 @@ Corvus.topbar = (function () {
       });
     }
     openToasts.push(handle);
-    while (openToasts.length > TOAST_MAX) openToasts.shift().close();
-    const prune = () => {
-      const i = openToasts.indexOf(handle);
-      if (i >= 0) openToasts.splice(i, 1);
-    };
     const close = handle.close;
     handle.close = () => { prune(); close(); };
-    const dismiss = handle.el && handle.el.querySelector && handle.el.querySelector(".ui-toast-close");
-    if (dismiss && dismiss.addEventListener) dismiss.addEventListener("click", prune);
     return handle;
+  }
+
+  /** Take down the toast of every line the vehicle has since resolved: a
+   *  "Kill switch engaged" still standing over a released switch is the
+   *  board contradicting the bar. */
+  function closeResolvedToasts(state) {
+    const resolved = new Set((state?.warnings || [])
+      .filter(isResolved).map((warning) => String(warning.msg || "")));
+    if (!resolved.size) return;
+    openToasts.slice().forEach((handle) => { if (resolved.has(handle.text)) handle.close(); });
+    // Over is over: if it comes back, that is news, however soon.
+    resolved.forEach((text) => toastedAt.delete(text));
   }
 
   /** A kill switch or disarm line from the vehicle, toasted under its title. */
@@ -1181,6 +1261,7 @@ Corvus.topbar = (function () {
     localNotifications.clear();
     readNotifications.clear();
     notificationFirstSeen.clear();
+    notificationResolvedAt.clear();
     renderedWarningSignature = "";
     refreshNotifications();
     try {
@@ -1237,7 +1318,8 @@ Corvus.topbar = (function () {
       remoteWarningKeys = nextKeys;
       return;
     }
-    const added = remote.filter((warning) => !remoteWarningKeys.has(notificationKey(warning)));
+    const added = remote.filter((warning) =>
+      !remoteWarningKeys.has(notificationKey(warning)) && !isResolved(warning));
     remoteWarningKeys = nextKeys;
     const duplicateRemoteKeys = new Set();
     added.forEach((warning) => {
@@ -1250,6 +1332,7 @@ Corvus.topbar = (function () {
     const actionable = fresh.filter((warning) =>
       !EVENT_TITLES[warning.event] && notificationLevel(warning) !== "info");
     events.forEach(toastVehicleEvent);
+    closeResolvedToasts(state);
     const announced = events.concat(actionable);
     if (!announced.length) return;
     const newest = announced[announced.length - 1];
@@ -1302,10 +1385,40 @@ Corvus.topbar = (function () {
     if (bootMs > 0) prevBootMs = bootMs;
   }
 
+  /**
+   * "Ready to fly", once, when the vehicle becomes ready: from NOT READY, from
+   * a released kill switch, or on a fresh link. The bar already says READY;
+   * this is the moment it changed, which the bar cannot say.
+   *
+   * Not after a landing: disarming a vehicle whose checks still pass is the
+   * end of a flight, and the disarm toast already says what happened. Not on
+   * the first snapshot either, which has observed no change.
+   */
+  function applyReadiness(state) {
+    const tone = readiness(state).tone;
+    const now = Date.now();
+    if (tone !== "ready") {
+      readySince = 0;
+      readyAnnounced = false;
+    } else if (prevReadyTone === null) {
+      readyAnnounced = true;
+    } else if (prevReadyTone !== "ready") {
+      readySince = now;
+      readyFromTone = prevReadyTone;
+    }
+    prevReadyTone = tone;
+    if (readyAnnounced || !readySince || now - readySince < READY_HOLD_MS) return;
+    readyAnnounced = true;
+    if (readyFromTone === "armed" || readyFromTone === "flying") return;
+    announceNotification("Ready to fly");
+    toastNotification("info", "Preflight checks pass", { event: "ready", title: "Ready to fly" });
+  }
+
   function handleTelemetryState(state) {
     lastState = state;
     syncRemoteWarnings(state);
     applyLifecycleMilestones(state);
+    applyReadiness(state);
     renderTopBar(state);
   }
 
@@ -1320,6 +1433,7 @@ Corvus.topbar = (function () {
     // moment it lands (app.js), exactly as it does for theme and scale.
     applySavedStatusDots();
     applySavedNotificationMarks();
+    applySavedAltitudeRef();
 
     Corvus.telemetry.subscribe(handleTelemetryState);
     // The captions under ALTITUDE and the speeds are static between frames, so
@@ -1355,6 +1469,8 @@ Corvus.topbar = (function () {
     setCompanyLogo,
     setStatusDots,
     statusDots,
+    setAltitudeRef,
+    altitudeRef,
     setNotificationMarks,
     notificationMarks,
     notifyError: showCmdError,

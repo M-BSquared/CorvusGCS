@@ -3,7 +3,7 @@
 Two kinds of camera
 -------------------
 **RTSP** (and the udp://, srt:// and http:// streams ffmpeg reads the same
-way). A browser cannot open an ``rtsp://`` address, and the PyQt6 WebEngine
+way). A browser cannot open an ``rtsp://`` address, and the PySide6 WebEngine
 wheels are built without the proprietary codecs, so neither ``<video>`` nor
 WebCodecs can play the H.264 or H.265 that drone cameras send. The stream is
 decoded on this side: one ffmpeg process per camera writes JPEG frames to a

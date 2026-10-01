@@ -50,9 +50,9 @@ INSTALLERS = {
 # The packages the application needs at runtime. Adding one here without
 # adding it to pyproject.toml fails, which is the point.
 EXPECTED_RUNTIME = {
-    "pymavlink", "paramiko", "pyserial", "PyQt6", "PyQt6-WebEngine",
+    "pymavlink", "paramiko", "pyserial", "PySide6-Essentials", "PySide6-Addons",
 }
-QT = {"PyQt6", "PyQt6-WebEngine"}
+QT = {"PySide6-Essentials", "PySide6-Addons"}
 
 
 def _groups() -> dict:
@@ -136,7 +136,7 @@ def test_every_installer_reads_its_group_from_pyproject() -> None:
 
 def test_no_installer_hardcodes_the_dependency_list() -> None:
     """Every one of them reads the file instead of restating it."""
-    packages = ("pymavlink", "paramiko", "pyserial", "PyQt6", "pytest", "ruff",
+    packages = ("pymavlink", "paramiko", "pyserial", "PySide6", "PyQt6", "pytest", "ruff",
                 "pyinstaller", "Pillow")
     for path in INSTALLERS:
         for line in path.read_text(encoding="utf-8").splitlines():

@@ -374,6 +374,7 @@ Corvus.setupControl = (function () {
 
     const widget = Corvus.rcTransmitter.create({
       interactive,
+      below: o.below || null,
       renderFunctions: (channel, controlId, armed) => (
         renderFunctions ? renderFunctions(channel, controlId, armed) : null
       ),
@@ -549,31 +550,35 @@ Corvus.setupControl = (function () {
   function buildOverview(navigateBack, openWizard) {
     const el = S.el("div", "rc-overview-view");
     el.appendChild(S.backButton(navigateBack));
-    el.appendChild(S.pageHeader("Radio Control",
-      "Transmitter calibration, channel assignment and switch mapping"));
+    const header = S.pageHeader("Radio Control",
+      "Transmitter calibration, channel assignment and switch mapping");
 
     const actions = S.el("div", "params-actions");
-    const calibrateBtn = Corvus.ui.button({
-      variant: "primary", size: "sm", icon: "radio", label: "Calibrate radio",
-    });
     const reloadBtn = Corvus.ui.button({
-      variant: "secondary", size: "sm", icon: "refresh-cw", label: "Reload",
+      variant: "primary", size: "sm", icon: "refresh-cw", label: "Reload",
     });
     const actionsStatus = S.el("div", "params-actions-status");
-    actions.appendChild(calibrateBtn);
     actions.appendChild(reloadBtn);
     // Placed once the state exists: the button reads it.
     const checkSlot = S.el("span", "rc-check-slot");
     actions.appendChild(checkSlot);
     actions.appendChild(actionsStatus);
-    el.appendChild(actions);
+    el.appendChild(S.pageHead(header, actions));
 
     const banner = S.el("div", "params-banner");
     banner.hidden = true;
     banner.textContent = "Radio configuration is read-only while armed";
     el.appendChild(banner);
 
-    const transmitter = transmitterCard({ interactive: true });
+    // Calibrating is done with the transmitter in hand, so the button sits
+    // under the drawing of it rather than among the page's reload actions.
+    const calibrateBtn = Corvus.ui.button({
+      variant: "primary", size: "sm", icon: "radio", label: "Calibrate radio",
+      className: "rc-calibrate",
+    });
+    const calibrateRow = S.el("div", "rc-tx-calibrate");
+    calibrateRow.appendChild(calibrateBtn);
+    const transmitter = transmitterCard({ interactive: true, below: calibrateRow });
     const monitor = channelMonitor({ title: "Live channels" });
     el.appendChild(topRow(transmitter.el, monitor.el));
 
@@ -616,6 +621,7 @@ Corvus.setupControl = (function () {
       el,
       onTelemetry(s) {
         applyArmed(state, !!(s && s.armed));
+        S.reloadOnLink(state, s, () => load(state));
         state.monitor.update(s);
         state.transmitter.update(s);
         paintLive(state, s);

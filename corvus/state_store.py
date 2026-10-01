@@ -31,7 +31,7 @@ import math
 import threading
 import time
 from typing import Any
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 logger = logging.getLogger("corvus.state_store")
 
@@ -471,9 +471,11 @@ class VehicleStateStore:
     ) -> None:
         """Atomically insert or refresh a warning and notify listeners.
 
-        ``event`` tags a line that reports a vehicle event (``"kill"``,
-        ``"unkill"``, ``"disarm"``), so the UI can title and toast it even
-        when its level is info.
+        ``event`` tags what the line reports: a vehicle event (``"kill"``,
+        ``"unkill"``, ``"disarm"``), which the UI titles and toasts even at
+        info level, or ``"prearm"`` for a failing preflight check. The tag is
+        also what :meth:`resolve_warnings` matches on. A line that arrives
+        again is live again, even if it had been resolved.
 
         Warning notifications share the coalesce window with telemetry; the
         warning is always written to state immediately, so ``get_snapshot``
@@ -491,6 +493,7 @@ class VehicleStateStore:
                 warnings.append(entry)
             else:
                 existing["meta"] = timestamp
+                existing.pop("resolved", None)
                 if event:
                     existing["event"] = event
                 old_level = str(existing.get("level", "info"))
@@ -501,6 +504,35 @@ class VehicleStateStore:
             snapshot, listeners = self._dispatch_locked(immediate=False)
         if snapshot is not None:
             self._notify(listeners, snapshot)
+
+    def resolve_warnings(self, events: Iterable[str]) -> bool:
+        """Mark every warning tagged with one of ``events`` as resolved.
+
+        Resolved is not removed. The vehicle has said the condition is over
+        (the kill switch was released, the preflight checks pass), so the line
+        stops asking for anything, but it stays on the board for the UI to
+        grey out and let go of in its own time. Returns whether anything
+        changed; a call that changes nothing notifies nobody, because the
+        bridge calls this on every SYS_STATUS.
+        """
+        wanted = set(events)
+        with self._lock:
+            warnings = self._data["warnings"]
+            if not any(
+                warning.get("event") in wanted and not warning.get("resolved")
+                for warning in warnings
+            ):
+                return False
+            self._data["warnings"] = [
+                {**warning, "resolved": True}
+                if warning.get("event") in wanted else dict(warning)
+                for warning in warnings
+            ]
+            self._data_version += 1
+            snapshot, listeners = self._dispatch_locked(immediate=False)
+        if snapshot is not None:
+            self._notify(listeners, snapshot)
+        return True
 
     def clear_warnings(self) -> None:
         """Atomically clear all warnings and notify listeners.

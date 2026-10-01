@@ -1,7 +1,7 @@
 """Rewriting the icons a Linux desktop keeps for an AppImage.
 
 ``corvus.desktop_icon`` is stdlib-only on purpose — the image work is handed
-in as a renderer — so the whole module is tested headless: no PyQt6, no
+in as a renderer — so the whole module is tested headless: no PySide6, no
 display, no AppImage. Every test builds a throwaway ``$HOME`` layout matching
 what appimaged / AppImageLauncher actually write.
 

@@ -75,15 +75,18 @@ Corvus.setup = (function () {
 
   function renderTiles(container) {
     container.innerHTML = "";
-    container.appendChild(S.pageHeader("Setup", "Vehicle configuration and calibration"));
-
-    // Compact Vehicle Info card stays at the top of the grid so the operator
-    // still sees which vehicle and firmware they are configuring (kept lean).
+    // Vehicle Info sits in the title row, right of the heading, so the operator
+    // still sees which vehicle and firmware they are configuring without a
+    // card of its own pushing the tiles down. On a narrow window it wraps
+    // under the title.
+    const head = S.el("div", "setup-head");
+    head.appendChild(S.pageHeader("Setup", "Vehicle configuration and calibration"));
     const state = (Corvus.telemetry && Corvus.telemetry.getState()) || {};
-    const infoCard = S.el("div", "page-card setup-vehicle-info");
-    infoCard.appendChild(S.sectionTitle("Vehicle Info"));
+    const infoCard = S.el("div", "setup-vehicle-info");
+    infoCard.setAttribute("role", "group");
+    infoCard.setAttribute("aria-label", "Vehicle info");
 
-    // Build the Vehicle Info rows. `dataKey` is written to each value span's
+    // Build the Vehicle Info facts. `dataKey` is written to each value span's
     // `dataset.infoKey` so tests (and any future caller) can locate a row by
     // key. Capture direct refs to the value spans here so the live telemetry
     // subscription below can update each row in place without a per-tick DOM
@@ -98,11 +101,16 @@ Corvus.setup = (function () {
     ];
     const rowValues = {};
     for (const def of rowDefs) {
-      const row = S.infoRow(def.label, def.value, def.key);
-      rowValues[def.key] = row.querySelector(".page-row-value");
-      infoCard.appendChild(row);
+      const fact = S.el("div", "setup-vehicle-fact");
+      fact.appendChild(S.el("span", "setup-vehicle-fact-label", def.label));
+      const value = S.el("span", "setup-vehicle-fact-value", def.value);
+      value.dataset.infoKey = def.key;
+      fact.appendChild(value);
+      rowValues[def.key] = value;
+      infoCard.appendChild(fact);
     }
-    container.appendChild(infoCard);
+    head.appendChild(infoCard);
+    container.appendChild(head);
 
     // Tile grid: Calibration + Radio Control + PID Tuning + Motors +
     // Safety & Sensors + Battery & Power + Telemetry Radio + RTK GPS +
@@ -118,7 +126,7 @@ Corvus.setup = (function () {
     grid.appendChild(makeTile("motors", "fan", "Motors",
       "Frame geometry, motor order and protocol."));
     grid.appendChild(makeTile("safety", "shield", "Safety & Sensors",
-      "Limits, failsafes, rangefinder, optical flow."));
+      "Limits, failsafes, sensors, preflight checklist."));
     grid.appendChild(makeTile("battery", "battery-charging", "Battery & Power",
       "Cells, capacity and power module."));
     grid.appendChild(makeTile("sik", "radio-tower", "Telemetry Radio",
@@ -130,7 +138,7 @@ Corvus.setup = (function () {
     grid.appendChild(makeTile("parameters", "list", "Parameters",
       "Edit, load and save every parameter."));
     grid.appendChild(makeTile("firmware", "cpu", "Firmware",
-      "Flash PX4 firmware over direct USB."));
+      "Flash PX4 or ArduPilot over direct USB."));
     grid.appendChild(makeTile("video", "video", "Video",
       "RTSP or WebRTC cameras in floating windows."));
     container.appendChild(grid);

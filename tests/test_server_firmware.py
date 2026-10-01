@@ -26,12 +26,14 @@ from corvus.firmware_uploader import (
     MAX_FIRMWARE_IMAGE_BYTES,
     _bl_crc32,
     parse_firmware,
+    parse_firmware_image,
     CHIP_ERASE,
     EOC,
     GET_CHIP,
     GET_CRC,
     GET_DEVICE,
     GET_SYNC,
+    INFO_BOARD_ID,
     INFO_FLASH_SIZE,
     INSYNC,
     INVALID,
@@ -55,13 +57,19 @@ class FakeBootloaderSerial:
     canonical reply into the read buffer; ``read`` drains it. Records every
     command so tests can assert the exact sequence (e.g. that REBOOT was/was
     not sent).
+
+    ``board_id`` is what the board answers to GET_DEVICE(INFO_BOARD_ID); None
+    makes it refuse the query with INSYNC INVALID, as ``bl.c`` does for an info
+    id it does not know.
     """
 
-    def __init__(self, fw_maxsize: int = 1 << 20) -> None:
+    def __init__(self, fw_maxsize: int = 1 << 20, board_id: int | None = 9) -> None:
         self._rbuf = bytearray()
         self.fw_maxsize = fw_maxsize
+        self.board_id = board_id
         self.programmed = bytearray()
         self.commands: list[int] = []
+        self.info_queries: list[int] = []
         self.rebooted = False
         self.closed = False
         self.timeout = 1.0
@@ -77,8 +85,13 @@ class FakeBootloaderSerial:
                 self._rbuf.extend(bytes([INSYNC, OK]))
             elif cmd == GET_DEVICE:
                 arg = data[1] if len(data) > 1 else 0
-                self._rbuf.extend((self.fw_maxsize if arg == INFO_FLASH_SIZE else 0).to_bytes(4, "little"))
-                self._rbuf.extend(bytes([INSYNC, OK]))
+                self.info_queries.append(arg)
+                if arg == INFO_BOARD_ID and self.board_id is None:
+                    self._rbuf.extend(bytes([INSYNC, INVALID]))
+                else:
+                    value = {INFO_FLASH_SIZE: self.fw_maxsize, INFO_BOARD_ID: self.board_id}.get(arg, 0)
+                    self._rbuf.extend(value.to_bytes(4, "little"))
+                    self._rbuf.extend(bytes([INSYNC, OK]))
             elif cmd == GET_CHIP:
                 self._rbuf.extend((0x12345678).to_bytes(4, "little"))
                 self._rbuf.extend(bytes([INSYNC, OK]))
@@ -227,6 +240,36 @@ def test_parse_firmware_rejects_an_oversized_zip_before_reading_it(
 def test_parse_firmware_rejects_an_oversized_raw_image() -> None:
     with pytest.raises(ValueError, match="size limit|too large"):
         parse_firmware(b"\xff" * (MAX_FIRMWARE_IMAGE_BYTES + 1))
+
+
+def _px4_container(image: bytes, board_id: int) -> bytes:
+    """A ``.px4``/``.apj`` JSON container for *image*, built for *board_id*."""
+    return json.dumps({
+        "board_id": board_id, "image_size": len(image),
+        "image": base64.b64encode(zlib.compress(image)).decode("ascii"),
+    }).encode("utf-8")
+
+
+def test_parse_firmware_image_carries_the_container_board_id() -> None:
+    image = bytes(range(256)) * 4
+    parsed = parse_firmware_image(_px4_container(image, 140))
+    assert parsed.image == image
+    assert parsed.board_id == 140
+    # The bytes-only entry point is unchanged for its existing callers.
+    assert parse_firmware(_px4_container(image, 140)) == image
+
+
+def test_parse_firmware_image_has_no_board_id_for_a_raw_binary() -> None:
+    blob = bytes(range(256)) * 4
+    assert parse_firmware_image(blob) == (blob, None)
+
+
+@pytest.mark.parametrize("bad", ["140", -1, 1 << 32, True, 1.5])
+def test_parse_firmware_image_rejects_a_malformed_board_id(bad: Any) -> None:
+    desc = {"board_id": bad,
+            "image": base64.b64encode(zlib.compress(b"\x00" * 64)).decode("ascii")}
+    with pytest.raises(ValueError, match="board_id"):
+        parse_firmware_image(json.dumps(desc).encode("utf-8"))
 
 
 # ---------------------------------------------------------------------------
@@ -420,6 +463,101 @@ def test_run_mid_program_cancel_does_not_reboot(monkeypatch: pytest.MonkeyPatch)
 
 
 # ---------------------------------------------------------------------------
+# Board id: an image built for another board is refused before the erase
+# ---------------------------------------------------------------------------
+
+def test_run_refuses_an_image_for_another_board_before_erasing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeBootloaderSerial(board_id=1013)
+    _patch_bootloader(monkeypatch, fake)
+    uploader = FirmwareUploader(connect_timeout_s=2.0)
+
+    assert uploader.run("/dev/ttyACM0", b"\x00" * 1024, board_id=140) is False
+
+    status = uploader.status()
+    assert status["state"] == "failed"
+    assert "board id 140" in status["message"]
+    assert "board id 1013" in status["message"]
+    assert "Nothing was erased." in status["message"]
+    assert "—" not in status["message"] and " - " not in status["message"]
+    assert INFO_BOARD_ID in fake.info_queries
+    # The flash is untouched and the board stays in its bootloader.
+    assert CHIP_ERASE not in fake.commands
+    assert PROG_MULTI not in fake.commands
+    assert REBOOT not in fake.commands
+    assert fake.rebooted is False
+    assert fake.closed is True
+
+
+def test_run_flashes_an_image_for_the_connected_board(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = FakeBootloaderSerial(board_id=140)
+    _patch_bootloader(monkeypatch, fake)
+    image = bytes((i * 7) & 0xFF for i in range(2048))
+    uploader = FirmwareUploader(connect_timeout_s=2.0)
+
+    assert uploader.run("/dev/ttyACM0", image, board_id=140) is True
+
+    assert uploader.status()["state"] == "done"
+    assert fake.programmed[:len(image)] == image
+    assert fake.rebooted is True
+
+
+def test_run_flashes_a_raw_binary_without_a_board_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = FakeBootloaderSerial(board_id=1013)
+    _patch_bootloader(monkeypatch, fake)
+    firmware = parse_firmware_image(bytes((i * 5) & 0xFF for i in range(2048)))
+    assert firmware.board_id is None
+    uploader = FirmwareUploader(connect_timeout_s=2.0)
+
+    assert uploader.run("/dev/ttyACM0", firmware.image, board_id=firmware.board_id) is True
+
+    assert fake.programmed[:len(firmware.image)] == firmware.image
+    assert fake.rebooted is True
+
+
+def test_run_accepts_fmu_v2_firmware_on_an_auavx21(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ArduPilot's uploader lets board 33 (AUAVX2.1) take board 9 firmware."""
+    fake = FakeBootloaderSerial(board_id=33)
+    _patch_bootloader(monkeypatch, fake)
+    uploader = FirmwareUploader(connect_timeout_s=2.0)
+
+    assert uploader.run("/dev/ttyACM0", b"\x00" * 1024, board_id=9) is True
+    assert fake.rebooted is True
+
+
+def test_the_auavx21_exception_does_not_work_the_other_way(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeBootloaderSerial(board_id=9)
+    _patch_bootloader(monkeypatch, fake)
+    uploader = FirmwareUploader(connect_timeout_s=2.0)
+
+    assert uploader.run("/dev/ttyACM0", b"\x00" * 1024, board_id=33) is False
+    assert CHIP_ERASE not in fake.commands
+    assert REBOOT not in fake.commands
+
+
+def test_run_still_flashes_when_the_bootloader_does_not_report_a_board_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import corvus.firmware_uploader as fu
+
+    monkeypatch.setattr(fu, "INFO_TIMEOUT_S", 0.2)
+    fake = FakeBootloaderSerial(board_id=None)
+    _patch_bootloader(monkeypatch, fake)
+    image = bytes((i * 7) & 0xFF for i in range(2048))
+    uploader = FirmwareUploader(connect_timeout_s=2.0)
+
+    assert uploader.run("/dev/ttyACM0", image, board_id=140) is True
+
+    # The refused query was drained, so it did not corrupt the flash size reply
+    # that the verify CRC depends on.
+    assert uploader._fw_maxsize == fake.fw_maxsize
+    assert fake.rebooted is True
+
+
+# ---------------------------------------------------------------------------
 # FlashService gate
 # ---------------------------------------------------------------------------
 
@@ -571,6 +709,94 @@ def test_flash_reconnect_after_reboot_rejected(monkeypatch: pytest.MonkeyPatch) 
     # Bridge was reconnected (set_connection + start) after the failed reboot.
     assert mav.connection_set_to == "serial:/dev/ttyACM0:115200"
     assert mav.started is True
+    fs.shutdown()
+
+
+def _recording_uploader(calls: list[dict[str, Any]]) -> type:
+    """A FirmwareUploader stand-in that records what FlashService hands it."""
+
+    class _Recording:
+        def __init__(self, on_progress: Any = None, cancel: Any = None, **_kw: Any) -> None:
+            pass
+
+        def run(self, device: str, image: bytes, board_id: int | None = None) -> bool:
+            calls.append({"device": device, "image": image, "board_id": board_id})
+            return True
+
+        def shutdown(self) -> None:
+            pass
+
+    return _Recording
+
+
+class _FakeCatalog:
+    """The FirmwareCatalog surface start_release uses, serving one payload."""
+
+    def __init__(self, payload: bytes) -> None:
+        self.payload = payload
+
+    def resolve(self, release_tag: str, board_name: str) -> dict[str, Any]:
+        return {"name": board_name}
+
+    def cached_path(self, name: str) -> None:
+        return None
+
+    def download(self, entry: dict[str, Any], on_progress: Any = None,
+                 cancel: Any = None) -> bytes:
+        return self.payload
+
+
+@pytest.mark.parametrize(("board_id", "expected"), [(140, 140), (None, None)])
+def test_flash_start_hands_the_image_board_id_to_the_uploader(
+    monkeypatch: pytest.MonkeyPatch, board_id: int | None, expected: int | None,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr("corvus.flash_service.FirmwareUploader", _recording_uploader(calls))
+    image = bytes(range(256)) * 4
+    payload = image if board_id is None else _px4_container(image, board_id)
+    fs = FlashService(FakeMavlink(transport="usb"), _store())
+
+    assert fs.start(payload) is True
+    fs._worker.join(timeout=5.0)
+
+    assert calls == [{"device": "/dev/ttyACM0", "image": image, "board_id": expected}]
+    assert fs.status()["state"] == "done"
+    fs.shutdown()
+
+
+def test_flash_release_hands_the_image_board_id_to_the_uploader(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr("corvus.flash_service.FirmwareUploader", _recording_uploader(calls))
+    image = bytes(range(256)) * 4
+    fs = FlashService(FakeMavlink(transport="usb"), _store(),
+                      catalog=_FakeCatalog(_px4_container(image, 140)))
+
+    assert fs.start_release("v1.17.0", "cubepilot_cubeorange_default.px4") is True
+    fs._worker.join(timeout=5.0)
+
+    assert calls == [{"device": "/dev/ttyACM0", "image": image, "board_id": 140}]
+    assert fs.status()["state"] == "done"
+    fs.shutdown()
+
+
+def test_flash_tells_the_operator_the_image_is_for_another_board(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeBootloaderSerial(board_id=1013)
+    _patch_bootloader(monkeypatch, fake)
+    mav = FakeMavlink(transport="usb")
+    fs = FlashService(mav, _store())
+
+    assert fs.start(_px4_container(b"\x00" * 1024, 140)) is True
+    fs._worker.join(timeout=10.0)
+
+    status = fs.status()
+    assert status["state"] == "failed"
+    assert "Nothing was erased." in status["message"]
+    assert CHIP_ERASE not in fake.commands
+    assert REBOOT not in fake.commands
     fs.shutdown()
 
 
@@ -833,7 +1059,7 @@ class _BlockingUploader:
     """Fake uploader whose run() blocks until the shared cancel event is set.
 
     Mirrors the FirmwareUploader surface FlashService._run uses: constructed
-    with on_progress + cancel, run(device, image) -> bool, shutdown().
+    with on_progress + cancel, run(device, image, board_id) -> bool, shutdown().
     """
 
     def __init__(self, on_progress: Any = None, cancel: Any = None, **_kw: Any) -> None:
@@ -842,7 +1068,7 @@ class _BlockingUploader:
         self.run_called = False
         self.shutdown_called = False
 
-    def run(self, device: str, image: bytes) -> bool:
+    def run(self, device: str, image: bytes, board_id: int | None = None) -> bool:
         self.run_called = True
         # Block until FlashService.shutdown sets the cancel event (or a safety
         # timeout so a buggy test never hangs the suite).
@@ -895,3 +1121,62 @@ def test_flash_shutdown_idempotent_with_no_worker() -> None:
     fs.shutdown()
     assert fs.status()["state"] == "idle"
     assert fs._worker is None
+
+
+# ---------------------------------------------------------------------------
+# The catalogue endpoint: which stack and which board to open on
+# ---------------------------------------------------------------------------
+
+def _catalog_handler(tmp_path, mavlink: Any):
+    from corvus import ardupilot_firmware as af
+    from corvus.firmware_catalog import FirmwareCatalog
+
+    (tmp_path / "catalog.json").write_text(json.dumps({"releases": [{
+        "tag": "v1.17.0", "name": "v1.17.0", "prerelease": False, "published": "",
+        "boards": [{"name": "cubepilot_cubeorange_default.px4", "label": "Cube Orange",
+                    "size": 1}],
+    }]}), encoding="utf-8")
+    (tmp_path / "catalog-ardupilot.json").write_text(json.dumps({"releases": [{
+        "tag": af.release_tag("Plane", "stable"), "name": "ArduPlane (stable)",
+        "prerelease": False,
+        "boards": [{"name": af.asset_name("Plane", "stable", "CubeOrange"),
+                    "board": "CubeOrange", "label": "CubeOrange", "size": 0}],
+    }]}), encoding="utf-8")
+    flash = MagicMock()
+    flash.catalog = FirmwareCatalog(str(tmp_path))
+    h, responses = _handler(flash=flash, mavlink=mavlink)
+    h.path = "/api/firmware/catalog"
+    return h, responses
+
+
+def test_api_firmware_catalog_detects_the_board_for_each_stack(tmp_path) -> None:
+    mavlink = MagicMock()
+    mavlink.board_identity.return_value = {"description": "CubeOrange", "hwid": ""}
+    mavlink.stack = "ardupilot"
+    mavlink.vehicle_type_id = 1      # FIXED_WING
+    h, responses = _catalog_handler(tmp_path, mavlink)
+    h._api_firmware_catalog()
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["detected"]["px4"]["key"] == "cubepilot_cubeorange_default.px4"
+    assert payload["detected"]["ardupilot"]["key"] == "CubeOrange"
+    # The page opens on what the aircraft runs: ArduPlane, not ArduCopter.
+    assert payload["suggested"] == {"stack": "ardupilot", "vehicle": "Plane"}
+
+
+def test_api_firmware_catalog_suggests_nothing_without_an_aircraft(tmp_path) -> None:
+    h, responses = _catalog_handler(tmp_path, None)
+    h._api_firmware_catalog()
+    payload, _status = responses[0]
+    assert payload["detected"] == {"px4": None, "ardupilot": None}
+    assert payload["suggested"] == {"stack": "", "vehicle": ""}
+
+
+def test_api_firmware_catalog_ignores_a_stack_it_cannot_flash(tmp_path) -> None:
+    mavlink = MagicMock()
+    mavlink.board_identity.return_value = {}
+    mavlink.stack = "generic"
+    mavlink.vehicle_type_id = 0
+    h, responses = _catalog_handler(tmp_path, mavlink)
+    h._api_firmware_catalog()
+    assert responses[0][0]["suggested"] == {"stack": "", "vehicle": ""}

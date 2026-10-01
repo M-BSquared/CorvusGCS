@@ -324,6 +324,40 @@ def test_connect_failure_for_missing_serial_sets_link_error(
     assert snap["link_connection"] == "serial:/dev/ttyUSB0:57600"
 
 
+@pytest.mark.parametrize("conn, raised, expected", [
+    # A Linux user outside the dialout group: the port is listed, and opening
+    # it is refused. "Unavailable" sent people looking for a loose cable.
+    ("serial:/dev/ttyACM0:57600",
+     OSError(13, "could not open port /dev/ttyACM0: Permission denied"),
+     "add your user to the dialout group"),
+    # Windows opens COM ports exclusively; pyserial's message has no errno.
+    ("serial:COM5:57600",
+     OSError("could not open port 'COM5': PermissionError(13, 'Access is denied.', None, 5)"),
+     "COM5 is in use by another program"),
+    ("serial:/dev/ttyACM0:57600",
+     OSError(16, "could not open port /dev/ttyACM0: Device or resource busy"),
+     "ModemManager"),
+    ("serial:/dev/ttyACM0:57600",
+     FileNotFoundError(2, "No such file or directory"),
+     "serial device unavailable"),
+])
+def test_a_port_that_will_not_open_says_why(
+    monkeypatch: pytest.MonkeyPatch, conn: str, raised: OSError, expected: str,
+) -> None:
+    store = VehicleStateStore()
+    seed_link_fields(store)
+    bridge = MavlinkBridge(store, conn)
+
+    def refuse(*args: Any, **kwargs: Any) -> Any:
+        raise raised
+
+    monkeypatch.setattr(mavutil, "mavlink_connection", refuse)
+
+    with pytest.raises(ConnectionError, match=expected):
+        bridge._connect()
+    assert expected in store.get_snapshot()["link_error"]
+
+
 def test_connect_success_sets_connected_status(monkeypatch: pytest.MonkeyPatch) -> None:
     store = VehicleStateStore()
     seed_link_fields(store)

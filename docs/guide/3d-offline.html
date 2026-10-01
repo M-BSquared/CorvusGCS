@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<!-- Written by tools/guide.py around the content block below. Edit the text
+     between the guide:content markers; run the script for everything else. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D, terrain and offline maps · Corvus GCS documentation</title>
+<meta name="description" content="The 3D view and the globe, elevation models, OpenStreetMap buildings, and preparing maps and terrain for a field with no internet.">
+<link rel="canonical" href="https://m-bsquared.github.io/CorvusGCS/guide/3d-offline.html">
+<meta name="theme-color" content="#0B0E12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="dark light">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Corvus GCS">
+<meta property="og:title" content="3D, terrain and offline maps · Corvus GCS documentation">
+<meta property="og:description" content="The 3D view and the globe, elevation models, OpenStreetMap buildings, and preparing maps and terrain for a field with no internet.">
+<meta property="og:url" content="https://m-bsquared.github.io/CorvusGCS/guide/3d-offline.html">
+<meta property="og:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/icons/apple-touch-icon.png">
+<link rel="preload" as="font" type="font/woff2" href="../assets/fonts/Inter-latin.woff2" crossorigin>
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="guide.css">
+<script>
+  document.documentElement.classList.add('js');
+  try {
+    var t = localStorage.getItem('corvus-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+</script>
+<script src="../script.js" defer></script>
+<script src="guide.js" defer></script>
+</head>
+
+<body class="guide">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <g id="i-github" fill="currentColor" stroke="none" transform="scale(1.5)"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></g>
+    <g id="i-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></g>
+    <g id="i-moon"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></g>
+    <g id="i-menu"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></g>
+    <g id="i-close"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></g>
+    <g id="i-prev"><path d="m15 18-6-6 6-6"/></g>
+    <g id="i-next"><path d="m9 18 6-6-6-6"/></g>
+    <g id="i-book"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></g>
+    <g id="i-info"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></g>
+    <g id="i-alert"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></g>
+    <g id="i-edit"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></g>
+  </defs>
+</svg>
+
+<header class="site-header" id="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="../index.html" aria-label="Corvus GCS, project website">
+      <span class="brand-mark" role="img" aria-hidden="true"></span>
+      <span class="brand-text">
+        <span class="brand-name">Corvus GCS</span>
+        <span class="brand-sub">Documentation</span>
+      </span>
+    </a>
+
+    <nav class="site-nav" id="site-nav" aria-label="Main">
+      <ul class="nav-list">
+        <li><a href="../index.html">Website</a></li>
+        <li><a href="index.html">Documentation</a></li>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS/releases/latest" target="_blank" rel="noopener">Download</a></li>
+        <li><a class="nav-github" href="https://github.com/M-BSquared/CorvusGCS" target="_blank" rel="noopener">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-github"></use></svg>GitHub</a></li>
+      </ul>
+    </nav>
+
+    <div class="header-actions">
+      <button class="icon-btn theme-toggle" id="theme-toggle" type="button" aria-label="Switch to the light theme" aria-pressed="false">
+        <svg class="icon icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-sun"></use></svg>
+        <svg class="icon icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-moon"></use></svg>
+      </button>
+      <button class="icon-btn nav-toggle" id="nav-toggle" type="button" aria-label="Open the menu" aria-expanded="false" aria-controls="site-nav">
+        <svg class="icon icon-open" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-menu"></use></svg>
+        <svg class="icon icon-shut" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap guide-layout">
+<nav class="guide-nav" id="guide-nav" aria-label="Documentation">
+  <button class="guide-nav-toggle" id="guide-nav-toggle" type="button" aria-expanded="false" aria-controls="guide-nav-body">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-book"></use></svg><span>Contents</span><span class="guide-nav-here">3D, terrain and offline maps</span><svg class="icon guide-nav-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg>
+  </button>
+  <div class="guide-nav-body" id="guide-nav-body">
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Start</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="install.html">Install and run</a></li>
+        <li><a href="connect.html">Connect to the aircraft</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Fly</p>
+      <ul>
+        <li><a href="flying.html">Map, HUD and flight controls</a></li>
+        <li><a href="3d-offline.html" aria-current="page">3D, terrain and offline maps</a></li>
+        <li><a href="mission.html">Mission planner</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Set up</p>
+      <ul>
+        <li><a href="airframe.html">Airframe and motors</a></li>
+        <li><a href="safety.html">Safety, sensors and battery</a></li>
+        <li><a href="parameters.html">Parameters and calibration</a></li>
+        <li><a href="radio-tuning.html">Radio control and tuning</a></li>
+        <li><a href="hardware.html">Telemetry radio, RTK and Remote ID</a></li>
+        <li><a href="firmware.html">Firmware</a></li>
+        <li><a href="video.html">Video and windows</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Review</p>
+      <ul>
+        <li><a href="analysis.html">Logs and Flight Review</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Tools</p>
+      <ul>
+        <li><a href="workspace.html">Console and SSH</a></li>
+        <li><a href="plugins.html">Plugins</a></li>
+        <li><a href="settings.html">Settings</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Reference</p>
+      <ul>
+        <li><a href="compatibility.html">PX4 and ArduPilot</a></li>
+        <li><a href="security.html">Network and security</a></li>
+        <li><a href="reference.html">Files, settings and variables</a></li>
+        <li><a href="build.html">Build the apps</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main id="main" class="guide-main">
+<article class="doc">
+<p class="eyebrow">Fly</p>
+<!-- guide:content -->
+<h1>3D, terrain and offline maps</h1>
+<p class="doc-lead">
+  Corvus can show the ground with its real shape and the buildings standing on
+  it, with the aircraft at the height it is actually flying. All of it, map
+  imagery, elevation and buildings, can be stored in advance for a field with
+  no internet.
+</p>
+
+<figure class="doc-shot">
+  <a href="../assets/images/map-3d.jpg"><img src="../assets/images/map-3d-800.jpg"
+     srcset="../assets/images/map-3d-800.jpg 800w, ../assets/images/map-3d.jpg 1600w"
+     sizes="(max-width: 900px) calc(100vw - 40px), 760px" width="1600" height="1000" loading="lazy" decoding="async"
+     alt="The map tilted into 3D: the field and the buildings around it in relief, the flown track, and the aircraft drawn above the ground at its altitude."></a>
+  <figcaption>3D in the blue theme: terrain, OpenStreetMap buildings and the aircraft at its altitude.</figcaption>
+</figure>
+
+<h2 id="3d">Switching to 3D</h2>
+<p>
+  The cube button on the map's control rail turns 3D on and off. 3D always
+  shows the ground with its real shape wherever elevation data is available:
+  hills are hills and valleys are valleys, drawn at true scale rather than
+  exaggerated, with light shading so slopes read on any map style. What you are
+  judging is clearance, and a hill drawn half again too tall is a hill you
+  misjudge.
+</p>
+<p>
+  Rest the pointer on the cube button (or long-press it on a touch screen) and
+  a small panel appears with two settings:
+</p>
+<dl>
+  <dt>Buildings</dt>
+  <dd>On, buildings are extruded from OpenStreetMap footprints at their tagged heights, so the things actually in your way are in your way on screen too. Off, 3D shows the terrain alone and asks for no building data, which is the choice for a link you would rather keep for telemetry, or a laptop on battery.</dd>
+  <dt>Elevation</dt>
+  <dd>Which elevation model the terrain is drawn from; see below.</dd>
+</dl>
+<p>
+  The panel only chooses; it never turns 3D on by itself, so you can set it
+  before you press the button. The settings, and whether 3D was on, come back
+  the next time you open Corvus.
+</p>
+
+<h2 id="globe">The globe</h2>
+<p>
+  Zoomed out, you get the Earth as a sphere with an atmosphere around its rim,
+  which you can spin, mountains included. Zoom in and it hands over to the
+  close view with nothing to press: from the whole planet down to the far end
+  of the runway is one continuous movement.
+</p>
+
+<h2 id="elevation">Elevation models</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Model</th><th>What it is</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">Automatic</th><td>The default. Uses the map service's own model when it has one and its key is set (MapTiler, Mapbox), and Copernicus GLO-30 otherwise. The row says which one is in use right now.</td></tr>
+    <tr><th scope="row">Copernicus GLO-30</th><td>The European 30 m model, noticeably sharper than SRTM on ridges and in narrow valleys, with national survey models (lidar, 1 to 10 m) where a country publishes one, for example Austria, Switzerland and parts of Germany. It is a surface model: forest and large buildings are part of the heights, which is what an aircraft has to clear. No key needed; served by the Mapterhorn project.</td></tr>
+    <tr><th scope="row">SRTM (AWS Terrain Tiles)</th><td>The older free model.</td></tr>
+    <tr><th scope="row">MapTiler Terrain, Mapbox Terrain</th><td>Appear once that service's key is set.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  Whatever you pick, a tile that cannot be had (offline, or with a key
+  refused) is filled in from the free SRTM model, so choosing a better model
+  never gives you a worse picture. Google publishes no elevation tiles.
+</p>
+
+<h2 id="aircraft-in-3d">The aircraft in the scene</h2>
+<p>
+  The aircraft flies in the scene rather than sliding along the ground. It is
+  drawn at the altitude it is really at, with a dashed line down to a shadow on
+  the ground directly beneath it and its height above ground beside it, so "how
+  high am I over that ridge" is something you can see instead of work out from
+  two numbers.
+</p>
+
+<h2 id="buildings">Buildings</h2>
+<p>
+  Buildings come from OpenStreetMap through the Overpass service, in blocks of
+  about 1.5 km. Online, a block can take a few seconds to arrive and the map
+  keeps asking until it has it, so buildings fill in over a moment rather than
+  all at once. A building on the edge between two blocks is drawn once.
+</p>
+<p>
+  Where a building is missing although you are online, it is usually missing
+  from OpenStreetMap itself. A building without a height tag is drawn two
+  storeys high.
+</p>
+<div class="callout">
+  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-info"></use></svg>
+  <div><p>The photorealistic 3D buildings in Google Earth are a licensed product that needs a Google API key and a different renderer, and Google does not allow them to be stored for offline use. Corvus draws real footprints at real heights, not photographed models.</p></div>
+</div>
+
+<h2 id="offline">Offline maps</h2>
+<p>
+  Corvus caches every map tile it fetches into a local store, so ground you
+  have already looked at keeps working with no connection. The store is an
+  MBTiles database in <code>~/.corvus/tiles</code> unless the config file names
+  another folder (see <a href="reference.html#folders">where Corvus keeps its files</a>).
+</p>
+
+<h3 id="download-area">Downloading an area</h3>
+<p>
+  To prepare for a field trip, use <strong>Download offline map</strong> on the
+  map and draw an area. The estimate shown before you commit includes
+  everything that will be stored. Downloads are:
+</p>
+<ul>
+  <li><strong>Named</strong>, so "what do I have offline?" can be answered by name rather than by coordinates.</li>
+  <li><strong>Listed and drawn</strong> as outlines on the map. In the Mission planner they stay hidden until you ask for them, one box per area.</li>
+  <li><strong>Complete for 3D by default.</strong> The elevation (the free model plus the one 3D is using) rides along, from the whole world view down to the deepest zoom you download, and so do the area's buildings.</li>
+</ul>
+<p>
+  Buildings are fetched in the background after the tiles, nearest the centre
+  first, so leave Corvus online for a few more minutes after a large download.
+</p>
+
+<h3 id="offline-terrain">Terrain with no connection</h3>
+<p>
+  3D keeps its relief in the field with no connection, also when you zoom in
+  further than you downloaded: finer elevation is then worked out from the
+  coarser tiles you have, and where coarse and fine ground meet it is joined
+  into a slope instead of a step or a crack. Beyond the downloaded area the
+  terrain is drawn from the coarse tiles without imagery, and there are no
+  buildings. Everything else on the map keeps working.
+</p>
+
+<h3 id="missing-tiles">Panning onto ground you do not have</h3>
+<p>
+  After a few failed lookups Corvus stops trying the network for 30 seconds,
+  so cached tiles keep rendering at full speed and the rest stays blank rather
+  than freezing the map. Moving back into covered ground, or getting a
+  connection back, recovers on its own.
+</p>
+<!-- /guide:content -->
+</article>
+
+<nav class="doc-pager" aria-label="Previous and next page">
+  <a class="doc-pager-prev" href="flying.html" rel="prev"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-prev"></use></svg><span><small>Previous</small>Map, HUD and flight controls</span></a>
+  <a class="doc-pager-next" href="mission.html" rel="next"><span><small>Next</small>Mission planner</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg></a>
+</nav>
+
+<p class="doc-edit">
+  <a href="https://github.com/M-BSquared/CorvusGCS/edit/master/docs/guide/3d-offline.html" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-edit"></use></svg>Suggest a change to this page</a>
+</p>
+</main>
+
+<aside class="guide-toc" aria-labelledby="toc-title">
+  <p class="guide-toc-title" id="toc-title">On this page</p>
+  <ul>
+    <li><a href="#3d">Switching to 3D</a></li>
+    <li><a href="#globe">The globe</a></li>
+    <li><a href="#elevation">Elevation models</a></li>
+    <li><a href="#aircraft-in-3d">The aircraft in the scene</a></li>
+    <li><a href="#buildings">Buildings</a></li>
+    <li><a href="#offline">Offline maps</a></li>
+  </ul>
+</aside>
+</div>
+
+<footer class="site-footer guide-footer">
+  <div class="wrap footer-base">
+    <p class="copyright">&copy; <span id="year">2026</span> Maximilian Böck. Developed with the Universität der Bundeswehr München.</p>
+    <p class="footer-meta">
+      Source available under the Sustainable Use License 1.0 (<em>fair-code</em>).
+      <a href="https://github.com/M-BSquared/CorvusGCS/blob/master/LICENSE.md" target="_blank" rel="noopener">License</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

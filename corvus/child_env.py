@@ -10,7 +10,9 @@ interpreter and Qt, all pointing inside the bundle:
 * ``QTWEBENGINE_CHROMIUM_FLAGS`` (every launcher, and :mod:`corvus.app`), for
   the embedded Chromium only;
 * ``APPDIR``, ``APPIMAGE``, ``ARGV0`` and ``OWD`` (the AppImage runtime), and
-  ``_PYI_*`` (the Windows build's PyInstaller bootloader).
+  ``_PYI_*`` (the Windows build's PyInstaller bootloader);
+* on Windows, PySide6's own package folder at the front of ``PATH``, which
+  ``PySide6/__init__.py`` puts there so its Qt DLLs are found.
 
 A child inherits every one of them unless told otherwise, and for the programs
 Corvus starts on the operator's behalf that is wrong: ``python3 tool.py`` from
@@ -117,13 +119,26 @@ def _ours(path: str, dirs: list[str]) -> bool:
     return any(_inside(path, d) for d in dirs)
 
 
+def qt_binding_dirs() -> tuple[str, ...]:
+    """The PySide6 package folder, once this process has imported PySide6.
+
+    Read from ``sys.modules`` rather than imported, so asking costs nothing
+    and never loads Qt into a process that had not.
+    """
+    module = sys.modules.get("PySide6")
+    path = getattr(module, "__file__", None)
+    return (os.path.dirname(os.path.abspath(path)),) if path else ()
+
+
 def child_env(env: Mapping[str, str] | None = None, *, root: str | None = None,
               prefixes: tuple[str, ...] | None = None,
-              meipass: str | None = None) -> dict[str, str]:
+              meipass: str | None = None,
+              qt_dirs: tuple[str, ...] | None = None) -> dict[str, str]:
     """A copy of *env* (``os.environ`` by default) fit for a program that is not Corvus.
 
-    *root*, *prefixes* and *meipass* stand in for :func:`app_root`, this
-    interpreter's prefixes and ``sys._MEIPASS``, for the tests.
+    *root*, *prefixes*, *meipass* and *qt_dirs* stand in for :func:`app_root`,
+    this interpreter's prefixes, ``sys._MEIPASS`` and :func:`qt_binding_dirs`,
+    for the tests.
     """
     src = dict(os.environ if env is None else env)
     dirs = bundle_dirs(src, root, meipass)
@@ -149,6 +164,18 @@ def child_env(env: Mapping[str, str] | None = None, *, root: str | None = None,
             out[key] = os.pathsep.join(kept)
         else:
             out.pop(key)
+
+    # Exact entries only, not everything under the app folder: PATH also
+    # carries the operator's own entries, an activated .venv among them.
+    qt_dirs = qt_binding_dirs() if qt_dirs is None else qt_dirs
+    path = out.get("PATH")
+    if path is not None and qt_dirs:
+        added = {_norm(d) for d in qt_dirs}
+        kept = [p for p in path.split(os.pathsep) if not (p and _norm(p) in added)]
+        if kept:
+            out["PATH"] = os.pathsep.join(kept)
+        else:
+            out.pop("PATH")
 
     defaulted = out.pop(QPA_DEFAULT_ENV, None)
     if defaulted is not None and out.get("QT_QPA_PLATFORM") == defaulted:

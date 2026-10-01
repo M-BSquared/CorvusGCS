@@ -139,16 +139,17 @@ Corvus.setupCalibration = (function () {
   function buildList(openWizard, navigateBack) {
     const el = S.el("div", "calib-list-view");
     el.appendChild(S.backButton(navigateBack));
-    el.appendChild(S.pageHeader("Calibration", "Guided sensor calibration"));
+    const header = S.pageHeader("Calibration", "Guided sensor calibration");
 
     // Readiness strip: the two preconditions every calibration shares, stated
-    // before the operator picks one rather than as a rejection afterwards.
+    // before the operator picks one rather than as a rejection afterwards. In
+    // the title row, where the other setup pages keep their actions.
     const ready = S.el("div", "calib-ready");
     const linkChip = readyChip("link", "Link");
     const armChip = readyChip("armed", "Disarmed");
     ready.appendChild(linkChip.el);
     ready.appendChild(armChip.el);
-    el.appendChild(ready);
+    el.appendChild(S.pageHead(header, ready));
 
     const mounting = buildMounting();
     el.appendChild(mounting.el);
@@ -430,6 +431,57 @@ Corvus.setupCalibration = (function () {
     const watchdog = S.el("div", "calib-watchdog");
     watchdog.hidden = true;
     text.appendChild(watchdog);
+
+    // --- actions ----------------------------------------------------------
+    // Start and Abort share the title row; every other button, and the
+    // checklist below, sits under the instruction in the column beside the
+    // figure. That column was empty space, and using it is what lets the
+    // whole wizard fit one screen without scrolling for what to do next.
+    const startBtn = Corvus.ui.button({
+      variant: proc.danger ? "danger" : "primary",
+      icon: "play", label: "Start " + proc.label.toLowerCase() + " calibration",
+      onClick: onStart,
+    });
+    /* The step PX4 does not have. ArduPilot prints "Place vehicle level and
+       press any key." and then waits for MAV_CMD_ACCELCAL_VEHICLE_POS naming
+       that position — forever, if nobody sends it. This is that key. It is
+       shown only while the session is actually holding a prompt, so on a PX4
+       link it never appears. */
+    const confirmBtn = Corvus.ui.button({
+      variant: "primary", icon: "check", label: "In position, continue",
+      onClick: onConfirmPosition,
+    });
+    const abortBtn = Corvus.ui.button({
+      variant: "danger", icon: "octagon-x", label: "Abort calibration", onClick: onAbort,
+    });
+    head.appendChild(startBtn);
+    head.appendChild(abortBtn);
+    const retryBtn = Corvus.ui.button({
+      variant: "secondary", icon: "rotate-cw", label: "Try again", onClick: onRetry,
+    });
+    const doneBtn = Corvus.ui.button({
+      variant: "secondary", icon: "chevron-left", label: "Back to calibrations",
+      onClick: () => navigateBack(),
+    });
+    // The accelerometer and compass results are read at boot; the wizard that
+    // says so offers the reboot rather than sending the operator to find one.
+    const rebootBtn = S.rebootButton({ mount: el });
+    const followUps = [confirmBtn, retryBtn, rebootBtn, doneBtn];
+    const actions = Corvus.ui.actions(followUps);
+    actions.classList.add("calib-actions");
+    text.appendChild(actions);
+
+    // --- preparation checklist (idle only) --------------------------------
+    const prep = S.el("div", "calib-prep");
+    const prepTitle = S.el("div", "guidance-title");
+    prepTitle.appendChild(S.icon(proc.danger ? "triangle-alert" : "list-checks"));
+    prepTitle.appendChild(S.el("span", null, "Before you start"));
+    prep.appendChild(prepTitle);
+    const prepList = S.el("ul", "calib-prep-list");
+    proc.prep.forEach((entry) => prepList.appendChild(prepItem(entry, "li", "calib-prep-item")));
+    prep.appendChild(prepList);
+    if (proc.danger) prep.classList.add("calib-prep-danger");
+    text.appendChild(prep);
     stage.appendChild(text);
     el.appendChild(stage);
 
@@ -470,18 +522,6 @@ Corvus.setupCalibration = (function () {
       el.appendChild(poseStrip);
     }
 
-    // --- preparation checklist (idle only) --------------------------------
-    const prep = S.el("div", "page-card calib-prep");
-    const prepTitle = S.el("div", "guidance-title");
-    prepTitle.appendChild(S.icon(proc.danger ? "triangle-alert" : "list-checks"));
-    prepTitle.appendChild(S.el("span", null, "Before you start"));
-    prep.appendChild(prepTitle);
-    const prepList = S.el("ul", "calib-prep-list");
-    proc.prep.forEach((entry) => prepList.appendChild(prepItem(entry, "li", "calib-prep-item")));
-    prep.appendChild(prepList);
-    if (proc.danger) prep.classList.add("calib-prep-danger");
-    el.appendChild(prep);
-
     // --- live autopilot transcript ----------------------------------------
     // Folded away by default: the stage above already says what the
     // autopilot wants, and a scrolling log beside it is text the operator
@@ -502,41 +542,6 @@ Corvus.setupCalibration = (function () {
     guidanceList.appendChild(S.el("div", "guidance-empty", "Nothing from the autopilot yet."));
     logCard.appendChild(guidanceList);
     el.appendChild(logCard);
-
-    // --- actions ----------------------------------------------------------
-    const startBtn = Corvus.ui.button({
-      variant: proc.danger ? "danger" : "primary",
-      icon: "play", label: "Start " + proc.label.toLowerCase() + " calibration",
-      onClick: onStart,
-    });
-    /* The step PX4 does not have. ArduPilot prints "Place vehicle level and
-       press any key." and then waits for MAV_CMD_ACCELCAL_VEHICLE_POS naming
-       that position — forever, if nobody sends it. This is that key. It is
-       shown only while the session is actually holding a prompt, so on a PX4
-       link it never appears. */
-    const confirmBtn = Corvus.ui.button({
-      variant: "primary", icon: "check", label: "In position, continue",
-      onClick: onConfirmPosition,
-    });
-    const abortBtn = Corvus.ui.button({
-      variant: "danger", icon: "octagon-x", label: "Abort calibration", onClick: onAbort,
-    });
-    head.appendChild(startBtn);
-    head.appendChild(abortBtn);
-    const retryBtn = Corvus.ui.button({
-      variant: "secondary", icon: "rotate-cw", label: "Try again", onClick: onRetry,
-    });
-    const doneBtn = Corvus.ui.button({
-      variant: "secondary", icon: "chevron-left", label: "Back to calibrations",
-      onClick: () => navigateBack(),
-    });
-    // The accelerometer and compass results are read at boot; the wizard that
-    // says so offers the reboot rather than sending the operator to find one.
-    const rebootBtn = S.rebootButton({ mount: el });
-    const actions = Corvus.ui.actions(
-      [confirmBtn, retryBtn, rebootBtn, doneBtn]);
-    actions.classList.add("calib-actions");
-    el.appendChild(actions);
 
     /* Modal gate for the one calibration that spins motors. Mounted on `el`
        (not document.body) so tearing the view down takes the dialog with it —
@@ -612,6 +617,7 @@ Corvus.setupCalibration = (function () {
       doneBtn.hidden = !terminal;
       rebootBtn.hidden = !(st.phase === "done" && proc.reboot);
       rebootBtn.disabled = busy || blocked;
+      actions.hidden = followUps.every((b) => b.hidden);
 
       banner.hidden = !(vehicle.armed || !vehicle.connected) || running;
       banner.textContent = vehicle.armed

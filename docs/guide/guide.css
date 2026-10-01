@@ -1,0 +1,352 @@
+/*
+  Corvus GCS documentation.
+
+  Loaded after ../style.css and built on its tokens, header and footer, so the
+  manual is the website's own surface in both themes. What is here is the
+  reading layout: a sidebar of pages, the text column, and "On this page".
+*/
+
+:root {
+  --warn: #F5B43C;
+  --warn-dim: rgba(245, 180, 60, 0.12);
+  --info-dim: rgba(59, 158, 255, 0.10);
+  --code-bg: #0E1318;
+  --sidebar-w: 248px;
+  --toc-w: 216px;
+  --measure: 76ch;
+}
+:root[data-theme="light"] {
+  --warn: #9A5B00;
+  --warn-dim: rgba(214, 140, 0, 0.12);
+  --info-dim: rgba(206, 94, 0, 0.08);
+  --code-bg: #F1F3F6;
+}
+
+/* The header is solid on every doc page: there is no hero under it. */
+.guide .site-header {
+  background: rgb(var(--glass-rgb) / 0.86);
+  border-bottom-color: var(--border);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+          backdrop-filter: blur(16px) saturate(160%);
+}
+.guide .nav-list a[aria-current="page"] { color: var(--text-1); background: rgb(var(--tint-rgb) / 0.06); }
+
+/* ===================================================================
+   Layout: sidebar, text, contents.
+   =================================================================== */
+.guide-layout {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--toc-w);
+  gap: 48px;
+  padding-top: calc(var(--header-h) + 36px);
+  padding-bottom: 80px;
+  align-items: start;
+}
+.guide-layout-wide { grid-template-columns: var(--sidebar-w) minmax(0, 1fr); }
+
+.guide-main { min-width: 0; }
+
+/* --- Sidebar ------------------------------------------------------ */
+.guide-nav {
+  position: sticky;
+  top: calc(var(--header-h) + 24px);
+  max-height: calc(100vh - var(--header-h) - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+  scrollbar-width: thin;
+}
+.guide-nav-toggle { display: none; }
+.guide-nav-group + .guide-nav-group { margin-top: 22px; }
+.guide-nav-heading {
+  margin-bottom: 6px;
+  padding-left: 12px;
+  font-size: 0.6875rem; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--text-3);
+}
+.guide-nav ul, .guide-toc ul { margin: 0; padding: 0; list-style: none; }
+.guide-nav li a {
+  display: block;
+  padding: 6px 12px;
+  border-left: 2px solid transparent;
+  border-radius: 0 var(--radius-btn) var(--radius-btn) 0;
+  color: var(--text-2);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+.guide-nav li a:hover { color: var(--text-1); background: rgb(var(--tint-rgb) / 0.05); }
+.guide-nav li a[aria-current="page"] {
+  color: var(--text-1);
+  font-weight: 600;
+  border-left-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+/* --- On this page ------------------------------------------------- */
+.guide-toc {
+  position: sticky;
+  top: calc(var(--header-h) + 24px);
+  max-height: calc(100vh - var(--header-h) - 48px);
+  overflow-y: auto;
+  font-size: 0.8125rem;
+}
+.guide-toc-title {
+  margin-bottom: 10px;
+  font-size: 0.6875rem; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--text-3);
+}
+.guide-toc li a {
+  display: block;
+  padding: 4px 0 4px 12px;
+  border-left: 1px solid var(--border);
+  color: var(--text-3);
+  line-height: 1.4;
+}
+.guide-toc li a:hover { color: var(--text-1); }
+.guide-toc li a.is-current { color: var(--accent-bright); border-left-color: var(--accent); }
+
+/* ===================================================================
+   The text.
+   =================================================================== */
+.doc { max-width: var(--measure); }
+.doc > .eyebrow { margin-bottom: 10px; }
+
+.doc h1 {
+  font-size: clamp(1.9rem, 1.5rem + 1.4vw, 2.6rem);
+  margin-bottom: 16px;
+}
+.doc h2 {
+  font-size: clamp(1.35rem, 1.2rem + 0.6vw, 1.65rem);
+  margin: 56px 0 14px;
+  padding-top: 26px;
+  border-top: 1px solid var(--border-soft);
+}
+.doc h3 { font-size: 1.125rem; margin: 34px 0 10px; }
+.doc h4 { font-size: 1rem; margin: 24px 0 8px; }
+.doc h2 + h3 { margin-top: 18px; }
+
+.doc p, .doc li, .doc dd { color: var(--text-2); }
+.doc p + p { margin-top: 1em; }
+.doc strong { color: var(--text-1); font-weight: 600; }
+.doc em { color: var(--text-1); }
+
+.doc .doc-lead {
+  font-size: clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem);
+  line-height: 1.6;
+  color: var(--text-2);
+  margin-bottom: 8px;
+}
+
+.doc ul, .doc ol { margin: 1em 0; padding-left: 1.35em; }
+.doc li + li { margin-top: 0.45em; }
+.doc li > ul, .doc li > ol { margin: 0.45em 0; }
+.doc li::marker { color: var(--text-3); }
+
+.doc a { text-decoration: underline; text-decoration-color: rgb(var(--tint-rgb) / 0.22); text-underline-offset: 3px; }
+.doc a:hover { text-decoration-color: currentColor; }
+
+.doc code, .doc kbd {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  padding: 0.12em 0.38em;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+.doc kbd { border-bottom-width: 2px; }
+
+.doc pre {
+  margin: 1.1em 0;
+  padding: 14px 18px;
+  overflow-x: auto;
+  border-radius: var(--radius);
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+.doc pre code { padding: 0; border: 0; background: none; font-size: inherit; overflow-wrap: normal; }
+
+/* --- Tables ------------------------------------------------------- */
+.doc .table-wrap {
+  margin: 1.2em 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.doc table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+.doc th, .doc td { padding: 10px 14px; text-align: left; vertical-align: top; }
+.doc thead th {
+  background: var(--surface-2);
+  color: var(--text-1);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.doc tbody tr + tr td, .doc tbody tr + tr th { border-top: 1px solid var(--border-soft); }
+.doc tbody th { color: var(--text-1); font-weight: 600; }
+.doc td { color: var(--text-2); }
+
+/* --- Definition lists: a setting and what it does ------------------ */
+.doc dl { margin: 1.2em 0; }
+.doc dt { color: var(--text-1); font-weight: 600; margin-top: 1.1em; }
+.doc dt:first-child { margin-top: 0; }
+.doc dd { margin: 0.3em 0 0; padding-left: 16px; border-left: 2px solid var(--border-soft); }
+.doc dd p + p { margin-top: 0.6em; }
+
+/* --- Callouts ------------------------------------------------------ */
+.callout {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 12px;
+  margin: 1.4em 0;
+  padding: 14px 18px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--info-dim);
+}
+.callout > .icon { color: var(--accent-bright); margin-top: 2px; }
+.callout p { color: var(--text-2); font-size: 0.9375rem; }
+.callout-warn { background: var(--warn-dim); border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
+.callout-warn > .icon { color: var(--warn); }
+
+/* --- Screenshots --------------------------------------------------- */
+.doc-shot { margin: 1.6em 0; }
+.doc-shot a {
+  display: block;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
+  transition: border-color 0.15s ease;
+  text-decoration: none;
+}
+.doc-shot a:hover { border-color: var(--accent); }
+.doc-shot img { width: 100%; }
+.doc-shot figcaption { margin-top: 10px; color: var(--text-3); font-size: 0.875rem; }
+
+/* --- Cards on the overview page ------------------------------------ */
+.doc-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 1.2em 0 0;
+  padding: 0;
+  list-style: none;
+}
+.doc-cards li { margin: 0; }
+.doc-cards a {
+  display: block;
+  height: 100%;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  text-decoration: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.doc-cards a:hover { border-color: var(--accent); background: var(--surface-2); }
+.doc-cards strong { display: block; color: var(--text-1); margin-bottom: 4px; }
+.doc-cards span { display: block; color: var(--text-2); font-size: 0.875rem; line-height: 1.5; }
+
+/* --- Previous / next ------------------------------------------------ */
+.doc-pager {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  max-width: var(--measure);
+  margin-top: 64px;
+}
+.doc-pager a {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-1);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.doc-pager a:hover { border-color: var(--accent); background: var(--surface-1); color: var(--text-1); }
+.doc-pager small {
+  display: block;
+  color: var(--text-3);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+.doc-pager .icon { color: var(--text-3); }
+.doc-pager-next { grid-column: 2; justify-content: flex-end; text-align: right; }
+
+.doc-edit { max-width: var(--measure); margin-top: 20px; font-size: 0.8125rem; }
+.doc-edit a { display: inline-flex; align-items: center; gap: 7px; color: var(--text-3); }
+.doc-edit a:hover { color: var(--accent-bright); }
+.doc-edit .icon { width: 15px; height: 15px; }
+
+.guide-footer { padding-top: 0; }
+.guide-footer .footer-base a { color: var(--text-2); }
+
+/* ===================================================================
+   Narrower screens: contents first, the sidebar folds into a button.
+   =================================================================== */
+@media (max-width: 1240px) {
+  .guide-layout { grid-template-columns: var(--sidebar-w) minmax(0, 1fr); }
+  .guide-toc { display: none; }
+}
+
+@media (max-width: 900px) {
+  .guide-layout, .guide-layout-wide {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+    padding-top: calc(var(--header-h) + 20px);
+  }
+  .guide-nav {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-1);
+  }
+  .guide-nav-body { padding: 14px 6px 16px; }
+
+  /* With script the list folds away behind one button; without, it stays open. */
+  .js .guide-nav-toggle {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%;
+    padding: 13px 16px;
+    border: 0;
+    background: none;
+    color: var(--text-1);
+    font: inherit; font-size: 0.9375rem; font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+  }
+  .guide-nav-toggle .icon { width: 18px; height: 18px; color: var(--accent-bright); }
+  .guide-nav-here {
+    margin-left: auto;
+    color: var(--text-3);
+    font-weight: 500;
+    font-size: 0.875rem;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .guide-nav-chevron { transition: transform 0.15s ease; color: var(--text-3) !important; }
+  .guide-nav-toggle[aria-expanded="true"] .guide-nav-chevron { transform: rotate(90deg); }
+  .js .guide-nav-body { display: none; border-top: 1px solid var(--border-soft); }
+  .js .guide-nav.is-open .guide-nav-body { display: block; }
+
+  .doc h2 { margin-top: 44px; }
+}
+
+@media (max-width: 620px) {
+  .doc-cards { grid-template-columns: 1fr; }
+  .doc-pager { grid-template-columns: 1fr; }
+  .doc-pager-next { grid-column: 1; }
+  .doc pre { margin-inline: -4px; padding: 12px 14px; }
+  .doc th, .doc td { padding: 9px 11px; }
+}

@@ -626,7 +626,6 @@ Corvus.sidenav = (function () {
     body.appendChild(scaleCard(cfg));
     body.appendChild(unitsCard(cfg));
     body.appendChild(pagesCard(cfg));
-    body.appendChild(checklistCard(cfg));
     body.appendChild(mapServiceCard(cfg, gen));
     body.appendChild(trackCard(cfg));
     body.appendChild(controlsCard(cfg));
@@ -634,6 +633,7 @@ Corvus.sidenav = (function () {
     // icon sit after Controls: all four are small finishing touches on an
     // interface the cards above them decide.
     body.appendChild(flightBarCard(cfg));
+    body.appendChild(flightHudCard(cfg));
     body.appendChild(compassCard(cfg));
     body.appendChild(topBarCard(cfg));
     body.appendChild(notificationsCard(cfg));
@@ -681,94 +681,6 @@ Corvus.sidenav = (function () {
             "Missions are drawn, saved and uploaded there. Nothing is " +
             "sent to the aircraft until you press Upload.",
     }));
-    return card;
-  }
-
-  // The preflight checklist: the feature itself, its window on the Home map,
-  // and the button to the dialog the lists are written in. Off by default,
-  // like the Mission planner: a station that does not fly by a checklist
-  // should not carry a window for one.
-  //
-  // Same contract as the Pages switch: live at once, persisted in the
-  // background, and snapped back when the backend refuses. The checklist
-  // module owns the state; this card only tells it.
-  function checklistCard(cfg) {
-    const CL = Corvus.checklist;
-    const card = Corvus.ui.card({ title: "Preflight checklist" });
-    CL.fromConfig(cfg);
-
-    const homeSw = Corvus.ui.toggle({
-      id: "settingsChecklistHome",
-      value: CL.isHomeWindow(),
-      disabled: !CL.isEnabled(),
-      ariaLabel: "Show on the Home map",
-      onChange: (next) => CL.setHomeWindow(next),
-    });
-    const editBtn = Corvus.ui.button({
-      variant: "secondary",
-      size: "sm",
-      icon: "list-checks",
-      label: "Edit checklists",
-      onClick: () => Corvus.checklistEditor.open(),
-    });
-    const summary = document.createElement("span");
-    summary.className = "checklist-summary";
-
-    function sync() {
-      const on = CL.isEnabled();
-      homeSw.setValue(CL.isHomeWindow());
-      homeSw.el.disabled = !on;
-      editBtn.disabled = !on;
-      const all = CL.lists();
-      const active = CL.activeList();
-      summary.textContent = !all.length ? "No checklists."
-        : `${all.length} ${all.length === 1 ? "checklist" : "checklists"}` +
-          (active ? `. On Home: ${active.name}.` : ".");
-    }
-
-    const sw = Corvus.ui.toggle({
-      id: "settingsChecklist",
-      value: CL.isEnabled(),
-      ariaLabel: "Preflight checklist",
-      onChange: (next) => {
-        CL.setEnabled(next);
-        sync();
-        return CL.persist({ enabled: next }).catch((error) => {
-          CL.setEnabled(!next);
-          sync();
-          throw error;
-        });
-      },
-    });
-    card.appendChild(Corvus.ui.field({
-      label: "Preflight checklist",
-      control: sw.el,
-      className: "field-switch",
-      hint: "A window on the Home map with your own checklist, ticked off " +
-            "item by item before each flight. Write as many lists as you " +
-            "like, in sections, and pick one in the window. Arming with items " +
-            "still open shows a warning and nothing more: the aircraft is " +
-            "never held back. Off by default.",
-    }));
-    card.appendChild(Corvus.ui.field({
-      label: "Show on the Home map",
-      control: homeSw.el,
-      className: "field-switch",
-      hint: "Drag the window by its bar and double-click the bar to send it " +
-            "back to its corner. Its × turns this off.",
-    }));
-    const row = document.createElement("div");
-    row.className = "checklist-settings-row";
-    row.append(summary, editBtn);
-    card.appendChild(row);
-
-    sync();
-    // The Home window's × and its list picker change this card's state too;
-    // the listener goes when the card leaves the page.
-    const unsub = CL.onChange(() => {
-      if (!card.isConnected) { unsub(); return; }
-      sync();
-    });
     return card;
   }
 
@@ -1015,6 +927,40 @@ Corvus.sidenav = (function () {
     return card;
   }
 
+  // The flight HUD over the Home map: compass, attitude indicator and readouts.
+  // On by default, so an absent key reads as shown. Same contract as the
+  // switches around it: live at once, persist awaited, a refused POST puts the
+  // window back.
+  function flightHudCard(cfg) {
+    const card = Corvus.ui.card({ title: "Flight HUD" });
+    const on = !((cfg.ui || {}).flight_hud === false);
+    Corvus.hudPanel.setShown(on);
+
+    const sw = Corvus.ui.toggle({
+      id: "settingsFlightHud",
+      value: on,
+      ariaLabel: "Show the flight HUD",
+      onChange: (next) => {
+        Corvus.hudPanel.setShown(next);
+        return postConfig({ ui: { flight_hud: next } }, { strict: true })
+          .catch((error) => {
+            Corvus.hudPanel.setShown(!next);
+            throw error;
+          });
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Show the flight HUD",
+      control: sw.el,
+      className: "field-switch",
+      hint: "On (the default), the window with the compass, the attitude " +
+            "indicator and the readouts sits over the Home map. Off, it is " +
+            "gone until you turn it back on, and it comes back where you " +
+            "left it.",
+    }));
+    return card;
+  }
+
   // Which way the flight compass is locked. North up is the default because it
   // reads the same way as the map under it; nose up turns the rose instead, so
   // the top of the dial is always straight ahead of the aircraft. Same
@@ -1089,6 +1035,32 @@ Corvus.sidenav = (function () {
             "captions: green good, amber caution, red fault, grey " +
             "nothing to report. Off by default: the values already carry that " +
             "colour themselves. Turn it on to scan the bar by colour alone.",
+    }));
+
+    // Same contract as the switch above: live at once, persist awaited, a
+    // refused POST puts the bar and the cards back.
+    const altRef = Corvus.topbar.setAltitudeRef((cfg.ui || {}).topbar_altitude);
+    const altCards = Corvus.ui.optionCards({
+      ariaLabel: "Altitude reference",
+      columns: 2,
+      value: altRef,
+      options: [
+        { id: "amsl", label: "AMSL", desc: "Above mean sea level" },
+        { id: "relative", label: "Relative", desc: "Above home" },
+      ],
+      onChange: (next) => {
+        const prev = Corvus.topbar.altitudeRef();
+        Corvus.topbar.setAltitudeRef(next);
+        postConfig({ ui: { topbar_altitude: next } }, { strict: true })
+          .catch(() => altCards.setValue(Corvus.topbar.setAltitudeRef(prev)));
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Altitude",
+      control: altCards.el,
+      hint: "Which altitude the ALTITUDE block shows. AMSL (the default) is " +
+            "height above mean sea level. Relative is height above the home " +
+            "position, usually where the aircraft took off.",
     }));
     return card;
   }

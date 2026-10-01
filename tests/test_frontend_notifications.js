@@ -9,15 +9,19 @@
  *  - unread vs read vs dismissed, and which of the three the badge reports;
  *  - closing the popover is what marks the board read, not opening it, so a
  *    notification that arrives while it is open is still visibly new;
- *  - nothing warning-level or worse is ever removed by a timer — only info
- *    ages out, because the console already holds every line verbatim;
+ *  - nothing warning-level or worse is removed by a timer while it stands;
+ *    info ages out, because the console already holds every line verbatim,
+ *    and so does a line the vehicle has resolved, after going grey first;
  *  - the lifecycle milestones: a fresh link and an autopilot reboot CLEAR,
  *    a change of the armed state MARKS READ, and a disconnect does neither
  *    (state_store synthesises armed=false on one, and a dropped link is the
  *    last moment at which warnings should go quiet);
  *  - nothing takes the screen: a new warning or critical is a toast (once
  *    per text in a short window), info only reaches the board, and the
- *    centre opens when the operator asks for it.
+ *    centre opens when the operator asks for it. A toast whose line resolves
+ *    is taken down, and the stack holds only a few at once;
+ *  - "Ready to fly" is toasted once when the vehicle becomes ready and stays
+ *    ready, and not after a landing.
  *
  * The bar's STATUS block is asserted here too, because it shares this harness
  * and the same rule: it may never claim more than the vehicle actually said.
@@ -184,6 +188,10 @@ require("./../src/js/units.js");
 require("./../src/js/notification_dedupe.js");
 require("./../src/js/topbar.js");
 
+// The real toast stack, kept before it is recorded over below, for the one
+// test that asserts the stack's own limit.
+const realToast = Corvus.ui.toast;
+
 // The toast layer, recorded. A toast is the notification the operator sees
 // without opening the centre, so what gets toasted is asserted directly.
 const toasts = [];
@@ -194,7 +202,10 @@ Corvus.ui.toast = (opts) => {
   text.className = "ui-toast-text";
   el.appendChild(text);
   const entry = { level: opts.level, message: opts.message, title: opts.title, closed: false, el };
-  entry.close = () => { entry.closed = true; };
+  entry.close = () => {
+    if (!entry.closed && typeof opts.onClose === "function") opts.onClose();
+    entry.closed = true;
+  };
   toasts.push(entry);
   return entry;
 };
@@ -426,17 +437,46 @@ function testWarningsAndCriticalsToastWithoutTakingTheScreen() {
   clickClose();
 }
 
-function testAtMostAFewToastsStandAtOnce() {
-  const ui = mount();
-  settle(ui);
-  const board = [];
-  for (let i = 0; i < 6; i += 1) {
-    board.push(warning("warning", `Warning ${i}`));
-    push({ warnings: board.slice() });
+/* The limit is the stack's own (Corvus.ui.toast), so the vehicle's lines, a
+   plugin's and the camera's all share it. Driven through the real toast with
+   a clock that never fires, so nothing leaves on its own. */
+function testTheToastStackHoldsAFewAndKeepsTheCriticalOnes() {
+  const realSetTimeout = window.setTimeout;
+  const lifetimes = {};
+  let showing = "";
+  // Records each toast's lifetime (the 160 ms exit animation is not one).
+  window.setTimeout = (_fn, ms) => { if (ms > 1000) lifetimes[showing] = ms; return 0; };
+  document.body = makeEl("body");
+  const closed = [];
+  const shown = [];
+  const show = (level, message) => {
+    showing = level;
+    shown.push(realToast({ level, message, onClose: () => closed.push(message) }));
+  };
+  try {
+    show("critical", "C1");
+    show("warning", "W1");
+    show("info", "I1");
+    assert.deepEqual(closed, [], "three stand");
+
+    show("warning", "W2");
+    assert.deepEqual(closed, ["W1"], "the oldest that is not critical makes room");
+    show("critical", "C2");
+    show("critical", "C3");
+    assert.deepEqual(closed, ["W1", "I1", "W2"]);
+
+    show("info", "I2");
+    assert.deepEqual(closed, ["W1", "I1", "W2", "C1"],
+      "a new one always shows; with only criticals standing, the oldest goes");
+
+    // A critical outlasts the others, and it does go: the board and its red
+    // badge are what keep an error, not a card pinned over the map.
+    assert.ok(lifetimes.critical > lifetimes.warning && lifetimes.warning > lifetimes.info);
+  } finally {
+    shown.forEach((t) => t.close());
+    window.setTimeout = realSetTimeout;
+    delete document.body;
   }
-  assert.equal(toasts.length, 6);
-  assert.deepEqual(toasts.map((t) => t.closed),
-    [true, true, false, false, false, false], "the oldest make room");
 }
 
 function testInfoAgesOutButAWarningNeverDoes() {
@@ -813,6 +853,176 @@ function testAReasonBeforeTheHeartbeatIsNotFollowedByAPlainToast() {
   assert.deepEqual(toasts.map((t) => t.message), ["Disarmed by command"]);
 }
 
+/* A toast placed while the board was closed, or shorter, covered the rows the
+   board then grew. The stack is placed again whenever the board opens, grows
+   or closes: below it while open, back in the corner once it is not. */
+function testTheToastStackMovesWithTheBoard() {
+  const ui = mount();
+  settle(ui);
+  const realReposition = Corvus.ui.repositionToasts;
+  const placedWhileOpen = [];
+  Corvus.ui.repositionToasts = () => placedWhileOpen.push(ui.open());
+  try {
+    push({ warnings: [warning("warning", "Wind high")] });
+    assert.deepEqual(placedWhileOpen, [], "nothing to clear while the board is closed");
+    openPopover();
+    assert.deepEqual(placedWhileOpen, [true], "the board opened");
+    push({ warnings: [warning("warning", "Wind high"), warning("critical", "Battery critical")] });
+    assert.deepEqual(placedWhileOpen, [true, true], "the board grew under the new toast");
+    clickClose();
+    assert.deepEqual(placedWhileOpen, [true, true, false], "and the stack goes back when it closes");
+  } finally {
+    Corvus.ui.repositionToasts = realReposition;
+  }
+
+  // The placement itself, on the real stack.
+  const realSetTimeout = window.setTimeout;
+  window.setTimeout = () => 0;
+  document.body = makeEl("body");
+  const handle = realToast({ level: "info", message: "probe", duration: 0 });
+  const stack = document.body.children[0];
+  stack.isConnected = true;
+  const popover = byId.warningsPopover;
+  try {
+    popover.hidden = false;
+    popover.getBoundingClientRect = () => ({ top: 58, bottom: 300, left: 0, right: 320, width: 320, height: 242 });
+    Corvus.ui.repositionToasts();
+    assert.equal(stack.style.top, "310px", "10 px below the board");
+    popover.hidden = true;
+    Corvus.ui.repositionToasts();
+    assert.equal(stack.style.top, "", "back to the stylesheet's corner");
+  } finally {
+    handle.close();
+    popover.hidden = true;
+    delete popover.getBoundingClientRect;
+    window.setTimeout = realSetTimeout;
+    delete document.body;
+  }
+}
+
+// --- resolved lines ----------------------------------------------------------
+
+const KILL = { level: "critical", msg: "Kill switch engaged. Motors stopped", meta: "10:05:00", event: "kill" };
+
+function testAResolvedLineGoesGreyStopsCountingAndAgesOut() {
+  const ui = mount();
+  settle(ui);
+  push({ warnings: [KILL, warning("warning", "Battery low")] });
+  assert.equal(ui.badge().textContent, "2");
+  assert.equal(ui.badgeLevel(), "critical");
+
+  // Released. The vehicle says the kill switch is over, the battery is not.
+  push({ warnings: [{ ...KILL, resolved: true }, warning("warning", "Battery low")] });
+  assert.equal(ui.badge().textContent, "1", "a resolved line is not counted");
+  assert.equal(ui.badgeLevel(), "warning", "and does not colour the badge");
+
+  openPopover();
+  const [kill, battery] = ui.items();
+  assert.ok(kill.classList.contains("is-resolved"), "still on the board, greyed");
+  assert.ok(!kill.classList.contains("is-read"));
+  assert.equal(kill.querySelector(".wp-icon").className, "wp-icon resolved", "no severity colour");
+  assert.equal(kill.querySelector(".wp-icon").children[0].getAttribute("data-lucide"), "octagon-alert",
+    "but the critical symbol stays: a check mark beside 'Kill switch engaged' reads as all good");
+  assert.equal(kill.querySelector(".wp-meta").textContent, "10:05:00 \u00b7 resolved");
+  assert.ok(!battery.classList.contains("is-resolved"));
+  clickClose();
+
+  nowMs += 61_000;
+  push({ warnings: [{ ...KILL, resolved: true }, warning("warning", "Battery low")] });
+  openPopover();
+  assert.deepEqual(ui.items().map((i) => i.querySelector(".wp-msg").textContent), ["Battery low"],
+    "the resolved line has aged out, the standing warning has not");
+  clickClose();
+}
+
+function testABoardOfOnlyResolvedLinesIsTheGoodColour() {
+  const ui = mount();
+  settle(ui);
+  push({ warnings: [{ ...warning("critical", "Preflight Fail: Accel 0 uncalibrated"), event: "prearm", resolved: true }] });
+  assert.equal(ui.badge().textContent, "0");
+  assert.equal(ui.badgeLevel(), "healthy");
+}
+
+function testAResolvedLinesToastIsTakenDown() {
+  const ui = mount();
+  settle(ui);
+  nowMs += 400_000;
+  push({ warnings: [KILL, warning("critical", "Preflight Fail: Accel 0 uncalibrated")] });
+  assert.equal(toasts.length, 2);
+
+  push({ warnings: [{ ...KILL, resolved: true }, warning("critical", "Preflight Fail: Accel 0 uncalibrated")] });
+  assert.equal(toasts[0].closed, true, "the kill toast goes with its switch");
+  assert.equal(toasts[1].closed, false, "the other one still stands");
+
+  // Engaged again a moment later: that is news, repeat window or not.
+  nowMs += 2_000;
+  push({ warnings: [{ ...KILL, meta: "10:05:02" }] });
+  assert.equal(toasts.length, 3);
+  assert.equal(toasts[2].message, KILL.msg);
+}
+
+function testALineFirstSeenResolvedIsNotToasted() {
+  const ui = mount();
+  settle(ui);
+  push({ warnings: [{ ...KILL, resolved: true }] });
+  assert.equal(toasts.length, 0);
+}
+
+// --- ready to fly ------------------------------------------------------------
+
+const readyToasts = () => toasts.filter((t) => t.title === "Ready to fly");
+
+function testReadyToFlyIsToastedOnceItHolds() {
+  const ui = mount();
+  settle(ui);
+  push({ prearm_ok: false });
+  push({ prearm_ok: true });
+  assert.equal(readyToasts().length, 0, "not on the first snapshot that says so");
+
+  nowMs += 1_600;
+  push({ prearm_ok: true });
+  assert.deepEqual(readyToasts().map((t) => [t.level, t.message]), [["info", "Preflight checks pass"]]);
+
+  nowMs += 5_000;
+  push({ prearm_ok: true });
+  assert.equal(readyToasts().length, 1, "once per time it becomes ready");
+}
+
+function testAFlickeringCheckIsNotAnnounced() {
+  const ui = mount();
+  settle(ui);
+  nowMs += 20_000;
+  push({ prearm_ok: false });
+  push({ prearm_ok: true });
+  nowMs += 500;
+  push({ prearm_ok: false });
+  nowMs += 2_000;
+  push({ prearm_ok: false });
+  assert.equal(readyToasts().length, 0);
+}
+
+function testReleasingTheKillSwitchAnnouncesReady() {
+  const ui = mount();
+  settle(ui);
+  nowMs += 40_000;
+  push({ prearm_ok: false, kill_switch: true });
+  push({ prearm_ok: true, kill_switch: false });
+  nowMs += 1_600;
+  push({ prearm_ok: true, kill_switch: false });
+  assert.equal(readyToasts().length, 1);
+}
+
+function testReadyAfterALandingIsNotAnnounced() {
+  const ui = mount();
+  settle(ui);
+  nowMs += 60_000;
+  push({ armed: true, prearm_ok: true, landed_state: 1 });
+  push({ armed: false, prearm_ok: true, landed_state: 1 });
+  nowMs += 2_000;
+  push({ armed: false, prearm_ok: true, landed_state: 1 });
+  assert.equal(readyToasts().length, 0, "the disarm toast already says what happened");
+}
+
 /* The severity marks — the coloured bar above the level icon and the one
    below it — are a display preference, so they are an attribute on <html>
    that both stylesheets read (.wp-item in main.css, .ui-toast in
@@ -885,7 +1095,8 @@ const tests = [
   testANotificationArrivingWhileOpenStaysNew,
   testReadItemsStayInTheListDimmedRatherThanDisappearing,
   testWarningsAndCriticalsToastWithoutTakingTheScreen,
-  testAtMostAFewToastsStandAtOnce,
+  testTheToastStackHoldsAFewAndKeepsTheCriticalOnes,
+  testTheToastStackMovesWithTheBoard,
   testInfoAgesOutButAWarningNeverDoes,
   testArmingMarksTheBoardReadWithoutDeletingIt,
   testADisconnectDoesNotQuietenTheBoard,
@@ -907,6 +1118,14 @@ const tests = [
   testAKillAndItsDisarmAreToastedUnderTheirOwnTitle,
   testADisarmWithoutAReasonIsToastedAndAReasonReplacesIt,
   testAReasonBeforeTheHeartbeatIsNotFollowedByAPlainToast,
+  testAResolvedLineGoesGreyStopsCountingAndAgesOut,
+  testABoardOfOnlyResolvedLinesIsTheGoodColour,
+  testAResolvedLinesToastIsTakenDown,
+  testALineFirstSeenResolvedIsNotToasted,
+  testReadyToFlyIsToastedOnceItHolds,
+  testAFlickeringCheckIsNotAnnounced,
+  testReleasingTheKillSwitchAnnouncesReady,
+  testReadyAfterALandingIsNotAnnounced,
   testSeverityMarksAreOffUntilSomethingSaysOtherwise,
   testTheCachedChoiceDefaultsToOffNotToOn,
 ];

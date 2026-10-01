@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<!-- Written by tools/guide.py around the content block below. Edit the text
+     between the guide:content markers; run the script for everything else. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Map, HUD and flight controls · Corvus GCS documentation</title>
+<meta name="description" content="The live map, the flown track, click to fly, the flight HUD, the flight bar, notifications, manual controls and the preflight checklist.">
+<link rel="canonical" href="https://m-bsquared.github.io/CorvusGCS/guide/flying.html">
+<meta name="theme-color" content="#0B0E12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="dark light">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Corvus GCS">
+<meta property="og:title" content="Map, HUD and flight controls · Corvus GCS documentation">
+<meta property="og:description" content="The live map, the flown track, click to fly, the flight HUD, the flight bar, notifications, manual controls and the preflight checklist.">
+<meta property="og:url" content="https://m-bsquared.github.io/CorvusGCS/guide/flying.html">
+<meta property="og:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/icons/apple-touch-icon.png">
+<link rel="preload" as="font" type="font/woff2" href="../assets/fonts/Inter-latin.woff2" crossorigin>
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="guide.css">
+<script>
+  document.documentElement.classList.add('js');
+  try {
+    var t = localStorage.getItem('corvus-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+</script>
+<script src="../script.js" defer></script>
+<script src="guide.js" defer></script>
+</head>
+
+<body class="guide">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <g id="i-github" fill="currentColor" stroke="none" transform="scale(1.5)"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></g>
+    <g id="i-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></g>
+    <g id="i-moon"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></g>
+    <g id="i-menu"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></g>
+    <g id="i-close"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></g>
+    <g id="i-prev"><path d="m15 18-6-6 6-6"/></g>
+    <g id="i-next"><path d="m9 18 6-6-6-6"/></g>
+    <g id="i-book"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></g>
+    <g id="i-info"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></g>
+    <g id="i-alert"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></g>
+    <g id="i-edit"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></g>
+  </defs>
+</svg>
+
+<header class="site-header" id="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="../index.html" aria-label="Corvus GCS, project website">
+      <span class="brand-mark" role="img" aria-hidden="true"></span>
+      <span class="brand-text">
+        <span class="brand-name">Corvus GCS</span>
+        <span class="brand-sub">Documentation</span>
+      </span>
+    </a>
+
+    <nav class="site-nav" id="site-nav" aria-label="Main">
+      <ul class="nav-list">
+        <li><a href="../index.html">Website</a></li>
+        <li><a href="index.html">Documentation</a></li>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS/releases/latest" target="_blank" rel="noopener">Download</a></li>
+        <li><a class="nav-github" href="https://github.com/M-BSquared/CorvusGCS" target="_blank" rel="noopener">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-github"></use></svg>GitHub</a></li>
+      </ul>
+    </nav>
+
+    <div class="header-actions">
+      <button class="icon-btn theme-toggle" id="theme-toggle" type="button" aria-label="Switch to the light theme" aria-pressed="false">
+        <svg class="icon icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-sun"></use></svg>
+        <svg class="icon icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-moon"></use></svg>
+      </button>
+      <button class="icon-btn nav-toggle" id="nav-toggle" type="button" aria-label="Open the menu" aria-expanded="false" aria-controls="site-nav">
+        <svg class="icon icon-open" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-menu"></use></svg>
+        <svg class="icon icon-shut" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap guide-layout">
+<nav class="guide-nav" id="guide-nav" aria-label="Documentation">
+  <button class="guide-nav-toggle" id="guide-nav-toggle" type="button" aria-expanded="false" aria-controls="guide-nav-body">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-book"></use></svg><span>Contents</span><span class="guide-nav-here">Map, HUD and flight controls</span><svg class="icon guide-nav-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg>
+  </button>
+  <div class="guide-nav-body" id="guide-nav-body">
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Start</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="install.html">Install and run</a></li>
+        <li><a href="connect.html">Connect to the aircraft</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Fly</p>
+      <ul>
+        <li><a href="flying.html" aria-current="page">Map, HUD and flight controls</a></li>
+        <li><a href="3d-offline.html">3D, terrain and offline maps</a></li>
+        <li><a href="mission.html">Mission planner</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Set up</p>
+      <ul>
+        <li><a href="airframe.html">Airframe and motors</a></li>
+        <li><a href="safety.html">Safety, sensors and battery</a></li>
+        <li><a href="parameters.html">Parameters and calibration</a></li>
+        <li><a href="radio-tuning.html">Radio control and tuning</a></li>
+        <li><a href="hardware.html">Telemetry radio, RTK and Remote ID</a></li>
+        <li><a href="firmware.html">Firmware</a></li>
+        <li><a href="video.html">Video and windows</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Review</p>
+      <ul>
+        <li><a href="analysis.html">Logs and Flight Review</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Tools</p>
+      <ul>
+        <li><a href="workspace.html">Console and SSH</a></li>
+        <li><a href="plugins.html">Plugins</a></li>
+        <li><a href="settings.html">Settings</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Reference</p>
+      <ul>
+        <li><a href="compatibility.html">PX4 and ArduPilot</a></li>
+        <li><a href="security.html">Network and security</a></li>
+        <li><a href="reference.html">Files, settings and variables</a></li>
+        <li><a href="build.html">Build the apps</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main id="main" class="guide-main">
+<article class="doc">
+<p class="eyebrow">Fly</p>
+<!-- guide:content -->
+<h1>Map, HUD and flight controls</h1>
+<p class="doc-lead">
+  The map is the centre of Corvus. Everything you need while the aircraft is in
+  the air sits on it or floats over it, and the side panel can be collapsed so
+  the whole window becomes the operational picture.
+</p>
+
+<figure class="doc-shot">
+  <a href="../assets/images/map.jpg"><img src="../assets/images/map-800.jpg"
+     srcset="../assets/images/map-800.jpg 800w, ../assets/images/map.jpg 1600w"
+     sizes="(max-width: 900px) calc(100vw - 40px), 760px" width="1600" height="1000" loading="lazy" decoding="async"
+     alt="The map filling the whole Corvus GCS window with the side panel collapsed, showing the vehicle, its heading, the home point, the flown track and the floating instrument panel."></a>
+  <figcaption>The side panel collapsed: vehicle, heading, home point, the flown track and the instrument panel.</figcaption>
+</figure>
+
+<h2 id="map">The map</h2>
+<p>
+  Your aircraft is drawn with a <strong>heading cone</strong> and a white ring
+  around it, so it stays visible over any imagery. The <strong>home
+  point</strong> is a landing pad mark on the exact coordinate. The map
+  service and layer (satellite, streets, terrain and so on) are chosen with the
+  layer control on the map's right edge; see
+  <a href="settings.html#map-service">Map service</a> for the services and
+  their keys.
+</p>
+
+<h3 id="track">The flown track</h3>
+<p>
+  The path the aircraft has flown trails behind it in red. It stays until you
+  clear it with the small button in the map's corner: a link drop, a vehicle
+  reboot and a restart of Corvus all keep it. When the aircraft lands and takes
+  off again, the earlier flights turn a lighter red, so the flight in progress
+  stands out. Two switches under <strong>Settings, Flown track</strong> change
+  this:
+</p>
+<ul>
+  <li><strong>Earlier flights in their own colour</strong>, on by default.</li>
+  <li><strong>Clear the track whenever Corvus starts or the autopilot reboots</strong>, off by default.</li>
+</ul>
+
+<h3 id="click-menu">Click the map</h3>
+<p>Click anywhere on the map to open a small menu for that spot:</p>
+<dl>
+  <dt>Fly to this point</dt>
+  <dd>
+    <p>Available once the aircraft is connected and armed; the menu says what is missing otherwise, and shows the height it will use (the PLAN altitude, see below).</p>
+    <p>For an aircraft that is already in the air, Corvus sends <code>MAV_CMD_DO_REPOSITION</code> rather than a mission. A PX4 aircraft that is holding stays in Hold and flies there, with no switch into Mission mode and back, and the mission stored on the aircraft is left alone. ArduPilot does the same in GUIDED. An aircraft that is armed but still on the ground gets a short mission with a takeoff first.</p>
+  </dd>
+  <dt>Set home here</dt>
+  <dd>Moves the home point, which is where a return to launch goes. It needs a connection but not a disarmed aircraft, because redirecting the return in flight is exactly when it is needed.</dd>
+</dl>
+
+<h2 id="flight-bar">The flight bar</h2>
+<p>
+  Across the top of the map: <strong>ARM</strong>, <strong>TAKEOFF</strong>,
+  <strong>LAND</strong>, <strong>RETURN</strong> and <strong>PLAN</strong>,
+  with the flight mode picker beside them.
+</p>
+<dl>
+  <dt>ARM / DISARM</dt>
+  <dd>Arms or disarms. Whether arming is allowed is the autopilot's decision; if it refuses, its reason is shown.</dd>
+  <dt>TAKEOFF</dt>
+  <dd>Opens a small panel with an altitude slider (1 to 120 m). Confirming arms the aircraft and takes off, in the order the autopilot needs: on PX4 the command first, then arming; on ArduPilot GUIDED, arming, then the command. See <a href="compatibility.html">PX4 and ArduPilot</a>.</dd>
+  <dt>LAND and RETURN</dt>
+  <dd>Land where the aircraft is, or return to launch. RETURN uses the heights and behaviour set on the <a href="safety.html#return">Safety</a> page.</dd>
+  <dt>PLAN</dt>
+  <dd>A quick way to fly a few points without the full planner. Press it, click points on the map, set the height (1 to 50 m above home) and press <strong>FLY</strong>. For anything longer, use the <a href="mission.html">Mission planner</a>.</dd>
+  <dt>Flight mode</dt>
+  <dd>Lists the modes the connected firmware actually has, in the stack's own words ("Return", not "RTL"), and only once the firmware version is known. PX4 sub modes such as Orbit and Position Slow are shown as themselves.</dd>
+</dl>
+<p>
+  Every command shows its progress on the button and reports the autopilot's
+  answer. A rejected command says why, in a notification.
+</p>
+<p>
+  By default the bar keeps its full size and narrows only when the row really
+  does not fit. <strong>Settings, Flight bar</strong> makes it step down
+  earlier, as soon as it would cover more than half the map: first to the
+  width of each word, then to icons alone.
+</p>
+
+<h3 id="position-reference">What needs a position, and what does not</h3>
+<p>
+  Corvus asks the aircraft for its home position as soon as it connects, and
+  needs home (or a global position) only where an altitude has to be converted
+  or set:
+</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Action</th><th>Without a position reference</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">Takeoff</th><td>Waits briefly, then sends the takeoff anyway with the altitude left unspecified, so the <em>vehicle</em> uses its own configured takeoff altitude. You get a warning, not a refusal.</td></tr>
+    <tr><th scope="row">Fly to points</th><td>Unaffected. Mission items carry your height above home directly, in the relative altitude frame, so nothing has to be converted. A single point for an aircraft already in the air is sent as a reposition, which on PX4 needs home to convert the height; without it Corvus uses the mission instead.</td></tr>
+    <tr><th scope="row">Set home</th><td>Waits briefly, then <strong>refuses</strong>. This altitude is not being converted: it is the altitude home will <em>have</em>, and home altitude is what a return descends to. Guessing it would move the landing point up or down as a side effect of moving it sideways.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Whether the aircraft can actually take off stays the autopilot's decision; if it cannot, its own refusal reaches you with a reason.</p>
+
+<h2 id="hud">The flight HUD</h2>
+<p>
+  The instrument panel (compass, attitude indicator, altitude, speeds, heading
+  and satellite count) floats over the map in a window you control:
+</p>
+<ul>
+  <li>Grab it anywhere that is not a button to move it.</li>
+  <li><strong>Pin</strong> it so a stray gesture cannot move it.</li>
+  <li>Shrink it to a compact size, or collapse it away.</li>
+  <li>Double-click it to send it back to its corner.</li>
+  <li>Take it off the map entirely with <strong>Settings, Flight HUD, Show the
+    flight HUD</strong>.</li>
+</ul>
+<p>
+  Where you put it stays put: across restarts, across a trip to Setup and
+  back, and when the side workspace slides open, a window parked at the right
+  edge moves in with it rather than disappearing behind it. The on-screen
+  control pads and the checklist window behave the same way.
+</p>
+<p>
+  The compass is north up by default. <strong>Settings, Compass, Lock compass
+  nose up</strong> turns the rose instead, so the top of the dial is always
+  where the aircraft is heading.
+</p>
+
+<h2 id="notifications">Notifications and toasts</h2>
+<p>
+  Messages from the autopilot and from Corvus collect in the notification
+  centre. The count on its badge is coloured by the worst thing unread:
+</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Badge</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>Green</td><td>Nothing unread.</td></tr>
+    <tr><td>Blue</td><td>Only informational lines. A normal flight produces a steady trickle of these.</td></tr>
+    <tr><td>Amber</td><td>At least one real warning.</td></tr>
+    <tr><td>Red</td><td>At least one critical message.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  The badge used to turn amber for anything unread, which taught operators to
+  ignore the one colour that has to keep working. Now amber means a warning.
+</p>
+<p>
+  A new warning or critical also appears as a <strong>toast</strong> in the
+  top right corner: once per message within a short window, and never by
+  opening the notification centre over the map. Click a toast to open the
+  centre. Informational lines ("Takeoff detected") only go to the centre, and
+  PX4's log file announcements stay in the console.
+</p>
+<p>
+  At most three toasts stand at once. A new one always shows, and the one that
+  makes room is the oldest that is not critical. Toasts leave on their own: an
+  informational one after about 5 seconds, a warning after 6, a critical after
+  20. The centre keeps every one of them, and the badge stays red until you
+  have looked.
+</p>
+<p>
+  A kill switch and a disarm get toasts of their own, titled <strong>Kill
+  switch</strong> and <strong>Disarmed</strong>, with the reason the vehicle
+  gave, such as "Disarmed by the kill switch" or "Disarmed by auto disarm after
+  landing". An engaged kill switch is critical, and its toast goes when the
+  switch is released. When the vehicle disarms without naming a reason
+  (ArduPilot never does), a plain Disarmed toast says so, and a reason arriving
+  a moment later replaces it.
+</p>
+<p>
+  When the vehicle says a problem is over, its line is marked
+  <strong>resolved</strong>: it turns grey but keeps its symbol, no longer
+  counts on the badge, and leaves the centre a minute later. That happens to the kill
+  switch line when the switch is released, and to every failed preflight check
+  ("Preflight Fail:" on PX4, "PreArm:" on ArduPilot) once the vehicle is ready
+  to fly or arms. A warning the vehicle has not resolved stays until you
+  dismiss it. Informational lines leave after a minute.
+</p>
+<p>
+  When the vehicle becomes ready to fly (from NOT READY, from a released kill
+  switch, or on a fresh link), a short <strong>Ready to fly</strong> toast says
+  so. It is not shown after a landing, where the Disarmed toast already says
+  what happened.
+</p>
+
+<h2 id="manual-control">Manual controls on screen</h2>
+<p>
+  Three optional input methods can be switched on under
+  <strong>Settings, Controls</strong>. All three are off by default.
+</p>
+<dl>
+  <dt>Virtual joystick</dt>
+  <dd>Two sticks on screen: throttle and yaw on the left, pitch and roll on the right.</dd>
+  <dt>Arrow keys</dt>
+  <dd>Your keyboard's arrow keys fly pitch and roll.</dd>
+  <dt>WASD</dt>
+  <dd>W and S for thrust, A and D for yaw.</dd>
+</dl>
+<p>
+  The two key pads share one window. A <strong>key strength</strong> slider
+  (25 to 100 %, 50 % by default) sets how far a held key pushes the stick, the
+  same for arrows and WASD. Hold <strong>Shift</strong> to fly at twice that
+  strength for as long as it is down: the slider is the cruise, Shift is the
+  dash. The on-screen sticks are not affected by either; they always reach
+  their own stops.
+</p>
+<div class="callout">
+  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-info"></use></svg>
+  <div><p>These are input sources only. They never arm, change mode or override a failsafe. On ArduPilot they only work when the aircraft accepts stick input from Corvus's system ID; see <a href="compatibility.html#sysid-mygcs">One setting on ArduPilot</a>.</p></div>
+</div>
+
+<h2 id="checklist">Preflight checklist</h2>
+<p>
+  An optional window on the Home map with your own checklist, ticked off item
+  by item before each flight. Switch it on with the <strong>Preflight
+  checklist</strong> card on <a href="safety.html#checklist">Safety &amp;
+  Sensors</a>, where <strong>Edit checklists</strong> opens the editor.
+</p>
+<ul>
+  <li><strong>Write as many lists as you like</strong>, each with a name, items and section headings, and pick one in the window. A station that has not written one gets a short standard list: propellers and battery, weather and airspace, GPS and home, failsafe and return altitude, and the area clear of people.</li>
+  <li><strong>Ticks belong to the flight</strong>, not to the setup. They are kept on this computer only. The lists themselves are part of the station's settings, so they survive a reinstall and travel with a <a href="settings.html#export-import">settings export</a>.</li>
+  <li><strong>Reordering keeps the ticks.</strong> An item is remembered by its text, so rewording one clears only that one.</li>
+  <li><strong>Arming with open items is allowed.</strong> Corvus shows a warning, once, and nothing more. The checklist is your memory aid; a ground station that refused to arm over a list it cannot verify would be blocking on the wrong thing.</li>
+</ul>
+<p>
+  The window moves, folds and returns to its corner on a double-click, like the
+  HUD. Its × hides it; the card on Safety &amp; Sensors brings it back without
+  switching the feature off.
+</p>
+<!-- /guide:content -->
+</article>
+
+<nav class="doc-pager" aria-label="Previous and next page">
+  <a class="doc-pager-prev" href="connect.html" rel="prev"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-prev"></use></svg><span><small>Previous</small>Connect to the aircraft</span></a>
+  <a class="doc-pager-next" href="3d-offline.html" rel="next"><span><small>Next</small>3D, terrain and offline maps</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg></a>
+</nav>
+
+<p class="doc-edit">
+  <a href="https://github.com/M-BSquared/CorvusGCS/edit/master/docs/guide/flying.html" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-edit"></use></svg>Suggest a change to this page</a>
+</p>
+</main>
+
+<aside class="guide-toc" aria-labelledby="toc-title">
+  <p class="guide-toc-title" id="toc-title">On this page</p>
+  <ul>
+    <li><a href="#map">The map</a></li>
+    <li><a href="#flight-bar">The flight bar</a></li>
+    <li><a href="#hud">The flight HUD</a></li>
+    <li><a href="#notifications">Notifications and toasts</a></li>
+    <li><a href="#manual-control">Manual controls on screen</a></li>
+    <li><a href="#checklist">Preflight checklist</a></li>
+  </ul>
+</aside>
+</div>
+
+<footer class="site-footer guide-footer">
+  <div class="wrap footer-base">
+    <p class="copyright">&copy; <span id="year">2026</span> Maximilian Böck. Developed with the Universität der Bundeswehr München.</p>
+    <p class="footer-meta">
+      Source available under the Sustainable Use License 1.0 (<em>fair-code</em>).
+      <a href="https://github.com/M-BSquared/CorvusGCS/blob/master/LICENSE.md" target="_blank" rel="noopener">License</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

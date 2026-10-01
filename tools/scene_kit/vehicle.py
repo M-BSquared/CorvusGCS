@@ -76,8 +76,9 @@ AUTO_SUBMODES = {
 # way PX4 spells them: it names the side facing DOWN.
 ACCEL_SIDES = ("down", "front", "left", "right", "up", "back")
 
-# MAV_SYS_STATUS_PREARM_CHECK — the bit Corvus reads for "ready to arm".
-PREARM_BIT = 1 << 27
+# The bit Corvus reads for "ready to arm". Named rather than written as a
+# shift: 1 << 27 is a different sensor, and the bar read STBY in every scene.
+PREARM_BIT = mavlink2.MAV_SYS_STATUS_PREARM_CHECK
 
 _SENSOR_BITS = (
     mavlink2.MAV_SYS_STATUS_SENSOR_3D_GYRO

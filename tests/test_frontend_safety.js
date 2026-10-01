@@ -237,6 +237,9 @@ function makeFakeTelemetry(opts = {}) {
 require("../src/js/ui.js");
 require("../src/js/setup-shared.js");
 require("../src/js/setup-safety.js");
+// The Preflight checklist card on the overview is drawn from these two.
+require("../src/js/checklist.js");
+require("../src/js/checklist-editor.js");
 
 // ---------------------------------------------------------------------------
 // A representative /api/safety payload: one plain form section with both field
@@ -475,8 +478,9 @@ async function testRendersEverySectionFromTheSchema() {
 
   assert.ok(fake.requests.includes("/api/safety"), "the page reads /api/safety on open");
   const titles = findByClass(container, "page-section-title").map((t) => t.textContent);
-  assert.deepEqual(titles, ["Flight limits", "Sensors"],
-    "the envelope is a form; the sensors are collected into one card of their own");
+  assert.deepEqual(titles, ["Flight limits", "Sensors", "Preflight checklist"],
+    "the envelope is a form; the sensors are collected into one card of their own, "
+    + "and the station's own checklist closes the page");
 
   const rows = findByClass(container, "safety-field");
   assert.equal(rows.length, 4, "the overview carries the limit fields only");
@@ -1583,6 +1587,181 @@ async function testAValueThePresetKeepsIsShownAndNeverWritten() {
 }
 
 // ---------------------------------------------------------------------------
+// ===========================================================================
+// PART C — two columns, and the Preflight checklist card
+// ===========================================================================
+
+function byId(root, id) {
+  const out = [];
+  (function walk(list) {
+    for (const e of list) {
+      if (!e || !e._isEl) continue;
+      if (e.id === id) out.push(e);
+      if (e.children) walk(e.children);
+    }
+  })(root.children || []);
+  return out[0] || null;
+}
+
+/** The section ids of the cards, column by column, top to bottom. */
+function columnOrder(container) {
+  const grid = findOneByClass(container, "safety-columns");
+  assert.ok(grid, "the cards sit in a column grid");
+  return grid.children.map((col) => {
+    assert.ok(col.className.includes("safety-column"), "every child is a column");
+    return col.children.map((card) => card.dataset.section);
+  });
+}
+
+/** Answer POST /api/config the way the backend does, and keep what was sent. */
+function withConfigBackend(fake) {
+  const posts = [];
+  const read = fake.telemetry.requestJson;
+  fake.telemetry.requestJson = (url, opts) => {
+    if (url !== "/api/config") return read(url, opts);
+    const body = JSON.parse(opts.body);
+    posts.push(body);
+    if (fake.refuseConfig) return Promise.reject(new Error("config is read-only"));
+    return Promise.resolve({
+      config: { checklists: Object.assign({ enabled: Corvus.checklist.isEnabled() }, body.checklists) },
+    });
+  };
+  return posts;
+}
+
+async function testTheSplitKeepsTheOrderAndEvensTheColumns() {
+  const split = Corvus.setupSafety.splitIndex;
+  assert.equal(split([13, 14, 16, 6, 8]), 2,
+    "PX4's overview: limits and return on the left, failsafes, sensors and checklist on the right");
+  assert.equal(split([1, 1, 10]), 2, "a tall last card gets a column to itself");
+  assert.equal(split([10, 1, 1]), 1, "so does a tall first one");
+  assert.equal(split([5]), 1, "one card is one column");
+  assert.equal(split([]), 0);
+}
+
+async function testTheOverviewLaysItsCardsOutInTwoColumns() {
+  const { container } = await openWith(safetyDoc());
+  const columns = columnOrder(container);
+  assert.equal(columns.length, 2, "two stacks side by side");
+  assert.deepEqual([].concat(...columns), ["limits", "sensors", "checklist"],
+    "stacked on a narrow page, the cards still read in their order");
+}
+
+async function testASensorPageLaysItsCardsOutInColumnsToo() {
+  const { container } = await openSensorPage();
+  const grid = findOneByClass(container, "safety-columns");
+  assert.ok(grid, "the sensor page uses the same grid");
+  const cards = grid.children.flatMap((col) => col.children);
+  assert.deepEqual(cards.map((c) => c.className.split(" ").pop()),
+    ["safety-sensor-card", "safety-preset-card", "safety-settings-card"]);
+  assert.equal(findByDataset(container, "section", "checklist").length, 0,
+    "the checklist belongs to the overview, not to one sensor");
+}
+
+async function testTheChecklistCardIsThereWithoutAVehicle() {
+  Corvus.checklist.fromConfig({});
+  const { container } = await openWith({ connected: false, sections: [], received: 0 });
+  const card = findByDataset(container, "section", "checklist")[0];
+  assert.ok(card, "the lists are the station's, so no vehicle is needed to edit them");
+  assert.ok(findOneByClass(container, "params-desc"), "beside the explanation of the empty page");
+  assert.equal(byId(card, "safetyChecklist").getAttribute("aria-checked"), "false", "off by default");
+  assert.equal(byId(card, "safetyChecklistHome").disabled, true, "nothing to show until it is on");
+  assert.equal(findOneByClass(card, "safety-checklist-edit").disabled, true);
+}
+
+async function testTheChecklistSwitchTurnsTheFeatureOnAndPersistsIt() {
+  Corvus.checklist.fromConfig({});
+  const fake = makeFakeTelemetry({ doc: safetyDoc() });
+  const posts = withConfigBackend(fake);
+  const { container, destroy } = await open(fake);
+  const card = findByDataset(container, "section", "checklist")[0];
+
+  fire(byId(card, "safetyChecklist"), "click");
+  for (let i = 0; i < 3; i += 1) await flushMicrotasks();
+
+  assert.deepEqual(posts, [{ checklists: { enabled: true } }]);
+  assert.equal(Corvus.checklist.isEnabled(), true);
+  assert.equal(byId(card, "safetyChecklistHome").disabled, false, "the Home switch opens up");
+  assert.equal(findOneByClass(card, "safety-checklist-edit").disabled, false);
+  assert.equal(fake.writes().length, 0, "nothing is written to the vehicle");
+  destroy();
+  Corvus.checklist.fromConfig({});
+}
+
+async function testARefusedChecklistSwitchSnapsBack() {
+  Corvus.checklist.fromConfig({});
+  const fake = makeFakeTelemetry({ doc: safetyDoc() });
+  withConfigBackend(fake);
+  fake.refuseConfig = true;
+  const { container, destroy } = await open(fake);
+  const sw = byId(findByDataset(container, "section", "checklist")[0], "safetyChecklist");
+
+  fire(sw, "click");
+  for (let i = 0; i < 3; i += 1) await flushMicrotasks();
+
+  assert.equal(Corvus.checklist.isEnabled(), false, "the feature is off again");
+  assert.equal(sw.getAttribute("aria-checked"), "false", "and the switch says so");
+  destroy();
+}
+
+async function testTheChecklistCardFollowsChangesMadeElsewhere() {
+  Corvus.checklist.fromConfig({});
+  const { container, destroy } = await openWith(safetyDoc());
+  const card = findByDataset(container, "section", "checklist")[0];
+
+  // What the Home window's list picker and its × do: the module changes, the
+  // card has to follow without a repaint.
+  Corvus.checklist.fromConfig({ checklists: {
+    enabled: true, active: "a",
+    lists: [{ id: "a", name: "Survey quad", items: [{ text: "Props", heading: false }] }],
+  } });
+  assert.equal(byId(card, "safetyChecklist").getAttribute("aria-checked"), "true");
+  assert.equal(findOneByClass(card, "checklist-summary").textContent,
+    "1 checklist. On Home: Survey quad.");
+  destroy();
+  Corvus.checklist.fromConfig({});
+}
+
+async function testTheChecklistCardStaysLiveWhileArmed() {
+  Corvus.checklist.fromConfig({ checklists: { enabled: true } });
+  const fake = makeFakeTelemetry({ doc: safetyDoc(), state: { connected: true, armed: true } });
+  const { container, destroy } = await open(fake);
+  assert.ok(!findOneByClass(container, "params-banner").hidden, "the vehicle's fields are locked");
+  const card = findByDataset(container, "section", "checklist")[0];
+  assert.equal(byId(card, "safetyChecklist").disabled, false,
+    "the checklist is the station's, not the vehicle's, so arming does not lock it");
+  assert.equal(byId(card, "safetyChecklistHome").disabled, false);
+  assert.equal(findOneByClass(card, "safety-checklist-edit").disabled, false);
+  destroy();
+  Corvus.checklist.fromConfig({});
+}
+
+async function testTheChecklistCardStopsListeningOnRepaintAndTeardown() {
+  const CL = Corvus.checklist;
+  const real = CL.onChange;
+  let live = 0;
+  CL.onChange = (fn) => {
+    live += 1;
+    const off = real(fn);
+    return () => { live -= 1; off(); };
+  };
+  try {
+    const { container, destroy } = await openWith(safetyDoc());
+    assert.equal(live, 1, "the card follows the checklist");
+    fire(findOneByClass(container, "safety-reload"), "click");
+    for (let i = 0; i < 3; i += 1) await flushMicrotasks();
+    assert.equal(live, 1, "a repaint replaces the listener rather than adding one");
+    enterSensor(container);
+    assert.equal(live, 0, "a sensor page has no checklist card to keep in step");
+    fire(findOneByClass(container, "setup-back"), "click");
+    assert.equal(live, 1);
+    destroy();
+    assert.equal(live, 0, "teardown lets go of it");
+  } finally {
+    CL.onChange = real;
+  }
+}
+
 async function main() {
   const tests = [
     testCheckValuesConfirmsWhatWasSetAndRedrawsFromTheVehicle,
@@ -1647,6 +1826,15 @@ async function main() {
     testAHalfConfiguredSensorIsShownAsIncomplete,
     testAPresetNamesThePortParameterItWillWrite,
     testAValueThePresetKeepsIsShownAndNeverWritten,
+    testTheSplitKeepsTheOrderAndEvensTheColumns,
+    testTheOverviewLaysItsCardsOutInTwoColumns,
+    testASensorPageLaysItsCardsOutInColumnsToo,
+    testTheChecklistCardIsThereWithoutAVehicle,
+    testTheChecklistSwitchTurnsTheFeatureOnAndPersistsIt,
+    testARefusedChecklistSwitchSnapsBack,
+    testTheChecklistCardFollowsChangesMadeElsewhere,
+    testTheChecklistCardStaysLiveWhileArmed,
+    testTheChecklistCardStopsListeningOnRepaintAndTeardown,
   ];
   for (const t of tests) {
     // The added-parameter list is persisted, so it would otherwise leak from

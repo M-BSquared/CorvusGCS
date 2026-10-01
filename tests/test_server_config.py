@@ -381,6 +381,22 @@ def test_post_config_persists_inverted_app_icon(tmp_path) -> None:
     assert on_disk["ui"] == {"inverted_app_icon": True}
 
 
+def test_post_config_persists_flight_hud_off(tmp_path) -> None:
+    """Settings -> Appearance -> Flight HUD. The switch posts only its own key;
+    the HUD being taken off must reach the disk and leave the compass lock."""
+    cfg_path = tmp_path / "config.json"
+    handler, responses = _handler(
+        config=CorvusConfig(ui={"compass_nose_up": True}),
+        config_path=str(cfg_path),
+    )
+    handler._api_config_update({"ui": {"flight_hud": False}})
+    payload, status = responses[0]
+    assert status == 200
+    assert payload["config"]["ui"] == {"compass_nose_up": True, "flight_hud": False}
+    on_disk = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert on_disk["ui"] == {"compass_nose_up": True, "flight_hud": False}
+
+
 def test_post_config_ui_keys_merge_not_replace(tmp_path) -> None:
     """The two ui keys are written one at a time and must not clear each other.
 

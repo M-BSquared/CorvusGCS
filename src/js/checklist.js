@@ -5,11 +5,11 @@ window.Corvus = window.Corvus || {};
   Corvus.checklist — the operator's preflight checklists, and the window on
   the Home map they are ticked off in.
 
-  Off by default. Settings > Appearance > Preflight checklist turns the
-  feature on, and its Edit button opens the dialog the lists are written in
-  (js/checklist-editor.js). The Home map then carries this window. The window
-  can be put away on its own with its × and brought back from the same
-  Settings card, without turning the feature off.
+  Off by default. The Preflight checklist card on Setup > Safety & Sensors
+  turns the feature on, and its Edit button opens the dialog the lists are
+  written in (js/checklist-editor.js). The Home map then carries this
+  window. The window can be put away on its own with its × and brought back
+  from the same card, without turning the feature off.
 
   What a list SAYS lives in the backend config (`checklists`, see
   corvus/checklists.py), so it survives a reinstall and travels with a
@@ -334,8 +334,8 @@ Corvus.checklist = (function () {
         const empty = document.createElement("div");
         empty.className = "checklist-empty";
         empty.textContent = list
-          ? "This checklist has no items yet. Add them in Settings, Preflight checklist."
-          : "No checklist yet. Write one in Settings, Preflight checklist.";
+          ? "This checklist has no items yet. Add them under Setup, Safety & Sensors."
+          : "No checklist yet. Write one under Setup, Safety & Sensors.";
         bodyEl.appendChild(empty);
       } else {
         bodyEl.appendChild(buildItems(list));
@@ -610,7 +610,7 @@ Corvus.checklist = (function () {
     const closeBtn = ui.iconButton("x", {
       size: 13,
       className: "icon-btn checklist-bar-btn",
-      title: "Hide the checklist window. Settings, Preflight checklist shows it again.",
+      title: "Hide the checklist window. Setup, Safety & Sensors shows it again.",
       onClick: () => { setHomeWindow(false).catch(() => {}); },
     });
     gripEl.append(titleEl, countEl, resetBtn, collapseBtn, closeBtn);

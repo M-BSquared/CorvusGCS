@@ -2,7 +2,7 @@
 """Corvus GCS standalone desktop app wrapper.
 
 Launches the backend HTTP/SSE server in a background thread and opens the
-UI in a PyQt6 QtWebEngine window — no browser needed. Handles clean
+UI in a PySide6 QtWebEngine window — no browser needed. Handles clean
 shutdown of both the server and the web engine.
 
 Usage:
@@ -123,7 +123,31 @@ from corvus.instance_lock import (
 )
 from corvus.file_manager import open_url
 from corvus.paths import corvus_path
+from corvus.qt_plugins import visible_plugin_dir
 from corvus.version import get_version
+
+
+def use_visible_qt_plugins() -> str | None:
+    """Load Qt's plugins through links when macOS has flagged them hidden.
+
+    Must run before the first QApplication, which is when Qt loads its
+    platform plugin. See :mod:`corvus.qt_plugins` for why a run from a checkout
+    under an iCloud synced folder needs it. A library path rather than
+    ``QT_PLUGIN_PATH``, so no program Corvus starts inherits the links.
+    Returns the folder of links, or ``None`` when Qt can see its plugins.
+    """
+    from PySide6.QtCore import QCoreApplication, QLibraryInfo
+
+    try:
+        links = visible_plugin_dir(QLibraryInfo.path(QLibraryInfo.LibraryPath.PluginsPath))
+    except OSError:
+        logger.warning("Qt's plugins are flagged hidden and could not be linked; "
+                       "Qt may not find its platform plugin", exc_info=True)
+        return None
+    if links:
+        QCoreApplication.addLibraryPath(links)
+        logger.info("Qt's plugins are flagged hidden here; loading them through %s", links)
+    return links
 
 
 def _report_startup_failure(text: str, detail: str) -> None:
@@ -137,7 +161,8 @@ def _report_startup_failure(text: str, detail: str) -> None:
     log line already emitted by the caller is what is left.
     """
     try:
-        from PyQt6.QtWidgets import QApplication, QMessageBox
+        from PySide6.QtWidgets import QApplication, QMessageBox
+        use_visible_qt_plugins()
         # Bound, not discarded: the QApplication has to outlive box.exec().
         # Naming it also gets the dialog a real application name instead of
         # the interpreter's, which is what the title bar and the macOS menu
@@ -687,10 +712,10 @@ def app_icon_pixmap(source: str, size: int, plate: str):
 
     Qt is imported here rather than at module scope so ``corvus.app`` keeps
     importing headless (the icon-selection helpers above are tested without
-    PyQt6 and without a display).
+    PySide6 and without a display).
     """
-    from PyQt6.QtCore import QRectF, Qt
-    from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPixmap
+    from PySide6.QtCore import QRectF, Qt
+    from PySide6.QtGui import QColor, QPainter, QPainterPath, QPixmap
 
     canvas = QPixmap(size, size)
     canvas.fill(QColor(0, 0, 0, 0))
@@ -727,8 +752,8 @@ def render_app_icon(source: str, dest: str, size, plate, text=None) -> None:
     manager adopts and one it ignores. It goes through QImage because QPixmap
     has no text keys — and the conversion is needed for the save anyway.
     """
-    from PyQt6.QtCore import Qt
-    from PyQt6.QtGui import QPixmap
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QPixmap
 
     if plate:
         pixmap = app_icon_pixmap(source, int(size or _ICON_RENDER_SIZE), plate)
@@ -749,7 +774,7 @@ def render_app_icon(source: str, dest: str, size, plate, text=None) -> None:
 
 def build_app_icon(inverted: bool, backplate: bool):
     """The QIcon for the Dock / taskbar, or ``None`` if the artwork is gone."""
-    from PyQt6.QtGui import QIcon
+    from PySide6.QtGui import QIcon
 
     path = app_icon_path(inverted)
     if not os.path.exists(path):
@@ -797,16 +822,16 @@ def set_windows_app_id(app_id: str) -> bool:
 
 
 def main() -> int:
-    from PyQt6.QtCore import (
-        QFile, QIODevice, QObject, QPoint, QRect, QSize, Qt, QTimer, QUrl, pyqtSlot,
+    from PySide6.QtCore import (
+        QFile, QIODevice, QObject, QPoint, QRect, QSize, Qt, QTimer, QUrl, Slot,
     )
-    from PyQt6.QtGui import QGuiApplication
-    from PyQt6.QtWebChannel import QWebChannel
-    from PyQt6.QtWebEngineCore import (
+    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtWebChannel import QWebChannel
+    from PySide6.QtWebEngineCore import (
         QWebEnginePage, QWebEngineProfile, QWebEngineScript, QWebEngineSettings,
     )
-    from PyQt6.QtWebEngineWidgets import QWebEngineView
-    from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
+    from PySide6.QtWebEngineWidgets import QWebEngineView
+    from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
 
     cfg = load_config()
     cfg_path = default_config_path()
@@ -881,6 +906,7 @@ def main() -> int:
     # Set before the QApplication, because Windows binds a window to whatever
     # the AppUserModelID was when the window was created.
     set_windows_app_id(f"corvus.gcs.{get_version()}")
+    use_visible_qt_plugins()
     app = QApplication(sys.argv)
     app.setApplicationName("CORVUS GCS")
     app.setApplicationDisplayName("CORVUS GCS")
@@ -1074,7 +1100,7 @@ def main() -> int:
             self._start = None
             self._grab = None       # Windows: (hwnd, dx, dy), pointer to window, in its pixels
 
-        @pyqtSlot()
+        @Slot()
         def dragStart(self) -> None:
             self._start = self._holder.geometry()
             self._grab = None
@@ -1087,7 +1113,7 @@ def main() -> int:
                 except Exception:  # noqa: BLE001 - Qt's move is the fallback
                     logger.debug("native drag unavailable", exc_info=True)
 
-        @pyqtSlot(int, int)
+        @Slot(int, int)
         def dragTo(self, dx: int, dy: int) -> None:
             if self._start is None or self._holder.normal is not None:
                 return
@@ -1101,28 +1127,28 @@ def main() -> int:
                     self._grab = None
             self._holder.move(self._start.x() + dx, self._start.y() + dy)
 
-        @pyqtSlot(result=bool)
+        @Slot(result=bool)
         def systemMove(self) -> bool:
             """Hand the move to the window system (Wayland: the only way to move)."""
             handle = self._holder.windowHandle()
             return bool(handle is not None and self._holder.normal is None
                         and handle.startSystemMove())
 
-        @pyqtSlot(result=bool)
+        @Slot(result=bool)
         def systemResize(self) -> bool:
             """Hand a resize from the corner grip to the window system."""
             handle = self._holder.windowHandle()
             return bool(handle is not None
                         and handle.startSystemResize(Qt.Edge.RightEdge | Qt.Edge.BottomEdge))
 
-        @pyqtSlot(int, int)
+        @Slot(int, int)
         def resizeTo(self, dw: int, dh: int) -> None:
             if self._start is not None:
                 self._holder.normal = None
                 self._holder.resize(max(POPOUT_MIN_W, self._start.width() + dw),
                                     max(POPOUT_MIN_H, self._start.height() + dh))
 
-        @pyqtSlot(int, int, result=str)
+        @Slot(int, int, result=str)
         def dragEnd(self, x: int, y: int) -> str:
             """End a gesture let go of at (x, y) in this window's page.
 
@@ -1143,7 +1169,7 @@ def main() -> int:
             return json.dumps({"inside": True, "left": origin.x(), "top": origin.y(),
                                "width": self._holder.width(), "height": self._holder.height()})
 
-        @pyqtSlot(result=bool)
+        @Slot(result=bool)
         def toggleMaximize(self) -> bool:
             if not support["place"]:
                 # Where a window may not place itself, the compositor maximizes it.
@@ -1162,17 +1188,17 @@ def main() -> int:
             self._holder.setGeometry(*screen_area_at(self._holder.geometry().center()))
             return True
 
-        @pyqtSlot(bool, result=bool)
+        @Slot(bool, result=bool)
         def setPinned(self, on: bool) -> bool:
             """Keep this window above the Corvus window (the pin in its bar)."""
             pin(self._holder, bool(on))
             return self._holder.pinned
 
-        @pyqtSlot(result=bool)
+        @Slot(result=bool)
         def isPinned(self) -> bool:
             return self._holder.pinned
 
-        @pyqtSlot(bool, bool, float, result=bool)
+        @Slot(bool, bool, float, result=bool)
         def setFrosted(self, on: bool, dark: bool, radius: float) -> bool:
             """Blur the desktop behind this window, or stop (frosted terminals).
 
@@ -1192,13 +1218,13 @@ def main() -> int:
                 return False
             return True
 
-        @pyqtSlot()
+        @Slot()
         def raiseWindow(self) -> None:
             self._holder.show()
             self._holder.raise_()
             self._holder.activateWindow()
 
-        @pyqtSlot()
+        @Slot()
         def closeWindow(self) -> None:
             self._holder.close()
 
@@ -1299,7 +1325,7 @@ def main() -> int:
             return QRect(web.mapToGlobal(QPoint(left, top)),
                          QSize(max(POPOUT_MIN_W, width), max(POPOUT_MIN_H, height)))
 
-        @pyqtSlot(str, str, int, int, int, int)
+        @Slot(str, str, int, int, int, int)
         def openWindow(self, key: str, query: str, left: int, top: int,
                        width: int, height: int) -> None:
             """A window of its own straight away: where it was last, or where
@@ -1319,7 +1345,7 @@ def main() -> int:
             holder.setGeometry(*popout_geometry(
                 (rect.x(), rect.y(), rect.width(), rect.height()), screen_area_at(rect.center())))
 
-        @pyqtSlot(str, str, int, int, int, int)
+        @Slot(str, str, int, int, int, int)
         def detachWindow(self, key: str, query: str, left: int, top: int,
                          width: int, height: int) -> None:
             """A frame dragged out of the app: its window, exactly where the frame is."""
@@ -1339,7 +1365,7 @@ def main() -> int:
                 except Exception:  # noqa: BLE001 - Qt's move is the fallback
                     logger.debug("native drag unavailable", exc_info=True)
 
-        @pyqtSlot(str, int, int)
+        @Slot(str, int, int)
         def moveWindow(self, key: str, left: int, top: int) -> None:
             holder = popout_windows.get(key)
             if holder is None:
@@ -1355,14 +1381,14 @@ def main() -> int:
                     self._grabs.pop(key, None)
             holder.move(web.mapToGlobal(QPoint(left, top)))
 
-        @pyqtSlot(str)
+        @Slot(str)
         def settleWindow(self, key: str) -> None:
             self._grabs.pop(key, None)
             holder = popout_windows.get(key)
             if holder is not None:
                 settle(holder)
 
-        @pyqtSlot(str)
+        @Slot(str)
         def closeWindow(self, key: str) -> None:
             self._grabs.pop(key, None)
             holder = popout_windows.get(key)

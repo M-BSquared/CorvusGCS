@@ -9,7 +9,7 @@ They assert: the ordered stop sequence runs without raising, the MAVLink
 thread is joined dead, SSH is shut down, ``store.shutdown()`` is invoked,
 ``server.shutdown()`` returns, the sequence is idempotent, and a failing
 step cannot skip subsequent cleanup (each call is individually guarded).
-``corvus.app`` imports cleanly without PyQt6 (its Qt imports live inside
+``corvus.app`` imports cleanly without PySide6 (its Qt imports live inside
 ``main()``), so the app stop sequence is unit-tested headlessly.
 """
 from __future__ import annotations
@@ -299,6 +299,17 @@ def test_server_shutdown_stops_every_service_that_holds_the_bridge(backend):
 
     server.shutdown()
     assert stopped == ["sik", "logs"]
+
+
+def test_server_shutdown_stops_the_auto_connect_watcher(backend):
+    """The watcher re-dials the bridge by itself, so it is one of the services
+    a caller holding only the server must not be left with."""
+    server, http_thread = backend
+    watcher = server.autoconnect
+    assert watcher is not None and watcher.is_alive()
+
+    server.shutdown()
+    assert not watcher.is_alive()
 
 
 def test_server_shutdown_survives_a_service_that_raises(backend, caplog):

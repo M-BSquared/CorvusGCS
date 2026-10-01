@@ -258,6 +258,38 @@ def detect_board(hints: dict[str, Any], boards: list[dict[str, Any]]) -> dict[st
     return None
 
 
+def detect_boards(hints: dict[str, Any],
+                  releases: list[dict[str, Any]]) -> dict[str, dict[str, Any] | None]:
+    """The connected board, matched once per stack: ``{"px4": …, "ardupilot": …}``.
+
+    Per stack because the same board is a different build on each, and either
+    may be what the operator is about to flash: a Cube running PX4 is still a
+    Cube when it is being moved to ArduPilot. Each answer carries the ``key``
+    the catalogue gives that board, which is what names it in every release of
+    its stack. Never raises.
+    """
+    out: dict[str, dict[str, Any] | None] = {"px4": None, "ardupilot": None}
+    px4 = [r for r in releases if r.get("vendor", "px4") == "px4"]
+    if px4:
+        # A PX4 target keeps its name across releases, so the newest stable
+        # release's list answers for all of them.
+        stable = next((r for r in px4 if not r.get("prerelease")), px4[0])
+        found = detect_board(hints, stable.get("boards") or [])
+        if found:
+            found["key"] = found.get("name")
+        out["px4"] = found
+    # Every ArduPilot board once, whichever vehicle's release lists it.
+    boards: dict[str, dict[str, Any]] = {}
+    for release in releases:
+        if release.get("vendor") != "ardupilot":
+            continue
+        for board in release.get("boards") or []:
+            boards.setdefault(str(board.get("board") or ""), board)
+    if boards:
+        out["ardupilot"] = ardupilot_firmware.detect_board(hints, list(boards.values()))
+    return out
+
+
 def default_firmware_dir() -> str:
     """Where downloaded images and the cached catalogue live."""
     return corvus_path("firmware")
@@ -480,6 +512,10 @@ class FirmwareCatalog:
 
         cached = self.list_cached_images()
         cached_names = {entry["name"] for entry in cached}
+        # `key` is what names the same board in every release of one stack, so
+        # a board the operator picked stays picked when they change release. A
+        # PX4 target keeps its file name across releases; an ArduPilot build is
+        # named after its vehicle and channel too, and only its board is stable.
         for release in releases:
             release.setdefault("vendor", "px4")
             for board in release.get("boards", []):
@@ -489,12 +525,16 @@ class FirmwareCatalog:
                 # is read straight back as the release list, and a field the
                 # UI groups by must never depend on when the file was written.
                 board.update(describe_board(str(board.get("name") or "")))
+                board["key"] = board.get("name")
         for release in ardupilot:
             release.setdefault("vendor", "ardupilot")
+            parsed = ardupilot_firmware.parse_tag(str(release.get("tag") or ""))
+            release.setdefault("vehicle", parsed[0] if parsed else "")
             for board in release.get("boards", []):
                 board["cached"] = board.get("name") in cached_names
                 board.update(
                     ardupilot_firmware.describe_board(str(board.get("board") or "")))
+                board["key"] = board.get("board")
         return {
             # PX4 first: it is the primary target, and the list is long enough
             # that whichever stack leads is the one an operator finds first.

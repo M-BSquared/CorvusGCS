@@ -2,7 +2,7 @@
 # Build Corvus GCS as a Linux AppImage (Ubuntu/Debian x86_64).
 #
 # Bundles a relocatable CPython (venv --copies + host stdlib + libpython) and
-# the PyQt6/QtWebEngine wheels, then packs them with appimagetool. No conda on
+# the PySide6/QtWebEngine wheels, then packs them with appimagetool. No conda on
 # the build host; only stdlib python3 -m venv + pip are used.
 #
 # Version is read exclusively from the repo-root VERSION file — never hardcoded.
@@ -178,6 +178,14 @@ mkdir -p "$REPO_DIR/dist"
 }
 if [ -f "$LOCK_OUT" ]; then echo "    (resolved set: $LOCK_OUT)"; fi
 
+# ---- 3b. Qt: the modules Corvus loads ---------------------------------------
+# The PySide6 wheels carry every Qt module, the Designer/Assistant/Linguist
+# tools and the files for building bindings. tools/qt_bundle.py takes out what
+# nothing in Corvus loads, read from the binaries' own DT_NEEDED entries, and
+# fails the build if anything left would miss a library it links.
+echo ">>> Trimming PySide6 to the Qt modules Corvus loads ..."
+python3 "$REPO_DIR/tools/qt_bundle.py" prune "$APPDIR/usr/lib/python$PY_MM/site-packages"
+
 # ---- 4. copy app code into AppDir root -------------------------------------
 # corvus/version.py does parent.parent/VERSION; corvus/server.py + app.py do
 # parent.parent/src — so VERSION, corvus/, src/ must be siblings at AppDir root.
@@ -228,17 +236,17 @@ PY_SITE="${PY_BASE}site-packages"
 export PYTHONHOME="$APPDIR/usr"
 export PYTHONPATH="$APPDIR:$PY_SITE"
 
-# Qt6 is bundled inside the PyQt6 wheel (site-packages/PyQt6/Qt6/). Point the Qt
-# plugin/resource loaders and the dynamic linker at it so the bundled Qt is
+# Qt6 is bundled inside the PySide6 wheel (site-packages/PySide6/Qt/). Point the
+# Qt plugin/resource loaders and the dynamic linker at it so the bundled Qt is
 # used despite the random /tmp/.mount_<XXXX> AppImage mount path.
-PYQT6_QT6="$PY_SITE/PyQt6/Qt6"
-export QT_PLUGIN_PATH="$PYQT6_QT6/plugins"
-export QT_QPA_PLATFORM_PLUGIN_PATH="$PYQT6_QT6/plugins"
-export QTWEBENGINE_RESOURCES_PATH="$PYQT6_QT6/resources"
-if [ -d "$PYQT6_QT6/resources/qtwebengine_dictionaries" ]; then
-    export QTWEBENGINE_DICTIONARIES_PATH="$PYQT6_QT6/resources/qtwebengine_dictionaries"
+PYSIDE6_QT="$PY_SITE/PySide6/Qt"
+export QT_PLUGIN_PATH="$PYSIDE6_QT/plugins"
+export QT_QPA_PLATFORM_PLUGIN_PATH="$PYSIDE6_QT/plugins"
+export QTWEBENGINE_RESOURCES_PATH="$PYSIDE6_QT/resources"
+if [ -d "$PYSIDE6_QT/resources/qtwebengine_dictionaries" ]; then
+    export QTWEBENGINE_DICTIONARIES_PATH="$PYSIDE6_QT/resources/qtwebengine_dictionaries"
 fi
-export LD_LIBRARY_PATH="$PYQT6_QT6/lib:$APPDIR/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="$PYSIDE6_QT/lib:$APPDIR/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 # AppImage cannot use the Chromium setuid sandbox; append the disabling flags.
 # app.py uses os.environ.setdefault, so its own Vulkan/swiftshader flags stay.

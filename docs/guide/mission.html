@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<!-- Written by tools/guide.py around the content block below. Edit the text
+     between the guide:content markers; run the script for everything else. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mission planner · Corvus GCS documentation</title>
+<meta name="description" content="Draw a mission on the map, read it as an altitude profile against the terrain, save it, upload it and follow it in flight.">
+<link rel="canonical" href="https://m-bsquared.github.io/CorvusGCS/guide/mission.html">
+<meta name="theme-color" content="#0B0E12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="dark light">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Corvus GCS">
+<meta property="og:title" content="Mission planner · Corvus GCS documentation">
+<meta property="og:description" content="Draw a mission on the map, read it as an altitude profile against the terrain, save it, upload it and follow it in flight.">
+<meta property="og:url" content="https://m-bsquared.github.io/CorvusGCS/guide/mission.html">
+<meta property="og:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/icons/apple-touch-icon.png">
+<link rel="preload" as="font" type="font/woff2" href="../assets/fonts/Inter-latin.woff2" crossorigin>
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="guide.css">
+<script>
+  document.documentElement.classList.add('js');
+  try {
+    var t = localStorage.getItem('corvus-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+</script>
+<script src="../script.js" defer></script>
+<script src="guide.js" defer></script>
+</head>
+
+<body class="guide">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <g id="i-github" fill="currentColor" stroke="none" transform="scale(1.5)"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></g>
+    <g id="i-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></g>
+    <g id="i-moon"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></g>
+    <g id="i-menu"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></g>
+    <g id="i-close"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></g>
+    <g id="i-prev"><path d="m15 18-6-6 6-6"/></g>
+    <g id="i-next"><path d="m9 18 6-6-6-6"/></g>
+    <g id="i-book"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></g>
+    <g id="i-info"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></g>
+    <g id="i-alert"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></g>
+    <g id="i-edit"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></g>
+  </defs>
+</svg>
+
+<header class="site-header" id="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="../index.html" aria-label="Corvus GCS, project website">
+      <span class="brand-mark" role="img" aria-hidden="true"></span>
+      <span class="brand-text">
+        <span class="brand-name">Corvus GCS</span>
+        <span class="brand-sub">Documentation</span>
+      </span>
+    </a>
+
+    <nav class="site-nav" id="site-nav" aria-label="Main">
+      <ul class="nav-list">
+        <li><a href="../index.html">Website</a></li>
+        <li><a href="index.html">Documentation</a></li>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS/releases/latest" target="_blank" rel="noopener">Download</a></li>
+        <li><a class="nav-github" href="https://github.com/M-BSquared/CorvusGCS" target="_blank" rel="noopener">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-github"></use></svg>GitHub</a></li>
+      </ul>
+    </nav>
+
+    <div class="header-actions">
+      <button class="icon-btn theme-toggle" id="theme-toggle" type="button" aria-label="Switch to the light theme" aria-pressed="false">
+        <svg class="icon icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-sun"></use></svg>
+        <svg class="icon icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-moon"></use></svg>
+      </button>
+      <button class="icon-btn nav-toggle" id="nav-toggle" type="button" aria-label="Open the menu" aria-expanded="false" aria-controls="site-nav">
+        <svg class="icon icon-open" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-menu"></use></svg>
+        <svg class="icon icon-shut" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap guide-layout">
+<nav class="guide-nav" id="guide-nav" aria-label="Documentation">
+  <button class="guide-nav-toggle" id="guide-nav-toggle" type="button" aria-expanded="false" aria-controls="guide-nav-body">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-book"></use></svg><span>Contents</span><span class="guide-nav-here">Mission planner</span><svg class="icon guide-nav-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg>
+  </button>
+  <div class="guide-nav-body" id="guide-nav-body">
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Start</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="install.html">Install and run</a></li>
+        <li><a href="connect.html">Connect to the aircraft</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Fly</p>
+      <ul>
+        <li><a href="flying.html">Map, HUD and flight controls</a></li>
+        <li><a href="3d-offline.html">3D, terrain and offline maps</a></li>
+        <li><a href="mission.html" aria-current="page">Mission planner</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Set up</p>
+      <ul>
+        <li><a href="airframe.html">Airframe and motors</a></li>
+        <li><a href="safety.html">Safety, sensors and battery</a></li>
+        <li><a href="parameters.html">Parameters and calibration</a></li>
+        <li><a href="radio-tuning.html">Radio control and tuning</a></li>
+        <li><a href="hardware.html">Telemetry radio, RTK and Remote ID</a></li>
+        <li><a href="firmware.html">Firmware</a></li>
+        <li><a href="video.html">Video and windows</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Review</p>
+      <ul>
+        <li><a href="analysis.html">Logs and Flight Review</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Tools</p>
+      <ul>
+        <li><a href="workspace.html">Console and SSH</a></li>
+        <li><a href="plugins.html">Plugins</a></li>
+        <li><a href="settings.html">Settings</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Reference</p>
+      <ul>
+        <li><a href="compatibility.html">PX4 and ArduPilot</a></li>
+        <li><a href="security.html">Network and security</a></li>
+        <li><a href="reference.html">Files, settings and variables</a></li>
+        <li><a href="build.html">Build the apps</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main id="main" class="guide-main">
+<article class="doc">
+<p class="eyebrow">Fly</p>
+<!-- guide:content -->
+<h1>Mission planner</h1>
+<p class="doc-lead">
+  Draw a flight on the map, read it from the side against the real terrain
+  under it, save it, upload it and follow it while it is flown. The planner is
+  off by default: a station that is flown by hand never needs it.
+</p>
+
+<figure class="doc-shot">
+  <a href="../assets/images/mission.jpg"><img src="../assets/images/mission-800.jpg"
+     srcset="../assets/images/mission-800.jpg 800w, ../assets/images/mission.jpg 1600w"
+     sizes="(max-width: 900px) calc(100vw - 40px), 760px" width="1600" height="1000" loading="lazy" decoding="async"
+     alt="The mission planner: a route of named waypoints and an orbit drawn over the satellite map, the item list on the right and the altitude profile underneath."></a>
+  <figcaption>A start point, waypoints, an orbit and the return, with the altitude profile underneath.</figcaption>
+</figure>
+
+<h2 id="turn-on">Turning it on</h2>
+<p>
+  Switch it on under <strong>Settings, Appearance, Pages</strong> (or in the
+  first start setup), and <strong>MISSION</strong> appears under HOME in the
+  left rail. The screen has three parts, and they are the same flight drawn
+  three ways: the map, the list, and the altitude profile.
+</p>
+
+<h2 id="map">The map</h2>
+<p>
+  A tool bar runs across the top left (the same kind of bar as the flight
+  actions on the Home tab) and the usual zoom, fit and layer controls sit on
+  the rail at the top right. The layer choice is shared with the Home map.
+</p>
+<p>
+  The planner opens <strong>where the Home map is looking</strong>. Pan or
+  zoom either map and the other starts from that view the next time you open
+  it, so the planner and the flight screen are never maps of two different
+  places. Nothing moves the camera by itself: if the mission you were last
+  editing is somewhere else entirely, the planner says so and leaves the view
+  alone, and the <strong>fit</strong> button frames the plan when you ask.
+</p>
+
+<h3 id="search">Search</h3>
+<p>Next to the offline download button there is a search box. It takes:</p>
+<ul>
+  <li><strong>Place names</strong>, looked up over OpenStreetMap's Nominatim, which needs a connection.</li>
+  <li><strong>Coordinates</strong>, with no network at all, in whatever notation you have them: <code>48.0802, 11.6410</code>, <code>48,0802 11,6410</code>, <code>48.5N 11.25E</code> or <code>48°04'48.8"N 11°38'27.5"E</code>.</li>
+  <li><strong>Your offline areas</strong>, matched by name and listed first, since they are named after exactly the places you fly from.</li>
+</ul>
+<p>Picking a result flies the map there and drops a mark; press the mark to remove it.</p>
+
+<h2 id="tools">Drawing the plan</h2>
+<p>Pick a tool and click the map:</p>
+<dl>
+  <dt>Start point</dt>
+  <dd>Where the flight begins. Every altitude in the plan is measured from here, which is the same reference PX4 flies a mission in.</dd>
+  <dt>Aircraft</dt>
+  <dd>With an aircraft connected, puts the start (and the takeoff on it) where the aircraft actually stands, and keeps it there while the aircraft is carried to the field. Once it is armed, the start stays at its home, where the mission's heights are measured from. Placing the start by hand lets go of the aircraft again, and a plan saved this way starts at whichever aircraft is connected when it is opened.</dd>
+  <dt>Takeoff, Waypoint, Land</dt>
+  <dd>The obvious ones.</dd>
+  <dt>Circle</dt>
+  <dd>Orbit a point a set number of times. Greyed on PX4, with the reason on the button: PX4 has no mission item that orbits a set number of times and refuses a whole mission that contains one. Use Hold there. ArduPilot flies a Circle as drawn.</dd>
+  <dt>Hold</dt>
+  <dd>Stay at a point for a set time.</dd>
+  <dt>Return</dt>
+  <dd>Needs no click, since it names no place.</dd>
+</dl>
+<p>
+  Drag points to move them. Right-click removes the last one, and
+  <kbd>Esc</kbd> puts the tool rail back to the pointer. A Circle draws its
+  real radius as a ring on the map; select it and a grip appears on the ring.
+  Drag it to size the orbit, and pick which way round it is flown. (PX4 stores
+  the direction as the sign of the loiter radius; Corvus keeps the radius a
+  length and sets the sign when it uploads, because nobody should have to type
+  a negative distance to turn the other way.)
+</p>
+<p>
+  The plan is drawn in the same amber as the Home tab's PLAN button (a dashed
+  route and numbered rings), so a drawn mission and a set of clicked points
+  read as the same kind of thing.
+</p>
+
+<h3 id="aircraft-on-map">The connected aircraft</h3>
+<p>
+  The connected aircraft is drawn on the planner's map with the same mark as on
+  the Home tab. That matters because an aircraft does not fly to the start
+  before it climbs: a multicopter takes off where it stands (PX4 then flies over
+  to the takeoff point, ArduPilot goes straight on to the first waypoint), and
+  every height is measured from where it armed. A start more than 25 m from the
+  aircraft is pointed out while you draw, with the Aircraft button as the fix.
+</p>
+
+<h2 id="aircraft-type">Aircraft type</h2>
+<p>
+  Above the altitude profile, <strong>Aircraft</strong> says what flies the
+  plan: multicopter, fixed wing or VTOL. While an aircraft is connected it is
+  set automatically and named the way the top bar names it ("Quadcopter"). It
+  is saved with the plan, so a mission drawn at the desk already looks the way
+  it will be flown. It changes three things:
+</p>
+<dl>
+  <dt>Hold</dt>
+  <dd>A fixed wing has to circle a point to stay there, so its Hold gets a ring, a radius and a direction. A multicopter simply hovers, so its Hold gets none. A quadcopter, hexacopter and octocopter are all planned the same way.</dd>
+  <dt>Takeoff</dt>
+  <dd>A multicopter climbs straight up from the start point. A fixed wing climbs out along the first leg at its climb pitch (10° unless the takeoff says otherwise, PX4's default) and reaches the takeoff height only after a run: 170 m for 30 m. The profile draws that run, and says so when the first point is closer than it.</dd>
+  <dt>Landing</dt>
+  <dd>
+    <p>A multicopter flies to the landing point and descends straight down there, so the profile shows a step. The corner of that step is a point of its own: drag it up or down, or type it into <strong>Descend from</strong>, to set the height the descent starts at. Left alone, it is the height of the point before. Drag it all the way down and the aircraft dives straight in from the point before to 3 m above the landing point, where the last metres stay a slow vertical touchdown. Corvus flies the corner as a waypoint right above the landing point, which is how both PX4 and ArduCopter let a mission set that height.</p>
+    <p>A fixed wing glides down from the point before, so the profile shows the slope and writes its angle on it. A glide steeper than 5° is pointed out while you draw, with how far out or how low the point before it has to be. That is PX4's default limit (<code>FW_LND_ANG</code>), and PX4 refuses a steeper approach on upload.</p>
+  </dd>
+  <dt>Return</dt>
+  <dd>A return flies to where the aircraft was armed, or to the nearest rally point, at heights set on the vehicle rather than in the plan. While connected, Corvus reads those heights (the same Return settings the <a href="safety.html#return">Safety</a> page shows) and draws the return as it will be flown: a multicopter climbs to its return height, comes home, descends and lands. A fixed wing does not land after a return at all; PX4 and ArduPlane both circle over home until you take over. The profile ends it in the air, marked "circles here", so a fixed wing mission that is meant to come down should end with Land.</dd>
+</dl>
+
+<h2 id="list">The list</h2>
+<p>
+  On the right, the mission in order. Reorder, delete, and edit any point's
+  exact latitude, longitude, height, orbit radius or hold time as numbers.
+  Above it, what the plan actually costs: number of items, ground distance,
+  estimated duration, the highest point, and the closest the route comes to
+  the ground.
+</p>
+
+<h2 id="profile">The altitude profile</h2>
+<p>
+  Underneath, the flight seen from the side: distance flown along the bottom,
+  height above the start point up the side, and the real terrain under the
+  route drawn beneath it. The terrain comes from the same elevation tiles 3D
+  uses, and is cached with them, so it works offline. Every point of the plan
+  is marked on it, <strong>and you set each point's height by dragging it
+  there</strong>. The gap between the line and the ground is the clearance,
+  measured rather than worked out in your head.
+</p>
+
+<h2 id="offline">Offline areas</h2>
+<p>
+  The offline area download is on this screen too, using the same map and the
+  same tile store as the Home tab. Planning is when you find out which ground
+  you have no imagery for, so the fix belongs where you found the problem. An
+  area downloaded here is an area the Home map already has; there is no second
+  copy. See <a href="3d-offline.html#offline">Offline maps</a>.
+</p>
+
+<h2 id="save">Saving and opening</h2>
+<p>
+  Missions are saved as readable JSON, in <code>~/.corvus/missions</code>
+  unless the config file names another folder (see
+  <a href="reference.html#folders">where Corvus keeps its files</a>). A plan can be copied to another laptop or kept with the rest of a
+  job's paperwork.
+</p>
+
+<h2 id="upload">Uploading and flying</h2>
+<p><strong>Nothing reaches the aircraft until you say so, and flying is a second decision.</strong></p>
+<dl>
+  <dt>Upload to vehicle</dt>
+  <dd>Writes the route and stops. The aircraft holds a mission it has not been told to run, which lets you upload from the tent and then walk out to it.</dd>
+  <dt>Upload and fly</dt>
+  <dd>Uploads, switches to the mission mode, arms and takes off. It asks first, and shows any warnings the plan raised.</dd>
+  <dt>From vehicle</dt>
+  <dd>Reads the mission the aircraft already holds into the planner: one uploaded by QGroundControl, or by Corvus before a reconnect. Anything the planner has no way to draw (a camera trigger, an altitude above terrain) is named rather than dropped, since uploading the plan again would remove it from the aircraft. When the aircraft holds a mission that is not the one on screen, the planner says so and offers to read it.</dd>
+</dl>
+<p>
+  PX4 accepts a mission first and checks it afterwards (a home position for
+  the heights to be measured from, a takeoff or landing its settings require),
+  so an accepted upload is not yet a mission it will fly. Corvus waits the
+  moment PX4 takes to decide, and a mission PX4 will not fly is reported as a
+  failed upload, with the reason where PX4 names one ("it has no home position
+  yet"), rather than as a success. ArduPilot checks at the upload, and its
+  answer is final.
+</p>
+
+<h2 id="following">Following the flight</h2>
+<p>
+  While the plan on screen is the one on the aircraft, the planner follows the
+  flight: the leg being flown is drawn in green, the point it is heading for is
+  ringed, the points behind it fade, and a line above the list says where it is
+  ("Flying to 3. Waypoint", paused, finished). Edit the plan, or let another
+  station upload a different one, and it stops claiming any of that, because
+  the aircraft is no longer flying what you are looking at.
+</p>
+<!-- /guide:content -->
+</article>
+
+<nav class="doc-pager" aria-label="Previous and next page">
+  <a class="doc-pager-prev" href="3d-offline.html" rel="prev"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-prev"></use></svg><span><small>Previous</small>3D, terrain and offline maps</span></a>
+  <a class="doc-pager-next" href="airframe.html" rel="next"><span><small>Next</small>Airframe and motors</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg></a>
+</nav>
+
+<p class="doc-edit">
+  <a href="https://github.com/M-BSquared/CorvusGCS/edit/master/docs/guide/mission.html" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-edit"></use></svg>Suggest a change to this page</a>
+</p>
+</main>
+
+<aside class="guide-toc" aria-labelledby="toc-title">
+  <p class="guide-toc-title" id="toc-title">On this page</p>
+  <ul>
+    <li><a href="#turn-on">Turning it on</a></li>
+    <li><a href="#map">The map</a></li>
+    <li><a href="#tools">Drawing the plan</a></li>
+    <li><a href="#aircraft-type">Aircraft type</a></li>
+    <li><a href="#list">The list</a></li>
+    <li><a href="#profile">The altitude profile</a></li>
+    <li><a href="#offline">Offline areas</a></li>
+    <li><a href="#save">Saving and opening</a></li>
+    <li><a href="#upload">Uploading and flying</a></li>
+    <li><a href="#following">Following the flight</a></li>
+  </ul>
+</aside>
+</div>
+
+<footer class="site-footer guide-footer">
+  <div class="wrap footer-base">
+    <p class="copyright">&copy; <span id="year">2026</span> Maximilian Böck. Developed with the Universität der Bundeswehr München.</p>
+    <p class="footer-meta">
+      Source available under the Sustainable Use License 1.0 (<em>fair-code</em>).
+      <a href="https://github.com/M-BSquared/CorvusGCS/blob/master/LICENSE.md" target="_blank" rel="noopener">License</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

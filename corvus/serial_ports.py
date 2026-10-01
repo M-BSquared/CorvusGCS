@@ -1,12 +1,15 @@
 """Which serial port is what: flight controller, radio, RTK base, bootloader.
 
-Pure functions over a device name and its USB descriptor, shared by the MAVLink
+Functions over a device name and its USB descriptor, shared by the MAVLink
 bridge (link transport, firmware flashing) and by auto-connect (which port to
 dial). Nothing here opens a port.
 """
 from __future__ import annotations
 
+import os
 import re
+from collections.abc import Iterable
+
 # Serial nodes that are never an autopilot or a radio, and that bury the one
 # that is. /dev/ttyS* are the Linux 8250 platform ports (always phantom on a
 # field laptop); the two macOS entries are present on every Mac whether or not
@@ -67,19 +70,32 @@ _USB_SERIAL_BRIDGE_RE = re.compile(
 # A board sitting in its USB bootloader enumerates as a serial port like any
 # other, but it is not a link: it speaks the PX4 bootloader protocol (see
 # corvus/firmware_uploader.py), not MAVLink, and opening it would hold the
-# device the flasher is about to claim. 26AC:0011 is the PX4 BL FMU descriptor,
-# 0483:DF11 is STM32 DFU; the words are what the descriptor strings say when
-# the ids do not.
-_BOOTLOADER_TOKENS: tuple[str, ...] = (
-    "vid:pid=26ac:0011",
-    "vid:pid=0483:df11",
-    "bl fmu",
-    "bootloader",
-    "dfu",
-)
+# device the flasher is about to claim. 0483:DF11 is STM32 DFU. PX4's
+# bootloader calls itself "PX4 BL FMU ...", ArduPilot's "<board>-BL".
+#
+# No PX4 vendor/product id is on this list, although 26AC:0011 used to be: the
+# PX4 bootloader and the PX4 firmware of a board share one id (FMUv2/v3 both
+# use 26AC:0011), so the id matched every Pixhawk 1, Pixhawk 2.4.8 and Cube
+# Black running PX4, and auto-connect skipped the flight controller on the
+# cable. Only the product string tells the two apart.
 _BOOTLOADER_RE = re.compile(
-    "|".join(re.escape(t) for t in _BOOTLOADER_TOKENS), re.IGNORECASE,
+    r"vid:pid=0483:df11"
+    r"|\bbl fmu\b"
+    r"|\bbootloader\b"
+    r"|\bdfu\b"
+    r"|-bl\b",
+    re.IGNORECASE,
 )
+
+# pyserial's hwid: "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1". The id pair
+# and the serial number name one physical device whichever node it got.
+_USB_IDENTITY_RE = re.compile(
+    r"VID:PID=([0-9A-F]{4}):([0-9A-F]{4})(?:\s+SER=(\S+))?", re.IGNORECASE,
+)
+
+# SiK Telemetry Radio V3 factory default, and what a ``serial:`` string without
+# a baud rate means.
+DEFAULT_SERIAL_BAUD = 57600
 
 # An RTK base station is a serial port that must never be dialled as a link.
 # The distinction is not academic: a ZED-F9P on a USB lead enumerates as
@@ -212,3 +228,80 @@ def is_windows_com_port(device: str) -> bool:
     connection field on Linux is still recognised for what it is.
     """
     return bool(_WINDOWS_COM_RE.match(str(device or "").strip()))
+
+
+def split_serial_connection(conn: str) -> tuple[str, int]:
+    """``serial:<device>[:<baud>]`` -> ``(device, baud)``. Never raises.
+
+    The baud is the last ``:``-separated field only when it is all digits, so a
+    device name with a colon in it (``COM3`` never has one, a Linux by-path
+    node does) keeps it. Without a numeric baud the whole remainder is the
+    device and the baud is :data:`DEFAULT_SERIAL_BAUD`.
+    """
+    text = str(conn or "")
+    rest = text[len("serial:"):] if text.startswith("serial:") else text
+    if ":" in rest:
+        device, _, baud_str = rest.rpartition(":")
+        if baud_str.isdigit():
+            return device, int(baud_str)
+    return rest, DEFAULT_SERIAL_BAUD
+
+
+def usb_identity(hwid: str) -> str | None:
+    """``"26AC:0032/0001"`` for a USB descriptor, or None when it has no ids.
+
+    What a port is, rather than where it is plugged in. macOS names a device
+    without a serial number after the USB socket, Windows may give it a new COM
+    number per socket, and Linux hands out ttyACM1 when ttyACM0 is still held
+    open, so the node name of one device changes with the socket and with the
+    timing of a replug. A device without a serial number still has an identity
+    (the id pair alone); it is just a weaker one.
+    """
+    match = _USB_IDENTITY_RE.search(str(hwid or ""))
+    if not match:
+        return None
+    vid, pid, serial = match.groups()
+    return f"{vid.upper()}:{pid.upper()}/{serial or ''}"
+
+
+def _port_aliases(device: str) -> set[str]:
+    """Every spelling of *device* that names the same node, lowercased."""
+    name = str(device or "").strip()
+    if not name:
+        return set()
+    aliases = {name.lower()}
+    for this, other in (("/dev/tty.", "/dev/cu."), ("/dev/cu.", "/dev/tty.")):
+        if name.startswith(this):
+            aliases.add((other + name[len(this):]).lower())
+    if is_windows_com_port(name):
+        aliases.add(name.upper().removeprefix("\\\\.\\").lower())
+    elif name.startswith("/"):
+        try:
+            aliases.add(os.path.realpath(name).lower())
+        except (OSError, ValueError):
+            pass
+    return aliases
+
+
+def same_port(a: str, b: str) -> bool:
+    """Do *a* and *b* name the same serial node?
+
+    A by-id symlink and the node it points at, the two halves of a macOS
+    cu/tty pair, and ``COM3`` against ``\\\\.\\COM3`` all count as one port.
+    """
+    return bool(_port_aliases(a) & _port_aliases(b))
+
+
+def port_present(device: str, enumerated: Iterable[str]) -> bool:
+    """Is *device* there right now, either enumerated or as a device node?
+
+    Enumeration alone is not enough: a by-id path or anything pyserial does
+    not report is never in it. The filesystem alone is not enough either,
+    because a Windows COM port is not a file.
+    """
+    name = str(device or "").strip()
+    if not name:
+        return False
+    if any(same_port(name, str(other or "")) for other in enumerated or ()):
+        return True
+    return not is_windows_com_port(name) and os.path.exists(name)

@@ -481,6 +481,19 @@ def test_track_switches_are_kept_only_as_genuine_booleans(tmp_path, key) -> None
         assert load_config(str(p)).ui == {key: value}
 
 
+def test_flight_hud_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
+    """On by default: absent or a hand-edited string leaves the key out, which
+    the frontend reads as the HUD shown. Only a real ``False`` hides it."""
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("flight_hud") is None
+    p.write_text(json.dumps({"ui": {"flight_hud": "false"}}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("flight_hud") is None
+    for value in (True, False):
+        p.write_text(json.dumps({"ui": {"flight_hud": value}}), encoding="utf-8")
+        assert load_config(str(p)).ui == {"flight_hud": value}
+
+
 def test_compass_nose_up_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
     """Opt-in: absent or a hand-edited string leaves the compass north up."""
     p = tmp_path / "c.json"
@@ -493,6 +506,19 @@ def test_compass_nose_up_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
     p.write_text(json.dumps(
         {"ui": {"compass_nose_up": False, "mission_page": True}}), encoding="utf-8")
     assert load_config(str(p)).ui == {"compass_nose_up": False, "mission_page": True}
+
+
+def test_topbar_altitude_keeps_only_known_references(tmp_path) -> None:
+    """AMSL unless the config names a reference the top bar can draw."""
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("topbar_altitude") is None
+    for bad in ("agl", "AMSL", True, 1):
+        p.write_text(json.dumps({"ui": {"topbar_altitude": bad}}), encoding="utf-8")
+        assert (load_config(str(p)).ui or {}).get("topbar_altitude") is None
+    for ref in ("amsl", "relative"):
+        p.write_text(json.dumps({"ui": {"topbar_altitude": ref}}), encoding="utf-8")
+        assert load_config(str(p)).ui == {"topbar_altitude": ref}
 
 
 def test_display_units_keep_only_known_values_per_quantity(tmp_path) -> None:

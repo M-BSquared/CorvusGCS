@@ -84,6 +84,9 @@ class FakeBridge:
                                 "tcp:", "tcpin:", "serial:")):
             raise ValueError("bad prefix")
 
+    def connection_string(self) -> str:
+        return self.connection
+
     def stop(self) -> None:
         self.calls.append("stop")
 
@@ -724,3 +727,272 @@ def test_startup_without_a_session_behaves_exactly_as_it_always_did(store):
     bridge = MavlinkBridge(store, "udp:0.0.0.0:14550")
     assert apply_startup_connection(bridge, "tcp:127.0.0.1:5760") == "tcp:127.0.0.1:5760"
     assert apply_startup_connection(bridge, "wifi:drone") == DEFAULT_MAVLINK_CONNECTION
+
+
+# ---------------------------------------------------------------------------
+# Bootloaders: the product string decides, never a PX4 id.
+# ---------------------------------------------------------------------------
+
+def test_a_running_pixhawk_1_is_not_mistaken_for_its_bootloader():
+    """PX4's FMUv2/v3 firmware enumerates as 26AC:0011, the same id its
+    bootloader uses. Matching the id skipped every Pixhawk 1, Pixhawk 2.4.8 and
+    Cube Black running PX4, so auto-connect never dialled them."""
+    from corvus.serial_ports import is_bootloader_port
+
+    running = {
+        "device": "/dev/ttyACM0",
+        "description": "PX4 FMU v2.x",
+        "hwid": "USB VID:PID=26AC:0011 SER=0 LOCATION=1-1:1.0",
+    }
+    assert not is_bootloader_port(running["device"], running["hwid"], running["description"])
+    decision = ac.resolve_startup_connection(None, None, ports(running))
+    assert decision.reason == ac.REASON_USB
+    assert decision.connection_string == "serial:/dev/ttyACM0:57600"
+
+
+@pytest.mark.parametrize("description, hwid, expected", [
+    ("PX4 BL FMU v2.x", "USB VID:PID=26AC:0011 SER=0", True),
+    ("PX4 BL FMU v6X.x", "USB VID:PID=3185:0035 SER=0", True),
+    ("CubeOrange-BL", "USB VID:PID=2DAE:1016 SER=2A0035", True),
+    ("STM32 BOOTLOADER", "USB VID:PID=0483:DF11", True),
+    ("CubeOrange", "USB VID:PID=2DAE:1016 SER=2A0035", False),
+    ("PX4 FMU v6X.x", "USB VID:PID=3185:0035 SER=0", False),
+    # A serial number is not a word: "DFU" inside one is not DFU mode.
+    ("FT232R USB UART", "USB VID:PID=0403:6001 SER=A9DFU3XY", False),
+    ("USB BLE dongle", "USB VID:PID=1A86:7523", False),
+])
+def test_bootloaders_are_told_apart_by_their_product_string(description, hwid, expected):
+    from corvus.serial_ports import is_bootloader_port
+    assert is_bootloader_port("/dev/ttyACM0", hwid, description) is expected
+
+
+# ---------------------------------------------------------------------------
+# Baud rates the operator already chose are kept.
+# ---------------------------------------------------------------------------
+
+def test_a_radio_saved_at_115200_is_dialled_at_115200_on_its_own_port():
+    decision = ac.resolve_startup_connection(
+        None, "serial:/dev/ttyUSB0:115200", ports(SIK_PORT),
+    )
+    assert decision.reason == ac.REASON_SIK
+    assert decision.connection_string == "serial:/dev/ttyUSB0:115200"
+
+
+def test_a_saved_rate_for_another_port_does_not_leak_onto_this_one():
+    decision = ac.resolve_startup_connection(
+        None, "serial:/dev/ttyUSB3:115200", ports(SIK_PORT),
+    )
+    assert decision.connection_string == "serial:/dev/ttyUSB0:57600"
+
+
+def test_the_radio_the_link_is_on_is_not_offered_back_at_another_rate():
+    session = ac.SessionState()
+    snapshot = {"link_status": "connected", "link_connection": "serial:/dev/ttyUSB0:115200"}
+    assert ac.suggest_connection(snapshot, ports(SIK_PORT), session) is None
+
+
+def test_a_redial_of_the_same_port_keeps_the_link_rate(store):
+    bridge = FakeBridge()
+    bridge.connection = "serial:/dev/ttyACM0:115200"
+    store.update(link_status="reconnecting")
+    w = watcher(bridge, store, [USB_PORT])
+    assert w.tick() == f"dialled: {ac.REASON_USB}"
+    assert "set:serial:/dev/ttyACM0:115200" in bridge.calls
+
+
+# ---------------------------------------------------------------------------
+# The link's own device, back under another name.
+# ---------------------------------------------------------------------------
+
+# Node names no test host has, so presence comes from the injected enumeration.
+OLD_NODE = "/dev/ttyACM41"
+NEW_NODE = "/dev/ttyACM42"
+
+
+def fc(device: str, serial: str = "3A0029", description: str = "Pixhawk FMU v6X") -> dict:
+    return {
+        "device": device,
+        "description": description,
+        "hwid": f"USB VID:PID=3185:0035 SER={serial} LOCATION=1-2",
+    }
+
+
+def manual_link(store, rows: list[dict], baud: int = 115200):
+    """A link the operator chose by hand, seen once by the watcher while it was there."""
+    bridge = FakeBridge()
+    bridge.connection = f"serial:{OLD_NODE}:{baud}"
+    session = ac.SessionState()
+    session.note_manual_connect()
+    store.update(link_status="connected", link_connection=bridge.connection)
+    store.heartbeat()
+    w = watcher(bridge, store, rows, session=session)
+    assert w.tick() == "noop: manual-override"
+    return bridge, session, w
+
+
+def test_a_hand_chosen_link_follows_its_device_to_a_new_name(store):
+    """Plugged into another socket, or replugged on Linux while the old node
+    was still open: the same board comes back as a new node. The bridge would
+    retry the vanished name for the rest of the session."""
+    rows = [fc(OLD_NODE)]
+    bridge, session, w = manual_link(store, rows)
+
+    rows[:] = [fc(NEW_NODE)]
+    store.update(link_status="reconnecting")
+    assert w.tick() == "followed"
+
+    assert bridge.calls == ["stop", f"set:serial:{NEW_NODE}:115200", "start"]
+    auto = store.get_snapshot()["link_auto"]
+    assert auto["manual_override"] is True
+    assert auto["reason"] == ac.REASON_MANUAL
+    assert auto["winner"] == f"serial:{NEW_NODE}:115200"
+    assert store.get_snapshot()["link_suggestion"] is None
+
+
+def test_nothing_moves_until_the_bridge_has_given_the_old_name_up(store):
+    """About two seconds pass between pulling the cable and the bridge noticing.
+    Acting then would offer the same board back as if it were a second one."""
+    rows = [fc(OLD_NODE)]
+    bridge, _, w = manual_link(store, rows)
+    rows[:] = [fc(NEW_NODE)]
+    assert w.tick() == "noop: link-device-gone"
+    assert bridge.calls == []
+    assert store.get_snapshot()["link_suggestion"] is None
+
+
+def test_a_different_board_is_not_followed(store):
+    rows = [fc(OLD_NODE, serial="AAAA")]
+    bridge, _, w = manual_link(store, rows)
+    rows[:] = [fc(NEW_NODE, serial="BBBB")]
+    store.update(link_status="reconnecting")
+    assert w.tick() == "noop: manual-override"
+    assert bridge.calls == []
+
+
+def test_two_boards_with_the_same_identity_are_no_answer(store):
+    rows = [fc(OLD_NODE, serial="")]
+    bridge, _, w = manual_link(store, rows)
+    rows[:] = [fc(NEW_NODE, serial=""), fc("/dev/ttyACM43", serial="")]
+    store.update(link_status="reconnecting")
+    assert w.tick() == "noop: manual-override"
+    assert bridge.calls == []
+
+
+def test_the_old_name_still_being_there_is_not_a_move(store):
+    rows = [fc(OLD_NODE, serial="")]
+    bridge, _, w = manual_link(store, rows)
+    rows.append(fc(NEW_NODE, serial=""))
+    store.update(link_status="reconnecting")
+    assert w.tick() == "noop: manual-override"
+    assert bridge.calls == []
+
+
+def test_a_disconnect_by_hand_is_not_followed(store):
+    rows = [fc(OLD_NODE)]
+    bridge, _, w = manual_link(store, rows)
+    bridge.running = False
+    rows[:] = [fc(NEW_NODE)]
+    store.update(link_status="disconnected")
+    assert w.tick() == "noop: manual-override"
+    assert bridge.calls == []
+
+
+def test_the_bootloader_is_waited_out_and_the_firmware_followed(store):
+    """A PX4 board comes back in its bootloader first, with the firmware's
+    vendor and product id, and re-enumerates once the firmware boots."""
+    rows = [fc(OLD_NODE)]
+    bridge, _, w = manual_link(store, rows)
+    store.update(link_status="reconnecting")
+
+    rows[:] = [fc(NEW_NODE, description="PX4 BL FMU v6X.x")]
+    assert w.tick() == "noop: manual-override"
+    assert bridge.calls == []
+
+    rows[:] = [fc("/dev/ttyACM43")]
+    assert w.tick() == "followed"
+    assert "set:serial:/dev/ttyACM43:115200" in bridge.calls
+
+
+def test_a_bootloader_on_the_old_name_does_not_replace_what_was_remembered(store):
+    rows = [fc(OLD_NODE)]
+    bridge, _, w = manual_link(store, rows)
+    rows[:] = [fc(OLD_NODE, serial="BL", description="PX4 BL FMU v6X.x")]
+    w.tick()
+    rows[:] = [fc(NEW_NODE)]
+    store.update(link_status="reconnecting")
+    assert w.tick() == "followed"
+
+
+def test_an_automatic_link_follows_at_once_rather_than_after_eight_seconds(store):
+    rows = [fc(OLD_NODE)]
+    bridge = FakeBridge()
+    bridge.connection = f"serial:{OLD_NODE}:57600"
+    store.update(link_status="connected", link_connection=bridge.connection)
+    store.heartbeat()
+    w = watcher(bridge, store, rows)
+    w.tick()
+
+    rows[:] = [fc(NEW_NODE)]
+    store.update(link_status="reconnecting")
+    assert not store.is_stale(ac.STALE_AFTER_S), "the heartbeat is still recent"
+    assert w.tick() == "followed"
+    assert store.get_snapshot()["link_auto"]["reason"] == ac.REASON_USB
+    assert store.get_snapshot()["link_auto"]["manual_override"] is False
+
+
+def test_an_identity_learned_on_another_link_is_not_used(store):
+    rows = [fc(OLD_NODE)]
+    bridge, _, w = manual_link(store, rows)
+    bridge.connection = "serial:/dev/ttyACM44:115200"
+    rows[:] = [fc(NEW_NODE)]
+    store.update(link_status="reconnecting")
+    assert w.tick() == "noop: manual-override"
+    assert bridge.calls == []
+
+
+# ---------------------------------------------------------------------------
+# serial_ports helpers the watcher stands on.
+# ---------------------------------------------------------------------------
+
+def test_usb_identity_reads_ids_and_serial_number():
+    from corvus.serial_ports import usb_identity
+    assert usb_identity("USB VID:PID=26ac:0032 SER=0001 LOCATION=20-1") == "26AC:0032/0001"
+    assert usb_identity("USB VID:PID=1A86:7523 LOCATION=1-1") == "1A86:7523/"
+    assert usb_identity("n/a") is None
+    assert usb_identity("") is None
+
+
+def test_one_node_has_many_spellings(tmp_path):
+    from corvus.serial_ports import same_port
+    assert same_port("/dev/cu.usbmodem01", "/dev/tty.usbmodem01")
+    assert same_port("COM3", "\\\\.\\COM3")
+    assert same_port("com3", "COM3")
+    assert not same_port("COM3", "COM13")
+    target = tmp_path / "ttyACM0"
+    target.write_text("")
+    link = tmp_path / "usb-Holybro_PX4_FMU_v6C.x_0-if00"
+    link.symlink_to(target)
+    assert same_port(str(link), str(target))
+
+
+def test_a_port_is_present_when_enumerated_or_on_disk(tmp_path):
+    from corvus.serial_ports import port_present
+    node = tmp_path / "ttyACM0"
+    assert not port_present(str(node), [])
+    node.write_text("")
+    assert port_present(str(node), [])
+    assert port_present("COM7", ["COM7"])
+    assert not port_present("COM7", ["COM8"])
+    assert not port_present("", ["COM7"])
+
+
+@pytest.mark.parametrize("conn, expected", [
+    ("serial:/dev/ttyUSB0:115200", ("/dev/ttyUSB0", 115200)),
+    ("serial:/dev/ttyUSB0", ("/dev/ttyUSB0", 57600)),
+    ("serial:COM3:921600", ("COM3", 921600)),
+    ("serial:/dev/serial/by-path/pci-0000:00:14.0-usb-0:2:1.0:57600",
+     ("/dev/serial/by-path/pci-0000:00:14.0-usb-0:2:1.0", 57600)),
+])
+def test_serial_connection_strings_split_on_the_last_numeric_field(conn, expected):
+    from corvus.serial_ports import split_serial_connection
+    assert split_serial_connection(conn) == expected

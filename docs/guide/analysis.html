@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<!-- Written by tools/guide.py around the content block below. Edit the text
+     between the guide:content markers; run the script for everything else. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logs and Flight Review · Corvus GCS documentation</title>
+<meta name="description" content="Downloading vehicle logs, the tlogs Corvus records, and reading either in Flight Review or Telemetry Review.">
+<link rel="canonical" href="https://m-bsquared.github.io/CorvusGCS/guide/analysis.html">
+<meta name="theme-color" content="#0B0E12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="dark light">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Corvus GCS">
+<meta property="og:title" content="Logs and Flight Review · Corvus GCS documentation">
+<meta property="og:description" content="Downloading vehicle logs, the tlogs Corvus records, and reading either in Flight Review or Telemetry Review.">
+<meta property="og:url" content="https://m-bsquared.github.io/CorvusGCS/guide/analysis.html">
+<meta property="og:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/icons/apple-touch-icon.png">
+<link rel="preload" as="font" type="font/woff2" href="../assets/fonts/Inter-latin.woff2" crossorigin>
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="guide.css">
+<script>
+  document.documentElement.classList.add('js');
+  try {
+    var t = localStorage.getItem('corvus-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+</script>
+<script src="../script.js" defer></script>
+<script src="guide.js" defer></script>
+</head>
+
+<body class="guide">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <g id="i-github" fill="currentColor" stroke="none" transform="scale(1.5)"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></g>
+    <g id="i-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></g>
+    <g id="i-moon"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></g>
+    <g id="i-menu"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></g>
+    <g id="i-close"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></g>
+    <g id="i-prev"><path d="m15 18-6-6 6-6"/></g>
+    <g id="i-next"><path d="m9 18 6-6-6-6"/></g>
+    <g id="i-book"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></g>
+    <g id="i-info"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></g>
+    <g id="i-alert"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></g>
+    <g id="i-edit"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></g>
+  </defs>
+</svg>
+
+<header class="site-header" id="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="../index.html" aria-label="Corvus GCS, project website">
+      <span class="brand-mark" role="img" aria-hidden="true"></span>
+      <span class="brand-text">
+        <span class="brand-name">Corvus GCS</span>
+        <span class="brand-sub">Documentation</span>
+      </span>
+    </a>
+
+    <nav class="site-nav" id="site-nav" aria-label="Main">
+      <ul class="nav-list">
+        <li><a href="../index.html">Website</a></li>
+        <li><a href="index.html">Documentation</a></li>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS/releases/latest" target="_blank" rel="noopener">Download</a></li>
+        <li><a class="nav-github" href="https://github.com/M-BSquared/CorvusGCS" target="_blank" rel="noopener">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-github"></use></svg>GitHub</a></li>
+      </ul>
+    </nav>
+
+    <div class="header-actions">
+      <button class="icon-btn theme-toggle" id="theme-toggle" type="button" aria-label="Switch to the light theme" aria-pressed="false">
+        <svg class="icon icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-sun"></use></svg>
+        <svg class="icon icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-moon"></use></svg>
+      </button>
+      <button class="icon-btn nav-toggle" id="nav-toggle" type="button" aria-label="Open the menu" aria-expanded="false" aria-controls="site-nav">
+        <svg class="icon icon-open" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-menu"></use></svg>
+        <svg class="icon icon-shut" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap guide-layout">
+<nav class="guide-nav" id="guide-nav" aria-label="Documentation">
+  <button class="guide-nav-toggle" id="guide-nav-toggle" type="button" aria-expanded="false" aria-controls="guide-nav-body">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-book"></use></svg><span>Contents</span><span class="guide-nav-here">Logs and Flight Review</span><svg class="icon guide-nav-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg>
+  </button>
+  <div class="guide-nav-body" id="guide-nav-body">
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Start</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="install.html">Install and run</a></li>
+        <li><a href="connect.html">Connect to the aircraft</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Fly</p>
+      <ul>
+        <li><a href="flying.html">Map, HUD and flight controls</a></li>
+        <li><a href="3d-offline.html">3D, terrain and offline maps</a></li>
+        <li><a href="mission.html">Mission planner</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Set up</p>
+      <ul>
+        <li><a href="airframe.html">Airframe and motors</a></li>
+        <li><a href="safety.html">Safety, sensors and battery</a></li>
+        <li><a href="parameters.html">Parameters and calibration</a></li>
+        <li><a href="radio-tuning.html">Radio control and tuning</a></li>
+        <li><a href="hardware.html">Telemetry radio, RTK and Remote ID</a></li>
+        <li><a href="firmware.html">Firmware</a></li>
+        <li><a href="video.html">Video and windows</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Review</p>
+      <ul>
+        <li><a href="analysis.html" aria-current="page">Logs and Flight Review</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Tools</p>
+      <ul>
+        <li><a href="workspace.html">Console and SSH</a></li>
+        <li><a href="plugins.html">Plugins</a></li>
+        <li><a href="settings.html">Settings</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Reference</p>
+      <ul>
+        <li><a href="compatibility.html">PX4 and ArduPilot</a></li>
+        <li><a href="security.html">Network and security</a></li>
+        <li><a href="reference.html">Files, settings and variables</a></li>
+        <li><a href="build.html">Build the apps</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main id="main" class="guide-main">
+<article class="doc">
+<p class="eyebrow">Review</p>
+<!-- guide:content -->
+<h1>Logs and Flight Review</h1>
+<p class="doc-lead">
+  Two kinds of log, and one reviewer for both. The aircraft writes a detailed
+  log on its SD card; Corvus records the telemetry it received on this laptop.
+  Either can be reduced to the plots and findings that answer "was that flight
+  healthy?", on your own machine, with nothing uploaded anywhere.
+</p>
+
+<figure class="doc-shot">
+  <a href="../assets/images/flight-review.jpg"><img src="../assets/images/flight-review-800.jpg"
+     srcset="../assets/images/flight-review-800.jpg 800w, ../assets/images/flight-review.jpg 1600w"
+     sizes="(max-width: 900px) calc(100vw - 40px), 760px" width="1600" height="1000" loading="lazy" decoding="async"
+     alt="Flight Review of a downloaded ULog: the flight modes as a coloured timeline, the log summary, and the ground track over satellite imagery."></a>
+  <figcaption>Flight Review of a downloaded ULog: the mode timeline, the summary and the ground track.</figcaption>
+</figure>
+
+<h2 id="vehicle-logs">Vehicle logs</h2>
+<p>
+  <strong>ANALYSIS</strong> in the left rail lists the logs on the flight
+  controller's SD card. Tick several and walk away: they are downloaded one
+  after another with a progress bar, and Cancel works throughout. Files land as
+  <code>log_&lt;id&gt;_&lt;UTC date&gt;.ulg</code>, so they are still
+  recognisable a month later, in <code>~/.corvus/flightlogs</code> by default.
+</p>
+<p>
+  On ArduPilot the on-board log is DataFlash (<code>.bin</code>). It downloads
+  the same way and lands in the same folder, but Flight Review reads ULog
+  only: it names the format and points you to Mission Planner rather than
+  failing obscurely. Telemetry Review, below, works on both stacks.
+</p>
+
+<h2 id="tlogs">Recorded telemetry (tlogs)</h2>
+<p>
+  Corvus records the MAVLink stream it receives, from the first frame of
+  every connection, without being asked. There is one file per flight: when
+  the aircraft disarms after a flight, the file is closed and the next one
+  begins. This is the log that always exists, even when the aircraft's own log
+  does not. Tlogs are written to <code>~/.corvus/logs</code> by default, and
+  every file records the Corvus version that wrote it.
+</p>
+<p>
+  The <strong>LOGS</strong> page in the left rail is something else: the
+  console transcript of this session, which you can copy or export for a bug
+  report.
+</p>
+
+<h2 id="flight-review">Flight Review</h2>
+<p>
+  Pick a downloaded log and Corvus reduces it to the plots that answer "was
+  that flight healthy?": motors, clipping, the estimator (EKF), battery and
+  more, with findings above the plots and the aircraft's own messages below,
+  filtered by severity. <strong>A log that never came through Corvus can be
+  opened too</strong>, from anywhere on your machine. Everything is parsed
+  locally.
+</p>
+
+<figure class="doc-shot">
+  <a href="../assets/images/flight-review-charts.jpg"><img src="../assets/images/flight-review-charts-800.jpg"
+     srcset="../assets/images/flight-review-charts-800.jpg 800w, ../assets/images/flight-review-charts.jpg 1600w"
+     sizes="(max-width: 900px) calc(100vw - 40px), 760px" width="1600" height="1000" loading="lazy" decoding="async"
+     alt="Flight Review plots of pitch angle and pitch rate, estimate against setpoint, with the takeoff, mission, loiter and return phases shaded behind the traces."></a>
+  <figcaption>Estimate against setpoint, with the flight modes shaded behind every plot.</figcaption>
+</figure>
+
+<h3 id="findings">Findings</h3>
+<p>
+  The findings name the problem and say where to look. Each one is a single
+  line you can scan, with the reasoning behind it one click away: the
+  explanations are a paragraph each, and a dozen paragraphs stacked up would
+  hide the one line that mattered. Problems come first, in order of severity;
+  context worth knowing but needing no action folds away under "2 more
+  observations".
+</p>
+<p>
+  <strong>Every finding carries the second of the flight it was measured at
+  and the mode being flown then</strong>, and so does every line of the
+  aircraft's message log, so a claim at the top of the page and the dip in the
+  plot that caused it line up.
+</p>
+
+<h3 id="what-it-reads">What it reads beyond thresholds</h3>
+<ul>
+  <li>A motor held at full output, and for how long.</li>
+  <li>How long the estimator actually rejected a sensor, rather than only how high the innovation spiked.</li>
+  <li>In-flight position and heading resets.</li>
+  <li>PX4's own failure detector firing.</li>
+  <li>A compass whose field strength rises and falls with the throttle: interference in the power wiring, not a calibration to redo.</li>
+  <li>A rate loop ringing, at a named frequency and amplitude.</li>
+  <li>ESC RPM where the ESCs report it, plotted beside the commands: commands say what was asked for, RPM says what happened.</li>
+</ul>
+
+<h3 id="what-it-does-not-say">What it deliberately does not say</h3>
+<p>One alarm about something ordinary costs every other finding its credibility, so:</p>
+<ul>
+  <li>A motor at its limit is only reported when the others still had headroom. All of them together is a hard climb, not a failure.</li>
+  <li>An estimator reset counts only in the air, since every counter ticks when the first GPS fix arrives on the ground.</li>
+  <li>Compass interference needs a physically believable swing before the wiring is blamed.</li>
+  <li>A brief innovation spike is an observation rather than a warning, because it is only a problem when it lasts.</li>
+  <li>The heading alignment PX4 makes after every takeoff is context, not a warning.</li>
+  <li>The battery is judged by the level the pack held, not the one sample at the hardest punch, and sag is measured over a few seconds, not from full to empty.</li>
+</ul>
+
+<h3 id="sensitivity">Sensitivity</h3>
+<p>
+  How readily a number becomes a finding is yours to set, once, under
+  <strong>Settings, Analysis</strong> (or in the first start setup):
+</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Setting</th><th>Reports</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Relaxed</strong></td><td>Only what should keep the aircraft on the ground.</td></tr>
+    <tr><td><strong>Normal</strong> (default)</td><td>Leaves a healthy aircraft, flown normally, with an empty list.</td></tr>
+    <tr><td><strong>Strict</strong></td><td>Every early sign, for tuning and new airframes.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  The plots are the same at every setting, and the page says which setting
+  its findings were read at. Whatever the setting, only the time the aircraft
+  was armed is measured: clipping counted on the bench, a refusal to arm, a
+  receiver that never heard a transmitter and a GPS still looking for its first
+  fix are not the flight.
+</p>
+
+<h3 id="ground-track">The ground track</h3>
+<p>The ground track has two readings, with a switch in its corner:</p>
+<dl>
+  <dt>Chart</dt>
+  <dd>Metres north over metres east on equal axes, which makes the gap between the estimate and the GPS measurable.</dd>
+  <dt>Satellite</dt>
+  <dd>The same path over the map imagery, at the place it was actually flown (the field, the runway, the tree line the turn was flown around), through the same tile cache the map uses, so it works offline wherever those tiles were downloaded.</dd>
+</dl>
+<p>
+  A flight with no global reference (indoors, or without a fix) has no origin
+  to place on the Earth, and offers no switch rather than a guess.
+</p>
+
+<div class="callout callout-warn">
+  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-alert"></use></svg>
+  <div><p>The review can be wrong. It is a help for reading a log, not a verdict on airworthiness: check its plots and the aircraft yourself.</p></div>
+</div>
+
+<h2 id="telemetry-review">Telemetry Review</h2>
+<p>
+  The same page, for a tlog instead of a ULog. The ULog is the better log,
+  and when you can get it, it is the one to read. Telemetry Review exists
+  because you cannot always get it: the SD card was not fitted, the download
+  would take an hour over a 57600 link, or the aircraft did not come back.
+  Corvus recorded the flight on this laptop either way, so pick a tlog and it
+  is reduced to the same plots, the same mode and armed bands, the same
+  findings and the same message log, drawn the same way, so the two read alike.
+</p>
+
+<h3 id="telemetry-limits">What a tlog can and cannot show</h3>
+<p>The page states this itself rather than leaving you to find out:</p>
+<ul>
+  <li>Telemetry arrives at 1 to 50 Hz, not a ULog's 200 to 1000 Hz. An oscillation is visible; the shape of one cycle is not.</li>
+  <li>There are no motor outputs and no data per IMU, because those never leave the aircraft.</li>
+</ul>
+
+<h3 id="the-link">What only a tlog has: the link</h3>
+<p>
+  <code>RADIO_STATUS</code>, the drop counters and the signal strength at both
+  ends describe the radio between you and the aircraft, which a log written on
+  board cannot know about. That includes the stretches where <strong>the link
+  went silent</strong>, measured against the pace that recording actually kept
+  rather than a fixed threshold, so a slow radio is not reported as a fault.
+</p>
+<p>
+  A recording that <strong>ends with the aircraft still armed</strong> is said
+  first and plainly, because that is the log somebody reads when an aircraft
+  did not come home. The vehicle's own verdict is read too: the subsystems it
+  reported as configured but not healthy, and the glitches its estimator
+  flagged.
+</p>
+<!-- /guide:content -->
+</article>
+
+<nav class="doc-pager" aria-label="Previous and next page">
+  <a class="doc-pager-prev" href="video.html" rel="prev"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-prev"></use></svg><span><small>Previous</small>Video and windows</span></a>
+  <a class="doc-pager-next" href="workspace.html" rel="next"><span><small>Next</small>Console and SSH</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg></a>
+</nav>
+
+<p class="doc-edit">
+  <a href="https://github.com/M-BSquared/CorvusGCS/edit/master/docs/guide/analysis.html" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-edit"></use></svg>Suggest a change to this page</a>
+</p>
+</main>
+
+<aside class="guide-toc" aria-labelledby="toc-title">
+  <p class="guide-toc-title" id="toc-title">On this page</p>
+  <ul>
+    <li><a href="#vehicle-logs">Vehicle logs</a></li>
+    <li><a href="#tlogs">Recorded telemetry (tlogs)</a></li>
+    <li><a href="#flight-review">Flight Review</a></li>
+    <li><a href="#telemetry-review">Telemetry Review</a></li>
+  </ul>
+</aside>
+</div>
+
+<footer class="site-footer guide-footer">
+  <div class="wrap footer-base">
+    <p class="copyright">&copy; <span id="year">2026</span> Maximilian Böck. Developed with the Universität der Bundeswehr München.</p>
+    <p class="footer-meta">
+      Source available under the Sustainable Use License 1.0 (<em>fair-code</em>).
+      <a href="https://github.com/M-BSquared/CorvusGCS/blob/master/LICENSE.md" target="_blank" rel="noopener">License</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

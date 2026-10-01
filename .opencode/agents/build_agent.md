@@ -65,7 +65,7 @@ every build script and build reproducibility.
     (+ `Corvus_GCS-<version>-macOS-<arch>.dmg`)
   `<version>` is always read from `VERSION`.
 - Every artifact must be **self-contained**: bundled CPython + stdlib +
-  PyQt6 / QtWebEngine + pymavlink + paramiko + pyserial, so it runs on a clean
+  PySide6 / QtWebEngine + pymavlink + paramiko + pyserial, so it runs on a clean
   target machine with no system Python, no conda, and no Qt install.
 - Verify the artifact, do not just observe that the script exited 0: it exists,
   is executable, carries the right `VERSION` inside the bundle, and the

@@ -255,6 +255,7 @@ def test_create_server_honours_configured_tile_cache_dir(tmp_path, monkeypatch):
         assert list(configured.glob("*.mbtiles")), "no cache written to the configured dir"
         assert not list(fallback.glob("*.mbtiles")), "caches went to the default dir anyway"
     finally:
+        srv.stop_autoconnect_watcher(server)
         try:
             server.mavlink.stop()
         except Exception:

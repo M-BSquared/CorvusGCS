@@ -24,6 +24,15 @@ window.Corvus = window.Corvus || {};
  * a flight, a sensor is set up once when it is fitted, and interleaving thirty
  * rangefinder parameters with the geofence made the page a wall.
  *
+ * Both views lay their cards out in two columns, like Battery & Power.
+ *
+ * The overview also carries the Preflight checklist card. It is the one card
+ * here that is not the vehicle's: the lists are Corvus's own config
+ * (Corvus.checklist), so it is shown without a vehicle and stays live while
+ * armed. It sits here because a checklist is about the same thing as the
+ * failsafes beside it: what has to be right before the aircraft leaves the
+ * ground.
+ *
  * A sensor is not a form, it is a switch. Bringing a ground lidar up is two
  * separate acts in PX4 — start the driver, then tell the estimator to fuse what
  * it produces — and doing only one of them is why a rangefinder can read
@@ -86,7 +95,10 @@ Corvus.setupSafety = (function () {
     paint(state);
 
     if (Corvus.telemetry && typeof Corvus.telemetry.subscribe === "function") {
-      state.unsub = Corvus.telemetry.subscribe((s) => applyArmed(state, !!(s && s.armed)));
+      state.unsub = Corvus.telemetry.subscribe((s) => {
+        applyArmed(state, !!(s && s.armed));
+        S.reloadOnLink(state, s, () => load(state));
+      });
     }
 
     load(state);
@@ -94,6 +106,7 @@ Corvus.setupSafety = (function () {
     return function destroy() {
       state.destroyed = true;
       if (state.unsub) { try { state.unsub(); } catch (_e) {} state.unsub = null; }
+      dropChecklist(state);
     };
   }
 
@@ -121,6 +134,7 @@ Corvus.setupSafety = (function () {
     if (state.destroyed) return;
     state.container.innerHTML = "";
     state.controls = [];
+    dropChecklist(state);
 
     // A sensor that disappeared between reads (a firmware downgrade, a
     // disconnect) must not leave the operator on a page about nothing.
@@ -130,12 +144,13 @@ Corvus.setupSafety = (function () {
     const page = S.el("div", "setup-page");
     if (section) {
       page.appendChild(S.backButton(() => openOverview(state), "Safety & Sensors"));
-      page.appendChild(S.pageHeader(section.title || "Sensor", section.hint || ""));
     } else {
       page.appendChild(S.backButton(state.navigateBack));
-      page.appendChild(S.pageHeader("Safety & Sensors",
-        "Flight limits, failsafe actions, and the sensors they rely on"));
     }
+    const header = section
+      ? S.pageHeader(section.title || "Sensor", section.hint || "")
+      : S.pageHeader("Safety & Sensors",
+        "Flight limits, failsafe actions, and the sensors they rely on");
 
     const actions = S.el("div", "params-actions");
     const reloadBtn = Corvus.ui.button({
@@ -152,7 +167,7 @@ Corvus.setupSafety = (function () {
     actions.appendChild(reloadBtn);
     actions.appendChild(checkBtn);
     actions.appendChild(actionsStatus);
-    page.appendChild(actions);
+    page.appendChild(S.pageHead(header, actions));
 
     const banner = S.el("div", "params-banner");
     banner.hidden = true;
@@ -246,28 +261,85 @@ Corvus.setupSafety = (function () {
     if (state.doc === null) return;
 
     const sections = Array.isArray(state.doc.sections) ? state.doc.sections : [];
+    const cards = [];
     if (!sections.length) {
       const card = S.el("div", "page-card safety-card");
       card.appendChild(S.sectionTitle("Safety & Sensors"));
       card.appendChild(S.el("div", "params-desc",
         "Connect to a vehicle to read its safety limits, failsafe actions and sensor "
         + "configuration. The page shows only what the connected firmware actually reports."));
-      state.host.appendChild(card);
-      return;
+      cards.push({ el: card, weight: 4 });
+    } else {
+      sections.filter((s) => !isSensorSection(s)).forEach((section) => {
+        const card = S.el("div", "page-card safety-card");
+        card.dataset.section = section.id || "";
+        card.appendChild(S.sectionTitle(section.title || ""));
+        if (section.hint) card.appendChild(S.el("div", "field-hint", section.hint));
+        const fields = section.fields || [];
+        if (fields.length) card.appendChild(fieldGrid(state, fields));
+        cards.push({ el: card, weight: formWeight(section) });
+      });
+      const sensors = sections.filter(isSensorSection);
+      if (sensors.length) {
+        cards.push({ el: sensorTiles(state, sensors), weight: 3 + 2 * sensors.length });
+      }
     }
 
-    const sensors = sections.filter(isSensorSection);
-    sections.filter((s) => !isSensorSection(s)).forEach((section) => {
-      const card = S.el("div", "page-card safety-card");
-      card.dataset.section = section.id || "";
-      card.appendChild(S.sectionTitle(section.title || ""));
-      if (section.hint) card.appendChild(S.el("div", "field-hint", section.hint));
-      const fields = section.fields || [];
-      if (fields.length) card.appendChild(fieldGrid(state, fields));
-      state.host.appendChild(card);
-    });
+    const checklist = checklistCard(state);
+    if (checklist) cards.push({ el: checklist, weight: 8 });
+    state.host.appendChild(columns(cards));
+  }
 
-    if (sensors.length) state.host.appendChild(sensorTiles(state, sensors));
+  // -------------------------------------------------------------------------
+  // Two columns
+  // -------------------------------------------------------------------------
+
+  /**
+   * Where to cut a run of cards into two columns: the index that leaves the
+   * two sums of `weights` closest, so neither column runs on alone under the
+   * other. The cut keeps the order, so a narrow page that stacks the second
+   * column under the first still reads top to bottom.
+   *
+   * Pure, and exported for the test suite.
+   *
+   * @param {number[]} weights roughly how tall each card is
+   * @returns {number} how many cards go in the first column
+   */
+  function splitIndex(weights) {
+    const total = weights.reduce((sum, w) => sum + w, 0);
+    let best = weights.length;
+    let bestTaller = Infinity;
+    let left = 0;
+    for (let i = 1; i <= weights.length; i += 1) {
+      left += weights[i - 1];
+      const taller = Math.max(left, total - left);
+      if (taller < bestTaller) { bestTaller = taller; best = i; }
+    }
+    return best;
+  }
+
+  /**
+   * The cards in two stacks side by side.
+   *
+   * The heights are estimated from what each card holds rather than measured:
+   * a measured split would move a card to the other column the moment a status
+   * line under one of its fields grew, under the operator's pointer.
+   */
+  function columns(cards) {
+    const grid = S.el("div", "safety-columns");
+    const cut = splitIndex(cards.map((c) => c.weight));
+    [cards.slice(0, cut), cards.slice(cut)].forEach((part) => {
+      if (!part.length) return;
+      const column = S.el("div", "safety-column");
+      part.forEach((c) => column.appendChild(c.el));
+      grid.appendChild(column);
+    });
+    return grid;
+  }
+
+  /** Roughly how many lines a form card takes: title and hint, then each field and its hint. */
+  function formWeight(section) {
+    return 2 + (section.fields || []).reduce((sum, f) => sum + (f.hint ? 2 : 1), 0);
   }
 
   /** A toggle section is a sensor; a plain form section is part of the envelope. */
@@ -326,20 +398,123 @@ Corvus.setupSafety = (function () {
   }
 
   // -------------------------------------------------------------------------
+  // Preflight checklist
+  // -------------------------------------------------------------------------
+
+  /**
+   * The feature itself, its window on the Home map, and the button to the
+   * dialog the lists are written in. Off by default: a station that does not
+   * fly by a checklist should not carry a window for one.
+   *
+   * Live at once, persisted in the background, and snapped back when the
+   * backend refuses. Corvus.checklist owns the state; this card only tells it,
+   * and follows it, because the Home window's × and its list picker change it
+   * too. None of it is registered with the armed gate: nothing here is
+   * written to the vehicle.
+   */
+  function checklistCard(state) {
+    const CL = Corvus.checklist;
+    if (!CL || !Corvus.checklistEditor) return null;
+    const ui = Corvus.ui;
+    const card = S.el("div", "page-card safety-card safety-checklist-card");
+    card.dataset.section = "checklist";
+    card.appendChild(S.sectionTitle("Preflight checklist"));
+    card.appendChild(S.el("div", "field-hint",
+      "Your own list in a window on the Home map, ticked off item by item before "
+      + "each flight. Arming with items still open shows a warning and nothing "
+      + "more: the aircraft is never held back."));
+
+    const sw = ui.toggle({
+      id: "safetyChecklist",
+      value: CL.isEnabled(),
+      ariaLabel: "Use a preflight checklist",
+      onChange: (next) => {
+        CL.setEnabled(next);
+        return CL.persist({ enabled: next }).catch((error) => {
+          CL.setEnabled(!next);
+          throw error;
+        });
+      },
+    });
+    // Kept so sync() can flip `disabled`: the switch reads it on every paint.
+    const homeOpts = {
+      id: "safetyChecklistHome",
+      value: CL.isHomeWindow(),
+      disabled: !CL.isEnabled(),
+      ariaLabel: "Show on the Home map",
+      onChange: (next) => CL.setHomeWindow(next),
+    };
+    const homeSw = ui.toggle(homeOpts);
+    const editBtn = ui.button({
+      variant: "secondary",
+      size: "sm",
+      icon: "list-checks",
+      label: "Edit checklists",
+      className: "safety-checklist-edit",
+      onClick: () => Corvus.checklistEditor.open(),
+    });
+    const summary = S.el("span", "checklist-summary", "");
+
+    card.appendChild(ui.field({
+      label: "Use a checklist",
+      control: sw.el,
+      className: "field-switch",
+      hint: "Write as many lists as you like, in sections, and pick one in the window. "
+        + "Off by default.",
+    }));
+    card.appendChild(ui.field({
+      label: "Show on the Home map",
+      control: homeSw.el,
+      className: "field-switch",
+      hint: "Drag the window by its bar and double-click the bar to send it back "
+        + "to its corner. Its × turns this off.",
+    }));
+    const row = S.el("div", "checklist-settings-row");
+    row.appendChild(summary);
+    row.appendChild(editBtn);
+    card.appendChild(row);
+
+    function sync() {
+      const on = CL.isEnabled();
+      sw.setValue(on);
+      homeOpts.disabled = !on;
+      homeSw.setValue(CL.isHomeWindow());
+      editBtn.disabled = !on;
+      const all = CL.lists();
+      const active = CL.activeList();
+      summary.textContent = !all.length ? "No checklists."
+        : `${all.length} ${all.length === 1 ? "checklist" : "checklists"}`
+          + (active ? `. On Home: ${active.name}.` : ".");
+    }
+    sync();
+    state.checklistUnsub = CL.onChange(sync);
+    return card;
+  }
+
+  /** Stop the card from following the checklist, before a repaint or on destroy. */
+  function dropChecklist(state) {
+    if (!state.checklistUnsub) return;
+    try { state.checklistUnsub(); } catch (_e) {}
+    state.checklistUnsub = null;
+  }
+
+  // -------------------------------------------------------------------------
   // One sensor, on its own page
   // -------------------------------------------------------------------------
 
   function renderSensorView(state, section) {
+    const cards = [];
     const status = S.el("div", "page-card safety-card safety-sensor-card");
     status.dataset.section = section.id || "";
     status.appendChild(S.sectionTitle("Status"));
     if (section.kind === "toggle" && section.toggle) {
       status.appendChild(sensorHeader(state, section));
     }
-    state.host.appendChild(status);
+    const problems = (section.toggle && section.toggle.problems) || [];
+    cards.push({ el: status, weight: 6 + problems.length });
 
     if ((section.presets || []).length) {
-      state.host.appendChild(presetCard(state, section));
+      cards.push({ el: presetCard(state, section), weight: 10 });
     }
 
     const fields = section.fields || [];
@@ -348,10 +523,11 @@ Corvus.setupSafety = (function () {
       card.appendChild(S.sectionTitle("Parameters"));
       card.appendChild(S.el("div", "field-hint",
         "Every field writes its parameter to the vehicle as soon as you leave it. "
-        + "A preset above fills these in; changing one afterwards is expected."));
+        + "A preset fills these in; changing one afterwards is expected."));
       card.appendChild(fieldGrid(state, fields));
-      state.host.appendChild(card);
+      cards.push({ el: card, weight: formWeight(section) });
     }
+    state.host.appendChild(columns(cards));
   }
 
   /**
@@ -540,7 +716,7 @@ Corvus.setupSafety = (function () {
     card.appendChild(S.el("div", "field-hint",
       "Pick the module you actually fitted and Corvus writes its whole setup: driver, "
       + "estimator, and the numbers from its datasheet. Custom writes nothing: the "
-      + "parameters below are yours, and you can add any others this airframe needs."));
+      + "parameters are yours, and you can add any others this airframe needs."));
 
     const options = [{ value: CUSTOM_PRESET, label: "Custom: set the parameters yourself" }]
       .concat(presets.map((p) => ({ value: p.id, label: presetOptionLabel(p) })));
@@ -1131,5 +1307,5 @@ Corvus.setupSafety = (function () {
     S.setActionsStatus(state.actionsStatus, cls, text);
   }
 
-  return { render };
+  return { render, splitIndex };
 })();

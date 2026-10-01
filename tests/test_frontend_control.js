@@ -502,6 +502,20 @@ async function testArmedGatingDisablesEveryControl() {
   assert.equal(buttonByLabel(container, "Calibrate radio").disabled, true);
 }
 
+// Calibrating is done with the transmitter in hand, so the button sits under
+// the drawing of it, and the title row keeps only the page's reload actions.
+async function testCalibrateSitsUnderTheTransmitterDrawing() {
+  const { container } = await openWith(rcDoc());
+  const card = findOneByClass(container, "rc-tx-card");
+  const row = findOneByClass(card, "rc-tx-calibrate");
+  assert.ok(row, "the transmitter card carries the Calibrate row");
+  assert.ok(buttonByLabel(row, "Calibrate radio"), "the button is in it");
+  const head = findOneByClass(container, "setup-head");
+  assert.ok(head && findOneByClass(head, "params-actions"), "the actions sit in the title row");
+  assert.equal(buttonByLabel(head, "Calibrate radio"), undefined, "and Calibrate is not among them");
+  assert.ok(buttonByLabel(head, "Reload"), "Reload is");
+}
+
 async function testTeardownReleasesTheSubscriptionAndTheStream() {
   const { destroy, fake } = await openWith(rcDoc());
   destroy();
@@ -796,6 +810,7 @@ async function main() {
     testAFieldWriteGoesThroughTheParameterEndpoint,
     testARefusedWriteRestoresTheControl,
     testArmedGatingDisablesEveryControl,
+    testCalibrateSitsUnderTheTransmitterDrawing,
     testTeardownReleasesTheSubscriptionAndTheStream,
     testDisconnectedRendersAnExplanationNotAnError,
     testDetectBindsTheChannelThatMoved,

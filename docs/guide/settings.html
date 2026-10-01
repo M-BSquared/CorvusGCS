@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<!-- Written by tools/guide.py around the content block below. Edit the text
+     between the guide:content markers; run the script for everything else. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings · Corvus GCS documentation</title>
+<meta name="description" content="Every page of Settings: appearance, map services and keys, controls, pages, files, export and import, and updates.">
+<link rel="canonical" href="https://m-bsquared.github.io/CorvusGCS/guide/settings.html">
+<meta name="theme-color" content="#0B0E12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="dark light">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Corvus GCS">
+<meta property="og:title" content="Settings · Corvus GCS documentation">
+<meta property="og:description" content="Every page of Settings: appearance, map services and keys, controls, pages, files, export and import, and updates.">
+<meta property="og:url" content="https://m-bsquared.github.io/CorvusGCS/guide/settings.html">
+<meta property="og:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/icons/apple-touch-icon.png">
+<link rel="preload" as="font" type="font/woff2" href="../assets/fonts/Inter-latin.woff2" crossorigin>
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="guide.css">
+<script>
+  document.documentElement.classList.add('js');
+  try {
+    var t = localStorage.getItem('corvus-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+</script>
+<script src="../script.js" defer></script>
+<script src="guide.js" defer></script>
+</head>
+
+<body class="guide">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <g id="i-github" fill="currentColor" stroke="none" transform="scale(1.5)"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></g>
+    <g id="i-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></g>
+    <g id="i-moon"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></g>
+    <g id="i-menu"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></g>
+    <g id="i-close"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></g>
+    <g id="i-prev"><path d="m15 18-6-6 6-6"/></g>
+    <g id="i-next"><path d="m9 18 6-6-6-6"/></g>
+    <g id="i-book"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></g>
+    <g id="i-info"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></g>
+    <g id="i-alert"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></g>
+    <g id="i-edit"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></g>
+  </defs>
+</svg>
+
+<header class="site-header" id="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="../index.html" aria-label="Corvus GCS, project website">
+      <span class="brand-mark" role="img" aria-hidden="true"></span>
+      <span class="brand-text">
+        <span class="brand-name">Corvus GCS</span>
+        <span class="brand-sub">Documentation</span>
+      </span>
+    </a>
+
+    <nav class="site-nav" id="site-nav" aria-label="Main">
+      <ul class="nav-list">
+        <li><a href="../index.html">Website</a></li>
+        <li><a href="index.html">Documentation</a></li>
+        <li><a href="https://github.com/M-BSquared/CorvusGCS/releases/latest" target="_blank" rel="noopener">Download</a></li>
+        <li><a class="nav-github" href="https://github.com/M-BSquared/CorvusGCS" target="_blank" rel="noopener">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-github"></use></svg>GitHub</a></li>
+      </ul>
+    </nav>
+
+    <div class="header-actions">
+      <button class="icon-btn theme-toggle" id="theme-toggle" type="button" aria-label="Switch to the light theme" aria-pressed="false">
+        <svg class="icon icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-sun"></use></svg>
+        <svg class="icon icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-moon"></use></svg>
+      </button>
+      <button class="icon-btn nav-toggle" id="nav-toggle" type="button" aria-label="Open the menu" aria-expanded="false" aria-controls="site-nav">
+        <svg class="icon icon-open" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-menu"></use></svg>
+        <svg class="icon icon-shut" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap guide-layout">
+<nav class="guide-nav" id="guide-nav" aria-label="Documentation">
+  <button class="guide-nav-toggle" id="guide-nav-toggle" type="button" aria-expanded="false" aria-controls="guide-nav-body">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-book"></use></svg><span>Contents</span><span class="guide-nav-here">Settings</span><svg class="icon guide-nav-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg>
+  </button>
+  <div class="guide-nav-body" id="guide-nav-body">
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Start</p>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="install.html">Install and run</a></li>
+        <li><a href="connect.html">Connect to the aircraft</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Fly</p>
+      <ul>
+        <li><a href="flying.html">Map, HUD and flight controls</a></li>
+        <li><a href="3d-offline.html">3D, terrain and offline maps</a></li>
+        <li><a href="mission.html">Mission planner</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Set up</p>
+      <ul>
+        <li><a href="airframe.html">Airframe and motors</a></li>
+        <li><a href="safety.html">Safety, sensors and battery</a></li>
+        <li><a href="parameters.html">Parameters and calibration</a></li>
+        <li><a href="radio-tuning.html">Radio control and tuning</a></li>
+        <li><a href="hardware.html">Telemetry radio, RTK and Remote ID</a></li>
+        <li><a href="firmware.html">Firmware</a></li>
+        <li><a href="video.html">Video and windows</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Review</p>
+      <ul>
+        <li><a href="analysis.html">Logs and Flight Review</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Tools</p>
+      <ul>
+        <li><a href="workspace.html">Console and SSH</a></li>
+        <li><a href="plugins.html">Plugins</a></li>
+        <li><a href="settings.html" aria-current="page">Settings</a></li>
+      </ul>
+    </div>
+    <div class="guide-nav-group">
+      <p class="guide-nav-heading">Reference</p>
+      <ul>
+        <li><a href="compatibility.html">PX4 and ArduPilot</a></li>
+        <li><a href="security.html">Network and security</a></li>
+        <li><a href="reference.html">Files, settings and variables</a></li>
+        <li><a href="build.html">Build the apps</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main id="main" class="guide-main">
+<article class="doc">
+<p class="eyebrow">Tools</p>
+<!-- guide:content -->
+<h1>Settings</h1>
+<p class="doc-lead">
+  <strong>SET</strong> at the bottom of the left rail. Everything applies at
+  once and is saved, in <code>~/.corvus/config.json</code>. This page goes
+  through the sections in the order they appear.
+</p>
+
+<h2 id="appearance">Appearance</h2>
+<dl>
+  <dt>Company logo</dt>
+  <dd>A PNG of your own, shown in the top right of the window.</dd>
+  <dt>Colour theme</dt>
+  <dd>Six themes, two light and four dark: Light (the default), Light Orange, Blue, Green, Orange and Pink. Switching is instant, with no reload and no flash, and the map, the plots and the instruments all follow.</dd>
+  <dt>Interface size</dt>
+  <dd>One slider from 80 % to 150 % that scales the whole app, for a small laptop screen or a bright field where you want everything larger.</dd>
+  <dt>Units</dt>
+  <dd>A unit system (metric, imperial, aviation) that sets altitude and length, distance, speed and temperature at once, and each of the four on its own afterwards. Units are for display only: parameters, mission files and everything sent to the aircraft stay in the units the autopilot uses.</dd>
+  <dt>Pages</dt>
+  <dd>Adds <strong>MISSION</strong> under HOME in the left rail. Off by default. See <a href="mission.html">Mission planner</a>.</dd>
+</dl>
+
+<h3 id="map-service">Map service</h3>
+<p>
+  Which map service and which of its layers. It can also be switched from the
+  layer control on the map itself.
+</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Service</th><th>Key</th></tr></thead>
+  <tbody>
+    <tr><td>Esri, OpenStreetMap</td><td>None needed.</td></tr>
+    <tr><td>Google, Bing</td><td>Work without a key, and take one if you have it. With a key, tiles come through the licensed APIs (the Google Map Tiles API, which has to be enabled for the key, and the Bing Maps REST API with a Bing Maps for Enterprise key), and the service card says "licensed API".</td></tr>
+    <tr><td>MapTiler, Mapbox</td><td>Need a key. A free key from either gets you licensed satellite imagery and street maps on your own quota. They appear as a service once they have a key; until then the note under API keys names them.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  <strong>API keys</strong> is the button that takes a key. The key never
+  reaches the browser: Corvus fetches the tiles itself and hands the images to
+  the page, so the key stays in the config file (readable by you alone), never
+  appears in a page, a URL or a log line, and is never sent back out by the
+  API. The Settings page is only told <em>that</em> a key is saved. You will
+  not see it again after saving; <strong>REMOVE</strong> clears it.
+</p>
+
+<dl>
+  <dt>Flown track</dt>
+  <dd>Earlier flights in their own colour (on by default), and clearing the track whenever Corvus starts or the autopilot reboots (off by default). See <a href="flying.html#track">The flown track</a>.</dd>
+  <dt>Controls</dt>
+  <dd>The virtual joystick, arrow keys and WASD keys, each its own switch and all off by default, and the key strength slider. See <a href="flying.html#manual-control">Manual controls</a>.</dd>
+  <dt>Flight bar</dt>
+  <dd><strong>Shrink with the window</strong>, off by default. On, the ARM, TAKEOFF, LAND, RETURN and PLAN bar steps down as soon as it would cover more than half the map: to the width of each word first, then to icons alone. It is measured on the map itself, so opening the side panel narrows it just as shrinking the window does.</dd>
+  <dt>Flight HUD</dt>
+  <dd><strong>Show the flight HUD</strong>, on by default. Off, the window with the compass, the attitude indicator and the readouts is taken off the Home map. Turned back on, it returns where you left it. See <a href="flying.html#hud">The flight HUD</a>.</dd>
+  <dt>Compass</dt>
+  <dd><strong>Lock compass nose up</strong>. Off, the compass is north up; on, the rose turns and the top of the dial is always the aircraft's heading.</dd>
+  <dt>Top bar</dt>
+  <dd><strong>Status dots</strong>, off by default: a dot after the VEHICLE, STATUS, GPS and BATTERY captions, green good, amber caution, red fault, grey nothing to report. The values already carry that colour; the dots let you scan the bar by colour alone.</dd>
+  <dt>Notifications</dt>
+  <dd><strong>Severity marks</strong>, off by default: coloured bars above and below the level icon of a notification, blue for information, amber for a warning, red for a fault.</dd>
+  <dt>Camera and terminal windows</dt>
+  <dd><strong>Open inside the Corvus window</strong> (off by default) and <strong>Solid terminals</strong>. See <a href="video.html#windows">Floating windows</a>.</dd>
+  <dt>App icon</dt>
+  <dd><strong>Inverted app icon</strong> uses the black mark instead of the white one for the Dock (macOS) or taskbar (Linux), better on a light dock. <strong>Icon backplate</strong> draws the mark on a filled rounded square so it is visible on a dock of any shade. Neither changes anything but the icon.</dd>
+</dl>
+
+<h2 id="ssh">SSH Connections</h2>
+<p>
+  Add, connect and remove saved SSH hosts. The same list is used by the
+  <a href="workspace.html#ssh">SSH tab</a> and the
+  <a href="plugins.html#ssh-launcher">launcher plugins</a>.
+</p>
+
+<h2 id="connection">Connection</h2>
+<p>
+  Shows the saved MAVLink connection and the HTTP port. To change the link,
+  use the LINK tab (see <a href="connect.html">Connect to the aircraft</a>).
+</p>
+
+<h2 id="files">Files</h2>
+<p>
+  <strong>Parameter export folder</strong>: where Export writes parameter
+  files. Leave it empty for <code>~/.corvus/params</code>; the export dialog can
+  still choose another place per file. The other folders Corvus uses are set
+  in the config file; see <a href="reference.html#folders">where Corvus keeps
+  its files</a>.
+</p>
+
+<h3 id="parameter-defaults">Parameter defaults</h3>
+<p>
+  <strong>Keep a copy on this computer</strong>, off by default. The parameter
+  editor reads each parameter's default from the vehicle, and on PX4 that file
+  can take half a minute over a telemetry radio. With this on, Corvus keeps a
+  copy per firmware and reuses it whenever the vehicle reports the same
+  checksum for its file. ArduPilot always reads from the vehicle.
+</p>
+<div class="callout callout-warn">
+  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-alert"></use></svg>
+  <div><p>A copy is matched to the vehicle by a checksum only, and in rare cases two different files share one. The defaults, descriptions and ranges shown would then belong to another firmware. If defaults ever look wrong, clear the copies and switch this off.</p></div>
+</div>
+
+<h2 id="analysis">Analysis</h2>
+<p>
+  <strong>Sensitivity</strong> of the flight review: Relaxed, Normal or
+  Strict. See <a href="analysis.html#sensitivity">Sensitivity</a>.
+</p>
+
+<h2 id="plugins">Plugins</h2>
+<p>
+  What Corvus found in both plugin folders, and <strong>Open plugin
+  folder</strong>, which opens your own. See <a href="plugins.html">Plugins</a>.
+</p>
+
+<h2 id="export-import">Export and import</h2>
+<p>
+  The settings of the station in one JSON file, for a backup or for setting up
+  the next laptop. That includes the window layout (where the flight HUD and
+  the virtual joystick sit), the RC transmitter bindings, the checklists, the
+  plugins and the company logo.
+</p>
+<ul>
+  <li><strong>By part.</strong> Both directions go by part (interface, window layout, map, connections, vehicle, folders, plugins), with <strong>All</strong> and <strong>None</strong> to start from. A part left out of the file is never touched on import.</li>
+  <li><strong>Plugins by plugin.</strong> Under Plugins you choose, per plugin, its <strong>Settings</strong> and its <strong>Files</strong> (the plugin itself, for one you installed). The plugins that ship with Corvus are on every station already, so only their settings travel.</li>
+  <li><strong>Secrets stay out</strong>, unless you switch them on: passwords and map keys are not in the file by default, and an import without them keeps the ones already stored for the same host.</li>
+  <li><strong>Import shows what the file holds</strong>, warns before it installs plugin files, and is refused while the aircraft is armed.</li>
+</ul>
+
+<h2 id="about">About</h2>
+<p>
+  The version, the live connection summary, and <strong>Credits</strong>,
+  which lists every bundled component and its licence.
+</p>
+
+<h2 id="updates">Updates</h2>
+<p>
+  A switch, on by default, that compares the running version with the
+  published releases on GitHub and shows a notice when a newer one exists,
+  plus <strong>Check now</strong>. SET in the left rail carries a marker while
+  a newer release is waiting.
+</p>
+<ul>
+  <li>Nothing is downloaded and nothing about your machine is sent.</li>
+  <li>With no internet the check fails silently.</li>
+  <li>The notice never appears while the aircraft is armed.</li>
+  <li><strong>Skip this version</strong> stops it coming back for that release.</li>
+</ul>
+<!-- /guide:content -->
+</article>
+
+<nav class="doc-pager" aria-label="Previous and next page">
+  <a class="doc-pager-prev" href="plugins.html" rel="prev"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-prev"></use></svg><span><small>Previous</small>Plugins</span></a>
+  <a class="doc-pager-next" href="compatibility.html" rel="next"><span><small>Next</small>PX4 and ArduPilot</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg></a>
+</nav>
+
+<p class="doc-edit">
+  <a href="https://github.com/M-BSquared/CorvusGCS/edit/master/docs/guide/settings.html" target="_blank" rel="noopener"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-edit"></use></svg>Suggest a change to this page</a>
+</p>
+</main>
+
+<aside class="guide-toc" aria-labelledby="toc-title">
+  <p class="guide-toc-title" id="toc-title">On this page</p>
+  <ul>
+    <li><a href="#appearance">Appearance</a></li>
+    <li><a href="#ssh">SSH Connections</a></li>
+    <li><a href="#connection">Connection</a></li>
+    <li><a href="#files">Files</a></li>
+    <li><a href="#analysis">Analysis</a></li>
+    <li><a href="#plugins">Plugins</a></li>
+    <li><a href="#export-import">Export and import</a></li>
+    <li><a href="#about">About</a></li>
+    <li><a href="#updates">Updates</a></li>
+  </ul>
+</aside>
+</div>
+
+<footer class="site-footer guide-footer">
+  <div class="wrap footer-base">
+    <p class="copyright">&copy; <span id="year">2026</span> Maximilian Böck. Developed with the Universität der Bundeswehr München.</p>
+    <p class="footer-meta">
+      Source available under the Sustainable Use License 1.0 (<em>fair-code</em>).
+      <a href="https://github.com/M-BSquared/CorvusGCS/blob/master/LICENSE.md" target="_blank" rel="noopener">License</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

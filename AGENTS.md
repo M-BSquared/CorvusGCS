@@ -91,7 +91,7 @@ all child processes (e.g. MAVLink bridges) and guarantees clean teardown.
 ## Platforms & packaging
 
 Corvus GCS ships as a self-contained desktop artifact per platform. Both
-artifacts run the *same* `corvus/app.py` (PyQt6 + QtWebEngine wrapper) and both
+artifacts run the *same* `corvus/app.py` (PySide6 + QtWebEngine wrapper) and both
 derive their version from the one `VERSION` read at build time.
 
 `./build.sh` is the one entry point: it dispatches to the platform script for
@@ -120,9 +120,21 @@ narrows the machines the artifact runs on.
 
 Shared packaging invariants — a violation of any of these is a build bug:
 
-- **Self-contained.** Bundled CPython + stdlib + PyQt6/QtWebEngine +
+- **Self-contained.** Bundled CPython + stdlib + PySide6/QtWebEngine +
   pymavlink/paramiko/pyserial. No system Python, no conda, no Qt install on the
   target machine.
+- **PySide6, never PyQt6.** The Qt binding is PySide6 (LGPL v3). PyQt6 is GPL
+  v3, and the GPL does not combine with the Sustainable Use License, so
+  bringing it back is a licence violation, not a library choice. The LGPL
+  texts ship in `assets/licenses/`, which every bundle carries. The AppImage
+  and the `.app` trim the PySide6 wheels with `tools/qt_bundle.py`, which keeps
+  what the imported modules, the Qt plugins and QtWebEngine link and fails the
+  build if anything left would miss a library; a new Qt import in
+  `corvus/app.py` goes into its `MODULES` too. The Windows build leaves the
+  never imported `QtQml`, `QtQuick` and `QtQuickWidgets` modules out of
+  PyInstaller (`--exclude-module`), whose hooks would otherwise pack PySide6's
+  whole QML tree. macOS 15 is the floor (`LSMinimumSystemVersion`), because
+  PySide6 6.10 and later is built for it.
 - **Offline at runtime.** The build may download wheels and packaging tools
   once; the *running* app must never need the network.
 - **Layout contract.** `VERSION`, `corvus/`, `src/`, and `assets/` stay
@@ -372,5 +384,6 @@ Rules that keep the chain honest:
 ./build-appimage.sh             # Linux artifact  (x86_64)
 ./build-macos-app.sh [--dmg]    # macOS artifact  (arm64 / x86_64)
 for f in tests/*.js; do node "$f"; done   # frontend assertions
+python3 tools/guide.py          # after editing docs/guide/*.html: rewrite each page's frame
 git config core.hooksPath .githooks   # one-time, enables the VERSION auto-bump
 ```

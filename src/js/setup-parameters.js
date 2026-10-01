@@ -67,8 +67,8 @@ Corvus.setupParameters = (function () {
     // The back button only asks the orchestrator to navigate back; the
     // orchestrator's teardown() is the single place that calls destroy().
     page.appendChild(S.backButton(navigateBack));
-    page.appendChild(S.pageHeader("Parameters",
-      "Every parameter with its default. Change values, load and save parameter files"));
+    const header = S.pageHeader("Parameters",
+      "Every parameter with its default. Change values, load and save parameter files");
 
     // Actions bar (Export / Import + status). Lives in `page`, sibling of the
     // `section`, so it stays visible across every phase — the editor's `card`
@@ -98,7 +98,7 @@ Corvus.setupParameters = (function () {
     actions.appendChild(importBtn);
     actions.appendChild(rebootBtn);
     actions.appendChild(actionsStatus);
-    page.appendChild(actions);
+    page.appendChild(S.pageHead(header, actions));
     exportBtn.disabled = true;   // enabled once params are loaded
     const cur = Corvus.telemetry && Corvus.telemetry.getState();
     importBtn.disabled = !!(cur && cur.armed);
@@ -778,9 +778,7 @@ Corvus.setupParameters = (function () {
 
   /** Apply the status class + text to the actions status line. */
   function setStatus(state, cls, text) {
-    if (!state.actionsStatus) return;
-    state.actionsStatus.className = "params-actions-status" + (cls ? " " + cls : "");
-    state.actionsStatus.textContent = text || "";
+    S.setActionsStatus(state.actionsStatus, cls, text);
   }
 
   // ---------------------------------------------------------------------------

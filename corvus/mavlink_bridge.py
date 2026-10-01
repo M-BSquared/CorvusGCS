@@ -48,6 +48,7 @@ from .autopilot import (  # noqa: F401 - re-exported, see the tables below
     PX4_MAIN_MODE,
     Dialect,
     ModeCommand,
+    VehicleEvent,
 )
 from .mavlink_common import (  # noqa: F401 - re-exported
     MAV_RESULT_TEXT,
@@ -110,6 +111,7 @@ from .serial_ports import (  # noqa: F401 - re-exported
     is_phantom_device,
     is_rtk_device,
     is_windows_com_port,
+    split_serial_connection,
 )
 from .state_store import VehicleStateStore
 from .tlog import TlogWriter
@@ -650,13 +652,7 @@ class MavlinkBridge(
         57600 (SiK Telemetry Radio V3 factory default). Never raises: on any
         parse problem the whole remainder is treated as the device path.
         """
-        rest = conn_str[len("serial:"):]
-        if ":" in rest:
-            device, _, baud_str = rest.rpartition(":")
-            if baud_str.isdigit():
-                return device, int(baud_str)
-        # No colon, or the suffix wasn't numeric → whole remainder is device.
-        return rest, 57600
+        return split_serial_connection(conn_str)
 
     def transport(self) -> str:
         """Classify the configured connection: 'usb' | 'sik' | 'udp' | 'tcp' | 'unknown'.
@@ -1035,7 +1031,7 @@ class MavlinkBridge(
                 )
         except (OSError, FileNotFoundError) as exc:
             if self._is_serial():
-                message = f"serial device unavailable: {self._conn_str}"
+                message = self._serial_open_error(exc)
                 self._store.update(link_error=message)
                 raise ConnectionError(message) from exc
             if getattr(exc, "errno", None) == errno.EADDRINUSE:
@@ -1135,6 +1131,40 @@ class MavlinkBridge(
         # _run only calls _connect while _running is set.
         self._tlog_armed = None
         self._start_tlog()
+
+    def _serial_open_error(self, exc: OSError) -> str:
+        """What the operator can do about a serial port that would not open.
+
+        "Unavailable" is true of every failure and helps with one of them. A
+        port listed in the dropdown that will not open is, on a fresh Linux
+        install, nearly always a user outside the dialout group, and on
+        Windows a COM port another program holds: Windows opens COM ports
+        exclusively and answers the second open with "access denied".
+        """
+        device = self.serial_device()
+        text = str(exc)
+        denied = (
+            getattr(exc, "errno", None) == errno.EACCES
+            or "PermissionError" in text
+            or "Access is denied" in text
+        )
+        if denied and is_windows_com_port(device):
+            return (
+                f"{device} is in use by another program. Close the other "
+                f"ground station and reconnect"
+            )
+        if denied:
+            return (
+                f"No permission to open {device}. On Linux, add your user to "
+                f"the dialout group (sudo usermod -aG dialout $USER), then log "
+                f"out and back in"
+            )
+        if getattr(exc, "errno", None) == errno.EBUSY:
+            return (
+                f"{device} is busy: another program has it open (on Linux "
+                f"often ModemManager probing a new device)"
+            )
+        return f"serial device unavailable: {self._conn_str}"
 
     def _apply_signing(self) -> None:
         """Turn on MAVLink 2 signing when the operator has configured a key.
@@ -2306,7 +2336,8 @@ class MavlinkBridge(
                 == mavutil.mavlink.MAV_STATE_FLIGHT_TERMINATION
             )
             extra: dict[str, Any] = {}
-            if not terminated and self._store.get_snapshot().get("flight_termination"):
+            lifted = not terminated and bool(self._store.get_snapshot().get("flight_termination"))
+            if lifted:
                 # The lockdown the heartbeat reported has lifted. On PX4 that
                 # is the kill switch coming back, even if its "Kill disengaged"
                 # line was lost on the way.
@@ -2317,9 +2348,13 @@ class MavlinkBridge(
                 autopilot_stack=self._dialect.stack, flight_termination=terminated,
                 **extra,
             )
-            if armed and self._prearm_reasons:
+            if lifted:
+                self._store.resolve_warnings({"kill"})
+            if armed:
                 # It armed, so whatever held it back no longer does.
-                self._clear_prearm_reasons()
+                if self._prearm_reasons:
+                    self._clear_prearm_reasons()
+                self._store.resolve_warnings({"prearm"})
             self._roll_tlog_on_disarm(armed)
             # A heartbeat recovers a degraded link; recompute quality. When no
             # RADIO_STATUS arrives (UDP SITL), quality is heartbeat-driven.
@@ -2654,16 +2689,44 @@ class MavlinkBridge(
         self._console_publish("STATUSTEXT", text, level)
         event = self._dialect.vehicle_event(text)
         if event is not None:
-            if event.kind in ("kill", "unkill"):
-                self._store.update(kill_switch=event.kind == "kill")
-            worst = max(level, event.level, key=_LEVEL_RANK.__getitem__)
-            self._store_update_warning(event.message, worst, event=event.kind)
+            self._note_vehicle_event(event, level)
             return
-        if level != "info" or not self._dialect.is_routine_statustext(text):
-            self._store_update_warning(text, level)
         reason = self._dialect.prearm_failure(text)
         if reason:
             self._note_prearm_failure(reason)
+            kill = self._dialect.prearm_event(reason)
+            if kill is not None:
+                # The switch, named by the check it fails because its own line
+                # was never seen. Said once, in that line's words, so the board
+                # and the bar call it the same thing however it was learned.
+                if not self._store.get_snapshot().get("kill_switch"):
+                    self._note_vehicle_event(kill, level)
+                return
+        if level != "info" or not self._dialect.is_routine_statustext(text):
+            self._store_update_warning(text, level, event="prearm" if reason else None)
+
+    def _note_vehicle_event(self, event: VehicleEvent, level: str) -> None:
+        """Latch the kill switch a line reports and put the line on the board."""
+        if event.kind == "kill":
+            self._store.update(kill_switch=True)
+        worst = max(level, event.level, key=_LEVEL_RANK.__getitem__)
+        self._store_update_warning(event.message, worst, event=event.kind)
+        if event.kind == "unkill":
+            self._release_kill_switch()
+
+    def _release_kill_switch(self) -> None:
+        """The switch is off: clear it, and the lockdown blamed on it.
+
+        PX4 reports the kill switch as flight termination in a heartbeat that
+        comes once a second, so waiting for the next one had the bar read
+        TERMINATED for up to a second after every release. A termination that
+        really is something else is back with that heartbeat.
+        """
+        changes: dict[str, Any] = {"kill_switch": False}
+        if self._store.get_snapshot().get("kill_switch"):
+            changes["flight_termination"] = False
+        self._store.update(**changes)
+        self._store.resolve_warnings({"kill"})
 
     # ------------------------------------------------------------------
     # Why it will not arm
@@ -2698,6 +2761,16 @@ class MavlinkBridge(
         if prearm is True:
             if self._prearm_reasons:
                 self._clear_prearm_reasons()
+            self._store.resolve_warnings({"prearm"})
+            snapshot = self._store.get_snapshot()
+            # Disarmed and ready means the switch is off: an engaged one fails
+            # a check of its own on both stacks. Armed, PX4 skips that check,
+            # so a pass says nothing about the switch.
+            if not snapshot.get("armed"):
+                if snapshot.get("kill_switch"):
+                    self._release_kill_switch()
+                else:
+                    self._store.resolve_warnings({"kill"})
             return
         if prearm is not False or self._prearm_reasons:
             return

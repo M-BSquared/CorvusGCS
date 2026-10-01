@@ -38,6 +38,11 @@ window.Corvus = window.Corvus || {};
  * motors?" is then a question the picture answers, and the frame size control
  * rescales every lift rotor at once instead of one coordinate at a time.
  *
+ * The numbers sit beside the drawing as tables, one row per motor and one per
+ * sensor, so the whole airframe is readable at once instead of one motor's
+ * form at a time. Selecting a row and clicking a motor on the drawing are the
+ * same act; it picks what the motor test spins.
+ *
  * Backend contract:
  *   GET  /api/motors                        {connected,motors,frame,sensors,outputs,banks,sections}
  *   POST /api/motors/assign {motor,bank,pin} wire a motor to an output pin
@@ -98,7 +103,7 @@ Corvus.setupMotors = (function () {
   function render(container, navigateBack) {
     const page = S.el("div", "setup-page");
     page.appendChild(S.backButton(navigateBack));
-    page.appendChild(S.pageHeader("Motors", "Airframe layout, motor assignment, and output protocol"));
+    const header = S.pageHeader("Motors", "Airframe layout, motor assignment, and output protocol");
 
     // Actions bar lives outside the content host so Reload + status survive
     // every re-render of the cards below.
@@ -112,7 +117,7 @@ Corvus.setupMotors = (function () {
     const checkSlot = S.el("span", "motors-check-slot");
     actions.appendChild(checkSlot);
     actions.appendChild(actionsStatus);
-    page.appendChild(actions);
+    page.appendChild(S.pageHead(header, actions));
 
     const banner = S.el("div", "params-banner");
     banner.hidden = true;
@@ -129,12 +134,13 @@ Corvus.setupMotors = (function () {
       host, banner, reloadBtn, actionsStatus,
       armed: false, loading: false, destroyed: false,
       controls: [], doc: null,
-      selected: 1,             // 1-based motor the detail panel is showing
+      selected: 1,             // 1-based motor the test spins, marked in both views
       propsOff: false,         // the propellers-removed acknowledgement
       throttle: DEFAULT_THROTTLE,
       testing: 0,              // motor currently spinning, 0 = none
       testTimer: null,
       nodes: {},               // motor number -> diagram node, for live marking
+      rows: {},                // motor number -> table row, marked the same way
       // Check values (setupShared): what the operator set until a check
       // confirms it, and the last check's outcome until the next one.
       wanted: {}, check: null, checking: false,
@@ -145,7 +151,10 @@ Corvus.setupMotors = (function () {
     applyArmed(state, !!(cur && cur.armed));
 
     if (Corvus.telemetry && typeof Corvus.telemetry.subscribe === "function") {
-      state.unsub = Corvus.telemetry.subscribe((s) => applyArmed(state, !!(s && s.armed)));
+      state.unsub = Corvus.telemetry.subscribe((s) => {
+        applyArmed(state, !!(s && s.armed));
+        S.reloadOnLink(state, s, () => load(state));
+      });
     }
 
     reloadBtn.addEventListener("click", () => {
@@ -213,6 +222,7 @@ Corvus.setupMotors = (function () {
     state.host.innerHTML = "";
     state.controls = [];
     state.nodes = {};
+    state.rows = {};
 
     if (!motors.length && !(doc.sections || []).length && !(doc.sensors || []).length) {
       const card = S.el("div", "page-card motors-card");
@@ -231,22 +241,47 @@ Corvus.setupMotors = (function () {
     }
 
     if (state.check) state.host.appendChild(S.checkCard(state.check, "motors"));
+
+    // Two columns once the page is wide enough (a container query, so a
+    // collapsed workspace panel counts): the drawing on the left, the numbers
+    // and the motor test on the right, so clicking a motor and spinning it
+    // stay on one screen. Narrower, the same cards stack in that order.
+    const layout = S.el("div", "motors-layout");
+    const side = S.el("div", "motors-side");
+    const main = S.el("div", "motors-main");
     if (motors.length) {
-      state.host.appendChild(airframeCard(state, doc, motors));
-      state.host.appendChild(motorCard(state, doc, motors));
-      state.host.appendChild(testCard(state, motors));
+      side.appendChild(airframeCard(state, doc, motors));
+      main.appendChild(motorTableCard(state, doc, motors));
+      main.appendChild(testCard(state, motors));
+      layout.classList.add("motors-split");
+      layout.appendChild(side);
     }
-    if ((doc.sensors || []).length) state.host.appendChild(sensorCard(state, doc));
-    (doc.sections || []).forEach((section) => {
-      const card = S.el("div", "page-card motors-card");
-      card.appendChild(S.sectionTitle(section.title || ""));
-      if (section.hint) card.appendChild(S.el("div", "field-hint", section.hint));
-      card.appendChild(fieldGrid(state, section.fields || []));
-      state.host.appendChild(card);
-    });
+    // Short forms share rows rather than each taking the full width.
+    const extra = S.el("div", "motors-extra");
+    // With motors the sensors sit on the airframe card, under the drawing
+    // they are marked on; without, they still need a card of their own.
+    if (!motors.length && (doc.sensors || []).length) {
+      const card = S.el("div", "page-card motors-card motors-sensor-card");
+      card.appendChild(sensorBlock(state, doc));
+      extra.appendChild(card);
+    }
+    (doc.sections || []).forEach((section) => extra.appendChild(sectionCard(state, section)));
+    if (extra.children.length) main.appendChild(extra);
+    layout.appendChild(main);
+    state.host.appendChild(layout);
 
     applyArmed(state, state.armed);
     S.refreshIcons();
+  }
+
+  /** One generic form section (the output protocol of a bank). */
+  function sectionCard(state, section) {
+    const card = S.el("div", "page-card motors-card motors-section-card");
+    card.dataset.section = section.id || "";
+    card.appendChild(S.sectionTitle(section.title || ""));
+    if (section.hint) card.appendChild(S.el("div", "field-hint", section.hint));
+    card.appendChild(fieldGrid(state, section.fields || []));
+    return card;
   }
 
   // -------------------------------------------------------------------------
@@ -256,19 +291,35 @@ Corvus.setupMotors = (function () {
   function airframeCard(state, doc, motors) {
     const card = S.el("div", "page-card motors-card motors-airframe-card");
     card.appendChild(S.sectionTitle("Airframe"));
+    // Stacked in the page's narrow left column; in a card as wide as the page
+    // the drawing takes the left and everything measured around it the right,
+    // rather than the drawing sitting alone in a band of empty card.
+    const body = S.el("div", "motors-airframe-body");
+    const figure = S.el("div", "motors-figure");
+    const info = S.el("div", "motors-airframe-info");
+    body.appendChild(figure);
+    body.appendChild(info);
+    card.appendChild(body);
 
     // The airframe class and the motor count live here, beside the drawing they
     // change, rather than in a separate form further down the page: picking
     // "Fixed wing" redraws this picture, so the control belongs next to it.
     if ((doc.geometry || []).length) {
-      card.appendChild(fieldGrid(state, doc.geometry));
+      const geometry = fieldGrid(state, doc.geometry);
+      geometry.classList.add("motors-geometry");
+      info.appendChild(geometry);
     }
 
     if (doc.airframe_preset != null) {
-      const caption = S.el("div", "field-hint",
-        `Airframe preset SYS_AUTOSTART ${doc.airframe_preset}. The preset rewrites a whole `
-        + "configuration and needs a reboot, so it is changed in Parameters, not here.");
-      card.appendChild(caption);
+      const preset = S.el("div", "field-label-row motors-preset");
+      preset.appendChild(S.el("span", "field-hint",
+        `Airframe preset ${doc.airframe_preset} (SYS_AUTOSTART)`));
+      preset.appendChild(Corvus.ui.infoHint({
+        title: "Airframe preset",
+        text: "The preset rewrites a whole configuration and needs a reboot, so it "
+          + "is changed in Parameters, not here.",
+      }));
+      info.appendChild(preset);
     }
 
     const sensors = doc.sensors || [];
@@ -277,7 +328,7 @@ Corvus.setupMotors = (function () {
     // it really sits between the motors; a GPS mast reaching past the arms
     // widens the view rather than falling off it.
     const span = measured ? Math.max(motorSpan(motors), sensorSpan(sensors)) : 0;
-    card.appendChild(diagram(state, motors, span, doc.airframe_family || "multirotor", sensors));
+    figure.appendChild(diagram(state, motors, span, doc.airframe_family || "multirotor", sensors));
 
     const legend = S.el("div", "motors-legend");
     legend.appendChild(S.el("span", "motors-legend-item",
@@ -300,36 +351,10 @@ Corvus.setupMotors = (function () {
     }
     legend.appendChild(S.el("span", "motors-legend-item",
       "Click a motor to select it"));
-    card.appendChild(legend);
+    figure.appendChild(legend);
 
-    if (doc.frame) card.appendChild(frameBlock(state, doc.frame));
-
-    // Add / remove motors. These write CA_ROTOR_COUNT, which changes which
-    // fields exist at all, so both reload the page afterwards.
-    const count = motors.length;
-    const max = doc.max_motors || 12;
-    const rowEl = S.el("div", "motors-count-actions");
-    const addBtn = Corvus.ui.button({
-      variant: "secondary", size: "sm", icon: "plus", label: "Add motor",
-    });
-    const removeBtn = Corvus.ui.button({
-      variant: "ghost", size: "sm", icon: "minus", label: "Remove last",
-    });
-    rowEl.appendChild(addBtn);
-    rowEl.appendChild(removeBtn);
-    rowEl.appendChild(S.el("span", "motors-count-note", `${count} of ${max} motors`));
-    card.appendChild(rowEl);
-
-    const countStatus = S.el("span", "params-row-status", "");
-    card.appendChild(countStatus);
-
-    addBtn.addEventListener("click", () =>
-      setMotorCount(state, count + 1, addBtn, countStatus));
-    removeBtn.addEventListener("click", () =>
-      setMotorCount(state, count - 1, removeBtn, countStatus));
-
-    registerControl(state, addBtn, () => { addBtn.disabled = state.armed || count >= max; });
-    registerControl(state, removeBtn, () => { removeBtn.disabled = state.armed || count <= 1; });
+    if (doc.frame) info.appendChild(frameBlock(state, doc.frame));
+    if (sensors.length) info.appendChild(sensorBlock(state, doc));
     return card;
   }
 
@@ -744,14 +769,15 @@ Corvus.setupMotors = (function () {
     return el;
   }
 
-  /** Apply the selected / assigned / testing classes to one motor's node. */
+  /** Apply the selected / assigned / testing classes to one motor's node and row. */
   function paintNode(state, number) {
-    const el = state.nodes[number];
-    if (!el) return;
     const motor = (state.doc && state.doc.motors || []).find((m) => m.number === number);
-    el.classList.toggle("selected", state.selected === number);
-    el.classList.toggle("testing", state.testing === number);
-    el.classList.toggle("unassigned", !!motor && !motor.output);
+    [state.nodes[number], state.rows[number]].forEach((el) => {
+      if (!el) return;
+      el.classList.toggle("selected", state.selected === number);
+      el.classList.toggle("testing", state.testing === number);
+      el.classList.toggle("unassigned", !!motor && !motor.output);
+    });
   }
 
   function selectMotor(state, number) {
@@ -760,22 +786,7 @@ Corvus.setupMotors = (function () {
     state.selected = number;
     paintNode(state, previous);
     paintNode(state, number);
-    renderMotorPanel(state);
     renderTestPanel(state);
-  }
-
-  // -------------------------------------------------------------------------
-  // The selected motor
-  // -------------------------------------------------------------------------
-
-  function motorCard(state, doc, motors) {
-    const card = S.el("div", "page-card motors-card");
-    card.appendChild(S.sectionTitle("Selected motor"));
-    const body = S.el("div", "motors-panel");
-    card.appendChild(body);
-    state.motorPanel = body;
-    renderMotorPanel(state);
-    return card;
   }
 
   function selectedMotor(state) {
@@ -783,110 +794,183 @@ Corvus.setupMotors = (function () {
       .find((m) => m.number === state.selected) || null;
   }
 
-  function renderMotorPanel(state) {
-    const body = state.motorPanel;
-    if (!body) return;
-    body.innerHTML = "";
-    dropControls(state, body);
+  // -------------------------------------------------------------------------
+  // Every motor, one row each
+  // -------------------------------------------------------------------------
 
-    const motor = selectedMotor(state);
-    if (!motor) {
-      body.appendChild(S.el("div", "field-hint", "Select a motor in the diagram."));
-      return;
-    }
+  /**
+   * The motors as a table: the pin each is wired to, then its own fields, then
+   * the limits of its pin. Comparing motor 1 with motor 3 is a glance down a
+   * column rather than two clicks and a memory.
+   */
+  function motorTableCard(state, doc, motors) {
+    const card = S.el("div", "page-card motors-card motors-table-card");
+    const head = S.el("div", "motors-card-head");
+    head.appendChild(S.sectionTitle("Motors"));
+    // ArduPilot's motor count follows the frame class, so there is nothing
+    // for these buttons to write there.
+    if (!doc.fixed_motor_count) head.appendChild(countActions(state, doc, motors));
+    card.appendChild(head);
 
-    const head = S.el("div", "motors-panel-head");
-    head.appendChild(S.el("span", "motors-panel-title", motor.label));
-    head.appendChild(S.el("span", "motors-panel-sub",
-      motor.output ? `wired to ${motor.output.label}` : "not wired to an output"));
-    body.appendChild(head);
-
-    body.appendChild(assignmentRow(state, motor));
-    body.appendChild(fieldGrid(state, motor.fields || []));
-    if (!(motor.fields || []).length) {
-      body.appendChild(S.el("div", "field-hint",
-        "This firmware reports no position parameters for this motor."));
-    }
-    // The limits of the pin the motor is on. PX4 keeps them per pin, so they
-    // follow the motor to whichever output it is assigned.
-    const limits = motor.output_fields || [];
-    if (motor.output && limits.length) {
-      const head = S.el("div", "motors-panel-head motors-output-head");
-      head.appendChild(S.el("span", "motors-panel-sub", `Output limits of ${motor.output.label}`));
-      body.appendChild(head);
-      body.appendChild(fieldGrid(state, limits));
-    }
-    S.refreshIcons();
+    const columns = motorColumns(motors);
+    const table = S.el("table", "motors-table");
+    table.appendChild(motorTableHead(columns));
+    const body = S.el("tbody");
+    motors.forEach((motor) => body.appendChild(motorRow(state, doc, motor, columns)));
+    table.appendChild(body);
+    const wrap = S.el("div", "motors-table-wrap");
+    wrap.appendChild(table);
+    card.appendChild(wrap);
+    return card;
   }
 
   /**
-   * Bank + pin, the two halves of "where is this motor plugged in".
+   * The value columns: every field any motor has, in the order they first
+   * appear, then the limits of the pins. Keyed by label, because each
+   * parameter name carries its own motor's index.
+   */
+  function motorColumns(motors) {
+    const columns = [];
+    const add = (group, field) => {
+      const label = field.label || field.param || "";
+      if (columns.some((c) => c.group === group && c.label === label)) return;
+      columns.push({ group, label, unit: field.unit || "", hint: field.hint || "" });
+    };
+    motors.forEach((m) => (m.fields || []).forEach((f) => add("motor", f)));
+    motors.forEach((m) => (m.output_fields || []).forEach((f) => add("pin", f)));
+    return columns;
+  }
+
+  function motorTableHead(columns) {
+    const thead = S.el("thead");
+    const pins = columns.filter((c) => c.group === "pin").length;
+    if (pins) {
+      // PX4 keeps the limits per pin, so they follow a motor to whichever
+      // output it is assigned; the group heading says whose they are.
+      const groups = S.el("tr", "motors-table-groups");
+      const lead = S.el("th");
+      lead.setAttribute("colspan", String(2 + columns.length - pins));
+      groups.appendChild(lead);
+      const group = S.el("th", "motors-th-group", "Output pin limits");
+      group.setAttribute("colspan", String(pins));
+      groups.appendChild(group);
+      thead.appendChild(groups);
+    }
+    const row = S.el("tr");
+    row.appendChild(headCell("Motor"));
+    row.appendChild(headCell("Output"));
+    columns.forEach((c) => row.appendChild(headCell(c.label, c.unit, c.hint)));
+    thead.appendChild(row);
+    return thead;
+  }
+
+  function headCell(label, unit, hint) {
+    const cell = S.el("th", "motors-th");
+    cell.setAttribute("scope", "col");
+    const wrap = S.el("span", "field-label-row motors-th-label");
+    wrap.appendChild(S.el("span", null, label));
+    if (unit) wrap.appendChild(S.el("span", "motors-th-unit", unit));
+    if (hint) wrap.appendChild(Corvus.ui.infoHint({ title: label, text: hint }));
+    cell.appendChild(wrap);
+    return cell;
+  }
+
+  function motorRow(state, doc, motor, columns) {
+    const row = S.el("tr", "motors-row");
+    row.dataset.motorRow = String(motor.number);
+    // A click anywhere in the row selects it, a control included: editing
+    // motor 3 makes motor 3 the one the test spins, which is what the
+    // operator is looking at.
+    row.addEventListener("click", () => selectMotor(state, motor.number));
+
+    const id = S.el("td", "motors-cell-id");
+    const chip = S.el("button", "motors-chip", String(motor.number));
+    chip.type = "button";
+    chip.setAttribute("aria-label", `Select ${motor.label}`);
+    id.appendChild(chip);
+    row.appendChild(id);
+
+    const output = S.el("td", "motors-cell-output");
+    const built = outputSelect(state, doc, motor);
+    output.appendChild(built.el);
+    output.appendChild(built.status);
+    row.appendChild(output);
+
+    columns.forEach((col) => {
+      const list = col.group === "pin"
+        ? (motor.output ? motor.output_fields || [] : [])
+        : (motor.fields || []);
+      row.appendChild(valueCell(state, list.find((f) => (f.label || f.param) === col.label)));
+    });
+
+    if (state.check) S.markChecked(state.check, row);
+    state.rows[motor.number] = row;
+    paintNode(state, motor.number);
+    return row;
+  }
+
+  /** One field as a table cell; a motor without that field gets an empty one. */
+  function valueCell(state, field) {
+    const cell = S.el("td", "motors-cell");
+    if (!field) {
+      cell.classList.add("motors-cell-none");
+      cell.textContent = "—";
+      return cell;
+    }
+    cell.dataset.param = field.param || "";
+    const built = S.paramControl(state, field, formOptions(state));
+    cell.appendChild(built.el);
+    cell.appendChild(built.status);
+    return cell;
+  }
+
+  /**
+   * Where the motor is plugged in, as one list of every pin on the board.
    *
    * PX4 stores the reverse mapping, so the write is done by the backend
    * (POST /api/motors/assign): it clears the pin the motor is leaving, swaps
    * with another motor if the target is taken, and refuses rather than move a
    * servo off its pin.
    */
-  function assignmentRow(state, motor) {
-    const doc = state.doc || {};
-    const banks = doc.banks || [];
-    const row = S.el("div", "motors-assign");
+  function outputSelect(state, doc, motor) {
     const status = S.el("span", "params-row-status", "");
-
-    const bankSelect = Corvus.ui.select({
-      className: "motors-select",
-      ariaLabel: `Output bank for ${motor.label}`,
-      options: [{ value: "", label: "Unassigned" }].concat(
-        banks.map((b) => ({ value: b.id, label: b.label }))),
-      value: motor.output ? motor.output.bank : "",
+    const held = motor.output ? `${motor.output.bank}:${motor.output.pin}` : "";
+    const select = Corvus.ui.select({
+      className: "motors-select motors-output-select",
+      ariaLabel: `Output for ${motor.label}`,
+      options: outputOptions(doc, motor),
+      value: held,
     });
-    const pinSelect = Corvus.ui.select({
-      className: "motors-select",
-      ariaLabel: `Output pin for ${motor.label}`,
-      options: pinOptions(doc, motor, motor.output ? motor.output.bank : ""),
-      value: motor.output ? String(motor.output.pin) : "",
+    select.addEventListener("change", () => {
+      if (select.value === held) return;
+      assign(state, motor, parseOutput(select.value), select, held, status);
     });
-
-    row.appendChild(Corvus.ui.field({ label: "Output bank", control: bankSelect }));
-    row.appendChild(Corvus.ui.field({ label: "Output pin", control: pinSelect }));
-    row.appendChild(status);
-
-    bankSelect.addEventListener("change", () => {
-      const bank = bankSelect.value;
-      Corvus.ui.setOptions(pinSelect, pinOptions(doc, motor, bank), "");
-      if (!bank) {
-        assign(state, motor, null, status);
-      } else {
-        setFieldStatus(status, "", "");
-      }
-    });
-    pinSelect.addEventListener("change", () => {
-      const pin = Number(pinSelect.value);
-      if (!bankSelect.value || !isFinite(pin) || !pin) return;
-      assign(state, motor, { bank: bankSelect.value, pin }, status);
-    });
-
-    registerControl(state, bankSelect);
-    registerControl(state, pinSelect);
-    return row;
+    registerControl(state, select);
+    return { el: select, status };
   }
 
-  /** Pins of `bank`, each annotated with what it currently drives. */
-  function pinOptions(doc, motor, bank) {
-    const options = [{ value: "", label: bank ? "Choose a pin…" : "—" }];
+  /** Every pin, each annotated with what it currently drives. */
+  function outputOptions(doc, motor) {
+    const options = [{ value: "", label: "Unassigned" }];
     (doc.outputs || []).forEach((out) => {
-      if (out.bank !== bank) return;
       const mine = out.motor === motor.number;
       const busy = !mine && out.function !== "Disabled";
       options.push({
-        value: String(out.pin),
+        value: `${out.bank}:${out.pin}`,
         label: busy ? `${out.label} (${out.function})` : out.label,
       });
     });
     return options;
   }
 
-  async function assign(state, motor, target, status) {
+  function parseOutput(value) {
+    const cut = String(value || "").lastIndexOf(":");
+    if (cut < 0) return null;
+    const pin = Number(value.slice(cut + 1));
+    return isFinite(pin) && pin > 0 ? { bank: value.slice(0, cut), pin } : null;
+  }
+
+  async function assign(state, motor, target, select, held, status) {
     setFieldStatus(status, "pending", "assigning");
     const body = target === null
       ? { motor: motor.number, output: null }
@@ -901,9 +985,39 @@ Corvus.setupMotors = (function () {
       const msg = (err && err.message) || "assignment failed";
       setFieldStatus(status, "err", msg);
       notify("critical", `Could not assign ${motor.label}: ${msg}`);
-      // Put the controls back on what the vehicle still holds.
-      renderMotorPanel(state);
+      // Put the control back on what the vehicle still holds.
+      select.value = held;
     }
+  }
+
+  /**
+   * Add / remove motors. These write CA_ROTOR_COUNT, which changes which
+   * fields exist at all, so both reload the page afterwards.
+   */
+  function countActions(state, doc, motors) {
+    const count = motors.length;
+    const max = doc.max_motors || 12;
+    const row = S.el("div", "motors-count-actions");
+    const status = S.el("span", "params-row-status", "");
+    const addBtn = Corvus.ui.button({
+      variant: "secondary", size: "sm", icon: "plus", label: "Add motor",
+    });
+    const removeBtn = Corvus.ui.button({
+      variant: "ghost", size: "sm", icon: "minus", label: "Remove last",
+    });
+    row.appendChild(status);
+    row.appendChild(S.el("span", "motors-count-note", `${count} of ${max}`));
+    row.appendChild(addBtn);
+    row.appendChild(removeBtn);
+
+    addBtn.addEventListener("click", () =>
+      setMotorCount(state, count + 1, addBtn, status));
+    removeBtn.addEventListener("click", () =>
+      setMotorCount(state, count - 1, removeBtn, status));
+
+    registerControl(state, addBtn, () => { addBtn.disabled = state.armed || count >= max; });
+    registerControl(state, removeBtn, () => { removeBtn.disabled = state.armed || count <= 1; });
+    return row;
   }
 
   // -------------------------------------------------------------------------
@@ -919,9 +1033,8 @@ Corvus.setupMotors = (function () {
     const warn = S.el("div", "motors-danger");
     warn.appendChild(S.el("strong", "motors-danger-title", "Remove all propellers first."));
     warn.appendChild(S.el("span", "motors-danger-text",
-      "This spins the selected motor at the throttle below. A propeller on a motor that "
-      + "starts unexpectedly will cut. Test on a bench, with the aircraft held down, and "
-      + "never with props fitted."));
+      "A propeller on a motor that starts unexpectedly will cut. Test on a bench, "
+      + "with the aircraft held down."));
     card.appendChild(warn);
 
     const body = S.el("div", "motors-test");
@@ -957,7 +1070,9 @@ Corvus.setupMotors = (function () {
       ariaLabel: "Test throttle",
       onChange: (v) => { state.throttle = Number(v); },
     });
-    body.appendChild(Corvus.ui.field({ label: "Throttle", control: throttle.el }));
+    body.appendChild(Corvus.ui.field({
+      label: "Throttle", control: throttle.el, className: "motors-test-throttle",
+    }));
 
     const status = S.el("div", "params-row-status", "");
     const row = S.el("div", "motors-test-actions");
@@ -1055,8 +1170,11 @@ Corvus.setupMotors = (function () {
    */
   function frameBlock(state, frame) {
     const box = S.el("div", "motors-frame");
-    const head = S.el("div", "motors-panel-head motors-output-head");
-    head.appendChild(S.el("span", "motors-panel-sub", "Frame size"));
+    const head = S.el("div", "field-label-row motors-frame-head");
+    head.appendChild(S.el("span", "motors-subhead", "Frame size"));
+    if (frame.adjustable && frame.hint) {
+      head.appendChild(Corvus.ui.infoHint({ title: "Frame size", text: frame.hint }));
+    }
     box.appendChild(head);
     if (!frame.adjustable) {
       box.appendChild(S.el("div", "field-hint motors-frame-note", frame.note || ""));
@@ -1084,7 +1202,6 @@ Corvus.setupMotors = (function () {
     });
     box.appendChild(row);
     box.appendChild(status);
-    if (frame.hint) box.appendChild(S.el("div", "field-hint", frame.hint));
     return box;
   }
 
@@ -1155,24 +1272,66 @@ Corvus.setupMotors = (function () {
 
   /**
    * Where the flight controller and each GPS antenna sit, as offsets from
-   * the centre of gravity. The estimator uses them in flight; no calibration
-   * reads them. Each write redraws the airframe so the marker moves with it.
+   * the centre of gravity: one row per sensor, one column per axis. The
+   * estimator uses them in flight; no calibration reads them. Each write
+   * redraws the airframe so the marker moves with it.
    */
-  function sensorCard(state, doc) {
-    const card = S.el("div", "page-card motors-card motors-sensor-card");
-    card.appendChild(S.sectionTitle("Flight controller and GPS"));
-    if (doc.position_hint) card.appendChild(S.el("div", "field-hint", doc.position_hint));
-    (doc.sensors || []).forEach((sensor) => {
-      const head = S.el("div", "motors-panel-head motors-sensor-head");
-      head.appendChild(S.el("span", "motors-panel-title", sensor.label || ""));
-      card.appendChild(head);
-      card.appendChild(S.paramFieldGrid(state, sensor.fields || [], {
-        prefix: "motors",
-        onApplied: () => load(state),
+  function sensorBlock(state, doc) {
+    const box = S.el("div", "motors-sensors");
+    const head = S.el("div", "field-label-row motors-sensors-head");
+    head.appendChild(S.el("span", "motors-subhead", "Flight controller and GPS"));
+    if (doc.position_hint) {
+      head.appendChild(Corvus.ui.infoHint({
+        title: "Flight controller and GPS", text: doc.position_hint,
       }));
-      if (sensor.hint) card.appendChild(S.el("div", "field-hint", sensor.hint));
+    }
+    box.appendChild(head);
+    const sensors = doc.sensors || [];
+    const columns = [];
+    sensors.forEach((s) => (s.fields || []).forEach((f) => {
+      const label = f.label || f.param || "";
+      if (!columns.some((c) => c.label === label)) columns.push({ label, unit: f.unit || "" });
+    }));
+
+    const table = S.el("table", "motors-table motors-sensor-table");
+    const thead = S.el("thead");
+    const headRow = S.el("tr");
+    headRow.appendChild(headCell(""));
+    columns.forEach((c) => headRow.appendChild(headCell(c.label, c.unit)));
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const body = S.el("tbody");
+    const opts = { prefix: "motors", onApplied: () => load(state) };
+    sensors.forEach((sensor) => {
+      const row = S.el("tr", "motors-sensor-row");
+      row.dataset.sensorRow = String(sensor.id || "");
+      const name = S.el("th", "motors-sensor-name");
+      name.setAttribute("scope", "row");
+      name.appendChild(S.rowLabel("motors-sensor-label", sensor.label || "", sensor.hint));
+      row.appendChild(name);
+      columns.forEach((col) => {
+        const field = (sensor.fields || []).find((f) => (f.label || f.param) === col.label);
+        const cell = S.el("td", "motors-cell");
+        if (!field) {
+          cell.classList.add("motors-cell-none");
+          cell.textContent = "—";
+        } else {
+          cell.dataset.param = field.param || "";
+          const built = S.paramControl(state, field, opts);
+          cell.appendChild(built.el);
+          cell.appendChild(built.status);
+        }
+        row.appendChild(cell);
+      });
+      if (state.check) S.markChecked(state.check, row);
+      body.appendChild(row);
     });
-    return card;
+    table.appendChild(body);
+    const wrap = S.el("div", "motors-table-wrap");
+    wrap.appendChild(table);
+    box.appendChild(wrap);
+    return box;
   }
 
   // -------------------------------------------------------------------------
@@ -1180,23 +1339,27 @@ Corvus.setupMotors = (function () {
   // -------------------------------------------------------------------------
 
   /**
-   * A plain form: one labelled control per field, built by the shared
-   * schema-driven form layer.
-   *
-   * The two page-specific parts are handed to it here. `signFallback` is the
+   * What every motor field on this page is built with. `signFallback` is the
    * magnitude a CW/CCW choice falls back to when the vehicle reports
    * CA_ROTORn_KM as exactly 0, whose sign says nothing; `onApplied` is what a
    * confirmed write means to this page — a moved motor changes the drawing, and
-   * the airframe class or motor count changes which fields exist at all.
+   * the airframe class or motor count changes which fields exist at all. Hints
+   * go behind an icon, because the forms here share rows with each other.
    */
-  function fieldGrid(state, fields) {
-    return S.paramFieldGrid(state, fields, {
+  function formOptions(state) {
+    return {
       prefix: "motors",
       signFallback: DEFAULT_KM,
+      hintAsInfo: true,
       onApplied: (field) => {
         if (field.reload || String(field.param || "").indexOf("CA_ROTOR") === 0) load(state);
       },
-    });
+    };
+  }
+
+  /** A plain form: one labelled control per field, from the shared form layer. */
+  function fieldGrid(state, fields) {
+    return S.paramFieldGrid(state, fields, formOptions(state));
   }
 
   /** Write CA_ROTOR_COUNT from the Add / Remove buttons, then re-read. */

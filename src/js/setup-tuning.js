@@ -73,30 +73,33 @@ Corvus.setupTuning = (function () {
   function render(container, navigateBack) {
     const page = S.el("div", "setup-page tune-page");
     page.appendChild(S.backButton(navigateBack));
-    page.appendChild(S.pageHeader("PID Tuning",
-      "The control cascade, one loop at a time, by hand or by autotune"));
+    const header = S.pageHeader("PID Tuning",
+      "The control cascade, one loop at a time, by hand or by autotune");
 
     // Readiness strip: what each action needs, stated before it is attempted.
     // Autotune and a gain edit want opposite states, which is exactly why both
-    // are shown rather than one "ready" light.
+    // are shown rather than one "ready" light. It sits with the actions, in
+    // the title row.
     const ready = S.el("div", "calib-ready tune-ready");
     const linkChip = readyChip("link", "Link");
     const flightChip = readyChip("flight", "Disarmed");
     ready.appendChild(linkChip.el);
     ready.appendChild(flightChip.el);
-    page.appendChild(ready);
 
     const actions = S.el("div", "params-actions");
     const reloadBtn = Corvus.ui.button({
       variant: "primary", size: "sm", icon: "refresh-cw", label: "Reload",
     });
     const actionsStatus = S.el("div", "params-actions-status");
+    // The link chip above already says when there is no vehicle.
+    actionsStatus.dataset.linkChip = "1";
+    actions.appendChild(ready);
     actions.appendChild(reloadBtn);
     // Placed once the state exists: the button reads it.
     const checkSlot = S.el("span", "tune-check-slot");
     actions.appendChild(checkSlot);
     actions.appendChild(actionsStatus);
-    page.appendChild(actions);
+    page.appendChild(S.pageHead(header, actions));
 
     const banner = S.el("div", "params-banner");
     banner.hidden = true;
@@ -644,6 +647,7 @@ Corvus.setupTuning = (function () {
     applyVehicle(state, s);
 
     paintReady(state);
+    S.reloadOnLink(state, s, () => load(state));
 
     if (wasArmed !== state.armed) applyArmed(state, state.armed);
     if (state.autotune) state.autotune.paint();

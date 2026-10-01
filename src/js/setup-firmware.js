@@ -4,7 +4,9 @@ window.Corvus = window.Corvus || {};
 /**
  * Corvus.setupFirmware — the Firmware sub-page of the Setup page.
  *
- * PX4 firmware flash over a DIRECT USB CONNECTION ONLY. The backend refuses to
+ * PX4 and ArduPilot firmware flash over a DIRECT USB CONNECTION ONLY. Both
+ * stacks use the same USB bootloader protocol and the same image container
+ * (.px4 / .apj), so everything after "which image" is one path. The backend refuses to
  * flash over SiK radio / UDP / TCP: the gate is `can_flash` from
  * /api/firmware/status, which is true only when transport=="usb" AND the
  * vehicle is idle AND not armed. The frontend mirrors that gate (defensive:
@@ -16,16 +18,24 @@ window.Corvus = window.Corvus || {};
  *   GET  /api/firmware/status     {state,transport,device,can_flash,armed,
  *                                  progress,message}
  *   GET  /api/firmware/catalog[?refresh=1]
- *                                  {releases:[{tag,name,prerelease,boards:[
- *                                   {name,label,size,cached,
+ *                                  {releases:[{tag,name,prerelease,
+ *                                   vendor,vehicle,boards:[
+ *                                   {name,key,label,size,cached,
  *                                    vendor,board,variant,title}]}],
- *                                   cached,error,dir}
- *                                  vendor/variant/title are derived from the
- *                                  `<vendor>_<board>_<variant>.px4` target
- *                                  name by the backend; the vendor is the
- *                                  left dropdown, the title is the right one,
- *                                  and the variant decides what the developer
- *                                  builds switch hides.
+ *                                   cached,error,dir,
+ *                                   detected:{px4,ardupilot},
+ *                                   suggested:{stack,vehicle}}
+ *                                  A release's `vendor` is its flight stack
+ *                                  ("px4" | "ardupilot"); a board's `vendor`
+ *                                  is its manufacturer, which is the left
+ *                                  dropdown, the title is the right one, and
+ *                                  the variant decides what the developer
+ *                                  builds switch hides. `key` names the same
+ *                                  board in every release of one stack.
+ *                                  `detected` is the board on the USB port
+ *                                  per stack ({name,key,label,source} | null);
+ *                                  `suggested` is the connected aircraft's
+ *                                  stack and ArduPilot `vehicle`.
  *   POST /api/firmware/flash       {release,board} -> downloads then flashes
  *   POST /api/firmware/upload     raw .px4/.apj/.bin body
  *                                  (Content-Type: application/octet-stream),
@@ -38,7 +48,8 @@ window.Corvus = window.Corvus || {};
  * telemetry `connected`/`armed` signature changes (no refetch spam) and after
  * every terminal SSE event (authoritative state).
  *
- * Firmware selection: the operator picks a PX4 release and their board and the
+ * Firmware selection: the operator picks a flight stack, a release (for
+ * ArduPilot: a vehicle and channel) and their board and the
  * backend downloads the matching image, caching it under `firmware_dir` so the
  * same flash works offline next time. The request names a release and a board,
  * never a URL — resolving the download target is the backend's job. The manual
@@ -69,7 +80,7 @@ Corvus.setupFirmware = (function () {
     // orchestrator's teardown() is the single place that calls destroy().
     page.appendChild(S.backButton(navigateBack));
     page.appendChild(S.pageHeader("Firmware Flash",
-      "Flash PX4 firmware over a direct USB connection only"));
+      "Flash PX4 or ArduPilot firmware over a direct USB connection only"));
 
     // --- Connection card --------------------------------------------------
     const linkSection = S.el("div", "page-section");
@@ -105,9 +116,9 @@ Corvus.setupFirmware = (function () {
 
     const note = S.el("div", "params-desc");
     note.textContent =
-      "Pick a PX4 release and your board and Corvus downloads the image for you, " +
-      "or select a local file. Flashing reboots the autopilot into its bootloader " +
-      "and uploads over USB. Keep the USB cable connected.";
+      "Pick PX4 or ArduPilot, a release and your board and Corvus downloads the " +
+      "image for you, or select a local file. Flashing reboots the autopilot into " +
+      "its bootloader and uploads over USB. Keep the USB cable connected.";
     fwCard.appendChild(note);
 
     // Source switch. Download is the default because it is the path that needs
@@ -115,7 +126,7 @@ Corvus.setupFirmware = (function () {
     // that has never been online needs.
     const sourceRow = S.el("div", "firmware-source");
     const sourceBtns = [
-      { id: "catalog", label: "PX4 release", icon: "cloud-download" },
+      { id: "catalog", label: "Download", icon: "cloud-download" },
       { id: "file", label: "Local file", icon: "folder-open" },
     ].map((opt) => {
       const b = Corvus.ui.button({
@@ -132,16 +143,41 @@ Corvus.setupFirmware = (function () {
     // --- Catalogue picker -------------------------------------------------
     const catalogBox = S.el("div", "firmware-catalog");
 
+    // The stack comes first because it decides what every list below it
+    // holds: the two publish different builds under different names for the
+    // same board. It opens on the stack the aircraft is running, and moving a
+    // board from one to the other is one click, not a hidden option.
+    const stackRow = S.el("div", "firmware-source firmware-stack");
+    const stackBtns = [
+      { id: "px4", label: "PX4" },
+      { id: "ardupilot", label: "ArduPilot" },
+    ].map((opt) => {
+      const b = Corvus.ui.button({
+        variant: "secondary", size: "sm", label: opt.label,
+        className: "firmware-stack-btn",
+        onClick: () => {
+          state.stackTouched = true;
+          setStack(opt.id);
+        },
+      });
+      b.dataset.stack = opt.id;
+      stackRow.appendChild(b);
+      return b;
+    });
+    catalogBox.appendChild(Corvus.ui.field({
+      label: "Flight stack", control: stackRow,
+    }));
+
     const releaseField = Corvus.ui.select({
-      ariaLabel: "PX4 release",
+      ariaLabel: "Firmware release",
       options: [{ value: "", label: "Loading releases…" }],
       disabled: true,
     });
     // The release list is fetched once and then served from disk forever, so
-    // without this nothing in the app ever asks GitHub again: a laptop that
-    // was offline the first time it opened this page stayed empty, and a
-    // machine that has the list never saw a new PX4 release. It is the only
-    // control here that needs the network on purpose.
+    // without this nothing in the app ever asks the release servers again: a
+    // laptop that was offline the first time it opened this page stayed
+    // empty, and a machine that has the list never saw a new release. It is
+    // the only control here that needs the network on purpose.
     const refreshBtn = Corvus.ui.button({
       variant: "secondary", size: "sm", icon: "refresh-cw",
       className: "firmware-refresh", label: "Refresh",
@@ -206,7 +242,7 @@ Corvus.setupFirmware = (function () {
     boardBox.appendChild(boardCount);
     catalogBox.appendChild(Corvus.ui.field({
       label: "Board", control: boardBox,
-      hint: "PX4 ships one image per flight-controller target. Pick your "
+      hint: "Every release has one image per flight controller. Pick your "
         + "manufacturer, then the board it made.",
     }));
 
@@ -298,12 +334,16 @@ Corvus.setupFirmware = (function () {
       file: null,           // the selected File
       source: "catalog",    // "catalog" (download) | "file" (local .px4/.apj/.bin)
       catalog: null,        // last /api/firmware/catalog payload
-      releases: [],         // releases from the catalogue
+      releases: [],         // releases from the catalogue, both stacks
+      stack: "px4",         // flight stack whose releases are listed
+      stackTouched: false,  // true once the operator picked a stack themselves
       boards: [],           // boards of the selected release (unfiltered)
       vendor: "",           // manufacturer shown in the left dropdown ("" = none)
       board: "",            // target name of the selected board ("" = none)
-      showVariants: false,  // include PX4's non-default developer builds
-      detected: null,       // {name,label,source} board the backend recognised
+      boardKey: "",         // the selected board's key, stable across releases
+      showVariants: false,  // include the non-default developer builds
+      detected: {},         // {px4,ardupilot}: the board the backend recognised
+      suggested: {},        // {stack,vehicle} of the connected aircraft
       boardTouched: false,  // true once the operator picked a board themselves
       // Telemetry signature for refetch gating (avoid /api/firmware/status spam).
       lastConnected: null,
@@ -423,12 +463,34 @@ Corvus.setupFirmware = (function () {
       return String(a.title || a.name).localeCompare(String(b.title || b.name));
     }
 
-    /** 0 = the vendor of the board we think is plugged in, 1 = PX4, 2 = rest. */
+    /** 0 = the vendor of the board we think is plugged in, 1 = PX4, 2 = rest,
+     *  3 = the boards no manufacturer could be read from. */
     function vendorRank(vendor) {
-      const detected = state.detected
-        && (state.boards.find((b) => b.name === state.detected.name) || {}).vendor;
+      const d = detectedBoard();
+      const detected = d
+        && (state.boards.find((b) => keyOf(b) === (d.key || d.name)) || {}).vendor;
       if (detected && vendor === detected) return 0;
+      if (vendor === "Other") return 3;
       return vendor === "PX4" ? 1 : 2;
+    }
+
+    /** What names a board in every release of its stack. */
+    function keyOf(b) {
+      return (b && (b.key || b.name)) || "";
+    }
+
+    /** The board recognised on the USB port, for the stack on screen. */
+    function detectedBoard() {
+      const d = state.detected && state.detected[state.stack];
+      return d && (d.key || d.name) ? d : null;
+    }
+
+    function stackOf(r) {
+      return (r && r.vendor) || "px4";
+    }
+
+    function stackReleases() {
+      return state.releases.filter((r) => stackOf(r) === state.stack);
     }
 
     /** One option in the board dropdown. The two things that decide whether a
@@ -499,7 +561,7 @@ Corvus.setupFirmware = (function () {
      *  dropdown quietly re-aims the Flash button. */
     function renderBoards() {
       const wanted = preferredBoard();
-      const match = wanted && visibleBoards().find((b) => b.name === wanted);
+      const match = wanted && visibleBoards().find((b) => keyOf(b) === wanted);
       state.board = match ? match.name : "";
       if (match) state.vendor = vendorOf(match);
       renderVendors();
@@ -561,31 +623,127 @@ Corvus.setupFirmware = (function () {
     function selectBoard(name) {
       state.board = name || "";
       if (boardField.value !== state.board) boardField.value = state.board;
+      const b = state.board && state.boards.find((x) => x.name === state.board);
+      if (b) state.boardKey = keyOf(b);
       renderBoardDetail();
       recomputeUploadGate();
     }
 
     /** Apply a release selection: swap the board list to that release's.
      *
-     *  A build target keeps its name across releases, so a board the operator
-     *  chose (or that was detected) survives a release change. */
+     *  A board keeps its key across the releases of one stack, so a board the
+     *  operator chose (or that was detected) survives a release change. */
     function selectRelease(tag) {
-      const release = state.releases.find((r) => r.tag === tag) || state.releases[0];
+      const list = stackReleases();
+      const release = list.find((r) => r.tag === tag) || list[0];
       state.boards = (release && release.boards) || [];
       renderBoards();
     }
 
-    /** Board the picker should land on: the operator's, else the detected one. */
+    /** Key of the board the picker should land on: the operator's, else the
+     *  detected one. */
     function preferredBoard() {
-      if (state.boardTouched && state.board) return state.board;
-      if (state.detected && state.detected.name) return state.detected.name;
-      return state.board;
+      if (state.boardTouched && state.boardKey) return state.boardKey;
+      const d = detectedBoard();
+      if (d) return d.key || d.name;
+      return state.board ? state.boardKey : "";
+    }
+
+    /** The release a list opens on. Never a pre-release: that is a deliberate
+     *  choice, never the one an operator lands on by not choosing. For
+     *  ArduPilot, the connected aircraft's vehicle, so re-flashing a plane
+     *  does not start from the copter build. */
+    function defaultRelease(list) {
+      const stable = list.filter((r) => !r.prerelease);
+      const vehicle = state.suggested && state.suggested.vehicle;
+      const own = vehicle && stable.find((r) => r.vehicle === vehicle);
+      return own || stable[0] || list[0];
+    }
+
+    /** Fill the release dropdown with the chosen stack's releases.
+     *
+     *  The label is the release's own name for ArduPilot, not its tag: a PX4
+     *  tag reads "v1.17.0", but an ArduPilot "tag" is a path
+     *  ("ardupilot:Copter/stable") that exists to route the flash request and
+     *  was never meant to be read by anyone. Its name says the channel. */
+    function renderReleases() {
+      const list = stackReleases();
+      renderDetected();
+      if (!list.length) {
+        Corvus.ui.setOptions(releaseField, [{ value: "", label: "No releases available" }], "");
+        releaseField.disabled = true;
+        state.boards = [];
+        state.board = "";
+        state.vendor = "";
+        renderBoards();
+        return false;
+      }
+      releaseField.disabled = false;
+      // Decided BEFORE the options are written: a select adopts its first
+      // option the moment it is filled, and PX4's newest tag is usually a beta.
+      const known = list.some((r) => r.tag === releaseField.value);
+      const wanted = known ? releaseField.value : defaultRelease(list).tag;
+      Corvus.ui.setOptions(releaseField, list.map((r) => ({
+        value: r.tag,
+        label: stackOf(r) === "ardupilot"
+          ? (r.name || r.tag)
+          : r.tag + (r.prerelease ? "  ·  pre-release" : ""),
+      })), wanted);
+      selectRelease(releaseField.value);
+      return true;
+    }
+
+    /** Show one stack's releases. The board carries over by key where the
+     *  other stack has it too, which within one stack it always does. */
+    function setStack(id) {
+      const next = id === "ardupilot" ? "ardupilot" : "px4";
+      const changed = next !== state.stack;
+      state.stack = next;
+      stackBtns.forEach((b) => {
+        const on = b.dataset.stack === state.stack;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+      // A PX4 target name means nothing to ArduPilot and the reverse, so an
+      // explicit pick does not follow the operator across the switch.
+      if (changed) {
+        state.boardTouched = false;
+        state.boardKey = "";
+        state.board = "";
+      }
+      if (!state.catalog) return;
+      renderReleases();
+      renderCatalogNote();
+    }
+
+    /** Say where the list came from, or what to do about there not being one. */
+    function renderCatalogNote() {
+      const data = state.catalog || {};
+      const name = state.stack === "ardupilot" ? "ArduPilot" : "PX4";
+      if (!stackReleases().length) {
+        // The lists live online and this is the one page that fetches them, so
+        // "press Refresh once you have internet" is the whole recovery, and
+        // the local-file path is still open to a laptop that will never have
+        // any.
+        catalogNote.textContent = (data.error
+          ? data.error + ". "
+          : "No " + name + " releases downloaded yet. ")
+          + "Press Refresh once this machine is online, or flash a local "
+          + (state.stack === "ardupilot" ? ".apj" : ".px4") + " file instead.";
+        catalogNote.classList.add("err");
+        return;
+      }
+      catalogNote.textContent = data.error
+        ? data.error + ". Showing the cached release list."
+        : "Images are cached in " + (data.dir || "the firmware folder")
+          + ", so a repeat flash needs no network.";
+      catalogNote.classList.toggle("err", !!data.error);
     }
 
     /** Show what the backend recognised on the USB port, and say how. */
     function renderDetected() {
-      const d = state.detected;
-      if (!d || !d.name) {
+      const d = detectedBoard();
+      if (!d) {
         detectedNote.hidden = true;
         detectedNote.textContent = "";
         return;
@@ -607,57 +765,20 @@ Corvus.setupFirmware = (function () {
      * this page offline is instant and silent.
      */
     function loadCatalog(refresh) {
-      catalogNote.textContent = refresh ? "Checking for PX4 releases…" : "Loading releases…";
+      catalogNote.textContent = refresh ? "Checking for new releases…" : "Loading releases…";
       catalogNote.classList.remove("err");
       Corvus.ui.setBusy(refreshBtn, true);
       const url = "/api/firmware/catalog" + (refresh ? "?refresh=1" : "");
       return Corvus.telemetry.requestJson(url).then((data) => {
         state.catalog = data || {};
         state.releases = (data && data.releases) || [];
-        state.detected = (data && data.detected) || null;
-        renderDetected();
-        if (!state.releases.length) {
-          Corvus.ui.setOptions(releaseField, [{ value: "", label: "No releases available" }]);
-          releaseField.disabled = true;
-          state.boards = [];
-          state.board = "";
-          state.vendor = "";
-          renderBoards();
-          // Say what to do about it. The list lives on GitHub and this is the
-          // one page that fetches it, so "press Refresh once you have
-          // internet" is the whole recovery — and the local-file path is still
-          // open to a laptop that will never have any.
-          catalogNote.textContent = ((data && data.error)
-            ? data.error + ". "
-            : "No PX4 releases downloaded yet. ")
-            + "Press Refresh once this machine is online, or flash a local "
-            + ".px4 file instead.";
-          catalogNote.classList.add("err");
-          return;
-        }
-        releaseField.disabled = false;
-        // Default to the newest STABLE release, decided BEFORE the options are
-        // written: a select adopts its first option the moment it is filled, and
-        // PX4's newest tag is usually a beta. A pre-release is a deliberate
-        // choice, never the one an operator lands on by not choosing.
-        const known = state.releases.some((r) => r.tag === releaseField.value);
-        const stable = state.releases.find((r) => !r.prerelease) || state.releases[0];
-        const wanted = known ? releaseField.value : stable.tag;
-        // The label is the release's own name when it has one, not its tag:
-        // PX4 tags read "v1.17.0", but an ArduPilot "tag" is a path
-        // ("ardupilot:Copter/stable") that exists to route the flash request
-        // and was never meant to be read by anyone.
-        Corvus.ui.setOptions(releaseField, state.releases.map((r) => ({
-          value: r.tag,
-          label: (r.vendor === "ardupilot" ? (r.name || r.tag) : r.tag)
-            + (r.prerelease ? "  ·  pre-release" : ""),
-        })), wanted);
-        selectRelease(releaseField.value);
-        catalogNote.textContent = data.error
-          ? data.error + ". Showing the cached release list."
-          : "Images are cached in " + (data.dir || "the firmware folder")
-            + ", so a repeat flash needs no network.";
-        catalogNote.classList.toggle("err", !!data.error);
+        state.detected = (data && data.detected) || {};
+        state.suggested = (data && data.suggested) || {};
+        // Open on the stack the aircraft runs, until the operator says otherwise.
+        const suggested = state.suggested.stack;
+        const stack = !state.stackTouched && (suggested === "px4" || suggested === "ardupilot")
+          ? suggested : state.stack;
+        setStack(stack);
       }).catch((err) => {
         catalogNote.textContent = (err && err.message) || "Could not load the release list";
         catalogNote.classList.add("err");
@@ -805,6 +926,7 @@ Corvus.setupFirmware = (function () {
     refreshStatus();
     // Catalogue from the backend's cache (no network unless the operator asks
     // for a refresh), then show the download picker.
+    setStack(state.stack);
     setSource("catalog");
 
     // --- File picker ------------------------------------------------------
