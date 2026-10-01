@@ -52,7 +52,7 @@ Corvus.ui = {
 };
 Corvus.telemetry = {
   requestJson: (url) => {
-    if (url === "/api/version") return Promise.resolve({ version: "2026.10.01" });
+    if (url === "/api/version") return Promise.resolve({ version: "2000.01.01" });
     if (url === "/api/tiles/sources") {
       return tileResponse ? Promise.resolve(tileResponse) : Promise.reject(new Error("offline"));
     }
@@ -99,7 +99,7 @@ async function openWith(response) {
   assert.equal(text.split("© Esri, Maxar, Earthstar Geographics").length - 1, 1,
     "a shared map attribution is listed twice");
   assert.ok(!text.includes("Loading"), "a placeholder was left behind");
-  assert.ok(text.includes("Corvus GCS 2026.10.01"), "version not taken from /api/version");
+  assert.ok(text.includes("Corvus GCS 2000.01.01"), "version not taken from /api/version");
 
   // --- the partnership, in the agreed wording ---------------------------
   assert.ok(text.includes("with Universität der Bundeswehr München"));
