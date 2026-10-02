@@ -46,6 +46,20 @@ def test_update_merges_and_replace_drops(tmp_path):
     assert plugin_config.load("demo", root) == {"b": 3}
 
 
+def test_replace_keeps_the_operators_options(tmp_path):
+    root = str(tmp_path)
+    plugin_config.update("demo", {"a": 1}, user_dir=root)
+    plugin_config.update("demo", {"_options": {"tab": True}}, user_dir=root)
+    saved = plugin_config.update("demo", {"b": 2}, replace=True, user_dir=root)
+    assert saved == {"b": 2, "_options": {"tab": True}}
+    assert plugin_config.load("demo", root) == saved
+    # Named in the patch, they are set like any other key.
+    saved = plugin_config.update("demo", {"_options": {"tab": False}}, user_dir=root)
+    assert saved == {"b": 2, "_options": {"tab": False}}
+    saved = plugin_config.update("demo", {"c": 3, "_options": {}}, replace=True, user_dir=root)
+    assert saved == {"c": 3, "_options": {}}
+
+
 def test_load_all_keys_by_folder_and_skips_the_rest(tmp_path):
     root = str(tmp_path)
     plugin_config.save("a", {"x": 1}, root)

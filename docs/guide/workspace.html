@@ -153,7 +153,9 @@
 <p class="doc-lead">
   A collapsible workspace beside the map holds the tools, so they never
   replace the operational picture: the MAVLink console, an SSH terminal to the
-  companion computer, and the plugins.
+  companion computer, and the plugins. A station that never uses the console
+  or the SSH terminal can switch either tab off in
+  <a href="settings.html#side-panel">Settings, Side panel</a>.
 </p>
 
 <figure class="doc-shot">
@@ -213,6 +215,12 @@
   ArduPilot has no such shell. On an ArduPilot link these commands are left
   out of <code>?</code> and of Tab completion, and typing one anyway is answered
   with a sentence saying why.
+</p>
+<p>
+  For the shell itself, with its prompt, <code>top</code> redrawing in place
+  and <kbd>Ctrl</kbd>+<kbd>C</kbd> to stop a running program, open the
+  <a href="plugins.html#nuttx-console">NuttX Console</a> plugin, which is
+  installed separately.
 </p>
 
 <h2 id="ssh">SSH terminal</h2>

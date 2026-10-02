@@ -146,16 +146,32 @@ def save(plugin_id: str, settings: dict[str, Any], user_dir: str | None = None) 
             raise
 
 
+# The options the operator set for a plugin in Settings > Plugins (its gear).
+# They share the plugin's file so they travel with it, but they are not the
+# plugin's to write: a replace keeps them (see update).
+OPTIONS_KEY = "_options"
+
+
 def update(plugin_id: str, patch: dict[str, Any], *, replace: bool = False,
            user_dir: str | None = None) -> dict[str, Any]:
     """Merge *patch* into the config of *plugin_id* (or replace it) and save.
 
     Returns the object now on disk. The read and the write happen under one
     lock, so two merges cannot each drop the other's key.
+
+    A replace replaces what the plugin saved, not the operator's options
+    under ``_options``: a plugin that stores its whole state with
+    ``replace`` does not know about them and must not wipe them. A patch that
+    names ``_options`` itself (the Settings dialog) still sets them.
     """
     with _write_lock:
-        existing = None if replace else load(plugin_id, user_dir)
-        merged = {**existing, **patch} if existing else dict(patch)
+        existing = load(plugin_id, user_dir)
+        if replace:
+            merged = dict(patch)
+            if (existing and OPTIONS_KEY in existing and OPTIONS_KEY not in merged):
+                merged[OPTIONS_KEY] = existing[OPTIONS_KEY]
+        else:
+            merged = {**existing, **patch} if existing else dict(patch)
         save(plugin_id, merged, user_dir)
         return merged
 

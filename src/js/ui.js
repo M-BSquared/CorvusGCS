@@ -410,6 +410,9 @@ Corvus.ui = (function () {
                          where taking the focus would be a decision the
                          operator did not make.
        typeahead         default true
+       dismissKeys(e)    optional. True for a keydown that should close the
+                         surface and then carry on to whoever else wants it,
+                         unstopped (the map menu gives the flight keys back).
        onOpen() / onClose()
 
      open(anchor) takes {el} — a trigger the list drops out of — or {x, y}, a
@@ -671,6 +674,10 @@ Corvus.ui = (function () {
        Registered only while the surface is open. */
     function onKey(e) {
       const key = e.key;
+      if (typeof o.dismissKeys === "function" && o.dismissKeys(e)) {
+        close(false);
+        return;
+      }
       if (key === "Escape") {
         stopEvent(e);
         close(true);

@@ -378,12 +378,12 @@ Rules that keep the chain honest:
 ```
 ./run.sh                        # create/update .venv from pyproject.toml + launch desktop app
 .venv/bin/python -m pytest -q   # test suite (the gate for every change)
-.venv/bin/python -m ruff check corvus serve.py tests   # lint, as CI runs it
+.venv/bin/python -m ruff check corvus serve.py tests plugins   # lint, as CI runs it
 .venv/bin/python serve.py       # backend only, UI in a normal browser
 ./build.sh [--dmg]              # artifact for the current host (dispatches below)
 ./build-appimage.sh             # Linux artifact  (x86_64)
 ./build-macos-app.sh [--dmg]    # macOS artifact  (arm64 / x86_64)
-for f in tests/*.js; do node "$f"; done   # frontend assertions
+node tools/frontend_tests.js    # frontend assertions: tests/ + plugins/*/tests/
 python3 tools/guide.py          # after editing docs/guide/*.html: rewrite each page's frame
 git config core.hooksPath .githooks   # one-time, enables the VERSION auto-bump
 ```

@@ -1899,6 +1899,10 @@ if (window.Corvus && Corvus.plugins && typeof Corvus.plugins.register === "funct
     name: "Schwalby",
     icon: "bird",
     description: "One-press buttons that start programs on this computer or over SSH",
+    // A shelf the operator reaches for on the pad, again and again: it can
+    // have a tab of its own, switched on from its gear in Settings > Plugins,
+    // and is a card under PLUGINS otherwise.
+    tab: true,
     init: function (containerEl, api) { Corvus.pluginSchwalby.init(containerEl, api); },
     destroy: function (containerEl) { Corvus.pluginSchwalby.destroy(containerEl); },
   });

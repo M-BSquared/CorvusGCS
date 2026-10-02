@@ -12,10 +12,18 @@
  * recorded.
  *
  * Run:
- *   node tests/test_frontend_schwalby.js
+ *   node plugins/schwalby/tests/test_schwalby.js
  */
 
 const assert = require("node:assert/strict");
+const path = require("node:path");
+
+// The Corvus checkout whose src/ this plugin runs against: the one around
+// plugins/schwalby/, unless CORVUS_ROOT names another (the plugin kept in its own
+// repository, say). tools/frontend_tests.js sets it.
+const CORVUS = process.env.CORVUS_ROOT
+  ? path.resolve(process.env.CORVUS_ROOT)
+  : path.join(__dirname, "..", "..", "..");
 
 // ---------------------------------------------------------------------------
 // Browser-ish globals so plugins.js and the folder plugins load and run in Node.
@@ -182,9 +190,9 @@ function flushMicrotasks() { return new Promise((r) => setTimeout(r, 0)); }
 // Load order mirrors the browser's: ui.js and plugins.js are <script> tags in
 // index.html; the plugin is a folder plugin and registers itself as it loads.
 // ---------------------------------------------------------------------------
-require("../src/js/ui.js");
-require("../src/js/plugins.js");
-require("../plugins/schwalby/schwalby.js");
+require(path.join(CORVUS, "src", "js", "ui.js"));
+require(path.join(CORVUS, "src", "js", "plugins.js"));
+require("../schwalby.js");
 
 const S = Corvus.pluginSchwalby;
 
@@ -502,7 +510,7 @@ function testSegment() {
 function testStylesheetIsItsOwn() {
   const fs = require("node:fs");
   const path = require("node:path");
-  const dir = path.join(__dirname, "..", "plugins", "schwalby");
+  const dir = path.join(__dirname, "..");
   const manifest = JSON.parse(fs.readFileSync(path.join(dir, "plugin.json"), "utf8"));
   assert.deepEqual(manifest.styles, ["schwalby.css"]);
   const css = fs.readFileSync(path.join(dir, "schwalby.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");

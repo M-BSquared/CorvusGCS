@@ -532,31 +532,37 @@ svg { display: block; }
 
 /* ===== PAGE VIEW ===== */
 /* Settings > Plugins. One plugin is a two-line block, not a page-row: the
-   name leads, its origin sits opposite in mono, and what the plugin does
-   reads underneath in the muted hint size. The rule below the block closes
-   it, which is why the description sits inside the padding and not under it. */
+   name leads, its origin (and its gear, when it has settings) sit opposite,
+   and what the plugin does reads underneath in the muted hint size. Each
+   block is ruled off from the next, with room on both sides of the rule. */
+.settings-plugin-list { display: flex; flex-direction: column; }
 .settings-plugin {
-  padding: var(--space-10) 0;
+  padding: var(--space-14) 0;
   border-bottom: 1px solid var(--border-soft);
 }
-.settings-plugin:first-child { padding-top: 0; }
+.settings-plugin:first-child { padding-top: var(--space-2); }
 .settings-plugin-head {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  min-height: 28px;
 }
-.settings-plugin-name { font-size: var(--text-md); color: var(--text-1); min-width: 0; }
+.settings-plugin-name { font-size: var(--text-md); font-weight: 500; color: var(--text-1); min-width: 0; }
+.settings-plugin-meta {
+  display: flex; align-items: center; gap: var(--space-8);
+  flex: 0 0 auto;
+}
 /* Mono and quiet: the version is a fact to check against a folder, and it
    should not compete with the name for the first read. */
 .settings-plugin-origin {
-  flex: 0 0 auto;
   font-family: var(--mono); font-size: var(--text-sm); color: var(--text-3);
 }
+.settings-plugin-gear { width: 28px; height: 28px; }
 .settings-plugin-desc {
-  margin-top: 3px;
+  margin-top: var(--space-4);
   font-size: var(--text-sm); line-height: 1.5; color: var(--text-3);
 }
-/* The folder field is a different subject from the list above it, and the
-   last plugin's own rule is not enough of a break on its own. */
-.settings-plugin + .field { margin-top: var(--space-14); }
+/* The folder field is a different subject from the list above it. */
+.settings-plugin-list + div > .settings-plugin-dir { margin-top: var(--space-18); }
+.settings-plugin-buttons { display: flex; flex-wrap: wrap; gap: var(--space-8); }
 /* Settings > Map service (sidenav.js buildMapServicePicker): the service
    cards, then the layer field, then the cache note. Both followers need air
    under the cards — the selected card carries an accent ring 1px outside its
@@ -838,7 +844,8 @@ svg { display: block; }
   gap: var(--space-8) var(--space-14);
 }
 .settings-path-row > .settings-path { flex: 1 1 auto; min-width: 0; }
-.settings-path-row > .btn { flex: 0 0 auto; }
+.settings-path-row > .btn,
+.settings-path-row > .settings-plugin-buttons { flex: 0 0 auto; }
 .settings-plugin-dir > .settings-path-row { margin-top: var(--space-2); }
 
 /* ===== MAIN / MAP ===== */
@@ -1710,6 +1717,32 @@ svg { display: block; }
   .region-label.downloading .region-label-meta { animation: none !important; }
 }
 
+/* A plugin's text on the Home map (api.map.drawText). A DOM marker for the
+   same reason as the region label. The colour is the plugin's, and is read
+   against imagery, so the halo in the page background is what keeps it
+   legible over a field of its own hue. */
+.map-overlay-label {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--overlay-color, #22D3EE);
+  font-family: var(--sans);
+  font-size: var(--overlay-size, 12px);
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow:
+    0 0 2px var(--bg), 0 0 2px var(--bg), 0 0 4px var(--bg),
+    0 1px 1px var(--bg);
+}
+.map-overlay-label[hidden] { display: none; }
+.map-overlay-label-dot {
+  flex: 0 0 auto;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
 /* waypoint (plan) marker — amber, translucent, same circular language as
    home/vehicle. Glow sits between home (none) and vehicle (strong) so the
    plan-in-progress reads as active but not focal. */
@@ -2427,9 +2460,20 @@ svg { display: block; }
   flex: 1; padding: 9px 0; font-size: 11px; font-weight: 600; letter-spacing: 0.9px;
   color: var(--text-3); border-radius: var(--radius-btn) var(--radius-btn) 0 0;
   border-bottom: 2px solid transparent; transition: color 130ms, background 130ms;
+  /* A plugin's tab can make the strip longer than the panel is wide; then the
+     captions give way (the full name is on hover) rather than the strip
+     pushing the panel wider. */
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.tab[hidden] { display: none; }
 .tab:hover { color: var(--text-1); background: var(--surface-hover); }
 .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+/* A plugin's tab, captioned with its name: in capitals like the others. */
+.tab-extra { text-transform: uppercase; }
+/* Four equal tabs fit with room to spare. Once a plugin adds one, each tab
+   takes the width of its own caption first and shares out what is left, so
+   a long name is not cut short while LINK and SSH stand half empty. */
+.panel-tabs:has(.tab-extra) .tab { flex: 1 1 auto; padding-inline: 5px; }
 
 .panel-content { flex: 1; min-height: 0; position: relative; }
 .tab-panel { display: none; flex-direction: column; height: 100%; min-height: 0; }
@@ -2800,6 +2844,9 @@ svg { display: block; }
 /* The plugin owns all DOM inside this container; the registry never reuses it
    across open/close cycles so a plugin's state cannot leak. */
 .plugin-container { flex: 1; min-height: 0; overflow-y: auto; padding: 0 14px 14px; }
+/* In a tab of its own the plugin sits under the tab's ruled header rather
+   than under a back button, so it needs the gap the header does not give. */
+.plugin-tab-container { padding-top: 12px; }
 
 /* Reduced motion: disable card/view/popover transitions (apple-design §14). */
 @media (prefers-reduced-motion: reduce) {
@@ -6063,7 +6110,7 @@ button.review-finding-head:focus-visible {
   position: absolute; inset: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--mission-side-w, 320px);
-  grid-template-rows: minmax(0, 1fr) var(--mission-profile-h, 240px);
+  grid-template-rows: minmax(0, 1fr);
   background: var(--bg);
 }
 
@@ -6631,8 +6678,6 @@ button.review-finding-head:focus-visible {
   border-top: 1px solid var(--border-soft);
   display: flex; flex-direction: column; gap: 8px;
 }
-/* The kind's one-line explanation belongs to the title above it. */
-.mission-detail-head + .field-hint { margin-top: -4px; }
 .mission-detail-head {
   display: flex; align-items: center; gap: 7px;
   font-size: 12px; font-weight: 700; color: var(--text-1);
@@ -6664,8 +6709,8 @@ button.review-finding-head:focus-visible {
 .mission-actions { display: flex; flex-direction: column; gap: 6px; flex: 0 0 auto; }
 /* Two by two: four labels in one row need more than the sidebar has, and the
    last button was cut off at the edge. */
-.mission-file-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.mission-file-row .btn { white-space: nowrap; }
+.mission-file-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.mission-file-row .btn { white-space: nowrap; padding-left: 4px; padding-right: 4px; gap: 4px; min-width: 0; }
 .mission-status { margin: 0; }
 .mission-warnings { padding-top: 8px; }
 
@@ -6695,11 +6740,43 @@ button.review-finding-head:focus-visible {
 
 /* ----- the altitude profile ----- */
 .mission-profile {
-  grid-row: 2; grid-column: 1;
+  grid-row: 1; grid-column: 1;
+  align-self: end; position: relative; z-index: calc(var(--z-map-chrome) + 1);
   display: flex; flex-direction: column;
-  min-height: 0;
-  border-top: 1px solid var(--border);
-  background: var(--surface-1);
+  height: var(--mission-profile-h, 240px);
+  margin: 0 14px 14px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: rgb(var(--glass-rgb) / 0.55);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
+  border: 1px solid rgb(var(--tint-rgb) / 0.06);
+  box-shadow: var(--shadow-pop);
+}
+.mission-profile.is-collapsed { height: auto; }
+.mission-profile.is-collapsed .mission-profile-plot,
+.mission-profile.is-collapsed .mission-profile-note,
+.mission-profile.is-collapsed .mission-aircraft { display: none; }
+.mission-profile.is-collapsed .mission-profile-head { padding-bottom: 6px; }
+.mission-profile-toggle { margin-left: -6px; flex: 0 0 auto; }
+.mission-profile:not(.is-collapsed) .mission-profile-toggle svg { transform: rotate(180deg); }
+/* The map's own bottom corners sit above the card, and follow it as it folds. */
+.mission-map-wrap .maplibregl-ctrl-bottom-left,
+.mission-map-wrap .maplibregl-ctrl-bottom-right {
+  bottom: var(--mission-profile-lift, 0px);
+  transition: bottom 160ms ease;
+}
+.mission-map-wrap .track-clear {
+  bottom: calc(var(--map-rail-inset, 14px) + 30px + var(--mission-profile-lift, 0px));
+  transition: bottom 160ms ease, opacity 140ms, color 140ms, background 140ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mission-map-wrap .maplibregl-ctrl-bottom-left,
+  .mission-map-wrap .maplibregl-ctrl-bottom-right,
+  .mission-map-wrap .track-clear { transition: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .mission-profile { background: var(--surface-2); backdrop-filter: none; -webkit-backdrop-filter: none; }
 }
 .mission-profile-head {
   display: flex; align-items: center; gap: 12px;
@@ -6752,8 +6829,11 @@ button.review-finding-head:focus-visible {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(320px, calc(55 * var(--vh))) var(--mission-profile-h, 190px) auto;
 }
+:where(:root[data-vw~="max-959"]) .mission-page:has(.mission-profile.is-collapsed) {
+  grid-template-rows: minmax(320px, calc(55 * var(--vh))) auto auto;
+}
 :where(:root[data-vw~="max-959"]) .mission-map-wrap { grid-row: 1; grid-column: 1; }
-:where(:root[data-vw~="max-959"]) .mission-profile { grid-row: 2; grid-column: 1; }
+:where(:root[data-vw~="max-959"]) .mission-profile { grid-row: 2; grid-column: 1; align-self: stretch; height: auto; margin: 0; border-radius: 0; border-width: 1px 0 0; }
 :where(:root[data-vw~="max-959"]) .mission-side {
   grid-row: 3; grid-column: 1;
   border-left: none;

@@ -6,7 +6,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Plugins · Corvus GCS documentation</title>
-<meta name="description" content="The Vibration Monitor, the SSH Launcher and Schwalby, and writing a plugin of your own.">
+<meta name="description" content="The Vibration Monitor, the SSH Launcher and Schwalby, the NuttX Console and the Trajectory Viewer to install, and writing a plugin of your own.">
 <link rel="canonical" href="https://m-bsquared.github.io/CorvusGCS/guide/plugins.html">
 <meta name="theme-color" content="#0B0E12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
@@ -14,7 +14,7 @@
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Corvus GCS">
 <meta property="og:title" content="Plugins · Corvus GCS documentation">
-<meta property="og:description" content="The Vibration Monitor, the SSH Launcher and Schwalby, and writing a plugin of your own.">
+<meta property="og:description" content="The Vibration Monitor, the SSH Launcher and Schwalby, the NuttX Console and the Trajectory Viewer to install, and writing a plugin of your own.">
 <meta property="og:url" content="https://m-bsquared.github.io/CorvusGCS/guide/plugins.html">
 <meta property="og:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
@@ -151,10 +151,11 @@
 <!-- guide:content -->
 <h1>Plugins</h1>
 <p class="doc-lead">
-  The <strong>TOOLS</strong> tab in the side workspace is an extension point.
+  The <strong>PLUGINS</strong> tab in the side workspace is an extension point.
   A plugin adds its own view there without a fork and without touching the
-  rest of the app. Three ship with Corvus, and a folder dropped into your
-  plugin folder adds your own.
+  rest of the app, settings of its own, and, when you allow it, a tab of its own. Three ship with
+  Corvus, two more are a download away, and a folder dropped into your plugin
+  folder adds your own.
 </p>
 
 <figure class="doc-shot">
@@ -229,6 +230,148 @@
   separate plugins with their own buttons and settings; neither touches the
   other's.
 </p>
+<p>
+  Schwalby can have a tab of its own. Switch on <strong>Own tab</strong> in its
+  settings (the gear beside it in <a href="settings.html#plugins">Settings,
+  Plugins</a>) and its shelf is the <strong>SCHWALBY</strong> tab, one press
+  from anywhere, instead of a card under PLUGINS.
+</p>
+
+<h2 id="more">Plugins to install</h2>
+<p>
+  Two more plugins are not included with Corvus. Each has a repository of its
+  own, and you add it the way you add any plugin:
+</p>
+<ol>
+  <li>Download the plugin from its repository: <strong>Code, Download ZIP</strong> on GitHub, or <code>git clone</code>.</li>
+  <li>Open <strong>Settings, Plugins, Open plugin folder</strong>.</li>
+  <li>Put the plugin's folder there and name it after the plugin's id, <code>nuttx-console</code> or <code>trajectory-viewer</code>. That is the folder its settings are kept in.</li>
+  <li>Press <strong>Reload plugins</strong> beside it. The plugin is on the PLUGINS tab.</li>
+</ol>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Plugin</th><th>Repository</th><th>Folder</th></tr></thead>
+  <tbody>
+    <tr><td><a href="#nuttx-console">NuttX Console</a></td><td><a href="https://github.com/M-BSquared/corvus-nuttx-console">corvus-nuttx-console</a></td><td><code>nuttx-console</code></td></tr>
+    <tr><td><a href="#trajectory-viewer">Trajectory Viewer</a></td><td><a href="https://github.com/M-BSquared/corvus-trajectory-viewer">corvus-trajectory-viewer</a></td><td><code>trajectory-viewer</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  To update one, replace its folder with the new download and press
+  <strong>Reload plugins</strong>. Its
+  settings are in <code>config.json</code> inside the folder, so keep that
+  file when you replace the rest.
+</p>
+
+<h2 id="nuttx-console">NuttX Console</h2>
+<div class="callout">
+  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-info"></use></svg>
+  <div><p>Not included with Corvus. Install it from <a href="https://github.com/M-BSquared/corvus-nuttx-console">corvus-nuttx-console</a>, see <a href="#more">Plugins to install</a>.</p></div>
+</div>
+<p>
+  PX4's own shell: NSH, the NuttShell of NuttX, the operating system PX4 runs
+  on, reached over the MAVLink link you are already connected with. No cable
+  to the flight controller, and every builtin is there, also the ones with no
+  button anywhere: <code>top</code>, <code>listener</code>,
+  <code>dmesg</code>, <code>free</code>, <code>param</code>,
+  <code>ver all</code>.
+</p>
+<p>
+  It looks and works like the <a href="workspace.html#console">MAVLink
+  console</a>: the shell's output as lines, your commands in the accent
+  colour, warnings and errors in theirs.
+</p>
+<ul>
+  <li><strong>Type a command and press Enter</strong>, or the send button. Up and Down bring back earlier commands, also after a restart. Enter on an empty line asks for a fresh prompt, and ends a running <code>top</code>.</li>
+  <li><strong><kbd>Ctrl</kbd>+<kbd>C</kbd></strong> in the command line, or the stop button, stops a running program such as <code>top</code> or <code>listener</code>.</li>
+  <li><strong>Filter, pause, copy, save and clear</strong> work as in the MAVLink console. Save writes <code>corvus-nsh_</code> and the time as a <code>.log</code> file beside the flight logs.</li>
+  <li>A program that redraws its screen, like <code>top</code>, replaces its lines instead of adding a screen every second.</li>
+</ul>
+
+<h3 id="nuttx-terminal">The terminal window</h3>
+<p>
+  The terminal button at the start of the toolbar opens the same shell in a
+  terminal window, the frame the SSH terminals open in: drag it by its bar,
+  size it from the corner, maximize it, put it away with &times;. There the
+  prompt is NSH's own and <code>top</code> redraws in place.
+</p>
+<ul>
+  <li>The line is edited here and sent whole when you press Enter, as PX4's own <code>mavlink_shell.py</code> and QGroundControl do it, so a slow radio link does not make typing lag. Arrow keys, Home, End and Delete move and edit in the line; Up and Down bring back earlier commands.</li>
+  <li><kbd>Ctrl</kbd>+<kbd>C</kbd> on an empty line stops a running program; on a line you are typing, it drops the line. With text selected, <kbd>Cmd</kbd>+<kbd>C</kbd> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> on Windows and Linux) copies it. <kbd>Ctrl</kbd>+<kbd>L</kbd> clears the screen.</li>
+  <li>The circular arrow in the bar ends the shell, and whatever runs in it, and opens a new one.</li>
+</ul>
+<p>
+  The console and the window show one shell: what you type in either reaches
+  it, and what it prints appears in both. It opens when a PX4 autopilot
+  connects and is closed when the last of the two is closed, so a
+  <code>top</code> left running does not keep the telemetry link busy for
+  nobody. With nothing connected both say so and the shell opens as soon as
+  an autopilot is there. On ArduPilot they say <em>Not available on this
+  autopilot</em>: ArduPilot has no NSH.
+</p>
+<p>
+  The NuttX Console can have a tab of its own, like Schwalby: with
+  <strong>Own tab</strong> switched on in its settings in
+  <a href="settings.html#plugins">Settings, Plugins</a>, it is the
+  <strong>NUTTX CONSOLE</strong> tab. The
+  <a href="workspace.html#nsh">MAVLink console's shell commands</a> keep
+  working beside it; whichever sent the last command gets the answer.
+</p>
+
+<h2 id="trajectory-viewer">Trajectory Viewer</h2>
+<div class="callout">
+  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-info"></use></svg>
+  <div><p>Not included with Corvus. Install it from <a href="https://github.com/M-BSquared/corvus-trajectory-viewer">corvus-trajectory-viewer</a>, see <a href="#more">Plugins to install</a>.</p></div>
+</div>
+<p>
+  Draws a trajectory from a file on the Home map: a route someone planned
+  elsewhere, a survey pattern, or yesterday's flight, as a reference to fly
+  against. It is drawn under the flown track, so while the aircraft flies its
+  own path is always the line on top and you see at a glance where it leaves
+  the reference.
+</p>
+<h3 id="trajectory-file">The file</h3>
+<p>
+  Plain text, one point per line, two or three numbers each: x, y and, if you
+  have it, z. Commas, semicolons, tabs or spaces separate them; a file with
+  semicolons or tabs may write decimals with a comma (<code>48,07;11,64</code>).
+  Empty lines, lines starting with <code>#</code>, <code>//</code> or
+  <code>%</code>, and a header line such as <code>lon,lat,alt</code> are
+  passed over. A line that is none of these is counted and named, and the
+  rest of the file is still read. Above 50 000 points the file is thinned
+  evenly, keeping the first and last point.
+</p>
+<pre><code># lon, lat, altitude
+11.64115,48.07512,20
+11.64230,48.07560,25
+11.64371,48.07601,30</code></pre>
+<h3 id="trajectory-frames">Coordinates</h3>
+<p>The file does not say what its numbers mean, so you choose:</p>
+<dl>
+  <dt>WGS84 / EPSG:4326</dt>
+  <dd>Degrees, in the order GIS tools write them: x is longitude, y is latitude (GeoJSON, QGIS, most CSV exports).</dd>
+  <dt>GPS</dt>
+  <dd>Degrees, in the order a GPS receiver or a phone shows them: latitude first, then longitude.</dd>
+  <dt>Local frame</dt>
+  <dd>Metres from the aircraft. The aircraft is 0, 0, 0 and x points the way its nose points. Choose whether y points to its <strong>right</strong> (FRD, as PX4 has it, with z down) or to its <strong>left</strong> (FLU, as ROS has it, with z up). The frame is taken from the aircraft's position and heading when you press <strong>Anchor at the aircraft</strong> (or turn the line on without an anchor), and then stays where it is while the aircraft flies, so the line is a fixed reference. Anchor again to move it to where the aircraft is now.</dd>
+</dl>
+<p>
+  If the numbers cannot be what you chose (a latitude of 150, say), the
+  plugin says so, and names the other order when the numbers would fit it.
+</p>
+<h3 id="trajectory-line">On the map</h3>
+<ul>
+  <li><strong>Colour</strong>: cyan, lime, magenta, blue or white. None of them is the red of the flown track or the amber of a planned route.</li>
+  <li><strong>Show on the Home map</strong> draws or removes the line. It stays on the map when you close the plugin and comes back after a restart, without opening the plugin, until you switch it off.</li>
+  <li><strong>Show me</strong> brings the Home map forward and frames the whole trajectory.</li>
+  <li><strong>Clear</strong> takes the line off the map and forgets the file.</li>
+</ul>
+<p>
+  The point count, the length and, when the file has z, the height range are
+  shown under the file name. z does not change the line itself: a line on the
+  map lies on the ground, in 3D as well.
+</p>
 
 <h2 id="your-own">Adding your own</h2>
 <p>Plugins are folders. Corvus reads two places:</p>
@@ -237,14 +380,16 @@
   <thead><tr><th>Where</th><th>What it is</th></tr></thead>
   <tbody>
     <tr><td><code>~/.corvus/plugins</code> (<code>%USERPROFILE%\.corvus\plugins</code> on Windows)</td><td>Yours. Survives updates.</td></tr>
-    <tr><td><code>plugins/</code> inside the application</td><td>The ones that ship with Corvus, including the three above. Replaced by an update.</td></tr>
+    <tr><td><code>plugins/</code> inside the application</td><td>The three that ship with Corvus. Replaced by an update.</td></tr>
   </tbody>
 </table>
 </div>
 <p>
   <strong>Settings, Plugins, Open plugin folder</strong> opens the first one in
   Finder, Explorer or your file manager, and lists what Corvus found. Drop a
-  folder in, restart, and the plugin is on the TOOLS tab. A plugin in your
+  folder in, press <strong>Reload plugins</strong>, and the plugin is on the
+  PLUGINS tab. The same button picks up a plugin you changed or deleted, no
+  restart needed. A plugin in your
   folder with the same id as a shipped one replaces it, so you can patch one
   without editing inside the app bundle.
 </p>
@@ -254,7 +399,8 @@
   my-plugin/
     plugin.json
     my-plugin.js
-    my-plugin.css      (optional)</code></pre>
+    my-plugin.css      (optional)
+    tests/             (optional, see Tests below)</code></pre>
 
 <h3 id="manifest">plugin.json</h3>
 <pre><code>{
@@ -297,6 +443,91 @@
   destroy: function (containerEl) { /* tear it down again */ },
 });</code></pre>
 <p>
+  More keys are optional. <code>start: function (api) {}</code> runs once
+  when Corvus starts (and again after <strong>Reload plugins</strong>),
+  whether or not the plugin is ever opened, for what has to be there from the
+  beginning (the Trajectory Viewer puts its saved line back on the map there).
+  <code>tab: true</code> lets it have a tab of its own, and
+  <code>options</code> gives it settings; see below. Write the script as one
+  function that runs itself, as the shipped plugins do, so a reload can run it
+  a second time.
+</p>
+
+<h3 id="tabs">Plugin tabs</h3>
+<p>
+  A plugin registered with <code>tab: true</code> gets an <strong>Own
+  tab</strong> switch in its settings in
+  <a href="settings.html#plugins">Settings, Plugins</a>. On, the plugin has a
+  tab in the side panel, captioned with its name and placed before PLUGINS.
+  Off (the default), it is a card like any other, so a plugin must work in
+  both. In a tab,
+  <code>init</code> runs the first time the tab is shown and the view is kept
+  while you move between tabs; <code>destroy</code> runs when the tab goes
+  away. PLUGINS stays the last tab.
+</p>
+
+<h3 id="options">Plugin settings</h3>
+<p>
+  A plugin that lists <code>options</code> gets a gear beside its version in
+  <a href="settings.html#plugins">Settings, Plugins</a>. The gear opens a
+  dialog with one control per option, drawn by Corvus so every plugin's
+  settings look alike. A change is saved at once.
+</p>
+<pre><code>Corvus.plugins.register("my-plugin", {
+  // name, icon, description, init, destroy as above
+  options: [
+    { key: "units", label: "Units", type: "select", default: "m",
+      choices: [{ value: "m", label: "Metres" }, { value: "ft", label: "Feet" }] },
+    { key: "labels", label: "Show labels", type: "toggle", default: true,
+      hint: "Names beside the points on the map." },
+    { key: "radius", label: "Radius (m)", type: "number", default: 50, min: 1, max: 5000 },
+    { key: "prefix", label: "Prefix", type: "text", placeholder: "WP" },
+  ],
+  optionsChanged: function (options, api) { /* follow the new values */ },
+});</code></pre>
+<p>
+  The types are <code>toggle</code>, <code>select</code>, <code>text</code>
+  and <code>number</code>. Read the values with
+  <code>api.getOptions()</code>: each is its saved value or its default.
+  <code>optionsChanged</code> runs after every change, with all of them.
+  They are kept in the plugin's own <code>config.json</code> under
+  <code>_options</code>, apart from what the plugin saves itself, so
+  <code>api.saveSettings</code> never overwrites them. The key
+  <code>tab</code> is taken by the <a href="#tabs">Own tab</a> switch.
+</p>
+
+<h3 id="map">Drawing on the map</h3>
+<p>
+  <code>api.map</code> draws lines, areas and text on the Home map. Lines and
+  areas lie under the flown track; text sits over it. Keys are the plugin's
+  own, so two plugins can both use <code>"path"</code>, and one key holds one
+  shape: drawing it again replaces it.
+</p>
+<pre><code>const color = api.map.colors[0].color;   // cyan, lime, magenta, blue, white
+
+// A line through the points.
+api.map.drawLine("route", [[11.641, 48.075], [11.643, 48.076]], { color, width: 3, dashed: false });
+
+// An area: the points are its corners, the surface between them is filled.
+api.map.drawPolygon("zone", [[11.640, 48.074], [11.645, 48.074], [11.645, 48.077], [11.640, 48.077]], {
+  color, fillOpacity: 0.25, width: 2,   // width 0: no outline
+});
+
+// A circle of 120 m around a point, as an area.
+api.map.drawCircle("keep-out", [11.642, 48.0755], 120, { color: api.map.colors[2].color });
+
+// Text at a point, with or without a dot.
+api.map.drawText("home-label", [11.642, 48.0755], "Landing zone", { color, size: 13, dot: true });
+
+api.map.setVisible("zone", false);
+api.map.fit([[11.641, 48.075], [11.643, 48.076]]);   // bring Home forward and frame it
+api.map.remove("route");</code></pre>
+<p>
+  A shape outlives the plugin's view: closing the card does not remove it.
+  Remove it when the operator asks. Text is plain text, never markup, and at
+  most 200 characters.
+</p>
+<p>
   The full <code>api</code> is documented at the top of
   <code>src/js/plugins.js</code>, and the manifest in
   <code>corvus/plugin_registry.py</code>. The shipped plugins are complete
@@ -308,6 +539,36 @@
   <li><code>plugins/schwalby</code>: the same, with a control and a stylesheet of its own.</li>
   <li><code>plugins/vibration</code>: a live chart on the telemetry stream.</li>
 </ul>
+<p>
+  The two plugins to install are worked examples too:
+  <a href="https://github.com/M-BSquared/corvus-trajectory-viewer">the Trajectory Viewer</a> for reading a file, a start hook and
+  a line on the map, <a href="https://github.com/M-BSquared/corvus-nuttx-console">the NuttX Console</a> for a tab of its own
+  and a stream from <code>/api/events</code>.
+</p>
+
+<h3 id="tests">Tests</h3>
+<p>
+  A plugin keeps its own tests in a <code>tests</code> folder inside its
+  folder. In a Corvus checkout, a plugin in <code>plugins/</code> is tested
+  with the rest: <code>node tools/frontend_tests.js</code> runs every
+  <code>plugins/&lt;id&gt;/tests/*.js</code> and <code>pytest</code> every
+  <code>plugins/&lt;id&gt;/tests/test_*.py</code>. Name Python test files
+  after the plugin (<code>test_&lt;id&gt;_*.py</code>) so they cannot clash
+  with another plugin's. A plugin that is not installed has no tests to run,
+  so leaving one out never fails the suite, and a plugin's tests stay out of
+  the application when it is built.
+</p>
+<p>
+  A test finds Corvus's own scripts through <code>CORVUS_ROOT</code>, and
+  three folders up when that is not set:
+</p>
+<pre><code>const path = require("node:path");
+const CORVUS = process.env.CORVUS_ROOT
+  ? path.resolve(process.env.CORVUS_ROOT)
+  : path.join(__dirname, "..", "..", "..");
+require(path.join(CORVUS, "src", "js", "ui.js"));
+require(path.join(CORVUS, "src", "js", "plugins.js"));
+require("../my-plugin.js");</code></pre>
 <p>
   A plugin's settings are kept in its own file,
   <code>~/.corvus/plugins/&lt;id&gt;/config.json</code>, not in the main
@@ -348,6 +609,9 @@
     <li><a href="#vibration">Vibration Monitor</a></li>
     <li><a href="#ssh-launcher">SSH Launcher</a></li>
     <li><a href="#schwalby">Schwalby</a></li>
+    <li><a href="#more">Plugins to install</a></li>
+    <li><a href="#nuttx-console">NuttX Console</a></li>
+    <li><a href="#trajectory-viewer">Trajectory Viewer</a></li>
     <li><a href="#your-own">Adding your own</a></li>
     <li><a href="#moving">Taking a plugin to another station</a></li>
   </ul>

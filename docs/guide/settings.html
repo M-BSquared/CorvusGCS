@@ -168,6 +168,8 @@
   <dd>A unit system (metric, imperial, aviation) that sets altitude and length, distance, speed and temperature at once, and each of the four on its own afterwards. Units are for display only: parameters, mission files and everything sent to the aircraft stay in the units the autopilot uses.</dd>
   <dt>Pages</dt>
   <dd>Adds <strong>MISSION</strong> under HOME in the left rail. Off by default. See <a href="mission.html">Mission planner</a>.</dd>
+  <dt id="side-panel">Side panel</dt>
+  <dd><strong>MAVLink console tab</strong> and <strong>SSH tab</strong>, both on by default. Off, the tab is gone from the side panel. Console messages are still collected and still go into the export on the Logs page; saved SSH connections stay saved and plugins still use them, and a terminal opens in a <a href="video.html#windows">window of its own</a> instead. LINK and PLUGINS cannot be switched off.</dd>
 </dl>
 
 <h3 id="map-service">Map service</h3>
@@ -258,8 +260,18 @@
 
 <h2 id="plugins">Plugins</h2>
 <p>
-  What Corvus found in both plugin folders, and <strong>Open plugin
-  folder</strong>, which opens your own. See <a href="plugins.html">Plugins</a>.
+  What Corvus found in both plugin folders, <strong>Open plugin
+  folder</strong>, which opens your own, and <strong>Reload plugins</strong>,
+  which loads what is in the folders now: a plugin you added, changed or
+  deleted takes effect without a restart. See <a href="plugins.html">Plugins</a>.
+</p>
+<p>
+  A plugin with settings has a gear beside its version, which opens them in a
+  dialog. A change is saved at once. A plugin that can have a tab of its own
+  (Schwalby and the NuttX Console can) has <strong>Own tab</strong> there:
+  on, it gets a tab in the side panel, placed before PLUGINS, and its card
+  under PLUGINS goes; off (the default), it is a card. PLUGINS is always the
+  last tab. See <a href="plugins.html#options">Plugin settings</a>.
 </p>
 
 <h2 id="export-import">Export and import</h2>

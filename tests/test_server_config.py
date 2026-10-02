@@ -397,6 +397,25 @@ def test_post_config_persists_flight_hud_off(tmp_path) -> None:
     assert on_disk["ui"] == {"compass_nose_up": True, "flight_hud": False}
 
 
+def test_post_config_persists_the_side_panel_switches(tmp_path) -> None:
+    """Settings -> Side panel and Settings -> Plugins. Each switch posts only
+    its own key, and none of them may drop another ``ui`` key on the way."""
+    cfg_path = tmp_path / "config.json"
+    handler, responses = _handler(
+        config=CorvusConfig(ui={"flight_hud": False}),
+        config_path=str(cfg_path),
+    )
+    handler._api_config_update({"ui": {"ssh_tab": False}})
+    handler._api_config_update({"ui": {"console_tab": False}})
+    handler._api_config_update({"ui": {"plugin_tabs": True}})
+    payload, status = responses[-1]
+    assert status == 200
+    expected = {"flight_hud": False, "ssh_tab": False, "console_tab": False, "plugin_tabs": True}
+    assert payload["config"]["ui"] == expected
+    on_disk = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert on_disk["ui"] == expected
+
+
 def test_post_config_ui_keys_merge_not_replace(tmp_path) -> None:
     """The two ui keys are written one at a time and must not clear each other.
 

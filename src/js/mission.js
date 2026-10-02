@@ -542,6 +542,10 @@ Corvus.mission = (function () {
   let map = null;
   let mapEl = null;
   let profileEl = null;
+  let profileWrapEl = null;
+  let profileToggleEl = null;
+  let profileLiftObserver = null;
+  let hadEnding = false;
   let listEl = null;
   let listHeadEl = null;
   let sideScrollEl = null;
@@ -1383,7 +1387,14 @@ Corvus.mission = (function () {
     profileNote.className = "mission-profile-note";
     profileNote.id = "missionProfileNote";
     profileNote.textContent = "Drag a point up or down to set its height.";
-    profileHead.append(profileTitle, profileNote, buildAircraftPicker());
+    profileWrapEl = profileWrap;
+    profileToggleEl = Corvus.ui.iconButton("chevron-down", {
+      title: "Show altitude profile", size: 14,
+      onClick: () => setProfileCollapsed(!profileWrap.classList.contains("is-collapsed")),
+    });
+    profileToggleEl.classList.add("mission-profile-toggle");
+    profileHead.append(profileToggleEl, profileTitle, profileNote, buildAircraftPicker());
+    setProfileCollapsed(true);
     profileEl = document.createElement("div");
     profileEl.className = "mission-profile-plot";
     profileWrap.append(profileHead, profileEl);
@@ -1391,6 +1402,7 @@ Corvus.mission = (function () {
 
     pageEl = page;
     container.appendChild(page);
+    watchProfileLift(mapWrap, profileWrap);
 
     buildTools();
     buildMapControls(controls);
@@ -1616,6 +1628,9 @@ Corvus.mission = (function () {
     if (pageEl && pageEl.remove) pageEl.remove();
     pageEl = null;
     mapWrapEl = null;
+    if (profileLiftObserver) { profileLiftObserver.disconnect(); profileLiftObserver = null; }
+    profileWrapEl = profileToggleEl = null;
+    hadEnding = false;
     mapEl = profileEl = listEl = detailEl = summaryEl = issuesEl = toolsEl = null;
     listHeadEl = sideScrollEl = null;
     status = null;
@@ -2021,7 +2036,7 @@ Corvus.mission = (function () {
     const fileRow = document.createElement("div");
     fileRow.className = "mission-file-row";
     const read = Corvus.ui.button({
-      variant: "secondary", size: "sm", icon: "download", label: "From vehicle",
+      variant: "secondary", size: "sm", icon: "download", label: "Read",
       className: "mission-read", onClick: () => readFromVehicle(read),
     });
     read.title = "Read the mission the vehicle holds into the planner";
@@ -3035,8 +3050,44 @@ Corvus.mission = (function () {
   /** Everything a committed VALUE changes, except the panel it was typed into.
    *  Rebuilding that panel takes the focus out of the field the operator just
    *  tabbed into, and the field already holds the value that was stored. */
+  /** The profile card starts folded: a route has no end to read a profile of
+   *  until it has a landing or a return, and a folded card leaves the map
+   *  alone. Unfolding redraws, because Plotly had nothing to measure. */
+  function setProfileCollapsed(on) {
+    if (!profileWrapEl || !profileToggleEl) return;
+    profileWrapEl.classList.toggle("is-collapsed", on);
+    const label = on ? "Show altitude profile" : "Hide altitude profile";
+    profileToggleEl.title = label;
+    profileToggleEl.setAttribute("aria-label", label);
+    profileToggleEl.setAttribute("aria-expanded", on ? "false" : "true");
+    if (!on) requestAnimationFrame(() => { resizeProfile(); drawProfile(); });
+  }
+
+  /** Unfold once, at the moment the plan gains its landing or return. After
+   *  that the operator's own fold is respected. */
+  function openProfileForEnding() {
+    const has = items.some((item) => item.type === "land" || item.type === "rtl");
+    if (has && !hadEnding) setProfileCollapsed(false);
+    hadEnding = has;
+  }
+
+  /** The map's bottom corners ride on top of the profile card: its height,
+   *  folded or not, is published as a variable the corner rules add to. */
+  function watchProfileLift(mapWrap, profileWrap) {
+    if (typeof ResizeObserver !== "function") return;
+    if (profileLiftObserver) profileLiftObserver.disconnect();
+    profileLiftObserver = new ResizeObserver(() => {
+      const cs = getComputedStyle(profileWrap);
+      const inFlow = cs.position === "relative" && cs.gridRow.startsWith("1");
+      const lift = inFlow ? profileWrap.offsetHeight + 14 : 0;
+      mapWrap.style.setProperty("--mission-profile-lift", lift + "px");
+    });
+    profileLiftObserver.observe(profileWrap);
+  }
+
   function refreshPlan() {
     if (destroyed) return;
+    openProfileForEnding();
     drawMap();
     renderList();
     renderSummary();
@@ -3570,6 +3621,12 @@ Corvus.mission = (function () {
     const title = document.createElement("span");
     title.textContent = spec.label;
     head.appendChild(title);
+    // On an aircraft that holds a loiter point rather than circling it, the
+    // text also says why the radius and direction fields are missing.
+    const hintText = itemHint(item);
+    if (hintText) {
+      head.appendChild(Corvus.ui.infoHint({ title: spec.label, text: hintText }));
+    }
     // The point's name beside its kind, as the mission's name sits beside
     // "Mission" at the top: a captioned row of its own took height from the
     // item list above.
@@ -3585,12 +3642,6 @@ Corvus.mission = (function () {
       onClick: () => { removeItem(item.id); refreshAll(); },
     }));
     detailEl.appendChild(head);
-
-    // On an aircraft that holds a loiter point rather than circling it, this
-    // is also where it says why the radius and direction fields are missing.
-    const note = Corvus.ui.empty(itemHint(item));
-    note.className = "field-hint";
-    detailEl.appendChild(note);
 
     if (spec.position) {
       const grid = document.createElement("div");
@@ -4137,6 +4188,8 @@ Corvus.mission = (function () {
     ];
 
     const layout = Object.assign({}, theme, {
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "rgba(0,0,0,0)",
       margin: PROFILE_MARGIN,
       showlegend: false,
       hovermode: "closest",

@@ -13,7 +13,8 @@
   is.
 
   So console, params, firmware and tiles share this one `/api/events` stream,
-  each arriving under its own event name. Worst case is now three connections
+  each arriving under its own event name, and so does `shell`, the PX4 NSH
+  output the NuttX Console plugin draws. Worst case is now three connections
   (telemetry, this, SSH) instead of five, and three are left for everything
   else.
 
@@ -128,7 +129,7 @@ Corvus.events = (function () {
   }
 
   /**
-   * Listen to one topic: "console", "params", "firmware", "tiles" — or
+   * Listen to one topic: "console", "params", "firmware", "tiles", "shell" — or
    * "error", which fires when the underlying stream drops and is about to
    * reconnect.
    * @param {string} topic

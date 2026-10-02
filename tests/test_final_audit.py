@@ -166,6 +166,10 @@ _EXPECTED_POST = {
     "/api/forwarding",
     "/api/autotune",
     "/api/vibration/stream",
+    # The NuttX Console plugin's terminal: keystrokes into PX4's NSH, and the
+    # release that ends it. Output arrives on the `shell` topic of /api/events.
+    "/api/mavlink/shell/send",
+    "/api/mavlink/shell/close",
     "/api/rc/calibrate",
     "/api/rc/stream",
     "/api/tuning/stream",

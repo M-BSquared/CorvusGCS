@@ -494,6 +494,27 @@ def test_flight_hud_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
         assert load_config(str(p)).ui == {"flight_hud": value}
 
 
+def test_side_panel_tab_keys_are_kept_only_as_genuine_booleans(tmp_path) -> None:
+    """``console_tab`` and ``ssh_tab`` are on by default and ``plugin_tabs`` is
+    off: absent or a hand-edited string leaves each key out, so the frontend
+    falls back to that default. Only a real boolean is kept, and each one on
+    its own."""
+    p = tmp_path / "c.json"
+    for key in ("console_tab", "ssh_tab", "plugin_tabs"):
+        p.write_text(json.dumps({}), encoding="utf-8")
+        assert (load_config(str(p)).ui or {}).get(key) is None
+        p.write_text(json.dumps({"ui": {key: "false"}}), encoding="utf-8")
+        assert (load_config(str(p)).ui or {}).get(key) is None
+        p.write_text(json.dumps({"ui": {key: 0}}), encoding="utf-8")
+        assert (load_config(str(p)).ui or {}).get(key) is None
+        for value in (True, False):
+            p.write_text(json.dumps({"ui": {key: value}}), encoding="utf-8")
+            assert load_config(str(p)).ui == {key: value}
+    p.write_text(json.dumps({"ui": {"console_tab": False, "ssh_tab": False, "plugin_tabs": True}}),
+                 encoding="utf-8")
+    assert load_config(str(p)).ui == {"console_tab": False, "ssh_tab": False, "plugin_tabs": True}
+
+
 def test_compass_nose_up_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
     """Opt-in: absent or a hand-edited string leaves the compass north up."""
     p = tmp_path / "c.json"

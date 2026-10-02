@@ -485,6 +485,12 @@ Corvus.app = (function () {
       // The preflight checklist and its Home window. Off unless the config
       // asks for it, like the Mission planner.
       Corvus.checklist.fromConfig(cfg);
+      // The side panel's CONSOLE and SSH tabs are there unless the config
+      // takes them away, and a plugin gets a tab of its own only when the
+      // config allows it. Plugins that load later are sorted by the same rule.
+      Corvus.panel.setTabHidden("console", !!(cfg.ui && cfg.ui.console_tab === false));
+      Corvus.panel.setTabHidden("ssh", !!(cfg.ui && cfg.ui.ssh_tab === false));
+      Corvus.plugins.setTabsAllowed(!!(cfg.ui && cfg.ui.plugin_tabs));
     }).catch(() => {});
 
     /* Before any module builds its DOM: this replaces the operating system's

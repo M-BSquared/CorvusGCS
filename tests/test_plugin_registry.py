@@ -5,8 +5,10 @@ own ``~/.corvus/plugins``.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
+from pathlib import Path
 
 import pytest
 
@@ -285,41 +287,58 @@ def test_ensure_user_plugins_dir_is_idempotent(tmp_path, monkeypatch):
 # The plugins that ship with Corvus
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("plugin_id,script,style", [
-    ("vibration", "vibration.js", "vibration.css"),
-    ("ssh-launcher", "ssh-launcher.js", "ssh-launcher.css"),
-    ("schwalby", "schwalby.js", "schwalby.css"),
-])
-def test_bundled_plugin_is_discoverable(plugin_id, script, style):
+_ROOT = Path(__file__).resolve().parent.parent
+_spec = importlib.util.spec_from_file_location("corvus_bundle_plugins_tool", _ROOT / "tools" / "bundle_plugins.py")
+bundle_plugins = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(bundle_plugins)
+
+# What a release carries: the plugin folders .gitignore lets back in.
+SHIPPED = bundle_plugins.shipped_plugin_ids(_ROOT / ".gitignore") or []
+
+
+def _bundled() -> list[dict]:
+    return [p for p in reg.discover(user_dir=os.path.join(str(os.devnull), "none"))
+            if p["source"] == "bundled"]
+
+
+@pytest.mark.parametrize("plugin_id", SHIPPED)
+def test_bundled_plugin_is_discoverable(plugin_id):
     """Every shipped plugin parses through the same code path a dropped-in
-    one does — that path being the same one is the whole point."""
-    found = reg.discover(user_dir=os.path.join(str(os.devnull), "none"))
-    ids = [p["id"] for p in found]
-    assert plugin_id in ids
-    plugin = found[ids.index(plugin_id)]
-    assert plugin["source"] == "bundled"
-    assert plugin["scripts"] == [script]
-    assert plugin["styles"] == [style]
+    one does — that path being the same one is the whole point. A plugin
+    that is not in this checkout has nothing to check."""
+    if not (_ROOT / "plugins" / plugin_id / "plugin.json").is_file():
+        pytest.skip(f"plugins/{plugin_id} is not in this checkout")
+    found = {p["id"]: p for p in _bundled()}
+    assert plugin_id in found
+    plugin = found[plugin_id]
+    assert plugin["scripts"], plugin_id
+    for name in plugin["scripts"] + plugin["styles"]:
+        assert (_ROOT / "plugins" / plugin_id / name).is_file(), (plugin_id, name)
 
 
 def test_bundled_plugins_keep_the_grid_order_they_declare():
     """Vibration first, then the launcher — the order the TOOLS tab had before
-    either of them lived in a folder — and Schwalby after it."""
-    found = reg.discover(user_dir=os.path.join(str(os.devnull), "none"))
-    assert [p["id"] for p in found] == ["vibration", "ssh-launcher", "schwalby"]
+    either of them lived in a folder — then Schwalby. Only the ones in this
+    checkout are compared, and a plugin installed into plugins/ besides them
+    takes the place its own order gives it."""
+    found = [p["id"] for p in _bundled()]
+    assert [i for i in found if i in ("vibration", "ssh-launcher", "schwalby")] == \
+        [i for i in ("vibration", "ssh-launcher", "schwalby") if i in found]
+    orders = [(p["order"], p["name"].lower()) for p in _bundled()]
+    assert orders == sorted(orders)
 
 
-def test_bundled_plugins_are_not_ignored_by_git():
+def test_gitignore_keeps_every_plugin_out_but_the_shipped_ones():
     """`.gitignore` keeps operator plugins out of the repository by ignoring
-    every folder under plugins/ and letting the shipped ones back in. A shipped
-    plugin missing from that list is one CI never sees, so the artifacts would
-    go out without it."""
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    with open(os.path.join(root, ".gitignore"), encoding="utf-8") as fh:
-        rules = [line.strip() for line in fh]
-    assert "/plugins/*/" in rules
-    for plugin in reg.discover(user_dir=os.path.join(str(os.devnull), "none")):
-        assert f"!/plugins/{plugin['id']}/" in rules, plugin["id"]
+    every folder under plugins/ and letting the shipped ones back in, and the
+    build ships exactly that list (tools/bundle_plugins.py). The NuttX Console
+    and the Trajectory Viewer are installed separately, from their own
+    repositories, so they are not on it."""
+    rules = (_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert "/plugins/*/" in [r.strip() for r in rules]
+    assert SHIPPED, "no plugin ships with Corvus"
+    assert "nuttx-console" not in SHIPPED
+    assert "trajectory-viewer" not in SHIPPED
 
 
 def test_a_file_name_that_starts_with_a_dot_keeps_it(tmp_path):

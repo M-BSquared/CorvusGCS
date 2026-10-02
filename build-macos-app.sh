@@ -431,8 +431,10 @@ rsync -a --exclude '__pycache__' "$REPO_DIR/src/" "$APPROOT/src/"
 rsync -a "$REPO_DIR/assets/" "$APPROOT/assets/"
 # The plugins that ship with Corvus. corvus/plugin_registry.py resolves this
 # root as a sibling of the corvus package, exactly like src/, so it has to land
-# beside it. Operator plugins live in ~/.corvus/plugins and are never bundled.
-rsync -a --exclude '__pycache__' "$REPO_DIR/plugins/" "$APPROOT/plugins/"
+# beside it. Operator plugins live in ~/.corvus/plugins and are never bundled,
+# and neither is a plugin installed into plugins/ for development: only the
+# ones .gitignore lets back in, without their tests/.
+"$PYBIN" "$REPO_DIR/tools/bundle_plugins.py" "$APPROOT/plugins"
 # -X: rsync -a above leaves extended attributes behind, cp -a does not, and a
 # working copy's (a sync agent's, Finder's) are nothing the bundle should carry.
 cp -aX "$REPO_DIR/VERSION" "$APPROOT/VERSION"

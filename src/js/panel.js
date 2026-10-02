@@ -86,7 +86,7 @@ Corvus.panel = (function () {
   let autoscroll = true;
   let history = [];
   let histIdx = -1;
-  let sshContent, futureContent;
+  let sshContent, futureContent, panelContent;
   let consoleUnsub = null;
   let consoleCommandPending = false;
   // The live terminal handle from Corvus.sshTerm, or null when the SSH tab is
@@ -107,8 +107,7 @@ Corvus.panel = (function () {
   function nowTs() {
     const d = new Date();
     const p = (n) => String(n).padStart(2, "0");
-    const ms = String(d.getMilliseconds()).padStart(3, "0");
-    return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${ms}`;
+    return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
   }
 
   // ---- history persistence ----
@@ -765,11 +764,118 @@ Corvus.panel = (function () {
    */
   function showTab(id) {
     const tabEl = document.querySelector(`.panel-tabs .tab[data-tab="${id}"]`);
-    if (!tabEl) return;
+    // A tab the operator switched off in Settings stays off: whoever asked
+    // for it is told no, and has to show what it wanted some other way.
+    if (!tabEl || tabEl.hidden) return false;
     document.querySelectorAll(".panel-tabs .tab").forEach((t) =>
       t.classList.toggle("active", t === tabEl));
     document.querySelectorAll(".tab-panel").forEach((p) =>
       p.classList.toggle("active", p.dataset.panel === id));
+    const hook = tabHooks[id];
+    if (hook && typeof hook.onShow === "function") {
+      try { hook.onShow(); } catch (err) { console.error("tab onShow failed:", id, err); }
+    }
+    return true;
+  }
+
+  // ---- tabs that come and go ----
+  //
+  // LINK, CONSOLE, SSH and PLUGINS are in index.html. Two things change that
+  // set at run time: Settings can switch CONSOLE and SSH off, and a plugin
+  // allowed a tab of its own gets one (js/plugins.js). PLUGINS stays the last
+  // tab whatever is added, because it is where every plugin without a tab
+  // still lives.
+
+  // Tab id -> {onShow}, for the tabs added through addTab.
+  const tabHooks = Object.create(null);
+
+  function tabButton(id) {
+    return tabs ? tabs.querySelector(`.tab[data-tab="${id}"]`) : null;
+  }
+
+  function tabSection(id) {
+    return panelContent ? panelContent.querySelector(`.tab-panel[data-panel="${id}"]`) : null;
+  }
+
+  /** The tab that takes over when the one showing goes away: the first one
+   *  still there, which is LINK, since nothing can take that away. */
+  function fallbackTab(except) {
+    const all = tabs ? Array.from(tabs.querySelectorAll(".tab")) : [];
+    const next = all.find((t) => !t.hidden && t.dataset.tab !== except);
+    return next ? next.dataset.tab : null;
+  }
+
+  /**
+   * Add a tab before PLUGINS and return the (empty) section it shows, or null
+   * before init() or for an id that is not a string. Adding an id that is
+   * already there returns its section rather than a second tab.
+   *
+   * @param {Object} spec {id, label, title, onShow}. `label` is the caption
+   *   (shown in capitals like the others), `onShow` runs every time the tab is
+   *   brought forward, which is how a plugin builds its view on first sight.
+   * @returns {HTMLElement|null}
+   */
+  function addTab(spec) {
+    const s = spec || {};
+    if (!tabs || !panelContent || typeof s.id !== "string" || !s.id) return null;
+    const existing = tabSection(s.id);
+    if (existing) return existing;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "tab tab-extra";
+    btn.dataset.tab = s.id;
+    btn.textContent = String(s.label || s.id);
+    // The caption can be cut short in a narrow panel; the full name is on hover.
+    btn.title = String(s.title || s.label || s.id);
+    tabs.insertBefore(btn, tabButton("future"));
+    const section = document.createElement("section");
+    section.className = "tab-panel";
+    section.dataset.panel = s.id;
+    panelContent.insertBefore(section, tabSection("future"));
+    tabHooks[s.id] = { onShow: s.onShow };
+    return section;
+  }
+
+  /** Remove a tab addTab made. The tab showing moves on if it was this one. */
+  function removeTab(id) {
+    const btn = tabButton(id);
+    const section = tabSection(id);
+    if (!btn && !section) return false;
+    const wasActive = !!(btn && btn.classList.contains("active"));
+    delete tabHooks[id];
+    if (btn) btn.remove();
+    if (section) section.remove();
+    if (wasActive) {
+      const next = fallbackTab(id);
+      if (next) showTab(next);
+    }
+    return true;
+  }
+
+  /**
+   * Hide or show one of the panel's tabs (Settings: the MAVLink console and
+   * SSH tabs). Hiding the tab that is showing brings the first remaining one
+   * forward. LINK and PLUGINS cannot be hidden: one is how the aircraft is
+   * reached, the other where plugins go.
+   *
+   * @returns {boolean} whether there is such a tab
+   */
+  function setTabHidden(id, hidden) {
+    if (id === "link" || id === "future") return false;
+    const btn = tabButton(id);
+    if (!btn) return false;
+    btn.hidden = !!hidden;
+    if (btn.hidden && btn.classList.contains("active")) {
+      const next = fallbackTab(id);
+      if (next) showTab(next);
+    }
+    return true;
+  }
+
+  /** Whether a tab is there and not switched off. */
+  function isTabShown(id) {
+    const btn = tabButton(id);
+    return !!(btn && !btn.hidden);
   }
 
   /** Tear down the live terminal, if any. Idempotent. */
@@ -1411,6 +1517,7 @@ Corvus.panel = (function () {
     hintEl = document.getElementById("consoleHint");
     sshContent = document.getElementById("sshContent");
     futureContent = document.getElementById("futureContent");
+    panelContent = panel.querySelector(".panel-content");
 
     handle.addEventListener("click", toggle);
 
@@ -1493,6 +1600,7 @@ Corvus.panel = (function () {
 
   return {
     init, toggle, addConsoleLine, addSSHConnection, editSSHConnection, showSSHTerminal, showTab,
+    addTab, removeTab, setTabHidden, isTabShown,
     setupSSHConnection, sshNeeds, openSSHWindow, refreshSSHCards,
     // Exposed for tests: the pure pieces, assertable without a DOM.
     // The transcript, for screens outside the CONSOLE tab (the Logs page).

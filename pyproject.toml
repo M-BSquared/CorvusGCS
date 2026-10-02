@@ -73,7 +73,12 @@ package-windows = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# Each plugin keeps its own checks in plugins/<id>/tests/, so a plugin that is
+# not installed takes its tests with it and leaves nothing to fail. Name a
+# plugin's test files after the plugin (test_<id>_*.py): test files are
+# imported by their bare name, so two plugins with a test_settings.py would
+# collide.
+testpaths = ["tests", "plugins"]
 # The repo root on sys.path, so `import corvus` resolves however pytest is
 # started. Without it only `python -m pytest` works — that form injects the
 # working directory, the bare `pytest` console script does not — so the suite
@@ -89,7 +94,7 @@ markers = [
 ]
 
 [tool.ruff]
-# CI runs `ruff check corvus serve.py tests`. This section is
+# CI runs `ruff check corvus serve.py tests plugins`. This section is
 # what "clean" means, and it is deliberately narrow: the point of adding a
 # linter to a codebase this size is to catch mistakes, not to start a
 # reformatting argument. Line length is not enforced at all.

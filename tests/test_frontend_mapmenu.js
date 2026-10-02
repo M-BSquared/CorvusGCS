@@ -487,8 +487,35 @@ function testAnUnrelatedKeyDoesNotClose() {
   reset();
   withActions();
   fireMap("click", { lngLat: { lng: 11.0, lat: 48.5 } });
-  fireDocument("keydown", { key: "a" });
+  fireDocument("keydown", { key: "x" });
   assert.ok(menuEl());
+}
+
+function testFlightKeysCloseAndPassThrough() {
+  ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "w", "a", "s", "d", "W", "D"]
+    .forEach((key) => {
+      reset();
+      withActions();
+      fireMap("click", { lngLat: { lng: 11.0, lat: 48.5 } });
+      let stopped = false;
+      fireDocument("keydown", {
+        key, shiftKey: key === key.toUpperCase() && key.length === 1,
+        stopPropagation() { stopped = true; },
+        preventDefault() { stopped = true; },
+      });
+      assert.equal(menuEl(), null, `${key} closes the menu`);
+      assert.equal(pinEl(), null, `${key} takes the pin down too`);
+      assert.equal(stopped, false, `${key} still reaches the flight controls`);
+    });
+}
+
+function testAFlightKeyWithAShortcutModifierDoesNotClose() {
+  reset();
+  withActions();
+  fireMap("click", { lngLat: { lng: 11.0, lat: 48.5 } });
+  fireDocument("keydown", { key: "a", metaKey: true });
+  fireDocument("keydown", { key: "ArrowUp", ctrlKey: true });
+  assert.ok(menuEl(), "Cmd+A and Ctrl+Up are shortcuts, not flight input");
 }
 
 function testPointerDownOutsideCloses() {
@@ -618,6 +645,8 @@ const tests = [
   testFirstUsableRowTakesFocus,
   testEscapeCloses,
   testAnUnrelatedKeyDoesNotClose,
+  testFlightKeysCloseAndPassThrough,
+  testAFlightKeyWithAShortcutModifierDoesNotClose,
   testPointerDownOutsideCloses,
   testPointerDownInsideTheMenuDoesNotClose,
   testClosingUnhooksTheDocumentListeners,

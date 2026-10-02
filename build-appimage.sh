@@ -195,7 +195,9 @@ rsync -a --exclude '__pycache__' "$REPO_DIR/src/" "$APPDIR/src/"
 rsync -a "$REPO_DIR/assets/" "$APPDIR/assets/"
 # The bundled plugins, beside corvus/ and src/ for the same reason those are
 # (corvus/plugin_registry.py resolves this root as a sibling of the package).
-rsync -a --exclude '__pycache__' "$REPO_DIR/plugins/" "$APPDIR/plugins/"
+# Only the ones .gitignore lets back in, and without their tests/: a plugin
+# installed into plugins/ for development is not part of the release.
+python3 "$REPO_DIR/tools/bundle_plugins.py" "$APPDIR/plugins"
 cp -a "$REPO_DIR/VERSION" "$APPDIR/VERSION"
 # The Sustainable Use License requires that anyone who receives a copy of
 # the software also receives a copy of its terms, so the licence ships in

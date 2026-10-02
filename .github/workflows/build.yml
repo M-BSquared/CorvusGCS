@@ -2,10 +2,12 @@
 # Corvus GCS — GitHub Actions pipeline (the project's only CI)
 # -----------------------------------------------------------------------------
 # Jobs:
-#   test        — pytest suite (python 3.12) on every push, PR, and tag.
+#   test        — pytest suite (python 3.12) on every push, PR, and tag:
+#                 tests/ and each plugin's own plugins/<id>/tests/.
 #   test-windows— the same suite on Windows; gates windows-app only.
-#   lint        — ruff over corvus/, serve.py and tests/.
-#   frontend    — the plain-node frontend assertions under tests/*.js.
+#   lint        — ruff over corvus/, serve.py, tests/ and plugins/.
+#   frontend    — the plain-node frontend assertions, tests/*.js and
+#                 plugins/<id>/tests/*.js, via tools/frontend_tests.js.
 #   appimage    — Linux x86_64 AppImage via ./build.sh   (-> build-appimage.sh).
 #   macos-app   — macOS arm64 .app + .dmg via ./build.sh --dmg.
 #   windows-app — Windows x64 folder + zip via .\build-windows.ps1 (PyInstaller).
@@ -56,7 +58,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install --group test
       - name: pytest
-        run: pytest -q tests
+        run: pytest -q
 
   # --- the suite on Windows --------------------------------------------------
   # Its own job rather than a matrix leg of `test`: `needs:` waits for every leg
@@ -78,7 +80,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install --group test
       - name: pytest
-        run: pytest -q tests
+        run: pytest -q
 
   # --- lint ------------------------------------------------------------------
   # The pipeline ran no linter, which is how six dead locals — an unused
@@ -102,7 +104,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install --group lint
       - name: ruff
-        run: ruff check corvus serve.py tests
+        run: ruff check corvus serve.py tests plugins
 
   # --- frontend assertions (no browser, no test runner) ----------------------
   frontend:
@@ -113,21 +115,10 @@ jobs:
         with:
           node-version: '20'
       - name: Run frontend tests
-        # An unmatched glob would pass itself through as a literal filename
-        # and "succeed" by running nothing, so the count is checked.
-        run: |
-          set -e
-          found=0
-          for f in tests/*.js; do
-            [ -e "$f" ] || continue
-            found=1
-            echo "--- $f"
-            node "$f"
-          done
-          if [ "$found" -ne 1 ]; then
-            echo "no frontend test files found, expected tests/*.js" >&2
-            exit 1
-          fi
+        # tests/*.js and every plugin's tests/*.js. The runner fails when it
+        # finds nothing at all, so a broken pattern cannot pass by running
+        # nothing; a plugin folder that is not there simply has no tests.
+        run: node tools/frontend_tests.js
 
   # --- Linux artifact --------------------------------------------------------
   # ubuntu-22.04 on purpose: the AppImage bundles the host's CPython and links

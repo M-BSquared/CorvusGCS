@@ -89,6 +89,9 @@ TELEMETRY_SSE_CAPACITY = 1
 CONSOLE_SSE_CAPACITY = 100
 PARAMS_SSE_CAPACITY = 16
 SSH_SSE_CAPACITY = 256
+# NSH output for a terminal, one SERIAL_CONTROL chunk (at most 70 bytes) per
+# entry: about 35 KB, several screens of `top`.
+SHELL_SSE_CAPACITY = 512
 TILES_PROGRESS_SSE_CAPACITY = 16
 FIRMWARE_SSE_CAPACITY = 16
 # Interactive cache-fill timeout. Short on purpose: this is the browser waiting
@@ -3551,6 +3554,41 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         status = 503 if "not connected" in error or "DISCONNECTED" in error else 409
         self._send_json({"ok": False, "error": error}, status)
 
+    @route("POST", "/api/mavlink/shell/send")
+    def _api_mavlink_shell_send(self, payload: dict) -> None:
+        """Type into the PX4 NSH shell, for a terminal.
+
+        ``{"data": "ver all\\n"}`` is sent as it is: no newline added, nothing
+        trimmed, so a Ctrl-C (``"\\x03"``) reaches a running ``top``. The
+        output arrives on the ``shell`` topic of ``/api/events``. 409 on a
+        stack with no shell, 503 with nothing connected.
+        """
+        data = payload.get("data")
+        if not isinstance(data, str) or not data:
+            self._send_json({"ok": False, "error": "data must be non-empty text"}, 400)
+            return
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        if self.mavlink.write_shell(data):
+            self._send_json({"ok": True})
+            return
+        error = self.mavlink.get_last_command_error() or "shell write failed"
+        status = 503 if "not connected" in error else 409
+        self._send_json({"ok": False, "error": error}, status)
+
+    @route("POST", "/api/mavlink/shell/close")
+    def _api_mavlink_shell_close(self, payload: dict) -> None:
+        """End the terminal's shell: PX4 stops it and frees the link.
+
+        Idempotent, and fine with nothing connected. What was running in the
+        shell (a ``top``, a ``listener``) stops with it.
+        """
+        del payload
+        if self.mavlink is not None:
+            self.mavlink.stop_shell()
+        self._send_json({"ok": True})
+
     @route("POST", "/api/mavlink/manual")
     def _api_mavlink_manual(self, payload: dict) -> None:
         """Forward one virtual-joystick frame to the vehicle as MANUAL_CONTROL.
@@ -6890,6 +6928,19 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.mavlink.add_console_sub(listener)
         return (lambda: self.mavlink.remove_console_sub(listener)), None
 
+    def _bind_shell(self, buf: _BoundedSseBuffer, job_id: str | None = None):
+        # The initial event is everything the shell printed so far, marked as
+        # a replay: a terminal clears itself and draws it, so a stream that
+        # reconnects redraws the session instead of printing it twice.
+        if not self.mavlink:
+            return (lambda: None), {"text": "", "replay": True}
+        listener = buf.put_fifo
+        backlog = self.mavlink.add_shell_sub(listener)
+        return (
+            lambda: self.mavlink.remove_shell_sub(listener),
+            {"text": backlog, "replay": True},
+        )
+
     def _bind_params(self, buf: _BoundedSseBuffer, job_id: str | None = None):
         if not self.mavlink:
             return (lambda: None), {"state": "idle", "count": 0, "received": 0}
@@ -6947,6 +6998,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 "message": e.get("message"),
             })),
             "tiles": (self._bind_tiles, TILES_PROGRESS_SSE_CAPACITY, _sanitize),
+            "shell": (self._bind_shell, SHELL_SSE_CAPACITY, lambda e: e),
         }
 
     _SSE_TERMINAL_STATES = ("done", "cancelled", "failed")
@@ -7021,7 +7073,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
 
     @route("GET", "/api/events")
     def _sse_events(self) -> None:
-        """One stream carrying any of console, params, firmware and tiles.
+        """One stream carrying any of console, params, firmware, tiles and shell.
 
         ``?topics=console,params`` selects them; ``?job=<id>`` is the download
         job the ``tiles`` topic follows. Unknown names are ignored rather than

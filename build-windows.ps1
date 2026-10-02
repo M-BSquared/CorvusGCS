@@ -242,6 +242,12 @@ Set-Content -Path $Entry -Value $EntrySource -Encoding UTF8
 Write-Host ">>> Running PyInstaller ..."
 if (Test-Path $AppDir) { Remove-Item -Recurse -Force $AppDir }
 
+# Only the plugins .gitignore lets back in, without their tests\: a plugin
+# installed into plugins\ for development is not part of the release.
+$PluginStage = Join-Path $BuildDir "plugins"
+& $VenvPy (Join-Path $RepoDir "tools\bundle_plugins.py") $PluginStage
+if ($LASTEXITCODE -ne 0) { throw "bundling the plugins failed" }
+
 $PyiArgs = @(
     "--noconfirm", "--clean", "--windowed",
     "--name", $AppName,
@@ -261,7 +267,7 @@ $PyiArgs = @(
     # as a sibling of the package, the same way server.py resolves src\, so it
     # lands beside them. Operator plugins live in %USERPROFILE%\.corvus\plugins
     # and are never bundled.
-    "--add-data", "$(Join-Path $RepoDir 'plugins');plugins",
+    "--add-data", "$PluginStage;plugins",
     "--hidden-import", "corvus.app",
     # pymavlink generates its dialects at import time from data the analyser
     # cannot see, so the whole package is collected rather than guessed at.

@@ -626,6 +626,7 @@ Corvus.sidenav = (function () {
     body.appendChild(scaleCard(cfg));
     body.appendChild(unitsCard(cfg));
     body.appendChild(pagesCard(cfg));
+    body.appendChild(sidePanelCard(cfg));
     body.appendChild(mapServiceCard(cfg, gen));
     body.appendChild(trackCard(cfg));
     body.appendChild(controlsCard(cfg));
@@ -681,6 +682,65 @@ Corvus.sidenav = (function () {
             "Missions are drawn, saved and uploaded there. Nothing is " +
             "sent to the aircraft until you press Upload.",
     }));
+    return card;
+  }
+
+  // Which tabs the side panel carries. CONSOLE and SSH are on by default, so
+  // an absent key reads as shown; a station that never types a MAVLink
+  // command or opens a shell can take them away. LINK and PLUGINS stay.
+  //
+  // Same contract as the switches around it: the panel changes at once, the
+  // persist is awaited, and a refused POST puts the tab back.
+  function sidePanelCard(cfg) {
+    const card = Corvus.ui.card({ title: "Side panel" });
+    const ui = cfg.ui || {};
+    const apply = (id, shown) => {
+      if (Corvus.panel && typeof Corvus.panel.setTabHidden === "function") {
+        Corvus.panel.setTabHidden(id, !shown);
+      }
+    };
+    [
+      {
+        id: "console",
+        key: "console_tab",
+        label: "MAVLink console tab",
+        hint: "The CONSOLE tab: the autopilot's messages and a command line. " +
+              "Off, the tab is gone. Messages are still collected, and Logs " +
+              "still exports them.",
+      },
+      {
+        id: "ssh",
+        key: "ssh_tab",
+        label: "SSH tab",
+        hint: "The SSH tab: your saved connections and a terminal. Off, the " +
+              "tab is gone. Connections stay saved, plugins still use them, " +
+              "and a terminal opens in a window of its own.",
+      },
+    ].forEach((spec) => {
+      const on = ui[spec.key] !== false;
+      apply(spec.id, on);
+      const sw = Corvus.ui.toggle({
+        id: "settingsTab_" + spec.id,
+        value: on,
+        ariaLabel: spec.label,
+        onChange: (next) => {
+          apply(spec.id, next);
+          const patch = {};
+          patch[spec.key] = next;
+          return postConfig({ ui: patch }, { strict: true })
+            .catch((error) => {
+              apply(spec.id, !next);
+              throw error;
+            });
+        },
+      });
+      card.appendChild(Corvus.ui.field({
+        label: spec.label,
+        control: sw.el,
+        className: "field-switch",
+        hint: spec.hint,
+      }));
+    });
     return card;
   }
 
@@ -1979,15 +2039,23 @@ Corvus.sidenav = (function () {
         // The whole connection goes across, not just the host: the terminal
         // header names the account that logged in, and only the backend's
         // reply knows which one the saved entry resolved to.
-        if (Corvus.panel && typeof Corvus.panel.showSSHTerminal === "function") {
-          Corvus.panel.showSSHTerminal({
-            name: c.name,
-            host: res.host || c.host,
-            port: res.port || c.port,
-            username: res.username || c.username,
-          });
+        const conn = {
+          name: c.name,
+          host: res.host || c.host,
+          port: res.port || c.port,
+          username: res.username || c.username,
+        };
+        const tabShown = !(Corvus.panel && typeof Corvus.panel.isTabShown === "function")
+          || Corvus.panel.isTabShown("ssh");
+        if (!tabShown && Corvus.termWindows) {
+          // The SSH tab is switched off: the terminal gets a window of its own.
+          Corvus.termWindows.open(Object.assign({ title: c.name }, conn), { reattach: true });
+        } else {
+          if (Corvus.panel && typeof Corvus.panel.showSSHTerminal === "function") {
+            Corvus.panel.showSSHTerminal(conn);
+          }
+          switchToSSHTab();
         }
-        switchToSSHTab();
         connectBtn.textContent = "CONNECTED";
         connectBtn.disabled = false;
       } else {
@@ -2178,18 +2246,26 @@ Corvus.sidenav = (function () {
 
   // --- Section D2: Plugins (the drop-in folder) ---
   // The plugin folder is the whole feature here: an operator copies a folder
-  // in, restarts, and the plugin is on the TOOLS tab. The list is what the
-  // backend actually discovered, so a plugin that is missing from it is a
-  // manifest problem rather than a mystery, and the button opens the folder
-  // in the host's file manager so nobody has to type the path.
+  // in, presses Reload plugins, and the plugin is on the PLUGINS tab. The list
+  // is what the backend actually discovered, so a plugin that is missing from
+  // it is a manifest problem rather than a mystery, and the buttons open the
+  // folder in the host's file manager and load what is in it now.
+  //
+  // A plugin with something to set (its own options, or a tab of its own)
+  // carries a gear that opens them in a dialog.
   //
   // `gen` gates the async /api/plugins fetch against a navigation away, the
   // same way the SSH and About sections do.
-  function renderPluginsSection(container, gen) {
+  function renderPluginsSection(container, cfg, gen) {
     const card = Corvus.ui.card({});
+    card.classList.add("settings-plugins");
     const status = Corvus.ui.message({});
     const list = document.createElement("div");
+    list.className = "settings-plugin-list";
     card.appendChild(list);
+    const folderSlot = document.createElement("div");
+    card.appendChild(folderSlot);
+    const stale = () => gen !== undefined && gen !== navGeneration;
 
     const openBtn = Corvus.ui.button({
       variant: "secondary",
@@ -2216,22 +2292,46 @@ Corvus.sidenav = (function () {
       },
     });
 
-    // Path and button are one field: the button is what the path is FOR, and
-    // parked in its own action row below the hint it read as a third, separate
-    // thing. Built here rather than at the two call sites so the fallback path
-    // (no /api/plugins) offers exactly the same field, only with the default
-    // location in it.
+    const reloadBtn = Corvus.ui.button({
+      variant: "secondary",
+      icon: "refresh-cw",
+      label: "Reload plugins",
+      onClick: () => {
+        const plugins = Corvus.plugins;
+        if (!plugins || typeof plugins.reload !== "function") return;
+        Corvus.ui.setBusy(reloadBtn, true);
+        status.hide();
+        plugins.reload().then((ids) => {
+          if (stale()) return;
+          const n = ids.length;
+          status.show(`Reloaded. ${n} plugin${n === 1 ? "" : "s"} loaded.`, "ok");
+          return fill();
+        }).catch((error) => {
+          if (!stale()) status.show((error && error.message) || "Could not reload the plugins", "err");
+        }).finally(() => {
+          Corvus.ui.setBusy(reloadBtn, false);
+        });
+      },
+    });
+
+    // Path and buttons are one field: the buttons are what the path is FOR,
+    // and parked in an action row of their own below the hint they read as a
+    // separate thing.
     function folderField(dir) {
+      const buttons = document.createElement("div");
+      buttons.className = "settings-plugin-buttons";
+      buttons.appendChild(reloadBtn);
+      buttons.appendChild(openBtn);
       const line = document.createElement("div");
       line.className = "settings-path-row";
       line.appendChild(pathLine(dir));
-      line.appendChild(openBtn);
+      line.appendChild(buttons);
       return Corvus.ui.field({
         className: "settings-plugin-dir",
         label: "Plugin folder",
         control: line,
-        info: "One folder per plugin, each with a plugin.json. Corvus loads " +
-              "them on the next start, so restart after copying one in.\n" +
+        info: "One folder per plugin, each with a plugin.json. After copying " +
+              "one in, changing one or deleting one, press Reload plugins.\n" +
               "Each plugin keeps its settings in its own config.json in there " +
               "(<id>/config.json), apart from the app's config. Copy that file " +
               "to the same place on another computer to set it up the same " +
@@ -2241,62 +2341,179 @@ Corvus.sidenav = (function () {
       });
     }
 
-    Corvus.telemetry.requestJson("/api/plugins").then((data) => {
-      if (gen !== undefined && gen !== navGeneration) return;
-      const plugins = (data && Array.isArray(data.plugins)) ? data.plugins : [];
-      if (!plugins.length) {
-        list.appendChild(Corvus.ui.empty("No plugins installed."));
-      } else {
-        plugins.forEach((p) => {
-          // "bundled" ships with the application; anything else came out of
-          // the operator's own folder, which is the distinction that matters
-          // when a plugin misbehaves.
-          const where = p.source === "bundled" ? "built in" : "installed";
-          const version = p.version ? " " + p.version : "";
-          list.appendChild(pluginRow(p.name || p.id, where + version, p.description));
-        });
-      }
-      list.appendChild(folderField((data && data.user_dir) || "~/.corvus/plugins"));
-      Corvus.ui.refreshIcons();
-    }).catch(() => {
-      if (gen !== undefined && gen !== navGeneration) return;
-      list.appendChild(Corvus.ui.empty("Plugin list unavailable."));
-      // The folder is still where it always was, and opening it is still the
-      // one thing to do here — the button must not vanish with the list.
-      list.appendChild(folderField("~/.corvus/plugins"));
-      Corvus.ui.refreshIcons();
-    });
+    function showFolder(dir) {
+      folderSlot.innerHTML = "";
+      folderSlot.appendChild(folderField(dir));
+    }
+
+    function fill() {
+      return Corvus.telemetry.requestJson("/api/plugins").then((data) => {
+        if (stale()) return;
+        const plugins = (data && Array.isArray(data.plugins)) ? data.plugins : [];
+        list.innerHTML = "";
+        if (!plugins.length) {
+          list.appendChild(Corvus.ui.empty("No plugins installed."));
+        } else {
+          // What each one can be set to, and whether it has a tab right now:
+          // the registry knows, the manifests do not, because a plugin says
+          // so when it registers.
+          const registered = (Corvus.plugins && typeof Corvus.plugins.list === "function")
+            ? Corvus.plugins.list() : [];
+          const byId = new Map(registered.map((r) => [r.id, r]));
+          plugins.forEach((p) => {
+            const reg = byId.get(p.id) || null;
+            list.appendChild(pluginRow(p, reg, fill));
+          });
+        }
+        showFolder((data && data.user_dir) || "~/.corvus/plugins");
+        Corvus.ui.refreshIcons();
+      }).catch(() => {
+        if (stale()) return;
+        list.innerHTML = "";
+        list.appendChild(Corvus.ui.empty("Plugin list unavailable."));
+        // The folder is still where it always was, and opening it is still the
+        // one thing to do here — the buttons must not vanish with the list.
+        showFolder("~/.corvus/plugins");
+        Corvus.ui.refreshIcons();
+      });
+    }
+    fill();
 
     card.appendChild(status.el);
     container.appendChild(Corvus.ui.section({ title: "Plugins", body: card }));
   }
 
-  /* One plugin: name and origin on a line, then what it does under them.
-     Not Corvus.ui.row — that is a label/value pair on ONE line, and a
-     description hung below it had to be pulled back up over the row's own
-     bottom border to look attached, which left the rule cutting through the
-     text. The two lines belong inside one bordered block instead. */
-  function pluginRow(name, origin, description) {
+  /* One plugin: name, then where it came from and its gear on the right, and
+     what it does underneath. Not Corvus.ui.row: that is a label/value pair on
+     ONE line, and a description hung below it had to be pulled back up over
+     the row's own bottom border to look attached. The lines belong inside
+     one bordered block instead. `reg` is the registry's entry (null for a
+     plugin that did not load), `onChanged` redraws the list after a setting
+     moved it into or out of a tab. */
+  function pluginRow(p, reg, onChanged) {
+    // "bundled" ships with the application; anything else came out of the
+    // operator's own folder, which is the distinction that matters when a
+    // plugin misbehaves.
+    const where = p.source === "bundled" ? "built in" : "installed";
+    const version = p.version ? " " + p.version : "";
+    const tab = reg && reg.inTab ? " · own tab" : "";
+    const failed = !reg ? " · not loaded" : "";
+
     const el = document.createElement("div");
     el.className = "settings-plugin";
+    el.dataset.pluginId = p.id;
     const head = document.createElement("div");
     head.className = "settings-plugin-head";
     const n = document.createElement("span");
     n.className = "settings-plugin-name";
-    n.textContent = name;
+    n.textContent = p.name || p.id;
+    const meta = document.createElement("span");
+    meta.className = "settings-plugin-meta";
     const o = document.createElement("span");
     o.className = "settings-plugin-origin";
-    o.textContent = origin;
+    o.textContent = where + version + tab + failed;
+    meta.appendChild(o);
+    if (reg && reg.hasOptions) {
+      meta.appendChild(Corvus.ui.iconButton("settings", {
+        className: "icon-btn settings-plugin-gear",
+        title: `Settings of ${p.name || p.id}`,
+        size: 15,
+        onClick: () => openPluginOptions(p, onChanged),
+      }));
+    }
     head.appendChild(n);
-    head.appendChild(o);
+    head.appendChild(meta);
     el.appendChild(head);
-    if (description) {
+    if (p.description) {
       const desc = document.createElement("div");
       desc.className = "settings-plugin-desc";
-      desc.textContent = description;
+      desc.textContent = p.description;
       el.appendChild(desc);
     }
     return el;
+  }
+
+  /* A plugin's settings, in a dialog of their own. Every change is in force
+     and saved at once, like the switches on the Settings page itself; a save
+     that fails puts the control back and says why. */
+  function openPluginOptions(p, onChanged) {
+    const plugins = Corvus.plugins;
+    const current = plugins && typeof plugins.options === "function" ? plugins.options(p.id) : null;
+    if (!current) return;
+    const body = document.createElement("div");
+    body.className = "settings-plugin-options";
+    const status = Corvus.ui.message({});
+    let changed = false;
+
+    const save = (key, value) => plugins.setOption(p.id, key, value).then((values) => {
+      changed = true;
+      status.hide();
+      return values;
+    }).catch((error) => {
+      status.show((error && error.message) || "Could not save the setting.", "err");
+      throw error;
+    });
+
+    current.schema.forEach((opt) => {
+      body.appendChild(pluginOptionField(p.id, opt, current.values[opt.key], save));
+    });
+    body.appendChild(status.el);
+
+    const done = Corvus.ui.button({
+      variant: "primary", label: "Done", onClick: () => dialog.close(),
+    });
+    const dialog = Corvus.ui.modal({
+      title: p.name || p.id,
+      body,
+      actions: [done],
+      onClose: () => {
+        if (changed && typeof onChanged === "function") onChanged();
+      },
+    });
+    dialog.open();
+  }
+
+  /* One option as a field. The control is the one Settings uses for the same
+     kind of value everywhere else. */
+  function pluginOptionField(pluginId, opt, value, save) {
+    const id = "pluginOpt_" + pluginId.replace(/[^A-Za-z0-9_-]/g, "_") + "_" + opt.key;
+    const hint = opt.hint || undefined;
+    if (opt.type === "toggle") {
+      const sw = Corvus.ui.toggle({
+        id, value: !!value, ariaLabel: opt.label,
+        onChange: (next) => save(opt.key, next),
+      });
+      return Corvus.ui.field({ label: opt.label, control: sw.el, className: "field-switch", hint });
+    }
+    if (opt.type === "select") {
+      let last = String(value);
+      const sel = Corvus.ui.select({
+        id, ariaLabel: opt.label, value: last, options: opt.choices,
+        onChange: (next, el) => {
+          save(opt.key, next).then(() => { last = next; }).catch(() => {
+            el.value = last;
+            if (el.corvusSelect && typeof el.corvusSelect.refresh === "function") el.corvusSelect.refresh();
+          });
+        },
+      });
+      return Corvus.ui.field({ label: opt.label, control: sel, hint });
+    }
+    let last = value == null ? "" : String(value);
+    const input = Corvus.ui.input({
+      id,
+      type: opt.type === "number" ? "number" : "text",
+      value: last,
+      placeholder: opt.placeholder,
+      min: opt.min, max: opt.max, step: opt.step,
+      ariaLabel: opt.label,
+      onChange: (next, el) => {
+        save(opt.key, next).then((values) => {
+          last = String(values[opt.key]);
+          el.value = last;
+        }).catch(() => { el.value = last; });
+      },
+    });
+    return Corvus.ui.field({ label: opt.label, control: input, hint });
   }
 
   /* A path shown as read-only monospace text. Not an input: unlike the export
@@ -2452,7 +2669,7 @@ Corvus.sidenav = (function () {
       renderConnectionSection(container, cfg);
       renderFilesSection(container, cfg);
       renderAnalysisSection(container, cfg);
-      renderPluginsSection(container, gen);
+      renderPluginsSection(container, cfg, gen);
       if (Corvus.settingsTransfer) container.appendChild(Corvus.settingsTransfer.section());
       renderAboutSection(container, gen);
       Corvus.ui.refreshIcons();
@@ -2480,6 +2697,9 @@ Corvus.sidenav = (function () {
 
   return {
     init, setMissionEnabled, isMissionEnabled: () => missionEnabled,
+    // Which page is showing, and the way to another one: a plugin that frames
+    // something on the Home map brings Home forward first.
+    switchTo, current: () => activeNav,
     // The first start setup offers the same choice (welcome.js).
     REVIEW_SENSITIVITIES,
   };

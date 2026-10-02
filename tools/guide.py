@@ -74,7 +74,7 @@ PAGES: tuple[Page, ...] = (
     Page("workspace.html", "Tools", "Console and SSH",
          "The MAVLink console and its commands, and the SSH terminal to a companion computer."),
     Page("plugins.html", "Tools", "Plugins",
-         "The Vibration Monitor, the SSH Launcher and Schwalby, and writing a plugin of your own."),
+         "The Vibration Monitor, the SSH Launcher and Schwalby, the NuttX Console and the Trajectory Viewer to install, and writing a plugin of your own."),
     Page("settings.html", "Tools", "Settings",
          "Every page of Settings: appearance, map services and keys, controls, pages, files, export and import, and updates."),
     Page("compatibility.html", "Reference", "PX4 and ArduPilot",

@@ -113,7 +113,8 @@ class CorvusConfig:
     "compass_nose_up": false, "solid_terminals": false,
     "topbar_altitude": "amsl",
     "track_earlier_flights": true, "track_clear_on_restart": false,
-    "flight_hud": true, "units": {"length":
+    "flight_hud": true, "console_tab": true, "ssh_tab": true,
+    "plugin_tabs": false, "units": {"length":
     "m", "distance": "km", "speed": "ms", "temperature": "c"}}`` — the multiplier
     the frontend puts on every length in the UI, which cut of the mark the
     Dock / taskbar gets, whether that mark sits on a filled backplate, whether
@@ -121,7 +122,7 @@ class CorvusConfig:
     carries the Mission planner, whether a notification draws the severity
     bar above and below its level icon, whether the Home flight bar starts
     narrowing at half the map column rather than only when it must, whether
-    the compass rose turns under a fixed needle, whether terminal windows are solid rather than frosted glass, whether the flight HUD is on the Home map, which altitude the top bar shows, and the display units for lengths,
+    the compass rose turns under a fixed needle, whether terminal windows are solid rather than frosted glass, whether the flight HUD is on the Home map, which of the side panel's tabs are shown and whether plugins may add their own, which altitude the top bar shows, and the display units for lengths,
     distances, speeds and temperatures),
     and the update check
     (``{"check": true, "skipped": "2026.09.27"}`` — whether to look at the
@@ -647,6 +648,14 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     ``track_earlier_flights``: a config that has never been asked must not
     take the instruments away.
 
+    ``console_tab`` and ``ssh_tab`` keep the side panel's MAVLink console
+    and SSH tabs. On unless turned off, like ``flight_hud``: a config that has
+    never been asked must not take a tab away.
+
+    ``plugin_tabs`` lets a plugin that asks for a tab of its own have one in
+    the side panel (see ``src/js/plugins.js``). Off unless asked for: by
+    default every plugin is a card under PLUGINS.
+
     ``units`` is the display unit per quantity (``length``, ``distance``,
     ``speed``, ``temperature``; see ``_UI_UNITS``). Each key is kept only with
     a value the frontend knows, so a typo reads as the metric default rather
@@ -670,7 +679,8 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     for key in ("inverted_app_icon", "app_icon_backplate", "topbar_status_dots",
                 "mission_page", "notification_marks", "flight_bar_shrink",
                 "compass_nose_up", "windows_in_app", "solid_terminals",
-                "track_earlier_flights", "track_clear_on_restart", "flight_hud"):
+                "track_earlier_flights", "track_clear_on_restart", "flight_hud",
+                "console_tab", "ssh_tab", "plugin_tabs"):
         if isinstance(raw.get(key), bool):
             out[key] = raw[key]
     return out or None

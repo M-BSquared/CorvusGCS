@@ -71,11 +71,9 @@ if (( VERIFY )); then
     echo "--- pytest"
     "$PY" -m pytest -q
     echo "--- ruff"
-    "$PY" -m ruff check corvus serve.py tests
+    "$PY" -m ruff check corvus serve.py tests plugins
     echo "--- frontend"
-    for f in tests/*.js; do
-        node "$f"
-    done
+    node tools/frontend_tests.js
 else
     echo "--- skipping tests (--no-verify)"
 fi

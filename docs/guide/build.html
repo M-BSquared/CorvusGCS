@@ -264,8 +264,14 @@
 
 <h2 id="tests">Running the tests</h2>
 <pre><code>.venv/bin/python -m pytest -q
-.venv/bin/python -m ruff check corvus serve.py tests
-for f in tests/*.js; do node "$f"; done</code></pre>
+.venv/bin/python -m ruff check corvus serve.py tests plugins
+node tools/frontend_tests.js</code></pre>
+<p>
+  Both runners take the tests in <code>tests/</code> and those of every
+  plugin in <code>plugins/</code>, which keeps its own in
+  <code>plugins/&lt;id&gt;/tests/</code>. A plugin that is not installed has
+  no tests to run, so leaving one out never fails the suite.
+</p>
 <!-- /guide:content -->
 </article>
 
