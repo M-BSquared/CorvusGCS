@@ -197,4 +197,4 @@ def test_the_frontend_runner_is_fine_without_plugins(tmp_path):
     shutil.rmtree(tmp_path / "plugins")
     run = subprocess.run([_node(), "-e", script, str(ROOT / "tools" / "frontend_tests.js"), str(tmp_path)],
                          capture_output=True, text=True, check=True)
-    assert json.loads(run.stdout) == ["tests/test_a.js"]
+    assert [Path(f).as_posix() for f in json.loads(run.stdout)] == ["tests/test_a.js"]

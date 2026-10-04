@@ -234,7 +234,7 @@ def _modes_section(values: dict[str, float], channels: int,
     if not fields:
         return None
     return {
-        "id": "modes", "title": "Flight modes", "kind": "fields", "fields": fields,
+        "id": "modes", "title": "Flight mode settings", "kind": "fields", "fields": fields,
         "hint": "The six modes the mode switch selects. ArduPilot fixes the PWM "
                 "band of each position; only the mode in it is yours to choose.",
     }
@@ -249,7 +249,7 @@ def _aux_section(values: dict[str, float], channels: int) -> dict[str, Any] | No
     if not fields:
         return None
     return {
-        "id": "switches", "title": "Auxiliary functions", "kind": "fields",
+        "id": "switches", "title": "Switch settings", "kind": "fields",
         "fields": fields,
         "hint": "ArduPilot binds a function to a channel rather than a channel "
                 "to a function, so every auxiliary switch is one of these.",

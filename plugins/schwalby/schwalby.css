@@ -10,25 +10,38 @@
 .schw-comp {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
+  gap: 4px;
   margin: 0 0 10px;
-  padding: 4px 10px;
+  padding-right: 4px;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-btn);
   background: var(--surface-2);
   color: var(--text-1);
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
   transition: border-color 140ms ease, background 140ms ease;
 }
 .schw-comp:hover { background: var(--surface-1); }
-.schw-comp:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
 .schw-comp[data-state="online"] { border-color: var(--healthy); }
 .schw-comp[data-state="offline"] { border-color: var(--critical); }
 .schw-comp[data-state="checking"],
 .schw-comp[data-state="error"] { border-color: var(--warning); }
+
+.schw-comp-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 6px 4px 10px;
+  border: 0;
+  border-radius: var(--radius-btn);
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.schw-comp-main:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+.schw-comp-open { flex: 0 0 auto; color: var(--healthy); }
 
 .schw-comp-icon {
   display: inline-flex;
@@ -86,6 +99,7 @@
   flex-direction: column;
   gap: 16px;
 }
+.schw-comp-form .field[hidden] { display: none; }
 .schw-comp-form .schw-comp-slider { padding: 2px 8px 0; }
 
 /* The shelf: one row per launch button, separated by a hairline so a shelf of
@@ -212,9 +226,17 @@
 }
 .schw-seg-opt i, .schw-seg-opt svg { width: 13px; height: 13px; flex: 0 0 auto; }
 .schw-seg-opt:hover { color: var(--text-1); }
-.schw-seg-opt[aria-checked="true"] { background: var(--surface-1); color: var(--text-1); }
+/* .schw-seg-opt[aria-checked="true"],
+.schw-seg-opt[aria-selected="true"] { background: var(--surface-1); color: var(--text-1); } */
+.schw-seg .schw-seg-opt[aria-checked="true"],
+.schw-seg .schw-seg-opt[aria-selected="true"] {
+  background: transparent !important;
+  box-shadow: none !important;
+}
 .schw-seg-opt[aria-checked="true"] i,
-.schw-seg-opt[aria-checked="true"] svg { color: var(--accent); }
+.schw-seg-opt[aria-checked="true"] svg,
+.schw-seg-opt[aria-selected="true"] i,
+.schw-seg-opt[aria-selected="true"] svg { color: var(--accent); }
 .schw-seg-opt:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: -2px; }
 
 /* The editor's fields, evenly apart. A card stacks its children as plain

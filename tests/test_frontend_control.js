@@ -158,6 +158,14 @@ function buttonByLabel(root, label) {
     .some((c) => c._isEl && c.textContent === label));
 }
 
+/** Switch the overview to a tab ("radio" or "modes"). */
+async function openTab(container, id) {
+  const tab = findByDataset(container, "tab", id).filter((e) => e.tagName === "BUTTON")[0];
+  assert.ok(tab, "the " + id + " tab exists");
+  fire(tab, "click");
+  await flushMicrotasks();
+}
+
 /** Text of every element with `cls`, in document order. */
 function textsOf(root, cls) {
   return findByClass(root, cls).map((e) => e.textContent);
@@ -259,7 +267,7 @@ function rcDoc(overrides) {
         ],
       },
       {
-        id: "modes", title: "Flight mode switch", kind: "fields", hint: "",
+        id: "modes", title: "Flight mode settings", kind: "fields", hint: "",
         fields: [
           mapField("RC_MAP_FLTMODE", "Flight mode channel", 5),
           { param: "COM_FLTMODE1", label: "Position 1", kind: "enum", value: 0, role: "mode",
@@ -280,7 +288,7 @@ function rcDoc(overrides) {
         ],
       },
       {
-        id: "switches", title: "Switches", kind: "fields", hint: "",
+        id: "switches", title: "Switch settings", kind: "fields", hint: "",
         fields: [mapField("RC_MAP_KILL_SW", "Kill switch", 6)],
       },
       {
@@ -334,7 +342,46 @@ async function testReadsTheSchemaAndRaisesTheChannelRate() {
 
   const titles = textsOf(container, "page-section-title");
   assert.deepEqual(titles, ["Transmitter", "Live channels", "Input and failsafe",
-    "Stick channels", "Flight mode switch", "Switches", "Channel calibration"]);
+    "Stick channels", "Channel calibration"],
+    "the Radio tab is the one that opens, and it holds no mode or switch settings");
+}
+
+async function testTheFlightModesTabHoldsTheModeAndSwitchSettings() {
+  const { container } = await openWith(rcDoc());
+
+  const tabs = findByClass(container, "rc-tabs")[0].children.map((t) => t.textContent);
+  assert.deepEqual(tabs, ["Radio", "Flight modes"]);
+
+  await openTab(container, "modes");
+  assert.deepEqual(textsOf(container, "page-section-title"),
+    ["Transmitter", "Live channels", "Flight mode settings", "Switch settings"],
+    "the drawing and the bars stay, the radio sections give way");
+  assert.ok(control(container, "COM_FLTMODE1"), "the six mode slots are editable here");
+  assert.ok(control(container, "RC_MAP_KILL_SW"), "so is every other switch");
+  assert.equal(control(container, "RC_MAP_ROLL"), undefined);
+
+  await openTab(container, "radio");
+  assert.ok(control(container, "RC_MAP_ROLL"), "and back");
+  assert.equal(control(container, "COM_FLTMODE1"), undefined);
+}
+
+async function testTheTabSurvivesAReload() {
+  const { container, fake } = await openWith(rcDoc());
+  await openTab(container, "modes");
+  const before = fake.requests.length;
+  fire(buttonByLabel(container, "Reload"), "click");
+  await flushMicrotasks();
+  assert.ok(fake.requests.length > before, "the page re-read the vehicle");
+  assert.ok(control(container, "COM_FLTMODE1"),
+    "a reload keeps the operator on the tab they were reading");
+}
+
+async function testABackendSectionOfAnUnknownIdIsShownOnTheRadioTab() {
+  const doc = rcDoc();
+  doc.sections.push({ id: "future", title: "Something new", kind: "fields", hint: "",
+    fields: [{ param: "RC_NEW", label: "New", kind: "number", value: 1 }] });
+  const { container } = await openWith(doc);
+  assert.ok(textsOf(container, "page-section-title").includes("Something new"));
 }
 
 async function testCheckValuesReadsBackTheFormsAndTheChannelTable() {
@@ -432,6 +479,7 @@ async function testTwoDoubledChannelsReadAsASentence() {
 
 async function testTheModeStripLightsTheLivePosition() {
   const { container, fake } = await openWith(rcDoc());
+  await openTab(container, "modes");
 
   const slots = findByClass(container, "rc-mode-slot");
   assert.equal(slots.length, 6, "six positions");
@@ -446,6 +494,27 @@ async function testTheModeStripLightsTheLivePosition() {
   fake.push(frame([1500, 1500, 1500, 1500, 2100, 1500, 1500, 1500]));
   assert.equal(slots[5].dataset.active, "1");
   assert.equal(slots[0].dataset.active, "");
+}
+
+async function testTheModeStripReadsArduPilotsFixedPwmBands() {
+  const doc = rcDoc();
+  const modes = doc.sections.find((sec) => sec.id === "modes");
+  modes.fields[0] = mapField("FLTMODE_CH", "Flight mode channel", 5);
+  doc.assignments = { FLTMODE_CH: 5 };
+  const { container, fake } = await openWith(doc);
+  await openTab(container, "modes");
+
+  const slots = findByClass(container, "rc-mode-slot");
+  const active = () => slots.findIndex((c) => c.dataset.active === "1");
+  const at = (pulse) => fake.push(frame([1500, 1500, 1500, 1500, pulse, 1500, 1500, 1500]));
+
+  at(1100); assert.equal(active(), 0);
+  at(1230); assert.equal(active(), 0, "1230 us is still the first band");
+  at(1231); assert.equal(active(), 1);
+  at(1500); assert.equal(active(), 3);
+  at(1749); assert.equal(active(), 4);
+  at(1750); assert.equal(active(), 5);
+  at(1900); assert.equal(active(), 5);
 }
 
 async function testTheCalibrationTableFlagsAnUncalibratedChannel() {
@@ -541,6 +610,7 @@ async function testDisconnectedRendersAnExplanationNotAnError() {
 
 async function testDetectBindsTheChannelThatMoved() {
   const { container, fake } = await openWith(rcDoc());
+  await openTab(container, "modes");
   fake.push(frame([1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500]));
 
   const row = findByDataset(container, "param", "RC_MAP_KILL_SW")
@@ -558,6 +628,7 @@ async function testDetectBindsTheChannelThatMoved() {
 
 async function testDetectIgnoresReceiverJitter() {
   const { container, fake } = await openWith(rcDoc());
+  await openTab(container, "modes");
   fake.push(frame([1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500]));
 
   const row = findByDataset(container, "param", "RC_MAP_KILL_SW")
@@ -576,6 +647,7 @@ async function testDetectIgnoresReceiverJitter() {
 
 async function testDetectWithoutASignalRefusesRatherThanGuessing() {
   const { container, fake } = await openWith(rcDoc());
+  await openTab(container, "modes");
 
   const row = findByDataset(container, "param", "RC_MAP_KILL_SW")
     .find((e) => e.className.includes("rc-field"));
@@ -799,6 +871,9 @@ async function testStartOverForgetsTheWholeMeasurement() {
 async function main() {
   const tests = [
     testReadsTheSchemaAndRaisesTheChannelRate,
+    testTheFlightModesTabHoldsTheModeAndSwitchSettings,
+    testTheTabSurvivesAReload,
+    testABackendSectionOfAnUnknownIdIsShownOnTheRadioTab,
     testCheckValuesReadsBackTheFormsAndTheChannelTable,
     testChannelBarsFollowTheTelemetry,
     testAChannelTheReceiverStopsDeliveringIsRemoved,
@@ -806,6 +881,7 @@ async function main() {
     testAChannelBoundTwiceIsCalledOut,
     testTwoDoubledChannelsReadAsASentence,
     testTheModeStripLightsTheLivePosition,
+    testTheModeStripReadsArduPilotsFixedPwmBands,
     testTheCalibrationTableFlagsAnUncalibratedChannel,
     testAFieldWriteGoesThroughTheParameterEndpoint,
     testARefusedWriteRestoresTheControl,

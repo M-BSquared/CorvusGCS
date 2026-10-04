@@ -120,7 +120,7 @@ Corvus.setup = (function () {
     grid.appendChild(makeTile("calibration", "sliders-horizontal", "Calibration",
       "Accelerometer, compass, gyro, level, ESCs."));
     grid.appendChild(makeTile("control", "radio", "Radio Control",
-      "Transmitter, channels and switch actions."));
+      "Transmitter, channels, flight modes and switches."));
     grid.appendChild(makeTile("tuning", "activity", "PID Tuning",
       "Controller gains and in-flight autotune."));
     grid.appendChild(makeTile("motors", "fan", "Motors",

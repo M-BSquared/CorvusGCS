@@ -537,9 +537,14 @@ Corvus.app = (function () {
     Corvus.welcome.maybeOpen().then(() => Corvus.update.init());
 
     let userToggled = false;
-    document.getElementById("panelHandle").addEventListener("click", () => { userToggled = true; });
+    document.getElementById("panelHandle").addEventListener("click", () => {
+      userToggled = true;
+      if (Corvus.panel && typeof Corvus.panel.setUserToggled === "function") {
+        Corvus.panel.setUserToggled(true);
+      }
+    });
     window.addEventListener("resize", () => {
-      if (userToggled) return;
+      if (userToggled || (Corvus.panel && typeof Corvus.panel.isUserToggled === "function" && Corvus.panel.isUserToggled())) return;
       const panel = document.getElementById("rightPanel");
       const collapsed = panel.classList.contains("collapsed");
       // body.clientWidth, not innerWidth: the thresholds are in the same
@@ -547,8 +552,8 @@ Corvus.app = (function () {
       // the interface size collapses the panel at the point the layout
       // actually gets cramped rather than at a fixed window width.
       const width = document.body.clientWidth || window.innerWidth;
-      if (width < 960 && !collapsed) Corvus.panel.toggle();
-      else if (width >= 1280 && collapsed) Corvus.panel.toggle();
+      if (width < 960 && !collapsed) Corvus.panel.toggle(false);
+      else if (width >= 1280 && collapsed) Corvus.panel.toggle(false);
     });
     window.dispatchEvent(new Event("resize"));
   }

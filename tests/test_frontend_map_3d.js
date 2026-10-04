@@ -87,6 +87,7 @@ global.maplibregl = {
   },
 };
 
+require(path.join(__dirname, "..", "src", "js", "anim.js"));
 require(path.join(__dirname, "..", "src", "js", "map.js"));
 const map = Corvus.map;
 

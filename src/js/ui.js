@@ -1357,6 +1357,73 @@ Corvus.ui = (function () {
   }
 
   /*
+    Segmented control: mutually exclusive radio choices in a recessed pill bar.
+    Used for mode/protocol choices (Serial / UDP, Local / SSH, Ping / SSH).
+    Matches .link-kinds metrics across the application.
+    Returns {el, setValue, getValue}.
+  */
+  function segment(opts) {
+    const o = opts || {};
+    const options = o.options || [];
+    let value = options.some((opt) => opt.value === o.value) ? o.value : (options[0] && options[0].value);
+    const el = document.createElement("div");
+    el.className = "ui-segment" + (o.className ? " " + o.className : "");
+    el.setAttribute("role", "radiogroup");
+    if (o.ariaLabel) el.setAttribute("aria-label", o.ariaLabel);
+
+    const buttons = options.map((opt, index) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "ui-segment-opt";
+      b.setAttribute("role", "radio");
+      b.dataset.value = opt.value;
+      if (opt.title) b.title = opt.title;
+      if (opt.icon) b.appendChild(icon(opt.icon, 13));
+      const text = document.createElement("span");
+      text.textContent = opt.label;
+      b.appendChild(text);
+      b.addEventListener("click", () => choose(opt.value, false));
+      b.addEventListener("keydown", (e) => {
+        const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+        if (!step) return;
+        e.preventDefault();
+        choose(options[(index + step + options.length) % options.length].value, true);
+      });
+      el.appendChild(b);
+      return b;
+    });
+
+    function paint() {
+      buttons.forEach((b, i) => {
+        const on = options[i].value === value;
+        b.setAttribute("aria-checked", on ? "true" : "false");
+        b.setAttribute("aria-selected", on ? "true" : "false");
+        b.tabIndex = on ? 0 : -1;
+      });
+    }
+
+    function choose(next, focus) {
+      if (next === value) return;
+      value = next;
+      paint();
+      const b = buttons[options.findIndex((opt) => opt.value === next)];
+      if (focus && b && typeof b.focus === "function") b.focus();
+      if (typeof o.onChange === "function") o.onChange(value);
+    }
+
+    paint();
+    return {
+      el,
+      getValue: () => value,
+      setValue: (next) => {
+        if (options.some((opt) => opt.value === next)) {
+          choose(next, false);
+        }
+      },
+    };
+  }
+
+  /*
     Vertical list of single-line choices with a leading state dot — the map
     layer switcher's shape. Same contract as optionCards: exactly one active,
     returns {el, setValue, getValue}.
@@ -2310,9 +2377,13 @@ Corvus.ui = (function () {
      used, which is what a bar capped by a max-width is already limited to. */
   function fitBar(bar, room) {
     if (!bar || !bar.classList) return;
-    bar.classList.remove("is-tight", "is-compact");
     const space = room == null ? bar.clientWidth : room;
-    if (!(space > 0) || bar.scrollWidth <= space) return;
+    if (!(space > 0)) return;
+    const isTight = bar.classList.contains("is-tight");
+    const isCompact = bar.classList.contains("is-compact");
+    if (!isTight && !isCompact && bar.scrollWidth <= space) return;
+    bar.classList.remove("is-tight", "is-compact");
+    if (bar.scrollWidth <= space) return;
     bar.classList.add("is-tight");
     if (bar.scrollWidth > space) bar.classList.add("is-compact");
   }
@@ -2347,6 +2418,7 @@ Corvus.ui = (function () {
     // pickers
     optionCards,
     optionList,
+    segment,
     navItem,
     tile,
     // overlays

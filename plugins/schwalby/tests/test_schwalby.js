@@ -323,7 +323,7 @@ function mount(opts) {
     releaseDisconnect: () => releaseDisconnect(),
     releasePing: () => releasePing(),
     pings: () => calls.filter((c) => c.url === "/api/local/ping").map((c) => c.body),
-    strip: () => all(".schw-comp")[0],
+    strip: () => all(".schw-comp-main")[0],
     savedNow: () => settings,
     urls: () => calls.map((c) => c.url),
     sends: () => calls.filter((c) => c.url === "/api/ssh/send").map((c) => c.body),
@@ -1117,6 +1117,7 @@ function openCompanion(h) {
     sliders: () => inside(".ui-slider-input"),
     button: (text) => inside(".btn").find((b) => b.children.some((c) => c.textContent === text)),
     hints: () => inside(".field-hint").filter((x) => !x.hidden).map((x) => x.textContent),
+    segments: () => inside(".schw-seg-opt"),
     open: () => !!overlay.parentNode,
   };
 }
@@ -1211,6 +1212,117 @@ async function testAProbeThatCannotBeMadeSaysWhy() {
   await flushMicrotasks();
   assert.equal(stripText(h).state, "error");
   assert.equal(h.strip().title, "There is no ping program on this computer.");
+  S.destroy(h.container);
+}
+
+async function testACompanionWithAConnectionGetsATerminalArrow() {
+  assert.deepEqual(S.normalizeCompanion({ host: "10.0.0.7", connection: " companion " }),
+    { name: "", host: "10.0.0.7", interval_s: 2, timeout_s: 6, connection: "companion" });
+  assert.equal(S.companionEntry({ host: "x", name: "Pi" }), null, "ping only has no terminal");
+  assert.deepEqual(S.companionEntry({ host: "x", name: "Pi", connection: "companion" }),
+    { id: "companion", label: "Pi", target: "ssh", connection: "companion" });
+
+  const plain = mount({ saved: { companion: COMPANION } });
+  await flushMicrotasks();
+  assert.equal(plain.tool("Open an SSH terminal on Jetson"), undefined, "no connection, no arrow");
+  S.destroy(plain.container);
+
+  const h = mount({ saved: { companion: Object.assign({}, COMPANION, { connection: "companion" }) }, holdPing: true });
+  await flushMicrotasks();
+  assert.equal(h.tool("Open an SSH terminal on Jetson"), undefined, "none before the ping answers");
+  h.releasePing();
+  await flushMicrotasks();
+  const arrow = h.tool("Open an SSH terminal on Jetson");
+  assert.ok(arrow, "the arrow appears once the ping answers");
+  click(arrow);
+  await flushMicrotasks();
+  assert.deepEqual(h.calls.find((c) => c.url === "/api/ssh/connect").body,
+    { name: "schwalby/companion", from: "companion" });
+  assert.equal(h.terminals.length, 1);
+  assert.equal(h.terminals[0].name, "schwalby/companion");
+  S.destroy(h.container);
+}
+
+async function testThePopupPicksASavedConnection() {
+  const h = mount({});
+  await flushMicrotasks();
+  const d = openCompanion(h);
+  const [pingSeg, sshSeg] = d.segments();
+  assert.ok(sshSeg, "the popup has an SSH segment");
+  click(sshSeg);
+  const sel = querySel(d.overlay.children, ".field-select")[0];
+  assert.ok(sel, "the popup has a connection dropdown");
+  sel.value = "companion";
+  (sel._listeners.change || []).forEach((cb) => cb());
+  assert.ok(!d.button("Save").disabled, "the connection's host is the address");
+  click(d.button("Save"));
+  await flushMicrotasks();
+  assert.deepEqual(h.savedNow().companion,
+    { name: "companion", host: "10.0.0.7", interval_s: 2, timeout_s: 6, connection: "companion" });
+  assert.deepEqual(h.pings()[0].host, "10.0.0.7");
+  S.destroy(h.container);
+}
+
+async function testCompanionDialogToggleSwitchesBetweenPingAndSsh() {
+  const h = mount({ saved: { buttons: [LOCAL_BUTTON] } });
+  await flushMicrotasks();
+
+  const d = openCompanion(h);
+  const [pingSeg, sshSeg] = d.segments();
+  assert.ok(pingSeg, "the popup has a Ping segment");
+  assert.ok(sshSeg, "the popup has an SSH segment");
+
+  const nameField = d.input("Companion name").parentNode;
+  const hostField = d.input("Companion IP address").parentNode;
+  const connField = querySel(d.overlay.children, ".field").find((f) => querySel(f.children, ".field-select").length > 0);
+
+  // Initially in Ping mode:
+  assert.equal(pingSeg.getAttribute("aria-checked"), "true");
+  assert.equal(sshSeg.getAttribute("aria-checked"), "false");
+  assert.equal(nameField.hidden, false, "name field visible");
+  assert.equal(hostField.hidden, false, "host field visible");
+  assert.equal(connField.hidden, true, "SSH dropdown hidden");
+
+  // Switch to SSH:
+  click(sshSeg);
+  assert.equal(pingSeg.getAttribute("aria-checked"), "false");
+  assert.equal(sshSeg.getAttribute("aria-checked"), "true");
+  assert.equal(nameField.hidden, true, "name field hidden");
+  assert.equal(hostField.hidden, true, "host field hidden");
+  assert.equal(connField.hidden, false, "SSH dropdown visible");
+
+  // Switch back to Ping:
+  click(pingSeg);
+  assert.equal(pingSeg.getAttribute("aria-checked"), "true");
+  assert.equal(sshSeg.getAttribute("aria-checked"), "false");
+  assert.equal(nameField.hidden, false, "name field visible again");
+  assert.equal(hostField.hidden, false, "host field visible again");
+  assert.equal(connField.hidden, true, "SSH dropdown hidden again");
+
+  click(d.button("Exit"));
+  S.destroy(h.container);
+}
+
+async function testCompanionDialogOpensWithSshWhenConnectionSaved() {
+  const h = mount({ saved: { companion: { name: "companion", host: "10.0.0.7", interval_s: 2, timeout_s: 6, connection: "companion" } } });
+  await flushMicrotasks();
+
+  const d = openCompanion(h);
+  const [pingSeg, sshSeg] = d.segments();
+  assert.equal(sshSeg.getAttribute("aria-checked"), "true", "SSH segment selected when connection saved");
+  assert.equal(pingSeg.getAttribute("aria-checked"), "false");
+
+  const connSelect = querySel(d.overlay.children, ".field-select")[0];
+  const connField = querySel(d.overlay.children, ".field").find((f) => querySel(f.children, ".field-select").length > 0);
+  assert.equal(connField.hidden, false, "SSH dropdown visible");
+  assert.equal(connSelect.value, "companion", "saved connection selected in dropdown");
+
+  const nameField = d.input("Companion name").parentNode;
+  const hostField = d.input("Companion IP address").parentNode;
+  assert.equal(nameField.hidden, true, "name field hidden");
+  assert.equal(hostField.hidden, true, "host field hidden");
+
+  click(d.button("Exit"));
   S.destroy(h.container);
 }
 
@@ -1321,6 +1433,10 @@ async function run() {
   await testSilenceLongerThanTheTimeoutIsOffline();
   await testAProbeThatCannotBeMadeSaysWhy();
   await testThePopupSavesClearsAndExits();
+  await testACompanionWithAConnectionGetsATerminalArrow();
+  await testThePopupPicksASavedConnection();
+  await testCompanionDialogToggleSwitchesBetweenPingAndSsh();
+  await testCompanionDialogOpensWithSshWhenConnectionSaved();
   await testDestroyStopsPingingAndClosesThePopup();
   dismissToasts();
   await flushMicrotasks();

@@ -109,6 +109,8 @@ global.getComputedStyle = (el) => ({
 });
 
 require("../src/js/ui.js");
+require("../src/js/theme.js");
+require("../src/js/scale.js");
 require("../src/js/sidenav.js");
 
 const scale = Corvus.scale;

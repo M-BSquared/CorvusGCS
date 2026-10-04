@@ -77,12 +77,13 @@ global.document = {
   addEventListener() {},
 };
 
-// Load order mirrors src/index.html: telemetry, map (defines Corvus.anim),
+// Load order mirrors src/index.html: telemetry, anim (Corvus.anim), map,
 // instruments, link. app.js is not required here — we stub Corvus.app.
 // ui.js first: it defines Corvus.ui, the component layer every other
 // module builds its DOM with (index.html loads it in the same order).
 require("../src/js/ui.js");
 require("../src/js/telemetry.js");
+require("../src/js/anim.js");
 require("../src/js/map.js");
 require("../src/js/instruments.js");
 require("../src/js/link.js");

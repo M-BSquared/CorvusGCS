@@ -249,11 +249,19 @@
         <i data-lucide="chevron-right"></i>
       </button>
       <div class="panel-body" id="panelBody">
-        <div class="panel-tabs" id="panelTabs">
-          <button class="tab active" data-tab="link">LINK</button>
-          <button class="tab" data-tab="console">CONSOLE</button>
-          <button class="tab" data-tab="ssh">SSH</button>
-          <button class="tab" data-tab="future">PLUGINS</button>
+        <div class="panel-tabs-wrap">
+          <button class="tabs-arrow" id="tabsLeft" type="button" aria-label="Scroll tabs left" hidden>
+            <i data-lucide="chevron-left"></i>
+          </button>
+          <div class="panel-tabs" id="panelTabs">
+            <button class="tab active" data-tab="link">LINK</button>
+            <button class="tab" data-tab="console">CONSOLE</button>
+            <button class="tab" data-tab="ssh">SSH</button>
+            <button class="tab" data-tab="future">PLUGINS</button>
+          </div>
+          <button class="tabs-arrow" id="tabsRight" type="button" aria-label="Scroll tabs right" hidden>
+            <i data-lucide="chevron-right"></i>
+          </button>
         </div>
         <div class="panel-content">
           <section class="tab-panel active" data-panel="link">
@@ -546,6 +554,7 @@
 <script src="js/notification_dedupe.js" defer></script>
 <script src="js/topbar.js" defer></script>
 <script src="js/map-search.js" defer></script>
+<script src="js/anim.js" defer></script>
 <script src="js/map.js" defer></script>
 <script src="js/instruments.js" defer></script>
 <script src="js/hud-panel.js" defer></script>
@@ -578,6 +587,8 @@
 <script src="js/mission.js" defer></script>
 <script src="js/settings-transfer.js" defer></script>
 <script src="js/welcome.js" defer></script>
+<script src="js/theme.js" defer></script>
+<script src="js/scale.js" defer></script>
 <script src="js/sidenav.js" defer></script>
 <script src="js/joystick.js" defer></script>
 <script src="js/checklist.js" defer></script>

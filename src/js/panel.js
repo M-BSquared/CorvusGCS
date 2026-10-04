@@ -771,6 +771,9 @@ Corvus.panel = (function () {
       t.classList.toggle("active", t === tabEl));
     document.querySelectorAll(".tab-panel").forEach((p) =>
       p.classList.toggle("active", p.dataset.panel === id));
+    if (typeof tabEl.scrollIntoView === "function") {
+      tabEl.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
     const hook = tabHooks[id];
     if (hook && typeof hook.onShow === "function") {
       try { hook.onShow(); } catch (err) { console.error("tab onShow failed:", id, err); }
@@ -788,6 +791,41 @@ Corvus.panel = (function () {
 
   // Tab id -> {onShow}, for the tabs added through addTab.
   const tabHooks = Object.create(null);
+
+  /** Show an arrow at each end of the strip only while tabs are hidden past it. */
+  function updateTabArrows() {
+    const left = document.getElementById("tabsLeft");
+    const right = document.getElementById("tabsRight");
+    if (!tabs || !left || !right) return;
+    if (panel && panel.classList.contains("collapsed")) {
+      left.hidden = true;
+      right.hidden = true;
+      return;
+    }
+    const max = tabs.scrollWidth - tabs.clientWidth;
+    left.hidden = !(max > 1 && tabs.scrollLeft > 1);
+    right.hidden = !(max > 1 && tabs.scrollLeft < max - 1);
+  }
+
+  function setupTabScroll() {
+    const left = document.getElementById("tabsLeft");
+    const right = document.getElementById("tabsRight");
+    if (!tabs || !left || !right) return;
+    const step = (dir) => () =>
+      tabs.scrollBy({ left: dir * Math.max(80, tabs.clientWidth * 0.6), behavior: "smooth" });
+    left.addEventListener("click", step(-1));
+    right.addEventListener("click", step(1));
+    tabs.addEventListener("scroll", updateTabArrows, { passive: true });
+    tabs.addEventListener("wheel", (e) => {
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        tabs.scrollLeft += e.deltaY;
+        e.preventDefault();
+      }
+    }, { passive: false });
+    if (typeof ResizeObserver === "function") new ResizeObserver(updateTabArrows).observe(tabs);
+    window.addEventListener("resize", updateTabArrows);
+    updateTabArrows();
+  }
 
   function tabButton(id) {
     return tabs ? tabs.querySelector(`.tab[data-tab="${id}"]`) : null;
@@ -833,6 +871,7 @@ Corvus.panel = (function () {
     section.dataset.panel = s.id;
     panelContent.insertBefore(section, tabSection("future"));
     tabHooks[s.id] = { onShow: s.onShow };
+    updateTabArrows();
     return section;
   }
 
@@ -845,6 +884,7 @@ Corvus.panel = (function () {
     delete tabHooks[id];
     if (btn) btn.remove();
     if (section) section.remove();
+    updateTabArrows();
     if (wasActive) {
       const next = fallbackTab(id);
       if (next) showTab(next);
@@ -865,6 +905,7 @@ Corvus.panel = (function () {
     const btn = tabButton(id);
     if (!btn) return false;
     btn.hidden = !!hidden;
+    updateTabArrows();
     if (btn.hidden && btn.classList.contains("active")) {
       const next = fallbackTab(id);
       if (next) showTab(next);
@@ -1487,21 +1528,98 @@ Corvus.panel = (function () {
     Corvus.plugins.init(futureContent, Corvus.telemetry);
   }
 
-  function toggle() {
-    const collapsed = panel.classList.toggle("collapsed");
-    panel.dataset.state = collapsed ? "closed" : "open";
-    handle.title = collapsed ? "Expand panel" : "Collapse panel";
-    handle.querySelector("i, svg")?.remove();
-    const i = document.createElement("i");
-    i.setAttribute("data-lucide", collapsed ? "chevron-left" : "chevron-right");
-    handle.appendChild(i);
-    Corvus.ui.refreshIcons();
-    setTimeout(() => window.dispatchEvent(new Event("resize")), 300);
+  let userToggled = false;
+  let animTimer = null;
+
+  // Told when the panel starts and stops changing width, so a map beside it
+  // can hold its canvas still for the slide instead of rebuilding it on every
+  // frame. See Corvus.map.holdThroughPanel.
+  const motionSubs = new Set();
+
+  /** Subscribe fn({phase: "start"|"end", growth}); returns the unsubscribe.
+   *  growth is how many px the room beside the panel gains (negative when
+   *  the panel opens). */
+  function onMotion(fn) {
+    motionSubs.add(fn);
+    return () => motionSubs.delete(fn);
+  }
+
+  function emitMotion(phase, growth) {
+    motionSubs.forEach((fn) => {
+      try { fn({ phase, growth }); } catch (err) { console.error("panel motion subscriber failed:", err); }
+    });
+  }
+
+  /** Width the panel is heading for. Measured from its own parts rather than
+   *  read from --panel-w, so it is in the same pixels as offsetWidth at any
+   *  interface scale. */
+  function targetWidth(collapsing) {
+    const strip = handle ? handle.offsetWidth : 0;
+    if (collapsing) return strip;
+    const body = panel && panel.querySelector ? panel.querySelector(".panel-body") : null;
+    return strip + (body ? body.offsetWidth : 0);
+  }
+
+  function toggle(byUser) {
+    if (byUser !== false) userToggled = true;
+    if (panel) {
+      const collapsing = !panel.classList.contains("collapsed");
+      emitMotion("start", (panel.offsetWidth || 0) - targetWidth(collapsing));
+    }
+    if (panel) panel.classList.add("is-animating");
+    const collapsed = panel ? panel.classList.toggle("collapsed") : false;
+    if (panel) panel.dataset.state = collapsed ? "closed" : "open";
+    if (handle) {
+      handle.title = collapsed ? "Expand panel" : "Collapse panel";
+      handle.setAttribute("aria-label", collapsed ? "Expand panel" : "Collapse panel");
+      handle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    }
+    updateTabArrows();
+    if (animTimer) clearTimeout(animTimer);
+    const finish = () => {
+      if (panel) panel.classList.remove("is-animating");
+      animTimer = null;
+      emitMotion("end", 0);
+      // Two frames on, so the maps' own ResizeObservers have already sized
+      // their canvases to the released width and the listeners below find
+      // nothing left to rebuild.
+      const raf = typeof window.requestAnimationFrame === "function"
+        ? window.requestAnimationFrame.bind(window)
+        : (cb) => setTimeout(cb, 16);
+      raf(() => raf(() => window.dispatchEvent(new Event("resize"))));
+    };
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      finish();
+      return;
+    }
+    const onEnd = (e) => {
+      if (e.target === panel && e.propertyName === "width") {
+        if (panel && typeof panel.removeEventListener === "function") {
+          panel.removeEventListener("transitionend", onEnd);
+        }
+        if (animTimer) {
+          clearTimeout(animTimer);
+          finish();
+        }
+      }
+    };
+    if (panel && typeof panel.addEventListener === "function") {
+      panel.addEventListener("transitionend", onEnd);
+    }
+    animTimer = setTimeout(() => {
+      if (panel && typeof panel.removeEventListener === "function") {
+        panel.removeEventListener("transitionend", onEnd);
+      }
+      finish();
+    }, 280);
   }
 
   function init() {
     panel = document.getElementById("rightPanel");
     handle = document.getElementById("panelHandle");
+    if (panel && !panel.dataset.state) {
+      panel.dataset.state = panel.classList.contains("collapsed") ? "closed" : "open";
+    }
     tabs = document.getElementById("panelTabs");
     output = document.getElementById("consoleOutput");
     input = document.getElementById("consoleInput");
@@ -1520,6 +1638,7 @@ Corvus.panel = (function () {
     panelContent = panel.querySelector(".panel-content");
 
     handle.addEventListener("click", toggle);
+    setupTabScroll();
 
     document.getElementById("addSsh").addEventListener("click", addSSHConnection);
 
@@ -1599,7 +1718,7 @@ Corvus.panel = (function () {
   }
 
   return {
-    init, toggle, addConsoleLine, addSSHConnection, editSSHConnection, showSSHTerminal, showTab,
+    init, toggle, onMotion, isAnimating: () => animTimer !== null, isUserToggled: () => userToggled, setUserToggled: (v) => { userToggled = !!v; }, addConsoleLine, addSSHConnection, editSSHConnection, showSSHTerminal, showTab,
     addTab, removeTab, setTabHidden, isTabShown,
     setupSSHConnection, sshNeeds, openSSHWindow, refreshSSHCards,
     // Exposed for tests: the pure pieces, assertable without a DOM.

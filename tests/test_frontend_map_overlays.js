@@ -164,13 +164,14 @@ Corvus.telemetry = {
 };
 
 require("../src/js/ui.js");
+require("../src/js/anim.js");
 require("../src/js/map.js");
 const map = Corvus.map;
 
 const LINE = [[11.0, 48.0], [11.001, 48.001], [11.002, 48.0005]];
 
 // Drawn BEFORE the style loads: kept, not lost.
-assert.equal(map.setOverlay("early", LINE, { color: "#22D3EE" }), true);
+assert.equal(map.setOverlay("early", LINE, { color: "#2BC4E4" }), true);
 assert.equal(map.hasOverlay("early"), true);
 
 map.init(makeEl("div"), makeEl("div"));
@@ -191,24 +192,24 @@ function testALineDrawnBeforeLoadIsDrawnOnLoadUnderTheTrack() {
 }
 
 function testALineDrawnAfterLoadIsStillUnderTheTrack() {
-  assert.equal(map.setOverlay("late", LINE, { color: "#A3E635", width: 4 }), true);
+  assert.equal(map.setOverlay("late", LINE, { color: "#7BD389", width: 4 }), true);
   assert.ok(below("overlay-late-line", "path-past-glow"));
   assert.ok(below("overlay-late-line", "path-line"));
   assert.ok(below("overlay-late-line", "waypoints-route"), "under the plan route as well");
   const spec = layerSpecs["overlay-late-line"];
-  assert.equal(spec.paint["line-color"], "#A3E635");
+  assert.equal(spec.paint["line-color"], "#7BD389");
   assert.equal(spec.paint["line-width"], 4);
   map.removeOverlay("late");
 }
 
 function testDrawingAgainReplacesRatherThanAdds() {
-  map.setOverlay("again", LINE, { color: "#22D3EE" });
-  map.setOverlay("again", LINE.slice(0, 2), { color: "#D946EF", dashed: true });
+  map.setOverlay("again", LINE, { color: "#2BC4E4" });
+  map.setOverlay("again", LINE.slice(0, 2), { color: "#C77DFF", dashed: true });
   assert.equal(layers.filter((l) => l === "overlay-again-line").length, 1, "one line, not two");
   assert.equal(sources["overlay-again"].data.geometry.coordinates.length, 2, "the new points");
-  assert.equal(layerSpecs["overlay-again-line"].paint["line-color"], "#D946EF");
+  assert.equal(layerSpecs["overlay-again-line"].paint["line-color"], "#C77DFF");
   assert.deepEqual(layerSpecs["overlay-again-line"].paint["line-dasharray"], [2, 1.5]);
-  map.setOverlay("again", LINE, { color: "#D946EF" });
+  map.setOverlay("again", LINE, { color: "#C77DFF" });
   assert.equal(layerSpecs["overlay-again-line"].paint["line-dasharray"], undefined,
     "a dash that is no longer asked for is gone");
   assert.ok(below("overlay-again-line", "path-past-glow"), "still under the track after a redraw");
@@ -279,14 +280,14 @@ function testFitFramesThePointsAndStopsFollowing() {
 const SQUARE = [[11.0, 48.0], [11.01, 48.0], [11.01, 48.01], [11.0, 48.01]];
 
 function testAnAreaIsFilledUnderTheTrack() {
-  assert.equal(map.setPolygonOverlay("zone", SQUARE, { color: "#A3E635", fillOpacity: 0.4 }), true);
+  assert.equal(map.setPolygonOverlay("zone", SQUARE, { color: "#7BD389", fillOpacity: 0.4 }), true);
   assert.ok(layers.includes("overlay-zone-fill"), "a fill layer");
   assert.ok(below("overlay-zone-fill", "overlay-zone-casing"), "the fill under its outline");
   assert.ok(below("overlay-zone-line", "path-past-glow"), "under the flown track");
   assert.ok(below("base", "overlay-zone-fill"), "over the imagery");
   const spec = layerSpecs["overlay-zone-fill"];
   assert.equal(spec.type, "fill");
-  assert.equal(spec.paint["fill-color"], "#A3E635");
+  assert.equal(spec.paint["fill-color"], "#7BD389");
   assert.equal(spec.paint["fill-opacity"], 0.4);
   const geom = sources["overlay-zone"].data.geometry;
   assert.equal(geom.type, "Polygon");
@@ -357,6 +358,33 @@ function testTextIsAPlainLabelAtItsPoint() {
   assert.equal(markers.length, before, "remove takes the marker away");
 }
 
+function testAButtonIsAClickableMarker() {
+  const before = markers.length;
+  let clicks = 0;
+  assert.equal(map.setButtonOverlay("b", [11.5, 48.5], "<i>Go</i>", { onClick: () => { clicks++; }, title: "Start" }), true);
+  assert.equal(markers.length, before + 1);
+  const m = markers[markers.length - 1];
+  const el = m.opts.element;
+  assert.equal(el.tagName, "BUTTON");
+  assert.equal(el.textContent, "<i>Go</i>", "plain text");
+  assert.equal(el.title, "Start");
+  assert.equal(m.opts.anchor, "center");
+  let stopped = 0;
+  el._listeners.click[0]({ stopPropagation() { stopped++; } });
+  assert.equal(clicks, 1);
+  assert.equal(stopped, 1, "the click does not reach the map");
+  map.setButtonOverlay("b", [11.5, 48.5], "Go", { onClick: () => { throw new Error("x"); } });
+  const again = markers[markers.length - 1].opts.element;
+  assert.doesNotThrow(() => again._listeners.click[0]({}), "a throwing handler is contained");
+  assert.equal(markers.length, before + 1, "redrawn, not added");
+  map.setOverlayVisible("b", false);
+  assert.equal(again.hidden, true);
+  assert.equal(map.setButtonOverlay("bad", [11, 95], "x"), false);
+  assert.equal(map.setButtonOverlay("bad", [11, 48], " "), false);
+  map.removeOverlay("b");
+  assert.equal(markers.length, before, "remove takes the marker away");
+}
+
 const tests = [
   testALineDrawnBeforeLoadIsDrawnOnLoadUnderTheTrack,
   testALineDrawnAfterLoadIsStillUnderTheTrack,
@@ -370,6 +398,7 @@ const tests = [
   testAnAreaClosesItselfAndNeedsThreeCorners,
   testOneKeyHoldsOneShapeOfAnyKind,
   testTextIsAPlainLabelAtItsPoint,
+  testAButtonIsAClickableMarker,
 ];
 
 let failed = 0;

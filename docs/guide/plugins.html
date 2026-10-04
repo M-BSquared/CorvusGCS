@@ -498,8 +498,8 @@
 
 <h3 id="map">Drawing on the map</h3>
 <p>
-  <code>api.map</code> draws lines, areas and text on the Home map. Lines and
-  areas lie under the flown track; text sits over it. Keys are the plugin's
+  <code>api.map</code> draws lines, areas, text and buttons on the Home map. Lines and
+  areas lie under the flown track; text and buttons sit over it. Keys are the plugin's
   own, so two plugins can both use <code>"path"</code>, and one key holds one
   shape: drawing it again replaces it.
 </p>
@@ -519,12 +519,15 @@ api.map.drawCircle("keep-out", [11.642, 48.0755], 120, { color: api.map.colors[2
 // Text at a point, with or without a dot.
 api.map.drawText("home-label", [11.642, 48.0755], "Landing zone", { color, size: 13, dot: true });
 
+// A button at a point. The handler is the plugin's; a click never reaches the map.
+api.map.drawButton("go", [11.642, 48.0755], "Start survey", { color, title: "Fly the survey", onClick() { startSurvey(); } });
+
 api.map.setVisible("zone", false);
 api.map.fit([[11.641, 48.075], [11.643, 48.076]]);   // bring Home forward and frame it
 api.map.remove("route");</code></pre>
 <p>
   A shape outlives the plugin's view: closing the card does not remove it.
-  Remove it when the operator asks. Text is plain text, never markup, and at
+  Remove it when the operator asks. Text and button labels are plain text, never markup, and at
   most 200 characters.
 </p>
 <p>

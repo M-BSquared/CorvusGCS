@@ -215,9 +215,8 @@
   The bundle is assembled, signed and verified in a private folder under the
   system temporary directory, and only then moved to <code>dist/</code>. That
   is what lets a checkout inside a cloud synced folder build at all: iCloud
-  Drive (including a synced <code>~/Documents</code>), OneDrive and Dropbox
-  write Finder metadata into a bundle while it is being built, and
-  <code>codesign</code> refuses a bundle that carries it.
+  Drive, OneDrive and Dropbox write Finder metadata into a bundle while it is
+  being built, and <code>codesign</code> refuses a bundle that carries it.
 </p>
 <p>
   The <code>.dmg</code> is sealed and safe to hand out from anywhere. A loose

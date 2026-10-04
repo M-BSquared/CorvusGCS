@@ -251,6 +251,12 @@ Corvus.map = {
     overlays[id] = { coords: [point], text, opts, kind: "text" };
     return true;
   },
+  setButtonOverlay(id, point, text, opts) {
+    mapCalls.push(["button", id]);
+    if (!Array.isArray(point) || !text) return false;
+    overlays[id] = { coords: [point], text, opts, kind: "button" };
+    return true;
+  },
   removeOverlay(id) { mapCalls.push(["remove", id]); const had = !!overlays[id]; delete overlays[id]; return had; },
   setOverlayVisible(id, on) { mapCalls.push(["visible", id, on]); return !!overlays[id]; },
   hasOverlay: (id) => !!overlays[id],
@@ -341,6 +347,43 @@ function testLinkAndPluginsCannotBeSwitchedOff() {
   assert.equal(panel.setTabHidden("link", true), false);
   assert.equal(panel.setTabHidden("future", true), false);
   assert.deepEqual(visibleTabs(), ["link", "console", "ssh", "future"]);
+}
+
+function testPanelToggleCollapsesAndExpandsCleanly() {
+  const p = byId.rightPanel;
+  const h = byId.panelHandle;
+  assert.equal(p.classList.contains("collapsed"), false);
+  assert.equal(p.dataset.state, "open");
+
+  // Non-user toggle (responsive layout auto-collapse)
+  panel.setUserToggled(false);
+  panel.toggle(false);
+  assert.equal(p.classList.contains("collapsed"), true);
+  assert.equal(p.dataset.state, "closed");
+  assert.equal(h.title, "Expand panel");
+  assert.equal(h.getAttribute("aria-expanded"), "false");
+  assert.equal(panel.isUserToggled(), false, "toggle(false) does not mark userToggled");
+
+  // User toggle (expanding)
+  panel.toggle(true);
+  assert.equal(p.classList.contains("collapsed"), false);
+  assert.equal(p.dataset.state, "open");
+  assert.equal(h.title, "Collapse panel");
+  assert.equal(h.getAttribute("aria-expanded"), "true");
+  assert.equal(panel.isUserToggled(), true, "toggle(true) marks userToggled");
+
+  // User toggle (collapsing)
+  panel.toggle();
+  assert.equal(p.classList.contains("collapsed"), true);
+  assert.equal(p.dataset.state, "closed");
+  assert.equal(h.title, "Expand panel");
+  assert.equal(h.getAttribute("aria-expanded"), "false");
+  assert.equal(panel.isUserToggled(), true);
+
+  // Restore open state
+  panel.toggle(true);
+  assert.equal(p.classList.contains("collapsed"), false);
+  assert.equal(p.classList.contains("is-animating"), true, "is-animating set during transition");
 }
 
 // ===========================================================================
@@ -459,7 +502,7 @@ function testMapKeysBelongToThePlugin() {
   plugins.register("t-a", spyPlugin({ name: "A", start(api) { apiA = api; } }).spec);
   plugins.register("t-b", spyPlugin({ name: "B", start(api) { apiB = api; } }).spec);
   const line = [[11, 48], [11.1, 48.1]];
-  assert.equal(apiA.map.drawLine("path", line, { color: "#22D3EE" }), true);
+  assert.equal(apiA.map.drawLine("path", line, { color: "#2BC4E4" }), true);
   assert.equal(apiB.map.drawLine("path", line), true);
   assert.ok(overlays["plugin-t-a-path"], "namespaced by plugin");
   assert.ok(overlays["plugin-t-b-path"], "so both plugins keep their own");
@@ -560,6 +603,14 @@ function testPolygonCircleAndTextAreThePluginsOwn() {
   assert.equal(api.map.drawText("label", [11, 48], "Pad", { dot: true }), true);
   assert.equal(overlays["plugin-t-shapes-label"].text, "Pad");
   assert.equal(api.map.has("label"), true);
+  let clicks = 0;
+  assert.equal(api.map.drawButton("go", [11, 48], "Go", { onClick() { clicks++; } }), true);
+  assert.equal(overlays["plugin-t-shapes-go"].kind, "button");
+  overlays["plugin-t-shapes-go"].opts.onClick();
+  assert.equal(clicks, 1, "the plugin's handler is called");
+  assert.equal(api.map.drawButton("boom", [11, 48], "Boom", { onClick() { throw new Error("x"); } }), true);
+  assert.doesNotThrow(() => overlays["plugin-t-shapes-boom"].opts.onClick(), "a throwing handler stays in the plugin");
+  assert.equal(api.map.drawButton("none", [11, 48], ""), false, "no label, no button");
   plugins.unregister("t-shapes");
   assert.ok(!Object.keys(overlays).some((k) => k.startsWith("plugin-t-shapes")),
     "every shape goes with the plugin, whatever its kind");
@@ -686,6 +737,7 @@ const tests = [
   testShowingATabRunsItsHookEveryTime,
   testConsoleAndSshCanBeSwitchedOff,
   testLinkAndPluginsCannotBeSwitchedOff,
+  testPanelToggleCollapsesAndExpandsCleanly,
   testStartRunsOnceAtRegistration,
   testAThrowingStartCostsOnlyThatPlugin,
   testATabIsOnlyGrantedWhenAllowed,

@@ -150,6 +150,13 @@ window.Corvus = window.Corvus || {};
  *                                 characters. `opts` {color, size (px, 9 to
  *                                 32, default 12), dot (a point marker with
  *                                 the text beside it), opacity, visible}.
+ *     drawButton(key, point, label, opts)
+ *                                 Draw or replace a clickable button at
+ *                                 [lng, lat]. Label as drawText. `opts`
+ *                                 {onClick, title (tooltip and accessible
+ *                                 name), disabled, color, size, opacity,
+ *                                 visible}. A click never reaches the map; a
+ *                                 throwing handler is contained.
  *     remove(key)                 Take a shape off the map.
  *     setVisible(key, on)         Hide or show a shape without forgetting it.
  *     has(key)                    Whether this plugin has a shape under `key`.
@@ -306,10 +313,10 @@ Corvus.plugins = (function () {
   // a line is read against imagery, not against the interface. None of them
   // is red or amber, which are the flown track and the plan route.
   const LINE_COLORS = Object.freeze([
-    { id: "cyan", label: "Cyan", color: "#22D3EE" },
-    { id: "lime", label: "Lime", color: "#A3E635" },
-    { id: "magenta", label: "Magenta", color: "#D946EF" },
-    { id: "blue", label: "Blue", color: "#3B82F6" },
+    { id: "cyan", label: "Cyan", color: "#2BC4E4" },
+    { id: "lime", label: "Lime", color: "#7BD389" },
+    { id: "magenta", label: "Magenta", color: "#C77DFF" },
+    { id: "blue", label: "Blue", color: "#5B8DEF" },
     { id: "white", label: "White", color: "#FFFFFF" },
   ].map(Object.freeze));
 
@@ -612,6 +619,16 @@ Corvus.plugins = (function () {
       },
       drawText(key, point, text, opts) {
         return draw("setTextOverlay", key, [point, text, opts]);
+      },
+      drawButton(key, point, label, opts) {
+        const o = Object.assign({}, opts);
+        const handler = o.onClick;
+        // The plugin's handler is its own code: a throw must not travel
+        // into the map.
+        o.onClick = typeof handler === "function"
+          ? () => { try { handler(); } catch (err) { console.error("plugin map button failed:", id, err); } }
+          : null;
+        return draw("setButtonOverlay", key, [point, label, o]);
       },
       remove(key) {
         const m = liveMap();
@@ -1248,6 +1265,7 @@ Corvus.plugins = (function () {
         drawPolygon: () => false,
         drawCircle: () => false,
         drawText: () => false,
+        drawButton: () => false,
         remove: () => false,
         setVisible: () => false,
         has: () => false,

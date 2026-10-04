@@ -117,7 +117,8 @@ The types are toggle, select, text and number; read them with
 `api.map.drawPolygon(key, [[lng, lat], ...], {color, fillOpacity, width})`
 (the area the points span) and `api.map.drawCircle(key, [lng, lat], metres,
 opts)`. `api.map.drawText(key, [lng, lat], "text", {color, size, dot})` puts a
-label there. `api.map.remove(key)`, `api.map.setVisible(key, on)`,
+label there. `api.map.drawButton(key, [lng, lat], "label", {onClick, title, color, size, disabled})`
+puts a clickable button there. `api.map.remove(key)`, `api.map.setVisible(key, on)`,
 `api.map.fit(coords)` and `api.map.colors` for the colours to offer. The keys
 are the plugin's own.
 

@@ -41,10 +41,11 @@ _CANONICAL_FILES = {
 # node tooling dir, and the dev venv run.sh creates (third-party packages such
 # as certifi carry zero-padded CalVer strings of their own). The AppImage at
 # the repo root is binary and has no scanned extension, so it is skipped by
-# the suffix filter below regardless.
+# the suffix filter below regardless. .claude holds agent worktrees: whole
+# checkouts of other branches, each with a README badge of its own.
 _SKIP_DIR_PARTS = {
     ".git", "__pycache__", ".pytest_cache", "node_modules",
-    "build", ".opencode", ".venv",
+    "build", ".opencode", ".venv", ".claude",
 }
 
 _SCANNED_EXTS = {".py", ".js", ".html", ".css", ".md"}

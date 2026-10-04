@@ -1723,7 +1723,7 @@ svg { display: block; }
    legible over a field of its own hue. */
 .map-overlay-label {
   display: flex; align-items: center; gap: 6px;
-  color: var(--overlay-color, #22D3EE);
+  color: var(--overlay-color, #2BC4E4);
   font-family: var(--sans);
   font-size: var(--overlay-size, 12px);
   font-weight: 600;
@@ -1742,6 +1742,31 @@ svg { display: block; }
   background: currentColor;
   box-shadow: 0 0 0 2px var(--bg);
 }
+
+/* A plugin's button on the Home map (api.map.drawButton). Unlike the label it
+   takes the pointer; the colour is the plugin's, on the panel background. */
+.map-overlay-button {
+  appearance: none;
+  padding: 6px 12px;
+  border: 1.5px solid var(--overlay-color, #2BC4E4);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  color: var(--overlay-color, #2BC4E4);
+  font-family: var(--sans);
+  font-size: var(--overlay-size, 13px);
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.map-overlay-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--overlay-color, #2BC4E4) 22%, var(--bg));
+}
+.map-overlay-button:focus-visible { outline: 2px solid var(--overlay-color, #2BC4E4); outline-offset: 2px; }
+.map-overlay-button:disabled { opacity: 0.45 !important; cursor: not-allowed; }
+.map-overlay-button[hidden] { display: none; }
 
 /* waypoint (plan) marker — amber, translucent, same circular language as
    home/vehicle. Glow sits between home (none) and vehicle (strong) so the
@@ -2427,53 +2452,108 @@ svg { display: block; }
 
 /* ===== RIGHT UTILITY PANEL ===== */
 .right-panel {
-  width: var(--panel-w); flex: 0 0 var(--panel-w);
-  display: flex; background: var(--surface-1);
-  border-left: 1px solid var(--border);
-  transition: width 280ms ease;
+  width: var(--panel-w); flex: 0 0 auto;
+  display: flex;
   position: relative; z-index: var(--z-right-panel); min-width: 0;
+  overflow: hidden;
+  transition: width 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 /* Clipped: a zero-width body still lays its tabs out at their own width, and
    that overflow widened the document, so focusing any field scrolled the whole
    page sideways. */
 .right-panel.collapsed {
-  width: var(--panel-w-collapsed); flex: 0 0 var(--panel-w-collapsed);
-  overflow: hidden;
+  width: var(--panel-w-collapsed); flex: 0 0 auto;
 }
 .right-panel.collapsed .panel-body { opacity: 0; pointer-events: none; }
+/* The map runs on under the handle strip, which is opaque at rest and frosts
+   on hover: the glass has the map to blur only because it is there. The panel
+   fill is on the body for the same reason, a fill under the handle would be
+   what the glass blurs. */
+.body .map { right: calc(-1 * var(--panel-w-collapsed)); }
 .panel-handle {
   width: var(--panel-w-collapsed); flex: 0 0 var(--panel-w-collapsed);
   display: grid; place-items: center;
-  background: var(--surface-2); border-right: 1px solid var(--border);
-  color: var(--text-3); transition: color 140ms, background 140ms;
+  background: var(--surface-2);
+  border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+  color: var(--text-3);
+  backdrop-filter: blur(0) saturate(100%);
+  -webkit-backdrop-filter: blur(0) saturate(100%);
+  transition: color 150ms ease, background 200ms ease, backdrop-filter 200ms ease, -webkit-backdrop-filter 200ms ease;
   cursor: pointer;
 }
-.panel-handle:hover { color: var(--accent-bright); background: var(--surface-hover); }
-.panel-handle i, .panel-handle svg { width: 16px; height: 16px; }
+.panel-handle:hover {
+  color: var(--accent-bright);
+  background: color-mix(in srgb, var(--surface-2) 90%, transparent);
+  backdrop-filter: blur(8px) saturate(120%);
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
+}
+.right-panel.is-animating .panel-handle {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: var(--surface-2) !important;
+  pointer-events: none;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .panel-handle:hover { background: var(--surface-hover); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .panel-handle:hover { background: var(--surface-hover); }
+}
+.panel-handle i, .panel-handle svg {
+  width: 16px; height: 16px;
+  transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1), color 150ms ease;
+  transform-origin: center;
+}
+.right-panel.collapsed .panel-handle i,
+.right-panel.collapsed .panel-handle svg {
+  transform: rotate(180deg);
+}
 .panel-body {
-  flex: 1; min-width: 0; display: flex; flex-direction: column;
-  transition: opacity 200ms ease; opacity: 1;
+  width: calc(var(--panel-w) - var(--panel-w-collapsed));
+  min-width: calc(var(--panel-w) - var(--panel-w-collapsed));
+  flex: 0 0 calc(var(--panel-w) - var(--panel-w-collapsed));
+  display: flex; flex-direction: column;
+  background: var(--surface-1);
+  contain: paint;
+  transition: opacity 260ms cubic-bezier(0.2, 0.8, 0.2, 1); opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .right-panel { transition: none !important; }
+  .panel-body { transition: none !important; }
+  .panel-handle i, .panel-handle svg { transition: none !important; }
 }
 
-.panel-tabs { display: flex; padding: 8px 12px 0; gap: 2px; border-bottom: 1px solid var(--border); }
+.panel-tabs-wrap {
+  display: flex; align-items: stretch; padding: 8px 12px 0; gap: 2px;
+  border-bottom: 1px solid var(--border);
+}
+/* A plugin's tab can make the strip longer than the panel is wide; the strip
+   then scrolls (arrows appear at the ends) instead of cutting captions short
+   or pushing the panel wider. */
+.panel-tabs {
+  flex: 1; min-width: 0; display: flex; gap: 2px;
+  overflow-x: auto; scrollbar-width: none; scroll-behavior: smooth;
+}
+.panel-tabs::-webkit-scrollbar { display: none; }
+.tabs-arrow {
+  flex: 0 0 auto; width: 22px; display: flex; align-items: center; justify-content: center;
+  color: var(--text-3); border-radius: var(--radius-btn) var(--radius-btn) 0 0;
+  transition: color 130ms, background 130ms;
+}
+.tabs-arrow[hidden] { display: none; }
+.tabs-arrow:hover { color: var(--text-1); background: var(--surface-hover); }
+.tabs-arrow i, .tabs-arrow svg { width: 14px; height: 14px; }
 .tab {
-  flex: 1; padding: 9px 0; font-size: 11px; font-weight: 600; letter-spacing: 0.9px;
+  flex: 1 0 auto; padding: 9px 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.9px;
   color: var(--text-3); border-radius: var(--radius-btn) var(--radius-btn) 0 0;
   border-bottom: 2px solid transparent; transition: color 130ms, background 130ms;
-  /* A plugin's tab can make the strip longer than the panel is wide; then the
-     captions give way (the full name is on hover) rather than the strip
-     pushing the panel wider. */
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  white-space: nowrap;
 }
 .tab[hidden] { display: none; }
 .tab:hover { color: var(--text-1); background: var(--surface-hover); }
 .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 /* A plugin's tab, captioned with its name: in capitals like the others. */
 .tab-extra { text-transform: uppercase; }
-/* Four equal tabs fit with room to spare. Once a plugin adds one, each tab
-   takes the width of its own caption first and shares out what is left, so
-   a long name is not cut short while LINK and SSH stand half empty. */
-.panel-tabs:has(.tab-extra) .tab { flex: 1 1 auto; padding-inline: 5px; }
 
 .panel-content { flex: 1; min-height: 0; position: relative; }
 .tab-panel { display: none; flex-direction: column; height: 100%; min-height: 0; }
@@ -4559,7 +4639,7 @@ button.link-card-title:focus-visible {
 :where(:root[data-vw~="max-1279"]) .tb-block[data-short] .v-main { display: none; }
 :where(:root[data-vw~="max-1279"]) .tb-block[data-short] .v-short { display: inline; }
 :where(:root[data-vw~="max-1279"]) .nav-item .nav-label { display: none; }
-:where(:root[data-vw~="max-1279"]) .nav-item { padding: 12px 0; }
+:where(:root[data-vw~="max-1279"]) .nav-item { padding: 0; }
 :where(:root[data-vw~="max-1279"]) .flight-overlay { --hud-w: 290px; }
 :root[data-vw~="max-959"] { --panel-w: 320px; }
 :where(:root[data-vw~="max-959"]) .right-panel:not(.collapsed) { width: var(--panel-w); }
@@ -6213,6 +6293,35 @@ button.review-finding-head:focus-visible {
   border-color: var(--accent);
 }
 .mission-tools .fa-btn.active:hover { background: var(--accent-hover); color: var(--text-inverted); }
+/* PATTERN: a button that opens a card instead of arming a tool. While the card
+   is open the pattern icon gives way to an arrow up, which is what closes it. */
+.mission-tools .pattern-toggle:not(.is-open) .pattern-up { display: none; }
+.mission-tools .pattern-toggle.is-open > :first-child { display: none; }
+.pattern-card {
+  position: absolute;
+  z-index: 2;
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 7px 11px;
+  border-radius: var(--radius-btn);
+  opacity: 0; visibility: hidden; transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.mission-topleft > .pattern-card.is-open {
+  opacity: 1; visibility: visible; transform: none;
+  pointer-events: auto;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+/* The bar's own rhythm: 7px padding, 7px between buttons, so the shapes read
+   as the same buttons one row down. */
+.pattern-options { display: flex; gap: 7px; margin: 0 -4px; }
+.pattern-options .fa-btn { flex: 1 1 0; min-width: 72px; }
+.pattern-fields {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  margin: 0 -11px; padding: 9px 11px 2px;
+  border-top: 1px solid var(--border-soft);
+}
+.pattern-fields .field { min-width: 0; }
 /* Not usable on the plan as it stands (no start yet, or the mission already
    has its ending). Greyed like a disabled button, but still pressable: the
    press is what puts the reason in the hint line under the bar. */

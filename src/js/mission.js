@@ -214,8 +214,9 @@ Corvus.mission = (function () {
       title: "Start where the connected aircraft stands, and follow it" },
     { id: "divider" },
     { id: "waypoint", icon: "map-pin", label: "POINT", title: "Add a waypoint" },
-    { id: "loiter_turns", icon: "rotate-cw", label: "CIRCLE", title: "Add a circle (orbit)" },
     { id: "loiter_time", icon: "timer", label: "HOLD", title: "Add a timed hold" },
+    { id: "pattern", icon: "waypoints", label: "PATTERN",
+      title: "Cover a circle, corridor or area in a back and forth sweep" },
     { id: "land", icon: "plane-landing", label: "LAND", title: "End the mission with a landing" },
     { id: "divider2" },
     { id: "rtl", icon: "house", label: "RETURN", title: "End the mission with a return to the start" },
@@ -225,6 +226,23 @@ Corvus.mission = (function () {
   // has at most one and it is always last.
   const ENDS = { land: true, rtl: true };
   const END_NAMES = { land: "a landing", rtl: "a return" };
+
+  // The shapes a PATTERN covers. Each is a tool of its own, armed from the
+  // card under the PATTERN button, and each ends in plain waypoints: the
+  // sweep is generated once and from then on is an ordinary route.
+  const PATTERNS = {
+    pattern_circle: { icon: "rotate-cw", label: "Circle",
+      hint: "Click the centre, then click the edge of the circle to cover." },
+    pattern_corridor: { icon: "route", label: "Corridor",
+      hint: "Click along the centre line of the corridor. Enter or a double click finishes." },
+    pattern_area: { icon: "vector-square", label: "Area",
+      hint: "Click the corners of the area. Enter or a double click finishes." },
+  };
+  const PATTERN_SPACING_M = { min: 5, max: 500, def: 30 };
+  const PATTERN_WIDTH_M = { min: 10, max: 2000, def: 100 };
+  const PATTERN_CIRCLE_MIN_M = 10;
+  const PATTERN_CIRCLE_SEGMENTS = 48;
+  const PATTERN_MITER_LIMIT = 2.5;
   // How close a takeoff has to stand to the start to BE the start's takeoff,
   // rather than a separate place the aircraft flies to before it climbs.
   const TIED_M = 0.5;
@@ -559,6 +577,16 @@ Corvus.mission = (function () {
   let home = null;         // {lat, lon, elevation|null} — the planned start
   let selectedId = null;
   let tool = "select";
+  let patternPts = [];     // {lat, lon}[] drawn so far for the armed pattern
+  let patternCursor = null;
+  let patternSpacing = PATTERN_SPACING_M.def;
+  let patternWidth = PATTERN_WIDTH_M.def;
+  let patternPinned = false;
+  let patternHover = false;
+  let patternLeaveTimer = 0;
+  let patternCardEl = null;
+  let patternButtonEl = null;
+  let patternSource = null;
   let planName = "Mission";
   let nextId = 1;
 
@@ -605,6 +633,7 @@ Corvus.mission = (function () {
   let rowDrag = null;
   let resizeHandler = null;
   let toolsObserver = null;
+  let panelHoldOff = null;
   let themeUnsub = null;
   let vehicleUnsub = null;
   // Cached rather than read per draw: this decides what the panel and the map
@@ -928,6 +957,134 @@ Corvus.mission = (function () {
     return ring;
   }
 
+  /** Metres east/north of *origin* and back, flat-earth. A pattern is a few
+   *  hundred metres across, where that is a fraction of a metre off. */
+  function localFrame(origin) {
+    const k = EARTH_RADIUS_M * Math.PI / 180;
+    const c = Math.max(0.01, Math.cos(origin.lat * Math.PI / 180));
+    return {
+      toXY: (p) => ({ x: (p.lon - origin.lon) * k * c, y: (p.lat - origin.lat) * k }),
+      toLL: (q) => ({ lat: origin.lat + q.y / k, lon: origin.lon + q.x / (k * c) }),
+    };
+  }
+
+  /** The back and forth sweep over a polygon of {x, y} metres: parallel passes
+   *  *spacing* apart, along the polygon's longest edge, alternating direction.
+   *  The spacing is shrunk a little so the passes divide the polygon evenly
+   *  and the first and last run half a spacing inside the edge. */
+  function sweepPolygon(ring, spacing) {
+    if (!Array.isArray(ring) || ring.length < 3 || !(spacing > 0)) return [];
+    let angle = 0;
+    let longest = -1;
+    ring.forEach((a, i) => {
+      const b = ring[(i + 1) % ring.length];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (len > longest) { longest = len; angle = Math.atan2(b.y - a.y, b.x - a.x); }
+    });
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const rot = ring.map((p) => ({ x: p.x * cos + p.y * sin, y: -p.x * sin + p.y * cos }));
+    const lo = Math.min(...rot.map((p) => p.y));
+    const hi = Math.max(...rot.map((p) => p.y));
+    if (!(hi - lo > 0)) return [];
+    const lines = Math.max(1, Math.ceil((hi - lo) / spacing));
+    const step = (hi - lo) / lines;
+    const out = [];
+    for (let k = 0; k < lines; k += 1) {
+      const y = lo + (k + 0.5) * step;
+      const xs = [];
+      rot.forEach((a, i) => {
+        const b = rot[(i + 1) % rot.length];
+        if ((a.y <= y && b.y > y) || (b.y <= y && a.y > y)) {
+          xs.push(a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x));
+        }
+      });
+      xs.sort((u, v) => u - v);
+      let runs = [];
+      for (let i = 0; i + 1 < xs.length; i += 2) {
+        if (xs[i + 1] - xs[i] > 0.01) runs.push([xs[i], xs[i + 1]]);
+      }
+      if (k % 2) runs = runs.reverse().map(([u, v]) => [v, u]);
+      runs.forEach(([u, v]) => { out.push({ x: u, y }, { x: v, y }); });
+    }
+    return out.map((p) => ({ x: p.x * cos - p.y * sin, y: p.x * sin + p.y * cos }));
+  }
+
+  /** The sweep along a corridor: passes parallel to the centre line {x, y}[],
+   *  spread across *width* metres, *spacing* apart, alternating direction. */
+  function sweepCorridor(path, width, spacing) {
+    const line = [];
+    (path || []).forEach((p) => {
+      const last = line[line.length - 1];
+      if (!last || Math.hypot(p.x - last.x, p.y - last.y) > 0.5) line.push(p);
+    });
+    if (line.length < 2 || !(width > 0) || !(spacing > 0)) return [];
+    const normals = [];
+    for (let i = 0; i < line.length - 1; i += 1) {
+      const dx = line[i + 1].x - line[i].x;
+      const dy = line[i + 1].y - line[i].y;
+      const len = Math.hypot(dx, dy);
+      normals.push({ x: -dy / len, y: dx / len });
+    }
+    const vertex = line.map((p, i) => {
+      const a = normals[Math.max(0, i - 1)];
+      const b = normals[Math.min(normals.length - 1, i)];
+      let nx = a.x + b.x;
+      let ny = a.y + b.y;
+      const len = Math.hypot(nx, ny);
+      if (len < 1e-6) return { n: a, scale: 1 };
+      nx /= len; ny /= len;
+      const dot = nx * a.x + ny * a.y;
+      return { n: { x: nx, y: ny }, scale: Math.min(PATTERN_MITER_LIMIT, 1 / Math.max(dot, 1e-6)) };
+    });
+    const lanes = Math.max(1, Math.ceil(width / spacing));
+    const out = [];
+    for (let j = 0; j < lanes; j += 1) {
+      const d = -width / 2 + (j + 0.5) * (width / lanes);
+      const pass = line.map((p, i) => ({
+        x: p.x + vertex[i].n.x * d * vertex[i].scale,
+        y: p.y + vertex[i].n.y * d * vertex[i].scale,
+      }));
+      if (j % 2) pass.reverse();
+      out.push(...pass);
+    }
+    return out;
+  }
+
+  /** The waypoints that cover a pattern, as {lat, lon}[].
+   *  *kind* is a PATTERNS id; *pts* what the operator clicked: centre and edge
+   *  for a circle, the centre line for a corridor, the corners for an area. */
+  function patternWaypoints(kind, pts, opts) {
+    const o = opts || {};
+    const spacing = clampNumber(o.spacing, PATTERN_SPACING_M.min, PATTERN_SPACING_M.max, PATTERN_SPACING_M.def);
+    const width = clampNumber(o.width, PATTERN_WIDTH_M.min, PATTERN_WIDTH_M.max, PATTERN_WIDTH_M.def);
+    if (!Array.isArray(pts) || !pts.length) return [];
+    const frame = localFrame(pts[0]);
+    const xy = pts.map(frame.toXY);
+    let path = [];
+    if (kind === "pattern_circle") {
+      if (xy.length < 2) return [];
+      const radius = Math.max(PATTERN_CIRCLE_MIN_M, Math.hypot(xy[1].x, xy[1].y));
+      const ring = [];
+      for (let i = 0; i < PATTERN_CIRCLE_SEGMENTS; i += 1) {
+        const a = (i / PATTERN_CIRCLE_SEGMENTS) * 2 * Math.PI;
+        ring.push({ x: radius * Math.cos(a), y: radius * Math.sin(a) });
+      }
+      path = sweepPolygon(ring, spacing);
+    } else if (kind === "pattern_corridor") {
+      path = sweepCorridor(xy, width, spacing);
+    } else if (kind === "pattern_area") {
+      path = sweepPolygon(xy, spacing);
+    }
+    const out = [];
+    path.forEach((p) => {
+      const ll = frame.toLL(p);
+      const last = out[out.length - 1];
+      if (!last || distanceM(last, ll) > 0.5) out.push(ll);
+    });
+    return out;
+  }
+
   /** Clamp a number into [min, max], falling back to *fallback* for junk. */
   function clampNumber(value, min, max, fallback) {
     const n = Number(value);
@@ -1127,6 +1284,9 @@ Corvus.mission = (function () {
       if (!connectedState()) return "Connect an aircraft first. The start is then put where it stands.";
       if (!vehicleStart()) return "The aircraft has not reported a position yet.";
       return null;
+    }
+    if (id === "pattern" || PATTERNS[id]) {
+      return home ? null : "Set the start first. The mission begins there.";
     }
     const refused = refusalOf(id);
     if (refused && TYPES[id]) return `${refused}. ${TYPES[id].instead || ""}`.trim();
@@ -1456,11 +1616,15 @@ Corvus.mission = (function () {
    *  must not be redrawing itself behind the one that is. */
   function arm() {
     resizeHandler = () => {
-      if (map) map.resize();
+      if (map) resizeIfStale();
       fitTools();
       drawProfile();
     };
     window.addEventListener("resize", resizeHandler);
+    // The right panel's slide resizes this map once rather than every frame.
+    if (Corvus.map && typeof Corvus.map.holdThroughPanel === "function") {
+      panelHoldOff = Corvus.map.holdThroughPanel(map);
+    }
     // The map column changes width without the window doing anything — the
     // right panel opens, the left rail collapses — and the bar has to answer
     // to the box it is in rather than to the window it is in.
@@ -1536,6 +1700,8 @@ Corvus.mission = (function () {
     if (resizeHandler) window.removeEventListener("resize", resizeHandler);
     resizeHandler = null;
     if (toolsObserver) { toolsObserver.disconnect(); toolsObserver = null; }
+    if (typeof panelHoldOff === "function") panelHoldOff();
+    panelHoldOff = null;
     if (typeof themeUnsub === "function") themeUnsub();
     themeUnsub = null;
     if (typeof vehicleUnsub === "function") vehicleUnsub();
@@ -1548,6 +1714,20 @@ Corvus.mission = (function () {
   function baseLayerId() {
     return (Corvus.map && typeof Corvus.map.getBaseLayer === "function")
       ? (Corvus.map.getBaseLayer() || "satellite") : "satellite";
+  }
+
+  /** map.resize() only when the canvas no longer matches its container.
+   *  MapLibre's own observer has usually caught up already, and a resize
+   *  that changes nothing still reallocates the buffer and redraws. */
+  function resizeIfStale() {
+    const box = map.getContainer && map.getContainer();
+    const canvas = map.getCanvas && map.getCanvas();
+    const ratio = typeof map.getPixelRatio === "function" ? map.getPixelRatio() : 1;
+    if (box && canvas
+        && box.clientWidth === canvas.clientWidth
+        && box.clientHeight === canvas.clientHeight
+        && canvas.width === Math.floor(box.clientWidth * ratio)) return;
+    map.resize();
   }
 
   /** Tell Plotly the chart has a size again: its own responsive handler had
@@ -1619,6 +1799,12 @@ Corvus.mission = (function () {
     routeSource = null;
     orbitSource = null;
     legSource = null;
+    patternSource = null;
+    patternPts = [];
+    patternCursor = null;
+    window.clearTimeout(patternLeaveTimer);
+    patternPinned = patternHover = false;
+    patternCardEl = patternButtonEl = null;
     vehicleEl = null;
     vehicleSig = "";
     regionSource = null;
@@ -1663,11 +1849,21 @@ Corvus.mission = (function () {
       button.dataset.tool = entry.id;
       if (toolActive(entry.id)) button.classList.add("active");
       button.appendChild(Corvus.ui.icon(entry.icon, 17));
+      if (entry.id === "pattern") {
+        const up = Corvus.ui.icon("chevron-up", 17);
+        up.classList.add("pattern-up");
+        button.appendChild(up);
+        button.classList.add("pattern-toggle");
+        button.setAttribute("aria-haspopup", "true");
+        button.setAttribute("aria-expanded", "false");
+        patternButtonEl = button;
+      }
       const caption = document.createElement("span");
       caption.textContent = entry.label;
       button.appendChild(caption);
       toolsEl.appendChild(button);
     });
+    buildPatternCard();
     updateTools();
     fitTools();
     toolsEl.addEventListener("click", (event) => {
@@ -1689,6 +1885,25 @@ Corvus.mission = (function () {
         refreshAll();
         return;
       }
+      // Not a tool either: it pins the card open (or shuts it) and the shapes
+      // inside the card are the tools.
+      if (button.dataset.tool === "pattern") {
+        window.clearTimeout(patternLeaveTimer);
+        if (patternPinned) {
+          patternPinned = false;
+          patternHover = false;
+        } else {
+          patternPinned = true;
+        }
+        syncPatternCard();
+        return;
+      }
+      if (patternPinned) {
+        window.clearTimeout(patternLeaveTimer);
+        patternPinned = false;
+        patternHover = false;
+        syncPatternCard();
+      }
       // A switch, not a tool: it acts at once and arms nothing.
       if (button.dataset.tool === "vehicle_start") {
         setStartAtVehicle(!startAtVehicle);
@@ -1705,7 +1920,105 @@ Corvus.mission = (function () {
 
   /** Is the button *id* shown pressed: the armed tool, or a switch that is on. */
   function toolActive(id) {
-    return id === tool || (id === "vehicle_start" && startAtVehicle);
+    return id === tool || (id === "vehicle_start" && startAtVehicle)
+      || (id === "pattern" && !!PATTERNS[tool]);
+  }
+
+  function setPatternHover(on) {
+    window.clearTimeout(patternLeaveTimer);
+    if (on) {
+      patternHover = true;
+      syncPatternCard();
+      return;
+    }
+    patternLeaveTimer = window.setTimeout(() => {
+      patternHover = false;
+      syncPatternCard();
+    }, 160);
+  }
+
+  /** The frosted card under PATTERN: the three shapes and the two numbers
+   *  that decide the sweep. It opens on hover; a press pins it open until a
+   *  shape is picked or the button is pressed again. */
+  function buildPatternCard() {
+    if (patternCardEl && patternCardEl.parentNode) patternCardEl.parentNode.removeChild(patternCardEl);
+    const card = document.createElement("div");
+    card.className = "glass pattern-card";
+    const options = document.createElement("div");
+    options.className = "pattern-options";
+    Object.keys(PATTERNS).forEach((id) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "fa-btn pattern-option";
+      option.dataset.pattern = id;
+      option.title = PATTERNS[id].hint;
+      option.appendChild(Corvus.ui.icon(PATTERNS[id].icon, 17));
+      const caption = document.createElement("span");
+      caption.textContent = PATTERNS[id].label.toUpperCase();
+      option.appendChild(caption);
+      option.addEventListener("click", (event) => {
+        event.preventDefault();
+        const blocked = toolBlocked(id);
+        window.clearTimeout(patternLeaveTimer);
+        patternPinned = false;
+        patternHover = false;
+        syncPatternCard();
+        if (blocked) { setHint(blocked); return; }
+        setTool(id);
+      });
+      options.appendChild(option);
+    });
+    card.appendChild(options);
+    const fields = document.createElement("div");
+    fields.className = "pattern-fields";
+    fields.append(
+      patternField("Spacing", PATTERN_SPACING_M, () => patternSpacing, (v) => { patternSpacing = v; }),
+      patternField("Width", PATTERN_WIDTH_M, () => patternWidth, (v) => { patternWidth = v; }),
+    );
+    card.appendChild(fields);
+    card.addEventListener("mouseenter", () => setPatternHover(true));
+    card.addEventListener("mouseleave", () => setPatternHover(false));
+    if (patternButtonEl) {
+      patternButtonEl.addEventListener("mouseenter", () => setPatternHover(true));
+      patternButtonEl.addEventListener("mouseleave", () => setPatternHover(false));
+    }
+    toolsEl.parentNode.appendChild(card);
+    patternCardEl = card;
+    syncPatternCard();
+  }
+
+  function patternField(label, range, get, set) {
+    const input = Corvus.ui.input({
+      type: "number", value: get(), min: range.min, max: range.max, step: 1,
+      mono: true, ariaLabel: label, autocomplete: false,
+      onChange: (value) => {
+        set(clampNumber(value, range.min, range.max, range.def));
+        input.value = get();
+        drawPattern();
+      },
+    });
+    return Corvus.ui.field({ label: `${label} (m)`, control: input });
+  }
+
+  /** Open or close the card, and turn the button's icon into an arrow up for
+   *  as long as it is open. The card is placed under its button, in the
+   *  bar's own coordinates, which the interface zoom has scaled. */
+  function syncPatternCard() {
+    if (!patternCardEl || !patternButtonEl) return;
+    const open = patternPinned || patternHover;
+    patternCardEl.classList.toggle("is-open", open);
+    patternButtonEl.classList.toggle("is-open", open);
+    patternButtonEl.setAttribute("aria-expanded", open ? "true" : "false");
+    if (!open) return;
+    const stack = patternCardEl.parentNode;
+    const scale = patternButtonEl.offsetWidth
+      ? patternButtonEl.getBoundingClientRect().width / patternButtonEl.offsetWidth : 1;
+    const from = patternButtonEl.getBoundingClientRect();
+    const base = stack.getBoundingClientRect();
+    const targetLeft = (from.left - base.left) / (scale || 1);
+    const maxLeft = Math.max(0, stack.clientWidth - patternCardEl.offsetWidth);
+    patternCardEl.style.left = `${Math.max(0, Math.min(targetLeft, maxLeft))}px`;
+    patternCardEl.style.top = `${(from.bottom - base.top) / (scale || 1) + 16}px`;
   }
 
   /** Grey the tools that cannot be used on the plan as it stands, with the
@@ -1753,6 +2066,15 @@ Corvus.mission = (function () {
   function setTool(next) {
     tool = next || "select";
     if (toolBlocked(tool)) tool = "select";
+    if (tool !== "pattern" && !PATTERNS[tool] && (patternPinned || patternHover)) {
+      window.clearTimeout(patternLeaveTimer);
+      patternPinned = false;
+      patternHover = false;
+      syncPatternCard();
+    }
+    patternPts = [];
+    patternCursor = null;
+    drawPattern();
     if (!toolsEl) return;
     toolsEl.querySelectorAll(".fa-btn").forEach((button) => {
       button.classList.toggle("active", toolActive(button.dataset.tool));
@@ -1777,6 +2099,10 @@ Corvus.mission = (function () {
       setHint(aboard ? `${where} AIRCRAFT puts it where the aircraft stands.` : where);
       return;
     }
+    if (PATTERNS[tool]) {
+      setHint(`${PATTERNS[tool].hint} Right click undoes a point. Esc to stop.`);
+      return;
+    }
     if (tool !== "select") {
       const end = endIndex();
       const before = end >= 0 && !ENDS[tool] ? ` before ${END_NAMES[items[end].type]}` : "";
@@ -1788,7 +2114,7 @@ Corvus.mission = (function () {
         ? "Press AIRCRAFT to start where the connected aircraft stands, or START to click a place."
         : "Press START and click where the aircraft takes off.");
     } else if (!items.some((item) => TYPES[item.type].position && item.type !== "takeoff")) {
-      setHint("Now add points with POINT, CIRCLE or HOLD, then end with LAND or RETURN.");
+      setHint("Now add points with POINT, HOLD or PATTERN, then end with LAND or RETURN.");
     } else if (endIndex() < 0) {
       setHint("End the mission with LAND or RETURN. Drag a point to move it, right-click to delete it.");
     } else {
@@ -2112,6 +2438,8 @@ Corvus.mission = (function () {
     });
     map.on("zoom", applyPointScale);
     map.on("click", onMapClick);
+    map.on("dblclick", onMapDoubleClick);
+    map.on("mousemove", onMapMove);
     // A right-click on EMPTY map removes the last thing placed — the undo of
     // the click that placed it, and the same gesture the Home tab's
     // fly-to-points planner uses. A right-click on a point deletes that point
@@ -2122,6 +2450,12 @@ Corvus.mission = (function () {
     // not take the landing away instead.
     map.on("contextmenu", (event) => {
       if (event && event.preventDefault) event.preventDefault();
+      if (PATTERNS[tool] && patternPts.length) {
+        patternPts.pop();
+        drawPattern();
+        updatePatternHint();
+        return;
+      }
       if (!items.length) return;
       const newest = items.reduce((best, item) => (item.id > best.id ? item : best));
       if (newest === startTakeoff()) removeStart();
@@ -2170,6 +2504,27 @@ Corvus.mission = (function () {
       // the operator opened the box and then clicked the map.
       event.preventDefault();
       searchBox.setOpen(false);
+      return;
+    }
+    if (event.key === "Escape" && (patternPinned || patternHover)) {
+      event.preventDefault();
+      window.clearTimeout(patternLeaveTimer);
+      patternPinned = false;
+      patternHover = false;
+      syncPatternCard();
+      return;
+    }
+    if (event.key === "Escape" && patternPts.length) {
+      event.preventDefault();
+      patternPts = [];
+      patternCursor = null;
+      drawPattern();
+      updateHint();
+      return;
+    }
+    if (event.key === "Enter" && PATTERNS[tool] && !isTypingTarget(event.target)) {
+      event.preventDefault();
+      if (tool !== "pattern_circle" && patternReady()) commitPattern();
       return;
     }
     if (event.key === "Escape" && tool !== "select") {
@@ -2393,6 +2748,37 @@ Corvus.mission = (function () {
     });
     legSource = map.getSource("mission-leg");
     drawLeg();
+
+    // The pattern being drawn, over everything else on the plan.
+    map.addSource("mission-pattern", { type: "geojson", data: emptyCollection() });
+    map.addLayer({
+      id: "mission-pattern-outline",
+      source: "mission-pattern",
+      type: "line",
+      filter: ["==", ["get", "kind"], "outline"],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": planColor(), "line-width": 2, "line-dasharray": [2, 2] },
+    });
+    map.addLayer({
+      id: "mission-pattern-sweep",
+      source: "mission-pattern",
+      type: "line",
+      filter: ["==", ["get", "kind"], "sweep"],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": planColor(), "line-width": 1.6, "line-opacity": 0.75 },
+    });
+    map.addLayer({
+      id: "mission-pattern-corner",
+      source: "mission-pattern",
+      type: "circle",
+      filter: ["==", ["get", "kind"], "corner"],
+      paint: {
+        "circle-radius": 4.5, "circle-color": planColor(),
+        "circle-stroke-color": planInk(), "circle-stroke-width": 1.5,
+      },
+    });
+    patternSource = map.getSource("mission-pattern");
+    drawPattern();
   }
 
   /* What is already on the disk, drawn where it is.
@@ -2510,6 +2896,109 @@ Corvus.mission = (function () {
 
   function token(name, fallback) { return Corvus.ui.token(name, fallback); }
 
+  /** A click with a pattern armed: another corner, or the last one. */
+  function patternClick(lngLat) {
+    patternPts.push({ lat: lngLat.lat, lon: lngLat.lng });
+    if (tool === "pattern_circle" && patternPts.length >= 2) {
+      commitPattern();
+      return;
+    }
+    drawPattern();
+    updatePatternHint();
+  }
+
+  function patternReady() {
+    const need = tool === "pattern_area" ? 3 : 2;
+    return distinctPoints(patternPts).length >= need;
+  }
+
+  function distinctPoints(pts) {
+    const out = [];
+    pts.forEach((p) => {
+      const last = out[out.length - 1];
+      if (!last || distanceM(last, p) > 0.5) out.push(p);
+    });
+    return out;
+  }
+
+  function updatePatternHint() {
+    if (!PATTERNS[tool]) return;
+    if (tool !== "pattern_circle" && patternReady()) {
+      setHint("Enter or a double click covers it. Click for more points, right click undoes one.");
+    } else {
+      updateHint();
+    }
+  }
+
+  /** Turn the drawn shape into waypoints, before the mission's ending. */
+  function commitPattern() {
+    const kind = tool;
+    const pts = distinctPoints(patternPts);
+    const route = patternWaypoints(kind, pts, { spacing: patternSpacing, width: patternWidth });
+    if (!route.length) {
+      setHint("That shape is too small to cover. Draw it larger or reduce the line spacing.");
+      return false;
+    }
+    const room = MAX_ITEMS - items.length;
+    if (route.length > room) {
+      notify("warning", `That pattern needs ${route.length} points and the mission has room for ${room}. `
+        + "Increase the line spacing.");
+      setHint(`That pattern needs ${route.length} points and there is room for ${room}. Increase the line spacing.`);
+      return false;
+    }
+    route.forEach((p) => { addItem("waypoint", { lat: p.lat, lng: p.lon }); });
+    setTool("select");
+    setHint(`Pattern added: ${route.length} points. Drag a point to move it, right-click to delete it.`);
+    refreshAll();
+    return true;
+  }
+
+  /** Draw the shape being drawn: its outline, a rubber band to the cursor and,
+   *  once it is complete enough, the sweep that will be added. */
+  function drawPattern() {
+    if (!patternSource) return;
+    const features = [];
+    if (PATTERNS[tool] && patternPts.length) {
+      const pts = patternPts.slice();
+      if (patternCursor) pts.push(patternCursor);
+      const coords = pts.map((p) => [p.lon, p.lat]);
+      if (tool === "pattern_circle" && pts.length >= 2) {
+        const radius = Math.max(PATTERN_CIRCLE_MIN_M, distanceM(pts[0], pts[1]));
+        features.push({ type: "Feature", properties: { kind: "outline" },
+          geometry: { type: "LineString", coordinates: circleRing(pts[0], radius, PATTERN_CIRCLE_SEGMENTS) } });
+      } else if (tool === "pattern_area" && coords.length >= 3) {
+        features.push({ type: "Feature", properties: { kind: "outline" },
+          geometry: { type: "LineString", coordinates: coords.concat([coords[0]]) } });
+      } else if (coords.length >= 2) {
+        features.push({ type: "Feature", properties: { kind: "outline" },
+          geometry: { type: "LineString", coordinates: coords } });
+      }
+      const sweep = distinctPoints(pts).length >= 2
+        ? patternWaypoints(tool, distinctPoints(pts), { spacing: patternSpacing, width: patternWidth }) : [];
+      if (sweep.length > 1) {
+        features.push({ type: "Feature", properties: { kind: "sweep" },
+          geometry: { type: "LineString", coordinates: sweep.map((p) => [p.lon, p.lat]) } });
+      }
+      patternPts.forEach((p) => {
+        features.push({ type: "Feature", properties: { kind: "corner" },
+          geometry: { type: "Point", coordinates: [p.lon, p.lat] } });
+      });
+    }
+    patternSource.setData({ type: "FeatureCollection", features });
+  }
+
+  function onMapMove(event) {
+    if (!PATTERNS[tool] || !patternPts.length || !event || !event.lngLat) return;
+    patternCursor = { lat: event.lngLat.lat, lon: event.lngLat.lng };
+    drawPattern();
+  }
+
+  function onMapDoubleClick(event) {
+    if (!PATTERNS[tool]) return;
+    if (event && event.preventDefault) event.preventDefault();
+    if (tool !== "pattern_circle" && patternReady()) commitPattern();
+  }
+
   function onMapClick(event) {
     if (!event || !event.lngLat) return;
     if (tool === "select") return;
@@ -2532,6 +3021,10 @@ Corvus.mission = (function () {
     if (blocked) {
       setTool("select");
       setHint(blocked);
+      return;
+    }
+    if (PATTERNS[tool]) {
+      patternClick(event.lngLat);
       return;
     }
     if (!addItem(tool, event.lngLat)) return;
@@ -5221,6 +5714,8 @@ Corvus.mission = (function () {
     // ways nothing throws over — the plan still uploads, at the wrong speed.
     _speedByItem: speedByItem,
     _circleRing: circleRing,
+    _patternWaypoints: patternWaypoints,
+    _patterns: PATTERNS,
     _clearances: clearances,
     _interpolateAt: interpolateAt,
     _decodeTerrarium: decodeTerrarium,
@@ -5311,5 +5806,11 @@ Corvus.mission = (function () {
     _mapControls: MAP_CONTROLS,
     // The downloaded-area overlay, so a test can drive it without a map.
     _setRegions: setRegions,
+    _patternPinned: () => patternPinned,
+    _patternHover: () => patternHover,
+    _setPatternHover: setPatternHover,
+    _syncPatternCard: syncPatternCard,
+    _patternCard: () => patternCardEl,
+    _patternButton: () => patternButtonEl,
   };
 })();

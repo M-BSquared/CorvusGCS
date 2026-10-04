@@ -48,6 +48,8 @@ global.getComputedStyle = () => ({ getPropertyValue: (k) => (k in props ? props[
 
 const SRC = path.join(__dirname, "..", "src");
 require(path.join(SRC, "js", "units.js"));
+require(path.join(SRC, "js", "theme.js"));
+require(path.join(SRC, "js", "scale.js"));
 require(path.join(SRC, "js", "sidenav.js"));
 require(path.join(SRC, "js", "welcome.js"));
 

@@ -267,31 +267,63 @@ APPRUN_EOF
 chmod 0755 "$APPDIR/AppRun"
 
 # ---- 6. desktop entry (no version literal) ---------------------------------
+# StartupWMClass is how a dock ties the running window to this entry. An
+# integrator (appimaged, AppImageLauncher) installs the file under a new name,
+# appimagekit_<hash>-corvus-gcs.desktop, so the window's app id, which
+# corvus/app.py sets to corvus-gcs, can no longer find it by file name alone.
 cat > "$APPDIR/corvus-gcs.desktop" <<'DESKTOP_EOF'
 [Desktop Entry]
 Name=Corvus GCS
-Comment=Ground Control Station for PX4-based aircraft
+Comment=Ground Control Station for PX4 and ArduPilot aircraft
 Exec=corvus-gcs
 Icon=corvus-gcs
+StartupWMClass=corvus-gcs
 Type=Application
 Categories=Utility;Science;
 Terminal=false
 DESKTOP_EOF
 
-# ---- 7. icon (256x256 preferred; fall back to the logo as-is) --------------
-if [ ! -f "$REPO_DIR/assets/CorvusGCS_logo.png" ]; then
+# ---- 7. icon: a square 256x256 PNG ------------------------------------------
+# Square on purpose. An integrator files the icon under hicolor/<W>x<H>/apps
+# from the image's real size, and the logo is 753x756: scaled with its aspect
+# kept it came out 254x256, a directory no icon theme looks in, so the
+# launcher fell back to a generic icon. Padded onto a transparent square
+# instead, and checked, because a wrong size here fails silently later.
+LOGO="$REPO_DIR/assets/CorvusGCS_logo.png"
+ICON="$APPDIR/corvus-gcs.png"
+if [ ! -f "$LOGO" ]; then
     echo "ERROR: assets/CorvusGCS_logo.png not found" >&2
     exit 1
 fi
 if command -v convert >/dev/null 2>&1; then
-    if ! convert "$REPO_DIR/assets/CorvusGCS_logo.png" -resize 256x256 \
-            "$APPDIR/corvus-gcs.png" 2>/dev/null; then
-        cp -a "$REPO_DIR/assets/CorvusGCS_logo.png" "$APPDIR/corvus-gcs.png"
-    fi
+    convert "$LOGO" -resize 256x256 -background none -gravity center \
+        -extent 256x256 "PNG32:$ICON"
 else
-    echo "WARNING: ImageMagick 'convert' not found; using logo as-is (not 256x256)"
-    cp -a "$REPO_DIR/assets/CorvusGCS_logo.png" "$APPDIR/corvus-gcs.png"
+    echo ">>> ImageMagick 'convert' not found; rendering the icon with the bundled Qt"
+    "$APPDIR/usr/bin/python3" - "$LOGO" "$ICON" <<'PY'
+import sys
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QImage, QPainter
+src = QImage(sys.argv[1]).scaled(256, 256, Qt.AspectRatioMode.KeepAspectRatio,
+                                 Qt.TransformationMode.SmoothTransformation)
+out = QImage(256, 256, QImage.Format.Format_ARGB32)
+out.fill(Qt.GlobalColor.transparent)
+p = QPainter(out)
+p.drawImage((256 - src.width()) // 2, (256 - src.height()) // 2, src)
+p.end()
+sys.exit(0 if out.save(sys.argv[2], "PNG") else 1)
+PY
 fi
+ICON_SIZE="$(python3 -c 'import struct, sys; d = open(sys.argv[1], "rb").read(24); print("%dx%d" % struct.unpack(">II", d[16:24]))' "$ICON")"
+if [ "$ICON_SIZE" != "256x256" ]; then
+    echo "ERROR: the AppImage icon is $ICON_SIZE, not 256x256" >&2
+    exit 1
+fi
+# The same file where the icon theme spec looks, and as .DirIcon, which is
+# what file managers and integrators read when they show the AppImage itself.
+mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+cp -a "$ICON" "$APPDIR/usr/share/icons/hicolor/256x256/apps/corvus-gcs.png"
+ln -sf corvus-gcs.png "$APPDIR/.DirIcon"
 
 # ---- 8. obtain appimagetool -------------------------------------------------
 APPIMAGETOOL="$BUILD_DIR/appimagetool-x86_64.AppImage"

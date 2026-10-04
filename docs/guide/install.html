@@ -264,6 +264,16 @@
   <code>CORVUS_PYTHON</code> at it:
 </p>
 <pre><code>CORVUS_PYTHON=/opt/homebrew/bin/python3.12 ./run.sh</code></pre>
+<p>
+  On a Linux desktop the dock and the applications grid find the app's icon
+  through a launcher entry, and a source checkout has none until you add it:
+</p>
+<pre><code>./run.sh --desktop-entry</code></pre>
+<p>
+  This writes <code>~/.local/share/applications/corvus-gcs-dev.desktop</code>
+  with the paths of this checkout. Later runs keep it pointing at the checkout
+  if you move it. Delete the file to remove the entry.
+</p>
 <p>For development you can run just the backend and open the interface in a normal browser:</p>
 <pre><code>.venv/bin/python serve.py        # then open http://localhost:8000/</code></pre>
 <p>On Windows, from PowerShell:</p>

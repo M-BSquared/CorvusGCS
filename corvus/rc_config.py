@@ -379,7 +379,7 @@ def _modes_section(values: dict[str, float], channels: int) -> dict[str, Any] | 
         for param, label, hint in MODE_SLOT_FIELDS
     ]))
     return _section(
-        "modes", "Flight mode switch",
+        "modes", "Flight mode settings",
         "One channel, six positions, one flight mode each. A position left "
         "unassigned keeps whatever mode the vehicle was already in.",
         fields,
@@ -389,7 +389,7 @@ def _modes_section(values: dict[str, float], channels: int) -> dict[str, Any] | 
 def _switches_section(values: dict[str, float], channels: int) -> dict[str, Any] | None:
     options = channel_options(channels)
     return _section(
-        "switches", "Switches",
+        "switches", "Switch settings",
         "Every other action PX4 can bind to a switch. Unassigned means the "
         "action is unavailable from the transmitter.",
         _map_fields(SWITCH_FIELDS, values, options),

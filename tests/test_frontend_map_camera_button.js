@@ -265,6 +265,7 @@ function setList(next) {
 }
 
 require("../src/js/ui.js");
+require("../src/js/anim.js");
 require("../src/js/map.js");
 
 const mapEl = makeEl("div");

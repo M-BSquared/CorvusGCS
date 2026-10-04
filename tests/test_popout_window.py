@@ -13,6 +13,7 @@ import sys
 import pytest
 
 import corvus.app as app
+import corvus.native_window as native_window
 
 
 @pytest.mark.parametrize("url", [
@@ -163,5 +164,5 @@ def test_the_desktop_blur_exists_only_on_macos() -> None:
 @pytest.mark.skipif(sys.platform != "darwin", reason="AppKit is macOS only")
 def test_the_desktop_blur_loads_on_macos() -> None:
     blur = app.mac_blur("darwin")
-    assert isinstance(blur, app.MacBlur)
+    assert isinstance(blur, native_window.MacBlur)
     blur.clear(0)   # nothing to take away is not an error

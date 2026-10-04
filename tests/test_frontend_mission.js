@@ -255,7 +255,7 @@ function testEveryPlaceableToolNamesARealItemType() {
   // that ties the start to the connected aircraft.
   mission._tools
     .filter((entry) => entry.id.indexOf("divider") !== 0 && entry.id !== "select"
-      && entry.id !== "home" && entry.id !== "vehicle_start")
+      && entry.id !== "home" && entry.id !== "vehicle_start" && entry.id !== "pattern")
     .forEach((entry) => {
       assert.ok(mission._types[entry.id],
         `the "${entry.id}" tool places an item type that does not exist`);
@@ -1957,10 +1957,80 @@ function testNothingButTheStartCanBePlacedOnAnEmptyPlan() {
   mission.setPlan({ items: [] });
   assert.strictEqual(mission._toolBlocked("home"), null);
   assert.strictEqual(mission._toolBlocked("select"), null);
-  for (const id of ["waypoint", "loiter_turns", "loiter_time", "land", "rtl"]) {
+  for (const id of ["waypoint", "loiter_time", "pattern", "pattern_area", "land", "rtl"]) {
     assert.match(String(mission._toolBlocked(id)), /start first/,
       `"${id}" must wait for the start: a landing with no takeoff is not a mission`);
   }
+}
+
+function testCircleIsAPatternNotAToolOfItsOwn() {
+  assert.ok(!mission._tools.some((entry) => entry.id === "loiter_turns"),
+    "CIRCLE moved into the PATTERN card");
+  assert.ok(mission._tools.some((entry) => entry.id === "pattern"));
+  assert.deepStrictEqual(Object.keys(mission._patterns),
+    ["pattern_circle", "pattern_corridor", "pattern_area"]);
+}
+
+function testAreaPatternSweepsBackAndForth() {
+  const m = 1 / 111195;
+  const east = 200 * m / Math.cos(48 * Math.PI / 180);
+  const pts = [
+    { lat: 48, lon: 11 }, { lat: 48, lon: 11 + east },
+    { lat: 48 + 100 * m, lon: 11 + east }, { lat: 48 + 100 * m, lon: 11 },
+  ];
+  const route = mission._patternWaypoints("pattern_area", pts, { spacing: 30 });
+  assert.strictEqual(route.length, 8, "four passes, two ends each");
+  assert.ok(Math.abs(route[1].lat - route[0].lat) < 1e-6, "a pass is straight");
+  assert.ok(Math.abs(route[1].lon - route[0].lon) > 1e-4, "and runs along the long edge");
+  assert.notStrictEqual(Math.sign(route[1].lon - route[0].lon), Math.sign(route[3].lon - route[2].lon),
+    "the next pass flies the other way");
+}
+
+function testCorridorAndCirclePatternsProduceRoutes() {
+  const line = [{ lat: 48, lon: 11 }, { lat: 48, lon: 11.003 }];
+  const corridor = mission._patternWaypoints("pattern_corridor", line, { spacing: 20, width: 60 });
+  assert.strictEqual(corridor.length, 6, "three lanes of two points");
+  const circle = mission._patternWaypoints("pattern_circle",
+    [{ lat: 48, lon: 11 }, { lat: 48, lon: 11.001 }], { spacing: 20 });
+  assert.ok(circle.length >= 6 && circle.length % 2 === 0);
+  assert.deepStrictEqual(mission._patternWaypoints("pattern_area", line, {}), [],
+    "two corners are not an area");
+}
+
+function testPatternCardPinningAndHoverBehavior() {
+  assert.strictEqual(mission._patternPinned(), false, "pattern card is initially unpinned");
+  assert.strictEqual(mission._patternHover(), false, "pattern card is initially not hovered");
+
+  mission._setPatternHover(true);
+  assert.strictEqual(mission._patternHover(), true, "hover opens the card");
+  assert.strictEqual(mission._patternPinned(), false, "hover does not pin the card");
+
+  mission._setPatternHover(false);
+
+  mission._setTool("waypoint");
+  assert.strictEqual(mission._patternPinned(), false, "arming waypoint unpins pattern card");
+  assert.strictEqual(mission._patternHover(), false, "arming waypoint clears hover");
+  mission._setTool("select");
+}
+
+function testPatternCardKeepsTheToolBarRhythm() {
+  // The card drops out of the tool bar and holds a row of the same buttons,
+  // so it takes the bar's spacing, not the larger Takeoff card's.
+  const css = fs.readFileSync(path.join(__dirname, "..", "src", "css", "main.css"), "utf8");
+  const block = (sel) => {
+    const m = css.match(new RegExp(`(?:^|\\n)${sel.replace(".", "\\.")}\\s*\\{([^}]+)\\}`));
+    assert.ok(m, `${sel} must be defined in main.css`);
+    return m[1];
+  };
+  const bar = block(".flight-actions");
+  const card = block(".pattern-card");
+  const gapOf = (body) => (body.match(/gap:\s*(\d+)px/) || [])[1];
+  assert.ok(gapOf(bar), ".flight-actions must quote a gap");
+  assert.strictEqual(gapOf(card), gapOf(bar), "pattern card spaces its rows like the bar");
+  const barPad = (bar.match(/padding:\s*(\d+)px/) || [])[1];
+  const cardPad = (card.match(/padding:\s*(\d+)px/) || [])[1];
+  assert.strictEqual(cardPad, barPad, "pattern card has the bar's vertical padding");
+  assert.match(card, /border-radius:\s*var\(--radius-btn\);/, "pattern card is rounded like the bar's buttons");
 }
 
 function testThereIsNoSeparateTakeoffTool() {
@@ -2232,6 +2302,11 @@ const tests = [
   testTwoTakeoffsAreCalledOut,
   testAPlanInOrderIsNotComplainedAbout,
   testNothingButTheStartCanBePlacedOnAnEmptyPlan,
+  testCircleIsAPatternNotAToolOfItsOwn,
+  testAreaPatternSweepsBackAndForth,
+  testCorridorAndCirclePatternsProduceRoutes,
+  testPatternCardPinningAndHoverBehavior,
+  testPatternCardKeepsTheToolBarRhythm,
   testThereIsNoSeparateTakeoffTool,
   testTheStartCarriesItsTakeoff,
   testANewStartArmsPointAndAMovedOneDoesNot,

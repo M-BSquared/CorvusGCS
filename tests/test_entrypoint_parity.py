@@ -401,4 +401,4 @@ def test_the_windows_taskbar_gets_its_own_identity():
     assert "SetCurrentProcessExplicitAppUserModelID" in source
     # Before the QApplication: Windows binds a window to whatever the id was
     # when the window was created.
-    assert source.index("set_windows_app_id(") < source.index("app = QApplication(sys.argv)")
+    assert source.index("set_windows_app_id(") < source.index("app = QApplication(")

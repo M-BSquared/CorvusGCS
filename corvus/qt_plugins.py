@@ -2,11 +2,11 @@
 
 Qt does not load a plugin it cannot see, and on macOS it does not see a file
 that carries the hidden flag (``UF_HIDDEN``): its plugin loader lists each
-plugin folder without hidden entries. A Mac whose iCloud Drive syncs
-``~/Documents`` sets that flag on every file under a dot-directory there,
-``.venv`` included. It does so in the background, a few files a second after
-they are written, and sets it again after it is cleared. A checkout in such a
-place runs fine right after ``pip install`` and stops starting minutes later:
+plugin folder without hidden entries. A file sync agent that manages the folder
+sets that flag on every file under a dot-directory in it, ``.venv`` included.
+The agent does so in the background, a few files a second after they are
+written, and sets it again after it is cleared. A checkout in such a place runs
+fine right after ``pip install`` and stops starting minutes later:
 Qt finds no platform plugin, and it does not raise but prints "Could not find
 the Qt platform plugin" and aborts the process.
 

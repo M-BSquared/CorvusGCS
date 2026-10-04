@@ -13,10 +13,13 @@ window.Corvus = window.Corvus || {};
  *
  *   overview  the drawn transmitter and the live channel monitor at the top —
  *             the two things on this page that answer "is the radio even
- *             talking" — then the schema-driven configuration: input mode and
- *             RC-loss action, stick channels, the flight-mode switch with its
- *             six slots, the remaining switches, the AUX passthroughs, and the
- *             per-channel calibration table.
+ *             talking" — then the schema-driven configuration, split in two
+ *             tabs that share that top row:
+ *               Radio         input mode and RC-loss action, stick channels,
+ *                             the per-channel calibration table
+ *               Flight modes  flight mode settings (the mode switch and its
+ *                             six slots) and switch settings (every other
+ *                             switch, the AUX passthroughs)
  *   wizard    the calibration itself, step by step.
  *
  * The drawing (Corvus.rcTransmitter) is the same widget in both views and it
@@ -95,6 +98,23 @@ Corvus.setupControl = (function () {
   const DETECT_TRAVEL_US = 250;
   const DETECT_TIMEOUT_MS = 8000;
 
+  /** The overview's two tabs. A section the backend sends under an id not
+   *  listed under "modes" lands on the Radio tab, so a section a newer backend
+   *  adds is shown rather than lost. */
+  const TABS = [
+    { id: "radio", label: "Radio" },
+    { id: "modes", label: "Flight modes" },
+  ];
+  const MODE_TAB_SECTIONS = ["modes", "switches", "aux"];
+
+  function tabOf(section) {
+    return MODE_TAB_SECTIONS.indexOf(section && section.id) >= 0 ? "modes" : "radio";
+  }
+
+  /** ArduPilot fixes the PWM band of each of the six mode positions: the
+   *  upper bound (exclusive) of positions 1 to 5, in microseconds. */
+  const ARDUPILOT_MODE_EDGES = [1231, 1361, 1491, 1621, 1750];
+
   /** The four sticks, in the order the wizard asks for them, each with the
    *  direction PX4 expects the pulse to rise in (see the file docstring). */
   const STICKS = [
@@ -148,7 +168,10 @@ Corvus.setupControl = (function () {
     // The schema is loaded once by the overview and handed to the wizard, so
     // the wizard knows which channels the sticks are already on and can offer
     // the existing mapping as the starting point of its own.
-    const openOverview = () => mount(buildOverview(navigateBack, openWizard));
+    let tab = "radio";
+    const openOverview = () => mount(buildOverview(navigateBack, openWizard, {
+      tab, onTab: (id) => { tab = id; },
+    }));
     function openWizard(doc) {
       mount(buildWizard(doc, () => openOverview()));
     }
@@ -547,7 +570,7 @@ Corvus.setupControl = (function () {
   /* Overview view                                                       */
   /* ================================================================== */
 
-  function buildOverview(navigateBack, openWizard) {
+  function buildOverview(navigateBack, openWizard, tabs) {
     const el = S.el("div", "rc-overview-view");
     el.appendChild(S.backButton(navigateBack));
     const header = S.pageHeader("Radio Control",
@@ -582,6 +605,10 @@ Corvus.setupControl = (function () {
     const monitor = channelMonitor({ title: "Live channels" });
     el.appendChild(topRow(transmitter.el, monitor.el));
 
+    const tabBar = S.el("div", "tune-tabs rc-tabs");
+    tabBar.setAttribute("role", "tablist");
+    el.appendChild(tabBar);
+
     const host = S.el("div", "page-section rc-sections");
     el.appendChild(host);
 
@@ -592,6 +619,7 @@ Corvus.setupControl = (function () {
       host, banner, actionsStatus, monitor, transmitter,
       armed: false, loading: false, destroyed: false, controls: [],
       doc: null, detect: null,
+      tab: (tabs && tabs.tab) || "radio", tabBar,
       // Live-updating pieces of the rendered sections, refreshed from the
       // telemetry push rather than rebuilt: the mode-slot highlight and the
       // per-channel "current" readout in the calibration table.
@@ -601,6 +629,23 @@ Corvus.setupControl = (function () {
       wanted: {}, check: null, checking: false,
     };
     checkSlot.appendChild(S.checkButton(state, CHECK));
+
+    TABS.forEach((t) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "tune-tab";
+      btn.dataset.tab = t.id;
+      btn.setAttribute("role", "tab");
+      btn.textContent = t.label;
+      btn.addEventListener("click", () => {
+        if (state.tab === t.id) return;
+        state.tab = t.id;
+        if (tabs && typeof tabs.onTab === "function") tabs.onTab(t.id);
+        cancelDetect(state, "cancelled");
+        renderSections(state, state.doc || {});
+      });
+      tabBar.appendChild(btn);
+    });
 
     calibrateBtn.addEventListener("click", () => {
       if (state.armed) return;
@@ -735,8 +780,15 @@ Corvus.setupControl = (function () {
     state.monitor.setLabels(assignmentLabels(doc));
     if (state.transmitter) state.transmitter.setDoc(doc);
 
-    const sections = Array.isArray(doc.sections) ? doc.sections : [];
-    if (!sections.length) {
+    Array.prototype.forEach.call(state.tabBar.children, (btn) => {
+      const active = btn.dataset.tab === state.tab;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    });
+
+    const all = Array.isArray(doc.sections) ? doc.sections : [];
+    const sections = all.filter((section) => tabOf(section) === state.tab);
+    if (!all.length) {
       const card = S.el("div", "page-card rc-card");
       card.appendChild(S.sectionTitle("Radio Control"));
       card.appendChild(S.el("div", "params-desc",
@@ -751,6 +803,14 @@ Corvus.setupControl = (function () {
     const duplicates = duplicateChannels(doc);
 
     if (state.check) state.host.appendChild(S.checkCard(state.check, "rc"));
+    if (!sections.length) {
+      const card = S.el("div", "page-card rc-card");
+      const label = (TABS.find((t) => t.id === state.tab) || TABS[0]).label;
+      card.appendChild(S.sectionTitle(label));
+      card.appendChild(S.el("div", "params-desc",
+        "The connected firmware reports no parameters for this tab."));
+      state.host.appendChild(card);
+    }
     sections.forEach((section) => {
       const card = S.el("div", "page-card rc-card");
       card.dataset.section = section.id || "";
@@ -879,10 +939,18 @@ Corvus.setupControl = (function () {
     return Math.max(0, Math.min(5, slot));
   }
 
+  /** ArduPilot reads the raw pulse against fixed bands, not a normalised
+   *  position, so the strip uses the pulse itself on that stack. */
+  function ardupilotSlotIndex(pulse) {
+    const index = ARDUPILOT_MODE_EDGES.findIndex((edge) => pulse < edge);
+    return index < 0 ? ARDUPILOT_MODE_EDGES.length : index;
+  }
+
   function modeStrip(state, section) {
     const slotFields = (section.fields || []).filter((f) => f.role === "mode");
     if (!slotFields.length) return null;
-    const mapField = (section.fields || []).find((f) => f.param === "RC_MAP_FLTMODE");
+    const mapField = (section.fields || []).find(
+      (f) => f.param === "RC_MAP_FLTMODE" || f.param === "FLTMODE_CH");
 
     const strip = S.el("div", "rc-modes");
     const cells = slotFields.map((field, index) => {
@@ -906,6 +974,7 @@ Corvus.setupControl = (function () {
     state.modeSlots = {
       cells,
       channel: mapField ? Number(mapField.value) || 0 : 0,
+      ardupilot: !!mapField && mapField.param === "FLTMODE_CH",
       refreshLabels() {
         cells.forEach((c) => { c.name.textContent = labelFor(c.field); });
       },
@@ -1002,7 +1071,9 @@ Corvus.setupControl = (function () {
       // endpoints: an uncalibrated channel has no trustworthy endpoints, and a
       // strip that silently uses the wrong ones is worse than one that is
       // openly approximate.
-      activeIndex = modeSlotIndex(pwmFraction(pulse) * 2 - 1);
+      activeIndex = slots.ardupilot
+        ? ardupilotSlotIndex(pulse)
+        : modeSlotIndex(pwmFraction(pulse) * 2 - 1);
     }
     slots.cells.forEach((c, index) => {
       c.cell.dataset.active = index === activeIndex ? "1" : "";

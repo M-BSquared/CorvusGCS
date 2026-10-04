@@ -181,13 +181,13 @@ echo ""
 
 # ---- where the bundle is built ----------------------------------------------
 # Assembled, signed and verified in a private folder under the local temp dir,
-# and only moved to $DIST_DIR once all of that passed. A checkout inside
-# iCloud Drive (which includes ~/Documents and ~/Desktop when those are
-# synced), OneDrive or Dropbox has its sync agent re-apply com.apple.FinderInfo
-# to directories inside the bundle while the build runs, and codesign refuses
-# the whole .app with "resource fork, Finder information, or similar detritus
-# not allowed". Nothing wins that race in place; building where the agent does
-# not look avoids it, whatever folder the repository is in.
+# and only moved to $DIST_DIR once all of that passed. A checkout inside a
+# folder a sync agent manages (iCloud Drive, OneDrive, Dropbox) has that agent
+# re-apply com.apple.FinderInfo to directories inside the bundle while the
+# build runs, and codesign refuses the whole .app with "resource fork, Finder
+# information, or similar detritus not allowed". Nothing wins that race in
+# place; building where the agent does not look avoids it, whatever folder the
+# repository is in.
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/corvus-gcs-build.XXXXXX")"
 APP="$WORK_DIR/$APP_NAME.app"
 MNT=""
@@ -759,11 +759,11 @@ echo ""
 echo ">>> Built: $APP_OUT  ($(du -sh "$APP_OUT" | cut -f1))"
 [ "$MAKE_DMG" -eq 1 ] && echo ">>> Built: $DMG  ($(du -sh "$DMG" | cut -f1))"
 # The .dmg is sealed and safe to hand out from anywhere. The loose .app is not
-# once a sync agent has written Finder metadata into it, which iCloud does the
+# once a sync agent has written Finder metadata into it, which happens the
 # moment it lands: it still runs here, but a copy of it would not verify on
-# another Mac. The file provider marks the root it syncs (~/Documents, say),
-# not every folder below it, hence the walk up. grep -c rather than -q: under
-# pipefail a -q that exits early can SIGPIPE xattr and read as "no".
+# another Mac. The file provider marks the root it syncs, not every folder
+# below it, hence the walk up. grep -c rather than -q: under pipefail a -q that
+# exits early can SIGPIPE xattr and read as "no".
 in_synced_folder() {  # <dir>
     local d
     d="$(cd "$1" 2>/dev/null && pwd -P)" || return 1

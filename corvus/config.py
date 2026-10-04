@@ -454,7 +454,7 @@ def _coerce_controls(raw: Any) -> dict[str, Any] | None:
 
 
 # The interface-scale range the frontend offers (Corvus.scale in
-# src/js/sidenav.js). Mirrored here only as bounds, not as the step list: the
+# src/js/scale.js). Mirrored here only as bounds, not as the step list: the
 # backend stores whatever the operator picked and has no opinion about which
 # steps a given build offers, but it must never persist a value that would
 # paint an unusable interface on the next launch.

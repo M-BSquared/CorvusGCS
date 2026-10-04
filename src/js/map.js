@@ -1,95 +1,6 @@
 "use strict";
 window.Corvus = window.Corvus || {};
 
-/**
- * Corvus.anim — single shared requestAnimationFrame coordinator plus the
- * pure easing helpers used by map.js and instruments.js.
- *
- * Why a shared loop: telemetry over a serial radio arrives at ~5–10 Hz, so the
- * map marker and the flight instruments would visibly stutter if they snapped
- * to each new sample. Both renderers instead keep a TARGET (latest telemetry)
- * and a DISPLAYED value, and a SINGLE rAF loop advances every registered
- * animator one frame at a time. The loop self-cancels once all animators report
- * they have settled (so the field laptop does not spin a permanent 60 FPS loop
- * while the vehicle is idle) and is woken again the moment a new target lands.
- *
- * The easing is exponential approach (a frame-rate-independent, critically
- * damped ease-out — no overshoot, per apple-design defaults). Heading uses the
- * shortest angular path so 350° ↔ 10° animates through 0°, not back through 180°.
- *
- * prefers-reduced-motion: animators snap directly to the target and never wake
- * the loop, satisfying the apple-design reduced-motion contract.
- */
-Corvus.anim = (function () {
-  const animators = new Set();
-  let rafId = null;
-  let lastTime = 0;
-
-  const hasRaf = () => typeof window !== "undefined" && typeof window.requestAnimationFrame === "function";
-  const raf = (cb) => hasRaf()
-    ? window.requestAnimationFrame(cb)
-    : window.setTimeout(() => cb(now()), 16);
-  const cancelRaf = (id) => {
-    if (typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function") {
-      window.cancelAnimationFrame(id);
-    } else {
-      window.clearTimeout(id);
-    }
-  };
-  const now = () => (typeof performance !== "undefined" && performance.now)
-    ? performance.now()
-    : Date.now();
-
-  function frame(t) {
-    rafId = null;
-    const dt = lastTime ? Math.min((t - lastTime) / 1000, 0.05) : 0;
-    lastTime = t;
-    let alive = false;
-    for (const a of Array.from(animators)) {
-      let stillMoving = false;
-      try { stillMoving = a.step(dt, t); } catch (_) { animators.delete(a); }
-      if (stillMoving) alive = true;
-    }
-    if (alive) rafId = raf(frame);
-    else lastTime = 0;
-  }
-
-  function add(animator) { animators.add(animator); return animator; }
-  function remove(animator) { animators.delete(animator); }
-  /** Start the loop if it is not already running. Idempotent. */
-  function wake() { if (rafId == null) { lastTime = 0; rafId = raf(frame); } }
-  function reducedMotion() {
-    return !!(typeof window !== "undefined" && window.matchMedia
-      && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
-  }
-
-  // ---- pure easing helpers (frame-rate independent, no overshoot) ----
-  function lerp(a, b, t) { return a + (b - a) * t; }
-  function approach(cur, target, dt, tau) {
-    const k = 1 - Math.exp(-dt / Math.max(tau, 1e-4));
-    return cur + (target - cur) * k;
-  }
-  function normAngle(a) { return ((a % 360) + 360) % 360; }
-  /** Shortest signed delta from cur to target, in (-180, 180]. */
-  function shortestDelta(cur, target) {
-    return ((target - cur) % 360 + 540) % 360 - 180;
-  }
-  function approachAngle(cur, target, dt, tau) {
-    return cur + shortestDelta(cur, target) * (1 - Math.exp(-dt / Math.max(tau, 1e-4)));
-  }
-  function settled(a, b, eps) { return Math.abs(a - b) <= eps; }
-  function settledAngle(cur, target, eps) { return Math.abs(shortestDelta(cur, target)) <= eps; }
-
-  return {
-    add, remove, wake, reducedMotion,
-    lerp, approach, normAngle, shortestDelta, approachAngle, settled, settledAngle,
-    // test hooks
-    _animators: () => animators,
-    _rafId: () => rafId,
-    _reset: () => { if (rafId != null) cancelRaf(rafId); rafId = null; lastTime = 0; animators.clear(); },
-  };
-})();
-
 Corvus.map = (function () {
   let map = null;
   let vehicleMarker = null;
@@ -807,6 +718,73 @@ Corvus.map = (function () {
     }
   }
 
+  /* Hold a map's container at one width while the right panel slides.
+
+     MapLibre watches its container and answers every change with resize(),
+     which reallocates the WebGL drawing buffer and redraws everything,
+     terrain and buildings included. Left alone, the slide's width transition
+     triggered that five or six times out of step with the frames, which was
+     the stutter. Pinned, the container changes size once: at the start when
+     the panel closes (the extra width is still hidden under the panel), at
+     the end when it opens (the lost width is already under it).
+
+     resize() keeps the centre, which would shift the picture by half the
+     change; panning by that half keeps it anchored on the left edge, the way
+     the panel uncovers and covers it. Following too: the aircraft stays where
+     it is on screen, and the follow box moves the camera only once it leaves
+     the box, so the map never jumps under the operator. Returns the
+     unsubscribe. */
+  function holdThroughPanel(m) {
+    const panelApi = Corvus.panel;
+    if (!m || !panelApi || typeof panelApi.onMotion !== "function") return () => {};
+    const container = m.getContainer && m.getContainer();
+    const canvas = m.getCanvas && m.getCanvas();
+    if (!container || !canvas) return () => {};
+    let phase = null;
+    let lastWidth = 0;
+    let settleTimer = null;
+
+    const release = () => {
+      container.style.width = "";
+      container.style.right = "";
+    };
+    const onResize = () => {
+      if (!phase) return;
+      const width = canvas.clientWidth;
+      const dx = (width - lastWidth) / 2;
+      lastWidth = width;
+      if (phase === "settling") phase = null;
+      if (dx) m.panBy([dx, 0], { animate: false });
+    };
+    m.on("resize", onResize);
+
+    const off = panelApi.onMotion(({ phase: step, growth }) => {
+      if (step === "start") {
+        release();
+        const natural = container.clientWidth;
+        if (!natural) { phase = null; return; }
+        if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
+        if (!phase) lastWidth = canvas.clientWidth;
+        phase = "moving";
+        container.style.width = `${natural + Math.max(0, growth || 0)}px`;
+        container.style.right = "auto";
+      } else if (step === "end" && phase) {
+        release();
+        // When the released width equals the pinned one no resize follows,
+        // so the anchoring must not linger for an unrelated one later.
+        phase = "settling";
+        settleTimer = setTimeout(() => { phase = null; settleTimer = null; }, 250);
+      }
+    });
+    return () => {
+      off();
+      m.off("resize", onResize);
+      if (settleTimer) clearTimeout(settleTimer);
+      release();
+      phase = null;
+    };
+  }
+
   /** Push the current theme's track colours onto the track layers. */
   function repaintTrack() {
     if (!map) return;
@@ -1026,14 +1004,15 @@ Corvus.map = (function () {
   // runs at boot and usually before the style has loaded, loses nothing: the
   // "load" handler draws whatever is waiting.
   //
-  // Three kinds: a line, an area (a filled polygon with an outline) and a
-  // text label. Lines and areas go UNDER the flown track. A reference shape is
+  // Four kinds: a line, an area (a filled polygon with an outline), a text
+  // label and a button. Lines and areas go UNDER the flown track. A reference shape is
   // what the aircraft is measured against, and where the two cross the
   // aircraft's own path is the one the operator has to be able to read. A
   // label is a DOM marker, for the reason the region labels give: a text
   // layer needs glyphs, and the field laptop has no internet to fetch them.
   // Markers sit over the canvas, so a label is the one overlay above the
-  // track; it is small text, not something that hides a path.
+  // track; it is small text, not something that hides a path. A button is a
+  // DOM marker too, and the one overlay that takes the pointer.
   const overlays = new Map();   // id -> {kind, coords, color, ...}
   const overlayMarkers = new Map();   // id -> {marker, el} for a text overlay
   const OVERLAY_PREFIX = "overlay-";
@@ -1044,7 +1023,7 @@ Corvus.map = (function () {
     "path-glow", "path-casing", "path-line",
     "waypoints-route",
   ];
-  const OVERLAY_DEFAULT_COLOR = "#22D3EE";
+  const OVERLAY_DEFAULT_COLOR = "#2BC4E4";
   const OVERLAY_TEXT_MAX = 200;
 
   function overlayIds(id) {
@@ -1123,6 +1102,32 @@ Corvus.map = (function () {
     return el;
   }
 
+  /** The DOM button a button overlay is drawn as. textContent only, and the
+   *  click never reaches the map beneath it (no pan, no waypoint dropped). */
+  function buildOverlayButton(o) {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "map-overlay-button";
+    el.style.setProperty("--overlay-color", o.color);
+    el.style.setProperty("--overlay-size", o.size + "px");
+    el.style.opacity = String(o.opacity);
+    el.textContent = o.text;
+    if (o.title) {
+      el.title = o.title;
+      el.setAttribute("aria-label", o.title);
+    }
+    el.disabled = !!o.disabled;
+    const stop = (event) => { if (event && event.stopPropagation) event.stopPropagation(); };
+    ["mousedown", "dblclick", "touchstart", "pointerdown"].forEach((type) => el.addEventListener(type, stop));
+    el.addEventListener("click", (event) => {
+      stop(event);
+      if (typeof o.onClick !== "function") return;
+      try { o.onClick(); } catch (error) { console.warn("Corvus: map button handler failed", error); }
+    });
+    el.hidden = !o.visible;
+    return el;
+  }
+
   /**
    * Put one overlay into the style as it is stored now. The layers are rebuilt
    * rather than patched: a change of colour, width or dash is rare, and a
@@ -1132,13 +1137,13 @@ Corvus.map = (function () {
     if (!map || !started) return;
     const o = overlays.get(id);
     if (!o) { undrawOverlay(id); return; }
-    if (o.kind === "text") {
+    if (o.kind === "text" || o.kind === "button") {
       undrawOverlay(id);
       try {
-        const el = buildOverlayLabel(o);
+        const el = o.kind === "button" ? buildOverlayButton(o) : buildOverlayLabel(o);
         // With a dot the point is the dot's centre and the text runs off to
         // its right; without one the text is centred on the point.
-        const marker = new maplibregl.Marker(o.dot
+        const marker = new maplibregl.Marker(o.kind === "text" && o.dot
           ? { element: el, anchor: "left", offset: [-5, 0] }
           : { element: el, anchor: "center" })
           .setLngLat(o.coords[0]).addTo(map);
@@ -1285,6 +1290,36 @@ Corvus.map = (function () {
     overlays.set(id, Object.assign({ kind: "text", coords: clean, text: label }, style, {
       size: isFinite(size) ? Math.min(Math.max(Math.round(size), 9), 32) : 12,
       dot: !!o.dot,
+    }));
+    drawOverlay(id);
+    return true;
+  }
+
+  /**
+   * Draw (or redraw) a clickable button at one [lng, lat] point. Returns
+   * false for an unusable point or empty label.
+   *
+   * @param {string} id
+   * @param {[number, number]} point [lng, lat]
+   * @param {string} text  shown as plain text, at most 200 characters
+   * @param {Object} [opts] {onClick, title, disabled, color, size (px, 9 to 32), opacity, visible}
+   * @returns {boolean}
+   */
+  function setButtonOverlay(id, point, text, opts) {
+    if (typeof id !== "string" || !id) return false;
+    const clean = cleanOverlayCoords([point]);
+    const label = String(text == null ? "" : text).replace(/\s+/g, " ").trim()
+      .slice(0, OVERLAY_TEXT_MAX);
+    if (!clean.length || !label) return false;
+    const o = opts || {};
+    const size = Number(o.size);
+    const style = overlayStyle(o);
+    if (o.opacity == null) style.opacity = 1;
+    overlays.set(id, Object.assign({ kind: "button", coords: clean, text: label }, style, {
+      size: isFinite(size) ? Math.min(Math.max(Math.round(size), 9), 32) : 13,
+      title: typeof o.title === "string" ? o.title.slice(0, OVERLAY_TEXT_MAX) : "",
+      disabled: !!o.disabled,
+      onClick: typeof o.onClick === "function" ? o.onClick : null,
     }));
     drawOverlay(id);
     return true;
@@ -4968,6 +5003,7 @@ Corvus.map = (function () {
     // rail and the HUD live, so it goes bottom-left, with the clear-track button
     // stacked above it (see .track-clear in main.css).
     addAttribution(map);
+    holdThroughPanel(map);
 
     // Controls are built NOW, not on "load". MapLibre fires "load" only once the
     // style AND its first tiles have resolved, so building the rail there left
@@ -5132,6 +5168,8 @@ Corvus.map = (function () {
     isFollowing: () => followMode,
     getMap: () => map,
     isReady: () => started,
+    // Shared with the mission planner's map, which sits beside the panel too.
+    holdThroughPanel,
     setWaypointMode,
     // The flight bar's OPTIONAL narrowing rule: whether it answers to a share
     // of the map column (captions off early, as the window narrows) on top of
@@ -5170,6 +5208,7 @@ Corvus.map = (function () {
     setOverlay,
     setPolygonOverlay,
     setTextOverlay,
+    setButtonOverlay,
     removeOverlay,
     setOverlayVisible,
     hasOverlay: (id) => overlays.has(id),

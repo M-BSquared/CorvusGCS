@@ -1,9 +1,9 @@
 """Qt plugins macOS has flagged hidden, loaded through links (corvus.qt_plugins).
 
-Under ``.venv`` in an iCloud synced checkout every file ends up flagged hidden,
-and Qt then finds no platform plugin and aborts. The links are made headless
-here: a plugin folder of plain files, with the flag stood in for, plus one
-test with a real flag where the file system has them.
+Under ``.venv`` in a checkout a sync agent manages every file ends up flagged
+hidden, and Qt then finds no platform plugin and aborts. The links are made
+headless here: a plugin folder of plain files, with the flag stood in for, plus
+one test with a real flag where the file system has them.
 """
 from __future__ import annotations
 
@@ -135,7 +135,7 @@ def test_the_links_never_reach_a_child_process():
 def test_every_qapplication_the_app_makes_comes_after_the_links():
     """Qt loads its platform plugin in the QApplication constructor."""
     source = (ROOT / "corvus" / "app.py").read_text(encoding="utf-8")
-    made = [m.start() for m in re.finditer(r"QApplication\(sys\.argv\)", source)]
+    made = [m.start() for m in re.finditer(r"QApplication\((?:sys\.argv\)|qt_argv\(sys\.argv)", source)]
     assert len(made) == 2, "the startup failure dialog and the main window"
     for at in made:
         before = source[:at]

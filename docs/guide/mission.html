@@ -205,8 +205,8 @@
   <dd>With an aircraft connected, puts the start (and the takeoff on it) where the aircraft actually stands, and keeps it there while the aircraft is carried to the field. Once it is armed, the start stays at its home, where the mission's heights are measured from. Placing the start by hand lets go of the aircraft again, and a plan saved this way starts at whichever aircraft is connected when it is opened.</dd>
   <dt>Takeoff, Waypoint, Land</dt>
   <dd>The obvious ones.</dd>
-  <dt>Circle</dt>
-  <dd>Orbit a point a set number of times. Greyed on PX4, with the reason on the button: PX4 has no mission item that orbits a set number of times and refuses a whole mission that contains one. Use Hold there. ArduPilot flies a Circle as drawn.</dd>
+  <dt>Pattern</dt>
+  <dd>Covers a shape with a back and forth sweep, added as ordinary waypoints. Hover the button, or press it to keep the card open, and pick a shape: <em>Circle</em> (click the centre, then the edge), <em>Corridor</em> (click along its centre line) or <em>Area</em> (click its corners). <kbd>Enter</kbd> or a double click finishes a corridor or an area, right-click undoes the last corner and <kbd>Esc</kbd> cancels. The card sets the line spacing and the corridor width in metres; the sweep is shown on the map while you draw. While the card is open the button shows an arrow up.</dd>
   <dt>Hold</dt>
   <dd>Stay at a point for a set time.</dd>
   <dt>Return</dt>
@@ -214,7 +214,7 @@
 </dl>
 <p>
   Drag points to move them. Right-click removes the last one, and
-  <kbd>Esc</kbd> puts the tool rail back to the pointer. A Circle draws its
+  <kbd>Esc</kbd> puts the tool rail back to the pointer. An orbit item (one opened from a file or read from an ArduPilot aircraft) draws its
   real radius as a ring on the map; select it and a grip appears on the ring.
   Drag it to size the orbit, and pick which way round it is flown. (PX4 stores
   the direction as the sign of the loiter radius; Corvus keeps the radius a

@@ -5,7 +5,6 @@ and exposes JSON/SSE API endpoints under ``/api/``.
 """
 from __future__ import annotations
 
-import collections
 import dataclasses
 import http.server
 import json
@@ -75,7 +74,30 @@ from .plugin_registry import (
     resolve_asset as resolve_plugin_asset,
     user_plugins_dir,
 )
+from .sse_buffers import _BoundedSseBuffer, _MultiplexSseBuffer  # noqa: F401 - re-exported
+from .http_input import (  # noqa: F401 - re-exported, tests import them from here
+    _clean_region_name,
+    _coerce_port,
+    _default_params_filename,
+    _default_region_name,
+    _int_or,
+    _parse_near,
+    _parse_takeoff_altitude,
+    _reject_json_constant,
+    _safe_filename,
+    _slugify,
+    _validate_tile_bounds,
+    _validate_tile_zooms,
+)
 from .ssh_bridge import SshBridge, run_command as ssh_run_command
+from .tile_http import (  # noqa: F401 - re-exported, tests import them from here
+    TILE_UPSTREAM_COOLDOWN_S,
+    TILE_UPSTREAM_FAIL_THRESHOLD,
+    _AbsentTiles,
+    _TileDownloaderPool,
+    _TileProgressBus,
+    _UpstreamBreaker,
+)
 from .state_store import VehicleStateStore, _sanitize
 from .paths import corvus_path
 from .tile_cache import TileCache, default_cache_dir
@@ -107,19 +129,6 @@ TILE_UPSTREAM_TIMEOUT_S = 4
 TILE_UPSTREAM_MAX_BYTES = 4 * 1024 * 1024
 
 
-# Offline circuit breaker for the interactive fill path.
-#
-# In the field there is no internet, so every tile the operator pans onto that
-# was not pre-downloaded is a cache miss, and every miss used to spend the full
-# timeout failing to reach the upstream. A viewport is dozens of tiles, so the
-# map became treacle exactly when it needed to be quick. After this many
-# consecutive failures the fill path stops trying and misses 404 instantly,
-# which is what the map wants anyway; one success re-arms it.
-TILE_UPSTREAM_FAIL_THRESHOLD = 3
-# How long to stay tripped before probing the network again. Long enough that a
-# genuinely offline session is not re-testing constantly, short enough that
-# walking back into coverage recovers on its own without a restart.
-TILE_UPSTREAM_COOLDOWN_S = 30.0
 # Body-size caps defend against a malformed/huge Content-Length: an unguarded
 # int() crashes the handler on a non-numeric header, and an unbounded read
 # can exhaust memory. General JSON API vs raw firmware binary (a few MB).
@@ -404,334 +413,6 @@ def route(http_method: str, path: str):
         _pending_routes.append((http_method, path, func.__name__))
         return func
     return decorator
-
-
-class _BoundedSseBuffer:
-    def __init__(self, capacity: int, condition: threading.Condition | None = None) -> None:
-        self._capacity = max(1, int(capacity))
-        self._items: collections.deque[Any] = collections.deque()
-        # Normally its own condition. _MultiplexSseBuffer passes a shared one so
-        # several topic buffers can wake the same reader thread; threading's
-        # Condition is built on an RLock, so a drain that already holds it may
-        # re-enter these methods.
-        self._condition = condition if condition is not None else threading.Condition()
-
-    def put_latest(self, item: Any) -> None:
-        with self._condition:
-            self._items.clear()
-            self._items.append(item)
-            self._condition.notify()
-
-    def put_console(self, entry: dict[str, Any]) -> None:
-        key = (entry.get("name"), entry.get("text"), entry.get("level"))
-        urgent = entry.get("level") in {"error", "critical", "warning"}
-        with self._condition:
-            if entry.get("name") != "SHELL":
-                self._items = collections.deque(
-                    item for item in self._items
-                    if (item.get("name"), item.get("text"), item.get("level")) != key
-                )
-            if len(self._items) >= self._capacity:
-                drop_index = next(
-                    (
-                        index for index in range(len(self._items) - 1, -1, -1)
-                        if self._items[index].get("level") not in {"error", "critical", "warning"}
-                    ),
-                    None,
-                )
-                if drop_index is None:
-                    if not urgent:
-                        return
-                    self._items.pop()
-                else:
-                    del self._items[drop_index]
-            # Always append, never appendleft. Urgency decides what survives
-            # a full buffer (the eviction scan above), never what is delivered
-            # first: the console is how someone reconstructs what the autopilot
-            # did and in what order, and an error that overtakes the
-            # informational line explaining it — "EKF2 switching to GPS"
-            # arriving after the failure it caused — inverts cause and effect.
-            self._items.append(entry)
-            self._condition.notify()
-
-    def put_fifo(self, item: Any) -> None:
-        """Append one item, dropping the oldest when the buffer is full."""
-        with self._condition:
-            if len(self._items) >= self._capacity:
-                self._items.popleft()
-            self._items.append(item)
-            self._condition.notify()
-
-    def get(self, timeout: float | None = None) -> Any:
-        deadline = None if timeout is None else time.monotonic() + timeout
-        with self._condition:
-            while not self._items:
-                remaining = None if deadline is None else deadline - time.monotonic()
-                if remaining is not None and remaining <= 0:
-                    raise queue.Empty
-                self._condition.wait(remaining)
-            return self._items.popleft()
-
-    def drain(self) -> list[Any]:
-        """Take everything buffered, in order, without waiting."""
-        with self._condition:
-            items = list(self._items)
-            self._items.clear()
-            return items
-
-    def qsize(self) -> int:
-        with self._condition:
-            return len(self._items)
-
-
-class _MultiplexSseBuffer:
-    """Several named topic buffers behind one condition, one reader thread.
-
-    Exists so one HTTP connection can carry several event streams. Each topic
-    keeps its OWN buffer, so each keeps its own drop policy — params and tiles
-    coalesce to the latest, the console evicts by urgency, firmware keeps every
-    step — which a single shared queue would have flattened into one.
-    """
-
-    def __init__(self) -> None:
-        self._condition = threading.Condition()
-        self._buffers: dict[str, _BoundedSseBuffer] = {}
-
-    def topic(self, name: str, capacity: int) -> _BoundedSseBuffer:
-        """Add a topic buffer and return it, for a listener to write into."""
-        buf = _BoundedSseBuffer(capacity, condition=self._condition)
-        with self._condition:
-            self._buffers[name] = buf
-        return buf
-
-    def drain(self, timeout: float) -> list[tuple[str, Any]]:
-        """Block for up to *timeout* and return ``[(topic, item), ...]``.
-
-        Raises :class:`queue.Empty` if nothing arrived, which is the caller's
-        cue to send a keep-alive ping and re-check whether the server is
-        stopping — the same contract :meth:`_BoundedSseBuffer.get` has.
-        """
-        deadline = time.monotonic() + timeout
-        with self._condition:
-            while True:
-                out: list[tuple[str, Any]] = []
-                for name, buf in self._buffers.items():
-                    out.extend((name, item) for item in buf.drain())
-                if out:
-                    return out
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise queue.Empty
-                self._condition.wait(remaining)
-
-
-class _UpstreamBreaker:
-    """Circuit breaker around the interactive tile cache-fill.
-
-    Field use is offline, so a pan onto un-downloaded ground produces a whole
-    viewport of cache misses at once. Each miss that tries the network costs
-    the full timeout, and the map stops responding precisely when the operator
-    is looking for something. After ``threshold`` consecutive failures the
-    breaker trips and misses fail instantly for ``cooldown`` seconds; the first
-    request after that is allowed through as a probe, and any success closes
-    the breaker again — so walking back into coverage recovers by itself.
-
-    Thread-safe: tiles are served from many handler threads at once, which is
-    the whole reason the failures arrive in a burst.
-    """
-
-    def __init__(self, threshold: int = TILE_UPSTREAM_FAIL_THRESHOLD,
-                 cooldown: float = TILE_UPSTREAM_COOLDOWN_S) -> None:
-        self._threshold = max(1, int(threshold))
-        self._cooldown = float(cooldown)
-        self._lock = threading.Lock()
-        self._failures = 0
-        self._open_until = 0.0
-
-    def allow(self) -> bool:
-        """True if a network attempt should be made now.
-
-        When the cooldown has elapsed this returns True exactly once per
-        cooldown window (a probe) unless the attempt succeeds — that way a
-        still-offline session does not go back to paying the timeout on every
-        tile the moment the window expires.
-        """
-        with self._lock:
-            if self._failures < self._threshold:
-                return True
-            if time.monotonic() >= self._open_until:
-                # Probe: re-arm the window now so only this one request gets
-                # through until it reports back.
-                self._open_until = time.monotonic() + self._cooldown
-                return True
-            return False
-
-    def record_success(self) -> None:
-        with self._lock:
-            self._failures = 0
-            self._open_until = 0.0
-
-    def record_failure(self) -> None:
-        with self._lock:
-            self._failures += 1
-            if self._failures >= self._threshold:
-                self._open_until = time.monotonic() + self._cooldown
-
-    def is_open(self) -> bool:
-        """True while the breaker is suppressing network attempts."""
-        with self._lock:
-            return self._failures >= self._threshold and time.monotonic() < self._open_until
-
-    def reset(self) -> None:
-        with self._lock:
-            self._failures = 0
-            self._open_until = 0.0
-
-
-class _AbsentTiles:
-    """Tiles a regional elevation source said it does not have (HTTP 404).
-
-    Above its ``sparse_above`` zoom a source like Copernicus/Mapterhorn only
-    has tiles where a national model exists, and a tile it lacks means its
-    children are lacking too. Remembering the 404s turns the next few hundred
-    requests over the same ground into an immediate answer instead of a round
-    trip each. Memory only and bounded: a restart, or the cap, just asks again.
-    """
-
-    def __init__(self, limit: int = 20000) -> None:
-        self._limit = max(1, int(limit))
-        self._lock = threading.Lock()
-        self._keys: set[tuple[str, int, int, int]] = set()
-
-    def add(self, source: str, z: int, x: int, y: int) -> None:
-        with self._lock:
-            if len(self._keys) >= self._limit:
-                self._keys.clear()
-            self._keys.add((source, z, x, y))
-
-    def covers(self, source: str, z: int, x: int, y: int, floor: int) -> bool:
-        """Is (*z*, *x*, *y*), or an ancestor finer than *floor*, known absent?"""
-        with self._lock:
-            for level in range(z, floor, -1):
-                shift = z - level
-                if (source, level, x >> shift, y >> shift) in self._keys:
-                    return True
-        return False
-
-
-class _TileProgressBus:
-    """Pub-sub fan-out so many SSE clients can watch one download job.
-
-    The downloader accepts a single ``on_progress`` callback per job (set at
-    ``start()`` time); SSE clients come and go. The bus is the one callback the
-    downloader calls; it reads ``job_id`` from the progress dict and fans the
-    dict out to every registered subscriber for that job.
-
-    Contract handed to the downloader: it invokes ``on_progress(progress)``
-    with a dict containing at least ``{job_id, state, done, total, failed}``
-    — the same shape its own ``status()`` returns. Without ``job_id`` the bus
-    cannot route, so the call is dropped.
-    """
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._subs: dict[str, list[Any]] = collections.defaultdict(list)
-
-    def subscribe(self, job_id: str, fn: Any) -> None:
-        with self._lock:
-            self._subs[job_id].append(fn)
-
-    def unsubscribe(self, job_id: str, fn: Any) -> None:
-        with self._lock:
-            try:
-                self._subs[job_id].remove(fn)
-            except ValueError:
-                pass
-            if not self._subs[job_id]:
-                self._subs.pop(job_id, None)
-
-    def make_on_progress(self) -> Any:
-        """Return the single ``on_progress`` callback to hand to the downloader."""
-        def _on_progress(progress: Any) -> None:
-            if not isinstance(progress, dict):
-                return
-            job_id = progress.get("job_id")
-            if not job_id:
-                return
-            with self._lock:
-                subs = list(self._subs.get(job_id, ()))
-            for fn in subs:
-                try:
-                    fn(progress)
-                except Exception:  # noqa: BLE001 - a bad subscriber must not kill the download
-                    logger.exception("tile progress subscriber raised")
-        return _on_progress
-
-
-class _TileDownloaderPool:
-    """Unified facade over one TileDownloader per source.
-
-    ``TileDownloader`` binds a single ``TileCache`` at construction (see its
-    contract); we keep one cache per source so ``/api/tiles/<source>/...``
-    serves the correct raster, which requires one downloader per source. The
-    pool exposes the single ``start``/``cancel``/``status``/``list_jobs``/
-    ``shutdown`` surface the HTTP layer wants and routes by source (``start``)
-    or ``job_id`` (``cancel``/``status``).
-    """
-
-    def __init__(
-        self,
-        caches: dict[str, TileCache],
-        downloader_cls: Any,
-        max_workers: int = 3,
-    ) -> None:
-        self._downloaders: dict[str, Any] = {
-            sid: downloader_cls(cache, max_workers=max_workers)
-            for sid, cache in caches.items()
-        }
-
-    def start(
-        self,
-        source: str,
-        upstream: str,
-        bounds: tuple,
-        minzoom: int,
-        maxzoom: int,
-        on_progress: Any = None,
-        token: str = "",
-    ) -> str:
-        dl = self._downloaders.get(source)
-        if dl is None:
-            raise ValueError(f"no downloader for source {source!r}")
-        return dl.start(source, upstream, bounds, minzoom, maxzoom,
-                        on_progress=on_progress, token=token)
-
-    def cancel(self, job_id: str) -> bool:
-        for dl in self._downloaders.values():
-            if dl.cancel(job_id):
-                return True
-        return False
-
-    def status(self, job_id: str) -> dict | None:
-        for dl in self._downloaders.values():
-            st = dl.status(job_id)
-            if st is not None:
-                return st
-        return None
-
-    def list_jobs(self) -> list[dict]:
-        jobs: list[dict] = []
-        for dl in self._downloaders.values():
-            jobs.extend(dl.list_jobs())
-        return jobs
-
-    def shutdown(self) -> None:
-        for dl in self._downloaders.values():
-            try:
-                dl.shutdown()
-            except Exception:  # noqa: BLE001 - shutdown must not raise
-                logger.exception("tile downloader shutdown failed")
-        self._downloaders.clear()
 
 
 def _build_tile_downloader(
@@ -1322,22 +1003,6 @@ def _tlog_dir(cfg: Any) -> str:
     return corvus_path("logs")
 
 
-def _coerce_port(value: Any, default: int) -> int:
-    """A TCP port from *value*, or *default* when it is not one.
-
-    Saved config entries have already been coerced once on load, but a
-    hand-edited file can still carry a port the range check would reject, and
-    a connection attempt is not the place to discover it.
-    """
-    if isinstance(value, bool):
-        return default
-    try:
-        port = int(value)
-    except (TypeError, ValueError):
-        return default
-    return port if 0 <= port <= 65535 else default
-
-
 def _compose_remote_command(directory: str, command: str, detach: bool) -> str:
     """Build the shell line a one-button launcher sends to the remote host.
 
@@ -1369,81 +1034,6 @@ def _compose_remote_command(directory: str, command: str, detach: bool) -> str:
 def _param_metadata_cache_dir() -> str:
     """Where the opt-in copies of PX4's parameter metadata are kept."""
     return corvus_path("param-metadata")
-
-
-def _slugify(value: Any) -> str:
-    """Lowercase, filename-safe slug of *value* ("" when there is nothing)."""
-    text = re.sub(r"[^A-Za-z0-9]+", "-", str(value or "")).strip("-").lower()
-    return text
-
-
-def _default_params_filename(vehicle_tag: str = "", suffix: str = ".json") -> str:
-    """Build a readable default name for an exported parameter file.
-
-    ``corvus-params_<vehicle>_<YYYY-MM-DD_HH-MM><suffix>``. Local time and a
-    vehicle tag rather than the old epoch-milliseconds name: a folder of
-    exports has to be scannable by eye, and "which airframe was this?" is the
-    first question asked of an old parameter file.
-    """
-    stamp = time.strftime("%Y-%m-%d_%H-%M")
-    tag = _slugify(vehicle_tag)
-    stem = f"corvus-params_{tag}_{stamp}" if tag else f"corvus-params_{stamp}"
-    return stem + suffix
-
-
-def _safe_filename(raw: Any, fallback: str, suffix: str = ".json") -> str:
-    """Reduce *raw* to a single safe filename, or return *fallback*.
-
-    Strips any directory component (so ``../../etc/x`` cannot escape the target
-    directory), rejects the empty/dot names, and forces *suffix* so the file is
-    recognizable (and, for parameter files, re-importable). A non-string takes
-    the fallback rather than being coerced — a client bug should produce the
-    sensible default name, not a file called ``42.json``.
-    """
-    if not isinstance(raw, str):
-        return fallback
-    name = os.path.basename(raw.strip())
-    name = re.sub(r'[\x00-\x1f<>:"/\\|?*]', "", name).strip()
-    if not name or name in (".", ".."):
-        return fallback
-    if name.lower().endswith(suffix.lower()):
-        name = name[: -len(suffix)]
-    # Truncate the STEM, then re-attach the suffix — truncating afterwards
-    # would chop the extension off a long name and leave an unrecognizable file.
-    name = name[:115].rstrip() or fallback
-    return name + suffix
-
-
-# A region name is operator-typed free text that ends up in the UI and in the
-# .mbtiles file. Keep it short and single-line; everything else about it is the
-# operator's business.
-_MAX_REGION_NAME = 60
-
-
-def _clean_region_name(raw: Any) -> str:
-    """Normalize an operator-supplied region name, or return "" if unusable.
-
-    Collapses whitespace (a pasted multi-line name would break the list
-    layout) and truncates. Non-strings become "", so the caller falls back to
-    a generated name rather than rejecting the download.
-    """
-    if not isinstance(raw, str):
-        return ""
-    name = " ".join(raw.split())
-    return name[:_MAX_REGION_NAME]
-
-
-def _default_region_name(bounds: tuple[float, float, float, float]) -> str:
-    """Generate a name for an unnamed download: its centre coordinates.
-
-    Not a timestamp — in the field the operator recognizes an area by where it
-    is, and a list of identical-looking timestamps is no better than no names
-    at all. They can rename it afterwards.
-    """
-    w, s, e, n = bounds
-    lat = (s + n) / 2.0
-    lon = (w + e) / 2.0
-    return f"{abs(lat):.3f}\u00b0{'N' if lat >= 0 else 'S'} {abs(lon):.3f}\u00b0{'E' if lon >= 0 else 'W'}"
 
 
 def _delete_region_tiles(cache: Any, region: dict) -> int:
@@ -1478,103 +1068,6 @@ def _delete_region_tiles(cache: Any, region: dict) -> int:
         still_needed = tile_cover(*_area(other))
         doomed = {tile for tile in doomed if not still_needed(tile)}
     return cache.delete_tiles(doomed) if doomed else 0
-
-
-def _int_or(raw: Any, fallback: int) -> int:
-    """A query parameter as an int, or the fallback. Never raises."""
-    try:
-        return int(str(raw).strip())
-    except (TypeError, ValueError):
-        return fallback
-
-
-def _parse_near(raw: Any) -> geocode.Near | None:
-    """``"<lon>,<lat>"`` from a query string, or None.
-
-    Returns a :class:`geocode.Near`, which names the order the wire format
-    already uses, so the lon/lat pair cannot be read the wrong way round
-    downstream.
-
-    Only ever a ranking hint, so anything unparseable is dropped silently
-    rather than failing the search it was meant to improve.
-    """
-    parts = str(raw or "").split(",")
-    if len(parts) != 2:
-        return None
-    try:
-        lon, lat = float(parts[0]), float(parts[1])
-    except ValueError:
-        return None
-    if not math.isfinite(lon) or not math.isfinite(lat):
-        return None
-    if not -180.0 <= lon <= 180.0 or not -90.0 <= lat <= 90.0:
-        return None
-    return geocode.Near(lon, lat)
-
-
-def _validate_tile_bounds(bounds: Any) -> tuple[str | None, tuple[float, float, float, float] | None]:
-    """Validate a ``{w,s,e,n}`` bounds object.
-
-    Returns ``(error, None)`` on failure or ``(None, (w,s,e,n))`` on success.
-    """
-    if not isinstance(bounds, dict):
-        return ("bounds must be an object {w,s,e,n}", None)
-    for key in ("w", "s", "e", "n"):
-        value = bounds.get(key)
-        # bool is a subclass of int — reject it so True is never coerced to 1.0
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
-            return (f"bounds.{key} must be a finite number", None)
-    w, s, e, n = float(bounds["w"]), float(bounds["s"]), float(bounds["e"]), float(bounds["n"])
-    if not -180.0 <= w <= 180.0 or not -180.0 <= e <= 180.0:
-        return ("bounds w/e must be in [-180, 180]", None)
-    if not -90.0 <= s <= 90.0 or not -90.0 <= n <= 90.0:
-        return ("bounds s/n must be in [-90, 90]", None)
-    if w > e or s > n:
-        return ("bounds must satisfy w<=e and s<=n", None)
-    return (None, (w, s, e, n))
-
-
-def _validate_tile_zooms(minzoom: Any, maxzoom: Any, src_maxzoom: int) -> str | None:
-    """Validate ``minzoom``/``maxzoom`` (ints, 0..22, min<=max, within source cap)."""
-    if isinstance(minzoom, bool) or not isinstance(minzoom, (int, float)):
-        return "minzoom must be a number"
-    if isinstance(maxzoom, bool) or not isinstance(maxzoom, (int, float)):
-        return "maxzoom must be a number"
-    # Range first: JSON reads 1e400 as inf, and int(inf) raises rather than
-    # answering, which dropped the connection instead of a 400.
-    if not -1 < minzoom < 23 or not -1 < maxzoom < 23:
-        return "zooms must be in [0, 22]"
-    if float(minzoom) != int(minzoom) or float(maxzoom) != int(maxzoom):
-        return "zooms must be integers"
-    mz, Mz = int(minzoom), int(maxzoom)
-    if not 0 <= mz <= 22 or not 0 <= Mz <= 22:
-        return "zooms must be in [0, 22]"
-    if mz > Mz:
-        return "minzoom must be <= maxzoom"
-    if Mz > src_maxzoom:
-        return f"maxzoom exceeds source max ({src_maxzoom})"
-    return None
-
-
-def _parse_takeoff_altitude(value: object) -> float:
-    if isinstance(value, bool):
-        raise ValueError("takeoff altitude must be a number")
-    try:
-        altitude = float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("takeoff altitude must be a number") from exc
-    if not math.isfinite(altitude):
-        raise ValueError("takeoff altitude must be finite")
-    if not TAKEOFF_ALTITUDE_MIN_M <= altitude <= TAKEOFF_ALTITUDE_MAX_M:
-        raise ValueError(
-            f"takeoff altitude must be between {TAKEOFF_ALTITUDE_MIN_M:.0f} and "
-            f"{TAKEOFF_ALTITUDE_MAX_M:.0f} m AGL"
-        )
-    return altitude
-
-
-def _reject_json_constant(value: str) -> None:
-    raise ValueError(f"non-finite JSON number: {value}")
 
 
 # 1-slot memoization of the serialized telemetry snapshot, keyed by the

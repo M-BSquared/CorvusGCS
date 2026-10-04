@@ -55,10 +55,10 @@ def qt_problem() -> str | None:
 def _visible_plugins() -> str | None:
     """A plugin folder Qt can list, when the installed one is flagged hidden.
 
-    Under ``.venv`` in an iCloud synced checkout, macOS flags every file
-    hidden, and Qt then has no platform plugin: it prints a line and aborts
-    the process. :mod:`corvus.qt_plugins` links the plugins into a folder Qt
-    can see; the desktop app uses the same.
+    Under ``.venv`` in a checkout a sync agent manages, macOS flags every
+    file hidden, and Qt then has no platform plugin: it prints a line and
+    aborts the process. :mod:`corvus.qt_plugins` links the plugins into a
+    folder Qt can see; the desktop app uses the same.
     """
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))

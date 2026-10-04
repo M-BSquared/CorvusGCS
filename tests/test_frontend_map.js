@@ -68,6 +68,7 @@ global.document = {
 // ui.js first: it defines Corvus.ui, the component layer every other
 // module builds its DOM with (index.html loads it in the same order).
 require("../src/js/ui.js");
+require("../src/js/anim.js");
 require("../src/js/map.js");
 
 const map = Corvus.map;

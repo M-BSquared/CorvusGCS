@@ -352,8 +352,8 @@
    responsive rules that fold the label away at narrow widths stay there too,
    because that is a layout decision about the rail, not about the item. */
 .nav-item {
-  width: 58px; display: flex; flex-direction: column; align-items: center; gap: var(--space-4);
-  padding: 9px 0; border-radius: var(--radius-btn);
+  width: 58px; height: 52px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-4);
+  padding: 0; border-radius: var(--radius-btn);
   color: var(--text-2); transition: background 140ms, color 140ms;
   position: relative;
 }
@@ -1052,6 +1052,61 @@
   text-overflow: ellipsis;
 }
 .option-card.selected .option-card-desc { color: var(--text-2); }
+
+/* ===== .ui-segment — segmented control =====
+   Recessed well with the chosen option lifted out of it, matching
+   the connection panel's Serial / Network (.link-kinds). */
+.ui-segment {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  background: var(--panel-fill);
+  border: 1px solid var(--panel-hairline);
+  border-radius: var(--radius-btn);
+}
+.ui-segment-opt {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: calc(var(--radius-btn) - 2px);
+  background: transparent;
+  color: var(--text-3);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: background 130ms ease, color 130ms ease;
+}
+.ui-segment-opt i,
+.ui-segment-opt svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+.ui-segment-opt:hover {
+  color: var(--text-1);
+}
+.ui-segment-opt[aria-checked="true"],
+.ui-segment-opt[aria-selected="true"] {
+  background: var(--surface-1);
+  color: var(--text-1);
+}
+.ui-segment-opt[aria-checked="true"] i,
+.ui-segment-opt[aria-checked="true"] svg,
+.ui-segment-opt[aria-selected="true"] i,
+.ui-segment-opt[aria-selected="true"] svg {
+  color: var(--accent);
+}
+.ui-segment-opt:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: -2px;
+}
 
 /* ===== .option-list / .option-item — the row every list is made of =====
    One row, three shapes: a leading state dot for a chooser (the layer

@@ -56,7 +56,10 @@ window.Corvus = window.Corvus || {};
  * POST /api/local/ping at the interval set in its popup, and shown offline
  * once no reply has come back for the timeout set there. Pressing it opens
  * that popup. It is saved beside the buttons as {name, host, interval_s,
- * timeout_s} and probed only while the plugin is open.
+ * timeout_s, connection?} and probed only while the plugin is open. With a
+ * saved SSH connection picked (or a new one typed in, saved first), its host
+ * is the one pinged, and once the ping answers an arrow beside the status
+ * connects and opens an SSH terminal on it, in the session "schwalby/companion".
  *
  * When a press does not run, the reason lands on the row that failed (a
  * warning triangle, the message in its popover) and on the notification board
@@ -100,12 +103,34 @@ Corvus.pluginSchwalby = (function () {
     { value: TARGET_SSH, label: "SSH", icon: "server", title: "Run it over an SSH connection" },
   ];
 
+  const COMPANION_TARGET_PING = "ping";
+  const COMPANION_TARGET_SSH = "ssh";
+
+  const COMPANION_TARGETS = [
+    { value: COMPANION_TARGET_PING, label: "Ping", icon: "activity", title: "Only ping an IP address or host name" },
+    { value: COMPANION_TARGET_SSH, label: "SSH", icon: "server", title: "Connect over SSH and ping its host" },
+  ];
+
   // What a terminal on this computer calls its host, in the window header.
   const LOCAL_HOST = "this computer";
 
   // The connection <select>'s last entry: not a connection but a way to type
   // one in, for a companion computer nothing is configured for yet.
   const NEW_CONNECTION = "__new__";
+
+  // Name first, as in the SSH connection form in Settings.
+  const NEW_FIELDS = [
+    { key: "name", label: "Name", placeholder: "CORVUS-01", hint: " ",
+      info: "The name this connection is saved under. It joins the SSH " +
+            "connections in Settings, so the next button can simply pick it." },
+    { key: "host", label: "Host", placeholder: "192.168.2.10", mono: true },
+    { key: "port", label: "Port", type: "number", mono: true },
+    { key: "username", label: "User", placeholder: "corvus" },
+    { key: "password", label: "Password", type: "password", mono: true,
+      placeholder: "optional, or use a key file" },
+    { key: "key_path", label: "Key file", mono: true,
+      placeholder: "/home/you/.ssh/id_rsa" },
+  ];
 
   function targetInfo(value) {
     return TARGETS.find((t) => t.value === value) || TARGETS[0];
@@ -423,6 +448,12 @@ Corvus.pluginSchwalby = (function () {
    */
   function segment(opts) {
     const ui = Corvus.ui;
+    if (ui && typeof ui.segment === "function") {
+      const seg = ui.segment(opts);
+      seg.el.classList.add("schw-seg");
+      Array.from(seg.el.children).forEach((b) => b.classList.add("schw-seg-opt"));
+      return seg;
+    }
     const options = opts.options;
     let value = options.some((o) => o.value === opts.value) ? opts.value : options[0].value;
     const el = document.createElement("div");
@@ -536,11 +567,36 @@ Corvus.pluginSchwalby = (function () {
     const interval = nearestStep(INTERVAL_STEPS, raw.interval_s, DEFAULT_INTERVAL_S);
     let timeout = nearestStep(TIMEOUT_STEPS, raw.timeout_s, DEFAULT_TIMEOUT_S);
     if (timeout <= interval) timeout = timeoutFor(interval);
-    return {
+    const out = {
       name: String(raw.name == null ? "" : raw.name).trim().slice(0, MAX_COMPANION_NAME),
       host,
       interval_s: interval,
       timeout_s: timeout,
+    };
+    const connection = String(raw.connection == null ? "" : raw.connection).trim().slice(0, 120);
+    if (connection) out.connection = connection;
+    return out;
+  }
+
+  /** The session the companion's terminal runs in, apart from every button's. */
+  const COMPANION_ID = "companion";
+
+  /**
+   * The companion computer as a shelf entry, so its terminal goes through the
+   * same connect and window code a button's does. Null without a connection.
+   *
+   * Pure, and exported for the test suite.
+   *
+   * @param {Object|null} companion the normalized companion
+   * @returns {Object|null}
+   */
+  function companionEntry(companion) {
+    if (!companion || !companion.connection) return null;
+    return {
+      id: COMPANION_ID,
+      label: companion.name || "Companion computer",
+      target: TARGET_SSH,
+      connection: companion.connection,
     };
   }
 
@@ -622,6 +678,7 @@ Corvus.pluginSchwalby = (function () {
     let companionDialog = null;
 
     const companionEl = document.createElement("div");
+    companionEl.className = "schw-comp";
     const shelfEl = document.createElement("div");
     const editorEl = document.createElement("div");
     const status = ui.message({ className: "schw-status" });
@@ -696,8 +753,9 @@ Corvus.pluginSchwalby = (function () {
 
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "schw-comp";
+      btn.className = "schw-comp-main";
       btn.dataset.state = state;
+      companionEl.dataset.state = state;
       btn.addEventListener("click", () => openCompanionDialog());
 
       const iconEl = document.createElement("span");
@@ -739,6 +797,22 @@ Corvus.pluginSchwalby = (function () {
         : companion ? `Pinged every ${companion.interval_s} s, offline after ${companion.timeout_s} s without a reply`
           : "Set the companion computer to watch";
       companionEl.appendChild(btn);
+
+      // The arrow only once the ping answers: a terminal to a computer that
+      // is not there would just wait for its connection to time out.
+      const entry = companionEntry(companion);
+      if (entry && state === "online") {
+        const session = sessionName(entry);
+        const up = !!live[session];
+        const arrow = ui.iconButton("chevron-right", {
+          className: "icon-btn schw-comp-open",
+          ariaLabel: `Open an SSH terminal on ${entry.label}`,
+          title: up ? "Open its SSH terminal window" : `Connect to ${entry.connection} and open a terminal`,
+          onClick: () => (up ? openTerminal(entry) : connectAndOpen(entry, arrow)),
+        });
+        if (opening[session]) ui.setBusy(arrow, true);
+        companionEl.appendChild(arrow);
+      }
       ui.refreshIcons();
 
       noteTransition(state);
@@ -825,10 +899,22 @@ Corvus.pluginSchwalby = (function () {
       const draft = companion ? Object.assign({}, companion) : {
         name: "", host: "", interval_s: DEFAULT_INTERVAL_S, timeout_s: DEFAULT_TIMEOUT_S,
       };
+      let mode = (draft && draft.connection) ? COMPANION_TARGET_SSH : COMPANION_TARGET_PING;
       const body = document.createElement("div");
       body.className = "schw-comp-form";
 
-      body.appendChild(ui.field({
+      const kindSeg = segment({
+        ariaLabel: "Companion connection type",
+        value: mode,
+        options: COMPANION_TARGETS,
+        onChange: (next) => {
+          mode = next;
+          paintConnection();
+        },
+      });
+      body.appendChild(kindSeg.el);
+
+      const nameField = ui.field({
         label: "Name",
         control: ui.input({
           value: draft.name,
@@ -838,7 +924,8 @@ Corvus.pluginSchwalby = (function () {
           onInput: (v) => { draft.name = v; },
         }),
         hint: "Optional. Shown at the top of Schwalby.",
-      }));
+      });
+      body.appendChild(nameField);
 
       const hostField = ui.field({
         label: "IP address",
@@ -854,6 +941,100 @@ Corvus.pluginSchwalby = (function () {
         hint: " ",
       });
       body.appendChild(hostField);
+
+      // A saved connection pings its host and adds an SSH terminal arrow;
+      // NEW_CONNECTION types one in and saves it first.
+      const newConn = blankConnection();
+      const connOptions = [];
+      connections.forEach((c) => {
+        const address = c.username ? `${c.username}@${c.host}` : String(c.host || "");
+        connOptions.push({
+          value: c.name,
+          label: (address && address !== c.name) ? `${c.name} (${address})` : c.name,
+        });
+      });
+      if (draft.connection && !connections.some((c) => c.name === draft.connection)) {
+        connOptions.push({ value: draft.connection, label: `${draft.connection} (not set up on this computer)` });
+      }
+      connOptions.push({ value: NEW_CONNECTION, label: "New connection…" });
+
+      let initialConn = "";
+      if (draft.connection && connOptions.some((o) => o.value === draft.connection)) {
+        initialConn = draft.connection;
+      } else if (connections.length > 0) {
+        initialConn = connections[0].name;
+      } else {
+        initialConn = NEW_CONNECTION;
+      }
+
+      const connSel = ui.select({
+        ariaLabel: "SSH connection",
+        options: connOptions,
+        value: initialConn,
+        onChange: () => { paintConnection(); },
+      });
+      const connField = ui.field({
+        label: "SSH connection",
+        control: connSel,
+        info: "Pick a saved SSH connection to ping its host and get an " +
+              "arrow beside the status that opens a terminal on it, or type " +
+              "a new one in. The password stays with the backend.",
+      });
+      body.appendChild(connField);
+
+      const newConnEl = document.createElement("div");
+      newConnEl.className = "schw-newconn glass";
+      body.appendChild(newConnEl);
+      const dialogStatus = ui.message({ className: "schw-status" });
+      body.appendChild(dialogStatus.el);
+
+      function isPing() { return mode === COMPANION_TARGET_PING; }
+      function pickedNew() { return !isPing() && connSel.value === NEW_CONNECTION; }
+      function pickedSaved() { return !isPing() && connSel.value !== "" && !pickedNew(); }
+
+      /* Built only while in use: a hidden password field is still a password
+         field in the page. */
+      function renderNewConnection() {
+        ui.clear(newConnEl);
+        newConnEl.hidden = !pickedNew();
+        if (!pickedNew()) return;
+        NEW_FIELDS.forEach((f) => {
+          newConnEl.appendChild(ui.field({
+            label: f.label,
+            control: ui.input({
+              type: f.type || "text",
+              value: newConn[f.key],
+              placeholder: f.placeholder,
+              mono: f.mono,
+              ariaLabel: f.label,
+              autocomplete: false,
+              spellcheck: false,
+              onInput: (v) => { newConn[f.key] = v; paintSave(); },
+            }),
+            hint: f.key === "name" ? "Optional. Left empty, it is saved as user@host." : f.hint,
+            info: f.info,
+          }));
+        });
+      }
+
+      /** The address that is pinged: typed, or the picked connection's host. */
+      function pingHost() {
+        if (isPing()) return String(draft.host || "").trim();
+        if (pickedNew()) return String(newConn.host || "").trim();
+        if (pickedSaved()) {
+          const c = connections.find((x) => x.name === connSel.value);
+          return c ? String(c.host || "").trim() : String(draft.host || "").trim();
+        }
+        return String(draft.host || "").trim();
+      }
+
+      function paintConnection() {
+        connField.hidden = isPing();
+        hostField.hidden = !isPing();
+        nameField.hidden = !isPing();
+        renderNewConnection();
+        paintSave();
+      }
 
       const seconds = (list) => list.map((n) => ({ value: n, label: `${n} s` }));
       const intervalSlider = ui.slider({
@@ -901,14 +1082,48 @@ Corvus.pluginSchwalby = (function () {
         icon: "check",
         label: "Save",
         onClick: () => {
-          const next = normalizeCompanion(draft);
-          if (!next) return;
-          companion = next;
-          persist();
-          dialog.close();
-          startProbing();
+          const finish = (connection) => {
+            const next = normalizeCompanion(Object.assign({}, draft, {
+              name: connection || draft.name, host: pingHost(), connection,
+            }));
+            if (!next) return;
+            dropOldSession(next);
+            companion = next;
+            persist();
+            dialog.close();
+            startProbing();
+          };
+          if (isPing()) { finish(""); return; }
+          if (!pickedNew()) { finish(connSel.value); return; }
+          const payload = newConnectionBody(newConn);
+          ui.setBusy(saveBtn, true);
+          api.postJson("/api/ssh/connections", payload).then((res) => {
+            if (cancelled) return;
+            ui.setBusy(saveBtn, false);
+            if (!(res && res.ok)) {
+              dialogStatus.show((res && res.error) || "The connection could not be saved.", "err");
+              return;
+            }
+            dialogStatus.hide();
+            if (Array.isArray(res.connections)) connections = res.connections;
+            finish(payload.name);
+          }).catch((error) => {
+            if (cancelled) return;
+            ui.setBusy(saveBtn, false);
+            dialogStatus.show(error.message || "Could not reach the backend", "err");
+          });
         },
       });
+
+      /** A terminal still open on a connection the companion no longer names
+       *  is closed with it, so the arrow never reopens the old one. */
+      function dropOldSession(next) {
+        const before = companionEntry(companion);
+        if (before && (!next.connection || next.connection !== before.connection)
+            && live[sessionName(before)]) {
+          closeSession(before);
+        }
+      }
       const clearBtn = ui.button({
         variant: "secondary",
         icon: "eraser",
@@ -916,6 +1131,8 @@ Corvus.pluginSchwalby = (function () {
         title: "Forget the companion computer and stop pinging it",
         disabled: !companion,
         onClick: () => {
+          const before = companionEntry(companion);
+          if (before && live[sessionName(before)]) closeSession(before);
           companion = null;
           persist();
           dialog.close();
@@ -925,13 +1142,16 @@ Corvus.pluginSchwalby = (function () {
       const exitBtn = ui.button({ variant: "ghost", label: "Exit", onClick: () => dialog.close() });
 
       function paintSave() {
-        const problem = hostError(draft.host);
+        let problem = hostError(pingHost());
+        if (pickedNew()) {
+          problem = newConnectionError(newConn, connections.map((c) => c.name)) || problem;
+        }
         saveBtn.disabled = !!problem;
         saveBtn.title = problem;
         // Only a wrong address is worth a line; an empty one is still being typed.
-        setHint(hostField, draft.host ? problem : "");
+        setHint(hostField, draft.host ? hostError(draft.host) : "");
       }
-      paintSave();
+      paintConnection();
 
       const dialog = ui.modal({
         title: "Companion computer",
@@ -957,8 +1177,12 @@ Corvus.pluginSchwalby = (function () {
         ((data && data.sessions) || []).forEach((sess) => {
           if (sess && sess.connected && !closing[sess.name]) next[sess.name] = true;
         });
-        const changed = buttons.some((b) => !!live[sessionName(b)] !== !!next[sessionName(b)]);
+        const watched = buttons.slice();
+        const companionSession = companionEntry(companion);
+        if (companionSession) watched.push(companionSession);
+        const changed = watched.some((b) => !!live[sessionName(b)] !== !!next[sessionName(b)]);
         live = next;
+        if (companionSession) paintCompanion();
         if (changed && editing === null) renderShelf();
       }).catch(() => {
         if (cancelled) return;
@@ -1271,19 +1495,6 @@ Corvus.pluginSchwalby = (function () {
         return String(newConn.name || "").trim() || derivedName(newConn);
       }
 
-      // Name first, as in the SSH connection form in Settings.
-      const NEW_FIELDS = [
-        { key: "name", label: "Name", placeholder: "CORVUS-01", hint: " ",
-          info: "The name this connection is saved under. It joins the SSH " +
-                "connections in Settings, so the next button can simply pick it." },
-        { key: "host", label: "Host", placeholder: "192.168.2.10", mono: true },
-        { key: "port", label: "Port", type: "number", mono: true },
-        { key: "username", label: "User", placeholder: "corvus" },
-        { key: "password", label: "Password", type: "password", mono: true,
-          placeholder: "optional, or use a key file" },
-        { key: "key_path", label: "Key file", mono: true,
-          placeholder: "/home/you/.ssh/id_rsa" },
-      ];
 
       /* Built only while in use: a password field that is merely hidden is
          still a password field in the page. */
@@ -1633,6 +1844,7 @@ Corvus.pluginSchwalby = (function () {
           ui.setBusy(btn, false);
           if (!ok) return false;
           live[session] = true;
+          if (entry.id === COMPANION_ID) paintCompanion();
           openTerminal(entry, true);
           status.show(`${entry.label}: terminal ready, press the button to start`, "ok");
           if (editing === null) renderShelf();
@@ -1885,10 +2097,11 @@ Corvus.pluginSchwalby = (function () {
     previewLine, terminalLine, sshSummary, localSummary, normalizeButtons, missingConnections,
     coerceButton, coerceMode, restarts, coerceTarget, sessionName, derivedName,
     newConnectionError, newConnectionBody, segment,
-    hostError, normalizeCompanion, companionState, probeWaitMs,
+    hostError, normalizeCompanion, companionEntry, COMPANION_ID, companionState, probeWaitMs,
     MAX_BUTTONS, LIVE_POLL_MS, MODE_TERMINAL, MODE_BACKGROUND, NEW_CONNECTION,
     CTRL_C, RESTART_GRACE_MS,
     TARGET_LOCAL, TARGET_SSH, LOCAL_HOST,
+    COMPANION_TARGET_PING, COMPANION_TARGET_SSH, COMPANION_TARGETS,
     INTERVAL_STEPS, TIMEOUT_STEPS, DEFAULT_INTERVAL_S, DEFAULT_TIMEOUT_S,
   };
 })();

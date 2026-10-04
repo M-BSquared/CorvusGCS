@@ -114,6 +114,17 @@ logging.basicConfig(
 logger = logging.getLogger("corvus.app")
 
 from corvus import desktop_icon
+from corvus.app_icon import (
+    app_icon_backplate,
+    app_icon_inverted,
+    app_icon_path,
+    app_icon_plate_color,
+    build_app_icon,
+    desktop_id,
+    qt_argv,
+    render_app_icon,
+    ships_own_icon,
+)
 from corvus.config import default_config_path, load_config
 from corvus.instance_lock import (
     ALLOW_MULTI_ENV,
@@ -122,6 +133,7 @@ from corvus.instance_lock import (
     describe_peer,
 )
 from corvus.file_manager import open_url
+from corvus.native_window import mac_blur, win32_windows
 from corvus.paths import corvus_path
 from corvus.qt_plugins import visible_plugin_dir
 from corvus.version import get_version
@@ -132,7 +144,7 @@ def use_visible_qt_plugins() -> str | None:
 
     Must run before the first QApplication, which is when Qt loads its
     platform plugin. See :mod:`corvus.qt_plugins` for why a run from a checkout
-    under an iCloud synced folder needs it. A library path rather than
+    in a folder a sync agent manages needs it. A library path rather than
     ``QT_PLUGIN_PATH``, so no program Corvus starts inherits the links.
     Returns the folder of links, or ``None`` when Qt can see its plugins.
     """
@@ -434,358 +446,6 @@ def popout_geometry(rect: tuple[int, int, int, int],
     return x, y, w, h
 
 
-class Win32Windows:
-    """The Win32 calls a frameless window needs to follow the pointer on Windows.
-
-    Qt's coordinates on Windows are logical pixels, and with screens at
-    different scales (a laptop at 150 % beside a monitor at 100 %) they are
-    not one continuous plane: each screen keeps its physical origin and is
-    shrunk from there, so there are gaps and overlaps between them. A window
-    moved through ``QWidget.move`` while the pointer crosses from one screen
-    to the other lands in a gap, is placed by the scale of the screen it came
-    from, and jumps back and forth. Windows' own pixels have no gaps. So the
-    drag is done in them: where the pointer is (``GetCursorPos``), where the
-    window is (``GetWindowRect``), and ``SetWindowPos``; Windows then tells Qt
-    the window changed screens, and Qt rescales it as it would for the
-    system's own drag.
-
-    Also the one thing the pin needs that Qt does not do: when another
-    program comes to the front, a window that stops being topmost is placed
-    above every other window, that program's included (``HWND_NOTOPMOST``).
-    :meth:`step_back` puts it behind that program's window instead.
-    """
-
-    _SWP_NOSIZE = 0x0001
-    _SWP_NOMOVE = 0x0002
-    _SWP_NOZORDER = 0x0004
-    _SWP_NOACTIVATE = 0x0010
-    _SWP_NOOWNERZORDER = 0x0200
-    _HWND_NOTOPMOST = -2
-
-    def __init__(self) -> None:
-        import ctypes
-        from ctypes import wintypes
-
-        self._ct = ctypes
-        self._wt = wintypes
-        # A private handle, so setting argtypes here changes nothing for any
-        # other user of ctypes.windll.user32.
-        user32 = ctypes.WinDLL("user32", use_last_error=True)
-        user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
-        user32.GetCursorPos.restype = wintypes.BOOL
-        user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
-        user32.GetWindowRect.restype = wintypes.BOOL
-        user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
-                                        ctypes.c_int, ctypes.c_int, wintypes.UINT]
-        user32.SetWindowPos.restype = wintypes.BOOL
-        user32.GetForegroundWindow.argtypes = []
-        user32.GetForegroundWindow.restype = wintypes.HWND
-        self._user32 = user32
-
-    def cursor(self) -> tuple[int, int]:
-        pt = self._wt.POINT()
-        if not self._user32.GetCursorPos(self._ct.byref(pt)):
-            raise OSError(self._ct.get_last_error(), "GetCursorPos failed")
-        return pt.x, pt.y
-
-    def origin(self, hwnd: int) -> tuple[int, int]:
-        rect = self._wt.RECT()
-        if not self._user32.GetWindowRect(hwnd, self._ct.byref(rect)):
-            raise OSError(self._ct.get_last_error(), "GetWindowRect failed")
-        return rect.left, rect.top
-
-    def move(self, hwnd: int, x: int, y: int) -> None:
-        flags = self._SWP_NOSIZE | self._SWP_NOZORDER | self._SWP_NOACTIVATE
-        if not self._user32.SetWindowPos(hwnd, None, int(x), int(y), 0, 0, flags):
-            raise OSError(self._ct.get_last_error(), "SetWindowPos failed")
-
-    def step_back(self, hwnd: int) -> None:
-        flags = self._SWP_NOSIZE | self._SWP_NOMOVE | self._SWP_NOACTIVATE | self._SWP_NOOWNERZORDER
-        self._user32.SetWindowPos(hwnd, self._HWND_NOTOPMOST, 0, 0, 0, 0, flags)
-        front = self._user32.GetForegroundWindow()
-        if front and front != hwnd:
-            self._user32.SetWindowPos(hwnd, front, 0, 0, 0, 0, flags)
-
-
-def win32_windows(platform: str = sys.platform) -> Win32Windows | None:
-    """:class:`Win32Windows` on Windows, None elsewhere or when it cannot load."""
-    if platform != "win32":
-        return None
-    try:
-        return Win32Windows()
-    except Exception:  # noqa: BLE001 - Qt's own moves are the fallback
-        logger.debug("Win32 window calls unavailable", exc_info=True)
-        return None
-
-
-class MacBlur:
-    """The desktop behind a see-through window, blurred by macOS.
-
-    A terminal's window of its own is frosted glass unless Settings asks for
-    solid ones (src/js/popout-page.js), and the page cannot do that alone: CSS
-    ``backdrop-filter`` only sees the page, and behind the page is the
-    desktop. macOS blurs it with an ``NSVisualEffectView`` behind the window's
-    content. Qt's view *is* the content view and draws in its own layer, so a
-    subview of it would cover the page; the effect view goes one level up,
-    into the window's frame view, below the content view. It follows the
-    window's size by itself, and its layer is rounded like the page's frame,
-    so the blur has the frame's corners rather than the window's square ones.
-
-    ctypes over the Objective-C runtime rather than PyObjC: a dozen messages
-    to AppKit are not worth a dependency. Every call is made on the Qt main
-    thread, which is AppKit's.
-    """
-
-    _BEHIND_WINDOW = 0       # NSVisualEffectBlendingModeBehindWindow
-    _ALWAYS_ACTIVE = 1       # NSVisualEffectStateActive: not grey behind another app
-    _POPOVER = 6             # the material that lets the most colour through
-    _SIZABLE = 2 | 16        # NSViewWidthSizable | NSViewHeightSizable
-    _BELOW = -1              # NSWindowBelow
-
-    def __init__(self) -> None:
-        import ctypes
-        import ctypes.util
-
-        objc_path = ctypes.util.find_library("objc")
-        appkit_path = ctypes.util.find_library("AppKit")
-        if not objc_path or not appkit_path:
-            raise OSError("no Objective-C runtime or AppKit")
-        ctypes.CDLL(appkit_path)
-        objc = ctypes.CDLL(objc_path)
-        objc.objc_getClass.restype = ctypes.c_void_p
-        objc.objc_getClass.argtypes = [ctypes.c_char_p]
-        objc.sel_registerName.restype = ctypes.c_void_p
-        objc.sel_registerName.argtypes = [ctypes.c_char_p]
-        if not objc.objc_getClass(b"NSVisualEffectView"):
-            raise OSError("AppKit has no NSVisualEffectView")
-
-        class Rect(ctypes.Structure):
-            _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double),
-                        ("w", ctypes.c_double), ("h", ctypes.c_double)]
-
-        self._ct = ctypes
-        self._objc = objc
-        self._rect = Rect
-        self._msg_send = ctypes.cast(objc.objc_msgSend, ctypes.c_void_p).value
-        self._prototypes: dict = {}
-
-    def _send(self, target: int, selector: str, restype=None, argtypes=(), *args):
-        """``[target selector:args…]``, with the C signature spelled out."""
-        c = self._ct
-        key = (restype, tuple(argtypes))
-        fn = self._prototypes.get(key)
-        if fn is None:
-            fn = c.CFUNCTYPE(restype, c.c_void_p, c.c_void_p, *argtypes)(self._msg_send)
-            self._prototypes[key] = fn
-        return fn(target, self._objc.sel_registerName(selector.encode()), *args)
-
-    def _obj(self, target: int, selector: str) -> int:
-        return int(self._send(target, selector, self._ct.c_void_p) or 0)
-
-    def frost(self, view_id: int, effect: int, dark: bool, radius: float,
-              width: int, height: int) -> int:
-        """Blur the desktop behind the window whose content view is *view_id*.
-
-        *effect* is what an earlier call returned, or 0: it is updated in
-        place while it is still behind this window, and replaced when Qt has
-        made the window anew. *dark* picks the blur's own tint to match the
-        theme, *radius* is the page frame's corner radius and *width* by
-        *height* the window's size, all in points. Returns the effect view,
-        retained, for the next call or for :meth:`clear`.
-        """
-        c = self._ct
-        window = self._obj(view_id, "window")
-        content = self._obj(window, "contentView") if window else 0
-        frame = self._obj(content, "superview") if content else 0
-        if not frame:
-            raise OSError("the view is not in a window with a frame view")
-        # Let go of a view behind a window that is gone only once its
-        # replacement exists: the caller keeps what it had if this raises.
-        stale = effect if effect and self._obj(effect, "superview") != frame else 0
-        if stale:
-            effect = 0
-        if not effect:
-            cls = self._objc.objc_getClass(b"NSVisualEffectView")
-            effect = self._obj(cls, "alloc")
-            effect = int(self._send(effect, "initWithFrame:", c.c_void_p, (self._rect,),
-                                    self._rect(0.0, 0.0, float(width), float(height))) or 0)
-            if not effect:
-                raise OSError("could not make an NSVisualEffectView")
-            self._send(effect, "setAutoresizingMask:", None, (c.c_ulong,), self._SIZABLE)
-            self._send(effect, "setBlendingMode:", None, (c.c_long,), self._BEHIND_WINDOW)
-            self._send(effect, "setState:", None, (c.c_long,), self._ALWAYS_ACTIVE)
-            self._send(effect, "setMaterial:", None, (c.c_long,), self._POPOVER)
-            self._send(effect, "setWantsLayer:", None, (c.c_bool,), True)
-            self._send(frame, "addSubview:positioned:relativeTo:", None,
-                       (c.c_void_p, c.c_long, c.c_void_p), effect, self._BELOW, content)
-        if stale:
-            self.clear(stale)
-        name =b"NSAppearanceNameDarkAqua" if dark else b"NSAppearanceNameAqua"
-        text = self._send(self._objc.objc_getClass(b"NSString"), "stringWithUTF8String:",
-                          c.c_void_p, (c.c_char_p,), name)
-        appearance = self._send(self._objc.objc_getClass(b"NSAppearance"), "appearanceNamed:",
-                                c.c_void_p, (c.c_void_p,), text)
-        self._send(effect, "setAppearance:", None, (c.c_void_p,), appearance)
-        layer = self._obj(effect, "layer")
-        if layer:
-            self._send(layer, "setCornerRadius:", None, (c.c_double,), max(0.0, float(radius)))
-            self._send(layer, "setMasksToBounds:", None, (c.c_bool,), True)
-        # The window's shadow is traced from what it draws, and it now draws
-        # the blur as well.
-        self._send(window, "invalidateShadow")
-        return effect
-
-    def clear(self, effect: int) -> None:
-        """Take the blur away, and let go of the view :meth:`frost` returned."""
-        if not effect:
-            return
-        self._send(effect, "removeFromSuperview")
-        self._send(effect, "release")
-
-
-def mac_blur(platform: str = sys.platform) -> MacBlur | None:
-    """:class:`MacBlur` on macOS, None elsewhere or when AppKit will not load."""
-    if platform != "darwin":
-        return None
-    try:
-        return MacBlur()
-    except Exception:  # noqa: BLE001 - a solid terminal is the fallback
-        logger.debug("macOS window blur unavailable", exc_info=True)
-        return None
-
-
-def app_icon_inverted(cfg) -> bool:
-    """Whether the operator asked for the inverted cut of the mark.
-
-    Reads the live config object the HTTP handlers mutate in place, so the
-    Settings switch reaches the Dock / taskbar without a restart. Anything
-    other than a genuine ``True`` means the normal (white artwork) mark.
-    """
-    ui = getattr(cfg, "ui", None)
-    return isinstance(ui, dict) and ui.get("inverted_app_icon") is True
-
-
-def app_icon_backplate(cfg) -> bool:
-    """Whether the mark should be drawn on a filled rounded square.
-
-    The shipped artwork is a bare silhouette on transparency, which is what
-    makes it vanish against a dock of its own colour. A backplate gives it
-    the contrast a platform icon is normally expected to carry on its own,
-    and unlike the inversion it works whichever way the dock is shaded.
-
-    Independent of :func:`app_icon_inverted`: the inversion picks the mark,
-    this picks whether it gets a ground. Anything other than a genuine
-    ``True`` means the bare mark, as before the switch existed.
-    """
-    ui = getattr(cfg, "ui", None)
-    return isinstance(ui, dict) and ui.get("app_icon_backplate") is True
-
-
-def app_icon_path(inverted: bool) -> str:
-    """Absolute path of the PNG the Dock / taskbar icon is built from."""
-    name = "CorvusGCS_logo_inverted.png" if inverted else "CorvusGCS_logo.png"
-    return os.path.join(REPO_ROOT, "assets", name)
-
-
-# Backplate geometry, as fractions of the icon's edge. The corner radius sits
-# where every platform's icon grid rounds to, and the mark is inset so its
-# wingtips keep clear of the corners instead of being clipped by them.
-_PLATE_RADIUS = 0.225
-_PLATE_INSET = 0.78
-# The plate carries the contrast, so it takes the side of the theme the mark
-# does not: the white mark gets the dark ground (--bg of the dark theme in
-# src/css/themes.css), the black one gets white.
-_PLATE_DARK = "#0B0E12"
-_PLATE_LIGHT = "#FFFFFF"
-# Size the icon is rasterised at when nothing else asks for one. Large enough
-# that macOS and GNOME downsample rather than upscale it.
-_ICON_RENDER_SIZE = 512
-
-
-def app_icon_plate_color(inverted: bool) -> str:
-    """The backplate colour that puts the chosen cut of the mark in relief."""
-    return _PLATE_LIGHT if inverted else _PLATE_DARK
-
-
-def app_icon_pixmap(source: str, size: int, plate: str):
-    """The mark centred on a filled rounded square — a square QPixmap.
-
-    Qt is imported here rather than at module scope so ``corvus.app`` keeps
-    importing headless (the icon-selection helpers above are tested without
-    PySide6 and without a display).
-    """
-    from PySide6.QtCore import QRectF, Qt
-    from PySide6.QtGui import QColor, QPainter, QPainterPath, QPixmap
-
-    canvas = QPixmap(size, size)
-    canvas.fill(QColor(0, 0, 0, 0))
-    painter = QPainter(canvas)
-    try:
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-        path = QPainterPath()
-        radius = size * _PLATE_RADIUS
-        path.addRoundedRect(QRectF(0, 0, size, size), radius, radius)
-        painter.fillPath(path, QColor(plate))
-        mark = QPixmap(source)
-        if not mark.isNull():
-            inner = max(1, int(size * _PLATE_INSET))
-            mark = mark.scaled(inner, inner, Qt.AspectRatioMode.KeepAspectRatio,
-                               Qt.TransformationMode.SmoothTransformation)
-            painter.drawPixmap((size - mark.width()) // 2,
-                               (size - mark.height()) // 2, mark)
-    finally:
-        painter.end()                # before the pixmap is handed on, always
-    return canvas
-
-
-def render_app_icon(source: str, dest: str, size, plate, text=None) -> None:
-    """Write the app icon to *dest* as a PNG. Raises if it cannot.
-
-    This is the renderer :mod:`corvus.desktop_icon` calls for every file it
-    rewrites; *size* is the one the icon theme's directory or the thumbnail
-    tier asks for, or ``None`` where nothing has an opinion.
-
-    *text* becomes PNG ``tEXt`` chunks. Empty for a launcher icon; for a file
-    thumbnail it carries the ``Thumb::URI`` / ``Thumb::MTime`` pair the
-    freedesktop spec requires, which is the difference between a PNG the file
-    manager adopts and one it ignores. It goes through QImage because QPixmap
-    has no text keys — and the conversion is needed for the save anyway.
-    """
-    from PySide6.QtCore import Qt
-    from PySide6.QtGui import QPixmap
-
-    if plate:
-        pixmap = app_icon_pixmap(source, int(size or _ICON_RENDER_SIZE), plate)
-    else:
-        pixmap = QPixmap(source)
-        if pixmap.isNull():
-            raise ValueError(f"cannot read {source}")
-        if size:
-            pixmap = pixmap.scaled(int(size), int(size),
-                                   Qt.AspectRatioMode.KeepAspectRatio,
-                                   Qt.TransformationMode.SmoothTransformation)
-    image = pixmap.toImage()
-    for key, value in (text or {}).items():
-        image.setText(key, value)
-    if not image.save(dest, "PNG"):
-        raise OSError(f"cannot write {dest}")
-
-
-def build_app_icon(inverted: bool, backplate: bool):
-    """The QIcon for the Dock / taskbar, or ``None`` if the artwork is gone."""
-    from PySide6.QtGui import QIcon
-
-    path = app_icon_path(inverted)
-    if not os.path.exists(path):
-        logger.warning("app icon %s missing; keeping the current one", path)
-        return None
-    if not backplate:
-        return QIcon(path)
-    return QIcon(app_icon_pixmap(path, _ICON_RENDER_SIZE,
-                                 app_icon_plate_color(inverted)))
-
-
 def _stop_all(server) -> None:
     """Ordered, exception-safe backend teardown. Never raises.
 
@@ -907,7 +567,11 @@ def main() -> int:
     # the AppUserModelID was when the window was created.
     set_windows_app_id(f"corvus.gcs.{get_version()}")
     use_visible_qt_plugins()
-    app = QApplication(sys.argv)
+    # Before the QApplication, so the first window already carries the id a
+    # Linux dock matches against the desktop entry's StartupWMClass.
+    app_id = desktop_id()
+    QGuiApplication.setDesktopFileName(app_id)
+    app = QApplication(qt_argv(sys.argv, app_id))
     app.setApplicationName("CORVUS GCS")
     app.setApplicationDisplayName("CORVUS GCS")
     app.setApplicationVersion(get_version())
@@ -1459,12 +1123,12 @@ def main() -> int:
     # Settings -> Appearance lands without a restart. Nothing else in the app
     # reads this: it is the icon only, not a theme.
     #
-    # Seeded with the off state, not None, because that is what the platform
-    # already shows: all three build scripts cut the bundle icon
-    # (.icns / .ico / .png) from the bare normal mark. An operator who never
-    # touches the switches therefore keeps the packaged icon untouched — Qt is
-    # only asked for an icon once the config actually asks for a different one.
-    applied_icon: list[tuple[bool, bool]] = [(False, False)]
+    # Where the platform already shows a packaged icon (.icns, .ico), seeded
+    # with the off state: the builds cut that icon from the bare normal mark,
+    # so Qt is only asked for one once the config asks for a different one.
+    # Everywhere else (Linux, a source checkout) nothing would draw an icon
+    # unless Qt is handed one, so the first tick always sets it.
+    applied_icon: list = [(False, False)] if ships_own_icon() else [None]
     # The launcher entry a Linux desktop integrator wrote is a file under
     # $HOME, not process state: it outlives the run that set it. So it gets its
     # own seed of None, which makes the first tick reconcile it once against

@@ -2,6 +2,7 @@
 # Corvus GCS — run the desktop app from source.
 #
 #   ./run.sh [PORT] [MAVLINK_CONNECTION]
+#   ./run.sh --desktop-entry      # Linux: add this checkout to the app launcher
 #
 # The first run creates .venv from a Python >= 3.12 and installs the `dev`
 # group from pyproject.toml into it. Later runs re-install only when
@@ -20,6 +21,50 @@ case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*) PY="$VENV/Scripts/python.exe" ;;
 esac
 STAMP="$VENV/.corvus-deps"
+
+# Linux: `./run.sh --desktop-entry` writes a launcher entry for this checkout,
+# so the applications grid and the dock show Corvus GCS with its icon. A
+# Wayland dock has no other way to find one. Its paths are this checkout's,
+# resolved here, and an existing entry is brought up to date on every run, so
+# it follows the checkout when it moves. StartupWMClass is the id a source
+# checkout's window carries (desktop_id in corvus/app_icon.py).
+ENTRY="${XDG_DATA_HOME:-$HOME/.local/share}/applications/corvus-gcs-dev.desktop"
+desktop_entry() {
+    local exec_path
+    exec_path="$(printf '%s' "$REPO_DIR/run.sh" | sed -e 's/[\\"`$]/\\&/g' -e 's/%/%%/g')"
+    printf '%s\n' \
+        "[Desktop Entry]" \
+        "Type=Application" \
+        "Name=Corvus GCS (dev)" \
+        "Comment=Corvus GCS from the checkout in $REPO_DIR" \
+        "Exec=\"$exec_path\"" \
+        "Icon=$REPO_DIR/assets/CorvusGCS_logo.png" \
+        "StartupWMClass=corvus-gcs-dev" \
+        "Categories=Utility;Science;" \
+        "Terminal=false"
+}
+sync_desktop_entry() {
+    local want
+    want="$(desktop_entry)"
+    [ "$want" = "$(cat "$ENTRY" 2>/dev/null)" ] && return 0
+    mkdir -p "$(dirname "$ENTRY")"
+    printf '%s\n' "$want" > "$ENTRY"
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database -q "$(dirname "$ENTRY")" || true
+    fi
+}
+if [ "${1:-}" = "--desktop-entry" ]; then
+    if [ "$(uname -s)" != "Linux" ]; then
+        echo "ERROR: --desktop-entry is for Linux desktops" >&2
+        exit 1
+    fi
+    sync_desktop_entry
+    echo ">>> Desktop entry: $ENTRY"
+    exit 0
+fi
+if [ "$(uname -s)" = "Linux" ] && [ -f "$ENTRY" ]; then
+    sync_desktop_entry || true
+fi
 
 py_ok() {  # <interpreter> -> 0 if it is Python >= 3.12
     "$1" -c 'import sys; sys.exit(sys.version_info < (3, 12))' >/dev/null 2>&1
