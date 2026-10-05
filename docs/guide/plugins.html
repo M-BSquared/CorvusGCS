@@ -351,6 +351,8 @@
 <dl>
   <dt>WGS84 / EPSG:4326</dt>
   <dd>Degrees, in the order GIS tools write them: x is longitude, y is latitude (GeoJSON, QGIS, most CSV exports).</dd>
+  <dt>UTM 32N / EPSG:32632, ETRS89 UTM 32N / EPSG:25832, UTM 33N / EPSG:32633</dt>
+  <dd>Metres, x is easting and y is northing, as surveyors and German geodata portals deliver them. Zone 32 covers Munich; zone 33 covers the east of Bavaria. EPSG:25832 and EPSG:32632 differ by under a metre.</dd>
   <dt>GPS</dt>
   <dd>Degrees, in the order a GPS receiver or a phone shows them: latitude first, then longitude.</dd>
   <dt>Local frame</dt>

@@ -6863,9 +6863,10 @@ button.review-finding-head:focus-visible {
   box-shadow: var(--shadow-pop);
 }
 .mission-profile.is-collapsed { height: auto; }
-.mission-profile.is-collapsed .mission-profile-plot,
-.mission-profile.is-collapsed .mission-profile-note,
-.mission-profile.is-collapsed .mission-aircraft { display: none; }
+.mission-profile.is-collapsed:not(.is-folding) .mission-profile-plot,
+.mission-profile.is-collapsed:not(.is-folding) .mission-profile-note,
+.mission-profile.is-collapsed:not(.is-folding) .mission-aircraft { display: none; }
+.mission-profile.is-folding .mission-profile-plot { flex: 0 0 auto; height: calc(var(--mission-profile-h, 240px) - 34px); }
 .mission-profile.is-collapsed .mission-profile-head { padding-bottom: 6px; }
 .mission-profile-toggle { margin-left: -6px; flex: 0 0 auto; }
 .mission-profile:not(.is-collapsed) .mission-profile-toggle svg { transform: rotate(180deg); }

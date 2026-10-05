@@ -562,6 +562,7 @@ Corvus.mission = (function () {
   let profileEl = null;
   let profileWrapEl = null;
   let profileToggleEl = null;
+  let profileAnim = null;
   let profileLiftObserver = null;
   let hadEnding = false;
   let listEl = null;
@@ -1550,7 +1551,7 @@ Corvus.mission = (function () {
     profileWrapEl = profileWrap;
     profileToggleEl = Corvus.ui.iconButton("chevron-down", {
       title: "Show altitude profile", size: 14,
-      onClick: () => setProfileCollapsed(!profileWrap.classList.contains("is-collapsed")),
+      onClick: () => setProfileCollapsed(!profileWrap.classList.contains("is-collapsed"), true),
     });
     profileToggleEl.classList.add("mission-profile-toggle");
     profileHead.append(profileToggleEl, profileTitle, profileNote, buildAircraftPicker());
@@ -3546,9 +3547,34 @@ Corvus.mission = (function () {
   /** The profile card starts folded: a route has no end to read a profile of
    *  until it has a landing or a return, and a folded card leaves the map
    *  alone. Unfolding redraws, because Plotly had nothing to measure. */
-  function setProfileCollapsed(on) {
+  function setProfileCollapsed(on, animate = false) {
     if (!profileWrapEl || !profileToggleEl) return;
-    profileWrapEl.classList.toggle("is-collapsed", on);
+    const wrap = profileWrapEl;
+    if (profileAnim) profileAnim.cancel();
+    profileAnim = null;
+    const from = wrap.offsetHeight;
+    const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const canAnimate = animate && !reduced && typeof wrap.animate === "function" && from > 0;
+    wrap.classList.toggle("is-collapsed", on);
+    if (canAnimate) {
+      const to = wrap.offsetHeight;
+      if (from !== to) {
+        wrap.classList.add("is-folding");
+        const run = wrap.animate(
+          [{ height: from + "px" }, { height: to + "px" }],
+          { duration: 220, easing: "cubic-bezier(0.2, 0, 0, 1)" },
+        );
+        profileAnim = run;
+        const done = () => {
+          if (profileAnim !== run) return;
+          profileAnim = null;
+          wrap.classList.remove("is-folding");
+          if (!on) { resizeProfile(); drawProfile(); }
+        };
+        run.onfinish = done;
+        run.oncancel = () => { if (profileAnim === run) { profileAnim = null; wrap.classList.remove("is-folding"); } };
+      }
+    }
     const label = on ? "Show altitude profile" : "Hide altitude profile";
     profileToggleEl.title = label;
     profileToggleEl.setAttribute("aria-label", label);
@@ -3560,7 +3586,7 @@ Corvus.mission = (function () {
    *  that the operator's own fold is respected. */
   function openProfileForEnding() {
     const has = items.some((item) => item.type === "land" || item.type === "rtl");
-    if (has && !hadEnding) setProfileCollapsed(false);
+    if (has && !hadEnding) setProfileCollapsed(false, true);
     hadEnding = has;
   }
 
