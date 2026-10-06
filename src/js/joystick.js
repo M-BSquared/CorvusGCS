@@ -18,11 +18,20 @@ window.Corvus = window.Corvus || {};
   are the right one (pitch and roll). Either alone is half a transmitter;
   together they are the whole one, without a pointer.
 
-  All three are off by default, and all three are INPUT SOURCES and nothing
-  else: they arm nothing, change no mode, and cannot override a failsafe.
-  Whether the autopilot acts on them at all is the vehicle's decision
-  (COM_RC_IN_MODE 1, 2 or 3, and a mode that flies from the sticks) — the GCS
-  deliberately does not set that parameter on the operator's behalf.
+  All three are off by default and arm nothing. The pad itself changes no mode
+  and cannot override a failsafe, with one exception, and only for the
+  keyboard: the keyboard's own flight keys are LOCKED until the operator
+  presses Shift + W twice in quick succession, because a stray W must never
+  take over an aircraft. The lock notice sits in the pad. Unlocking asks an
+  armed vehicle in a mode that ignores the sticks for the stack's
+  position-holding mode (the dialect's stick_mode, POSCTL on PX4, POSHOLD on an
+  ArduPilot copter), with the refusal shown if there is one, and a key press
+  after that asks again if the vehicle has left it. The lock comes back on
+  Escape, on collapsing the pad and on switching a key surface on or off;
+  lost window focus or a dropped link leave it as it is. The on-screen keys
+  are pointer driven and not locked. Whether the autopilot acts on the frames at all is still the vehicle's
+  decision (COM_RC_IN_MODE 1, 2 or 3) — the GCS deliberately does not set that
+  parameter on the operator's behalf.
 
   Axis mapping is the transmitter's, because that is what PX4 receives:
 
@@ -94,6 +103,8 @@ window.Corvus = window.Corvus || {};
 Corvus.joystick = (function () {
   const ACTIVE_HZ = 20;      // while an axis is off centre
   const IDLE_HZ = 5;         // holding the link open at neutral
+  const UNLOCK_WINDOW_MS = 800; // between the two Shift + W presses
+  const MODE_RETRY_MS = 2000; // between mode requests from key presses
   const DEADZONE = 0.06;     // fraction of stick travel that still reads as centre
 
   /* How much stick one held key is worth, as a fraction of full travel. A
@@ -168,6 +179,11 @@ Corvus.joystick = (function () {
   let timer = null;
   let inFlight = false;
   let connected = false;
+  let vehicle = {};
+  let locked = true;
+  let lastUnlockPress = 0;
+  let lockEl = null;
+  let modeRequestedAt = 0;
   let boundGlobals = false;
   const sticks = [];
   const keyButtons = {};        // dir -> button element
@@ -429,7 +445,43 @@ Corvus.joystick = (function () {
     return entry;
   }
 
+  function paintLock() {
+    if (!lockEl) return;
+    lockEl.hidden = collapsed || !(showKeys || showWasd);
+    lockEl.classList.toggle("is-unlocked", !locked);
+    lockEl.textContent = locked
+      ? "Keyboard locked. Press Shift + W twice to unlock."
+      : "Keyboard unlocked. Esc locks it again.";
+  }
+
+  function setLocked(on) {
+    lastUnlockPress = 0;
+    if (!!on === locked) return;
+    locked = !!on;
+    if (locked) { releaseKeys(); setBoost(false); }
+    paintLock();
+  }
+
+  /* Two Shift + W presses inside UNLOCK_WINDOW_MS. Neither one flies: the
+     gesture is consumed here, before a key can be held. */
+  function unlockGesture(event) {
+    if (event.repeat || !event.shiftKey || !keysLive(event)) return false;
+    if (typeof event.key !== "string" || event.key.toLowerCase() !== "w") return false;
+    const now = Date.now();
+    if (lastUnlockPress && now - lastUnlockPress <= UNLOCK_WINDOW_MS) {
+      setLocked(false);
+      modeRequestedAt = 0;
+      ensureStickMode();
+    } else {
+      lastUnlockPress = now;
+    }
+    event.preventDefault();
+    return true;
+  }
+
   function onKeyDown(event) {
+    if (locked) { unlockGesture(event); return; }
+    if (event.key === "Escape" && keysLive(event)) { setLocked(true); return; }
     // Read before the target check: Shift itself is not a direction key, and
     // pressing it while a direction key is held must still take effect.
     if (keysLive(event)) setBoost(!!event.shiftKey);
@@ -437,6 +489,27 @@ Corvus.joystick = (function () {
     if (!entry) return;
     event.preventDefault();          // no page scroll while flying
     setHeld(entry.dir, true);
+    if (!event.repeat) ensureStickMode();
+  }
+
+  /* The sticks only matter in a mode that reads them. Asked for from a fresh
+     press, never from the stream, and throttled so a refusal is one toast per
+     attempt rather than one per frame. The target comes from the dialect via
+     the capabilities document, so this module never asks which stack it is. */
+  function ensureStickMode() {
+    const now = Date.now();
+    if (!connected || !vehicle.armed || now - modeRequestedAt < MODE_RETRY_MS) return;
+    if (!Corvus.capabilities || !Corvus.telemetry) return;
+    modeRequestedAt = now;
+    Corvus.capabilities.get().then((caps) => {
+      const target = caps && caps.stick_mode;
+      if (!target || (caps.stick_modes || []).includes(vehicle.mode)) return null;
+      return Corvus.telemetry.postAction("/api/mavlink/mode", { mode: target });
+    }).catch((error) => {
+      if (Corvus.topbar && Corvus.topbar.notifyError) {
+        Corvus.topbar.notifyError((error && error.message) || "Mode change for manual flight rejected");
+      }
+    });
   }
 
   function onKeyUp(event) {
@@ -828,12 +901,14 @@ Corvus.joystick = (function () {
   function setKeysEnabled(on) {
     if (!!on === showKeys) return;
     showKeys = !!on;
+    setLocked(true);
     if (pad) apply();
   }
 
   function setWasdEnabled(on) {
     if (!!on === showWasd) return;
     showWasd = !!on;
+    setLocked(true);
     if (pad) apply();
   }
 
@@ -873,6 +948,7 @@ Corvus.joystick = (function () {
         Corvus.ui.icon(collapsed ? "chevron-up" : "chevron-down", 13));
       Corvus.ui.refreshIcons();
     }
+    paintLock();
     stopStream();
     releaseAll();
     if (streaming()) {
@@ -886,6 +962,7 @@ Corvus.joystick = (function () {
 
   function toggleCollapsed() {
     collapsed = !collapsed;
+    setLocked(true);
     savePosition();
     apply();
   }
@@ -938,10 +1015,14 @@ Corvus.joystick = (function () {
 
     keysEl = buildKeys();
     surfaces.append(sticksEl, keysEl);
-    pad.append(gripEl, surfaces);
+    lockEl = document.createElement("div");
+    lockEl.className = "js-lock";
+    lockEl.setAttribute("role", "status");
+    pad.append(gripEl, surfaces, lockEl);
 
     Corvus.telemetry.subscribe((s) => {
       connected = !!(s && s.connected);
+      vehicle = s || {};
       if (streaming()) paintStatus(frame());
     });
 
@@ -969,6 +1050,7 @@ Corvus.joystick = (function () {
       hostObserver.observe(boundsEl());
     }
     Corvus.ui.refreshIcons();
+    setLocked(true);
     apply();
   }
 
@@ -983,6 +1065,7 @@ Corvus.joystick = (function () {
     isWasdEnabled: () => showWasd,
     keyGain: () => keyGain,
     isBoosted: () => boost,
+    isLocked: () => locked,
     GAIN_STEPS,
     DEFAULT_GAIN: KEY_DEFLECTION,
     resetPosition,

@@ -72,7 +72,7 @@ def test_a_connected_vehicle_returns_the_rendered_sections() -> None:
     assert status == 200
     assert payload["connected"] is True
     assert [s["id"] for s in payload["sections"]] == [
-        "limits", "rtl", "failsafe", "rangefinder", "flow",
+        "limits", "geofence", "rtl", "failsafe", "rangefinder", "flow",
     ]
     assert payload["received"] == len(_safety_values())
     assert _sections(payload)["rangefinder"]["toggle"]["enabled"] is True
@@ -129,7 +129,7 @@ def test_a_firmware_missing_parameters_yields_fewer_sections_not_an_error() -> N
     payload, status = responses[0]
     assert status == 200
     assert payload["connected"] is True
-    assert set(_sections(payload)) == {"limits", "failsafe"}
+    assert set(_sections(payload)) == {"limits", "geofence", "failsafe"}
 
 
 def test_added_parameters_ride_the_same_batch_read() -> None:

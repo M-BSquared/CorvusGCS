@@ -49,9 +49,52 @@ Corvus.app = (function () {
       }
     });
 
+    // The two flight cards each open under their own button and never at the
+    // same time. Laid out from the buttons' layout offsets, not their
+    // bounding rects: a hovered or pressed button carries a transform, and a
+    // rect would follow it.
+    const FLIGHT_CARDS = [
+      { panel: "takeoffPanel", button: "btnTakeoff" },
+      { panel: "planPanel", button: "btnPlan" },
+    ];
+
+    function anchorFlightCard(card) {
+      const panel = document.getElementById(card.panel);
+      const button = document.getElementById(card.button);
+      if (!panel || !button || panel.hidden) return;
+      const host = panel.offsetParent;
+      const at = Corvus.ui.offsetWithin(button, host);
+      const maxLeft = host ? Math.max(0, host.clientWidth - panel.offsetWidth - 14) : at.left;
+      panel.style.left = `${Math.max(0, Math.min(at.left, maxLeft))}px`;
+      panel.style.top = `${at.top + button.offsetHeight + 16}px`;
+    }
+
+    function openFlightCard(id) {
+      FLIGHT_CARDS.forEach((card) => {
+        const panel = document.getElementById(card.panel);
+        if (!panel) return;
+        if (card.panel === id) {
+          panel.hidden = false;
+          anchorFlightCard(card);
+        } else {
+          panel.hidden = true;
+        }
+      });
+    }
+
+    function reanchorFlightCards() {
+      FLIGHT_CARDS.forEach(anchorFlightCard);
+    }
+    window.addEventListener("resize", reanchorFlightCards);
+    const flightBarEl = document.getElementById("flightActions");
+    if (flightBarEl && typeof ResizeObserver === "function") {
+      new ResizeObserver(reanchorFlightCards).observe(flightBarEl);
+    }
+
     btnTakeoff.addEventListener("click", () => {
       const panel = document.getElementById("takeoffPanel");
-      panel.hidden = !panel.hidden;
+      if (panel.hidden) openFlightCard("takeoffPanel");
+      else panel.hidden = true;
     });
 
     const takeoffSlider = document.getElementById("takeoffAlt");
@@ -172,7 +215,8 @@ Corvus.app = (function () {
     }
 
     function setPlanPanelVisible(visible) {
-      planPanel.hidden = !visible;
+      if (visible) openFlightCard("planPanel");
+      else planPanel.hidden = true;
     }
 
     function setPlanMode(enabled) {
@@ -502,6 +546,8 @@ Corvus.app = (function () {
     Corvus.topbar.init();
     Corvus.sidenav.init();
     Corvus.map.init(document.getElementById("map"), document.getElementById("mapControls"));
+    // AFTER map.init: the stored geofence is drawn on that map as an overlay.
+    if (Corvus.geofence) Corvus.geofence.start();
     Corvus.instruments.init(document.getElementById("flightOverlay"));
     // AFTER instruments.init: the panel re-parents the built instruments into
     // its collapsible body, so they have to exist first.

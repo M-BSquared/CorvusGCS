@@ -1,0 +1,808 @@
+/*
+  Corvus GCS: The mission planner.
+
+  One of the page sheets index.html loads after main.css, in a fixed order.
+  See main.css for what a page sheet may and may not do.
+*/
+
+/* ===== MISSION PLANNER =====
+   A full-bleed page, unlike every other entry in the rail: the map is the
+   document here, and a 32/40 page padding around it would be 70 px of chrome
+   taken off the thing being drawn on. `data-page` is written by
+   Corvus.sidenav.renderPage, so the flush layout belongs to this one screen
+   and no other page has to opt out of it.
+
+   Three regions, and the split is the workflow: draw on the map, read and
+   correct in the list beside it, set heights on the profile underneath. The
+   sidebar spans both rows because the item list is about the whole mission,
+   while the profile spans only the map's column because it is the map's
+   route seen from the side — the two are the same object drawn twice, and
+   lining their x-axes up under one another is what makes that legible. */
+.page-view[data-page="mission"] { padding: 0; overflow: hidden; }
+
+.mission-page {
+  position: absolute; inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--mission-side-w, 320px);
+  grid-template-rows: minmax(0, 1fr);
+  background: var(--bg);
+}
+
+.mission-map-wrap {
+  position: relative;
+  grid-row: 1; grid-column: 1;
+  overflow: hidden;
+  /* Same rail geometry the Home map derives its chrome offsets from, so the
+     two screens' control rails sit at identical distances from the edge. */
+  --map-rail-inset: 14px;
+  --map-rail-w: 48px;
+  --map-rail-gap: 8px;
+  /* First free x-offset to the LEFT of the zoom rail, same derivation as
+     .map-view's, so the offline-download trigger lands exactly where the Home
+     map's does. */
+  --map-rail-clear: calc(var(--map-rail-inset) + var(--map-rail-w) + var(--map-rail-gap));
+  /* Left of the download trigger is where the place search sits, and left of
+     THAT is where the tool bar has to stop. The Home flight bar needs no such
+     rule — five buttons never reach the far side of the map; nine of them
+     do. */
+  --map-search-clear: calc(var(--map-rail-clear) + 34px + var(--map-rail-gap));
+  --map-trigger-clear: calc(var(--map-search-clear) + 34px + var(--map-rail-gap));
+}
+/* The planner's trash. It is .track-clear — literally the Home map's
+   clear-track button, in the Home map's corner, at the Home map's weight —
+   because it is the same kind of control: the one press on this map that
+   throws the work away. Only the hover colour differs, and only because what
+   it deletes is the amber plan rather than the red flown track. */
+.mission-plan-clear:hover { color: var(--plan); }
+
+.mission-map { position: absolute; inset: 0; }
+/* A tool is armed: the next click on the map places something, and the cursor
+   is the only thing that says so before the click happens. */
+.mission-map.is-placing { cursor: crosshair; }
+.mission-map.is-placing .maplibregl-canvas { cursor: crosshair; }
+
+/* The tool bar. It IS the Home tab's flight bar — .flight-actions and .fa-btn,
+   same geometry, same glass, same place — because it is the same kind of
+   thing: the primary controls of the screen, laid across the top of the map
+   with a caption under each icon. It was a vertical icon rail, which made the
+   planner's primary controls a different sort of object from the ones on the
+   screen beside it and left every tool unlabelled.
+
+   What is here is only what a bar of MODES needs that a bar of actions does
+   not: an armed state, and somewhere to go when the map is too narrow to hold
+   nine buttons in a row. */
+/* The bar and its caption line, stacked. Absolutely positioned as ONE thing so
+   the caption follows the bar down when a narrow map wraps it onto a second
+   row, rather than sitting at an offset that was right for one row. */
+.mission-topleft {
+  position: absolute;
+  top: var(--map-rail-inset); left: var(--map-rail-inset);
+  z-index: var(--z-map-panel);
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: var(--map-rail-gap);
+  /* A WIDTH, not a max-width: this box is the room the bar has, and fitTools
+     in mission.js measures against it to decide whether the captions fit. A
+     max-width would collapse to the bar's own width and measure nothing.
+     It ends where the download trigger begins, which is as far right as
+     anything on this side of the map may go. */
+  width: calc(100% - var(--map-rail-inset) - var(--map-trigger-clear));
+  /* And it takes no presses of its own, for the reason .map-topleft does not:
+     the room is as wide as the map whether the bar fills it or not, and a drag
+     started in the empty strip beside the bar belongs to the map under it. */
+  pointer-events: none;
+}
+.mission-topleft > * { pointer-events: auto; }
+.mission-tools {
+  position: static;
+  /* ONE ROW, like the Home flight bar's. It wrapped before, and that was the
+     whole difference between the two bars: same glass, same radius, same
+     padding, same gap, same 72px buttons — and 127px tall against Home's 68px,
+     because nine tools in the room left beside a 320px sidebar is two rows.
+     A control set that stacks does not read as the control set it copies.
+     When the row genuinely will not fit, the captions come off (.is-compact,
+     set from a measurement rather than a guessed viewport width) and it stays
+     one row. */
+  flex-wrap: nowrap;
+  /* The Home bar reserves the map's right-hand controls out of its own width,
+     because it is positioned against the left edge of the whole map. This one
+     is not: .mission-topleft is already exactly the room the bar has (it has
+     to be, since fitTools measures against it), so inheriting that reservation
+     would subtract the rail twice. */
+  max-width: none;
+}
+/* Three steps down, and the words are the last thing to go. The steps
+   themselves are NOT restated here: .mission-tools carries .flight-actions,
+   so it already answers to the .is-tight / .is-compact rules beside that
+   class, and the two bars narrow identically because they are narrowed by one
+   rule rather than by two that agree today. What the planner's column can
+   hold beside a 320px sidebar with the right-hand panel open is a bar reading
+   SELECT START POINT CIRCLE, and that is worth more there than buttons that
+   line up.
+
+   Armed: this tool is what the next map click will place. Filled accent, the
+   same treatment .fa-btn.plan.active gets on the Home bar for the same idea. */
+.mission-tools .fa-btn.active {
+  color: var(--text-inverted);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.mission-tools .fa-btn.active:hover { background: var(--accent-hover); color: var(--text-inverted); }
+/* PATTERN: a button that opens a card instead of arming a tool. While the card
+   is open the pattern icon gives way to an arrow up, which is what closes it. */
+.mission-tools .pattern-toggle:not(.is-open) .pattern-up { display: none; }
+.mission-tools .pattern-toggle.is-open > :first-child { display: none; }
+.pattern-card {
+  position: absolute;
+  z-index: 2;
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 7px 11px;
+  border-radius: var(--radius-btn);
+  opacity: 0; visibility: hidden; transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.mission-topleft > .pattern-card.is-open {
+  opacity: 1; visibility: visible; transform: none;
+  pointer-events: auto;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+/* The bar's own rhythm: 7px padding, 7px between buttons, so the shapes read
+   as the same buttons one row down. */
+.pattern-options { display: flex; gap: 7px; margin: 0 -4px; }
+.pattern-options .fa-btn { flex: 1 1 0; min-width: 72px; }
+.pattern-fields {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  margin: 0 -11px; padding: 9px 11px 2px;
+  border-top: 1px solid var(--border-soft);
+}
+.pattern-fields .field { min-width: 0; }
+/* Not usable on the plan as it stands (no start yet, or the mission already
+   has its ending). Greyed like a disabled button, but still pressable: the
+   press is what puts the reason in the hint line under the bar. */
+.mission-tools .fa-btn.is-blocked { opacity: 0.4; cursor: not-allowed; }
+.mission-tools .fa-btn.is-blocked:hover { color: var(--text-2); background: transparent; transform: none; }
+/* The next step on an empty plan: START, outlined so it is the button the eye
+   lands on while everything after it is greyed. */
+.mission-tools .fa-btn.is-next:not(.active) {
+  color: var(--accent-bright);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+/* Nothing narrows them. They were 62px on 8px/10px padding, on the argument
+   that nine tools do not need what a bar of five does — but the bar sits
+   directly across the app from the Home tab's, and a control set that is the
+   same object at nine-tenths the size reads as a lesser one. The bar wraps
+   instead when the map is too narrow, and drops its captions below 1280px. */
+
+/* What the armed tool will do. Under the bar rather than beside it, now that
+   the bar runs across the top. Quiet: it is a caption on the map, not a
+   control. */
+/* The SAME material as the bar it hangs under, at a caption's weight.
+
+   It was a flat `rgb(0 0 0 / 0.42)` film with a hardcoded near-white type,
+   which made it the one thing floating on this map that was not made of the
+   app's glass: a black label under a frosted bar, following the theme in
+   neither colour nor substance, and an opaque smudge over the imagery where
+   everything around it lets the picture through. The tokens below are the
+   ones .glass and the rail buttons use — so it frosts with them, it takes the
+   palette with them, and prefers-reduced-transparency turns all of them solid
+   together.
+
+   Quieter than the bar on purpose: one step less fill, the soft blur rather
+   than the deep one, and --text-2 instead of --text-1. It is a caption on the
+   map, not a control, and it must not read as a button with no press. */
+.mission-hint {
+  max-width: 360px;
+  padding: 7px 11px;
+  border-radius: var(--radius-btn);
+  background: rgb(var(--glass-rgb) / 0.55);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
+  border: 1px solid rgb(var(--tint-rgb) / 0.06);
+  box-shadow: var(--shadow-pop);
+  color: var(--text-2);
+  font-size: 11.5px; line-height: 1.45;
+  pointer-events: none;
+}
+/* An empty hint is not an empty box. The element is always in the stack (the
+   bar and its caption are positioned as one thing), and with a surface on it
+   an unarmed tool left a blank pane of glass sitting under the bar. */
+.mission-hint:empty { display: none; }
+@media (prefers-reduced-transparency: reduce) {
+  .mission-hint {
+    background: var(--surface-2);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* ----- markers -----
+   The planner draws the SAME marks the Home tab does, by sharing their
+   classes rather than by restating them: .home-marker for the start point
+   (map.js builds the identical "H" in a ring) and .wp-marker for every
+   planned point (the numbered amber ring the fly-to-points planner already
+   uses). What is below is only what the PLANNER adds on top of those — they
+   can be picked up and moved, one of them is selected, and a mission has six
+   kinds of point where fly-to-points has one.
+
+   The per-type colour scheme this replaced was the mistake: six palettes over
+   photographic imagery read as six unrelated objects rather than as one route.
+   One colour, and the kind carried by a small glyph. */
+.mission-point, .mission-home { cursor: grab; }
+.mission-point:active, .mission-home:active { cursor: grabbing; }
+
+/* NOTHING here may set `position`.
+   MapLibre positions a marker by putting `position: absolute` on the element
+   you hand it (its own .maplibregl-marker rule) and writing the ground point
+   into a transform. main.css loads after the vendor sheet at the same
+   specificity, so a `position: relative` here won — and every marker fell back
+   into normal flow, stacked one 28px row below the last, and sat that far off
+   the route it belongs to. It looked like a projection bug and was a cascade
+   one. The badge below is absolute and anchors to the marker either way, since
+   MapLibre's own `position: absolute` already makes it a containing block. */
+/* Repainted in the plan's own amber rather than the theme's --warning, for the
+   same reason the route is: these sit on imagery, and the light theme's warning
+   is a dark #B07600 that reads as a smudge on a satellite tile. The dark ring
+   is what carries them over a white roof.
+
+   --mission-point-scale is written onto the map container by mission.js from
+   the camera's zoom (see pointScaleFor there): a 28px ring is a dot once the
+   whole plan is in frame, so the marks grow as the camera pulls back and
+   settle at their quoted size once you are over the ground you are drawing on.
+   It is a SIZE and not a `transform`, because MapLibre writes its own
+   transform onto every marker element inline — which is why the selected
+   state used to carry a `transform: scale(1.18)` that never did anything at
+   all, and why it is a size below too. */
+.mission-point {
+  --mp-scale: var(--mission-point-scale, 1);
+  width: calc(28px * var(--mp-scale));
+  height: calc(28px * var(--mp-scale));
+  background: color-mix(in srgb, var(--plan) 40%, transparent);
+  border-color: var(--plan);
+  border-width: calc(1.5px * var(--mp-scale));
+  box-shadow: 0 0 0 calc(1.5px * var(--mp-scale)) var(--plan-ink),
+              0 0 12px color-mix(in srgb, var(--plan) 70%, transparent);
+  transition: width 120ms, height 120ms, box-shadow 120ms;
+}
+.mission-point .wp-marker-num {
+  color: #FFFFFF;
+  font-size: calc(12px * var(--mp-scale));
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.75);
+}
+
+/* The kind of point, for everything that is not a plain waypoint. A badge on
+   the ring rather than a colour change: the number stays where the eye looks
+   for it, and the route keeps one colour. Its icon carries no inline size
+   (Corvus.ui.icon's "auto"), so this rule is what scales it with the ring. */
+.mission-point-badge {
+  position: absolute;
+  top: calc(-3px * var(--mp-scale)); right: calc(-3px * var(--mp-scale));
+  width: calc(14px * var(--mp-scale)); height: calc(14px * var(--mp-scale));
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--plan-ink);
+  border: 1px solid var(--plan);
+  color: var(--plan);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
+}
+.mission-point-badge i, .mission-point-badge svg {
+  width: calc(9px * var(--mp-scale)); height: calc(9px * var(--mp-scale));
+}
+
+/* The start when it carries the takeoff. It has no point ring of its own
+   there, so without this the route would read H, 2, 3. It gets the same amber
+   ring every point wears, with the H inside it and the number pinned to its
+   corner. The crosshair ticks go: inside a ring they read as clutter, and the
+   ring's centre already is the coordinate. */
+.mission-home.has-takeoff {
+  --mp-scale: var(--mission-point-scale, 1);
+  width: calc(28px * var(--mp-scale));
+  height: calc(28px * var(--mp-scale));
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--plan) 40%, transparent);
+  border: calc(1.5px * var(--mp-scale)) solid var(--plan);
+  box-shadow: 0 0 0 calc(1.5px * var(--mp-scale)) var(--plan-ink),
+              0 0 12px color-mix(in srgb, var(--plan) 70%, transparent);
+  transition: width 120ms, height 120ms, box-shadow 120ms;
+}
+.mission-home.has-takeoff .h-body {
+  width: calc(26px * var(--mp-scale));
+  height: calc(26px * var(--mp-scale));
+}
+.mission-home.has-takeoff .h-ticks { display: none; }
+.mission-home.has-takeoff.is-selected {
+  --mp-scale: calc(var(--mission-point-scale, 1) * 1.18);
+  background: var(--plan);
+  box-shadow: 0 0 0 calc(1.5px * var(--mp-scale)) var(--plan-ink),
+              0 0 0 calc(3.5px * var(--mp-scale)) var(--plan-select),
+              0 0 0 calc(4.5px * var(--mp-scale)) var(--plan-ink),
+              0 2px 10px rgb(0 0 0 / 0.5);
+}
+
+/* The takeoff's number, the same small amber ring as before, pinned to the
+   ring's corner so the H stays readable. Not a grab target of its own: a
+   press on it is a press on the start. */
+.mission-home-num {
+  position: absolute;
+  top: calc(-8px * var(--mp-scale, 1));
+  right: calc(-8px * var(--mp-scale, 1));
+  width: calc(18px * var(--mp-scale, 1));
+  height: calc(18px * var(--mp-scale, 1));
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--plan) 85%, #000);
+  border: 1.5px solid var(--plan);
+  box-shadow: 0 0 0 1.5px var(--plan-ink);
+  color: #FFFFFF;
+  font-family: var(--sans);
+  font-size: calc(10px * var(--mp-scale, 1));
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.75);
+  pointer-events: none;
+}
+
+/* A point's own name, beside the ring and clear of the badge. Absolute for the
+   badge's reason. Its selector names only itself, so the marker rules above
+   stay the only ones that touch the element MapLibre positions. Sized from the
+   camera's scale rather than --mp-scale, so selecting a point does not make
+   its name jump. Not a click target: a name lying over the map must not eat
+   the click that places the next point. */
+.mission-point-name {
+  position: absolute;
+  left: 100%; top: 50%;
+  transform: translateY(-50%);
+  margin-left: calc(6px * var(--mission-point-scale, 1));
+  max-width: 180px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--plan-ink) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--plan) 55%, transparent);
+  color: #FFFFFF;
+  font-family: var(--sans);
+  font-size: calc(11px * var(--mission-point-scale, 1));
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
+  pointer-events: none;
+}
+
+/* Selection: the ring fills solid amber and gains a white rim, cased in ink
+   on both sides so it holds on a white roof as well as a dark field. It says
+   "this one" without bringing a second colour onto the route. */
+.mission-point.is-selected {
+  --mp-scale: calc(var(--mission-point-scale, 1) * 1.18);
+  background: var(--plan);
+  box-shadow: 0 0 0 calc(1.5px * var(--mp-scale)) var(--plan-ink),
+              0 0 0 calc(3.5px * var(--mp-scale)) var(--plan-select),
+              0 0 0 calc(4.5px * var(--mp-scale)) var(--plan-ink),
+              0 2px 10px rgb(0 0 0 / 0.5);
+}
+.mission-point.is-selected .wp-marker-num {
+  color: var(--plan-ink);
+  text-shadow: none;
+}
+
+/* The mission being flown (Corvus.mission's progress): the point the vehicle
+   is on its way to, and the ones it has passed, in the app's "going well"
+   colour so they read apart from the selection. */
+.mission-point.is-current {
+  --mp-scale: calc(var(--mission-point-scale, 1) * 1.12);
+  box-shadow: 0 0 0 calc(1.5px * var(--mp-scale)) var(--plan-ink),
+              0 0 0 calc(4px * var(--mp-scale)) color-mix(in srgb, var(--healthy) 80%, transparent),
+              0 0 14px color-mix(in srgb, var(--healthy) 70%, transparent);
+}
+.mission-point.is-done { opacity: 0.55; }
+
+/* The grip that sizes a selected orbit. Small and square so it is not mistaken
+   for a waypoint, and on the ring rather than beside it. It grows with the
+   marks for the same reason they do. */
+.mission-radius-handle {
+  --mp-scale: var(--mission-point-scale, 1);
+  width: calc(13px * var(--mp-scale)); height: calc(13px * var(--mp-scale));
+  border-radius: 3px;
+  cursor: ew-resize;
+  background: var(--plan);
+  border: calc(1.5px * var(--mp-scale)) solid var(--plan-ink);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--plan) 70%, transparent);
+}
+.mission-radius-handle:active { cursor: grabbing; }
+
+/* The grip that moves a whole pattern. Round, where the radius grip is square,
+   and larger than a waypoint so it reads as a control and not as a point. */
+.mission-pattern-handle {
+  --mp-scale: var(--mission-point-scale, 1);
+  display: flex; align-items: center; justify-content: center;
+  width: calc(26px * var(--mp-scale)); height: calc(26px * var(--mp-scale));
+  border-radius: 50%;
+  cursor: grab;
+  color: var(--plan-ink);
+  background: var(--plan);
+  border: calc(1.5px * var(--mp-scale)) solid var(--plan-ink);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--plan) 70%, transparent);
+}
+.mission-pattern-handle:active { cursor: grabbing; }
+.mission-pattern-handle i, .mission-pattern-handle svg {
+  width: calc(15px * var(--mp-scale)); height: calc(15px * var(--mp-scale));
+}
+
+/* ----- the sidebar ----- */
+.mission-side {
+  --mission-side-pad: 14px;
+  grid-row: 1 / span 2; grid-column: 2;
+  display: flex; flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: var(--mission-side-pad);
+  background: var(--surface-1);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+}
+
+/* Name, summary and item list scroll as one, so a long plan gets the whole
+   height rather than what the summary leaves it. The point editor and the
+   buttons below stay put: Upload never scrolls off the bottom. Pulled out to
+   the panel's edges so the scrollbar sits against the border and a focus ring
+   on the name field is not clipped. The gutter is always reserved and taken
+   out of the right padding, so the rows end where the editor below ends
+   whether the plan overflows or not. */
+.mission-side-scroll {
+  flex: 1 1 auto;
+  min-height: 80px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  display: flex; flex-direction: column;
+  gap: 10px;
+  margin: 0 calc(-1 * var(--mission-side-pad));
+  padding: 0 calc(var(--mission-side-pad) - 9px) 0 var(--mission-side-pad);
+}
+
+/* The panel's title with the mission's name beside it. */
+.mission-plan-row { flex-direction: row; align-items: center; gap: 10px; }
+.mission-plan-row .field-label {
+  flex: 0 0 auto;
+  font-size: 13px; font-weight: 700; letter-spacing: 0; text-transform: none;
+  color: var(--text-1);
+}
+.mission-plan-row .field-input { flex: 1 1 auto; min-width: 0; }
+
+/* Caption and figure on one line, two to a row. Stacked, every figure cost a
+   caption's height as well, and that height came out of the item list. */
+.mission-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+.mission-summary-cell {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  min-width: 0;
+  padding: 4px 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-btn);
+  background: var(--surface-2);
+}
+.mission-summary-cell[data-level="warn"] {
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border-soft));
+}
+.mission-summary-label {
+  flex: 0 0 auto;
+  font-size: 9px; letter-spacing: 0.7px; text-transform: uppercase;
+  color: var(--text-3);
+}
+.mission-summary-value {
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--mono); font-size: 12px; color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.mission-summary-cell[data-level="warn"] .mission-summary-value { color: var(--warning); }
+
+/* What is wrong with the plan, while there is still a plan to fix rather than
+   an upload to confirm. Quiet amber, not the critical red: none of these is a
+   refusal — every one of them describes a mission PX4 would happily fly. */
+.mission-issues { display: flex; flex-direction: column; gap: 4px; }
+/* `display: flex` beats the UA's [hidden] rule, and an empty vehicle box
+   still draws its border and padding: a blank bar under the summary. */
+.mission-issues[hidden], .mission-vehicle[hidden] { display: none; }
+.mission-issue {
+  display: grid; grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center; gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-btn);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border-soft));
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  color: var(--text-2);
+  font-size: 11px; line-height: 1.45;
+}
+.mission-issue > i, .mission-issue > svg { color: var(--warning); }
+/* One line, always: the explanation lives in the info popover. */
+.mission-issue-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mission-issue .ui-info { color: var(--text-3); }
+
+/* Pinned while the rows scroll under it, so the clear button and the
+   caption stay in reach on a plan longer than the panel. Above a dragged row
+   (z-index 2), which is kept below it anyway. */
+.mission-list-head {
+  position: sticky; top: 0; z-index: 3;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10px; letter-spacing: 0.9px; text-transform: uppercase;
+  color: var(--text-3);
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border-soft);
+  padding-bottom: 3px;
+}
+.mission-list-head .icon-btn { width: 24px; height: 24px; }
+
+/* Full height: the box around it does the scrolling (see
+   .mission-side-scroll). */
+.mission-list {
+  flex: 0 0 auto;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.mission-row {
+  display: grid;
+  /* The label is content-sized and the VALUE is the one that gives way: the
+     names are six short fixed words, while "26.7 m · ↺80 m · 3×" is as long as
+     the plan makes it. Both were minmax(0, …) for a moment, which is worse
+     than either — a grid sizes an `auto` track to its content before it gives
+     an `fr` track anything, so the detail kept its full width and the name
+     went to nothing.
+     A point can carry a name of its own now, up to 40 characters, and that is
+     no longer a short fixed word: left alone it would take the whole row. So
+     the value keeps a floor, enough for its altitude, and a long name is cut
+     with an ellipsis instead. */
+  grid-template-columns: 18px 16px auto minmax(4.5em, 1fr) auto;
+  align-items: center; gap: 7px;
+  padding: 5px 6px;
+  border-radius: var(--radius-btn);
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.mission-row:hover { background: var(--surface-hover); }
+.mission-row.is-selected {
+  background: var(--surface-2);
+  border-color: color-mix(in srgb, var(--nav) 50%, var(--border));
+}
+.mission-row:focus-visible { outline: 2px solid var(--nav); outline-offset: -2px; }
+.mission-row.is-current { box-shadow: inset 3px 0 0 var(--healthy); }
+.mission-row.is-done .mission-row-label,
+.mission-row.is-done .mission-row-value { color: var(--text-3); }
+
+/* What the vehicle is doing with the plan, or that it holds another one. */
+.mission-vehicle {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 7px 9px; border-radius: var(--radius-btn);
+  border: 1px solid var(--border); background: var(--surface-2);
+  font-size: 12px; color: var(--text-2);
+}
+.mission-vehicle[data-level="live"] { border-color: color-mix(in srgb, var(--healthy) 55%, var(--border)); }
+.mission-vehicle[data-level="warn"] { border-color: color-mix(in srgb, var(--warning) 55%, var(--border)); }
+.mission-vehicle-text { flex: 1 1 12em; min-width: 0; }
+.mission-row-index {
+  font-family: var(--mono); font-size: 10.5px; color: var(--text-3);
+  text-align: right; font-variant-numeric: tabular-nums;
+  /* The row's handle. A pointer can take hold of the whole row, but a finger
+     cannot — the same downward drag is how the list is scrolled — so this one
+     cell is taken out of the browser's panning and left to the drag. */
+  cursor: grab;
+  touch-action: none;
+}
+.mission-row-icon { color: var(--text-2); }
+.mission-row[data-kind="takeoff"] .mission-row-icon { color: var(--healthy); }
+.mission-row[data-kind="loiter_turns"] .mission-row-icon,
+.mission-row[data-kind="loiter_time"] .mission-row-icon { color: var(--warning); }
+.mission-row[data-kind="land"] .mission-row-icon,
+.mission-row[data-kind="rtl"] .mission-row-icon { color: var(--accent); }
+.mission-row-label {
+  font-size: 12px; color: var(--text-1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mission-row-value {
+  font-family: var(--mono); font-size: 10.5px; color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-align: right;
+}
+/* The per-row buttons appear on hover or focus. Three always-on icon buttons
+   per row would be more chrome than list on a plan of any length. */
+.mission-row-tools { display: flex; gap: 1px; opacity: 0; transition: opacity 120ms; }
+.mission-row:hover .mission-row-tools,
+.mission-row:focus-within .mission-row-tools,
+.mission-row.is-selected .mission-row-tools { opacity: 1; }
+.mission-row-tools .icon-btn { width: 20px; height: 20px; }
+
+/* Reordering by hand (see "dragging a row to a new place" in mission.js).
+   The grabbed row is carried by a transform while the rows it passes close up
+   underneath it, so it has to be the one drawn on top — and the gesture must
+   not also be a text selection of every row it crosses. */
+.mission-list.is-reordering { user-select: none; -webkit-user-select: none; }
+.mission-list.is-reordering,
+.mission-list.is-reordering .mission-row,
+.mission-list.is-reordering .mission-row-index { cursor: grabbing; }
+/* The start's takeoff and the ending hold their places: no grab cursor. */
+.mission-row.is-pinned .mission-row-index { cursor: default; }
+.mission-row.is-dragging {
+  position: relative; z-index: 2;
+  background: var(--surface-2);
+  border-color: color-mix(in srgb, var(--nav) 50%, var(--border));
+  box-shadow: var(--shadow-pop);
+}
+/* Nothing to aim at while a row is in the air: the buttons sit under the
+   pointer at whatever row it is over, and none of them is the one it means. */
+.mission-list.is-reordering .mission-row-tools { opacity: 0; }
+
+.mission-detail {
+  flex: 0 0 auto;
+  max-height: 42%;
+  overflow-y: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.mission-detail-head {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 700; color: var(--text-1);
+}
+.mission-detail-head > span { flex: 0 0 auto; }
+.mission-detail .mission-detail-name {
+  flex: 1 1 auto; min-width: 0; width: auto;
+  margin-left: 3px;
+  font-weight: 400;
+}
+/* Delete this one item. Against the far edge of the header, away from the
+   fields — it is the only control in the panel that is not an edit. */
+.mission-detail-remove { margin-left: auto; }
+.mission-detail-remove:hover {
+  color: var(--critical);
+  background: color-mix(in srgb, var(--critical) 16%, transparent);
+}
+
+/* Bottom-aligned so a caption that wraps in a narrow sidebar lifts itself, not
+   its input out of line with the one beside it. */
+.mission-detail-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px; align-items: end;
+}
+.mission-detail-wide { grid-column: 1 / -1; }
+.mission-detail .field { gap: 3px; }
+.mission-detail .field-input { font-size: 12px; padding: 5px 8px; }
+
+.mission-actions { display: flex; flex-direction: column; gap: 6px; flex: 0 0 auto; }
+/* Two by two: four labels in one row need more than the sidebar has, and the
+   last button was cut off at the edge. */
+.mission-file-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.mission-file-row .btn { white-space: nowrap; padding-left: 4px; padding-right: 4px; gap: 4px; min-width: 0; }
+.mission-status { margin: 0; }
+.mission-warnings { padding-top: 8px; }
+
+.mission-open-list { display: flex; flex-direction: column; gap: 4px; min-width: 320px; }
+.mission-open-row { display: flex; align-items: center; gap: 6px; }
+.mission-open-name {
+  flex: 1;
+  display: flex; flex-direction: column; gap: 2px;
+  text-align: left;
+  padding: 7px 9px;
+  border-radius: var(--radius-btn);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-2);
+  color: var(--text-1);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.mission-open-name:hover { background: var(--surface-hover); }
+/* One press arms, the next deletes the file. The armed state has to look like
+   a different button than the one that was pressed, or the second press is the
+   first one repeated. */
+.mission-open-row .icon-btn.is-armed {
+  color: var(--critical);
+  background: color-mix(in srgb, var(--critical) 18%, transparent);
+}
+.mission-open-meta { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); }
+
+/* ----- the altitude profile ----- */
+.mission-profile {
+  grid-row: 1; grid-column: 1;
+  align-self: end; position: relative; z-index: calc(var(--z-map-chrome) + 1);
+  display: flex; flex-direction: column;
+  height: var(--mission-profile-h, 240px);
+  margin: 0 14px 14px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: rgb(var(--glass-rgb) / 0.55);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
+  border: 1px solid rgb(var(--tint-rgb) / 0.06);
+  box-shadow: var(--shadow-pop);
+}
+.mission-profile.is-collapsed { height: auto; }
+.mission-profile.is-collapsed:not(.is-folding) .mission-profile-plot,
+.mission-profile.is-collapsed:not(.is-folding) .mission-profile-note,
+.mission-profile.is-collapsed:not(.is-folding) .mission-aircraft { display: none; }
+.mission-profile.is-folding .mission-profile-plot { flex: 0 0 auto; height: calc(var(--mission-profile-h, 240px) - 34px); }
+.mission-profile.is-collapsed .mission-profile-head { padding-bottom: 6px; }
+.mission-profile-toggle { margin-left: -6px; flex: 0 0 auto; }
+.mission-profile:not(.is-collapsed) .mission-profile-toggle svg { transform: rotate(180deg); }
+/* The map's own bottom corners sit above the card, and follow it as it folds. */
+.mission-map-wrap .maplibregl-ctrl-bottom-left,
+.mission-map-wrap .maplibregl-ctrl-bottom-right {
+  bottom: var(--mission-profile-lift, 0px);
+  transition: bottom 160ms ease;
+}
+.mission-map-wrap .track-clear {
+  bottom: calc(var(--map-rail-inset, 14px) + 30px + var(--mission-profile-lift, 0px));
+  transition: bottom 160ms ease, opacity 140ms, color 140ms, background 140ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mission-map-wrap .maplibregl-ctrl-bottom-left,
+  .mission-map-wrap .maplibregl-ctrl-bottom-right,
+  .mission-map-wrap .track-clear { transition: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .mission-profile { background: var(--surface-2); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+.mission-profile-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 6px 14px 2px;
+}
+/* What flies the plan, at the heading's right end. Sized to the heading's
+   own small caps so the row does not grow and take height from the chart. */
+.mission-aircraft {
+  flex-direction: row; align-items: center; gap: 8px;
+  flex: 0 0 auto; margin-left: auto;
+}
+.mission-aircraft .field-label { letter-spacing: 0.9px; }
+.mission-aircraft .field-select {
+  width: auto; min-width: 118px;
+  padding: 3px 26px 3px 8px;
+  font-size: 11px;
+}
+.mission-profile-title {
+  font-size: 10px; letter-spacing: 0.9px; text-transform: uppercase;
+  color: var(--text-3);
+  flex: 0 0 auto; white-space: nowrap;
+}
+.mission-profile-note {
+  font-size: 11px; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mission-profile-plot { flex: 1 1 auto; min-height: 0; }
+/* The chart is a control surface, so it says so under the pointer — and while
+   a point is being dragged the whole plot keeps the grabbing cursor rather
+   than handing it back every time the pointer leaves the marker. */
+.mission-profile-plot .nsewdrag { cursor: default; }
+.mission-profile-plot.is-dragging,
+.mission-profile-plot.is-dragging .nsewdrag { cursor: ns-resize; }
+
+:where(:root[data-vw~="max-1279"]) .mission-page { --mission-side-w: 280px; --mission-profile-h: 210px; }
+/* No caption rule here any more. It used to drop them at this width, which
+   is the wrong question asked of the wrong box: the bar's room is the map
+   COLUMN, and that changes when the right panel opens without the viewport
+   moving at all. fitTools measures the box itself. */
+/* Below this the three-region split stops working: the sidebar is narrower
+   than its own number fields. It moves under the profile instead, and the
+   page starts scrolling — three stacked regions cannot all fit a laptop
+   window, and a map squeezed to 180 px is not a map you can plan on. The
+   map keeps a floor of 320 px for exactly that reason. */
+:where(:root[data-vw~="max-959"]) .page-view[data-page="mission"] { overflow-y: auto; }
+:where(:root[data-vw~="max-959"]) .mission-page {
+  position: relative; inset: auto;
+  min-height: 100%;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(320px, calc(55 * var(--vh))) var(--mission-profile-h, 190px) auto;
+}
+:where(:root[data-vw~="max-959"]) .mission-page:has(.mission-profile.is-collapsed) {
+  grid-template-rows: minmax(320px, calc(55 * var(--vh))) auto auto;
+}
+:where(:root[data-vw~="max-959"]) .mission-map-wrap { grid-row: 1; grid-column: 1; }
+:where(:root[data-vw~="max-959"]) .mission-profile { grid-row: 2; grid-column: 1; align-self: stretch; height: auto; margin: 0; border-radius: 0; border-width: 1px 0 0; }
+:where(:root[data-vw~="max-959"]) .mission-side {
+  grid-row: 3; grid-column: 1;
+  border-left: none;
+  border-top: 1px solid var(--border);
+  overflow: visible;
+}
+:where(:root[data-vw~="max-959"]) .mission-side-scroll { overflow: visible; }
+:where(:root[data-vw~="max-959"]) .mission-list-head { position: static; }
+:where(:root[data-vw~="max-959"]) .mission-list { max-height: 320px; overflow-y: auto; }
+:where(:root[data-vw~="max-959"]) .mission-detail { max-height: none; }

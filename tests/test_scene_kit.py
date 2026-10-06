@@ -15,6 +15,7 @@ when that is absent.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -579,7 +580,9 @@ def test_the_instrument_panel_is_pictured_bottom_right_with_its_controls() -> No
     """Where the app puts it, and with the controls the pointer would reveal."""
     root = Path(__file__).resolve().parents[1]
     index = (root / "src" / "index.html").read_text(encoding="utf-8")
-    css = (root / "src" / "css" / "main.css").read_text(encoding="utf-8")
+    sheets = re.findall(r'href="css/([\w.-]+\.css)"', index)
+    css = "\n".join((root / "src" / "css" / name).read_text(encoding="utf-8")
+                    for name in sheets[sheets.index("components.css") + 1:])
     hud = (root / "src" / "js" / "hud-panel.js").read_text(encoding="utf-8")
     assert 'class="flight-overlay' in index
     assert '"hud-actions"' in hud

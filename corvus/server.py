@@ -33,7 +33,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from . import (
     ardupilot_battery, ardupilot_motors, ardupilot_mounting, ardupilot_rc,
     ardupilot_remote_id, ardupilot_safety, ardupilot_tuning, autopilot, battery,
-    battery_config, dem_tiles, geocode, mission, motor_config, mounting_config, param_files,
+    battery_config, dem_tiles, geocode, motor_config, mounting_config, param_files,
     param_metadata, rc_config, remote_id,
     remote_id_config,
     local_shell, net_probe, rtk, rtk_service,
@@ -41,10 +41,7 @@ from . import (
     video, websocket,
 )
 from .config import (
-    MAX_MAP_TOKEN_CHARS,
     CorvusConfig,
-    _MAP_TOKEN_CHARS,
-    _config_to_dict,
     default_config_path,
     load_config,
     save_config,
@@ -57,16 +54,12 @@ from .mavlink_forwarder import (
     DEFAULT_PORT as _FORWARD_DEFAULT_PORT,
 )
 from .mavlink_bridge import (
-    FLY_TO_MAX_POINTS,
-    TAKEOFF_ALTITUDE_MAX_M,
-    TAKEOFF_ALTITUDE_MIN_M,
     MavlinkBridge,
 )
 from .file_manager import open_folder, open_url
-from . import plugin_config, plugin_files, settings_bundle
+from . import plugin_config
 from .plugin_registry import (
     bundled_plugins_dir,
-    discover as discover_plugins,
     ensure_user_plugins_dir,
     find_dir as find_plugin_dir,
     is_valid_id as is_valid_plugin_id,
@@ -89,12 +82,31 @@ from .http_input import (  # noqa: F401 - re-exported, tests import them from he
     _validate_tile_bounds,
     _validate_tile_zooms,
 )
+from .http_paths import (  # noqa: F401 - re-exported, tests import them from here
+    _default_settings_filename,
+    _missions_dir,
+    _params_export_dir,
+    _settings_export_dir,
+)
+from .http_routes import CLIENT_GONE_ERRORS, _config_write_lock, _pending_routes, route
+from .routes.console import ConsoleRoutes
+from .routes.control import ControlRoutes
+from .routes.firmware import FirmwareRoutes
+from .routes.geofence import GeofenceRoutes
+from .routes.logs import LogRoutes
+from .routes.mission import MissionRoutes
+from .routes.rtk import RtkRoutes
+from .routes.settings import SettingsRoutes
+from .routes.tiles import TileRoutes
+from .routes.vehicle import VehicleRoutes
+from .routes.video import VideoRoutes
 from .ssh_bridge import SshBridge, run_command as ssh_run_command
 from .tile_http import (  # noqa: F401 - re-exported, tests import them from here
     TILE_UPSTREAM_COOLDOWN_S,
     TILE_UPSTREAM_FAIL_THRESHOLD,
     _AbsentTiles,
     _TileDownloaderPool,
+    _delete_region_tiles,
     _TileProgressBus,
     _UpstreamBreaker,
 )
@@ -136,9 +148,6 @@ MAX_JSON_BODY_BYTES = 8 * 1024 * 1024
 # A settings file can carry the company logo (4 MB) and the operator's plugins
 # (4 MB each, see corvus/plugin_files.py), both as base64 inside the JSON.
 MAX_SETTINGS_BODY_BYTES = 32 * 1024 * 1024
-# The plugins one export may carry together, before base64. Keeps a file with
-# the logo and every plugin inside MAX_SETTINGS_BODY_BYTES once encoded.
-MAX_EXPORT_PLUGIN_BYTES = 16 * 1024 * 1024
 MAX_FIRMWARE_BODY_BYTES = 64 * 1024 * 1024
 # Operator-supplied company logo: a brand mark, not an image library, so a few
 # MB is already generous and keeps a mis-picked photo out of the config dir.
@@ -149,10 +158,6 @@ MAX_LOGO_BODY_BYTES = 4 * 1024 * 1024
 # before anything has looked at it.
 MAX_ULOG_BODY_BYTES = 128 * 1024 * 1024
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
-# Config keys read once at startup (the listening socket, the tile cache, the
-# tlog recorder, the firmware catalog), so a settings import that changes one
-# says a restart is needed rather than pretending it took effect.
-_IMPORT_RESTART_KEYS: tuple[str, ...] = ("http_port", "tile_cache_dir", "tlog_dir", "firmware_dir")
 
 # Response hardening headers.
 #
@@ -281,14 +286,6 @@ CALIB_SENSORS = frozenset({
 # takes its axis selection from FW_AT_AXES rather than from the command. So
 # "all" is the only value that ever goes on the wire.
 AUTOTUNE_AXES = frozenset({"all"})
-# PX4 NuttShell (NSH) builtins with no MAVLink-command equivalent (e.g.
-# `listener <topic>` subscribes to a uORB topic and prints it). Routed to the
-# serial-control debug shell, not a MAV_CMD. `help` stays the local help and
-# `param` is not a console command, so this set is disjoint from the Corvus
-# command set above.
-SHELL_COMMANDS = frozenset({
-    "listener", "top", "free", "dmesg", "tasks", "perf", "boot_log", "hrt",
-})
 
 # Cross-origin reads of the API.
 #
@@ -399,20 +396,8 @@ def _host_header_allowed(host_header: Any) -> bool:
     return False
 
 
-# Route registry: the @route decorator tags handler methods while the
-# CorvusHandler class body executes; the pending entries are wired onto the
-# class-level _GET_ROUTES/_POST_ROUTES tables after the class is defined. The
-# dispatch methods then resolve path -> method name by lookup instead of an
-# if/elif chain, so adding an endpoint is just "decorate a method".
-_pending_routes: list[tuple[str, str, str]] = []
 
 
-def route(http_method: str, path: str):
-    """Register the decorated handler as the route for *path*."""
-    def decorator(func):
-        _pending_routes.append((http_method, path, func.__name__))
-        return func
-    return decorator
 
 
 def _build_tile_downloader(
@@ -543,48 +528,12 @@ def _tile_cache_dir(cfg: Any) -> str:
     return default_cache_dir()
 
 
-def _params_export_dir(cfg: Any) -> str:
-    """Directory exported parameter files are written to.
-
-    The operator's ``params_dir`` when set, otherwise ``~/.corvus/params`` —
-    the same "empty string means the built-in default" convention the tile
-    cache and tlog directories use.
-    """
-    configured = getattr(cfg, "params_dir", "") or ""
-    if configured.strip():
-        return os.path.expanduser(configured.strip())
-    return corvus_path("params")
 
 
-def _settings_export_dir() -> str:
-    """Where a settings export goes by default: Downloads, else the home folder.
-
-    Not under ``~/.corvus`` like the other exports: this file is made to be
-    carried to another machine, and a hidden folder is where it gets lost.
-    """
-    home = os.path.expanduser("~")
-    downloads = os.path.join(home, "Downloads")
-    return downloads if os.path.isdir(downloads) else home
 
 
-def _default_settings_filename() -> str:
-    """``corvus-settings_<host>_<YYYY-MM-DD_HH-MM>.json``: which station, and when."""
-    stamp = time.strftime("%Y-%m-%d_%H-%M")
-    try:
-        host = _slugify(socket.gethostname().split(".")[0])
-    except OSError:
-        host = ""
-    return f"corvus-settings_{host}_{stamp}.json" if host else f"corvus-settings_{stamp}.json"
 
 
-def _missions_dir(cfg: Any) -> str:
-    """Directory saved mission plans are read from and written to.
-
-    Same convention as the parameter export folder above: the operator's
-    ``missions_dir`` when set, ``~/.corvus/missions`` otherwise.
-    """
-    configured = getattr(cfg, "missions_dir", "") or ""
-    return mission.missions_dir(os.path.expanduser(configured.strip()))
 
 
 def _build_log_service(mavlink: Any, config: Any) -> Any:
@@ -1036,38 +985,6 @@ def _param_metadata_cache_dir() -> str:
     return corvus_path("param-metadata")
 
 
-def _delete_region_tiles(cache: Any, region: dict) -> int:
-    """Delete the tiles of *region* that no other region still covers.
-
-    Regions overlap by design (an operator pre-downloads a wide area at low
-    zoom and a landing site at high zoom inside it). Deleting one region's
-    full tile set would punch holes in the other, so every candidate tile is
-    checked against the remaining regions first and kept if any still needs
-    it. Returns the number of tiles actually removed.
-
-    Only the region being deleted is expanded into tiles. The others are
-    asked per candidate through their zoom ranges: expanding each of them,
-    as this used to, built and threw away up to ``MAX_TILES_PER_JOB`` tuples
-    per remaining region to delete one area.
-    """
-    from corvus.tile_downloader import enumerate_tiles, tile_cover
-
-    def _area(r: dict) -> tuple[tuple[float, float, float, float], int, int]:
-        b = r.get("bounds") or {}
-        return (
-            (b.get("w", 0.0), b.get("s", 0.0), b.get("e", 0.0), b.get("n", 0.0)),
-            int(r.get("minzoom", 0)), int(r.get("maxzoom", 0)),
-        )
-
-    doomed = set(enumerate_tiles(*_area(region)))
-    for other in cache.list_regions():
-        if not doomed:
-            break
-        if other["id"] == region["id"]:
-            continue
-        still_needed = tile_cover(*_area(other))
-        doomed = {tile for tile in doomed if not still_needed(tile)}
-    return cache.delete_tiles(doomed) if doomed else 0
 
 
 # 1-slot memoization of the serialized telemetry snapshot, keyed by the
@@ -1114,7 +1031,22 @@ def _serialize_telemetry_snapshot(
         return data
 
 
-class CorvusHandler(http.server.BaseHTTPRequestHandler):
+# The route handlers of each area live in corvus/routes/; their @route
+# entries land in the same registry, wired onto this class below.
+class CorvusHandler(
+    ConsoleRoutes,
+    ControlRoutes,
+    FirmwareRoutes,
+    GeofenceRoutes,
+    LogRoutes,
+    MissionRoutes,
+    RtkRoutes,
+    SettingsRoutes,
+    TileRoutes,
+    VehicleRoutes,
+    VideoRoutes,
+    http.server.BaseHTTPRequestHandler,
+):
     """Request handler routing between static files and API endpoints."""
 
     mavlink: MavlinkBridge | None = None
@@ -1399,29 +1331,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.config_path = path
         return cfg
 
-    def _map_token(self, provider_id: str) -> str:
-        """The stored API key for *provider_id*, or "" when none is set.
 
-        The only reader of the map service credentials. They never leave this
-        process: the frontend asks this server for a tile, this substitutes the
-        key into the upstream URL, and the browser is handed the image bytes —
-        so an injected script in the page has nothing to steal, and a key does
-        not end up in a browser cache, a history entry or a referrer.
-        """
-        if not provider_id:
-            return ""
-        tokens = self._live_config().map_tokens
-        if not isinstance(tokens, dict):
-            return ""
-        value = tokens.get(provider_id)
-        return value if isinstance(value, str) else ""
-
-    def _map_tokens_set(self) -> set[str]:
-        """Provider ids with a key stored — never the keys themselves."""
-        tokens = self._live_config().map_tokens
-        if not isinstance(tokens, dict):
-            return set()
-        return {pid for pid, value in tokens.items() if isinstance(value, str) and value}
 
     def _save_live_config(self) -> None:
         """Persist the live config to its path; never raises into the handler.
@@ -2130,51 +2040,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         out.update(plugin_config.load_all(self.plugin_user_dir))
         return out
 
-    @route("GET", "/api/mavlink/modes")
-    def _api_mavlink_modes(self) -> None:
-        if self.mavlink:
-            self._send_json({
-                "modes": self.mavlink.get_available_modes(),
-                "labels": self.mavlink.get_mode_labels(),
-            })
-        else:
-            self._send_json({"modes": [], "labels": {}})
 
-    @route("GET", "/api/mavlink/capabilities")
-    def _api_mavlink_capabilities(self) -> None:
-        """What the connected flight stack can do.
 
-        The frontend uses this to stop offering controls the vehicle would
-        refuse — the MAVLink console on a stack with no shell, ESC calibration
-        on a stack that does it through a parameter, an autotune button that
-        starts a mode rather than a command. A missing control with a reason is
-        a better answer than one that fails on press.
-        """
-        if self.mavlink:
-            self._send_json(self.mavlink.capabilities())
-            return
-        self._send_json(
-            autopilot.dialect_for_stack(autopilot.STACK_GENERIC).capabilities()
-            | {"modes": [], "vehicle_type": 0, "mission_unsupported": {}}
-        )
-
-    @route("GET", "/api/mavlink/serial-ports")
-    def _api_mavlink_serial_ports(self) -> None:
-        """Enumerate serial ports for the connection manager UI.
-
-        Always answers 200 so the frontend can safely poll: an empty list
-        means "no bridge" or "enumeration failed" (with an ``error`` field).
-        """
-        if self.mavlink is None:
-            self._send_json({"ports": []})
-            return
-        try:
-            ports = self.mavlink.list_serial_ports()
-        except Exception as exc:  # noqa: BLE001 - UI polling must never 500
-            logger.exception("list_serial_ports failed")
-            self._send_json({"ports": [], "error": str(exc)})
-            return
-        self._send_json({"ports": ports})
 
     @route("GET", "/api/params")
     def _api_params(self) -> None:
@@ -2256,56 +2123,6 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         fresh = (query.get("fresh") or [""])[0] in ("1", "true")
         return self.mavlink.fetch_params(names, **({"fresh": True} if fresh else {}))
 
-    @route("GET", "/api/motors")
-    def _api_motors(self) -> None:
-        """Return the vehicle's motor configuration as a renderable description.
-
-        Reads only the ~100 parameters the Motors page needs (a named batch
-        read, not the full ~1300-parameter download the editor uses) and hands
-        them to :mod:`corvus.motor_config`, which owns the PX4 schema. The
-        response lists only the fields the connected firmware actually answered
-        for, so a parameter absent on v1.16 is one field fewer rather than an
-        error (AGENTS.md: graceful fallback across v1.16/v1.17/v1.18).
-
-        Always 200 so the page can render a "not connected" state instead of an
-        error banner; ``connected`` says which it is.
-        """
-        schema = self._schema("motors")
-        # The flight controller and the GPS antenna are placed relative to the
-        # same centre of gravity as the motors, so they are drawn on the same
-        # airframe and ride the same batched read.
-        mounting = self._schema("mounting")
-        if self.mavlink is None:
-            payload = schema.build({})
-            payload["sensors"] = mounting.positions({})
-            payload["connected"] = False
-            self._send_json(payload)
-            return
-        try:
-            values = self._fetch_page_params(
-                schema.param_names() + mounting.position_param_names())
-            # A second, smaller read once the first has said which pins drive
-            # a motor: their per-channel limits. A schema without per-channel
-            # limits has no such function.
-            followup = getattr(schema, "output_param_names", None)
-            names = followup(values) if values and followup is not None else []
-            if names:
-                values = dict(values, **self._fetch_page_params(names))
-        except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
-            logger.exception("motor parameter fetch failed")
-            payload = schema.build({})
-            payload["sensors"] = mounting.positions({})
-            payload["connected"] = False
-            payload["error"] = str(exc)
-            self._send_json(payload)
-            return
-        payload = schema.build(values)
-        payload["sensors"] = mounting.positions(values)
-        payload["position_hint"] = mounting.POSITION_HINT
-        payload["connected"] = bool(values)
-        if not values:
-            payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
-        self._send_json(payload)
 
     @route("GET", "/api/mounting")
     def _api_mounting(self) -> None:
@@ -2388,34 +2205,6 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
         self._send_json(payload)
 
-    @route("GET", "/api/mission/return")
-    def _api_mission_return(self) -> None:
-        """How the connected vehicle flies a Return, for the planner to draw.
-
-        A Return is not flown at a height the plan sets: the vehicle climbs,
-        comes home and lands (or circles) at heights of its own. The planner
-        used to draw it at the height of the last point, which PX4's default
-        return height is often well above. The parameter names belong to the Safety
-        page's schema for the connected stack, which turns them into one shape
-        for both. Always 200; ``connected`` says whether anything answered.
-        """
-        if self.mavlink is None:
-            self._send_json({"connected": False})
-            return
-        schema = self._schema("safety")
-        ardupilot = schema is ardupilot_safety
-        vehicle = autopilot.vehicle_class(self._vehicle_type_id())
-        try:
-            values = self._fetch_page_params(
-                schema.return_param_names(vehicle) if ardupilot else schema.return_param_names())
-        except Exception:  # noqa: BLE001 - a read must never 500 the page
-            logger.exception("return parameter fetch failed")
-            self._send_json({"connected": False})
-            return
-        payload = (schema.return_profile(values, vehicle) if ardupilot
-                   else schema.return_profile(values))
-        payload["connected"] = bool(values)
-        self._send_json(payload)
 
     @route("GET", "/api/tuning")
     def _api_tuning(self) -> None:
@@ -2629,56 +2418,6 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
                 logger.exception("remote id status failed")
         self._send_json(payload)
 
-    @route("GET", "/api/rc")
-    def _api_rc(self) -> None:
-        """Return the vehicle's transmitter configuration as a description.
-
-        Same shape and same contract as ``/api/safety``, ``/api/motors`` and
-        ``/api/tuning``: one batched read of the parameters
-        :mod:`corvus.rc_config` knows about, handed to that module to turn into
-        sections — the input mode and its failsafe, the stick channels, the
-        flight-mode switch and its six slots, the remaining switches, the AUX
-        passthroughs, and the per-channel calibration table.
-
-        The channel pickers are capped at what the receiver actually delivers
-        (``RC_CHANNELS.chancount``, via the telemetry store) rather than at
-        PX4's eighteen, so an eight-channel radio does not present ten empty
-        rows. When no RC has arrived the cap falls back to the full eighteen —
-        an unknown receiver must not narrow the choices.
-
-        A parameter the connected firmware does not answer for is one field
-        fewer and an empty section disappears, so one schema serves v1.16,
-        v1.17 and v1.18 without a version switch (AGENTS.md).
-
-        Always 200 so the page can render a "not connected" state instead of an
-        error banner; ``connected`` says which it is.
-        """
-        schema = self._schema("rc")
-        empty = {"connected": False, "sections": [], "assignments": {},
-                 "channel_limit": schema.MAX_CHANNELS, "received": 0}
-        if self.mavlink is None:
-            self._send_json(empty)
-            return
-        channels = schema.MAX_CHANNELS
-        if self.store is not None:
-            reported = self.store.get_snapshot().get("rc_channel_count") or 0
-            if isinstance(reported, int) and 0 < reported <= schema.MAX_CHANNELS:
-                channels = reported
-        try:
-            values = self._fetch_page_params(schema.param_names())
-        except Exception as exc:  # noqa: BLE001 - a read must never 500 the page
-            logger.exception("RC parameter fetch failed")
-            self._send_json(dict(empty, error=str(exc)))
-            return
-        payload = schema.build(
-            values, channels,
-            **({"vehicle_type": self._vehicle_type_id()}
-               if schema is ardupilot_rc else {}),
-        )
-        payload["connected"] = bool(values)
-        if not values:
-            payload["error"] = self.mavlink.get_last_command_error() or "no parameters received"
-        self._send_json(payload)
 
     # ---- POST API ----
     def _handle_api_post(self, path: str) -> None:
@@ -2721,500 +2460,22 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "not found"}, 404)
 
-    @route("POST", "/api/console/command")
-    def _api_console_command(self, payload: dict) -> None:
-        command_value = payload.get("command", "")
-        cmd = command_value.strip() if isinstance(command_value, str) else ""
-        if not cmd or not self.mavlink:
-            self._send_json({"error": "no command or not connected"}, 400)
-            return
-        parts = cmd.lower().split()
-        ok = True
-        if parts[0] == "arm":
-            ok = self.mavlink.arm(True)
-        elif parts[0] == "disarm":
-            ok = self.mavlink.arm(False)
-        elif parts[0] == "mode" and len(parts) > 1:
-            ok = self.mavlink.set_mode(parts[1].upper())
-        elif parts[0] == "takeoff":
-            if len(parts) > 2:
-                self._send_json({"error": "usage: takeoff [altitude_agl]"}, 400)
-                return
-            try:
-                alt = _parse_takeoff_altitude(parts[1] if len(parts) > 1 else 10.0)
-            except ValueError as exc:
-                self._send_json({"error": str(exc)}, 400)
-                return
-            ok = self.mavlink.takeoff(alt)
-        elif parts[0] == "land":
-            ok = self.mavlink.land()
-        elif parts[0] == "rtl":
-            ok = self.mavlink.rtl()
-        elif parts[0] == "help":
-            self._send_json({"ok": True, "help": True})
-            return
-        elif parts[0] == "shell" or parts[0] == "nsh":
-            # Strip the prefix from the ORIGINAL cmd so the rest keeps its case
-            # (NSH is case-sensitive, e.g. `listener sensor_combined`).
-            shell_text = cmd.split(maxsplit=1)[1] if len(cmd.split(maxsplit=1)) > 1 else ""
-            if not shell_text:
-                self._send_json({"error": f"usage: {parts[0]} <command>"}, 400)
-                return
-            ok_shell = self.mavlink.send_shell_command(shell_text)
-            if ok_shell:
-                self._send_json({"ok": True, "shell": True})
-            else:
-                error = self.mavlink.get_last_command_error() or f"shell command failed: {cmd}"
-                normalized_error = error.lower()
-                status = 503 if (
-                    "disconnected" in normalized_error or "not connected" in normalized_error
-                ) else 409
-                self._send_json({"ok": False, "error": error}, status)
-            return
-        elif parts[0] in SHELL_COMMANDS:
-            # Send the full original cmd (case-preserved) to the NSH shell.
-            ok_shell = self.mavlink.send_shell_command(cmd)
-            if ok_shell:
-                self._send_json({"ok": True, "shell": True})
-            else:
-                error = self.mavlink.get_last_command_error() or f"shell command failed: {cmd}"
-                normalized_error = error.lower()
-                status = 503 if (
-                    "disconnected" in normalized_error or "not connected" in normalized_error
-                ) else 409
-                self._send_json({"ok": False, "error": error}, status)
-            return
-        else:
-            self._send_json({"error": f"unknown command: {cmd}"}, 400)
-            return
-        if ok:
-            self._send_json({"ok": True})
-        else:
-            error = self.mavlink.get_last_command_error() or f"command failed: {cmd}"
-            status = 503 if "DISCONNECTED" in error else 409
-            self._send_json({"ok": False, "error": error}, status)
 
-    @route("POST", "/api/console/save")
-    def _api_console_save(self, payload: dict) -> None:
-        """Write the console transcript to disk and return the path.
 
-        Server-side for the same reason parameter export is: the desktop build
-        runs in QtWebEngine, which drops an ``<a download>`` unless the host
-        app implements a handler, so a browser-download route would silently
-        produce nothing there. Logs land beside the tlogs, since that is where
-        someone reconstructing a flight will already be looking.
-        """
-        text = payload.get("text")
-        if not isinstance(text, str) or not text.strip():
-            self._send_json({"ok": False, "error": "text must be a non-empty string"}, 400)
-            return
 
-        cfg = self._live_config()
-        target_dir = os.path.expanduser(
-            (cfg.tlog_dir or "").strip() or "~/.corvus/logs")
-        filename = _safe_filename(
-            payload.get("filename"),
-            time.strftime("corvus-console_%Y-%m-%d_%H-%M.log"),
-            suffix=".log",
-        )
-        try:
-            os.makedirs(target_dir, exist_ok=True)
-            path = os.path.join(target_dir, filename)
-            fd, tmp_name = tempfile.mkstemp(prefix=filename + ".", suffix=".tmp", dir=target_dir)
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    f.write(text)
-                    if not text.endswith("\n"):
-                        f.write("\n")
-                os.replace(tmp_name, path)
-            except BaseException:
-                try:
-                    os.unlink(tmp_name)
-                except OSError:
-                    pass
-                raise
-        except OSError as exc:
-            self._send_json(
-                {"ok": False, "error": f"could not write to {target_dir}: {exc.strerror or exc}"},
-                400)
-            return
-        except Exception as exc:  # noqa: BLE001 - a log save must never 500
-            logger.exception("console log save failed")
-            self._send_json({"ok": False, "error": f"save failed: {exc}"}, 500)
-            return
 
-        logger.info("console log written to %s", path)
-        self._send_json({"ok": True, "path": path, "dir": target_dir, "filename": filename})
 
-    def _note_manual_link(self, conn: str) -> None:
-        """Record that the operator chose the link by hand, and clear the offer.
 
-        Never raises: this is bookkeeping on top of a connect that has already
-        succeeded, and an auto-connect bug must not turn a working link into a
-        500.
-        """
-        session = self.autoconnect_session
-        if session is None:
-            return
-        try:
-            session.note_manual_connect()
-            if conn:
-                session.note_decision("manual", conn)
-            if self.store is not None:
-                self.store.update(
-                    link_suggestion=None, link_auto=session.as_dict(),
-                )
-        except Exception:  # noqa: BLE001 - never fail a good connect over this
-            logger.exception("autoconnect: could not record the manual connect")
 
-    @route("GET", "/api/mavlink/auto")
-    def _api_mavlink_auto(self) -> None:
-        """Read-only view of what auto-connect decided and what it is offering.
 
-        The same two values the store pushes over SSE (``link_auto`` and
-        ``link_suggestion``), served as a plain GET so the behaviour can be
-        asked about directly — from a test, from a support session, from a
-        terminal at the field — without holding an event stream open. No side
-        effects: this endpoint decides nothing and dials nothing.
-        """
-        session = self.autoconnect_session
-        snapshot = self.store.get_snapshot() if self.store is not None else {}
-        auto = session.as_dict() if session is not None else dict(
-            snapshot.get("link_auto") or {},
-        )
-        self._send_json({
-            "auto": auto,
-            "suggestion": snapshot.get("link_suggestion"),
-        })
 
-    @route("POST", "/api/mavlink/connect")
-    def _api_mavlink_connect(self, payload: dict) -> None:
-        conn = payload.get("connection", "udp:127.0.0.1:14550")
-        # Validate the connection string up front: a non-string/empty value
-        # would be passed straight to the bridge. set_connection() now raises
-        # ValueError on a bad spec — surface that as a 400, not a 500.
-        if not isinstance(conn, str) or not conn:
-            self._send_json(
-                {"ok": False, "error": "connection must be a non-empty string"}, 400,
-            )
-            return
-        if self.mavlink is None:
-            self._send_json({"ok": False, "error": "mavlink not ready"}, 503)
-            return
-        # Validate BEFORE tearing anything down. This used to stop the bridge
-        # first, so a typo in the connection field killed a working link and
-        # handed back a 400 — the operator lost the aircraft to a spelling
-        # mistake, with no way back except retyping the old string from memory.
-        try:
-            self.mavlink.validate_connection(conn)
-        except ValueError as exc:
-            self._send_json({"ok": False, "error": str(exc)}, 400)
-            return
-        try:
-            self.mavlink.stop()
-            self.mavlink.set_connection(conn)
-            self.mavlink.start()
-        except ValueError as exc:
-            self._send_json({"ok": False, "error": str(exc)}, 400)
-            return
-        # The operator picked a link, so auto-connect stops picking for them —
-        # for the rest of this process, not for the rest of time (the flag is
-        # never persisted, so the next field launch starts from the hardware
-        # again). Set only now, after the dial actually went through: a string
-        # the bridge refused is not a choice, it is a typo.
-        self._note_manual_link(conn)
-        self._send_json({"ok": True, "connection": conn})
 
-    @route("POST", "/api/mavlink/disconnect")
-    def _api_mavlink_disconnect(self, payload: dict) -> None:
-        """Close the MAVLink link and leave it closed.
 
-        Until now the only way out of a connection was to make another one, so
-        an operator who wanted the radio free — to hand the aircraft to another
-        GCS, to swap a cable, to stop a reconnect loop hammering a port that
-        moved — had to quit the app. ``stop()`` already does the full teardown
-        (tlog closed, pending commands cancelled, shell released), so this is
-        that call plus an honest reply.
 
-        Idempotent: disconnecting an already-closed link is a success, because
-        the state the caller asked for is the state they get.
 
-        Takes ``payload`` because every POST handler is dispatched with the
-        parsed body, even the ones with nothing to read from it.
-        """
-        if self.mavlink is None:
-            self._send_json({"ok": False, "error": "mavlink not ready"}, 503)
-            return
-        try:
-            self.mavlink.stop()
-        except Exception as exc:  # noqa: BLE001 - teardown must never 500
-            logger.exception("mavlink disconnect failed")
-            self._send_json({"ok": False, "error": f"disconnect failed: {exc}"}, 500)
-            return
-        # "Leave it closed" has to mean closed. Auto-connect keeps the manual
-        # override it was given (and takes one now if it had none), so nothing
-        # dials the link back open behind the operator who just freed the
-        # radio. The way back is another connect, or a restart.
-        self._note_manual_link("")
-        self._send_json({"ok": True})
 
-    @route("POST", "/api/mavlink/arm")
-    def _api_mavlink_arm(self, payload: dict) -> None:
-        arm = payload.get("arm", True)
-        if not isinstance(arm, bool):
-            self._send_json({"ok": False, "error": "arm must be boolean"}, 400)
-            return
-        if self.mavlink:
-            ok = self.mavlink.arm(arm)
-            if ok:
-                self._send_json({"ok": True})
-            else:
-                error = self.mavlink.get_last_command_error() or "arm command failed"
-                status = 503 if "DISCONNECTED" in error else 409
-                self._send_json({"ok": False, "error": error}, status)
-        else:
-            self._send_json({"error": "not connected"}, 400)
 
-    @route("POST", "/api/mavlink/mode")
-    def _api_mavlink_mode(self, payload: dict) -> None:
-        mode = payload.get("mode", "")
-        if self.mavlink and isinstance(mode, str) and mode:
-            ok = self.mavlink.set_mode(mode.upper())
-            if ok:
-                self._send_json({"ok": True})
-            else:
-                error = self.mavlink.get_last_command_error() or "mode change failed"
-                status = 503 if "DISCONNECTED" in error else 409
-                self._send_json({"ok": False, "error": error}, status)
-        else:
-            self._send_json({"error": "not connected or no mode"}, 400)
 
-    @route("POST", "/api/mavlink/takeoff")
-    def _api_mavlink_takeoff(self, payload: dict) -> None:
-        try:
-            alt = _parse_takeoff_altitude(payload.get("altitude", 10.0))
-        except ValueError as exc:
-            self._send_json({"ok": False, "error": str(exc)}, 400)
-            return
-        if self.mavlink:
-            ok = self.mavlink.takeoff(alt)
-            if ok:
-                self._send_json({"ok": True, "altitude_agl": alt})
-            else:
-                error = self.mavlink.get_last_command_error() or "takeoff command failed"
-                status = 503 if "DISCONNECTED" in error else 409
-                self._send_json({"ok": False, "error": error}, status)
-        else:
-            self._send_json({"error": "not connected"}, 400)
-
-    @route("POST", "/api/mavlink/land")
-    def _api_mavlink_land(self, payload: dict) -> None:
-        if self.mavlink:
-            ok = self.mavlink.land()
-            if ok:
-                self._send_json({"ok": True})
-            else:
-                error = self.mavlink.get_last_command_error() or "land command failed"
-                status = 503 if "DISCONNECTED" in error else 409
-                self._send_json({"ok": False, "error": error}, status)
-        else:
-            self._send_json({"error": "not connected"}, 400)
-
-    @route("POST", "/api/mavlink/rtl")
-    def _api_mavlink_rtl(self, payload: dict) -> None:
-        if self.mavlink:
-            ok = self.mavlink.rtl()
-            if ok:
-                self._send_json({"ok": True})
-            else:
-                error = self.mavlink.get_last_command_error() or "RTL command failed"
-                status = 503 if "DISCONNECTED" in error else 409
-                self._send_json({"ok": False, "error": error}, status)
-        else:
-            self._send_json({"error": "not connected"}, 400)
-
-    @route("POST", "/api/mavlink/reboot")
-    def _api_mavlink_reboot(self, payload: dict) -> None:
-        """Restart the autopilot. Disarmed only; the bridge refuses otherwise."""
-        del payload
-        if self.mavlink is None:
-            self._send_json({"ok": False, "error": "not connected"}, 503)
-            return
-        if self.mavlink.reboot_autopilot():
-            self._send_json({"ok": True})
-            return
-        error = self.mavlink.get_last_command_error() or "reboot failed"
-        status = 503 if "not connected" in error or "DISCONNECTED" in error else 409
-        self._send_json({"ok": False, "error": error}, status)
-
-    @route("POST", "/api/mavlink/shell/send")
-    def _api_mavlink_shell_send(self, payload: dict) -> None:
-        """Type into the PX4 NSH shell, for a terminal.
-
-        ``{"data": "ver all\\n"}`` is sent as it is: no newline added, nothing
-        trimmed, so a Ctrl-C (``"\\x03"``) reaches a running ``top``. The
-        output arrives on the ``shell`` topic of ``/api/events``. 409 on a
-        stack with no shell, 503 with nothing connected.
-        """
-        data = payload.get("data")
-        if not isinstance(data, str) or not data:
-            self._send_json({"ok": False, "error": "data must be non-empty text"}, 400)
-            return
-        if self.mavlink is None:
-            self._send_json({"ok": False, "error": "not connected"}, 503)
-            return
-        if self.mavlink.write_shell(data):
-            self._send_json({"ok": True})
-            return
-        error = self.mavlink.get_last_command_error() or "shell write failed"
-        status = 503 if "not connected" in error else 409
-        self._send_json({"ok": False, "error": error}, status)
-
-    @route("POST", "/api/mavlink/shell/close")
-    def _api_mavlink_shell_close(self, payload: dict) -> None:
-        """End the terminal's shell: PX4 stops it and frees the link.
-
-        Idempotent, and fine with nothing connected. What was running in the
-        shell (a ``top``, a ``listener``) stops with it.
-        """
-        del payload
-        if self.mavlink is not None:
-            self.mavlink.stop_shell()
-        self._send_json({"ok": True})
-
-    @route("POST", "/api/mavlink/manual")
-    def _api_mavlink_manual(self, payload: dict) -> None:
-        """Forward one virtual-joystick frame to the vehicle as MANUAL_CONTROL.
-
-        The stream endpoint for ``src/js/joystick.js``: normalized axes in,
-        one MAVLink frame out, no ACK. Each frame is independent — the browser
-        re-sends at a fixed rate and a dropped one is simply superseded — so
-        this validates and dispatches, and never blocks on the vehicle.
-        """
-        axes: dict[str, float] = {}
-        for name, low, high in (("x", -1.0, 1.0), ("y", -1.0, 1.0),
-                                ("z", 0.0, 1.0), ("r", -1.0, 1.0)):
-            raw = payload.get(name, 0.0 if name != "z" else 0.5)
-            # bool is a subclass of int — reject it so True never flies as 1.0.
-            if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(float(raw)):
-                self._send_json({"ok": False, "error": f"{name} must be a finite number"}, 400)
-                return
-            value = float(raw)
-            if not low <= value <= high:
-                self._send_json(
-                    {"ok": False, "error": f"{name} must be between {low:g} and {high:g}"}, 400)
-                return
-            axes[name] = value
-
-        buttons = payload.get("buttons", 0)
-        if isinstance(buttons, bool) or not isinstance(buttons, int) or not 0 <= buttons <= 0xFFFF:
-            self._send_json({"ok": False, "error": "buttons must be an integer between 0 and 65535"}, 400)
-            return
-
-        if not self.mavlink:
-            self._send_json({"error": "not connected"}, 400)
-            return
-        if self.mavlink.manual_control(buttons=buttons, **axes):
-            self._send_json({"ok": True})
-            return
-        error = self.mavlink.get_last_command_error() or "manual control send failed"
-        status = 503 if "DISCONNECTED" in error else 409
-        self._send_json({"ok": False, "error": error}, status)
-
-    @route("POST", "/api/mavlink/sethome")
-    def _api_mavlink_sethome(self, payload: dict) -> None:
-        """Move the home position to a clicked map coordinate.
-
-        Lateral only: the bridge keeps the existing home altitude, because a
-        map click carries no terrain height. Allowed while armed — relocating
-        home is how an operator redirects RTL mid-flight.
-        """
-        lat = payload.get("lat")
-        lon = payload.get("lon")
-        # bool is a subclass of int — reject it so True never flies as 1.0.
-        for name, value, limit in (("lat", lat, 90.0), ("lon", lon, 180.0)):
-            if isinstance(value, bool) or not isinstance(value, (int, float)) \
-                    or not math.isfinite(float(value)):
-                self._send_json({"ok": False, "error": f"{name} must be a finite number"}, 400)
-                return
-            if not -limit <= float(value) <= limit:
-                self._send_json(
-                    {"ok": False, "error": f"{name} must be between {-limit:g} and {limit:g}"}, 400)
-                return
-
-        if self.mavlink is None:
-            self._send_json({"error": "not connected"}, 400)
-            return
-        if self.mavlink.set_home(float(lat), float(lon)):
-            self._send_json({"ok": True})
-            return
-        error = self.mavlink.get_last_command_error() or "set home failed"
-        status = 503 if "DISCONNECTED" in error else 409
-        self._send_json({"ok": False, "error": error}, status)
-
-    @route("POST", "/api/mavlink/gotopoints")
-    def _api_mavlink_gotopoints(self, payload: dict) -> None:
-        """Dispatch a multi-waypoint fly-to command to the vehicle."""
-        raw_points = payload.get("points")
-        if not isinstance(raw_points, list) or not raw_points:
-            self._send_json({"ok": False, "error": "points must be a non-empty list"}, 400)
-            return
-        # Checked before the per-point walk below, so an oversized payload
-        # costs one comparison rather than a coordinate-validated copy of
-        # itself. The bridge enforces the same bound — this is the early out.
-        if len(raw_points) > FLY_TO_MAX_POINTS:
-            self._send_json(
-                {"ok": False,
-                 "error": f"too many points ({len(raw_points)}); "
-                          f"the maximum is {FLY_TO_MAX_POINTS}"},
-                400,
-            )
-            return
-        cleaned: list[dict[str, float]] = []
-        for index, item in enumerate(raw_points):
-            if not isinstance(item, dict):
-                self._send_json({"ok": False, "error": f"point {index} must be an object"}, 400)
-                return
-            lat = item.get("lat")
-            lon = item.get("lon")
-            alt_agl = item.get("alt_agl")
-            # bool is a subclass of int — reject it so True is never coerced to 1.0
-            if isinstance(lat, bool) or not isinstance(lat, (int, float)) or not math.isfinite(float(lat)):
-                self._send_json({"ok": False, "error": f"point {index} lat must be a finite number"}, 400)
-                return
-            if isinstance(lon, bool) or not isinstance(lon, (int, float)) or not math.isfinite(float(lon)):
-                self._send_json({"ok": False, "error": f"point {index} lon must be a finite number"}, 400)
-                return
-            if isinstance(alt_agl, bool) or not isinstance(alt_agl, (int, float)) or not math.isfinite(float(alt_agl)):
-                self._send_json({"ok": False, "error": f"point {index} alt_agl must be a finite number"}, 400)
-                return
-            lat_f = float(lat)
-            lon_f = float(lon)
-            alt_f = float(alt_agl)
-            if not -90.0 <= lat_f <= 90.0:
-                self._send_json({"ok": False, "error": f"point {index} lat must be between -90 and 90"}, 400)
-                return
-            if not -180.0 <= lon_f <= 180.0:
-                self._send_json({"ok": False, "error": f"point {index} lon must be between -180 and 180"}, 400)
-                return
-            if not TAKEOFF_ALTITUDE_MIN_M <= alt_f <= TAKEOFF_ALTITUDE_MAX_M:
-                self._send_json(
-                    {"ok": False, "error": f"point {index} alt_agl must be between "
-                     f"{TAKEOFF_ALTITUDE_MIN_M:.0f} and {TAKEOFF_ALTITUDE_MAX_M:.0f} m AGL"},
-                    400,
-                )
-                return
-            cleaned.append({"lat": lat_f, "lon": lon_f, "alt_agl": alt_f})
-        if self.mavlink is None:
-            self._send_json({"error": "not connected"}, 400)
-            return
-        ok = self.mavlink.fly_to_points(cleaned)
-        if ok:
-            self._send_json({"ok": True})
-        else:
-            error = self.mavlink.get_last_command_error() or "fly to points failed"
-            status = 503 if "DISCONNECTED" in error else 409
-            self._send_json({"ok": False, "error": error}, status)
 
     # ---- Mission planner -------------------------------------------------
     #
@@ -3225,159 +2486,14 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     # source of mission items, and neither is a JSON file an operator copied
     # from another machine.
 
-    @route("POST", "/api/mission/upload")
-    def _api_mission_upload(self, payload: dict) -> None:
-        """Upload a planned mission to the vehicle, optionally starting it.
 
-        ``start`` is a separate flag rather than a separate call so the two
-        cannot be reordered by a slow link: an operator who asked to fly gets
-        the mission on board and started, and one who did not gets a vehicle
-        holding a route it has not been told to run.
-        """
-        plan, error = mission.validate_plan(payload.get("plan"))
-        if plan is None:
-            self._send_json({"ok": False, "error": error}, 400)
-            return
-        if not plan["items"]:
-            self._send_json({"ok": False, "error": "the mission is empty"}, 400)
-            return
-        start = payload.get("start")
-        if start is not None and not isinstance(start, bool):
-            self._send_json({"ok": False, "error": "start must be true or false"}, 400)
-            return
-        if self.mavlink is None:
-            self._send_json({"ok": False, "error": "not connected"}, 400)
-            return
 
-        items = mission.plan_to_items(plan)
-        if not self.mavlink.upload_mission_plan(items):
-            self._send_mission_failure("mission upload failed")
-            return
-        # Which state of the vehicle's mission this plan now is, so the page
-        # can follow its progress and stop the moment it no longer is.
-        store = getattr(self, "store", None)
-        synced = ({"revision": store.get_snapshot().get("mission_revision")}
-                  if store is not None else {})
-        if not start:
-            self._send_json({"ok": True, "items": len(items), "started": False, **synced})
-            return
-        if not self.mavlink.start_mission(len(items)):
-            self._send_mission_failure("mission start failed")
-            return
-        self._send_json({"ok": True, "items": len(items), "started": True, **synced})
 
-    @route("POST", "/api/mission/start")
-    def _api_mission_start(self, payload: dict) -> None:
-        """Run the mission already uploaded to the vehicle."""
-        count = payload.get("items")
-        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
-            self._send_json({"ok": False, "error": "items must be a positive integer"}, 400)
-            return
-        if count > FLY_TO_MAX_POINTS:
-            self._send_json(
-                {"ok": False,
-                 "error": f"items must be at most {FLY_TO_MAX_POINTS}"}, 400)
-            return
-        if self.mavlink is None:
-            self._send_json({"ok": False, "error": "not connected"}, 400)
-            return
-        if not self.mavlink.start_mission(count):
-            self._send_mission_failure("mission start failed")
-            return
-        self._send_json({"ok": True})
 
-    @route("POST", "/api/mission/clear")
-    def _api_mission_clear(self, payload: dict) -> None:
-        """Wipe the mission stored on the vehicle."""
-        if self.mavlink is None:
-            self._send_json({"ok": False, "error": "not connected"}, 400)
-            return
-        if not self.mavlink.clear_mission():
-            self._send_mission_failure("mission clear failed")
-            return
-        self._send_json({"ok": True})
 
-    @route("POST", "/api/mission/download")
-    def _api_mission_download(self, payload: dict) -> None:
-        """Read the mission the vehicle holds, as a plan the Mission page can draw.
 
-        Answers ``{ok, plan, count, items, plan_index, skipped, adjusted,
-        revision, error}``. ``plan`` is None when not even the part the planner
-        understands makes a valid plan, and ``error`` says why; ``skipped``
-        names what the planner could not draw, which an upload of the plan
-        would remove from the vehicle.
-        """
-        del payload
-        download = getattr(self.mavlink, "download_mission", None)
-        if self.mavlink is None or download is None:
-            self._send_json({"ok": False, "error": "not connected"}, 503)
-            return
-        result = download()
-        if result is None:
-            self._send_mission_failure("mission download failed")
-            return
-        self._send_json(dict(result, ok=True))
 
-    def _send_mission_failure(self, fallback: str) -> None:
-        """Report why the bridge refused, with the status that says whose fault.
 
-        503 for a link that is not there (try again when it is), 409 for a
-        vehicle that answered and said no.
-        """
-        error = (self.mavlink.get_last_command_error() if self.mavlink else "") or fallback
-        status = 503 if "DISCONNECTED" in error else 409
-        self._send_json({"ok": False, "error": error}, status)
-
-    @route("GET", "/api/mission/plans")
-    def _api_mission_plans(self) -> None:
-        """List the saved mission plans, newest first."""
-        directory = _missions_dir(self._live_config())
-        self._send_json({"dir": directory, "plans": mission.list_plans(directory)})
-
-    @route("POST", "/api/mission/plans/save")
-    def _api_mission_plans_save(self, payload: dict) -> None:
-        """Save a plan under its (sanitized) name, overwriting a namesake."""
-        plan, error = mission.validate_plan(payload.get("plan"))
-        if plan is None:
-            self._send_json({"ok": False, "error": error}, 400)
-            return
-        name = mission.safe_plan_name(payload.get("name")) or plan["name"]
-        if not name:
-            self._send_json({"ok": False, "error": "a mission needs a name"}, 400)
-            return
-        directory = _missions_dir(self._live_config())
-        try:
-            stored = mission.write_plan(directory, name, plan)
-        except OSError as exc:
-            logger.exception("could not save mission %r", name)
-            self._send_json({"ok": False, "error": f"could not save: {exc}"}, 500)
-            return
-        self._send_json({"ok": True, "name": stored, "dir": directory})
-
-    @route("POST", "/api/mission/plans/load")
-    def _api_mission_plans_load(self, payload: dict) -> None:
-        """Read one saved plan back, re-validated on the way out."""
-        name = mission.safe_plan_name(payload.get("name"))
-        if not name:
-            self._send_json({"ok": False, "error": "name must be a mission name"}, 400)
-            return
-        plan = mission.read_plan(_missions_dir(self._live_config()), name)
-        if plan is None:
-            self._send_json({"ok": False, "error": f"no saved mission named {name!r}"}, 404)
-            return
-        self._send_json({"ok": True, "name": name, "plan": plan})
-
-    @route("POST", "/api/mission/plans/remove")
-    def _api_mission_plans_remove(self, payload: dict) -> None:
-        """Delete one saved plan. Deleting what is gone is a success."""
-        name = mission.safe_plan_name(payload.get("name"))
-        if not name:
-            self._send_json({"ok": False, "error": "name must be a mission name"}, 400)
-            return
-        if not mission.remove_plan(_missions_dir(self._live_config()), name):
-            self._send_json({"ok": False, "error": "could not delete the mission"}, 500)
-            return
-        self._send_json({"ok": True})
 
     @route("POST", "/api/ssh/connect")
     def _api_ssh_connect(self, payload: dict) -> None:
@@ -3508,353 +2624,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             return
         self._send_json({"ok": True, "config": public})
 
-    # ---- Settings export and import (corvus/settings_bundle.py) ----
-    @route("GET", "/api/settings/export/target")
-    def _api_settings_export_target(self) -> None:
-        """Where a settings export would be written, and a filename. Always 200."""
-        self._send_json({"dir": _settings_export_dir(),
-                         "filename": _default_settings_filename()})
 
-    @route("POST", "/api/settings/export")
-    def _api_settings_export(self, payload: dict) -> None:
-        """Write the chosen settings of this station to one file and return its path.
 
-        Written here rather than as a browser download for the reason parameter
-        exports are (see ``_api_params_export``). It is also what lets the file
-        carry the secrets when ``include_secrets`` asks for them: they go from
-        the config straight to disk and never through an HTTP response.
-        ``browser`` is the interface state the page keeps in localStorage,
-        carried through untouched.
 
-        ``sections`` picks the parts (every one when absent). With
-        ``plugins`` among them, ``plugin_settings`` names the plugins whose
-        settings go in (every one when absent) and ``plugin_files`` the
-        plugins that go in themselves (none when absent); only a plugin from
-        the operator's folder can, since a bundled one ships with Corvus.
-        """
-        include_secrets = payload.get("include_secrets", False)
-        if not isinstance(include_secrets, bool):
-            self._send_json({"ok": False, "error": "include_secrets must be true or false"}, 400)
-            return
-        browser = payload.get("browser", {})
-        if not isinstance(browser, dict):
-            self._send_json({"ok": False, "error": "browser must be an object"}, 400)
-            return
-        try:
-            sections = settings_bundle.normalize_sections(payload.get("sections"))
-        except ValueError as exc:
-            self._send_json({"ok": False, "error": str(exc)}, 400)
-            return
-        if not sections:
-            self._send_json({"ok": False, "error": "Choose at least one part to export."}, 400)
-            return
-        files_by_plugin, error = self._export_plugin_files(payload.get("plugin_files", []),
-                                                           "plugins" in sections)
-        if error is not None:
-            self._send_json({"ok": False, "error": error}, 400)
-            return
-        raw_dir = payload.get("dir")
-        target_dir = raw_dir if isinstance(raw_dir, str) and raw_dir.strip() else \
-            _settings_export_dir()
-        target_dir = os.path.expanduser(target_dir.strip())
-        filename = _safe_filename(payload.get("filename"), _default_settings_filename(), ".json")
 
-        with _config_write_lock:
-            cfg = self._live_config()
-            config = _config_to_dict(cfg)
-            plugins = self._plugin_settings_all()
-        try:
-            chosen_settings = settings_bundle.normalize_ids(
-                payload.get("plugin_settings"), plugins, "plugin_settings")
-        except ValueError as exc:
-            self._send_json({"ok": False, "error": str(exc)}, 400)
-            return
-        plugins = {k: v for k, v in plugins.items() if k in chosen_settings}
-        logo = None
-        if isinstance(cfg.branding, dict) and cfg.branding.get("logo"):
-            try:
-                logo = self._logo_path().read_bytes() or None
-            except OSError:
-                logo = None
-        bundle = settings_bundle.build(config, sections=sections, plugins=plugins,
-                                       plugin_files=files_by_plugin, logo=logo,
-                                       browser=browser, include_secrets=include_secrets)
-        try:
-            text = json.dumps(bundle, indent=2, ensure_ascii=False) + "\n"
-            os.makedirs(target_dir, exist_ok=True)
-            path = os.path.join(target_dir, filename)
-            # mkstemp creates the file 0o600, which the replace keeps: with the
-            # secrets in it, this file is as sensitive as the config itself.
-            fd, tmp_name = tempfile.mkstemp(prefix=filename + ".", suffix=".tmp", dir=target_dir)
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
-                    f.write(text)
-                os.replace(tmp_name, path)
-            except BaseException:
-                try:
-                    os.unlink(tmp_name)
-                except OSError:
-                    pass
-                raise
-        except OSError as exc:
-            self._send_json(
-                {"ok": False, "error": f"could not write to {target_dir}: {exc.strerror or exc}"},
-                400)
-            return
-        except Exception as exc:  # noqa: BLE001 - an export must never 500 unexplained
-            logger.exception("settings export failed")
-            self._send_json({"ok": False, "error": f"export failed: {exc}"}, 500)
-            return
-        logger.info("exported settings (%s) to %s (secrets %s, %d plugin(s) with their files)",
-                    ", ".join(bundle["sections"]), path,
-                    "included" if include_secrets else "left out", len(files_by_plugin))
-        self._send_json({"ok": True, "path": path, "dir": target_dir,
-                         "filename": filename, "secrets": include_secrets,
-                         "sections": bundle["sections"]})
-
-    def _export_plugin_files(self, raw: Any, wanted: bool
-                             ) -> tuple[dict[str, dict[str, bytes]], str | None]:
-        """The files of each plugin named in *raw*, or an error sentence.
-
-        Only plugins discovered in the operator's folder: a bundled one ships
-        with Corvus, and a name that is not installed has no files to take.
-        """
-        if raw is None or not wanted:
-            return {}, None
-        if not isinstance(raw, list) or not all(isinstance(p, str) for p in raw):
-            return {}, "plugin_files must be a list of plugin ids"
-        if not raw:
-            return {}, None
-        user_dir, bundled_dir = self._plugin_roots()
-        installed = {m["id"]: m for m in discover_plugins(user_dir, bundled_dir)}
-        out: dict[str, dict[str, bytes]] = {}
-        total = 0
-        for plugin_id in dict.fromkeys(raw):
-            manifest = installed.get(plugin_id)
-            if manifest is None or manifest.get("source") != "user":
-                return {}, f"The plugin {plugin_id} is not in the plugin folder, so its files cannot be exported."
-            try:
-                files = plugin_files.collect(manifest["dir"])
-            except ValueError as exc:
-                return {}, (f"The plugin {manifest['name']} is {exc}, too much for a settings file. "
-                            "Copy its folder instead.")
-            except OSError as exc:
-                return {}, f"The plugin {manifest['name']} could not be read: {exc.strerror or exc}"
-            total += sum(len(b) for b in files.values())
-            if total > MAX_EXPORT_PLUGIN_BYTES:
-                return {}, ("The chosen plugins are larger than "
-                            f"{MAX_EXPORT_PLUGIN_BYTES // (1024 * 1024)} MB together. "
-                            "Take fewer of them, or copy their folders instead.")
-            out[plugin_id] = files
-        return out, None
-
-    @route("POST", "/api/settings/import")
-    def _api_settings_import(self, payload: dict) -> None:
-        """Apply a settings file written by ``POST /api/settings/export``.
-
-        ``bundle`` is the parsed file and ``sections`` the section ids to take
-        from it (every one the file carries when absent); a section the file
-        does not carry is never taken from it. With ``plugins`` among them,
-        ``plugin_settings`` and ``plugin_files`` name the plugins whose
-        settings, and which plugins themselves, are taken (every one in the
-        file when absent). Refused while armed: an import can restart the
-        forwarder, the RTK corrections and the cameras, replace the Remote ID
-        the aircraft broadcasts, and install plugin code. Everything is
-        checked before anything is written. What runs from the config is
-        applied now; the few settings read only at startup come back in
-        ``restart`` so the page can say so. The browser block is the page's to
-        apply. A successful import also counts as the first start setup.
-        """
-        if self.store is not None and self.store.get_snapshot().get("armed"):
-            self._send_json({"ok": False,
-                             "error": "Settings cannot be imported while the vehicle is armed."},
-                            409)
-            return
-        try:
-            bundle = settings_bundle.parse(payload.get("bundle"))
-            sections = settings_bundle.normalize_sections(payload.get("sections"))
-            take_settings = settings_bundle.normalize_ids(
-                payload.get("plugin_settings"), bundle["plugins"], "plugin_settings")
-            take_files = settings_bundle.normalize_ids(
-                payload.get("plugin_files"), bundle["plugin_files"], "plugin_files")
-        except ValueError as exc:
-            self._send_json({"ok": False, "error": str(exc)}, 400)
-            return
-        sections &= set(bundle["sections"])
-        if "plugins" not in sections:
-            take_settings, take_files = set(), set()
-        if not sections:
-            self._send_json({"ok": False, "error": "Choose at least one part to import."}, 400)
-            return
-
-        from .config import _build_config
-        warnings: list[str] = []
-        plugins_written = 0
-        plugins_installed = 0
-        with _config_write_lock:
-            cfg = self._live_config()
-            before = _config_to_dict(cfg)
-            merged = settings_bundle.merge(before, bundle["config"], sections,
-                                           secrets=bundle["secrets"])
-            logo = bundle["logo"] if "interface" in sections else None
-            if "interface" in sections and logo is None:
-                # A logo name with no picture behind it would draw a broken
-                # image in the top bar.
-                branding = merged.get("branding")
-                if isinstance(branding, dict):
-                    branding = {k: v for k, v in branding.items() if k != "logo"}
-                    if branding:
-                        merged["branding"] = branding
-                    else:
-                        merged.pop("branding", None)
-            new_cfg = _build_config(merged)
-
-            if "interface" in sections:
-                try:
-                    if logo is not None:
-                        self._store_logo(logo)
-                    else:
-                        self._logo_path().unlink(missing_ok=True)
-                except OSError as exc:
-                    logger.error("settings import: company logo not stored: %s", exc)
-                    warnings.append("The company logo could not be stored.")
-                    new_cfg.branding = cfg.branding
-
-            new_cfg.plugins = cfg.plugins
-            if "plugins" in sections:
-                # Files before settings: an install keeps the settings the
-                # installed copy had, and the file's own settings, when
-                # chosen, then replace them.
-                for plugin_id in sorted(take_files):
-                    try:
-                        plugin_files.install(plugin_id, bundle["plugin_files"][plugin_id],
-                                             self.plugin_user_dir)
-                    except (OSError, ValueError) as exc:
-                        logger.error("settings import: plugin %s not installed: %s",
-                                     plugin_id, exc)
-                        warnings.append(f"The plugin {plugin_id} could not be installed.")
-                        continue
-                    plugins_installed += 1
-                legacy = dict(cfg.plugins) if isinstance(cfg.plugins, dict) else {}
-                for plugin_id, settings in bundle["plugins"].items():
-                    if plugin_id not in take_settings or not is_valid_plugin_id(plugin_id):
-                        continue
-                    try:
-                        plugin_config.save(plugin_id, settings, self.plugin_user_dir)
-                    except (OSError, ValueError) as exc:
-                        logger.error("settings import: plugin %s not stored: %s", plugin_id, exc)
-                        warnings.append(f"The settings of plugin {plugin_id} could not be stored.")
-                        continue
-                    plugins_written += 1
-                    legacy.pop(plugin_id, None)
-                new_cfg.plugins = legacy or None
-
-            # In place, like _apply_config_partial: every handler shares this object.
-            for field in dataclasses.fields(cfg):
-                setattr(cfg, field.name, getattr(new_cfg, field.name))
-            after = _config_to_dict(cfg)
-            try:
-                save_config(cfg, self.config_path or default_config_path())
-            except OSError as exc:
-                logger.error("settings import: config not saved: %s", exc)
-                warnings.append("Applied for this session but not saved.")
-            if before.get("forwarding") != after.get("forwarding"):
-                self._restart_forwarder()
-            self._refresh_autoconnect_session(cfg)
-            self._refresh_battery_settings(cfg)
-            self._refresh_remote_id(cfg)
-
-        if before.get("video") != after.get("video"):
-            self._apply_video(video.settings(cfg.video))
-        if before.get("rtk") != after.get("rtk") and self.rtk is not None:
-            try:
-                self.rtk.apply_settings(rtk.settings(cfg.rtk))
-            except Exception:  # noqa: BLE001 - the rest of the import stands
-                logger.exception("settings import: RTK settings not applied")
-                warnings.append("The RTK settings are stored but could not be applied.")
-        restart = [key for key in _IMPORT_RESTART_KEYS if before.get(key) != after.get(key)]
-        self._finish_first_start()
-        logger.info("imported settings (%s) from a file written by %s",
-                    ", ".join(sorted(sections)), bundle["version"] or "an unknown version")
-        self._send_json({
-            "ok": True,
-            "config": to_public_dict(cfg),
-            "sections": sorted(sections),
-            "plugins": plugins_written,
-            "plugins_installed": plugins_installed,
-            "restart": restart,
-            "warnings": warnings,
-        })
-
-    @route("POST", "/api/settings/reset")
-    def _api_settings_reset(self, payload: dict) -> None:
-        """Put the station back to factory settings and reopen the first start setup.
-
-        The config goes back to its defaults and its file is removed, the
-        company logo and every plugin's saved settings are deleted, and the
-        first start setup is pending again, for this session and, with no
-        config file on disk, for the next start too. Plugins the operator
-        installed stay installed: they are software, not settings. Refused
-        while armed, for the reasons an import is. The browser half, the
-        interface state in localStorage, is the page's to clear.
-        """
-        if self.store is not None and self.store.get_snapshot().get("armed"):
-            self._send_json({"ok": False,
-                             "error": "Settings cannot be reset while the vehicle is armed."},
-                            409)
-            return
-        warnings: list[str] = []
-        with _config_write_lock:
-            cfg = self._live_config()
-            before = _config_to_dict(cfg)
-            fresh = CorvusConfig()
-            for field in dataclasses.fields(cfg):
-                setattr(cfg, field.name, getattr(fresh, field.name))
-            after = _config_to_dict(cfg)
-            try:
-                Path(self.config_path or default_config_path()).unlink(missing_ok=True)
-            except OSError as exc:
-                logger.error("settings reset: config file not removed: %s", exc)
-                warnings.append("The config file could not be removed. "
-                                "The next start may skip the setup.")
-            try:
-                self._logo_path().unlink(missing_ok=True)
-            except OSError as exc:
-                logger.error("settings reset: company logo not removed: %s", exc)
-                warnings.append("The company logo could not be removed.")
-            for plugin_id in plugin_config.load_all(self.plugin_user_dir):
-                path = plugin_config.config_path(plugin_id, self.plugin_user_dir)
-                if path is None:
-                    continue
-                try:
-                    os.unlink(path)
-                except FileNotFoundError:
-                    pass
-                except OSError as exc:
-                    logger.error("settings reset: plugin %s settings not removed: %s",
-                                 plugin_id, exc)
-                    warnings.append(f"The settings of plugin {plugin_id} could not be removed.")
-            if before.get("forwarding") != after.get("forwarding"):
-                self._restart_forwarder()
-            self._refresh_autoconnect_session(cfg)
-            self._refresh_battery_settings(cfg)
-            self._refresh_remote_id(cfg)
-
-        if before.get("video") != after.get("video"):
-            self._apply_video(video.settings(cfg.video))
-        if before.get("rtk") != after.get("rtk") and self.rtk is not None:
-            try:
-                self.rtk.apply_settings(rtk.settings(cfg.rtk))
-            except Exception:  # noqa: BLE001 - the rest of the reset stands
-                logger.exception("settings reset: RTK settings not applied")
-                warnings.append("The RTK settings are reset but could not be applied.")
-        restart = [key for key in _IMPORT_RESTART_KEYS if before.get(key) != after.get(key)]
-        state = self.first_start
-        if state is not None:
-            state["pending"] = True
-        logger.info("settings reset to factory defaults")
-        self._send_json({"ok": True, "config": to_public_dict(cfg),
-                         "restart": restart, "warnings": warnings})
 
     # ---- First start setup (src/js/welcome.js) ----
     def _finish_first_start(self) -> None:
@@ -3930,22 +2703,6 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(blob)
 
-    def _store_logo(self, raw: bytes) -> None:
-        """Write *raw* as the company logo, atomically. Raises OSError."""
-        path = self._logo_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp",
-                                        dir=str(path.parent))
-        try:
-            with os.fdopen(fd, "wb") as f:
-                f.write(raw)
-            os.replace(tmp_name, path)
-        except OSError:
-            try:
-                os.unlink(tmp_name)
-            except OSError:
-                pass
-            raise
 
     def _api_branding_logo_upload_raw(self) -> None:
         """Store a raw PNG body as the company logo and record its name.
@@ -4733,170 +3490,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
         result = self.mavlink.get_param_upload_result()
         self._send_json(result)
 
-    @route("POST", "/api/motors/assign")
-    def _api_motors_assign(self, payload: dict) -> None:
-        """Wire one motor to one output pin (Setup -> Motors, click-to-assign).
 
-        PX4 stores the mapping pin-first (``PWM_MAIN_FUNC3 = 103``), so moving
-        *Motor 3* to a different pin is two writes, not one: clear the pin it is
-        on, then claim the new one. Doing that here rather than in the browser
-        keeps the pair together and lets the outcome be judged as a whole.
 
-        Three cases for a target pin that is already taken:
-        free (``Disabled``) is a plain move; another *motor* is a swap, so the
-        displaced motor lands on the pin this one vacated; anything else — a
-        servo, a gimbal, a parachute — is refused by name, because silently
-        moving a servo off its pin is how a control surface stops working.
-
-        Body: ``{motor: 1-16, bank: "MAIN"|"AUX"|"CAN"|"SIM", pin: n}`` to assign, or
-        ``{motor: n, output: null}`` to unassign.
-        """
-        schema = self._schema("motors")
-        motor = payload.get("motor")
-        if isinstance(motor, bool) or not isinstance(motor, int) or not (
-                1 <= motor <= schema.MAX_MOTOR_FUNCTIONS):
-            self._send_json({
-                "ok": False,
-                "error": f"motor must be between 1 and {schema.MAX_MOTOR_FUNCTIONS}",
-            }, 400)
-            return
-
-        unassign = payload.get("output", False) is None
-        target_param = None
-        target_label = ""
-        if not unassign:
-            bank = payload.get("bank")
-            pin = payload.get("pin")
-            if not isinstance(bank, str) or isinstance(pin, bool) or not isinstance(pin, int):
-                self._send_json({"ok": False, "error": "bank and pin are required"}, 400)
-                return
-            target_param = schema.function_param(bank, pin)
-            if target_param is None:
-                self._send_json({"ok": False, "error": f"unknown output {bank} {pin}"}, 400)
-                return
-            target_label = f"{bank} {pin}"
-
-        if self.mavlink is None:
-            self._send_json({"ok": False, "error": "not connected"}, 503)
-            return
-
-        values = self.mavlink.fetch_params(
-            [e for e in schema.param_names() if "_FUNC" in e])
-        if not values:
-            error = self.mavlink.get_last_command_error() or "no output parameters received"
-            self._send_json({"ok": False, "error": error}, 503)
-            return
-        if target_param is not None and target_param not in values:
-            self._send_json(
-                {"ok": False, "error": f"this board has no output {target_label}"}, 400)
-            return
-
-        entries = schema.outputs(values)
-        source = next((e for e in entries if e["motor"] == motor), None)
-        if target_param is not None and source is not None and source["param"] == target_param:
-            self._send_json({"ok": True, "writes": [], "note": "already assigned"})
-            return
-
-        writes: list[tuple[str, float]] = []
-        if target_param is None:
-            if source is None:
-                self._send_json({"ok": True, "writes": [], "note": "already unassigned"})
-                return
-            writes.append((source["param"], 0.0))
-        else:
-            occupant = next(e for e in entries if e["param"] == target_param)
-            displaced = occupant["motor"]
-            if displaced is None and int(round(occupant["value"])) != 0:
-                self._send_json({
-                    "ok": False,
-                    "error": f"{target_label} drives {occupant['function']}. "
-                             "Free it in Parameters before assigning a motor to it",
-                }, 409)
-                return
-            if displaced is not None and source is None:
-                self._send_json({
-                    "ok": False,
-                    "error": f"{target_label} already drives Motor {displaced}, and "
-                             f"Motor {motor} has no output to swap it onto",
-                }, 409)
-                return
-            # Source first: a motor briefly on no pin is a safer transient than
-            # one briefly on two.
-            if source is not None:
-                vacated = (0.0 if displaced is None
-                           else schema.motor_function_value(displaced))
-                writes.append((source["param"], float(vacated or 0.0)))
-            claimed = schema.motor_function_value(motor)
-            if claimed is None:
-                self._send_json({
-                    "ok": False,
-                    "error": f"this autopilot has no output function for Motor {motor}",
-                }, 400)
-                return
-            writes.append((target_param, float(claimed)))
-
-        applied: list[dict[str, Any]] = []
-        for name, value in writes:
-            if not self.mavlink.set_param(name, value):
-                error = self.mavlink.get_last_command_error() or "parameter write failed"
-                status = 503 if "not connected" in error else 409
-                self._send_json({
-                    "ok": False, "error": error, "applied": applied, "failed": name,
-                }, status)
-                return
-            applied.append({"param": name, "value": value})
-        logger.info("assigned motor %d -> %s", motor, target_label or "unassigned")
-        self._send_json({"ok": True, "writes": applied})
-
-    @route("POST", "/api/motors/test")
-    def _api_motors_test(self, payload: dict) -> None:
-        """Spin one motor on the bench so the operator can identify it.
-
-        PROPELLERS MUST BE OFF — the UI will not enable this until the operator
-        confirms that, and the bridge refuses while armed and bounds the
-        duration so the *vehicle* stops the motor even if the link dies.
-        """
-        motor = payload.get("motor")
-        if isinstance(motor, bool) or not isinstance(motor, int):
-            self._send_json({"ok": False, "error": "motor must be an integer"}, 400)
-            return
-        throttle = payload.get("throttle", 15)
-        if isinstance(throttle, bool) or not isinstance(throttle, (int, float)):
-            self._send_json({"ok": False, "error": "throttle must be a number"}, 400)
-            return
-        duration = payload.get("duration", 2)
-        if isinstance(duration, bool) or not isinstance(duration, (int, float)):
-            self._send_json({"ok": False, "error": "duration must be a number"}, 400)
-            return
-        if not 0 <= float(throttle) <= 100:
-            self._send_json(
-                {"ok": False, "error": "throttle must be between 0 and 100 percent"}, 400)
-            return
-        if self.mavlink is None:
-            self._send_json({"ok": False, "error": "not connected"}, 503)
-            return
-        if self.mavlink.motor_test(motor, float(throttle), float(duration)):
-            self._send_json({"ok": True, "motor": motor, "throttle": float(throttle)})
-            return
-        error = self.mavlink.get_last_command_error() or "motor test failed"
-        status = 503 if "not connected" in error else 409
-        self._send_json({"ok": False, "error": error}, status)
-
-    @route("POST", "/api/motors/test/stop")
-    def _api_motors_test_stop(self, payload: dict) -> None:
-        """Stop every running motor test.
-
-        Never gated on the armed state: this only ever stops a motor, so
-        refusing it would be a safety regression (mirrors /api/calibrate/cancel).
-        """
-        if self.mavlink is None:
-            self._send_json({"ok": False, "error": "not connected"}, 503)
-            return
-        if self.mavlink.stop_motor_test():
-            self._send_json({"ok": True})
-            return
-        error = self.mavlink.get_last_command_error() or "motor stop failed"
-        self._send_json({"ok": False, "error": error}, 503)
 
     @route("POST", "/api/calibrate")
     def _api_calibrate(self, payload: dict) -> None:
@@ -5064,110 +3659,7 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             status = 503 if "not connected" in error else 409
             self._send_json({"ok": False, "error": error}, status)
 
-    @route("POST", "/api/rc/stream")
-    def _api_rc_stream(self, payload: dict) -> None:
-        """Enable/disable the high-rate RC_CHANNELS stream on demand.
 
-        Read-only stream-rate control, and safe while armed for the same reason
-        the tuning one is: no command and no parameter write leaves the GCS.
-        The Radio Control page toggles it on open and close, so the rest of the
-        time PX4 streams channels at its own default rate.
-        """
-        enabled = payload.get("enabled")
-        if not isinstance(enabled, bool):
-            self._send_json({"ok": False, "error": "enabled must be boolean"}, 400)
-            return
-        raw_rate = payload.get("rate_hz", 20)
-        # bool is a subclass of int — reject it so True is never coerced to 1 Hz
-        if isinstance(raw_rate, bool) or not isinstance(raw_rate, (int, float)):
-            self._send_json({"ok": False, "error": "rate_hz must be a number"}, 400)
-            return
-        rate_hz = int(raw_rate)
-        if raw_rate != rate_hz or not 1 <= rate_hz <= 50:
-            self._send_json(
-                {"ok": False, "error": "rate_hz must be between 1 and 50 Hz"}, 400
-            )
-            return
-        if self.mavlink is None:
-            self._send_json({"ok": False, "error": "not connected"}, 503)
-            return
-        if self.mavlink.set_rc_stream(enabled, rate_hz):
-            self._send_json({"ok": True, "enabled": enabled, "rate_hz": rate_hz})
-            return
-        error = self.mavlink.get_last_command_error() or "RC stream request failed"
-        status = 503 if "not connected" in error else 409
-        self._send_json({"ok": False, "error": error}, status)
-
-    @route("POST", "/api/rc/calibrate")
-    def _api_rc_calibrate(self, payload: dict) -> None:
-        """Write a measured RC calibration to the vehicle.
-
-        Neither PX4 nor ArduPilot has an autopilot-side RC calibration: unlike
-        the accelerometer, the whole procedure belongs to the ground station,
-        which watches RC_CHANNELS while the operator sweeps every control and
-        then writes the endpoints it saw. This is the write half. The measuring
-        half is the wizard in ``setup-control.js``; what arrives here is its
-        result:
-
-        ``{channels: [{channel, min, max, trim, reversed}], count, mapping}``,
-        where ``mapping`` is the stick assignment the wizard learned by asking
-        for one named stick at a time and watching which channel answered.
-
-        Validation lives in the connected stack's ``calibration_writes`` — the
-        two differ on where the reversal goes (``RC<n>_REV`` on PX4, a 0/1
-        ``RC<n>_REVERSED`` on ArduPilot) and on whether there is a channel-count
-        parameter at all — and is all-or-nothing on purpose: a rejected
-        measurement leaves the vehicle exactly as it was, because a half-written
-        endpoint set looks calibrated and is not. A write that fails part-way is reported with the parameters
-        that did land, so the operator knows the radio is now inconsistent and
-        must run the wizard again rather than fly it.
-
-        Refused while armed by the bridge's own parameter gate; refused here
-        first so the reason names the page rather than a parameter.
-        """
-        schema = self._schema("rc")
-        if self.mavlink is None:
-            self._send_json({"ok": False, "error": "not connected"}, 503)
-            return
-        if self.store is not None and self.store.get_snapshot().get("armed"):
-            self._send_json(
-                {"ok": False, "error": "cannot calibrate the radio while armed"}, 409)
-            return
-
-        count = payload.get("count")
-        if count is not None and (isinstance(count, bool) or not isinstance(count, int)):
-            self._send_json({"ok": False, "error": "count must be an integer"}, 400)
-            return
-
-        # The known-parameter set is what makes this version-tolerant: a write
-        # to an RC<n>_REV a firmware does not have is dropped rather than sent
-        # and reported as a failure the operator cannot act on.
-        known = set(self.mavlink.fetch_params(schema.param_names()))
-        if not known:
-            error = self.mavlink.get_last_command_error() or "no parameters received"
-            self._send_json({"ok": False, "error": error}, 503)
-            return
-
-        try:
-            writes = schema.calibration_writes(
-                payload.get("channels"), count, known, payload.get("mapping"))
-        except rc_config.CalibrationError as exc:
-            self._send_json({"ok": False, "error": str(exc)}, 400)
-            return
-
-        applied: list[dict[str, Any]] = []
-        for write in writes:
-            if not self.mavlink.set_param(write["name"], write["value"]):
-                error = self.mavlink.get_last_command_error() or "parameter write failed"
-                status = 503 if "not connected" in error else 409
-                self._send_json({
-                    "ok": False, "error": error, "applied": applied,
-                    "failed": write["name"],
-                }, status)
-                return
-            applied.append(write)
-        logger.info("RC calibration written: %d parameters", len(applied))
-        self._send_json({"ok": True, "writes": applied})
 
     @route("POST", "/api/warnings/clear")
     def _api_warnings_clear(self, payload: dict) -> None:
@@ -5182,118 +3674,10 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             self.store.clear_warnings()
         self._send_json({"ok": True})
 
-    # ---- Firmware flash ----
-    @route("GET", "/api/firmware/status")
-    def _api_firmware_status(self) -> None:
-        """Live flash status + the USB gate. Always 200."""
-        if self.flash is None:
-            transport = "unknown"
-            device = ""
-            armed = False
-            if self.mavlink is not None:
-                transport = self.mavlink.transport()
-                device = self.mavlink.serial_device()
-            if self.store is not None:
-                armed = bool(self.store.get_snapshot().get("armed"))
-            self._send_json({
-                "state": "idle",
-                "transport": transport,
-                "device": device,
-                "can_flash": False,
-                "armed": armed,
-                "progress": 0,
-                "message": "",
-            })
-            return
-        self._send_json(self.flash.status())
 
-    @route("GET", "/api/firmware/catalog")
-    def _api_firmware_catalog(self) -> None:
-        """PX4 and ArduPilot releases and their flashable boards, plus the cache.
 
-        Served from the on-disk cache unless ``?refresh=1``, so opening the page
-        in the field is instant and needs no network. A failed refresh returns
-        200 with the cached list and a non-empty ``error`` — going blank because
-        there is no internet is exactly the wrong answer for this app.
 
-        ``detected`` is the board on the USB port per stack, and ``suggested``
-        the stack and ArduPilot vehicle of the connected aircraft: what the page
-        opens on, never what it flashes without being told.
-        """
-        if self.flash is None or getattr(self.flash, "catalog", None) is None:
-            self._send_json({"releases": [], "cached": [], "error":
-                             "firmware catalogue unavailable", "dir": ""})
-            return
-        params = parse_qs(urlparse(self.path).query)
-        refresh = (params.get("refresh", ["0"])[0] or "0").lower() in ("1", "true", "yes")
-        try:
-            data = self.flash.catalog.catalog(refresh=refresh)
-            data["detected"] = self._detect_connected_board(data.get("releases") or [])
-            data["suggested"] = self._suggested_firmware()
-            self._send_json(data)
-        except Exception:  # noqa: BLE001 - a catalogue failure must not 500
-            logger.exception("firmware catalogue failed")
-            self._send_json({"releases": [], "cached": [],
-                             "error": "firmware catalogue failed", "dir": "",
-                             "detected": {"px4": None, "ardupilot": None},
-                             "suggested": {"stack": "", "vehicle": ""}})
 
-    def _detect_connected_board(self, releases: list) -> dict:
-        """Which board is plugged in, per stack, matched against the catalogue.
-
-        A suggestion only — it preselects, it does not decide.
-        """
-        from .firmware_catalog import detect_boards
-        nothing: dict = {"px4": None, "ardupilot": None}
-        if self.mavlink is None or not releases:
-            return nothing
-        try:
-            return detect_boards(self.mavlink.board_identity(), releases)
-        except Exception:  # noqa: BLE001 - detection is a convenience, never a gate
-            logger.debug("board detection failed", exc_info=True)
-            return nothing
-
-    def _suggested_firmware(self) -> dict:
-        """The connected aircraft's stack and ArduPilot vehicle, or blanks.
-
-        The vehicle is offered whichever stack is flying now: a quad moving from
-        PX4 to ArduPilot wants ArduCopter just as much as one already on it.
-        """
-        from .ardupilot_firmware import vehicle_for_mav_type
-        out = {"stack": "", "vehicle": ""}
-        if self.mavlink is None:
-            return out
-        try:
-            stack = str(getattr(self.mavlink, "stack", "") or "")
-            out["stack"] = stack if stack in ("px4", "ardupilot") else ""
-            out["vehicle"] = vehicle_for_mav_type(getattr(self.mavlink, "vehicle_type_id", 0))
-        except Exception:  # noqa: BLE001 - a default is a convenience, never a gate
-            logger.debug("firmware suggestion failed", exc_info=True)
-        return out
-
-    @route("POST", "/api/firmware/flash")
-    def _api_firmware_flash(self, payload: dict) -> None:
-        """Download one catalogue image and flash it.
-
-        The body names a release and a board; the download URL is resolved
-        server-side, so the browser never chooses what gets fetched.
-        """
-        release = payload.get("release", "")
-        board = payload.get("board", "")
-        if not isinstance(release, str) or not isinstance(board, str):
-            self._send_json({"ok": False, "error": "release and board must be strings"}, 400)
-            return
-        if not release.strip() or not board.strip():
-            self._send_json({"ok": False, "error": "release and board are required"}, 400)
-            return
-        if self.flash is None:
-            self._send_json({"ok": False, "error": "flash service unavailable"}, 503)
-            return
-        if self.flash.start_release(release.strip(), board.strip()):
-            self._send_json({"ok": True, "state": "downloading"})
-            return
-        err = getattr(self.flash, "last_error", "") or "flash refused"
-        self._send_json({"ok": False, "error": err}, 409)
 
     def _api_firmware_upload_raw(self) -> None:
         """Receive a raw firmware binary and start a flash.
@@ -5337,15 +3721,6 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             err = getattr(self.flash, "last_error", "") or "flash refused"
             self._send_json({"ok": False, "error": err}, 409)
 
-    @route("POST", "/api/firmware/cancel")
-    def _api_firmware_cancel(self, payload: dict) -> None:
-        if self.flash is None:
-            self._send_json({"ok": False, "error": "flash service unavailable"}, 503)
-            return
-        if self.flash.cancel():
-            self._send_json({"ok": True})
-        else:
-            self._send_json({"ok": False, "error": "no flash in progress"})
 
     # ---- SiK telemetry radio ----
     #
@@ -5503,122 +3878,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
     # property of the ground station, and the aircraft is told nothing about it
     # beyond the corrections themselves.
 
-    @route("GET", "/api/rtk/status")
-    def _api_rtk_status(self) -> None:
-        """What the base is doing, in one read.
 
-        Always 200 so the page can poll it: a service that could not be built
-        is reported as one that is off, with the reason on it, rather than as
-        an error the page has to render a banner for.
-        """
-        if self.rtk is None:
-            self._send_json({
-                "enabled": False,
-                "state": rtk_service.STATE_OFF,
-                "message": "RTK corrections are unavailable in this build",
-                "error": "", "warning": "",
-                "source": "usb", "mode": "survey", "device": "", "baud": 0,
-                "receiver": None, "receiver_label": "",
-                "survey": None, "survey_progress": 0,
-                "survey_target": {
-                    "accuracy": rtk.DEFAULT_SURVEY_ACCURACY_M,
-                    "duration": rtk.DEFAULT_SURVEY_DURATION_S,
-                },
-                "frames": 0, "frame_bytes": 0, "crc_errors": 0,
-                "source_age": None, "uptime": None, "messages": {},
-                "injected": {"bytes": 0, "messages": 0, "dropped": 0, "age": None},
-                "link_ready": False,
-                "vehicle": {"fix": "", "satellites": 0, "hdop": 0},
-                "ports": [],
-                "settings": rtk.defaults(),
-                "defaults": rtk.defaults(),
-            })
-            return
-        try:
-            self._send_json(self.rtk.status())
-        except Exception as exc:  # noqa: BLE001 - a status read must never 500
-            logger.exception("RTK status failed")
-            self._send_json({"ok": False, "error": f"RTK status failed: {exc}"}, 500)
 
-    @route("POST", "/api/rtk/settings")
-    def _api_rtk_settings(self, payload: dict) -> None:
-        """Replace the RTK settings, persist them, and restart the session.
-
-        The whole block is replaced rather than merged, because the page sends
-        the whole form and a merge cannot express "clear the NTRIP username".
-        The one exception is the NTRIP password: an empty one means "keep the
-        stored password", since the status endpoint never sent the real one to
-        the browser in the first place and a form round-trip would otherwise
-        blank it on every save.
-        """
-        if not isinstance(payload, dict):
-            self._send_json({"ok": False, "error": "settings must be an object"}, 400)
-            return
-        stored = rtk.settings(getattr(self.config, "rtk", None))
-        incoming = dict(payload)
-        ntrip_in = incoming.get("ntrip")
-        if isinstance(ntrip_in, dict) and not str(ntrip_in.get("password") or "").strip():
-            ntrip_in = dict(ntrip_in)
-            ntrip_in["password"] = stored.get("ntrip", {}).get("password", "")
-            incoming["ntrip"] = ntrip_in
-        resolved = rtk.settings(incoming)
-
-        # Refused before anything is stored, so a form that cannot work is not
-        # saved and then reported as broken on every restart.
-        if resolved["source"] == "ntrip":
-            problem = rtk.ntrip_problem(resolved["ntrip"])
-            if problem:
-                self._send_json({"ok": False, "error": problem}, 400)
-                return
-        if resolved["source"] == "usb" and resolved["mode"] == "fixed":
-            problem = rtk.fixed_position_problem(resolved["fixed"])
-            if problem:
-                self._send_json({"ok": False, "error": problem}, 400)
-                return
-
-        self.config.rtk = resolved
-        warning = ""
-        try:
-            save_config(self.config, self.config_path or default_config_path())
-        except Exception:  # noqa: BLE001 - it still runs this session
-            logger.exception("could not persist RTK config")
-            warning = "set for this session but not saved"
-
-        if self.rtk is None:
-            self._send_json({"ok": True, "warning": warning or
-                             "RTK corrections are unavailable in this build"})
-            return
-        try:
-            self.rtk.apply_settings(resolved)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("applying RTK settings failed")
-            self._send_json({"ok": False, "error": f"could not apply: {exc}"}, 500)
-            return
-        result = {"ok": True, "status": self.rtk.status()}
-        if warning:
-            result["warning"] = warning
-        self._send_json(result)
-
-    @route("POST", "/api/rtk/restart")
-    def _api_rtk_restart(self, payload: dict) -> None:
-        """Survey again from zero.
-
-        The answer to a base that converged somewhere it should not have — run
-        before the tripod was level, or with the antenna still under a roof.
-        POST because it throws away a completed survey, which on a fresh
-        session costs another three minutes.
-        """
-        del payload
-        if self.rtk is None:
-            self._send_json({"ok": False, "error": "RTK corrections are unavailable"}, 503)
-            return
-        try:
-            self.rtk.restart_survey()
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("RTK restart failed")
-            self._send_json({"ok": False, "error": f"could not restart: {exc}"}, 500)
-            return
-        self._send_json({"ok": True, "status": self.rtk.status()})
 
     # ---- Programs on this computer (launcher buttons) ----
     def _local_only(self) -> bool:
@@ -5723,269 +3984,18 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             return
         self._send_json(self.pinger.ping(host, wait_ms / 1000.0))
 
-    # ---- Camera video ----
-    def _video_status(self) -> dict[str, Any]:
-        """The Video page's whole state, or an unavailable one without a service."""
-        if self.video is None:
-            return {
-                "available": False,
-                "reason": "Video is unavailable in this build.",
-                "ffmpeg": {"path": "", "source": "", "version": "", "configured": ""},
-                "streams": [
-                    dict(video.public_stream(s), state=video.STATE_UNAVAILABLE, message="")
-                    for s in video.settings(getattr(self._live_config(), "video", None))["streams"]
-                ],
-                "max_streams": video.MAX_STREAMS,
-                "schemes": list(video.SCHEMES),
-                "transports": list(video.TRANSPORTS),
-            }
-        return self.video.status()
 
-    @route("GET", "/api/video/status")
-    def _api_video_status(self) -> None:
-        """Every camera with its state, and whether there is an ffmpeg to decode with.
 
-        Always 200 so the page can poll it. Never carries a password.
-        """
-        try:
-            self._send_json(self._video_status())
-        except Exception as exc:  # noqa: BLE001 - a status read must never 500
-            logger.exception("video status failed")
-            self._send_json({"ok": False, "error": f"video status failed: {exc}"}, 500)
 
-    @route("GET", "/api/video/frame")
-    def _api_video_frame(self) -> None:
-        """The next frame of one camera, as ``image/jpeg``, or its state as JSON.
-
-        ``?id=`` names the camera and ``?after=`` the last frame number the
-        window has. The request waits up to ``video.FRAME_WAIT_S`` for a newer
-        frame, so a window asking in a loop gets every frame as it is decoded
-        while holding a connection for no longer than one frame interval (see
-        :mod:`corvus.video` for why this is not one endless stream). With no
-        new frame in time the answer is ``{"state", "message", "seq"}``.
-
-        Asking is also what keeps the camera's ffmpeg running: it is started by
-        the first request and stopped a few seconds after the last one. That
-        makes this the one GET with a side effect, so it gets the check the
-        POSTs do: a page on another site cannot start a decoder from an <img>.
-        """
-        headers = getattr(self, "headers", None)
-        if headers is not None and str(headers.get("Sec-Fetch-Site", "")).lower() == "cross-site":
-            self._send_json({"error": "cross-site request forbidden"}, 403)
-            return
-        params = parse_qs(urlparse(self.path).query)
-        stream_id = (params.get("id") or [""])[0]
-        try:
-            after = int((params.get("after") or ["0"])[0])
-        except ValueError:
-            after = 0
-        if self.video is None:
-            self._send_json({"state": video.STATE_UNAVAILABLE, "seq": 0,
-                             "message": "Video is unavailable in this build."}, 503)
-            return
-        try:
-            result = self.video.frame(stream_id, after, stopping=self._sse_stopping)
-        except KeyError:
-            self._send_json({"error": "no such camera"}, 404)
-            return
-        except video.WrongKind as exc:
-            self._send_json({"error": str(exc)}, 409)
-            return
-        jpeg = result.get("jpeg")
-        if not jpeg:
-            self._send_json(result)
-            return
-        self.send_response(200)
-        self.send_header("Content-Type", "image/jpeg")
-        self.send_header("Content-Length", str(len(jpeg)))
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Video-Seq", str(result["seq"]))
-        self._send_cors()
-        self.end_headers()
-        try:
-            self.wfile.write(jpeg)
-        except CLIENT_GONE_ERRORS:
-            pass
-
-    def _save_video(self, streams: list[dict[str, Any]], ffmpeg: str) -> dict[str, Any]:
-        """Store the camera list and persist it; return what was stored.
-
-        Called with ``_config_write_lock`` held, so two saves cannot interleave
-        their read-modify-write of the list. The caller hands the result to
-        the service once the lock is released.
-        """
-        cfg = self._live_config()
-        cfg.video = video.settings({"streams": streams, "ffmpeg": ffmpeg})
-        self._save_live_config()
-        return cfg.video
 
     def _apply_video(self, stored: dict[str, Any]) -> None:
         if self.video is not None:
             self.video.apply_settings(stored)
 
-    @route("POST", "/api/video/streams")
-    def _api_video_streams_upsert(self, payload: dict) -> None:
-        """Add a camera, or replace the one named by ``id``. Does not open it.
 
-        ``kind`` is ``"rtsp"`` (decoded here by ffmpeg, the default) or
-        ``"webrtc"`` (a WHEP address the window plays itself).
 
-        ``password`` follows the rule the SSH connections use, because the
-        status never sends it to the browser: an omitted key keeps the stored
-        one, a sent one (including ``""``) replaces it. With one exception: a
-        camera moved to another host does not take its password along, because
-        that would send one camera's password to a different machine. The
-        answer then carries a ``warning`` saying so. Credentials typed into the
-        address itself (``rtsp://user:pass@host/…``) are taken out of it and
-        stored apart, so the address can be shown and the password cannot.
-        """
-        name = payload.get("name", "")
-        url = payload.get("url", "")
-        username = payload.get("username", "")
-        if not isinstance(name, str) or not isinstance(url, str) or not isinstance(username, str):
-            self._send_json({"ok": False, "error": "name, url and username must be strings"}, 400)
-            return
-        if len(name.strip()) > video.MAX_NAME_LEN:
-            self._send_json({"ok": False, "error": "The name is too long."}, 400)
-            return
-        kind = payload.get("kind", video.KIND_RTSP)
-        if kind not in video.KINDS:
-            self._send_json({"ok": False, "error": "kind must be rtsp or webrtc"}, 400)
-            return
-        clean_url, url_user, url_password = video.split_credentials(url)
-        problem = video.url_problem(clean_url, kind)
-        if problem:
-            self._send_json({"ok": False, "error": problem}, 400)
-            return
-        transport = payload.get("transport", video.DEFAULT_TRANSPORT)
-        if transport not in video.TRANSPORTS:
-            self._send_json({"ok": False, "error": "transport must be tcp or udp"}, 400)
-            return
-        stream_id = payload.get("id")
-        if not isinstance(stream_id, str):
-            stream_id = ""
 
-        with _config_write_lock:
-            current = video.settings(getattr(self._live_config(), "video", None))
-            streams = current["streams"]
-            existing = next((s for s in streams if s["id"] == stream_id), None) if stream_id else None
-            if stream_id and existing is None:
-                self._send_json({"ok": False, "error": "That camera is no longer saved."}, 404)
-                return
-            if existing is None and len(streams) >= video.MAX_STREAMS:
-                self._send_json({"ok": False,
-                                 "error": f"At most {video.MAX_STREAMS} cameras can be saved."}, 400)
-                return
-            warning = ""
-            if "password" in payload:
-                password = payload["password"] if isinstance(payload["password"], str) else ""
-            else:
-                password = existing.get("password", "") if existing else ""
-                if password and not video.same_origin(existing["url"], clean_url):
-                    password = ""
-                    warning = ("The camera moved to another host, so its password was not "
-                               "kept. Enter it again if the new one needs it.")
-            if url_user:
-                username, password = url_user, url_password or password
-            entry = video.coerce_stream({
-                "id": existing["id"] if existing else video.new_stream_id(),
-                "name": name,
-                "url": clean_url,
-                "username": username.strip(),
-                "password": password,
-                "transport": transport,
-                "kind": kind,
-            })
-            if entry is None:
-                self._send_json({"ok": False, "error": "That camera cannot be saved."}, 400)
-                return
-            if existing is not None:
-                streams = [entry if s["id"] == entry["id"] else s for s in streams]
-            else:
-                streams.append(entry)
-            stored = self._save_video(streams, current["ffmpeg"])
-        self._apply_video(stored)
-        answer = {"ok": True, "id": entry["id"], "status": self._video_status()}
-        if warning:
-            answer["warning"] = warning
-        self._send_json(answer)
 
-    @route("POST", "/api/video/streams/remove")
-    def _api_video_streams_remove(self, payload: dict) -> None:
-        """Remove a camera by ``id``; its decoder is stopped. Idempotent."""
-        stream_id = payload.get("id")
-        if not isinstance(stream_id, str) or not stream_id:
-            self._send_json({"ok": False, "error": "id must be a non-empty string"}, 400)
-            return
-        with _config_write_lock:
-            current = video.settings(getattr(self._live_config(), "video", None))
-            streams = [s for s in current["streams"] if s["id"] != stream_id]
-            stored = self._save_video(streams, current["ffmpeg"])
-        self._apply_video(stored)
-        self._send_json({"ok": True, "status": self._video_status()})
-
-    @route("POST", "/api/video/webrtc/offer")
-    def _api_video_webrtc_offer(self, payload: dict) -> None:
-        """Pass a camera window's WebRTC offer to the camera's WHEP server.
-
-        ``{id, sdp}`` in; ``{ok, sdp, session}`` out, where ``sdp`` is the
-        server's answer and ``session`` an opaque token for
-        ``/api/video/webrtc/close``. The request is made from here rather than
-        from the window so the camera's password never reaches the browser,
-        and the answer never names the session URL it would be sent to.
-        """
-        stream_id = payload.get("id")
-        sdp = payload.get("sdp")
-        if not isinstance(stream_id, str) or not stream_id or not isinstance(sdp, str):
-            self._send_json({"ok": False, "error": "id and sdp must be strings"}, 400)
-            return
-        if self.video is None:
-            self._send_json({"ok": False, "error": "Video is unavailable in this build."}, 503)
-            return
-        try:
-            result = self.video.whep_offer(stream_id, sdp)
-        except KeyError:
-            self._send_json({"ok": False, "error": "no such camera"}, 404)
-            return
-        except video.WrongKind as exc:
-            self._send_json({"ok": False, "error": str(exc)}, 409)
-            return
-        status = result.pop("status", 200) if not result.get("ok") else 200
-        self._send_json(result, status)
-
-    @route("POST", "/api/video/webrtc/close")
-    def _api_video_webrtc_close(self, payload: dict) -> None:
-        """End a WebRTC session a camera window opened. Idempotent."""
-        token = payload.get("session")
-        if not isinstance(token, str) or not token:
-            self._send_json({"ok": False, "error": "session must be a non-empty string"}, 400)
-            return
-        closed = self.video.whep_close(token) if self.video is not None else False
-        self._send_json({"ok": True, "closed": closed})
-
-    @route("POST", "/api/video/settings")
-    def _api_video_settings(self, payload: dict) -> None:
-        """Set the ffmpeg to decode with. ``""`` means find one by itself.
-
-        A path that is not an executable file is refused rather than stored,
-        so the page never has to explain a setting that was saved broken.
-        """
-        path = payload.get("ffmpeg", "")
-        if not isinstance(path, str):
-            self._send_json({"ok": False, "error": "ffmpeg must be a string"}, 400)
-            return
-        path = path.strip()
-        if path:
-            resolved, _ = video.resolve_ffmpeg(path)
-            if not resolved:
-                self._send_json({"ok": False,
-                                 "error": "There is no program at that path that can be run."}, 400)
-                return
-        with _config_write_lock:
-            current = video.settings(getattr(self._live_config(), "video", None))
-            stored = self._save_video(current["streams"], path)
-        self._apply_video(stored)
-        self._send_json({"ok": True, "status": self._video_status()})
 
     # ---- Second-station MAVLink forwarding ----
     @route("GET", "/api/forwarding")
@@ -6119,176 +4129,11 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             },
         })
 
-    # ---- Flight logs (on-board ULogs + local tlogs) ----
-    @route("GET", "/api/logs/status")
-    def _api_logs_status(self) -> None:
-        """Everything the Analysis page renders: logs, queue, progress, folder."""
-        if self.logs is None:
-            self._send_json({
-                "state": "idle", "message": "", "percent": 0, "current": None,
-                "queued": [], "completed": [], "logs": [], "tlogs": [],
-                "dir": "", "connected": False,
-            })
-            return
-        self._send_json(self.logs.status())
 
-    @route("POST", "/api/logs/refresh")
-    def _api_logs_refresh(self, payload: dict) -> None:
-        """Ask the vehicle to enumerate its on-board logs."""
-        del payload
-        if self.logs is None:
-            self._send_json({"ok": False, "error": "log service unavailable"}, 503)
-            return
-        if self.logs.refresh():
-            self._send_json({"ok": True, "state": "listing"})
-            return
-        error = getattr(self.logs, "last_error", "") or "could not list logs"
-        self._send_json({"ok": False, "error": error},
-                        503 if "not connected" in error else 409)
 
-    @route("POST", "/api/logs/download")
-    def _api_logs_download(self, payload: dict) -> None:
-        """Queue one or more on-board logs for sequential download."""
-        raw = payload.get("ids")
-        if not isinstance(raw, list) or not raw:
-            self._send_json({"ok": False, "error": "ids must be a non-empty list"}, 400)
-            return
-        ids: list[int] = []
-        for item in raw:
-            if isinstance(item, bool) or not isinstance(item, (int, float)):
-                self._send_json({"ok": False, "error": "ids must be numbers"}, 400)
-                return
-            ids.append(int(item))
-        if self.logs is None:
-            self._send_json({"ok": False, "error": "log service unavailable"}, 503)
-            return
-        if self.logs.start_download(ids):
-            self._send_json({"ok": True, "state": "downloading", "queued": len(ids)})
-            return
-        error = getattr(self.logs, "last_error", "") or "download refused"
-        self._send_json({"ok": False, "error": error},
-                        503 if "not connected" in error else 409)
 
-    def _review_sensitivity(self) -> str:
-        """The Flight Review sensitivity the operator set in Settings.
 
-        Read per request from the live config, so a change on the Settings
-        page applies to the next review opened without a restart. Never
-        raises: an unreadable setting reviews at the default.
-        """
-        from .flight_review import normalize_sensitivity
-        try:
-            block = getattr(self._live_config(), "review", None) or {}
-            return normalize_sensitivity(block.get("sensitivity"))
-        except Exception:  # noqa: BLE001 - a setting must not fail a review
-            return normalize_sensitivity(None)
 
-    @route("GET", "/api/logs/review")
-    def _api_logs_review(self) -> None:
-        """Flight Review for one ULog in the download folder.
-
-        The file is named, never pathed: the name is resolved inside the
-        download folder and the result checked with realpath, so no query can
-        walk out of it.
-        """
-        params = parse_qs(urlparse(self.path).query)
-        name = (params.get("file", [""])[0] or "").strip()
-        if not name:
-            self._send_json({"ok": False, "error": "file is required"}, 400)
-            return
-        if self.logs is None:
-            self._send_json({"ok": False, "error": "log service unavailable"}, 503)
-            return
-        # Emptiness is tested BEFORE realpath: realpath("") is the process's
-        # working directory, so the commonpath guard below would happily pass
-        # and an unconfigured folder would resolve names against wherever
-        # Corvus was started from.
-        configured = self.logs.status().get("dir") or ""
-        if not configured:
-            self._send_json({"ok": False, "error": "no download folder configured"}, 400)
-            return
-        directory = os.path.realpath(configured)
-        target = os.path.realpath(os.path.join(directory, os.path.basename(name)))
-        if os.path.commonpath([directory, target]) != directory:
-            self._send_json({"ok": False, "error": "unknown log file"}, 400)
-            return
-        # .bin is accepted here and refused by the parser with a sentence that
-        # says what the file actually is. "Unknown log file" for a log Corvus
-        # downloaded itself, under a name it chose itself, is the worst of both.
-        suffixes = getattr(self.logs, "LOG_SUFFIXES", (".ulg",))
-        if not target.endswith(suffixes) or not os.path.isfile(target):
-            self._send_json({"ok": False, "error": "unknown log file"}, 404)
-            return
-        try:
-            from .flight_review import review_file
-            from .ulog import UlogError
-            data = review_file(target, os.path.basename(target),
-                               self._review_sensitivity())
-        except UlogError as exc:
-            self._send_json({"ok": False, "error": str(exc)}, 400)
-            return
-        except (OSError, MemoryError) as exc:
-            self._send_json({"ok": False, "error": f"could not read the log ({exc})"}, 400)
-            return
-        except Exception:  # noqa: BLE001 - a bad log must not 500 the app
-            logger.exception("flight review failed for %s", target)
-            self._send_json({"ok": False, "error": "could not analyse this log"}, 400)
-            return
-        # Spread, not mutated: the result may be a cached one that another
-        # request is about to send.
-        self._send_json({**data, "ok": True})
-
-    @route("GET", "/api/logs/tlog-review")
-    def _api_logs_tlog_review(self) -> None:
-        """Telemetry Review for one recorded tlog.
-
-        Confined to the tlog folder exactly the way the ULog review is confined
-        to the download folder: the request names a file, never a path, and the
-        resolved target is checked with realpath before it is opened.
-        """
-        params = parse_qs(urlparse(self.path).query)
-        name = (params.get("file", [""])[0] or "").strip()
-        if not name:
-            self._send_json({"ok": False, "error": "file is required"}, 400)
-            return
-        if self.logs is None:
-            self._send_json({"ok": False, "error": "log service unavailable"}, 503)
-            return
-        # Emptiness is tested BEFORE realpath, not after: realpath("") is the
-        # process's working directory, which is always a real path, so the
-        # guard below would pass and an unconfigured folder would resolve
-        # names against wherever Corvus happened to be started.
-        configured = self.logs.resolve_tlog_dir() or ""
-        if not configured:
-            self._send_json({"ok": False, "error": "no recording folder configured"}, 400)
-            return
-        directory = os.path.realpath(configured)
-        target = os.path.realpath(os.path.join(directory, os.path.basename(name)))
-        if os.path.commonpath([directory, target]) != directory:
-            self._send_json({"ok": False, "error": "unknown recording"}, 400)
-            return
-        if not target.endswith(".tlog") or not os.path.isfile(target):
-            self._send_json({"ok": False, "error": "unknown recording"}, 404)
-            return
-        try:
-            from .tlog_review import TlogError, review_file
-            data = review_file(target, os.path.basename(target),
-                               self._review_sensitivity())
-        except TlogError as exc:
-            self._send_json({"ok": False, "error": str(exc)}, 400)
-            return
-        except (OSError, MemoryError) as exc:
-            self._send_json({"ok": False,
-                             "error": f"could not read that recording ({exc})"}, 400)
-            return
-        except Exception:  # noqa: BLE001 - a bad recording must not 500 the app
-            logger.exception("telemetry review failed for %s", target)
-            self._send_json({"ok": False,
-                             "error": "could not analyse that recording"}, 400)
-            return
-        # Spread, not mutated: the result may be a cached one that another
-        # request is about to send.
-        self._send_json({**data, "ok": True})
 
     def _api_logs_review_upload_raw(self) -> None:
         """Flight Review for a ULog the operator picked from anywhere on disk.
@@ -6339,68 +4184,8 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             return
         self._send_json({**data, "ok": True})
 
-    @route("POST", "/api/logs/erase")
-    def _api_logs_erase(self, payload: dict) -> None:
-        """Erase every on-board log.
 
-        MAVLink has no per-log delete, so this is all-or-nothing by protocol.
-        The confirm lives in the UI; the backend refuses while armed and while
-        another log job owns the vehicle's single log session.
-        """
-        del payload
-        if self.logs is None:
-            self._send_json({"ok": False, "error": "log service unavailable"}, 503)
-            return
-        if self.logs.erase():
-            self._send_json({"ok": True, "state": "erasing"})
-            return
-        error = getattr(self.logs, "last_error", "") or "erase refused"
-        self._send_json({"ok": False, "error": error},
-                        503 if "not connected" in error else 409)
 
-    @route("POST", "/api/logs/cancel")
-    def _api_logs_cancel(self, payload: dict) -> None:
-        del payload
-        if self.logs is None:
-            self._send_json({"ok": False, "error": "log service unavailable"}, 503)
-            return
-        if self.logs.cancel():
-            self._send_json({"ok": True})
-        else:
-            self._send_json({"ok": False, "error": "no log operation in progress"})
-
-    @route("POST", "/api/logs/dir")
-    def _api_logs_dir(self, payload: dict) -> None:
-        """Set the download folder and persist it for future connections.
-
-        Its own endpoint rather than a general config write because this is the
-        one setting the Analysis page owns, and it has to be verified as
-        writable before the operator queues an hour of downloads into it.
-        """
-        value = payload.get("dir")
-        if not isinstance(value, str) or not value.strip():
-            self._send_json({"ok": False, "error": "dir must be a non-empty string"}, 400)
-            return
-        path = os.path.expanduser(value.strip())
-        try:
-            os.makedirs(path, exist_ok=True)
-            if not os.access(path, os.W_OK):
-                raise OSError(errno.EACCES, "not writable")
-        except OSError as exc:
-            self._send_json({"ok": False,
-                             "error": f"cannot use {path} ({exc.strerror or exc})"}, 400)
-            return
-        if self.config is not None:
-            with _config_write_lock:
-                self.config.log_download_dir = path
-                try:
-                    save_config(self.config, self.config_path or default_config_path())
-                except Exception:  # noqa: BLE001 - the folder still works this session
-                    logger.exception("could not persist log_download_dir")
-                    self._send_json({"ok": True, "dir": path,
-                                     "warning": "folder set for this session but not saved"})
-                    return
-        self._send_json({"ok": True, "dir": path})
 
     # ---- SSE endpoints ----
     # ---- SSE topics -------------------------------------------------------
@@ -6629,17 +4414,6 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             if self.store:
                 self.store.remove_listener(listener)
 
-    @route("GET", "/api/console/stream")
-    def _sse_console(self) -> None:
-        """STATUSTEXT as its own stream, under the event name ``message``.
-
-        The frontend uses ``/api/events?topics=console`` instead, to stay
-        inside the browser's six-connection budget. This endpoint remains
-        because it is a published HTTP API a plugin or an external tool may
-        hold — and because it costs nothing now that it is the same topic
-        binding the multiplexed stream uses, under a different event name.
-        """
-        self._serve_sse_topics({"console": "message"})
 
     @route("GET", "/api/params/progress")
     def _sse_params(self) -> None:
@@ -6835,16 +4609,6 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             if all(isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 1000 for v in dims):
                 self.ssh.resize(name, dims[0], dims[1])
 
-    @route("GET", "/api/firmware/progress")
-    def _sse_firmware(self) -> None:
-        """Flash progress as its own stream — every step, none coalesced.
-
-        Erase/program/verify each matter to whoever is watching a bootloader
-        write, so this topic buffers FIFO rather than latest-wins. See
-        :meth:`_sse_console`: the frontend uses
-        ``/api/events?topics=firmware`` over the same binding.
-        """
-        self._serve_sse_topics({"firmware": "progress"})
 
     # ---- Place search ----
     @route("GET", "/api/geocode")
@@ -6889,534 +4653,17 @@ class CorvusHandler(http.server.BaseHTTPRequestHandler):
             return
         self._send_json({"ok": True, "results": results, "error": ""})
 
-    # ---- Tile cache / download / serve ----
-    @route("GET", "/api/tiles/sources")
-    def _api_tiles_sources(self) -> None:
-        """List every source with its source cap and live cache stats; always 200.
 
-        ``maxzoom`` is the SOURCE cap (the highest zoom the upstream serves,
-        e.g. 19) — a constant capability, never the cache contents. ``minzoom``
-        is the source floor (every registered source serves a single z0 world
-        tile). The cache stats are reported under distinct ``cached_*`` keys so
-        they can never clobber the source cap: the prior duplicate ``maxzoom``
-        key returned the cache max (or null when empty), hiding the real 19
-        cap from the UI and forcing a hardcoded ``SOURCE_ZOOM_CAP`` workaround.
-        """
-        caches = self.tile_caches or {}
-        sources = []
-        for entry in tile_sources.list_sources():
-            sid = entry["id"]
-            cache = caches.get(sid)
-            stats = cache.stats() if cache is not None else {
-                "count": 0, "minzoom": None, "maxzoom": None,
-            }
-            sources.append({
-                "id": sid,
-                "label": entry["label"],
-                # Provider grouping so the UI can offer "which map service"
-                # as one choice and then filter the layer/download pickers to
-                # that service. Mirrors corvus/tile_sources.PROVIDERS.
-                "provider": entry["provider"],
-                "style": entry["style"],
-                # The legally-required credit string. Served here so the
-                # frontend can put it on its MapLibre raster source instead of
-                # hand-mirroring the registry — that mirror was the one place
-                # a new source could silently ship without attribution.
-                "attribution": entry["attribution"],
-                "minzoom": 0,
-                "maxzoom": entry["maxzoom"],
-                "cached_count": stats["count"],
-                "cached_minzoom": stats["minzoom"],
-                "cached_maxzoom": stats["maxzoom"],
-            })
-        # Elevation sources travel in their own key, never mixed into
-        # `sources`: everything that reads that list means "a base layer the
-        # operator can pick", and a DEM in the layer switcher would paint the
-        # map in false colour. The frontend builds its raster-dem source from
-        # this, encoding included, so the height packing is stated once.
-        # A keyed DEM says whether its key is set, as the map services below
-        # do, so the frontend picks it only when it can actually load.
-        keys_set = self._map_tokens_set()
-        terrain = []
-        for entry in tile_sources.list_terrain():
-            cache = caches.get(entry["id"])
-            stats = cache.stats() if cache is not None else {
-                "count": 0, "minzoom": None, "maxzoom": None,
-            }
-            terrain.append({
-                **entry,
-                "minzoom": 0,
-                "cached_count": stats["count"],
-                "cached_minzoom": stats["minzoom"],
-                "cached_maxzoom": stats["maxzoom"],
-                "token_required": tile_sources.needs_token(entry["id"]),
-                "token_set": entry["provider"] in keys_set,
-            })
-        buildings = (self.buildings.stats()
-                     if self.buildings is not None else {"cells": 0, "bytes": 0})
-        # A keyed service reports whether the operator has given it a key —
-        # never the key. ``token_set`` is the whole of what the UI needs: the
-        # tiles are proxied by this process, so the browser has no use for the
-        # credential itself. A service that needs one and has not got one is
-        # still listed, with the reason on it, rather than hidden: a layer that
-        # vanished would leave the operator with nothing to act on. A service
-        # whose key is optional (Google, Bing) draws either way; its key only
-        # moves it onto the licensed API.
-        have = keys_set
-        providers = []
-        for prov in tile_sources.list_providers():
-            keyed = prov.get("token") is not None
-            providers.append({
-                **prov,
-                "token_required": tile_sources.token_required(prov["id"]),
-                "token_set": keyed and prov["id"] in have,
-            })
-        from .tile_downloader import MAX_TILES_PER_JOB
-        self._send_json({
-            "sources": sources,
-            "providers": providers,
-            "default_provider": tile_sources.DEFAULT_PROVIDER,
-            "terrain": terrain,
-            "default_terrain": tile_sources.DEFAULT_TERRAIN,
-            "preferred_terrain": tile_sources.PREFERRED_TERRAIN,
-            "buildings": buildings,
-            # The per-job cap POST /api/tiles/download enforces, so the dialog
-            # can refuse an area before the operator presses Download rather
-            # than after.
-            "max_tiles_per_job": MAX_TILES_PER_JOB,
-        })
 
-    @route("POST", "/api/tiles/token")
-    def _api_tiles_token(self, payload: dict) -> None:
-        """Store (or clear) one map service's API key.
 
-        Its own endpoint rather than a key in ``POST /api/config``, for the
-        same reason the NTRIP password and the SSH passwords are handled
-        apart: this is a credential. It goes in one direction only — in through
-        here, out only as a substitution into an upstream URL made inside this
-        process. ``GET /api/config`` does not carry it back, and neither does
-        anything else; the UI learns from ``token_set`` that one is stored.
 
-        An empty ``token`` removes the key, which is how the dialog's REMOVE
-        works. Removing one that was never there is a success, so a stale UI
-        cannot report an error for the state the operator already wanted.
-        """
-        provider = payload.get("provider")
-        if not isinstance(provider, str) or not provider:
-            self._send_json({"ok": False, "error": "provider must be a non-empty string"}, 400)
-            return
-        if tile_sources.token_meta(provider) is None:
-            # Refused rather than stored: an id that is not a keyed service is
-            # either a typo or an attempt to use the config file as scratch
-            # space for something that is never read back.
-            self._send_json(
-                {"ok": False, "error": f"{provider!r} is not a keyed map service"}, 400)
-            return
-        raw = payload.get("token", "")
-        if not isinstance(raw, str):
-            self._send_json({"ok": False, "error": "token must be a string"}, 400)
-            return
-        token = raw.strip()
 
-        cfg = self._live_config()
-        tokens = dict(cfg.map_tokens) if isinstance(cfg.map_tokens, dict) else {}
-        if token:
-            if len(token) > MAX_MAP_TOKEN_CHARS:
-                self._send_json(
-                    {"ok": False,
-                     "error": f"that key is longer than {MAX_MAP_TOKEN_CHARS} characters"},
-                    400)
-                return
-            if not set(token) <= _MAP_TOKEN_CHARS:
-                # Named rather than silently cleaned: the overwhelmingly likely
-                # cause is a paste that took the surrounding quotes or the
-                # "key=" prefix with it, and an operator told what is wrong
-                # fixes it in one go.
-                self._send_json(
-                    {"ok": False,
-                     "error": "that does not look like an API key. Use letters, digits, "
-                              ". _ ~ - only, with no spaces or quotes"},
-                    400)
-                return
-            tokens[provider] = token
-        else:
-            tokens.pop(provider, None)
 
-        with _config_write_lock:
-            cfg.map_tokens = tokens or None
-            try:
-                self._save_live_config()
-            except Exception:  # noqa: BLE001 - never 500 over a settings write
-                logger.exception("could not persist the map service key")
-                self._send_json(
-                    {"ok": False,
-                     "error": "the key is set for this session but could not be saved"},
-                    500)
-                return
-        # Logged as a fact, never with the value: an operator reading the log
-        # should be able to see that a key was set without the log becoming a
-        # place the key lives.
-        logger.info("map service key for %s %s", provider,
-                    "stored" if token else "removed")
-        self._send_json({"ok": True, "provider": provider, "token_set": bool(token)})
 
-    @route("GET", "/api/tiles/jobs")
-    def _api_tiles_jobs(self) -> None:
-        """List all download jobs across every source."""
-        if self.tile_downloader is None:
-            self._send_json({"jobs": []})
-            return
-        self._send_json({"jobs": self.tile_downloader.list_jobs()})
 
-    @route("POST", "/api/tiles/download")
-    def _api_tiles_download(self, payload: dict) -> None:
-        """Start a tile download job for a source within bounds/zooms."""
-        if self.tile_downloader is None:
-            self._send_json({"ok": False, "error": "tile service unavailable"}, 503)
-            return
-        source = payload.get("source")
-        if not isinstance(source, str) or tile_sources.get(source) is None:
-            self._send_json({"ok": False, "error": "unknown source"}, 400)
-            return
-        src = tile_sources.get(source)
-        err, bounds = _validate_tile_bounds(payload.get("bounds"))
-        if err is not None:
-            self._send_json({"ok": False, "error": err}, 400)
-            return
-        zoom_err = _validate_tile_zooms(payload.get("minzoom"), payload.get("maxzoom"), src["maxzoom"])
-        if zoom_err is not None:
-            self._send_json({"ok": False, "error": zoom_err}, 400)
-            return
-        minzoom = int(payload["minzoom"])
-        maxzoom = int(payload["maxzoom"])
-        # The operator's name for this area. Optional: an unnamed download is
-        # still recorded, under a generated name, so every cached area is
-        # accounted for in the region list rather than silently invisible.
-        name = _clean_region_name(payload.get("name")) or _default_region_name(bounds)
 
-        # A keyed service with no key downloads nothing but 401s, and does it
-        # for however many thousand tiles the region covers. Refused up front
-        # with the one thing the operator can act on, rather than reported as
-        # a job that failed every tile.
-        token = self._map_token(str(src.get("provider") or ""))
-        if tile_sources.needs_token(source) and not token:
-            self._send_json({
-                "ok": False,
-                "error": "this map service needs an API key. Add one under "
-                         "Settings, Map service",
-            }, 400)
-            return
-        # A licensed API hands out its template once, here, and the job keeps
-        # it: a session outlives any download, and a refused key is reported
-        # before a single tile is asked for.
-        template = src["upstream"]
-        if token and tile_sources.licensed(source) is not None:
-            try:
-                template = tile_sessions.resolve(source, token)
-            except tile_sessions.TileSessionError as exc:
-                self._send_json({"ok": False, "error": str(exc)}, 502)
-                return
 
-        cache = (self.tile_caches or {}).get(source)
-        on_progress = self._make_tile_progress(cache)
-        try:
-            job_id = self.tile_downloader.start(
-                source, template, bounds, minzoom, maxzoom,
-                on_progress=on_progress, token=token,
-            )
-        except Exception as exc:  # noqa: BLE001 - a download submit must never 500
-            logger.exception("tile download start failed")
-            self._send_json({"ok": False, "error": f"start failed: {exc}"}, 500)
-            return
-        status = self.tile_downloader.status(job_id) if job_id else None
-        if status and status.get("state") == "failed":
-            self._send_json(
-                {"ok": False, "error": status.get("error", "download failed")}, 409
-            )
-            return
-        # Record the region as soon as the job exists, keyed by the job id, so
-        # the area shows on the map while it is still downloading. The progress
-        # callback patches the final tile count and state when the job ends.
-        self._record_region(cache, job_id, name, source, bounds, minzoom, maxzoom)
-        # Elevation rides along when asked for, as its own job on its own
-        # cache. Without it a pre-downloaded area is flat the moment the
-        # laptop leaves the network — imagery cached for the field and terrain
-        # that is not is exactly the split that makes 3D mode useless there.
-        terrain_job = None
-        chosen_job = None
-        if payload.get("terrain") and not tile_sources.is_terrain(source):
-            terrain_job = self._start_terrain_companion(bounds, minzoom, maxzoom, name)
-            # The free elevation always comes along: it is what every other
-            # DEM falls back to. The one 3D is actually drawing from comes
-            # too, when that is a different one, so the field sees the same
-            # ground the office did.
-            chosen = payload.get("terrain_source")
-            if (isinstance(chosen, str) and chosen != tile_sources.DEFAULT_TERRAIN
-                    and tile_sources.is_terrain(chosen)):
-                chosen_job = self._start_terrain_companion(
-                    bounds, minzoom, maxzoom, name, chosen)
-        # Buildings for 3D, queued behind whatever the map is showing and
-        # fetched in the background. Not a tile job: Overpass is a shared
-        # service with a fair use policy, and a building block is one query,
-        # not a URL template the downloader could walk.
-        building_blocks = 0
-        if payload.get("buildings") and self.buildings is not None:
-            try:
-                building_blocks = int(self.buildings.prefetch(bounds))
-            except Exception:  # noqa: BLE001 - the imagery job is already running
-                logger.exception("building prefetch failed to start")
-        self._send_json({
-            "job_id": job_id, "name": name, "terrain_job_id": terrain_job,
-            "terrain_source_job_id": chosen_job, "building_blocks": building_blocks,
-        })
 
-    def _start_terrain_companion(
-        self, bounds: tuple, minzoom: int, maxzoom: int, name: str,
-        terrain_id: str | None = None,
-    ) -> str | None:
-        """Start the elevation half of a region download. None if it cannot run.
-
-        *terrain_id* is the DEM to download, the free default when omitted.
-        Best effort on purpose: the imagery job has already been accepted and
-        the operator has been shown progress for it, so a DEM that cannot be
-        started must not turn their download into an error. It also caps the
-        zooms at the DEM's own — elevation is a smooth surface, and asking for
-        z19 heights would quadruple the job for tiles the upstream does not
-        even serve — and, for a DEM that only has its finest levels in some
-        regions, at the last level it has everywhere.
-        """
-        default_terrain = terrain_id or tile_sources.DEFAULT_TERRAIN
-        src = tile_sources.get(default_terrain)
-        if src is None or self.tile_downloader is None or not tile_sources.is_terrain(default_terrain):
-            return None
-        token = self._map_token(str(src.get("provider") or ""))
-        if tile_sources.needs_token(default_terrain) and not token:
-            return None
-        hi = min(maxzoom, src["maxzoom"], src.get("sparse_above", src["maxzoom"]))
-        # From zoom 0, whatever the imagery starts at. A pitched view draws
-        # its far ground from coarse tiles, and every missing fine tile is
-        # derived from a coarser ancestor (corvus/dem_tiles.py): an area whose
-        # elevation starts at z14 has neither, and its terrain drops to sea
-        # level at the first tile that is not on disk. Over one area the
-        # levels below the imagery's add a tile or two each. Only an area
-        # already near the per-job cap gives some of them back, so the
-        # elevation job is never refused where it used to be accepted.
-        from .tile_downloader import MAX_TILES_PER_JOB, tile_count
-        lo, floor = 0, min(minzoom, hi)
-        while lo < floor and tile_count(bounds, lo, hi) > MAX_TILES_PER_JOB:
-            lo += 1
-        cache = (self.tile_caches or {}).get(default_terrain)
-        try:
-            job_id = self.tile_downloader.start(
-                default_terrain, src["upstream"], bounds, lo, hi,
-                on_progress=self._make_tile_progress(cache), token=token,
-            )
-        except Exception:  # noqa: BLE001 - the imagery job is already running
-            logger.exception("terrain companion download start failed")
-            return None
-        if job_id:
-            self._record_region(cache, job_id, name, default_terrain, bounds, lo, hi)
-        return job_id
-
-    def _record_region(self, cache: Any, job_id: str, name: str, source: str,
-                       bounds: tuple, minzoom: int, maxzoom: int) -> None:
-        """Write the region row for a download job that is already running.
-
-        The job has to exist first, because its id is the row's key, so a fast
-        job can end before this row does: an area already on disk is walked
-        in milliseconds. Its final update then found no row to patch, and the
-        row written after it said "downloading" until the next launch settled
-        it as cancelled. So the job is read back once the row is in, and one
-        that has already ended is settled here. Never raises: bookkeeping must
-        not fail a download the operator has been shown.
-        """
-        if cache is None:
-            return
-        w, s, e, n = bounds
-        try:
-            cache.add_region({
-                "id": job_id, "name": name, "source": source,
-                "w": w, "s": s, "e": e, "n": n,
-                "minzoom": minzoom, "maxzoom": maxzoom,
-                "tile_count": 0, "state": "running",
-            })
-            status = (self.tile_downloader.status(job_id)
-                      if self.tile_downloader is not None else None)
-            state = status.get("state") if isinstance(status, dict) else None
-            if state in self._SSE_TERMINAL_STATES:
-                cache.update_region(job_id, tile_count=status.get("done", 0), state=state)
-        except Exception:  # noqa: BLE001 - bookkeeping must not fail the download
-            logger.exception("region record write failed")
-
-    def _make_tile_progress(self, cache: Any) -> Any:
-        """Compose the progress callback handed to the downloader.
-
-        Two jobs on one callback because the downloader accepts exactly one:
-        fan the update out to the SSE subscribers (the bus), and keep the
-        region record in step with the job. The bus half runs first and is
-        never skipped, so a bookkeeping failure cannot cost the operator their
-        live progress. Returns None when there is nothing to do.
-        """
-        bus_fn = (self.tile_progress_bus.make_on_progress()
-                  if self.tile_progress_bus is not None else None)
-        if cache is None:
-            return bus_fn
-
-        # The terminal update must be applied once. The downloader fires
-        # progress from several worker threads, so guard the transition with a
-        # flag rather than relying on the last call winning.
-        finished: dict[str, bool] = {"done": False}
-
-        def _on_progress(progress: Any) -> None:
-            if bus_fn is not None:
-                bus_fn(progress)
-            if not isinstance(progress, dict):
-                return
-            state = progress.get("state")
-            if state not in ("done", "cancelled", "failed") or finished["done"]:
-                return
-            finished["done"] = True
-            # Elevation derived from what was on disk before this job is
-            # stale now that finer tiles may have landed under it.
-            source = progress.get("source")
-            if self.dem_fallback is not None and tile_sources.is_terrain(source):
-                self.dem_fallback.forget(source)
-            try:
-                # `done` counts tiles now present in the cache — fetched plus
-                # the ones that were already there — so it is exactly how much
-                # of the region is available offline.
-                cache.update_region(
-                    progress.get("job_id", ""),
-                    tile_count=progress.get("done", 0),
-                    state=state,
-                )
-            except Exception:  # noqa: BLE001 - never kill the download
-                logger.exception("region record update failed")
-
-        return _on_progress
-
-    @route("GET", "/api/tiles/regions")
-    def _api_tiles_regions(self) -> None:
-        """List every named, pre-downloaded area across all sources.
-
-        Always 200: a source whose cache cannot be read contributes nothing
-        rather than failing the whole list, because the map draws these and a
-        500 here would blank every region the operator does have.
-        """
-        regions: list[dict] = []
-        for sid, cache in (self.tile_caches or {}).items():
-            try:
-                for region in cache.list_regions():
-                    region["source"] = region.get("source") or sid
-                    regions.append(region)
-            except Exception:  # noqa: BLE001
-                logger.exception("region list failed for source %s", sid)
-        regions.sort(key=lambda r: r.get("created_at", ""), reverse=True)
-        self._send_json({"regions": regions})
-
-    @route("POST", "/api/tiles/regions/rename")
-    def _api_tiles_regions_rename(self, payload: dict) -> None:
-        """Rename a stored region.
-
-        Areas downloaded without a name get a coordinate-derived one, which is
-        exact but not memorable; this is how "47.350°N 8.550°E" becomes
-        "Landing site".
-        """
-        source = payload.get("source")
-        region_id = payload.get("id")
-        name = _clean_region_name(payload.get("name"))
-        if not isinstance(region_id, str) or not region_id:
-            self._send_json({"ok": False, "error": "id required"}, 400)
-            return
-        if not name:
-            self._send_json({"ok": False, "error": "name required"}, 400)
-            return
-        cache = (self.tile_caches or {}).get(source) if isinstance(source, str) else None
-        if cache is None:
-            self._send_json({"ok": False, "error": "unknown source"}, 400)
-            return
-        if not cache.update_region(region_id, name=name):
-            self._send_json({"ok": False, "error": "unknown region"}, 404)
-            return
-        self._send_json({"ok": True, "name": name})
-
-    @route("POST", "/api/tiles/regions/remove")
-    def _api_tiles_regions_remove(self, payload: dict) -> None:
-        """Forget a named region, optionally deleting its cached tiles.
-
-        ``delete_tiles`` defaults to False: regions overlap, so dropping the
-        tiles of one can silently punch holes in another. The caller asks for
-        it explicitly, and only the tiles no OTHER region still covers are
-        removed.
-        """
-        source = payload.get("source")
-        region_id = payload.get("id")
-        if not isinstance(region_id, str) or not region_id:
-            self._send_json({"ok": False, "error": "id required"}, 400)
-            return
-        cache = (self.tile_caches or {}).get(source) if isinstance(source, str) else None
-        if cache is None:
-            self._send_json({"ok": False, "error": "unknown source"}, 400)
-            return
-        region = cache.get_region(region_id)
-        if region is None:
-            self._send_json({"ok": False, "error": "unknown region"}, 404)
-            return
-
-        removed_tiles = 0
-        if payload.get("delete_tiles") is True:
-            try:
-                removed_tiles = _delete_region_tiles(cache, region)
-            except Exception as exc:  # noqa: BLE001 - deletion must never 500
-                logger.exception("region tile deletion failed")
-                self._send_json({"ok": False, "error": f"tile deletion failed: {exc}"}, 500)
-                return
-            # Elevation derived from the tiles just deleted must not outlive them.
-            if removed_tiles and self.dem_fallback is not None and tile_sources.is_terrain(source):
-                self.dem_fallback.forget(source)
-        cache.remove_region(region_id)
-        self._send_json({"ok": True, "removed_tiles": removed_tiles})
-
-    @route("POST", "/api/tiles/cancel")
-    def _api_tiles_cancel(self, payload: dict) -> None:
-        """Cancel a running download job by id."""
-        if self.tile_downloader is None:
-            self._send_json({"ok": False, "error": "tile service unavailable"}, 503)
-            return
-        job_id = payload.get("id")
-        if not isinstance(job_id, str) or not job_id:
-            self._send_json({"ok": False, "error": "id required"}, 400)
-            return
-        if self.tile_downloader.cancel(job_id):
-            self._send_json({"ok": True})
-        else:
-            self._send_json({"ok": False, "error": "unknown job"}, 404)
-
-    @route("GET", "/api/tiles/progress")
-    def _sse_tiles_progress(self) -> None:
-        """SSE stream of one download job's progress (latest-wins, coalesced)."""
-        query = urlparse(self.path).query
-        params = parse_qs(query)
-        job_id = params.get("id", [None])[0]
-        if not job_id:
-            self._send_json({"error": "missing id"}, 400)
-            return
-        if self.tile_downloader is None:
-            self._send_json({"error": "tile service unavailable"}, 503)
-            return
-        status = self.tile_downloader.status(job_id)
-        if status is None:
-            self._send_json({"error": "unknown job"}, 404)
-            return
-        # The validation above is what this endpoint adds over the bare topic:
-        # a missing, unknown or unservable job is a 4xx/5xx answer, and a
-        # stream cannot express one once its headers have gone out. The
-        # multiplexed form has no equivalent — there a bad job id simply never
-        # fires, which is the right failure for one topic among several.
-        del status  # re-read by the topic binder, which owns the subscription
-        self._serve_sse_topics(
-            {"tiles": "progress"}, job_id=job_id, close_on=("tiles",),
-        )
 
     def _api_tiles_serve(self, source: str, z: int, x: int, y: int) -> None:
         """Serve a cached tile, transparently fetching+ caching from upstream.
@@ -8110,45 +5357,8 @@ def bind_server(
     ) from last_exc
 
 
-# One writer at a time for the live CorvusConfig object.
-#
-# The config is a single mutable dataclass shared by every handler thread, and
-# the endpoints that change it all do read-modify-write: read the current
-# dict, merge the payload, assign the fields back, then serialize the whole
-# object to disk. Two of those interleaving is not hypothetical — a settings
-# page with two browser tabs open, or a double-clicked toggle, is enough. The
-# damage is real: ``_api_config_apply`` assigns seventeen fields one at a
-# time, so a save running between the third and the fourth writes a file that
-# is half the old config and half the new one; and the SSH list is mutated in
-# place by add (append) while remove rebuilds it, so an add and a remove that
-# overlap lose an entry outright.
-#
-# An RLock (not a Lock) because a guarded endpoint calls other guarded helpers
-# — ``_save_live_config`` is itself taken under the same lock by its callers.
-# Module-level, so it covers every handler thread of every server in the
-# process, which is what "one config file" means.
-_config_write_lock = threading.RLock()
 
 
-# Every way a browser tab closing reaches an SSE writer.
-#
-# The handlers used to catch only BrokenPipeError and ConnectionResetError,
-# which is the complete list on Linux and macOS and an incomplete one on
-# Windows: closing a tab there surfaces as ConnectionAbortedError (WSAECONNAB
-# ORTED, 10053), and a socket torn down under a blocked write raises a bare
-# OSError with WSAENOTSOCK (10038). Those escaped the handler, so socketserver
-# printed a full traceback per closed tab — noise that buries a real fault in
-# the log during a flight. TimeoutError covers a write that stalls on a wedged
-# client. All of them mean exactly one thing: stop writing, drop the listener,
-# let the thread go. OSError is the base of the first four, so the tuple is
-# really "OSError" — spelled out because the specific names are the point.
-CLIENT_GONE_ERRORS = (
-    BrokenPipeError,
-    ConnectionResetError,
-    ConnectionAbortedError,
-    TimeoutError,
-    OSError,
-)
 
 
 DEFAULT_MAVLINK_CONNECTION = "udp:127.0.0.1:14550"

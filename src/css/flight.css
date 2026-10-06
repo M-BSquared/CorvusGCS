@@ -1,0 +1,326 @@
+/*
+  Corvus GCS: The flight overlay: the HUD panel and the warnings popover.
+
+  One of the page sheets index.html loads after main.css, in a fixed order.
+  See main.css for what a page sheet may and may not do.
+*/
+
+/* ===== FLIGHT OVERLAY ===== */
+/* ===== FLIGHT HUD PANEL =====
+   A movable window over the map (Corvus.hudPanel): drag by the title bar, pin
+   to lock the position, shrink to compact, collapse to the bar alone. It sits
+   at the bottom-right until it is moved; .is-placed then drops that anchoring
+   so the dragged left/top wins. --hud-w is the one number the compact state
+   changes, so every child scales from a single declaration. */
+.flight-overlay {
+  --hud-w: 320px;
+  position: absolute; right: 16px; bottom: 16px; z-index: var(--z-map-panel);
+  width: var(--hud-w);
+  border-radius: 14px;
+  padding: 14px;
+  display: flex; flex-direction: column;
+  /* The whole panel is the drag handle — there is no title bar to grab. */
+  cursor: grab;
+  touch-action: none;
+  transition: width 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.flight-overlay.is-dragging { transition: none; cursor: grabbing; user-select: none; }
+.flight-overlay[hidden] { display: none; }
+.flight-overlay.is-pinned { cursor: default; }
+/* Collapsed: the readouts fold away and what is left is a control pill. */
+.flight-overlay.is-collapsed {
+  width: auto;
+  padding: 5px;
+  border-radius: 9px;
+}
+/* Dragged at least once: positioned from the top-left corner instead. */
+.flight-overlay.is-placed { right: auto; bottom: auto; }
+/* A ratio, not a fixed width: the base --hud-w changes per breakpoint, and
+   compact has to stay smaller than all of them. */
+.flight-overlay.is-compact { width: calc(var(--hud-w) * 0.72); }
+
+/* The controls float over the panel's top-right corner and stay out of the way
+   until reached for. No title bar: a permanent strip saying "FLIGHT" would cost
+   map for something the compass and horizon under it already say. */
+.hud-actions {
+  position: absolute;
+  /* Top centre, in the gap between the compass and the attitude indicator.
+     Both dials are circles, so the space above and between them is dead area
+     the cluster can occupy without covering a reading — unlike the top-right
+     corner, where it sat over the attitude indicator's scale. */
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  /* Local to the HUD's own stacking context — this only has to beat the
+     instruments beside it, so it is not on the app-wide ladder. */
+  z-index: 1;
+  display: flex; align-items: center; gap: 1px;
+  padding: 2px;
+  border-radius: 7px;
+  background: rgb(var(--glass-rgb) / 0.55);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
+  border: 1px solid rgb(var(--tint-rgb) / 0.06);
+  opacity: 0;
+  transition: opacity 140ms;
+}
+/* Revealed on hover, and on keyboard focus so the controls are reachable
+   without a pointer at all. */
+.flight-overlay:hover .hud-actions,
+.flight-overlay:focus-within .hud-actions { opacity: 1; }
+/* Collapsed, the controls are the only thing left — so they stay put. */
+.flight-overlay.is-collapsed .hud-actions {
+  opacity: 1;
+  position: static;
+  transform: none;
+  background: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: none;
+  padding: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hud-actions { transition: none; }
+}
+/* Small and quiet: these sit on top of the instruments, not beside them. */
+.hud-actions .icon-btn {
+  width: 20px; height: 20px; border-radius: 5px;
+  color: var(--text-3);
+}
+.hud-actions .icon-btn:hover { color: var(--text-1); }
+.hud-actions .icon-btn.active { color: var(--accent-bright); background: var(--accent-dark); }
+.hud-actions .icon-btn svg, .hud-actions .icon-btn i { width: 13px; height: 13px; }
+
+.hud-body { display: flex; flex-direction: column; gap: 10px; }
+.hud-body[hidden] { display: none; }
+
+/* Readouts folded: the two dials stay, the numeric grid goes. The gap goes
+   with it, or the panel keeps a strip of padding where the numbers were. */
+.flight-overlay.is-readouts-off .hud-body { gap: 0; }
+/* Collapsed, the readouts control has nothing left to fold — the whole body
+   is already gone — so it drops out of the pill rather than sitting in it
+   doing nothing. */
+.flight-overlay.is-collapsed .hud-readouts { display: none; }
+
+/* Compact: the instruments carry the size change, since the dials are what
+   dominate the panel. The readouts and telemetry cells only tighten. */
+.is-compact .instruments { gap: 8px; }
+.is-compact .instrument { gap: 3px; }
+.is-compact .readout-label { font-size: 7.5px; letter-spacing: 0.7px; }
+.is-compact .readout-value { font-size: 11px; }
+.is-compact .ft-cell { padding: 5px 7px; }
+.is-compact .ft-cell .ft-label { font-size: 7.5px; }
+.is-compact .ft-cell .ft-value { font-size: 12px; }
+.is-compact .hud-body { gap: 7px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .flight-overlay { transition: none !important; }
+}
+.instruments { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.instrument { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.compass, .attitude { width: 100%; aspect-ratio: 1; }
+
+/* --- Compass ---
+   Two concentric surfaces (bezel ring, dial face) and one tick band between
+   them. Everything is a theme token, including the tick colours, so the dial
+   inverts with the interface instead of being a light-theme drawing that a
+   dark theme has to fight. */
+.compass-ring { fill: rgb(var(--tint-rgb) / 0.06); stroke: rgb(var(--tint-rgb) / 0.16); stroke-width: 1.5; }
+.compass-face { fill: rgb(var(--input-rgb) / 0.55); stroke: rgb(var(--tint-rgb) / 0.06); stroke-width: 1; }
+.compass-tick { stroke: rgb(var(--tint-rgb) / 0.22); stroke-width: 0.9; }
+.compass-tick.medium { stroke: rgb(var(--tint-rgb) / 0.34); stroke-width: 1.1; }
+.compass-tick.major { stroke: var(--text-3); stroke-width: 1.6; }
+.compass-tick.cardinal { stroke: var(--text-2); stroke-width: 2.2; }
+.compass-label { font: 700 13px var(--sans); fill: var(--text-2); letter-spacing: 0.3px; }
+/* North is the datum the whole dial is read from, so it is the one label
+   allowed to carry the navigation accent. */
+.compass-label.north { fill: var(--nav); }
+.compass-digit { font: 600 7.5px var(--sans); fill: var(--text-3); font-variant-numeric: tabular-nums; }
+.needle-north { fill: var(--vehicle); }
+.needle-south { fill: rgb(var(--vehicle-rgb) / 0.28); }
+.compass-hub { fill: var(--surface-1); stroke: var(--vehicle); stroke-width: 1.6; }
+
+/* --- Attitude indicator ---
+   Flat. Two tones from the --adi-* tokens in themes.css and one white line
+   between them; no gradient, no vignette. Everything drawn ON
+   the ball is white except the aircraft symbol, which is the single amber
+   accent — the roll ticks and the symbol used to be --text-1/--text-3, which
+   is near-black on the light themes and vanished into the sky.
+
+   The weights are deliberately uniform (one for the ladder, one for the arc)
+   rather than a three-step hierarchy: at 88 units across there is only room
+   for a hierarchy to look busy. */
+/* The ring is the compass's ring, to the value: same band, same fill, same
+   hairline. That shared edge is what makes the pair read as two instruments
+   rather than two drawings. */
+.attitude .adi-ring { fill: rgb(var(--tint-rgb) / 0.06); stroke: rgb(var(--tint-rgb) / 0.16); stroke-width: 1.5; }
+.attitude .adi-sky { fill: var(--adi-sky); }
+.attitude .adi-ground { fill: var(--adi-ground); }
+.attitude .adi-horizon { stroke: #FFFFFF; stroke-width: 1.8; }
+/* Seats the ball into the ring. The two colours it separates are both mid
+   values, so this only has to be a hairline to register. */
+.attitude .adi-ball-edge { fill: none; stroke: rgb(var(--tint-rgb) / 0.14); stroke-width: 1; }
+
+.attitude .pitch-tick { stroke: rgba(255, 255, 255, 0.85); stroke-width: 1.3; }
+.attitude .pitch-label { font: 500 7px var(--sans); fill: rgba(255, 255, 255, 0.85); font-variant-numeric: tabular-nums; }
+
+/* On the ring now, not on the sky — so they take the ring's colours, which
+   are the compass's tick colours. */
+.adi-roll-arc .roll-tick { stroke: var(--text-3); stroke-width: 1.6; }
+.adi-roll-arc .roll-tick.zero { stroke: var(--text-2); stroke-width: 2.2; }
+.adi-roll-scale .roll-pointer { fill: var(--adi-mark); }
+
+.adi-aircraft .adi-mark { stroke: var(--adi-mark); stroke-width: 2.6; fill: none; stroke-linecap: round; }
+/* A hairline casing under the amber — enough to keep the bars a shape where
+   they cross the horizon, not enough to read as a shadow. */
+.adi-aircraft .adi-mark-outline { stroke: var(--adi-mark-outline); stroke-width: 4.4; fill: none; stroke-linecap: round; }
+.adi-aircraft .adi-mark-dot { fill: var(--adi-mark); }
+
+.instrument-readout { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.readout-label { font-size: 8.5px; font-weight: 600; letter-spacing: 0.9px; color: var(--text-3); }
+.readout-value { font-size: 13px; font-weight: 600; color: var(--text-1); font-variant-numeric: tabular-nums; }
+
+.flight-telemetry {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+  background: var(--border-soft); border: 1px solid var(--border-soft);
+  border-radius: var(--radius-btn); overflow: hidden;
+}
+/* `display: grid` above beats the UA's [hidden] rule, so the readouts fold
+   has to restate it — the same trap .hud-body and the joystick surfaces are
+   in. Corvus.hudPanel sets both this and .is-readouts-off. */
+.flight-telemetry[hidden] { display: none; }
+.ft-cell { background: rgb(var(--glass-rgb) / 0.4); padding: 7px 9px; display: flex; flex-direction: column; gap: 2px; }
+.ft-cell .ft-label { font-size: 8.5px; font-weight: 600; letter-spacing: 0.7px; color: var(--text-3); text-transform: uppercase; }
+.ft-cell .ft-value { font-size: 15px; font-weight: 600; color: var(--text-1); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.ft-cell .ft-value.nav { color: var(--nav); }
+.ft-cell .ft-value.healthy { color: var(--healthy); }
+
+/* ===== WARNINGS POPOVER ===== */
+.warnings-popover {
+  /* Clear of the bar rather than welded to it: the popover is a surface that
+     floats over the app, and a panel whose top edge is the bar's bottom edge
+     reads as part of the bar instead of as something that opened out of it. */
+  position: fixed; top: calc(var(--top-h) + 10px); right: 12px; z-index: var(--z-toast);
+  width: min(320px, calc(100 * var(--vw) - 24px));
+  border-radius: var(--radius);
+  overflow: hidden;
+  animation: corvus-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.warnings-popover[hidden] { display: none; }
+.wp-header { display: flex; align-items: center; justify-content: space-between; padding: 11px 13px; border-bottom: 1px solid var(--border-soft); }
+.wp-title { font-size: 12px; font-weight: 600; letter-spacing: 0.5px; }
+.wp-actions { display: flex; gap: 4px; }
+.wp-clear-all:disabled, .wp-clear-all[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
+.wp-clear-all:disabled:hover, .wp-clear-all[aria-disabled="true"]:hover { background: transparent; color: var(--text-3); }
+.wp-list { max-height: 280px; overflow-y: auto; }
+/* One row of the board. The leading column — gutter, icon, severity mark — is
+   the shared notification anatomy from themes.css, so this row and a toast
+   (.ui-toast in components.css) line up on the same numbers. What is local to
+   the board is below it: the meta line, the read dimming, the dismiss button. */
+.wp-item {
+  position: relative;
+  display: flex; gap: var(--notif-gap);
+  padding: var(--notif-pad-y) var(--notif-pad-right) var(--notif-pad-y) var(--notif-gutter);
+  border-bottom: 1px solid var(--border-soft);
+  align-items: flex-start;
+  transition: opacity 200ms;
+}
+.wp-item:last-child { border-bottom: none; }
+
+/* Unread draws a rule in its own severity colour down the leading column,
+   BROKEN BY THE ICON: a segment above it, the icon, a segment below. The icon
+   is centred in the row so the break falls in the middle of the rule rather
+   than clipping one end of it.
+
+   It replaced an inset box-shadow that ran the full height of the row, hard
+   against the popover's edge and square at both ends: on a two-line
+   notification that read as a red rule someone had drawn down the side of the
+   card rather than as anything belonging to the row. Threading the rule
+   through the icon ties the two together — one leading column, with the
+   severity stated once in the middle of it.
+
+   Absolutely positioned, so both segments still cost the flex row nothing. */
+.wp-item::before,
+.wp-item::after {
+  content: "";
+  position: absolute;
+  /* On the icon's own centre line. */
+  left: calc(var(--notif-gutter) + (var(--notif-icon) - var(--notif-mark)) / 2);
+  width: var(--notif-mark);
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity 200ms;
+}
+/* Each segment hangs off the icon's clearance and takes --notif-mark-fill of
+   what is left between there and the row's edge; the remainder is the air
+   that keeps it off that edge, so both scale with the message together. The
+   percentages resolve against the row, and both are measured from its middle,
+   which is where the icon is — so the two segments come out the same length
+   however the message wraps. */
+.wp-item::before {
+  bottom: calc(50% + var(--notif-icon) / 2 + var(--notif-mark-gap));
+  height: calc((50% - var(--notif-icon) / 2 - var(--notif-mark-gap)) * var(--notif-mark-fill));
+}
+.wp-item::after {
+  top: calc(50% + var(--notif-icon) / 2 + var(--notif-mark-gap));
+  height: calc((50% - var(--notif-icon) / 2 - var(--notif-mark-gap)) * var(--notif-mark-fill));
+}
+.wp-item[data-level="info"]::before,
+.wp-item[data-level="info"]::after { color: var(--nav); opacity: 1; }
+.wp-item[data-level="warning"]::before,
+.wp-item[data-level="warning"]::after { color: var(--warning); opacity: 1; }
+.wp-item[data-level="critical"]::before,
+.wp-item[data-level="critical"]::after { color: var(--critical); opacity: 1; }
+/* Read: the mark goes and the row recedes. Still legible, still in place —
+   the board is a log, not a queue that empties itself. */
+.wp-item.is-read::before, .wp-item.is-read::after { opacity: 0; }
+.wp-item.is-read { opacity: 0.55; }
+.wp-item.is-read:hover, .wp-item.is-read:focus-within { opacity: 1; }
+/* Resolved: the vehicle has said it is over. It loses its colour as well as
+   its mark, so the only colour left on the board is what still stands. */
+.wp-item.is-resolved::before, .wp-item.is-resolved::after { opacity: 0; }
+.wp-item.is-resolved { opacity: 0.55; }
+.wp-item.is-resolved .wp-msg { color: var(--text-2); }
+.wp-item.is-resolved:hover, .wp-item.is-resolved:focus-within { opacity: 1; }
+/* Marks off (Settings -> Notifications). `content: none` rather than
+   `opacity: 0`: the segments are gone, not merely invisible, so nothing is
+   left to fade in on a hover or a level change.
+   Nothing else in the row moves. The segments were absolutely positioned and
+   the icon is centred by .wp-icon's own align-self, so the icon stays exactly
+   where the marks used to meet it — the column simply loses its rule. */
+:root[data-notification-marks="off"] .wp-item::before,
+:root[data-notification-marks="off"] .wp-item::after { content: none; }
+@media (prefers-reduced-motion: reduce) {
+  .wp-item, .wp-item::before, .wp-item::after { transition: none; }
+}
+.wp-icon {
+  width: var(--notif-icon); height: var(--notif-icon);
+  flex: 0 0 auto; display: grid; place-items: center;
+  /* Centred in the row rather than on the first line of text: the rule is
+     broken AT the icon, and a break at the top of a three-line notification
+     would leave one segment and a stub. Centred with the marks off too — the
+     switch takes the rule away, not the layout it was drawn in. */
+  align-self: center;
+}
+.wp-icon.warning { color: var(--warning); }
+.wp-icon.critical { color: var(--critical); }
+.wp-icon.info { color: var(--nav); }
+.wp-icon.resolved { color: var(--text-3); }
+.wp-icon svg { width: var(--notif-icon-svg); height: var(--notif-icon-svg); }
+.wp-body { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.wp-msg { font-size: var(--text-sm); color: var(--text-1); line-height: 1.3; }
+.wp-meta { font-size: var(--text-2xs); color: var(--text-3); }
+.wp-empty { padding: 22px; text-align: center; color: var(--text-3); font-size: var(--text-sm); }
+.wp-dismiss {
+  width: var(--notif-dismiss); height: var(--notif-dismiss);
+  flex: 0 0 auto; display: grid; place-items: center;
+  margin: -2px -4px -2px auto; border-radius: var(--radius-btn); color: var(--text-3);
+}
+.wp-dismiss:hover { color: var(--text-1); background: var(--surface-hover); }
+.wp-dismiss svg { width: 13px; height: 13px; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}

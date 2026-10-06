@@ -188,7 +188,7 @@
   --z-toast: 200;
 
   /* --- Notifications ---
-     One notification has two homes: a row on the board (.wp-item, main.css)
+     One notification has two homes: a row on the board (.wp-item, flight.css)
      and a toast (.ui-toast, components.css). They are the same object seen
      twice — same levels, same icons, same colours — and they were built to two
      different sets of numbers: a 20px icon in a 9px gutter on one, an 18px

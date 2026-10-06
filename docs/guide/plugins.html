@@ -351,8 +351,8 @@
 <dl>
   <dt>WGS84 / EPSG:4326</dt>
   <dd>Degrees, in the order GIS tools write them: x is longitude, y is latitude (GeoJSON, QGIS, most CSV exports).</dd>
-  <dt>UTM 32N / EPSG:32632, ETRS89 UTM 32N / EPSG:25832, UTM 33N / EPSG:32633</dt>
-  <dd>Metres, x is easting and y is northing, as surveyors and German geodata portals deliver them. Zone 32 covers Munich; zone 33 covers the east of Bavaria. EPSG:25832 and EPSG:32632 differ by under a metre.</dd>
+  <dt>UTM / Projected metres</dt>
+  <dd>Metres, x is easting and y is northing, as surveyors and German geodata portals deliver them. Choose the zone below it: 32N is EPSG:32632 and EPSG:25832 (Munich), 33N is EPSG:32633 (the east of Bavaria). 31N, 34N and 35N are there too. EPSG:25832 and EPSG:32632 differ by under a metre.</dd>
   <dt>GPS</dt>
   <dd>Degrees, in the order a GPS receiver or a phone shows them: latitude first, then longitude.</dd>
   <dt>Local frame</dt>
@@ -367,6 +367,7 @@
   <li><strong>Colour</strong>: cyan, lime, magenta, blue or white. None of them is the red of the flown track or the amber of a planned route.</li>
   <li><strong>Show on the Home map</strong> draws or removes the line. It stays on the map when you close the plugin and comes back after a restart, without opening the plugin, until you switch it off.</li>
   <li><strong>Show me</strong> brings the Home map forward and frames the whole trajectory.</li>
+  <li><strong>Compare in 3D</strong> opens a window with the trajectory and the track the aircraft flew, as two lines in one 3D plot, with the largest and the average distance between them. The flown track is recorded while the aircraft is armed and kept until Corvus closes; <strong>Clear flown track</strong> in the window empties it. Heights are measured above each track's own start, because a file does not say what its z is measured from.</li>
   <li><strong>Clear</strong> takes the line off the map and forgets the file.</li>
 </ul>
 <p>

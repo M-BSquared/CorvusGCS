@@ -395,7 +395,7 @@ assert.equal(typeof docEl.getAttribute("data-vw"), "string");
 const fs = require("node:fs");
 const path = require("node:path");
 const cssDir = path.join(__dirname, "..", "src", "css");
-const sheets = ["themes.css", "components.css", "main.css"];
+const sheets = ["themes.css", "components.css", ...require("./support/page_css.js").pageSheets()];
 const css = Object.fromEntries(
   sheets.map((f) => [f, fs.readFileSync(path.join(cssDir, f), "utf8")])
 );
@@ -407,7 +407,7 @@ for (const [name, text] of Object.entries(css)) {
   const found = withoutComments(text).match(/@media[^{]*\((?:max|min)-(?:width|device-width)\s*:/g) || [];
   assert.deepEqual(found, [],
     `${name}: a width media query cannot see the interface scale — guard the rule ` +
-    "with :where(:root[data-vw~=\"…\"]) instead (see RESPONSIVE in main.css)");
+    "with :where(:root[data-vw~=\"…\"]) instead (see responsive.css)");
 }
 
 // 2. No bare vw/vh unit. `zoom` does not reach them either: 44vw inside the

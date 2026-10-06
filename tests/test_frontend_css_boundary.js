@@ -39,7 +39,9 @@ const read = (p) => fs.readFileSync(path.join(SRC, p), "utf8");
 
 const uiJs = read("js/ui.js");
 const componentsCss = read("css/components.css");
-const mainCss = read("css/main.css");
+const { pageCss } = require("./support/page_css.js");
+// The page sheets (main.css and the ones after it), in load order.
+const mainCss = pageCss();
 const indexHtml = read("index.html");
 
 const stripComments = (css) => css.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -51,10 +53,12 @@ const stripComments = (css) => css.replace(/\/\*[\s\S]*?\*\//g, "");
 // override in main.css would need to out-specify the component rather than
 // merely come after it, and a tie would go the wrong way without saying so.
 const sheetOrder = [...indexHtml.matchAll(/href="css\/([\w.-]+\.css)"/g)].map((m) => m[1]);
+// The page sheets were one main.css, cut at its section boundaries; their
+// order IS the old file's order, so it is pinned here as well.
 assert.deepEqual(
   sheetOrder,
-  ["themes.css", "components.css", "main.css"],
-  `index.html must load themes.css, then components.css, then main.css — got ${sheetOrder.join(", ")}`
+  ["themes.css", "components.css", ...["main.css", "map.css", "flight.css", "panel.css", "setup.css", "responsive.css", "setup-forms.css", "link.css", "mission.css"]],
+  `index.html must load themes.css, then components.css, then the page sheets in order — got ${sheetOrder.join(", ")}`
 );
 
 // ---------------------------------------------------------------------------
@@ -168,7 +172,7 @@ for (const head of topLevelSelectors(mainCss)) {
 assert.deepEqual(
   definitions,
   [],
-  "main.css defines library classes that belong in components.css:\n  " +
+  "a page sheet defines library classes that belong in components.css:\n  " +
     definitions.join("\n  ") +
     "\n(a scoped override like `.btn.rc-detect` or `.hud-actions .icon-btn` is fine;" +
     " a bare definition is not)"
@@ -225,7 +229,7 @@ function rootBlocks(css) {
   return out;
 }
 
-for (const [name, css] of [["components.css", componentsCss], ["main.css", mainCss]]) {
+for (const [name, css] of [["components.css", componentsCss], ["page sheets", mainCss]]) {
   const declared = rootBlocks(css).flatMap((body) =>
     [...body.matchAll(/(^|[;\s])(--[\w-]+)\s*:/g)].map((m) => m[2])
   );

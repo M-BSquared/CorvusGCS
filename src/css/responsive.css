@@ -1,0 +1,57 @@
+/*
+  Corvus GCS: The responsive rules, guarded by the data-vw breakpoints Corvus.scale
+  writes (src/js/scale.js). Kept at this point in the load order: the sheets
+  after it rely on overriding them.
+
+  One of the page sheets index.html loads after main.css, in a fixed order.
+  See main.css for what a page sheet may and may not do.
+*/
+
+/* ===== RESPONSIVE =====
+
+   Why these are selectors and not `@media (max-width: …)`.
+
+   A media query measures the WINDOW, and the window is not the box this app
+   lays out in. The interface scale is a `zoom` on <body> (see --ui-scale),
+   and zoom is invisible to a media query: at 150% on a 1440px window the app
+   has 960px to work with, every media query still sees 1440, and none of the
+   rules below fired. The result was the widest layout crammed into two
+   thirds of the room — nav labels the rail could not afford, a 380px utility
+   panel, and a flight bar that ran out over the map's own search button.
+
+   So the condition moved to where the real width is known. Corvus.scale
+   writes <html data-vw="max-1279 max-959 …"> from window.innerWidth divided
+   by the scale — the EFFECTIVE viewport, in the pixels everything below
+   <body> is laid out in — and each guard below names the media query it
+   replaces. At 100% the tokens turn over at exactly the widths the @media
+   rules did, so nothing about the unscaled layout has moved.
+
+   :where() carries no specificity, so these weigh exactly what the rule
+   inside the @media block weighed and a tie is still settled by source
+   order — which several rules further up this file depend on and say so.
+   The one exception is the `:root` rule, which owns a token rather than
+   styling a box: it has to out-specify themes.css's default, so it takes the
+   attribute directly. */
+:where(:root[data-vw~="max-1279"]) .tb-block { padding: 6px 9px; }
+:where(:root[data-vw~="max-1279"]) .tb-value { font-size: 14px; }
+:where(:root[data-vw~="max-1279"]) .tb-block[data-short] .v-main { display: none; }
+:where(:root[data-vw~="max-1279"]) .tb-block[data-short] .v-short { display: inline; }
+:where(:root[data-vw~="max-1279"]) .nav-item .nav-label { display: none; }
+:where(:root[data-vw~="max-1279"]) .nav-item { padding: 0; }
+:where(:root[data-vw~="max-1279"]) .flight-overlay { --hud-w: 290px; }
+:root[data-vw~="max-959"] { --panel-w: 320px; }
+:where(:root[data-vw~="max-959"]) .right-panel:not(.collapsed) { width: var(--panel-w); }
+:where(:root[data-vw~="max-959"]) .flight-overlay { --hud-w: 270px; bottom: 12px; right: 12px; }
+:where(:root[data-vw~="max-959"]) .tb-block[data-priority="low"] { display: none; }
+:where(:root[data-vw~="max-959"]) .joystick-pad { --js-size: 96px; --js-knob: 36px; --js-key: 30px; left: 12px; bottom: 12px; }
+:where(:root[data-vw~="max-600"]) .top-bar { height: 52px; padding: 0 6px; }
+:where(:root[data-vw~="max-600"]) .tb-logo-sub { display: none; }
+:where(:root[data-vw~="max-600"]) .tb-company-logo { height: 24px; max-width: 90px; padding-left: 8px; margin-left: 6px; }
+:where(:root[data-vw~="max-600"]) .tb-block[data-priority="mid"] { display: none; }
+:where(:root[data-vw~="max-600"]) .flight-overlay { --hud-w: 240px; }
+:where(:root[data-vw~="max-600"]) .flight-overlay .instruments { grid-template-columns: 1fr; }
+:where(:root[data-vw~="max-600"]) .nav-item .nav-label { display: none; }
+:where(:root[data-vw~="max-600"]) .joystick-pad { --js-size: 84px; --js-knob: 32px; --js-key: 28px; padding: 4px 8px 8px; }
+:where(:root[data-vw~="max-600"]) .js-surfaces { gap: 10px; }
+:where(:root[data-vw~="max-600"]) .js-sticks { gap: 10px; }
+:where(:root[data-vw~="max-600"]) .js-keys { gap: 8px; }

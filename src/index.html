@@ -16,11 +16,11 @@
 <link href="vendor/xterm.css" rel="stylesheet" />
 <!-- Load order is load-bearing, and it reads tokens -> library -> app:
      themes.css owns every design token, components.css defines the shared
-     controls out of those tokens, main.css lays out the screens and may
-     override a control for one page. Neither of the latter two defines a
-     token.
+     controls out of those tokens, and the page sheets (main.css and the
+     eight after it, in this order) lay out the screens and may override a
+     control for one page. None of them defines a token.
 
-     components.css comes BEFORE main.css so that last part is true. It used
+     components.css comes BEFORE the page sheets so that last part is true. It used
      to come after, which meant a page override could only win on specificity
      — and three of them silently did not: `.params-actions .btn`,
      `.btn.rc-detect` and `.btn.rc-tx-chip-drop` each tie `.btn[data-size=sm]`
@@ -30,6 +30,14 @@
 <link rel="stylesheet" href="css/themes.css" />
 <link rel="stylesheet" href="css/components.css" />
 <link rel="stylesheet" href="css/main.css" />
+<link rel="stylesheet" href="css/map.css" />
+<link rel="stylesheet" href="css/flight.css" />
+<link rel="stylesheet" href="css/panel.css" />
+<link rel="stylesheet" href="css/setup.css" />
+<link rel="stylesheet" href="css/responsive.css" />
+<link rel="stylesheet" href="css/setup-forms.css" />
+<link rel="stylesheet" href="css/link.css" />
+<link rel="stylesheet" href="css/mission.css" />
 <script>
 /* Apply the saved theme and interface size BEFORE first paint. Corvus.theme /
    Corvus.scale re-apply (and reconcile with the backend config) once the app
@@ -54,7 +62,7 @@
     }
   } catch (e) {}
   try {
-    /* The responsive breakpoints (css/main.css, "RESPONSIVE"). They are
+    /* The responsive breakpoints (css/responsive.css). They are
        selectors rather than media queries because a media query cannot see
        the interface scale, so the width they turn on has to be written here.
        Corvus.scale.BREAKPOINTS owns the list and rewrites this attribute on
@@ -555,7 +563,9 @@
 <script src="js/topbar.js" defer></script>
 <script src="js/map-search.js" defer></script>
 <script src="js/anim.js" defer></script>
+<script src="js/map-overlays.js" defer></script>
 <script src="js/map.js" defer></script>
+<script src="js/geofence.js" defer></script>
 <script src="js/instruments.js" defer></script>
 <script src="js/hud-panel.js" defer></script>
 <script src="js/ssh-term.js" defer></script>
@@ -574,6 +584,7 @@
 <script src="js/setup-control.js" defer></script>
 <script src="js/setup-tuning.js" defer></script>
 <script src="js/setup-motors.js" defer></script>
+<script src="js/setup-geofence.js" defer></script>
 <script src="js/setup-safety.js" defer></script>
 <script src="js/setup-battery.js" defer></script>
 <script src="js/setup-sik.js" defer></script>
@@ -584,6 +595,7 @@
 <script src="js/setup-firmware.js" defer></script>
 <script src="js/setup.js" defer></script>
 <script src="js/analysis.js" defer></script>
+<script src="js/mission-geometry.js" defer></script>
 <script src="js/mission.js" defer></script>
 <script src="js/settings-transfer.js" defer></script>
 <script src="js/welcome.js" defer></script>

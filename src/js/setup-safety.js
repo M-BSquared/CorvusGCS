@@ -107,6 +107,7 @@ Corvus.setupSafety = (function () {
       state.destroyed = true;
       if (state.unsub) { try { state.unsub(); } catch (_e) {} state.unsub = null; }
       dropChecklist(state);
+      dropGeofence(state);
     };
   }
 
@@ -135,6 +136,7 @@ Corvus.setupSafety = (function () {
     state.container.innerHTML = "";
     state.controls = [];
     dropChecklist(state);
+    dropGeofence(state);
 
     // A sensor that disappeared between reads (a firmware downgrade, a
     // disconnect) must not leave the operator on a page about nothing.
@@ -262,6 +264,7 @@ Corvus.setupSafety = (function () {
 
     const sections = Array.isArray(state.doc.sections) ? state.doc.sections : [];
     const cards = [];
+    const fence = geofenceCard(state, sections.find(isGeofenceSection) || null);
     if (!sections.length) {
       const card = S.el("div", "page-card safety-card");
       card.appendChild(S.sectionTitle("Safety & Sensors"));
@@ -270,7 +273,8 @@ Corvus.setupSafety = (function () {
         + "configuration. The page shows only what the connected firmware actually reports."));
       cards.push({ el: card, weight: 4 });
     } else {
-      sections.filter((s) => !isSensorSection(s)).forEach((section) => {
+      sections.filter((s) => !isSensorSection(s) && !isGeofenceSection(s)).forEach((section) => {
+        if (fence && section.id === "rtl") cards.push(fence);
         const card = S.el("div", "page-card safety-card");
         card.dataset.section = section.id || "";
         card.appendChild(S.sectionTitle(section.title || ""));
@@ -279,15 +283,49 @@ Corvus.setupSafety = (function () {
         if (fields.length) card.appendChild(fieldGrid(state, fields));
         cards.push({ el: card, weight: formWeight(section) });
       });
+      if (fence && !cards.includes(fence)) cards.push(fence);
       const sensors = sections.filter(isSensorSection);
       if (sensors.length) {
         cards.push({ el: sensorTiles(state, sensors), weight: 3 + 2 * sensors.length });
       }
     }
 
+    if (fence && !cards.includes(fence)) cards.push(fence);
     const checklist = checklistCard(state);
     if (checklist) cards.push({ el: checklist, weight: 8 });
     state.host.appendChild(columns(cards));
+  }
+
+  function isGeofenceSection(section) {
+    return !!section && section.kind === "geofence";
+  }
+
+  /**
+   * The Geofence card (js/setup-geofence.js): the area on a map of its own,
+   * and the action on leaving it from the stack's schema. Shown without a
+   * vehicle too, since the area is drawn and kept on this station.
+   */
+  function geofenceCard(state, section) {
+    if (!Corvus.setupGeofence || !Corvus.geofence) return null;
+    const connected = !!(state.doc && state.doc.connected);
+    const built = Corvus.setupGeofence.card({
+      section,
+      connected,
+      armed: () => state.armed,
+      fieldGrid: (fields) => fieldGrid(state, fields),
+      register: (el, recheck) => registerControl(state, el, recheck),
+      writeParams: (writes) => runWrites(state, writes),
+      reload: () => load(state, true),
+    });
+    state.geofence = built;
+    return { el: built.el, weight: 14 + formWeight(section || {}) };
+  }
+
+  /** Take the geofence card's map down, before a repaint or on destroy. */
+  function dropGeofence(state) {
+    if (!state.geofence) return;
+    try { state.geofence.destroy(); } catch (_e) {}
+    state.geofence = null;
   }
 
   // -------------------------------------------------------------------------

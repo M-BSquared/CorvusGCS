@@ -1220,13 +1220,11 @@ def return_profile(values: dict[str, float], vehicle: str = "copter") -> dict[st
 # ---------------------------------------------------------------------------
 
 def _fence_section(values: dict[str, float], vehicle: str) -> dict[str, Any] | None:
-    actions = FENCE_ACTION_OPTIONS.get(vehicle, FENCE_ACTION_OPTIONS["copter"])
     return section("limits", "Flight limits", present([
         enum("FENCE_ENABLE", "Fence", values, ON_OFF_OPTIONS),
         bitmask("FENCE_TYPE", "What the fence limits", values, FENCE_TYPE_BITS,
                 hint="A fence with no type selected limits nothing, whatever "
                      "FENCE_ENABLE says."),
-        enum("FENCE_ACTION", "Action at the fence", values, actions),
         number("FENCE_ALT_MAX", "Maximum altitude", values, unit="m", step=1, min=0),
         number("FENCE_ALT_MIN", "Minimum altitude", values, unit="m", step=1),
         number("FENCE_RADIUS", "Circle radius", values, unit="m", step=1, min=0,
@@ -1237,7 +1235,56 @@ def _fence_section(values: dict[str, float], vehicle: str) -> dict[str, Any] | N
         enum("AVOID_ENABLE", "Obstacle avoidance", values, ON_OFF_OPTIONS),
         number("AVOID_MARGIN", "Avoidance margin", values, unit="m", step=0.5, min=0),
     ]), hint="The envelope the vehicle is not allowed to leave, measured from "
-             "the home position.")
+             "the home position. What it does at the fence is set on the Geofence card.")
+
+
+# FENCE_TYPE bit for an inclusion polygon (FENCE_TYPE_BITS above).
+FENCE_TYPE_POLYGON = 1 << 2
+
+
+def geofence_enable_writes(values: dict[str, float]) -> list[dict[str, Any]]:
+    """The writes that make an uploaded polygon act, in order.
+
+    ArduPilot stores the polygon whatever its parameters say and ignores it
+    until FENCE_TYPE has the polygon bit and FENCE_ENABLE is on. A parameter
+    this firmware did not answer for is left alone.
+    """
+    writes: list[dict[str, Any]] = []
+    kind = values.get("FENCE_TYPE")
+    if kind is not None and kind == kind and not int(kind) & FENCE_TYPE_POLYGON:
+        writes.append({"name": "FENCE_TYPE", "value": int(kind) | FENCE_TYPE_POLYGON})
+    enabled = values.get("FENCE_ENABLE")
+    if enabled is not None and enabled != 1:
+        writes.append({"name": "FENCE_ENABLE", "value": 1})
+    return writes
+
+
+def _geofence_section(values: dict[str, float], vehicle: str) -> dict[str, Any] | None:
+    """The Geofence card, in the shape safety_config's has.
+
+    Present whenever the vehicle answered at all. The action labels differ
+    per vehicle class, so *vehicle* picks them.
+    """
+    if not values:
+        return None
+    actions = FENCE_ACTION_OPTIONS.get(vehicle, FENCE_ACTION_OPTIONS["copter"])
+    fields = present([
+        enum("FENCE_ACTION", "Action when leaving the area", values, actions,
+             hint="Also applies to the altitude and circle limits under Flight limits."),
+    ])
+    writes = geofence_enable_writes(values)
+    inactive = ""
+    if writes:
+        inactive = ("The fence is switched off or does not include polygons. "
+                    "Uploading the area switches it on.")
+    elif values.get("FENCE_ACTION") == 0:
+        inactive = "The action is Report only, so leaving the area only warns."
+    return {
+        "id": "geofence", "title": "Geofence", "kind": "geofence", "fields": fields,
+        "hint": "Draw the area the vehicle may fly in. Leaving it triggers the action below.",
+        "enable_writes": writes,
+        "inactive": inactive,
+    }
 
 
 def _rtl_section(values: dict[str, float]) -> dict[str, Any] | None:
@@ -1342,6 +1389,7 @@ def build(values: dict[str, float],
     ports = _serial_ports(values)
     sections = [s for s in (
         _fence_section(values, vehicle),
+        _geofence_section(values, vehicle),
         _rtl_section(values),
         _failsafe_section(values, vehicle),
         _arming_section(values),

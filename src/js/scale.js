@@ -64,7 +64,7 @@ Corvus.scale = (function () {
 
     `zoom` is invisible to a media query: it measures the window, which stays
     1440px wide however small the app's own pixels have become inside it. So
-    the width media queries in css/main.css became selectors guarded by this
+    the width media queries in the page sheets became selectors guarded by this
     attribute, and this is what writes it.
 
     Each token names the media query it replaces, so a rule and its condition

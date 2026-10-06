@@ -284,6 +284,20 @@ def test_only_ardupilot_needs_a_mode_before_a_guided_command() -> None:
     assert apm.guided_mode(mv.mavlink.MAV_TYPE_ANTENNA_TRACKER) == ""
 
 
+def test_each_stack_names_the_mode_the_flight_keys_switch_to() -> None:
+    px4 = autopilot.dialect_for(mv.mavlink.MAV_AUTOPILOT_PX4)
+    apm = autopilot.dialect_for(mv.mavlink.MAV_AUTOPILOT_ARDUPILOTMEGA)
+    generic = autopilot.dialect_for(mv.mavlink.MAV_AUTOPILOT_GENERIC)
+    assert px4.stick_mode(2) == "POSCTL"
+    assert "POSCTL" in px4.stick_modes(2) and "MISSION" not in px4.stick_modes(2)
+    assert apm.stick_mode(mv.mavlink.MAV_TYPE_QUADROTOR) == "POSHOLD"
+    assert "LOITER" in apm.stick_modes(mv.mavlink.MAV_TYPE_QUADROTOR)
+    assert "AUTO" not in apm.stick_modes(mv.mavlink.MAV_TYPE_QUADROTOR)
+    assert apm.stick_mode(mv.mavlink.MAV_TYPE_FIXED_WING) == ""
+    assert generic.stick_mode(2) == ""
+    assert px4.capabilities(2)["stick_mode"] == "POSCTL"
+
+
 def test_only_ardupilot_reserves_mission_slot_zero_for_home() -> None:
     assert autopilot.dialect_for(mv.mavlink.MAV_AUTOPILOT_PX4).mission_seq0_is_home is False
     assert autopilot.dialect_for(

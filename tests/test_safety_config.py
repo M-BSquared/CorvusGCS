@@ -75,7 +75,7 @@ def _with_flow(**overrides: float) -> dict[str, float]:
 
 def test_a_current_firmware_yields_every_safety_section() -> None:
     doc = safety_config.build(_safe())
-    assert set(_sections(doc)) == {"limits", "rtl", "failsafe"}
+    assert set(_sections(doc)) == {"limits", "geofence", "rtl", "failsafe"}
     assert doc["received"] == len(_safe())
 
 
@@ -84,7 +84,8 @@ def test_the_limits_the_operator_came_for_are_present_with_units() -> None:
     assert limits["GF_MAX_HOR_DIST"]["value"] == 500.0
     assert limits["GF_MAX_HOR_DIST"]["unit"] == "m"
     assert limits["GF_MAX_VER_DIST"]["value"] == 120.0
-    assert limits["GF_ACTION"]["kind"] == "enum"
+    fence = _fields(_sections(safety_config.build(_safe()))["geofence"])
+    assert fence["GF_ACTION"]["kind"] == "enum"
 
 
 def test_the_return_height_is_a_field_not_a_guess() -> None:
@@ -321,7 +322,7 @@ def test_reading_every_parameter_at_once_never_raises() -> None:
     """A vehicle that answers for the whole superset must still build cleanly."""
     doc = safety_config.build({n: 1.0 for n in safety_config.param_names()})
     assert {s["id"] for s in doc["sections"]} == {
-        "limits", "rtl", "failsafe", "rangefinder", "flow",
+        "limits", "geofence", "rtl", "failsafe", "rangefinder", "flow",
     }
 
 

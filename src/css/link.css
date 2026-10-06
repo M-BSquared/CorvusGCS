@@ -1,0 +1,726 @@
+/*
+  Corvus GCS: The console page and the LINK tab: quality, disconnect, presets, recents.
+
+  One of the page sheets index.html loads after main.css, in a fixed order.
+  See main.css for what a page sheet may and may not do.
+*/
+
+/* ===== CONSOLE =====
+   One toolbar, then the stream, then the input. The panel used to carry a
+   title row (duplicating the tab above it) plus five icon buttons plus a
+   separate filter strip plus a status bar — more chrome than stream. Search,
+   severity and tools now share a single line, and the counts fold into the
+   footer beside the command hint. Everything here is deliberately quiet: the
+   messages are the content, the controls are not. */
+/* --panel-gutter is the console pane's single horizontal inset. Its children
+   used to each invent their own (toolbar 0, stream 0, input row 11px, footer
+   2px), so nothing in the column lined up and the send button ran off the
+   panel edge. Padding rather than a pane-level inset, so the toolbar's rule,
+   the input bar's border and its fill still span the full width. */
+.tab-panel[data-panel="console"] { --panel-gutter: 12px; }
+.console-toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px var(--panel-gutter, 12px);
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 8px;
+}
+
+/* Search: an icon inside the field rather than a label beside it, so the
+   filter costs one control's width instead of two. */
+.console-search {
+  position: relative;
+  flex: 1; min-width: 0;
+  display: flex; align-items: center;
+}
+.console-search-icon {
+  position: absolute; left: 7px;
+  width: 12px; height: 12px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+.console-filter {
+  width: 100%;
+  padding: 5px 8px 5px 25px;
+  border-radius: var(--radius-btn);
+  background: var(--panel-fill);
+  border: 1px solid var(--panel-hairline);
+  color: var(--text-1);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  outline: none;
+  transition: border-color 130ms, box-shadow 130ms;
+}
+.console-filter::placeholder { color: var(--text-3); }
+.console-filter:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+
+/* Tools sit at the end of the same line, muted until used. */
+.console-tools { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+/* Same 26px as the filter beside them, so the toolbar reads as one row rather
+   than a field with a shorter button cluster parked next to it. */
+.console-tools .icon-btn { width: 26px; height: 26px; border-radius: 5px; color: var(--text-3); }
+.console-tools .icon-btn:hover { color: var(--text-1); }
+.console-tools .icon-btn.active { color: var(--warning); background: var(--warning-dark); }
+.console-tools .icon-btn svg, .console-tools .icon-btn i { width: 13px; height: 13px; }
+
+/* ----- the stream ----- */
+.console-stream { position: relative; flex: 1; min-height: 0; display: flex; padding: 0 var(--panel-gutter, 12px); }
+
+/* Jump-to-live: appears only once the operator has scrolled away from the end,
+   and says how much arrived meanwhile — which the permanent auto-scroll toggle
+   it replaces could never do. */
+.console-jump {
+  position: absolute;
+  left: 50%; bottom: 10px;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--text-inverted);
+  border: none;
+  font-family: var(--sans);
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.3px;
+  cursor: pointer;
+  box-shadow: var(--shadow-soft);
+  animation: corvus-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.console-jump:hover { background: var(--accent-hover); }
+.console-jump:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+.console-jump[hidden] { display: none; }
+.console-jump svg, .console-jump i { width: 12px; height: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  .console-jump { animation: none; }
+}
+
+/* ----- footer: counts and the command hint on one slim line ----- */
+.console-footer {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 5px var(--panel-gutter, 12px) 0;
+  min-height: 15px;
+  font-size: 10px;
+  color: var(--text-3);
+}
+.console-count { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.console-count.is-paused { color: var(--warning); font-weight: 600; }
+.console-hint {
+  flex: 1; min-width: 0;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 10px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ===== LINK — quality, disconnect, presets, recents ===== */
+.link-quality {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.6px;
+  padding: 2px 5px; border-radius: 999px;
+  border: 1px solid currentColor;
+  flex: 0 0 auto;
+}
+.link-quality[hidden] { display: none; }
+.link-quality[data-level="healthy"] { color: var(--healthy); }
+.link-quality[data-level="warning"] { color: var(--warning); }
+.link-quality[data-level="critical"] { color: var(--critical); }
+.link-quality[data-level="off"] { color: var(--text-3); }
+
+/* The AUTO chip rides the connection line rather than the status row: it
+   answers the same question the connection string does ("what link is this"),
+   and the status row has no width to spare — a third pill beside the state
+   word clipped CONNECTED down to "C\2026", which is the one word on the panel
+   that has to stay readable. Quieter than the quality pill on purpose: quality
+   is a flying decision, "who picked this" is context. */
+.link-status-why {
+  display: flex; align-items: center; gap: 6px; min-width: 0;
+}
+.link-status-why > .link-status-conn { flex: 1 1 auto; min-width: 0; }
+.link-auto-badge {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.6px;
+  padding: 2px 5px; border-radius: 999px;
+  border: 1px dashed var(--border-strong);
+  color: var(--text-3);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.link-auto-badge[hidden] { display: none; }
+
+/* The mid-session plug: a device turned up while the link was busy elsewhere.
+   Outlined in the accent rather than filled, because it is an offer and a
+   filled row reads as something that already happened. */
+.link-suggestion {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 7px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-btn);
+  background: var(--surface-2);
+}
+.link-suggestion[hidden] { display: none; }
+.link-suggestion-text {
+  flex: 1 1 160px; min-width: 0;
+  font-size: 10.5px; color: var(--text-2); line-height: 1.35;
+}
+.link-suggestion-actions { display: flex; gap: 4px; flex: 0 0 auto; }
+
+/* Disconnect used to be grey ghost text, which on a live link read as
+   decoration: the one control an operator reaches for when a port has moved
+   was the hardest one on the panel to find. It now carries an outline in its
+   own colour — unmistakably a button, and unmistakably the destructive one —
+   without the filled red of a .btn danger, which would invite the click. */
+.btn.link-disconnect {
+  padding: 5px 10px;
+  color: var(--critical);
+  background: color-mix(in srgb, var(--critical) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--critical) 30%, transparent);
+}
+/* #fff on the filled hover, not --text-inverted: the dark themes invert to a
+   near-black, which would be unreadable on red. Same reason .btn danger does
+   it. */
+.btn.link-disconnect:hover:not(:disabled) {
+  color: #fff;
+  background: var(--critical);
+  border-color: var(--critical);
+}
+.link-disconnect[hidden] { display: none; }
+
+/* Presets. Four bordered rows rather than a wrapped strip of ghost buttons:
+   the strip had no edges, so the labels read as prose under the field and the
+   longest of them wrapped into the line below.
+
+   One line per row now: name, the string it fills in, and a hint icon. The
+   note that explains the endpoint used to be printed under every row, three
+   lines of prose deep at the narrowest panel width, which turned a four-item
+   list into a wall of text and pushed Connect out of sight. It lives in the
+   hint's popover, which is the whole reason Corvus.ui.infoHint exists.
+
+   The row is a container, not the control: it holds the pick button and the
+   hint button side by side, so the hover and focus treatment moves onto the
+   wrapper (:focus-within, since the focus lands on a child). */
+.link-presets { display: flex; flex-direction: column; gap: 5px; margin-top: 9px; }
+.link-preset-list { display: flex; flex-direction: column; gap: 4px; }
+.link-preset {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--radius-btn);
+  background: var(--panel-fill);
+  border: 1px solid var(--panel-hairline);
+  transition: background 130ms, border-color 130ms;
+}
+.link-preset:hover {
+  background: var(--panel-fill-hover);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--panel-hairline-hover));
+}
+.link-preset:focus-within {
+  border-color: var(--accent);
+}
+.link-preset-pick {
+  display: flex; align-items: baseline; gap: 8px;
+  flex: 1; min-width: 0;
+  padding: 1px 0;
+  text-align: left;
+  cursor: pointer;
+}
+.link-preset-pick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-btn);
+}
+.link-preset-name {
+  flex: 1; min-width: 0;
+  color: var(--text-1);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.1px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.link-preset-conn {
+  flex: none;
+  color: var(--text-3);
+  font-family: var(--mono); font-size: 10px;
+  white-space: nowrap;
+}
+.link-preset:hover .link-preset-name { color: var(--accent); }
+
+/* Connect sits directly under the preset rows, which are now bordered and
+   the same width as it; a little extra air keeps it from reading as a fifth
+   row of the list. */
+.btn.link-connect { margin-top: 4px; }
+
+.link-recent { display: flex; flex-direction: column; gap: 5px; }
+.link-recent-list { display: flex; flex-direction: column; gap: 3px; }
+.link-recent-row {
+  display: flex; align-items: center; gap: 4px;
+  border-radius: var(--radius-btn);
+}
+.link-recent-conn {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 7px;
+  padding: 6px 9px;
+  border-radius: var(--radius-btn);
+  background: var(--panel-fill);
+  border: 1px solid var(--panel-hairline);
+  color: var(--text-2);
+  font-family: var(--mono); font-size: 11px;
+  text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  cursor: pointer;
+  transition: background 130ms, color 130ms, border-color 130ms;
+}
+.link-recent-conn:hover {
+  background: var(--panel-fill-hover);
+  border-color: var(--panel-hairline-hover);
+  color: var(--text-1);
+}
+.link-recent-conn:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 1px; }
+.link-recent-conn i, .link-recent-conn svg {
+  width: 13px; height: 13px; flex: 0 0 auto; color: var(--text-3);
+}
+/* The name is what identifies the link and the one part allowed to shrink;
+   the baud (or the scheme) rides the right edge at a size that reads as an
+   annotation, because it is only ever consulted second. */
+.link-recent-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link-recent-detail { flex: 0 0 auto; font-size: 10px; color: var(--text-3); }
+
+/* ===================================================================
+   ANALYSIS — flight-log download
+   The folder is chosen once at the top and persisted, because the point of
+   this page is that after a flight you press one button rather than
+   re-answering "where to?" every time.
+   =================================================================== */
+.logs-view { display: flex; flex-direction: column; gap: 12px; }
+
+/* Current Telemetry as a grid of small tiles. Nine full-width rows left the
+   right half of the card empty and pushed the log tools most of a screen
+   down; the values are two or three characters each, so they get a tile the
+   size of the number rather than a line the width of the page. */
+.tele-body { display: flex; flex-direction: column; gap: 8px; }
+.tele-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.tele-tile {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--panel-hairline);
+  border-radius: var(--radius-btn);
+  background: var(--panel-fill);
+  backdrop-filter: var(--blur-fine);
+  -webkit-backdrop-filter: var(--blur-fine);
+}
+.tele-tile-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.tele-tile-head svg, .tele-tile-head i {
+  width: 13px; height: 13px; flex: 0 0 auto; color: var(--text-3);
+}
+.tele-tile-label {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.6px;
+  text-transform: uppercase; color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The number and its unit share a baseline: the unit is an annotation on the
+   value, not a second value. */
+.tele-tile-line { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
+.tele-tile-value {
+  font-family: var(--mono); font-size: 20px; line-height: 1.1;
+  color: var(--text-1); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tele-tile-unit { font-size: 11px; color: var(--text-3); flex: 0 0 auto; }
+/* Kept in the flow even when empty, so tiles in a row stand at one height. */
+.tele-tile-detail {
+  font-size: 10.5px; color: var(--text-3); min-height: 14px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* No link: the dashes stay, dimmed. A frame that disappears on link loss
+   reads as a bug rather than as "nothing to show". */
+.tele-grid[data-state="off"] .tele-tile-value { color: var(--text-3); }
+
+/* The download folder is a setting, not a section: one slim row, no card, no
+   heading, no paragraph. Given all three it out-shouted the logs, which are
+   what the page is actually for. */
+.logs-dir-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface-1); border: 1px solid var(--border-soft);
+  border-radius: var(--radius-btn);
+}
+.logs-dir-icon { display: flex; flex: 0 0 auto; color: var(--text-3); }
+.logs-dir-icon svg, .logs-dir-icon i { width: 14px; height: 14px; }
+.logs-dir-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.3px;
+  color: var(--text-3); text-transform: uppercase; flex: 0 0 auto;
+}
+.logs-dir-row .logs-dir-input {
+  flex: 1; min-width: 0;
+  padding: 4px 8px; font-size: 11.5px;
+  background: transparent; border-color: transparent;
+}
+.logs-dir-row .logs-dir-input:focus {
+  background: rgb(var(--input-rgb) / 0.6); border-color: var(--accent);
+}
+.logs-dir-note {
+  font-size: 11px; line-height: 1.4; color: var(--text-3);
+  padding: 0 2px; min-height: 0;
+}
+.logs-dir-note:empty { display: none; }
+.logs-dir-note.err { color: var(--critical); }
+
+/* The two log kinds as Setup-style tiles: the landing view is a choice, not
+   two long lists competing for the same screen. */
+.logs-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+.logs-tile { align-items: center; gap: 14px; padding: 18px 20px; }
+.logs-tile .tile-icon { width: 40px; height: 40px; }
+.logs-tile .tile-icon svg, .logs-tile .tile-icon i { width: 20px; height: 20px; }
+.logs-tile .tile-body { flex: 1; }
+
+.logs-landing { display: flex; flex-direction: column; gap: 12px; }
+/* The heading's own underline is the rule between the page's two halves —
+   live telemetry above, log tooling below; the column gap does the spacing. */
+.logs-landing > .page-section-title { margin-bottom: 0; }
+.logs-landing[hidden] { display: none; }
+.logs-body { display: flex; flex-direction: column; gap: 12px; }
+.logs-body[hidden] { display: none; }
+.logs-card { display: flex; flex-direction: column; gap: 10px; }
+.logs-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.logs-head .page-section-title { margin: 0; }
+.logs-select-row { display: flex; align-items: center; gap: 6px; }
+.logs-selection { font-size: 11px; color: var(--text-3); margin-left: 4px; }
+/* Ordering is a reading control, not one of the selection actions, so it sits
+   at the far end of the row rather than next to Select all. `margin-left:auto`
+   on the wrapper (not the select) so the label travels with it. */
+.logs-sort { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.logs-sort-label {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.5px;
+  text-transform: uppercase; color: var(--text-3);
+}
+.logs-sort .field-select { max-width: 150px; font-size: 11.5px; padding-block: 4px; }
+/* In the tlog head the sort is the only thing beside the title, and
+   .logs-head already spaces its ends apart. */
+.logs-head .logs-sort { margin-left: 0; }
+
+.logs-list {
+  display: flex; flex-direction: column; gap: 2px;
+  max-height: 320px; overflow-y: auto;
+  background: var(--surface-1); border: 1px solid var(--border-soft);
+  border-radius: var(--radius-btn); padding: 4px;
+}
+.logs-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 9px; border-radius: var(--radius-btn);
+  cursor: pointer; position: relative;
+}
+.logs-row:hover { background: var(--surface-hover); }
+.logs-row-static { cursor: default; }
+.logs-row-static:hover { background: transparent; }
+.logs-check { width: 14px; height: 14px; flex: 0 0 auto; accent-color: var(--accent); }
+.logs-row-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.logs-row-title-row { display: flex; align-items: center; gap: 7px; }
+.logs-row-title { font-size: 12.5px; font-weight: 600; color: var(--text-1); }
+/* "already in the folder" — the difference between a no-op and pulling
+   megabytes back over a telemetry link. */
+.logs-row-tag {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+  color: var(--healthy); background: var(--healthy-dark);
+  border: 1px solid var(--healthy); border-radius: 4px; padding: 1px 5px;
+}
+.logs-row-meta {
+  font-family: var(--mono); font-size: 10.5px; color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Per-row state, so a long queue is readable at a glance rather than only
+   through the status line. */
+.logs-row-mark {
+  width: var(--dot-size); height: var(--dot-size); border-radius: 50%;
+  color: transparent; background: currentColor; flex: 0 0 auto;
+}
+.logs-row[data-state="active"] { background: var(--nav-dark); }
+.logs-row[data-state="active"] .logs-row-mark {
+  color: var(--nav); box-shadow: var(--dot-halo);
+  animation: calibMarkerPulse 1.4s ease-in-out infinite;
+}
+.logs-row[data-state="done"] .logs-row-mark { color: var(--healthy); box-shadow: var(--dot-halo); }
+.logs-row[data-state="failed"] .logs-row-mark { color: var(--critical); box-shadow: var(--dot-halo); }
+/* Straight from a downloaded log into its review. Row-reverse so the arrow
+   trails the word — it points at where the click goes, not back at the row.
+   Always drawn, never hover-revealed: a shortcut nobody can see is a shortcut
+   nobody uses, and only downloaded rows carry one at all. */
+/* Depth-qualified: components.css is loaded after this file and its
+   .btn[data-variant="ghost"] rule matches at the same specificity, so a
+   two-class selector here would lose the colour on source order alone. */
+.logs-row .btn.logs-row-review {
+  flex-direction: row-reverse; flex: 0 0 auto; gap: 5px;
+  color: var(--nav); padding-inline: 8px;
+}
+.logs-row .btn.logs-row-review:hover { color: var(--nav); background: var(--nav-dark); }
+.logs-row-review .btn-icon { transition: transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.logs-row-review:hover .btn-icon { transform: translateX(2px); }
+@media (prefers-reduced-motion: reduce) {
+  .logs-row-review .btn-icon, .logs-row-review:hover .btn-icon {
+    transition: none; transform: none;
+  }
+}
+
+.logs-actions { display: flex; align-items: center; gap: 8px; }
+/* Pushed to the far end, away from Download: the destructive action should not
+   sit where the hand goes for the routine one. */
+.btn.logs-erase { margin-left: auto; }
+.logs-status { font-size: 11.5px; line-height: 1.5; color: var(--text-2); min-height: 16px; }
+.logs-status.err { color: var(--critical); }
+
+@media (prefers-reduced-motion: reduce) {
+  .logs-row[data-state="active"] .logs-row-mark { animation: none; }
+}
+
+/* ----- ANALYSIS: Flight Review ----- */
+.review-pick { display: flex; gap: 8px; align-items: center; }
+.review-pick .field-select { flex: 1; min-width: 0; }
+/* The exception, not the norm: one quiet line under the picker rather than a
+   second full-width button competing with Review for the eye. */
+.review-browse-row { display: flex; margin-top: 6px; }
+.review-browse-row .btn.review-browse {
+  padding: 2px 4px; height: auto; font-size: 11px; color: var(--text-3);
+}
+.review-browse-row .btn.review-browse:hover {
+  background: transparent; color: var(--nav);
+}
+/* The input exists only to open the OS file dialog; the button is the control.
+   Hidden with clip rather than display:none so a click still reaches it and it
+   stays reachable to a screen reader. */
+.review-file-input {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.review-out { display: flex; flex-direction: column; gap: 12px; }
+/* Shown while the backend parses. A long flight is a real wait, and the page
+   arrived at by the shortcut would otherwise be blank for all of it. */
+.review-loading {
+  font-size: 12px; color: var(--text-3); text-align: center; padding: 26px 14px;
+}
+.review-loading::after {
+  content: ""; display: block; height: 2px; margin: 14px auto 0; max-width: 200px;
+  border-radius: 2px; background: var(--nav-dark);
+  background-image: linear-gradient(90deg, transparent, var(--nav), transparent);
+  background-size: 45% 100%; background-repeat: no-repeat;
+  animation: reviewLoadingSweep 1.3s ease-in-out infinite;
+}
+@keyframes reviewLoadingSweep {
+  from { background-position: -45% 0; }
+  to { background-position: 145% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .review-loading::after { animation: none; background-position: 50% 0; }
+}
+.review-summary { display: flex; flex-direction: column; gap: 10px; }
+.review-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px;
+}
+.review-fact { display: flex; flex-direction: column; gap: 2px; }
+.review-fact-label {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.6px;
+  text-transform: uppercase; color: var(--text-3);
+}
+.review-fact-value { font-family: var(--mono); font-size: 12px; color: var(--text-1); }
+
+/* Findings sit above the plots: the plots are the evidence, these are the two
+   sentences worth reading if you read nothing else. */
+.review-finding {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 12px; line-height: 1.5;
+  border-radius: var(--radius-btn); padding: 8px 10px;
+  border: 1px solid var(--border-soft); background: var(--surface-2);
+  color: var(--text-2);
+}
+.review-finding svg, .review-finding i {
+  width: 14px; height: 14px; flex: 0 0 auto; margin-top: 1px;
+}
+.review-finding[data-level="ok"] {
+  color: var(--healthy); background: var(--healthy-dark); border-color: var(--healthy);
+}
+.review-finding[data-level="warning"] {
+  color: var(--warning); background: var(--warning-dark); border-color: var(--warning);
+}
+.review-finding[data-level="critical"] {
+  color: var(--critical-bright); background: var(--critical-dark); border-color: var(--critical);
+}
+/* Notes are context rather than problems: the same row, quietened, so they
+   read as things worth knowing and not as things needing doing. */
+.review-finding[data-level="note"] {
+  color: var(--text-2); background: var(--surface-2); border-color: var(--border-soft);
+}
+
+/* A finding is a headline and, behind it, why it is a claim worth making. The
+   reasoning is a paragraph each and a page of them is a wall the reader gives
+   up on, so the headline is a row and the paragraph waits for a click. */
+.review-finding-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.review-finding-head {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  width: 100%; text-align: left;
+  background: none; border: 0; padding: 0; margin: 0;
+  color: inherit; font: inherit; line-height: inherit;
+}
+button.review-finding-head { cursor: pointer; }
+button.review-finding-head:hover .review-finding-text { text-decoration: underline; }
+button.review-finding-head:focus-visible {
+  outline: 2px solid currentColor; outline-offset: 3px; border-radius: 3px;
+}
+.review-finding-text { flex: 1 1 auto; min-width: 0; }
+/* The chevron trails the row and turns when it is open, so an unopened finding
+   still advertises that there is more behind it. */
+.review-finding-head svg, .review-finding-head i {
+  flex: 0 0 auto; opacity: 0.55; transition: transform 120ms ease;
+}
+.review-finding-head[aria-expanded="true"] svg,
+.review-finding-head[aria-expanded="true"] i { transform: rotate(180deg); }
+.review-finding-detail {
+  font-size: 11.5px; line-height: 1.6; opacity: 0.88;
+  padding-left: 2px; border-left: 2px solid currentColor;
+  padding-inline-start: 10px; margin-top: 2px;
+}
+.review-finding-time {
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.4px; opacity: 0.8; flex: 0 0 auto;
+}
+.review-finding-mode {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 999px; flex: 0 0 auto;
+  border: 1px solid var(--border-soft); opacity: 0.9;
+}
+/* The fold the observations sit behind. Deliberately plain: it is a disclosure,
+   not an action, and styling it as a button invites a press it does not earn. */
+.review-more {
+  display: flex; align-items: center; gap: 6px;
+  background: none; border: 0; padding: 2px 0; margin: 0;
+  font-size: 11px; color: var(--text-3); cursor: pointer;
+}
+.review-more:hover { color: var(--text-2); }
+.review-more-label { letter-spacing: 0.2px; }
+.review-more svg, .review-more i {
+  width: 13px; height: 13px; transition: transform 120ms ease;
+}
+.review-more[aria-expanded="true"] svg,
+.review-more[aria-expanded="true"] i { transform: rotate(90deg); }
+.review-finding-notes { display: flex; flex-direction: column; gap: 8px; }
+/* Which thresholds produced the list above: an empty list at Relaxed and one
+   at Strict say different things. */
+.review-sensitivity { font-size: 11px; color: var(--text-3); letter-spacing: 0.2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .review-finding-head svg, .review-finding-head i,
+  .review-more svg, .review-more i { transition: none; }
+}
+
+/* The flight as a strip of modes. Every plot below carries the same bands, so
+   this is the key as much as it is a timeline. */
+.review-modes {
+  display: flex; height: 22px; border-radius: 4px; overflow: hidden;
+  border: 1px solid var(--border-soft);
+}
+.review-mode-seg {
+  min-width: 2px; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+/* Named in place where the span is wide enough to read; the key below covers
+   the slivers, so no mode goes unlabelled either way. */
+.review-mode-seg-label {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.4px;
+  text-transform: uppercase; color: #10141C;
+  white-space: nowrap; padding: 0 4px;
+}
+/* A time ruler under the strip: "which mode when" should be answerable from
+   the overview, not only from the timeline plot. */
+.review-mode-ruler {
+  display: flex; justify-content: space-between;
+  font-family: var(--mono); font-size: 9.5px; color: var(--text-3);
+  margin-top: -4px;
+}
+.review-mode-key { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+.review-mode-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--text-2);
+}
+.review-mode-dot { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; }
+.review-mode-time { font-family: var(--mono); font-size: 10px; color: var(--text-3); }
+
+/* Jump chips: two dozen plots is a scroll, and this is the difference between
+   a report you skim and one you give up on. */
+.review-nav { display: flex; flex-wrap: wrap; gap: 6px; }
+.btn.review-nav-chip { border-radius: 999px; }
+
+/* Section rule between plot groups, so "estimator" is distinguishable from
+   "airframe" without reading every title. */
+.review-group {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; padding-bottom: 5px; margin-top: 6px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.review-group-title {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.8px;
+  text-transform: uppercase; color: var(--text-1);
+}
+.review-group-count { font-size: 10.5px; color: var(--text-3); }
+
+.review-plot-card { display: flex; flex-direction: column; gap: 8px; }
+/* The title on the left, and on the one plot that has two views, the switch
+   between them on the right. */
+.review-plot-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+}
+/* 268 rather than 240: the legend under the axis is readable now, and it is
+   the bottom margin that grew — without this the drawing area shrank by the
+   height of the legend it gained. */
+.review-plot { width: 100%; height: 268px; }
+.review-plot[hidden] { display: none; }
+/* Equal axes on a wide card leave a square track using a fraction of the
+   width. Taller is the only lever that makes it bigger without distorting it,
+   and the track is the plot people actually look at. */
+.review-plot[data-equal="1"] { height: min(460px, calc(70 * var(--vh))); }
+.review-note { font-size: 11px; line-height: 1.5; color: var(--text-3); }
+
+/* ----- Ground track: the same path over imagery -----
+   A segmented control, not tabs: it chooses how to read ONE plot, and the
+   card it sits in is where that choice applies. Built on .link-kinds' metrics
+   so the app has one segmented surface rather than two that nearly match. */
+.review-view-seg,
+.params-filter {
+  display: flex; gap: 3px; padding: 3px;
+  background: var(--panel-fill); border: 1px solid var(--panel-hairline);
+  border-radius: var(--radius-btn);
+}
+.review-view-opt,
+.params-filter-opt {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px;
+  border: 0; border-radius: calc(var(--radius-btn) - 2px);
+  background: transparent; color: var(--text-3);
+  font-family: inherit; font-size: 11px; font-weight: 600; letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: background 130ms ease, color 130ms ease;
+}
+.review-view-opt i, .review-view-opt svg { width: 13px; height: 13px; }
+.review-view-opt:hover,
+.params-filter-opt:not(:disabled):hover { color: var(--text-1); }
+.review-view-opt[aria-selected="true"],
+.params-filter-opt[aria-selected="true"] { background: var(--surface-1); color: var(--text-1); }
+.review-view-opt[aria-selected="true"] i,
+.review-view-opt[aria-selected="true"] svg { color: var(--accent); }
+.review-view-opt:focus-visible,
+.params-filter-opt:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: -2px; }
+
+.review-track { display: flex; flex-direction: column; gap: 8px; }
+.review-track[hidden] { display: none; }
+/* Clipped, because MapLibre's canvas has square corners of its own and would
+   otherwise sit past the card's. */
+.review-track-map {
+  position: relative; overflow: hidden;
+  border: 1px solid var(--border-soft); border-radius: var(--radius-btn);
+  background: var(--surface-2);
+}
+/* The Plotly legend does not come with the map, so the key is stated here in
+   the same colours and the same order. */
+.review-track-key { padding-top: 2px; }
+.review-messages { max-height: 320px; }
+.logs-head .field-select { max-width: 190px; }

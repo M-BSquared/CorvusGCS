@@ -110,7 +110,7 @@ def _all_values(module) -> dict[str, float]:
 def test_safety_renders_the_sections_an_operator_needs_before_a_flight() -> None:
     payload = ardupilot_safety.build(_all_values(ardupilot_safety), [], "copter")
     ids = [s["id"] for s in payload["sections"]]
-    assert ids == ["limits", "rtl", "failsafe", "arming",
+    assert ids == ["limits", "geofence", "rtl", "failsafe", "arming",
                    "rangefinder", "flow"]
     assert payload["stack"] == "ardupilot"
 
@@ -124,8 +124,8 @@ def test_the_fence_action_means_something_different_on_each_vehicle() -> None:
     plane = ardupilot_safety.build(values, [], "plane")
 
     def action_options(payload):
-        limits = next(s for s in payload["sections"] if s["id"] == "limits")
-        field = next(f for f in limits["fields"] if f["param"] == "FENCE_ACTION")
+        fence = next(s for s in payload["sections"] if s["id"] == "geofence")
+        field = next(f for f in fence["fields"] if f["param"] == "FENCE_ACTION")
         return {int(o["value"]) for o in field["options"]}
 
     assert 4 in action_options(copter)
@@ -139,8 +139,8 @@ def test_an_unknown_enum_value_is_preserved_rather_than_snapped() -> None:
     values = _all_values(ardupilot_safety)
     values["FENCE_ACTION"] = 42.0
     payload = ardupilot_safety.build(values, [], "copter")
-    limits = next(s for s in payload["sections"] if s["id"] == "limits")
-    field = next(f for f in limits["fields"] if f["param"] == "FENCE_ACTION")
+    fence = next(s for s in payload["sections"] if s["id"] == "geofence")
+    field = next(f for f in fence["fields"] if f["param"] == "FENCE_ACTION")
     assert {"value": 42, "label": "Unknown (42)"} in field["options"]
 
 

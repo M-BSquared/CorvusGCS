@@ -1,0 +1,1299 @@
+/*
+  Corvus GCS: The Home map and what sits on it: rails, menus, search, the aircraft, the
+  launch point, the flown track, the joystick and the preflight checklist.
+
+  One of the page sheets index.html loads after main.css, in a fixed order.
+  See main.css for what a page sheet may and may not do.
+*/
+
+/* ===== MAIN / MAP ===== */
+.main { flex: 1; position: relative; min-width: 0; background: var(--bg); }
+.map-view { position: absolute; inset: 0; }
+.map { position: absolute; inset: 0; }
+/* The sky, in 3D mode — the backstop behind MapLibre's own.
+   map.js paints a real sky and atmosphere through setSky, which is what the
+   operator normally sees. This gradient is what shows if that is ever absent:
+   MapLibre draws nothing above the horizon, so the container itself is the
+   sky there, at no cost in layers, tiles or frame time. Themed rather than
+   blue in both cases — the map sits inside an app wearing one palette, and a
+   photographic sky over a dark UI looks like a screenshot of a different
+   program. */
+.map.three-d {
+  background: linear-gradient(
+    to bottom,
+    var(--bg) 0%,
+    color-mix(in srgb, var(--surface-2) 70%, var(--bg)) 55%,
+    color-mix(in srgb, var(--surface-3) 85%, var(--bg)) 100%
+  );
+}
+.page-view { position: absolute; inset: 0; overflow-y: auto; padding: 32px 40px; }
+.page-view[hidden] { display: none; }
+/* Tile attribution. The credit is a legal requirement, so it is always on and
+   always legible — but it is the least important thing on the map, so it reads
+   as a caption on the imagery rather than as a control.
+
+   It uses the same glass as the rest of the map chrome (.map-controls,
+   .tiles-trigger, .map-search-trigger) — glass-rgb fill, tint-rgb hairline,
+   shadow-pop — so the toggle reads as one more piece of that chrome instead of
+   a faint smudge in the corner, on any imagery in either theme.
+
+   Specificity note: the geometry below is deliberately written as
+   `.maplibregl-ctrl-bottom-left > .maplibregl-ctrl.maplibregl-ctrl-attrib`.
+   MapLibre's own `.maplibregl-ctrl-bottom-left > .maplibregl-ctrl-attrib
+   .maplibregl-compact-show` rule is three classes deep and was silently winning
+   on padding and radius — which is where the oversized pill with a 28px gap
+   before the text came from. Matching that depth (and landing later in the
+   cascade, since main.css loads after the vendor sheet) is what makes these
+   values stick, without reaching for !important. */
+.maplibregl-ctrl-bottom-left .maplibregl-ctrl {
+  margin: 0 0 var(--map-rail-inset, 14px) var(--map-rail-inset, 14px);
+}
+.maplibregl-ctrl-bottom-left > .maplibregl-ctrl.maplibregl-ctrl-attrib {
+  /* A flex row, so the toggle and the credit are laid out by this rule rather
+     than by MapLibre's absolute corner placement plus a padding reservation. */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* MapLibre's compact rule sets box-sizing: content-box, so its own 20px
+     min-height and every padding below were being added to each other rather
+     than absorbed. */
+  box-sizing: border-box;
+  min-height: 0;
+  /* 4px top and bottom, the same as the folded disc below, so opening the
+     credit does not change the pill's height or nudge the icon. */
+  padding: 4px 9px 4px 4px;
+  background: rgb(var(--glass-rgb) / 0.38);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border: 1px solid rgb(var(--tint-rgb) / 0.06);
+  border-radius: 999px;
+  box-shadow: var(--shadow-pop);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-2);
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+/* Readable whenever the credit is actually open. Keyed only to the open state,
+   not :hover: the credit is a click-to-reveal detail, not a mouseover
+   tooltip, so passing over the pill must not pop the text open on its own. */
+.maplibregl-ctrl-bottom-left
+  > .maplibregl-ctrl.maplibregl-ctrl-attrib.maplibregl-compact-show {
+  /* Still glass when open: an opaque plate read as a sticker on the imagery.
+     The heavier blur, not the fill, is what keeps the text legible. */
+  background: rgb(var(--glass-rgb) / 0.45);
+  color: var(--text-1);
+}
+/* Collapsed — MapLibre folds the credit into a bare toggle on a narrow map, so
+   the row holds nothing but the button and the pill becomes its disc. */
+.maplibregl-ctrl-bottom-left
+  > .maplibregl-ctrl.maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show) {
+  /* The credit is display:none here, but the row's 6px gap is still charged to
+     its shrink-to-fit width — 6px of nothing on the right, which is what turned
+     the disc into an ellipse with the glyph sitting left of centre. Zero the
+     gap, and pad evenly, and the box is square again. */
+  gap: 0;
+  padding: 4px;
+  cursor: pointer;
+}
+/* Hover warms the toggle towards the theme's accent: the whole disc while
+   folded, the icon alone while open. A hint, not the full accent: this is the
+   least important thing on the map. Colour only, it still opens on click. */
+.maplibregl-ctrl-bottom-left
+  > .maplibregl-ctrl.maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show):hover {
+  background: rgb(var(--glass-rgb) / 0.5);
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: color-mix(in srgb, var(--accent) 55%, var(--text-1));
+}
+.maplibregl-ctrl-bottom-left
+  .maplibregl-ctrl-attrib.maplibregl-compact-show
+  .maplibregl-ctrl-attrib-button:hover {
+  color: color-mix(in srgb, var(--accent) 55%, var(--text-1));
+}
+/* The credit itself. Capped and wrapped rather than allowed to run: with
+   terrain on, two sources are joined into one line, and an unbounded caption
+   becomes a strip of type across the bottom of the map. Wrapped, it stays a
+   tidy block in the corner and nothing of the credit is lost — which
+   truncating it would not manage, and this is text there is no right to
+   shorten. */
+.maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-inner {
+  max-width: min(46ch, calc(40 * var(--vw)));
+  letter-spacing: 0.01em;
+}
+.maplibregl-ctrl-attrib a { color: inherit; text-decoration: none; }
+.maplibregl-ctrl-attrib a:hover {
+  color: var(--text-1);
+  text-decoration: underline;
+}
+
+/* The compact toggle.
+
+   MapLibre ships it as a 24px white disc with a baked-in dark glyph,
+   absolutely positioned in the corner — both the brightest thing there and
+   invisible on a dark surface. It was redrawn here as a hairline circle with a
+   typographic italic "i", and that traded one problem for three: the glyph was
+   whatever the UI font makes of a 8.5px italic "i" (a slanted stroke whose ink
+   sits right of the box it is centred in, so the mark never looked centred), a
+   0.3-alpha ring plus 0.58-alpha type is a ghost on sunlit imagery, and it was
+   the one icon in the application not drawn from the app's own set.
+
+   So it is Lucide's `info` — the same glyph, from the same family, as every
+   other icon in the interface — painted as a mask in currentColor. A mask
+   rather than a background image because the colour then follows the pill's
+   own state: the whole row lights on hover and this lights with it, from one
+   declaration instead of two copies of a hex value. Crisp at any DPI, and it
+   needs no ring of its own: the circle is part of the glyph. */
+.maplibregl-ctrl-bottom-left .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button {
+  position: static;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 15px; height: 15px;
+  margin: 0;
+  padding: 0;
+  background-color: currentColor;
+  background-image: none;
+  border: 0;
+  border-radius: 50%;
+  list-style: none;
+  color: inherit;
+  cursor: pointer;
+  -webkit-mask: var(--attrib-info-mask);
+  mask: var(--attrib-info-mask);
+}
+.maplibregl-ctrl-attrib {
+  /* Lucide `info`, inlined: circle + stem + dot, exactly the geometry
+     vendor/lucide.min.js carries for the name. A custom property so the
+     button rule stays readable and the two mask declarations cannot drift. */
+  --attrib-info-mask:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 16v-4'/%3E%3Cpath d='M12 8h.01'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+/* The old typographic glyph. Both markers are suppressed rather than one: a
+   <summary> draws a disclosure triangle through ::-webkit-details-marker in
+   WebKit and through ::marker everywhere else, and either of them beside a
+   15px icon is a second mark nobody asked for. */
+.maplibregl-ctrl-attrib-button::-webkit-details-marker { display: none; }
+.maplibregl-ctrl-attrib-button::marker { content: ""; }
+.maplibregl-ctrl-attrib-button::after { content: none; }
+/* MapLibre paints a 2px blue glow on plain :focus. That fires on mouse-down and
+   then stays, so a single click left the least important thing on the map
+   wearing the loudest ring on it. The glow goes; the ring is handed to
+   :focus-visible, which a pointer click does not trigger — and it is drawn as
+   an outline offset off the glyph, because a mask has no border to colour. */
+.maplibregl-ctrl-attrib-button:focus { outline: none; box-shadow: none; }
+.maplibregl-ctrl-bottom-left
+  .maplibregl-ctrl-attrib
+  .maplibregl-ctrl-attrib-button:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 2px;
+  border-radius: 50%;
+  box-shadow: none;
+}
+.maplibregl-ctrl-logo { opacity: 0.35 !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .maplibregl-ctrl-attrib { transition: none; }
+}
+
+/* Geometry shared by the map chrome. The right-hand control rail is the
+   anchor; everything else that floats beside it is positioned off these two
+   values rather than off a hand-computed pixel offset, which is how the
+   download trigger came to overlap the zoom buttons. */
+.map-view {
+  --map-rail-inset: 14px;                 /* rail distance from the viewport edge */
+  --map-rail-w: 48px;                     /* 34px button + 6px padding + 1px border, both sides */
+  --map-rail-gap: 8px;                    /* breathing room between rail and neighbours */
+  /* First free x-offset to the LEFT of the rail. */
+  --map-rail-clear: calc(var(--map-rail-inset) + var(--map-rail-w) + var(--map-rail-gap));
+  /* …and left of the download trigger sitting there is where the place
+     search goes. The same derivation the planner's map column uses, so the
+     two screens' searches land in the identical spot. */
+  --map-search-clear: calc(var(--map-rail-clear) + 34px + var(--map-rail-gap));
+  /* The first free x-offset left of ALL of it, which is where anything
+     growing from the other edge — the flight bar — has to stop. */
+  --map-trigger-clear: calc(var(--map-search-clear) + 34px + var(--map-rail-gap));
+}
+
+.map-controls {
+  position: absolute; top: var(--map-rail-inset); right: var(--map-rail-inset); z-index: var(--z-map-chrome);
+  display: flex; flex-direction: column; gap: 6px;
+  background: rgb(var(--glass-rgb) / 0.55);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
+  border: 1px solid rgb(var(--tint-rgb) / 0.06);
+  border-radius: var(--radius);
+  padding: 6px;
+  box-shadow: var(--shadow-pop);
+}
+.mc-btn {
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border-radius: var(--radius-btn); color: var(--text-2);
+  transition: background 130ms, color 130ms; position: relative;
+}
+.mc-btn i, .mc-btn svg { width: 17px; height: 17px; }
+.mc-btn:hover { background: var(--surface-hover); color: var(--text-1); }
+.mc-btn.active { background: var(--accent-dark); color: var(--text-1); }
+.mc-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+.mc-divider { height: 1px; background: var(--border-soft); margin: 2px 4px; }
+.mc-btn[hidden], .mc-divider[hidden] { display: none; }
+
+/* The switcher is a .ui-menu (components.css) opened from the rail's layers
+   button: the surface, the caption, the .option-item rows and the dismissal
+   are all the app's shared dropdown, and Corvus.ui.menu() positions it beside
+   the rail. What is left here is a width the layer names can live in, and the
+   per-service group headings that are interleaved between the rows. */
+.layers-popover { min-width: 168px; }
+/* A stream address can be a hundred characters of path and query; left to
+   size the list, it stretches the popover across the map. Cap it and let the
+   address trail off (the row's tooltip carries the whole thing). */
+.camera-popover { max-width: 260px; }
+.camera-popover .option-item-label,
+.camera-popover .option-item-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ===== 3D PANEL (hover the map rail's cube button) =====
+   The one map popover that is a SETTING rather than a list: the button itself
+   is the mode's on/off, and this says which 3D it will give you. So it holds
+   a .field-switch out of the settings vocabulary instead of .option-item rows,
+   and it needs the padding a menu of rows gets from the rows themselves.
+
+   Wider than the layer switcher because the hint is the reason the panel
+   exists — the two modes look alike and differ in what they download, and a
+   caption wrapped to four lines is a caption nobody reads. */
+.three-d-popover { min-width: 244px; max-width: 276px; }
+.three-d-popover .field { padding: 2px 6px 6px; }
+/* The settings cards keep the hint clear of the switch's column so its ragged
+   edge lines up with the caption. In a popover this narrow that reserved
+   column is most of the line, so the hint takes the full width instead — the
+   switch is one line up, with nothing beside the text to line up with. */
+.three-d-popover .field-switch > .field-hint { padding-right: 0; }
+.layer-group {
+  font-size: 9.5px; font-weight: 600; letter-spacing: 0.9px;
+  color: var(--text-3); text-transform: uppercase;
+  margin: 8px 6px 3px; padding-top: 6px;
+  border-top: 1px solid var(--border-soft);
+}
+.layer-group:first-of-type { margin-top: 2px; padding-top: 0; border-top: none; }
+
+/* ===== MAP CONTEXT MENU (click a position on the map) =====
+   The one surface in the app anchored to a geographic point rather than to a
+   corner of the screen, so it carries a pin at the point it acts on: the menu
+   itself is offset from the click (a menu under the cursor hides the thing it
+   is about), and without the pin "this point" would be a guess.
+
+   The menu is a .ui-menu of .option-item rows like every other dropdown in
+   the app (components.css) — the surface, the rows and the way it grows out
+   of the corner nearest the pin all come from there. What is left here is the
+   pin, the coordinate caption and a width that suits a menu sitting ON the
+   ground the operator is choosing. */
+.map-context-pin {
+  position: absolute;
+  z-index: var(--z-map-popover);
+  width: 16px; height: 16px;
+  margin: -8px 0 0 -8px;          /* centre on the point, not corner-align */
+  border-radius: 50%;
+  /* A literal white ring, like .vehicle-marker and .home-marker: it separates
+     the pin from IMAGERY, not from the UI, so it must not flip with the theme
+     the way a --tint-rgb hairline would — that turns black on the light themes
+     and vanishes over dark ground. */
+  background: #fff;
+  box-shadow: var(--shadow-soft);
+  pointer-events: none;
+  animation: corvus-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.map-context-pin::after {
+  content: "";
+  position: absolute; inset: 3px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.map-context-menu {
+  /* Sized to its two rows and nothing more. The old 186px floor made the menu
+     a third wider than its widest label, and this surface sits ON the ground
+     the operator is choosing — every column of it is map they cannot see. */
+  min-width: 0;
+  width: max-content;
+  max-width: 220px;
+}
+/* Denser than the shared glass: at 0.6 the imagery behind shows through the
+   text, and a disabled row over a green field was barely readable. */
+.map-context-menu.glass { background: rgb(var(--glass-rgb) / 0.9); }
+@media (prefers-reduced-transparency: reduce) {
+  .map-context-menu.glass { background: var(--surface-2); }
+}
+.map-context-menu[hidden] { display: none; }
+
+/* The coordinates of the clicked point, in the same tabular mono the telemetry
+   readouts use. A caption, not a control: the menu should say what it is about
+   before it says what it can do. */
+/* Scoped past .ui-menu-head, the shared caption it is a variant of: a
+   coordinate is read digit by digit, so this one is mono and tabular rather
+   than the uppercase label a menu head usually carries. */
+/* Laid out on the rows' grid: the pin sits in the icon column (8px in, 14px
+   wide, 8px gap) and the coordinates start where the labels start, so the
+   caption and the actions read as one list. The right padding puts the copy
+   glyph's edge on the rows' 8px inset. */
+.map-context-menu .map-context-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 3px 6px 8px;
+  margin: 0 0 3px;
+  color: var(--text-2);
+  border-bottom: 1px solid rgb(var(--tint-rgb) / 0.1);
+}
+.map-context-pin-icon {
+  width: 14px; height: 14px;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+.map-context-menu .map-context-coords {
+  flex: 1 1 auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+  color: var(--text-1);
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Copy the coordinates. Sized to the caption line so the head does not grow;
+   the tick in the accent colour is the confirmation that they are on the
+   clipboard, and it reverts on its own. */
+.map-context-copy {
+  flex: 0 0 auto;
+  width: 22px; height: 22px;
+  display: grid; place-items: center;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--text-3);
+  transition: background 130ms, color 130ms;
+}
+.map-context-copy:hover { background: var(--surface-hover); color: var(--text-1); }
+.map-context-copy:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: -2px; }
+.map-context-copy svg, .map-context-copy i { width: 13px; height: 13px; }
+.map-context-copy .map-context-copy-done { display: none; }
+.map-context-copy.is-copied { color: var(--accent-bright); }
+.map-context-copy.is-copied .map-context-copy-idle { display: none; }
+.map-context-copy.is-copied .map-context-copy-done { display: block; }
+
+/* The rows are .option-item (components.css): the icon, the label, the note
+   under it and the disabled treatment are the shared recipe, so an action on
+   the map reads like a choice in any other list the app opens. */
+/* One step darker than the shared recipe, because this list sits on imagery
+   rather than on the app's own surfaces: the label in full ink, the note at
+   --text-2, and a disabled row at --text-3 throughout so its reason stays
+   readable instead of fading into the ground behind it. */
+.map-context-menu .map-context-item { color: var(--text-1); }
+.map-context-menu .map-context-item .option-item-note { font-size: 10.5px; color: var(--text-2); }
+.map-context-menu .map-context-item:disabled { color: var(--text-3); }
+.map-context-menu .map-context-item:disabled > svg,
+.map-context-menu .map-context-item:disabled .option-item-note { color: var(--text-3); }
+
+@media (prefers-reduced-motion: reduce) {
+  .map-context-pin { animation: none !important; }
+}
+
+/* ===== OFFLINE MAP (tile download) =====
+   Only the floating trigger lives on the map; the panel itself is a
+   Corvus.ui.modal (see components.css) because as an anchored popover it was
+   constantly covered by the flight bar, the HUD and the right panel. What
+   remains here is the trigger and the dialog's own inner layout. */
+.tiles-trigger {
+  position: absolute; top: var(--map-rail-inset); right: var(--map-rail-clear); z-index: var(--z-map-chrome);
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border-radius: var(--radius);
+  background: rgb(var(--glass-rgb) / 0.55);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
+  border: 1px solid rgb(var(--tint-rgb) / 0.06);
+  box-shadow: var(--shadow-pop);
+  color: var(--text-2);
+  transition: background 130ms, color 130ms;
+}
+.tiles-trigger:hover { background: var(--surface-hover); color: var(--text-1); }
+.tiles-trigger.active { background: var(--accent-dark); color: var(--accent-bright); }
+.tiles-trigger i, .tiles-trigger svg { width: 17px; height: 17px; }
+
+/* ===== PLACE SEARCH =====
+   One control, on both maps: js/map-search.js builds it and the Home view and
+   the planner each mount one, so what is described here is what the operator
+   meets in either place.
+
+   A glass square that grows a field out of its own left edge. Collapsed it is
+   the same 34px button as the offline-map trigger beside it, in the same row,
+   because they are the same kind of thing: a map service you reach for, not a
+   control you fly with. Opening it moves nothing — the field appears to the
+   LEFT of the button, so the button the operator just pressed stays under
+   their pointer and the rail behind it never shifts. */
+.map-search {
+  position: absolute; top: var(--map-rail-inset); right: var(--map-search-clear);
+  z-index: var(--z-map-chrome);
+  display: flex; align-items: flex-start;
+}
+/* Open, it OUTRANKS the tool bar. Closed it is a 34px square in the chrome
+   layer like the download trigger beside it, and there it belongs under the
+   bar. Opened, the field and its results reach across the bar's row — and a
+   list the operator just asked for, drawn underneath the thing it overlaps,
+   is a list they cannot read. */
+.map-search.is-open { z-index: var(--z-map-popover); }
+.map-search-trigger {
+  flex: none;
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border-radius: var(--radius);
+  background: rgb(var(--glass-rgb) / 0.55);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
+  border: 1px solid rgb(var(--tint-rgb) / 0.06);
+  box-shadow: var(--shadow-pop);
+  color: var(--text-2);
+  transition: background 130ms, color 130ms;
+}
+.map-search-trigger:hover { background: var(--surface-hover); color: var(--text-1); }
+.map-search-trigger.active { background: var(--accent-dark); color: var(--accent-bright); }
+.map-search-trigger i, .map-search-trigger svg { width: 17px; height: 17px; }
+
+/* The field, as a box holding three things rather than as a bare <input>.
+   A search that opens out of a magnifier loses the magnifier the moment it is
+   open — the trigger beside it is showing its pressed state, not its icon —
+   so the field carries one of its own, and a clear button on the other side,
+   because emptying a search by holding backspace is a chore and not a
+   gesture.
+
+   Closed, the whole box is not merely invisible: it is zero-wide and takes no
+   pointer, so a click anywhere near the button reaches the button. */
+.map-search-field {
+  display: flex; align-items: center;
+  width: 0; min-width: 0; height: 34px;
+  padding: 0; margin-right: 0;
+  overflow: hidden;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  opacity: 0; pointer-events: none;
+  background: rgb(var(--glass-rgb) / 0.72);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
+  box-shadow: var(--shadow-pop);
+  transition: width 160ms ease, padding 160ms ease, opacity 120ms ease,
+              margin 160ms ease, border-color 130ms, box-shadow 130ms;
+}
+.map-search.is-open .map-search-field {
+  width: min(272px, calc(44 * var(--vw))); padding: 0 6px 0 9px;
+  margin-right: var(--map-rail-gap);
+  border-color: var(--border); opacity: 1; pointer-events: auto;
+}
+/* The field reads as focused as a whole, rather than the <input> inside it
+   drawing a second box around itself. */
+.map-search.is-open .map-search-field:focus-within {
+  border-color: var(--accent-bright);
+  background: rgb(var(--glass-rgb) / 0.88);
+}
+.map-search-field-icon {
+  flex: none; width: 14px; height: 14px; margin-right: 7px;
+  color: var(--text-3);
+}
+/* The <input> is now the middle of a box that owns the surface, so it gives
+   up its own: no border, no background, no padding, and it takes whatever
+   width is left. */
+.field-input.map-search-input {
+  flex: 1 1 auto; min-width: 0;
+  height: 100%; padding: 0; margin: 0;
+  border: 0; background: none; box-shadow: none;
+}
+.field-input.map-search-input:focus { border: 0; box-shadow: none; outline: none; }
+/* Only a control while there is something to clear; the space it occupies is
+   held either way, so the caret does not jump a button's width on the first
+   keystroke. */
+.map-search-reset {
+  flex: none;
+  width: 22px; height: 22px; display: grid; place-items: center;
+  border-radius: var(--radius-btn);
+  color: var(--text-3);
+  opacity: 0; pointer-events: none;
+  transition: opacity 120ms, background 130ms, color 130ms;
+}
+.map-search.has-text .map-search-reset { opacity: 1; pointer-events: auto; }
+.map-search-reset:hover { background: var(--surface-hover); color: var(--text-1); }
+.map-search-reset i, .map-search-reset svg { width: 13px; height: 13px; }
+
+/* The results hang under the FIELD, not under the whole control: the trigger
+   is the button that opened the list, not part of the question, and a list
+   that runs on past the input's right edge reads as belonging to the button
+   instead of to what was typed. Same right edge, same width as the field, so
+   the list is the box's own answer directly beneath it. */
+.map-search-results {
+  position: absolute; top: calc(34px + var(--map-rail-gap));
+  right: calc(34px + var(--map-rail-gap));
+  width: min(272px, calc(44 * var(--vw)));
+  max-height: calc(46 * var(--vh)); overflow-y: auto;
+  display: flex; flex-direction: column;
+  padding: 4px;
+  border-radius: var(--radius);
+  background: rgb(var(--glass-rgb) / 0.86);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border: 1px solid rgb(var(--tint-rgb) / 0.06);
+  box-shadow: var(--shadow-pop);
+}
+.map-search:not(.is-open) .map-search-results { display: none; }
+/* Nothing to show is not a box. `display: flex` above outranks the `hidden`
+   attribute's UA `display: none`, so an empty list still painted its padding
+   and border as a thin bar under the field; this puts `hidden` back in
+   charge. */
+.map-search-results[hidden] { display: none; }
+/* A lookup is in flight: the list it is about to replace goes quiet rather
+   than being emptied, so the local answers stay readable while the network
+   one arrives. */
+.map-search-results.is-busy { opacity: 0.55; }
+
+/* One result, in three columns: what sort of answer it is, what it is called,
+   and how far away it is.
+
+   It was one ellipsized line per row, and that line was a Nominatim
+   display_name — a full postal address, with the one word the operator typed
+   in front of forty characters they did not. The name is its own line now and
+   the address is the quiet one under it (js/map-search.js splits them at the
+   first comma), which is the difference between a list that is read and a
+   list that is scanned. */
+.map-search-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center; gap: 9px;
+  width: 100%; padding: 7px 9px;
+  border: 0; border-radius: var(--radius-btn);
+  background: transparent; color: var(--text-1);
+  font-family: var(--sans); font-size: 12px; text-align: left;
+  cursor: pointer;
+}
+.map-search-row:hover, .map-search-row.is-active { background: var(--surface-hover); }
+.map-search-row-icon {
+  width: 15px; height: 15px; color: var(--text-3);
+}
+.map-search-row.is-active .map-search-row-icon { color: var(--accent-bright); }
+.map-search-row-text {
+  display: flex; flex-direction: column; gap: 1px; min-width: 0;
+}
+.map-search-row-name {
+  /* One line per place: seven wrapped addresses is a wall, not a list. The
+     title attribute is not set on purpose — the row is picked, not read. */
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.map-search-row-detail {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 10.5px; color: var(--text-3);
+}
+/* How far the place is from what the map is showing. The column exists
+   because a search for a common name answers with several of it, and the
+   names cannot say which one is the site they are driving to. Tabular so the
+   numbers line up down the list rather than dancing. */
+.map-search-row-dist {
+  font-size: 10.5px; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.map-search-row.is-active .map-search-row-dist { color: var(--text-2); }
+/* "No network" and "nothing there" both land here, and the operator has to be
+   able to tell them apart — so it is a sentence, not an empty list. */
+.map-search-note { padding: 8px 9px; font-size: 11.5px; color: var(--text-2); }
+
+/* Where the search landed. A ring and a dot, like every other mark on this
+   map, and a colour that is none of the others: not the amber the route is
+   drawn in (nothing here gets flown), not the green of the start point, not
+   the red of the flown track. Press it to take it off.
+
+   A LITERAL, not a themed token, for the reason --plan is a literal (see
+   themes.css): this lies on photographic imagery and never on a themed
+   surface, and --accent is a near-black in some palettes — which on a
+   satellite tile is no mark at all. --plan-ink is the casing that makes it
+   survive a sunlit roof as well as a dark field.
+
+   NOTHING here may set `position`: MapLibre positions a marker by writing the
+   ground point into a transform on the element you hand it (see the marker
+   section below). */
+.map-search-pin {
+  width: 18px; height: 18px; cursor: pointer;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid #33D6FF;
+  background: color-mix(in srgb, #33D6FF 20%, transparent);
+  box-shadow: 0 0 0 1px var(--plan-ink), 0 1px 6px var(--plan-ink);
+}
+.map-search-pin::after {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%; background: #33D6FF;
+}
+
+/* --- dialog contents ---
+   Fields, buttons, progress bar and status message are the shared .field-* /
+   .btn / .ui-progress / .ui-msg components; only what is specific to this
+   panel lives here. */
+.tiles-bounds-head { display: flex; align-items: center; justify-content: space-between; }
+.tiles-bounds {
+  font-size: 11px; color: var(--text-2); font-family: var(--mono);
+  font-variant-numeric: tabular-nums; line-height: 1.4;
+}
+.tiles-zoom-row { display: flex; gap: 10px; }
+.tiles-estimate {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px; border-radius: var(--radius-btn);
+  background: var(--panel-fill); border: 1px solid var(--panel-hairline);
+}
+.tiles-estimate-val { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.tiles-estimate-value { font-size: 13px; font-weight: 700; color: var(--accent-bright); font-variant-numeric: tabular-nums; }
+.tiles-estimate-sub { font-size: 10px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* --- downloaded areas list --- */
+.tiles-regions-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  padding-top: 6px; border-top: 1px solid var(--border-soft);
+}
+.tiles-regions-count { font-size: 10px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.tiles-regions { display: flex; flex-direction: column; gap: 6px; }
+.tiles-region-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 6px 4px 10px; border-radius: var(--radius-btn);
+  background: var(--panel-fill); border: 1px solid var(--panel-hairline);
+  transition: background 130ms, border-color 130ms;
+}
+.tiles-region-row:hover { background: var(--panel-fill-hover); border-color: var(--panel-hairline-hover); }
+/* An in-flight download is marked on the row as well as on the map label, so
+   the list never claims an area is ready before it is. */
+.tiles-region-row.downloading { border-color: var(--warning); }
+/* The identity block IS the "frame this area" button — a name that does
+   nothing beside a locate icon that does would be the worse split. */
+.tiles-region-main {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px;
+  padding: 5px 0; text-align: left; cursor: pointer; background: none; border: none;
+}
+.tiles-region-main:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; border-radius: var(--radius-btn); }
+.tiles-region-name {
+  font-size: 12px; font-weight: 600; color: var(--text-1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tiles-region-meta {
+  font-size: 10px; color: var(--text-3); font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tiles-region-row.downloading .tiles-region-meta { color: var(--warning); }
+.tiles-region-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.tiles-stat-empty { font-size: 11px; color: var(--text-3); line-height: 1.5; padding: 6px 2px; }
+
+/* ===== VEHICLE MARKER =====
+   One SVG so the heading cone and the body cannot drift apart, plus a soft
+   halo behind it. The white ring is what makes the marker survive being flown
+   over a red roof or a bright field — the previous marker had no outline and
+   simply vanished against imagery its own colour. */
+.vehicle-marker { width: 48px; height: 48px; display: grid; place-items: center; }
+.vehicle-marker .v-halo {
+  position: absolute;
+  width: 34px; height: 34px; border-radius: 50%;
+  background: rgb(var(--vehicle-rgb) / 0.22);
+  filter: blur(5px);
+}
+.vehicle-marker .v-body {
+  position: relative;
+  width: 48px; height: 48px;
+  /* Rotated by map.js to the vehicle heading; the transition is off because
+     the heading is already eased frame-by-frame by the shared rAF loop. */
+  transform: rotate(0deg);
+  transform-origin: 50% 50%;
+  overflow: visible;
+}
+/* The heading cone carries safety-relevant information — which way the nose is
+   pointing — so it is not as faint as a decorative flourish would be. The white
+   edge keeps it readable over light ground, where a translucent red wash alone
+   washes out. */
+.vehicle-marker .v-cone {
+  fill: rgb(var(--vehicle-rgb) / 0.62);
+  stroke: rgb(255 255 255 / 0.55);
+  stroke-width: 0.9;
+}
+/* The separating ring — white on dark themes, and still white on light,
+   because it separates the marker from IMAGERY, not from the UI. */
+.vehicle-marker .v-ring { fill: #fff; }
+.vehicle-marker .v-fill { fill: var(--vehicle); }
+.vehicle-marker .v-centre { fill: #fff; }
+
+/* ===== THE AIRCRAFT IN 3D =====
+   In 3D mode the aircraft is not a MapLibre marker: a marker takes a lngLat
+   and drapes onto the terrain, which is the one thing a flying aircraft does
+   not do. map.js positions these four elements itself from the map's own
+   projection matrix, so they are plain absolutely-positioned children of the
+   map container, transformed per frame and never hit-tested.
+
+   No z-index on purpose: they come after the canvas and the marker container
+   in the DOM, so they paint above the map, and they stay below the control
+   rail and the clear-track button, which do carry one. */
+.veh3d, .veh3d-shadow, .veh3d-lead, .veh3d-alt {
+  position: absolute;
+  top: 0; left: 0;
+  pointer-events: none;
+  /* Positioned from a render matrix that is recomputed every frame — a
+     transition would make the aircraft chase the camera instead of ride it. */
+  transition: none;
+}
+.veh3d { transform-origin: 50% 50%; }
+.veh3d[hidden], .veh3d-shadow[hidden], .veh3d-lead[hidden], .veh3d-alt[hidden] {
+  display: none !important;
+}
+
+/* Where the aircraft is on the GROUND, directly under itself. Flat and quiet:
+   it answers "which point on the map is that", and nothing else. The ring is
+   what survives being drawn over dark imagery, the same job the white ring
+   does on the marker above it. */
+.veh3d-shadow {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.3);
+  border: 1.5px solid rgb(var(--vehicle-rgb) / 0.75);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.25);
+}
+
+/* The line joining the two. Dashed, because a solid one reads as a tether or
+   a route; this is a measurement, not a thing in the world. Sized to the
+   container so it can draw anywhere in it. */
+.veh3d-lead { width: 100%; height: 100%; overflow: visible; }
+.veh3d-lead line {
+  stroke: rgb(var(--vehicle-rgb) / 0.8);
+  stroke-width: 1.6;
+  stroke-dasharray: 5 4;
+  /* The dark companion stroke the track lines use, done with a shadow so the
+     line stays one element: over bright ground a thin coloured line alone
+     disappears. */
+  filter: drop-shadow(0 0 1.5px rgb(0 0 0 / 0.7));
+}
+
+/* Height above ground, on the leader line. Small and tabular: it is a
+   confirmation of what the operator is already seeing, not the primary
+   altitude readout — that is the HUD's job. */
+.veh3d-alt {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgb(var(--glass-rgb) / 0.72);
+  backdrop-filter: var(--blur-fine);
+  -webkit-backdrop-filter: var(--blur-fine);
+  border: 1px solid rgb(var(--tint-rgb) / 0.08);
+  color: var(--text-2);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* ===== HOME / LAUNCH POINT =====
+   A landing-pad mark: "H" in a ring, with crosshair ticks on the exact
+   coordinate. Quieter than the vehicle on purpose — where the aircraft IS has
+   to win over where it started. */
+.home-marker { width: 32px; height: 32px; display: grid; place-items: center; }
+/* `display: grid` above outranks the UA sheet's [hidden] rule, so the marker
+   needs its own — map.js hides both markers until the aircraft has actually
+   named a position, and a hidden attribute that does nothing would draw a
+   landing pad and an aircraft on coordinates nothing ever reported. */
+.home-marker[hidden], .vehicle-marker[hidden] { display: none !important; }
+.home-marker .h-body { width: 32px; height: 32px; overflow: visible; }
+.home-marker .h-ticks {
+  stroke: var(--healthy);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  opacity: 0.8;
+}
+.home-marker .h-ring { fill: #fff; }
+.home-marker .h-fill { fill: color-mix(in srgb, var(--healthy) 88%, #000); }
+.home-marker .h-glyph {
+  stroke: #fff;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* ===== CLEAR FLOWN TRACK =====
+   Deliberately the smallest control on the map. It appears only while there IS
+   a track, sits in the one free corner, and stays at a low opacity until
+   reached for — an action taken once per flight should not out-shout the
+   track it clears. */
+/* Sits directly above the attribution control, which owns the bottom-left
+   corner itself and must never be covered. */
+.track-clear {
+  position: absolute;
+  /* Centred on the folded attribution disc below it, which is 25px wide
+     (15px icon, 4px padding, 1px border): half the 3px difference in. */
+  left: calc(var(--map-rail-inset, 14px) + 1.5px);
+  bottom: calc(var(--map-rail-inset, 14px) + 30px);
+  z-index: var(--z-map-chrome);
+  width: 22px; height: 22px;
+  display: grid; place-items: center;
+  border-radius: 6px;
+  background: rgb(var(--glass-rgb) / 0.75);
+  backdrop-filter: var(--blur-fine);
+  -webkit-backdrop-filter: var(--blur-fine);
+  border: 1px solid rgb(var(--tint-rgb) / 0.12);
+  color: var(--text-2);
+  opacity: 0.85;
+  transition: opacity 140ms, color 140ms, background 140ms;
+}
+.track-clear:hover {
+  opacity: 1;
+  color: var(--track);
+  background: rgb(var(--glass-rgb) / 0.75);
+}
+.track-clear:focus-visible { opacity: 1; outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+.track-clear[hidden] { display: none; }
+.track-clear i, .track-clear svg { width: 12px; height: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  .track-clear { transition: none; }
+}
+
+/* downloaded-area label — the name badge at the centre of each cached region.
+   A DOM marker, not a MapLibre symbol layer: a text layer needs a glyphs URL
+   and the field laptop has no internet to fetch fonts from. Non-interactive so
+   it never swallows a map click meant for waypoint planning underneath it. */
+.region-label {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 4px 8px; border-radius: var(--radius-btn);
+  background: rgb(var(--glass-rgb) / 0.72);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
+  border: 1px solid color-mix(in srgb, var(--nav) 45%, transparent);
+  box-shadow: var(--shadow-soft);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.region-label-name {
+  font-size: 11px; font-weight: 600; color: var(--text-1); letter-spacing: 0.2px;
+}
+.region-label-meta {
+  font-size: 9px; color: var(--text-3); letter-spacing: 0.5px;
+  font-variant-numeric: tabular-nums;
+}
+/* An in-flight download pulses so "downloading…" reads as live, not stuck. */
+.region-label.downloading { border-color: var(--warning); }
+.region-label.downloading .region-label-meta {
+  color: var(--warning);
+  animation: livePulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .region-label.downloading .region-label-meta { animation: none !important; }
+}
+
+/* A plugin's text on the Home map (api.map.drawText). A DOM marker for the
+   same reason as the region label. The colour is the plugin's, and is read
+   against imagery, so the halo in the page background is what keeps it
+   legible over a field of its own hue. */
+.map-overlay-label {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--overlay-color, #2BC4E4);
+  font-family: var(--sans);
+  font-size: var(--overlay-size, 12px);
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow:
+    0 0 2px var(--bg), 0 0 2px var(--bg), 0 0 4px var(--bg),
+    0 1px 1px var(--bg);
+}
+.map-overlay-label[hidden] { display: none; }
+.map-overlay-label-dot {
+  flex: 0 0 auto;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+/* A plugin's button on the Home map (api.map.drawButton). Unlike the label it
+   takes the pointer; the colour is the plugin's, on the panel background. */
+.map-overlay-button {
+  appearance: none;
+  padding: 6px 12px;
+  border: 1.5px solid var(--overlay-color, #2BC4E4);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  color: var(--overlay-color, #2BC4E4);
+  font-family: var(--sans);
+  font-size: var(--overlay-size, 13px);
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.map-overlay-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--overlay-color, #2BC4E4) 22%, var(--bg));
+}
+.map-overlay-button:focus-visible { outline: 2px solid var(--overlay-color, #2BC4E4); outline-offset: 2px; }
+.map-overlay-button:disabled { opacity: 0.45 !important; cursor: not-allowed; }
+.map-overlay-button[hidden] { display: none; }
+
+/* waypoint (plan) marker — amber, translucent, same circular language as
+   home/vehicle. Glow sits between home (none) and vehicle (strong) so the
+   plan-in-progress reads as active but not focal. */
+.wp-marker {
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  border: 1.5px solid var(--warning);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--warning) 45%, transparent);
+}
+.wp-marker-num {
+  font-family: var(--sans);
+  font-size: 12px; font-weight: 700;
+  color: var(--warning);
+  line-height: 1; letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== VIRTUAL JOYSTICK / MANUAL CONTROL PAD =====
+   A movable window over the map holding whichever manual-control surfaces are
+   switched on: the stick pair, the arrow-key cluster, or both. Hidden unless
+   Settings > Appearance > Controls turns one on, so the default map is exactly
+   what it was. It sits at the bottom left (the HUD owns the bottom right)
+   until it is dragged; .is-placed then drops that anchoring so the dragged
+   left/top wins — the same contract as .flight-overlay.
+
+   --js-size is the one number the whole pad scales from, and --js-travel is
+   derived from it rather than typed twice: the knob may travel to the base's
+   edge minus its own radius, and Corvus.joystick moves it by that variable so
+   the JS geometry and this stylesheet cannot drift apart. */
+.joystick-pad {
+  --js-size: 116px;
+  --js-knob: 42px;
+  --js-travel: calc((var(--js-size) - var(--js-knob)) / 2);
+  --js-key: 34px;
+  position: absolute; left: 16px; bottom: 16px;
+  /* One step above the HUD, which shares --z-map-panel. Both are movable
+     windows and they can be dragged over each other; when they overlap, the
+     control the operator is flying with wins over a readout. */
+  z-index: calc(var(--z-map-panel) + 1);
+  display: flex; flex-direction: column; gap: 6px;
+  border-radius: 14px;
+  padding: 4px 10px 10px;
+  /* The pad is a control surface, not a map surface: a drag that starts here
+     must move a stick or the pad, never pan the map underneath it. */
+  touch-action: none;
+}
+.joystick-pad.is-placed { bottom: auto; }
+.joystick-pad.is-dragging { cursor: grabbing; user-select: none; }
+/* Collapsed: the surfaces fold away and the grip bar is the whole window, so
+   the bottom padding and the divider under the bar come off with them. */
+.joystick-pad.is-collapsed { padding: 4px 8px; gap: 0; }
+.joystick-pad.is-collapsed .js-grip { padding-bottom: 0; border-bottom: none; }
+/* Everything here lays out with `display: flex`, and a class rule's display
+   beats the UA's `[hidden] { display: none }` — so each surface has to restate
+   it or switching one off leaves it on screen. Same fix as .plan-panel and
+   .hud-body above. */
+.joystick-pad[hidden] { display: none; }
+.js-surfaces[hidden] { display: none; }
+
+/* Grip bar: the drag handle, and the only place the live axis values show.
+   One row, so the pad reads as a window with a title bar rather than as loose
+   controls scattered over the map. */
+.js-grip {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 0 4px;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text-3);
+  cursor: grab;
+  touch-action: none;
+}
+.joystick-pad.is-dragging .js-grip { cursor: grabbing; }
+.js-grip i, .js-grip svg { width: 13px; height: 13px; flex: none; }
+.js-axes {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 9.5px;
+  letter-spacing: -0.1px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.js-axes.offline { color: var(--warning); }
+/* Pushed to the far end of the bar, and small enough that the bar stays the
+   thinnest row on the pad rather than growing to fit a control. Qualified by
+   .js-grip because the shared .icon-btn rule is declared later in this file
+   and would otherwise win its 28px box back. */
+.js-grip .js-collapse {
+  margin-left: auto;
+  width: 18px; height: 18px; border-radius: 5px;
+  color: var(--text-3);
+  flex: none;
+}
+.js-grip .js-collapse:hover { color: var(--text-1); background: var(--panel-wash); }
+.js-grip .js-collapse svg, .js-grip .js-collapse i { width: 13px; height: 13px; }
+
+.js-surfaces { display: flex; align-items: flex-start; gap: 14px; }
+.js-sticks { display: flex; gap: 14px; }
+.js-sticks[hidden] { display: none; }
+
+/* ===== PREFLIGHT CHECKLIST WINDOW =====
+   A movable window over the map with the operator's own checklist. Hidden
+   unless Setup > Safety & Sensors > Preflight checklist turns it on. It rests
+   under the flight bar at the top left until it is dragged; .is-placed then
+   drops that anchoring so the dragged left/top wins, as on the joystick pad.
+   The list scrolls inside the window, so a long checklist never pushes the
+   window off the map. */
+.checklist-panel {
+  position: absolute; left: var(--map-rail-inset); top: 76px;
+  z-index: var(--z-map-panel);
+  width: 272px;
+  max-height: calc(100% - 92px);
+  display: flex; flex-direction: column;
+  border-radius: 14px;
+  padding: 6px 8px 8px;
+  touch-action: none;
+}
+.checklist-panel.is-dragging { cursor: grabbing; user-select: none; }
+.checklist-panel.is-collapsed { padding-bottom: 6px; }
+.checklist-panel[hidden],
+.checklist-body[hidden] { display: none; }
+.checklist-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 0 6px 2px;
+  color: var(--text-3);
+  cursor: grab;
+  touch-action: none;
+}
+.checklist-panel.is-collapsed .checklist-bar { padding-bottom: 0; }
+.checklist-panel.is-dragging .checklist-bar { cursor: grabbing; }
+.checklist-bar > i, .checklist-bar > svg { width: 14px; height: 14px; flex: none; }
+.checklist-panel.is-complete .checklist-bar > svg { color: var(--healthy); }
+.checklist-title {
+  flex: 1; min-width: 0;
+  font-size: 11px; font-weight: 650; letter-spacing: 0.4px; text-transform: uppercase;
+  color: var(--text-1);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.checklist-count {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 11px; color: var(--text-2);
+}
+.checklist-count.is-complete { color: var(--healthy); font-weight: 600; }
+.checklist-bar .checklist-bar-btn {
+  width: 20px; height: 20px; border-radius: 5px; flex: none; color: var(--text-3);
+}
+.checklist-bar .checklist-bar-btn:hover { color: var(--text-1); background: var(--panel-wash); }
+.checklist-bar .checklist-bar-btn svg, .checklist-bar .checklist-bar-btn i { width: 13px; height: 13px; }
+.checklist-body {
+  display: flex; flex-direction: column; gap: 6px;
+  min-height: 0; overflow-y: auto;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 6px;
+}
+.checklist-picker { width: 100%; }
+.checklist-items { display: flex; flex-direction: column; gap: 1px; }
+.checklist-heading {
+  padding: 8px 4px 3px;
+  font-size: 9.5px; font-weight: 650; letter-spacing: 0.7px; text-transform: uppercase;
+  color: var(--text-3);
+}
+.checklist-heading:first-child { padding-top: 2px; }
+.checklist-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  width: 100%; padding: 5px 4px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 12.5px; line-height: 1.35; color: var(--text-1);
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+.checklist-item:hover { background: var(--panel-wash); }
+.checklist-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.checklist-box {
+  flex: none; width: 16px; height: 16px; margin-top: 1px;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--border); border-radius: 4px;
+  color: var(--text-inverted);
+  transition: background 120ms, border-color 120ms;
+}
+.checklist-box svg, .checklist-box i { width: 12px; height: 12px; stroke-width: 3; }
+.checklist-item.is-checked .checklist-box { background: var(--healthy); border-color: var(--healthy); }
+.checklist-item.is-checked .checklist-text { color: var(--text-3); text-decoration: line-through; }
+.checklist-empty { padding: 4px; font-size: 12px; line-height: 1.45; color: var(--text-3); }
+.checklist-done {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 4px 2px;
+  font-size: 12px; font-weight: 600; color: var(--healthy);
+}
+.checklist-done svg, .checklist-done i { width: 14px; height: 14px; }
+
+/* The card on Setup > Safety & Sensors: the summary line and the button to
+   the editor dialog. */
+.checklist-settings-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding-top: 10px; border-top: 1px solid var(--border-soft);
+}
+.checklist-summary { font-size: 12px; color: var(--text-2); }
+
+/* The editor dialog. Same two views as the Video page: the list and one
+   list's editor, never both, so the hidden attribute has to win. */
+.checklist-dialog { display: flex; flex-direction: column; gap: 12px; }
+.checklist-lists-card, .checklist-editor-card { display: flex; flex-direction: column; gap: 12px; }
+.checklist-lists-card[hidden], .checklist-editor[hidden] { display: none; }
+.checklist-list { display: flex; flex-direction: column; }
+.checklist-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid var(--border-soft);
+}
+.checklist-row:first-child { padding-top: 0; }
+.checklist-row:last-child { border-bottom: none; }
+.checklist-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.checklist-row-name-line { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.checklist-row-name {
+  font-size: 13px; font-weight: 600; color: var(--text-1);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.checklist-row-badge {
+  flex: 0 0 auto; font-size: 9px; font-weight: 600; letter-spacing: 0.6px;
+  text-transform: uppercase; color: var(--healthy);
+  padding: 1px 5px; border: 1px solid var(--healthy); border-radius: 4px;
+}
+.checklist-row-detail { font-size: 11px; color: var(--text-3); }
+.checklist-items-label { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.checklist-edit-items {
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: calc(46 * var(--vh)); overflow-y: auto;
+}
+.checklist-edit-row { display: flex; align-items: center; gap: 2px; }
+.checklist-edit-row .field-input { flex: 1; min-width: 0; margin-right: 4px; }
+.checklist-edit-row.is-heading .field-input {
+  font-weight: 650; text-transform: uppercase; letter-spacing: 0.5px; font-size: 11.5px;
+}
+.checklist-edit-row .icon-btn[disabled] { opacity: 0.35; pointer-events: none; }
+
+.js-stick { display: flex; flex-direction: column; align-items: center; gap: 7px; }
+.js-base {
+  position: relative;
+  width: var(--js-size); height: var(--js-size);
+  border-radius: 50%;
+  background: rgb(var(--input-rgb) / 0.5);
+  border: 1px solid var(--border);
+  cursor: grab;
+  touch-action: none;
+  transition: border-color 140ms, box-shadow 140ms;
+}
+.js-stick.active .js-base {
+  cursor: grabbing;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+/* Centre crosshair: the detent marker. Two hairlines drawn as one element so
+   the base keeps a single child besides the knob. */
+.js-cross {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  background:
+    linear-gradient(to right, transparent calc(50% - 0.5px), var(--border-soft) calc(50% - 0.5px), var(--border-soft) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(50% - 0.5px), var(--border-soft) calc(50% - 0.5px), var(--border-soft) calc(50% + 0.5px), transparent calc(50% + 0.5px));
+  pointer-events: none;
+}
+.js-knob {
+  position: absolute;
+  top: calc(50% - var(--js-knob) / 2);
+  left: calc(50% - var(--js-knob) / 2);
+  width: var(--js-knob); height: var(--js-knob);
+  border-radius: 50%;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-pop);
+  pointer-events: none;
+  /* No transition while a stick is held — the knob must sit under the finger,
+     not chase it. The spring-back on release is the only animated move. */
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), background 140ms;
+}
+.js-stick.active .js-knob { transition: background 140ms; background: var(--accent); border-color: var(--accent); }
+.js-caption {
+  font-size: 9px; font-weight: 600; letter-spacing: 0.9px;
+  color: var(--text-3); text-transform: uppercase;
+}
+
+/* The key panel: the WASD cluster and the arrow cluster side by side, each on
+   its own switch. Both are laid out as their keys sit on a keyboard — an
+   inverted T — so a cluster reads as "these keys": the physical keys drive the
+   same buttons and light them up, which is what makes the mapping
+   self-evident without a legend. */
+.js-keys {
+  display: flex; align-items: flex-end; gap: 12px;
+  /* Bottom-aligned with the sticks: every surface ends on its caption. */
+  align-self: stretch; justify-content: flex-end;
+}
+.js-keys[hidden] { display: none; }
+.js-keys-cluster {
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+}
+.js-keys-cluster[hidden] { display: none; }
+.js-keys-grid {
+  display: grid;
+  grid-template-columns: repeat(3, var(--js-key));
+  grid-template-rows: repeat(2, var(--js-key));
+  gap: 5px;
+}
+.js-key {
+  display: grid; place-items: center;
+  border-radius: var(--radius-btn);
+  background: rgb(var(--input-rgb) / 0.5);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 120ms, color 120ms, border-color 120ms, transform 90ms;
+}
+/* Both clusters share the inverted T, so the two key sets are named together
+   rather than the grid being written out twice. */
+.js-key-up,    .js-key-w { grid-column: 2; grid-row: 1; }
+.js-key-left,  .js-key-a { grid-column: 1; grid-row: 2; }
+.js-key-down,  .js-key-s { grid-column: 2; grid-row: 2; }
+.js-key-right, .js-key-d { grid-column: 3; grid-row: 2; }
+.js-key i, .js-key svg { width: 15px; height: 15px; }
+/* WASD carries its letters instead of an icon: the letter IS the mapping, and
+   the caption below the cluster is what says the axes they move. */
+.js-key-letter {
+  font-family: var(--mono);
+  font-size: 12px; font-weight: 600; line-height: 1;
+}
+.js-key:hover { color: var(--text-1); border-color: var(--border-strong); }
+.js-key:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+/* Held — by finger or by the keyboard's own arrow key. */
+.js-key.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-inverted);
+  transform: translateY(1px);
+}
+/* Shift held: every key in the panel is worth more travel than the slider
+   says, so the whole panel is marked rather than only the key under the
+   finger — the boost is a state of the surface, not of one key. The ring sits
+   outside the cluster so it does not move the keys under the operator's hand,
+   and the held key changes color as well, because a key that is now flying
+   twice as fast must not look identical to one that is not. */
+.js-keys.is-boost .js-keys-grid {
+  box-shadow: 0 0 0 2px var(--warning-dark);
+  border-radius: var(--radius-btn);
+}
+.js-keys.is-boost .js-key.active {
+  background: var(--warning);
+  border-color: var(--warning);
+  /* --text-inverted is what every other --warning fill in the app writes on
+     (.tb-warn-badge), and it is the token that flips with the theme, so the
+     letter stays legible on amber and on yellow alike. */
+  color: var(--text-inverted);
+}
+.js-keys.is-boost .js-caption { color: var(--warning); }
+
+/* The keyboard lock notice: amber while the keys are dead, so a pad that looks
+   live is never mistaken for one that is flying. */
+.js-lock {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.3px; text-align: center;
+  padding: 4px 8px; border-radius: var(--radius-btn);
+  color: var(--warning); border: 1px solid var(--warning-dark);
+}
+.js-lock[hidden] { display: none; }
+.js-lock.is-unlocked { color: var(--text-2); border-color: var(--border); }
+
+/* The spring-back and the key press are the only motion here, and both are
+   decorative: the axis values are already updated by the time they play. */
+@media (prefers-reduced-motion: reduce) {
+  .js-knob, .js-base, .js-key { transition: none !important; }
+  .js-key.active { transform: none; }
+}

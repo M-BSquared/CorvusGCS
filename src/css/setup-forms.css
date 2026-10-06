@@ -1,0 +1,884 @@
+/*
+  Corvus GCS: Setup's forms: parameter export and import, the schema-driven parameter
+  forms, motors, safety and sensors, hardware presets and Remote ID.
+
+  One of the page sheets index.html loads after main.css, in a fixed order.
+  See main.css for what a page sheet may and may not do.
+*/
+
+/* ===== Parameter Export/Import actions (setup-parameters) ===== */
+.params-actions { display: flex; align-items: center; gap: 10px; padding: 4px 0 8px; flex-wrap: wrap; }
+.params-actions .btn { padding: 8px 13px; font-weight: 700; gap: 6px; }
+.params-actions .btn i, .params-actions .btn svg { width: 14px; height: 14px; }
+.params-actions-status { font-size: 11.5px; color: var(--text-2); min-width: 0; flex: 1; }
+.params-actions-status.pending { color: var(--nav); }
+.params-actions-status.ok { color: var(--healthy); }
+.params-actions-status.err { color: var(--critical); }
+
+/* ----- PARAMETER FORMS (.pform-*) -----
+   The layout behind every page that renders a form the *backend* described —
+   Motors, Safety & Sensors and PID Tuning — built by
+   Corvus.setupShared.paramFieldGrid.
+   Each element carries this base class plus its page's own modifier
+   (class="pform-field motors-field"), so the layout is written once here and a
+   page overrides only what genuinely differs: its label-column width, and how
+   wide a select may grow. Everything collapses to a single column on a narrow
+   window, since a two-column form squeezed to 300px is unreadable in a field
+   tent. */
+.pform-grid { display: flex; flex-direction: column; }
+.pform-field {
+  display: grid;
+  grid-template-columns: minmax(130px, 220px) 1fr;
+  align-items: center; gap: 6px 12px;
+  padding: 7px 0; border-bottom: 1px solid var(--border-soft);
+}
+.pform-field:last-child { border-bottom: none; }
+.pform-field-label { font-size: 12px; color: var(--text-1); }
+.pform-field-control { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* The hint sits under the control, in the second column, so the label column
+   stays a clean vertical rule down the form. */
+.pform-field-hint { grid-column: 2; margin: 0; }
+.pform-unit { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+
+/* Capped so a select does not stretch the width of the card while the number
+   inputs beside it stay narrow. */
+.field-select.pform-select { padding: 6px 9px; min-width: 130px; max-width: 260px; }
+.field-input.pform-input { padding: 6px 9px; width: 110px; }
+.field-input.pform-input:disabled,
+.field-select.pform-select:disabled {
+  background: var(--surface-2); color: var(--text-3); cursor: not-allowed;
+}
+
+/* One parameter whose bits are independent switches — ArduPilot's FENCE_TYPE,
+   FS_OPTIONS, ARMING_CHECK. Wraps rather than scrolls: ARMING_CHECK has
+   nineteen of them and a single row would push the card off the screen. */
+.pform-bits { display: flex; flex-wrap: wrap; gap: 4px 14px; min-width: 0; }
+.pform-bit {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11.5px; color: var(--text-1); cursor: pointer;
+}
+.pform-bit input { accent-color: var(--accent); cursor: pointer; }
+.pform-bit input:disabled { cursor: not-allowed; }
+.pform-bit:has(input:disabled) { color: var(--text-3); cursor: not-allowed; }
+
+:where(:root[data-vw~="max-720"]) .pform-field { grid-template-columns: 1fr; }
+:where(:root[data-vw~="max-720"]) .pform-field-hint { grid-column: 1; }
+
+/* ----- MOTORS -----
+   Two halves side by side once the column is wide enough. On the left the
+   airframe drawing, where the motors sit at their real distances so
+   "front-left" is a thing you can point at, with the motor test under it. On
+   the right the same airframe as numbers: one table row per motor, one per
+   sensor, so the whole configuration is read at once rather than one motor's
+   form at a time. The side-by-side follows the COLUMN the page has, not the
+   window, because collapsing the workspace panel is how an operator makes
+   room here and it never changes the viewport. Narrower, everything stacks. */
+.motors-sections { display: flex; flex-direction: column; gap: 14px; container-type: inline-size; }
+.motors-sections .page-card { margin-bottom: 0; }
+.motors-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.motors-card .page-section-title { margin-bottom: 0; }
+.motors-layout, .motors-side, .motors-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+@container (min-width: 1240px) {
+  .motors-layout.motors-split {
+    display: grid; grid-template-columns: minmax(360px, 420px) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+/* The protocol forms are short, so they share rows. */
+.motors-extra {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  gap: 14px; align-items: start;
+}
+.motors-card-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  flex-wrap: wrap; padding-bottom: 8px; border-bottom: 1px solid var(--border-soft);
+}
+.motors-card-head .page-section-title { padding-bottom: 0; border-bottom: none; }
+.motors-card .params-row-status:empty { display: none; }
+
+/* ----- the airframe drawing ----- */
+.motors-diagram { display: flex; justify-content: center; }
+.motors-svg {
+  width: 100%; max-width: 340px; height: auto;
+  /* The drawing is meaningless below about this size — the labels collide. */
+  min-width: 240px;
+  overflow: visible;
+}
+.motors-ring { fill: none; stroke: var(--border); stroke-width: 1; }
+.motors-axis { stroke: var(--border-soft); stroke-width: 1; }
+.motors-axis-label {
+  fill: var(--text-3); font-size: 10px; font-weight: 700; letter-spacing: 0.6px;
+}
+.motors-nose { fill: var(--accent); }
+.motors-arm { stroke: var(--text-3); stroke-width: 3; stroke-linecap: round; opacity: 0.5; }
+.motors-hub { fill: var(--surface-3); stroke: var(--border); stroke-width: 1; }
+
+/* One motor. The whole group is the hit target and the focus ring, so the
+   number, the output label and the spin arrow all select together. */
+.motors-node { cursor: pointer; outline: none; }
+.motors-node-disc {
+  fill: var(--surface-2); stroke: var(--border); stroke-width: 2;
+  transition: fill 140ms ease, stroke 140ms ease;
+}
+.motors-node-number {
+  fill: var(--text-1); font-size: 15px; font-weight: 700;
+  pointer-events: none; user-select: none;
+}
+.motors-node-output {
+  fill: var(--text-3); font-size: 10px; font-weight: 600;
+  pointer-events: none; user-select: none;
+}
+.motors-node-spin { fill: none; stroke: var(--text-3); stroke-width: 1.5; opacity: 0.8; }
+.motors-node-spin-head { fill: var(--text-3); opacity: 0.8; }
+/* A rotor that pushes rather than lifts: the arrow points where the thrust
+   goes, so a quadplane's pusher cannot be mistaken for a fifth lift rotor. */
+.motors-node-thrust { fill: var(--nav); }
+
+/* The airframe body behind the motors. Schematic for everything except a
+   multirotor's arms, which are derived from the real motor positions — hence
+   the lighter, unfilled treatment: it reads as a diagram, not a measurement. */
+.motors-shape {
+  fill: var(--surface-3); stroke: var(--border); stroke-width: 1.5;
+  opacity: 0.9;
+}
+.motors-shape-body { fill: var(--surface-2); }
+.motors-rotor-disc { fill: none; stroke: var(--border); stroke-dasharray: 4 5; }
+
+.motors-node:hover .motors-node-disc { fill: var(--surface-3); stroke: var(--text-3); }
+.motors-node:focus-visible .motors-node-disc {
+  stroke: var(--accent-bright); stroke-width: 3;
+}
+.motors-node.selected .motors-node-disc {
+  fill: var(--accent-dim); stroke: var(--accent-bright); stroke-width: 3;
+}
+.motors-node.selected .motors-node-output { fill: var(--text-2); }
+/* A motor on no output pin is a real fault, not a styling nicety: it will not
+   spin and the aircraft will not fly. Say so on the drawing. */
+.motors-node.unassigned .motors-node-disc {
+  stroke: var(--warning); stroke-dasharray: 4 3;
+}
+.motors-node.unassigned .motors-node-output { fill: var(--warning); }
+.motors-node.testing .motors-node-disc {
+  fill: var(--critical-dark); stroke: var(--critical); stroke-width: 3;
+  animation: motorSpinPulse 700ms ease-in-out infinite;
+}
+@keyframes motorSpinPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) {
+  .motors-node.testing .motors-node-disc { animation: none; }
+  .motors-node-disc { transition: none; }
+}
+
+/* Fallback where SVG is unavailable: the same selection, as plain buttons. */
+.btn.motors-node-fallback { margin: 2px; }
+.btn.motors-node-fallback.selected { border-color: var(--accent); background: var(--accent-dim); }
+
+.motors-legend {
+  display: flex; flex-wrap: wrap; gap: 3px 14px;
+  font-size: 10.5px; color: var(--text-3);
+}
+
+/* The flight controller and the GPS antenna on the airframe. Drawn under the
+   motors and never a click target: their fields are in their own table. */
+.motors-sensor { pointer-events: none; }
+.motors-sensor-mark { stroke-width: 2; }
+.motors-sensor-fc .motors-sensor-mark { fill: var(--accent-dim); stroke: var(--accent-bright); }
+.motors-sensor-gps .motors-sensor-mark { fill: none; stroke: var(--nav); }
+.motors-sensor-tag {
+  fill: var(--text-2); font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+  user-select: none;
+}
+
+/* The airframe card is a container of its own: in the left column it
+   stacks, and stretched across a narrower page it puts the drawing beside
+   the numbers that belong to it. */
+.motors-airframe-card { container-type: inline-size; }
+.motors-airframe-body, .motors-figure, .motors-airframe-info {
+  display: flex; flex-direction: column; gap: 10px; min-width: 0;
+}
+.motors-figure { gap: 6px; }
+@container (min-width: 700px) {
+  .motors-airframe-body {
+    display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+    column-gap: 28px; align-items: start;
+  }
+}
+
+/* ----- airframe class, preset and frame size, around the drawing -----
+   Label over control, side by side: the class and the count are two small
+   controls, and a form row each would put a card's width of air beside them. */
+.pform-grid.motors-geometry { flex-direction: row; flex-wrap: wrap; gap: 8px 14px; }
+.motors-geometry > .pform-field {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  padding: 0; border: none;
+}
+.motors-geometry .pform-field-label {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.7px;
+  color: var(--text-3); text-transform: uppercase;
+}
+.motors-geometry .field-input.pform-input { width: 80px; }
+.motors-preset { gap: 4px; }
+
+.motors-frame, .motors-sensors {
+  display: flex; flex-direction: column; gap: 6px;
+  padding-top: 8px; border-top: 1px solid var(--border-soft);
+}
+.motors-subhead { font-size: 11.5px; font-weight: 600; color: var(--text-2); }
+.motors-frame-dims { display: flex; align-items: flex-end; gap: 8px 12px; flex-wrap: wrap; }
+.motors-frame-control { display: flex; align-items: center; gap: 5px; }
+.field-input.motors-frame-input { width: 76px; padding: 6px 8px; }
+
+/* ----- the motor table ----- */
+.motors-count-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.motors-count-note {
+  font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums;
+}
+/* Scrolls sideways rather than squeezing: a coordinate cut to "0.17" is a
+   wrong number, not a compact one. */
+.motors-table-wrap { overflow-x: auto; }
+.motors-table { border-collapse: collapse; font-size: 12px; }
+.motors-table th {
+  text-align: left; white-space: nowrap; padding: 0 4px 6px;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.7px;
+  color: var(--text-3); text-transform: uppercase;
+  border-bottom: 1px solid var(--border-soft);
+}
+.motors-th-label { gap: 4px; }
+.motors-th-unit { text-transform: none; letter-spacing: 0; font-weight: 500; opacity: 0.8; }
+.motors-table-groups th { padding-bottom: 3px; border-bottom: none; }
+.motors-th-group { text-align: center; }
+.motors-table-groups .motors-th-group {
+  border-bottom: 1px solid var(--border);
+}
+.motors-table td { padding: 4px 4px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
+.motors-table tbody tr:last-child > * { border-bottom: none; }
+.motors-table .field-input.pform-input { width: 68px; padding: 5px 6px; }
+.motors-table .field-select.pform-select,
+.motors-table .field-select.motors-select { min-width: 0; max-width: none; padding: 5px 24px 5px 7px; }
+/* Fixed, because a native select is as wide as its longest option and the
+   pin list names what each pin drives. */
+.motors-table .field-select.motors-output-select { width: 116px; }
+.motors-table .params-row-status { display: block; margin-top: 2px; }
+.motors-table .params-row-status:empty { display: none; }
+.motors-cell-none { color: var(--text-3); text-align: center; }
+
+.motors-row { cursor: pointer; }
+.motors-row > td { transition: background 120ms ease; }
+.motors-row:hover > td { background: var(--surface-2); }
+.motors-row.selected > td { background: var(--accent-dim); }
+.motors-row > td:first-child { border-radius: var(--radius-btn) 0 0 var(--radius-btn); }
+.motors-row > td:last-child { border-radius: 0 var(--radius-btn) var(--radius-btn) 0; }
+/* The row's number is drawn like the motor's disc on the airframe, so the two
+   read as the same thing. */
+.motors-chip {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface-2); border: 2px solid var(--border);
+  color: var(--text-1); font: inherit; font-size: 12.5px; font-weight: 700;
+  cursor: pointer;
+}
+.motors-chip:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 1px; }
+.motors-row.selected .motors-chip { border-color: var(--accent-bright); background: var(--accent-dim); }
+.motors-row.unassigned .motors-chip { border-color: var(--warning); border-style: dashed; }
+.motors-row.unassigned .motors-output-select { border-color: var(--warning); color: var(--warning); }
+.motors-row.testing .motors-chip {
+  background: var(--critical-dark); border-color: var(--critical);
+  animation: motorSpinPulse 700ms ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .motors-row.testing .motors-chip { animation: none; }
+  .motors-row > td { transition: none; }
+}
+
+/* ----- flight controller and GPS, under the frame size ----- */
+.motors-table tbody .motors-sensor-name {
+  text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 500;
+  color: var(--text-1); padding: 4px 14px 4px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.motors-sensor-label { white-space: nowrap; }
+
+/* ----- motor test ----- */
+/* Loud on purpose. This is the only control on the page that moves hardware.
+   One strip rather than a box: it stays in view above the controls it is
+   about without pushing them below the fold. */
+.motors-danger {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px;
+  background: var(--critical-dark); border: 1px solid var(--critical);
+  border-radius: var(--radius-btn); padding: 7px 10px;
+}
+.motors-danger-title { font-size: 12px; font-weight: 700; color: var(--critical); }
+.motors-danger-text { font-size: 11px; color: var(--text-2); line-height: 1.45; }
+/* Acknowledgement, throttle and the buttons in one row, wrapping when the
+   column is narrow. */
+.motors-test { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; }
+.motors-test > .field-switch { flex: 0 0 auto; gap: 12px; }
+.motors-test > .motors-test-throttle { flex: 1 1 300px; min-width: 240px; }
+.motors-test-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ----- schema-driven forms -----
+   Layout comes from .pform-* above; only the label column and the row rhythm
+   are Motors' own: these forms share a row with each other, so each is
+   narrow, and its labels are short ("Timer group 0", "PWM minimum"). */
+.motors-field { grid-template-columns: minmax(110px, 170px) 1fr; padding: 5px 0; }
+/* A protocol card alone in a wide column splits its form in two rather than
+   leaving most of the card empty beside a column of selects. */
+.motors-section-card { container-type: inline-size; }
+@container (min-width: 680px) {
+  .motors-section-card .pform-grid {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px;
+  }
+  .motors-section-card .pform-field:nth-last-child(2):nth-child(odd) { border-bottom: none; }
+}
+
+/* Repeated because .motors-field above is written after the .pform-field
+   collapse and would otherwise win it back at the same specificity. */
+:where(:root[data-vw~="max-720"]) .motors-field { grid-template-columns: 1fr; }
+
+/* ----- SAFETY & SENSORS -----
+   Same schema-driven form as Motors, plus a sensor header: a switch that runs
+   the whole bring-up chain and the one or two pickers that say which sensor it
+   is. The header is a band rather than another form row because it is not a
+   setting — it is the thing the settings below belong to, and it has to read as
+   "this sensor is on" from across a field tent. */
+.safety-sections { display: flex; flex-direction: column; gap: 14px; }
+.safety-card { display: flex; flex-direction: column; gap: 10px; }
+
+/* Two stacks of cards side by side, the way Battery & Power lays out its
+   pair. setup-safety.js decides which card goes in which stack, so a short
+   card is never stretched to the height of the long one beside it. auto-fit
+   for the same reason as .rid-grid: the width that decides is this
+   column's, not the window's, and 440px is what a form with Safety's label
+   column needs before its hints become a ribbon. Narrower, the second stack
+   goes under the first. */
+.safety-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(440px, 100%), 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.safety-column { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+/* Layout comes from .pform-* above. Safety's own two departures: a wider label
+   column, because its labels are sentences ("Auto-disarm if not taking off"),
+   and a wider select, because its options are too ("Return at critical, land at
+   emergency"). */
+.safety-field { grid-template-columns: minmax(140px, 230px) 1fr; }
+.field-select.safety-select { min-width: 150px; max-width: 300px; }
+
+/* Geofence card (setup-geofence.js): a map of its own to draw the area on.
+   The corner and edge handles are DOM markers, so they take the pointer. */
+.geofence-map {
+  position: relative;
+  height: 280px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.geofence-map.is-drawing .maplibregl-canvas-container { cursor: crosshair; }
+.geofence-map-hint {
+  position: absolute; left: 8px; right: 52px; top: 8px; z-index: 2;
+  padding: 6px 10px;
+  border-radius: var(--radius-btn);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  color: var(--text-1);
+  font-size: var(--text-xs);
+  pointer-events: none;
+}
+.geofence-map-hint[hidden] { display: none; }
+.geofence-corner {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--warning);
+  border: 2px solid var(--bg);
+  box-shadow: var(--shadow-soft);
+  cursor: grab;
+}
+.geofence-corner:active { cursor: grabbing; }
+.geofence-mid {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--warning);
+  opacity: 0.85;
+  cursor: copy;
+}
+.geofence-mid:hover { opacity: 1; transform: scale(1.2); }
+.geofence-expand.btn { position: absolute; right: 8px; bottom: 8px; z-index: 2; }
+.geofence-expand[hidden] { display: none; }
+.geofence-map-slot { position: relative; }
+.geofence-map-away {
+  height: 280px;
+  display: grid; place-items: center;
+  border-radius: var(--radius);
+  border: 1px dashed var(--border-strong);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+.geofence-map-away[hidden] { display: none; }
+
+/* The large editor: the card's own map, moved into a panel over the app. Not
+   the shared .modal, which takes Escape for itself; here Escape first gives
+   up the corners being drawn and only then closes. */
+.geofence-editor-overlay {
+  position: fixed; inset: 0;
+  z-index: var(--z-modal);
+  background: var(--scrim);
+  padding: 24px;
+  display: flex;
+  animation: corvus-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.geofence-editor {
+  flex: 1; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-modal);
+}
+.geofence-editor-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.geofence-editor-text { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 2px; }
+.geofence-editor-title { font-size: var(--text-md); font-weight: 650; color: var(--text-1); }
+.geofence-editor-summary { font-size: var(--text-sm); color: var(--text-2); }
+.geofence-editor-body { flex: 1; min-height: 0; display: flex; }
+.geofence-editor-body .geofence-map { flex: 1; height: auto; }
+.geofence-summary { font-size: var(--text-sm); color: var(--text-2); }
+.geofence-summary.is-stale { color: var(--warning); }
+.geofence-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.geofence-warn { color: var(--warning); }
+.geofence-warn[hidden] { display: none; }
+
+/* Sensor header. Raised off the card so the switch and the state line read as
+   one unit and the settings below read as its detail. */
+.safety-sensor {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 11px 12px; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--border-soft);
+}
+.safety-sensor-main {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.safety-sensor-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.safety-sensor-label { font-size: 13px; font-weight: 650; color: var(--text-1); }
+/* The state line is the honest half: it names the driver AND the estimator, so
+   a sensor that streams but is not fused cannot look configured. */
+.safety-sensor-detail { font-size: 11.5px; color: var(--text-2); }
+.safety-sensor-picker {
+  display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+}
+.safety-sensor-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.safety-sensor-field[hidden] { display: none; }
+.safety-sensor-field-label {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.4px;
+  text-transform: uppercase; color: var(--text-3);
+}
+/* Sensor names run long ("Benewake TFmini / TF02 (serial)"), and a clipped
+   model name is the one thing on this card the operator must read exactly. */
+.field-select.safety-driver-select { min-width: 220px; max-width: 340px; }
+.safety-sensor-status { align-self: center; }
+
+/* Sensor tiles on the overview. One card per sensor, carrying the two facts
+   that decide whether the operator needs to open it: is it on, and what is
+   feeding it. Same .tile recipe as the Setup grid, one column narrower. */
+.safety-sensor-tiles {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+/* Same row as a Setup tile — icon, text, trailing chevron — but the icon sits
+   at the top rather than centred: this tile carries three lines, and an icon
+   centred against them drifts down beside the state row instead of marking the
+   title it belongs to. */
+.safety-sensor-tile { align-items: flex-start; gap: 12px; padding: 14px 16px; }
+.safety-sensor-tile .tile-icon { width: 34px; height: 34px; }
+.safety-sensor-tile .tile-icon svg, .safety-sensor-tile .tile-icon i {
+  width: 17px; height: 17px;
+}
+.safety-sensor-tile .tile-body { flex: 1; }
+.safety-sensor-tile > svg, .safety-sensor-tile > i[data-lucide="chevron-right"] {
+  align-self: flex-start; margin-top: 9px;
+}
+.safety-sensor-state {
+  display: flex; align-items: center; gap: 7px; margin-top: 5px; min-width: 0;
+}
+/* The pill is the across-the-tent read. The detail beside it is the honest
+   half — it names the driver AND the estimator, so a sensor that streams but
+   is not fused cannot look configured from the overview either. */
+.safety-sensor-pill {
+  flex: 0 0 auto; font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+  text-transform: uppercase; padding: 2px 7px; border-radius: 999px;
+  border: 1px solid var(--border-soft); color: var(--text-3);
+}
+.safety-sensor-pill.on {
+  color: var(--healthy); border-color: color-mix(in srgb, var(--healthy) 45%, transparent);
+  background: color-mix(in srgb, var(--healthy) 12%, transparent);
+}
+.safety-sensor-pill.partial {
+  color: var(--warning); border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+.safety-sensor-state-detail {
+  font-size: 11px; color: var(--text-3); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* What a half-configured sensor still lacks, one line per gap, read back from
+   the vehicle. Warning colour, because each line is a reason it will not work. */
+.safety-sensor-problems { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.safety-sensor-problem {
+  display: flex; align-items: flex-start; gap: 7px;
+  font-size: 11.5px; line-height: 1.5; color: var(--warning);
+}
+.safety-sensor-problem svg { flex: 0 0 auto; width: 14px; height: 14px; margin-top: 2px; }
+.safety-sensor-note { margin-top: 8px; }
+
+/* Where the sensor is plugged in. Its own line with a plug, because it is the
+   first thing wanted on the bench and it changes with the model picked. */
+.safety-wiring {
+  display: flex; align-items: flex-start; gap: 7px; margin-top: 8px;
+  font-size: 11.5px; line-height: 1.5; color: var(--text-2);
+}
+.safety-wiring[hidden] { display: none; }
+.safety-wiring svg { flex: 0 0 auto; width: 14px; height: 14px; margin-top: 2px; color: var(--text-3); }
+
+/* ----- Hardware presets -----
+   A preset is a product, not a driver, so the row carries the bus and the model
+   number with the name — a list read one line at a time is where "UART" vs
+   "DroneCAN" actually prevents a mistake. Picking one only previews it; the
+   write list below is shown in full before anything reaches the aircraft. */
+.field-select.safety-preset-select { min-width: 280px; max-width: 460px; }
+.safety-preset-detail:empty { display: none; }
+.safety-preset-detail {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 11px 12px; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--border-soft);
+}
+.safety-preset-summary { margin: 0; font-size: 12.5px; color: var(--text-1); }
+.safety-preset-note { margin: 0; font-size: 11.5px; color: var(--text-2); line-height: 1.5; }
+.safety-preset-warning {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 11.5px; line-height: 1.5; color: var(--warning);
+}
+.safety-preset-warning svg { flex: 0 0 auto; width: 15px; height: 15px; margin-top: 1px; }
+
+/* The write list is the consent surface: every parameter, its value, and why.
+   Monospace on the first two columns because a parameter name read wrong is a
+   different parameter. */
+.safety-preset-writes { display: flex; flex-direction: column; gap: 2px; }
+.safety-preset-write {
+  display: grid; gap: 10px; align-items: baseline;
+  grid-template-columns: minmax(120px, 175px) minmax(70px, 108px) 1fr;
+  padding: 3px 0; border-top: 1px solid var(--border-soft);
+}
+.safety-preset-write:first-child { border-top: 0; }
+/* A value the preset considered and deliberately left alone: same grid, muted. */
+.safety-preset-kept {
+  display: grid; gap: 10px; align-items: baseline;
+  grid-template-columns: minmax(120px, 175px) minmax(70px, 108px) 1fr;
+  padding: 3px 0; border-top: 1px solid var(--border-soft); opacity: 0.7;
+}
+.safety-preset-kept .safety-preset-write-value { font-weight: 500; font-style: italic; }
+.safety-preset-write-param {
+  font-family: var(--mono); font-size: 11px; color: var(--text-2);
+}
+.safety-preset-write-value {
+  font-family: var(--mono); font-size: 11px; font-weight: 650; color: var(--text-1);
+}
+.safety-preset-write-value.pending { font-style: italic; font-weight: 500; color: var(--text-3); }
+.safety-preset-write-why { font-size: 11px; color: var(--text-3); }
+.safety-preset-missing { font-size: 11px; color: var(--warning); }
+.safety-preset-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* ----- Parameters the operator adds themselves -----
+   Deliberately the same row as every other field on the page — same label
+   column, same control, same status — because it *is* one: read in the same
+   batch, written by the same path. Only the trailing remove button is new. */
+.safety-extra-list { display: flex; flex-direction: column; gap: 2px; }
+.safety-extra-field { padding: 3px 0; border-top: 1px solid var(--border-soft); }
+.safety-extra-field:first-child { border-top: 0; }
+.safety-extra-field .safety-field-label { font-family: var(--mono); font-size: 11.5px; }
+.safety-extra-empty { font-size: 11.5px; color: var(--text-3); }
+/* A name the firmware never answered for keeps its row and says why, so a typo
+   is distinguishable from a parameter this PX4 version does not have. */
+.safety-extra-absent { font-size: 11.5px; color: var(--warning); align-self: center; }
+.icon-btn.safety-extra-remove { width: 26px; height: 26px; flex: 0 0 auto; }
+.icon-btn.safety-extra-remove svg { width: 13px; height: 13px; }
+.safety-extra-add { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.field-input.safety-extra-input { min-width: 200px; }
+.safety-extra-add .params-row-status { align-self: center; }
+
+/* Repeated for the same reason as Motors: the widened column above is
+   written after the .pform-field collapse, at the same specificity. */
+:where(:root[data-vw~="max-720"]) .safety-field { grid-template-columns: 1fr; }
+:where(:root[data-vw~="max-720"]) .safety-sensor-picker { flex-direction: column; align-items: stretch; }
+:where(:root[data-vw~="max-720"]) .field-select.safety-select { max-width: none; }
+:where(:root[data-vw~="max-720"]) .field-select.safety-preset-select { min-width: 0; max-width: none; }
+:where(:root[data-vw~="max-720"]) .safety-preset-write { grid-template-columns: 1fr auto; gap: 2px 10px; }
+:where(:root[data-vw~="max-720"]) .safety-preset-write-why { grid-column: 1 / -1; }
+:where(:root[data-vw~="max-720"]) .safety-extra-add { flex-direction: column; align-items: stretch; }
+:where(:root[data-vw~="max-720"]) .field-input.safety-extra-input { min-width: 0; }
+
+/* ----- BATTERY & POWER -----
+   Two columns, and which one an operator is looking at says what they are
+   doing. The left is the pack as it is right now — the drawing and its numbers
+   — and it stays put; the right is everything that can be changed. A cell
+   count typed on the right lands in the drawing on the left immediately, which
+   is the only way to tell a correct count from a plausible one.
+
+   When the two no longer fit side by side they stack, pack first, because on a
+   narrow window the reading is still what the page is for. */
+/* A wrapping row rather than a media query, because the width that matters is
+   this container's and not the window's: the right-hand panel is open on most
+   field laptops and takes a third of it, which a viewport breakpoint cannot
+   see. Each column has its own floor, because the two do not need the same
+   room: the drawing reads at 300px, the settings form needs 420px for a label,
+   an input and its unit on one line. Equal halves while both floors fit, then
+   the settings move under the pack. */
+.battery-layout {
+  display: flex; flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-start;
+}
+.battery-live {
+  display: flex; flex-direction: column; gap: 14px;
+  flex: 1 1 0; min-width: min(300px, 100%);
+}
+.battery-config {
+  display: flex; flex-direction: column; gap: 14px;
+  flex: 1 1 0; min-width: min(420px, 100%);
+}
+.battery-card { display: flex; flex-direction: column; gap: 10px; }
+
+/* "Check values" (setupShared.checkCard, on every setup page that writes
+   fields): what the operator set against what the vehicle holds now. */
+.check-card { display: flex; flex-direction: column; gap: 10px; }
+.check-summary { font-size: 12px; color: var(--text-2); }
+.check-summary.ok { color: var(--healthy); }
+.check-summary.err { color: var(--critical); }
+.check-rows { display: flex; flex-direction: column; }
+.check-row {
+  display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 1.4fr);
+  gap: 8px; align-items: baseline; padding: 5px 0;
+  border-bottom: 1px solid var(--border-soft); font-size: 11.5px;
+}
+.check-head { color: var(--text-3); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.3px; }
+.check-param, .check-value { font-family: var(--mono); overflow-wrap: anywhere; }
+.check-row.ok .check-outcome { color: var(--healthy); }
+.check-row.err .check-outcome { color: var(--critical); }
+
+/* ----- the drawing -----
+   One fill across the whole pack, because that is what "remaining" means, with
+   the cells as dividers over it. A per-compartment fill would be a claim about
+   individual cells that a pack voltage cannot support — and when a smart
+   battery does report per-cell volts, those go in the labels underneath where
+   they can be read as the measurement they are. */
+/* Capped, and centred once the columns stack. Left uncapped it follows the
+   card's width, and on a stacked layout that is a battery drawn 400px tall —
+   a diagram is a diagram, not a poster. */
+.battery-figure {
+  width: 100%; max-width: 360px; height: auto;
+  display: block; margin: 0 auto; overflow: visible;
+}
+.battery-body { fill: var(--surface-2); }
+.battery-outline { fill: none; stroke: var(--text-3); stroke-width: 5.5; }
+.battery-terminal { fill: var(--text-3); }
+/* The cell seams are drawn in the card's own background rather than in a grey,
+   because they cross both halves of the gauge: a grey line reads on the empty
+   side and vanishes into the fill, which is exactly where the operator is
+   counting cells. Background-coloured, they read as the gaps between cells on
+   the filled side and as a faint seam on the empty one. */
+.battery-divider { stroke: var(--surface-1); stroke-width: 2.5; }
+
+/* The fill is the one element on this page that carries state colour, and it
+   carries the same thresholds the top bar does — an operator must never read
+   "green" here and "amber" two inches above. */
+.battery-fill { transition: width 220ms ease; }
+.battery-fill.healthy { fill: var(--healthy); opacity: 0.55; }
+.battery-fill.warning { fill: var(--warning); opacity: 0.55; }
+.battery-fill.critical { fill: var(--critical); opacity: 0.6; }
+.battery-fill.off { fill: var(--text-3); opacity: 0.25; }
+
+/* Sans with tabular figures rather than mono: six "4.15 V" in a monospace
+   face ran into one line across the pack. */
+.battery-cell-label {
+  fill: var(--text-2); font-family: var(--sans); font-size: 8.5px;
+  font-variant-numeric: tabular-nums;
+}
+.battery-percent-window { fill: var(--surface-1); stroke: var(--text-3); stroke-width: 1.5; }
+.battery-percent-label {
+  fill: var(--text-1); font-family: var(--sans); font-size: 18px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.battery-source-label {
+  fill: var(--text-3); font-family: var(--sans); font-size: 9.5px;
+  letter-spacing: 0.3px;
+}
+
+/* The failsafe levels, drawn on the pack rather than listed beside it: the
+   question they answer is "how much is left before something happens", and
+   that is a distance along this bar. */
+.battery-threshold { stroke: var(--critical); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.battery-threshold.low { stroke: var(--warning); }
+.battery-threshold-label {
+  fill: var(--text-3); font-family: var(--sans); font-size: 8.5px;
+  letter-spacing: 0.3px; text-transform: uppercase;
+}
+
+/* ----- the numbers under it ----- */
+.battery-readout { display: flex; flex-direction: column; }
+.battery-readout-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 5px 0; border-bottom: 1px solid var(--border-soft);
+}
+.battery-readout-row:last-child { border-bottom: none; }
+.battery-readout-label { font-size: 11.5px; color: var(--text-2); }
+.battery-readout-value {
+  font-family: var(--mono); font-size: 12px; color: var(--text-1);
+  text-align: right; min-width: 0;
+}
+.battery-readout-value.healthy { color: var(--healthy); }
+.battery-readout-value.warning { color: var(--warning); }
+.battery-readout-value.critical { color: var(--critical); }
+.battery-readout-value.off { color: var(--text-3); }
+
+/* The row that names the answer the operator is NOT flying by. Quiet, but
+   permanent: the whole argument for computing both is that they can be seen
+   disagreeing without switching a setting back and forth. */
+.battery-readout-row[data-readout="fc"] {
+  border-top: 1px solid var(--border-soft); margin-top: 4px; padding-top: 7px;
+}
+.battery-readout-row[data-readout="fc"] .battery-readout-value { color: var(--text-2); }
+
+/* ----- the estimator card -----
+   The one card on this page that is not a vehicle setting, so it reads as a
+   band rather than another form row — and it deliberately stays enabled while
+   the vehicle is armed. Refusing it would be the ground station refusing to
+   let somebody fix its own display in the one situation where the number
+   matters most. */
+.battery-estimate-switch {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 12px; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--border-soft);
+}
+.battery-estimate-label { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.battery-estimate-title { font-size: 13px; font-weight: 650; color: var(--text-1); }
+.battery-estimate-sub { font-size: 11.5px; color: var(--text-2); }
+
+/* Layout comes from .pform-* ; battery's own departure is the placeholder,
+   which carries the resolved value an empty field would otherwise hide. The
+   control column has a floor wide enough for the input and its widest unit
+   (mΩ/cell), so a narrow card takes room from the label first rather than
+   pushing the input past the edge. A fixed floor rather than the content's
+   own width, because every row is its own grid and only a fixed one keeps
+   the inputs of all of them in one line. */
+.battery-field { grid-template-columns: minmax(140px, 230px) minmax(220px, 1fr); }
+/* The last resort, when even the stacked column is too narrow for a label
+   beside its input: one column, as on a narrow window. Measured on the card
+   rather than the window, which the collapse above at 720px cannot see, and
+   repeated here because .battery-field is written after it at the same
+   specificity. */
+.battery-config > .page-card { container-type: inline-size; }
+@container (max-width: 380px) {
+  .battery-field { grid-template-columns: 1fr; }
+  .battery-field .pform-field-hint { grid-column: 1; }
+}
+.field-input.battery-input { width: 150px; min-width: 0; }
+.field-input.battery-input::placeholder { color: var(--text-3); font-style: italic; }
+.field-select.battery-select { min-width: 150px; max-width: 300px; }
+.battery-estimator-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ===== REMOTE ID =====
+   A stack, not two columns. The page reads top to bottom as one act — turn the
+   broadcast on, see what is going out, see what is still missing, fill it in —
+   and a side-by-side layout would put the checklist beside the fields it is
+   about rather than above them, which is the wrong way round for something
+   worked through in order.
+
+   The four identity cards below do sit in a grid, because they are four
+   independent forms of three or four rows each and stacking them made the page
+   a scroll with nothing on either side of it. auto-fit rather than a media
+   query, for the same reason the battery layout wraps without one: the width that
+   decides is this container's, and the right-hand panel is open on most field
+   laptops.
+
+   440px is the minimum because it is what a two-column form actually needs,
+   not a guess at a comfortable card. Below it the label column takes its full
+   230px, the control and its hint share whatever is left, and the hint —
+   several lines of why the field matters — ends up a 120px ribbon down the
+   side of the card. One wide column beats two unreadable ones. */
+.rid-stack { display: flex; flex-direction: column; gap: 14px; }
+.rid-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.rid-card { display: flex; flex-direction: column; gap: 10px; }
+
+/* The master switch, in the same shape as the battery estimator's — this is
+   the one control on the page with a consequence rather than a value. */
+.rid-switch-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 12px; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--border-soft);
+}
+.rid-switch-label { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rid-switch-title { font-size: 13px; font-weight: 650; color: var(--text-1); }
+.rid-switch-sub { font-size: 11.5px; color: var(--text-2); }
+
+/* What the broadcast is doing: three rows, each a dot, a fixed label column and
+   a sentence. The label column is fixed so the three sentences start on one
+   vertical line — the rows are read as a group, and a ragged left edge makes
+   scanning them for the one that is wrong slower than it needs to be. */
+.rid-status-rows { display: flex; flex-direction: column; gap: 7px; }
+.rid-status-row {
+  display: grid; grid-template-columns: auto 74px 1fr;
+  align-items: center; gap: 9px;
+}
+.rid-status-label { font-size: 12px; color: var(--text-2); }
+.rid-status-text { font-size: 12.5px; color: var(--text-1); min-width: 0; }
+
+/* The findings list. Errors and warnings differ by icon colour only: they are
+   the same kind of thing at different weights, and a red panel behind half of
+   a pre-flight checklist reads as breakage rather than as work remaining. */
+.rid-checks { display: flex; flex-direction: column; gap: 6px; }
+.rid-check {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 12.5px; color: var(--text-1); line-height: 1.45;
+}
+.rid-check svg { width: 14px; height: 14px; flex: none; margin-top: 2px; }
+.rid-check-error svg { color: var(--critical); }
+.rid-check-warning svg { color: var(--warning); }
+.rid-check-ok svg { color: var(--healthy); }
+.rid-check-text { min-width: 0; }
+
+/* Layout comes from .pform-* ; Remote ID's own departures are a narrower label
+   column and a text field that has to hold twenty characters of serial number
+   without scrolling. Narrower rather than wider, unlike the other pages: these
+   labels are short phrases, and the column they sit in is inside a card that
+   is already sharing the page with another one.
+
+   minmax(0, 1fr) on the control column rather than a bare 1fr: 1fr floors at
+   the content's minimum size, so a long placeholder or an unbroken serial
+   number pushes the track wider than the card and the row overflows. */
+.rid-field { grid-template-columns: minmax(110px, 175px) minmax(0, 1fr); }
+.field-input.rid-input { width: 100%; max-width: 260px; }
+.field-input.rid-input::placeholder { color: var(--text-3); font-style: italic; }
+.field-select.rid-select { min-width: 150px; max-width: 320px; }
+
+/* The character counter sits with the field rather than under it: every one of
+   these lengths is a hard cap in the message format, so how much room is left
+   is part of typing the value, not a footnote to it. */
+.rid-counter {
+  font-size: 11px; color: var(--text-3);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+.rid-card-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* The suggestion sits under the control it would fill, in the hint column, so
+   it reads as an offer about that field rather than as an action on the card. */
+.btn.rid-suggest { grid-column: 2; justify-self: start; }
+
+:where(:root[data-vw~="max-720"]) .btn.rid-suggest { grid-column: 1; }
+:where(:root[data-vw~="max-720"]) .rid-status-row { grid-template-columns: auto 1fr; }
+:where(:root[data-vw~="max-720"]) .rid-status-label { display: none; }

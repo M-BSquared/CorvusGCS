@@ -67,7 +67,7 @@ Corvus.setupBattery = (function () {
   const FIGURE_HEIGHT = 132;
 
   // Threshold label geometry, in drawing units; `size` and `tracking` mirror
-  // .battery-threshold-label in main.css. `em` is a generous uppercase advance
+  // .battery-threshold-label in setup-forms.css. `em` is a generous uppercase advance
   // for when the text cannot be measured (not laid out yet), so an estimate
   // errs towards another row rather than towards an overlap.
   const FLAG = { gap: 3, pad: 2, pitch: 10, cap: 6.5, size: 8.5, tracking: 0.3, em: 0.76 };

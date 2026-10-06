@@ -1270,7 +1270,7 @@
    and clears itself. Stacked in its own column and never added to the board
    underneath.
 
-   It is built to the same anatomy as a board row (.wp-item in main.css) —
+   It is built to the same anatomy as a board row (.wp-item in flight.css) —
    leading column, text, dismiss — on the shared --notif-* tokens, because the
    two are regularly on screen together: the stack drops below the popover
    when that is open, which puts a toast directly under a row it must not look

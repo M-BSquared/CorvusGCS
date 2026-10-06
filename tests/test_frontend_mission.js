@@ -76,6 +76,7 @@ global.document = {
 
 require("../src/js/ui.js");
 require("../src/js/units.js");
+require("../src/js/mission-geometry.js");
 require("../src/js/mission.js");
 
 const mission = Corvus.mission;
@@ -273,8 +274,8 @@ function testEveryPlaceableToolNamesARealItemType() {
 // it belongs to. It reads as a projection bug and is a cascade one, which is
 // why it is worth a test rather than a comment.
 // ---------------------------------------------------------------------------
-const mainCss = fs.readFileSync(
-  path.join(__dirname, "..", "src", "css", "main.css"), "utf-8");
+// The page sheets (main.css and the ones after it), in load order.
+const mainCss = require("./support/page_css.js").pageCss();
 
 /** Every rule block in *css* whose selector list names one of *classes* as a
  *  whole class (so `.wp-marker-num` does not match `.wp-marker`). */
@@ -1243,7 +1244,7 @@ function testEveryElevationDownloadIsLeftOffThePlannerMap() {
 function testTheToolBarKeepsTheHomeFlightBarsSize() {
   const rules = topLevelRules(mainCss);
   const base = rules.find((rule) => /(^|,)\s*\.fa-btn\s*$/.test(rule.selector));
-  assert.ok(base, ".fa-btn must be findable in main.css");
+  assert.ok(base, ".fa-btn must be findable in the page sheets");
   const baseWidth = Number((base.body.match(/min-width:\s*(\d+)px/) || [])[1]);
   assert.ok(baseWidth > 0, ".fa-btn must quote a min-width");
 
@@ -1285,7 +1286,7 @@ function testNothingOverridesMapLibresMarkerPositioning() {
   const markers = ["mission-point", "mission-home", "mission-radius-handle",
                    "wp-marker", "home-marker"];
   const rules = rulesNaming(mainCss, markers);
-  assert.ok(rules.length > 0, "the marker rules must be findable in main.css");
+  assert.ok(rules.length > 0, "the marker rules must be findable in the page sheets");
   rules.forEach((rule) => {
     assert.ok(!/(^|[;\s])position\s*:/.test(rule.body),
       `"${rule.selector}" sets position on a MapLibre marker element. ` +
@@ -1992,9 +1993,38 @@ function testCorridorAndCirclePatternsProduceRoutes() {
   assert.strictEqual(corridor.length, 6, "three lanes of two points");
   const circle = mission._patternWaypoints("pattern_circle",
     [{ lat: 48, lon: 11 }, { lat: 48, lon: 11.001 }], { spacing: 20 });
-  assert.ok(circle.length >= 6 && circle.length % 2 === 0);
+  const radius = mission._distanceM({ lat: 48, lon: 11 }, circle[0]);
+  assert.ok(circle.length >= 9, "a ring of points, not a back and forth sweep");
+  circle.forEach((p) => {
+    assert.ok(Math.abs(mission._distanceM({ lat: 48, lon: 11 }, p) - radius) < 0.6,
+      "every point lies on the circle, none inside it");
+  });
+  assert.ok(mission._distanceM(circle[0], circle[circle.length - 1]) < 0.6, "the last point closes the loop");
+  assert.ok(Math.abs(circle[0].lat - 48) < 1e-6 && circle[0].lon > 11, "it starts where the edge was clicked");
   assert.deepStrictEqual(mission._patternWaypoints("pattern_area", line, {}), [],
     "two corners are not an area");
+}
+
+function testPatternCardIgnoresTheButtonsTransform() {
+  const body = missionJs.slice(missionJs.indexOf("function syncPatternCard"), missionJs.indexOf("function updateTools"));
+  assert.ok(!/getBoundingClientRect/.test(body),
+    "a pressed button is scaled; positioning from its rect moves the card on every press");
+}
+
+function testPlacedPatternPointsShareAGroup() {
+  mission.setPlan({ items: [] });
+  mission._placeStart(at(48, 11));
+  mission._setTool("pattern_area");
+  const m = 1 / 111195;
+  [[0, 0], [0, 100], [100, 100], [100, 0]].forEach(([n, e]) => {
+    mission._patternClick({ lat: 48 + n * m, lng: 11 + e * m });
+  });
+  assert.strictEqual(mission._commitPattern(), true);
+  const grouped = mission._items().filter((item) => item.pattern != null);
+  assert.ok(grouped.length >= 4, "the sweep's points carry a pattern id");
+  assert.strictEqual(new Set(grouped.map((item) => item.pattern)).size, 1, "one pattern, one id");
+  assert.ok(mission.getPlan().items.every((item) => !("pattern" in item)),
+    "the id stays out of the plan the backend validates");
 }
 
 function testPatternCardPinningAndHoverBehavior() {
@@ -2016,10 +2046,10 @@ function testPatternCardPinningAndHoverBehavior() {
 function testPatternCardKeepsTheToolBarRhythm() {
   // The card drops out of the tool bar and holds a row of the same buttons,
   // so it takes the bar's spacing, not the larger Takeoff card's.
-  const css = fs.readFileSync(path.join(__dirname, "..", "src", "css", "main.css"), "utf8");
+  const css = mainCss;
   const block = (sel) => {
     const m = css.match(new RegExp(`(?:^|\\n)${sel.replace(".", "\\.")}\\s*\\{([^}]+)\\}`));
-    assert.ok(m, `${sel} must be defined in main.css`);
+    assert.ok(m, `${sel} must be defined in a page sheet`);
     return m[1];
   };
   const bar = block(".flight-actions");
@@ -2305,6 +2335,8 @@ const tests = [
   testCircleIsAPatternNotAToolOfItsOwn,
   testAreaPatternSweepsBackAndForth,
   testCorridorAndCirclePatternsProduceRoutes,
+  testPatternCardIgnoresTheButtonsTransform,
+  testPlacedPatternPointsShareAGroup,
   testPatternCardPinningAndHoverBehavior,
   testPatternCardKeepsTheToolBarRhythm,
   testThereIsNoSeparateTakeoffTool,

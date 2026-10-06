@@ -33,7 +33,7 @@ const path = require("node:path");
 
 const SRC = path.join(__dirname, "..", "src");
 const sidenav = fs.readFileSync(path.join(SRC, "js", "sidenav.js"), "utf8");
-const mainCss = fs.readFileSync(path.join(SRC, "css", "main.css"), "utf8");
+const mainCss = require("./support/page_css.js").pageCss();
 
 // The dialog's own source, bounded at both ends, so a match elsewhere in this
 // 1 800-line module cannot stand in for one inside it.

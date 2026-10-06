@@ -190,4 +190,6 @@ def test_popout_html_is_offline_and_complete() -> None:
 
 def test_popout_html_loads_the_stylesheets_in_the_apps_order() -> None:
     order = re.findall(r'href="css/([\w.-]+\.css)"', _POPOUT.read_text(encoding="utf-8"))
-    assert order == ["themes.css", "components.css", "main.css"]
+    app = re.findall(r'href="css/([\w.-]+\.css)"', (_SRC / "index.html").read_text(encoding="utf-8"))
+    assert order[:3] == ["themes.css", "components.css", "main.css"]
+    assert order == app, "a pop out window must cascade exactly as the main window does"

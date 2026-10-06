@@ -266,6 +266,7 @@ Corvus.telemetry = {
 
 require("../src/js/ui.js");
 require("../src/js/anim.js");
+require("../src/js/map-overlays.js");
 require("../src/js/map.js");
 
 const map = Corvus.map;

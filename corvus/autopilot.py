@@ -805,6 +805,19 @@ class Dialect:
         """
         return ""
 
+    def stick_mode(self, mav_type: int) -> str:
+        """The mode that flies the aircraft from MANUAL_CONTROL and holds position.
+
+        What the keyboard flight keys switch to when the vehicle is somewhere
+        else. "" when the stack has no such mode to offer.
+        """
+        return "POSCTL"
+
+    def stick_modes(self, mav_type: int) -> tuple[str, ...]:
+        """Every mode that already answers the sticks, so none of them is left."""
+        return ("MANUAL", "ALTCTL", "POSCTL", "POSITION_SLOW", "STABILIZED",
+                "ACRO", "ALTITUDE_CRUISE")
+
     def reposition_altitude_frame(self, mav_type: int) -> str:
         """How ``MAV_CMD_DO_REPOSITION``'s altitude is sent: "amsl" or "relative".
 
@@ -896,6 +909,8 @@ class Dialect:
             "log_suffix": self.log_suffix,
             "firmware_vendor": self.firmware_vendor,
             "guided_mode": self.guided_mode(mav_type),
+            "stick_mode": self.stick_mode(mav_type),
+            "stick_modes": list(self.stick_modes(mav_type)),
             "mission_mode": self.mission_mode,
             "takeoff_frame": self.takeoff_plan(mav_type).altitude_frame,
             "param_defaults": bool(self.param_metadata_path),
@@ -1065,6 +1080,20 @@ class ArduPilotDialect(Dialect):
             return ""
         return ARDUPILOT_GUIDED_MODE
 
+    def stick_mode(self, mav_type: int) -> str:
+        """POSHOLD on a copter or a sub. Plane and rover have no position mode."""
+        names = set(self._table(mav_type).values())
+        if int(mav_type or 0) in _COPTER_TYPES + (12,) and "POSHOLD" in names:
+            return "POSHOLD"
+        return ""
+
+    def stick_modes(self, mav_type: int) -> tuple[str, ...]:
+        names = set(self._table(mav_type).values())
+        flown = ("STABILIZE", "ACRO", "ALT_HOLD", "LOITER", "POSHOLD", "SPORT",
+                 "DRIFT", "FLOWHOLD", "MANUAL", "FBWA", "FBWB", "CRUISE",
+                 "STEERING", "QSTABILIZE", "QHOVER", "QLOITER")
+        return tuple(name for name in flown if name in names)
+
     def reposition_altitude_frame(self, mav_type: int) -> str:
         """ArduPilot takes DO_REPOSITION in MAV_FRAME_GLOBAL_RELATIVE_ALT."""
         return "relative"
@@ -1229,6 +1258,12 @@ class GenericDialect(Dialect):
 
     def mode_label(self, name: str) -> str:
         return _plain_mode_label(name)
+
+    def stick_mode(self, mav_type: int) -> str:
+        return ""
+
+    def stick_modes(self, mav_type: int) -> tuple[str, ...]:
+        return ()
 
     def mode_table(
         self, mav_type: int, firmware: tuple[int, ...] | None = None,

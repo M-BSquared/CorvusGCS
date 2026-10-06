@@ -16,6 +16,7 @@ from typing import Any
 
 from pymavlink import mavutil
 
+from . import geofence
 from . import mission as mission_plan
 from .mavlink_common import TAKEOFF_ALTITUDE_MAX_M, TAKEOFF_ALTITUDE_MIN_M, _PendingAck
 
@@ -49,6 +50,9 @@ for _kind, _name in _MISSION_CMD_NAMES.items():
     assert mission_plan.COMMAND_OF[_kind] == getattr(mavutil.mavlink, _name), \
         f"mission.py MAV_CMD for {_kind} disagrees with pymavlink"
 assert mission_plan.MAV_CMD_DO_CHANGE_SPEED == mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED
+assert geofence.MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION == \
+    mavutil.mavlink.MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION
+assert geofence.MAV_MISSION_TYPE_FENCE == mavutil.mavlink.MAV_MISSION_TYPE_FENCE
 
 # Non-navigation mission items (DO_CHANGE_SPEED) travel in MAV_FRAME_MISSION:
 # they name no place, and PX4's feasibility checker reads the frame of every
@@ -147,6 +151,12 @@ class MissionProtocolMixin:
         # _pending_mission_ack on MISSION_ACK; _mission_lock guards both.
         self._mission_lock = threading.Lock()
         self._mission_items: list[dict[str, Any]] | None = None
+        # MAV_MISSION_TYPE of the upload in flight: 0 for a mission, FENCE for
+        # the geofence. A request for the other kind is not ours to answer.
+        self._mission_upload_type = 0
+        # The area last put on the vehicle over this link ([] after a clear),
+        # or None when that is not known.
+        self._vehicle_fence: list[list[float]] | None = None
         self._pending_mission_ack: _PendingAck | None = None
         # When the vehicle last asked for an item. The upload watches this so a
         # stalled handshake ends in seconds rather than sitting out a budget
@@ -189,10 +199,15 @@ class MissionProtocolMixin:
         if not conn or not self._ack_is_for_us(msg):
             return
         seq = int(getattr(msg, "seq", -1))
+        kind = int(getattr(msg, "mission_type", 0) or 0)
         with self._mission_lock:
             items = self._mission_items
-        if items is None or not (0 <= seq < len(items)):
+            upload_type = self._mission_upload_type
+        if items is None or not (0 <= seq < len(items)) or kind != upload_type:
             return
+        # Only a fence names its type on the wire: a mission item is sent the
+        # way it always was, which every MAVLink build understands.
+        typed = (upload_type,) if upload_type else ()
         item = items[seq]
         with self._mission_lock:
             self._mission_last_request = time.monotonic()
@@ -207,7 +222,7 @@ class MissionProtocolMixin:
                         item["frame"], item["command"], item["current"],
                         item["autocontinue"], item["param1"], item["param2"],
                         item["param3"], item["param4"], item["x_int"],
-                        item["y_int"], item["z"],
+                        item["y_int"], item["z"], *typed,
                     )
                 else:
                     conn.mav.mission_item_send(
@@ -215,7 +230,7 @@ class MissionProtocolMixin:
                         item["frame"], item["command"], item["current"],
                         item["autocontinue"], item["param1"], item["param2"],
                         item["param3"], item["param4"], item["x_f"],
-                        item["y_f"], item["z"],
+                        item["y_f"], item["z"], *typed,
                     )
         except Exception as exc:
             logger.debug("mission item send failed (seq=%d): %s", seq, exc)
@@ -494,14 +509,17 @@ class MissionProtocolMixin:
                 pending.result = ack_type
                 pending.event.set()
 
-    def _upload_mission(self, items: list[dict[str, Any]]) -> int:
+    def _upload_mission(self, items: list[dict[str, Any]], mission_type: int = 0) -> int:
         """Upload mission items and wait for MISSION_ACK.
 
-        Returns MAV_MISSION_ACCEPTED on success, the MISSION_ACK type on
-        rejection, -1 on timeout, -2 on disconnect/shutdown.
+        *mission_type* is MAV_MISSION_TYPE: 0 for the mission, FENCE for the
+        geofence. Returns MAV_MISSION_ACCEPTED on success, the MISSION_ACK type
+        on rejection, -1 on timeout, -2 on disconnect/shutdown.
         """
         pending = _PendingAck()
+        typed = (mission_type,) if mission_type else ()
         with self._mission_lock:
+            self._mission_upload_type = mission_type
             self._mission_items = list(items)
             self._pending_mission_ack = pending
             self._mission_last_request = time.monotonic()
@@ -512,7 +530,7 @@ class MissionProtocolMixin:
                     if conn is not self._conn:
                         return -2
                     conn.mav.mission_count_send(
-                        self._target_system, self._target_component, len(items),
+                        self._target_system, self._target_component, len(items), *typed,
                     )
             except Exception as exc:
                 logger.error("mission_count_send failed: %s", exc)
@@ -542,6 +560,7 @@ class MissionProtocolMixin:
                 if self._pending_mission_ack is pending:
                     self._pending_mission_ack = None
                 self._mission_items = None
+                self._mission_upload_type = 0
 
     # ------------------------------------------------------------------
     # Fly to points (Punktabflug)
@@ -1104,4 +1123,60 @@ class MissionProtocolMixin:
                 return self._command_failure("Mission clear", result)
             self._note_vehicle_mission([])
             self._console_publish("MISSION", "Mission cleared", "success")
+            return True
+
+    # ------------------------------------------------------------------
+    # Geofence (mission_type FENCE)
+    # ------------------------------------------------------------------
+
+    def vehicle_fence(self) -> list[list[float]] | None:
+        """The area last put on the vehicle over this link, [] after a clear,
+        None when this link has not transferred one."""
+        return self._vehicle_fence
+
+    def upload_fence(self, polygon: list[list[float]]) -> bool:
+        """Put *polygon* (``[[lon, lat], ...]``) on the vehicle as its inclusion fence.
+
+        Replaces whatever fence the vehicle held. Does not decide whether the
+        fence acts: that is a parameter, written by the caller from the safety
+        schema. Returns True only on MAV_MISSION_ACCEPTED.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            if not isinstance(polygon, list) or len(polygon) < geofence.MIN_VERTICES:
+                self._set_command_error(
+                    f"an area needs at least {geofence.MIN_VERTICES} corners")
+                return False
+            if not self._connection_ready():
+                return self._command_failure("Geofence upload", -2)
+            specs = [
+                self._build_mission_item_spec(
+                    seq, int(entry["command"]), entry["lat"], entry["lon"], 0.0,
+                    *entry["params"], frame=mavutil.mavlink.MAV_FRAME_GLOBAL)
+                for seq, entry in enumerate(geofence.fence_items(polygon))
+            ]
+            for spec in specs:
+                spec["current"] = 0
+            self._console_publish(
+                "GEOFENCE", f"Uploading a geofence with {len(specs)} corners …", "info")
+            ack = self._upload_mission(specs, geofence.MAV_MISSION_TYPE_FENCE)
+            if ack != mavutil.mavlink.MAV_MISSION_ACCEPTED:
+                result = ack if ack < 0 else self._mission_ack_to_result(ack)
+                return self._command_failure("Geofence upload", result)
+            self._vehicle_fence = [list(p) for p in polygon]
+            self._console_publish("GEOFENCE", "Geofence accepted by the vehicle", "success")
+            return True
+
+    def clear_fence(self) -> bool:
+        """Remove every fence the vehicle holds: a zero-item FENCE transfer."""
+        with self._operation_lock:
+            self._set_command_error("")
+            if not self._connection_ready():
+                return self._command_failure("Geofence clear", -2)
+            ack = self._upload_mission([], geofence.MAV_MISSION_TYPE_FENCE)
+            if ack != mavutil.mavlink.MAV_MISSION_ACCEPTED:
+                result = ack if ack < 0 else self._mission_ack_to_result(ack)
+                return self._command_failure("Geofence clear", result)
+            self._vehicle_fence = []
+            self._console_publish("GEOFENCE", "Geofence removed from the vehicle", "success")
             return True

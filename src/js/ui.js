@@ -2359,6 +2359,24 @@ Corvus.ui = (function () {
     btn.classList.toggle("is-active", !!active);
   }
 
+
+  /**
+   * Where *el* sits inside *ancestor*, in layout pixels: {left, top}. Walks
+   * the offsetParent chain, so a hovered or pressed element (which carries a
+   * transform) is measured where it is laid out, not where it is drawn, and
+   * the answer is in the same pixels as the style.left of anything placed in
+   * *ancestor*, whatever the interface zoom is.
+   */
+  function offsetWithin(el, ancestor) {
+    let left = 0;
+    let top = 0;
+    for (let node = el; node && node !== ancestor; node = node.offsetParent) {
+      left += node.offsetLeft;
+      top += node.offsetTop;
+    }
+    return { left, top };
+  }
+
   /* Keep a .flight-actions bar on ONE ROW inside the room it actually has.
 
      Both bars in the application are this bar — the Home tab's flight actions
@@ -2433,6 +2451,7 @@ Corvus.ui = (function () {
     setBusy,
     setActive,
     fitBar,
+    offsetWithin,
     // charts
     token,
     plotlyTheme,

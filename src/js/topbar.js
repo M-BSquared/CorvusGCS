@@ -72,7 +72,7 @@ Corvus.topbar = (function () {
   // mechanisms as the dots above: a localStorage cache so the first paint is
   // right before the config lands, and an attribute on <html> because the
   // hiding is CSS (the :root[data-notification-marks="off"] rules beside
-  // .wp-item in main.css and .ui-toast in components.css).
+  // .wp-item in flight.css and .ui-toast in components.css).
   const MARKS_KEY = "corvus.notificationMarks";
   // Which altitude the ALTITUDE block reads: AMSL (the default) or relative to
   // home. Same localStorage cache as the two above, so the first frame already

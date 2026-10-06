@@ -238,3 +238,37 @@ class _TileDownloaderPool:
             except Exception:  # noqa: BLE001 - shutdown must not raise
                 logger.exception("tile downloader shutdown failed")
         self._downloaders.clear()
+
+
+def _delete_region_tiles(cache: Any, region: dict) -> int:
+    """Delete the tiles of *region* that no other region still covers.
+
+    Regions overlap by design (an operator pre-downloads a wide area at low
+    zoom and a landing site at high zoom inside it). Deleting one region's
+    full tile set would punch holes in the other, so every candidate tile is
+    checked against the remaining regions first and kept if any still needs
+    it. Returns the number of tiles actually removed.
+
+    Only the region being deleted is expanded into tiles. The others are
+    asked per candidate through their zoom ranges: expanding each of them,
+    as this used to, built and threw away up to ``MAX_TILES_PER_JOB`` tuples
+    per remaining region to delete one area.
+    """
+    from corvus.tile_downloader import enumerate_tiles, tile_cover
+
+    def _area(r: dict) -> tuple[tuple[float, float, float, float], int, int]:
+        b = r.get("bounds") or {}
+        return (
+            (b.get("w", 0.0), b.get("s", 0.0), b.get("e", 0.0), b.get("n", 0.0)),
+            int(r.get("minzoom", 0)), int(r.get("maxzoom", 0)),
+        )
+
+    doomed = set(enumerate_tiles(*_area(region)))
+    for other in cache.list_regions():
+        if not doomed:
+            break
+        if other["id"] == region["id"]:
+            continue
+        still_needed = tile_cover(*_area(other))
+        doomed = {tile for tile in doomed if not still_needed(tile)}
+    return cache.delete_tiles(doomed) if doomed else 0

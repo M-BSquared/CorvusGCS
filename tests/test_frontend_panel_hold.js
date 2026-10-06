@@ -41,6 +41,7 @@ Corvus.panel = {
 const emit = (phase, growth) => motion.forEach((fn) => fn({ phase, growth }));
 
 require("../src/js/anim.js");
+require("../src/js/map-overlays.js");
 require("../src/js/map.js");
 
 function fakeMap(naturalWidth) {
@@ -119,6 +120,31 @@ function testFollowingDoesNotMakeThePictureJump() {
   off();
 }
 
+function testOnTheGlobeThePanIsMeasuredAndCorrected() {
+  // A pan on the globe is not a pure shift: model one that only gets 88% of
+  // the way, and require the anchor back at its old pixel anyway.
+  const { m, container, canvas } = fakeMap(644);
+  let anchorX = 322;                       // the old middle, on screen
+  m.getCenter = () => ({ anchor: true });
+  m.project = () => ({ x: anchorX, y: 300 });
+  m.panBy = (offset, opts) => { m.pans.push({ offset, opts }); anchorX -= offset[0] * 0.88; };
+  const settle = m.settle;
+  m.settle = () => {
+    const before = canvas.clientWidth;
+    if (container.clientWidth !== before) anchorX += (container.clientWidth - before) / 2;
+    settle();
+  };
+  const off = Corvus.map.holdThroughPanel(m);
+  emit("start", 356);
+  m.settle();
+  assert.ok(Math.abs(anchorX - 322) < 0.5, `anchor back at 322, got ${anchorX}`);
+  assert.ok(m.pans.length > 1 && m.pans.length <= 4, "corrected in a few steps");
+  assert.ok(m.pans.every((p) => p.opts && p.opts.animate === false), "never animated");
+  container.natural = 1000;
+  emit("end", 0);
+  off();
+}
+
 function testAnUnrelatedResizeLaterIsNotAnchored() {
   const { m, container } = fakeMap(644);
   const off = Corvus.map.holdThroughPanel(m);
@@ -174,6 +200,7 @@ function testWithoutAPanelItIsANoop() {
     testOpeningResizesOnceAtTheEnd,
     testClosingResizesOnceAtTheStart,
     testFollowingDoesNotMakeThePictureJump,
+    testOnTheGlobeThePanIsMeasuredAndCorrected,
     testAnUnrelatedResizeLaterIsNotAnchored,
     testAHiddenMapIsLeftAlone,
     testUnsubscribeLetsGo,

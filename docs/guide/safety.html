@@ -167,8 +167,37 @@
 <h2 id="limits">Limits</h2>
 <p>
   The <strong>Safety &amp; Sensors</strong> page starts with the maximum
-  distance and height from home, and what the aircraft does when it reaches
-  either one.
+  distance and height from home. What the aircraft does when it reaches
+  either one is set on the Geofence card below.
+</p>
+
+<h2 id="geofence">Geofence</h2>
+<p>
+  The <strong>Geofence</strong> card holds the area the aircraft may fly in.
+  Press <strong>Draw area</strong>: a large map opens over the page, and you
+  click the corners on it the same way you draw an Area pattern in the Mission
+  planner. <strong>Large map</strong> on the card's small map opens the same
+  view to adjust an area, and <strong>Done</strong> or Escape closes it. Enter or a double click
+  closes the area, a right click takes the last corner back and Escape gives
+  up. Once it is closed you can drag any corner, remove one with a right click,
+  or add one with the small handle in the middle of an edge. The area is kept
+  on this computer as soon as you finish, so you can draw it without a
+  vehicle.
+</p>
+<p>
+  <strong>Upload to vehicle</strong> puts it on the autopilot as an inclusion
+  fence, on PX4 and on ArduPilot. <strong>Action when leaving the area</strong>
+  picks what the aircraft does when it crosses the edge (for example Return or
+  Land); the same action applies to the distance and height limits. On
+  ArduPilot the upload also switches the fence on and adds polygons to
+  <code>FENCE_TYPE</code> when they are not already there. The line under the
+  map says whether the area on the vehicle is the one you see, and warns when
+  the aircraft is outside it.
+</p>
+<p>
+  <strong>Show on the Home map</strong> draws the area as a dashed outline on
+  the Home map. <strong>Remove from vehicle</strong> clears the vehicle's
+  fence and keeps the area here.
 </p>
 
 <h2 id="return">Return to launch</h2>
@@ -337,6 +366,7 @@
   <p class="guide-toc-title" id="toc-title">On this page</p>
   <ul>
     <li><a href="#limits">Limits</a></li>
+    <li><a href="#geofence">Geofence</a></li>
     <li><a href="#return">Return to launch</a></li>
     <li><a href="#failsafes">Failsafe actions</a></li>
     <li><a href="#sensors">Distance sensor and optical flow</a></li>

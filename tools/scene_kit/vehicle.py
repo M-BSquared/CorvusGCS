@@ -245,6 +245,9 @@ class SimVehicle:
         self.calibration_step_seconds = self.opts.calibration_step_seconds
         self._mission: list[tuple[float, float, float]] = []
         self._mission_expect = 0
+        self._upload_type = 0
+        # The geofence the GCS uploaded, as (lon, lat) corners.
+        self.fence: list[tuple[float, float]] = []
         # Every uploaded item as it arrived, so a download gives it back
         # unchanged, and the item number of each point the flown path visits.
         self._mission_items: list[tuple[Any, ...]] = []
@@ -797,6 +800,21 @@ class SimVehicle:
     # -- missions ---------------------------------------------------------
 
     def _begin_mission_upload(self, msg: Any) -> None:
+        # A geofence travels the same handshake with mission_type FENCE, and
+        # every request and the ACK say so, as PX4 and ArduPilot do.
+        self._upload_type = int(getattr(msg, "mission_type", 0) or 0)
+        if self._upload_type:
+            self.fence = []
+            self._mission_expect = int(msg.count)
+            if self._mission_expect <= 0:
+                self._send(self._conn.mav.mission_ack_send,
+                           msg.get_srcSystem(), msg.get_srcComponent(),
+                           mavlink2.MAV_MISSION_ACCEPTED, self._upload_type)
+                self._on_event("fence cleared")
+                return
+            self._send(self._conn.mav.mission_request_int_send,
+                       msg.get_srcSystem(), msg.get_srcComponent(), 0, self._upload_type)
+            return
         self._mission = []
         self._mission_items = []
         self._mission_point_seq = []
@@ -811,6 +829,18 @@ class SimVehicle:
 
     def _collect_mission_item(self, msg: Any) -> None:
         seq = int(msg.seq)
+        kind = int(getattr(msg, "mission_type", 0) or 0)
+        if kind:
+            self.fence.append((msg.y / 1e7, msg.x / 1e7))
+            if seq + 1 < self._mission_expect:
+                self._send(self._conn.mav.mission_request_int_send,
+                           msg.get_srcSystem(), msg.get_srcComponent(), seq + 1, kind)
+                return
+            self._send(self._conn.mav.mission_ack_send,
+                       msg.get_srcSystem(), msg.get_srcComponent(),
+                       mavlink2.MAV_MISSION_ACCEPTED, kind)
+            self._on_event(f"fence uploaded ({len(self.fence)} corners)")
+            return
         self._mission.append((msg.x / 1e7, msg.y / 1e7, float(msg.z)))
         self._mission_items.append((
             int(msg.frame), int(msg.command), float(msg.param1), float(msg.param2),

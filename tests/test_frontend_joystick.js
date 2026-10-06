@@ -146,6 +146,15 @@ global.Corvus.telemetry = {
   },
 };
 
+const modeCalls = [];
+global.Corvus.telemetry.postAction = async (url, body) => { modeCalls.push({ url, body }); return { ok: true }; };
+global.Corvus.capabilities = {
+  get: async () => ({
+    stick_mode: "POSCTL",
+    stick_modes: ["MANUAL", "ALTCTL", "POSCTL", "STABILIZED", "ACRO"],
+  }),
+};
+
 // The real component layer, not a stub: the pad builds its grip and its four
 // keys through Corvus.ui.icon, so a mismatch there should fail here.
 require("./../src/js/ui.js");
@@ -156,7 +165,11 @@ require("./../src/js/joystick.js");
 /* The module is a singleton, so every test has to hand it back in a clean
    state: switched off, no scheduled tick, and — the one that bites — no frame
    still counted as outstanding from the previous test's unresolved POST. */
+let clock = 1e9;
+Date.now = () => clock;
+
 async function reset() {
+  clock += 10000;       // past the mode-request throttle of the previous test
   Corvus.joystick.setEnabled(false);
   Corvus.joystick.setKeysEnabled(false);
   Corvus.joystick.setWasdEnabled(false);
@@ -164,6 +177,7 @@ async function reset() {
   if (pendingResolve) { pendingResolve.resolve({ ok: true }); pendingResolve = null; }
   await new Promise((r) => setImmediate(r));
   posts.length = 0;
+  modeCalls.length = 0;
   timers = [];
   store.clear();
 }
@@ -172,7 +186,7 @@ async function reset() {
  *  drive. `sticks` / `keys` / `wasd` switch the three surfaces on after init,
  *  which is the order the real app uses (build hidden, then apply the
  *  config). */
-async function mount({ connected = true, sticks = true, keys = false, wasd = false } = {}) {
+async function mount({ connected = true, sticks = true, keys = false, wasd = false, unlocked = true } = {}) {
   await reset();
   const host = makeEl("div");                 // stands in for .map-view
   // clientWidth === rect width means an interface scale of 1; the scaled case
@@ -191,6 +205,7 @@ async function mount({ connected = true, sticks = true, keys = false, wasd = fal
   if (sticks) Corvus.joystick.setEnabled(true);
   if (keys) Corvus.joystick.setKeysEnabled(true);
   if (wasd) Corvus.joystick.setWasdEnabled(true);
+  if (unlocked && (keys || wasd)) unlock();
   return {
     host, pad,
     left: bases[0], right: bases[1],
@@ -216,10 +231,19 @@ function fireKey(type, key, target, opts) {
     // Shift is the boost modifier, so it rides on every key event rather than
     // being a keypress of its own — the tests hold it the same way.
     shiftKey: !!o.shiftKey,
+    repeat: !!o.repeat,
     target: target || { tagName: "BODY" },
     preventDefault() { defaulted = false; },
   }));
   return { defaultPrevented: !defaulted };
+}
+
+function unlock() {
+  fireKey("keydown", "W", null, { shiftKey: true });
+  fireKey("keyup", "W", null, { shiftKey: true });
+  fireKey("keydown", "W", null, { shiftKey: true });
+  fireKey("keyup", "W", null, { shiftKey: true });
+  fireKey("keyup", "Shift", null, { shiftKey: false });
 }
 
 function fire(el, type, ev) {
@@ -462,6 +486,118 @@ async function testArrowKeysDeflectHalfStickNotFull() {
   fireKey("keydown", "ArrowUp");
   flushTimers();
   assert.equal(lastFrame().x, 0.5, "a key has no travel to meter, so it is not full authority");
+}
+
+// --- the keyboard lock -------------------------------------------------------
+
+async function testTheKeyboardStartsLockedAndSaysSo() {
+  const m = await mount({ sticks: false, keys: true, wasd: true, unlocked: false });
+  assert.equal(Corvus.joystick.isLocked(), true);
+  const lock = m.pad.querySelector("js-lock");
+  assert.equal(lock.hidden, false);
+  assert.match(lock.textContent, /locked.*Shift \+ W twice/);
+  const r = fireKey("keydown", "ArrowUp");
+  fireKey("keydown", "w");
+  flushTimers();
+  assert.equal(r.defaultPrevented, false, "a locked key is not claimed");
+  assert.equal(lastFrame().x, 0);
+  assert.equal(lastFrame().z, 0.5);
+}
+
+async function testShiftWTwiceUnlocksAndThePressesDoNotFly() {
+  const m = await mount({ sticks: false, keys: true, wasd: true, unlocked: false });
+  fireKey("keydown", "W", null, { shiftKey: true });
+  assert.equal(Corvus.joystick.isLocked(), true, "one press is not enough");
+  fireKey("keyup", "W", null, { shiftKey: true });
+  fireKey("keydown", "W", null, { shiftKey: true });
+  assert.equal(Corvus.joystick.isLocked(), false);
+  flushTimers();
+  assert.equal(lastFrame().z, 0.5, "the unlocking presses do not climb");
+  assert.match(m.pad.querySelector("js-lock").textContent, /unlocked/);
+  fireKey("keyup", "W", null, { shiftKey: true });
+  fireKey("keyup", "Shift", null, { shiftKey: false });
+}
+
+async function testAPlainWTwiceOrASlowSecondPressDoesNotUnlock() {
+  await mount({ sticks: false, keys: true, wasd: true, unlocked: false });
+  fireKey("keydown", "w"); fireKey("keyup", "w");
+  fireKey("keydown", "w"); fireKey("keyup", "w");
+  assert.equal(Corvus.joystick.isLocked(), true, "without Shift it is only a letter");
+  fireKey("keydown", "W", null, { shiftKey: true });
+  fireKey("keyup", "W", null, { shiftKey: true });
+  clock += 5000;
+  fireKey("keydown", "W", null, { shiftKey: true });
+  assert.equal(Corvus.joystick.isLocked(), true, "a slow second press starts over");
+  fireKey("keyup", "W", null, { shiftKey: true });
+  fireKey("keyup", "Shift", null, { shiftKey: false });
+}
+
+async function testTheLockComesBackOnEscapeAndASurfaceSwitchOnly() {
+  await mount({ sticks: false, keys: true, wasd: true });
+  assert.equal(Corvus.joystick.isLocked(), false);
+  (windowListeners.blur || []).forEach((cb) => cb());
+  assert.equal(Corvus.joystick.isLocked(), false, "losing focus does not lock");
+  stateSubscriber({ connected: false });
+  assert.equal(Corvus.joystick.isLocked(), false, "losing the link does not lock");
+  fireKey("keydown", "Escape");
+  assert.equal(Corvus.joystick.isLocked(), true, "Escape locks");
+  unlock();
+  Corvus.joystick.setKeysEnabled(false);
+  assert.equal(Corvus.joystick.isLocked(), true, "switching the arrows off locks");
+  unlock();
+  Corvus.joystick.setWasdEnabled(false);
+  assert.equal(Corvus.joystick.isLocked(), true, "switching WASD off locks");
+}
+
+async function testNoModeRequestWhileLockedAndOneWhenUnlocking() {
+  await mount({ sticks: false, keys: true, wasd: true, unlocked: false });
+  stateSubscriber({ connected: true, armed: true, mode: "MISSION" });
+  await pressAndSettle("ArrowUp");
+  assert.equal(modeCalls.length, 0, "a locked key never touches the mode");
+  unlock();
+  await settle();
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(modeCalls, [{ url: "/api/mavlink/mode", body: { mode: "POSCTL" } }]);
+}
+
+// --- the keys take the aircraft into the position mode -----------------------
+
+async function pressAndSettle(key, opts) {
+  fireKey("keydown", key, null, opts);
+  await settle();
+  await new Promise((r) => setImmediate(r));
+}
+
+async function testAKeyPressSwitchesAnArmedVehicleToTheStickMode() {
+  await mount({ sticks: false, keys: true, wasd: true });
+  stateSubscriber({ connected: true, armed: true, mode: "MISSION" });
+  await pressAndSettle("w");
+  assert.deepEqual(modeCalls, [{ url: "/api/mavlink/mode", body: { mode: "POSCTL" } }]);
+}
+
+async function testNoModeRequestWhenTheVehicleAlreadyFliesFromTheSticks() {
+  await mount({ sticks: false, keys: true });
+  stateSubscriber({ connected: true, armed: true, mode: "ALTCTL" });
+  await pressAndSettle("ArrowUp");
+  assert.equal(modeCalls.length, 0);
+}
+
+async function testNoModeRequestOnTheGroundOrWithoutALink() {
+  await mount({ sticks: false, keys: true });
+  stateSubscriber({ connected: true, armed: false, mode: "MISSION" });
+  await pressAndSettle("ArrowUp");
+  stateSubscriber({ connected: false, armed: true, mode: "MISSION" });
+  await pressAndSettle("ArrowDown");
+  assert.equal(modeCalls.length, 0);
+}
+
+async function testHeldKeyRepeatsAndTypingDoNotRequestAMode() {
+  await mount({ sticks: false, keys: true, wasd: true });
+  stateSubscriber({ connected: true, armed: true, mode: "LOITER" });
+  await pressAndSettle("w", { repeat: true });
+  fireKey("keydown", "w", { tagName: "INPUT" });
+  await settle();
+  assert.equal(modeCalls.length, 0);
 }
 
 // --- key strength and the Shift boost ---------------------------------------
@@ -881,7 +1017,10 @@ async function testACollapsedPadStopsFlyingButKeepsTheStreamAlive() {
 
   fire(m.collapse, "click");
   fireKey("keydown", "ArrowUp");
-  assert.ok(m.key("up").className.includes("active"), "keys fly again once expanded");
+  assert.equal(m.key("up").className.includes("active"), false, "collapsing locks the keyboard again");
+  unlock();
+  fireKey("keydown", "ArrowUp");
+  assert.ok(m.key("up").className.includes("active"), "keys fly again once unlocked");
   fireKey("keyup", "ArrowUp");
 }
 
@@ -1207,6 +1346,15 @@ const tests = [
   testACollapsedPadIsRestoredOnTheNextLaunch,
   testTheCollapseControlIsNotADragHandle,
   testTheAxisReadoutOnlyNamesTheAxesTheSurfacesCanMove,
+  testTheKeyboardStartsLockedAndSaysSo,
+  testShiftWTwiceUnlocksAndThePressesDoNotFly,
+  testAPlainWTwiceOrASlowSecondPressDoesNotUnlock,
+  testTheLockComesBackOnEscapeAndASurfaceSwitchOnly,
+  testNoModeRequestWhileLockedAndOneWhenUnlocking,
+  testAKeyPressSwitchesAnArmedVehicleToTheStickMode,
+  testNoModeRequestWhenTheVehicleAlreadyFliesFromTheSticks,
+  testNoModeRequestOnTheGroundOrWithoutALink,
+  testHeldKeyRepeatsAndTypingDoNotRequestAMode,
   testKeyStrengthSetsHowFarAKeyPushesTheStick,
   testTheStrengthAndTheBoostReachTheArrowKeysWithoutWasd,
   testKeyStrengthChangesUnderAHeldKey,

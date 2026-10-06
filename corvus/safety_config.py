@@ -729,8 +729,6 @@ def _limits_section(values: dict[str, float]) -> dict[str, Any] | None:
                 hint="Height above home the vehicle may reach. 0 disables the limit."),
         _number("LNDMC_ALT_MAX", "Multicopter altitude ceiling", values, unit="m", step=1,
                 hint="Hard altitude limit enforced by the multicopter land detector."),
-        _enum("GF_ACTION", "Action at the limit", values, GEOFENCE_ACTION_OPTIONS,
-              hint="What the vehicle does when it reaches the distance or height limit."),
         _enum("GF_SOURCE", "Position source", values, GEOFENCE_SOURCE_OPTIONS),
         _enum("GF_PREDICT", "Predict the breach", values, ON_OFF_OPTIONS,
               hint="Act on where the current velocity is taking the vehicle, not only on "
@@ -741,7 +739,31 @@ def _limits_section(values: dict[str, float]) -> dict[str, Any] | None:
     return {
         "id": "limits", "title": "Flight limits", "kind": "fields", "fields": fields,
         "hint": "The envelope the vehicle is not allowed to leave, measured from the home "
-                "position.",
+                "position. What it does at the limit is set on the Geofence card.",
+    }
+
+
+def _geofence_section(values: dict[str, float]) -> dict[str, Any] | None:
+    """The Geofence card: the area drawn on the map and the action on leaving it.
+
+    Present whenever the vehicle answered at all, even without GF_ACTION: the
+    area is drawn and kept on this station, and only the action needs the
+    vehicle. (With no vehicle the page builds the card without a section.) On
+    PX4 an uploaded polygon acts as soon as it is on board, so there is
+    nothing to switch on.
+    """
+    if not values:
+        return None
+    fields = _present([
+        _enum("GF_ACTION", "Action when leaving the area", values, GEOFENCE_ACTION_OPTIONS,
+              hint="Also applies to the maximum distance and height under Flight limits."),
+    ])
+    return {
+        "id": "geofence", "title": "Geofence", "kind": "geofence", "fields": fields,
+        "hint": "Draw the area the vehicle may fly in. Leaving it triggers the action below.",
+        "enable_writes": [],
+        "inactive": ("The action is None, so leaving the area does nothing."
+                     if values.get("GF_ACTION") == 0 else ""),
     }
 
 
@@ -1378,6 +1400,7 @@ def build(values: dict[str, float],
     """
     sections = [s for s in (
         _limits_section(values),
+        _geofence_section(values),
         _rtl_section(values),
         _failsafe_section(values),
         _rangefinder_section(values),

@@ -84,6 +84,7 @@ global.document = {
 require("../src/js/ui.js");
 require("../src/js/telemetry.js");
 require("../src/js/anim.js");
+require("../src/js/map-overlays.js");
 require("../src/js/map.js");
 require("../src/js/instruments.js");
 require("../src/js/link.js");
