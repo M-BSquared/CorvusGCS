@@ -80,7 +80,7 @@ download() {  # <url> <dest>
 PY_STDLIB="$(python3 -c 'import sysconfig; print(sysconfig.get_path("stdlib"))')"
 PY_LIBDIR="$(python3 -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
 
-# ---- cleanup trap: keep $OUTPUT + cached appimagetool, drop $APPDIR on failure
+# ---- cleanup trap: keep $OUTPUT + cached build/tools, drop $APPDIR on failure
 SUCCESS=0
 cleanup() {
     if [ "${SUCCESS:-0}" -ne 1 ]; then
@@ -325,18 +325,34 @@ mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 cp -a "$ICON" "$APPDIR/usr/share/icons/hicolor/256x256/apps/corvus-gcs.png"
 ln -sf corvus-gcs.png "$APPDIR/.DirIcon"
 
-# ---- 8. obtain appimagetool -------------------------------------------------
-APPIMAGETOOL="$BUILD_DIR/appimagetool-x86_64.AppImage"
-APPIMAGETOOL_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+# ---- 8. obtain appimagetool + the static type-2 runtime ---------------------
+# AppImageKit's appimagetool is retired and embeds the old runtime, which links
+# libfuse2 and the system glibc. The current tool lives in AppImage/appimagetool
+# and the runtime in AppImage/type2-runtime: static, FUSE 3 built in. The
+# runtime is fetched explicitly and passed with --runtime-file so a cached or
+# PATH appimagetool can never fall back to an old one. `rm -rf build/tools`
+# refreshes both; CI does not cache them, so it always packs with the latest.
+TOOLS_DIR="$BUILD_DIR/tools"
+APPIMAGETOOL="$TOOLS_DIR/appimagetool-x86_64.AppImage"
+APPIMAGETOOL_URL="https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
+RUNTIME="$TOOLS_DIR/runtime-x86_64"
+RUNTIME_URL="https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64"
+mkdir -p "$TOOLS_DIR"
 if [ -x "$APPIMAGETOOL" ]; then
     echo ">>> Using cached appimagetool"
-elif command -v appimagetool >/dev/null 2>&1; then
-    APPIMAGETOOL="$(command -v appimagetool)"
-    echo ">>> Using appimagetool from PATH"
+elif [ -n "${CORVUS_APPIMAGETOOL:-}" ]; then
+    APPIMAGETOOL="$CORVUS_APPIMAGETOOL"
+    echo ">>> Using appimagetool from CORVUS_APPIMAGETOOL ($APPIMAGETOOL)"
 else
     echo ">>> Downloading appimagetool ..."
     download "$APPIMAGETOOL_URL" "$APPIMAGETOOL"
     chmod +x "$APPIMAGETOOL"
+fi
+if [ -s "$RUNTIME" ]; then
+    echo ">>> Using cached AppImage runtime"
+else
+    echo ">>> Downloading AppImage runtime ..."
+    download "$RUNTIME_URL" "$RUNTIME"
 fi
 
 # ---- 9. pack ----------------------------------------------------------------
@@ -389,12 +405,12 @@ PY
 }
 
 echo ">>> Packaging AppImage ..."
-if ! ARCH=x86_64 "$APPIMAGETOOL" "$APPDIR" "$OUTPUT" >>"$AIM_LOG" 2>&1; then
+if ! ARCH=x86_64 "$APPIMAGETOOL" --runtime-file "$RUNTIME" "$APPDIR" "$OUTPUT" >>"$AIM_LOG" 2>&1; then
     echo ">>> Direct run failed; retrying with APPIMAGE_EXTRACT_AND_RUN=1 ..."
-    if ! APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 "$APPIMAGETOOL" "$APPDIR" "$OUTPUT" >>"$AIM_LOG" 2>&1; then
+    if ! APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 "$APPIMAGETOOL" --runtime-file "$RUNTIME" "$APPDIR" "$OUTPUT" >>"$AIM_LOG" 2>&1; then
         if command -v unsquashfs >/dev/null 2>&1; then
             echo ">>> Extract-and-run failed; manually unsquashfs-ing appimagetool (bypasses FUSE + binfmt) ..."
-            if ! run_appimagetool_extracted "$APPIMAGETOOL" "$APPDIR" "$OUTPUT" >>"$AIM_LOG" 2>&1; then
+            if ! run_appimagetool_extracted "$APPIMAGETOOL" --runtime-file "$RUNTIME" "$APPDIR" "$OUTPUT" >>"$AIM_LOG" 2>&1; then
                 echo "ERROR: appimagetool failed; log: $AIM_LOG" >&2
                 tail -n 20 "$AIM_LOG" >&2 || true
                 exit 1
@@ -405,6 +421,27 @@ if ! ARCH=x86_64 "$APPIMAGETOOL" "$APPDIR" "$OUTPUT" >>"$AIM_LOG" 2>&1; then
             exit 1
         fi
     fi
+fi
+
+# The old runtime is a dynamic ELF (PT_INTERP, libfuse.so.2); the type-2
+# runtime is static. Refuse to ship the former.
+if ! python3 - "$OUTPUT" <<'PY'
+import struct, sys
+with open(sys.argv[1], "rb") as f:
+    head = f.read(64)
+    if head[:4] != b"\x7fELF" or head[4] != 2:
+        sys.exit("not a 64-bit ELF runtime")
+    phoff, = struct.unpack_from("<Q", head, 32)
+    phentsize, phnum = struct.unpack_from("<HH", head, 54)
+    f.seek(phoff)
+    table = f.read(phentsize * phnum)
+for i in range(phnum):
+    if struct.unpack_from("<I", table, i * phentsize)[0] == 3:
+        sys.exit("dynamically linked runtime (needs libfuse2 and the system glibc)")
+PY
+then
+    echo "ERROR: $OUTPUT carries the old AppImage runtime" >&2
+    exit 1
 fi
 
 SUCCESS=1

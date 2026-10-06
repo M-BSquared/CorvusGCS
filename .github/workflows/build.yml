@@ -139,16 +139,13 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
-            wget rsync squashfs-tools imagemagick libfuse2
-      - name: Cache appimagetool
-        uses: actions/cache@v4
-        with:
-          path: build/appimagetool-x86_64.AppImage
-          key: appimagetool-x86_64
+            wget rsync squashfs-tools imagemagick
+      # appimagetool and its type-2 runtime are deliberately not cached: a
+      # fixed cache key froze an old tool for good. Each build fetches the
+      # current continuous release; the static runtime needs no FUSE 2 package.
       - name: Build AppImage
         run: |
           chmod +x build.sh build-appimage.sh
-          [ -f build/appimagetool-x86_64.AppImage ] && chmod +x build/appimagetool-x86_64.AppImage || true
           ./build.sh
       - name: Read version
         id: ver
