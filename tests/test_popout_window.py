@@ -131,6 +131,28 @@ def test_everywhere_else_qt_chooses(env, platform) -> None:
     assert app.qpa_platform(env, platform) == ""
 
 
+def test_a_linux_start_without_any_display_says_so() -> None:
+    assert "DISPLAY" in app.missing_display({}, "linux")
+
+
+@pytest.mark.parametrize("env,platform", [
+    ({"DISPLAY": ":0"}, "linux"),
+    ({"WAYLAND_DISPLAY": "wayland-0"}, "linux"),
+    ({"QT_QPA_PLATFORM": "offscreen"}, "linux"),    # the operator's choice
+    ({}, "darwin"),
+    ({}, "win32"),
+])
+def test_a_window_can_open(env, platform) -> None:
+    assert app.missing_display(env, platform) == ""
+
+
+def test_qt_comes_up_before_the_backend_opens_anything() -> None:
+    import inspect
+
+    source = inspect.getsource(app.main)
+    assert source.index("QApplication(qt_argv(") < source.index("start_backend(port")
+
+
 @pytest.mark.parametrize("name,expected", [
     ("xcb", {"place": True, "pin": True, "frost": False}),
     ("cocoa", {"place": True, "pin": True, "frost": True}),

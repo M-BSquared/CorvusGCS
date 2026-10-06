@@ -7,8 +7,8 @@ interpreter and Qt, all pointing inside the bundle:
   launcher), so the bundled interpreter finds its stdlib;
 * ``LD_LIBRARY_PATH``, ``QT_PLUGIN_PATH`` and the QtWebEngine paths (the
   AppImage), so the bundled Qt is the one loaded;
-* ``QTWEBENGINE_CHROMIUM_FLAGS`` (every launcher, and :mod:`corvus.app`), for
-  the embedded Chromium only;
+* ``QTWEBENGINE_CHROMIUM_FLAGS`` and ``CORVUS_LAUNCHER_CHROMIUM_FLAGS`` (the
+  launchers, and :mod:`corvus.app`), for the embedded Chromium only;
 * ``APPDIR``, ``APPIMAGE``, ``ARGV0`` and ``OWD`` (the AppImage runtime), and
   ``_PYI_*`` (the Windows build's PyInstaller bootloader);
 * on Windows, PySide6's own package folder at the front of ``PATH``, which
@@ -60,6 +60,7 @@ _ALWAYS_DROP: tuple[str, ...] = (
     "PYTHONEXECUTABLE",
     "__PYVENV_LAUNCHER__",
     "QTWEBENGINE_CHROMIUM_FLAGS",
+    "CORVUS_LAUNCHER_CHROMIUM_FLAGS",
     "_MEIPASS2",
 )
 

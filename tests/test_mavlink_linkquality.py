@@ -493,3 +493,24 @@ def test_gcs_hb_loop_survives_a_send_failure_and_exits_on_stop() -> None:
 
     assert not worker.is_alive(), "the loop must exit once the bridge stops"
     assert bridge._hb_thread is None
+
+
+# ---------------------------------------------------------------------------
+# Shutdown: the socket stop() closes under the receive loop is not an error
+# ---------------------------------------------------------------------------
+
+def test_a_link_closed_by_stop_is_not_logged_as_an_error(caplog: pytest.LogCaptureFixture) -> None:
+    bridge = ready_bridge()
+
+    def receive_until_stopped() -> None:
+        bridge._running.clear()            # what stop() does before it closes the socket
+        raise OSError(9, "Bad file descriptor")
+
+    bridge._connect = lambda: None
+    bridge._schedule_message_intervals = lambda: None
+    bridge._receive_loop = receive_until_stopped
+    bridge._running.set()
+    with caplog.at_level("DEBUG", logger="corvus.mavlink"):
+        bridge._run()
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]
+    assert any("closed for shutdown" in r.getMessage() for r in caplog.records)

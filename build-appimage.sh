@@ -186,6 +186,14 @@ if [ -f "$LOCK_OUT" ]; then echo "    (resolved set: $LOCK_OUT)"; fi
 echo ">>> Trimming PySide6 to the Qt modules Corvus loads ..."
 python3 "$REPO_DIR/tools/qt_bundle.py" prune "$APPDIR/usr/lib/python$PY_MM/site-packages"
 
+# ---- 3c. the system libraries Qt and Python link but a clean host lacks -----
+# Qt's X11 platform plugin links libxcb-cursor, libxkbcommon-x11 and six more
+# that the PySide6 wheels leave to the system. A machine without them cannot
+# open a window at all; Qt aborts at startup. Copied in here, and the build
+# fails if anything the app cannot start without is still unresolved.
+echo ">>> Bundling the system libraries the AppDir links ..."
+python3 "$REPO_DIR/tools/appimage_libs.py" bundle "$APPDIR"
+
 # ---- 4. copy app code into AppDir root -------------------------------------
 # corvus/version.py does parent.parent/VERSION; corvus/server.py + app.py do
 # parent.parent/src — so VERSION, corvus/, src/ must be siblings at AppDir root.
@@ -250,9 +258,10 @@ if [ -d "$PYSIDE6_QT/resources/qtwebengine_dictionaries" ]; then
 fi
 export LD_LIBRARY_PATH="$PYSIDE6_QT/lib:$APPDIR/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-# AppImage cannot use the Chromium setuid sandbox; append the disabling flags.
-# app.py uses os.environ.setdefault, so its own Vulkan/swiftshader flags stay.
-export QTWEBENGINE_CHROMIUM_FLAGS="${QTWEBENGINE_CHROMIUM_FLAGS:-} --no-sandbox --disable-gpu-sandbox --disable-setuid-sandbox --disable-dev-shm-usage"
+# AppImage cannot use the Chromium setuid sandbox. Handed over in a variable of
+# its own: app.py appends it to its GPU fallback flags, which it only applies
+# when QTWEBENGINE_CHROMIUM_FLAGS is unset (setting that here dropped them).
+export CORVUS_LAUNCHER_CHROMIUM_FLAGS="--no-sandbox --disable-gpu-sandbox --disable-setuid-sandbox --disable-dev-shm-usage"
 
 # Ensure a writable HOME for Qt/Chromium profile+cache when none is set/unwritable.
 if [ -z "${HOME:-}" ] || [ ! -w "${HOME:-}" ]; then

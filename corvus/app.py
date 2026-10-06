@@ -58,9 +58,9 @@ def chromium_flags(platform: str = sys.platform) -> list[str]:
       Windows the sandbox works and there is nothing to buy by dropping it,
       so those platforms keep it.
 
-    Any of this can be replaced outright: the whole list is applied with
-    ``setdefault``, so an operator who exports ``QTWEBENGINE_CHROMIUM_FLAGS``
-    gets exactly what they asked for and none of the above.
+    Any of this can be replaced outright: an operator who exports
+    ``QTWEBENGINE_CHROMIUM_FLAGS`` gets exactly what they asked for and none
+    of the above (see :func:`chromium_flags_value`).
 
     Deliberately absent: ``--disable-software-rasterizer``, which used to sit
     two lines under ``--enable-unsafe-swiftshader`` and turn it off again —
@@ -76,7 +76,29 @@ def chromium_flags(platform: str = sys.platform) -> list[str]:
     return flags
 
 
-os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", " ".join(chromium_flags()))
+# What a packaged launcher adds for its own sandboxing (the AppImage cannot use
+# Chromium's setuid sandbox). Kept apart from QTWEBENGINE_CHROMIUM_FLAGS so it
+# never stands in for the operator's own choice.
+LAUNCHER_FLAGS_ENV = "CORVUS_LAUNCHER_CHROMIUM_FLAGS"
+
+
+def chromium_flags_value(env, platform: str = sys.platform) -> str:
+    """The ``QTWEBENGINE_CHROMIUM_FLAGS`` this run starts Chromium with.
+
+    The operator's own value if they set one, else :func:`chromium_flags`,
+    then whatever the launcher put in :data:`LAUNCHER_FLAGS_ENV`. The AppImage
+    launcher used to export its sandbox switches as
+    ``QTWEBENGINE_CHROMIUM_FLAGS`` itself, which looked to this module like an
+    operator's choice: every packaged run then lost the GPU blocklist override
+    and the software GL fallback, and on a machine without a GPU driver
+    MapLibre found WebGL blocklisted and drew no map.
+    """
+    own = env.get("QTWEBENGINE_CHROMIUM_FLAGS", "").strip() or " ".join(chromium_flags(platform))
+    extra = env.get(LAUNCHER_FLAGS_ENV, "").strip()
+    return f"{own} {extra}" if extra else own
+
+
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = chromium_flags_value(os.environ)
 
 
 def qpa_platform(env, platform: str = sys.platform) -> str:
@@ -96,6 +118,24 @@ def qpa_platform(env, platform: str = sys.platform) -> str:
         return ""
     wayland = bool(env.get("WAYLAND_DISPLAY")) or env.get("XDG_SESSION_TYPE", "").lower() == "wayland"
     return "xcb;wayland" if wayland and env.get("DISPLAY") else ""
+
+
+def missing_display(env, platform: str = sys.platform) -> str:
+    """Why no window can open here, or ``""`` when one can.
+
+    On Linux, Qt aborts the process when it finds neither an X11 nor a Wayland
+    display, after printing a line about plugins that sends the operator
+    looking in the wrong place. A start over SSH or from a service is the
+    usual cause, and this says so plainly. An operator who chose a platform
+    (``offscreen``, ``eglfs``, ``vnc``) is trusted with it.
+    """
+    if not platform.startswith("linux") or env.get("QT_QPA_PLATFORM"):
+        return ""
+    if env.get("DISPLAY") or env.get("WAYLAND_DISPLAY"):
+        return ""
+    return ("no display to open a window on: neither DISPLAY nor WAYLAND_DISPLAY "
+            "is set. Start CORVUS GCS from the desktop session, or run serve.py "
+            "and open the interface in a browser.")
 
 
 _QPA = qpa_platform(os.environ)
@@ -548,6 +588,28 @@ def main() -> int:
                        "are not shareable. Point this one at its own link.",
                        ALLOW_MULTI_ENV)
 
+    no_display = missing_display(os.environ)
+    if no_display:
+        logger.error("%s", no_display)
+        lock.release()
+        return 1
+
+    # Set before the QApplication, because Windows binds a window to whatever
+    # the AppUserModelID was when the window was created.
+    set_windows_app_id(f"corvus.gcs.{get_version()}")
+    use_visible_qt_plugins()
+    # Before the QApplication, so the first window already carries the id a
+    # Linux dock matches against the desktop entry's StartupWMClass.
+    app_id = desktop_id()
+    QGuiApplication.setDesktopFileName(app_id)
+    # Before the backend: Qt aborts the process when it cannot load a platform
+    # plugin, and an abort runs no atexit handler. Up to here nothing is open
+    # that the kernel does not close itself.
+    app = QApplication(qt_argv(sys.argv, app_id))
+    app.setApplicationName("CORVUS GCS")
+    app.setApplicationDisplayName("CORVUS GCS")
+    app.setApplicationVersion(get_version())
+
     logger.info("Starting backend on port %d (MAVLink: %s)", port,
                 mavlink_conn or cfg.mavlink_connection)
     try:
@@ -562,19 +624,6 @@ def main() -> int:
     # bind_server may have landed on a different port than the one asked for.
     port = server.server_address[1]
     lock.write_port(port)
-
-    # Set before the QApplication, because Windows binds a window to whatever
-    # the AppUserModelID was when the window was created.
-    set_windows_app_id(f"corvus.gcs.{get_version()}")
-    use_visible_qt_plugins()
-    # Before the QApplication, so the first window already carries the id a
-    # Linux dock matches against the desktop entry's StartupWMClass.
-    app_id = desktop_id()
-    QGuiApplication.setDesktopFileName(app_id)
-    app = QApplication(qt_argv(sys.argv, app_id))
-    app.setApplicationName("CORVUS GCS")
-    app.setApplicationDisplayName("CORVUS GCS")
-    app.setApplicationVersion(get_version())
 
     window = QMainWindow()
     window.setWindowTitle(f"CORVUS GCS v{get_version()}")

@@ -139,7 +139,17 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
-            wget rsync squashfs-tools imagemagick
+            wget rsync squashfs-tools imagemagick \
+            libxcb-cursor0 libxkbcommon-x11-0 libxkbcommon0 libxcb-icccm4 \
+            libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-render0 \
+            libxcb-util1 libxcb-xkb1 libxcb-randr0 libxcb-shape0 libxcb-shm0 \
+            libxcb-sync1 libxcb-xfixes0 libxcb-xinerama0 libxcb-xinput0 \
+            libxcb-glx0 libxcb-dri3-0 libxcb-present0 libxcomposite1 \
+            libxdamage1 libxext6 libxfixes3 libxrandr2 libxtst6 libxkbfile1 \
+            libxshmfence1 libxrender1 libxi6 libsm6 libice6
+      # The libraries above are not used by the build itself: tools/
+      # appimage_libs.py copies them into the AppImage, because a clean
+      # desktop lacks them and Qt cannot open a window without them.
       # appimagetool and its type-2 runtime are deliberately not cached: a
       # fixed cache key froze an old tool for good. Each build fetches the
       # current continuous release; the static runtime needs no FUSE 2 package.

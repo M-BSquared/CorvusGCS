@@ -60,7 +60,7 @@ echo "Bundle:  $APP_OUT"
 echo ""
 
 [ "$(uname -s)" = "Darwin" ] || { echo "ERROR: this build must run on macOS" >&2; exit 1; }
-for tool in rsync install_name_tool otool codesign sips iconutil ditto; do
+for tool in rsync install_name_tool otool codesign sips iconutil ditto lipo cc; do
     command -v "$tool" >/dev/null 2>&1 || {
         echo "ERROR: '$tool' not found — install the Xcode command line tools:" >&2
         echo "       xcode-select --install" >&2
@@ -274,7 +274,7 @@ echo ">>> Bundling stdlib + lib-dynload from $PY_STDLIB ..."
 rsync -a \
     --exclude 'site-packages' --exclude '__pycache__' \
     --exclude 'test' --exclude 'idlelib' --exclude 'turtledemo' \
-    --exclude 'tkinter' --exclude 'ensurepip' \
+    --exclude 'tkinter' --exclude '_tkinter*' --exclude 'ensurepip' \
     "$PY_STDLIB/" "$PYROOT/lib/python$PY_MM/"
 
 # ---- 5. relocate the interpreter -------------------------------------------
@@ -295,6 +295,32 @@ OLD_REF="$(otool -L "$PYROOT/bin/python3" | awk 'NR>1 && $1 ~ /Python\.framework
 cp -L "$OLD_REF" "$FW_DST/Python"
 chmod u+w "$FW_DST/Python"
 rsync -a "$PY_FW_DIR/Resources/" "$FW_DST/Resources/"   # Python.app GUI stub
+
+# The python.org interpreter is universal2. Left that way, a process started
+# under Rosetta (anything that asks for x86_64, or an older launcher) runs it as
+# x86_64, and the Qt in this bundle, thinned to $ARCH above, does not load: the
+# app dies on its first import. With one architecture there is nothing to pick.
+thin_to_arch() {  # <mach-o>
+    local archs
+    archs="$(lipo -archs "$1" 2>/dev/null)" || return 0
+    [ "$archs" = "$ARCH" ] && return 0
+    case " $archs " in
+        *" $ARCH "*) ;;
+        *) echo "ERROR: $1 is [$archs] and has no $ARCH slice" >&2; return 1 ;;
+    esac
+    chmod u+w "$1"
+    lipo -thin "$ARCH" "$1" -output "$1.thin" && mv "$1.thin" "$1"
+}
+thin_to_arch "$FW_DST/Python"
+# Its own install name still names the host framework; nothing loads it by
+# that name, but the bundle-wide check below rightly would not tell the two
+# apart. Signed with the framework in step 10.
+install_name_tool -id "@rpath/Python.framework/Versions/$PY_MM/Python" "$FW_DST/Python"
+[ -f "$FW_DST/Resources/Python.app/Contents/MacOS/Python" ] \
+    && thin_to_arch "$FW_DST/Resources/Python.app/Contents/MacOS/Python"
+for b in "$PYROOT"/bin/python "$PYROOT"/bin/python3 "$PYROOT"/bin/python"$PY_MM"; do
+    [ -f "$b" ] && [ ! -L "$b" ] && thin_to_arch "$b"
+done
 
 # A framework is not a directory that happens to contain Versions/<x>: codesign
 # checks for the standard layout and rejects anything else with "bundle format
@@ -317,10 +343,23 @@ ln -sfn Versions/Current/Resources "$APP/Contents/Frameworks/Python.framework/Re
 # interpreter has a prefix that cannot collide, which is why this only ever
 # failed in CI. Compare the path field against the prefix as a path, not as
 # text anywhere in the line.
+# Homebrew's prefix is a symlink (opt/python@X.Y) into the Cellar, and the
+# binaries name the Cellar path, so both spellings count.
+PY_FW_PREFIX_LINKED="${OLD_REF%%/Python.framework/*}"
 host_fw_refs() {  # <binary>
     local ref
-    otool -L "$1" 2>/dev/null | awk 'NR>1 {print $1}' | while IFS= read -r ref; do
-        case "$ref" in "$PY_FW_PREFIX"/*) printf '%s\n' "$ref" ;; esac
+    otool -L "$1" 2>/dev/null | awk 'NR>1 && !/:$/ {print $1}' | while IFS= read -r ref; do
+        case "$ref" in "$PY_FW_PREFIX"/*|"$PY_FW_PREFIX_LINKED"/*) printf '%s\n' "$ref" ;; esac
+    done
+}
+
+# Load-command paths in <binary> that point anywhere outside macOS itself: the
+# host framework, Homebrew's OpenSSL, /usr/local. Relative ones (@rpath,
+# @loader_path, @executable_path) are the bundle's own and are left out.
+foreign_refs() {  # <binary>
+    local ref
+    otool -L "$1" 2>/dev/null | awk 'NR>1 && !/:$/ {print $1}' | while IFS= read -r ref; do
+        case "$ref" in /System/*|/usr/lib/*|@*) ;; /*) printf '%s\n' "$ref" ;; esac
     done
 }
 
@@ -399,23 +438,74 @@ else
     echo "WARNING: framework GUI stub not found at $STUB"
 fi
 
+# ---- 5b. the libraries the stdlib's extension modules link ------------------
+# python.org builds _ssl and _hashlib against an OpenSSL it keeps beside the
+# framework (and _curses against its own ncurses), linked by absolute path:
+# /Library/Frameworks/Python.framework/Versions/X.Y/lib/libssl.3.dylib. Homebrew
+# links /opt/homebrew/opt/openssl@3 the same way. On the build Mac that path
+# exists, so every check here passed; on a Mac without that exact install the
+# app died at its first `import ssl`.
+# Copied into the bundle's lib/ and linked relative to the module instead.
+echo ">>> Bundling the libraries the stdlib links ..."
+BUNDLE_LIB="$PYROOT/lib"
+macho_under() {  # <dir> -> every .so / .dylib below it
+    /usr/bin/find "$1" -type f \( -name '*.so' -o -name '*.dylib' \) ! -path '*/site-packages/*'
+}
+while :; do
+    added=0
+    while IFS= read -r bin; do
+        [ -n "$bin" ] || continue
+        while IFS= read -r ref; do
+            [ -n "$ref" ] || continue
+            name="$(basename "$ref")"
+            [ -f "$BUNDLE_LIB/$name" ] && continue
+            [ -f "$ref" ] || { echo "ERROR: $bin links $ref, which is missing" >&2; exit 1; }
+            cp -L "$ref" "$BUNDLE_LIB/$name"
+            chmod u+w "$BUNDLE_LIB/$name"
+            echo "    bundled $name"
+            added=1
+        done <<< "$(foreign_refs "$bin")"
+    done <<< "$(macho_under "$PYROOT/lib")"
+    [ "$added" -eq 1 ] || break
+done
+while IFS= read -r bin; do
+    [ -n "$bin" ] || continue
+    refs="$(foreign_refs "$bin")"
+    [ -n "$refs" ] || continue
+    rel="$("$PYBIN" -c 'import os, sys; print(os.path.relpath(sys.argv[2], os.path.dirname(sys.argv[1])))' "$bin" "$BUNDLE_LIB")"
+    while IFS= read -r ref; do
+        [ -n "$ref" ] || continue
+        name="$(basename "$ref")"
+        if [ "$(dirname "$bin")" = "$BUNDLE_LIB" ] && [ "$name" = "$(basename "$bin")" ]; then
+            install_name_tool -id "@loader_path/$name" "$bin" 2>/dev/null \
+                || { echo "ERROR: install_name_tool -id failed on $bin" >&2; exit 1; }
+        else
+            to="@loader_path/$rel/$name"
+            [ "$rel" = "." ] && to="@loader_path/$name"
+            install_name_tool -change "$ref" "$to" "$bin" 2>/dev/null \
+                || { echo "ERROR: install_name_tool failed on $bin ($ref -> $to)" >&2; exit 1; }
+        fi
+    done <<< "$refs"
+    sign "$bin"
+done <<< "$(macho_under "$PYROOT/lib")"
+
 # Fail loudly rather than shipping a bundle that only runs on this machine.
-# The check greps for the framework *prefix*, not just the one install name that
-# was rewritten, so it also catches a second load command pointing at the host —
-# which is why it must name what it found. Reporting only "still references the
-# build host" left nothing to act on.
+# Every Mach-O in the bundle, not a chosen few: the import check further down
+# runs on the build Mac, where a path into the host framework resolves, so it
+# cannot see one. Names what it found, because "still references the build
+# host" alone leaves nothing to act on.
 host_refs=""
-for b in "$PYROOT/bin/python3" "$STUB"; do
-    [ -f "$b" ] || continue
-    hits="$(host_fw_refs "$b")"
+while IFS= read -r b; do
+    [ -n "$b" ] || continue
+    hits="$(foreign_refs "$b")"
     if [ -n "$hits" ]; then
         host_refs="${host_refs}
-  $b:
+  ${b#"$WORK_DIR"/}:
 $(printf '%s\n' "$hits" | sed 's/^/    /')"
     fi
-done
+done <<< "$(/usr/bin/find "$APP" -type f \( -name '*.so' -o -name '*.dylib' -o -perm -u+x \) ! -name '*.py')"
 if [ -n "$host_refs" ]; then
-    echo "ERROR: a bundled binary still references the build host at $PY_FW_PREFIX" >&2
+    echo "ERROR: a bundled binary links a library outside the bundle and outside macOS" >&2
     printf '%s\n' "$host_refs" >&2
     echo "  (the install name rewritten above was: $OLD_REF)" >&2
     exit 1
@@ -495,46 +585,16 @@ PY
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 # ---- 9. launcher ------------------------------------------------------------
-# No version literal; pythonX.Y is resolved at runtime, same as AppRun.
-echo ">>> Writing launcher ..."
-cat > "$APP/Contents/MacOS/corvus-gcs" <<'LAUNCH_EOF'
-#!/bin/bash
-set -euo pipefail
-
-CONTENTS="$(cd "$(dirname "$0")/.." && pwd)"
-RES="$CONTENTS/Resources"
-APPROOT="$RES/app"
-
-# Resolve the bundled pythonX.Y directory at runtime (X.Y was fixed at build).
-shopt -s nullglob
-PY_BASE=""
-for d in "$RES/python/lib"/python3.*/; do PY_BASE="$d"; break; done
-shopt -u nullglob
-if [ -z "$PY_BASE" ] || [ ! -d "$PY_BASE" ]; then
-    echo "corvus-gcs: bundled python3.x not found under $RES/python/lib" >&2
-    exit 1
-fi
-
-# PYTHONHOME overrides the stale pyvenv.cfg `home =` so the bundled interpreter
-# finds its stdlib inside the bundle regardless of where the .app was copied.
-# PYTHONPATH re-adds the venv site-packages (PYTHONHOME bypasses venv site
-# discovery) and the app root so `import corvus` resolves.
-export PYTHONHOME="$RES/python"
-export PYTHONPATH="$APPROOT:${PY_BASE}site-packages"
-export PYTHONDONTWRITEBYTECODE=1
-
-# corvus/app.py's default Chromium flags target Linux GPU stacks (Vulkan /
-# swiftshader). It sets them with os.environ.setdefault, so seeding a
-# macOS-appropriate value here keeps Metal in play. An operator override wins.
-export QTWEBENGINE_CHROMIUM_FLAGS="${QTWEBENGINE_CHROMIUM_FLAGS:---enable-webgl}"
-
-cd "$APPROOT"
-
-# exec replaces the shell so SIGINT/SIGTERM reach python directly, letting
-# corvus/app.py's signal handlers tear down cleanly (no zombies, no leaked
-# sockets, tlog flushed).
-exec "$RES/python/bin/python3" "$APPROOT/corvus/app.py" "$@"
-LAUNCH_EOF
+# A native executable compiled for $ARCH, not a script: LaunchServices starts a
+# script bundle under Rosetta on Apple Silicon, and the interpreter then cannot
+# load this bundle's Qt (see tools/macos_launcher.c). No version literal;
+# pythonX.Y is read at runtime. No QTWEBENGINE_CHROMIUM_FLAGS either:
+# corvus/app.py picks the macOS set itself and applies it only when that
+# variable is unset.
+echo ">>> Compiling launcher for $ARCH ..."
+cc -arch "$ARCH" -mmacosx-version-min=15.0 -Os -Wall -Wextra -Werror \
+    -o "$APP/Contents/MacOS/corvus-gcs" "$REPO_DIR/tools/macos_launcher.c" \
+    || { echo "ERROR: the launcher did not compile" >&2; exit 1; }
 chmod 0755 "$APP/Contents/MacOS/corvus-gcs"
 
 # ---- 10. sign the bundle ----------------------------------------------------
@@ -620,6 +680,7 @@ if [ "$VERIFY" -eq 1 ]; then
             "$PYROOT/bin/python3" - <<'PY'
 import sys
 import serial, paramiko                      # noqa: F401
+import ssl, hashlib, sqlite3, lzma, ctypes   # noqa: F401  (the stdlib's own native libraries)
 from pymavlink import mavutil                # noqa: F401
 # Every module corvus/app.py imports, from the trimmed Qt.
 from PySide6 import QtCore, QtGui, QtWidgets, QtNetwork  # noqa: F401
@@ -654,6 +715,15 @@ PY
     }
     SITE="$PYROOT/lib/python$PY_MM/site-packages"
     QT_CORE="$(/usr/bin/find "$SITE/PySide6" -name 'QtWebEngineCore' -type f 2>/dev/null | head -1)"
+    # The launcher and the interpreter must be $ARCH and nothing else: a
+    # second slice is what lets a Rosetta start pick the wrong one.
+    for binary in "$APP/Contents/MacOS/corvus-gcs" "$PYROOT/bin/python3"; do
+        archs="$(arch_of "$binary")"
+        if [ "$archs" != "$ARCH" ]; then
+            echo "ERROR: $binary is [$archs]; it must be $ARCH only." >&2
+            exit 1
+        fi
+    done
     for binary in "$PYROOT/bin/python3" ${QT_CORE:+"$QT_CORE"}; do
         [ -f "$binary" ] || continue
         archs="$(arch_of "$binary")"

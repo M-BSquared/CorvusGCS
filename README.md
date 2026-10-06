@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.10.08-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.08" />
+  <img src="https://img.shields.io/badge/Version-2026.10.09-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.09" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -32,9 +32,9 @@
   <br>
   <!-- <img src="https://img.shields.io/badge/%F0%9F%A4%96-Vibe%20Coded-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded" />
   <img width="8" /> -->
-  <img src="https://img.shields.io/badge/Lines%20of%20Code-100k%2B-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 100k+" />
+  <img src="https://img.shields.io/badge/Lines%20of%20Code-231k-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 231k" />
   <img width="8" />
-  <img src="https://img.shields.io/badge/Tests-77k%20lines%20%C2%B7%20169%20files-18a4de?style=for-the-badge" height="28" alt="Tests: 77k lines across 169 files" />
+  <img src="https://img.shields.io/badge/Tests-98k%20lines%20%C2%B7%20218%20files-18a4de?style=for-the-badge" height="28" alt="Tests: 98k lines across 218 files" />
   <br>
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-6E7681?style=for-the-badge" height="28" alt="Platform: macOS | Linux | Windows" />
   <img width="8" />

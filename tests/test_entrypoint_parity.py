@@ -373,15 +373,11 @@ def test_the_gpu_sandbox_is_still_dropped_where_it_blocks_startup(platform):
     assert "--disable-gpu-sandbox" in chromium_flags(platform)
 
 
-def test_the_operator_can_replace_the_whole_flag_list(monkeypatch):
-    """setdefault, so an exported QTWEBENGINE_CHROMIUM_FLAGS wins outright."""
-    import corvus.app as app_module
+def test_the_operator_can_replace_the_whole_flag_list():
+    """An exported QTWEBENGINE_CHROMIUM_FLAGS wins outright, never merged."""
+    from corvus.app import chromium_flags_value
 
-    source = pathlib.Path(app_module.__file__).read_text(encoding="utf-8")
-    assert 'os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS"' in source, (
-        "the flags must be a default the operator can override, not an "
-        "assignment that silently discards what they set"
-    )
+    assert chromium_flags_value({"QTWEBENGINE_CHROMIUM_FLAGS": "--foo"}, "linux") == "--foo"
 
 
 def test_the_windows_taskbar_gets_its_own_identity():
@@ -402,3 +398,32 @@ def test_the_windows_taskbar_gets_its_own_identity():
     # Before the QApplication: Windows binds a window to whatever the id was
     # when the window was created.
     assert source.index("set_windows_app_id(") < source.index("app = QApplication(")
+
+
+def test_a_launchers_sandbox_flags_do_not_replace_the_gpu_fallbacks():
+    """The AppImage's sandbox switches used to arrive as QTWEBENGINE_CHROMIUM_FLAGS.
+
+    That looked like an operator's own value, so every packaged run lost
+    the blocklist override and SwiftShader, and a machine without a GPU
+    driver drew no map ("WebGL2 blocklisted").
+    """
+    from corvus.app import LAUNCHER_FLAGS_ENV, chromium_flags, chromium_flags_value
+
+    value = chromium_flags_value({LAUNCHER_FLAGS_ENV: "--no-sandbox"}, "linux").split()
+    assert set(chromium_flags("linux")) <= set(value)
+    assert "--no-sandbox" in value
+    assert chromium_flags_value({}, "darwin").split() == chromium_flags("darwin")
+
+
+def test_an_operators_chromium_flags_win_and_keep_the_launchers():
+    from corvus.app import LAUNCHER_FLAGS_ENV, chromium_flags_value
+
+    env = {"QTWEBENGINE_CHROMIUM_FLAGS": "--enable-webgl", LAUNCHER_FLAGS_ENV: "--no-sandbox"}
+    assert chromium_flags_value(env, "linux") == "--enable-webgl --no-sandbox"
+
+
+def test_no_launcher_sets_qtwebengine_chromium_flags_itself():
+    root = pathlib.Path(__file__).resolve().parents[1]
+    for script in ("build-appimage.sh", "build-macos-app.sh"):
+        text = (root / script).read_text(encoding="utf-8")
+        assert "export QTWEBENGINE_CHROMIUM_FLAGS" not in text, script

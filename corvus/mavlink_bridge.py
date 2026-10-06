@@ -831,7 +831,11 @@ class MavlinkBridge(
                 self._receive_loop()
             except Exception as exc:
                 cycle_exc = exc
-                logger.error("MAVLink error: %s", exc)
+                if self._running.is_set():
+                    logger.error("MAVLink error: %s", exc)
+                else:
+                    # stop() closed the link under the receive loop.
+                    logger.debug("MAVLink link closed for shutdown: %s", exc)
             self._cancel_pending_commands()
             self._abort_parameter_operations()
             self._reset_shell_state()
