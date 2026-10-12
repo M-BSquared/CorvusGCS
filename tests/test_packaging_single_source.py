@@ -238,3 +238,18 @@ def test_builds_write_into_dist_not_the_repo_root() -> None:
 
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     assert "/dist/" in gitignore
+
+
+def test_qt_stays_below_the_release_that_split_out_webengine() -> None:
+    """PySide6 6.12 ships QtWebEngine as its own wheel, PySide6-WebEngine.
+
+    With only Essentials and Addons named, 6.12 installs without a web view:
+    the macOS and Linux builds stop at the Qt trim, and the Windows build and a
+    fresh run.sh venv produce an app that dies on its first import. Either the
+    ceiling stays or the WebEngine wheel joins the group.
+    """
+    app = _group("app")
+    if "PySide6-WebEngine" in app:
+        return
+    for package in QT:
+        assert "<6.12" in app[package], f"{package} needs <6.12 without PySide6-WebEngine"
