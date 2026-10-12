@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from pymavlink import mavutil
 
-from corvus import autopilot
+from corvus import autopilot, mission
 from corvus.mavlink_bridge import MavlinkBridge
 from corvus.server import CorvusHandler
 from corvus.state_store import VehicleStateStore
@@ -129,3 +129,58 @@ def test_the_goto_endpoint_still_wants_an_altitude_for_an_aircraft() -> None:
     bridge, sent = _goto(QUAD, {"lat": 48.1, "lon": 11.6})
     assert sent[0][1] == 400
     assert bridge.points == []
+
+
+class _UploadBridge:
+    def __init__(self, mav_type: int) -> None:
+        self.vehicle_type_id = mav_type
+        self.uploaded: list[Any] = []
+
+    def upload_mission_plan(self, items: list[dict[str, Any]]) -> bool:
+        self.uploaded.append(items)
+        return True
+
+    def get_last_command_error(self) -> str:
+        return ""
+
+
+def _upload(mav_type: int, aircraft: str) -> tuple[_UploadBridge, list[tuple[dict, int]]]:
+    bridge = _UploadBridge(mav_type)
+    handler = object.__new__(CorvusHandler)
+    handler.mavlink = bridge  # type: ignore[assignment]
+    handler.store = None  # type: ignore[assignment]
+    sent: list[tuple[dict, int]] = []
+    handler._send_json = lambda data, status=200: sent.append((data, status))  # type: ignore[method-assign]
+    handler._api_mission_upload({"plan": {
+        "aircraft": aircraft,
+        "home": {"lat": 48.08, "lon": 11.64},
+        "items": [{"type": "waypoint", "lat": 48.09, "lon": 11.65, "alt": 0}],
+    }})
+    return bridge, sent
+
+
+def test_a_plan_for_a_rover_is_a_plan_kind() -> None:
+    assert mission.GROUND_AIRCRAFT in mission.PLAN_AIRCRAFT
+    assert mission.PLAN_AIRCRAFT[0] == "multirotor", "the planner is for aircraft first"
+    assert mission.PLAN_AIRCRAFT[-1] == mission.GROUND_AIRCRAFT
+
+
+@pytest.mark.parametrize("mav_type", [ROVER, BOAT])
+def test_a_rover_plan_uploads_to_a_rover_or_a_boat(mav_type: int) -> None:
+    bridge, sent = _upload(mav_type, "rover")
+    assert sent[0][1] == 200
+    assert len(bridge.uploaded) == 1
+
+
+@pytest.mark.parametrize("mav_type", [QUAD, mavutil.mavlink.MAV_TYPE_FIXED_WING, 0])
+def test_a_rover_plan_is_refused_by_anything_that_flies(mav_type: int) -> None:
+    bridge, sent = _upload(mav_type, "rover")
+    assert sent[0][1] == 409
+    assert "ground level" in sent[0][0]["error"]
+    assert bridge.uploaded == [], "nothing reaches the vehicle"
+
+
+def test_an_aircraft_plan_still_uploads_to_an_aircraft() -> None:
+    bridge, sent = _upload(QUAD, "multirotor")
+    assert sent[0][1] == 200
+    assert len(bridge.uploaded) == 1

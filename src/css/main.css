@@ -345,13 +345,13 @@ svg { display: block; }
   flex: 0 0 auto;
   max-width: none;
 }
-/* Two steps down, shared by both bars: the Home tab's flight actions and the
-   planner's tools are the same control set on two screens, so they narrow the
-   same way. Full is 72px of minimum width under every caption, whatever the
-   caption says, so the buttons are one rhythm. Tight keeps every caption and
-   gives up only that shared rhythm — each button falls back to the width of
-   its own word, which is worth more than buttons that line up. Icons only when
-   even that will not fit.
+/* Shared by both bars: the Home tab's flight actions and the planner's tools
+   are the same control set on two screens, so they are sized the same way.
+   Every button is one width (--fa-w) and every caption one size (--fa-s, a
+   share of the 10px below): 72px at full size, where a long word is set a
+   little smaller rather than widening its button past the others. Tight
+   narrows them all together, captions included. Icons only when even that
+   will not fit.
 
    Applied from a MEASUREMENT of the box the bar actually has (fitBar in
    js/ui.js), never from a viewport media query: the bar's room is the map
@@ -361,6 +361,15 @@ svg { display: block; }
 .flight-actions.is-compact .fa-btn { min-width: 0; padding: 9px; }
 .flight-actions.is-compact .fa-btn span { display: none; }
 .flight-actions.is-compact .field-select.mode-selector { min-width: 96px; }
+.flight-actions.is-even > .fa-btn {
+  width: var(--fa-w, 72px); min-width: 0;
+  padding-left: 0; padding-right: 0;
+}
+.flight-actions.is-even > .fa-btn > span {
+  font-size: calc(10px * var(--fa-s, 1));
+  letter-spacing: calc(0.6px * var(--fa-s, 1));
+  white-space: nowrap;
+}
 .fa-btn {
   position: relative;
   display: flex; flex-direction: column; align-items: center; gap: 3px;

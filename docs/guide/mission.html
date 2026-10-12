@@ -206,7 +206,7 @@
   <dt>Takeoff, Waypoint, Land</dt>
   <dd>The obvious ones.</dd>
   <dt>Pattern</dt>
-  <dd>Adds a shape as ordinary waypoints. Hover the button, or press it to keep the card open, and pick a shape: <em>Circle</em> (click the centre, then the edge; the aircraft flies once around the circle), <em>Corridor</em> (click along its centre line) or <em>Area</em> (click its corners); corridors and areas are covered with a back and forth sweep. <kbd>Enter</kbd> or a double click finishes a corridor or an area, right-click undoes the last corner and <kbd>Esc</kbd> cancels. The card sets the line spacing and the corridor width in metres; the sweep is shown on the map while you draw. While the card is open the button shows an arrow up. Once a pattern is placed, selecting any of its points shows a move handle at its centre: drag it to shift the whole pattern, or drag a single point to move just that one.</dd>
+  <dd>Adds a shape to the plan. Hover the button, or press it to keep the card open, and pick a shape: <em>Circle</em> (click the centre, then the edge), <em>Corridor</em> (click along its centre line) or <em>Area</em> (click its corners). A circle becomes one <strong>Circle</strong> point that the aircraft flies once around, clockwise; drag its rim to change the radius, and set the number of turns and the direction in the panel. ArduPilot flies it as a real circle. PX4 has no circle in a mission, so Corvus sends it as waypoints around the rim, one every 10 m or so, and the aircraft flies them without stopping. Corridors and areas are covered with a back and forth sweep of ordinary waypoints. <kbd>Enter</kbd> or a double click finishes a corridor or an area, right-click undoes the last corner and <kbd>Esc</kbd> cancels. The card sets the line spacing and the corridor width in metres for a sweep; the sweep is shown on the map while you draw. While the card is open the button shows an arrow up. Once a pattern is placed, selecting any of its points shows a move handle at its centre: drag it to shift the whole pattern, or drag a single point to move just that one.</dd>
   <dt>Hold</dt>
   <dd>Stay at a point for a set time.</dd>
   <dt>Return</dt>
@@ -237,10 +237,11 @@
   aircraft is pointed out while you draw, with the Aircraft button as the fix.
 </p>
 
-<h2 id="aircraft-type">Aircraft type</h2>
+<h2 id="aircraft-type">Vehicle type</h2>
 <p>
-  Above the altitude profile, <strong>Aircraft</strong> says what flies the
-  plan: multicopter, fixed wing or VTOL. While an aircraft is connected it is
+  Above the altitude profile, <strong>Vehicle</strong> says what flies the
+  plan: multicopter, fixed wing or VTOL, or a rover or boat (see
+  <a href="#rover">below</a>). While a vehicle is connected it is
   set automatically and named the way the top bar names it ("Quadcopter"). It
   is saved with the plan, so a mission drawn at the desk already looks the way
   it will be flown. It changes three things:
@@ -258,6 +259,25 @@
   <dt>Return</dt>
   <dd>A return flies to where the aircraft was armed, or to the nearest rally point, at heights set on the vehicle rather than in the plan. While connected, Corvus reads those heights (the same Return settings the <a href="safety.html#return">Safety</a> page shows) and draws the return as it will be flown: a multicopter climbs to its return height, comes home, descends and lands. A fixed wing does not land after a return at all; PX4 and ArduPlane both circle over home until you take over. The profile ends it in the air, marked "circles here", so a fixed wing mission that is meant to come down should end with Land.</dd>
 </dl>
+
+<h3 id="rover">Rover or boat</h3>
+<p>
+  The planner is built for aircraft, but it can also plan a route for a rover
+  or a boat. Pick <strong>Rover or boat</strong>, or connect one, and the plan
+  becomes a route on the ground:
+</p>
+<ul>
+  <li>The start has no takeoff, and <strong>LAND</strong> leaves the tool bar. A landing or takeoff left in the plan is pointed out, and the upload refuses it.</li>
+  <li>The altitude profile shrinks to a heading that says <strong>GROUND ROUTE</strong>. New points sit at ground level, and the list and the point editor show no heights.</li>
+  <li>A Hold stops at the point for its time. Return drives back to where the vehicle was armed and stops there.</li>
+  <li>The duration is estimated at 2 m/s (ArduRover's default <code>WP_SPEED</code>) unless a point sets its own speed.</li>
+</ul>
+<p>
+  Switching back to an aircraft puts the takeoff on the start again and lifts
+  every point left at ground level to 30 m, and says so: check the heights in
+  the profile before you fly. A plan saved for a rover is never uploaded to a
+  vehicle that flies, because every point in it is at ground level.
+</p>
 
 <h2 id="list">The list</h2>
 <p>
@@ -302,7 +322,7 @@
   <dt>Upload to vehicle</dt>
   <dd>Writes the route and stops. The aircraft holds a mission it has not been told to run, which lets you upload from the tent and then walk out to it.</dd>
   <dt>Upload and fly</dt>
-  <dd>Uploads, switches to the mission mode, arms and takes off. It asks first, and shows any warnings the plan raised.</dd>
+  <dd>Uploads, switches to the mission mode, arms and takes off. It asks first, and shows any warnings the plan raised. For a rover or a boat the button reads <strong>Upload and drive</strong>.</dd>
   <dt>Read</dt>
   <dd>Reads the mission the aircraft already holds into the planner: one uploaded by QGroundControl, or by Corvus before a reconnect. Anything the planner has no way to draw (a camera trigger, an altitude above terrain) is named rather than dropped, since uploading the plan again would remove it from the aircraft. When the aircraft holds a mission that is not the one on screen, the planner says so and offers to read it.</dd>
 </dl>
@@ -344,7 +364,7 @@
     <li><a href="#turn-on">Turning it on</a></li>
     <li><a href="#map">The map</a></li>
     <li><a href="#tools">Drawing the plan</a></li>
-    <li><a href="#aircraft-type">Aircraft type</a></li>
+    <li><a href="#aircraft-type">Vehicle type</a></li>
     <li><a href="#list">The list</a></li>
     <li><a href="#profile">The altitude profile</a></li>
     <li><a href="#offline">Offline areas</a></li>

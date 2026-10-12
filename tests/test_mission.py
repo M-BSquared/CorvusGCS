@@ -882,3 +882,63 @@ def test_start_at_vehicle_never_reaches_the_wire() -> None:
     assert cleaned is not None and tied is not None
     # Compared as text: an unset yaw is NaN, and NaN is never equal to itself.
     assert json.dumps(mission.plan_to_items(tied)) == json.dumps(mission.plan_to_items(cleaned))
+
+
+# ---------------------------------------------------------------------------
+# A Circle as waypoints, for an autopilot without NAV_LOITER_TURNS
+# ---------------------------------------------------------------------------
+
+def _circle_items(**circle: Any) -> list[dict[str, Any]]:
+    cleaned, error = mission.validate_plan(plan(items=[
+        {"type": "waypoint", "lat": 48.0, "lon": 11.0, "alt": 30},
+        {"type": "loiter_turns", "lat": 48.001, "lon": 11.0, "alt": 40,
+         "turns": 1, "radius": 60, **circle},
+        {"type": "rtl"},
+    ]))
+    assert cleaned is not None, error
+    return mission.lower_circles(mission.plan_to_items(cleaned))
+
+
+def _bearing(centre: dict[str, float], point: dict[str, Any]) -> float:
+    """Maths angle of *point* round *centre*, east 0, counter-clockwise."""
+    k = math.cos(math.radians(centre["lat"]))
+    return math.atan2(point["lat"] - centre["lat"], (point["lon"] - centre["lon"]) * k)
+
+
+def test_a_lowered_circle_joins_its_rim_on_the_side_it_is_flown_into() -> None:
+    items = _circle_items()
+    ring = [entry for entry in items if entry["item"] == 1]
+    centre = {"lat": 48.001, "lon": 11.0}
+    # The waypoint before lies due south of the centre.
+    assert _bearing(centre, ring[0]) == pytest.approx(-math.pi / 2, abs=1e-6)
+    assert mission.leg_distance_m(ring[0], ring[-1]) < 0.5, "one full turn ends where it began"
+    for entry in ring:
+        assert mission.leg_distance_m(centre, entry) == pytest.approx(60.0, abs=0.3)
+
+
+@pytest.mark.parametrize(("direction", "clockwise"), [(1, True), (-1, False)])
+def test_a_lowered_circle_turns_the_way_the_plan_says(direction: int, clockwise: bool) -> None:
+    ring = [entry for entry in _circle_items(direction=direction) if entry["item"] == 1]
+    centre = {"lat": 48.001, "lon": 11.0}
+    step = _bearing(centre, ring[1]) - _bearing(centre, ring[0])
+    step = (step + math.pi) % (2 * math.pi) - math.pi
+    assert (step < 0) is clockwise
+
+
+def test_a_lowered_circle_flies_its_turns_and_nothing_else_changes() -> None:
+    one = [entry for entry in _circle_items(turns=1) if entry["item"] == 1]
+    two = [entry for entry in _circle_items(turns=2) if entry["item"] == 1]
+    assert len(two) - 1 == 2 * (len(one) - 1)
+    assert [entry["item"] for entry in _circle_items(turns=0)] == [0, 1, 2], \
+        "zero turns joins the rim and goes on"
+    items = _circle_items()
+    assert items[0]["command"] == mission.MAV_CMD_NAV_WAYPOINT and items[0]["item"] == 0
+    assert items[-1]["command"] == mission.MAV_CMD_NAV_RETURN_TO_LAUNCH
+    assert all(entry["command"] != mission.MAV_CMD_NAV_LOITER_TURNS for entry in items)
+
+
+def test_a_plan_without_a_circle_is_lowered_to_itself() -> None:
+    cleaned, _ = mission.validate_plan(plan())
+    assert cleaned is not None
+    items = mission.plan_to_items(cleaned)
+    assert mission.lower_circles(items) == items

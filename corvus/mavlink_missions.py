@@ -937,6 +937,17 @@ class MissionProtocolMixin:
     # must be able to put a route on the aircraft and walk out to it before
     # anything spins.
 
+    def lower_mission_plan(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """*items* as this autopilot flies them: a Circle as the waypoints
+        around its rim where the stack has no NAV_LOITER_TURNS in a mission.
+
+        The HTTP layer calls this before it uploads, because the count it
+        starts the mission with has to be the count on the vehicle.
+        """
+        if self._dialect.mission_circles_as_waypoints:
+            return mission_plan.lower_circles(items)
+        return items
+
     def upload_mission_plan(self, items: list[dict[str, Any]]) -> bool:
         """Upload a planned mission. Does not start it and does not arm.
 
@@ -949,10 +960,14 @@ class MissionProtocolMixin:
             if not isinstance(items, list) or not items:
                 self._set_command_error("mission must carry at least one item")
                 return False
+            drawn = len(items)
+            items = self.lower_mission_plan(items)
             if len(items) > FLY_TO_MAX_POINTS:
+                circles = (" This autopilot flies a circle as waypoints around it: "
+                           "give the circles fewer turns." if len(items) > drawn else "")
                 self._set_command_error(
                     f"too many mission items ({len(items)}); "
-                    f"the maximum is {FLY_TO_MAX_POINTS}"
+                    f"the maximum is {FLY_TO_MAX_POINTS}.{circles}"
                 )
                 return False
             if not self._connection_ready():

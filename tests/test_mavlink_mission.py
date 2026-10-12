@@ -257,9 +257,34 @@ def test_a_return_travels_in_the_mission_frame() -> None:
     assert ret[3] == MISSION_DO_FRAME
 
 
-def test_a_circle_is_refused_on_px4_before_anything_is_sent() -> None:
+def test_a_circle_goes_to_px4_as_the_waypoints_around_it() -> None:
     """PX4 has no NAV_LOITER_TURNS in a mission; the whole transfer would
-    fail with a bare UNSUPPORTED that names neither the item nor a way out."""
+    fail with a bare UNSUPPORTED. The circle is flown as its rim instead."""
+    bridge = ready_bridge()
+    plan, _error = mission.validate_plan({"items": [
+        {"type": "takeoff", "lat": 48.08, "lon": 11.64, "alt": 25},
+        {"type": "loiter_turns", "lat": 48.09, "lon": 11.65, "alt": 40,
+         "turns": 1, "radius": 50},
+        {"type": "rtl"},
+    ]})
+    assert plan is not None
+
+    items = bridge.lower_mission_plan(mission.plan_to_items(plan))
+
+    commands = [entry["command"] for entry in items]
+    assert mavutil.mavlink.MAV_CMD_NAV_LOITER_TURNS not in commands
+    ring = [entry for entry in items if entry["item"] == 1]
+    assert len(ring) > 12, "a circle, not a triangle"
+    assert all(entry["command"] == mavutil.mavlink.MAV_CMD_NAV_WAYPOINT for entry in ring)
+    centre = {"lat": 48.09, "lon": 11.65}
+    for entry in ring:
+        assert mission.leg_distance_m(centre, entry) == pytest.approx(50.0, abs=0.5)
+        assert entry["alt"] == pytest.approx(40.0)
+    assert commands[0] == mavutil.mavlink.MAV_CMD_NAV_TAKEOFF
+    assert commands[-1] == mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH
+
+
+def test_a_circle_uploads_to_px4_without_a_loiter_turns_on_the_wire() -> None:
     bridge = ready_bridge()
     answer_the_handshake(bridge)
     plan, _error = mission.validate_plan({"items": [
@@ -269,12 +294,21 @@ def test_a_circle_is_refused_on_px4_before_anything_is_sent() -> None:
     ]})
     assert plan is not None
 
-    assert not bridge.upload_mission_plan(mission.plan_to_items(plan))
+    assert bridge.upload_mission_plan(mission.plan_to_items(plan)), bridge.get_last_command_error()
+    sent = [item[4] for item in bridge._conn.mav.items]
+    assert mavutil.mavlink.MAV_CMD_NAV_LOITER_TURNS not in sent
 
-    assert bridge._conn.mav.counts == [], "nothing reaches the vehicle"
-    error = bridge.get_last_command_error()
-    assert "Circle (item 2)" in error
-    assert "PX4" in error
+
+def test_too_many_turns_for_px4_say_so() -> None:
+    bridge = ready_bridge()
+    plan, _error = mission.validate_plan({"items": [
+        {"type": "loiter_turns", "lat": 48.09, "lon": 11.65, "alt": 40,
+         "turns": 20, "radius": 200},
+    ]})
+    assert plan is not None
+
+    assert not bridge.upload_mission_plan(mission.plan_to_items(plan))
+    assert "fewer turns" in bridge.get_last_command_error()
 
 
 def test_a_circle_still_goes_to_ardupilot() -> None:
@@ -293,7 +327,11 @@ def test_a_circle_still_goes_to_ardupilot() -> None:
 
 def test_the_capabilities_name_the_items_a_stack_will_not_fly() -> None:
     bridge = ready_bridge()
-    assert set(bridge.capabilities()["mission_unsupported"]) == {"loiter_turns"}
+    assert bridge.capabilities()["mission_unsupported"] == {}, \
+        "PX4 flies a Circle, as waypoints"
+    bridge._mav_type_id = mavutil.mavlink.MAV_TYPE_GROUND_ROVER
+    assert set(bridge.capabilities()["mission_unsupported"]) == {"takeoff", "land"}
+    bridge._mav_type_id = mavutil.mavlink.MAV_TYPE_QUADROTOR
     bridge._dialect = autopilot.dialect_for_stack(autopilot.STACK_ARDUPILOT)
     assert bridge.capabilities()["mission_unsupported"] == {}
 

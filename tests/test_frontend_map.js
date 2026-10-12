@@ -730,6 +730,30 @@ function testTheFlightBarIsMeasuredAgainstAShareOfTheMap() {
   }
 }
 
+function testEveryFlightButtonIsOneWidthAndArmIsSizedForDisarm() {
+  /* One width and one caption size for every button, so the bar reads as one
+     row of equals. The arm button is measured for DISARM too: sized for ARM
+     alone, arming would rescale every caption and move the whole row. */
+  const root = path.join(__dirname, "..");
+  const html = fs.readFileSync(path.join(root, "src", "index.html"), "utf-8");
+  const arm = (html.match(/<button[^>]*id="btnArm"[^>]*>/) || [""])[0];
+  const app = fs.readFileSync(path.join(root, "src", "js", "app.js"), "utf-8");
+  const captions = Array.from(app.matchAll(/armed \? "([A-Z]+)" : "([A-Z]+)"/g))
+    .flatMap((m) => [m[1], m[2]]);
+  assert.ok(captions.length, "app.js must name the arm button's two captions");
+  captions.filter((text) => text !== "ARM").forEach((text) => {
+    assert.ok(new RegExp(`data-captions="[^"]*\\b${text}\\b`).test(arm),
+      `#btnArm must list "${text}" in data-captions, or arming moves the row`);
+  });
+  const css = fs.readFileSync(path.join(root, "src", "css", "main.css"), "utf-8");
+  assert.ok(/\.flight-actions\.is-even > \.fa-btn \{[^}]*width: var\(--fa-w/.test(css),
+    "every button takes the bar's one width");
+  assert.ok(/\.flight-actions\.is-even > \.fa-btn > span \{[^}]*font-size: calc\(10px \* var\(--fa-s/.test(css),
+    "and every caption the bar's one size");
+  const ui = fs.readFileSync(path.join(root, "src", "js", "ui.js"), "utf-8");
+  assert.ok(/dataset\.captions/.test(ui), "fitBar measures the captions a button can switch to");
+}
+
 function testTheFlightBarIsFullSizeUntilTheSwitchIsThrown() {
   // The default, and the whole point of it: the room is .map-topleft's — the
   // box beside the map's controls — so the buttons keep their 72px rhythm and
@@ -918,6 +942,7 @@ function testDifferentAreasStaySeparate() {
 
 const tests = [
   testTheFlightBarIsFullSizeUntilTheSwitchIsThrown,
+  testEveryFlightButtonIsOneWidthAndArmIsSizedForDisarm,
   testTheFlightBarIsMeasuredAgainstAShareOfTheMap,
   testTheFlightBarShrinkIsOffWhenTheConfigIsSilent,
   testAPlannerThatWasNeverAimedHasNoViewOfItsOwn,

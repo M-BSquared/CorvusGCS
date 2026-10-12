@@ -666,14 +666,15 @@ class Dialect:
     # The flight mode that runs an uploaded mission.
     mission_mode: str = "MISSION"
     # MAV_CMDs this stack will not take as a mission item, with the reason the
-    # operator is shown. PX4 v1.16 to v1.18 have no NAV_LOITER_TURNS in their
+    # operator is shown. A plan carrying one is refused before anything is
+    # sent, and the planner greys the item out.
+    mission_command_refusals: dict[int, str] = {}
+    # Whether a Circle (NAV_LOITER_TURNS) goes up as the waypoints around its
+    # rim instead. PX4 v1.16 to v1.18 have no NAV_LOITER_TURNS in their
     # mission at all: mavlink_mission.cpp answers MAV_MISSION_UNSUPPORTED and
-    # the whole upload fails. So a plan carrying one is refused before
-    # anything is sent, and the planner greys the item out.
-    mission_command_refusals: dict[int, str] = {
-        mavutil.mavlink.MAV_CMD_NAV_LOITER_TURNS:
-            "PX4 does not fly an orbit with a set number of turns in a mission",
-    }
+    # the whole upload fails. A ring of waypoints is the circle PX4 can fly
+    # (see corvus.mission.lower_circles).
+    mission_circles_as_waypoints: bool = True
     # Whether the vehicle says, after it has accepted an upload, that it will
     # not fly it. PX4's navigator checks a mission once it is stored (no home
     # for a relative altitude, a required landing missing) and reports the
@@ -992,6 +993,7 @@ class ArduPilotDialect(Dialect):
     # ArduCopter, Plane and Rover fly NAV_LOITER_TURNS as a circle of the
     # item's radius, and AP_Mission refuses at upload what it cannot store.
     mission_command_refusals: dict[int, str] = {}
+    mission_circles_as_waypoints = False
     mission_validity_reported = False
     mission_rejection_hint = ""
     param_encoding = PARAM_ENCODING_C_CAST
@@ -1256,6 +1258,7 @@ class GenericDialect(Dialect):
     # Nothing is known to be refused, and nothing reports a verdict: the
     # vehicle's own MISSION_ACK is the only answer.
     mission_command_refusals: dict[int, str] = {}
+    mission_circles_as_waypoints = False
     mission_validity_reported = False
     mission_rejection_hint = ""
     log_format = "unknown"

@@ -838,14 +838,60 @@ Corvus.pluginSchwalby = (function () {
 
     function companionName() { return (companion && companion.name) || "Companion computer"; }
 
+    let confirmDialog = null;
+
+    /**
+     * Ask a yes or no question in the app's own dialog. Resolves true only on
+     * the confirm button; Escape, the backdrop, the close button and Cancel all
+     * answer no. One question at a time: a second one while it is up answers no.
+     */
+    function askConfirm(opts) {
+      if (confirmDialog || cancelled) return Promise.resolve(false);
+      return new Promise((resolve) => {
+        let answered = false;
+        const answer = (yes) => {
+          if (answered) return;
+          answered = true;
+          resolve(yes);
+          if (confirmDialog) confirmDialog.close();
+        };
+        const body = document.createElement("div");
+        body.className = "schw-confirm";
+        opts.lines.forEach((text) => {
+          const line = document.createElement("p");
+          line.className = "schw-confirm-line";
+          line.textContent = text;
+          body.appendChild(line);
+        });
+        const cancelBtn = ui.button({ variant: "secondary", label: "Cancel", onClick: () => answer(false) });
+        const yesBtn = ui.button({
+          variant: opts.danger ? "danger" : "primary", icon: opts.icon, label: opts.confirmLabel,
+          onClick: () => answer(true),
+        });
+        confirmDialog = ui.modal({
+          title: opts.title, size: "sm", body, actions: [cancelBtn, yesBtn],
+          onClose: () => { confirmDialog = null; answer(false); },
+        });
+        confirmDialog.open();
+      });
+    }
+
     /** Send reboot or shutdown over the companion's saved SSH connection. */
-    function powerCompanion(action, retried) {
-      if (!companion || !companion.connection) return Promise.resolve();
-      if (!retried && !window.confirm(
-        `${action.label} "${companionName()}"?\n\nEverything running on it stops.` +
-        (action.id === "shutdown" ? " It has to be switched on by hand again." : ""))) {
-        return Promise.resolve();
+    async function powerCompanion(action, retried) {
+      if (!companion || !companion.connection) return;
+      if (!retried) {
+        const yes = await askConfirm({
+          title: `${action.label} ${companionName()}?`,
+          lines: ["Everything running on it stops."].concat(
+            action.id === "shutdown" ? ["It has to be switched on by hand again."] : []),
+          confirmLabel: action.label, icon: action.icon, danger: true,
+        });
+        if (!yes || cancelled || !companion || !companion.connection) return;
       }
+      return sendPower(action, retried);
+    }
+
+    function sendPower(action, retried) {
       status.show(`${companionName()}: ${action.label.toLowerCase()} ...`, "info");
       return api.postJson("/api/ssh/power", {
         name: companion.connection,
@@ -1700,11 +1746,12 @@ Corvus.pluginSchwalby = (function () {
       });
 
       /** Put the finished draft on the shelf and go back to it. */
-      function commit() {
+      async function commit() {
         const entry = coerceButton(draft);
         if (!entry) return;
         const before = isNew ? null : buttons.find((b) => b.id === entry.id);
-        if (before && !leaveSession(before, entry)) return;
+        if (before && !(await leaveSession(before, entry))) return;
+        if (cancelled) return;
         if (isNew) buttons.push(entry);
         else buttons = buttons.map((b) => (b.id === entry.id ? entry : b));
         persist();
@@ -2069,26 +2116,35 @@ Corvus.pluginSchwalby = (function () {
      * background, nothing on the shelf would lead to it. Either way it has to
      * go, and because that stops a running program, this asks first.
      *
-     * @returns {boolean} false when the operator would rather keep it
+     * @returns {Promise<boolean>} false when the operator would rather keep it
      */
-    function leaveSession(before, after) {
+    async function leaveSession(before, after) {
       if (!live[sessionName(before)]) return true;
       const moved = before.target !== after.target
         || (after.target === TARGET_SSH && before.connection !== after.connection);
       const detached = before.mode !== MODE_BACKGROUND && after.mode === MODE_BACKGROUND;
       if (!moved && !detached) return true;
-      if (!window.confirm(
-        `"${before.label}" is still running in its terminal.\n\nSaving this ` +
-        `closes that session, which stops what it is running.`)) return false;
+      const yes = await askConfirm({
+        title: `Save "${before.label}"?`,
+        lines: ["It is still running in its terminal.",
+          "Saving this closes that session, which stops what it is running."],
+        confirmLabel: "Save and close it", icon: "check", danger: true,
+      });
+      if (!yes || cancelled) return false;
       closeSession(before);
       return true;
     }
 
     /** Remove a button, and the session only it could reach. */
-    function remove(entry, running) {
-      if (running && !window.confirm(
-        `Remove "${entry.label}"?\n\nIts session will be closed, ` +
-        `which stops what it is running.`)) return;
+    async function remove(entry, running) {
+      if (running) {
+        const yes = await askConfirm({
+          title: `Remove "${entry.label}"?`,
+          lines: ["Its session will be closed, which stops what it is running."],
+          confirmLabel: "Remove", icon: "trash-2", danger: true,
+        });
+        if (!yes || cancelled) return;
+      }
       buttons = buttons.filter((b) => b.id !== entry.id);
       clearError(entry);
       persist();
@@ -2159,6 +2215,7 @@ Corvus.pluginSchwalby = (function () {
       stopPolling();
       stopProbing();
       if (companionDialog) companionDialog.close();
+      if (confirmDialog) confirmDialog.close();
       if (powerMenu) powerMenu.close(false);
       containerEl._schwDestroy = null;
     };

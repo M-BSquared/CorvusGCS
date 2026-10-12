@@ -641,6 +641,13 @@ def main() -> int:
     layout.setSpacing(0)
 
     def configure_view(view) -> None:
+        # No native menu (Reload, Save page, View page source): none of it
+        # belongs in a ground station. The page still gets its contextmenu
+        # events, so the map's own right-click menu is unaffected.
+        try:
+            view.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        except Exception:  # noqa: BLE001 - a stray menu beats no window
+            logger.exception("could not turn off the native context menu")
         # A WebRTC camera's picture arrives seconds after the click that opened
         # its window, by which time the click no longer counts as one. The
         # video is muted, and this app plays no other media.

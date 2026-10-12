@@ -179,11 +179,18 @@ ITEM_TYPES: tuple[str, ...] = tuple(ITEM_SPECS)
 # The item types that orbit, and therefore have a direction to orbit in.
 ORBIT_TYPES: tuple[str, ...] = ("loiter_turns", "loiter_time")
 
-# The kind of aircraft a plan is drawn for. It never reaches the wire: it only
+# The kind of vehicle a plan is drawn for. It never reaches the wire: it only
 # tells the planner what a Hold looks like when nothing is connected, because a
 # multicopter hovers over the point where a fixed wing has to circle it. The
-# names are the contract with AIRCRAFT in src/js/mission.js.
-PLAN_AIRCRAFT: tuple[str, ...] = ("multirotor", "fixed_wing", "vtol")
+# names are the contract with AIRCRAFT in src/js/mission.js. The planner is
+# built for aircraft; ``rover`` (a rover or a boat) is the one kind that drives,
+# and comes last for that reason.
+PLAN_AIRCRAFT: tuple[str, ...] = ("multirotor", "fixed_wing", "vtol", "rover")
+
+# The plan kind that drives instead of flying. Its points carry no height the
+# vehicle uses, so the HTTP layer refuses to upload one to a vehicle that flies:
+# every point would be a waypoint at ground level.
+GROUND_AIRCRAFT = "rover"
 
 # The one place the plan's aircraft does reach the wire. A landing may carry
 # ``approach_alt``: the height a multicopter arrives at above the landing point
@@ -559,6 +566,78 @@ def plan_to_items(plan: dict[str, Any]) -> list[dict[str, Any]]:
         })
 
     return items
+
+
+# A Circle flown as waypoints, for an autopilot that has no NAV_LOITER_TURNS
+# in its missions (PX4 v1.16 to v1.18). One waypoint every few metres of the
+# rim, within bounds: fewer and a multicopter flies a visible polygon, more and
+# a few turns of a wide circle fill the mission.
+CIRCLE_RING_SPACING_M = 10.0
+CIRCLE_RING_POINTS_MIN = 12
+CIRCLE_RING_POINTS_MAX = 36
+
+
+def _ring_waypoints(entry: dict[str, Any], before: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """One NAV_LOITER_TURNS wire item as the waypoints around its rim.
+
+    The ring starts at the point of the rim nearest *before* (the last item
+    that names a place), so the aircraft joins the circle rather than crossing
+    it, and runs the item's turns in its direction (the sign of param3,
+    positive clockwise). Zero turns is the entry point alone.
+    """
+    params = list(entry.get("params") or [0.0, 0.0, 0.0, 0.0])
+    turns = max(0.0, float(params[0] or 0.0))
+    radius = max(MISSION_RADIUS_MIN_M, abs(float(params[2] or 0.0)))
+    clockwise = float(params[2] or 0.0) >= 0.0
+    lat0, lon0 = float(entry["lat"]), float(entry["lon"])
+    k = EARTH_RADIUS_M * math.pi / 180.0
+    c = max(0.01, math.cos(math.radians(lat0)))
+    start = math.pi / 2.0
+    if before is not None:
+        dx = (float(before["lon"]) - lon0) * k * c
+        dy = (float(before["lat"]) - lat0) * k
+        if math.hypot(dx, dy) > 0.5:
+            start = math.atan2(dy, dx)
+    per_lap = int(min(CIRCLE_RING_POINTS_MAX, max(
+        CIRCLE_RING_POINTS_MIN, round(2.0 * math.pi * radius / CIRCLE_RING_SPACING_M))))
+    steps = int(round(per_lap * turns))
+    sign = -1.0 if clockwise else 1.0
+    out: list[dict[str, Any]] = []
+    for i in range(steps + 1):
+        angle = start + sign * 2.0 * math.pi * i / per_lap
+        out.append({
+            "command": MAV_CMD_NAV_WAYPOINT,
+            "lat": lat0 + radius * math.sin(angle) / k,
+            "lon": lon0 + radius * math.cos(angle) / (k * c),
+            "alt": float(entry.get("alt", 0.0)),
+            # Flown through, not stopped at: no hold, the airframe's
+            # acceptance radius, no heading asked for.
+            "params": [0.0, 0.0, 0.0, float("nan")],
+            "item": entry.get("item"),
+        })
+    return out
+
+
+def lower_circles(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """:func:`plan_to_items` output with every Circle flown as waypoints.
+
+    For an autopilot that refuses NAV_LOITER_TURNS as a mission item. Every
+    waypoint keeps the ``item`` of the Circle it came from, so the vehicle's
+    progress through the ring still reads as that one plan item.
+    """
+    out: list[dict[str, Any]] = []
+    before: dict[str, Any] | None = None
+    for entry in items:
+        command = int(entry.get("command", 0))
+        if command == MAV_CMD_NAV_LOITER_TURNS:
+            ring = _ring_waypoints(entry, before)
+            out.extend(ring)
+            before = ring[-1]
+            continue
+        out.append(entry)
+        if command not in POSITIONLESS_COMMANDS:
+            before = entry
+    return out
 
 
 # MAV_FRAME values a downloaded item can carry its altitude in. Relative to

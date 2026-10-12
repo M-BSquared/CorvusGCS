@@ -719,7 +719,13 @@
 .mission-profile.is-collapsed:not(.is-folding) .mission-profile-note,
 .mission-profile.is-collapsed:not(.is-folding) .mission-aircraft { display: none; }
 .mission-profile.is-folding .mission-profile-plot { flex: 0 0 auto; height: calc(var(--mission-profile-h, 240px) - 34px); }
-.mission-profile.is-collapsed .mission-profile[hidden] { display: none; }
+/* A plan that drives has no heights to plot: the card shrinks to its heading,
+   which still carries the vehicle picker, so the kind can be switched back. */
+.mission-profile.is-ground { height: auto; }
+.mission-profile.is-ground .mission-profile-plot,
+.mission-profile.is-ground .mission-profile-toggle { display: none; }
+.mission-profile.is-ground:not(.is-folding) .mission-profile-note { display: block; min-width: 0; }
+.mission-profile.is-ground:not(.is-folding) .mission-aircraft { display: flex; }
 .mission-profile-head { padding-bottom: 6px; }
 .mission-profile-toggle { margin-left: -6px; flex: 0 0 auto; }
 .mission-profile:not(.is-collapsed) .mission-profile-toggle svg { transform: rotate(180deg); }
@@ -745,6 +751,7 @@
   display: flex; align-items: center; gap: 12px;
   padding: 6px 14px 2px;
 }
+.mission-profile.is-ground .mission-profile-head { padding: 8px 14px; }
 /* What flies the plan, at the heading's right end. Sized to the heading's
    own small caps so the row does not grow and take height from the chart. */
 .mission-aircraft {

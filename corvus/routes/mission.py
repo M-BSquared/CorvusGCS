@@ -67,8 +67,20 @@ class MissionRoutes:
         if self.mavlink is None:
             self._send_json({"ok": False, "error": "not connected"}, 400)
             return
+        if (plan.get("aircraft") == mission.GROUND_AIRCRAFT
+                and not autopilot.is_ground_vehicle(self._vehicle_type_id())):
+            self._send_json({
+                "ok": False,
+                "error": "This plan is drawn for a rover or a boat. Its points are at "
+                         "ground level, so an aircraft would fly into the ground. "
+                         "Pick the aircraft in the planner and set the heights first.",
+            }, 409)
+            return
 
         items = mission.plan_to_items(plan)
+        lower = getattr(self.mavlink, "lower_mission_plan", None)
+        if callable(lower):
+            items = lower(items)
         if not self.mavlink.upload_mission_plan(items):
             self._send_mission_failure("mission upload failed")
             return

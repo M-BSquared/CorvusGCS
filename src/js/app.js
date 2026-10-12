@@ -17,6 +17,29 @@ window.Corvus = window.Corvus || {};
   version is never hardcoded here; it is read from GET /api/version.
 */
 Corvus.app = (function () {
+  /* Where the vehicle is, for offering only the one of TAKEOFF and LAND that
+     applies: "air", "ground", or "" when that is not known (or nothing is
+     connected), which greys neither. Read like _is_airborne in
+     corvus/mavlink_flight.py: the vehicle's own landed state first, and its
+     height above home only when it publishes none.
+
+     The two answers are not equally firm, on purpose. "ground" needs a fact
+     (disarmed, or the autopilot saying ON_GROUND), because it is what greys
+     LAND, and LAND must never be withheld from an aircraft that is flying on
+     the strength of a height guess. "air" may come from the guess: the worst
+     it does is grey TAKEOFF for a vehicle hovering low. */
+  const AIRBORNE_LANDED_STATES = [2, 3, 4];   // IN_AIR, TAKEOFF, LANDING
+  const LANDED_ON_GROUND = 1;
+  const AIRBORNE_FALLBACK_M = 1.5;
+
+  function flightPhase(s) {
+    if (!s || !s.connected) return "";
+    const landed = Number(s.landed_state);
+    if (AIRBORNE_LANDED_STATES.indexOf(landed) !== -1) return "air";
+    if (!s.armed || landed === LANDED_ON_GROUND) return "ground";
+    return Number(s.altitude_agl) > AIRBORNE_FALLBACK_M ? "air" : "";
+  }
+
   // Idempotency guard for the flight-mode selector: only repopulate when the
   // mode list returned by the backend actually changes (or once per connect).
   let loadedModesSignature = "";
@@ -26,6 +49,23 @@ Corvus.app = (function () {
     const btnTakeoff = document.getElementById("btnTakeoff");
     const btnLand = document.getElementById("btnLand");
     const btnRTL = document.getElementById("btnRTL");
+
+    /* In the air TAKEOFF is greyed, on the ground LAND is (see flightPhase).
+       A button with a command in flight is left alone: setBusy holds it
+       disabled until the answer, and clearing that would allow a second
+       press. */
+    function showFlightPhase(s) {
+      const phase = flightPhase(s);
+      offer(btnTakeoff, phase !== "air", "Takeoff", "Takeoff: already in the air");
+      offer(btnLand, phase !== "ground", "Land", "Land: on the ground");
+      if (phase === "air") document.getElementById("takeoffPanel").hidden = true;
+    }
+
+    function offer(button, on, title, why) {
+      if (button.classList.contains("is-busy")) return;
+      button.disabled = !on;
+      button.title = on ? title : why;
+    }
     /* The mode picker is a plain <select> and stays one: the app's dropdown
        is put over every select in the page by ui.watchSelects() (called from
        init below), and it keeps the element as the state, so everything here
@@ -401,8 +441,10 @@ Corvus.app = (function () {
     Corvus.telemetry.subscribe((s) => {
       btnArm.classList.toggle("armed", !!s?.armed);
       const span = btnArm.querySelector("span");
-      if (span) span.textContent = s?.armed ? "DISARM" : "ARM";
+      const armCaption = s?.armed ? "DISARM" : "ARM";
+      if (span && span.textContent !== armCaption) span.textContent = armCaption;
       adaptToVehicle(Corvus.capabilities ? Corvus.capabilities.isGround(s) : false);
+      showFlightPhase(s);
       showVehicleMode(modeSel, s?.mode || "", s?.mode_label || "");
       // PLAN mirrors the other flight buttons: only actionable against a
       // connected vehicle. On disconnect, also exit planning so the UI never
@@ -644,6 +686,7 @@ Corvus.app = (function () {
     refreshModes,
     refreshModesFromData,
     showVehicleMode,
+    flightPhase,
     notifyError: (msg, attempt) => Corvus.topbar.notifyError(msg, attempt),
   };
 })();

@@ -115,6 +115,10 @@ Corvus.mission = (function () {
   // The lowest a multicopter's landing descent may start. Mirrors
   // MISSION_APPROACH_MIN_M in corvus/mission.py, which says why.
   const APPROACH_MIN_M = 3;
+  // What a route is timed at on a plan that drives, when no point pins a
+  // speed: ArduRover's WP_SPEED default. The flying default (NOMINAL_SPEED_MS)
+  // would time a rover at five times its pace.
+  const DRIVE_SPEED_MS = 2;
   // How far the drawn start may be from the connected aircraft before the
   // planner says so. A fix wanders a few metres with the aircraft standing
   // still; tens of metres is an aircraft standing somewhere else.
@@ -156,6 +160,7 @@ Corvus.mission = (function () {
     waypoint: {
       label: "Waypoint", icon: "map-pin", position: true, color: "nav",
       hint: "Fly to this point at this height.",
+      hints: { rover: "Drive to this point." },
       params: {
         hold: { label: "Hold", unit: "s", min: 0, max: HOLD_MAX_S, step: 1, def: 0 },
         accept_radius: { label: "Accept radius", unit: "m", min: 0, max: 1000, step: 1, def: 0 },
@@ -163,11 +168,15 @@ Corvus.mission = (function () {
     },
     loiter_turns: {
       label: "Circle", icon: "rotate-cw", position: true, color: "warning",
-      hint: "Orbit this point a set number of times, then continue.",
+      hint: "Fly a circle of this radius around the point, a set number of times, then "
+        + "continue. ArduPilot flies it as one circle; PX4 has no circle in a mission, so "
+        + "Corvus sends it as waypoints around the rim.",
+      hints: {
+        rover: "Drive a circle of this radius around the point, a set number of times, then "
+          + "continue.",
+      },
       // What to use on a stack that will not fly one (see missionRefusals).
       instead: "Use HOLD to stay at a point for a set time instead.",
-      hoverHint: "Hold over this point, then continue. This aircraft holds the point instead "
-        + "of circling it, so the radius and direction stay in the plan but are not flown.",
       params: {
         turns: { label: "Turns", unit: "", min: 0, max: TURNS_MAX, step: 0.5, def: 1 },
         radius: { label: "Radius", unit: "m", min: RADIUS_MIN_M, max: RADIUS_MAX_M, step: 1, def: DEFAULT_RADIUS_M },
@@ -186,6 +195,8 @@ Corvus.mission = (function () {
           + "the point in place, so the radius and direction stay in the plan but are not flown.",
         fixed_wing: "Circle this point for a set time, then continue.",
         vtol: "Circle this point for a set time, then continue.",
+        rover: "Stop at this point for a set time, then continue. The radius and direction "
+          + "stay in the plan but are not driven.",
       },
       params: {
         seconds: { label: "Time", unit: "s", min: 0, max: HOLD_MAX_S, step: 1, def: 30 },
@@ -216,6 +227,8 @@ Corvus.mission = (function () {
         fixed_wing: "Fly back to where the aircraft was armed, or to the nearest rally point, "
           + "and circle there. Ends the mission but not the flight: a fixed wing does not "
           + "land after a return. End with LAND to bring it down.",
+        rover: "Drive back to where the vehicle was armed, or to the nearest rally point, "
+          + "and stop there. Ends the mission.",
       },
       params: {},
     },
@@ -236,14 +249,16 @@ Corvus.mission = (function () {
   // stands and keeps it there (see "WHERE THE AIRCRAFT STARTS").
   const TOOLS = [
     { id: "select", icon: "mouse-pointer-2", label: "SELECT", title: "Select and move points" },
-    { id: "home", icon: "plane-takeoff", label: "START", title: "Set the start: the aircraft takes off here" },
+    { id: "home", icon: "plane-takeoff", label: "START", title: "Set the start: the aircraft takes off here",
+      driveTitle: "Set the start: the vehicle starts driving here" },
     { id: "vehicle_start", icon: "locate-fixed", label: "AIRCRAFT",
-      title: "Start where the connected aircraft stands, and follow it" },
+      title: "Start where the connected aircraft stands, and follow it",
+      driveLabel: "VEHICLE", driveTitle: "Start where the connected vehicle stands, and follow it" },
     { id: "divider" },
     { id: "waypoint", icon: "map-pin", label: "POINT", title: "Add a waypoint" },
     { id: "loiter_time", icon: "timer", label: "HOLD", title: "Add a timed hold" },
     { id: "pattern", icon: "waypoints", label: "PATTERN",
-      title: "Cover a circle, corridor or area in a back and forth sweep" },
+      title: "Fly a circle, or cover a corridor or an area in a back and forth sweep" },
     { id: "land", icon: "plane-landing", label: "LAND", title: "End the mission with a landing" },
     { id: "divider2" },
     { id: "rtl", icon: "house", label: "RETURN", title: "End the mission with a return to the start" },
@@ -259,7 +274,7 @@ Corvus.mission = (function () {
   // sweep is generated once and from then on is an ordinary route.
   const PATTERNS = {
     pattern_circle: { icon: "rotate-cw", label: "Circle",
-      hint: "Click the centre, then click the edge of the circle to fly around." },
+      hint: "Click the centre, then click the edge of the circle to fly." },
     pattern_corridor: { icon: "route", label: "Corridor",
       hint: "Click along the centre line of the corridor. Enter or a double click finishes." },
     pattern_area: { icon: "vector-square", label: "Area",
@@ -354,6 +369,10 @@ Corvus.mission = (function () {
   const HOVER_TYPES = [
     "QUADROTOR", "COAXIAL", "HELICOPTER", "HEXAROTOR", "OCTOROTOR", "TRIROTOR",
   ];
+  // A Circle is the exception: it IS a flight path on every airframe.
+  // ArduCopter flies NAV_LOITER_TURNS as a circle of that radius, and on PX4,
+  // which has no such mission item, it goes up as the waypoints around the rim
+  // (corvus.mission.lower_circles). So its ring is always shown.
 
   /*
     WHAT THE PLAN IS FLOWN BY
@@ -365,27 +384,53 @@ Corvus.mission = (function () {
 
     It covers the Hold alone. MAV_CMD_NAV_LOITER_TIME is flown as a hover by
     PX4 and ArduPilot multicopters alike, so on a multicopter its radius is
-    never a flight path. A Circle is different: ArduCopter does fly
-    NAV_LOITER_TURNS as a circle of that radius, so hiding one because of a
-    choice made offline would hide a path that is flown. The Circle stays on
-    the connected-vehicle rule above.
+    never a flight path. A Circle's always is (see above).
 
     While a recognisable aircraft is connected, the plan takes its kind and the
     choice is locked: what is flying decides, not what was picked. Names are
     the contract with PLAN_AIRCRAFT in corvus/mission.py.
+
+    The planner is built for aircraft, and a rover or a boat is the one kind
+    that drives. It comes last, and a plan for it is a route on the ground: no
+    takeoff, no landing and no heights (see "A PLAN THAT DRIVES").
   */
   const AIRCRAFT = [
     { value: "multirotor", label: "Multicopter", types: HOVER_TYPES },
     { value: "fixed_wing", label: "Fixed wing", types: ["FIXED_WING"] },
     { value: "vtol", label: "VTOL", types: ["VTOL_DUOROTOR", "VTOL_QUADROTOR", "VTOL_TILTROTOR"] },
+    // Corvus.capabilities.GROUND_TYPES, as the bridge names them.
+    { value: "rover", label: "Rover or boat", types: ["GROUNDED_ROVER", "SURFACE_BOAT"] },
   ];
 
-  /** Does the connected vehicle drive or sail? Then the plan has no takeoff,
-   *  no landing and no heights: it is a route on the ground. */
-  function vehicleIsGround() {
-    const capabilities = Corvus.capabilities;
-    return !!(capabilities && typeof capabilities.isGround === "function"
-      && capabilities.isGround(connectedState()));
+  /*
+    A PLAN THAT DRIVES
+
+    A rover or a boat has no air to take off into or land from, and no height
+    to fly at. Its plan keeps the same items and the same file, but the start
+    carries no takeoff, LAND is not offered, the altitude profile gives way to
+    a plain heading and new points sit at ground level. The kind comes from
+    the plan, so a route can be drawn at the desk before a rover is connected;
+    a connected vehicle still decides, as for any aircraft.
+
+    Switching kinds is an edit of the plan: driving takes the start's takeoff
+    away, flying puts it back and lifts every point left at ground level to a
+    working height, because a waypoint at 0 m is flown along the ground. The
+    upload refuses a plan for a rover on a vehicle that flies, for the same
+    reason. The refusals mirror _GROUND_MISSION_REFUSALS in corvus/autopilot.py.
+  */
+  const GROUND_REFUSALS = {
+    takeoff: "A rover drives, it does not take off",
+    land: "A rover drives, it does not land",
+  };
+
+  /** Does the plan drive rather than fly? */
+  function planDrives() {
+    return aircraft === "rover";
+  }
+
+  /** What the operator's words call the thing the plan is for. */
+  function craft() {
+    return drives ? "vehicle" : "aircraft";
   }
 
   /** The connected aircraft's state, or null with nothing connected. */
@@ -393,13 +438,6 @@ Corvus.mission = (function () {
     const state = Corvus.telemetry && typeof Corvus.telemetry.getState === "function"
       ? Corvus.telemetry.getState() : null;
     return state && state.connected ? state : null;
-  }
-
-  /** Does the connected aircraft hold a loiter point rather than circle it? */
-  function vehicleHovers() {
-    const state = connectedState();
-    if (!state) return false;
-    return HOVER_TYPES.indexOf(String(state.vehicle_type || "")) !== -1;
   }
 
   /** The plan aircraft a MAV_TYPE name is, or null for one that is none of them. */
@@ -417,8 +455,8 @@ Corvus.mission = (function () {
   /** Does the aircraft fly this orbit's ring, radius and direction? */
   function ringFlown(item) {
     if (!isOrbit(item)) return false;
-    if (item.type === "loiter_time") return aircraft !== "multirotor";
-    return !hovers;
+    if (item.type === "loiter_time") return aircraft !== "multirotor" && aircraft !== "rover";
+    return true;
   }
 
   /** Take the plan's aircraft from the connected one, and lock or unlock the
@@ -460,6 +498,7 @@ Corvus.mission = (function () {
   /** The sentence under an item's heading: what it does on this aircraft. */
   function itemHint(item) {
     const spec = TYPES[item.type];
+    if (drives && spec.hints && spec.hints.rover) return spec.hints.rover;
     if (isOrbit(item) && !ringFlown(item) && spec.hoverHint) return spec.hoverHint;
     return (aircraft && spec.hints && spec.hints[aircraft]) || spec.hint;
   }
@@ -568,8 +607,9 @@ Corvus.mission = (function () {
     }).catch(() => {});
   }
 
-  /** Why the connected stack will not fly *type*, or "". */
+  /** Why the connected stack, or a plan that drives, will not fly *type*, or "". */
   function refusalOf(type) {
+    if (drives && GROUND_REFUSALS[type]) return GROUND_REFUSALS[type];
     const reason = missionRefusals[type];
     return typeof reason === "string" ? reason : "";
   }
@@ -591,6 +631,8 @@ Corvus.mission = (function () {
   let profileEl = null;
   let profileWrapEl = null;
   let profileToggleEl = null;
+  let profileTitleEl = null;
+  let flyButtonEl = null;
   let profileAnim = null;
   let profileLiftObserver = null;
   let hadEnding = false;
@@ -668,11 +710,9 @@ Corvus.mission = (function () {
   let panelHoldOff = null;
   let themeUnsub = null;
   let vehicleUnsub = null;
-  // Cached rather than read per draw: this decides what the panel and the map
-  // show, and telemetry arrives many times a second.
-  let hovers = false;
-  // Whether the connected vehicle drives instead of flying, cached like
-  // `hovers`: it decides which tools and fields the page offers.
+  // Whether the plan drives instead of flying (see "A PLAN THAT DRIVES").
+  // Cached rather than read per draw: it decides which tools and fields the
+  // page offers, and telemetry arrives many times a second.
   let drives = false;
   // What the plan is flown by (see AIRCRAFT), or null when nobody said. Locked
   // while the connected aircraft names it.
@@ -785,6 +825,8 @@ Corvus.mission = (function () {
     planName = (plan && plan.name) || "Mission";
     aircraft = cleanAircraft(plan && plan.aircraft);
     adoptVehicleAircraft();
+    // As saved: a file is not adapted to a kind it already names.
+    syncDrives(false);
     home = (plan && plan.home)
       ? { lat: plan.home.lat, lon: plan.home.lon,
           elevation: plan.home.elevation != null ? plan.home.elevation : null }
@@ -890,8 +932,8 @@ Corvus.mission = (function () {
     if (id === "vehicle_start") {
       // Always free to switch off, whatever the link is doing.
       if (startAtVehicle) return null;
-      if (!connectedState()) return "Connect an aircraft first. The start is then put where it stands.";
-      if (!vehicleStart()) return "The aircraft has not reported a position yet.";
+      if (!connectedState()) return `Connect ${drives ? "a vehicle" : "an aircraft"} first. The start is then put where it stands.`;
+      if (!vehicleStart()) return `The ${craft()} has not reported a position yet.`;
       return null;
     }
     if (id === "pattern" || PATTERNS[id]) {
@@ -1152,6 +1194,7 @@ Corvus.mission = (function () {
     const profileTitle = document.createElement("span");
     profileTitle.className = "mission-profile-title";
     profileTitle.textContent = "ALTITUDE PROFILE";
+    profileTitleEl = profileTitle;
     const profileNote = document.createElement("span");
     profileNote.className = "mission-profile-note";
     profileNote.id = "missionProfileNote";
@@ -1167,7 +1210,6 @@ Corvus.mission = (function () {
     profileEl = document.createElement("div");
     profileEl.className = "mission-profile-plot";
     profileWrap.append(profileHead, profileEl);
-    profileWrap.hidden = drives;
     page.appendChild(profileWrap);
 
     pageEl = page;
@@ -1250,10 +1292,9 @@ Corvus.mission = (function () {
     // The airframe decides whether a loiter radius is a thing that gets flown,
     // and it can arrive, change or go away while the page is open. Only a
     // CHANGE redraws: the state itself lands on every telemetry frame.
-    hovers = vehicleHovers();
-    drives = vehicleIsGround();
-    applyGround();
     adoptVehicleAircraft();
+    syncDrives(true);
+    applyGround();
     loadReturnProfile();
     loadRefusals();
     followVehicleStart(null, false);
@@ -1275,10 +1316,62 @@ Corvus.mission = (function () {
     document.addEventListener("keydown", onKey, true);
   }
 
-  /** Show the page the way a driving vehicle needs it: no altitude profile,
-   *  and a tool bar without LAND. Called when the kind of vehicle changes. */
+  /** Follow the plan's kind after it may have changed. *edit* adapts the plan
+   *  too (see "A PLAN THAT DRIVES"): a kind picked, or set by a connected
+   *  vehicle, does; a plan loaded as it was saved does not. True on a change. */
+  function syncDrives(edit) {
+    const next = planDrives();
+    if (next === drives) return false;
+    drives = next;
+    if (edit) adaptToKind();
+    applyGround();
+    return true;
+  }
+
+  /** The plan, after its kind changed to *drives*. Driving takes the start's
+   *  takeoff away. Flying puts it back and lifts every point left at ground
+   *  level, which a rover's points are, to a working height, and says so. */
+  function adaptToKind() {
+    if (drives) {
+      const tied = startTakeoff();
+      if (tied) removeItem(tied.id);
+      return;
+    }
+    let lifted = 0;
+    items.forEach((item) => {
+      if (!TYPES[item.type].position || item.type === "land" || item.alt !== 0) return;
+      item.alt = DEFAULT_ALT_M;
+      lifted += 1;
+    });
+    if (home && !items.some((item) => item.type === "takeoff")) {
+      const keep = selectedId;
+      const takeoff = addItem("takeoff", { lat: home.lat, lon: home.lon }, 0);
+      if (takeoff) takeoff.alt = DEFAULT_ALT_M;
+      selectedId = keep;
+    }
+    if (lifted) {
+      notify("warning", `${lifted === 1 ? "A point" : `${lifted} points`} at ground level `
+        + `now ${lifted === 1 ? "flies" : "fly"} at ${lengthText(DEFAULT_ALT_M)}. `
+        + "Check the heights in the altitude profile.");
+    }
+  }
+
+  /** Show the page the way the plan's kind needs it. A plan that drives has
+   *  a plain heading instead of the altitude profile, a tool bar without
+   *  LAND, and drives rather than flies when it is started. */
   function applyGround() {
-    if (profileWrapEl) profileWrapEl.hidden = drives;
+    if (profileWrapEl) {
+      profileWrapEl.classList.toggle("is-ground", drives);
+      if (profileTitleEl) profileTitleEl.textContent = drives ? "GROUND ROUTE" : "ALTITUDE PROFILE";
+      resetProfileNote();
+      if (!drives && !profileWrapEl.classList.contains("is-collapsed")) {
+        requestAnimationFrame(() => { resizeProfile(); drawProfile(); });
+      }
+    }
+    if (flyButtonEl) {
+      const caption = flyButtonEl.querySelector("span");
+      if (caption) caption.textContent = drives ? "Upload and drive" : "Upload and fly";
+    }
     if (toolsEl) buildTools();
   }
 
@@ -1292,18 +1385,11 @@ Corvus.mission = (function () {
     const state = frame && frame.connected ? frame : null;
     loadRefusals();
     const moved = followVehicleStart(state, false);
-    const next = vehicleHovers();
     const wasLocked = aircraftLocked;
     const adopted = adoptVehicleAircraft();
     if (aircraftLocked !== wasLocked) loadReturnProfile();
-    const nextGround = vehicleIsGround();
-    const groundChanged = nextGround !== drives;
-    if (groundChanged) {
-      drives = nextGround;
-      applyGround();
-    }
-    if (moved || next !== hovers || adopted || groundChanged) {
-      hovers = next;
+    const groundChanged = syncDrives(true);
+    if (moved || adopted || groundChanged) {
       vehicleSeen = vehicleStart(state) != null;
       offsetFar = (startOffsetM(state) || 0) > START_OFFSET_WARN_M;
       refreshAll();
@@ -1441,7 +1527,7 @@ Corvus.mission = (function () {
     pageEl = null;
     mapWrapEl = null;
     if (profileLiftObserver) { profileLiftObserver.disconnect(); profileLiftObserver = null; }
-    profileWrapEl = profileToggleEl = null;
+    profileWrapEl = profileToggleEl = profileTitleEl = flyButtonEl = null;
     hadEnding = false;
     mapEl = profileEl = listEl = detailEl = summaryEl = issuesEl = toolsEl = null;
     listHeadEl = sideScrollEl = null;
@@ -1472,8 +1558,7 @@ Corvus.mission = (function () {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "fa-btn";
-      button.title = drives && entry.id === "home"
-        ? "Set the start: the vehicle starts here" : entry.title;
+      button.title = toolTitle(entry.id);
       button.dataset.tool = entry.id;
       if (toolActive(entry.id)) button.classList.add("active");
       button.appendChild(Corvus.ui.icon(entry.icon, 17));
@@ -1488,62 +1573,81 @@ Corvus.mission = (function () {
       }
       const caption = document.createElement("span");
       caption.textContent = entry.label;
+      if (drives && entry.driveLabel) caption.textContent = entry.driveLabel;
+      // Sized for both words (Corvus.ui.fitBar), so switching between a
+      // plan that flies and one that drives moves no other button.
+      if (entry.driveLabel) button.dataset.captions = `${entry.label}|${entry.driveLabel}`;
       button.appendChild(caption);
       toolsEl.appendChild(button);
     });
     buildPatternCard();
     updateTools();
     fitTools();
-    toolsEl.addEventListener("click", (event) => {
-      const button = event.target.closest(".fa-btn");
-      if (!button) return;
-      event.preventDefault();
-      // A greyed tool still answers a press, with the reason it is greyed:
-      // a button that silently does nothing reads as a broken one.
-      const blocked = toolBlocked(button.dataset.tool);
-      if (blocked) {
-        setHint(blocked);
-        return;
-      }
-      // RTL names no place on the map, so arming a tool for it would be a mode
-      // the operator could never leave by clicking. It appends immediately.
-      if (button.dataset.tool === "rtl") {
-        addItem("rtl", null);
-        setTool("select");
-        refreshAll();
-        return;
-      }
-      // Not a tool either: it pins the card open (or shuts it) and the shapes
-      // inside the card are the tools.
-      if (button.dataset.tool === "pattern") {
-        window.clearTimeout(patternLeaveTimer);
-        if (patternPinned) {
-          patternPinned = false;
-          patternHover = false;
-        } else {
-          patternPinned = true;
-        }
-        syncPatternCard();
-        return;
-      }
+    // One function, so the bar can be rebuilt (a plan that starts to drive
+    // loses LAND) without stacking a second listener that answers every press
+    // twice: a switch pressed twice is a switch that did nothing.
+    toolsEl.addEventListener("click", onToolsClick);
+  }
+
+  function onToolsClick(event) {
+    const button = event.target.closest(".fa-btn");
+    if (!button) return;
+    event.preventDefault();
+    // A greyed tool still answers a press, with the reason it is greyed:
+    // a button that silently does nothing reads as a broken one.
+    const blocked = toolBlocked(button.dataset.tool);
+    if (blocked) {
+      setHint(blocked);
+      return;
+    }
+    // RTL names no place on the map, so arming a tool for it would be a mode
+    // the operator could never leave by clicking. It appends immediately.
+    if (button.dataset.tool === "rtl") {
+      addItem("rtl", null);
+      setTool("select");
+      refreshAll();
+      return;
+    }
+    // Not a tool either: it pins the card open (or shuts it) and the shapes
+    // inside the card are the tools.
+    if (button.dataset.tool === "pattern") {
+      window.clearTimeout(patternLeaveTimer);
       if (patternPinned) {
-        window.clearTimeout(patternLeaveTimer);
         patternPinned = false;
         patternHover = false;
-        syncPatternCard();
+      } else {
+        patternPinned = true;
       }
-      // A switch, not a tool: it acts at once and arms nothing.
-      if (button.dataset.tool === "vehicle_start") {
-        setStartAtVehicle(!startAtVehicle);
-        setTool("select");
-        refreshAll();
-        if (startAtVehicle && home && map) {
-          map.easeTo({ center: [home.lon, home.lat], duration: 500 });
-        }
-        return;
+      syncPatternCard();
+      return;
+    }
+    if (patternPinned) {
+      window.clearTimeout(patternLeaveTimer);
+      patternPinned = false;
+      patternHover = false;
+      syncPatternCard();
+    }
+    // A switch, not a tool: it acts at once and arms nothing.
+    if (button.dataset.tool === "vehicle_start") {
+      setStartAtVehicle(!startAtVehicle);
+      setTool("select");
+      refreshAll();
+      if (startAtVehicle && home && map) {
+        map.easeTo({ center: [home.lon, home.lat], duration: 500 });
       }
-      setTool(button.dataset.tool);
-    });
+      return;
+    }
+    setTool(button.dataset.tool);
+  }
+
+  /** A tool's tooltip when nothing greys it, worded for the plan's kind. */
+  function toolTitle(id) {
+    if (id === "vehicle_start" && startAtVehicle) {
+      return `The start follows the connected ${craft()}. Press to let go of it.`;
+    }
+    const entry = TOOLS.find((each) => each.id === id);
+    if (!entry) return "";
+    return (drives && entry.driveTitle) || entry.title || "";
   }
 
   /** Is the button *id* shown pressed: the armed tool, or a switch that is on. */
@@ -1652,16 +1756,12 @@ Corvus.mission = (function () {
    *  reason as the tooltip, and mark START while the plan still needs one. */
   function updateTools() {
     if (!toolsEl) return;
-    const titles = {};
-    TOOLS.forEach((entry) => { titles[entry.id] = entry.title; });
     toolsEl.querySelectorAll(".fa-btn").forEach((button) => {
       const id = button.dataset.tool;
       const blocked = toolBlocked(id);
       button.classList.toggle("is-blocked", !!blocked);
       button.setAttribute("aria-disabled", blocked ? "true" : "false");
-      button.title = blocked || (id === "vehicle_start" && startAtVehicle
-        ? "The start follows the connected aircraft. Press to let go of it."
-        : titles[id]) || "";
+      button.title = blocked || toolTitle(id);
       button.classList.toggle("active", toolActive(id));
       button.setAttribute("aria-pressed", id === "vehicle_start" && startAtVehicle ? "true" : "false");
       button.classList.toggle("is-next", id === "home" && !home);
@@ -1719,11 +1819,13 @@ Corvus.mission = (function () {
    *  mission is drawn in. Start, then the route, then how it ends. */
   function updateHint() {
     const aboard = vehicleStart() != null;
+    const switchName = drives ? "VEHICLE" : "AIRCRAFT";
+    const starts = drives ? "starts driving" : "takes off";
     if (tool === "home") {
       const where = home
-        ? "Click the map to move the start. The aircraft takes off there."
-        : "Click the map where the aircraft takes off.";
-      setHint(aboard ? `${where} AIRCRAFT puts it where the aircraft stands.` : where);
+        ? `Click the map to move the start. The ${craft()} ${starts} there.`
+        : `Click the map where the ${craft()} ${starts}.`;
+      setHint(aboard ? `${where} ${switchName} puts it where the ${craft()} stands.` : where);
       return;
     }
     if (PATTERNS[tool]) {
@@ -1738,12 +1840,16 @@ Corvus.mission = (function () {
     }
     if (!home) {
       setHint(aboard
-        ? "Press AIRCRAFT to start where the connected aircraft stands, or START to click a place."
-        : "Press START and click where the aircraft takes off.");
+        ? `Press ${switchName} to start where the connected ${craft()} stands, or START to click a place.`
+        : `Press START and click where the ${craft()} ${starts}.`);
     } else if (!items.some((item) => TYPES[item.type].position && item.type !== "takeoff")) {
-      setHint("Now add points with POINT, HOLD or PATTERN, then end with LAND or RETURN.");
+      setHint(drives
+        ? "Now add points with POINT, HOLD or PATTERN, then end with RETURN or at the last point."
+        : "Now add points with POINT, HOLD or PATTERN, then end with LAND or RETURN.");
     } else if (endIndex() < 0) {
-      setHint("End the mission with LAND or RETURN. Drag a point to move it, right-click to delete it.");
+      setHint(drives
+        ? "End with RETURN, or the vehicle stops at the last point. Drag a point to move it, right-click to delete it."
+        : "End the mission with LAND or RETURN. Drag a point to move it, right-click to delete it.");
     } else {
       setHint("Drag a point to move it, right-click to delete it. New points go in before the end.");
     }
@@ -1871,6 +1977,15 @@ Corvus.mission = (function () {
     clearPlanEl.hidden = !items.length && !home;
   }
 
+  /** The operator picked what the plan is for. False while a connected
+   *  vehicle decides that instead. */
+  function chooseAircraft(value) {
+    if (aircraftLocked) return false;
+    aircraft = cleanAircraft(value);
+    syncDrives(true);
+    return true;
+  }
+
   /** What flies the plan, at the right end of the profile's heading. */
   function buildAircraftPicker() {
     const select = Corvus.ui.select({
@@ -1880,21 +1995,20 @@ Corvus.mission = (function () {
       options: aircraftOptions(),
       disabled: aircraftLocked,
       onChange: (value) => {
-        if (aircraftLocked) return;
-        aircraft = cleanAircraft(value);
-        refreshAll();
+        if (chooseAircraft(value)) refreshAll();
       },
     });
     return Corvus.ui.field({
-      label: "Aircraft",
+      label: "Vehicle",
       control: select,
       className: "mission-aircraft",
       info: "What flies this plan. The planner only tells an aircraft that hovers from "
         + "one that circles: a quadcopter, hexacopter or octocopter is a multicopter, and "
         + "all of them are planned the same way. A multicopter hovers at a Hold where a "
         + "fixed wing circles it, so a Hold's ring, radius and direction are shown only "
-        + "for an aircraft that flies them. While an aircraft is connected, it sets this "
-        + "and the list names it.",
+        + "for an aircraft that flies them. A rover or a boat drives the route on the "
+        + "ground: no takeoff, no landing and no heights. While a vehicle is connected, "
+        + "it sets this and the list names it.",
     });
   }
 
@@ -1981,9 +2095,10 @@ Corvus.mission = (function () {
     });
     const fly = Corvus.ui.button({
       variant: "secondary", shape: "block", icon: "play",
-      label: "Upload and fly",
+      label: drives ? "Upload and drive" : "Upload and fly",
       onClick: () => uploadPlan(true, fly),
     });
+    flyButtonEl = fly;
     wrap.append(upload, fly);
 
     const fileRow = document.createElement("div");
@@ -2557,10 +2672,13 @@ Corvus.mission = (function () {
     }
   }
 
-  /** Turn the drawn shape into waypoints, before the mission's ending. */
+  /** Turn the drawn shape into the mission, before its ending: a circle into
+   *  one Circle, flown round its rim, and a corridor or an area into the
+   *  waypoints of its sweep. */
   function commitPattern() {
     const kind = tool;
     const pts = distinctPoints(patternPts);
+    if (kind === "pattern_circle") return commitCircle(pts);
     const route = patternWaypoints(kind, pts, { spacing: patternSpacing, width: patternWidth });
     if (!route.length) {
       setHint("That shape is too small to cover. Draw it larger or reduce the line spacing.");
@@ -2585,6 +2703,29 @@ Corvus.mission = (function () {
     return true;
   }
 
+  /** One Circle at the clicked centre, as wide as the click on its edge, once
+   *  round, clockwise. The radius, turns and direction are the Circle's own
+   *  from then on: the grip on its rim and the editor change them. */
+  function commitCircle(pts) {
+    if (pts.length < 2) return false;
+    if (items.length >= MAX_ITEMS) {
+      notify("warning", `A mission can hold ${MAX_ITEMS} items.`);
+      return false;
+    }
+    const radius = clampNumber(Math.max(PATTERN_CIRCLE_MIN_M, distanceM(pts[0], pts[1])),
+      RADIUS_MIN_M, RADIUS_MAX_M, DEFAULT_RADIUS_M);
+    const circle = addItem("loiter_turns", { lat: pts[0].lat, lon: pts[0].lon });
+    if (!circle) return false;
+    circle.radius = Math.round(radius);
+    circle.turns = 1;
+    circle.direction = 1;
+    setTool("select");
+    setHint("Circle added. Drag its rim to change the radius, and set the turns and the "
+      + "direction in the panel.");
+    refreshAll();
+    return true;
+  }
+
   /** Draw the shape being drawn: its outline, a rubber band to the cursor and,
    *  once it is complete enough, the sweep that will be added. */
   function drawPattern() {
@@ -2605,7 +2746,8 @@ Corvus.mission = (function () {
         features.push({ type: "Feature", properties: { kind: "outline" },
           geometry: { type: "LineString", coordinates: coords } });
       }
-      const sweep = distinctPoints(pts).length >= 2
+      // A circle is flown round its outline, which is already drawn.
+      const sweep = tool !== "pattern_circle" && distinctPoints(pts).length >= 2
         ? patternWaypoints(tool, distinctPoints(pts), { spacing: patternSpacing, width: patternWidth }) : [];
       if (sweep.length > 1) {
         features.push({ type: "Feature", properties: { kind: "sweep" },
@@ -2884,11 +3026,17 @@ Corvus.mission = (function () {
   function buildHomeMarker(takeoff) {
     const element = document.createElement("div");
     element.className = "home-marker mission-home";
-    element.title = startAtVehicle
-      ? "Start, at the connected aircraft and following it. Every altitude in the plan is "
-        + "measured from here. Click to set the climb height, drag to place it by hand"
-      : "Start. The aircraft takes off here, and every altitude in the plan "
-        + "is measured from here. Click to set the climb height, drag to move, right-click to remove";
+    if (drives) {
+      element.title = startAtVehicle
+        ? "Start, at the connected vehicle and following it. Drag to place it by hand"
+        : "Start. The vehicle starts driving here. Drag to move, right-click to remove";
+    } else {
+      element.title = startAtVehicle
+        ? "Start, at the connected aircraft and following it. Every altitude in the plan is "
+          + "measured from here. Click to set the climb height, drag to place it by hand"
+        : "Start. The aircraft takes off here, and every altitude in the plan "
+          + "is measured from here. Click to set the climb height, drag to move, right-click to remove";
+    }
     if (startAtVehicle) element.classList.add("is-following");
     element.innerHTML =
       '<svg class="h-body" viewBox="0 0 32 32" aria-hidden="true">' +
@@ -3275,7 +3423,7 @@ Corvus.mission = (function () {
    *  that the operator's own fold is respected. */
   function openProfileForEnding() {
     const has = items.some((item) => item.type === "land" || item.type === "rtl");
-    if (has && !hadEnding) setProfileCollapsed(false, true);
+    if (has && !hadEnding && !drives) setProfileCollapsed(false, true);
     hadEnding = has;
   }
 
@@ -3355,7 +3503,8 @@ Corvus.mission = (function () {
     if (!items.length) {
       listEl.appendChild(Corvus.ui.empty(home
         ? "Nothing planned yet. Add points from the tool bar."
-        : "Nothing planned yet. Press START and click where the aircraft takes off."));
+        : `Nothing planned yet. Press START and click where the ${craft()} `
+          + `${drives ? "starts driving" : "takes off"}.`));
       return;
     }
     let number = 0;
@@ -3431,6 +3580,19 @@ Corvus.mission = (function () {
   function describeItem(item) {
     const spec = TYPES[item.type];
     if (!spec.position) return aircraft === "fixed_wing" ? "circles at start" : "to start";
+    // A route on the ground: a height the vehicle never uses is not quoted.
+    if (drives && item.type !== "takeoff" && item.type !== "land") {
+      const parts = [];
+      if (isOrbit(item)) {
+        if (ringFlown(item)) {
+          parts.push(`${item.direction < 0 ? "↺" : "↻"}${Corvus.units.formatLength(item.radius)}`);
+        }
+        parts.push(item.type === "loiter_turns" ? `${item.turns}×` : `${Math.round(item.seconds)} s`);
+      }
+      if (item.type === "waypoint" && item.hold > 0) parts.push(`${Math.round(item.hold)} s`);
+      if (item.speed != null) parts.push(speedText(item.speed));
+      return parts.join(" · ");
+    }
     if (item.type === "land") {
       if (aircraft !== "multirotor" || item.approach_alt == null) return "ground";
       return item.approach_alt <= APPROACH_MIN_M
@@ -4095,8 +4257,8 @@ Corvus.mission = (function () {
     Corvus.ui.clear(summaryEl);
     const points = stations(items, home);
     const length = routeLength(items, home);
-    const seconds = routeDuration(items, home, null);
-    const gaps = clearances(points, ground).filter((value) => value != null);
+    const seconds = routeDuration(items, home, drives ? DRIVE_SPEED_MS : null);
+    const gaps = drives ? [] : clearances(points, ground).filter((value) => value != null);
 
     // No highest-point figure: the altitude profile shows it, and the one case
     // where it matters (above the open-category ceiling) is in the issues.
@@ -4194,6 +4356,8 @@ Corvus.mission = (function () {
     // itself over the new plan.
     const pass = ++groundToken;
     if (!terrainSpec) return;
+    // No profile to draw it under, and no height to clear it by.
+    if (drives) { ground = null; return; }
     const points = stations(items, home);
     if (points.length < 2) { ground = null; return; }
     const total = points[points.length - 1].distance;
@@ -4349,7 +4513,7 @@ Corvus.mission = (function () {
    * exact.
    */
   function drawProfile() {
-    if (!profileEl || destroyed) return;
+    if (!profileEl || destroyed || drives) return;
     // Plotly is 1.0 MB and is fetched on first use (js/lazy.js). Come back
     // through this same function once it is here; `destroyed` is re-checked
     // because the operator can leave the page while it loads, and this is the
@@ -4761,7 +4925,11 @@ Corvus.mission = (function () {
    *  borrow that line as their live readout. */
   function resetProfileNote() {
     const note = document.getElementById("missionProfileNote");
-    if (note) note.textContent = "Drag a point up or down to set its height.";
+    if (note) {
+      note.textContent = drives
+        ? "A rover or a boat drives the route at ground level. Heights are not used."
+        : "Drag a point up or down to set its height.";
+    }
   }
 
   /** What the height is, while it is being dragged. In the chart's own caption
@@ -4802,7 +4970,7 @@ Corvus.mission = (function () {
     if (offset != null && offset > START_OFFSET_WARN_M) {
       say(`The ${drives ? "vehicle" : "aircraft"} is ${formatDistance(Math.round(offset))} from the start.`,
         drives
-          ? "It drives the route from where it stands, not from the start. Press AIRCRAFT to "
+          ? "It drives the route from where it stands, not from the start. Press VEHICLE to "
             + "start the plan where the vehicle is, or drive it to the start."
           : "It takes off where it stands, not at the start, and every height in the plan is "
             + "measured from where it takes off. Press AIRCRAFT to start the plan where the "
@@ -4815,7 +4983,8 @@ Corvus.mission = (function () {
       const count = items.filter((item) => item.type === type).length;
       if (!reason || !count) return;
       const label = TYPES[type].label;
-      say(`${count === 1 ? "A" : count} ${label}${count === 1 ? "" : "s"} this aircraft will not fly.`,
+      say(`${count === 1 ? "A" : count} ${label}${count === 1 ? "" : "s"} `
+        + `${drives ? "this vehicle will not drive" : "this aircraft will not fly"}.`,
         `${reason}, so the upload is refused. ${TYPES[type].instead || "Remove it before uploading."}`);
     });
 
@@ -4843,6 +5012,19 @@ Corvus.mission = (function () {
       const end = TYPES[items[ends].type].label.toLowerCase();
       say(`${left} item${left === 1 ? "" : "s"} after the ${end} will not be flown.`,
         `The mission ends at the ${end}. Move the items before it or delete them.`);
+    }
+
+    // Everything below is about heights, which a route on the ground has none of.
+    if (drives) return list;
+
+    // What a plan for a rover leaves behind when it is flown instead: the
+    // terrain check below needs a DEM, and this needs nothing.
+    const level = items.filter((item) => TYPES[item.type].position
+      && item.type !== "land" && item.alt === 0).length;
+    if (level) {
+      say(`${level === 1 ? "A point" : `${level} points`} at ground level.`,
+        "At the height of the start, the aircraft flies along the ground. "
+        + "Raise them in the altitude profile.");
     }
 
     const highest = items.reduce(
@@ -4932,9 +5114,15 @@ Corvus.mission = (function () {
    *  warnings in front of the operator rather than after the fact. */
   function confirmUpload(andFly, warnings, proceed) {
     const body = document.createElement("div");
-    const lead = Corvus.ui.empty(andFly
-      ? `${planName} will be uploaded, the vehicle switched to MISSION and armed. It will take off.`
-      : `${planName} will be written to the vehicle. It will not fly until you start it.`);
+    let text = `${planName} will be written to the vehicle. It will not fly until you start it.`;
+    if (andFly) {
+      text = drives
+        ? `${planName} will be uploaded, the vehicle switched to its mission mode and armed. It will start driving.`
+        : `${planName} will be uploaded, the vehicle switched to MISSION and armed. It will take off.`;
+    } else if (drives) {
+      text = `${planName} will be written to the vehicle. It will not drive until you start it.`;
+    }
+    const lead = Corvus.ui.empty(text);
     body.appendChild(lead);
     if (warnings.length) {
       const list = document.createElement("div");
@@ -4948,11 +5136,11 @@ Corvus.mission = (function () {
     const confirm = Corvus.ui.button({
       variant: andFly ? "danger" : "primary",
       icon: andFly ? "play" : "upload",
-      label: andFly ? "Upload and fly" : "Upload",
+      label: andFly ? (drives ? "Upload and drive" : "Upload and fly") : "Upload",
       onClick: () => { dialog.close(); proceed(); },
     });
     dialog = Corvus.ui.modal({
-      title: andFly ? "Fly this mission?" : "Upload this mission?",
+      title: andFly ? (drives ? "Drive this mission?" : "Fly this mission?") : "Upload this mission?",
       body,
       actions: [cancel, confirm],
     });
@@ -5454,7 +5642,6 @@ Corvus.mission = (function () {
     _dropSlot: dropSlot,
     _pointScaleFor: pointScaleFor,
     _hoverTypes: HOVER_TYPES,
-    _vehicleHovers: vehicleHovers,
     // test hooks: which kind of aircraft the plan is for, and what that shows.
     // Wrong silently: a ring drawn round a point the aircraft hovers over, or
     // none round a circle it flies.
@@ -5463,7 +5650,9 @@ Corvus.mission = (function () {
     _adoptVehicleAircraft: adoptVehicleAircraft,
     // test hook: take the driving/flying kind from the connected vehicle, as a
     // telemetry frame does.
-    _syncDrives: () => { drives = vehicleIsGround(); return drives; },
+    _syncDrives: () => { adoptVehicleAircraft(); syncDrives(true); return drives; },
+    // test hook: pick the plan's kind as the picker does.
+    _setAircraft: chooseAircraft,
     _paramApplies: paramApplies,
     _itemHint: itemHint,
     // test hooks: how a landing is drawn and judged for that aircraft.

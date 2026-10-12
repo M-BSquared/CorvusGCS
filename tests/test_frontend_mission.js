@@ -498,28 +498,25 @@ function testProgressIsClaimedOnlyWhileTheVehicleHoldsThisPlan() {
   mission.setPlan({ items: [] });
 }
 
-function testOnlyAMultirotorHidesTheLoiterRadius() {
-  /* A loiter radius is the circle an aircraft that cannot hover flies in order
-     to stay at a point. Hiding it from an airframe that DOES fly it would take
-     away the only control over how tight that circle is. */
+function testACircleShowsItsRingOnEveryAirframe() {
+  /* A Circle is a flight path everywhere: ArduCopter flies NAV_LOITER_TURNS
+     as a circle, and PX4 gets the waypoints round its rim. Only a Hold on a
+     multicopter is a hover whose radius nobody flies. */
   const was = Corvus.telemetry;
-  const asVehicle = (state) => {
-    Corvus.telemetry = { getState: () => state };
-    return mission._vehicleHovers();
-  };
   try {
-    assert.strictEqual(asVehicle({ connected: true, vehicle_type: "QUADROTOR" }), true);
-    assert.strictEqual(asVehicle({ connected: true, vehicle_type: "HEXAROTOR" }), true);
-    assert.strictEqual(asVehicle({ connected: true, vehicle_type: "FIXED_WING" }), false,
-      "a fixed wing cannot hold a point without circling it");
-    assert.strictEqual(asVehicle({ connected: true, vehicle_type: "VTOL_QUADROTOR" }), false,
-      "a VTOL may hold in either mode, so the field stays");
-    assert.strictEqual(asVehicle({ connected: true, vehicle_type: "GENERIC" }), false,
-      "an airframe that has not said what it is is not an argument for hiding it");
-    assert.strictEqual(asVehicle({ connected: false, vehicle_type: "QUADROTOR" }), false,
-      "and a plan drawn with nothing connected keeps every field the file carries");
+    for (const type of ["QUADROTOR", "FIXED_WING", "VTOL_QUADROTOR", "GROUNDED_ROVER"]) {
+      Corvus.telemetry = { getState: () => ({ connected: true, vehicle_type: type }) };
+      mission.setPlan({ items: [
+        { type: "loiter_turns", lat: 48, lon: 11, alt: 40, turns: 2, radius: 80 },
+      ] });
+      const circle = mission.getPlan().items[0];
+      assert.strictEqual(mission._paramApplies(circle, "radius"), true, `${type} flies the circle`);
+      assert.strictEqual(mission._paramApplies(circle, "direction"), true);
+    }
   } finally {
     Corvus.telemetry = was;
+    mission.setPlan({ items: [] });
+    mission._syncDrives();
   }
 }
 
@@ -567,8 +564,11 @@ function testEveryConnectedAirframeMapsToTheRightPlanAircraft() {
     "a helicopter hovers at a Hold as a multicopter does");
   assert.strictEqual(mission._aircraftOf("FIXED_WING"), "fixed_wing");
   assert.strictEqual(mission._aircraftOf("VTOL_QUADROTOR"), "vtol");
-  assert.strictEqual(mission._aircraftOf("GROUNDED_ROVER"), null,
-    "an airframe that is none of the three sets nothing");
+  assert.strictEqual(mission._aircraftOf("GROUNDED_ROVER"), "rover");
+  assert.strictEqual(mission._aircraftOf("SURFACE_BOAT"), "rover",
+    "a boat drives a route on the water as a rover does on land");
+  assert.strictEqual(mission._aircraftOf("SUBMARINE"), null,
+    "an airframe that is none of them sets nothing");
   assert.strictEqual(mission._aircraftOf(""), null);
   const bridge = fs.readFileSync(
     path.join(__dirname, "..", "corvus", "mavlink_bridge.py"), "utf-8");
@@ -1987,20 +1987,30 @@ function testAreaPatternSweepsBackAndForth() {
     "the next pass flies the other way");
 }
 
+function testTheCirclePatternIsOneCircleRoundTheClickedCentre() {
+  mission.setPlan({ home: { lat: 48, lon: 11 }, items: [] });
+  mission._setTool("pattern_circle");
+  mission._patternClick({ lat: 48.001, lng: 11 });
+  mission._patternClick({ lat: 48.001, lng: 11.001 });
+  const items = mission.getPlan().items.filter((item) => item.type !== "takeoff");
+  assert.strictEqual(items.length, 1, "one item, not a ring of waypoints");
+  const [circle] = items;
+  assert.strictEqual(circle.type, "loiter_turns");
+  assert.strictEqual(circle.lat, 48.001);
+  assert.strictEqual(circle.turns, 1, "once round");
+  assert.strictEqual(circle.direction, 1, "clockwise");
+  const edge = mission._distanceM({ lat: 48.001, lon: 11 }, { lat: 48.001, lon: 11.001 });
+  assert.ok(Math.abs(circle.radius - edge) <= 0.5, `as wide as the click on its edge (${circle.radius})`);
+  mission.setPlan({ items: [] });
+}
+
 function testCorridorAndCirclePatternsProduceRoutes() {
   const line = [{ lat: 48, lon: 11 }, { lat: 48, lon: 11.003 }];
   const corridor = mission._patternWaypoints("pattern_corridor", line, { spacing: 20, width: 60 });
   assert.strictEqual(corridor.length, 6, "three lanes of two points");
-  const circle = mission._patternWaypoints("pattern_circle",
-    [{ lat: 48, lon: 11 }, { lat: 48, lon: 11.001 }], { spacing: 20 });
-  const radius = mission._distanceM({ lat: 48, lon: 11 }, circle[0]);
-  assert.ok(circle.length >= 9, "a ring of points, not a back and forth sweep");
-  circle.forEach((p) => {
-    assert.ok(Math.abs(mission._distanceM({ lat: 48, lon: 11 }, p) - radius) < 0.6,
-      "every point lies on the circle, none inside it");
-  });
-  assert.ok(mission._distanceM(circle[0], circle[circle.length - 1]) < 0.6, "the last point closes the loop");
-  assert.ok(Math.abs(circle[0].lat - 48) < 1e-6 && circle[0].lon > 11, "it starts where the edge was clicked");
+  assert.deepStrictEqual(mission._patternWaypoints("pattern_circle",
+    [{ lat: 48, lon: 11 }, { lat: 48, lon: 11.001 }], { spacing: 20 }), [],
+    "a circle is one Circle item, not a ring of waypoints");
   assert.deepStrictEqual(mission._patternWaypoints("pattern_area", line, {}), [],
     "two corners are not an area");
 }
@@ -2030,6 +2040,103 @@ function testARoverStartsWithoutATakeoff() {
     mission._syncDrives();
     mission.setPlan({ items: [] });
   }
+}
+
+function testTheAircraftComesFirstAndTheRoverLast() {
+  // Drone first: the flying kinds lead the picker, and the one that drives
+  // is offered after them rather than in their place.
+  const kinds = mission._aircraft.map((entry) => entry.value);
+  assert.strictEqual(kinds[0], "multirotor");
+  assert.strictEqual(kinds[kinds.length - 1], "rover");
+}
+
+/** Run *fn* with nothing connected, so the plan's own kind decides. */
+function offline(fn) {
+  const was = Corvus.telemetry;
+  Corvus.telemetry = { getState: () => ({ connected: false, vehicle_type: "" }) };
+  try {
+    fn();
+  } finally {
+    Corvus.telemetry = was;
+    mission.setPlan({ items: [] });
+    mission._syncDrives();
+  }
+}
+
+function testARoverPlanIsDrawnWithNothingConnected() {
+  offline(() => {
+    mission.setPlan({ aircraft: "rover", items: [] });
+    assert.strictEqual(mission._syncDrives(), true, "the plan's kind drives on its own");
+    mission._placeStart(at(48, 11));
+    assert.ok(!mission._items().some((item) => item.type === "takeoff"),
+      "a route on the ground starts without a climb");
+    assert.strictEqual(mission.getPlan().aircraft, "rover", "and is saved as one");
+  });
+}
+
+function testAPlanThatDrivesRefusesTakeoffAndLandAndKeepsQuietAboutHeights() {
+  offline(() => {
+    mission.setPlan({
+      aircraft: "rover",
+      home: { lat: 48, lon: 11 },
+      items: [
+        { type: "waypoint", lat: 48.001, lon: 11, alt: 0 },
+        { type: "land", lat: 48.002, lon: 11, alt: 0 },
+      ],
+    });
+    mission._syncDrives();
+    const problems = mission._problems();
+    assert.ok(problems.some((text) => /Land this vehicle will not drive/.test(text)),
+      `a landing is called out on a rover plan: ${problems.join(" | ")}`);
+    assert.ok(!problems.some((text) => /ground level/.test(text)),
+      "a rover's points are meant to be at ground level");
+  });
+}
+
+function testFlyingAPlanDrawnForARoverLiftsItsPointsAndPutsTheTakeoffBack() {
+  offline(() => {
+    mission.setPlan({
+      aircraft: "rover",
+      home: { lat: 48, lon: 11 },
+      items: [{ type: "waypoint", lat: 48.001, lon: 11, alt: 0 }],
+    });
+    mission._syncDrives();
+    // As the picker does it: a file is loaded as saved, a pick adapts it.
+    mission._setAircraft("multirotor");
+    const items = mission._items();
+    assert.strictEqual(items[0].type, "takeoff", "the start climbs again");
+    const point = items.find((item) => item.type === "waypoint");
+    assert.ok(point.alt > 0, "a point at ground level is not flown along the ground");
+
+    mission._setAircraft("rover");
+    assert.ok(!mission._items().some((item) => item.type === "takeoff"),
+      "and driving takes the start's takeoff away again");
+  });
+}
+
+function testAnAircraftPlanWithAPointAtGroundLevelIsCalledOut() {
+  offline(() => {
+    mission.setPlan({
+      aircraft: "multirotor",
+      home: { lat: 48, lon: 11 },
+      items: [
+        { type: "takeoff", lat: 48, lon: 11, alt: 30 },
+        { type: "waypoint", lat: 48.001, lon: 11, alt: 0 },
+      ],
+    });
+    mission._syncDrives();
+    assert.ok(mission._problems().some((text) => /A point at ground level/.test(text)));
+  });
+}
+
+function testTheToolBarIsBuiltWithOneClickListener() {
+  // Rebuilt whenever the plan starts or stops driving; an inline listener
+  // stacked a second handler and a switch pressed once toggled twice.
+  const body = missionJs.slice(missionJs.indexOf("function buildTools"),
+    missionJs.indexOf("function onToolsClick"));
+  assert.ok(body.includes('toolsEl.addEventListener("click", onToolsClick)'));
+  assert.ok(!/addEventListener\("click", \(/.test(body.split("buildPatternCard();")[1] || ""),
+    "no inline click handler on the bar itself");
 }
 
 function testPatternCardIgnoresTheButtonsTransform() {
@@ -2282,7 +2389,7 @@ const tests = [
   testBothBarsAreMeasuredAgainstARoomAndNotThemselves,
   testTheTwoBarsButtonsAreTheSameSize,
   testProgressIsClaimedOnlyWhileTheVehicleHoldsThisPlan,
-  testOnlyAMultirotorHidesTheLoiterRadius,
+  testACircleShowsItsRingOnEveryAirframe,
   testEveryHoveringTypeIsARotorcraft,
   testAHiddenRadiusIsStillSavedAndUploaded,
   testThePlanAircraftNamesMatchThePythonModel,
@@ -2362,7 +2469,14 @@ const tests = [
   testCircleIsAPatternNotAToolOfItsOwn,
   testAreaPatternSweepsBackAndForth,
   testCorridorAndCirclePatternsProduceRoutes,
+  testTheCirclePatternIsOneCircleRoundTheClickedCentre,
   testARoverStartsWithoutATakeoff,
+  testTheAircraftComesFirstAndTheRoverLast,
+  testARoverPlanIsDrawnWithNothingConnected,
+  testAPlanThatDrivesRefusesTakeoffAndLandAndKeepsQuietAboutHeights,
+  testFlyingAPlanDrawnForARoverLiftsItsPointsAndPutsTheTakeoffBack,
+  testAnAircraftPlanWithAPointAtGroundLevelIsCalledOut,
+  testTheToolBarIsBuiltWithOneClickListener,
   testPatternCardIgnoresTheButtonsTransform,
   testPlacedPatternPointsShareAGroup,
   testPatternCardPinningAndHoverBehavior,

@@ -2385,25 +2385,103 @@ Corvus.ui = (function () {
      moving a pixel, which is why the test is a measurement and never a
      viewport media query.
 
-     Two steps down, in .flight-actions.is-tight / .is-compact: the shared
-     button width goes first, the captions only if that is still not enough.
-     Both are cleared before measuring, because a bar that has already been
-     narrowed measures narrow and would never widen again once it had shrunk
-     once.
+     Every button is ONE width with ONE caption size (.is-even, from
+     --fa-w and --fa-s). The width is 72px at full size, not the width of the
+     longest word: a long caption is set a little smaller instead, the same
+     size on every button so no single one looks shrunk, and only a caption
+     that would need more than BAR_MIN_SCALE widens the row. Narrower rooms
+     take the same shape down (.is-tight): every button narrows together and
+     the shared caption with it, down to BAR_TIGHT_SCALE. Icons only
+     (.is-compact) when even that will not fit. Each step is cleared before
+     measuring, because a bar that has already been narrowed measures narrow
+     and would never widen again once it had shrunk once.
 
      `room` is the width to fit into; without one the bar's own client width is
      used, which is what a bar capped by a max-width is already limited to. */
+  const BAR_FULL_W = 72;
+  // The least room beside a caption, either side, border included.
+  const BAR_EDGE = 7;
+  const BAR_MIN_SCALE = 0.85;
+  const BAR_TIGHT_SCALE = 0.8;
+
   function fitBar(bar, room) {
     if (!bar || !bar.classList) return;
     const space = room == null ? bar.clientWidth : room;
     if (!(space > 0)) return;
-    const isTight = bar.classList.contains("is-tight");
-    const isCompact = bar.classList.contains("is-compact");
-    if (!isTight && !isCompact && bar.scrollWidth <= space) return;
     bar.classList.remove("is-tight", "is-compact");
+    const buttons = barButtons(bar);
+    if (!buttons.length || !bar.style || typeof bar.style.setProperty !== "function") {
+      bar.classList.remove("is-even");
+      if (bar.scrollWidth <= space) return;
+      bar.classList.add("is-tight");
+      if (bar.scrollWidth > space) bar.classList.add("is-compact");
+      return;
+    }
+
+    // Measured at a known width, so the pixels read back (which the interface
+    // scale may have zoomed) convert to the CSS pixels the width is set in.
+    setEven(bar, 100, 1);
+    const k = buttons[0].offsetWidth / 100 || 1;
+    const longest = Math.max(1, ...buttons.map((button) => captionWidth(button) / k));
+    const scaleAt = (width) => Math.min(1, Math.floor((width - 2 * BAR_EDGE) / longest * 100) / 100);
+
+    let width = BAR_FULL_W;
+    let scale = scaleAt(width);
+    if (scale < BAR_MIN_SCALE) {
+      scale = BAR_MIN_SCALE;
+      width = Math.ceil(longest * BAR_MIN_SCALE + 2 * BAR_EDGE);
+    }
+    setEven(bar, width, scale);
     if (bar.scrollWidth <= space) return;
+
     bar.classList.add("is-tight");
-    if (bar.scrollWidth > space) bar.classList.add("is-compact");
+    const others = bar.scrollWidth / k - buttons.length * width;
+    let narrow = Math.floor((space / k - others) / buttons.length);
+    for (let tries = 0; tries < 4; tries += 1) {
+      const fits = scaleAt(narrow);
+      if (fits < BAR_TIGHT_SCALE) break;
+      setEven(bar, narrow, fits);
+      if (bar.scrollWidth <= space) return;
+      narrow -= 1;
+    }
+
+    bar.classList.remove("is-even");
+    bar.classList.add("is-compact");
+  }
+
+  /** The widest caption *button* shows: the one it has now, or any other it
+   *  can switch to (data-captions, "|" between them). ARM becomes DISARM, and
+   *  sized for both, no button moves when it does. */
+  function captionWidth(button) {
+    const caption = button.querySelector("span");
+    if (!caption) return 0;
+    let widest = Math.max(caption.scrollWidth, caption.offsetWidth);
+    const others = (button.dataset && button.dataset.captions) || "";
+    others.split("|").map((text) => text.trim()).filter(Boolean).forEach((text) => {
+      const probe = caption.cloneNode(false);
+      probe.textContent = text;
+      probe.setAttribute("aria-hidden", "true");
+      probe.style.position = "absolute";
+      probe.style.visibility = "hidden";
+      button.appendChild(probe);
+      widest = Math.max(widest, probe.scrollWidth, probe.offsetWidth);
+      probe.remove();
+    });
+    return widest;
+  }
+
+  /** The bar's own buttons that are on show. */
+  function barButtons(bar) {
+    if (!bar.children) return [];
+    return Array.from(bar.children).filter((el) => el.classList
+      && el.classList.contains("fa-btn") && !el.hidden);
+  }
+
+  /** Every button *width* CSS pixels wide, with the caption at *scale*. */
+  function setEven(bar, width, scale) {
+    bar.classList.add("is-even");
+    bar.style.setProperty("--fa-w", `${width}px`);
+    bar.style.setProperty("--fa-s", String(scale));
   }
 
   return {

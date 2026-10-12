@@ -1573,6 +1573,24 @@ Corvus.map = (function () {
     if (Corvus.ui && typeof Corvus.ui.onThemeChange === "function") {
       Corvus.ui.onThemeChange(fit);
     }
+    // So does a caption that changes (ARM is DISARM once armed) or a button
+    // that comes and goes: the buttons share the longest word's caption size.
+    // Only a real change refits, since the arm caption is rewritten on every
+    // telemetry frame.
+    if (typeof MutationObserver === "function") {
+      const captions = () => Array.from(bar.children)
+        .map((el) => (el.hidden ? "" : el.textContent.trim())).join("|");
+      let seen = captions();
+      new MutationObserver(() => {
+        const now = captions();
+        if (now === seen) return;
+        seen = now;
+        fit();
+      }).observe(bar, {
+        subtree: true, childList: true, characterData: true,
+        attributes: true, attributeFilter: ["hidden"],
+      });
+    }
   }
 
   /* The room to fit the bar into: .map-topleft's width, or a share of the map

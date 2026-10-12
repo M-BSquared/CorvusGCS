@@ -180,8 +180,8 @@ global.document = {
   body,
 };
 
-// The launcher asks before removing a button that is running something.
-window.confirm = () => true;
+// Every question is the app's own dialog; the browser's is a failure.
+window.confirm = () => { throw new Error("window.confirm: ask with the app's own dialog"); };
 
 // Flush the microtask queue (for the plugin's best-effort postAction promises).
 function flushMicrotasks() { return new Promise((r) => setTimeout(r, 0)); }
@@ -962,6 +962,17 @@ async function testALateStatusRepaintsTheOpenEditor() {
   S.destroy(h.container);
 }
 
+/* The questions the plugin asks are Corvus.ui.modal dialogs on <body>. */
+function dialogs() { return querySel(body.children, ".modal-overlay"); }
+function inDialog(sel) { return querySel(dialogs()[dialogs().length - 1].children, sel); }
+function dialogButton(text) { return inDialog(".btn").find((b) => b.children.some((c) => c.textContent === text)); }
+function dialogLines() { return inDialog(".schw-confirm-line").map((l) => l.textContent).join(" "); }
+async function answer(text) {
+  assert.ok(dialogs().length, `a question is up, to answer with ${text}`);
+  click(dialogButton(text));
+  await flushMicrotasks();
+}
+
 /* A running row has no pencil, so the editor meets a running session only
    when it was opened before the shelf knew. These open it before the first
    liveness answer comes back, which is that case. */
@@ -971,21 +982,22 @@ async function testMovingARunningButtonClosesItsSessionFirst() {
   await flushMicrotasks();
 
   // Declined: nothing is saved, the editor stays, the program keeps running.
-  window.confirm = () => false;
   pickTarget(h, "Local");
   click(h.byLabel("Save")[0]);
   await flushMicrotasks();
+  assert.match(dialogLines(), /still running in its terminal/);
+  assert.equal(h.savedNow().buttons[0].target, "ssh", "nothing is saved before the answer");
+  await answer("Cancel");
+  assert.equal(dialogs().length, 0);
   assert.equal(h.byLabel("Save").length, 1, "still editing");
   assert.equal(h.savedNow().buttons[0].target, "ssh");
   assert.ok(!h.urls().includes("/api/ssh/disconnect"));
 
   // Confirmed: the old session goes, because its next line would still have
   // landed on the companion computer.
-  let asked = "";
-  window.confirm = (text) => { asked = text; return true; };
   click(h.byLabel("Save")[0]);
   await flushMicrotasks();
-  assert.match(asked, /still running in its terminal/);
+  await answer("Save and close it");
   assert.deepEqual(h.calls.filter((c) => c.url === "/api/ssh/disconnect").map((c) => c.body), [{ name: "schwalby/s" }]);
   assert.equal(h.savedNow().buttons[0].target, "local");
 
@@ -999,7 +1011,6 @@ async function testMovingARunningButtonClosesItsSessionFirst() {
   await flushMicrotasks();
   assert.deepEqual(h.urls().filter((u) => /disconnect|local\/connect|ssh\/send/.test(u)),
     ["/api/ssh/disconnect", "/api/ssh/send", "/api/local/connect", "/api/ssh/send"]);
-  window.confirm = () => true;
   S.destroy(h.container);
 }
 
@@ -1008,12 +1019,10 @@ async function testARenameKeepsTheSession() {
   const h = mount(opts);
   click(h.tool("Edit Start mission"));
   await flushMicrotasks();
-  let asked = 0;
-  window.confirm = () => { asked += 1; return true; };
   typeInto(h.fieldBy("Button label"), "Mission A");
   click(h.byLabel("Save")[0]);
   await flushMicrotasks();
-  assert.equal(asked, 0);
+  assert.equal(dialogs().length, 0, "a rename asks nothing");
   assert.ok(!h.urls().includes("/api/ssh/disconnect"));
   assert.ok(h.tool("Stop Mission A"), "still running, under its new name");
   S.destroy(h.container);
@@ -1025,9 +1034,10 @@ async function testARenameKeepsTheSession() {
   changeTo(moved.select(), "ground");
   click(moved.byLabel("Save")[0]);
   await flushMicrotasks();
-  assert.equal(asked, 1);
+  assert.equal(dialogs().length, 1, "another connection is a move, so it asks");
+  assert.ok(!moved.urls().includes("/api/ssh/disconnect"), "nothing closes before the answer");
+  await answer("Save and close it");
   assert.deepEqual(moved.calls.find((c) => c.url === "/api/ssh/disconnect").body, { name: "schwalby/s" });
-  window.confirm = () => true;
   S.destroy(moved.container);
 }
 
@@ -1037,6 +1047,15 @@ async function testRemovingARunningButtonClosesItsSession() {
   await flushMicrotasks();
   click(h.byLabel("Delete")[0]);
   await flushMicrotasks();
+  assert.match(dialogLines(), /session will be closed/);
+  assert.equal(h.shelf().length, 0, "the editor is still open behind the question");
+  assert.ok(!h.urls().includes("/api/ssh/disconnect"));
+  await answer("Cancel");
+  assert.ok(h.byLabel("Delete").length, "declined: still editing, nothing removed");
+  assert.ok(!h.urls().includes("/api/ssh/disconnect"));
+  click(h.byLabel("Delete")[0]);
+  await flushMicrotasks();
+  await answer("Remove");
   assert.equal(h.shelf().length, 0);
   assert.deepEqual(h.calls.find((c) => c.url === "/api/ssh/disconnect").body, { name: "schwalby/l" });
   S.destroy(h.container);
@@ -1264,27 +1283,51 @@ async function testRightClickOnAnSshCompanionOffersRebootAndShutdown() {
   const labels = rows().map((r) => querySel(r.children, ".option-item-label")[0].textContent);
   assert.deepEqual(labels, ["Reboot", "Shutdown"]);
 
-  window.confirm = () => false;
   click(rows()[0]);
   await flushMicrotasks();
+  assert.equal(dialogs().length, 1, "reboot asks in a dialog");
+  assert.equal(inDialog(".modal-title")[0].textContent, "Reboot Jetson?");
+  assert.equal(h.urls().includes("/api/ssh/power"), false, "nothing is sent before the answer");
+  click(dialogButton("Cancel"));
+  await flushMicrotasks();
+  assert.equal(dialogs().length, 0, "Cancel closes it");
   assert.equal(h.urls().includes("/api/ssh/power"), false, "declining the question sends nothing");
 
   rightClick(h);
-  let asked = "";
-  window.confirm = (text) => { asked = text; return true; };
+  click(rows()[0]);
+  await flushMicrotasks();
+  (inDialog(".icon-btn")[0]._listeners.click || [])[0]();
+  await flushMicrotasks();
+  assert.equal(h.urls().includes("/api/ssh/power"), false, "the close button is a no too");
+
+  rightClick(h);
   click(rows()[1]);
   await flushMicrotasks();
-  assert.match(asked, /Shutdown/);
+  assert.equal(inDialog(".modal-title")[0].textContent, "Shutdown Jetson?");
+  assert.ok(inDialog(".schw-confirm-line").some((l) => /switched on by hand/.test(l.textContent)),
+    "a shutdown says it has to be started again by hand");
+  click(dialogButton("Shutdown"));
+  await flushMicrotasks();
+  assert.equal(dialogs().length, 0, "answered, so closed");
   const run = h.calls.find((c) => c.url === "/api/ssh/power").body;
   assert.deepEqual(run, { name: "companion", action: "shutdown" });
-  window.confirm = () => true;
+
+  rightClick(h);
+  click(rows()[0]);
+  await flushMicrotasks();
+  assert.ok(!inDialog(".schw-confirm-line").some((l) => /by hand/.test(l.textContent)),
+    "a reboot does not claim that");
   S.destroy(h.container);
+  assert.equal(dialogs().length, 0, "closing the plugin takes an open question with it");
 
   const f = mount({ saved: { companion: Object.assign({}, COMPANION, { connection: "companion" }) },
     power: { ok: false, error: "sudo refused the saved password." } });
   await flushMicrotasks();
   rightClick(f);
   click(rows()[0]);
+  await flushMicrotasks();
+  const lastDialog = querySel(body.children, ".modal-overlay").pop();
+  click(querySel(lastDialog.children, ".btn").find((b) => b.children.some((c) => c.textContent === "Reboot")));
   await flushMicrotasks();
   assert.ok(f.consoleLines.some((c) => c.level === "error" && /sudo refused/.test(c.line)));
   S.destroy(f.container);

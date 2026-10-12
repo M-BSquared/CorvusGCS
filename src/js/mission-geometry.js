@@ -24,7 +24,6 @@ Corvus.missionGeometry = (function () {
   const PATTERN_WIDTH_M = { min: 10, max: 2000, def: 100 };
   const PATTERN_CIRCLE_MIN_M = 10;
   const PATTERN_CIRCLE_SEGMENTS = 48;
-  const PATTERN_CIRCLE_POINTS = { min: 8, max: 48 };
   const PATTERN_MITER_LIMIT = 2.5;
 
   // =====================================================================
@@ -377,8 +376,9 @@ Corvus.missionGeometry = (function () {
   }
 
   /** The waypoints that cover a pattern, as {lat, lon}[].
-   *  *kind* is a PATTERNS id; *pts* what the operator clicked: centre and edge
-   *  for a circle, the centre line for a corridor, the corners for an area. */
+   *  *kind* is a PATTERNS id; *pts* what the operator clicked: the centre line
+   *  for a corridor, the corners for an area. A circle is no sweep: it is one
+   *  Circle item, flown round its rim, so it has no waypoints here. */
   function patternWaypoints(kind, pts, opts) {
     const o = opts || {};
     const spacing = clampNumber(o.spacing, PATTERN_SPACING_M.min, PATTERN_SPACING_M.max, PATTERN_SPACING_M.def);
@@ -387,18 +387,7 @@ Corvus.missionGeometry = (function () {
     const frame = localFrame(pts[0]);
     const xy = pts.map(frame.toXY);
     let path = [];
-    if (kind === "pattern_circle") {
-      if (xy.length < 2) return [];
-      const radius = Math.max(PATTERN_CIRCLE_MIN_M, Math.hypot(xy[1].x, xy[1].y));
-      const start = Math.atan2(xy[1].y, xy[1].x);
-      const count = Math.round(clampNumber(
-        (2 * Math.PI * radius) / spacing, PATTERN_CIRCLE_POINTS.min, PATTERN_CIRCLE_POINTS.max,
-        PATTERN_CIRCLE_POINTS.max));
-      for (let i = 0; i <= count; i += 1) {
-        const a = start - (i / count) * 2 * Math.PI;
-        path.push({ x: radius * Math.cos(a), y: radius * Math.sin(a) });
-      }
-    } else if (kind === "pattern_corridor") {
+    if (kind === "pattern_corridor") {
       path = sweepCorridor(xy, width, spacing);
     } else if (kind === "pattern_area") {
       path = sweepPolygon(xy, spacing);
@@ -469,7 +458,6 @@ Corvus.missionGeometry = (function () {
     PATTERN_WIDTH_M,
     PATTERN_CIRCLE_MIN_M,
     PATTERN_CIRCLE_SEGMENTS,
-    PATTERN_CIRCLE_POINTS,
     PATTERN_MITER_LIMIT,
     distanceM,
     lerpPoint,

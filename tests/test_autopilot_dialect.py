@@ -434,13 +434,19 @@ def test_each_stack_reads_its_own_preflight_wording(stack: str, text: str,
     assert autopilot.dialect_for_stack(stack).prearm_failure(text) == reason
 
 
-def test_px4_refuses_a_circle_in_a_mission_and_ardupilot_flies_one() -> None:
+def test_px4_flies_a_circle_as_waypoints_and_ardupilot_flies_it_as_one() -> None:
     """PX4 v1.16 to v1.18 answer NAV_LOITER_TURNS with MAV_MISSION_UNSUPPORTED
-    (mavlink_mission.cpp); ArduCopter, Plane and Rover fly it as a circle."""
+    (mavlink_mission.cpp), so a Circle goes up as the ring of waypoints
+    around it; ArduCopter, Plane and Rover fly the item itself."""
     px4 = autopilot.dialect_for_stack(autopilot.STACK_PX4)
-    assert mv.mavlink.MAV_CMD_NAV_LOITER_TURNS in px4.mission_command_refusals
-    assert autopilot.dialect_for_stack(autopilot.STACK_ARDUPILOT).mission_command_refusals == {}
-    assert autopilot.dialect_for_stack(autopilot.STACK_GENERIC).mission_command_refusals == {}
+    assert px4.mission_circles_as_waypoints is True
+    assert mv.mavlink.MAV_CMD_NAV_LOITER_TURNS not in px4.mission_command_refusals
+    ardupilot = autopilot.dialect_for_stack(autopilot.STACK_ARDUPILOT)
+    assert ardupilot.mission_circles_as_waypoints is False
+    assert ardupilot.mission_command_refusals == {}
+    generic = autopilot.dialect_for_stack(autopilot.STACK_GENERIC)
+    assert generic.mission_circles_as_waypoints is False
+    assert generic.mission_command_refusals == {}
 
 
 def test_only_px4_is_waited_on_for_a_verdict_after_an_upload() -> None:
