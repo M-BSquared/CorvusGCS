@@ -388,6 +388,7 @@ class VehicleRoutes:
             )
             return
         cleaned: list[dict[str, float]] = []
+        ground = autopilot.is_ground_vehicle(self._vehicle_type_id())
         for index, item in enumerate(raw_points):
             if not isinstance(item, dict):
                 self._send_json({"ok": False, "error": f"point {index} must be an object"}, 400)
@@ -395,6 +396,8 @@ class VehicleRoutes:
             lat = item.get("lat")
             lon = item.get("lon")
             alt_agl = item.get("alt_agl")
+            if ground and alt_agl is None:
+                alt_agl = 0.0
             # bool is a subclass of int — reject it so True is never coerced to 1.0
             if isinstance(lat, bool) or not isinstance(lat, (int, float)) or not math.isfinite(float(lat)):
                 self._send_json({"ok": False, "error": f"point {index} lat must be a finite number"}, 400)
@@ -414,7 +417,7 @@ class VehicleRoutes:
             if not -180.0 <= lon_f <= 180.0:
                 self._send_json({"ok": False, "error": f"point {index} lon must be between -180 and 180"}, 400)
                 return
-            if not TAKEOFF_ALTITUDE_MIN_M <= alt_f <= TAKEOFF_ALTITUDE_MAX_M:
+            if not ground and not TAKEOFF_ALTITUDE_MIN_M <= alt_f <= TAKEOFF_ALTITUDE_MAX_M:
                 self._send_json(
                     {"ok": False, "error": f"point {index} alt_agl must be between "
                      f"{TAKEOFF_ALTITUDE_MIN_M:.0f} and {TAKEOFF_ALTITUDE_MAX_M:.0f} m AGL"},

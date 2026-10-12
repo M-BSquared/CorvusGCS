@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.10.09-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.09" />
+  <img src="https://img.shields.io/badge/Version-2026.10.10-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.10" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -130,7 +130,7 @@ the documentation that explains it.
 | 📴 **Work offline** | Nothing loads from the internet. Download named areas with their elevation and buildings in advance. [More](https://m-bsquared.github.io/CorvusGCS/guide/3d-offline.html#offline) |
 | 🧭 **Plan a mission** | Draw it on the map, read it as an altitude profile against the terrain, drag heights on the chart, save, upload, and fly on a second press. [More](https://m-bsquared.github.io/CorvusGCS/guide/mission.html) |
 | 📡 **Connect** | Connects on its own to what is plugged in; serial, UDP and TCP by hand; link quality; automatic reconnect; mirror the link to QGroundControl. [More](https://m-bsquared.github.io/CorvusGCS/guide/connect.html) |
-| 🔧 **Set up** | Airframe drawn to scale, motor test, output protocol, parameters with their defaults, guided calibration, radio, PID tuning and autotune, firmware for both stacks. [More](https://m-bsquared.github.io/CorvusGCS/guide/airframe.html) |
+| 🔧 **Set up** | A first setup that walks a new controller through firmware, aircraft type, calibration and safety, airframe drawn to scale, motor test, output protocol, parameters with their defaults, guided calibration, radio, PID tuning and autotune, firmware for both stacks. [More](https://m-bsquared.github.io/CorvusGCS/guide/airframe.html) |
 | 🛡️ **Set limits** | Maximum distance and height, return profile, a failsafe for every loss, rangefinders and optical flow with one switch, and the battery page. [More](https://m-bsquared.github.io/CorvusGCS/guide/safety.html) |
 | 🛰️ **RTK and Remote ID** | Plug in a base station and corrections flow; NTRIP too. Program SiK radios. Broadcast Remote ID. [More](https://m-bsquared.github.io/CorvusGCS/guide/hardware.html) |
 | 🎥 **Watch the camera** | RTSP or WebRTC cameras in floating windows you can put on a second screen. A frozen picture is never passed off as live. [More](https://m-bsquared.github.io/CorvusGCS/guide/video.html) |

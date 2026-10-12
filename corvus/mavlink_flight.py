@@ -16,7 +16,7 @@ import time
 from pymavlink import mavutil
 from typing import Any
 
-from .autopilot import ModeCommand
+from .autopilot import ModeCommand, is_ground_vehicle
 from .mavlink_common import MAV_RESULT_TEXT, TAKEOFF_ALTITUDE_MAX_M, TAKEOFF_ALTITUDE_MIN_M
 
 logger = logging.getLogger("corvus.mavlink")
@@ -295,6 +295,9 @@ class FlightCommandsMixin:
         most of the world's land is a command to stay put.
         """
         self._set_command_error("")
+        if is_ground_vehicle(self._mav_type_id):
+            self._set_command_error("Takeoff is not available on a rover. Arm it and drive.")
+            return False
         if isinstance(altitude_agl, bool):
             self._set_command_error("Takeoff altitude must be a number")
             return False
@@ -432,6 +435,9 @@ class FlightCommandsMixin:
         """
         with self._operation_lock.priority():
             self._set_command_error("")
+            if is_ground_vehicle(self._mav_type_id):
+                self._set_command_error("Land is not available on a rover. Disarm it to stop.")
+                return False
             nan = float("nan")
             result = self._send_command_and_wait(
                 mavutil.mavlink.MAV_CMD_NAV_LAND,

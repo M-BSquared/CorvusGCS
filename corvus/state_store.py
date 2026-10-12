@@ -109,7 +109,7 @@ class VehicleStateStore:
     IMMEDIATE_KEYS: frozenset[str] = frozenset(
         {"armed", "mode", "link_status", "link_quality", "connected",
          "landed_state", "autotune_state", "link_auto", "link_suggestion",
-         "flight_termination", "kill_switch"}
+         "link_bootloader", "flight_termination", "kill_switch"}
     )
 
     def __init__(self, history_len: int = 600) -> None:
@@ -279,6 +279,11 @@ class VehicleStateStore:
             # it, because the aircraft on the current link may be flying.
             "link_auto": {},
             "link_suggestion": None,
+            # A board sitting in its USB bootloader: null, or {device,
+            # description}. It speaks no MAVLink, so it can never be a link,
+            # and it usually means a controller with no firmware on it. The
+            # first setup wizard offers the Firmware page for it.
+            "link_bootloader": None,
             "time": "",
             "warnings": [],
             "home": [0.0, 0.0],

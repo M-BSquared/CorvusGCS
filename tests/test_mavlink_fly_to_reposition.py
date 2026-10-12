@@ -223,3 +223,33 @@ def test_an_accepted_mission_start_is_not_followed_by_a_mode_change_or_arm() -> 
         "restarted a short mission that had finished"
     )
     assert bridge._store.get_snapshot()["mode"] == "MISSION"
+
+
+def rover_bridge(stack: str, *, armed: bool) -> MavlinkBridge:
+    bridge = bridge_in_the_air(armed=armed, mode="GUIDED")
+    bridge._store.update(landed_state=1, altitude_agl=0.0)
+    bridge._mav_type_id = mavutil.mavlink.MAV_TYPE_GROUND_ROVER
+    bridge._dialect = autopilot.dialect_for_stack(stack)
+    return bridge
+
+
+def test_a_rover_on_px4_drives_a_mission_with_no_takeoff_item() -> None:
+    bridge = rover_bridge(autopilot.STACK_PX4, armed=False)
+    mav = bridge._conn.mav
+
+    assert bridge.fly_to_points([{"lat": 47.3980, "lon": 8.5460}])
+
+    assert mav.int == [], "PX4 reads a reposition as AMSL, and a rover has none"
+    assert mav.counts == [1], "one waypoint, and no NAV_TAKEOFF in front of it"
+
+
+def test_an_armed_ardupilot_rover_gets_the_reposition_at_ground_level() -> None:
+    bridge = rover_bridge(autopilot.STACK_ARDUPILOT, armed=True)
+    mav = bridge._conn.mav
+
+    assert bridge.fly_to_points([{"lat": 47.3980, "lon": 8.5460}])
+
+    assert mav.counts == []
+    assert mav.int[0][3] == mavutil.mavlink.MAV_CMD_DO_REPOSITION
+    assert mav.int[0][2] == mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT
+    assert mav.int[0][12] == 0.0, "no altitude on the ground"

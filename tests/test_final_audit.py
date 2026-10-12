@@ -86,6 +86,7 @@ _EXPECTED_GET = {
     "/api/geofence",
     "/api/config",
     "/api/firmware/status",
+    "/api/first-setup",
     "/api/firmware/catalog",
     "/api/sik/status",
     "/api/rtk/status",
@@ -135,6 +136,7 @@ _EXPECTED_POST = {
     "/api/ssh/connections",
     "/api/ssh/connections/remove",
     "/api/ssh/run",
+    "/api/ssh/power",
     "/api/plugins/settings",
     "/api/plugins/folder",
     "/api/config",
@@ -183,6 +185,7 @@ _EXPECTED_POST = {
     "/api/tiles/regions/rename",
     "/api/tiles/regions/remove",
     "/api/firmware/cancel",
+    "/api/first-setup/airframe",
     # SiK radio sessions are POST including the read: loading settings takes the
     # serial port from the bridge and puts a radio into command mode, which is a
     # side effect on the telemetry link and not a fetch.

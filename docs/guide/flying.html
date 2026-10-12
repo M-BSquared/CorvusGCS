@@ -219,6 +219,26 @@
   <dt>Flight mode</dt>
   <dd>Lists the modes the connected firmware actually has, in the stack's own words ("Return", not "RTL"), and only once the firmware version is known. PX4 sub modes such as Orbit and Position Slow are shown as themselves.</dd>
 </dl>
+<h3 id="rover">Rover and boat</h3>
+<p>
+  Corvus is tuned for aircraft, and that is what it assumes until the vehicle
+  says otherwise. When a rover or a boat connects, the bar and the map menu
+  stop talking about flying:
+</p>
+<ul>
+  <li><strong>TAKEOFF</strong> and <strong>LAND</strong> are gone, along with their altitude panel. The command layer refuses both as well, so a console command or another client cannot send them either.</li>
+  <li>The map menu reads <strong>Drive to this point</strong> and shows no height. <strong>PLAN</strong> becomes <strong>DRIVE TO POINTS</strong>, with no altitude slider, and the button reads <strong>DRIVE</strong>.</li>
+  <li>An armed ArduPilot rover goes to a single point with <code>MAV_CMD_DO_REPOSITION</code> in GUIDED. On PX4, and for more than one point, Corvus uploads a short mission with no takeoff item in front of it.</li>
+  <li><strong>ARM</strong>, <strong>RETURN</strong> and the mode picker stay, and the picker lists the rover's own modes (Manual, Hold, Auto, Guided and so on).</li>
+</ul>
+<p>
+  The setup pages already follow the vehicle: Safety, Tuning, Battery and the
+  other pages show the parameters the rover firmware has. In the
+  <a href="mission.html">Mission planner</a> a rover has no takeoff on its start,
+  no LAND tool and no altitude profile, and an upload that carries a takeoff or
+  a landing is refused with the reason.
+</p>
+
 <p>
   Every command shows its progress on the button and reports the autopilot's
   answer. A rejected command says why, in a notification.

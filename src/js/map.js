@@ -2770,7 +2770,8 @@ Corvus.map = (function () {
       const row = Corvus.ui.menuItem({
         className: "map-context-item",
         icon: action.icon,
-        label: action.label == null ? action.id : action.label,
+        label: typeof action.label === "function" ? action.label(point)
+          : (action.label == null ? action.id : action.label),
         note,
         disabled: !enabled,
         onSelect: () => {

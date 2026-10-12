@@ -32,6 +32,32 @@ Corvus.app = (function () {
        still reads modeSel.value and its "change" event. */
     const modeSel = document.getElementById("modeSelector");
 
+    /* Corvus is tuned for aircraft. A rover or boat keeps ARM, RETURN, PLAN
+       and the mode picker, and loses what has no meaning on the ground:
+       TAKEOFF, LAND and every altitude. Worded from the telemetry snapshot so
+       the bar changes on the heartbeat that names the vehicle. */
+    const isGround = () => !!(Corvus.capabilities && Corvus.capabilities.isGround());
+    let shownGround = null;
+    function adaptToVehicle(ground) {
+      if (ground === shownGround) return;
+      shownGround = ground;
+      btnTakeoff.hidden = ground;
+      btnLand.hidden = ground;
+      if (ground) {
+        document.getElementById("takeoffPanel").hidden = true;
+      }
+      const btnPlanEl = document.getElementById("btnPlan");
+      btnPlanEl.title = ground ? "Plan drive-to-points route" : "Plan fly-to-points mission";
+      modeSel.title = ground ? "Drive Mode" : "Flight Mode";
+      const planTitle = document.getElementById("planTitle");
+      if (planTitle) planTitle.textContent = ground ? "DRIVE TO POINTS" : "FLY TO POINTS";
+      const altRow = document.getElementById("planAltRow");
+      if (altRow) altRow.hidden = ground;
+      const flyLabel = document.getElementById("planFlyLabel");
+      if (flyLabel) flyLabel.textContent = ground ? "DRIVE" : "FLY";
+      btnRTL.title = ground ? "Return to start" : "Return to Launch";
+    }
+
     btnArm.addEventListener("click", async () => {
       const s = Corvus.telemetry.getState();
       const willArm = !s?.armed;
@@ -256,7 +282,9 @@ Corvus.app = (function () {
       const alt = parseFloat(planAlt.value);
       // alt_agl is bounded [1, 50] by the slider; clamp defensively for safety.
       const altAgl = Math.min(50, Math.max(1, isFinite(alt) ? alt : 10));
-      const points = pts.map((p) => ({ lat: p.lat, lon: p.lon, alt_agl: altAgl }));
+      const points = pts.map((p) => (isGround()
+        ? { lat: p.lat, lon: p.lon }
+        : { lat: p.lat, lon: p.lon, alt_agl: altAgl }));
       const attempt = Corvus.topbar.beginCommand("gotopoints");
       Corvus.ui.setBusy(planFly, true);
       try {
@@ -269,7 +297,7 @@ Corvus.app = (function () {
         setPlanPanelVisible(false);
       } catch (error) {
         Corvus.topbar.failCommand(attempt);
-        Corvus.topbar.notifyError(error.message || "Fly to points rejected", attempt);
+        Corvus.topbar.notifyError(error.message || (isGround() ? "Drive to points rejected" : "Fly to points rejected"), attempt);
       } finally {
         Corvus.ui.setBusy(planFly, false);
         refreshPlanFly(); // re-gate from live state (keep the plan so the operator can retry)
@@ -323,7 +351,7 @@ Corvus.app = (function () {
       Corvus.map.setContextActions([
         {
           id: "goto",
-          label: "Fly to this point",
+          label: () => (isGround() ? "Drive to this point" : "Fly to this point"),
           icon: "navigation",
           // The same gate as the PLAN panel's FLY, for the same reason: the
           // bridge arms and starts a mission, and dispatching that against a
@@ -337,12 +365,14 @@ Corvus.app = (function () {
             if (!enabled) {
               return state().connected ? "Arm the vehicle first" : "Not connected";
             }
-            return `${Corvus.units.formatLength(planAltAgl())} AGL`;
+            return isGround() ? "" : `${Corvus.units.formatLength(planAltAgl())} AGL`;
           },
           run: (point) => runMapCommand(
             "gotopoints", "/api/mavlink/gotopoints",
-            { points: [{ lat: point.lat, lon: point.lng, alt_agl: planAltAgl() }] },
-            "Fly to point rejected",
+            { points: [isGround()
+              ? { lat: point.lat, lon: point.lng }
+              : { lat: point.lat, lon: point.lng, alt_agl: planAltAgl() }] },
+            isGround() ? "Drive to point rejected" : "Fly to point rejected",
           ),
         },
         {
@@ -372,6 +402,7 @@ Corvus.app = (function () {
       btnArm.classList.toggle("armed", !!s?.armed);
       const span = btnArm.querySelector("span");
       if (span) span.textContent = s?.armed ? "DISARM" : "ARM";
+      adaptToVehicle(Corvus.capabilities ? Corvus.capabilities.isGround(s) : false);
       showVehicleMode(modeSel, s?.mode || "", s?.mode_label || "");
       // PLAN mirrors the other flight buttons: only actionable against a
       // connected vehicle. On disconnect, also exit planning so the UI never
@@ -581,6 +612,10 @@ Corvus.app = (function () {
     // offline) is scheduled once the setup is closed, so its notice never
     // lands on top of it. maybeOpen never rejects.
     Corvus.welcome.maybeOpen().then(() => Corvus.update.init());
+
+    // A controller nobody has set up yet (or one with no firmware) is offered
+    // the First Setup wizard. Watches telemetry transitions, never polls.
+    Corvus.firstSetup.init();
 
     let userToggled = false;
     document.getElementById("panelHandle").addEventListener("click", () => {

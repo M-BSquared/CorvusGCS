@@ -303,6 +303,26 @@ def vehicle_class(mav_type: Any) -> str:
         return VEHICLE_OTHER
 
 
+def is_ground_vehicle(mav_type: Any) -> bool:
+    """Does this vehicle drive or sail instead of fly (a rover or a boat)?
+
+    The app is tuned for aircraft, so everything unknown counts as one. A
+    ground vehicle is the exception, and the one place that says so: takeoff,
+    land and altitude have no meaning for it, and the UI and the command layer
+    both ask here instead of repeating the MAV_TYPE list.
+    """
+    return vehicle_class(mav_type) == VEHICLE_ROVER
+
+
+# What a ground vehicle cannot do as a mission item. There is no air to take
+# off into or land from, so the planner greys both out for a rover or a boat
+# and an upload that carries one is refused with the reason.
+_GROUND_MISSION_REFUSALS: dict[int, str] = {
+    mavutil.mavlink.MAV_CMD_NAV_TAKEOFF: "A rover drives, it does not take off",
+    mavutil.mavlink.MAV_CMD_NAV_LAND: "A rover drives, it does not land",
+}
+
+
 # ---------------------------------------------------------------------------
 # Command plans
 # ---------------------------------------------------------------------------
@@ -895,10 +915,18 @@ class Dialect:
 
     # --- reporting -----------------------------------------------------
 
+    def mission_refusals(self, mav_type: Any = 0) -> dict[int, str]:
+        """:attr:`mission_command_refusals`, plus what this kind of vehicle cannot do."""
+        if is_ground_vehicle(mav_type):
+            return {**self.mission_command_refusals, **_GROUND_MISSION_REFUSALS}
+        return self.mission_command_refusals
+
     def capabilities(self, mav_type: int = 0) -> dict[str, Any]:
         """The flags the HTTP layer publishes so the UI can adapt."""
         return {
             "stack": self.stack,
+            "vehicle": vehicle_class(mav_type),
+            "ground": is_ground_vehicle(mav_type),
             "label": self.label,
             "shell": self.supports_shell,
             "esc_calibration": self.supports_esc_calibration,

@@ -625,3 +625,49 @@ def test_the_connection_list_says_whether_a_password_is_stored(tmp_path):
     assert listed["companion"]["has_password"] is True
     assert listed["copied"]["has_password"] is False
     assert "hunter2" not in json.dumps(responses[0][0])
+
+
+# ---------------------------------------------------------------------------
+# POST /api/ssh/power
+# ---------------------------------------------------------------------------
+
+def test_power_sends_the_saved_password_to_sudo_on_stdin(tmp_path, monkeypatch):
+    spy = _RunSpy()
+    monkeypatch.setattr("corvus.server.ssh_run_command", spy)
+    handler, responses = _with_saved_connection(tmp_path)
+    handler._api_ssh_power({"name": "companion", "action": "reboot"})
+    call = spy.calls[0]
+    assert call["stdin_data"] == "hunter2\n"
+    assert "hunter2" not in call["command"]
+    assert "sudo -S -p ''" in call["command"]
+    assert "shutdown -r now" in call["command"]
+    assert responses[0][1] == 200
+    assert "hunter2" not in json.dumps(responses[0][0])
+
+
+def test_power_without_a_password_never_waits_for_sudo(tmp_path, monkeypatch):
+    spy = _RunSpy()
+    monkeypatch.setattr("corvus.server.ssh_run_command", spy)
+    handler, _ = _with_saved_connection(tmp_path, password="", key_path="/k")
+    handler._api_ssh_power({"name": "companion", "action": "shutdown"})
+    assert spy.calls[0]["stdin_data"] is None
+    assert "sudo -n shutdown -h now" in spy.calls[0]["command"]
+
+
+def test_power_explains_a_sudo_refusal(tmp_path, monkeypatch):
+    spy = _RunSpy({"ok": False, "exit_status": 1, "stdout": "", "error": "x",
+                   "stderr": "sudo: a password is required"})
+    monkeypatch.setattr("corvus.server.ssh_run_command", spy)
+    handler, responses = _with_saved_connection(tmp_path, password="", key_path="/k")
+    handler._api_ssh_power({"name": "companion", "action": "reboot"})
+    assert "passwordless sudo" in responses[0][0]["error"]
+
+
+def test_power_takes_only_the_two_actions(tmp_path, monkeypatch):
+    spy = _RunSpy()
+    monkeypatch.setattr("corvus.server.ssh_run_command", spy)
+    handler, responses = _with_saved_connection(tmp_path)
+    handler._api_ssh_power({"name": "companion", "action": "rm -rf /"})
+    handler._api_ssh_power({"name": "nobody", "action": "reboot"})
+    assert [r[1] for r in responses] == [400, 400]
+    assert spy.calls == []

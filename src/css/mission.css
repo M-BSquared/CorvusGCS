@@ -719,7 +719,8 @@
 .mission-profile.is-collapsed:not(.is-folding) .mission-profile-note,
 .mission-profile.is-collapsed:not(.is-folding) .mission-aircraft { display: none; }
 .mission-profile.is-folding .mission-profile-plot { flex: 0 0 auto; height: calc(var(--mission-profile-h, 240px) - 34px); }
-.mission-profile.is-collapsed .mission-profile-head { padding-bottom: 6px; }
+.mission-profile.is-collapsed .mission-profile[hidden] { display: none; }
+.mission-profile-head { padding-bottom: 6px; }
 .mission-profile-toggle { margin-left: -6px; flex: 0 0 auto; }
 .mission-profile:not(.is-collapsed) .mission-profile-toggle svg { transform: rotate(180deg); }
 /* The map's own bottom corners sit above the card, and follow it as it folds. */

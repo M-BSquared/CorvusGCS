@@ -110,7 +110,23 @@ function testPeekNeverFetches() {
   assert.equal(requests.length, 0);
 }
 
+async function testOnlyAConnectedRoverOrBoatDrives() {
+  const frame = (type, connected = true) => ({ connected, vehicle_type: type });
+  assert.equal(C.isGround(frame("GROUNDED_ROVER")), true);
+  assert.equal(C.isGround(frame("SURFACE_BOAT")), true);
+  assert.equal(C.isGround(frame("QUADROTOR")), false, "an aircraft is the default");
+  assert.equal(C.isGround(frame("FIXED_WING")), false);
+  assert.equal(C.isGround(frame("GROUNDED_ROVER", false)), false,
+    "a vehicle that is not connected is no rover");
+  assert.equal(C.isGround(frame("")), false);
+  snapshot = frame("GROUNDED_ROVER");
+  assert.equal(C.isGround(), true, "with no frame given it reads the telemetry snapshot");
+  assert.equal(C.moveVerb(), "Drive");
+  assert.equal(C.moveVerb(frame("QUADROTOR")), "Fly");
+}
+
 const tests = [
+  testOnlyAConnectedRoverOrBoatDrives,
   testTheDocumentIsFetchedOncePerStack,
   testConcurrentAsksShareOneRequest,
   testADifferentAircraftIsADifferentAnswer,

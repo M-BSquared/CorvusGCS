@@ -511,6 +511,7 @@ class AutoConnectWatcher:
         snapshot = self._snapshot()
         status = str(snapshot.get("link_status", "") or "").lower()
         ports = classify_ports(self._list_ports())
+        self._publish_bootloader(ports)
 
         link = self._link_connection(snapshot)
         device = _serial_device(link)
@@ -677,6 +678,23 @@ class AutoConnectWatcher:
             )
         self._update_store(link_suggestion=suggestion.as_dict() if suggestion else None)
         return True
+
+    def _publish_bootloader(self, ports: Sequence[PortInfo]) -> None:
+        """Push (or clear) ``link_bootloader``, once per change.
+
+        Compared with what the store holds, so the two-second tick republishes
+        nothing while the same board sits in its bootloader.
+        """
+        found = next(
+            (p for p in ports if is_bootloader_port(p.device, p.hwid, p.description)),
+            None,
+        )
+        current = (self._snapshot().get("link_bootloader") or {}).get("device")
+        if (found.device if found else None) == current:
+            return
+        self._update_store(link_bootloader=(
+            {"device": found.device, "description": found.description} if found else None
+        ))
 
     def _publish_auto(self) -> None:
         self._update_store(link_auto=self._session.as_dict())

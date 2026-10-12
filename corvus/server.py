@@ -92,6 +92,7 @@ from .http_routes import CLIENT_GONE_ERRORS, _config_write_lock, _pending_routes
 from .routes.console import ConsoleRoutes
 from .routes.control import ControlRoutes
 from .routes.firmware import FirmwareRoutes
+from .routes.first_setup import FirstSetupRoutes
 from .routes.geofence import GeofenceRoutes
 from .routes.logs import LogRoutes
 from .routes.mission import MissionRoutes
@@ -980,6 +981,24 @@ def _compose_remote_command(directory: str, command: str, detach: bool) -> str:
     return body
 
 
+_POWER_FLAGS = {"reboot": "-r", "shutdown": "-h"}
+
+
+def _compose_power_command(action: str, has_password: bool) -> str:
+    """The shell line that reboots or powers off the far end.
+
+    ``shutdown ... now`` returns as soon as the request is made, so the
+    connection ends with a real exit status instead of being cut by the reboot.
+    Root runs it directly; anyone else goes through ``sudo``, which reads the
+    saved password from standard input (``-S``, no prompt text) or, without
+    one, refuses to ask (``-n``) so a key login fails with a clear message
+    instead of waiting for a password nobody can type.
+    """
+    run = f"shutdown {_POWER_FLAGS[action]} now"
+    sudo = "sudo -S -p ''" if has_password else "sudo -n"
+    return f'if [ "$(id -u)" -eq 0 ]; then {run}; else {sudo} {run}; fi'
+
+
 def _param_metadata_cache_dir() -> str:
     """Where the opt-in copies of PX4's parameter metadata are kept."""
     return corvus_path("param-metadata")
@@ -1037,6 +1056,7 @@ class CorvusHandler(
     ConsoleRoutes,
     ControlRoutes,
     FirmwareRoutes,
+    FirstSetupRoutes,
     GeofenceRoutes,
     LogRoutes,
     MissionRoutes,
@@ -3005,6 +3025,58 @@ class CorvusHandler(
         # the caller needs the ``stderr`` in the body to say *why* it failed —
         # an error status would leave the UI with nothing but a status line.
         # ``ok`` is the field to branch on.
+        self._send_json(result)
+
+    @route("POST", "/api/ssh/power")
+    def _api_ssh_power(self, payload: dict) -> None:
+        """Reboot or shut down the host of a saved SSH connection.
+
+        Only the two fixed actions are accepted, never a command from the
+        caller. The connection's saved password doubles as the sudo password,
+        sent on standard input; it never leaves the backend and is not echoed.
+        A connection that logs in with a key and has no password needs
+        passwordless sudo, and the reply says so when it does not.
+        """
+        action = payload.get("action")
+        if action not in _POWER_FLAGS:
+            self._send_json({"ok": False, "error": "action must be reboot or shutdown"}, 400)
+            return
+        name = payload.get("name")
+        if not isinstance(name, str) or not name:
+            self._send_json({"ok": False, "error": "name must be a non-empty string"}, 400)
+            return
+        saved = next((e for e in self._live_config().ssh_connections
+                      if isinstance(e, dict) and e.get("name") == name), None)
+        if saved is None:
+            self._send_json({"ok": False, "error": f"no saved connection named {name!r}",
+                             "needs": "connection", "connection": name}, 400)
+            return
+        host = saved.get("host", "")
+        username = saved.get("username", "")
+        if not host or not username:
+            self._send_json({"ok": False, "error": "the connection has no host or user",
+                             "needs": "credentials" if host else "connection",
+                             "connection": name}, 400)
+            return
+        password = saved.get("password") or None
+        key_path = saved.get("key_path") or None
+        sudo_password = password if password and not key_path else None
+        line = _compose_power_command(action, sudo_password is not None)
+        result = ssh_run_command(
+            host=host, command=line, port=_coerce_port(saved.get("port", 22), 22),
+            username=username, password=password, key_path=key_path,
+            stdin_data=f"{sudo_password}\n" if sudo_password is not None else None,
+        )
+        if not result.get("ok"):
+            detail = str(result.get("stderr") or "").lower()
+            if "password is required" in detail or "no tty present" in detail:
+                result["error"] = ("sudo needs a password on this computer. Save the "
+                                   "password with the connection or allow passwordless sudo.")
+            elif "try again" in detail or "incorrect password" in detail:
+                result["error"] = "sudo refused the saved password."
+        if result.pop("auth_failed", False):
+            result.update(needs="credentials", connection=name)
+        result.pop("stdout", None)
         self._send_json(result)
 
     @route("POST", "/api/plugins/settings")

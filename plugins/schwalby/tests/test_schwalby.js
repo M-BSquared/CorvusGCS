@@ -298,6 +298,7 @@ function mount(opts) {
         if (!o.holdPing) return Promise.resolve(res);
         return new Promise((resolve) => { releasePing = () => resolve(res); });
       }
+      if (url === "/api/ssh/power") return Promise.resolve(o.power || { ok: true });
       if (url === "/api/ssh/run") {
         return Promise.resolve(o.run || { ok: true, stdout: "4711", stderr: "", command: body.command });
       }
@@ -1243,6 +1244,52 @@ async function testACompanionWithAConnectionGetsATerminalArrow() {
   S.destroy(h.container);
 }
 
+async function testRightClickOnAnSshCompanionOffersRebootAndShutdown() {
+  const rightClick = (h) => {
+    const ev = { preventDefault() { this.prevented = true; }, clientX: 5, clientY: 5 };
+    (h.container.children[0]._listeners.contextmenu || []).forEach((cb) => cb(ev));
+    return ev;
+  };
+  const rows = () => querySel(body.children, ".option-item");
+
+  const plain = mount({ saved: { companion: COMPANION } });
+  await flushMicrotasks();
+  rightClick(plain);
+  assert.equal(rows().length, 0, "a ping only companion has no power menu");
+  S.destroy(plain.container);
+
+  const h = mount({ saved: { companion: Object.assign({}, COMPANION, { connection: "companion" }) } });
+  await flushMicrotasks();
+  assert.equal(rightClick(h).prevented, true);
+  const labels = rows().map((r) => querySel(r.children, ".option-item-label")[0].textContent);
+  assert.deepEqual(labels, ["Reboot", "Shutdown"]);
+
+  window.confirm = () => false;
+  click(rows()[0]);
+  await flushMicrotasks();
+  assert.equal(h.urls().includes("/api/ssh/power"), false, "declining the question sends nothing");
+
+  rightClick(h);
+  let asked = "";
+  window.confirm = (text) => { asked = text; return true; };
+  click(rows()[1]);
+  await flushMicrotasks();
+  assert.match(asked, /Shutdown/);
+  const run = h.calls.find((c) => c.url === "/api/ssh/power").body;
+  assert.deepEqual(run, { name: "companion", action: "shutdown" });
+  window.confirm = () => true;
+  S.destroy(h.container);
+
+  const f = mount({ saved: { companion: Object.assign({}, COMPANION, { connection: "companion" }) },
+    power: { ok: false, error: "sudo refused the saved password." } });
+  await flushMicrotasks();
+  rightClick(f);
+  click(rows()[0]);
+  await flushMicrotasks();
+  assert.ok(f.consoleLines.some((c) => c.level === "error" && /sudo refused/.test(c.line)));
+  S.destroy(f.container);
+}
+
 async function testThePopupPicksASavedConnection() {
   const h = mount({});
   await flushMicrotasks();
@@ -1434,6 +1481,7 @@ async function run() {
   await testAProbeThatCannotBeMadeSaysWhy();
   await testThePopupSavesClearsAndExits();
   await testACompanionWithAConnectionGetsATerminalArrow();
+  await testRightClickOnAnSshCompanionOffersRebootAndShutdown();
   await testThePopupPicksASavedConnection();
   await testCompanionDialogToggleSwitchesBetweenPingAndSsh();
   await testCompanionDialogOpensWithSshWhenConnectionSaved();

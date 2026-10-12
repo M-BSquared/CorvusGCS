@@ -2005,6 +2005,33 @@ function testCorridorAndCirclePatternsProduceRoutes() {
     "two corners are not an area");
 }
 
+function testARoverStartsWithoutATakeoff() {
+  const was = Corvus.telemetry;
+  const wasCaps = Corvus.capabilities;
+  let state = { connected: true, vehicle_type: "GROUNDED_ROVER" };
+  Corvus.telemetry = { getState: () => state };
+  Corvus.capabilities = { isGround: (s) => !!s && s.vehicle_type === "GROUNDED_ROVER" };
+  try {
+    mission.setPlan({ items: [] });
+    assert.strictEqual(mission._syncDrives(), true, "a rover drives");
+    mission._placeStart(at(48, 11));
+    assert.ok(!mission._items().some((item) => item.type === "takeoff"),
+      "there is no air to take off into");
+
+    state = { connected: true, vehicle_type: "QUADROTOR" };
+    assert.strictEqual(mission._syncDrives(), false, "a quadcopter still flies");
+    mission.setPlan({ items: [] });
+    mission._placeStart(at(48, 11));
+    assert.ok(mission._items().some((item) => item.type === "takeoff"),
+      "an aircraft's start still carries its takeoff");
+  } finally {
+    Corvus.telemetry = was;
+    Corvus.capabilities = wasCaps;
+    mission._syncDrives();
+    mission.setPlan({ items: [] });
+  }
+}
+
 function testPatternCardIgnoresTheButtonsTransform() {
   const body = missionJs.slice(missionJs.indexOf("function syncPatternCard"), missionJs.indexOf("function updateTools"));
   assert.ok(!/getBoundingClientRect/.test(body),
@@ -2335,6 +2362,7 @@ const tests = [
   testCircleIsAPatternNotAToolOfItsOwn,
   testAreaPatternSweepsBackAndForth,
   testCorridorAndCirclePatternsProduceRoutes,
+  testARoverStartsWithoutATakeoff,
   testPatternCardIgnoresTheButtonsTransform,
   testPlacedPatternPointsShareAGroup,
   testPatternCardPinningAndHoverBehavior,

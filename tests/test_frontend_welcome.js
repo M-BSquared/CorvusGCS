@@ -61,18 +61,24 @@ const AVIATION = { length: "ft", distance: "nmi", speed: "kn", temperature: "c" 
 
 function testTheConfigOutranksTheScreen() {
   const c = W.choicesFrom(
-    { theme: { name: "blue" }, ui: { scale: 1.1, units: AVIATION, mission_page: true },
+    { theme: { name: "blue" },
+      ui: { scale: 1.1, units: AVIATION, mission_page: true, console_tab: false },
+      controls: { virtual_joystick: true },
       review: { sensitivity: "strict" }, updates: { check: false } },
     { theme: "green", units: METRIC });
   assert.deepEqual(c, {
-    theme: "blue", units: AVIATION, sensitivity: "strict", missionPage: true, updates: false,
+    theme: "blue", units: AVIATION, sensitivity: "strict", missionPage: true,
+    consoleTab: false, sshTab: true,
+    virtualJoystick: true, arrowKeys: false, wasdKeys: false, updates: false,
   });
 }
 
 function testTheScreenFillsInWhatTheConfigLeavesOut() {
   const c = W.choicesFrom({}, { theme: "green", units: AVIATION });
   assert.deepEqual(c, {
-    theme: "green", units: AVIATION, sensitivity: "normal", missionPage: false, updates: true,
+    theme: "green", units: AVIATION, sensitivity: "normal", missionPage: false,
+    consoleTab: true, sshTab: true,
+    virtualJoystick: false, arrowKeys: false, wasdKeys: false, updates: true,
   });
 }
 
@@ -105,13 +111,16 @@ function testTheSensitivityCarriesTheCaution() {
 
 function testFinishPostsOnlyTheKeysTheSetupOwns() {
   const patch = W.configPatch({
-    theme: "pink", units: AVIATION, sensitivity: "relaxed", missionPage: true, updates: false,
+    theme: "pink", units: AVIATION, sensitivity: "relaxed", missionPage: true,
+    consoleTab: false, sshTab: true,
+    virtualJoystick: true, arrowKeys: false, wasdKeys: true, updates: false,
   });
-  // No `ui.scale`: the interface size is not part of the setup, so Finish must
-  // leave whatever size the station already has.
+  // No `ui.scale` and no `controls.key_gain`: those are not part of the setup,
+  // so Finish must leave the size and key strength the station already has.
   assert.deepEqual(patch, {
     theme: { name: "pink" },
-    ui: { units: AVIATION, mission_page: true },
+    ui: { units: AVIATION, mission_page: true, console_tab: false, ssh_tab: true },
+    controls: { virtual_joystick: true, arrow_keys: false, wasd_keys: true },
     review: { sensitivity: "relaxed" },
     updates: { check: false },
   });

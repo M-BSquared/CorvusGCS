@@ -44,7 +44,15 @@ Corvus.capabilities = (function () {
     calibrations: [],
     modes: [],
     vehicle_type: 0,
+    vehicle: "",
+    ground: false,
   };
+
+  /* MAV_TYPE names (as the telemetry snapshot carries them) of the vehicles
+     that drive or sail. Corvus is tuned for aircraft, so anything not listed
+     here, including a vehicle that is not connected, is treated as one. The
+     backend's autopilot.is_ground_vehicle is the same list. */
+  const GROUND_TYPES = ["GROUNDED_ROVER", "GROUND_ROVER", "SURFACE_BOAT"];
 
   let cached = null;       // the last document we successfully fetched
   let cachedStack = null;  // the stack it was fetched for
@@ -63,6 +71,28 @@ Corvus.capabilities = (function () {
 
   function peek() {
     return cached;
+  }
+
+  /** Does the connected vehicle drive or sail instead of fly? Synchronous,
+   *  from the telemetry snapshot, so a bar can relabel itself on the frame
+   *  the heartbeat arrives rather than after a fetch. */
+  function isGround(state) {
+    let snapshot = state;
+    if (!snapshot) {
+      try {
+        snapshot = Corvus.telemetry && Corvus.telemetry.getState
+          ? Corvus.telemetry.getState() : null;
+      } catch (_err) {
+        snapshot = null;
+      }
+    }
+    if (!snapshot || !snapshot.connected) return false;
+    return GROUND_TYPES.indexOf(String(snapshot.vehicle_type || "")) !== -1;
+  }
+
+  /** The verb a command on the map is worded with: "Fly" or "Drive". */
+  function moveVerb(state) {
+    return isGround(state) ? "Drive" : "Fly";
   }
 
   /**
@@ -111,5 +141,5 @@ Corvus.capabilities = (function () {
     return cached.calibrations.indexOf(name) !== -1;
   }
 
-  return { DEFAULT, get, peek, reset, stack, hasCalibration };
+  return { DEFAULT, get, peek, reset, stack, hasCalibration, isGround, moveVerb, GROUND_TYPES };
 })();

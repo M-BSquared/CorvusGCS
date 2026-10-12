@@ -826,6 +826,82 @@ Corvus.pluginSchwalby = (function () {
       }
     }
 
+    // ---- power menu on the companion (SSH only) -----------------------------
+
+    const POWER_ACTIONS = [
+      { id: "reboot", label: "Reboot", icon: "rotate-cw", note: "Restart the companion computer",
+        done: "Reboot sent" },
+      { id: "shutdown", label: "Shutdown", icon: "power", note: "Power the companion computer off",
+        done: "Shutdown sent" },
+    ];
+    let powerMenu = null;
+
+    function companionName() { return (companion && companion.name) || "Companion computer"; }
+
+    /** Send reboot or shutdown over the companion's saved SSH connection. */
+    function powerCompanion(action, retried) {
+      if (!companion || !companion.connection) return Promise.resolve();
+      if (!retried && !window.confirm(
+        `${action.label} "${companionName()}"?\n\nEverything running on it stops.` +
+        (action.id === "shutdown" ? " It has to be switched on by hand again." : ""))) {
+        return Promise.resolve();
+      }
+      status.show(`${companionName()}: ${action.label.toLowerCase()} ...`, "info");
+      return api.postJson("/api/ssh/power", {
+        name: companion.connection,
+        action: action.id,
+      }).catch(replyOf).then((res) => {
+        if (cancelled) return null;
+        if (!retried && res && res.needs) {
+          return setUpConnection(res).then((saved) => (
+            saved && !cancelled ? powerCompanion(action, true) : null));
+        }
+        const r = res || {};
+        if (!r.ok) {
+          const text = String(r.error || r.stderr || "").trim().split("\n")[0] || "The command failed.";
+          status.show(`${companionName()}: ${text}`, "err");
+          api.console(`${PLUGIN_ID}: ${companionName()}: ${action.label.toLowerCase()} failed, ${text}`, "error");
+        } else {
+          status.show(`${companionName()}: ${action.done}`, "ok");
+          api.console(`${PLUGIN_ID}: ${companionName()}: ${action.done.toLowerCase()}`, "success");
+        }
+        return null;
+      });
+    }
+
+    function renderPowerRows(surface) {
+      const head = document.createElement("div");
+      head.className = "ui-menu-head";
+      head.textContent = companionName();
+      surface.appendChild(head);
+      const rows = POWER_ACTIONS.map((action) => {
+        const row = ui.menuItem({
+          label: action.label,
+          note: action.note,
+          icon: action.icon,
+          onSelect: () => { if (powerMenu) powerMenu.close(false); powerCompanion(action); },
+        });
+        surface.appendChild(row);
+        return row;
+      });
+      ui.refreshIcons();
+      return rows;
+    }
+
+    /* A ping-only companion has no login to send a command through. */
+    companionEl.addEventListener("contextmenu", (event) => {
+      if (!companion || !companion.connection) return;
+      event.preventDefault();
+      if (!powerMenu) {
+        powerMenu = ui.menu({
+          role: "menu",
+          ariaLabel: "Companion computer power",
+          render: renderPowerRows,
+        });
+      }
+      powerMenu.open({ el: companionEl });
+    });
+
     function formatRtt(ms) {
       const n = Number(ms);
       if (!isFinite(n)) return "";
@@ -2083,6 +2159,7 @@ Corvus.pluginSchwalby = (function () {
       stopPolling();
       stopProbing();
       if (companionDialog) companionDialog.close();
+      if (powerMenu) powerMenu.close(false);
       containerEl._schwDestroy = null;
     };
   }

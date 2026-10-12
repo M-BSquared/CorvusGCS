@@ -6,8 +6,8 @@ window.Corvus = window.Corvus || {};
 
   Opens once, on a station that had no config file when Corvus started
   (GET /api/welcome, see corvus/server.py). Its first page has three ways out,
-  each one click: set the station up in three short steps (look, units and
-  flight review, workspace), take the settings from a file exported on another
+  each one click: set the station up in four short steps (look, units and
+  flight review, workspace, controls), take the settings from a file exported on another
   station, or skip straight to the map with the defaults.
 
   Every choice previews live, through the same modules the Settings page
@@ -25,6 +25,20 @@ Corvus.welcome = (function () {
     { id: "look", label: "Look" },
     { id: "units", label: "Units" },
     { id: "workspace", label: "Workspace" },
+    { id: "controls", label: "Controls" },
+  ];
+
+  // Which side panel tabs can be taken away, as Settings > Appearance > Side
+  // panel offers them. LINK and PLUGINS stay.
+  const PANEL_TABS = [
+    { id: "console", key: "consoleTab" },
+    { id: "ssh", key: "sshTab" },
+  ];
+
+  const CONTROL_ROWS = [
+    { key: "virtualJoystick", config: "virtual_joystick", apply: "setEnabled", label: "Virtual joystick" },
+    { key: "arrowKeys", config: "arrow_keys", apply: "setKeysEnabled", label: "Arrow keys" },
+    { key: "wasdKeys", config: "wasd_keys", apply: "setWasdEnabled", label: "WASD keys" },
   ];
 
   const UNIT_ROWS = [
@@ -50,21 +64,27 @@ Corvus.welcome = (function () {
     const c = cfg || {};
     const l = live || {};
     const ui = c.ui || {};
+    const controls = c.controls || {};
     const saved = String((c.review && c.review.sensitivity) || "");
     return {
       theme: Corvus.theme.fromConfig(c) || (Corvus.theme.isKnown(l.theme) ? l.theme : Corvus.theme.DEFAULT),
       units: Corvus.units.fromConfig(c) || Object.assign({}, l.units || Corvus.units.DEFAULTS),
       sensitivity: sensitivities().some((s) => s.id === saved) ? saved : "normal",
       missionPage: !!ui.mission_page,
+      consoleTab: ui.console_tab !== false,
+      sshTab: ui.ssh_tab !== false,
+      virtualJoystick: !!controls.virtual_joystick,
+      arrowKeys: !!controls.arrow_keys,
+      wasdKeys: !!controls.wasd_keys,
       updates: !(c.updates && c.updates.check === false),
     };
   }
 
   /**
-   * The POST /api/config body for *choices*. `ui`, `review` and `updates` are
-   * merged per key by the backend, so this sets exactly these and leaves the
-   * rest, the interface size included: that one is under Settings >
-   * Appearance. Pure.
+   * The POST /api/config body for *choices*. `ui`, `controls`, `review` and
+   * `updates` are merged per key by the backend, so this sets exactly these
+   * and leaves the rest, the interface size and the key strength included:
+   * those are under Settings > Appearance. Pure.
    */
   function configPatch(choices) {
     return {
@@ -72,6 +92,13 @@ Corvus.welcome = (function () {
       ui: {
         units: Object.assign({}, choices.units),
         mission_page: !!choices.missionPage,
+        console_tab: !!choices.consoleTab,
+        ssh_tab: !!choices.sshTab,
+      },
+      controls: {
+        virtual_joystick: !!choices.virtualJoystick,
+        arrow_keys: !!choices.arrowKeys,
+        wasd_keys: !!choices.wasdKeys,
       },
       review: { sensitivity: choices.sensitivity },
       updates: { check: !!choices.updates },
@@ -84,10 +111,26 @@ Corvus.welcome = (function () {
     return { theme, units: Corvus.units.get() };
   }
 
-  /** Put the look back to *c* (theme and units), for Skip. */
+  /** Show or hide one side panel tab on screen. Nothing is written. */
+  function applyTab(id, shown) {
+    if (Corvus.panel && typeof Corvus.panel.setTabHidden === "function") {
+      Corvus.panel.setTabHidden(id, !shown);
+    }
+  }
+
+  /** Switch one input control on the map on or off. Nothing is written. */
+  function applyControl(apply, on) {
+    if (Corvus.joystick && typeof Corvus.joystick[apply] === "function") {
+      Corvus.joystick[apply](on);
+    }
+  }
+
+  /** Put the screen back to *c* (theme, units, tabs and controls), for Skip. */
   function restore(c) {
     Corvus.theme.setTheme(c.theme);
     Corvus.units.set(c.units);
+    PANEL_TABS.forEach((t) => applyTab(t.id, c[t.key]));
+    CONTROL_ROWS.forEach((r) => applyControl(r.apply, c[r.key]));
   }
 
   function markDone() {
@@ -220,7 +263,7 @@ Corvus.welcome = (function () {
           className: "welcome-card welcome-card-primary",
           icon: "sliders-horizontal",
           title: "Set up this station",
-          desc: "Colour theme, units, flight review and workspace.",
+          desc: "Colour theme, units, flight review, workspace and controls.",
           onClick: () => go(0),
         });
         const arrow = document.createElement("span");
@@ -388,6 +431,27 @@ Corvus.welcome = (function () {
             hint: "Adds MISSION to the left rail: plan takeoff, waypoints and landing " +
                   "on a map, then upload. Leave it off for a station flown by hand.",
           }));
+          const tabHints = {
+            console: "The CONSOLE tab: the autopilot's messages and a command line. " +
+                     "Off, the tab is gone. Messages are still collected.",
+            ssh: "The SSH tab: your saved connections and a terminal. Off, the tab " +
+                 "is gone. Connections stay saved and a terminal opens in a window of its own.",
+          };
+          const tabLabels = { console: "MAVLink console tab", ssh: "SSH tab" };
+          PANEL_TABS.forEach((t) => {
+            const sw = Corvus.ui.toggle({
+              id: "welcomeTab_" + t.id,
+              value: choices[t.key],
+              ariaLabel: tabLabels[t.id],
+              onChange: (on) => { choices[t.key] = on; applyTab(t.id, on); },
+            });
+            wrap.appendChild(Corvus.ui.field({
+              label: tabLabels[t.id],
+              control: sw.el,
+              className: "field-switch",
+              hint: tabHints[t.id],
+            }));
+          });
           const updates = Corvus.ui.toggle({
             id: "welcomeUpdates",
             value: choices.updates,
@@ -404,9 +468,40 @@ Corvus.welcome = (function () {
           }));
           const outro = document.createElement("div");
           outro.className = "page-card-desc welcome-outro";
-          outro.textContent = "Connections, the map service, the virtual joystick and " +
-            "everything on these pages are under Settings, whenever you need them.";
+          outro.textContent = "Connections, the map service and everything on " +
+            "these pages are under Settings, whenever you need them.";
           wrap.appendChild(outro);
+          return wrap;
+        },
+
+        controls() {
+          const wrap = document.createDocumentFragment();
+          const hints = {
+            virtualJoystick: "Two-stick pad over the map: left is throttle and yaw, right " +
+              "is pitch and roll. Drag it by the grip bar.",
+            arrowKeys: "Flies pitch and roll from the arrow keys, on screen and on your own keyboard.",
+            wasdKeys: "W and S are thrust, A and D are yaw.",
+          };
+          CONTROL_ROWS.forEach((r) => {
+            const sw = Corvus.ui.toggle({
+              id: "welcomeControl_" + r.key,
+              value: choices[r.key],
+              ariaLabel: r.label,
+              onChange: (on) => { choices[r.key] = on; applyControl(r.apply, on); },
+            });
+            wrap.appendChild(Corvus.ui.field({
+              label: r.label,
+              control: sw.el,
+              className: "field-switch",
+              hint: hints[r.key],
+            }));
+          });
+          const caution = document.createElement("div");
+          caution.className = "welcome-review-caution";
+          caution.textContent = "These controls reach the aircraft only with COM_RC_IN_MODE " +
+            "1, 2 or 3 and a mode that flies from the sticks. All three are off by default. " +
+            "The key strength is under Settings, Appearance.";
+          wrap.appendChild(caution);
           return wrap;
         },
       };

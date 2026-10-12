@@ -161,9 +161,33 @@
   <li><strong>Disarmed.</strong> Refused while armed.</li>
 </ul>
 <p>
+  A new controller is the one exception to "connected": it has no firmware to
+  talk to, so there is no link. See <a href="#blank-board">A controller with no
+  firmware</a>.
+</p>
+<p>
   Both formats are supported. ArduPilot's <code>.apj</code> and PX4's
   <code>.px4</code> are the same kind of container and go through the same
   USB bootloader, so a local file of either kind flashes the same way.
+</p>
+
+<h2 id="blank-board">A controller with no firmware</h2>
+<p>
+  A new flight controller, or one whose last flash was interrupted, sits in its
+  USB bootloader and says nothing over MAVLink. Corvus notices it: the port
+  shows up as a bootloader, a dialog offers the
+  <a href="airframe.html#first-setup">First Setup</a> wizard, and the wizard
+  opens on this page. Flashing then skips the reboot (there is nothing running
+  to reboot) and writes the image straight to the bootloader.
+</p>
+<ul>
+  <li><strong>One board at a time.</strong> With two controllers waiting in their bootloaders Corvus will not guess which one you mean. Unplug one.</li>
+  <li><strong>Only without a link.</strong> While a vehicle is connected the usual path applies: reboot into the bootloader, then flash.</li>
+  <li><strong>The board is picked for you</strong> from the bootloader's name where it carries one, as it is for a running controller.</li>
+</ul>
+<p>
+  When the flash is done, Corvus connects to the board by itself, the same way
+  it does for any controller plugged in.
 </p>
 
 <h2 id="stack">PX4 or ArduPilot</h2>
@@ -240,6 +264,7 @@
   <p class="guide-toc-title" id="toc-title">On this page</p>
   <ul>
     <li><a href="#requirements">Requirements</a></li>
+    <li><a href="#blank-board">A controller with no firmware</a></li>
     <li><a href="#stack">PX4 or ArduPilot</a></li>
     <li><a href="#boards">Picking the board</a></li>
     <li><a href="#developer-builds">Developer builds and peripherals</a></li>

@@ -357,6 +357,7 @@ require("../src/js/setup-sik.js");
 require("../src/js/setup-remoteid.js");
 require("../src/js/setup-parameters.js");
 require("../src/js/setup-firmware.js");
+require("../src/js/setup-firstsetup.js");
 require("../src/js/setup.js");
 
 // ===========================================================================
@@ -377,7 +378,7 @@ async function testTileGridRendersEveryTile() {
   const video = tiles[tiles.length - 1];
   assert.equal(video.disabled, false, "the Video tile opens its page");
   assert.deepEqual(tiles.map((t) => t.dataset.view),
-    ["calibration", "control", "tuning", "motors", "safety", "battery", "sik",
+    ["firstsetup", "calibration", "control", "tuning", "motors", "safety", "battery", "sik",
      "rtk", "remoteid", "parameters", "firmware", "video"],
     "every Setup tile, in order");
 
@@ -386,7 +387,7 @@ async function testTileGridRendersEveryTile() {
   // .tile-title class; .setup-tile is now only the layout modifier.
   const titles = tiles.map((t) => findOneByClass(t, "tile-title").textContent);
   assert.deepEqual(titles,
-    ["Calibration", "Radio Control", "PID Tuning", "Motors", "Safety & Sensors",
+    ["First Setup", "Calibration", "Radio Control", "PID Tuning", "Motors", "Safety & Sensors",
      "Battery & Power", "Telemetry Radio", "RTK GPS", "Remote ID", "Parameters",
      "Firmware", "Video"]);
 }
@@ -402,7 +403,7 @@ async function testClickTileSwapsToSubPageAndBackReturns() {
   Corvus.setup.render(container);
   const tiles = findByClass(container, "setup-tile");
   // Click Calibration → sub-page rendered (back button + calib grid present).
-  fire(tiles[0], "click");
+  fire(tiles.find((t) => t.dataset.view === "calibration"), "click");
   assert.ok(findOneByClass(container, "setup-back"), "back button present on calibration sub-page");
   assert.ok(findOneByClass(container, "calib-cards"), "calibration card list present");
 
@@ -3427,6 +3428,218 @@ function resetSetup() {
   Corvus.setup.render(pageViewEl);
 }
 
+
+// ===========================================================================
+// PART Z — First Setup wizard
+// ===========================================================================
+
+const FS_FRESH = {
+  connected: true, stack: "px4", vehicle: "Copter", transport: "usb",
+  facts: { airframe: "todo", accel: "todo", gyro: "todo", mag: "todo" },
+  reasons: ["No airframe is selected."], needs_setup: true, prompt: true,
+  presets: [
+    { id: 4001, group: "Multirotor", label: "Quadcopter X" },
+    { id: 2100, group: "Fixed wing", label: "Standard plane" },
+  ],
+  preset_current: null, fingerprint: "px4|1|2|x",
+};
+
+function fsActiveStep(container) {
+  const active = findByClass(container, "fs-step").filter((b) => b.classList.contains("active"));
+  return active.length ? active[0].dataset.step : "";
+}
+
+function testFirstSetupStepStatesComeFromTheVehicleWhereItKnows() {
+  const F = Corvus.setupFirstSetup;
+  const fresh = F.stepStates(FS_FRESH, {}, false);
+  assert.equal(fresh.firmware, "done");
+  assert.equal(fresh.aircraft, "todo");
+  assert.equal(fresh.calibration, "todo");
+  assert.equal(fresh.radio, "pending", "a page the vehicle cannot judge starts as not visited");
+
+  const done = F.stepStates(Object.assign({}, FS_FRESH, {
+    facts: { airframe: "done", accel: "done", gyro: "done", mag: "not_required" },
+  }), { radio: true }, false);
+  assert.equal(done.aircraft, "done");
+  assert.equal(done.calibration, "done");
+  assert.equal(done.radio, "done", "a visited page counts");
+
+  assert.equal(F.stepStates(null, {}, false).firmware, "todo", "no controller, no firmware to speak of");
+  assert.equal(F.stepStates(FS_FRESH, {}, true).firmware, "todo", "a board waiting in its bootloader has none");
+  assert.equal(F.calibrationState({ accel: "unknown", gyro: "unknown", mag: "unknown" }), "unknown");
+  assert.equal(F.calibrationState({ accel: "done", gyro: "todo", mag: "done" }), "todo");
+}
+
+function testFirstSetupStartsWhereTheWorkIs() {
+  const F = Corvus.setupFirstSetup;
+  assert.equal(F.initialStep(null, false), "firmware", "nothing connected");
+  assert.equal(F.initialStep(FS_FRESH, true), "firmware", "a blank board in its bootloader");
+  assert.equal(F.initialStep(FS_FRESH, false), "aircraft");
+  assert.equal(F.initialStep(Object.assign({}, FS_FRESH, {
+    facts: { airframe: "done", accel: "todo", gyro: "todo", mag: "todo" },
+  }), false), "calibration");
+  assert.equal(F.initialStep(Object.assign({}, FS_FRESH, {
+    facts: { airframe: "done", accel: "done", gyro: "done", mag: "done" },
+  }), false), "aircraft", "everything done: the top of the list");
+}
+
+async function testFirstSetupTileOpensTheWizardOnTheFirstOpenStep() {
+  Corvus.setupFirstSetup.forget();
+  const fake = makeFakeTelemetry({ urlResponses: { "/api/first-setup": FS_FRESH } });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  pageViewEl = container;
+
+  Corvus.setup.render(container);
+  openTile(container, "firstsetup");
+  await flushMicrotasks();
+
+  assert.equal(findByClass(container, "fs-step").length, 8, "eight steps in the stepper");
+  assert.equal(fsActiveStep(container), "aircraft", "a fresh board opens on the aircraft type");
+  assert.ok(Corvus.setupFirstSetup.isOpen());
+  assert.match(textOf(findOneByClass(container, "fs-bar-title")), /Choose the aircraft type/);
+  // The hosted page's own back button would leave the wizard, so there is one.
+  assert.equal(findByClass(container, "setup-back").length, 1, "only the wizard's back button");
+
+  fire(findOneByClass(container, "setup-back"), "click");
+  assert.ok(findOneByClass(container, "setup-tiles"), "back returns to the tile grid");
+  assert.equal(Corvus.setupFirstSetup.isOpen(), false, "closed once left");
+}
+
+async function testFirstSetupOpensOnTheStepItWasToldTo() {
+  Corvus.setupFirstSetup.forget();
+  const fake = makeFakeTelemetry({
+    urlResponses: {
+      "/api/first-setup": { connected: false, presets: [] },
+      "/api/firmware/status": { state: "idle", transport: "unknown", device: "", can_flash: false,
+        armed: false, bootloader: "", progress: 0, message: "" },
+      "/api/firmware/catalog": { releases: [], cached: [], error: "", dir: "", detected: {}, suggested: {} },
+    },
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  pageViewEl = container;
+  Corvus.setup.render(container);
+
+  Corvus.setup.openView("firstsetup", { step: "firmware" });
+  await flushMicrotasks();
+
+  assert.equal(fsActiveStep(container), "firmware");
+  assert.ok(fake.requests.includes("/api/firmware/status"), "the real Firmware page is hosted");
+  Corvus.setup.teardown();
+  Corvus.setupFirstSetup.forget();
+}
+
+async function testChoosingTheAircraftPostsThePresetAndOffersTheReboot() {
+  Corvus.setupFirstSetup.forget();
+  const fake = makeFakeTelemetry({ urlResponses: { "/api/first-setup": FS_FRESH } });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  pageViewEl = container;
+  Corvus.setup.render(container);
+  Corvus.setup.openView("firstsetup", { step: "aircraft" });
+  await flushMicrotasks();
+
+  const apply = buttonByLabel(container, "Use this aircraft type");
+  const reboot = findOneByClass(container, "reboot-autopilot");
+  assert.equal(apply.disabled, true, "nothing chosen yet");
+  assert.equal(reboot.hidden, true, "no reboot until something is written");
+
+  const card = findByClass(container, "option-card").filter((c) => c.dataset.value === "4001")[0];
+  assert.ok(card, "the quadcopter is offered");
+  fire(card, "click");
+  assert.equal(apply.disabled, false);
+  fire(apply, "click");
+  await flushMicrotasks();
+
+  const post = fake.postCalls.find((c) => c.url === "/api/first-setup/airframe");
+  assert.deepEqual(post && post.payload, { preset: 4001 }, "only the id travels, not parameter values");
+  assert.equal(reboot.hidden, false, "the reboot is offered once it is written");
+  assert.equal(apply.disabled, true, "and the choice cannot be written twice");
+  Corvus.setup.teardown();
+  Corvus.setupFirstSetup.forget();
+}
+
+async function testAnArmedAircraftCannotChangeItsType() {
+  Corvus.setupFirstSetup.forget();
+  const fake = makeFakeTelemetry({
+    urlResponses: { "/api/first-setup": FS_FRESH },
+    state: { armed: true, connected: true },
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  pageViewEl = container;
+  Corvus.setup.render(container);
+  Corvus.setup.openView("firstsetup", { step: "aircraft" });
+  await flushMicrotasks();
+
+  const card = findByClass(container, "option-card").filter((c) => c.dataset.value === "4001")[0];
+  fire(card, "click");
+
+  assert.equal(buttonByLabel(container, "Use this aircraft type").disabled, true);
+  assert.match(textOf(findOneByClass(container, "fs-note")), /Disarm/);
+  Corvus.setup.teardown();
+  Corvus.setupFirstSetup.forget();
+}
+
+async function testAnArdupilotPlaneHasNothingToChooseHere() {
+  Corvus.setupFirstSetup.forget();
+  const fake = makeFakeTelemetry({
+    urlResponses: {
+      "/api/first-setup": { connected: true, stack: "ardupilot", vehicle: "Plane", presets: [],
+        facts: { airframe: "unknown", accel: "done", gyro: "not_required", mag: "done" },
+        preset_current: null },
+    },
+  });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  pageViewEl = container;
+  Corvus.setup.render(container);
+  Corvus.setup.openView("firstsetup", { step: "aircraft" });
+  await flushMicrotasks();
+
+  assert.equal(findByClass(container, "option-card").length, 0);
+  assert.match(textOf(findOneByClass(container, "fs-note")), /nothing to choose/);
+  Corvus.setup.teardown();
+  Corvus.setupFirstSetup.forget();
+}
+
+async function testTheStepperIsAMapNotAGate() {
+  Corvus.setupFirstSetup.forget();
+  const fake = makeFakeTelemetry({ urlResponses: { "/api/first-setup": FS_FRESH } });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  pageViewEl = container;
+  Corvus.setup.render(container);
+  Corvus.setup.openView("firstsetup", { step: "finish" });
+  await flushMicrotasks();
+
+  assert.equal(fsActiveStep(container), "finish", "any step can be opened directly");
+  const rows = findByClass(container, "fs-summary-row");
+  assert.equal(rows.length, 7);
+  assert.match(textOf(findOneByClass(container, "fs-note")), /not marked done/);
+  Corvus.setup.teardown();
+  Corvus.setupFirstSetup.forget();
+}
+
+async function testLeavingTheWizardReleasesItsSubscription() {
+  Corvus.setupFirstSetup.forget();
+  const fake = makeFakeTelemetry({ urlResponses: { "/api/first-setup": FS_FRESH } });
+  Corvus.telemetry = fake.telemetry;
+  const container = makeEl("div");
+  pageViewEl = container;
+  Corvus.setup.render(container);
+  Corvus.setup.openView("firstsetup", { step: "aircraft" });
+  await flushMicrotasks();
+  const before = fake.unsubCalls;
+
+  Corvus.setup.teardown();
+
+  assert.ok(fake.unsubCalls > before, "the wizard's telemetry subscription is released");
+  assert.equal(Corvus.setupFirstSetup.isOpen(), false);
+  Corvus.setupFirstSetup.forget();
+}
+
 async function withReset(fn) {
   resetSetup();
   return fn();
@@ -3440,6 +3653,16 @@ async function run() {
   await withReset(testTeardownRunsOnSwap);
   await withReset(testReRenderTearsDownActiveSubPage);
   await withReset(testVehicleInfoUpdatesLive);
+
+  await withReset(testFirstSetupStepStatesComeFromTheVehicleWhereItKnows);
+  await withReset(testFirstSetupStartsWhereTheWorkIs);
+  await withReset(testFirstSetupTileOpensTheWizardOnTheFirstOpenStep);
+  await withReset(testFirstSetupOpensOnTheStepItWasToldTo);
+  await withReset(testChoosingTheAircraftPostsThePresetAndOffersTheReboot);
+  await withReset(testAnArmedAircraftCannotChangeItsType);
+  await withReset(testAnArdupilotPlaneHasNothingToChooseHere);
+  await withReset(testTheStepperIsAMapNotAGate);
+  await withReset(testLeavingTheWizardReleasesItsSubscription);
 
   await withReset(testTheAirframeCardOwnsTheClassAndTheMotorCount);
   await withReset(testChangingTheAirframeTypeWritesAndRedraws);

@@ -16,7 +16,10 @@ window.Corvus = window.Corvus || {};
  *
  * Backend contract (drives the UI; do not flash from the frontend's own logic):
  *   GET  /api/firmware/status     {state,transport,device,can_flash,armed,
- *                                  progress,message}
+ *                                  bootloader,progress,message}
+ *                                  `bootloader` is the port of a board that
+ *                                  waits in its bootloader with no link (a new
+ *                                  controller); it is flashed directly.
  *   GET  /api/firmware/catalog[?refresh=1]
  *                                  {releases:[{tag,name,prerelease,
  *                                   vendor,vehicle,boards:[
@@ -823,8 +826,10 @@ Corvus.setupFirmware = (function () {
       const armed = !!st.armed || isArmedFromTelemetry();
       const canFlash = !!st.can_flash;
 
-      setRowValue(transportRow, transportLabel(transport));
-      setRowValue(deviceRow, st.device || "—");
+      // A board waiting in its bootloader has no link, so no transport: say
+      // what is actually there instead of "Unknown".
+      setRowValue(transportRow, st.bootloader ? "USB bootloader" : transportLabel(transport));
+      setRowValue(deviceRow, st.bootloader || st.device || "—");
 
       // Gate banner: shown when not can_flash. Append the current transport so
       // the operator sees exactly why flashing is blocked right now.
@@ -910,9 +915,14 @@ Corvus.setupFirmware = (function () {
       // Re-fetch /api/firmware/status only when the link/armed signature
       // changes (avoids spamming the endpoint on every telemetry frame — the
       // transport only changes when the connection changes).
-      if (connected !== state.lastConnected || armed !== state.lastArmed) {
+      // A controller plugged in with no firmware appears as a bootloader
+      // port, not as a link, so that is part of the signature too.
+      const waiting = (t.link_bootloader && t.link_bootloader.device) || "";
+      if (connected !== state.lastConnected || armed !== state.lastArmed
+          || waiting !== state.lastBootloader) {
         state.lastConnected = connected;
         state.lastArmed = armed;
+        state.lastBootloader = waiting;
         refreshStatus();
       }
     }

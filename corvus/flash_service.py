@@ -16,6 +16,11 @@ synchronously on that thread):
   4. ``MavlinkBridge.set_connection`` + ``start()`` — reconnect the GCS to the
      (newly flashed) FC. Skipped during shutdown so a tear-down never respawns
      the bridge.
+
+A controller with no firmware (a new board, or one whose flash was interrupted)
+has no MAVLink to reboot, but it is already sitting in its bootloader. When no
+vehicle is linked and exactly one board shows up in its bootloader, step 1 is
+skipped and that port is flashed directly. Everything else is unchanged.
 """
 from __future__ import annotations
 
@@ -26,6 +31,7 @@ from collections.abc import Callable
 
 from .firmware_catalog import FirmwareCatalog
 from .firmware_uploader import FirmwareUploader, parse_firmware_image
+from .serial_ports import is_bootloader_port
 
 if TYPE_CHECKING:  # avoid an import cycle at runtime
     from .mavlink_bridge import MavlinkBridge
@@ -60,10 +66,12 @@ class FlashService:
         mavlink: MavlinkBridge,
         store: VehicleStateStore,
         catalog: FirmwareCatalog | None = None,
+        list_ports_fn: Callable[[], list[dict[str, Any]]] | None = None,
     ) -> None:
         self.mavlink = mavlink
         self._store = store
         self.catalog = catalog
+        self._list_ports = list_ports_fn
         self._lock = threading.Lock()
         self._state = "idle"
         self._percent = 0
@@ -80,6 +88,42 @@ class FlashService:
         self._shutting_down = False
 
     # ------------------------------------------------------------------
+    # A board that is already in its bootloader
+    # ------------------------------------------------------------------
+
+    def bootloader_ports(self) -> list[dict[str, Any]]:
+        """Serial ports whose descriptor says "flight controller in its bootloader"."""
+        lister = self._list_ports or getattr(self.mavlink, "list_serial_ports", None)
+        if lister is None:
+            return []
+        try:
+            rows = lister() or []
+        except Exception:  # noqa: BLE001 - enumeration is best-effort
+            logger.debug("bootloader port enumeration failed", exc_info=True)
+            return []
+        return [
+            row for row in rows
+            if is_bootloader_port(str(row.get("device", "") or ""),
+                                  str(row.get("hwid", "") or ""),
+                                  str(row.get("description", "") or ""))
+        ]
+
+    def bootloader_device(self) -> str:
+        """The one bootloader port that may be flashed without a link, or "".
+
+        Only while no vehicle is linked (a linked vehicle takes the normal
+        path, and its own bootloader reboot is what makes the port appear), and
+        only when there is exactly one: with two boards waiting, guessing is
+        how the wrong one gets erased.
+        """
+        if self._store.get_snapshot().get("connected"):
+            return ""
+        ports = self.bootloader_ports()
+        if len(ports) != 1:
+            return ""
+        return str(ports[0].get("device", "") or "")
+
+    # ------------------------------------------------------------------
     # Status (HTTP GET /api/firmware/status)
     # ------------------------------------------------------------------
 
@@ -89,6 +133,7 @@ class FlashService:
         transport = mavlink.transport() if mavlink is not None else "unknown"
         device = mavlink.serial_device() if mavlink is not None else ""
         armed = bool(self._store.get_snapshot().get("armed"))
+        bootloader = self.bootloader_device()
         with self._lock:
             state = self._state
             percent = self._percent
@@ -98,8 +143,11 @@ class FlashService:
             "transport": transport,
             "device": device,
             # can_flash is the conjunction: USB link AND idle AND disarmed.
-            "can_flash": bool(mavlink is not None and mavlink.is_direct_usb()
-                              and state not in BUSY_STATES and not armed),
+            "can_flash": bool(
+                mavlink is not None and state not in BUSY_STATES
+                and (bool(bootloader) or (mavlink.is_direct_usb() and not armed))),
+            # The port of a board waiting in its bootloader, or "".
+            "bootloader": bootloader,
             "armed": armed,
             "progress": percent,
             "message": message,
@@ -118,10 +166,11 @@ class FlashService:
         """
         if self.mavlink is None:
             return "no autopilot connection"
-        if not self.mavlink.is_direct_usb():
-            return NON_USB_GATE_MESSAGE.format(transport=self.mavlink.transport())
-        if self._store.get_snapshot().get("armed"):
-            return "cannot flash while armed"
+        if not self.bootloader_device():
+            if not self.mavlink.is_direct_usb():
+                return NON_USB_GATE_MESSAGE.format(transport=self.mavlink.transport())
+            if self._store.get_snapshot().get("armed"):
+                return "cannot flash while armed"
         with self._lock:
             if self._state in BUSY_STATES:
                 return "flash already in progress"
@@ -155,12 +204,13 @@ class FlashService:
                 self.last_error = "flash already in progress"
                 return False
             conn = self.mavlink.connection_string()
+            bootloader = self.bootloader_device()
             self._cancel.clear()
             self._state = "flashing"
             self._percent = 0
             self._message = "Preparing to flash…"
             self._worker = threading.Thread(
-                target=self._run, args=(conn, image, board_id), name="firmware-flash",
+                target=self._run, args=(conn, image, board_id, bootloader), name="firmware-flash",
                 daemon=True,
             )
             self._worker.start()
@@ -199,19 +249,20 @@ class FlashService:
                 self.last_error = "flash already in progress"
                 return False
             conn = self.mavlink.connection_string()
+            bootloader = self.bootloader_device()
             self._cancel.clear()
             self._state = "downloading"
             self._percent = 0
             self._message = message
             self._worker = threading.Thread(
-                target=self._run_release, args=(conn, entry),
+                target=self._run_release, args=(conn, entry, bootloader),
                 name="firmware-download", daemon=True,
             )
             self._worker.start()
         self._notify_listeners({"state": "downloading", "percent": 0, "message": message})
         return True
 
-    def _run_release(self, conn: str, entry: dict[str, Any]) -> None:
+    def _run_release(self, conn: str, entry: dict[str, Any], bootloader: str = "") -> None:
         """Download worker: fetch (or reuse the cache), then hand off to _run."""
         name = str(entry.get("name", ""))
         try:
@@ -244,17 +295,25 @@ class FlashService:
 
         # Re-check the gate: the download took time, and the vehicle may have
         # armed or the cable may have been pulled since the operator pressed go.
-        refusal = self._gate_for_resume()
+        refusal = self._gate_for_resume(bootloader)
         if refusal:
             self._set("failed", 0, refusal)
             return
         self._set("flashing", 0, "Preparing to flash…")
-        self._run(conn, image, board_id)
+        self._run(conn, image, board_id, bootloader)
 
-    def _gate_for_resume(self) -> str | None:
-        """The gate, minus the busy check — this job IS the busy one."""
+    def _gate_for_resume(self, bootloader: str = "") -> str | None:
+        """The gate, minus the busy check — this job IS the busy one.
+
+        A flash that started on a board in its bootloader resumes only while
+        that same board is still the one waiting there.
+        """
         if self.mavlink is None:
             return "no autopilot connection"
+        if bootloader:
+            if self.bootloader_device() != bootloader:
+                return "the controller left its bootloader"
+            return None
         if not self.mavlink.is_direct_usb():
             return NON_USB_GATE_MESSAGE.format(transport=self.mavlink.transport())
         if self._store.get_snapshot().get("armed"):
@@ -265,24 +324,31 @@ class FlashService:
     # Worker
     # ------------------------------------------------------------------
 
-    def _run(self, conn: str, image: bytes, board_id: int | None = None) -> None:
+    def _run(self, conn: str, image: bytes, board_id: int | None = None,
+             bootloader: str = "") -> None:
         """Upload worker: reboot -> stop bridge -> flash -> (re)connect bridge.
 
         *board_id* is the board the image was built for, or None for a raw
         binary; the uploader checks it against the bootloader before erasing.
+        *bootloader* is the port of a board that is already in its bootloader:
+        there is nothing to reboot, so the reboot is skipped and that port is
+        flashed.
         """
-        self._set("flashing", 0, "Rebooting autopilot into bootloader…")
         uploader: FirmwareUploader | None = None
         try:
-            if not self.mavlink.reboot_to_bootloader():
-                self._set("failed", 0, "Reboot to bootloader rejected. Is the vehicle armed?")
-                return
+            if bootloader:
+                self._set("flashing", 0, "Controller found in its bootloader…")
+            else:
+                self._set("flashing", 0, "Rebooting autopilot into bootloader…")
+                if not self.mavlink.reboot_to_bootloader():
+                    self._set("failed", 0, "Reboot to bootloader rejected. Is the vehicle armed?")
+                    return
             # Release the bridge so the uploader can own the serial device.
             try:
                 self.mavlink.stop()
             except Exception:  # noqa: BLE001 - bridge may already be tearing down
                 logger.debug("mavlink.stop() during flash raised", exc_info=True)
-            device = self.mavlink.serial_device()
+            device = bootloader or self.mavlink.serial_device()
             if not device:
                 self._set("failed", 0, "no serial device for bootloader")
                 return

@@ -18,6 +18,7 @@ from pymavlink import mavutil
 
 from . import geofence
 from . import mission as mission_plan
+from .autopilot import is_ground_vehicle
 from .mavlink_common import TAKEOFF_ALTITUDE_MAX_M, TAKEOFF_ALTITUDE_MIN_M, _PendingAck
 
 logger = logging.getLogger("corvus.mavlink")
@@ -191,7 +192,7 @@ class MissionProtocolMixin:
         on it rather than letting a plan be drawn that the upload refuses.
         """
         return {"mission_unsupported": mission_plan.refused_item_types(
-            self._dialect.mission_command_refusals)}
+            self._dialect.mission_refusals(self._mav_type_id))}
 
     def _handle_mission_request(self, msg: Any, as_int: bool) -> None:
         """Serve one MISSION_ITEM(_INT) during an upload we initiated."""
@@ -586,6 +587,7 @@ class MissionProtocolMixin:
             )
             return None
         cleaned: list[tuple[float, float, float]] = []
+        ground = is_ground_vehicle(self._mav_type_id)
         for idx, entry in enumerate(points):
             if not isinstance(entry, dict):
                 self._set_command_error(f"point {idx} must be an object")
@@ -593,6 +595,8 @@ class MissionProtocolMixin:
             lat = self._fly_to_point_number(entry.get("lat"))
             lon = self._fly_to_point_number(entry.get("lon"))
             alt = self._fly_to_point_number(entry.get("alt_agl"))
+            if ground and entry.get("alt_agl") is None:
+                alt = 0.0
             if lat is None:
                 self._set_command_error(f"point {idx} lat must be a number")
                 return None
@@ -608,7 +612,9 @@ class MissionProtocolMixin:
             if alt is None:
                 self._set_command_error(f"point {idx} alt_agl must be a number")
                 return None
-            if not math.isfinite(alt) or not (
+            if ground:
+                alt = 0.0
+            elif not math.isfinite(alt) or not (
                 TAKEOFF_ALTITUDE_MIN_M <= alt <= TAKEOFF_ALTITUDE_MAX_M
             ):
                 self._set_command_error(
@@ -813,7 +819,8 @@ class MissionProtocolMixin:
                 return None
             frame = mavutil.mavlink.MAV_FRAME_GLOBAL
             altitude = float(amsl)
-        if not self._enter_guided("Fly to point"):
+        action = "Drive to point" if is_ground_vehicle(self._mav_type_id) else "Fly to point"
+        if not self._enter_guided(action):
             return False
         result = self._send_command_int_and_wait(
             mavutil.mavlink.MAV_CMD_DO_REPOSITION, frame,
@@ -824,11 +831,26 @@ class MissionProtocolMixin:
         if result == mavutil.mavlink.MAV_RESULT_UNSUPPORTED:
             return None
         if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-            return self._command_failure("Fly to point", result)
-        self._console_publish(
-            "GOTOPOINTS", f"Flying to point at {alt_agl:.0f} m AGL", "success",
-        )
+            return self._command_failure(action, result)
+        if is_ground_vehicle(self._mav_type_id):
+            self._console_publish("GOTOPOINTS", "Driving to point", "success")
+        else:
+            self._console_publish(
+                "GOTOPOINTS", f"Flying to point at {alt_agl:.0f} m AGL", "success",
+            )
         return True
+
+    def _can_reposition(self, ground: bool, on_ground: bool) -> bool:
+        """Is one point best sent as a DO_REPOSITION rather than a mission?
+
+        An aircraft that is in the air, yes. A rover has no air to be in, so it
+        is armed instead, and only on ArduPilot: PX4 reads a reposition's
+        altitude as AMSL and a rover has none to give.
+        """
+        if not ground:
+            return not on_ground
+        relative = self._dialect.reposition_altitude_frame(self._mav_type_id) == "relative"
+        return relative and bool(self._store.get_snapshot().get("armed"))
 
     def fly_to_points(self, points: list[dict[str, float]]) -> bool:
         """Fly to the given points in order (Punktabflug) by uploading a mission.
@@ -846,19 +868,21 @@ class MissionProtocolMixin:
         """
         with self._operation_lock:
             self._set_command_error("")
+            ground = is_ground_vehicle(self._mav_type_id)
+            label = "Drive to points" if ground else "Fly to points"
             cleaned = self._validate_fly_to_points(points)
             if cleaned is None:
                 return False
             if not self._connection_ready():
-                return self._command_failure("Fly to points", -2)
+                return self._command_failure(label, -2)
             # No altitude-reference gate here, on purpose. There used to be
             # one, and it was pure ceremony: every item below is built in
             # MAV_FRAME_GLOBAL_RELATIVE_ALT, whose z *is* the AGL number the
             # operator typed, so the AMSL value the gate computed was thrown
             # away without ever being sent. It refused missions over a
             # conversion the mission does not need.
-            on_ground = not self._is_airborne()
-            if not on_ground and len(cleaned) == 1:
+            on_ground = not ground and not self._is_airborne()
+            if len(cleaned) == 1 and self._can_reposition(ground, on_ground):
                 handled = self._reposition_to(*cleaned[0])
                 if handled is not None:
                     return handled
@@ -889,17 +913,17 @@ class MissionProtocolMixin:
             ack = self._upload_mission(items)
             if ack != mavutil.mavlink.MAV_MISSION_ACCEPTED:
                 result = ack if ack < 0 else self._mission_ack_to_result(ack)
-                return self._command_failure("Fly to points", result)
+                return self._command_failure(label, result)
             # Not a plan: the Mission page's plan is no longer what is on board.
             self._note_vehicle_mission(None)
 
             self._console_publish(
                 "GOTOPOINTS", "Mission accepted; starting …", "info",
             )
-            if not self._start_uploaded_mission("Fly to points", planned):
+            if not self._start_uploaded_mission(label, planned):
                 return False
 
-            self._console_publish("GOTOPOINTS", "Fly to points started", "success")
+            self._console_publish("GOTOPOINTS", f"{label} started", "success")
             return True
 
     # ------------------------------------------------------------------
@@ -997,7 +1021,7 @@ class MissionProtocolMixin:
         fails the whole transfer with a bare UNSUPPORTED, which tells the
         operator neither which item nor what to use instead.
         """
-        refusals = self._dialect.mission_command_refusals
+        refusals = self._dialect.mission_refusals(self._mav_type_id)
         for number, entry in enumerate(items, start=1):
             try:
                 command = int(entry.get("command"))

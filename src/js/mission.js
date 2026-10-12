@@ -380,6 +380,14 @@ Corvus.mission = (function () {
     { value: "vtol", label: "VTOL", types: ["VTOL_DUOROTOR", "VTOL_QUADROTOR", "VTOL_TILTROTOR"] },
   ];
 
+  /** Does the connected vehicle drive or sail? Then the plan has no takeoff,
+   *  no landing and no heights: it is a route on the ground. */
+  function vehicleIsGround() {
+    const capabilities = Corvus.capabilities;
+    return !!(capabilities && typeof capabilities.isGround === "function"
+      && capabilities.isGround(connectedState()));
+  }
+
   /** The connected aircraft's state, or null with nothing connected. */
   function connectedState() {
     const state = Corvus.telemetry && typeof Corvus.telemetry.getState === "function"
@@ -663,6 +671,9 @@ Corvus.mission = (function () {
   // Cached rather than read per draw: this decides what the panel and the map
   // show, and telemetry arrives many times a second.
   let hovers = false;
+  // Whether the connected vehicle drives instead of flying, cached like
+  // `hovers`: it decides which tools and fields the page offers.
+  let drives = false;
   // What the plan is flown by (see AIRCRAFT), or null when nobody said. Locked
   // while the connected aircraft names it.
   let aircraft = null;
@@ -919,7 +930,7 @@ Corvus.mission = (function () {
       if (!lngLat) return null;
       item.lat = lngLat.lat;
       item.lon = lngLat.lng != null ? lngLat.lng : lngLat.lon;
-      item.alt = type === "land" ? 0 : suggestedAltitude(index);
+      item.alt = type === "land" || drives ? 0 : suggestedAltitude(index);
     }
     Object.keys(spec.params).forEach((key) => { item[key] = spec.params[key].def; });
     // No speed of its own: a new point is flown at whatever the plan, or the
@@ -950,7 +961,7 @@ Corvus.mission = (function () {
       if (!keepSelection) selectedId = tied.id;
       return tied;
     }
-    if (items.some((item) => item.type === "takeoff")) return null;
+    if (drives || items.some((item) => item.type === "takeoff")) return null;
     const takeoff = addItem("takeoff", { lat, lon }, 0);
     if (takeoff) takeoff.alt = DEFAULT_ALT_M;
     return takeoff;
@@ -1156,6 +1167,7 @@ Corvus.mission = (function () {
     profileEl = document.createElement("div");
     profileEl.className = "mission-profile-plot";
     profileWrap.append(profileHead, profileEl);
+    profileWrap.hidden = drives;
     page.appendChild(profileWrap);
 
     pageEl = page;
@@ -1239,6 +1251,8 @@ Corvus.mission = (function () {
     // and it can arrive, change or go away while the page is open. Only a
     // CHANGE redraws: the state itself lands on every telemetry frame.
     hovers = vehicleHovers();
+    drives = vehicleIsGround();
+    applyGround();
     adoptVehicleAircraft();
     loadReturnProfile();
     loadRefusals();
@@ -1261,6 +1275,13 @@ Corvus.mission = (function () {
     document.addEventListener("keydown", onKey, true);
   }
 
+  /** Show the page the way a driving vehicle needs it: no altitude profile,
+   *  and a tool bar without LAND. Called when the kind of vehicle changes. */
+  function applyGround() {
+    if (profileWrapEl) profileWrapEl.hidden = drives;
+    if (toolsEl) buildTools();
+  }
+
   /** Everything a telemetry frame can change on this page besides the
    *  mission's progress: the aircraft's mark, a start that follows it, the
    *  kind of aircraft, what the stack refuses, and the warnings and tools
@@ -1275,7 +1296,13 @@ Corvus.mission = (function () {
     const wasLocked = aircraftLocked;
     const adopted = adoptVehicleAircraft();
     if (aircraftLocked !== wasLocked) loadReturnProfile();
-    if (moved || next !== hovers || adopted) {
+    const nextGround = vehicleIsGround();
+    const groundChanged = nextGround !== drives;
+    if (groundChanged) {
+      drives = nextGround;
+      applyGround();
+    }
+    if (moved || next !== hovers || adopted || groundChanged) {
       hovers = next;
       vehicleSeen = vehicleStart(state) != null;
       offsetFar = (startOffsetM(state) || 0) > START_OFFSET_WARN_M;
@@ -1435,6 +1462,7 @@ Corvus.mission = (function () {
   function buildTools() {
     Corvus.ui.clear(toolsEl);
     TOOLS.forEach((entry) => {
+      if (drives && entry.id === "land") return;
       if (entry.id.indexOf("divider") === 0) {
         const divider = document.createElement("div");
         divider.className = "fa-divider";
@@ -1444,7 +1472,8 @@ Corvus.mission = (function () {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "fa-btn";
-      button.title = entry.title;
+      button.title = drives && entry.id === "home"
+        ? "Set the start: the vehicle starts here" : entry.title;
       button.dataset.tool = entry.id;
       if (toolActive(entry.id)) button.classList.add("active");
       button.appendChild(Corvus.ui.icon(entry.icon, 17));
@@ -3852,7 +3881,9 @@ Corvus.mission = (function () {
       }));
       detailEl.appendChild(grid);
 
-      if (item.type !== "land") {
+      if (drives) {
+        detailEl.appendChild(speedField(item));
+      } else if (item.type !== "land") {
         // Height and speed on one row: the speed box used to be the last field
         // in a panel capped at 42% of the sidebar, below the fold, where an
         // operator looking for a per-point speed concluded there was none.
@@ -4769,10 +4800,13 @@ Corvus.mission = (function () {
     // "WHERE THE AIRCRAFT STARTS").
     const offset = startOffsetM();
     if (offset != null && offset > START_OFFSET_WARN_M) {
-      say(`The aircraft is ${formatDistance(Math.round(offset))} from the start.`,
-        "It takes off where it stands, not at the start, and every height in the plan is "
-        + "measured from where it takes off. Press AIRCRAFT to start the plan where the "
-        + "aircraft is, or carry the aircraft to the start.");
+      say(`The ${drives ? "vehicle" : "aircraft"} is ${formatDistance(Math.round(offset))} from the start.`,
+        drives
+          ? "It drives the route from where it stands, not from the start. Press AIRCRAFT to "
+            + "start the plan where the vehicle is, or drive it to the start."
+          : "It takes off where it stands, not at the start, and every height in the plan is "
+            + "measured from where it takes off. Press AIRCRAFT to start the plan where the "
+            + "aircraft is, or carry the aircraft to the start.");
     }
     // Refused by the upload anyway, with the same reason; said here, while
     // the plan is still being drawn.
@@ -4800,7 +4834,9 @@ Corvus.mission = (function () {
     const ends = endIndex();
     if (ends < 0 && items.some((item) => TYPES[item.type].position && item.type !== "takeoff")) {
       say("The mission has no ending.",
-        "Add a landing or a return, or the aircraft stays at the last point when it is done.");
+        drives
+          ? "Add a return, or the vehicle stops at the last point when it is done."
+          : "Add a landing or a return, or the aircraft stays at the last point when it is done.");
     }
     if (ends >= 0 && ends < items.length - 1) {
       const left = items.length - 1 - ends;
@@ -5425,6 +5461,9 @@ Corvus.mission = (function () {
     _aircraft: AIRCRAFT,
     _aircraftOf: aircraftOf,
     _adoptVehicleAircraft: adoptVehicleAircraft,
+    // test hook: take the driving/flying kind from the connected vehicle, as a
+    // telemetry frame does.
+    _syncDrives: () => { drives = vehicleIsGround(); return drives; },
     _paramApplies: paramApplies,
     _itemHint: itemHint,
     // test hooks: how a landing is drawn and judged for that aircraft.

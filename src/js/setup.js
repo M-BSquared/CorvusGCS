@@ -4,7 +4,7 @@ window.Corvus = window.Corvus || {};
 /**
  * Corvus.setup — the Setup page (left-nav "SETUP").
  *
- * Thin orchestrator: renders the tile grid (Calibration, Radio Control, PID
+ * Thin orchestrator: renders the tile grid (First Setup, Calibration, Radio Control, PID
  * Tuning, Motors, Safety & Sensors, Battery & Power, Telemetry Radio, RTK GPS,
  * Remote ID, Parameters, Firmware) plus a compact Vehicle Info card, and routes to
  * the sub-pages. The actual page content lives in its own file:
@@ -19,6 +19,7 @@ window.Corvus = window.Corvus || {};
  *   - setup-remoteid.js     (Corvus.setupRemoteId)
  *   - setup-parameters.js   (Corvus.setupParameters)
  *   - setup-firmware.js     (Corvus.setupFirmware)
+ *   - setup-firstsetup.js   (Corvus.setupFirstSetup), the wizard that hosts the others
  * Shared helpers live in setup-shared.js (Corvus.setupShared).
  *
  * Lifecycle: each sub-page render returns a `destroy()` that the orchestrator
@@ -33,7 +34,7 @@ Corvus.setup = (function () {
 
   // Active view of the Setup page: "tiles" (the grid) | "calibration" |
   // "control" | "tuning" | "motors" | "safety" | "battery" | "sik" | "rtk" |
-  // "remoteid" | "parameters" | "firmware".
+  // "remoteid" | "parameters" | "firmware" | "firstsetup".
   let activeView = "tiles";
 
   // Teardown handle for the currently-rendered view. `render` calls this before
@@ -117,6 +118,8 @@ Corvus.setup = (function () {
     // Remote ID + Parameters + Firmware. Keyboard-focusable buttons so the whole tile is
     // reachable and announces as a control.
     const grid = S.el("div", "setup-tiles");
+    grid.appendChild(makeTile("firstsetup", "wand-sparkles", "First Setup",
+      "A new controller, step by step: firmware, aircraft, calibration."));
     grid.appendChild(makeTile("calibration", "sliders-horizontal", "Calibration",
       "Accelerometer, compass, gyro, level, ESCs."));
     grid.appendChild(makeTile("control", "radio", "Radio Control",
@@ -189,9 +192,10 @@ Corvus.setup = (function () {
   }
 
   /** Swap the container to a sub-page. Tears the grid down first. */
-  function openView(viewId) {
+  function openView(viewId, opts) {
     if (["calibration", "control", "tuning", "motors", "safety", "battery",
-         "sik", "rtk", "remoteid", "parameters", "firmware", "video"].indexOf(viewId) < 0) return;
+         "sik", "rtk", "remoteid", "parameters", "firmware", "video",
+         "firstsetup"].indexOf(viewId) < 0) return;
     teardown();
     activeView = viewId;
     const container = document.getElementById("pageView");
@@ -228,6 +232,8 @@ Corvus.setup = (function () {
       activeDestroy = Corvus.setupParameters.render(container, navigateBack);
     } else if (viewId === "video") {
       activeDestroy = Corvus.setupVideo.render(container, navigateBack);
+    } else if (viewId === "firstsetup") {
+      activeDestroy = Corvus.setupFirstSetup.render(container, navigateBack, opts);
     } else { // firmware
       activeDestroy = Corvus.setupFirmware.render(container, navigateBack);
     }
@@ -239,5 +245,5 @@ Corvus.setup = (function () {
   // the operator leaves the Setup page via the left-nav — not only on Back or
   // re-entry. Idempotent: safe to call when nothing is active, and safe to
   // call again after Back already tore down (no double-unsub, no throw).
-  return { render, teardown };
+  return { render, teardown, openView };
 })();

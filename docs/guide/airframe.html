@@ -169,7 +169,7 @@
 <h2 id="setup-pages">The Setup pages</h2>
 <p>
   <strong>Setup</strong> in the left rail opens a vehicle card and one tile per
-  job: Calibration, Radio Control, PID Tuning, Motors, Safety &amp; Sensors,
+  job: First Setup, Calibration, Radio Control, PID Tuning, Motors, Safety &amp; Sensors,
   Battery &amp; Power, Telemetry Radio, RTK GPS, Remote ID, Parameters,
   Firmware and Video. Each page reads only the parameters it shows, so it
   opens in about a second even over a slow radio, and only shows what the
@@ -183,6 +183,42 @@
   as written only when the aircraft confirms it. All of them are read only
   while the aircraft is armed.
 </p>
+
+<h2 id="first-setup">First Setup</h2>
+<p>
+  A new controller needs a handful of pages in a fixed order. <strong>First
+  Setup</strong> is the first tile on the Setup page and walks through them,
+  hosting the real pages one at a time under a short explanation of what to do
+  there:
+</p>
+<ol>
+  <li><strong>Firmware.</strong> Flash PX4 or ArduPilot, including onto a board that has none yet.</li>
+  <li><strong>Aircraft.</strong> Choose what the controller is flying. PX4 offers the generic airframes (quadcopter, hexarotor and octocopter in X and plus layouts, plane, flying wing, three VTOL types and two rovers). ArduPilot Copter offers the same multirotors as a frame class and type. ArduPilot Plane and Rover pick their type with the firmware, so there is nothing to choose. The choice is written when you press <em>Use this aircraft type</em>, and the controller has to be rebooted to apply it. PX4 also resets its parameters to that airframe's defaults, which is why a controller that already has a type asks first.</li>
+  <li><strong>Frame and motors.</strong> Motor order and spin, and where the controller and the GPS sit on the drawing.</li>
+  <li><strong>Calibration.</strong> The controller's rotation first, then gyro, accelerometer, compass and level.</li>
+  <li><strong>Radio, Safety, Battery.</strong> Optional in the sense that you can leave each one, but a failsafe nobody set is a failsafe nobody has.</li>
+  <li><strong>Finish.</strong> What is done and what is open.</li>
+</ol>
+<p>
+  The row of steps is a map, not a gate: open any of them at any time. A step
+  is marked done when the controller says so (an aircraft type is chosen, the
+  sensors carry a calibration) or when you went through it. Everything else on
+  the pages works as it does outside the wizard.
+</p>
+
+<h3 id="first-setup-detect">When Corvus offers it</h3>
+<p>
+  Corvus offers the wizard in a dialog when a controller looks fresh: no
+  airframe is selected (PX4), or no sensor was ever calibrated. A controller
+  that is merely missing one calibration is not offered it, since that would be
+  a dialog on every connect; the wizard still shows the step as open. It is
+  also offered for a board with no firmware, which opens on the Firmware step.
+</p>
+<ul>
+  <li><strong>Never unasked.</strong> The dialog offers, you choose. <em>Not now</em> lasts until the next connection. <em>Do not ask again</em> is remembered for that controller only, so the next fresh board is still offered the wizard. Finishing the wizard counts as the same.</li>
+  <li><strong>Not on a simulator.</strong> A link over UDP or TCP is never offered it, because a simulator carries no calibrations the way a board does. Open it from the tile whenever you like.</li>
+  <li><strong>Not while armed</strong>, and not on top of another dialog.</li>
+</ul>
 
 <h2 id="drawing">The drawing</h2>
 <p>
@@ -315,6 +351,7 @@
   <p class="guide-toc-title" id="toc-title">On this page</p>
   <ul>
     <li><a href="#setup-pages">The Setup pages</a></li>
+    <li><a href="#first-setup">First Setup</a></li>
     <li><a href="#drawing">The drawing</a></li>
     <li><a href="#motor-outputs">Motor outputs</a></li>
     <li><a href="#frame-size">Frame size and sensor positions</a></li>

@@ -52,8 +52,10 @@ Corvus.settingsTransfer = (function () {
   // the setting itself travels with the config.
   // corvus.checklist.ticks is what was checked for the flight at hand, not
   // how the station is set up. corvus.map.track is the flown track itself.
+  // corvus.firstSetup.v1 is which controllers were told "do not ask again":
+  // they are boards on this desk, and meaningless on another station.
   const NOT_SETTINGS = ["corvus.console.history", "corvus.mission.last", "corvus.frostedTerminals",
-    "corvus.checklist.ticks", "corvus.map.track"];
+    "corvus.checklist.ticks", "corvus.map.track", "corvus.firstSetup.v1"];
 
   /* The parts an import is chosen by. The ids match SECTIONS in
      corvus/settings_bundle.py. */

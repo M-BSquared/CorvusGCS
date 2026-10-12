@@ -630,6 +630,7 @@ def run_command(
     password: str | None = None,
     key_path: str | None = None,
     timeout: float = 20.0,
+    stdin_data: str | None = None,
 ) -> dict[str, Any]:
     """Run one command over its own SSH connection and return the result.
 
@@ -645,6 +646,10 @@ def run_command(
     ``{"ok", "exit_status", "stdout", "stderr", "error", "auth_failed"}``;
     ``ok`` is true only when the command actually ran AND exited 0, and
     ``auth_failed`` is true when the host refused the login. Never raises.
+
+    *stdin_data* is written to the command's standard input, which is then
+    closed. It carries a sudo password to ``sudo -S`` without putting it on a
+    command line, where the remote process list would show it.
 
     Lifecycle: this blocks its calling thread (an HTTP handler thread, which is
     a daemon) for at most the 8s connect plus *timeout*, and it owns no state
@@ -678,7 +683,11 @@ def run_command(
             kwargs["allow_agent"] = False
             kwargs["look_for_keys"] = False
         client.connect(**kwargs)
-        _stdin, stdout, stderr = client.exec_command(command, timeout=timeout_s)
+        stdin, stdout, stderr = client.exec_command(command, timeout=timeout_s)
+        if stdin_data is not None:
+            stdin.write(stdin_data)
+            stdin.flush()
+            stdin.channel.shutdown_write()
         out, err, status = _drain_command_output(stdout, stderr, timeout_s)
         return {
             "ok": status == 0,

@@ -1500,6 +1500,70 @@
 :where(:root[data-vw~="max-720"]) .rc-monitor-head { flex-wrap: wrap; }
 :where(:root[data-vw~="max-720"]) .field-select.rc-tx-fn-select { min-width: 0; width: 100%; max-width: none; }
 
+/* ===== First Setup (setup-firstsetup.js, first-setup.js) =====
+   A row of numbered steps, one bar with what to do and the way on, and the
+   hosted page underneath. The hosted page keeps its own header; only its back
+   button goes, since the wizard owns navigation. */
+.fs-steps {
+  display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; padding: 0; list-style: none;
+}
+.fs-step-item { display: contents; }
+.fs-step {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 12px; border-radius: 999px;
+  border: 1px solid var(--border-soft); background: transparent;
+  font: inherit; font-size: 11.5px; font-weight: 600; color: var(--text-3);
+  white-space: nowrap; cursor: pointer;
+}
+.fs-step:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.fs-step-num {
+  flex: 0 0 auto; display: grid; place-items: center;
+  width: 18px; height: 18px; border-radius: 50%; font-size: 10px;
+  background: rgb(var(--tint-rgb) / 0.08); color: var(--text-2);
+}
+.fs-step-num svg, .fs-step-num i { width: 11px; height: 11px; }
+.fs-step.active { border-color: var(--accent); color: var(--text-1); }
+.fs-step.active .fs-step-num { background: var(--accent); color: var(--text-inverted); }
+.fs-step.done { color: var(--text-2); }
+.fs-step.done .fs-step-num { background: var(--accent-dim); color: var(--accent-bright); }
+.fs-step.todo:not(.active) { border-color: var(--warning); }
+
+.fs-bar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 12px 24px; margin-bottom: 18px;
+}
+.fs-bar-text { flex: 1 1 320px; min-width: 0; }
+.fs-bar-title { font-size: var(--text-md); font-weight: 700; color: var(--text-1); }
+.fs-bar-body { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--text-2); }
+.fs-bar-actions { display: flex; flex: 0 0 auto; gap: 8px; }
+.fs-bar-actions [hidden] { display: none; }
+
+/* The hosted page's own back button would lead out of the wizard. */
+.fs-host .setup-back { display: none; }
+.fs-slot > .setup-page { gap: 4px; }
+
+.fs-aircraft, .fs-finish { display: flex; flex-direction: column; gap: 14px; }
+.fs-status { font-size: var(--text-md); font-weight: 600; color: var(--text-1); }
+.fs-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.fs-actions [hidden] { display: none; }
+
+.fs-summary { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.fs-summary-row {
+  display: grid; grid-template-columns: 22px 1fr auto auto; align-items: center; gap: 10px;
+  padding: 6px 4px; border-bottom: 1px solid var(--border-soft);
+}
+.fs-summary-row:last-child { border-bottom: 0; }
+.fs-summary-mark svg, .fs-summary-mark i { width: 16px; height: 16px; }
+.fs-summary-row.done .fs-summary-mark { color: var(--healthy); }
+.fs-summary-row.todo .fs-summary-mark { color: var(--warning); }
+.fs-summary-row.pending .fs-summary-mark { color: var(--text-3); }
+.fs-summary-name { font-weight: 600; color: var(--text-1); }
+.fs-summary-state { font-size: 11.5px; color: var(--text-2); }
+
+.fs-offer-lede { margin: 0 0 8px; font-size: var(--text-md); color: var(--text-1); }
+.fs-offer-reasons { margin: 0 0 10px; padding-left: 18px; font-size: 12px; color: var(--text-2); }
+.fs-offer-note { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-2); }
+
 /* Reduced transparency: make translucent/animated surfaces frostier (apple-design §14). */
 @media (prefers-reduced-transparency: reduce) {
   .autotune-live-dot { animation: none; }

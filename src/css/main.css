@@ -391,6 +391,7 @@ svg { display: block; }
   -webkit-tap-highlight-color: transparent;
 }
 .fa-btn i, .fa-btn svg { width: 17px; height: 17px; }
+.fa-btn[hidden] { display: none; }
 /* Hover: subtle lift + a wash in the action's identity colour. */
 .fa-btn:hover { color: var(--text-1); background: rgb(var(--tint-rgb) / 0.06); transform: translateY(-1px); }
 /* Per-action colour identity on hover (semantic tokens). */
@@ -466,6 +467,7 @@ svg { display: block; }
 .takeoff-title { font-size: 11px; font-weight: 600; letter-spacing: 1px; color: var(--text-2); }
 .takeoff-body { display: flex; flex-direction: column; gap: 12px; }
 .takeoff-slider-row { display: flex; align-items: center; gap: 10px; }
+.takeoff-slider-row[hidden] { display: none; }
 .takeoff-slider {
   flex: 1; -webkit-appearance: none; appearance: none;
   height: 4px; border-radius: 2px;

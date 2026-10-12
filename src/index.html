@@ -153,7 +153,7 @@
 
         <div class="plan-panel glass" id="planPanel" hidden>
           <div class="plan-header">
-            <span class="plan-title">FLY TO POINTS</span>
+            <span class="plan-title" id="planTitle">FLY TO POINTS</span>
             <button class="icon-btn" id="planClose" aria-label="Close planning panel" title="Close"><i data-lucide="x"></i></button>
           </div>
           <div class="plan-body">
@@ -161,14 +161,14 @@
               <span class="plan-count-label">POINTS</span>
               <span class="plan-count-value" id="planCount">0</span>
             </div>
-            <div class="takeoff-slider-row">
+            <div class="takeoff-slider-row" id="planAltRow">
               <input type="range" min="1" max="50" value="10" step="1" class="takeoff-slider" id="planAlt" aria-label="Waypoint altitude above home" />
               <span class="takeoff-alt-value" id="planAltValue"></span>
             </div>
             <div class="plan-actions">
               <button class="plan-fly" id="planFly" disabled>
                 <i data-lucide="send"></i>
-                <span>FLY</span>
+                <span id="planFlyLabel">FLY</span>
               </button>
               <button class="plan-clear" id="planClear">
                 <i data-lucide="rotate-ccw"></i>
@@ -593,6 +593,8 @@
 <script src="js/setup-remoteid.js" defer></script>
 <script src="js/setup-parameters.js" defer></script>
 <script src="js/setup-firmware.js" defer></script>
+<script src="js/first-setup.js" defer></script>
+<script src="js/setup-firstsetup.js" defer></script>
 <script src="js/setup.js" defer></script>
 <script src="js/analysis.js" defer></script>
 <script src="js/mission-geometry.js" defer></script>

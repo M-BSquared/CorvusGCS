@@ -79,7 +79,15 @@ class FirmwareRoutes:
         if self.mavlink is None or not releases:
             return nothing
         try:
-            return detect_boards(self.mavlink.board_identity(), releases)
+            identity = self.mavlink.board_identity()
+            # A board with no firmware has no link to ask: the descriptor of
+            # the bootloader port it shows up as is all there is.
+            waiting = self.flash.bootloader_ports() if self.flash is not None else []
+            if not identity.get("device") and len(waiting) == 1:
+                identity = dict(identity, device=waiting[0].get("device", ""),
+                                description=waiting[0].get("description", ""),
+                                hwid=waiting[0].get("hwid", ""))
+            return detect_boards(identity, releases)
         except Exception:  # noqa: BLE001 - detection is a convenience, never a gate
             logger.debug("board detection failed", exc_info=True)
             return nothing
