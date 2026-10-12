@@ -281,6 +281,16 @@ $PyiArgs = @(
     "--exclude-module", "PySide6.QtQuickWidgets"
 )
 if ($Ico) { $PyiArgs += @("--icon", $Ico) }
+# pymavlink only ever loads its `all` dialect (corvus/app.py pins it). The
+# others, each once for MAVLink 1 and once for 2, stay out of the archive,
+# and lxml with them (tools/bundle_trim.py says why neither is needed).
+$Dialects = Join-Path $VenvDir "Lib\site-packages\pymavlink\dialects"
+foreach ($Wire in @("v10", "v20")) {
+    Get-ChildItem (Join-Path $Dialects $Wire) -Filter "*.py" |
+        Where-Object { $_.BaseName -notin @("all", "__init__") } |
+        ForEach-Object { $PyiArgs += @("--exclude-module", "pymavlink.dialects.$Wire.$($_.BaseName)") }
+}
+$PyiArgs += @("--exclude-module", "lxml")
 $PyiArgs += $Entry
 
 & $VenvPy -m PyInstaller @PyiArgs
@@ -288,6 +298,12 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
 
 $Exe = Join-Path $AppDir "$AppName.exe"
 if (-not (Test-Path $Exe)) { throw "expected $Exe, which PyInstaller did not produce" }
+
+# The dialect XML collect-all copied, Qt translations, Chromium locales but
+# en-US and de: data files PyInstaller collects and the app never reads.
+Write-Host ">>> Trimming what the app never loads ..."
+& $VenvPy (Join-Path $RepoDir "tools\bundle_trim.py") (Join-Path $AppDir "_internal")
+if ($LASTEXITCODE -ne 0) { throw "trimming the bundle failed" }
 
 # ---- 6. verify --------------------------------------------------------------
 # The failure this catches is the one that matters: a bundle that builds and

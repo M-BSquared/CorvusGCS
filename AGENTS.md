@@ -135,6 +135,13 @@ Shared packaging invariants — a violation of any of these is a build bug:
   PyInstaller (`--exclude-module`), whose hooks would otherwise pack PySide6's
   whole QML tree. macOS 15 is the floor (`LSMinimumSystemVersion`), because
   PySide6 6.10 and later is built for it.
+- **Only what runs.** After the Qt trim, `tools/bundle_trim.py` takes out
+  every pymavlink dialect but `all` (which `corvus/app.py` pins through
+  `MAVLINK_DIALECT`), lxml, pip, Qt translations, Chromium locales but
+  `en-US` and `de`, and the framework copies pip writes where macOS expects
+  symlinks. It fails the build if the `all` dialect or `en-US.pak` is gone.
+  Code that loads another dialect, a `QTranslator` or lxml has to change
+  that tool in the same commit.
 - **Offline at runtime.** The build may download wheels and packaging tools
   once; the *running* app must never need the network.
 - **Layout contract.** `VERSION`, `corvus/`, `src/`, and `assets/` stay

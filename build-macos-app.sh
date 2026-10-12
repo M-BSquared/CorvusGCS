@@ -263,6 +263,12 @@ for pkg in PySide6 shiboken6; do
 done
 echo ">>> Trimming PySide6 to the Qt modules Corvus loads ..."
 "$PYBIN" "$REPO_DIR/tools/qt_bundle.py" prune "$SITE_PKGS"
+# The rest the wheels bring and Corvus never reads: every pymavlink dialect
+# but `all`, lxml, pip, Qt translations, Chromium locales but en-US and de,
+# and the framework copies pip wrote out where the layout wants symlinks.
+echo ">>> Trimming what the app never loads ..."
+"$PYBIN" "$REPO_DIR/tools/bundle_trim.py" "$SITE_PKGS"
+rm -f "$PYROOT"/bin/pip "$PYROOT"/bin/pip3 "$PYROOT"/bin/pip3.*
 
 # ---- 4. stdlib --------------------------------------------------------------
 # pyvenv.cfg `home =` points at the build host and breaks on another Mac.
@@ -773,7 +779,7 @@ if [ "$MAKE_DMG" -eq 1 ]; then
     for attempt in 1 2 3 4; do
         echo "--- hdiutil create, attempt $attempt" >>"$BUILD_DIR/hdiutil.log"
         if hdiutil create -volname "$APP_NAME $VERSION" -srcfolder "$STAGE" \
-                -ov -format UDZO "$DMG_WORK" >>"$BUILD_DIR/hdiutil.log" 2>&1; then
+                -ov -format ULMO "$DMG_WORK" >>"$BUILD_DIR/hdiutil.log" 2>&1; then
             DMG_MADE=1
             break
         fi

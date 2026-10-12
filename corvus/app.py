@@ -100,6 +100,11 @@ def chromium_flags_value(env, platform: str = sys.platform) -> str:
 
 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = chromium_flags_value(os.environ)
 
+# pymavlink loads the dialect this names, and the packaged builds ship only
+# "all" (tools/bundle_trim.py). Another one left in the shell by MAVProxy
+# would send pymavlink to regenerate it inside a read-only bundle.
+os.environ["MAVLINK_DIALECT"] = "all"
+
 
 def qpa_platform(env, platform: str = sys.platform) -> str:
     """The Qt platform to ask for, or ``""`` to leave Qt its own choice.

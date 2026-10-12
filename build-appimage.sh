@@ -109,7 +109,14 @@ python3 -m venv --copies "$APPDIR/usr"
 # site-packages is preserved: the host stdlib dir has no site-packages subdir,
 # and rsync below excludes dist-packages to avoid leaking system debs.
 echo ">>> Bundling stdlib + lib-dynload from $PY_STDLIB ..."
-rsync -a --exclude 'dist-packages' "$PY_STDLIB/" "$APPDIR/usr/lib/python$PY_MM/"
+# The same stdlib parts the .app leaves out: the CPython test suite, IDLE, Tk
+# and ensurepip, none of which the app imports, and the static libpython,
+# which only links C extensions at build time.
+rsync -a --exclude 'dist-packages' \
+    --exclude 'test' --exclude 'idlelib' --exclude 'turtledemo' \
+    --exclude 'tkinter' --exclude '_tkinter*' --exclude 'ensurepip' \
+    --exclude 'config-*/libpython*.a' \
+    "$PY_STDLIB/" "$APPDIR/usr/lib/python$PY_MM/"
 
 echo ">>> Bundling libpython${PY_MM}.so.1.0 from $PY_LIBDIR ..."
 if [ -f "$PY_LIBDIR/libpython${PY_MM}.so.1.0" ]; then
@@ -185,6 +192,11 @@ if [ -f "$LOCK_OUT" ]; then echo "    (resolved set: $LOCK_OUT)"; fi
 # fails the build if anything left would miss a library it links.
 echo ">>> Trimming PySide6 to the Qt modules Corvus loads ..."
 python3 "$REPO_DIR/tools/qt_bundle.py" prune "$APPDIR/usr/lib/python$PY_MM/site-packages"
+# The rest the wheels bring and Corvus never reads: every pymavlink dialect
+# but `all`, lxml, pip, Qt translations and Chromium locales but en-US and de.
+echo ">>> Trimming what the app never loads ..."
+python3 "$REPO_DIR/tools/bundle_trim.py" "$APPDIR/usr/lib/python$PY_MM/site-packages"
+rm -f "$APPDIR"/usr/bin/pip "$APPDIR"/usr/bin/pip3 "$APPDIR"/usr/bin/pip3.*
 
 # ---- 3c. the system libraries Qt and Python link but a clean host lacks -----
 # Qt's X11 platform plugin links libxcb-cursor, libxkbcommon-x11 and six more
