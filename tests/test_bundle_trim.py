@@ -117,6 +117,14 @@ def test_a_frozen_layout_without_dialect_sources_passes(tmp_path):
         assert [p.name for p in (internal / "pymavlink" / "dialects" / wire).iterdir()] == ["all.xml"]
 
 
+# A .framework and its directory symlinks exist only in the macOS bundle; on
+# Windows a plain symlink_to makes a file link that a chained path cannot open.
+_posix_links = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="macOS framework symlinks; no Windows bundle has a .framework",
+)
+
+
 def framework(site: Path, name: str) -> Path:
     fw = site / "PySide6" / "Qt" / "lib" / f"{name}.framework"
     for base in (fw, fw / "Versions" / "A"):
@@ -126,6 +134,7 @@ def framework(site: Path, name: str) -> Path:
     return fw
 
 
+@_posix_links
 def test_identical_framework_copies_become_symlinks(tmp_path):
     site = fake_site(tmp_path)
     fw = framework(site, "QtWebEngineCore")
@@ -137,6 +146,7 @@ def test_identical_framework_copies_become_symlinks(tmp_path):
     assert (fw / "Resources" / "qtwebengine_resources.pak").read_text() == "pak" * 100
 
 
+@_posix_links
 def test_a_framework_copy_that_differs_is_left_alone(tmp_path):
     site = fake_site(tmp_path)
     fw = framework(site, "QtWebEngineCore")
