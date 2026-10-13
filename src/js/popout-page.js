@@ -41,6 +41,15 @@ Corvus.popoutPage = (function () {
     });
   }
 
+  /** The app's language, applied now and followed when it changes in the main window. */
+  function followLanguage() {
+    if (!Corvus.i18n) return;
+    Corvus.i18n.init();
+    window.addEventListener("storage", (e) => {
+      if (e.key === "corvus.lang") Corvus.i18n.use(e.newValue || Corvus.i18n.DEFAULT);
+    });
+  }
+
   /**
    * The bar and the body, with the frame's own classes, filling the window.
    * Returns a record Corvus.floatWindows.setStatus can write the pill of.
@@ -704,6 +713,8 @@ Corvus.popoutPage = (function () {
     const kind = params.get("kind");
     const key = params.get("key") || "";
     followTheme();
+    followLanguage();
+    Corvus.ui.guardSelection();
     if (kind === "video" && params.get("id")) return camera(root, key, params);
     if (kind === "terminal" && params.get("name")) return terminal(root, key, params);
     if (kind && kind.indexOf("plugin:") === 0 && kind.length > 7) {

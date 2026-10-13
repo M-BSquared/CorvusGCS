@@ -1223,9 +1223,9 @@ Corvus.pluginSshLauncher = (function () {
      * is the one action here that asks first.
      */
     function remove(entry, running) {
-      if (running && !window.confirm(
-        `Remove "${entry.label}"?\n\nIts session will be closed, ` +
-        `which stops what it is running.`)) return;
+      if (running && !window.confirm(Corvus.t(
+        'Remove "{name}"?\n\nIts session will be closed, which stops what it is running.',
+        { name: entry.label }))) return;
       buttons = buttons.filter((b) => b.id !== entry.id);
       clearError(entry);
       persist();

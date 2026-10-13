@@ -3,30 +3,24 @@
 One vehicle is flown at a time. Every page, every command, the HUD and the
 telemetry stream belong to that one, exactly as they did before this module
 existed; the others are *seen*: their position, heading, mode and battery
-reach the map and the vehicle list, and nothing is sent to them but what a
-link sends anyway (the station heartbeat) and, for a vehicle on a shared link
-that is not streaming its position, one request to do so.
+reach the map and the vehicle list.
 
-Two ways a second vehicle arrives, and both are common in the field:
+**One link is one vehicle.** A link (a radio, a USB cable, a UDP port) flies
+the first autopilot it latches and nothing else; another system id heard on
+the same link is ignored and told to the console once. A second vehicle needs
+a radio and a link of its own, which is how it works in the field anyway:
+every PX4 leaves the factory as system 1, so two of those cannot share a link.
+An extra link is a complete :class:`~corvus.mavlink_bridge.MavlinkBridge` with
+its own store, so the vehicle on it is as flyable as the one on the main link.
 
-* **On the same link**, under its own system id. PX4's multi-vehicle SITL
-  sends every instance to port 14550, and a mesh radio or mavlink-router
-  carries a whole fleet down one socket. The link's bridge keeps flying the
-  one system it latched; :class:`FleetTracker` listens to the rest.
-* **On a link of its own**, typically a second SiK radio. Every PX4 leaves the
-  factory as system 1, so two of those cannot share a link at all. An extra
-  link is a complete :class:`~corvus.mavlink_bridge.MavlinkBridge` with its own
-  store, so the vehicle on it is as flyable as the one on the main link.
-
-Selecting a vehicle on another link swaps the bridge and store the HTTP layer
-talks to (:class:`ActiveBridge`, :class:`ActiveStore`); selecting one on the
-same link asks that link's bridge to latch the other system, which it does
-through its ordinary connect path.
+Selecting a vehicle swaps the bridge and store the HTTP layer talks to
+(:class:`ActiveBridge`, :class:`ActiveStore`). Removing a vehicle closes its
+link (the main link is disconnected and left closed), and it leaves the list.
 
 The guarantee this module is built around: with one vehicle and no extra
 link, nothing changes. The proxies point at the main bridge and store and never
-move, the tracker only reads frames the bridge already received, and no
-request is ever sent to the vehicle being flown on its behalf.
+move, the tracker only reads frames the bridge already received, and nothing
+is ever sent to a vehicle on the list's behalf.
 """
 from __future__ import annotations
 
@@ -61,13 +55,9 @@ PALETTE: tuple[str, ...] = (
 
 # A vehicle whose heartbeat has not been heard for this long is drawn as lost.
 STALE_S = 5.0
-# ...and after this long it is dropped from the list altogether.
+# ...and after this long it is dropped from the list altogether. The operator
+# can remove it at once instead.
 FORGET_S = 600.0
-# How long a vehicle on a shared link may go without a position before it is
-# asked to stream one, how often that is retried, and how many times.
-NUDGE_AFTER_S = 3.0
-NUDGE_EVERY_S = 10.0
-NUDGE_MAX = 3
 # How often the fleet snapshot is pushed to the browser.
 PUBLISH_INTERVAL_S = 0.25
 # How long colours wait for the link to latch the vehicle it flies, which is
@@ -87,7 +77,6 @@ MAX_NAME_CHARS = 40
 # Vehicles remembered in the config (names and colours). Oldest unnamed first
 # when the table is full, so an operator's own names are the last to go.
 MAX_REMEMBERED = 64
-MAX_SYSTEMS_PER_LINK = 64
 
 _COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 _LINK_ID_RE = re.compile(r"^link-[0-9]{1,3}$")
@@ -131,11 +120,10 @@ def coerce_config(raw: Any) -> dict[str, Any] | None:
     """The ``fleet`` block of the config, bounded and typed. Never raises.
 
     ``{"links": [{"id": "link-2", "connection": "serial:/dev/ttyUSB1:57600"}],
-    "vehicles": {"main:2": {"name": "Scout", "color": "#2F7DF6"}},
-    "theme_vehicle": "main:1", "shared_links": true}``. ``theme_vehicle`` is
-    the one vehicle that keeps the theme's own colour while it has none chosen.
-    ``shared_links`` (default true) lists every vehicle a link carries; false
-    makes every link one vehicle, the one it latched.
+    "vehicles": {"link-2:1": {"name": "Scout", "color": "#2F7DF6"}},
+    "theme_vehicle": "main:1"}``. ``theme_vehicle`` is the one vehicle that
+    keeps the theme's own colour while it has none chosen. Anything else (the
+    ``shared_links`` switch of earlier versions) is dropped.
     """
     if not isinstance(raw, dict):
         return None
@@ -183,8 +171,6 @@ def coerce_config(raw: Any) -> dict[str, Any] | None:
         out["vehicles"] = vehicles
     if parse_vehicle_key(raw.get("theme_vehicle")) is not None:
         out["theme_vehicle"] = raw["theme_vehicle"]
-    if isinstance(raw.get("shared_links"), bool):
-        out["shared_links"] = raw["shared_links"]
     return out or None
 
 
@@ -197,22 +183,46 @@ def _finite(value: Any) -> float | None:
 
 
 class FleetTracker:
-    """What every autopilot on one link last said about itself. Passive.
+    """What the one autopilot a link flies last said about itself. Passive.
 
-    Fed every frame the bridge receives, before the bridge's own "is this my
-    vehicle" filter. It keeps a few fields per system, enough to draw an
-    aircraft on the map and list it, and decides nothing about the link.
+    Fed every frame of that vehicle the bridge receives. It keeps a few fields,
+    enough to draw the aircraft on the map and list it, and decides nothing
+    about the link. Until :meth:`bind` names the system the link latched it
+    takes nothing, so a stray frame on a noisy radio never becomes a vehicle.
     Thread-safe: written by the receive thread, read by the fleet publisher.
     """
 
     def __init__(self, type_names: dict[int, str] | None = None) -> None:
         self._lock = threading.Lock()
-        self._systems: dict[int, dict[str, Any]] = {}
+        self._system: int | None = None
+        self._component = 0
+        self._entry: dict[str, Any] | None = None
         self._type_names = dict(type_names or {})
         # STATUSTEXT at warning level or worse, as (seq, system, severity,
         # text). Bounded; the fleet reads past its own cursor.
         self._events: list[tuple[int, int, int, str]] = []
         self._event_seq = 0
+
+    def bind(self, system: int, component: int = 0) -> None:
+        """Track *system* from now on, and only it. Another system forgets the last."""
+        try:
+            system = int(system)
+            component = int(component or 0)
+        except (TypeError, ValueError):
+            return
+        if not 1 <= system <= 255:
+            return
+        with self._lock:
+            if system != self._system:
+                self._entry = None
+            self._system = system
+            self._component = component
+            if self._entry is not None and component:
+                self._entry["component"] = component
+
+    def bound_system(self) -> int | None:
+        with self._lock:
+            return self._system
 
     def observe(self, msg: Any, vehicle_heartbeat: bool = False, now: float | None = None) -> None:
         """Take one received frame. *vehicle_heartbeat* is the bridge's verdict
@@ -223,34 +233,31 @@ class FleetTracker:
             component = int(msg.get_srcComponent() or 0)
         except Exception:  # noqa: BLE001 - a malformed frame is not the tracker's problem
             return
-        if not 1 <= system <= 255:
-            return
         stamp = time.monotonic() if now is None else now
         with self._lock:
-            entry = self._systems.get(system)
+            if self._system is None or system != self._system:
+                return
+            entry = self._entry
             if name == "HEARTBEAT":
                 if not vehicle_heartbeat:
                     return
+                if self._component and component and component != self._component:
+                    # A companion running MAVSDK heartbeats as an autopilot on
+                    # the same system id; it does not speak for the airframe.
+                    return
                 if entry is None:
-                    if len(self._systems) >= MAX_SYSTEMS_PER_LINK:
-                        return
-                    entry = self._new_entry(system, component, stamp)
-                    self._systems[system] = entry
-                elif component != entry["component"]:
-                    # A second autopilot-looking node on one system id (a
-                    # companion running MAVSDK) must not overwrite the
-                    # flight controller's mode and armed state.
-                    if stamp - entry["last_heartbeat"] < STALE_S:
-                        return
-                    entry["component"] = component
+                    entry = self._new_entry(system, component or self._component, stamp)
+                    self._entry = entry
                 self._take_heartbeat(entry, msg, stamp)
                 return
-            if entry is None or component != entry["component"]:
+            if entry is None or (entry["component"] and component != entry["component"]):
                 return
             if name == "GLOBAL_POSITION_INT":
                 lat = _finite(getattr(msg, "lat", None))
                 lon = _finite(getattr(msg, "lon", None))
                 if lat is None or lon is None or (lat == 0 and lon == 0):
+                    return
+                if not (-90e7 <= lat <= 90e7 and -180e7 <= lon <= 180e7):
                     return
                 entry["position"] = [round(lon / 1e7, 7), round(lat / 1e7, 7)]
                 rel = _finite(getattr(msg, "relative_alt", None))
@@ -263,7 +270,6 @@ class FleetTracker:
                 vx = _finite(getattr(msg, "vx", 0)) or 0.0
                 vy = _finite(getattr(msg, "vy", 0)) or 0.0
                 entry["groundspeed"] = round(math.hypot(vx, vy) / 100.0, 1)
-                entry["last_position"] = stamp
             elif name == "VFR_HUD":
                 heading = _finite(getattr(msg, "heading", None))
                 if heading is not None:
@@ -309,13 +315,6 @@ class FleetTracker:
             fresh = [(s, sev, t) for n, s, sev, t in self._events if n > seq]
             return self._event_seq, fresh
 
-    def keep_only(self, system: int | None) -> None:
-        """Forget every system but *system* (all of them for None)."""
-        with self._lock:
-            for key in list(self._systems):
-                if key != system:
-                    del self._systems[key]
-
     def _new_entry(self, system: int, component: int, stamp: float) -> dict[str, Any]:
         return {
             "sysid": system, "component": component,
@@ -324,7 +323,6 @@ class FleetTracker:
             "mode": "", "mode_label": "", "armed": False, "system_status": 0,
             "position": None, "altitude_rel": None, "altitude_amsl": None,
             "heading": None, "groundspeed": None, "battery": None, "voltage": None,
-            "last_position": 0.0, "nudges": 0, "last_nudge": 0.0,
         }
 
     def _take_heartbeat(self, entry: dict[str, Any], msg: Any, stamp: float) -> None:
@@ -350,67 +348,29 @@ class FleetTracker:
             entry["mode"] = entry["mode_label"] = ""
 
     def systems(self, now: float | None = None) -> list[dict[str, Any]]:
-        """Every system heard recently, oldest first, as plain dicts."""
-        stamp = time.monotonic() if now is None else now
-        out: list[dict[str, Any]] = []
-        with self._lock:
-            for system in list(self._systems):
-                entry = self._systems[system]
-                age = stamp - entry["last_heartbeat"]
-                if age > FORGET_S:
-                    del self._systems[system]
-                    continue
-                item = {
-                    k: v for k, v in entry.items()
-                    if k not in ("first_heartbeat", "last_heartbeat", "last_position",
-                                 "nudges", "last_nudge", "component", "autopilot")
-                }
-                item["stale"] = age > STALE_S
-                item["_first"] = entry["first_heartbeat"]
-                out.append(item)
-        out.sort(key=lambda item: item["_first"])
-        for item in out:
-            item.pop("_first", None)
-        return out
-
-    def component_of(self, system: int) -> int:
-        """The autopilot component a system heartbeats from, 1 if unknown."""
-        with self._lock:
-            entry = self._systems.get(system)
-            return int(entry["component"]) if entry else 1
-
-    def stack_of(self, system: int) -> str:
-        with self._lock:
-            entry = self._systems.get(system)
-            return str(entry["stack"]) if entry else ""
-
-    def due_for_nudge(self, system: int, now: float | None = None) -> bool:
-        """Should *system* be asked to stream its position? Records the ask.
-
-        Only a vehicle that has been heartbeating for a while without a single
-        position, and at most :data:`NUDGE_MAX` times, so a vehicle with no GPS
-        is not asked forever.
-        """
+        """The vehicle, as a list of none or one plain dict."""
         stamp = time.monotonic() if now is None else now
         with self._lock:
-            entry = self._systems.get(system)
-            if entry is None or entry["nudges"] >= NUDGE_MAX:
-                return False
-            if stamp - entry["last_heartbeat"] > STALE_S:
-                return False
-            if entry["last_position"] and stamp - entry["last_position"] < NUDGE_EVERY_S:
-                return False
-            if stamp - entry["first_heartbeat"] < NUDGE_AFTER_S:
-                return False
-            if entry["last_nudge"] and stamp - entry["last_nudge"] < NUDGE_EVERY_S:
-                return False
-            entry["nudges"] += 1
-            entry["last_nudge"] = stamp
-            return True
+            entry = self._entry
+            if entry is None:
+                return []
+            age = stamp - entry["last_heartbeat"]
+            if age > FORGET_S:
+                self._entry = None
+                return []
+            item = {
+                k: v for k, v in entry.items()
+                if k not in ("first_heartbeat", "last_heartbeat", "component", "autopilot")
+            }
+        item["stale"] = age > STALE_S
+        return [item]
 
     def forget(self) -> None:
+        """Drop the vehicle and the binding: the link flies nothing now."""
         with self._lock:
-            self._systems.clear()
+            self._entry = None
+            self._system = None
+            self._component = 0
 
 
 class ActiveStore:
@@ -628,7 +588,6 @@ class Fleet:
         self._persist = persist
         self._meta: dict[str, dict[str, str]] = {}
         self._theme_key: str = ""
-        self._shared_links = True
         self._pending_links: list[dict[str, str]] = []
         # Notifications about vehicles that are not being flown.
         self._events: list[dict[str, Any]] = []
@@ -639,6 +598,9 @@ class Fleet:
         self._listeners: list[Callable[[dict[str, Any]], None]] = []
         self._listeners_lock = threading.Lock()
         self._last_published = ""
+        # The publish thread and an HTTP handler's publish_now() both collect
+        # events; one at a time, or the bookkeeping dicts change mid-read.
+        self._publish_lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._created = time.monotonic()
@@ -654,7 +616,6 @@ class Fleet:
         with self._lock:
             self._meta = {k: dict(v) for k, v in (clean.get("vehicles") or {}).items()}
             self._theme_key = clean.get("theme_vehicle", "")
-            self._shared_links = clean.get("shared_links", True)
             self._pending_links = list(clean.get("links") or [])
 
     def to_config(self) -> dict[str, Any] | None:
@@ -666,10 +627,7 @@ class Fleet:
             ]
             meta = {k: dict(v) for k, v in self._meta.items() if v}
             theme = self._theme_key
-            shared = self._shared_links
         block: dict[str, Any] = {"links": links, "vehicles": meta, "theme_vehicle": theme}
-        if not shared:
-            block["shared_links"] = False
         return coerce_config(block)
 
     def _save(self) -> None:
@@ -684,7 +642,6 @@ class Fleet:
 
     def start(self) -> None:
         """Open the configured extra links and start publishing."""
-        self._links[MAIN_LINK].bridge.fleet_shared_link = self._shared_links
         for entry in self._pending_links:
             try:
                 self._open_link(entry["id"], entry["connection"])
@@ -749,7 +706,6 @@ class Fleet:
         store = self._store_factory()
         bridge = self._bridge_factory(store, connection)
         bridge.fleet_link_id = link_id
-        bridge.fleet_shared_link = self._shared_links
         link = FleetLink(link_id, bridge, store, primary=False)
         with self._lock:
             self._links[link_id] = link
@@ -800,20 +756,103 @@ class Fleet:
             logger.debug("fleet: could not withdraw the offer", exc_info=True)
 
     def remove_link(self, link_id: str) -> str:
-        """Close an extra link. Returns "" or why not."""
+        """Close an extra link, and forget the vehicle on it. Returns "" or why not."""
         with self._lock:
             link = self._links.get(link_id)
             if link is None:
                 return "no such link"
             if link.primary:
                 return "the main link is closed from the LINK tab"
-            if self._active_link == link_id:
-                self._switch_link(MAIN_LINK)
             del self._links[link_id]
+            self._forget_link_meta(link_id)
+            if self._active_link == link_id:
+                self._switch_link(self._fallback_link())
         self._close(link)
         self._save()
         self.publish_now()
         return ""
+
+    def remove_vehicle(self, key: Any, confirm_armed: bool = False) -> tuple[str, int]:
+        """Take a vehicle off the list: close its link, so nothing of it is shown.
+
+        An extra link is closed for good. The main link is disconnected and
+        left closed (the caller tells auto-connect); the LINK tab opens it
+        again. An armed vehicle that is still heard is only removed with
+        *confirm_armed*: it keeps flying, and the station no longer sees it.
+        Returns ``("", 200)`` or ``(why not, HTTP status)``.
+        """
+        parsed = parse_vehicle_key(key)
+        if parsed is None:
+            return "unknown vehicle", 400
+        link_id, system_id = parsed
+        link = self.link(link_id)
+        if link is None:
+            return "that vehicle's link is not open", 404
+        entry = self._entry_of(link, system_id)
+        if entry is None:
+            return "that vehicle is not on the list", 404
+        if entry.get("armed") and not entry.get("stale") and not confirm_armed:
+            return ("The vehicle is armed. Removing it closes its link: it keeps "
+                    "flying and the station no longer sees it."), 409
+        if not link.primary:
+            error = self.remove_link(link_id)
+            return (error, 400) if error else ("", 200)
+        try:
+            link.bridge.stop()
+        except Exception:  # noqa: BLE001 - the list still lets go of it
+            logger.exception("fleet: disconnecting the main link failed")
+        try:
+            link.bridge.fleet_tracker.forget()
+        except Exception:  # noqa: BLE001
+            logger.debug("fleet: could not clear the main link's list", exc_info=True)
+        try:
+            link.store.forget_vehicle()
+            link.store.update(vehicle_id="")
+        except Exception:  # noqa: BLE001
+            logger.debug("fleet: could not clear the main link's store", exc_info=True)
+        with self._lock:
+            self._forget_key(vehicle_key(link_id, system_id))
+            if self._active_link == link_id:
+                self._switch_link(self._fallback_link(exclude=link_id))
+        logger.info("fleet: removed %s", vehicle_key(link_id, system_id))
+        self._save()
+        self.publish_now()
+        return "", 200
+
+    def _entry_of(self, link: FleetLink, system_id: int) -> dict[str, Any] | None:
+        try:
+            systems = link.bridge.fleet_tracker.systems()
+        except Exception:  # noqa: BLE001
+            return None
+        return next((e for e in systems if e.get("sysid") == system_id), None)
+
+    def _fallback_link(self, exclude: str = "") -> str:
+        """The link to fly once the flown one is gone: one with a live vehicle."""
+        with self._lock:
+            candidates = [l for l in self._links.values() if l.id != exclude]
+        for link in candidates:
+            if self._controlled(link) is not None:
+                return link.id
+        return MAIN_LINK
+
+    def _forget_key(self, key: str) -> None:
+        self._meta.pop(key, None)
+        self._was_live.pop(key, None)
+        if self._theme_key == key:
+            self._theme_key = ""
+
+    def _forget_link_meta(self, link_id: str) -> None:
+        """Names and colours of a closed link's vehicles: the next link of that
+        id may carry another aircraft, which must not inherit them."""
+        prefix = f"{link_id}:"
+        # Copies first: the publish thread writes _was_live without this lock.
+        for key in [k for k in list(self._meta) if k.startswith(prefix)]:
+            self._forget_key(key)
+        for key in [k for k in list(self._was_live) if k.startswith(prefix)]:
+            self._was_live.pop(key, None)
+        if self._theme_key.startswith(prefix):
+            self._theme_key = ""
+        self._event_cursor.pop(link_id, None)
 
     def connection_in_use(self, connection: str, except_link: str = "") -> str:
         """The label of another link already open on *connection*, or "".
@@ -837,31 +876,6 @@ class Fleet:
 
     def link_changed(self) -> None:
         """An extra link was pointed somewhere else from the LINK tab: save it."""
-        self._save()
-        self.publish_now()
-
-    def shared_links(self) -> bool:
-        return self._shared_links
-
-    def set_shared_links(self, on: bool) -> None:
-        """List every vehicle a link carries (on), or only the one it flies.
-
-        Off is how a link behaved before there was a vehicle list: the first
-        autopilot heard is the vehicle, the rest of the link is ignored, and
-        nothing is ever asked of another system. On a link with one vehicle on
-        it, which is every radio link, the two are the same.
-        """
-        on = bool(on)
-        with self._lock:
-            self._shared_links = on
-            bridges = [link.bridge for link in self._links.values()]
-        for bridge in bridges:
-            bridge.fleet_shared_link = on
-            if not on:
-                try:
-                    bridge.fleet_tracker.keep_only(bridge.controlled_system())
-                except Exception:  # noqa: BLE001 - the list is best effort
-                    logger.debug("fleet: could not trim the list", exc_info=True)
         self._save()
         self.publish_now()
 
@@ -919,7 +933,7 @@ class Fleet:
             victim = unnamed[0] if unnamed else next(iter(self._meta))
             del self._meta[victim]
 
-    def select(self, key: str) -> str:
+    def select(self, key: Any) -> str:
         """Fly the vehicle *key* from now on. Returns "" or why not."""
         parsed = parse_vehicle_key(key)
         if parsed is None:
@@ -929,14 +943,11 @@ class Fleet:
             link = self._links.get(link_id)
             if link is None:
                 return "that vehicle's link is not open"
+            if self._entry_of(link, system_id) is None:
+                return "that vehicle is not on the list"
             current = self._controlled(link)
-            if not self._shared_links and current is not None and current != system_id:
-                return ("Several vehicles on one link is off in Settings, "
-                        "so this link flies only the vehicle it latched.")
-            try:
-                link.bridge.select_system(system_id)
-            except ValueError as exc:
-                return str(exc)
+            if current is not None and current != system_id:
+                return f"this link flies system {current}"
             self._switch_link(link_id)
         self.publish_now()
         return ""
@@ -957,12 +968,6 @@ class Fleet:
         except Exception:  # noqa: BLE001 - a bridge without it controls nothing
             return None
 
-    def _preferred(self, link: FleetLink) -> int | None:
-        try:
-            return link.bridge.preferred_system()
-        except Exception:  # noqa: BLE001
-            return None
-
     def default_name(self, link_id: str, system_id: int) -> str:
         if link_id == MAIN_LINK:
             return f"Vehicle {system_id}"
@@ -978,7 +983,6 @@ class Fleet:
         active_key = ""
         for link in links:
             controlled = self._controlled(link)
-            preferred = self._preferred(link)
             try:
                 state = link.store.get_snapshot()
             except Exception:  # noqa: BLE001
@@ -988,7 +992,8 @@ class Fleet:
             except Exception:  # noqa: BLE001
                 systems = []
             if link.id == active_link:
-                chosen = controlled or preferred
+                # A vehicle that went quiet is still the one being flown.
+                chosen = controlled or (systems[0]["sysid"] if systems else None)
                 if chosen:
                     active_key = vehicle_key(link.id, chosen)
             link_rows.append({
@@ -1031,7 +1036,6 @@ class Fleet:
             "links": link_rows,
             "vehicles": vehicles,
             "palette": list(PALETTE),
-            "shared_links": self._shared_links,
             "suggestion": suggestion if isinstance(suggestion, dict) else None,
             "events": events,
             "event_seq": self._event_seq,
@@ -1154,6 +1158,10 @@ class Fleet:
                     self._add_event(key, "critical", "no heartbeat for 5 s, link lost", stamp)
 
     def _publish(self, force: bool = False) -> None:
+        with self._publish_lock:
+            self._publish_locked(force)
+
+    def _publish_locked(self, force: bool) -> None:
         try:
             self.collect_events()
         except Exception:  # noqa: BLE001 - notifications never stop the list

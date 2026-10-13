@@ -34,6 +34,10 @@
     var s = parseFloat(localStorage.getItem("corvus.scale"));
     if (s >= 0.8 && s <= 1.5) document.documentElement.style.setProperty("--ui-scale", String(s));
   } catch (e) {}
+  try {
+    var l = localStorage.getItem("corvus.lang");
+    if (l) document.documentElement.setAttribute("lang", l);
+  } catch (e) {}
   /* In the desktop app this page is a frameless, see-through window of its
      own (corvus/app.py), and has to be transparent from the first paint, or
      its rounded corners would flash up square. */
@@ -47,6 +51,7 @@
 <div id="popout" class="popout-root"></div>
 <script src="vendor/lucide.min.js" defer></script>
 <script src="js/lazy.js" defer></script>
+<script src="js/i18n.js" defer></script>
 <script src="js/ui.js" defer></script>
 <script src="js/ssh-term.js" defer></script>
 <script src="js/float-window.js" defer></script>

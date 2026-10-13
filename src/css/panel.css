@@ -622,8 +622,8 @@ button.link-card-title:focus-visible {
 
 .link-status {
   background: var(--surface-2); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 9px 10px;
-  display: flex; flex-direction: column; gap: 3px;
+  border-radius: var(--radius); padding: 12px;
+  display: flex; flex-direction: column; gap: 8px;
 }
 /* One line, never two: the status word, the quality pill and the two link
    actions share a row that must not wrap, because a status card that changes
@@ -675,6 +675,31 @@ button.link-card-title:focus-visible {
   overflow: hidden;
 }
 .link-status-error[hidden] { display: none; }
+/* The status card's problem line. One row that never grows: the sentence is
+   cut with an ellipsis and, only while it is cut, a red info icon opens the
+   whole of it. Red because it is still an error, however long. Set apart from
+   the connection line by a hairline so the two do not read as one block. */
+.link-status-problem {
+  display: flex; align-items: center; gap: 6px; min-width: 0;
+  padding-top: 8px; border-top: 1px solid var(--border);
+  font-size: 11px; line-height: 1.4; color: var(--critical);
+}
+.link-status-problem[hidden] { display: none; }
+.link-status-problem-text {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ui-info.link-error-info,
+.ui-info.link-error-info:hover,
+.ui-info.link-error-info[data-popover-open="true"] { color: var(--critical); }
+.ui-info.link-error-info[hidden] { display: none; }
+.ui-popover.link-error-info {
+  max-width: min(320px, calc(100 * var(--vw) - 16px));
+  border-color: var(--critical);
+}
+.ui-popover.link-error-info .ui-popover-text {
+  color: var(--critical); word-break: break-word;
+}
 /* Same line, same place, but the forwarder is running — it just did not get
    the listen port it asked for. Red would say something broke; nothing did. */
 .link-status-error.link-status-notice { color: var(--warning); }

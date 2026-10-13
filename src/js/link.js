@@ -100,7 +100,8 @@ Corvus.link = (function () {
   let serialSelect, baudSelect, refreshBtn, connectBtn, reconnectBtn;
   let customInput, portHint;
   let kindSerialBtn, kindNetBtn, serialFields, netFields;
-  let statusDot, statusLabel, statusConn, statusError;
+  let statusDot, statusLabel, statusConn, statusError, statusErrorText;
+  let errorHint = null, errorObserver = null;
   let disconnectBtn, qualityEl, recentHost, presetHost;
   let autoBadge, suggestionHost;
 
@@ -267,7 +268,7 @@ Corvus.link = (function () {
     const conn = suggestion ? String(suggestion.connection_string || "") : "";
     if (!conn || conn === dismissedSuggestion) {
       Corvus.ui.clear(suggestionHost);
-      suggestionHost.hidden = true;
+      if (!suggestionHost.hidden) suggestionHost.hidden = true;
       shownSuggestion = "";
       return;
     }
@@ -558,19 +559,46 @@ Corvus.link = (function () {
     portHint.hidden = !absent;
   }
 
+  /* The status card keeps the backend's sentence on one line so the card does
+     not change height with the message. When the sentence is cut off, a red
+     info icon opens it whole: a long message is still an error, so the popover
+     is red too. The icon is only on screen while the text is actually clipped,
+     which depends on the panel width, hence the observer. */
+  function paintErrorOverflow() {
+    if (!statusError || !statusErrorText || !errorHint) return;
+    const clipped = !statusError.hidden
+      && statusErrorText.scrollWidth > statusErrorText.clientWidth + 1;
+    errorHint.hidden = !clipped;
+  }
+
   function showError(text) {
-    if (!statusError) return;
-    if (text) {
-      statusError.textContent = String(text);
-      // The line is clamped to two rows so a long backend message cannot grow
-      // the card; the title keeps the whole of it reachable.
-      statusError.title = String(text);
-      statusError.hidden = false;
-    } else {
-      statusError.textContent = "";
-      statusError.title = "";
-      statusError.hidden = true;
+    if (!statusError || !statusErrorText) return;
+    const msg = text ? String(text) : "";
+    // Called on every telemetry frame. An unchanged message changes nothing,
+    // and the overflow check below would force a layout to find that out.
+    if (statusErrorText.textContent === msg && statusError.hidden === !msg) return;
+    statusErrorText.textContent = msg;
+    statusError.hidden = !msg;
+    if (errorHint && errorHint.corvusPopover) {
+      errorHint.corvusPopover.setContent({ text: msg });
     }
+    paintErrorOverflow();
+  }
+
+  function initErrorHint() {
+    if (!statusError || !statusErrorText || !Corvus.ui || !Corvus.ui.infoHint) return;
+    errorHint = Corvus.ui.infoHint({
+      text: "",
+      className: "link-error-info",
+      ariaLabel: "Show the full error message",
+    });
+    errorHint.hidden = true;
+    statusError.appendChild(errorHint);
+    if (typeof ResizeObserver === "function") {
+      errorObserver = new ResizeObserver(paintErrorOverflow);
+      errorObserver.observe(statusError);
+    }
+    Corvus.ui.refreshIcons();
   }
 
   /** POST a connection string and update local state. */
@@ -661,35 +689,39 @@ Corvus.link = (function () {
     if (disconnectBtn) disconnectBtn.disabled = busy;
   }
 
+  /** Assign only when different: the row is refreshed on every telemetry
+   *  frame, and an unchanged write still costs a style pass. */
+  function setProp(target, key, value) {
+    if (target[key] !== value) target[key] = value;
+  }
+
   /** Reflect link_status into the status row + connect button labels. */
   function updateFromState(state) {
     const status = String(state.link_status || "disconnected").toLowerCase();
     const info = statusInfo(status);
 
-    if (statusDot) {
-      statusDot.className = "link-status-dot " + info.dot;
-    }
-    if (statusLabel) statusLabel.textContent = info.label;
+    if (statusDot) setProp(statusDot, "className", "link-status-dot " + info.dot);
+    if (statusLabel) setProp(statusLabel, "textContent", info.label);
 
     // AUTO chip: which rule picked this link, in two words, with the whole
     // sentence on hover. Hidden the moment the operator connects by hand —
     // it would then be describing a decision that is no longer in force.
     if (autoBadge) {
       const auto = autoInfo(state, status);
-      autoBadge.textContent = auto ? auto.label : "";
-      autoBadge.title = auto ? auto.title : "";
-      autoBadge.hidden = !auto;
+      setProp(autoBadge, "textContent", auto ? String(auto.label) : "");
+      setProp(autoBadge, "title", auto ? String(auto.title) : "");
+      setProp(autoBadge, "hidden", !auto);
     }
 
     renderSuggestion(state);
 
     if (statusConn) {
       const conn = state.link_connection || "";
-      statusConn.textContent = conn || "No connection";
+      setProp(statusConn, "textContent", String(conn || "No connection"));
       // Ellipsised on one line — a serial path is long enough to wrap three
       // times — with the full string on hover.
-      statusConn.title = conn;
-      statusConn.hidden = !conn;
+      setProp(statusConn, "title", String(conn));
+      setProp(statusConn, "hidden", !conn);
     }
 
     // Backend link_error wins over any locally-shown error.
@@ -708,33 +740,33 @@ Corvus.link = (function () {
     //  - otherwise   -> enabled "Connect", Reconnect hidden
     const busy = inFlight || status === "connecting";
     if (connectBtn) {
-      connectBtn.disabled = busy || status === "connected";
+      setProp(connectBtn, "disabled", busy || status === "connected");
       const span = connectBtn.querySelector("span");
       if (span) {
-        span.textContent = status === "connecting" ? "Connecting\u2026"
+        setProp(span, "textContent", status === "connecting" ? "Connecting\u2026"
           : status === "connected" ? "Connected"
-          : "Connect";
+          : "Connect");
       }
     }
     if (reconnectBtn) {
       const showReconnect = status === "connected" && !inFlight;
-      reconnectBtn.hidden = !showReconnect;
-      reconnectBtn.disabled = !showReconnect;
+      setProp(reconnectBtn, "hidden", !showReconnect);
+      setProp(reconnectBtn, "disabled", !showReconnect);
     }
     // Disconnect is offered whenever there is something to close — including
     // while connecting or reconnecting, which is exactly when an operator
     // wants to stop a retry loop against a port that has moved.
     if (disconnectBtn) {
       const canDisconnect = status !== "disconnected" && !inFlight;
-      disconnectBtn.hidden = !canDisconnect;
-      disconnectBtn.disabled = !canDisconnect;
+      setProp(disconnectBtn, "hidden", !canDisconnect);
+      setProp(disconnectBtn, "disabled", !canDisconnect);
     }
     // Link quality only means something on a live link.
     if (qualityEl) {
       const q = status === "connected" ? qualityInfo(state.link_quality) : { label: "", level: "off" };
-      qualityEl.textContent = q.label;
-      qualityEl.dataset.level = q.level;
-      qualityEl.hidden = !q.label;
+      setProp(qualityEl, "textContent", String(q.label));
+      setProp(qualityEl.dataset, "level", String(q.level));
+      setProp(qualityEl, "hidden", !q.label);
     }
 
     const firmware = String(state.px4_version || "");
@@ -825,6 +857,7 @@ Corvus.link = (function () {
     statusLabel = document.getElementById("linkStatusLabel");
     statusConn = document.getElementById("linkStatusConn");
     statusError = document.getElementById("linkStatusError");
+    statusErrorText = document.getElementById("linkStatusErrorText");
     disconnectBtn = document.getElementById("linkDisconnect");
     qualityEl = document.getElementById("linkQuality");
     recentHost = document.getElementById("linkRecent");
@@ -832,6 +865,7 @@ Corvus.link = (function () {
     autoBadge = document.getElementById("linkAutoBadge");
     suggestionHost = document.getElementById("linkSuggestion");
 
+    initErrorHint();
     initCards();
     loadRecent();
     renderRecent();

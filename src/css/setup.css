@@ -132,7 +132,7 @@
               border-color 160ms ease, background 160ms ease;
 }
 .calib-card:hover:not(:disabled) {
-  background: var(--surface-2); border-color: var(--border-strong); transform: translateY(-1px);
+  background: var(--surface-2); border-color: var(--border-strong);
 }
 .calib-card:active:not(:disabled) { transform: scale(0.995); }
 .calib-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

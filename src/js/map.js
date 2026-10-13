@@ -947,8 +947,24 @@ Corvus.map = (function () {
      change; panning by that half keeps it anchored on the left edge, the way
      the panel uncovers and covers it. Following too: the aircraft stays where
      it is on screen, and the follow box moves the camera only once it leaves
-     the box, so the map never jumps under the operator. Returns the
-     unsubscribe. */
+     the box, so the map never jumps under the operator.
+
+     Under a tilted camera or over terrain a pan is not a shift: it moves the
+     camera, the foreground travels further than the horizon, and the picture
+     shears. There the vanishing point is held on its pixel instead, through
+     the padding, so the picture does not move at all. It is then off the
+     middle by half the panel, which is harmless while the camera is still;
+     the next programmatic move (following, centring, the 3D switch) takes it
+     back as part of a motion the map is making anyway (panelRestPadding).
+     Returns the unsubscribe. */
+  const panelRest = new WeakMap();
+
+  /** The padding a map held by holdThroughPanel goes back to on its next
+   *  camera move, or null when it is already there. */
+  function panelRestPadding(m) {
+    return (m && panelRest.get(m)) || null;
+  }
+
   function holdThroughPanel(m) {
     const panelApi = Corvus.panel;
     if (!m || !panelApi || typeof panelApi.onMotion !== "function") return () => {};
@@ -963,6 +979,20 @@ Corvus.map = (function () {
       container.style.width = "";
       container.style.right = "";
     };
+    const tilted = () => {
+      if (typeof m.getPadding !== "function" || typeof m.setPadding !== "function") return false;
+      const pitch = typeof m.getPitch === "function" ? m.getPitch() : 0;
+      const terrain = typeof m.getTerrain === "function" && m.getTerrain();
+      return pitch >= 0.5 || !!terrain;
+    };
+    const samePadding = (a, b) => ["top", "bottom", "left", "right"]
+      .every((side) => Math.abs((a[side] || 0) - (b[side] || 0)) < 0.5);
+    const onMoveEnd = () => {
+      const base = panelRest.get(m);
+      if (base && !phase && samePadding(m.getPadding(), base)) panelRest.delete(m);
+    };
+    m.on("moveend", onMoveEnd);
+
     const onResize = () => {
       if (!phase) return;
       const width = canvas.clientWidth;
@@ -970,6 +1000,20 @@ Corvus.map = (function () {
       lastWidth = width;
       if (phase === "settling") phase = null;
       if (width === before) return;
+      const base = panelRest.get(m);
+      if (base) {
+        // Keep the vanishing point on its pixel: a new width moves the middle
+        // by half the change, a padding of the whole change moves it back.
+        // Kept on one side only, so closing what opening added cancels out.
+        // Still inside resize(), so the step is never painted.
+        const padding = m.getPadding();
+        const offset = (padding.right - base.right) - (padding.left - base.left) + (width - before);
+        m.setPadding(Object.assign({}, padding, {
+          right: base.right + Math.max(0, offset),
+          left: base.left + Math.max(0, -offset),
+        }));
+        return;
+      }
       // The centre is where the old middle of the picture was; put it back
       // at that pixel. On a flat map one pan of half the change does it. On
       // the globe and over terrain a pan is not a pure shift, so measure
@@ -994,6 +1038,7 @@ Corvus.map = (function () {
         if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
         if (!phase) lastWidth = canvas.clientWidth;
         phase = "moving";
+        if (!panelRest.has(m) && tilted()) panelRest.set(m, m.getPadding());
         container.style.width = `${natural + Math.max(0, growth || 0)}px`;
         container.style.right = "auto";
       } else if (step === "end" && phase) {
@@ -1001,12 +1046,13 @@ Corvus.map = (function () {
         // When the released width equals the pinned one no resize follows,
         // so the anchoring must not linger for an unrelated one later.
         phase = "settling";
-        settleTimer = setTimeout(() => { phase = null; settleTimer = null; }, 250);
+        settleTimer = setTimeout(() => { phase = null; settleTimer = null; onMoveEnd(); }, 250);
       }
     });
     return () => {
       off();
       m.off("resize", onResize);
+      m.off("moveend", onMoveEnd);
       if (settleTimer) clearTimeout(settleTimer);
       release();
       phase = null;
@@ -2448,10 +2494,18 @@ Corvus.map = (function () {
   function cameraMove(opts, jump) {
     if (!map) return;
     const merged = withCameraGoal(opts);
+    const rest = panelRestPadding(map);
+    if (rest && merged.padding === undefined) merged.padding = rest;
     if (jump) {
       delete merged.duration;
       map.jumpTo(merged);
     } else {
+      // Over terrain the ease leaves the camera's ground height alone.
+      // Unfrozen, MapLibre re-reads the DEM pixel under the target every
+      // frame and lands on it, which over a surface model is a roof or a
+      // tree top: every follow pan ended with the view lurching. The height
+      // is reconciled once the camera is still (syncTerrainElevation).
+      if (terrainOn) merged.freezeElevation = true;
       map.easeTo(merged);
     }
   }
@@ -2488,13 +2542,24 @@ Corvus.map = (function () {
     }, 0);
   }
 
+  /** The map's viewport in CSS pixels. Read from the transform, which is
+   *  what project() measures against, rather than from the container: a
+   *  clientWidth read here runs right after the other telemetry subscribers
+   *  have written the DOM, and forced a full layout on every sample. */
+  function viewSize() {
+    const transform = map && map.transform;
+    if (transform && transform.width > 0 && transform.height > 0) {
+      return [transform.width, transform.height];
+    }
+    const container = map && map.getContainer();
+    return container ? [container.clientWidth, container.clientHeight] : [0, 0];
+  }
+
   function applyFollow() {
     if (!map || !followMode || followEasing) return;
     const target = vehTarget && realFix([vehTarget.lng, vehTarget.lat]);
     if (!target) return;
-    const container = map.getContainer();
-    const width = container ? container.clientWidth : 0;
-    const height = container ? container.clientHeight : 0;
+    const [width, height] = viewSize();
     // In 3D the aircraft is drawn at its altitude, which at 150 m and 60
     // degrees of pitch is a few hundred pixels above the ground point — far
     // enough that the marker can leave the top of the screen while the point
@@ -3219,9 +3284,23 @@ Corvus.map = (function () {
   // invisible; the interval keeps a burst of arriving DEM tiles from
   // recomputing it on every one.
   const TERRAIN_SYNC_EPSILON_M = 2.0;
-  // How far MapLibre's own clamped ground height may sit from ours before it
-  // counts as wrong rather than as another DEM zoom (syncTerrainElevation).
-  const TERRAIN_SYNC_CLAMPED_M = 30.0;
+  // The camera's ground height (syncTerrainElevation), as shares of the
+  // camera's distance from the centre: the spacing of the patch the median
+  // is taken over, how far the height may be off before it is moved, and how
+  // far off is jumped rather than glided...
+  const CAMERA_GROUND_SPAN = 0.04;
+  const CAMERA_GROUND_BAND = 0.015;
+  const CAMERA_GROUND_SNAP = 0.3;
+  // ...and the share of the camera's height above the ground it looks at that
+  // the ground may rise by before the camera counts as inside it.
+  const CAMERA_GROUND_BURIED = 0.5;
+  // The glide: its time constant, the shortest step it assumes (the first
+  // frame has no previous one), and how close counts as there.
+  const CAMERA_GROUND_GLIDE_MS = 220;
+  const CAMERA_GROUND_MIN_STEP_MS = 16;
+  const CAMERA_GROUND_DONE_M = 0.5;
+  const EARTH_CIRCUMFERENCE_M = 40075016.686;
+  const METRES_PER_DEGREE = EARTH_CIRCUMFERENCE_M / 360;
   const TERRAIN_SYNC_MIN_MS = 250;
   // The zoom the camera-seeding elevation probe reads. Coarse on purpose:
   // it only has to place a camera above the ground, the DEM query refines it
@@ -3233,6 +3312,10 @@ Corvus.map = (function () {
   // milliseconds, and a tile that is not coming must not hold the camera
   // still long enough for the operator to notice the button did nothing.
   const TERRAIN_PROBE_TIMEOUT_MS = 1500;
+  // How long the terrain waits for the tilt (or a follow pan) to finish
+  // before it is attached anyway, and how often it looks (whenStill).
+  const TERRAIN_ATTACH_WAIT_MS = 1500;
+  const TERRAIN_ATTACH_POLL_MS = 50;
   // Attempts the settle poll makes before giving up — a few seconds' worth.
   const TERRAIN_SYNC_TRIES = 20;
   // Where the globe hands over to the flat map. MapLibre's own globe fades
@@ -3355,13 +3438,13 @@ Corvus.map = (function () {
   // landing mid-poll continues it rather than restarting it — see
   // scheduleTerrainSync.
   let terrainSyncTries = 0;
-  // The centre an elevation probe is running for (seedCameraElevation), and
-  // whether MapLibre's own ground clamp is set aside while it lands.
+  // The centre an elevation probe is running for (seedCameraElevation).
   let terrainSeedKey = null;
-  let clampSuspended = false;
-  // The last ground height syncTerrainElevation wrote, so it can tell that
-  // MapLibre has taken the camera back and stop arguing with it.
-  let terrainSyncWritten = null;
+  // The camera's ground height on its way to a new value (glideCameraGround).
+  const groundGlide = { target: null, frame: null, last: 0 };
+  // True while Corvus itself is writing that height, so the move it fires is
+  // not taken for the operator's (see the moveend handler).
+  let elevationWriting = false;
   let buildingSource = null;
   // "z/x/y" -> feature array. An empty array is a cell that is either genuinely
   // empty or still in flight; either way it must not be requested twice.
@@ -3577,36 +3660,56 @@ Corvus.map = (function () {
    * world.
    */
   /**
-   * Bring terrain up, and call *onReady* once the camera has been placed.
+   * Bring terrain up, once the camera has been placed above the ground and is
+   * holding still.
    *
-   * The callback exists because the order matters and is not obvious: the
-   * camera's ground height has to be set BEFORE the tilt, not during it.
-   * Writing the elevation into a running easeTo fights the animation, and
-   * what the operator sees is the map decline to tilt at all. So the caller
-   * hands its tilt over and it runs on the far side of the seed.
+   * The tilt does not wait for this. It used to: the camera's height was
+   * seeded first and the tilt handed over to run after it, so the side view
+   * came only once the elevation probe had answered, which over ground the
+   * cache does not hold is its whole timeout. And it came with a race: the
+   * height being written again while the tilt ran stopped the tilt part way.
+   * Now the tilt starts on the press, over the flat map, and the terrain is
+   * attached when the camera is still (whenStill). Attach and seed land in
+   * the same frame, so the ground rises under the camera without the camera
+   * ever being inside it.
    */
-  function enableTerrain(onReady) {
+  function enableTerrain() {
     const id = terrainSourceId();
-    const ready = () => { if (typeof onReady === "function") onReady(); };
     if (!map || !started || !id || terrainWanted) return false;
     terrainWanted = true;
     // Claimed before the probe below, so a second press cannot start a second
     // attach, and cancelled by a generation bump if 3D goes off meanwhile.
     const generation = ++terrainGeneration;
     primeCameraElevation().then((height) => {
-      if (generation !== terrainGeneration) return;   // switched off, or re-entered
-      attachTerrain(id, generation);
-      // AFTER the attach, never before: setTerrain resets the camera's centre
-      // elevation to zero as it binds — it re-derives that height from the
-      // terrain it is attaching, which at that instant knows nothing. A seed
-      // written first is therefore thrown away, and the camera goes back
-      // underground on the very call that was meant to save it.
-      if (height !== null && terrainOn) {
-        try { map.setCenterElevation(height); } catch (_error) { /* camera busy */ }
-      }
-      ready();
+      whenStill(generation, () => {
+        attachTerrain(id, generation);
+        // AFTER the attach, never before: setTerrain resets the camera's
+        // centre elevation to zero as it binds — it re-derives that height
+        // from the terrain it is attaching, which at that instant knows
+        // nothing. A seed written first is therefore thrown away, and the
+        // camera goes back underground on the very call that was meant to
+        // save it.
+        if (height !== null && terrainOn) writeCenterElevation(height);
+      });
     });
     return true;
+  }
+
+  /**
+   * Run *fn* once the camera is not being moved, or after a short wait at
+   * most. Writing the camera's height is a jumpTo, and a jumpTo stops any
+   * animation in flight: the tilt into 3D, or a follow pan. Bounded, because
+   * a camera that never holds still (a follow pan per telemetry sample) must
+   * not keep the terrain away, and dropped by a generation bump.
+   */
+  function whenStill(generation, fn, since) {
+    if (generation !== terrainGeneration || !terrainWanted || !map) return;
+    const start = since === undefined ? nowMs() : since;
+    if (!mapInMotion() || nowMs() - start > TERRAIN_ATTACH_WAIT_MS) {
+      fn();
+      return;
+    }
+    window.setTimeout(() => whenStill(generation, fn, start), TERRAIN_ATTACH_POLL_MS);
   }
 
   /**
@@ -3741,6 +3844,9 @@ Corvus.map = (function () {
       return;
     }
     terrainOn = true;
+    // From here the camera's height is held by syncTerrainElevation, never
+    // by MapLibre's per-pixel clamp: see there for why.
+    holdCameraGround(true);
     addHillshade(id);
     // From here on, DEM tiles landing are the cue to reconcile the camera's
     // idea of the ground height with the real one — see syncTerrainElevation.
@@ -3826,91 +3932,215 @@ Corvus.map = (function () {
    * a point 600 m underground: the terrain is behind it, no tile computes as
    * visible, and the map renders empty while insisting everything has loaded.
    *
-   * setCenterElevation is MapLibre 5's own public answer to this, and taking
-   * it is most of why the map was moved to 5. The v4 equivalent had to be
-   * done by hand through internals: transform.elevation is getter-only in 5,
-   * and its recalculateZoom — MapLibre 4's own correction — preserved the
-   * camera's ALTITUDE rather than its zoom, dropping the operator to street
-   * level, and left the zoom NaN whenever the camera was below the new
-   * ground, which poisoned getBounds, getZoom and every tile calculation.
+   * The height is Corvus's, not MapLibre's, for as long as terrain is on (see
+   * attachTerrain). MapLibre's own rule puts the camera's focus on the one
+   * DEM pixel under the centre, every frame and at the end of every ease.
+   * Over a surface model, which has the roofs and the tree tops in it, that
+   * pixel jumps by ten or twenty metres whenever the centre crosses a hedge,
+   * and following an aircraft moves the centre all the time: the whole view
+   * pumped up and down with every follow pan. What is used here is the
+   * median of a patch around the centre (cameraGround), changed only when it
+   * has moved by a share of the camera's distance, and then glided to rather
+   * than jumped to.
    *
    * Runs for as long as 3D is on, not once: DEM tiles refine as they load,
-   * and a camera moved by something that does not interpolate elevation can
-   * drift. Rate limited, and a no-op once the two agree.
+   * and every camera move ends somewhere new. Rate limited, and a no-op once
+   * the two agree.
    */
   function syncTerrainElevation() {
     if (!map || !terrainOn) return false;
     if (typeof map.setCenterElevation !== "function") return true;   // nothing to do
-    // Never mid-animation: MapLibre interpolates the elevation itself across
-    // an ease, and a write here would fight its next frame. Nor mid-drag:
-    // MapLibre freezes the height while the operator pans and settles it on
-    // release, and a DEM tile landing under a moving centre used to move the
-    // camera's focus by hundreds of metres in the middle of the drag. The
+    // Never mid-animation or mid-drag: the camera is being moved, and a
+    // height written now would be a jolt under the operator's hand. The
     // moveend handler asks again once the map is still.
-    if (typeof map.isEasing === "function" && map.isEasing()) return false;
-    if (typeof map.isMoving === "function" && map.isMoving()) return false;
+    if (mapInMotion()) return false;
     let centre;
     try { centre = map.getCenter(); } catch (_error) { return false; }
     if (!centre || !isFinite(centre.lng) || !isFinite(centre.lat)) return false;
-    const ground = terrainElevation([centre.lng, centre.lat]);
+    const distance = cameraDistanceM(centre.lat);
+    // A literal zero under the centre is not an answer (readTerrainValue):
+    // terrainElevation is null there, and so is the patch. Keeping it
+    // unsettled costs a few retries at genuine sea level and then leaves 0
+    // standing, which is the right answer there.
+    const ground = cameraGround(centre, distance);
     if (ground === null) {
       // The DEM under the centre has not arrived, and after a long jump it
       // may never: see seedCameraElevation.
       seedCameraElevation(centre);
       return false;
     }
-    // The ground is known again: MapLibre can hold the camera on it itself.
-    resumeCenterClamp();
-    // A literal zero is not an answer yet. A terrain with no DEM loaded under
-    // the centre reports 0 rather than null, which is exactly what the camera
-    // already believes — so taking it at face value declares success, stops
-    // asking, and leaves the aircraft's ground six hundred metres below the
-    // mountain it is on. Keeping it unsettled costs a few retries at genuine
-    // sea level and then leaves 0 standing, which is the right answer there.
-    if (ground === 0) return false;
+    terrainSeedKey = null;
+    if (groundGlide.target !== null) {
+      groundGlide.target = ground;   // already on its way; only the goal moved
+      return true;
+    }
     const current = Number(map.getCenterElevation());
-    if (isFinite(current) && Math.abs(ground - current) < TERRAIN_SYNC_EPSILON_M) return true;
-    // While MapLibre clamps the centre to the ground it is the one holding the
-    // camera, and a few metres between its reading and this one is only two
-    // DEM zooms disagreeing. What this exists for is the camera hundreds of
-    // metres underground, and that is never within this margin.
-    const clamped = !clampSuspended && typeof map.getCenterClampedToGround === "function"
-      && map.getCenterClampedToGround();
-    if (clamped && isFinite(current) && current !== 0
-        && Math.abs(ground - current) < TERRAIN_SYNC_CLAMPED_M) return true;
-    // Already written, and MapLibre put its own height back. With the centre
-    // clamped to the ground it holds the camera on the terrain itself, read
-    // from the DEM tile of ITS zoom, which can differ from this reading by
-    // several metres in steep ground. Writing again only starts the next
-    // round: every write moved the camera and fired a burst of data events,
-    // every burst brought this back, four times a second for as long as the
-    // map stood still. That was the stutter.
-    if (terrainSyncWritten !== null && !clampSuspended
-        && Math.abs(terrainSyncWritten - ground) < TERRAIN_SYNC_EPSILON_M) return true;
+    const off = isFinite(current) ? Math.abs(ground - current) : Infinity;
+    if (off < cameraGroundBand(distance)) return true;
+    // A camera inside the hill, or so far off that it might as well be, is
+    // the blank map: gliding out of it would show the operator the inside of
+    // a mountain for a moment. Everything else glides.
+    if (cameraBuried(ground, current, distance) || off > CAMERA_GROUND_SNAP * distance) {
+      return writeCenterElevation(ground);
+    }
+    glideCameraGround(ground);
+    return true;
+  }
+
+  /** Is the camera being moved right now, by an animation or by a hand? */
+  function mapInMotion() {
+    if (typeof map.isEasing === "function" && map.isEasing()) return true;
+    return typeof map.isMoving === "function" && map.isMoving();
+  }
+
+  /**
+   * How far the camera is from the point it looks at, in metres.
+   *
+   * MapLibre's camera sits 1.5 viewport heights from the centre at its
+   * default field of view; cameraToCenterDistance is that, in pixels, when
+   * the transform is there to ask. Times the metres in one pixel at the
+   * centre's latitude.
+   */
+  function cameraDistanceM(lat) {
+    const container = map.getContainer();
+    const height = container ? container.clientHeight : 0;
+    const transform = map.transform;
+    const px = transform && isFinite(transform.cameraToCenterDistance)
+      ? transform.cameraToCenterDistance : 1.5 * height;
+    let zoom;
+    try { zoom = map.getZoom(); } catch (_error) { zoom = NaN; }
+    if (!isFinite(zoom) || !(px > 0)) return 0;
+    const metresPerPixel = EARTH_CIRCUMFERENCE_M * Math.cos((lat * Math.PI) / 180)
+      / (512 * Math.pow(2, zoom));
+    return px * metresPerPixel;
+  }
+
+  /** Would the camera be in or close to the ground at *ground*? It sits
+   *  distance x cos(pitch) above the height it looks at. */
+  function cameraBuried(ground, current, distance) {
+    if (!isFinite(current)) return true;
+    let pitch;
+    try { pitch = map.getPitch(); } catch (_error) { pitch = 0; }
+    const rise = distance * Math.cos(((isFinite(pitch) ? pitch : 0) * Math.PI) / 180);
+    return ground - current > CAMERA_GROUND_BURIED * rise;
+  }
+
+  /** How far the camera's ground may be off before it is moved: a share of
+   *  the camera's distance, so a few metres close in and tens far out, where
+   *  the same metres are a fraction of a pixel. */
+  function cameraGroundBand(distance) {
+    return Math.max(TERRAIN_SYNC_EPSILON_M, CAMERA_GROUND_BAND * distance);
+  }
+
+  /**
+   * The ground height the camera should look at, around *centre*, or null
+   * while the DEM under the centre itself is unknown.
+   *
+   * A median over a small patch rather than the one pixel under the centre.
+   * Over a surface model the pixel is a roof one moment and a road the next;
+   * the median is the level most of the patch is at, which moves when the
+   * ground does and not when the centre crosses a building. The patch scales
+   * with the camera's distance, so it stays about the same share of the view.
+   */
+  function cameraGround(centre, distance) {
+    const middle = terrainElevation([centre.lng, centre.lat]);
+    if (middle === null) return null;
+    const step = CAMERA_GROUND_SPAN * distance;
+    if (!(step > 0)) return middle;
+    const dLat = step / METRES_PER_DEGREE;
+    const dLng = dLat / Math.max(0.05, Math.cos((centre.lat * Math.PI) / 180));
+    const heights = [middle];
+    for (let i = -1; i <= 1; i++) {
+      for (let j = -1; j <= 1; j++) {
+        if (i === 0 && j === 0) continue;
+        const h = terrainElevation([centre.lng + i * dLng, centre.lat + j * dLat]);
+        if (h !== null) heights.push(h);
+      }
+    }
+    return medianOf(heights);
+  }
+
+  function medianOf(values) {
+    const sorted = values.slice().sort((a, b) => a - b);
+    const mid = sorted.length >> 1;
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
+  /** Set the camera's ground height, without the move it fires being taken
+   *  for a new view (see the moveend handler). */
+  function writeCenterElevation(height) {
+    elevationWriting = true;
     try {
-      map.setCenterElevation(ground);
-      terrainSyncWritten = ground;
+      map.setCenterElevation(height);
       return true;
     } catch (_error) {
-      return false;   // a camera mid-change; the retry below tries again
+      return false;   // a camera mid-change; the next sync tries again
+    } finally {
+      elevationWriting = false;
     }
+  }
+
+  /**
+   * Move the camera's ground height to *target* over a few frames.
+   *
+   * An exponential approach with a fixed time constant, so it takes as long
+   * on a laptop drawing ten frames a second as on one drawing sixty. It gives
+   * way to anything that moves the camera: the moveend that follows asks for
+   * the height again, from where the camera then is.
+   */
+  function glideCameraGround(target) {
+    groundGlide.target = target;
+    if (groundGlide.frame !== null) return;
+    groundGlide.last = nowMs();
+    stepCameraGround();
+  }
+
+  function stepCameraGround() {
+    groundGlide.frame = null;
+    const target = groundGlide.target;
+    if (!map || !terrainOn || target === null || mapInMotion()) {
+      groundGlide.target = null;
+      return;
+    }
+    const current = Number(map.getCenterElevation());
+    const now = nowMs();
+    const dt = Math.max(CAMERA_GROUND_MIN_STEP_MS, now - groundGlide.last);
+    groundGlide.last = now;
+    const left = target - current;
+    const next = !isFinite(current) || Math.abs(left) <= CAMERA_GROUND_DONE_M
+      ? target
+      : current + left * (1 - Math.exp(-dt / CAMERA_GROUND_GLIDE_MS));
+    if (!writeCenterElevation(next) || next === target) {
+      groundGlide.target = null;
+      return;
+    }
+    groundGlide.frame = window.requestAnimationFrame(stepCameraGround);
+  }
+
+  /** Stop a glide in progress. Idempotent. */
+  function stopCameraGlide() {
+    if (groundGlide.frame !== null) window.cancelAnimationFrame(groundGlide.frame);
+    groundGlide.frame = null;
+    groundGlide.target = null;
+  }
+
+  function nowMs() {
+    return typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
   }
 
   /**
    * Lift the camera out of the ground after a long jump.
    *
-   * MapLibre keeps the camera's focus on the terrain under the centre
-   * (centerClampedToGround), and where that terrain is not loaded it uses 0.
-   * After a jump of a few kilometres into a valley, say from a follow cut or a
-   * place search, that is a camera hundreds of metres underground. It then
-   * asks for the elevation tiles IT can see, which are not the ones under the
-   * centre, so the centre never loads and the map stays blank: the same
-   * deadlock primeCameraElevation breaks when terrain is first attached.
+   * Where the terrain under the centre is not loaded, there is no ground to
+   * sync to. After a jump of a few kilometres into a valley, say from a
+   * follow cut or a place search, the camera keeps the height of where it
+   * was, which can be hundreds of metres underground. MapLibre then asks for
+   * the elevation tiles IT can see, which are not the ones under the centre,
+   * so the centre never loads and the map stays blank: the same deadlock
+   * primeCameraElevation breaks when terrain is first attached.
    *
-   * Broken the same way: the height is read straight from one elevation tile.
-   * The clamp is set aside meanwhile, or MapLibre would put the camera back to
-   * 0 on its next frame; resumeCenterClamp restores it as soon as the terrain
-   * under the centre is known. One probe per centre at a time.
+   * Broken the same way: the height is read straight from one elevation
+   * tile. One probe per centre at a time.
    */
   function seedCameraElevation(centre) {
     if (!map || typeof map.setCenterElevation !== "function") return;
@@ -3926,22 +4156,21 @@ Corvus.map = (function () {
       // Only if the camera is still where the probe was for and still blind.
       if (!now || Math.abs(now.lng - centre.lng) > 1e-3 || Math.abs(now.lat - centre.lat) > 1e-3) return;
       if (terrainElevation([now.lng, now.lat]) !== null) return;
-      if (typeof map.setCenterClampedToGround === "function") {
-        try { map.setCenterClampedToGround(false); clampSuspended = true; } catch (_error) { /* keep going */ }
-      }
-      try { map.setCenterElevation(height); } catch (_error) { return; }
+      // Not into a moving camera: the write would stop the tilt or the pan
+      // part way. Forgotten instead, so the moveend at its end asks again.
+      if (mapInMotion()) { terrainSeedKey = null; return; }
+      if (!writeCenterElevation(height)) return;
       scheduleTerrainSync(true);
     });
   }
 
-  /** Hand the camera's height back to MapLibre. Idempotent. */
-  function resumeCenterClamp() {
-    terrainSeedKey = null;
-    if (!clampSuspended || !map) return;
-    clampSuspended = false;
-    if (typeof map.setCenterClampedToGround === "function") {
-      try { map.setCenterClampedToGround(true); } catch (_error) { /* already */ }
-    }
+  /**
+   * Who holds the camera's height: Corvus while terrain is on, MapLibre
+   * otherwise (where it holds it at sea level, which is right on flat ground).
+   */
+  function holdCameraGround(own) {
+    if (!map || typeof map.setCenterClampedToGround !== "function") return;
+    try { map.setCenterClampedToGround(!own); } catch (_error) { /* an older MapLibre */ }
   }
 
   /**
@@ -4142,8 +4371,9 @@ Corvus.map = (function () {
     // a settle poll running, and that poll outliving the mode is a timer
     // nobody is waiting for on a field laptop's battery.
     stopTerrainSync();
-    resumeCenterClamp();
-    terrainSyncWritten = null;
+    stopCameraGlide();
+    terrainSeedKey = null;
+    holdCameraGround(false);
     if (!map || !terrainOn) return;
     map.off("data", onTerrainData);
     removeHillshade();
@@ -4551,9 +4781,7 @@ Corvus.map = (function () {
     // map was resized (or from before the aircraft lost its fix) is a camera
     // that pans to somewhere the aircraft is not.
     if (!threeD || !veh3dEl || !vehDisplay || !map) { hideVehicle3D(); return; }
-    const container = map.getContainer();
-    const width = container ? container.clientWidth : 0;
-    const height = container ? container.clientHeight : 0;
+    const [width, height] = viewSize();
     if (!(width > 0 && height > 0)) { hideVehicle3D(); return; }
 
     const lng = vehDisplay.lng, lat = vehDisplay.lat;
@@ -4802,7 +5030,6 @@ Corvus.map = (function () {
     if (!map) return threeD;
     threeD = on;
     const full = threeDDetail === THREE_D_FULL;
-    let tiltHandled = false;
     if (on) {
       // Everything that touches the style waits for the style. The rail is
       // built before "load" (so the operator is never left without controls
@@ -4816,11 +5043,9 @@ Corvus.map = (function () {
         const wantGlobe = wantsGlobe(map.getZoom(), globeOn);
         if (wantGlobe !== globeOn) setGlobe(wantGlobe);
         globeOn = wantGlobe;
-        // Terrain in both modes, on both projections. The tilt is handed to
-        // enableTerrain so it runs after the camera has been placed above
-        // the ground (see there). When there is no terrain to wait for (no
-        // DEM served, or it is already on) it happens immediately below.
-        tiltHandled = enableTerrain(() => tiltTo(THREE_D_PITCH));
+        // Terrain in both modes, on both projections. It comes up behind
+        // the tilt, never in front of it (see enableTerrain).
+        enableTerrain();
         if (full) {
           addBuildingLayer();
           refreshBuildings();
@@ -4848,7 +5073,7 @@ Corvus.map = (function () {
       // once("moveend") here: a 3D press cancelled before the tilt lands
       // leaves that listener registered forever, and an operator toggling the
       // button accumulates one per press.
-      if (!tiltHandled) tiltTo(THREE_D_PITCH);
+      tiltTo(THREE_D_PITCH);
     } else {
       hideVehicle3D();
       removeBuildingLayer();
@@ -5011,7 +5236,12 @@ Corvus.map = (function () {
     map.on("moveend", () => {
       followEasing = false;
       operatorMoving = false;
+      // Also after the camera's own ground height was set: if that stopped a
+      // tilt or a pan part way, the goal it was carrying is asked for again.
       settleCameraGoal();
+      // But nothing else. It is not a new view, and answering it would only
+      // ask for the height that was just written.
+      if (elevationWriting) return;
       // The camera landed somewhere new: it may have crossed the zoom where
       // the globe hands over to the flat map, and its ground height may be
       // stale.
@@ -5119,6 +5349,7 @@ Corvus.map = (function () {
     isReady: () => started,
     // Shared with the mission planner's map, which sits beside the panel too.
     holdThroughPanel,
+    panelRestPadding,
     setWaypointMode,
     // The flight bar's OPTIONAL narrowing rule: whether it answers to a share
     // of the map column (captions off early, as the window narrows) on top of

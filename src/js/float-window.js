@@ -160,13 +160,14 @@ Corvus.floatWindows = (function () {
   }
 
   /** Write a record's rect to its element and let the content re-fit. */
-  function applyRect(rec) {
+  function applyRect(rec, moveOnly) {
     rec.el.style.left = rec.rect.x + "px";
     rec.el.style.top = rec.rect.y + "px";
     rec.el.style.width = rec.rect.w + "px";
     rec.el.style.height = rec.rect.h + "px";
     if (!rec.maximized) geometry.set(rec.key, Object.assign({}, rec.rect));
-    if (typeof rec.onResize === "function") rec.onResize(rec);
+    // A move leaves the size alone, so the content is not re-fitted per event.
+    if (!moveOnly && typeof rec.onResize === "function") rec.onResize(rec);
   }
 
   /** Bring a window to the front. Stacking is DOM order — no z-index race. */
@@ -352,12 +353,13 @@ Corvus.floatWindows = (function () {
         rec.rect = clampRect({
           x: drag.rect.x + dx, y: drag.rect.y + dy, w: drag.rect.w, h: drag.rect.h,
         }, view);
-      } else {
-        rec.rect = clampRect({
-          x: drag.rect.x, y: drag.rect.y,
-          w: drag.rect.w + dx, h: drag.rect.h + dy,
-        }, view);
+        applyRect(rec, rec.rect.w === drag.rect.w && rec.rect.h === drag.rect.h);
+        return;
       }
+      rec.rect = clampRect({
+        x: drag.rect.x, y: drag.rect.y,
+        w: drag.rect.w + dx, h: drag.rect.h + dy,
+      }, view);
       applyRect(rec);
     });
 

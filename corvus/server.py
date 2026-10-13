@@ -33,7 +33,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from . import (
     ardupilot_battery, ardupilot_motors, ardupilot_mounting, ardupilot_rc,
     ardupilot_remote_id, ardupilot_safety, ardupilot_tuning, autopilot, battery,
-    battery_config, dem_tiles, geocode, motor_config, mounting_config, param_files,
+    battery_config, dem_tiles, geocode, languages, motor_config, mounting_config, param_files,
     param_metadata, rc_config, remote_id,
     remote_id_config,
     local_shell, net_probe, rtk, rtk_service,
@@ -96,6 +96,7 @@ from .routes.firmware import FirmwareRoutes
 from .routes.fleet import FleetRoutes
 from .routes.first_setup import FirstSetupRoutes
 from .routes.geofence import GeofenceRoutes
+from .routes.languages import LanguageRoutes
 from .routes.logs import LogRoutes
 from .routes.mission import MissionRoutes
 from .routes.rtk import RtkRoutes
@@ -1130,6 +1131,7 @@ class CorvusHandler(
     FirstSetupRoutes,
     FleetRoutes,
     GeofenceRoutes,
+    LanguageRoutes,
     LogRoutes,
     MissionRoutes,
     RtkRoutes,
@@ -1479,6 +1481,8 @@ class CorvusHandler(
             merged["stream_rates"] = cfg.stream_rates
         if cfg.theme is not None:
             merged["theme"] = cfg.theme
+        if cfg.language is not None:
+            merged["language"] = cfg.language
         if cfg.map is not None:
             merged["map"] = cfg.map
         # Carried through the merge but absent from ``known`` below: a write of
@@ -1513,7 +1517,7 @@ class CorvusHandler(
             "mavlink_connection", "http_port", "tile_cache_dir", "tlog_dir",
             "params_dir", "firmware_dir", "log_download_dir", "missions_dir",
             "tile_sources", "stream_rates", "ssh_connections",
-            "theme", "map", "branding", "controls", "ui", "updates",
+            "theme", "language", "map", "branding", "controls", "ui", "updates",
             "autoconnect", "battery", "remote_id", "parameters", "review",
             "checklists",
         }
@@ -1549,6 +1553,14 @@ class CorvusHandler(
                 if not isinstance(value, dict):
                     return None, "theme must be an object"
                 merged["theme"] = value
+            elif key == "language":
+                # "" puts the default (English) back; anything else has to be
+                # shaped like a code, though not necessarily an installed one,
+                # because a settings file from another station may name a
+                # language this one does not have.
+                if not isinstance(value, str) or (value and not languages.is_valid_code(value)):
+                    return None, "language must be a language code such as de or pt-BR"
+                merged["language"] = value
             elif key == "map":
                 if not isinstance(value, dict):
                     return None, "map must be an object"

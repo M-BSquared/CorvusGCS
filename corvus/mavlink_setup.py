@@ -205,6 +205,12 @@ class VehicleSetupMixin:
             )
             if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
                 return self._command_failure(f"Motor test {motor}", result)
+            tested = getattr(self, "_motors_tested", None)
+            if tested is None:
+                tested = self._motors_tested = []
+            if motor in tested:
+                tested.remove(motor)
+            tested.append(motor)
             self._console_publish(
                 "MOTOR", f"motor {motor} test at {throttle_pct:g}% for {duration:g}s",
                 "warning")
@@ -225,8 +231,13 @@ class VehicleSetupMixin:
             ok = True
             # Every motor, not just the last one tested: the operator pressing
             # Stop wants silence, and a test that was started by something else
-            # (or before a reload) is exactly when that matters most.
-            for motor in range(1, 9):
+            # (or before a reload) is exactly when that matters most. The ones
+            # this session spun go first, the last one first, and a motor
+            # above 8 is among them: the fixed 1 to 8 sweep used to leave it
+            # running until its own timeout.
+            tested = list(reversed(getattr(self, "_motors_tested", None) or []))
+            order = tested + [m for m in range(1, 9) if m not in tested]
+            for motor in order:
                 plan = self._dialect.motor_stop(motor)
                 result = self._send_command_and_wait(
                     plan.command, plan.param_list(), timeout=2.0, retries=0,

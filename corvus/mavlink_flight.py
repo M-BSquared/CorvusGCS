@@ -89,6 +89,32 @@ class FlightCommandsMixin:
             self._console_publish("MODE", f"Mode accepted: {mode}", "success")
             return True
 
+    def _sequence_interrupted(self, mark: int, action: str) -> bool:
+        """Did the operator take over while a multi-step command was under way?
+
+        Takeoff and mission start are several commands with telemetry waits
+        between them, and they no longer hold the command lock across those
+        waits: Disarm, Land, RTL or a mode change must not queue behind them.
+        So each later step asks first whether one of those ran meanwhile, and
+        the sequence stops there rather than sending its next step on top of
+        the operator's.
+        """
+        if not self._operation_lock.aborted_since(mark):
+            return False
+        text = f"{action} stopped: another command took over"
+        self._set_command_error(text)
+        self._console_publish(action.upper(), text, "warning")
+        return True
+
+    def _reports_armed_state(self, armed: bool) -> bool:
+        """Does fresh telemetry say the vehicle is already *armed* (or not)?"""
+        snapshot = self._store.get_snapshot()
+        return (
+            bool(snapshot.get("connected"))
+            and bool(snapshot.get("armed")) is armed
+            and not self._store.is_stale(timeout=2.0)
+        )
+
     def _wait_for_armed_state(self, armed: bool, timeout: float = ARMED_STATE_CONFIRM_S) -> bool:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -115,8 +141,10 @@ class FlightCommandsMixin:
             self._set_command_error("")
             if not self._connection_ready():
                 return self._command_failure(action, -2)
-            if bool(self._store.get_snapshot().get("armed")) is arm:
-                return True
+            # Always sent, even when telemetry already shows the state asked
+            # for. Telemetry lags the vehicle by up to a heartbeat: a Disarm
+            # pressed right after an Arm was accepted read "already disarmed"
+            # off the store and returned success without sending anything.
             nan = float("nan")
             result = self._send_command_and_wait(
                 mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
@@ -124,6 +152,11 @@ class FlightCommandsMixin:
                 timeout=3.0, retries=2,
             )
             if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                # ArduPilot answers FAILED to arming an armed vehicle and to
+                # disarming a disarmed one. When fresh telemetry agrees the
+                # vehicle is in the state asked for, that is not a failure.
+                if result >= 0 and self._reports_armed_state(arm):
+                    return True
                 return self._command_failure(action, result)
         # Outside the lock deliberately. What follows sends nothing: it watches
         # the store for the vehicle's own report of the new state. Holding the
@@ -317,6 +350,7 @@ class FlightCommandsMixin:
             return False
         if not self._connection_ready():
             return self._command_failure("Takeoff", -2)
+        mark = self._operation_lock.abort_mark()
         nan = float("nan")
         plan = self._dialect.takeoff_plan(self._mav_type_id)
         # Resolved BEFORE the command lock is taken. Validation reads nothing
@@ -376,55 +410,68 @@ class FlightCommandsMixin:
             return False
 
         params = [plan.min_pitch_deg, nan, nan, nan, nan, nan, takeoff_alt]
-        with self._operation_lock:
-            if not self._connection_ready():
-                # Re-checked: the waits above are not instantaneous, and the
-                # link may have gone in the meantime.
-                return self._command_failure("Takeoff", -2)
-            if altitude_note:
-                self._console_publish("TAKEOFF", altitude_note, "info")
+        # Each step takes the command lock for itself and no longer than its
+        # own round trip. Holding it across the whole sequence held it across
+        # the arm confirmation too, up to six seconds of reading telemetry,
+        # and a Disarm, Land or RTL pressed in that window waited for it.
+        if self._sequence_interrupted(mark, "Takeoff"):
+            return False
+        if not self._connection_ready():
+            # Re-checked: the waits above are not instantaneous, and the link
+            # may have gone in the meantime.
+            return self._command_failure("Takeoff", -2)
+        if altitude_note:
+            self._console_publish("TAKEOFF", altitude_note, "info")
 
-            if plan.order == "takeoff_then_arm":
+        if plan.order == "takeoff_then_arm":
+            with self._operation_lock:
                 result = self._send_command_and_wait(
                     mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
                     params, timeout=5.0, retries=1,
                 )
-                if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                    return self._command_failure("Takeoff", result)
-                self._console_publish(
-                    "TAKEOFF", "Takeoff target accepted; arming …", "info")
-                if not self.arm(True):
-                    return False
-            else:
-                # ArduPilot refuses NAV_TAKEOFF while disarmed, so arming comes
-                # first — and that is the order that can strand an armed
-                # aircraft on the ground, so a refused takeoff disarms again.
-                self._console_publish(
-                    "TAKEOFF", "Arming before takeoff …", "info")
-                if not self.arm(True):
-                    return False
+            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                return self._command_failure("Takeoff", result)
+            self._console_publish(
+                "TAKEOFF", "Takeoff target accepted; arming …", "info")
+            if self._sequence_interrupted(mark, "Takeoff"):
+                return False
+            if not self.arm(True):
+                return False
+        else:
+            # ArduPilot refuses NAV_TAKEOFF while disarmed, so arming comes
+            # first — and that is the order that can strand an armed
+            # aircraft on the ground, so a refused takeoff disarms again.
+            self._console_publish(
+                "TAKEOFF", "Arming before takeoff …", "info")
+            if not self.arm(True):
+                return False
+            if self._sequence_interrupted(mark, "Takeoff"):
+                # The operator acted after the arm. What they asked for stands;
+                # no takeoff is sent on top of it.
+                return False
+            with self._operation_lock:
                 result = self._send_command_and_wait(
                     mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
                     params, timeout=5.0, retries=1,
                 )
-                if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                    failure = (
-                        f"Takeoff failed: "
-                        f"{MAV_RESULT_TEXT.get(result, f'RESULT_{result}')}"
-                    )
-                    self._console_publish(
-                        "TAKEOFF",
-                        "Takeoff refused after arming, disarming again",
-                        "warning",
-                    )
-                    self.arm(False)
-                    # After the disarm, which clears the last error itself.
-                    self._set_command_error(failure)
-                    self._console_publish("TAKEOFF", failure, "error")
-                    self._store_update_warning(failure, "critical")
-                    return False
-            self._console_publish("TAKEOFF", "Takeoff accepted and vehicle armed", "success")
-            return True
+            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                failure = (
+                    f"Takeoff failed: "
+                    f"{MAV_RESULT_TEXT.get(result, f'RESULT_{result}')}"
+                )
+                self._console_publish(
+                    "TAKEOFF",
+                    "Takeoff refused after arming, disarming again",
+                    "warning",
+                )
+                self.arm(False)
+                # After the disarm, which clears the last error itself.
+                self._set_command_error(failure)
+                self._console_publish("TAKEOFF", failure, "error")
+                self._store_update_warning(failure, "critical")
+                return False
+        self._console_publish("TAKEOFF", "Takeoff accepted and vehicle armed", "success")
+        return True
 
     def land(self) -> bool:
         """Command land at current position with NaN lat/lon and ACK.
@@ -504,18 +551,19 @@ class FlightCommandsMixin:
         home is how an operator redirects RTL mid-flight, so refusing it in the
         air would remove the case it is most needed for.
         """
+        self._set_command_error("")
+        coords = self._validate_lat_lon(lat, lon, "Set home")
+        if coords is None:
+            return False
+        lat_f, lon_f = coords
+        alt_amsl = self._takeoff_altitude_amsl(0.0)
+        if alt_amsl is None:
+            # Same brief wait the takeoff path takes: right after connect the
+            # reference is usually just late, not absent. Outside the command
+            # lock, which it would otherwise hold for two seconds of reading
+            # telemetry while an RTL waited.
+            alt_amsl = self._await_takeoff_reference(0.0)
         with self._operation_lock:
-            self._set_command_error("")
-            coords = self._validate_lat_lon(lat, lon, "Set home")
-            if coords is None:
-                return False
-            lat_f, lon_f = coords
-
-            alt_amsl = self._takeoff_altitude_amsl(0.0)
-            if alt_amsl is None:
-                # Same brief wait the takeoff path takes: right after connect
-                # the reference is usually just late, not absent.
-                alt_amsl = self._await_takeoff_reference(0.0)
             if alt_amsl is None:
                 # Unlike takeoff, this one keeps its refusal. The altitude here
                 # is not a number being converted for the wire — it is the

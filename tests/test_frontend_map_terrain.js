@@ -559,56 +559,218 @@ async function reset() {
     map._setTerrainSpec(DEM);
   });
 
-  await check("the camera height is left to MapLibre while the map moves", async () => {
-    await reset();
-    map._setTerrainSpec(DEM);
-    map.set3DMode("simple");
-    await settle();
+  // ---- the camera's ground height: Corvus holds it, smoothed ----
+  // The fake rAF never runs its callback; these tests step the glide by hand.
+  const frames = [];
+  const withFrames = async (fn) => {
+    const realRaf = window.requestAnimationFrame;
+    window.requestAnimationFrame = (cb) => { frames.push(cb); return frames.length; };
+    try { await fn(); } finally { window.requestAnimationFrame = realRaf; frames.length = 0; }
+  };
+  const runFrames = (n) => {
+    for (let i = 0; i < n && frames.length; i++) frames.shift()();
+  };
+  const withCamera = async (start, ground, fn) => {
     const writes = [];
-    let held = 900;
+    let held = start;
+    const realQuery = fakeMap.queryTerrainElevation;
     fakeMap.getCenterElevation = () => held;
-    fakeMap.getCenterClampedToGround = () => true;
-    fakeMap.setCenterElevation = (h) => { writes.push(h); };
-    fakeMap.isMoving = () => true;
+    fakeMap.setCenterElevation = (h) => { writes.push(h); held = h; };
+    fakeMap.queryTerrainElevation = (at) => (style.terrain ? ground(at) : null);
     try {
-      assert.equal(map._syncTerrainElevation(), false, "mid-drag is not settled, only postponed");
-      assert.deepEqual(writes, [], "a drag is never moved under the operator's hand");
-      fakeMap.isMoving = () => false;
-      // Far out (the blank-map case): written once.
-      assert.equal(map._syncTerrainElevation(), true);
-      assert.deepEqual(writes, [1500]);
-      // MapLibre puts its own reading back, several metres off ours and
-      // still outside the clamped margin: no second write, however often asked.
-      held = 1460;
-      for (let i = 0; i < 10; i++) map._syncTerrainElevation();
-      assert.deepEqual(writes, [1500], "writing again only starts the next round of the fight");
+      await fn(writes, () => held);
     } finally {
       fakeMap.isMoving = () => false;
+      fakeMap.queryTerrainElevation = realQuery;
       delete fakeMap.getCenterElevation;
-      delete fakeMap.getCenterClampedToGround;
       delete fakeMap.setCenterElevation;
+    }
+  };
+
+  await check("with terrain on, the camera's height is Corvus's, not MapLibre's", async () => {
+    await reset();
+    const clamps = [];
+    fakeMap.setCenterClampedToGround = (on) => { clamps.push(on); };
+    try {
+      map.set3DMode("simple");
+      await settle();
+      assert.equal(clamps[clamps.length - 1], false,
+        "MapLibre's clamp reads one DEM pixel, which over a surface model is a roof");
+      await reset();
+      assert.equal(clamps[clamps.length - 1], true, "and it gets it back when 3D goes off");
+    } finally {
+      delete fakeMap.setCenterClampedToGround;
     }
   });
 
-  await check("a clamped camera a few metres off is two DEM zooms, not an error", async () => {
+  await check("a follow ease leaves the ground height alone over terrain", async () => {
+    await reset();
+    const eases = [];
+    const realEase = fakeMap.easeTo;
+    const realState = Corvus.telemetry.getState;
+    fakeMap.easeTo = (opts) => { eases.push(opts); realEase(opts); };
+    Corvus.telemetry.getState = () => ({ connected: true, position: [11.01, 47.41], heading: 0 });
+    try {
+      map.set3DMode("simple");
+      await settle();
+      eases.length = 0;
+      map.centerOnVehicle(true);
+      assert.ok(eases.length > 0 && eases.every((o) => o.freezeElevation === true),
+        "unfrozen, MapLibre lands every pan on the pixel under the target");
+      await reset();
+      eases.length = 0;
+      map.centerOnVehicle(true);
+      assert.ok(eases.length > 0 && eases.every((o) => !o.freezeElevation),
+        "without terrain there is no ground height to leave alone");
+    } finally {
+      fakeMap.easeTo = realEase;
+      Corvus.telemetry.getState = realState;
+    }
+  });
+
+  await check("the camera height is never moved under a drag", async () => {
     await reset();
     map.set3DMode("simple");
     await settle();
-    const writes = [];
-    fakeMap.getCenterElevation = () => 1494;
-    fakeMap.getCenterClampedToGround = () => true;
-    fakeMap.setCenterElevation = (h) => { writes.push(h); };
-    try {
+    await withCamera(900, () => 1500, async (writes) => {
+      fakeMap.isMoving = () => true;
+      assert.equal(map._syncTerrainElevation(), false, "mid-drag is not settled, only postponed");
+      assert.deepEqual(writes, [], "a drag is never moved under the operator's hand");
+    });
+  });
+
+  await check("a camera inside the hill is put on the ground at once", async () => {
+    await reset();
+    zoom = 16;
+    map.set3DMode("simple");
+    await settle();
+    await withCamera(0, () => 1500, async (writes) => {
       assert.equal(map._syncTerrainElevation(), true);
-      assert.deepEqual(writes, []);
-      // A camera at sea level over 1500 m of ground is still lifted.
-      fakeMap.getCenterElevation = () => 0;
-      map._syncTerrainElevation();
-      assert.deepEqual(writes, [1500]);
+      assert.deepEqual(writes, [1500], "a camera inside the hill is the blank map: no glide");
+    });
+    zoom = 13;
+  });
+
+  await check("a roof under the centre does not move the camera", async () => {
+    await reset();
+    zoom = 17;
+    map.set3DMode("simple");
+    await settle();
+    // A surface model: the centre is on a 15 m roof, the patch round it is
+    // the street at 550 m.
+    const c = { lng: centre[0], lat: centre[1] };
+    const onCentre = (at) => Math.abs(at.lng - c.lng) < 1e-9 && Math.abs(at.lat - c.lat) < 1e-9;
+    await withCamera(550, (at) => (onCentre(at) ? 565 : 550), async (writes) => {
+      assert.equal(map._syncTerrainElevation(), true);
+      assert.deepEqual(writes, [], "the median of the patch is the street");
+    });
+    zoom = 13;
+  });
+
+  await check("a real change of ground is glided to, not jumped to", async () => {
+    await reset();
+    zoom = 17;
+    map.set3DMode("simple");
+    await settle();
+    await withFrames(async () => {
+      await withCamera(550, () => 580, async (writes, held) => {
+        map._syncTerrainElevation();
+        assert.ok(writes.length === 1 && writes[0] > 550 && writes[0] < 560,
+          `the first frame takes a small step, got ${writes}`);
+        runFrames(200);
+        assert.equal(held(), 580, "and it arrives");
+        for (let i = 1; i < writes.length; i++) {
+          assert.ok(writes[i] > writes[i - 1], "steadily, without overshoot");
+        }
+        const count = writes.length;
+        map._syncTerrainElevation();
+        runFrames(5);
+        assert.equal(writes.length, count, "once there, nothing more is written");
+      });
+    });
+    zoom = 13;
+  });
+
+  await check("a glide gives way to a camera move", async () => {
+    await reset();
+    zoom = 17;
+    map.set3DMode("simple");
+    await settle();
+    await withFrames(async () => {
+      await withCamera(550, () => 580, async (writes) => {
+        map._syncTerrainElevation();
+        const count = writes.length;
+        fakeMap.isMoving = () => true;
+        runFrames(10);
+        assert.equal(writes.length, count, "nothing is written while the operator moves the map");
+      });
+    });
+    zoom = 13;
+  });
+
+  await check("the side view starts on the press, not after the elevation probe", async () => {
+    await reset();
+    const calls = [];
+    const realEase = fakeMap.easeTo;
+    const realTerrain = fakeMap.setTerrain;
+    fakeMap.easeTo = (opts) => { if (opts && opts.pitch !== undefined) calls.push("tilt"); realEase(opts); };
+    fakeMap.setTerrain = (spec) => { if (spec) calls.push("terrain"); realTerrain(spec); };
+    try {
+      map.set3DMode("simple");
+      assert.deepEqual(calls, ["tilt"],
+        "the tilt is synchronous with the press; the probe can take its whole timeout");
+      await settle();
+      assert.deepEqual(calls, ["tilt", "terrain"], "and the relief follows");
     } finally {
-      delete fakeMap.getCenterElevation;
-      delete fakeMap.getCenterClampedToGround;
-      delete fakeMap.setCenterElevation;
+      fakeMap.easeTo = realEase;
+      fakeMap.setTerrain = realTerrain;
+    }
+  });
+
+  await check("the terrain waits for the tilt to land before it is attached", async () => {
+    await reset();
+    fakeMap.isEasing = () => true;
+    try {
+      map.set3DMode("simple");
+      await settle();
+      assert.equal(style.terrain, null,
+        "attaching writes the camera's height, a jumpTo, which would stop the tilt part way");
+      fakeMap.isEasing = () => false;
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      assert.ok(style.terrain, "once the camera is still, the relief comes up");
+      assert.equal(pitch, 60);
+    } finally {
+      fakeMap.isEasing = () => false;
+    }
+  });
+
+  await check("a camera that never holds still does not keep the terrain away", async () => {
+    await reset();
+    fakeMap.isMoving = () => true;
+    try {
+      map.set3DMode("simple");
+      await settle();
+      assert.equal(style.terrain, null);
+      await new Promise((resolve) => setTimeout(resolve, 1700));
+      assert.ok(style.terrain, "attached after the wait is up, moving or not");
+    } finally {
+      fakeMap.isMoving = () => false;
+    }
+  });
+
+  await check("leaving 3D while the terrain waits leaves no terrain behind", async () => {
+    await reset();
+    fakeMap.isEasing = () => true;
+    try {
+      map.set3DMode("simple");
+      await settle();
+      map.set3DMode("off");
+      fakeMap.isEasing = () => false;
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      assert.equal(style.terrain, null, "the wait is dropped with the mode");
+      assert.equal(pitch, 0);
+    } finally {
+      fakeMap.isEasing = () => false;
     }
   });
 

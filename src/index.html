@@ -51,6 +51,21 @@
     var t = localStorage.getItem("corvus.theme");
     if (t) document.documentElement.setAttribute("data-theme", t);
   } catch (e) {}
+  try {
+    /* The saved interface language (js/i18n.js). The page is held back until
+       i18n has swapped the text in, so a German station never paints English
+       first. i18n.js lifts the hold; the timer is the way out if it never
+       runs, so a broken script costs a moment, not the interface. */
+    var l = localStorage.getItem("corvus.lang");
+    if (l && l !== "en") {
+      document.documentElement.setAttribute("lang", l);
+      document.documentElement.setAttribute("data-i18n", "pending");
+      var hold = document.createElement("style");
+      hold.textContent = 'html[data-i18n="pending"] body { visibility: hidden; }';
+      document.head.appendChild(hold);
+      setTimeout(function () { document.documentElement.removeAttribute("data-i18n"); }, 3000);
+    }
+  } catch (e) {}
   var scale = 1;
   try {
     var s = parseFloat(localStorage.getItem("corvus.scale"));
@@ -141,8 +156,11 @@
           </div>
           <div class="takeoff-body">
             <div class="takeoff-slider-row">
-              <input type="range" min="1" max="120" value="10" step="1" class="takeoff-slider" id="takeoffAlt" />
-              <span class="takeoff-alt-value" id="takeoffAltValue"></span>
+              <input type="range" min="0" max="1000" value="500" step="1" data-min-m="1" data-max-m="120" class="takeoff-slider" id="takeoffAlt" aria-label="Takeoff altitude" />
+              <span class="takeoff-alt-entry">
+                <input type="number" inputmode="decimal" autocomplete="off" class="field-input field-input-mono takeoff-alt-input" id="takeoffAltInput" aria-label="Takeoff altitude" />
+                <span class="takeoff-alt-unit" id="takeoffAltUnit"></span>
+              </span>
             </div>
             <button class="takeoff-confirm" id="takeoffConfirm">
               <i data-lucide="arrow-up"></i>
@@ -299,7 +317,12 @@
                        selected has to say so; the whole sentence is on hover. -->
                   <span class="link-auto-badge" id="linkAutoBadge" hidden></span>
                 </div>
-                <div class="link-status-error" id="linkStatusError" hidden></div>
+                <!-- One line. When the backend's sentence does not fit, a red
+                     info icon appears and carries the whole of it in a popover
+                     (see showError in link.js). -->
+                <div class="link-status-problem" id="linkStatusError" hidden>
+                  <span class="link-status-problem-text" id="linkStatusErrorText"></span>
+                </div>
               </div>
 
               <!-- A device plugged in while the link was busy elsewhere. An
@@ -470,7 +493,7 @@
             </div>
 
             <div class="console-stream">
-              <div class="console-output" id="consoleOutput"></div>
+              <div class="console-output" id="consoleOutput" translate="no"></div>
               <!-- Replaces the permanent auto-scroll toggle: it only appears
                    once the operator has scrolled away from the live end. -->
               <button class="console-jump" id="consoleJump" type="button" hidden>
@@ -555,6 +578,7 @@
 <script src="vendor/lucide.min.js" defer></script>
 <script src="js/lazy.js" defer></script>
 <script src="js/events.js" defer></script>
+<script src="js/i18n.js" defer></script>
 <script src="js/ui.js" defer></script>
 <script src="js/units.js" defer></script>
 <script src="js/credits.js" defer></script>

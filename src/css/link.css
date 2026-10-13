@@ -131,7 +131,7 @@
    that has to stay readable. Quieter than the quality pill on purpose: quality
    is a flying decision, "who picked this" is context. */
 .link-status-why {
-  display: flex; align-items: center; gap: 6px; min-width: 0;
+  display: flex; align-items: center; gap: 8px; min-width: 0;
 }
 .link-status-why > .link-status-conn { flex: 1 1 auto; min-width: 0; }
 .link-auto-badge {

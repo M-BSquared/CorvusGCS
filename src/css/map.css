@@ -63,8 +63,8 @@
      credit does not change the pill's height or nudge the icon. */
   padding: 4px 9px 4px 4px;
   background: rgb(var(--glass-rgb) / 0.38);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
   border: 1px solid rgb(var(--tint-rgb) / 0.06);
   border-radius: 999px;
   box-shadow: var(--shadow-pop);
@@ -530,8 +530,8 @@
   padding: 4px;
   border-radius: var(--radius);
   background: rgb(var(--glass-rgb) / 0.86);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
   border: 1px solid rgb(var(--tint-rgb) / 0.06);
   box-shadow: var(--shadow-pop);
 }

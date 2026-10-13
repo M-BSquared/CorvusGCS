@@ -437,6 +437,54 @@ def test_without_a_base_the_edge_is_held_and_the_tile_is_not_kept(tmp_path) -> N
         store.close()
 
 
+def test_far_from_the_grid_without_a_base_the_edge_is_still_held(tmp_path) -> None:
+    store, model = _store_with_tile(tmp_path, values=[800.0] * 1600)
+    try:
+        w, s, e, n = model["bounds"]
+        z = 15
+        x, y = _tile_of(z, (w + e) / 2, (s + n) / 2)
+        assert not store.covers(model["id"], z, x + 40, y + 7)
+        blob, complete = store.tile(model["id"], z, x + 40, y + 7, base=None)
+        assert not complete
+        heights = dem_tiles.heights(blob, "terrarium")
+        assert min(heights) == pytest.approx(800.0, abs=0.01)
+        assert max(heights) == pytest.approx(800.0, abs=0.01)
+    finally:
+        store.close()
+
+
+def test_an_incomplete_tile_is_reused_briefly_then_cut_again(tmp_path, monkeypatch) -> None:
+    from corvus import custom_dem
+
+    store, model = _store_with_tile(tmp_path, values=[800.0] * 1600)
+    try:
+        w, s, e, n = model["bounds"]
+        z = 15
+        x, y = _tile_of(z, (w + e) / 2, (s + n) / 2)
+        cuts = []
+        real_render = custom_dem.render_tile
+
+        def counting(*args, **kwargs):
+            cuts.append(1)
+            return real_render(*args, **kwargs)
+
+        monkeypatch.setattr(custom_dem, "render_tile", counting)
+        now = [1000.0]
+        monkeypatch.setattr(custom_dem.time, "monotonic", lambda: now[0])
+        first, _ = store.tile(model["id"], z, x, y, base=None)
+        second, complete = store.tile(model["id"], z, x, y, base=None)
+        assert second == first and not complete
+        assert len(cuts) == 1, "the terrain and its shading ask for the same tile"
+        now[0] += custom_dem.PROVISIONAL_TTL_S + 1
+        store.tile(model["id"], z, x, y, base=None)
+        assert len(cuts) == 2, "the stand-in is not kept past its time"
+        # The default elevation arriving is never held up by a stand-in.
+        _blob, complete = store.tile(model["id"], z, x, y, base=lambda *_: [300.0] * 65536)
+        assert complete and len(cuts) == 3
+    finally:
+        store.close()
+
+
 def test_coarse_tiles_read_the_overview(tmp_path) -> None:
     # A checkerboard of 0 and 100 m averages to 50 at any coarse zoom; point
     # sampling the full grid would hand back 0s and 100s.
@@ -607,9 +655,22 @@ def test_import_list_serve_and_remove_over_http(dem_server, tmp_path) -> None:
     assert min(heights) == pytest.approx(420.0, abs=0.01)
     assert max(heights) == pytest.approx(700.0, abs=0.01)
 
-    # Far from the model the tile is the default elevation unchanged.
-    status, blob, _ = _request(server, "GET", f"/api/tiles/{model['id']}/{z}/{x + 50}/{y}.png")
-    assert status == 404  # nothing cached there and no network
+    # Far from the model, with nothing cached and no network, the model's edge
+    # is held outward rather than leaving a hole MapLibre would draw at sea
+    # level, and the browser is told to ask again soon.
+    status, blob, headers = _request(server, "GET", f"/api/tiles/{model['id']}/{z}/{x + 50}/{y}.png")
+    assert status == 200
+    assert "86400" not in headers["Cache-Control"]
+    heights = dem_tiles.heights(blob, "terrarium")
+    assert min(heights) == pytest.approx(700.0, abs=0.01)
+    assert max(heights) == pytest.approx(700.0, abs=0.01)
+
+    # Where the default elevation is to be had, it still wins out there.
+    caches["terrain"].put_tile(z, x + 50, y,
+                               dem_tiles.encode_heights(256, [380.0] * 65536, "terrarium"))
+    status, blob, headers = _request(server, "GET", f"/api/tiles/{model['id']}/{z}/{x + 50}/{y}.png")
+    assert status == 200 and "86400" in headers["Cache-Control"]
+    assert max(dem_tiles.heights(blob, "terrarium")) == pytest.approx(380.0, abs=0.01)
 
     status, body, _ = _request(server, "POST", "/api/dem/rename",
                                json.dumps({"id": model["id"], "name": "Hill"}).encode())

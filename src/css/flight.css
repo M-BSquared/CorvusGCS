@@ -16,8 +16,8 @@
   --hud-w: 320px;
   position: absolute; right: 16px; bottom: 16px; z-index: var(--z-map-panel);
   width: var(--hud-w);
-  border-radius: 14px;
-  padding: 14px;
+  border-radius: var(--radius);
+  padding: 12px;
   display: flex; flex-direction: column;
   /* The whole panel is the drag handle — there is no title bar to grab. */
   cursor: grab;

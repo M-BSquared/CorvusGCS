@@ -107,7 +107,6 @@
 .schw-shelf {
   display: flex;
   flex-direction: column;
-  margin-bottom: 14px;
 }
 .schw-empty { margin-bottom: 14px; }
 .schw-row {
@@ -124,6 +123,7 @@
    wrapping the row onto two lines. */
 .schw-launch {
   flex: 1;
+  font-size: 14px;
   min-width: 0;
   justify-content: flex-start;
 }
@@ -134,7 +134,7 @@
   white-space: nowrap;
 }
 
-/* The warning, the live dot, the arrow and the pencil: present,
+/* The warning, the live dot and the pencil: present,
    never competing with the launch button, full strength on hover or focus.
    Centred, because they are not all one height. */
 .schw-row-tools {
@@ -161,7 +161,7 @@
 }
 
 /* A row whose program is running: a live dot on the card's own surface, and
-   tools that stop fading, because that is when the arrow matters. */
+   tools that stop fading, because that is when the stop button matters. */
 .schw-dot {
   width: var(--dot-size, 7px);
   height: var(--dot-size, 7px);
@@ -173,8 +173,48 @@
   box-shadow: var(--dot-halo);
 }
 .schw-running .schw-row-tools { opacity: 1; }
-.schw-running .schw-open { color: var(--healthy); }
-.schw-open:disabled { opacity: 0.35; cursor: default; }
+
+/* The arrow sits inside the launch button, on its colour: no surface of its
+   own, and a hover that lifts the glyph rather than painting over the bar. */
+.schw-launch .schw-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin-right: -4px;
+  border-radius: var(--radius-btn);
+  background: transparent;
+  color: inherit;
+  opacity: 0.85;
+  cursor: pointer;
+}
+.schw-launch .schw-open:hover { background: rgba(255, 255, 255, 0.18); opacity: 1; }
+.schw-launch .schw-open:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
+.schw-launch .schw-open.is-busy { opacity: 0.35; cursor: default; }
+
+/* The card is a tall column: the shelf at the top, one row of controls on
+   its bottom edge. The Add button sits on the bars' left edge and the square
+   edit toggle on their right edge, as tall as the Add button. */
+.schw-shelf-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 55vh;
+}
+.schw-card-actions {
+  margin-top: auto;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  align-items: stretch;
+}
+.schw-card-actions > .btn:first-child { flex: 1; min-width: 0; }
+.schw-edit-toggle {
+  flex: 0 0 auto;
+  width: 38px;
+  padding: 0;
+}
+.schw-edit-toggle .btn-icon { width: 16px; height: 16px; }
 
 /* The pencil's place while the session is up: it ends the program, so it
    carries the critical colour, and it fades while the stop is under way. */

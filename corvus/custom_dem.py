@@ -33,7 +33,10 @@ pixel the model does not cover is filled from the free default elevation
 ``base(z, x, y)``. So choosing a custom model never drops the surrounding
 country to sea level. When even that is unavailable (offline, never
 downloaded), the model's nearest edge is held outward instead, and the tile
-is marked incomplete so it is not kept.
+is marked incomplete so it is not kept for long. That holds for tiles that do
+not touch the model at all as well: a tile with no answer is a hole MapLibre
+fills with sea level, which next to a model at 550 m is a cliff the camera
+ends up inside, and the map goes blank.
 
 Lifecycle
 ---------
@@ -83,6 +86,12 @@ LATTICE_STEP = 16
 # nearest to a tile, because the free default takes over at that point anyway.
 MIN_OVERVIEW_SIDE = 32
 RENDERED_CACHE_SIZE = 96
+# How long an incomplete tile (the model's edge held outward because the free
+# default was not to be had) is reused. The terrain and its shading ask for the
+# same tile within moments of each other, and cutting one is tens of
+# milliseconds of pure Python. Short, because the default may come back online.
+PROVISIONAL_TTL_S = 30.0
+PROVISIONAL_CACHE_SIZE = 96
 # The finest and coarsest zoom a model is offered at. Beyond the finest,
 # MapLibre stretches the last tile itself.
 MIN_MAXZOOM = 10
@@ -326,6 +335,7 @@ class CustomDemStore:
         self._grids: dict[str, list[_LoadedGrid]] = {}
         self._model_locks: dict[str, threading.Lock] = {}
         self._rendered: OrderedDict[tuple, bytes] = OrderedDict()
+        self._provisional: OrderedDict[tuple, tuple[bytes, float]] = OrderedDict()
         self._closed = False
         self._load_all()
 
@@ -626,6 +636,7 @@ class CustomDemStore:
             self._grids.clear()
             self._model_locks.clear()
             self._rendered.clear()
+            self._provisional.clear()
         for lock, grids in entries:
             if lock is not None:
                 with lock:
@@ -636,8 +647,9 @@ class CustomDemStore:
                     g.close()
 
     def _forget_rendered(self, model_id: str) -> None:
-        for key in [k for k in self._rendered if k[0] == model_id]:
-            del self._rendered[key]
+        for store in (self._rendered, self._provisional):
+            for key in [k for k in store if k[0] == model_id]:
+                del store[key]
 
     # ------------------------------------------------------------ tiles
 
@@ -658,8 +670,10 @@ class CustomDemStore:
 
         Incomplete means the default elevation around the model was not
         available, so the model's edge was held outward instead; such a tile
-        is not remembered, and the browser should ask again. None for an
-        unknown model.
+        is remembered only briefly, and the browser should ask again. This
+        also answers tiles that do not touch the model, so ground nobody has
+        data for continues the model rather than dropping to sea level. None
+        for an unknown model.
         """
         key = (model_id, z, x, y)
         with self._lock:
@@ -682,20 +696,41 @@ class CustomDemStore:
                 base_values = None
             if base_values is not None and len(base_values) != TILE_SIZE * TILE_SIZE:
                 base_values = None
+        if base_values is None:
+            held = self._provisional_hit(key)
+            if held is not None:
+                return held, False
         with model_lock:
             if not grids or not grids[0].levels:
                 return None
             values, filled = render_tile(grids, z, x, y, base_values)
         blob = _encode(values)
         complete = base_values is not None or filled
-        if complete:
-            with self._lock:
-                if model_id in self._models:
+        with self._lock:
+            if model_id in self._models:
+                if complete:
                     self._rendered[key] = blob
                     self._rendered.move_to_end(key)
                     while len(self._rendered) > RENDERED_CACHE_SIZE:
                         self._rendered.popitem(last=False)
+                else:
+                    self._provisional[key] = (blob, time.monotonic())
+                    self._provisional.move_to_end(key)
+                    while len(self._provisional) > PROVISIONAL_CACHE_SIZE:
+                        self._provisional.popitem(last=False)
         return blob, complete
+
+    def _provisional_hit(self, key: tuple) -> bytes | None:
+        """An incomplete tile cut moments ago, or None."""
+        with self._lock:
+            hit = self._provisional.get(key)
+            if hit is None:
+                return None
+            blob, made = hit
+            if time.monotonic() - made > PROVISIONAL_TTL_S:
+                del self._provisional[key]
+                return None
+            return blob
 
 
 def _encode(values: list[float]) -> bytes:

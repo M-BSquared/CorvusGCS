@@ -8,9 +8,8 @@ shutdown of both the server and the web engine.
 Usage:
     python3 corvus/app.py [port] [mavlink_connection]
 
-Chromium rendering flags are set to handle environments where GBM/EGL
-is not available (falls back to Vulkan on Linux, or to software rendering
-anywhere) — see :func:`chromium_flags`.
+Chromium rendering flags are set so the map draws on any GPU stack, with
+software rendering as the fallback anywhere — see :func:`chromium_flags`.
 """
 from __future__ import annotations
 
@@ -46,15 +45,12 @@ def chromium_flags(platform: str = sys.platform) -> list[str]:
       is what keeps MapLibre initialising on a machine with no usable driver:
       a VM, a remote session, an old laptop with a broken EGL stack.
     * ``--enable-webgl`` — MapLibre is WebGL; without it there is no map.
-    * Vulkan, on Linux only. macOS has no Vulkan (Qt renders through Metal)
-      and Windows goes through ANGLE/D3D, so asking for it there is at best a
-      no-op and at worst a wasted GPU init on every launch.
     * ``--disable-gpu-sandbox``, on Linux only. The GPU process sandbox is a
       real boundary, and this frontend is the thing that loads operator-
       supplied plugins out of ``~/.corvus/plugins`` — so it is not a boundary
       to give up everywhere by default. It is here because it is the flag
-      that makes the GPU stacks above come up on the Linux systems this app
-      is deployed to (container, VM, odd driver, no GBM/EGL). On macOS and
+      that makes the GPU stack come up on the Linux systems this app is
+      deployed to (container, VM, odd driver, no GBM/EGL). On macOS and
       Windows the sandbox works and there is nothing to buy by dropping it,
       so those platforms keep it.
 
@@ -62,7 +58,14 @@ def chromium_flags(platform: str = sys.platform) -> list[str]:
     ``QTWEBENGINE_CHROMIUM_FLAGS`` gets exactly what they asked for and none
     of the above (see :func:`chromium_flags_value`).
 
-    Deliberately absent: ``--disable-software-rasterizer``, which used to sit
+    Deliberately absent: Vulkan (``--use-vulkan``,
+    ``--enable-features=Vulkan``), which Linux used to be given. Chromium's
+    Vulkan compositor is experimental on Linux, and with a WebGL canvas that
+    redraws every frame it flickers: the 3D map on a Linux Mint laptop,
+    whenever the aircraft was flying. Chromium's default GL path draws the
+    same map, and SwiftShader still catches a machine where GL will not come
+    up. An operator who wants Vulkan back sets ``QTWEBENGINE_CHROMIUM_FLAGS``.
+    Also absent: ``--disable-software-rasterizer``, which used to sit
     two lines under ``--enable-unsafe-swiftshader`` and turn it off again —
     SwiftShader *is* the software rasterizer, so the pair asked for opposite
     things and the machine that needed the fallback most is the one that lost
@@ -71,7 +74,7 @@ def chromium_flags(platform: str = sys.platform) -> list[str]:
     """
     flags = ["--ignore-gpu-blocklist"]
     if platform.startswith("linux"):
-        flags += ["--enable-features=Vulkan", "--use-vulkan", "--disable-gpu-sandbox"]
+        flags += ["--disable-gpu-sandbox"]
     flags += ["--enable-unsafe-swiftshader", "--enable-webgl"]
     return flags
 
@@ -619,7 +622,7 @@ def main() -> int:
     from PySide6.QtCore import (
         QEvent, QFile, QIODevice, QObject, QPoint, QRect, QSize, Qt, QTimer, QUrl, Slot,
     )
-    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtGui import QCursor, QGuiApplication
     from PySide6.QtWebChannel import QWebChannel
     from PySide6.QtWebEngineCore import (
         QWebEnginePage, QWebEngineProfile, QWebEngineScript, QWebEngineSettings,
@@ -983,8 +986,11 @@ def main() -> int:
         """What a window out of the app may ask of its own window, and nothing else.
 
         Moves and sizes are relative to where a gesture started (``dragStart``),
-        in the pointer's own screen deltas, so they are right on every screen
-        whatever the window's position was. On Windows a move follows the
+        measured from the global cursor (``QCursor.pos``) rather than from the
+        page's ``screenX``: Chromium derives that from the window position it
+        last heard of, which trails a window that is being moved, and the
+        feedback made the window judder. The page's deltas are only the
+        fallback. On Windows a move follows the
         pointer in Windows' own pixels instead (:class:`Win32Windows`), and on
         Wayland the page hands the gesture to the compositor (``systemMove``,
         ``systemResize``): see :func:`window_support`.
@@ -994,11 +1000,22 @@ def main() -> int:
             super().__init__(holder)
             self._holder = holder
             self._start = None
+            self._cursor0 = None    # global cursor when the gesture began
+            self._last = None       # last position or size applied, to skip repeats
             self._grab = None       # Windows: (hwnd, dx, dy), pointer to window, in its pixels
+
+        def _delta(self, dx: int, dy: int) -> tuple[int, int]:
+            """The cursor's travel since ``dragStart``, or the page's if Qt has none."""
+            if self._cursor0 is None:
+                return dx, dy
+            now = QCursor.pos()
+            return now.x() - self._cursor0.x(), now.y() - self._cursor0.y()
 
         @Slot()
         def dragStart(self) -> None:
             self._start = self._holder.geometry()
+            self._cursor0 = QCursor.pos()
+            self._last = None
             self._grab = None
             if win is not None:
                 try:
@@ -1021,7 +1038,11 @@ def main() -> int:
                     return
                 except Exception:  # noqa: BLE001 - Qt's move is the fallback
                     self._grab = None
-            self._holder.move(self._start.x() + dx, self._start.y() + dy)
+            dx, dy = self._delta(dx, dy)
+            target = (self._start.x() + dx, self._start.y() + dy)
+            if target != self._last:
+                self._last = target
+                self._holder.move(*target)
 
         @Slot(result=bool)
         def systemMove(self) -> bool:
@@ -1041,8 +1062,12 @@ def main() -> int:
         def resizeTo(self, dw: int, dh: int) -> None:
             if self._start is not None:
                 self._holder.normal = None
-                self._holder.resize(max(POPOUT_MIN_W, self._start.width() + dw),
-                                    max(POPOUT_MIN_H, self._start.height() + dh))
+                dw, dh = self._delta(dw, dh)
+                size = (max(POPOUT_MIN_W, self._start.width() + dw),
+                        max(POPOUT_MIN_H, self._start.height() + dh))
+                if size != self._last:
+                    self._last = size
+                    self._holder.resize(*size)
 
         @Slot(int, int, result=str)
         def dragEnd(self, x: int, y: int) -> str:
@@ -1054,6 +1079,8 @@ def main() -> int:
             QtWebEngine leave out the window's title bar.
             """
             self._start = None
+            self._cursor0 = None
+            self._last = None
             self._grab = None
             if self._holder.normal is not None or not support["place"]:
                 return json.dumps({"inside": False})

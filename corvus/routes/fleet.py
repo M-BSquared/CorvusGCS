@@ -112,15 +112,26 @@ class FleetRoutes:
             return
         self._send_json({"ok": True, "fleet": self.fleet.snapshot()})
 
-    @route("POST", "/api/fleet/settings")
-    def _api_fleet_settings(self, payload: dict) -> None:
-        """``shared_links``: list every vehicle a link carries, or only its own."""
+    @route("POST", "/api/fleet/vehicle/remove")
+    def _api_fleet_vehicle_remove(self, payload: dict) -> None:
+        """Take a vehicle off the list by closing its link.
+
+        An armed vehicle that is still heard needs ``confirm_armed: true``. On
+        the main link the link is disconnected and auto-connect is told to
+        leave it closed, exactly as the LINK tab's Disconnect does.
+        """
         if self.fleet is None:
             self._send_json({"ok": False, "error": "only one vehicle is supported here"}, 503)
             return
-        shared = payload.get("shared_links")
-        if not isinstance(shared, bool):
-            self._send_json({"ok": False, "error": "shared_links must be true or false"}, 400)
+        key = payload.get("id")
+        confirm = payload.get("confirm_armed", False)
+        if not isinstance(confirm, bool):
+            self._send_json({"ok": False, "error": "confirm_armed must be true or false"}, 400)
             return
-        self.fleet.set_shared_links(shared)
+        error, status = self.fleet.remove_vehicle(key, confirm_armed=confirm)
+        if error:
+            self._send_json({"ok": False, "error": error}, status)
+            return
+        if isinstance(key, str) and key.startswith("main:"):
+            self._note_manual_link("")
         self._send_json({"ok": True, "fleet": self.fleet.snapshot()})

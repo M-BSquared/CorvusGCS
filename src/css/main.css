@@ -49,6 +49,18 @@ input { font-family: inherit; }
 svg { display: block; }
 ::selection { background: var(--accent-dim); }
 
+/* A desktop app, not a page: chrome, labels and readouts are not text to pick
+   up, and a stray drag or double click used to leave a highlight that nothing
+   cleared. Text is selectable only where an operator copies from it: fields,
+   the console and log streams, preformatted output, the terminals, and anything
+   marked `.selectable`. Corvus.ui.guardSelection() clears a leftover highlight
+   on the next press outside those. */
+body { -webkit-user-select: none; user-select: none; }
+input, textarea, [contenteditable="true"], pre, code, .selectable,
+.selectable *, .console-output, .console-output *, .xterm, .xterm * {
+  -webkit-user-select: text; user-select: text;
+}
+
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
@@ -401,14 +413,9 @@ svg { display: block; }
 }
 .fa-btn i, .fa-btn svg { width: 17px; height: 17px; }
 .fa-btn[hidden] { display: none; }
-/* Hover: subtle lift + a wash in the action's identity colour. */
-.fa-btn:hover { color: var(--text-1); background: rgb(var(--tint-rgb) / 0.06); transform: translateY(-1px); }
-/* Per-action colour identity on hover (semantic tokens). */
-.fa-btn.arm:hover { color: var(--healthy); background: color-mix(in srgb, var(--healthy) 14%, transparent); }
-.fa-btn.takeoff:hover { color: var(--healthy-bright); background: color-mix(in srgb, var(--healthy-bright) 14%, transparent); transform: translateY(-2px); }
-.fa-btn.land:hover { color: var(--warning); background: color-mix(in srgb, var(--warning) 14%, transparent); }
-.fa-btn.rtl:hover { color: var(--nav-bright); background: color-mix(in srgb, var(--nav) 14%, transparent); }
-.fa-btn.plan:hover { color: var(--accent-bright); background: var(--accent-dim); }
+/* Hover is the rail's: a flat wash, no lift and no colour per action. */
+.fa-btn:hover { color: var(--text-1); background: var(--surface-hover); }
+.fa-btn.plan:hover { color: var(--accent-bright); }
 /* Press: instant scale(0.96), no overshoot. */
 .fa-btn:active:not(:disabled):not(.is-busy) { transform: scale(0.96); }
 .fa-btn:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
@@ -416,12 +423,11 @@ svg { display: block; }
 /* .is-busy overrides the disabled cursor/opacity so the ACK wait reads as
    "working", not "forbidden" (mirrors .btn.is-busy in components.css). */
 .fa-btn.is-busy { opacity: 0.5; cursor: progress; }
-/* Armed: filled healthy green with a soft glow. */
+/* Armed: filled healthy green. */
 .fa-btn.armed {
   color: var(--text-inverted);
   background: var(--healthy);
   border-color: var(--healthy);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--healthy) 35%, transparent), 0 4px 14px color-mix(in srgb, var(--healthy) 35%, transparent);
 }
 .fa-btn.armed:hover { background: var(--healthy-bright); color: var(--text-inverted); }
 /* PLAN engaged: filled accent. */
@@ -447,19 +453,20 @@ svg { display: block; }
   }
 }
 /* .field-select on the glass flight bar: it keeps the shared control's
-   metrics, chevron and focus ring, and only swaps the recessed well for the
-   translucent material so it sits in the bar rather than on it. The chevron
+   metrics, chevron and focus ring, and only swaps the recessed well for a
+   flat wash of the contrast overlay, the same fill the bar's buttons take on
+   hover, so it sits in the bar rather than on it. The chevron
    is a background-image on .field-select, so background-color must be set
    on its own longhand here — the shorthand would erase it. */
 .field-select.mode-selector {
-  background-color: rgb(var(--glass-rgb) / 0.55);
-  border-color: rgb(var(--tint-rgb) / 0.08);
+  background-color: rgb(var(--tint-rgb) / 0.06);
+  border-color: transparent;
   font-size: 11px; font-weight: 600; letter-spacing: 0.5px;
   min-width: 120px;
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
-  box-shadow: var(--shadow-soft);
+  box-shadow: none;
+  transition: background-color 130ms, border-color 130ms, box-shadow 130ms;
 }
+.field-select.mode-selector:hover:not(:disabled) { background-color: rgb(var(--tint-rgb) / 0.1); }
 
 /* ===== TAKEOFF PANEL ===== */
 .takeoff-panel {
@@ -496,6 +503,16 @@ svg { display: block; }
   font-size: 16px; font-weight: 600; color: var(--healthy);
   min-width: 48px; text-align: right; font-variant-numeric: tabular-nums;
 }
+.takeoff-alt-entry { display: flex; align-items: baseline; gap: 4px; }
+.takeoff-alt-input {
+  width: 64px; padding: 5px 6px; text-align: right;
+  font-size: 15px; font-weight: 600; color: var(--healthy);
+  font-variant-numeric: tabular-nums; -moz-appearance: textfield;
+}
+.takeoff-alt-input::-webkit-outer-spin-button,
+.takeoff-alt-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.takeoff-alt-input:focus { border-color: var(--healthy); }
+.takeoff-alt-unit { font-size: 12px; font-weight: 600; color: var(--text-2); min-width: 18px; }
 .takeoff-confirm {
   display: flex; align-items: center; justify-content: center; gap: 6px;
   width: 100%; padding: 10px; border-radius: var(--radius-btn);
@@ -581,6 +598,8 @@ svg { display: block; }
 /* The folder field is a different subject from the list above it. */
 .settings-plugin-list + div > .settings-plugin-dir { margin-top: var(--space-18); }
 .settings-plugin-buttons { display: flex; flex-wrap: wrap; gap: var(--space-8); }
+.settings-language-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8); }
+.settings-language-row .settings-language-select { flex: 0 1 240px; width: 240px; max-width: 100%; }
 /* Settings > Map service (sidenav.js buildMapServicePicker): the service
    cards, then the layer field, then the cache note. Both followers need air
    under the cards — the selected card carries an accent ring 1px outside its
@@ -744,7 +763,6 @@ svg { display: block; }
   border-radius: 13px;
   background: var(--accent);
   color: var(--text-inverted);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18), 0 4px 14px var(--accent-dim);
 }
 .welcome-card-primary .tile-icon svg, .welcome-card-primary .tile-icon i { width: 22px; height: 22px; }
 .welcome-card-primary .tile-body { flex: 1; gap: 4px; }
@@ -1041,4 +1059,7 @@ svg { display: block; }
 .fleet-error { font-size: var(--text-sm); color: var(--critical); }
 .fleet-error[hidden] { display: none; }
 .fleet-confirm p { margin: 0 0 8px; line-height: 1.45; }
+.fleet-confirm .fleet-confirm-warn { color: var(--warning); font-weight: 600; }
+.fleet-side .fleet-remove { color: var(--text-3); }
+.fleet-side .fleet-remove:hover { color: var(--critical); }
 

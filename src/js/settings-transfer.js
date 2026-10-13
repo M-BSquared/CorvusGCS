@@ -31,6 +31,7 @@ Corvus.settingsTransfer = (function () {
      was forgotten here from one that was left out on purpose. */
   const BROWSER_KEYS = [
     { key: "corvus.theme", section: "interface" },
+    { key: "corvus.lang", section: "interface" },
     { key: "corvus.scale", section: "interface" },
     { key: "corvus.units", section: "interface" },
     { key: "corvus.topbarDots", section: "interface" },
@@ -63,7 +64,7 @@ Corvus.settingsTransfer = (function () {
      corvus/settings_bundle.py. */
   const SECTIONS = [
     { id: "interface", label: "Interface and controls",
-      hint: "Theme, size, units, top bar, joystick and keys, RC transmitter, company logo, " +
+      hint: "Language, theme, size, units, top bar, joystick and keys, RC transmitter, company logo, " +
             "flight review sensitivity." },
     { id: "layout", label: "Window layout",
       hint: "Where the flight HUD, the virtual joystick and the checklist sit, and which cards are folded." },

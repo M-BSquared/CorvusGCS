@@ -10,6 +10,10 @@ window.Corvus = window.Corvus || {};
   flight review, workspace, controls), take the settings from a file exported on another
   station, or skip straight to the map with the defaults.
 
+  The language is the first choice of the Look step, because everything after
+  it is read in it. A station with no choice yet opens in the browser's own
+  language when Corvus has a file for it, so the start page needs no picker.
+
   Every choice previews live, through the same modules the Settings page
   uses, and nothing is written until Finish: the config is posted once, then
   POST /api/welcome marks the setup done and writes the config file, so the
@@ -68,6 +72,7 @@ Corvus.welcome = (function () {
     const controls = c.controls || {};
     const saved = String((c.review && c.review.sensitivity) || "");
     return {
+      language: (typeof c.language === "string" && c.language) ? c.language : (l.language || "en"),
       theme: Corvus.theme.fromConfig(c) || (Corvus.theme.isKnown(l.theme) ? l.theme : Corvus.theme.DEFAULT),
       units: Corvus.units.fromConfig(c) || Object.assign({}, l.units || Corvus.units.DEFAULTS),
       sensitivity: sensitivities().some((s) => s.id === saved) ? saved : "normal",
@@ -90,6 +95,7 @@ Corvus.welcome = (function () {
    */
   function configPatch(choices) {
     return {
+      language: choices.language,
       theme: { name: choices.theme },
       ui: {
         units: Object.assign({}, choices.units),
@@ -111,7 +117,11 @@ Corvus.welcome = (function () {
   function liveNow() {
     let theme = "";
     try { theme = document.documentElement.getAttribute("data-theme") || ""; } catch (_e) {}
-    return { theme, units: Corvus.units.get() };
+    return {
+      theme,
+      units: Corvus.units.get(),
+      language: Corvus.i18n ? Corvus.i18n.current() : "en",
+    };
   }
 
   /** Show or hide one side panel tab on screen. Nothing is written. */
@@ -128,8 +138,9 @@ Corvus.welcome = (function () {
     }
   }
 
-  /** Put the screen back to *c* (theme, units, tabs and controls), for Skip. */
+  /** Put the screen back to *c* (language, theme, units, tabs and controls), for Skip. */
   function restore(c) {
+    if (Corvus.i18n) Corvus.i18n.use(c.language);
     Corvus.theme.setTheme(c.theme);
     Corvus.units.set(c.units);
     PANEL_TABS.forEach((t) => applyTab(t.id, c[t.key]));
@@ -146,6 +157,21 @@ Corvus.welcome = (function () {
 
   function notify(level, message) {
     window.dispatchEvent(new CustomEvent("corvus:notification", { detail: { level, message } }));
+  }
+
+  /**
+   * A station with no language chosen yet starts in the browser's own, when
+   * Corvus has a file for it. Done before the setup opens, so what the setup
+   * puts back on Skip is that language and not English.
+   */
+  async function openInBrowserLanguage(cfg) {
+    const I = Corvus.i18n;
+    if (!I || cfg.language) return;
+    try {
+      const prefs = (typeof navigator !== "undefined" && (navigator.languages || [navigator.language])) || [];
+      const found = I.detect(prefs.filter(Boolean), (await I.refresh()).map((l) => l.code));
+      if (found) await I.use(found);
+    } catch (_e) { /* English stands */ }
   }
 
   /**
@@ -166,6 +192,7 @@ Corvus.welcome = (function () {
       const res = await Corvus.telemetry.requestJson("/api/config");
       cfg = (res && res.config) || {};
     } catch (_e) { /* the defaults stand in */ }
+    await openInBrowserLanguage(cfg);
     try {
       await show(cfg);
     } catch (_e) {
@@ -201,6 +228,25 @@ Corvus.welcome = (function () {
       const titleEl = dialog.dialog.querySelector(".modal-title");
       const footer = dialog.dialog.querySelector(".modal-actions");
       const msg = Corvus.ui.message();
+
+      /* The same list Settings offers. Applied at once, so the rest of the
+         setup is read in it; written with everything else on Finish. */
+      function languageField() {
+        if (!Corvus.i18n || Corvus.i18n.available().length < 2) return null;
+        const select = Corvus.ui.select({
+          ariaLabel: "Language",
+          options: Corvus.i18n.options(),
+          value: choices.language,
+          onChange: (code) => {
+            Corvus.i18n.use(code).then((now) => {
+              choices.language = now;
+              select.value = now;
+              if (select.corvusSelect) select.corvusSelect.refresh();
+            });
+          },
+        });
+        return Corvus.ui.field({ className: "welcome-language", label: "Language", control: select });
+      }
 
       function go(n) {
         step = Math.max(-1, Math.min(n, STEPS.length - 1));
@@ -325,6 +371,8 @@ Corvus.welcome = (function () {
       const pages = {
         look() {
           const wrap = document.createDocumentFragment();
+          const language = languageField();
+          if (language) wrap.appendChild(language);
           const themes = Corvus.ui.optionCards({
             ariaLabel: "Colour theme",
             columns: 3,
@@ -540,8 +588,17 @@ Corvus.welcome = (function () {
       function skip() {
         restore(initial);
         // Best effort: when the backend cannot take it, the setup simply
-        // offers itself again on the next start.
-        markDone().catch(() => {});
+        // offers itself again on the next start. The language is written
+        // because the setup was shown in it, so it must not fall back to
+        // English the next morning.
+        const saved = initial.language && initial.language !== "en"
+          ? Corvus.telemetry.requestJson("/api/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ language: initial.language }),
+          }).catch(() => {})
+          : Promise.resolve();
+        saved.then(markDone).catch(() => {});
         close();
       }
 

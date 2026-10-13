@@ -186,6 +186,7 @@ function flushMicrotasks() { return new Promise((r) => setTimeout(r, 0)); }
 // ---------------------------------------------------------------------------
 // ui.js first: it defines Corvus.ui, the component layer every other
 // module builds its DOM with (index.html loads it in the same order).
+require(path.join(CORVUS, "src", "js", "i18n.js"));
 require(path.join(CORVUS, "src", "js", "ui.js"));
 require(path.join(CORVUS, "src", "js", "plugins.js"));
 // A folder plugin: in the browser its script is appended by loadInstalled

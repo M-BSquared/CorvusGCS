@@ -227,7 +227,7 @@
   <li><strong>Formats.</strong> GeoTIFF (one band of heights, LZW, Deflate or uncompressed), XYZ text with one <code>x y z</code> line per grid point, and ESRI ASCII grids (<code>.asc</code>). Several files, such as a folder of 1 km tiles, load into one model in one go, and the add button on a model puts more files into it later.</li>
   <li><strong>Coordinate system.</strong> A GeoTIFF names its own. An XYZ or ASCII file does not, so choose it before loading: German state data is usually ETRS89 / UTM zone 32N (EPSG 25832). Supported are WGS 84, ETRS89 and NAD83 UTM zones, Web Mercator, DHDN Gauss-Krüger, the British National Grid, Lambert-93, LAEA Europe and the Swiss LV95 and LV03 grids. Any other system is refused with that list rather than guessed.</li>
   <li><strong>Served by Corvus itself.</strong> The files are converted once and kept next to the offline map cache. Corvus cuts elevation tiles from them as the map asks, so there is no separate server to run, and it works with no connection at all.</li>
-  <li><strong>Around your data.</strong> Outside the area your files cover, the free SRTM model fills in, so the surrounding country never drops to sea level.</li>
+  <li><strong>Around your data.</strong> Outside the area your files cover, the free SRTM model fills in, so the surrounding country never drops to sea level. Where SRTM is not on the laptop either (offline, never downloaded), the edge of your data is continued outward instead, so leaving your area never ends in a cliff or a blank map.</li>
 </ul>
 
 <h2 id="aircraft-in-3d">The aircraft in the scene</h2>

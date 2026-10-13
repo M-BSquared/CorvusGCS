@@ -165,7 +165,13 @@ class DemRoutes:
                 blob, complete = result
         else:
             blob = self._default_terrain_at(z, x, y)
-            complete = blob is not None
+            if blob is None:
+                # Never a hole: MapLibre draws a missing elevation tile at sea
+                # level, and beside a model at 550 m that is a cliff the
+                # camera falls into. The model's edge, held outward, instead.
+                result = store.tile(model_id, z, x, y, None)
+                if result is not None:
+                    blob, complete = result[0], False
         if blob is None:
             self._send_json({"error": "tile not available"}, 404)
             return

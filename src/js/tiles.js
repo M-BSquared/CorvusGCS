@@ -589,7 +589,7 @@ Corvus.tiles = (function () {
 
   function renameRegion(region) {
     if (typeof window.prompt !== "function") return;
-    const next = window.prompt("Name for this area", region.name || "");
+    const next = window.prompt(Corvus.t("Name for this area"), region.name || "");
     if (next === null) return;                 // cancelled
     const name = next.trim();
     if (!name || name === region.name) return;
@@ -605,9 +605,9 @@ Corvus.tiles = (function () {
     // Deleting frees disk, so it is worth a confirm. The backend keeps any
     // tile another region still covers, which is what the wording promises.
     if (typeof window.confirm === "function" &&
-        !window.confirm(
-          `Delete "${region.name}" and its cached tiles?\n\n` +
-          "Tiles shared with another downloaded area are kept.")) {
+        !window.confirm(Corvus.t(
+          'Delete "{name}" and its cached tiles?\n\nTiles shared with another downloaded area are kept.',
+          { name: region.name }))) {
       return;
     }
     Corvus.telemetry.requestJson("/api/tiles/regions/remove", {

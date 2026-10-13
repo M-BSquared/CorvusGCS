@@ -1447,7 +1447,11 @@ Corvus.mission = (function () {
    *  back out of the drawn chart. */
   function resizeProfile() {
     if (!profileEl || !window.Plotly || !window.Plotly.Plots) return;
-    try { window.Plotly.Plots.resize(profileEl); } catch (_error) { /* never drawn */ }
+    // Plotly reports "not displayed" as a rejected promise, not a throw.
+    try {
+      const pending = window.Plotly.Plots.resize(profileEl);
+      if (pending && typeof pending.catch === "function") pending.catch(() => {});
+    } catch (_error) { /* never drawn */ }
   }
 
   /** Leaving the page.

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import threading
+from collections import deque
 from typing import Any
 
 
@@ -47,6 +48,10 @@ class _PriorityLock:
         self._turnstile = threading.Condition()
         self._aborts_waiting = 0
         self._local = threading.local()
+        # Every abort that registered, as (number, thread id), so a sequence
+        # running without the lock can tell that one ran in between its steps.
+        self._abort_count = 0
+        self._abort_log: deque[tuple[int, int]] = deque(maxlen=64)
 
     def _acquire(self, priority: bool) -> bool:
         """Take the lock. Returns whether this call registered an abort.
@@ -65,6 +70,8 @@ class _PriorityLock:
         if priority:
             with self._turnstile:
                 self._aborts_waiting += 1
+                self._abort_count += 1
+                self._abort_log.append((self._abort_count, threading.get_ident()))
             registered = True
             try:
                 self._lock.acquire()
@@ -121,6 +128,28 @@ class _PriorityLock:
         """
         with self._turnstile:
             return self._aborts_waiting > 0
+
+    def abort_mark(self) -> int:
+        """A point to ask :meth:`aborted_since` about later."""
+        with self._turnstile:
+            return self._abort_count
+
+    def aborted_since(self, mark: int) -> bool:
+        """Has another thread's abort registered since *mark*?
+
+        For a sequence of commands that does not hold the lock between its
+        steps (takeoff: mode, arm, takeoff). An operator who pressed Disarm,
+        Land, RTL or picked a mode meanwhile has taken the aircraft back, and
+        the sequence must not send its next step on top of that. The calling
+        thread's own aborts (the mode change a takeoff makes) do not count.
+        """
+        me = threading.get_ident()
+        with self._turnstile:
+            if self._abort_count == mark:
+                return False
+            if self._abort_count - mark > len(self._abort_log):
+                return True
+            return any(n > mark and ident != me for n, ident in self._abort_log)
 
 
 class _PriorityLockAbort:

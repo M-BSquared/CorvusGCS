@@ -70,6 +70,13 @@ DO_REPOSITION_CHANGE_MODE = 1
 # the vehicle has stopped asking — a dropped MISSION_COUNT, or a mission
 # rejected without an ACK. Generous enough for a 57 kbps radio mid-burst.
 MISSION_UPLOAD_QUIET_S = 10.0
+# MISSION_COUNT is the one frame of an upload the vehicle does not ask for
+# again: lost on the radio, the vehicle never starts requesting items. It is
+# sent again after this long without a request (longer on a radio), a few
+# times, inside the quiet window above.
+MISSION_COUNT_RETRY_S = 1.5
+MISSION_COUNT_RETRY_S_SLOW = 3.0
+MISSION_COUNT_TRIES = 3
 # Absolute ceiling on one upload, whatever the item count.
 MISSION_UPLOAD_MAX_S = 120.0
 
@@ -483,13 +490,13 @@ class MissionProtocolMixin:
             self._send_mission_ack(mavutil.mavlink.MAV_MISSION_ACCEPTED)
         return [download.items[seq] for seq in range(offset, total)]
 
-    def _send_mission_ack(self, result: int) -> None:
+    def _send_mission_ack(self, result: int, mission_type: int = 0) -> None:
         conn = self._conn
         try:
             with self._send_lock:
                 if conn is not None and conn is self._conn:
                     conn.mav.mission_ack_send(
-                        self._target_system, self._target_component, result, 0)
+                        self._target_system, self._target_component, result, mission_type)
         except Exception as exc:  # noqa: BLE001 - the vehicle times the transfer out anyway
             logger.debug("mission ack send failed: %s", exc)
 
@@ -515,27 +522,41 @@ class MissionProtocolMixin:
 
         *mission_type* is MAV_MISSION_TYPE: 0 for the mission, FENCE for the
         geofence. Returns MAV_MISSION_ACCEPTED on success, the MISSION_ACK type
-        on rejection, -1 on timeout, -2 on disconnect/shutdown.
+        on rejection, -1 on timeout, -2 on disconnect/shutdown, -3 when an
+        abort command (RTL, Land, Disarm, a mode change) is waiting: the
+        transfer is cancelled on the vehicle, which keeps the mission it had,
+        and the abort goes first.
         """
         pending = _PendingAck()
         typed = (mission_type,) if mission_type else ()
+        started = time.monotonic()
         with self._mission_lock:
             self._mission_upload_type = mission_type
             self._mission_items = list(items)
             self._pending_mission_ack = pending
-            self._mission_last_request = time.monotonic()
-        try:
+            self._mission_last_request = started
+        slow = getattr(self, "_is_slow_link", lambda: False)()
+        count_retry_s = MISSION_COUNT_RETRY_S_SLOW if slow else MISSION_COUNT_RETRY_S
+
+        def send_count() -> bool:
             conn = self._conn
             try:
                 with self._send_lock:
-                    if conn is not self._conn:
-                        return -2
+                    if conn is None or conn is not self._conn:
+                        return False
                     conn.mav.mission_count_send(
                         self._target_system, self._target_component, len(items), *typed,
                     )
             except Exception as exc:
                 logger.error("mission_count_send failed: %s", exc)
+                return False
+            return True
+
+        try:
+            if not send_count():
                 return -2
+            count_sent_at = started
+            count_sends = 1
             # Bounded by progress, not by item count. PX4 requests the items
             # one at a time and back to back, so "the vehicle has stopped
             # asking" is known within MISSION_UPLOAD_QUIET_S — where a budget
@@ -547,11 +568,23 @@ class MissionProtocolMixin:
             while True:
                 if pending.event.wait(timeout=0.2):
                     return pending.result if pending.result is not None else -1
+                if self._operation_lock.abort_waiting():
+                    self._send_mission_ack(MAV_MISSION_OPERATION_CANCELLED, mission_type)
+                    logger.info("mission upload cancelled: an abort command is waiting")
+                    return -3
                 now = time.monotonic()
                 if now > deadline:
                     return -1
                 with self._mission_lock:
                     last = self._mission_last_request
+                if (last <= started and count_sends < MISSION_COUNT_TRIES
+                        and now - count_sent_at > count_retry_s):
+                    logger.info("no item requested yet, sending MISSION_COUNT again")
+                    if not send_count():
+                        return -2
+                    count_sent_at = now
+                    count_sends += 1
+                    continue
                 # No item has been asked for in a while and no ACK has landed:
                 # the handshake is not in progress, it is over.
                 if now - last > MISSION_UPLOAD_QUIET_S:
@@ -699,7 +732,7 @@ class MissionProtocolMixin:
         """
         return self._dialect.mission_start_params(count)
 
-    def _start_uploaded_mission(self, action: str, count: int) -> bool:
+    def _start_uploaded_mission(self, action: str, count: int, mark: int | None = None) -> bool:
         """MISSION_START, the mission mode and arming, in this stack's order.
 
         PX4's MISSION_START switches to the mission and arms by itself; the
@@ -709,8 +742,14 @@ class MissionProtocolMixin:
         armed first. That order can leave an aircraft armed for nothing, so a
         MISSION_START refused after arming disarms again, as takeoff does.
 
-        Called with the command lock held; returns False with the reason set.
+        Called without the command lock: each step takes it for its own round
+        trip, so Disarm, Land, RTL or a mode change never waits behind the
+        mode and arm confirmations, and a sequence one of them interrupted
+        sends nothing more (*mark*, see :meth:`_sequence_interrupted`).
+        Returns False with the reason set.
         """
+        if mark is None:
+            mark = self._operation_lock.abort_mark()
         nan = float("nan")
         first, last = self._mission_start_range(count)
         arm_mode = self._dialect.mission_arm_mode(self._mav_type_id)
@@ -722,14 +761,19 @@ class MissionProtocolMixin:
                 entered = self._enter_guided(action)
             if not entered:
                 return False
+            if self._sequence_interrupted(mark, action):
+                return False
             if not self.arm(True):
                 return False
             armed_here = True
-        result = self._send_command_and_wait(
-            mavutil.mavlink.MAV_CMD_MISSION_START,
-            [first, last, nan, nan, nan, nan, nan],
-            timeout=5.0, retries=1,
-        )
+        if self._sequence_interrupted(mark, action):
+            return False
+        with self._operation_lock:
+            result = self._send_command_and_wait(
+                mavutil.mavlink.MAV_CMD_MISSION_START,
+                [first, last, nan, nan, nan, nan, nan],
+                timeout=5.0, retries=1,
+            )
         if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
             if armed_here:
                 self._console_publish(
@@ -866,47 +910,53 @@ class MissionProtocolMixin:
         One point for a vehicle already in the air is a reposition instead
         (see :meth:`_reposition_to`), which leaves the stored mission alone.
         """
+        self._set_command_error("")
+        mark = self._operation_lock.abort_mark()
+        ground = is_ground_vehicle(self._mav_type_id)
+        label = "Drive to points" if ground else "Fly to points"
+        cleaned = self._validate_fly_to_points(points)
+        if cleaned is None:
+            return False
+        if not self._connection_ready():
+            return self._command_failure(label, -2)
+        # No altitude-reference gate here, on purpose. There used to be one,
+        # and it was pure ceremony: every item below is built in
+        # MAV_FRAME_GLOBAL_RELATIVE_ALT, whose z *is* the AGL number the
+        # operator typed, so the AMSL value the gate computed was thrown away
+        # without ever being sent. It refused missions over a conversion the
+        # mission does not need.
+        on_ground = not ground and not self._is_airborne()
+        if len(cleaned) == 1 and self._can_reposition(ground, on_ground):
+            # A mode change and one command, each under the lock for itself.
+            handled = self._reposition_to(*cleaned[0])
+            if handled is not None:
+                return handled
+        nan = float("nan")
+        items: list[dict[str, Any]] = []
+        seq = 0
+        if on_ground:
+            # Climb to the first waypoint's AGL, then proceed to the points.
+            takeoff_agl = cleaned[0][2]
+            takeoff_lat, takeoff_lon = self._takeoff_item_position(cleaned[0])
+            items.append(self._build_mission_item_spec(
+                seq, mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+                takeoff_lat, takeoff_lon, takeoff_agl, nan, nan, nan, nan,
+            ))
+            seq += 1
+        for lat, lon, alt_agl in cleaned:
+            items.append(self._build_mission_item_spec(
+                seq, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+                lat, lon, alt_agl, 0.0, nan, nan, nan,
+            ))
+            seq += 1
+
+        planned = len(items)
+        items = self._with_mission_home_slot(items)
+        # The upload is a handshake and holds the lock; it gives way to an
+        # abort by cancelling itself. Starting is a sequence, and does not.
         with self._operation_lock:
-            self._set_command_error("")
-            ground = is_ground_vehicle(self._mav_type_id)
-            label = "Drive to points" if ground else "Fly to points"
-            cleaned = self._validate_fly_to_points(points)
-            if cleaned is None:
-                return False
             if not self._connection_ready():
                 return self._command_failure(label, -2)
-            # No altitude-reference gate here, on purpose. There used to be
-            # one, and it was pure ceremony: every item below is built in
-            # MAV_FRAME_GLOBAL_RELATIVE_ALT, whose z *is* the AGL number the
-            # operator typed, so the AMSL value the gate computed was thrown
-            # away without ever being sent. It refused missions over a
-            # conversion the mission does not need.
-            on_ground = not ground and not self._is_airborne()
-            if len(cleaned) == 1 and self._can_reposition(ground, on_ground):
-                handled = self._reposition_to(*cleaned[0])
-                if handled is not None:
-                    return handled
-            nan = float("nan")
-            items: list[dict[str, Any]] = []
-            seq = 0
-            if on_ground:
-                # Climb to the first waypoint's AGL, then proceed to the points.
-                takeoff_agl = cleaned[0][2]
-                takeoff_lat, takeoff_lon = self._takeoff_item_position(cleaned[0])
-                items.append(self._build_mission_item_spec(
-                    seq, mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-                    takeoff_lat, takeoff_lon, takeoff_agl, nan, nan, nan, nan,
-                ))
-                seq += 1
-            for lat, lon, alt_agl in cleaned:
-                items.append(self._build_mission_item_spec(
-                    seq, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-                    lat, lon, alt_agl, 0.0, nan, nan, nan,
-                ))
-                seq += 1
-
-            planned = len(items)
-            items = self._with_mission_home_slot(items)
             self._console_publish(
                 "GOTOPOINTS", f"Uploading {planned} mission item(s) …", "info",
             )
@@ -917,14 +967,14 @@ class MissionProtocolMixin:
             # Not a plan: the Mission page's plan is no longer what is on board.
             self._note_vehicle_mission(None)
 
-            self._console_publish(
-                "GOTOPOINTS", "Mission accepted; starting …", "info",
-            )
-            if not self._start_uploaded_mission(label, planned):
-                return False
+        self._console_publish(
+            "GOTOPOINTS", "Mission accepted; starting …", "info",
+        )
+        if not self._start_uploaded_mission(label, planned, mark):
+            return False
 
-            self._console_publish("GOTOPOINTS", f"{label} started", "success")
-            return True
+        self._console_publish("GOTOPOINTS", f"{label} started", "success")
+        return True
 
     # ------------------------------------------------------------------
     # Mission plan (the Mission page)
@@ -1133,17 +1183,17 @@ class MissionProtocolMixin:
         v1.18; the order of the steps is the dialect's, see
         :meth:`_start_uploaded_mission`.
         """
-        with self._operation_lock:
-            self._set_command_error("")
-            if not isinstance(count, int) or count <= 0:
-                self._set_command_error("mission item count must be positive")
-                return False
-            if not self._connection_ready():
-                return self._command_failure("Mission start", -2)
-            if not self._start_uploaded_mission("Mission start", count):
-                return False
-            self._console_publish("MISSION", "Mission started", "success")
-            return True
+        self._set_command_error("")
+        mark = self._operation_lock.abort_mark()
+        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+            self._set_command_error("mission item count must be positive")
+            return False
+        if not self._connection_ready():
+            return self._command_failure("Mission start", -2)
+        if not self._start_uploaded_mission("Mission start", count, mark):
+            return False
+        self._console_publish("MISSION", "Mission started", "success")
+        return True
 
     def clear_mission(self) -> bool:
         """Wipe the mission stored on the vehicle.

@@ -199,6 +199,16 @@ const S = Corvus.pluginSchwalby;
 /** Fire an element's first click listener. */
 function click(el) { el._listeners.click[0](); }
 
+/** A row's pencil. The shelf shows none until its own edit toggle is pressed,
+ *  so this presses the toggle first when the pencil is not there yet. */
+function editTool(h, label) {
+  if (!h.tool(`Edit ${label}`)) {
+    const toggle = h.tool("Edit buttons");
+    if (toggle) click(toggle);
+  }
+  return h.tool(`Edit ${label}`);
+}
+
 /** Pick an option in a <select> built by Corvus.ui.select. */
 function changeTo(el, value) {
   el.value = value;
@@ -329,7 +339,7 @@ function mount(opts) {
     urls: () => calls.map((c) => c.url),
     sends: () => calls.filter((c) => c.url === "/api/ssh/send").map((c) => c.body),
     shelf: () => all(".schw-launch"),
-    tool: (label) => all(".icon-btn").find((b) => b.getAttribute("aria-label") === label),
+    tool: (label) => [...all(".icon-btn"), ...all(".schw-edit-toggle")].find((b) => b.getAttribute("aria-label") === label),
     byLabel: (text) => all(".btn").filter((b) => b.children.some((c) => c.textContent === text)),
     fieldBy: (aria) => all(".field-input").find((i) => i.getAttribute("aria-label") === aria),
     select: () => all(".field-select")[0],
@@ -614,7 +624,7 @@ async function testRestartSendsCtrlCFirst() {
 async function testRestartSwitchIsSavedAndOnlyForATerminal() {
   const h = mount({ saved: { buttons: [LOCAL_BUTTON] } });
   await flushMicrotasks();
-  click(h.tool("Edit Ground logger"));
+  click(editTool(h, "Ground logger"));
   const switches = querySel(h.container.children, ".field-switch");
   const toggles = querySel(h.container.children, ".ui-toggle");
   assert.equal(toggles[1].getAttribute("aria-label"), "Restart on press");
@@ -627,6 +637,37 @@ async function testRestartSwitchIsSavedAndOnlyForATerminal() {
   click(h.byLabel("Save")[0]);
   await flushMicrotasks();
   assert.equal(h.savedNow().buttons[0].restart, true);
+  S.destroy(h.container);
+}
+
+/* The arrow is part of the launch button, not a tool beside it, and a click on
+   it must not also press the button. */
+async function testTheArrowLivesInsideTheLaunchButton() {
+  const h = mount({ saved: { buttons: [LOCAL_BUTTON] } });
+  await flushMicrotasks();
+  const arrow = h.tool("Open the terminal for Ground logger");
+  const launch = h.shelf()[0];
+  assert.ok(launch.children.includes(arrow), "inside the orange bar");
+  const calls = h.calls.length;
+  arrow._listeners.click[0]({ stopPropagation() {}, preventDefault() {} });
+  await flushMicrotasks();
+  assert.equal(h.sends().length, 0, "the program is not started by the arrow");
+  assert.ok(h.calls.length >= calls);
+  S.destroy(h.container);
+}
+
+/* The rows show no pencil until the shelf's own edit toggle is pressed, and
+   pressing it again hides them. */
+async function testThePencilsAppearOnlyInEditMode() {
+  const h = mount({ saved: { buttons: [LOCAL_BUTTON, SSH_BUTTON] } });
+  await flushMicrotasks();
+  assert.equal(h.tool("Edit Ground logger"), undefined, "hidden by default");
+  assert.ok(h.tool("Edit buttons"), "the toggle is always there");
+  click(h.tool("Edit buttons"));
+  assert.ok(h.tool("Edit Ground logger"), "shown in edit mode");
+  assert.ok(h.tool("Edit Start mission"));
+  click(h.tool("Edit buttons"));
+  assert.equal(h.tool("Edit Ground logger"), undefined, "hidden again");
   S.destroy(h.container);
 }
 
@@ -817,7 +858,7 @@ async function testAnOrdinaryFailureAsksForNothing() {
 async function testTheEditorKeepsAMissingConnection() {
   const h = mount({ saved: { buttons: [SSH_BUTTON] }, connections: [] });
   await flushMicrotasks();
-  click(h.tool("Edit Start mission"));
+  click(editTool(h, "Start mission"));
   await flushMicrotasks();
   assert.equal(h.select().value, "companion");
   assert.ok(!h.newConnShowing(), "not the new-connection form");
@@ -880,7 +921,7 @@ async function testEditorSwitchesBetweenLocalAndSsh() {
 async function testCancelDiscardsTheDraft() {
   const h = mount({ saved: { buttons: [LOCAL_BUTTON] } });
   await flushMicrotasks();
-  click(h.tool("Edit Ground logger"));
+  click(editTool(h, "Ground logger"));
   pickTarget(h, "SSH");
   click(h.byLabel("Cancel")[0]);
   assert.deepEqual(h.where(), ["Local"]);
@@ -927,7 +968,7 @@ async function testNoTerminalWhereThereIsNone() {
     localStatus: { terminal: false, reason: "Windows offers no terminal here. Run it in the background.", background: true },
   });
   await flushMicrotasks();
-  click(h.tool("Edit Ground logger"));
+  click(editTool(h, "Ground logger"));
   const sw = h.terminalSwitch();
   assert.equal(sw.disabled, true, "no switch to a terminal that cannot be had");
   assert.equal(sw.getAttribute("aria-checked"), "false");
@@ -953,7 +994,7 @@ async function testALateStatusRepaintsTheOpenEditor() {
     localStatus: new Promise((resolve) => { answer = resolve; }),
   });
   await flushMicrotasks();
-  click(h.tool("Edit Ground logger"));
+  click(editTool(h, "Ground logger"));
   assert.equal(h.terminalSwitch().disabled, false, "unanswered, the operator's choice stands");
   answer({ terminal: false, reason: "No terminal here.", background: true });
   await flushMicrotasks();
@@ -978,7 +1019,7 @@ async function answer(text) {
    liveness answer comes back, which is that case. */
 async function testMovingARunningButtonClosesItsSessionFirst() {
   const h = mount({ saved: { buttons: [SSH_BUTTON] }, sessions: ["schwalby/s"], holdDisconnect: true });
-  click(h.tool("Edit Start mission"));
+  click(editTool(h, "Start mission"));
   await flushMicrotasks();
 
   // Declined: nothing is saved, the editor stays, the program keeps running.
@@ -1017,7 +1058,7 @@ async function testMovingARunningButtonClosesItsSessionFirst() {
 async function testARenameKeepsTheSession() {
   const opts = { saved: { buttons: [SSH_BUTTON] }, sessions: ["schwalby/s"] };
   const h = mount(opts);
-  click(h.tool("Edit Start mission"));
+  click(editTool(h, "Start mission"));
   await flushMicrotasks();
   typeInto(h.fieldBy("Button label"), "Mission A");
   click(h.byLabel("Save")[0]);
@@ -1029,7 +1070,7 @@ async function testARenameKeepsTheSession() {
 
   // Another connection is a move: asked, then closed.
   const moved = mount(opts);
-  click(moved.tool("Edit Start mission"));
+  click(editTool(moved, "Start mission"));
   await flushMicrotasks();
   changeTo(moved.select(), "ground");
   click(moved.byLabel("Save")[0]);
@@ -1043,7 +1084,7 @@ async function testARenameKeepsTheSession() {
 
 async function testRemovingARunningButtonClosesItsSession() {
   const h = mount({ saved: { buttons: [LOCAL_BUTTON] }, sessions: ["schwalby/l"] });
-  click(h.tool("Edit Ground logger"));
+  click(editTool(h, "Ground logger"));
   await flushMicrotasks();
   click(h.byLabel("Delete")[0]);
   await flushMicrotasks();
@@ -1070,7 +1111,7 @@ async function testARunningRowStopsInsteadOfEditing() {
     sessions: ["schwalby/l", "schwalby/s"],
   });
   await flushMicrotasks();
-  assert.ok(h.tool("Edit Tile server"));
+  assert.ok(editTool(h, "Tile server"));
   assert.equal(h.tool("Stop Tile server"), undefined);
 
   for (const [label, session, where] of [
@@ -1078,7 +1119,7 @@ async function testARunningRowStopsInsteadOfEditing() {
     ["Start mission", "schwalby/s", "companion"],
   ]) {
     const disconnects = () => h.calls.filter((c) => c.url === "/api/ssh/disconnect" && c.body.name === session);
-    assert.equal(h.tool(`Edit ${label}`), undefined);
+    assert.equal(editTool(h, label), undefined);
     const stopBtn = h.tool(`Stop ${label}`);
     assert.ok(stopBtn.className.split(/\s+/).includes("schw-stop"));
 
@@ -1091,7 +1132,7 @@ async function testARunningRowStopsInsteadOfEditing() {
     await new Promise((r) => setTimeout(r, S.RESTART_GRACE_MS + 50));
     await flushMicrotasks();
     assert.equal(disconnects().length, 1);
-    assert.ok(h.tool(`Edit ${label}`), "stopped, the pencil is back");
+    assert.ok(editTool(h, label), "stopped, the pencil is back");
     assert.equal(h.tool(`Stop ${label}`), undefined);
     assert.equal(h.status().textContent, `${label} stopped`);
     assert.ok(h.consoleLines.some((l) => l.line === `schwalby (${where}): stopped ${label}` && l.level === "info"));
@@ -1494,6 +1535,8 @@ async function run() {
   await testRestartSendsCtrlCFirst();
   await testRestartSwitchIsSavedAndOnlyForATerminal();
   await testTheArrowConnectsBeforeTheFirstPress();
+  await testTheArrowLivesInsideTheLaunchButton();
+  await testThePencilsAppearOnlyInEditMode();
   await testLocalBackgroundButtonRunsHere();
   await testALocalFailureLandsOnItsRow();
   await testARefusedLocalShellSaysWhy();

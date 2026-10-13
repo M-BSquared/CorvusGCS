@@ -194,8 +194,15 @@
   Corvus flies one vehicle at a time and shows every other one it hears. Click
   the <strong>Vehicle</strong> block at the left of the status bar to open the
   vehicle list. Each entry has the vehicle's name and colour, its system ID and
-  link, its mode, battery and height, and a <strong>Take control</strong>
-  button.
+  link, its mode, battery and height, a <strong>Take control</strong>
+  button and a bin to remove it.
+</p>
+<p>
+  One link is one vehicle. A link flies the first autopilot it hears and
+  nothing else, and a second vehicle needs a radio and a link of its own; see
+  <a href="#vehicle-links">One radio per vehicle</a>. A frame that radio noise
+  turns into something that looks like a heartbeat from a random system ID is
+  thrown away, so it never shows up as a vehicle.
 </p>
 <p>
   The vehicle in control is the one the whole interface is about: the status
@@ -223,8 +230,8 @@
   Corvus asks first, because that vehicle keeps flying in its current mode and
   is not sent anything to stop it. Give it a mode that flies on its own (Hold,
   Mission or Return) before you switch. From then on commands, the joystick and
-  every page go to the new vehicle. The switch takes about a second, during
-  which the status bar shows the link connecting.
+  every page go to the new vehicle. The switch is immediate, because every
+  vehicle has its own link.
 </p>
 <p>
   The flown track belongs to its vehicle. Switching hands the old vehicle's
@@ -259,17 +266,26 @@
   for the same adapter.
 </p>
 
-<h3 id="vehicle-shared">Several vehicles on one link</h3>
+<h3 id="vehicle-shared">Another autopilot on the same link</h3>
 <p>
-  A router, a mesh radio or PX4's multi-vehicle simulation carries several
-  vehicles down one link, and they appear by themselves. On a shared link every
-  vehicle needs its own <code>MAV_SYS_ID</code> (<code>SYSID_THISMAV</code> on
-  ArduPilot), and taking control of another one takes about a second while
-  the link latches it. A vehicle there that does not send its position
-  (ArduPilot sends nothing a station has not asked for) is asked for it at
-  2 Hz, and for nothing else. <strong>Settings, Vehicles, Show every vehicle a
-  link carries</strong> switches this off: every link is then one vehicle, the
-  first autopilot it hears, as it was before Corvus had a vehicle list.
+  A router, a mesh radio or PX4's multi-vehicle simulation can carry several
+  vehicles down one link. Corvus flies the first autopilot it hears there and
+  ignores the rest; the console says once which system ID it ignored. To fly
+  each of them, give each one a link of its own (for the simulation, a UDP
+  port each).
+</p>
+
+<h3 id="vehicle-remove">Removing a vehicle</h3>
+<p>
+  The bin in a vehicle's entry removes it. Corvus asks first, then closes the
+  vehicle's link, and the vehicle leaves the list and the map, track
+  included. A vehicle on the main link is disconnected and stays
+  disconnected until you connect again on the LINK tab. A vehicle on an extra
+  link has that link closed; open the link again to bring it back. Its name
+  and colour are forgotten, because the next radio opened in its place may
+  carry another aircraft. Removing an armed vehicle that is still heard needs
+  a second confirmation: it keeps flying in its current mode, and the station
+  no longer sees it.
 </p>
 
 <h3 id="vehicle-warnings">Warnings from the other vehicles</h3>
@@ -314,7 +330,7 @@
   <dt>ARM / DISARM</dt>
   <dd>Arms or disarms. Whether arming is allowed is the autopilot's decision; if it refuses, its reason is shown.</dd>
   <dt>TAKEOFF</dt>
-  <dd>Opens a small panel with an altitude slider (1 to 120 m). Confirming arms the aircraft and takes off, in the order the autopilot needs: on PX4 the command first, then arming; on ArduPilot GUIDED, arming, then the command. See <a href="compatibility.html">PX4 and ArduPilot</a>.</dd>
+  <dd>Opens a small panel with an altitude slider (1 to 120 m) and a box beside it. The slider is logarithmic, so the low heights get most of the track and the arrow keys step by one metre (5 m above 50 m). The box is ready for typing as soon as the panel opens: a number typed there is the altitude at once, the slider follows, and a value outside the range is set to the nearest limit. <kbd>Enter</kbd> in the box confirms the takeoff, the same as the button; if the box is empty or holds a value outside the range, <kbd>Enter</kbd> only corrects it, and the next <kbd>Enter</kbd> takes off. The box uses the length unit chosen in Settings. Confirming arms the aircraft and takes off, in the order the autopilot needs: on PX4 the command first, then arming; on ArduPilot GUIDED, arming, then the command. See <a href="compatibility.html">PX4 and ArduPilot</a>.</dd>
   <dt>LAND and RETURN</dt>
   <dd>Land where the aircraft is, or return to launch. RETURN uses the heights and behaviour set on the <a href="safety.html#return">Safety</a> page.</dd>
   <dt>PLAN</dt>

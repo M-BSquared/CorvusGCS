@@ -3,7 +3,8 @@
 /**
  * Frontend tests for Corvus.map.holdThroughPanel: a map beside the right
  * panel is resized once per slide, not on every frame of it, and the picture
- * stays anchored on its left edge while that happens.
+ * stays anchored on its left edge while that happens. Under a tilted camera
+ * the vanishing point is held instead of panning, so the picture never shears.
  *
  * The fake map stands in for MapLibre's own ResizeObserver: `settle()` is the
  * observer firing, and it resizes the canvas only when the container's width
@@ -69,7 +70,7 @@ function fakeMap(naturalWidth) {
     },
     listenerCount: (type) => (listeners[type] || []).length,
   };
-  return { m, container, canvas };
+  return { m, container, canvas, listeners };
 }
 
 function testOpeningResizesOnceAtTheEnd() {
@@ -162,6 +163,91 @@ function testAnUnrelatedResizeLaterIsNotAnchored() {
   }, 300));
 }
 
+/** A tilted map: padding moves the vanishing point. */
+function tiltedMap(naturalWidth) {
+  const f = fakeMap(naturalWidth);
+  const { m } = f;
+  let padding = { top: 0, bottom: 0, left: 0, right: 0 };
+  m.eases = [];
+  m.getPitch = () => 60;
+  m.getPadding = () => Object.assign({}, padding);
+  m.setPadding = (p) => { padding = Object.assign({}, p); };
+  m.easeTo = (opts) => { m.eases.push(opts); };
+  /** Where the vanishing point is drawn, from the left edge. */
+  m.vanishingX = (width) => padding.left + (width - padding.left - padding.right) / 2;
+  m.moveEnd = () => (f.listeners.moveend || []).forEach((cb) => cb());
+  return f;
+}
+
+const tick = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function testTiltedOpeningDoesNotMoveThePicture() {
+  const { m, container } = tiltedMap(1000);
+  const off = Corvus.map.holdThroughPanel(m);
+  emit("start", -356);
+  container.natural = 644;
+  emit("end", 0);
+  m.settle();
+  assert.equal(m.resizes, 1);
+  assert.equal(m.pans.length, 0, "no pan: a pan shears a tilted picture");
+  assert.equal(m.eases.length, 0, "and no glide: the picture stays put");
+  assert.equal(m.vanishingX(644), 500, "vanishing point still on its old pixel");
+  assert.deepEqual(Corvus.map.panelRestPadding(m), { top: 0, bottom: 0, left: 0, right: 0 },
+    "the next camera move takes it back");
+  off();
+}
+
+async function testTiltedClosingThenOpeningCancelsOut() {
+  const { m, container } = tiltedMap(644);
+  const off = Corvus.map.holdThroughPanel(m);
+  emit("start", 356);
+  m.settle();
+  assert.equal(m.pans.length, 0);
+  assert.equal(m.vanishingX(1000), 322, "held on its pixel across the resize");
+  container.natural = 1000;
+  emit("end", 0);
+  await tick(300);
+  emit("start", -356);
+  container.natural = 644;
+  emit("end", 0);
+  m.settle();
+  assert.deepEqual(m.getPadding(), { top: 0, bottom: 0, left: 0, right: 0 },
+    "back where it started, so nothing is left to restore");
+  m.moveEnd();
+  assert.equal(Corvus.map.panelRestPadding(m), null);
+  off();
+}
+
+async function testACameraMoveThatRestoresThePaddingClearsTheRest() {
+  const { m, container } = tiltedMap(644);
+  const off = Corvus.map.holdThroughPanel(m);
+  emit("start", 356);
+  m.settle();
+  container.natural = 1000;
+  emit("end", 0);
+  await tick(300);
+  assert.ok(Corvus.map.panelRestPadding(m), "an offset is owed");
+  m.moveEnd();
+  assert.ok(Corvus.map.panelRestPadding(m), "a move that did not restore it keeps it owed");
+  m.setPadding(Corvus.map.panelRestPadding(m));
+  m.moveEnd();
+  assert.equal(Corvus.map.panelRestPadding(m), null);
+  off();
+}
+
+function testFlatMapStillPans() {
+  const { m, container } = tiltedMap(1000);
+  m.getPitch = () => 0;
+  const off = Corvus.map.holdThroughPanel(m);
+  emit("start", -356);
+  container.natural = 644;
+  emit("end", 0);
+  m.settle();
+  assert.equal(m.eases.length, 0, "a flat map keeps its left edge exactly");
+  assert.deepEqual(m.pans.map((p) => p.offset), [[-178, 0]]);
+  off();
+}
+
 function testAHiddenMapIsLeftAlone() {
   const { m, container } = fakeMap(0);
   const off = Corvus.map.holdThroughPanel(m);
@@ -202,6 +288,10 @@ function testWithoutAPanelItIsANoop() {
     testFollowingDoesNotMakeThePictureJump,
     testOnTheGlobeThePanIsMeasuredAndCorrected,
     testAnUnrelatedResizeLaterIsNotAnchored,
+    testTiltedOpeningDoesNotMoveThePicture,
+    testTiltedClosingThenOpeningCancelsOut,
+    testACameraMoveThatRestoresThePaddingClearsTheRest,
+    testFlatMapStillPans,
     testAHiddenMapIsLeftAlone,
     testUnsubscribeLetsGo,
     testWithoutAPanelItIsANoop,

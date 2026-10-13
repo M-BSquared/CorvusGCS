@@ -618,6 +618,8 @@ class ParamProtocolMixin:
             pending = _PendingAck()
             with self._param_lock:
                 self._param_set_pending[name] = pending
+            echoed: ParamEntry | None = None
+            confirmed = False
             try:
                 for _attempt in range(3):
                     if not self._connection_ready():
@@ -636,42 +638,58 @@ class ParamProtocolMixin:
                     except Exception as exc:  # noqa: BLE001 - report, never raise
                         self._set_command_error(f"parameter write failed: {exc}")
                         return False
-                    if pending.event.wait(timeout=1.0):
-                        # The waiter is woken by an echoed PARAM_VALUE
-                        # (result 0) and by a link teardown alike (result -2,
-                        # set by _abort_parameter_operations). Only the first
-                        # is a write. Treating the second as one meant a cable
+                    answered = False
+                    deadline = time.monotonic() + 1.0
+                    while True:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0 or not pending.event.wait(timeout=remaining):
+                            break
+                        # The waiter is woken by an echoed PARAM_VALUE (result
+                        # 0) and by a link teardown alike (result -2, set by
+                        # _abort_parameter_operations). Only the first is a
+                        # write. Treating the second as one meant a cable
                         # pulled mid-write reported the parameter as set
                         # whenever the stale cache still held the value being
-                        # written — which is exactly the case where nothing
+                        # written, which is exactly the case where nothing
                         # went out at all.
                         if pending.result == -2:
                             self._set_command_error("not connected")
                             return False
+                        answered = True
+                        with self._param_lock:
+                            echoed = self._params.get(name)
+                            if echoed is not None and self._echo_confirms(echoed, value):
+                                confirmed = True
+                                break
+                            # Another value: either the vehicle's answer, or a
+                            # PARAM_VALUE that was already on its way (a
+                            # download, another station's read) when this
+                            # write went out. The rest of the window is waited
+                            # out for the real echo before it counts as either.
+                            pending.event.clear()
+                            pending.result = None
+                    if confirmed or answered:
                         break
-                else:
-                    self._set_command_error("parameter write not confirmed (timeout)")
-                    return False
             finally:
                 with self._param_lock:
                     if self._param_set_pending.get(name) is pending:
                         self._param_set_pending.pop(name, None)
-            with self._param_lock:
-                echoed = self._params.get(name)
             if echoed is None:
-                self._set_command_error("parameter write not confirmed (no echo)")
+                self._set_command_error("parameter write not confirmed (timeout)")
                 return False
-            if autopilot_dialect.param_type_is_integer(echoed.type):
-                confirmed = autopilot_dialect.param_values_match(
-                    echoed.type, echoed.value, value)
-            else:
-                confirmed = abs(echoed.value - value) <= max(1e-4, 1e-3 * abs(value))
             if confirmed:
                 self._console_publish("PARAM", f"{name} set to {value}", "success")
                 return True
             text = (f"parameter write not confirmed (got {echoed.value} expected {value})")
             self._set_command_error(text)
             return False
+
+    @staticmethod
+    def _echo_confirms(echoed: ParamEntry, value: float) -> bool:
+        """Does an echoed PARAM_VALUE carry the value that was written?"""
+        if autopilot_dialect.param_type_is_integer(echoed.type):
+            return autopilot_dialect.param_values_match(echoed.type, echoed.value, value)
+        return abs(echoed.value - value) <= max(1e-4, 1e-3 * abs(value))
 
     def start_param_upload(self, params: list[dict]) -> bool:
         """Apply a saved parameter file to the vehicle as a background upload.

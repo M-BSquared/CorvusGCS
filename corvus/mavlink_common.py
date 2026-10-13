@@ -10,7 +10,7 @@ import threading
 from dataclasses import dataclass, field
 
 MAV_RESULT_TEXT: dict[int, str] = {
-    -2: "DISCONNECTED", -1: "ACK_TIMEOUT",
+    -3: "INTERRUPTED", -2: "DISCONNECTED", -1: "ACK_TIMEOUT",
     0: "ACCEPTED", 1: "TEMPORARILY_REJECTED", 2: "DENIED",
     3: "UNSUPPORTED", 4: "FAILED", 5: "IN_PROGRESS",
     6: "CANCELLED", 7: "COMMAND_LONG_ONLY", 8: "COMMAND_INT_ONLY",
@@ -39,3 +39,6 @@ class _PendingAck:
     # later ACK, and one of these is returned only if none arrives in time.
     interim: frozenset[int] = frozenset()
     interim_result: int | None = None
+    # The vehicle answered IN_PROGRESS: it heard the command, and resending it
+    # could start the work over.
+    in_progress: bool = False

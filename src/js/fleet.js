@@ -14,26 +14,42 @@ window.Corvus = window.Corvus || {};
   One vehicle is flown at a time. Everything else in the app (the HUD, the
   flight bar, every setup page) follows that one; the rest are drawn on the
   map in their own colour.
+
+  One link is one vehicle: a second aircraft needs a radio and a link of its
+  own. Removing a vehicle closes its link, and it leaves the list and the map.
 */
 Corvus.fleet = (function () {
   const EMPTY = {
     active: "", active_link: "main", links: [], vehicles: [], palette: [],
-    shared_links: true, suggestion: null,
+    suggestion: null,
   };
+  // A snapshot published just before a removal can still be on its way. The
+  // removed vehicle is held off the list this long, so it does not flash back.
+  const REMOVED_HOLD_MS = 3000;
+  const removedAt = new Map();
   let snapshot = EMPTY;
   const subscribers = new Set();
   let started = false;
   let dialog = null;
 
+  function recentlyRemoved(id) {
+    const at = removedAt.get(id);
+    if (at === undefined) return false;
+    if (Date.now() - at < REMOVED_HOLD_MS) return true;
+    removedAt.delete(id);
+    return false;
+  }
+
   function normalise(data) {
     if (!data || typeof data !== "object") return EMPTY;
+    const vehicles = (Array.isArray(data.vehicles) ? data.vehicles : [])
+      .filter((v) => v && typeof v.id === "string" && !recentlyRemoved(v.id));
     return {
-      active: typeof data.active === "string" ? data.active : "",
+      active: typeof data.active === "string" && !recentlyRemoved(data.active) ? data.active : "",
       active_link: typeof data.active_link === "string" ? data.active_link : "main",
       links: Array.isArray(data.links) ? data.links : [],
-      vehicles: Array.isArray(data.vehicles) ? data.vehicles : [],
+      vehicles,
       palette: Array.isArray(data.palette) ? data.palette : [],
-      shared_links: data.shared_links !== false,
       suggestion: data.suggestion && typeof data.suggestion === "object" ? data.suggestion : null,
     };
   }
@@ -130,7 +146,14 @@ Corvus.fleet = (function () {
   const setColor = (id, color) => post("/api/fleet/vehicle", { id, color });
   const addLink = (connection) => post("/api/fleet/links/add", { connection });
   const removeLink = (id) => post("/api/fleet/links/remove", { id });
-  const setSharedLinks = (on) => post("/api/fleet/settings", { shared_links: !!on });
+
+  /** Take *id* off the list: its link is closed, and the map forgets it. */
+  async function removeVehicle(id, confirmArmed) {
+    const data = await post("/api/fleet/vehicle/remove", { id, confirm_armed: !!confirmArmed });
+    removedAt.set(id, Date.now());
+    if (Corvus.mapFleet && typeof Corvus.mapFleet.forget === "function") Corvus.mapFleet.forget(id);
+    return data;
+  }
 
   /* ---------------- colours ---------------- */
 
@@ -182,7 +205,8 @@ Corvus.fleet = (function () {
   }
 
   function detailText(v) {
-    const parts = [`System ${v.sysid}`, v.link_label || ""];
+    const link = linkOf(v);
+    const parts = [`System ${v.sysid}`, v.link_label || "", link && !link.primary ? link.connection : ""];
     if (v.type) parts.push(String(v.type).replace(/_/g, " ").toLowerCase());
     if (v.stack) parts.push(v.stack === "px4" ? "PX4" : v.stack === "ardupilot" ? "ArduPilot" : v.stack);
     return parts.filter(Boolean).join(" · ");
@@ -222,6 +246,55 @@ Corvus.fleet = (function () {
           label: "Take control", variant: "primary",
           onClick: () => { handle.close(); onYes(); },
         }),
+      ],
+    });
+    handle.open();
+  }
+
+  function linkOf(v) {
+    return snapshot.links.find((l) => l.id === v.link) || null;
+  }
+
+  function confirmRemove(v, onDone) {
+    const link = linkOf(v);
+    const armed = !!v.armed && !v.stale;
+    const body = document.createElement("div");
+    body.className = "fleet-confirm";
+    const p1 = document.createElement("p");
+    if (link && link.primary) {
+      p1.textContent = "The main link is disconnected and stays closed. " +
+        "It leaves the list and the map. Connect it again on the LINK tab.";
+    } else {
+      const conn = link ? ` (${link.connection})` : "";
+      p1.textContent = `Its link${conn} is closed. It leaves the list and the map. ` +
+        "To bring it back, open the link again.";
+    }
+    body.appendChild(p1);
+    if (armed) {
+      const p2 = document.createElement("p");
+      p2.className = "fleet-confirm-warn";
+      p2.textContent = `${v.name} is armed. It keeps flying in ${v.mode_label || "its current mode"}, ` +
+        "and the station no longer sees it or sends it anything.";
+      body.appendChild(p2);
+    }
+    let handle = null;
+    const removeBtn = Corvus.ui.button({
+      label: "Remove", variant: "danger", icon: "trash-2",
+      onClick: () => {
+        Corvus.ui.setBusy(removeBtn, true);
+        removeVehicle(v.id, armed)
+          .then(() => { handle.close(); if (onDone) onDone(); })
+          .catch((err) => Corvus.ui.toast({ level: "critical", message: err.message }))
+          .finally(() => Corvus.ui.setBusy(removeBtn, false));
+      },
+    });
+    handle = Corvus.ui.modal({
+      title: `Remove ${v.name}?`,
+      body,
+      size: "sm",
+      actions: [
+        Corvus.ui.button({ label: "Cancel", variant: "ghost", onClick: () => handle.close() }),
+        removeBtn,
       ],
     });
     handle.open();
@@ -276,8 +349,8 @@ Corvus.fleet = (function () {
 
     const hint = document.createElement("p");
     hint.className = "fleet-hint";
-    hint.textContent = "One link per radio: a vehicle on a radio of its own needs a link of its own. " +
-      "Vehicles that share a link (router, mesh radio, simulator) appear by themselves.";
+    hint.textContent = "One link is one vehicle. A second vehicle needs a radio of its own " +
+      "and a link of its own. Another autopilot heard on a link is ignored.";
 
     const addRow = document.createElement("div");
     addRow.className = "fleet-add";
@@ -396,7 +469,7 @@ Corvus.fleet = (function () {
       entry.label.textContent = link.label;
       entry.connEl.textContent = link.connection;
       entry.connEl.title = link.error || link.connection;
-      entry.count.textContent = link.vehicles === 1 ? "1 vehicle" : `${link.vehicles} vehicles`;
+      entry.count.textContent = link.vehicles ? "1 vehicle" : "No vehicle yet";
       entry.el.classList.toggle("is-active", link.id === snapshot.active_link);
     }
 
@@ -560,7 +633,12 @@ Corvus.fleet = (function () {
       const flying = document.createElement("span");
       flying.className = "fleet-flying";
       flying.textContent = "In control";
-      side.append(status, locate, take, flying);
+      const remove = Corvus.ui.iconButton("trash-2", {
+        title: "Remove this vehicle", ariaLabel: "Remove this vehicle", size: 14,
+        onClick: () => confirmRemove(rows.get(v.id).data),
+      });
+      remove.classList.add("fleet-remove");
+      side.append(status, locate, take, flying, remove);
 
       row.append(swatch, main, side);
       return { el: row, swatch, name, detail, readout, status, locate, take, flying, data: v };
@@ -641,7 +719,7 @@ Corvus.fleet = (function () {
 
   return {
     start, subscribe, get, vehicle, activeVehicle, isMulti, colorOf, nameOf,
-    select, rename, setColor, addLink, removeLink, setSharedLinks, openDialog,
+    select, rename, setColor, addLink, removeLink, removeVehicle, openDialog,
     // The links list, for Settings: {el, render, refreshPorts}.
     buildLinksPanel,
     rgbTriplet, tint, paintElement, themeColor,

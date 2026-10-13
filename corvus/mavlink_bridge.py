@@ -223,11 +223,6 @@ DUPLICATE_FRAME_WINDOW_S = 0.3
 # rebooted rather than that two UDP frames arrived out of order.
 VEHICLE_REBOOT_BACKSTEP_MS = 5000
 
-# The pause between dropping one vehicle on a shared link and listening for the
-# next: long enough for the browser to be told the first one is gone before the
-# second one's state arrives.
-VEHICLE_SWITCH_PAUSE_S = 0.3
-
 # The autopilot sends one preflight report's lines back to back; a line after
 # a gap this long starts the next report rather than adding to the last one.
 PREARM_REPORT_GAP_S = 2.0
@@ -235,6 +230,20 @@ PREARM_REPORT_GAP_S = 2.0
 # report again (MAV_CMD_RUN_PREARM_CHECKS). PX4 reports on its own only when
 # a result changes, so a station that connects afterwards hears nothing.
 PREARM_REPORT_REQUEST_EVERY_S = 30.0
+# When the vehicle's readiness flips from ready to not ready, the reason is
+# asked for at once (something changed: a kill switch moved, a sensor
+# dropped out), but not more often than this.
+PREARM_CHANGE_REQUEST_MIN_S = 2.0
+# A SYS_STATUS saying "ready" this soon after the vehicle reported its kill
+# switch engaged is taken for one composed before the switch moved, not as
+# proof the switch is off. Both stacks run their arming checks on a slower
+# clock than they send the switch's own line, and taking the stale "ready"
+# at its word cleared the kill switch moments after it engaged.
+KILL_SETTLE_S = 3.0
+# While the switch is engaged and the vehicle disarmed, on a stack whose
+# report names every failing check, the report is asked for this often, so
+# a release whose own line was lost on the radio is still noticed.
+KILL_RECHECK_S = 5.0
 # Reasons kept for one report. PX4 has ~70 checks; a report this long is a
 # bench aircraft with nothing connected, and the first lines are the point.
 PREARM_REASONS_MAX = 20
@@ -281,8 +290,38 @@ _NON_AUTOPILOT_COMPONENTS = frozenset({
 })
 
 
-class _VehicleSwitch(ConnectionError):
-    """Ends a connect cycle on purpose: the operator chose another system."""
+# Upper bounds a real HEARTBEAT stays under. Deliberately far above what the
+# dialect defines today (MAV_TYPE ends in the 40s, MAV_AUTOPILOT in the 20s,
+# MAV_STATE at 8), so an aircraft from a newer firmware with a type this
+# pymavlink does not know yet still connects.
+_HEARTBEAT_LIMITS: tuple[tuple[str, int], ...] = (
+    ("type", 128),
+    ("autopilot", 64),
+    ("system_status", 32),
+)
+
+
+def _is_plausible_heartbeat(hb: Any) -> bool:
+    """Could this HEARTBEAT have been sent by a real MAVLink node?
+
+    A noisy radio link, a serial port at the wrong baud rate, or two radios on
+    one channel produce bytes that now and then pass the 16 bit checksum as a
+    HEARTBEAT. Such a frame carries a random system id (241, 231, ...) and
+    used to show up as a vehicle of its own. Every real node sends
+    ``mavlink_version`` 3 and small enum values; a forged frame passes all
+    four checks about once in 16000 times, on top of the checksum. A field
+    that is not an int (a synthetic frame) is not judged.
+    """
+    version = getattr(hb, "mavlink_version", None)
+    if isinstance(version, int) and not isinstance(version, bool) and version != 3:
+        return False
+    for field, limit in _HEARTBEAT_LIMITS:
+        value = getattr(hb, field, None)
+        if isinstance(value, bool) or not isinstance(value, int):
+            continue
+        if not 0 <= value < limit:
+            return False
+    return True
 
 
 def _is_vehicle_heartbeat(hb: Any) -> bool:
@@ -303,7 +342,12 @@ def _is_vehicle_heartbeat(hb: Any) -> bool:
     component id against the ones that are never a flight controller even on
     the airframe's own system id. Latching onto any of them gives a session
     that looks connected while every command is addressed to a gimbal.
+
+    A frame that no real node could have sent (see
+    :func:`_is_plausible_heartbeat`) is not a vehicle either.
     """
+    if not _is_plausible_heartbeat(hb):
+        return False
     try:
         component = getattr(hb, "get_srcComponent", lambda: 0)()
         if component and int(component) in _NON_AUTOPILOT_COMPONENTS:
@@ -411,6 +455,12 @@ class MavlinkBridge(
         # this cycle saw itself rolls the tlog over.
         self._tlog_armed: bool | None = None
         self._running = threading.Event()
+        # Which start() the connect/receive thread belongs to. A thread that
+        # stop() could not join in time (blocked opening a port, say) must not
+        # carry on once start() has handed the link to a new thread: both would
+        # open the same port and each read half the frames.
+        self._run_generation = 0
+        self._cycle = threading.local()
         # Complement of _running: set by stop() so daemon workers can sleep via
         # _interruptible_sleep and wake immediately on shutdown (BUG 1, 12).
         self._stop_event = threading.Event()
@@ -488,19 +538,23 @@ class MavlinkBridge(
         self._prearm_reasons: list[str] = []
         self._prearm_reason_at = 0.0
         self._prearm_requested_at = 0.0
-        # Every autopilot heard on this link, this one included, for the
-        # vehicle list and the map (corvus/fleet.py). Read only: nothing in it
-        # decides how the link is flown.
+        # The kill switch, as more than one line on a lossy radio tells it:
+        # when the vehicle last said it was engaged, the readiness SYS_STATUS
+        # last reported, and the preflight report in progress (when it began,
+        # and whether it named the switch).
+        self._kill_evidence_at = 0.0
+        self._prearm_last: bool | None = None
+        self._prearm_report_started_at = 0.0
+        self._prearm_report_kill = False
+        # The one vehicle this link flies, as the vehicle list and the map
+        # see it (corvus/fleet.py). Read only: nothing in it decides how the
+        # link is flown. One link is one vehicle; another autopilot heard on
+        # it is ignored, and a second vehicle needs a radio of its own.
         self.fleet_tracker = FleetTracker(MAV_TYPE_MAP)
         # Which link this is to the fleet; "main" unless corvus.fleet opened it.
         self.fleet_link_id = MAIN_LINK
-        # Whether the vehicle list shows every vehicle this link carries, or
-        # only the one it flies (Settings, Vehicles).
-        self.fleet_shared_link = True
-        # The system the operator chose to fly on this link. None means the
-        # first autopilot that heartbeats, which is how a link always latched.
-        self._preferred_system: int | None = None
-        self._switch_requested = threading.Event()
+        # Other autopilots heard on this link, each told to the console once.
+        self._ignored_systems: set[int] = set()
         # Each protocol owns its own state; see the mixin modules.
         self._init_param_state()
         self._init_param_metadata_state()
@@ -551,42 +605,13 @@ class MavlinkBridge(
         # invalid value cannot crash _is_serial() or hang mavlink_connection.
         self.validate_connection(conn_str)
         if conn_str != self._conn_str:
-            # Another link carries other vehicles; a choice made on this one
-            # would otherwise hold the new link waiting for a system id that
-            # is not on it.
-            self._preferred_system = None
+            # Another link carries another vehicle.
             self.fleet_tracker.forget()
         self._conn_str = conn_str
 
     def controlled_system(self) -> int | None:
         """The system id this link is flying, or None while it flies none."""
         return self._target_system if self._connection_ready() else None
-
-    def preferred_system(self) -> int | None:
-        """The system id the operator chose on this link, None for "the first"."""
-        return self._preferred_system
-
-    def select_system(self, system_id: int) -> None:
-        """Fly *system_id* on this link from now on.
-
-        A link that carries several vehicles (PX4's multi-vehicle SITL, a mesh
-        radio, mavlink-router) latches the first autopilot it hears. This makes
-        it latch another one instead, by ending the connect cycle and running
-        the ordinary connect path again with the choice in force, so every
-        piece of per-vehicle state (parameters, mission, mode table, dialect,
-        home) is dropped and fetched again exactly as for a fresh aircraft.
-        Nothing happens when that system is already the one being flown.
-        """
-        if isinstance(system_id, bool) or not isinstance(system_id, int):
-            raise ValueError("system id must be an integer")
-        if not 1 <= system_id <= 255:
-            raise ValueError("system id must be between 1 and 255")
-        self._preferred_system = system_id
-        if self._connection_ready() and self._target_system == system_id:
-            return
-        if self._running.is_set():
-            logger.info("Switching this link to system %d", system_id)
-            self._switch_requested.set()
 
     def connection_string(self) -> str:
         """Return the configured MAVLink connection string (read-only accessor)."""
@@ -822,7 +847,10 @@ class MavlinkBridge(
             # then proceed so a fresh start() can reconnect (BUG 3).
             self._thread.join(timeout=1.0)
         self._running.set()
-        self._thread = threading.Thread(target=self._run, name="mavlink", daemon=True)
+        self._run_generation += 1
+        self._thread = threading.Thread(
+            target=self._run, args=(self._run_generation,), name="mavlink", daemon=True,
+        )
         self._thread.start()
 
     def stop(self) -> None:
@@ -876,8 +904,19 @@ class MavlinkBridge(
         if self._hb_thread:
             self._hb_thread.join(timeout=2)
 
-    def _run(self) -> None:
-        while self._running.is_set():
+    def _superseded(self) -> bool:
+        """Has a later start() replaced the thread this runs on?
+
+        False on any thread that is not a connect/receive thread (the unit
+        tests call _connect directly), so only an orphaned cycle stands down.
+        """
+        generation = getattr(self._cycle, "generation", None)
+        return generation is not None and generation != self._run_generation
+
+    def _run(self, generation: int | None = None) -> None:
+        self._cycle.generation = generation
+        self._cycle.conn = None
+        while self._running.is_set() and not self._superseded():
             cycle_exc: Exception | None = None
             try:
                 self._connect()
@@ -890,13 +929,22 @@ class MavlinkBridge(
                 self._receive_loop()
             except Exception as exc:
                 cycle_exc = exc
-                if isinstance(exc, _VehicleSwitch):
-                    logger.info("%s", exc)
-                elif self._running.is_set():
+                if self._running.is_set() and not self._superseded():
                     logger.error("MAVLink error: %s", exc)
                 else:
                     # stop() closed the link under the receive loop.
                     logger.debug("MAVLink link closed for shutdown: %s", exc)
+            if self._superseded():
+                # Another thread owns the link now: close only what this one
+                # opened, and leave the shared state to its new owner.
+                own = getattr(self._cycle, "conn", None)
+                if own is not None and own is not self._conn:
+                    try:
+                        own.close()
+                    except Exception:  # noqa: BLE001 - it is being thrown away
+                        pass
+                logger.info("MAVLink cycle superseded by a restart; leaving it to the new one")
+                return
             self._cancel_pending_commands()
             self._abort_parameter_operations()
             self._reset_shell_state()
@@ -910,11 +958,6 @@ class MavlinkBridge(
                 except Exception:
                     pass
             self._store.set_disconnected()
-            if self._running.is_set() and isinstance(cycle_exc, _VehicleSwitch):
-                # Not a failure: no backoff, no error on the LINK tab.
-                self._store.update(link_status="connecting", link_error="")
-                self._interruptible_sleep(VEHICLE_SWITCH_PAUSE_S)
-                continue
             if self._running.is_set():
                 delay = self._reconnect_delay(self._reconnect_attempt)
                 logger.info(
@@ -1051,6 +1094,10 @@ class MavlinkBridge(
         self._last_boot_ms = None
         self._clear_prearm_reasons()
         self._prearm_requested_at = 0.0
+        self._kill_evidence_at = 0.0
+        self._prearm_last = None
+        self._prearm_report_started_at = 0.0
+        self._prearm_report_kill = False
         self._home_alt_amsl = None
         self._position_home_alt_amsl = None
         # And forget the DISPLAYED home with it. The bridge already dropped
@@ -1091,19 +1138,30 @@ class MavlinkBridge(
                 # mavserial takes the bare device path + a baud kwarg; the
                 # ``serial:`` prefix is only a user-facing convention here.
                 device, baud = self._parse_serial(self._conn_str)
-                self._conn = mavutil.mavlink_connection(
+                opened = mavutil.mavlink_connection(
                     device,
                     baud=baud,
                     source_system=GCS_SYSTEM_ID,
                     source_component=GCS_COMPONENT_ID,
                 )
             else:
-                self._conn = mavutil.mavlink_connection(
+                opened = mavutil.mavlink_connection(
                     self._conn_str,
                     timeout=2,
                     source_system=GCS_SYSTEM_ID,
                     source_component=GCS_COMPONENT_ID,
                 )
+            # Opening can block (a TCP dial, a USB port that is slow to come
+            # up), long enough for stop() to give up on this thread and a new
+            # start() to begin. Then this connection is nobody's.
+            if self._superseded():
+                try:
+                    opened.close()
+                except Exception:  # noqa: BLE001 - it is being thrown away
+                    pass
+                raise ConnectionError("superseded by a restart")
+            self._conn = opened
+            self._cycle.conn = opened
         except (OSError, FileNotFoundError) as exc:
             if self._is_serial():
                 message = self._serial_open_error(exc)
@@ -1143,6 +1201,14 @@ class MavlinkBridge(
         src_comp = getattr(hb, "get_srcComponent", lambda: 0)() or self._conn.target_component
         self._target_system = src_sys or 1
         self._target_component = src_comp or 1
+        self._ignored_systems = set()
+        # The vehicle list is this one vehicle from now on; whatever the link
+        # carried before (another aircraft on the same radio) is gone.
+        try:
+            self.fleet_tracker.bind(self._target_system, self._target_component)
+            self.fleet_tracker.observe(hb, vehicle_heartbeat=True)
+        except Exception:  # noqa: BLE001 - the vehicle list never costs the link
+            logger.debug("fleet tracker failed", exc_info=True)
         # Tell pymavlink which node we picked. It does its own latching in
         # post_message — first heartbeat its `probably_vehicle_heartbeat`
         # accepts wins — and that is not always the one _wait_vehicle_heartbeat
@@ -1321,7 +1387,7 @@ class MavlinkBridge(
             # budget. Closing the socket would end the wait too, but only by
             # raising through _run's error path, which then logs a shutdown as
             # a link failure.
-            if self._stop_event.is_set():
+            if self._stop_event.is_set() or self._superseded():
                 return None
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -1345,17 +1411,8 @@ class MavlinkBridge(
                 if time.monotonic() - waited_from < wait_for / 2:
                     return None
                 continue
-            vehicle = _is_vehicle_heartbeat(hb)
-            if self.fleet_shared_link:
-                try:
-                    self.fleet_tracker.observe(hb, vehicle_heartbeat=vehicle)
-                except Exception:  # noqa: BLE001 - the vehicle list never costs the link
-                    logger.debug("fleet tracker failed", exc_info=True)
-            if vehicle:
-                preferred = self._preferred_system
-                if preferred is None or getattr(hb, "get_srcSystem", lambda: 0)() == preferred:
-                    return hb
-                continue
+            if _is_vehicle_heartbeat(hb):
+                return hb
             logger.info(
                 "ignoring heartbeat from sys=%s comp=%s: not an autopilot",
                 getattr(hb, "get_srcSystem", lambda: "?")(),
@@ -2218,13 +2275,6 @@ class MavlinkBridge(
             # close self._conn under us; use the local ref for recv_match.
             conn = self._conn
             try:
-                if self._switch_requested.is_set():
-                    self._switch_requested.clear()
-                    preferred = self._preferred_system
-                    if preferred is not None and preferred != self._target_system:
-                        raise _VehicleSwitch(
-                            f"Switching from system {self._target_system} to {preferred}"
-                        )
                 if self._store.is_stale(timeout=self._warn_timeout()):
                     if self._store.is_stale(timeout=self._drop_timeout()):
                         raise ConnectionError("heartbeat timeout")
@@ -2334,57 +2384,40 @@ class MavlinkBridge(
     _CONSOLE_MSGS = frozenset({"COMMAND_ACK"})
 
     def _observe_fleet(self, msg: Any, name: str) -> None:
-        """Hand a frame to the vehicle list. Never raises, never blocks."""
+        """Hand a frame of the vehicle this link flies to the vehicle list.
+
+        Frames of any other system are not the list's: one link is one
+        vehicle. Never raises, never blocks.
+        """
         try:
+            source = int(getattr(msg, "get_srcSystem", lambda: 0)() or 0)
             heartbeat = name == "HEARTBEAT"
-            if not self.fleet_shared_link:
-                # One vehicle per link: the one this link flies.
-                source = int(getattr(msg, "get_srcSystem", lambda: 0)() or 0)
-                if source != self._target_system:
-                    return
+            if source != self._target_system:
+                if heartbeat and source:
+                    self._note_ignored_system(msg, source)
+                return
             self.fleet_tracker.observe(
                 msg, vehicle_heartbeat=heartbeat and _is_vehicle_heartbeat(msg),
             )
-            if heartbeat:
-                self._nudge_fleet_streams(msg)
         except Exception:  # noqa: BLE001 - the vehicle list never costs the link
             logger.debug("fleet tracker failed", exc_info=True)
 
-    def _nudge_fleet_streams(self, msg: Any) -> None:
-        """Ask another vehicle on this link for its position, if it sends none.
-
-        A vehicle this link is not flying gets no stream requests from the
-        connect path, and ArduPilot streams nothing to a station that has not
-        asked. One position stream at 2 Hz is what drawing it on the map
-        takes. Never the vehicle being flown: its streams are the connect
-        path's business, and it is asked nothing here.
-        """
-        system = int(getattr(msg, "get_srcSystem", lambda: 0)() or 0)
-        if not system or system == self._target_system:
+    def _note_ignored_system(self, hb: Any, system: int) -> None:
+        """Tell the console, once per system, that another autopilot is ignored."""
+        if system in self._ignored_systems or len(self._ignored_systems) >= 16:
             return
-        if not self.fleet_shared_link or not self.fleet_tracker.due_for_nudge(system):
+        if system == GCS_SYSTEM_ID or not _is_vehicle_heartbeat(hb):
             return
-        conn = self._conn
-        if conn is None:
-            return
-        component = self.fleet_tracker.component_of(system)
-        ardupilot = self.fleet_tracker.stack_of(system) == autopilot_dialect.STACK_ARDUPILOT
-        with self._send_lock:
-            if conn is not self._conn:
-                return
-            conn.mav.command_long_send(
-                system, component,
-                mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
-                mavutil.mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT, 500000,
-                0, 0, 0, 0, 0,
-            )
-            if ardupilot:
-                conn.mav.request_data_stream_send(
-                    system, component, mavutil.mavlink.MAV_DATA_STREAM_POSITION, 2, 1,
-                )
-                conn.mav.request_data_stream_send(
-                    system, component, mavutil.mavlink.MAV_DATA_STREAM_EXTENDED_STATUS, 1, 1,
-                )
+        self._ignored_systems.add(system)
+        logger.info("ignoring autopilot sys=%d: this link flies sys=%d",
+                    system, self._target_system)
+        self._console_publish(
+            "LINK",
+            f"Another autopilot (system {system}) is on this link and is ignored. "
+            f"This link flies system {self._target_system}; a second vehicle "
+            "needs a radio and a link of its own.",
+            "warning",
+        )
 
     def _dispatch(self, msg: Any) -> None:
         name = msg.get_type()
@@ -2403,7 +2436,12 @@ class MavlinkBridge(
             if self._ack_is_for_us(msg):
                 with self._ack_lock:
                     pending = self._pending_acks.get(msg.command)
-                    if pending is not None and msg.result in pending.interim:
+                    if (pending is not None
+                            and msg.result == mavutil.mavlink.MAV_RESULT_IN_PROGRESS
+                            and not pending.accept_in_progress):
+                        # Heard and being worked on: the final word follows.
+                        pending.in_progress = True
+                    elif pending is not None and msg.result in pending.interim:
                         pending.interim_result = msg.result
                     elif pending and (
                         msg.result != mavutil.mavlink.MAV_RESULT_IN_PROGRESS
@@ -2473,6 +2511,13 @@ class MavlinkBridge(
             # heartbeat landed (A1).
             self._hb_times.append(self._store.heartbeat())
             self._publish_heartbeat_jitter()
+            if self._degraded_warned:
+                # The heartbeat is back before the drop timeout. Without this
+                # the link read "degraded" until the next reconnect, and a
+                # second dropout in the same session was never reported.
+                self._degraded_warned = False
+                self._store.update(link_status="connected", link_error="")
+                logger.info("Link recovered: heartbeat back")
             vtype = MAV_TYPE_MAP.get(msg.type, f"TYPE_{msg.type}")
             autopilot = MAV_AUTOPILOT_MAP.get(msg.autopilot, f"AP_{msg.autopilot}")
             # Behind a router the aircraft on the far end can be swapped
@@ -2488,7 +2533,10 @@ class MavlinkBridge(
                 == mavutil.mavlink.MAV_STATE_FLIGHT_TERMINATION
             )
             extra: dict[str, Any] = {}
-            lifted = not terminated and bool(self._store.get_snapshot().get("flight_termination"))
+            before = self._store.get_snapshot()
+            if terminated and before.get("kill_switch"):
+                self._kill_evidence_at = time.monotonic()
+            lifted = not terminated and bool(before.get("flight_termination"))
             if lifted:
                 # The lockdown the heartbeat reported has lifted. On PX4 that
                 # is the kill switch coming back, even if its "Kill disengaged"
@@ -2848,6 +2896,8 @@ class MavlinkBridge(
             self._note_prearm_failure(reason)
             kill = self._dialect.prearm_event(reason)
             if kill is not None:
+                self._prearm_report_kill = True
+                self._kill_evidence_at = time.monotonic()
                 # The switch, named by the check it fails because its own line
                 # was never seen. Said once, in that line's words, so the board
                 # and the bar call it the same thing however it was learned.
@@ -2860,6 +2910,7 @@ class MavlinkBridge(
     def _note_vehicle_event(self, event: VehicleEvent, level: str) -> None:
         """Latch the kill switch a line reports and put the line on the board."""
         if event.kind == "kill":
+            self._kill_evidence_at = time.monotonic()
             self._store.update(kill_switch=True)
         worst = max(level, event.level, key=_LEVEL_RANK.__getitem__)
         self._store_update_warning(event.message, worst, event=event.kind)
@@ -2897,6 +2948,8 @@ class MavlinkBridge(
         now = time.monotonic()
         if now - self._prearm_reason_at > PREARM_REPORT_GAP_S:
             self._prearm_reasons = []
+            self._prearm_report_started_at = now
+            self._prearm_report_kill = False
         self._prearm_reason_at = now
         if reason in self._prearm_reasons or len(self._prearm_reasons) >= PREARM_REASONS_MAX:
             return
@@ -2910,27 +2963,72 @@ class MavlinkBridge(
 
     def _note_prearm_state(self, prearm: bool | None) -> None:
         """React to SYS_STATUS's verdict: clear the reasons, or go and get them."""
+        now = time.monotonic()
+        previous, self._prearm_last = self._prearm_last, prearm
+        snapshot = self._store.get_snapshot()
         if prearm is True:
             if self._prearm_reasons:
                 self._clear_prearm_reasons()
             self._store.resolve_warnings({"prearm"})
-            snapshot = self._store.get_snapshot()
             # Disarmed and ready means the switch is off: an engaged one fails
             # a check of its own on both stacks. Armed, PX4 skips that check,
-            # so a pass says nothing about the switch.
+            # so a pass says nothing about the switch. Nor does a pass that
+            # may predate the switch's own line (KILL_SETTLE_S).
             if not snapshot.get("armed"):
                 if snapshot.get("kill_switch"):
-                    self._release_kill_switch()
+                    if now - self._kill_evidence_at >= KILL_SETTLE_S:
+                        self._release_kill_switch()
                 else:
                     self._store.resolve_warnings({"kill"})
             return
-        if prearm is not False or self._prearm_reasons:
+        if prearm is not False:
             return
-        now = time.monotonic()
+        self._check_kill_released_by_report(now, snapshot)
+        if (
+            previous is True and not snapshot.get("armed")
+            and now - self._prearm_requested_at >= PREARM_CHANGE_REQUEST_MIN_S
+        ):
+            # Ready a moment ago, not now. If that was a kill switch whose
+            # line was lost, the report names it within a second.
+            self._prearm_requested_at = now
+            self._request_prearm_report()
+            return
+        if (
+            snapshot.get("kill_switch") and not snapshot.get("armed")
+            and self._dialect.prearm_report_complete
+            and now - max(self._prearm_requested_at, self._kill_evidence_at) >= KILL_RECHECK_S
+        ):
+            self._prearm_requested_at = now
+            self._request_prearm_report()
+            return
+        if self._prearm_reasons:
+            return
         if now - self._prearm_requested_at < PREARM_REPORT_REQUEST_EVERY_S:
             return
         self._prearm_requested_at = now
         self._request_prearm_report()
+
+    def _check_kill_released_by_report(self, now: float, snapshot: dict[str, Any]) -> None:
+        """Release the switch when a whole report asked for since says nothing of it.
+
+        Only on a stack whose report names every failing check, only while
+        disarmed (the checks do not run armed), and only for a report that
+        began after the last request, which was itself made after the switch
+        was last reported engaged. A report still arriving is not judged.
+        """
+        if not snapshot.get("kill_switch") or snapshot.get("armed"):
+            return
+        if not self._dialect.prearm_report_complete:
+            return
+        if self._prearm_report_kill or not self._prearm_report_started_at:
+            return
+        if self._prearm_requested_at <= self._kill_evidence_at:
+            return
+        if self._prearm_report_started_at < self._prearm_requested_at:
+            return
+        if now - self._prearm_reason_at <= PREARM_REPORT_GAP_S:
+            return
+        self._release_kill_switch()
 
     def _request_prearm_report(self) -> None:
         """Ask for the preflight report now. Fire and forget, like _request_home.
@@ -3061,7 +3159,7 @@ class MavlinkBridge(
         text = f"{action} failed: {MAV_RESULT_TEXT.get(result, f'RESULT_{result}')}"
         self._set_command_error(text)
         self._console_publish(action.upper(), text, "error")
-        level = "warning" if result in (-2, -1, 1) else "critical"
+        level = "warning" if result in (-3, -2, -1, 1) else "critical"
         self._store_update_warning(text, level)
         return False
 
@@ -3115,12 +3213,26 @@ class MavlinkBridge(
                         return pending.result if pending.result is not None else -1
                     if pending.interim_result is not None:
                         return pending.interim_result
+                    if pending.in_progress:
+                        return self._await_final_ack(pending, timeout)
                     logger.warning("Command %d ACK timeout (attempt %d)", command, attempt + 1)
                 return -1
             finally:
                 with self._ack_lock:
                     if self._pending_acks.get(command) is pending:
                         self._pending_acks.pop(command, None)
+
+    def _await_final_ack(self, pending: _PendingAck, timeout: float) -> int:
+        """The vehicle said IN_PROGRESS: wait for its verdict, never resend.
+
+        A resend of a command the vehicle is already carrying out can start it
+        over (a second calibration, a second takeoff target), which is what the
+        retry loop used to do whenever the verdict took longer than one ACK
+        timeout. IN_PROGRESS is returned if the verdict does not come.
+        """
+        if pending.event.wait(timeout=timeout):
+            return pending.result if pending.result is not None else -1
+        return mavutil.mavlink.MAV_RESULT_IN_PROGRESS
 
     def _send_command_int_and_wait(
         self, command: int, frame: int,
@@ -3170,6 +3282,8 @@ class MavlinkBridge(
                         return -2
                     if pending.event.wait(timeout=timeout):
                         return pending.result if pending.result is not None else -1
+                    if pending.in_progress:
+                        return self._await_final_ack(pending, timeout)
                     logger.warning("Command %d ACK timeout (attempt %d)", command, attempt + 1)
                 return -1
             finally:

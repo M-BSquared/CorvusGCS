@@ -366,6 +366,7 @@ Corvus.sidenav = (function () {
   // is nothing to get wrong and undoing is one more click.
   function renderAppearanceSection(container, cfg, gen) {
     const body = document.createDocumentFragment();
+    body.appendChild(languageCard(gen));
     body.appendChild(companyLogoCard(cfg));
     body.appendChild(themeCard(cfg));
     body.appendChild(scaleCard(cfg));
@@ -1220,6 +1221,103 @@ Corvus.sidenav = (function () {
     }));
     card.appendChild(status.el);
     showLogo(configured);
+    return card;
+  }
+
+  // Interface language. One entry per file in src/lang and in the operator's own
+  // folder (GET /api/languages lists both), so a language dropped into that
+  // folder shows up here after Reload languages. Applies at once, like the
+  // theme, and is written to the config in the background. The folder is
+  // scanned again each time the page opens, so a file copied in meanwhile is
+  // already there.
+  function languageCard(gen) {
+    const I = Corvus.i18n;
+    const card = Corvus.ui.card({ title: "Language" });
+    const status = Corvus.ui.message({});
+    const row = document.createElement("div");
+    row.className = "settings-language-row";
+    const stale = () => gen !== undefined && gen !== navGeneration;
+    let picker = null;
+
+    function choose(code) {
+      status.hide();
+      return I.use(code).then((now) => {
+        show(now);
+        return postConfig({ language: now });
+      });
+    }
+
+    function show(code) {
+      if (!picker) return;
+      picker.value = code;
+      if (picker.corvusSelect) picker.corvusSelect.refresh();
+    }
+
+    function paint() {
+      const next = Corvus.ui.select({
+        id: "settingsLanguage",
+        className: "settings-language-select",
+        ariaLabel: "Language",
+        options: I.options(),
+        value: I.current(),
+        onChange: choose,
+      });
+      if (picker && picker.parentNode) {
+        // The dropdown may already be wrapped by the themed control.
+        const old = picker.corvusSelect ? picker.parentNode : picker;
+        old.parentNode.replaceChild(next, old);
+      } else {
+        row.insertBefore(next, row.firstChild);
+      }
+      picker = next;
+    }
+
+    const reloadBtn = Corvus.ui.button({
+      variant: "secondary",
+      icon: "refresh-cw",
+      label: "Reload languages",
+      onClick: () => {
+        Corvus.ui.setBusy(reloadBtn, true);
+        status.hide();
+        I.reload().then(() => {
+          if (stale()) return;
+          const n = I.available().length;
+          paint();
+          status.show(`Reloaded. ${n} language${n === 1 ? "" : "s"} installed.`, "ok");
+        }).catch((error) => {
+          if (!stale()) status.show((error && error.message) || "Could not reload the languages", "err");
+        }).finally(() => {
+          Corvus.ui.setBusy(reloadBtn, false);
+        });
+      },
+    });
+
+    // The language also changes from outside this card (the config answering
+    // at start, the first start setup), so the dropdown follows it.
+    function follow() {
+      if (stale()) { window.removeEventListener("corvus:languagechange", follow); return; }
+      show(I.current());
+    }
+    window.addEventListener("corvus:languagechange", follow);
+
+    paint();
+    row.appendChild(reloadBtn);
+    I.refresh().then(() => {
+      if (!stale()) paint();
+    });
+
+    card.appendChild(Corvus.ui.field({
+      label: "Interface language",
+      control: row,
+      info: "More languages can be added: copy a language file into the " +
+            "languages folder of your Corvus folder (~/.corvus/languages), " +
+            "then press Reload languages. One file per language, named after " +
+            "its code, for example es.json. A text a file does not list stays " +
+            "English.\n" +
+            "A file there with the code of a language that ships with Corvus " +
+            "replaces it.",
+    }));
+    card.appendChild(status.el);
     return card;
   }
 
@@ -2240,7 +2338,7 @@ Corvus.sidenav = (function () {
       ariaLabel: `Remove ${c.name}`,
     });
     rm.addEventListener("click", async () => {
-      if (!confirm(`Remove connection ${c.name}?`)) return;
+      if (!confirm(Corvus.t("Remove connection {name}?", { name: c.name }))) return;
       try {
         await fetch("/api/ssh/connections/remove", {
           method: "POST",
@@ -2265,32 +2363,11 @@ Corvus.sidenav = (function () {
   }
 
   // --- Vehicles: several at once (js/fleet.js, corvus/fleet.py) ---
-  // The switch for vehicles that share a link, and the links themselves. The
-  // links list is the Vehicles dialog's own panel, kept live from the fleet
-  // stream for as long as this page is open.
+  // The links, one vehicle each. The list is the Vehicles dialog's own panel,
+  // kept live from the fleet stream for as long as this page is open.
   function renderVehiclesSection(container, gen) {
     const fleet = Corvus.fleet;
     if (!fleet) return;
-    const snap = fleet.get();
-
-    const shared = Corvus.ui.toggle({
-      id: "settingsSharedLinks",
-      value: snap.shared_links !== false,
-      ariaLabel: "Several vehicles on one link",
-      onChange: (next) => fleet.setSharedLinks(next),
-    });
-    const sharedCard = Corvus.ui.card({ title: "Several vehicles on one link" });
-    sharedCard.appendChild(Corvus.ui.field({
-      label: "Show every vehicle a link carries",
-      control: shared.el,
-      className: "field-switch",
-      hint: "On (the default): a link that carries several vehicles, such as " +
-            "mavlink-router, a mesh radio or PX4's multi-vehicle simulation, " +
-            "lists every one of them, and you can take control of any. Each " +
-            "needs its own MAV_SYS_ID. Off: every link is one vehicle, the " +
-            "first autopilot it hears, and the rest of the link is ignored. " +
-            "A radio link carries one vehicle either way.",
-    }));
 
     const linksCard = Corvus.ui.card({ title: "Links" });
     const panel = fleet.buildLinksPanel();
@@ -2306,12 +2383,10 @@ Corvus.sidenav = (function () {
         if (gen !== navGeneration) off();
         return;
       }
-      shared.setValue(fleet.get().shared_links !== false);
       panel.render();
     });
 
     const body = document.createDocumentFragment();
-    body.appendChild(sharedCard);
     body.appendChild(linksCard);
     container.appendChild(Corvus.ui.section({ title: "Vehicles", body }));
   }

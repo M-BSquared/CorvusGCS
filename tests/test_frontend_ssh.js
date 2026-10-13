@@ -39,6 +39,7 @@ global.document = {
   removeEventListener: () => {},
 };
 
+require("./../src/js/i18n.js");
 require("./../src/js/ui.js");
 require("./../src/js/panel.js");
 

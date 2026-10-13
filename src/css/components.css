@@ -45,13 +45,15 @@
    Translucency conveys hierarchy. A single definition keeps
    the flight-action bar, planning panels, popovers, and the HUD reading as
    one family. Each surface keeps its own positioning/size in main.css; this
-   class supplies the shared blur, border, and shadow depth only. */
+   class supplies the shared blur, border, and shadow depth only. It is the
+   map rail's material (soft blur, faint hairline, small shadow), flat rather
+   than glossy: no lit rim, no deep drop shadow. */
 .glass {
   background: rgb(var(--glass-rgb) / 0.6);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
-  border: 1px solid rgb(var(--tint-rgb) / 0.08);
-  box-shadow: var(--glass-edge), var(--shadow-glass);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
+  border: 1px solid rgb(var(--tint-rgb) / 0.06);
+  box-shadow: var(--shadow-pop);
 }
 /* Reduced transparency: frost the material to a solid surface so text stays
    legible without the blur. */
@@ -122,11 +124,6 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-/* A 1px lift on hover — the same cue the flight-action buttons give, at half
-   the distance because these sit in dense lists rather than on open map. */
-.btn:hover:not(:disabled):not(.is-busy) {
-  transform: translateY(-1px);
-}
 /* Instant feedback on press — respond on the press, not the release.
    Declared after the lift so the press wins while held.
    No scale while disabled or busy. */
@@ -253,15 +250,7 @@
 .btn[data-variant="primary"],
 .btn[data-variant="danger"],
 .btn[data-variant="success"] {
-  box-shadow: var(--shadow-soft);
-}
-/* The hover lift is 1px, so the shadow grows with it — the light source does
-   not move when the surface does. */
-.btn[data-variant="secondary"]:hover:not(:disabled):not(.is-busy),
-.btn[data-variant="primary"]:hover:not(:disabled):not(.is-busy),
-.btn[data-variant="danger"]:hover:not(:disabled):not(.is-busy),
-.btn[data-variant="success"]:hover:not(:disabled):not(.is-busy) {
-  box-shadow: var(--shadow-pop);
+  box-shadow: none;
 }
 /* Pressed is against the page, not above it: the shadow goes as the 0.97
    scale lands. It repeats the variant list rather than saying `.btn:active`,
@@ -594,7 +583,8 @@
 /* Keyboard navigation moves real focus between the rows, so the focused row
    has to be visible even when the pointer opened the list (:focus-visible
    alone leaves it unmarked). */
-.ui-menu .option-item:focus {
+.ui-menu .option-item:focus,
+.ui-menu .option-item.active {
   outline: 2px solid var(--accent-bright);
   outline-offset: -2px;
 }
@@ -944,10 +934,8 @@
 .tile:hover {
   background: var(--panel-fill-hover);
   border-color: var(--panel-hairline-hover);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-soft);
 }
-.tile:active { transform: translateY(0) scale(0.99); }
+.tile:active { transform: scale(0.99); }
 .tile:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
 .tile:disabled {
   cursor: not-allowed;
@@ -1129,7 +1117,7 @@
   cursor: pointer;
   transition: background 130ms, color 130ms;
 }
-.option-item:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-1); }
+.option-item:hover:not(:disabled) { background: rgb(var(--tint-rgb) / 0.06); color: var(--text-1); }
 .option-item:active:not(:disabled) { background: var(--accent-dim); }
 .option-item:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: -2px; }
 .option-item.active { background: var(--accent-dark); color: var(--text-1); }
@@ -1396,13 +1384,13 @@
   max-height: 100%;
   width: 100%;
   max-width: 420px;
-  padding: 22px;
-  border-radius: 14px;
+  padding: 20px;
+  border-radius: 12px;
   background: var(--modal-fill);
-  backdrop-filter: var(--modal-blur);
-  -webkit-backdrop-filter: var(--modal-blur);
-  border: 1px solid var(--panel-hairline);
-  box-shadow: var(--glass-edge), var(--shadow-modal);
+  backdrop-filter: var(--blur-soft);
+  -webkit-backdrop-filter: var(--blur-soft);
+  border: 1px solid rgb(var(--tint-rgb) / 0.06);
+  box-shadow: var(--shadow-pop);
   animation: corvus-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
   --panel-fill: var(--modal-card-fill);
   --panel-fill-hover: var(--modal-card-fill-hover);

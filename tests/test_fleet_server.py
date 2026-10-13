@@ -33,6 +33,21 @@ def backend(tmp_path, monkeypatch):
     thread.join(timeout=5)
 
 
+def _hear(bridge, system: int, armed: bool = False) -> None:
+    """The bridge latched *system*, as its connect path does."""
+    from pymavlink import mavutil
+    base_mode = mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED
+    if armed:
+        base_mode |= mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED
+    hb = mavutil.mavlink.MAVLink_heartbeat_message(
+        type=mavutil.mavlink.MAV_TYPE_QUADROTOR, autopilot=mavutil.mavlink.MAV_AUTOPILOT_PX4,
+        base_mode=base_mode, custom_mode=3 << 16, system_status=4, mavlink_version=3,
+    )
+    hb.pack(mavutil.mavlink.MAVLink(None, srcSystem=system, srcComponent=1))
+    bridge.fleet_tracker.bind(system, 1)
+    bridge.fleet_tracker.observe(hb, vehicle_heartbeat=True)
+
+
 def _request(server, method: str, path: str, payload: dict | None = None):
     conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=5)
     try:
@@ -75,8 +90,11 @@ def test_an_extra_link_is_opened_saved_selected_and_closed(backend) -> None:
     assert status == 400, "the main link's own port cannot be opened twice"
 
     status, body = _request(server, "POST", "/api/fleet/select", {"id": "link-2:1"})
-    assert status == 200 and body["fleet"]["active_link"] == "link-2"
+    assert status == 400, "a link with no vehicle heard on it has nothing to fly"
     extra = server.fleet.link("link-2")
+    _hear(extra.bridge, 1)
+    status, body = _request(server, "POST", "/api/fleet/select", {"id": "link-2:1"})
+    assert status == 200 and body["fleet"]["active_link"] == "link-2"
     assert srv.CorvusHandler.mavlink.target is extra.bridge
     assert srv.CorvusHandler.store.target is extra.store
 
@@ -158,15 +176,45 @@ def test_serialised_telemetry_follows_a_switch_even_at_equal_versions() -> None:
     assert json.loads(second)["battery_voltage"] == 22.2
 
 
-def test_the_shared_link_switch_is_saved(backend) -> None:
+def test_the_shared_link_switch_is_gone(backend) -> None:
+    server, _ = backend
+    status, _ = _request(server, "POST", "/api/fleet/settings", {"shared_links": True})
+    assert status == 404
+    _status, body = _request(server, "GET", "/api/fleet")
+    assert "shared_links" not in body
+
+
+def test_removing_a_vehicle_on_an_extra_link_closes_it(backend) -> None:
     server, config_path = backend
-    status, body = _request(server, "POST", "/api/fleet/settings", {"shared_links": False})
-    assert status == 200 and body["fleet"]["shared_links"] is False
-    assert server.mavlink.fleet_shared_link is False
+    _request(server, "POST", "/api/fleet/links/add", {"connection": "udp:127.0.0.1:9998"})
+    extra = server.fleet.link("link-2")
+    _hear(extra.bridge, 1, armed=True)
+    _request(server, "POST", "/api/fleet/vehicle", {"id": "link-2:1", "name": "Scout"})
+    status, body = _request(server, "POST", "/api/fleet/vehicle/remove", {"id": "link-2:1"})
+    assert status == 409 and "armed" in body["error"]
+    assert server.fleet.link("link-2") is not None
+    status, body = _request(server, "POST", "/api/fleet/vehicle/remove",
+                            {"id": "link-2:1", "confirm_armed": True})
+    assert status == 200
+    assert [v["id"] for v in body["fleet"]["vehicles"]] == []
+    assert [link["id"] for link in body["fleet"]["links"]] == ["main"]
     saved = json.loads(config_path.read_text(encoding="utf-8"))
-    assert saved["fleet"]["shared_links"] is False
-    status, _ = _request(server, "POST", "/api/fleet/settings", {"shared_links": "no"})
-    assert status == 400
+    assert "link-2:1" not in (saved.get("fleet") or {}).get("vehicles", {}), (
+        "the next link-2 may carry another aircraft"
+    )
+    status, _ = _request(server, "POST", "/api/fleet/vehicle/remove", {"id": "link-2:1"})
+    assert status == 404
+
+
+def test_removing_the_main_vehicle_disconnects_and_leaves_it_closed(backend) -> None:
+    server, _ = backend
+    _hear(server.mavlink, 1)
+    server.store.update(vehicle_id="main:1")
+    status, body = _request(server, "POST", "/api/fleet/vehicle/remove", {"id": "main:1"})
+    assert status == 200
+    assert body["fleet"]["vehicles"] == []
+    assert server.store.get_snapshot()["vehicle_id"] == ""
+    assert server.mavlink.fleet_tracker.bound_system() is None
 
 
 def test_auto_connect_is_told_which_ports_the_extra_links_hold(backend) -> None:

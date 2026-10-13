@@ -710,6 +710,11 @@ class Dialect:
     # checks as events, and still send this text beside every one of them
     # (HealthAndArmingChecks.cpp, the "LEGACY" pass), whenever the report runs.
     prearm_prefixes: tuple[str, ...] = ("Preflight Fail: ",)
+    # Whether one preflight report names every check that fails. Only then is
+    # a report without the kill switch's check proof that the switch is off.
+    # PX4's text pass is not relied on for that: its heartbeat already says
+    # whether the motors are locked down, and does so once a second.
+    prearm_report_complete: bool = False
     # Informational STATUSTEXT that is housekeeping rather than news: PX4's
     # logger names every log file it opens, on each arm. Kept in the console,
     # left off the notification board.
@@ -1008,6 +1013,11 @@ class ArduPilotDialect(Dialect):
     # ArduPilot only ever reports in text: "PreArm: ..." for a check, and
     # "Arm: ..." for the reason an arm command was refused.
     prearm_prefixes = ("PreArm: ", "Arm: ")
+    # AP_Arming::pre_arm_checks joins its check groups with a plain "&", so
+    # every group runs and reports, the emergency stop's among them. Its
+    # heartbeat says nothing about an emergency stop, so this is the one
+    # repeatable way to learn that a released switch really is released.
+    prearm_report_complete = True
     routine_statustext_prefixes = ()
 
     def vehicle_event(self, text: str) -> VehicleEvent | None:

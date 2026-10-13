@@ -12,7 +12,7 @@ from __future__ import annotations
 from pymavlink import mavutil as mv
 
 from corvus import autopilot
-from corvus.mavlink_bridge import MavlinkBridge
+from corvus.mavlink_bridge import KILL_RECHECK_S, KILL_SETTLE_S, PREARM_REPORT_GAP_S, MavlinkBridge
 from corvus.state_store import VehicleStateStore
 
 PX4 = autopilot.dialect_for_stack(autopilot.STACK_PX4)
@@ -257,6 +257,7 @@ def test_ready_to_fly_resolves_every_failed_check_and_the_switch() -> None:
     b._dispatch(sys_status(ready=False))
     assert not any(resolved(b).values())
 
+    b._kill_evidence_at -= KILL_SETTLE_S  # a "ready" well after the switch's own line
     b._dispatch(sys_status(ready=True))
     assert resolved(b) == {
         "Preflight Fail: Accel 0 uncalibrated": True,
@@ -290,3 +291,157 @@ def test_a_check_that_fails_again_is_live_again() -> None:
     b._dispatch(sys_status(ready=True))
     b._publish_statustext("Preflight Fail: Compass not calibrated", 2)
     assert resolved(b) == {"Preflight Fail: Compass not calibrated": False}
+
+
+# --- a lossy radio ------------------------------------------------------------
+#
+# The switch's own line is sent once. When it is lost, or when a SYS_STATUS
+# composed before the switch moved arrives after it, the station must still
+# end up with the switch's real position, without the operator moving it again.
+
+class Recorder:
+    """A connection that records the preflight reports the bridge asks for."""
+
+    def __init__(self) -> None:
+        self.requests = 0
+        recorder = self
+
+        class Mav:
+            def command_long_send(self, _sys, _comp, command, *_rest):
+                if command == mv.mavlink.MAV_CMD_RUN_PREARM_CHECKS:
+                    recorder.requests += 1
+
+        self.mav = Mav()
+
+
+def wired(stack: str = autopilot.STACK_PX4) -> tuple[MavlinkBridge, Recorder]:
+    b = bridge(stack)
+    conn = Recorder()
+    b._conn = conn
+    return b, conn
+
+
+def ap_heartbeat(armed: bool = False):
+    return heartbeat(armed, mv.mavlink.MAV_STATE_STANDBY, mv.mavlink.MAV_AUTOPILOT_ARDUPILOTMEGA)
+
+
+def test_a_stale_ready_does_not_undo_a_switch_that_just_engaged() -> None:
+    """The bug behind "I have to flip it again": the arming checks run slower
+    than the switch's line is sent, so a "ready" composed before the switch
+    moved arrived after it and cleared it."""
+    for stack, line in ((autopilot.STACK_PX4, "Kill engaged"),
+                        (autopilot.STACK_ARDUPILOT, "RC7: MotorEStop HIGH")):
+        b, _conn = wired(stack)
+        b._dispatch(sys_status(ready=True))
+        b._publish_statustext(line, 6)
+        b._dispatch(sys_status(ready=True))
+        assert b._store.get_snapshot()["kill_switch"] is True, stack
+
+
+def test_a_ready_well_after_the_switch_still_releases_it() -> None:
+    b, _conn = wired(autopilot.STACK_ARDUPILOT)
+    b._publish_statustext("RC7: MotorEStop HIGH", 6)
+    b._kill_evidence_at -= KILL_SETTLE_S + 0.1
+    b._dispatch(sys_status(ready=True))
+    assert b._store.get_snapshot()["kill_switch"] is False
+
+
+def test_a_flip_to_not_ready_asks_for_the_reason_at_once() -> None:
+    """A switch whose line was lost turns "ready" into "not ready". The report
+    is asked for then, even with older reasons on the list."""
+    b, conn = wired()
+    b._publish_statustext("Preflight Fail: Compass not calibrated", 2)
+    b._dispatch(sys_status(ready=True))
+    b._prearm_requested_at -= 60
+    b._publish_statustext("Preflight Fail: Accel 0 uncalibrated", 2)
+    b._dispatch(sys_status(ready=False))
+    assert conn.requests == 1
+    b._dispatch(sys_status(ready=False))
+    assert conn.requests == 1, "once per flip, not on every SYS_STATUS"
+    b._publish_statustext("Preflight Fail: Kill switch engaged", 2)
+    assert b._store.get_snapshot()["kill_switch"] is True
+
+
+def test_ardupilot_notices_a_release_whose_line_was_lost() -> None:
+    """Indoors, without GPS, the vehicle never turns ready, so "ready" could
+    not clear the switch: it stayed on the bar until moved again."""
+    b, conn = wired(autopilot.STACK_ARDUPILOT)
+    b._dispatch(ap_heartbeat())
+    b._publish_statustext("PreArm: Motors Emergency Stopped", 2)
+    b._publish_statustext("PreArm: GPS 1: Bad fix", 2)
+    b._dispatch(sys_status(ready=False))
+    assert conn.requests == 0, "the switch was just named: nothing to ask yet"
+
+    b._kill_evidence_at -= KILL_RECHECK_S + 1
+    b._prearm_requested_at -= KILL_RECHECK_S + 1
+    b._dispatch(sys_status(ready=False))
+    assert conn.requests == 1, "asked again while it is held"
+
+    # "RC7: MotorEStop LOW" is lost. The report that answers no longer names it.
+    b._prearm_reason_at -= PREARM_REPORT_GAP_S + 1
+    b._publish_statustext("PreArm: GPS 1: Bad fix", 2)
+    b._dispatch(sys_status(ready=False))
+    assert b._store.get_snapshot()["kill_switch"] is True, "a report still arriving is not judged"
+    b._prearm_reason_at -= PREARM_REPORT_GAP_S + 1
+    b._dispatch(sys_status(ready=False))
+    snap = b._store.get_snapshot()
+    assert snap["kill_switch"] is False
+    assert resolved(b)["Emergency stop engaged. Motors stopped"] is True
+
+
+def test_ardupilot_keeps_a_switch_the_new_report_still_names() -> None:
+    b, _conn = wired(autopilot.STACK_ARDUPILOT)
+    b._dispatch(ap_heartbeat())
+    b._publish_statustext("RC7: MotorEStop HIGH", 6)
+    b._kill_evidence_at -= KILL_RECHECK_S + 1
+    b._prearm_requested_at -= KILL_RECHECK_S + 1
+    b._dispatch(sys_status(ready=False))
+    b._prearm_reason_at -= PREARM_REPORT_GAP_S + 1
+    b._publish_statustext("PreArm: Motors Emergency Stopped", 2)
+    b._prearm_reason_at -= PREARM_REPORT_GAP_S + 1
+    b._dispatch(sys_status(ready=False))
+    assert b._store.get_snapshot()["kill_switch"] is True
+
+
+def test_a_report_from_before_the_request_proves_nothing() -> None:
+    b, _conn = wired(autopilot.STACK_ARDUPILOT)
+    b._dispatch(ap_heartbeat())
+    b._publish_statustext("RC7: MotorEStop HIGH", 6)
+    b._publish_statustext("PreArm: GPS 1: Bad fix", 2)   # unprompted, same moment
+    b._prearm_reason_at -= PREARM_REPORT_GAP_S + 1
+    b._dispatch(sys_status(ready=False))
+    assert b._store.get_snapshot()["kill_switch"] is True
+
+
+def test_px4_is_not_released_by_a_report_that_omits_the_switch() -> None:
+    """PX4's text report is not relied on to name every check; its heartbeat
+    says whether the motors are locked down."""
+    b, _conn = wired()
+    b._publish_statustext("Kill engaged", 6)
+    b._kill_evidence_at -= KILL_RECHECK_S + 1
+    b._prearm_requested_at = b._kill_evidence_at + 0.5
+    b._publish_statustext("Preflight Fail: Accel 0 uncalibrated", 2)
+    b._prearm_reason_at -= PREARM_REPORT_GAP_S + 1
+    b._dispatch(sys_status(ready=False))
+    assert b._store.get_snapshot()["kill_switch"] is True
+
+
+def test_armed_ardupilot_is_not_judged_by_a_report() -> None:
+    b, _conn = wired(autopilot.STACK_ARDUPILOT)
+    b._dispatch(ap_heartbeat(armed=True))
+    b._publish_statustext("RC7: MotorEStop HIGH", 6)
+    b._kill_evidence_at -= KILL_RECHECK_S + 1
+    b._prearm_requested_at = b._kill_evidence_at + 0.5
+    b._publish_statustext("PreArm: GPS 1: Bad fix", 2)
+    b._prearm_reason_at -= PREARM_REPORT_GAP_S + 1
+    b._dispatch(sys_status(ready=False))
+    assert b._store.get_snapshot()["kill_switch"] is True
+
+
+def test_arming_is_not_a_flip_worth_asking_about() -> None:
+    b, conn = wired()
+    b._dispatch(sys_status(ready=True))
+    b._dispatch(heartbeat(True, mv.mavlink.MAV_STATE_ACTIVE))
+    b._prearm_reasons = ["already known"]
+    b._dispatch(sys_status(ready=False))
+    assert conn.requests == 0

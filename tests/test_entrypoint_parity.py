@@ -320,9 +320,14 @@ def test_chromium_flags_never_disable_the_software_fallback(platform):
     assert "--disable-software-rasterizer" not in flags
 
 
-@pytest.mark.parametrize("platform", ["darwin", "win32"])
-def test_vulkan_is_not_requested_off_linux(platform):
-    """macOS renders through Metal and Windows through ANGLE/D3D."""
+@pytest.mark.parametrize("platform", ["linux", "linux2", "darwin", "win32"])
+def test_vulkan_is_never_forced(platform):
+    """Chromium's Vulkan compositor flickered the 3D map on Linux.
+
+    macOS renders through Metal and Windows through ANGLE/D3D, and on Linux
+    Chromium's own GL path draws the map without the flicker a WebGL canvas
+    redrawn every frame showed under Vulkan.
+    """
     from corvus.app import chromium_flags
 
     flags = chromium_flags(platform)
@@ -330,11 +335,10 @@ def test_vulkan_is_not_requested_off_linux(platform):
 
 
 @pytest.mark.parametrize("platform", ["linux", "linux2"])
-def test_vulkan_is_requested_on_linux(platform):
+def test_linux_keeps_the_gpu_sandbox_switch(platform):
     from corvus.app import chromium_flags
 
-    flags = chromium_flags(platform)
-    assert "--use-vulkan" in flags and "--enable-features=Vulkan" in flags
+    assert "--disable-gpu-sandbox" in chromium_flags(platform)
 
 
 @pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])

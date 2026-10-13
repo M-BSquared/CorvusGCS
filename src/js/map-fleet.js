@@ -15,6 +15,10 @@ window.Corvus = window.Corvus || {};
   one it starts drawing with takeTrack(), so a vehicle's track follows the
   vehicle and not the role it plays. They survive a restart, like the main
   track, under their own key.
+
+  A vehicle the operator removed (js/fleet.js) is forgotten here too: its
+  marker and track go, and a track map.js hands over for it afterwards is
+  dropped, until the vehicle is heard again.
 */
 Corvus.mapFleet = (function () {
   const STORE_KEY = "corvus.map.fleetTracks";
@@ -37,6 +41,8 @@ Corvus.mapFleet = (function () {
   // What the drawn paths depend on besides the points: whose track map.js
   // draws itself, and each track's colour. See paintKey.
   let paintedKey = null;
+  // Vehicles removed from the list: nothing of theirs is drawn or kept.
+  const removed = new Set();
 
   function metres(a, b) {
     const R = 6371000;
@@ -303,6 +309,7 @@ Corvus.mapFleet = (function () {
 
   function onSnapshot(snapshot) {
     lastSnapshot = snapshot;
+    snapshot.vehicles.forEach((v) => removed.delete(v.id));
     const owner = ownerId();
     let changed = false;
     snapshot.vehicles.forEach((v) => {
@@ -320,6 +327,12 @@ Corvus.mapFleet = (function () {
   /** map.js hands over the track of the vehicle it stops drawing. */
   function stashTrack(id, track) {
     if (!id || !track) return;
+    if (removed.has(id)) {
+      tracks.delete(id);
+      scheduleSave();
+      paint();
+      return;
+    }
     const current = validFlight(track.current) ? track.current.slice() : [];
     const past = (Array.isArray(track.past) ? track.past : []).filter((f) => validFlight(f) && f.length >= 2);
     tracks.delete(id);
@@ -342,6 +355,17 @@ Corvus.mapFleet = (function () {
     paint();
     if (!t) return null;
     return { current: t.current, past: t.past };
+  }
+
+  /** The operator removed *id*: drop its marker and its track. */
+  function forget(id) {
+    if (!id) return;
+    removed.add(id);
+    tracks.delete(id);
+    const m = markers.get(id);
+    if (m) { m.marker.remove(); markers.delete(id); }
+    save();
+    paint();
   }
 
   function clearTracks() {
@@ -370,7 +394,7 @@ Corvus.mapFleet = (function () {
   restore();
 
   return {
-    attach, stashTrack, takeTrack, clearTracks, hasTracks,
+    attach, stashTrack, takeTrack, clearTracks, hasTracks, forget,
     // test hooks
     _record: record,
     _onSnapshot: (snapshot) => onSnapshot(snapshot),

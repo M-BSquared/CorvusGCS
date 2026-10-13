@@ -338,9 +338,9 @@
   aircraft to command is taken from the first heartbeat sent by an actual
   autopilot, not the first heartbeat of any kind. An identical frame arriving
   twice within 0.3 s (the signature of a routing loop) is dropped before it is
-  read, so a looped acknowledgement cannot confirm a command twice. Other
-  vehicles on the link are listed and drawn on the map, and you can take
-  control of one of them; see
+  read, so a looped acknowledgement cannot confirm a command twice. Another
+  autopilot on the link is ignored: one link is one vehicle, and a second
+  vehicle needs a link of its own; see
   <a href="flying.html#vehicles">Several vehicles</a>.
 </p>
 

@@ -1000,12 +1000,26 @@ Corvus.topbar = (function () {
     const fleet = Corvus.fleet;
     if (!vehicleSwatch || !fleet) return;
     const multi = fleet.isMulti();
-    vehicleSwatch.hidden = !multi || !state.connected;
-    if (vehicleSwatch.hidden) return;
+    const hidden = !multi || !state.connected;
+    if (vehicleSwatch.hidden !== hidden) vehicleSwatch.hidden = hidden;
+    if (hidden) return;
     vehicleSwatch.style.background = fleet.colorOf(state.vehicle_id) || fleet.themeColor();
     const count = fleet.get().vehicles.length;
     const root = blockEls.vehicle && blockEls.vehicle.root;
-    if (root) root.setAttribute("aria-label", `Vehicle: ${fleetVehicleLabel(state)}, ${count} vehicles`);
+    if (root) setAttr(root, "aria-label", `Vehicle: ${fleetVehicleLabel(state)}, ${count} vehicles`);
+  }
+
+  // The bar is updated on every telemetry frame and almost nothing in it
+  // changes between two; an unchanged write still costs a style pass.
+  function setText(el, value) {
+    const text = value == null ? "" : String(value);
+    if (el.textContent !== text) el.textContent = text;
+  }
+  function setClass(el, name) {
+    if (el.className !== name) el.className = name;
+  }
+  function setAttr(el, name, value) {
+    if (el.getAttribute(name) !== value) el.setAttribute(name, value);
   }
 
   function updateTopBarValues(state) {
@@ -1022,19 +1036,20 @@ Corvus.topbar = (function () {
         cached.vShort.textContent = b.short;
       }
       const subEl = cached.sub;
-      if (subEl && b.sub !== undefined) subEl.textContent = b.sub;
-      if (subEl && b.subCls !== undefined) subEl.className = "sub" + (b.subCls ? " " + b.subCls : "");
-      if (b.title !== undefined) el.title = b.title || "";
+      if (subEl && b.sub !== undefined) setText(subEl, b.sub);
+      if (subEl && b.subCls !== undefined) setClass(subEl, "sub" + (b.subCls ? " " + b.subCls : ""));
+      if (b.title !== undefined && el.title !== (b.title || "")) el.title = b.title || "";
       if (b.tone !== undefined) {
-        if (b.tone && b.tone !== "none") el.dataset.tone = b.tone;
-        else delete el.dataset.tone;
+        if (b.tone && b.tone !== "none") {
+          if (el.dataset.tone !== b.tone) el.dataset.tone = b.tone;
+        } else if (el.dataset.tone !== undefined) {
+          delete el.dataset.tone;
+        }
       }
       const dotEl = cached.dot;
-      if (dotEl && b.dot) {
-        dotEl.className = "tb-dot " + b.dot;
-      }
+      if (dotEl && b.dot) setClass(dotEl, "tb-dot " + b.dot);
       const valSpan = cached.value;
-      if (valSpan) valSpan.className = "tb-value" + (b.cls ? " " + b.cls : "");
+      if (valSpan) setClass(valSpan, "tb-value" + (b.cls ? " " + b.cls : ""));
     });
     // Warnings block has a distinct structure (pill, not v-main/sub); keep
     // its single per-update query as-is rather than over-caching it.
@@ -1042,16 +1057,16 @@ Corvus.topbar = (function () {
     if (warnPill) {
       const { items, unread, count, level } = notificationSummary(state);
       const countEl = warnPill.querySelector(".tb-warn-count");
-      if (countEl) countEl.textContent = String(count);
+      if (countEl) setText(countEl, String(count));
       // The pill colour is a token, set from CSS off this attribute. It used
       // to be three hex literals written straight onto style.background, which
       // meant the one element in the bar that never changed with the theme was
       // the one shouting loudest.
-      warnPill.dataset.level = level;
+      if (warnPill.dataset.level !== level) warnPill.dataset.level = level;
       const warningButton = warnPill.closest(".tb-block.warnings");
       if (warningButton) {
         const plural = (n) => `${n} notification${n === 1 ? "" : "s"}`;
-        warningButton.setAttribute("aria-label", unread.length
+        setAttr(warningButton, "aria-label", unread.length
           ? `${unread.length} unread of ${plural(items.length)}`
           : plural(items.length));
       }

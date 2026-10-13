@@ -555,7 +555,7 @@ Corvus.setupVideo = (function () {
 
       async function remove() {
         const label = draft.name || draft.url || "this camera";
-        if (!window.confirm(`Remove "${label}"?`)) return;
+        if (!window.confirm(Corvus.t('Remove "{name}"?', { name: label }))) return;
         ui.setBusy(deleteBtn, true);
         try {
           const res = await Corvus.telemetry.requestJson("/api/video/streams/remove", {

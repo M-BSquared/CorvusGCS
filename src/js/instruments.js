@@ -180,32 +180,44 @@ Corvus.instruments = (function () {
     adiRollScale.appendChild(el("polygon", { points: "0,-73 -5,-64 5,-64", class: "roll-pointer" }));
   }
 
+  // The instruments render on every animation frame, and most frames change
+  // only some of them; an unchanged write still costs a style pass.
+  function setAttr(el, name, value) {
+    if (el.getAttribute(name) !== value) el.setAttribute(name, value);
+  }
+  function setText(el, value) {
+    const text = value == null ? "" : String(value);
+    if (el.textContent !== text) el.textContent = text;
+  }
+
   function updateAttitude(pitch, roll) {
     // Clamps are applied to the DISPLAYED value so the instrument never
     // over-travels its scale while easing.
     const pPitch = Math.max(-30, Math.min(30, pitch));
     const pRoll = Math.max(-60, Math.min(60, roll));
-    adiInner.setAttribute("transform", `rotate(${-pRoll}) translate(0 ${(pPitch * PPD).toFixed(1)})`);
-    adiRollScale.setAttribute("transform", `rotate(${-pRoll})`);
+    setAttr(adiInner, "transform", `rotate(${-pRoll}) translate(0 ${(pPitch * PPD).toFixed(1)})`);
+    setAttr(adiRollScale, "transform", `rotate(${-pRoll})`);
     if (attitudeValue) {
       const ps = pitch >= 0 ? "+" : "";
       const rs = roll >= 0 ? "+" : "";
-      attitudeValue.textContent = `P ${ps}${pitch.toFixed(1)}\u00B0  R ${rs}${roll.toFixed(1)}\u00B0`;
+      setText(attitudeValue, `P ${ps}${pitch.toFixed(1)}\u00B0  R ${rs}${roll.toFixed(1)}\u00B0`);
     }
   }
 
   function renderCompass(h) {
     if (!compassCard || !compassArrow) return;
     if (noseUp) {
-      compassCard.setAttribute("transform", `rotate(${-h})`);
-      compassArrow.setAttribute("transform", "rotate(0)");
+      setAttr(compassCard, "transform", `rotate(${-h})`);
+      setAttr(compassArrow, "transform", "rotate(0)");
       for (const t of compassLabels) {
-        t.setAttribute("transform", `rotate(${h} ${t.getAttribute("x")} ${t.getAttribute("y")})`);
+        setAttr(t, "transform", `rotate(${h} ${t.getAttribute("x")} ${t.getAttribute("y")})`);
       }
     } else {
-      compassCard.setAttribute("transform", "rotate(0)");
-      compassArrow.setAttribute("transform", `rotate(${h})`);
-      for (const t of compassLabels) t.removeAttribute("transform");
+      setAttr(compassCard, "transform", "rotate(0)");
+      setAttr(compassArrow, "transform", `rotate(${h})`);
+      for (const t of compassLabels) {
+        if (t.getAttribute("transform") !== null) t.removeAttribute("transform");
+      }
     }
   }
 
@@ -223,7 +235,7 @@ Corvus.instruments = (function () {
   function renderInstruments() {
     const h = Math.round(Corvus.anim.normAngle(insDisplay.heading)) % 360;
     renderCompass(h);
-    if (compassValue) compassValue.textContent = String(h).padStart(3, "0") + "\u00B0";
+    if (compassValue) setText(compassValue, String(h).padStart(3, "0") + "\u00B0");
     updateAttitude(insDisplay.pitch, insDisplay.roll);
   }
 
@@ -278,7 +290,7 @@ Corvus.instruments = (function () {
   function updateFlightTelemetry(s) {
     const set = (k, v) => {
       const n = ftCells[k];
-      if (n) n.textContent = v;
+      if (n) setText(n, v);
     };
     if (!s.connected) {
       ["altAmsl", "agl", "gs", "vs", "hdg", "sats"].forEach((k) => set(k, "\u2014"));

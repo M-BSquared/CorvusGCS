@@ -195,10 +195,26 @@ Corvus.panel = (function () {
     if (output && passesFilter(rec)) {
       output.appendChild(lineEl(rec));
       while (output.children.length > MAX_LINES) output.removeChild(output.firstChild);
-      if (autoscroll) output.scrollTop = output.scrollHeight;
+      if (autoscroll) followLive();
       else missed++;
     }
     updateCount();
+  }
+
+  /* Reading scrollHeight lays the console out, and a burst of lines (a
+     parameter download, a calibration) used to pay that once per line. The
+     follow is done once per frame instead; until it lands, the scroll handler
+     must not read the not-yet-followed position as the operator scrolling up. */
+  let followQueued = false;
+  function followLive() {
+    if (followQueued) return;
+    followQueued = true;
+    const run = () => {
+      followQueued = false;
+      if (output && autoscroll) output.scrollTop = output.scrollHeight;
+    };
+    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(run);
+    else run();
   }
 
   /** Re-render the visible set from the buffer. Called when a filter changes. */
@@ -214,10 +230,10 @@ Corvus.panel = (function () {
 
   function updateCount() {
     if (countEl) {
-      const visible = lines.filter(passesFilter).length;
       const held = pendingLines.length;
       const parts = [];
-      if (filterText) parts.push(`${visible} / ${lines.length}`);
+      // Counted only when a filter is set: this runs once per incoming line.
+      if (filterText) parts.push(`${lines.filter(passesFilter).length} / ${lines.length}`);
       else parts.push(`${lines.length}`);
       if (held) parts.push(`${held} held`);
       if (paused) parts.push("paused");
@@ -1492,8 +1508,8 @@ Corvus.panel = (function () {
     async function remove() {
       const live = !!(conn && conn.connected);
       if (!confirm(live
-        ? `Delete the connection ${originalName}?\n\nIts session is open and will be closed.`
-        : `Delete the connection ${originalName}?`)) return;
+        ? Corvus.t("Delete the connection {name}?\n\nIts session is open and will be closed.", { name: originalName })
+        : Corvus.t("Delete the connection {name}?", { name: originalName }))) return;
       error.hide();
       Corvus.ui.setBusy(deleteBtn, true);
       let res;
@@ -1796,6 +1812,7 @@ Corvus.panel = (function () {
     clearBtn.addEventListener("click", clearConsole);
     if (jumpBtn) jumpBtn.addEventListener("click", jumpToLive);
     output.addEventListener("scroll", () => {
+      if (followQueued) return;
       const atBottom = output.scrollHeight - output.scrollTop - output.clientHeight < 30;
       if (!atBottom && autoscroll) {
         // Scrolling up IS the "stop following" gesture — no toggle needed.

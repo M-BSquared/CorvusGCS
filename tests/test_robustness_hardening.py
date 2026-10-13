@@ -899,7 +899,9 @@ def test_the_takeoff_ceiling_is_the_operational_one() -> None:
 
 def test_the_takeoff_slider_stops_where_the_backend_stops() -> None:
     """Two places carry this number. A slider that offers a height the backend
-    rejects is a control whose top end only ever produces a 400."""
+    rejects is a control whose top end only ever produces a 400. The slider is
+    logarithmic, so its own min and max are positions; the metres it spans are
+    its data-min-m and data-max-m."""
     import re
     from pathlib import Path
 
@@ -908,8 +910,8 @@ def test_the_takeoff_slider_stops_where_the_backend_stops() -> None:
     html = (Path(__file__).resolve().parent.parent / "src" / "index.html").read_text()
     tag = re.search(r'<input[^>]*id="takeoffAlt"[^>]*>', html)
     assert tag, "the takeoff slider must still exist"
-    lo = re.search(r'min="(\d+)"', tag.group(0))
-    hi = re.search(r'max="(\d+)"', tag.group(0))
+    lo = re.search(r'data-min-m="(\d+)"', tag.group(0))
+    hi = re.search(r'data-max-m="(\d+)"', tag.group(0))
     assert lo and hi
     assert float(lo.group(1)) == TAKEOFF_ALTITUDE_MIN_M
     assert float(hi.group(1)) == TAKEOFF_ALTITUDE_MAX_M

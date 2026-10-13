@@ -808,11 +808,16 @@ Corvus.ui = (function () {
 
     function syncTrigger() {
       const chosen = options().filter((o) => String(o.value) === String(sel.value))[0];
-      labelEl.textContent = chosen ? textOf(chosen) : "";
+      /* Written only when different: the flight bar's mode picker is synced
+         on every telemetry frame, and an unchanged write still replaces the
+         text node, which wakes every subtree observer above it. */
+      const label = chosen ? textOf(chosen) : "";
+      if (labelEl.textContent !== label) labelEl.textContent = label;
       /* An empty value is the placeholder row ("SELECT MODE"), which is a
          prompt and not a choice, so it is dimmed like one. */
-      trigger.dataset.placeholder = !chosen || String(chosen.value) === "" ? "true" : "false";
-      trigger.disabled = !!sel.disabled;
+      const placeholder = !chosen || String(chosen.value) === "" ? "true" : "false";
+      if (trigger.dataset.placeholder !== placeholder) trigger.dataset.placeholder = placeholder;
+      if (trigger.disabled !== !!sel.disabled) trigger.disabled = !!sel.disabled;
       if (sel.disabled) list.close(false);
     }
 
@@ -2301,6 +2306,24 @@ Corvus.ui = (function () {
     (an integer) negligible. Returns 1 when there is nothing to measure, which
     is the answer at 100% anyway.
   */
+  const SELECTABLE = "input, textarea, [contenteditable='true'], pre, code, .selectable, .console-output, .xterm";
+
+  /**
+   * Clear a highlight left over from an earlier press once the next press lands
+   * outside anything that is meant to be selected. The stylesheet already stops
+   * chrome from being picked up; this removes what a selectable region left
+   * behind, which nothing else would, since clicking a button never collapses it.
+   */
+  function guardSelection() {
+    if (typeof document === "undefined" || typeof document.addEventListener !== "function") return;
+    document.addEventListener("pointerdown", (ev) => {
+      const target = ev.target;
+      if (target && typeof target.closest === "function" && target.closest(SELECTABLE)) return;
+      const sel = typeof window.getSelection === "function" ? window.getSelection() : null;
+      if (sel && !sel.isCollapsed) sel.removeAllRanges();
+    }, true);
+  }
+
   function uiScale() {
     if (typeof document === "undefined" || !document.body) return 1;
     const body = document.body;
@@ -2540,5 +2563,6 @@ Corvus.ui = (function () {
     clear,
     refreshIcons,
     uiScale,
+    guardSelection,
   };
 })();

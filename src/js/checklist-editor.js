@@ -293,7 +293,7 @@ Corvus.checklistEditor = (function () {
       }
 
       async function remove() {
-        if (!window.confirm(`Remove "${draft.name || "this checklist"}"?`)) return;
+        if (!window.confirm(Corvus.t('Remove "{name}"?', { name: draft.name || Corvus.t("this checklist") }))) return;
         ui.setBusy(deleteBtn, true);
         try {
           await CL.saveLists(CL.lists().filter((l) => l.id !== draft.id));

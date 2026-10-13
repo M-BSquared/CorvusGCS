@@ -61,13 +61,13 @@ const AVIATION = { length: "ft", distance: "nmi", speed: "kn", temperature: "c" 
 
 function testTheConfigOutranksTheScreen() {
   const c = W.choicesFrom(
-    { theme: { name: "blue" },
+    { language: "de", theme: { name: "blue" },
       ui: { scale: 1.1, units: AVIATION, mission_page: true, console_tab: false },
       controls: { virtual_joystick: true },
       review: { sensitivity: "strict" }, updates: { check: false } },
     { theme: "green", units: METRIC });
   assert.deepEqual(c, {
-    theme: "blue", units: AVIATION, sensitivity: "strict", missionPage: true,
+    language: "de", theme: "blue", units: AVIATION, sensitivity: "strict", missionPage: true,
     consoleTab: false, sshTab: true,
     virtualJoystick: true, gamepad: false, arrowKeys: false, wasdKeys: false, updates: false,
   });
@@ -76,7 +76,7 @@ function testTheConfigOutranksTheScreen() {
 function testTheScreenFillsInWhatTheConfigLeavesOut() {
   const c = W.choicesFrom({}, { theme: "green", units: AVIATION });
   assert.deepEqual(c, {
-    theme: "green", units: AVIATION, sensitivity: "normal", missionPage: false,
+    language: "en", theme: "green", units: AVIATION, sensitivity: "normal", missionPage: false,
     consoleTab: true, sshTab: true,
     virtualJoystick: false, gamepad: false, arrowKeys: false, wasdKeys: false, updates: true,
   });
@@ -88,6 +88,12 @@ function testNothingKnownFallsBackToTheDefaults() {
   assert.deepEqual(c.units, METRIC);
   assert.equal(c.sensitivity, "normal");
   assert.equal(c.updates, true);
+}
+
+function testTheLanguageComesFromTheConfigThenTheScreen() {
+  assert.equal(W.choicesFrom({ language: "fr" }, { language: "de" }).language, "fr");
+  assert.equal(W.choicesFrom({}, { language: "de" }).language, "de");
+  assert.equal(W.choicesFrom({}, {}).language, "en");
 }
 
 function testAnUnknownSensitivityFallsBackToNormal() {
@@ -111,13 +117,14 @@ function testTheSensitivityCarriesTheCaution() {
 
 function testFinishPostsOnlyTheKeysTheSetupOwns() {
   const patch = W.configPatch({
-    theme: "pink", units: AVIATION, sensitivity: "relaxed", missionPage: true,
+    language: "fr", theme: "pink", units: AVIATION, sensitivity: "relaxed", missionPage: true,
     consoleTab: false, sshTab: true,
     virtualJoystick: true, gamepad: true, arrowKeys: false, wasdKeys: true, updates: false,
   });
   // No `ui.scale` and no `controls.key_gain`: those are not part of the setup,
   // so Finish must leave the size and key strength the station already has.
   assert.deepEqual(patch, {
+    language: "fr",
     theme: { name: "pink" },
     ui: { units: AVIATION, mission_page: true, console_tab: false, ssh_tab: true },
     controls: { virtual_joystick: true, gamepad: true, arrow_keys: false, wasd_keys: true },
@@ -174,6 +181,7 @@ const tests = [
   testTheConfigOutranksTheScreen,
   testTheScreenFillsInWhatTheConfigLeavesOut,
   testNothingKnownFallsBackToTheDefaults,
+  testTheLanguageComesFromTheConfigThenTheScreen,
   testAnUnknownSensitivityFallsBackToNormal,
   testTheSetupOffersTheSensitivitiesTheSettingsPageOffers,
   testTheSensitivityCarriesTheCaution,

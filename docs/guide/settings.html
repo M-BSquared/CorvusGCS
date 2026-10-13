@@ -158,6 +158,8 @@
 
 <h2 id="appearance">Appearance</h2>
 <dl>
+  <dt id="language">Language</dt>
+  <dd>The language of the interface: English, German or French, from a dropdown, with <strong>Reload languages</strong> beside it. Switching is instant, with no reload. The first start setup opens in the browser's own language when Corvus has a file for it, and offers the choice in its first step, <strong>Look</strong>. A text that a language does not translate stays English. More languages can be added without touching the program, see <a href="#adding-a-language">Adding a language</a>.</dd>
   <dt>Company logo</dt>
   <dd>A PNG of your own, shown in the top right of the window.</dd>
   <dt>Colour theme</dt>
@@ -171,6 +173,26 @@
   <dt id="side-panel">Side panel</dt>
   <dd><strong>MAVLink console tab</strong> and <strong>SSH tab</strong>, both on by default. Off, the tab is gone from the side panel. Console messages are still collected and still go into the export on the Logs page; saved SSH connections stay saved and plugins still use them, and a terminal opens in a <a href="video.html#windows">window of its own</a> instead. LINK and PLUGINS cannot be switched off.</dd>
 </dl>
+
+<h3 id="adding-a-language">Adding a language</h3>
+<p>
+  A language is one JSON file named after its code, such as
+  <code>es.json</code>. It maps the English text of the interface, copied
+  exactly, to its translation:
+</p>
+<pre><code>{
+  "meta": { "name": "Spanish", "native_name": "Español" },
+  "strings": {
+    "Settings": "Ajustes",
+    "Settings of {name}": "Ajustes de {name}"
+  }
+}</code></pre>
+<ul>
+  <li><strong>Where it goes.</strong> Into <code>~/.corvus/languages</code>, which Corvus creates with a README the first time Settings is opened, or into <code>src/lang</code> in a checkout, next to <code>de.json</code> and <code>fr.json</code>. The folder under your home survives updates, and a file there with the code of a language that ships with Corvus replaces it. Press <strong>Reload languages</strong> after copying one in.</li>
+  <li><strong>No ids.</strong> The English text is the key. A text the file does not list stays English, so a file can start small and grow.</li>
+  <li><strong><code>{name}</code></strong> in an English text matches whatever stands in that place, and the same <code>{name}</code> in the translation puts it back. What it matched is translated too, when the file has an entry for it. A label that ends in an autopilot parameter, such as <code>Action on RC loss (NAV_RCL_ACT)</code>, is translated by the label alone.</li>
+  <li><strong>Finding the texts.</strong> <code>python3 tools/i18n.py new es Spanish Español</code> writes a file with every text the other languages list, each blank. To see what is still English on screen, open Corvus in the language, go through the pages and run <code>copy(JSON.stringify(Corvus.i18n.template(), null, 2))</code> in the browser console. <code>python3 tools/i18n.py check</code> reads every file and reports a placeholder that does not match.</li>
+</ul>
 
 <h3 id="map-service">Map service</h3>
 <p>

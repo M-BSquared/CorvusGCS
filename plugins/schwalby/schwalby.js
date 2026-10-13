@@ -76,6 +76,7 @@ Corvus.pluginSchwalby = (function () {
   // Bounded so the shelf stays a shelf; an operator with more of them wants a
   // script, not more buttons.
   const MAX_BUTTONS = 12;
+  const LAUNCH_ICON_PX = 16;
 
   // How often the shelf asks which of its sessions are still up. There is no
   // push for this, and the answer is what decides whether a button's arrow
@@ -655,6 +656,7 @@ Corvus.pluginSchwalby = (function () {
     let connectionsLoaded = false; // whether that list is the backend's answer yet
     let localStatus = null;       // GET /api/local/status
     let editing = null;           // the button being edited, or null on the shelf
+    let editMode = false;         // whether the shelf shows each row's pencil
     let repaintTarget = null;     // the open editor's target painter, for a late status
     let live = {};                // session name -> true, from /api/ssh/sessions
     const errors = Object.create(null);  // button id -> why its last press failed
@@ -1329,6 +1331,7 @@ Corvus.pluginSchwalby = (function () {
       ui.clear(shelfEl);
 
       const card = ui.card({});
+      card.classList.add("schw-shelf-card");
       if (!buttons.length) {
         const none = ui.empty("No launch buttons yet. Add one for each program you start " +
                               "before a flight, on this computer or on a companion computer.");
@@ -1341,8 +1344,9 @@ Corvus.pluginSchwalby = (function () {
         card.appendChild(list);
       }
 
+      if (!buttons.length) editMode = false;
       const last = buttons.length ? buttons[buttons.length - 1] : null;
-      card.appendChild(ui.actions(ui.button({
+      const addBtn = ui.button({
         variant: "secondary",
         icon: "plus",
         label: "Add button",
@@ -1359,7 +1363,19 @@ Corvus.pluginSchwalby = (function () {
           mode: MODE_TERMINAL,
           restart: false,
         }, true),
-      })));
+      });
+      let editToggle = null;
+      if (buttons.length) {
+        editToggle = ui.button({
+          variant: "secondary",
+          icon: "pencil",
+          className: "schw-edit-toggle",
+          ariaLabel: "Edit buttons",
+          title: editMode ? "Done editing" : "Edit the buttons",
+          onClick: () => { editMode = !editMode; renderShelf(); },
+        });
+        ui.setActive(editToggle, editMode);
+      }
 
       // A shelf copied from another computer names connections this one has
       // not saved. Saying so up front beats a press that fails; the press
@@ -1377,6 +1393,11 @@ Corvus.pluginSchwalby = (function () {
         note.classList.add("schw-note");
         card.appendChild(note);
       }
+
+      // Last in the card, on its bottom edge: Add button left, edit toggle right.
+      const bar = ui.actions([addBtn, editToggle]);
+      bar.classList.add("schw-card-actions");
+      card.appendChild(bar);
 
       shelfEl.appendChild(card);
       ui.refreshIcons();
@@ -1398,7 +1419,6 @@ Corvus.pluginSchwalby = (function () {
       const launchBtn = ui.button({
         variant: "primary",
         size: "sm",
-        icon: "play",
         label: entry.label,
         className: "schw-launch",
         ariaLabel: running ? `${restarts(entry) ? "Restart" : "Run"} ${entry.label}${restarts(entry) ? "" : " again"}`
@@ -1419,7 +1439,7 @@ Corvus.pluginSchwalby = (function () {
       where.setAttribute("data-where", target.label);
       where.title = isLocal(entry) ? "Runs on this computer"
         : `Runs on ${entry.connection || "an SSH connection"} over SSH`;
-      where.appendChild(ui.icon(target.icon, 14));
+      where.appendChild(ui.icon(target.icon, LAUNCH_ICON_PX));
       launchBtn.appendChild(where);
 
       const tools = document.createElement("div");
@@ -1443,19 +1463,32 @@ Corvus.pluginSchwalby = (function () {
         tools.appendChild(dot);
       }
 
-      // The arrow into the button's own terminal. With nothing running it
-      // connects first and opens a plain shell, the program not started; the
-      // button runs its line into that same shell afterwards.
+      // The arrow into the button's own terminal, at the far end of the launch
+      // button itself. A span, because a button cannot hold a button. With
+      // nothing running it connects first and opens a plain shell, the
+      // program not started; the button runs its line into that same shell
+      // afterwards.
       if (entry.mode !== MODE_BACKGROUND) {
-        const openBtn = ui.iconButton("chevron-right", {
-          className: "icon-btn schw-open",
-          ariaLabel: `Open the terminal for ${entry.label}`,
-          title: running
-            ? "Open its terminal window to watch it, or press Ctrl-C to stop it"
-            : "Open its terminal and connect. The program starts with the button.",
-          onClick: () => (running ? openTerminal(entry) : connectAndOpen(entry, openBtn)),
+        const openBtn = document.createElement("span");
+        openBtn.className = "icon-btn schw-open";
+        openBtn.setAttribute("role", "button");
+        openBtn.setAttribute("tabindex", "0");
+        openBtn.setAttribute("aria-label", `Open the terminal for ${entry.label}`);
+        openBtn.title = running
+          ? "Open its terminal window to watch it, or press Ctrl-C to stop it"
+          : "Open its terminal and connect. The program starts with the button.";
+        openBtn.disabled = false;
+        openBtn.appendChild(ui.icon("chevron-right", LAUNCH_ICON_PX));
+        const openIt = (e) => {
+          if (e) { e.stopPropagation(); e.preventDefault(); }
+          if (openBtn.disabled) return;
+          if (running) openTerminal(entry); else connectAndOpen(entry, openBtn);
+        };
+        openBtn.addEventListener("click", openIt);
+        openBtn.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") openIt(e);
         });
-        tools.appendChild(openBtn);
+        launchBtn.appendChild(openBtn);
       }
 
       // While the session is up the pencil is a stop button: editing a button
@@ -1472,7 +1505,7 @@ Corvus.pluginSchwalby = (function () {
         });
         if (stopping) ui.setBusy(stopBtn, true);
         tools.appendChild(stopBtn);
-      } else {
+      } else if (editMode) {
         tools.appendChild(ui.iconButton("pencil", {
           ariaLabel: `Edit ${entry.label}`,
           title: "Edit",
@@ -1481,7 +1514,9 @@ Corvus.pluginSchwalby = (function () {
       }
 
       row.appendChild(launchBtn);
-      row.appendChild(tools);
+      // An empty tools box would still cost its gap and shorten the button, so
+      // the bar's right edge would no longer line up with the controls below.
+      if (tools.children.length) row.appendChild(tools);
       return row;
     }
 

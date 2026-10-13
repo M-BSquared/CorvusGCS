@@ -5,7 +5,7 @@ window.Corvus = window.Corvus || {};
   Corvus.app — frontend orchestrator.
 
   Module load order (defined by the <script> tags in src/index.html):
-    maplibre-gl, lucide, plotly-basic, ui, telemetry, notification_dedupe,
+    maplibre-gl, lucide, plotly-basic, i18n, ui, telemetry, notification_dedupe,
     topbar, map, instruments, panel, link, plugins,
     setup-shared, setup-calibration, setup-parameters, setup, sidenav,
     joystick, checklist, checklist-editor, tiles, update, app (this file).
@@ -17,6 +17,64 @@ window.Corvus = window.Corvus || {};
   version is never hardcoded here; it is read from GET /api/version.
 */
 Corvus.app = (function () {
+  /* The metres a typed altitude stands for, or null while the box holds
+     nothing usable. `toSi` converts from the display unit. Clamped to the
+     slider's range so a typed 500 asks for the top of it rather than a height
+     the backend refuses, and rounded to the centimetre so 100 ft is not sent
+     as 30.480000000000004. */
+  function altitudeFromEntry(text, toSi, min, max) {
+    const typed = String(text).trim();
+    if (typed === "") return null;
+    const value = Number(typed);
+    if (!isFinite(value)) return null;
+    const metres = Math.min(max, Math.max(min, toSi(value)));
+    return Math.round(metres * 100) / 100;
+  }
+
+  /* Whether the box holds a number that stands as typed: not empty, not
+     unreadable, and inside the range the box itself shows. `validity` is the
+     input's ValidityState. Step is deliberately not asked about, since
+     7.5 m is a fine altitude. */
+  function entryIsClear(text, validity) {
+    if (String(text).trim() === "") return false;
+    return !(validity.badInput || validity.rangeUnderflow || validity.rangeOverflow);
+  }
+
+  /* The takeoff slider is logarithmic: a fixed distance along it is the same
+     percentage of height, so the low heights, where a metre matters, get the
+     room and 100 m is not a hair's breadth from 120. Its own number is a
+     position from 0 to `span`; the metres come from here.
+
+     A height is snapped to a whole metre up to 50 m and to 5 m above it,
+     because a thumb cannot tell 83 from 84 m and nobody wants to. */
+  const ALTITUDE_COARSE_FROM_M = 50;
+  const ALTITUDE_COARSE_STEP_M = 5;
+
+  function altitudeToPosition(metres, min, max, span) {
+    const m = Math.min(max, Math.max(min, metres));
+    return Math.round(span * Math.log(m / min) / Math.log(max / min));
+  }
+
+  function positionToAltitude(position, min, max, span) {
+    const raw = min * Math.pow(max / min, position / span);
+    const step = raw >= ALTITUDE_COARSE_FROM_M ? ALTITUDE_COARSE_STEP_M : 1;
+    return Math.min(max, Math.max(min, Math.round(raw / step) * step));
+  }
+
+  /* One arrow-key press: to the next whole metre (or 5 m above 50) in that
+     direction, from wherever the height is, including a typed 30.48. The
+     slider's own keys would move a thousandth of the track, which at 10 m is
+     less than the snapping, so the key would do nothing. */
+  function nudgeAltitude(metres, direction, min, max) {
+    const up = direction > 0;
+    const coarse = up ? metres >= ALTITUDE_COARSE_FROM_M : metres > ALTITUDE_COARSE_FROM_M;
+    const step = coarse ? ALTITUDE_COARSE_STEP_M : 1;
+    const next = up
+      ? (Math.floor(metres / step + 1e-9) + 1) * step
+      : (Math.ceil(metres / step - 1e-9) - 1) * step;
+    return Math.min(max, Math.max(min, next));
+  }
+
   /* Where the vehicle is, for offering only the one of TAKEOFF and LAND that
      applies: "air", "ground", or "" when that is not known (or nothing is
      connected), which greys neither. Read like _is_airborne in
@@ -58,13 +116,19 @@ Corvus.app = (function () {
       const phase = flightPhase(s);
       offer(btnTakeoff, phase !== "air", "Takeoff", "Takeoff: already in the air");
       offer(btnLand, phase !== "ground", "Land", "Land: on the ground");
-      if (phase === "air") document.getElementById("takeoffPanel").hidden = true;
+      if (phase === "air") {
+        const panel = document.getElementById("takeoffPanel");
+        if (!panel.hidden) panel.hidden = true;
+      }
     }
 
+    /* Runs on every telemetry frame; only a real change is written, since an
+       unchanged one still costs the bar a style pass. */
     function offer(button, on, title, why) {
       if (button.classList.contains("is-busy")) return;
-      button.disabled = !on;
-      button.title = on ? title : why;
+      if (button.disabled !== !on) button.disabled = !on;
+      const tip = on ? title : why;
+      if (button.title !== tip) button.title = tip;
     }
     /* The mode picker is a plain <select> and stays one: the app's dropdown
        is put over every select in the page by ui.watchSelects() (called from
@@ -157,18 +221,74 @@ Corvus.app = (function () {
       new ResizeObserver(reanchorFlightCards).observe(flightBarEl);
     }
 
+    const takeoffSlider = document.getElementById("takeoffAlt");
+    const takeoffInput = document.getElementById("takeoffAltInput");
+    const takeoffUnit = document.getElementById("takeoffAltUnit");
+
     btnTakeoff.addEventListener("click", () => {
       const panel = document.getElementById("takeoffPanel");
-      if (panel.hidden) openFlightCard("takeoffPanel");
-      else panel.hidden = true;
+      if (panel.hidden) {
+        openFlightCard("takeoffPanel");
+        takeoffInput.focus();
+        takeoffInput.select();
+      } else {
+        panel.hidden = true;
+      }
     });
 
-    const takeoffSlider = document.getElementById("takeoffAlt");
-    const takeoffAltValue = document.getElementById("takeoffAltValue");
+    // The altitude lives here in metres, which is what the bridge is sent; the
+    // slider and the box are two views of it, the box in the display unit. The
+    // slider is read only when it is moved, never back from what was set on it:
+    // its position is rounded, and a typed 100 ft (30.48 m) must stay 30.48.
+    const takeoffMin = Number(takeoffSlider.dataset.minM);
+    const takeoffMax = Number(takeoffSlider.dataset.maxM);
+    const takeoffSpan = Number(takeoffSlider.max);
+    const sliderPosition = (metres) => altitudeToPosition(metres, takeoffMin, takeoffMax, takeoffSpan);
+    let takeoffAlt = 10;
     const showTakeoffAlt = () => {
-      takeoffAltValue.textContent = Corvus.units.formatLength(takeoffSlider.value);
+      const shown = Corvus.units.formatLength(takeoffAlt, { bare: true });
+      takeoffSlider.value = sliderPosition(takeoffAlt);
+      takeoffSlider.setAttribute("aria-valuetext", `${shown} ${Corvus.units.lengthSymbol()}`);
+      takeoffInput.min = Corvus.units.formatLength(takeoffMin, { bare: true });
+      takeoffInput.max = Corvus.units.formatLength(takeoffMax, { bare: true });
+      takeoffInput.value = shown;
+      takeoffUnit.textContent = Corvus.units.lengthSymbol();
     };
-    takeoffSlider.addEventListener("input", showTakeoffAlt);
+    takeoffSlider.addEventListener("input", () => {
+      takeoffAlt = positionToAltitude(Number(takeoffSlider.value), takeoffMin, takeoffMax, takeoffSpan);
+      showTakeoffAlt();
+    });
+    takeoffSlider.addEventListener("keydown", (event) => {
+      const direction = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[event.key];
+      if (!direction) return;
+      event.preventDefault();
+      takeoffAlt = nudgeAltitude(takeoffAlt, direction, takeoffMin, takeoffMax);
+      showTakeoffAlt();
+    });
+    // Taken per keystroke so the slider and CONFIRM follow at once, but the
+    // box is left alone while typing: rewriting it would turn a half-typed "4"
+    // on the way to "45" into something else under the cursor. It is tidied
+    // when the box is left, which also restores an emptied box.
+    takeoffInput.addEventListener("input", () => {
+      const metres = altitudeFromEntry(takeoffInput.value, Corvus.units.lengthToSi, takeoffMin, takeoffMax);
+      if (metres == null) return;
+      takeoffAlt = metres;
+      takeoffSlider.value = sliderPosition(metres);
+    });
+    takeoffInput.addEventListener("change", showTakeoffAlt);
+    // Enter is CONFIRM TAKEOFF, through the button so it takes the same path
+    // (and stays dead while a command is in flight). Only on a number that
+    // stands as typed: from an empty or out-of-range box it just tidies the
+    // box, so a "500" never becomes a 120 m takeoff the operator has not seen.
+    takeoffInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.repeat) return;
+      event.preventDefault();
+      if (!entryIsClear(takeoffInput.value, takeoffInput.validity)) {
+        showTakeoffAlt();
+        return;
+      }
+      document.getElementById("takeoffConfirm").click();
+    });
     window.addEventListener("corvus:unitschange", showTakeoffAlt);
     showTakeoffAlt();
 
@@ -177,7 +297,7 @@ Corvus.app = (function () {
     });
 
     document.getElementById("takeoffConfirm").addEventListener("click", async () => {
-      const alt = parseFloat(takeoffSlider.value);
+      const alt = takeoffAlt;
       const attempt = Corvus.topbar.beginCommand(["takeoff", "arm"]);
       document.getElementById("takeoffPanel").hidden = true;
       const btn = document.getElementById("takeoffConfirm");
@@ -269,7 +389,8 @@ Corvus.app = (function () {
     function refreshPlanFly(pts) {
       const s = Corvus.telemetry.getState() || {};
       const p = pts || getPlanPoints();
-      planFly.disabled = !(s.connected && s.armed && p.length >= 1);
+      const blocked = !(s.connected && s.armed && p.length >= 1);
+      if (planFly.disabled !== blocked) planFly.disabled = blocked;
     }
 
     function refreshPlanCount(pts) {
@@ -449,7 +570,7 @@ Corvus.app = (function () {
       // PLAN mirrors the other flight buttons: only actionable against a
       // connected vehicle. On disconnect, also exit planning so the UI never
       // strands the operator in a click-to-add mode they can no longer commit.
-      btnPlan.disabled = !s?.connected;
+      if (btnPlan.disabled !== !s?.connected) btnPlan.disabled = !s?.connected;
       if (!s?.connected && btnPlan.classList.contains("active")) setPlanMode(false);
       refreshPlanFly();
     });
@@ -537,8 +658,16 @@ Corvus.app = (function () {
     // also covers the case where that script could not read storage.
     Corvus.theme.applySaved();
     Corvus.scale.applySaved();
+    // The language last used on this machine, before the config answers. The
+    // page is held back by index.html until it is in, so nothing paints in the
+    // wrong one first.
+    Corvus.i18n.init();
+    Corvus.ui.guardSelection();
     Corvus.telemetry.requestJson("/api/config").then((res) => {
       const cfg = (res && res.config) || {};
+      // The config is the authority, like for the theme. Not while the first
+      // start setup is open: it picks the language itself, from the browser.
+      if (!(Corvus.welcome && Corvus.welcome.isOpen())) Corvus.i18n.use(Corvus.i18n.fromConfig(cfg));
       const name = Corvus.theme.fromConfig(cfg);
       if (name) Corvus.theme.setTheme(name);
       const scale = Corvus.scale.fromConfig(cfg);
@@ -691,6 +820,11 @@ Corvus.app = (function () {
     refreshModesFromData,
     showVehicleMode,
     flightPhase,
+    altitudeFromEntry,
+    entryIsClear,
+    altitudeToPosition,
+    positionToAltitude,
+    nudgeAltitude,
     notifyError: (msg, attempt) => Corvus.topbar.notifyError(msg, attempt),
   };
 })();

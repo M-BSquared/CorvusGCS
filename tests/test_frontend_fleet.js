@@ -267,4 +267,62 @@ assert.equal(store.has("corvus.map.fleetTracks"), false);
   mf.clearTracks();
 }
 
-console.log("test_frontend_fleet.js: all assertions passed");
+// ---------------------------------------------------------------------------
+// Removing a vehicle: off the list, off the map, and it does not flash back
+// ---------------------------------------------------------------------------
+(async () => {
+  const two = (extra) => ({
+    active: "main:1",
+    links: [{ id: "main", primary: true }, { id: "link-2", primary: false, connection: "udp:0.0.0.0:14560" }],
+    vehicles: [
+      { id: "main:1", sysid: 1, link: "main", name: "Lead", position: [11.6, 48.0] },
+      { id: "link-2:1", sysid: 1, link: "link-2", name: "Scout", position: [11.7, 48.1], ...extra },
+    ],
+  });
+  const posted = [];
+  const realRequest = Corvus.telemetry.requestJson;
+  Corvus.telemetry.requestJson = async (url, opts) => {
+    posted.push({ url, body: JSON.parse(opts.body) });
+    const after = two();
+    after.vehicles = after.vehicles.slice(0, 1);
+    after.links = after.links.slice(0, 1);
+    return { ok: true, fleet: after };
+  };
+  try {
+    mf.clearTracks();
+    fleet._take(two());
+    mf._onSnapshot(fleet.get());
+    mf._onSnapshot(fleet.get());
+    assert.ok(mf._tracks().has("link-2:1"));
+
+    await fleet.removeVehicle("link-2:1", true);
+    assert.deepEqual(posted[0], { url: "/api/fleet/vehicle/remove",
+      body: { id: "link-2:1", confirm_armed: true } });
+    assert.deepEqual(fleet.get().vehicles.map((v) => v.id), ["main:1"]);
+    assert.equal(mf._tracks().has("link-2:1"), false, "its track went with it");
+
+    // A snapshot published just before the removal arrives late.
+    fleet._take(two());
+    assert.deepEqual(fleet.get().vehicles.map((v) => v.id), ["main:1"], "no flash back");
+    mf._onSnapshot(fleet.get());
+    mf.stashTrack("link-2:1", { current: [[1, 1], [2, 2]], past: [] });
+    assert.equal(mf._tracks().has("link-2:1"), false, "a late hand-over is dropped too");
+
+    // Heard again once the hold is over (the operator opened its link again).
+    const realNow = Date.now;
+    Date.now = () => realNow() + 10000;
+    try {
+      fleet._take(two());
+      assert.deepEqual(fleet.get().vehicles.map((v) => v.id), ["main:1", "link-2:1"]);
+      mf._onSnapshot(fleet.get());
+      mf._onSnapshot(fleet.get());
+      assert.ok(mf._tracks().has("link-2:1"), "back on the map once heard again");
+    } finally {
+      Date.now = realNow;
+    }
+  } finally {
+    Corvus.telemetry.requestJson = realRequest;
+    mf.clearTracks();
+  }
+  console.log("test_frontend_fleet.js: all assertions passed");
+})().catch((err) => { console.error(err); process.exit(1); });

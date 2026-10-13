@@ -59,6 +59,7 @@ _CONFIG_FIELD_ORDER: tuple[str, ...] = (
     "stream_rates",
     "ssh_connections",
     "theme",
+    "language",
     "map",
     "map_tokens",
     "branding",
@@ -93,6 +94,8 @@ class CorvusConfig:
     ``~/.corvus/params`` / ``~/.corvus/firmware`` / ``~/.corvus/flightlogs`` /
     ``~/.corvus/missions``); a non-empty value pins the location. ``None`` dict
     fields mean "use built-in defaults"; a dict overrides the whole registry.
+
+    ``language`` is the interface language code (``"de"``), or None for English.
 
     ``ssh_connections``/``theme``/``map``/``branding``/``controls``/``ui``/``updates`` are persisted operator UI state:
     the SSH connection list, the selected color theme (``{"name": ...}``, one
@@ -195,6 +198,7 @@ class CorvusConfig:
     stream_rates: dict | None = None
     ssh_connections: list[dict[str, Any]] = dataclasses.field(default_factory=list)
     theme: dict[str, Any] | None = None
+    language: str | None = None
     map: dict[str, Any] | None = None
     map_tokens: dict[str, str] | None = None
     branding: dict[str, Any] | None = None
@@ -329,6 +333,17 @@ def _coerce_theme(raw: Any) -> dict[str, Any] | None:
     ``~/.corvus/config.json`` keeps loading, no longer written by the UI.
     """
     return _coerce_str_keys(raw, ("name", "accent"))
+
+
+def _coerce_language(raw: Any) -> str | None:
+    """The interface language code (``"de"``, ``"pt-BR"``), or None for English.
+
+    Only the shape is checked, not whether a file for it is installed: a config
+    copied from another station may name a language this one does not have, and
+    the interface then stays English until one is added.
+    """
+    from .languages import is_valid_code
+    return raw if isinstance(raw, str) and is_valid_code(raw) else None
 
 
 def _coerce_map(raw: Any) -> dict[str, Any] | None:
@@ -901,6 +916,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
 
     ssh_connections = _coerce_ssh_connections(data.get("ssh_connections"))
     theme = _coerce_theme(data.get("theme"))
+    language = _coerce_language(data.get("language"))
     map_cfg = _coerce_map(data.get("map"))
     map_tokens = _coerce_map_tokens(data.get("map_tokens"))
     branding = _coerce_branding(data.get("branding"))
@@ -933,6 +949,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         stream_rates=stream_rates,
         ssh_connections=ssh_connections,
         theme=theme,
+        language=language,
         map=map_cfg,
         map_tokens=map_tokens,
         branding=branding,
@@ -1005,6 +1022,8 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
         out["stream_rates"] = cfg.stream_rates
     if cfg.theme is not None:
         out["theme"] = dict(cfg.theme)
+    if cfg.language:
+        out["language"] = cfg.language
     if cfg.map is not None:
         out["map"] = dict(cfg.map)
     if cfg.map_tokens is not None:
