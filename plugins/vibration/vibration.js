@@ -34,7 +34,7 @@ window.Corvus = window.Corvus || {};
  *    restores PX4's default VIBRATION rate (POST enabled:false) — no leaks.
  *
  * Reduced motion: when the OS asks for less motion, Plotly transitions are
- * zeroed (static react updates) — apple-design requirement.
+ * zeroed (static react updates).
  */
 Corvus.pluginVibration = (function () {
   const MAX_POINTS = 600;          // ~60 s at 10 Hz — capped memory
@@ -223,7 +223,7 @@ Corvus.pluginVibration = (function () {
     }
 
     // Reduced motion → zero-duration Plotly transitions (static react updates),
-    // per apple-design: no animated redraws when the OS asks for less motion.
+    // no animated redraws when the OS asks for less motion.
     const config = { displayModeBar: false, responsive: true };
     if (reduced) {
       config.transition = { duration: 0 };
@@ -284,7 +284,7 @@ Corvus.pluginVibration = (function () {
       }
       // Throttle Plotly.react to ~10 Hz even on rapid updates. The telemetry
       // callback already runs on a rAF (telemetry.js notifySubscribers), so a
-      // direct call here stays on the compositor clock (apple-design).
+      // direct call here stays on the compositor clock.
       if (Date.now() - lastRedraw >= REDRAW_MIN_MS) redraw();
     }
 

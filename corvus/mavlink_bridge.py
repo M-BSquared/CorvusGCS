@@ -63,6 +63,7 @@ from .mavlink_missions import (  # noqa: F401 - re-exported
     MISSION_UPLOAD_QUIET_S,
     MissionProtocolMixin,
 )
+from .fleet import MAIN_LINK, FleetTracker
 from .mavlink_forwarder import frame_source_system
 from .mavlink_flight import FlightCommandsMixin
 from .mavlink_ftp import FtpClientMixin
@@ -222,6 +223,11 @@ DUPLICATE_FRAME_WINDOW_S = 0.3
 # rebooted rather than that two UDP frames arrived out of order.
 VEHICLE_REBOOT_BACKSTEP_MS = 5000
 
+# The pause between dropping one vehicle on a shared link and listening for the
+# next: long enough for the browser to be told the first one is gone before the
+# second one's state arrives.
+VEHICLE_SWITCH_PAUSE_S = 0.3
+
 # The autopilot sends one preflight report's lines back to back; a line after
 # a gap this long starts the next report rather than adding to the last one.
 PREARM_REPORT_GAP_S = 2.0
@@ -273,6 +279,10 @@ _NON_AUTOPILOT_COMPONENTS = frozenset({
     mavutil.mavlink.MAV_COMP_ID_TELEMETRY_RADIO,
     mavutil.mavlink.MAV_COMP_ID_UDP_BRIDGE,
 })
+
+
+class _VehicleSwitch(ConnectionError):
+    """Ends a connect cycle on purpose: the operator chose another system."""
 
 
 def _is_vehicle_heartbeat(hb: Any) -> bool:
@@ -478,6 +488,19 @@ class MavlinkBridge(
         self._prearm_reasons: list[str] = []
         self._prearm_reason_at = 0.0
         self._prearm_requested_at = 0.0
+        # Every autopilot heard on this link, this one included, for the
+        # vehicle list and the map (corvus/fleet.py). Read only: nothing in it
+        # decides how the link is flown.
+        self.fleet_tracker = FleetTracker(MAV_TYPE_MAP)
+        # Which link this is to the fleet; "main" unless corvus.fleet opened it.
+        self.fleet_link_id = MAIN_LINK
+        # Whether the vehicle list shows every vehicle this link carries, or
+        # only the one it flies (Settings, Vehicles).
+        self.fleet_shared_link = True
+        # The system the operator chose to fly on this link. None means the
+        # first autopilot that heartbeats, which is how a link always latched.
+        self._preferred_system: int | None = None
+        self._switch_requested = threading.Event()
         # Each protocol owns its own state; see the mixin modules.
         self._init_param_state()
         self._init_param_metadata_state()
@@ -527,7 +550,43 @@ class MavlinkBridge(
         # The server passes raw JSON here; validate before storing so an
         # invalid value cannot crash _is_serial() or hang mavlink_connection.
         self.validate_connection(conn_str)
+        if conn_str != self._conn_str:
+            # Another link carries other vehicles; a choice made on this one
+            # would otherwise hold the new link waiting for a system id that
+            # is not on it.
+            self._preferred_system = None
+            self.fleet_tracker.forget()
         self._conn_str = conn_str
+
+    def controlled_system(self) -> int | None:
+        """The system id this link is flying, or None while it flies none."""
+        return self._target_system if self._connection_ready() else None
+
+    def preferred_system(self) -> int | None:
+        """The system id the operator chose on this link, None for "the first"."""
+        return self._preferred_system
+
+    def select_system(self, system_id: int) -> None:
+        """Fly *system_id* on this link from now on.
+
+        A link that carries several vehicles (PX4's multi-vehicle SITL, a mesh
+        radio, mavlink-router) latches the first autopilot it hears. This makes
+        it latch another one instead, by ending the connect cycle and running
+        the ordinary connect path again with the choice in force, so every
+        piece of per-vehicle state (parameters, mission, mode table, dialect,
+        home) is dropped and fetched again exactly as for a fresh aircraft.
+        Nothing happens when that system is already the one being flown.
+        """
+        if isinstance(system_id, bool) or not isinstance(system_id, int):
+            raise ValueError("system id must be an integer")
+        if not 1 <= system_id <= 255:
+            raise ValueError("system id must be between 1 and 255")
+        self._preferred_system = system_id
+        if self._connection_ready() and self._target_system == system_id:
+            return
+        if self._running.is_set():
+            logger.info("Switching this link to system %d", system_id)
+            self._switch_requested.set()
 
     def connection_string(self) -> str:
         """Return the configured MAVLink connection string (read-only accessor)."""
@@ -831,7 +890,9 @@ class MavlinkBridge(
                 self._receive_loop()
             except Exception as exc:
                 cycle_exc = exc
-                if self._running.is_set():
+                if isinstance(exc, _VehicleSwitch):
+                    logger.info("%s", exc)
+                elif self._running.is_set():
                     logger.error("MAVLink error: %s", exc)
                 else:
                     # stop() closed the link under the receive loop.
@@ -849,6 +910,11 @@ class MavlinkBridge(
                 except Exception:
                     pass
             self._store.set_disconnected()
+            if self._running.is_set() and isinstance(cycle_exc, _VehicleSwitch):
+                # Not a failure: no backoff, no error on the LINK tab.
+                self._store.update(link_status="connecting", link_error="")
+                self._interruptible_sleep(VEHICLE_SWITCH_PAUSE_S)
+                continue
             if self._running.is_set():
                 delay = self._reconnect_delay(self._reconnect_attempt)
                 logger.info(
@@ -1103,6 +1169,12 @@ class MavlinkBridge(
         self._latch_dialect(hb.autopilot, hb.type)
         armed = bool(hb.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
         mode = self._decode_mode(hb)
+        vehicle_id = f"{self.fleet_link_id}:{self._target_system}"
+        previous_id = self._store.get_snapshot().get("vehicle_id", "")
+        if previous_id and previous_id != vehicle_id:
+            # Another aircraft than the one this store described. The same
+            # one reconnecting keeps its last state, as it always has.
+            self._store.forget_vehicle()
         logger.info("Heartbeat: %s / %s (%s) mode=%s (sys=%d comp=%d)",
                     vtype, autopilot, self._dialect.label, mode,
                     self._target_system, self._target_component)
@@ -1111,6 +1183,7 @@ class MavlinkBridge(
             armed=armed, mode=mode, mode_label=self._dialect.mode_label(mode),
             link_status="connected", link_error="",
             autopilot_stack=self._dialect.stack,
+            vehicle_id=vehicle_id,
         )
         self._store.heartbeat()
         self._build_mode_mapping()
@@ -1272,8 +1345,17 @@ class MavlinkBridge(
                 if time.monotonic() - waited_from < wait_for / 2:
                     return None
                 continue
-            if _is_vehicle_heartbeat(hb):
-                return hb
+            vehicle = _is_vehicle_heartbeat(hb)
+            if self.fleet_shared_link:
+                try:
+                    self.fleet_tracker.observe(hb, vehicle_heartbeat=vehicle)
+                except Exception:  # noqa: BLE001 - the vehicle list never costs the link
+                    logger.debug("fleet tracker failed", exc_info=True)
+            if vehicle:
+                preferred = self._preferred_system
+                if preferred is None or getattr(hb, "get_srcSystem", lambda: 0)() == preferred:
+                    return hb
+                continue
             logger.info(
                 "ignoring heartbeat from sys=%s comp=%s: not an autopilot",
                 getattr(hb, "get_srcSystem", lambda: "?")(),
@@ -2136,6 +2218,13 @@ class MavlinkBridge(
             # close self._conn under us; use the local ref for recv_match.
             conn = self._conn
             try:
+                if self._switch_requested.is_set():
+                    self._switch_requested.clear()
+                    preferred = self._preferred_system
+                    if preferred is not None and preferred != self._target_system:
+                        raise _VehicleSwitch(
+                            f"Switching from system {self._target_system} to {preferred}"
+                        )
                 if self._store.is_stale(timeout=self._warn_timeout()):
                     if self._store.is_stale(timeout=self._drop_timeout()):
                         raise ConnectionError("heartbeat timeout")
@@ -2244,8 +2333,62 @@ class MavlinkBridge(
 
     _CONSOLE_MSGS = frozenset({"COMMAND_ACK"})
 
+    def _observe_fleet(self, msg: Any, name: str) -> None:
+        """Hand a frame to the vehicle list. Never raises, never blocks."""
+        try:
+            heartbeat = name == "HEARTBEAT"
+            if not self.fleet_shared_link:
+                # One vehicle per link: the one this link flies.
+                source = int(getattr(msg, "get_srcSystem", lambda: 0)() or 0)
+                if source != self._target_system:
+                    return
+            self.fleet_tracker.observe(
+                msg, vehicle_heartbeat=heartbeat and _is_vehicle_heartbeat(msg),
+            )
+            if heartbeat:
+                self._nudge_fleet_streams(msg)
+        except Exception:  # noqa: BLE001 - the vehicle list never costs the link
+            logger.debug("fleet tracker failed", exc_info=True)
+
+    def _nudge_fleet_streams(self, msg: Any) -> None:
+        """Ask another vehicle on this link for its position, if it sends none.
+
+        A vehicle this link is not flying gets no stream requests from the
+        connect path, and ArduPilot streams nothing to a station that has not
+        asked. One position stream at 2 Hz is what drawing it on the map
+        takes. Never the vehicle being flown: its streams are the connect
+        path's business, and it is asked nothing here.
+        """
+        system = int(getattr(msg, "get_srcSystem", lambda: 0)() or 0)
+        if not system or system == self._target_system:
+            return
+        if not self.fleet_shared_link or not self.fleet_tracker.due_for_nudge(system):
+            return
+        conn = self._conn
+        if conn is None:
+            return
+        component = self.fleet_tracker.component_of(system)
+        ardupilot = self.fleet_tracker.stack_of(system) == autopilot_dialect.STACK_ARDUPILOT
+        with self._send_lock:
+            if conn is not self._conn:
+                return
+            conn.mav.command_long_send(
+                system, component,
+                mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
+                mavutil.mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT, 500000,
+                0, 0, 0, 0, 0,
+            )
+            if ardupilot:
+                conn.mav.request_data_stream_send(
+                    system, component, mavutil.mavlink.MAV_DATA_STREAM_POSITION, 2, 1,
+                )
+                conn.mav.request_data_stream_send(
+                    system, component, mavutil.mavlink.MAV_DATA_STREAM_EXTENDED_STATUS, 1, 1,
+                )
+
     def _dispatch(self, msg: Any) -> None:
         name = msg.get_type()
+        self._observe_fleet(msg, name)
 
         if name == "COMMAND_ACK" and self._is_from_vehicle(msg):
             # The console is this aircraft's console: through a router it would

@@ -188,3 +188,75 @@ def test_the_desktop_blur_loads_on_macos() -> None:
     blur = app.mac_blur("darwin")
     assert isinstance(blur, native_window.MacBlur)
     blur.clear(0)   # nothing to take away is not an error
+
+
+def test_by_default_a_window_of_its_own_is_frameless_and_the_page_draws_it() -> None:
+    frame = app.popout_frame(False, "cocoa")
+    assert frame["native"] is False
+    assert frame["flags"] == app.QT_FRAMELESS
+    assert frame["translucent"] is True, "see-through around the page's rounded corners"
+
+
+def test_on_macos_the_page_runs_on_under_the_systems_title_bar() -> None:
+    """The traffic lights sit at the left of the Corvus bar, which keeps the
+    name, the status, the pin and the power button."""
+    frame = app.popout_frame(True, "cocoa")
+    assert frame["native"] and frame["overlay"]
+    assert frame["controls"] == "left"
+    assert frame["inset"] == app.MAC_TITLE_CONTROLS_W
+    assert frame["flags"] == app.QT_EXPANDED_CLIENT_AREA | app.QT_NO_TITLE_BAR_BACKGROUND
+    assert frame["translucent"] is True, "the blur behind a frosted terminal shows through"
+
+
+@pytest.mark.parametrize("name", ["windows", "xcb", "wayland"])
+def test_elsewhere_the_page_starts_below_the_systems_title_bar(name) -> None:
+    frame = app.popout_frame(True, name)
+    assert frame["native"] and not frame["overlay"]
+    assert frame["controls"] == "right"
+    assert frame["flags"] == 0, "an ordinary framed window"
+    assert frame["translucent"] is False, "a framed window draws black where it is see-through"
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Qt's names are checked where Qt runs")
+def test_the_expanded_client_area_is_the_bit_qt_knows() -> None:
+    from PySide6.QtCore import Qt
+    assert app.QT_FRAMELESS == Qt.WindowType.FramelessWindowHint.value
+    assert app.QT_NO_TITLE_BAR_BACKGROUND == Qt.WindowType.NoTitleBarBackgroundHint.value
+    expanded = getattr(Qt.WindowType, "ExpandedClientAreaHint",
+                       Qt.WindowType.MaximizeUsingFullscreenGeometryHint)
+    assert app.QT_EXPANDED_CLIENT_AREA == expanded.value
+
+
+def test_the_system_title_bar_is_the_default_and_the_corvus_bar_is_asked_for() -> None:
+    class Cfg:
+        ui = None
+    cfg = Cfg()
+    assert app.system_title_bar(cfg) is True
+    assert app.system_title_bar(None) is True
+    cfg.ui = {"corvus_title_bar": "true"}
+    assert app.system_title_bar(cfg) is True, "a string is not a yes"
+    cfg.ui = {"corvus_title_bar": False}
+    assert app.system_title_bar(cfg) is True
+    cfg.ui = {"corvus_title_bar": True}
+    assert app.system_title_bar(cfg) is False
+
+
+@pytest.mark.parametrize("choice,default,expected", [
+    ("system", False, True),
+    ("corvus", True, False),
+    ("", True, True),
+    ("", False, False),
+    ("anything", False, False),
+])
+def test_a_window_may_choose_its_own_title_bar(choice, default, expected) -> None:
+    """A plugin's terminal can have its own (the plugin's option); otherwise
+    Settings decides."""
+    assert app.popout_title_bar(choice, default) is expected
+
+
+def test_the_choice_comes_with_the_windows_address() -> None:
+    base = "http://localhost:8000/popout.html?key=term%3Anuttx-console&kind=plugin%3Anuttx-console"
+    assert app.popout_bar_choice(base + "&bar=system") == "system"
+    assert app.popout_bar_choice(base + "&bar=corvus") == "corvus"
+    assert app.popout_bar_choice(base + "&bar=bogus") == ""
+    assert app.popout_bar_choice(base) == ""

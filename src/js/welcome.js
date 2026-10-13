@@ -37,6 +37,7 @@ Corvus.welcome = (function () {
 
   const CONTROL_ROWS = [
     { key: "virtualJoystick", config: "virtual_joystick", apply: "setEnabled", label: "Virtual joystick" },
+    { key: "gamepad", config: "gamepad", apply: "setGamepadEnabled", label: "USB gamepad" },
     { key: "arrowKeys", config: "arrow_keys", apply: "setKeysEnabled", label: "Arrow keys" },
     { key: "wasdKeys", config: "wasd_keys", apply: "setWasdEnabled", label: "WASD keys" },
   ];
@@ -74,6 +75,7 @@ Corvus.welcome = (function () {
       consoleTab: ui.console_tab !== false,
       sshTab: ui.ssh_tab !== false,
       virtualJoystick: !!controls.virtual_joystick,
+      gamepad: !!controls.gamepad,
       arrowKeys: !!controls.arrow_keys,
       wasdKeys: !!controls.wasd_keys,
       updates: !(c.updates && c.updates.check === false),
@@ -97,6 +99,7 @@ Corvus.welcome = (function () {
       },
       controls: {
         virtual_joystick: !!choices.virtualJoystick,
+        gamepad: !!choices.gamepad,
         arrow_keys: !!choices.arrowKeys,
         wasd_keys: !!choices.wasdKeys,
       },
@@ -479,6 +482,8 @@ Corvus.welcome = (function () {
           const hints = {
             virtualJoystick: "Two-stick pad over the map: left is throttle and yaw, right " +
               "is pitch and roll. Drag it by the grip bar.",
+            gamepad: "A game controller plugged in by USB. Push both sticks inward " +
+              "and hold for one second to arm.",
             arrowKeys: "Flies pitch and roll from the arrow keys, on screen and on your own keyboard.",
             wasdKeys: "W and S are thrust, A and D are yaw.",
           };

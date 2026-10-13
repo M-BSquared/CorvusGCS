@@ -493,6 +493,20 @@ function testProgressIsClaimedOnlyWhileTheVehicleHoldsThisPlan() {
 
   mission.setPlan(plan);
   assert.ok(mission._progress(), "the same plan again is the same plan");
+
+  // Each link counts revisions from zero: a vehicle on another link holding
+  // the same number does not hold this plan.
+  const savedTelemetry = Corvus.telemetry;
+  Corvus.telemetry = { getState: () => ({ vehicle_id: "main:1" }) };
+  try {
+    mission._onVehicleMission(frame({ mission_revision: 6, vehicle_id: "main:1" }));
+    mission._syncWith(6);
+    assert.ok(mission._progress(), "the vehicle it was sent to");
+    mission._onVehicleMission(frame({ mission_revision: 6, vehicle_id: "link-2:1" }));
+    assert.equal(mission._progress(), null, "another vehicle with the same revision");
+  } finally {
+    Corvus.telemetry = savedTelemetry;
+  }
   mission._syncWith(undefined);
   assert.equal(mission._progress(), null);
   mission.setPlan({ items: [] });

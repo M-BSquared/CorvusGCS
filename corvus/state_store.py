@@ -118,6 +118,11 @@ class VehicleStateStore:
         self._lock = threading.Lock()
         self._data: dict[str, Any] = {
             "connected": False,
+            # Which vehicle this state is about, "<link>:<system id>" (see
+            # corvus.fleet). Set when a link latches a vehicle and kept across
+            # a disconnect, so the frontend can tell a dropped link from a
+            # different aircraft. "" until the first vehicle is heard.
+            "vehicle_id": "",
             "armed": False,
             "vehicle_type": "",
             "autopilot": "",
@@ -375,6 +380,8 @@ class VehicleStateStore:
         self._failure_lock = threading.Lock()
         self._failure_last_logged: float = 0.0
         self._failure_suppressed: int = 0
+        # What a store that has never heard a vehicle holds, for forget_vehicle.
+        self._defaults: dict[str, Any] = _isolate(self._data)
 
     def _snapshot_locked(self) -> dict[str, Any]:
         """Under ``self._lock``: return the cached snapshot, rebuilding only
@@ -550,6 +557,35 @@ class VehicleStateStore:
             self._data["warnings"] = []
             self._data_version += 1
             snapshot, listeners = self._dispatch_locked(immediate=False)
+        if snapshot is not None:
+            self._notify(listeners, snapshot)
+
+    # What forget_vehicle keeps: the link and the RTK base belong to this
+    # station, not to whichever aircraft is on the other end.
+    _STATION_KEYS: frozenset[str] = frozenset({
+        "link_status", "link_connection", "link_error", "link_quality",
+        "link_auto", "link_suggestion", "link_bootloader",
+        "rtk_state", "rtk_source", "rtk_accuracy", "rtk_progress",
+    })
+
+    def forget_vehicle(self) -> None:
+        """Drop everything the previous aircraft said, before another is latched.
+
+        A link that latches a different vehicle (another system id on a shared
+        link) would otherwise show the last one's position, battery and
+        warnings until the new one's messages overwrite each field, and the map
+        would draw a line from where the old aircraft was to where the new one
+        is. Notifies immediately, like a disconnect.
+        """
+        with self._lock:
+            for key, value in self._defaults.items():
+                if key not in self._STATION_KEYS:
+                    self._data[key] = _isolate(value) if isinstance(value, (list, dict)) else value
+            for history in self._history.values():
+                history.clear()
+            self._last_heartbeat = 0.0
+            self._data_version += 1
+            snapshot, listeners = self._dispatch_locked(immediate=True)
         if snapshot is not None:
             self._notify(listeners, snapshot)
 

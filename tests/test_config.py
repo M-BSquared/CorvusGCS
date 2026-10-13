@@ -805,3 +805,14 @@ def test_solid_terminals_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
     assert load_config(str(p)).ui == {"solid_terminals": True, "windows_in_app": True}
     p.write_text(json.dumps({"ui": {"solid_terminals": False}}), encoding="utf-8")
     assert load_config(str(p)).ui == {"solid_terminals": False}
+
+
+def test_corvus_title_bar_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
+    """Off unless asked for: a window of its own has the system's title bar."""
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("corvus_title_bar") is None
+    p.write_text(json.dumps({"ui": {"corvus_title_bar": "true"}}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("corvus_title_bar") is None
+    p.write_text(json.dumps({"ui": {"corvus_title_bar": True}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"corvus_title_bar": True}

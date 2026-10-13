@@ -301,7 +301,7 @@ svg { display: block; }
 .nav-spacer { flex: 1; }
 
 /* ===== FLIGHT ACTION BUTTONS (flagship control group) =====
-   Tesla/Apple aesthetic: a glassy bar holding icon-over-label chips with
+   A glassy bar holding icon-over-label chips with
    a per-action colour identity, instant press feedback, a pulsing busy ring
    while PX4 acknowledges, and a filled armed state with a soft glow. */
 /* The bar's ROOM, and the same box .mission-topleft is for the planner's
@@ -409,7 +409,7 @@ svg { display: block; }
 .fa-btn.land:hover { color: var(--warning); background: color-mix(in srgb, var(--warning) 14%, transparent); }
 .fa-btn.rtl:hover { color: var(--nav-bright); background: color-mix(in srgb, var(--nav) 14%, transparent); }
 .fa-btn.plan:hover { color: var(--accent-bright); background: var(--accent-dim); }
-/* Press: instant scale(0.96), no overshoot (apple-design §1). */
+/* Press: instant scale(0.96), no overshoot. */
 .fa-btn:active:not(:disabled):not(.is-busy) { transform: scale(0.96); }
 .fa-btn:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
 .fa-btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -596,6 +596,27 @@ svg { display: block; }
    field gets rather than reading as another control of the same picker. */
 .settings-map-keys { margin-top: var(--space-14); }
 .settings-map-keys-note { display: block; margin-top: 6px; }
+/* Settings > Elevation data (sidenav.js elevationDataCard): the loaded
+   models as plugin-style rows, then the import fields. A model's summary and
+   its four buttons wrap under the name rather than squeezing it. */
+.settings-dem-list { margin-bottom: var(--space-14); }
+.settings-dem .settings-plugin-head { flex-wrap: wrap; }
+.settings-dem .settings-plugin-meta { flex-wrap: wrap; justify-content: flex-end; }
+.settings-dem-title { display: inline-flex; align-items: center; gap: var(--space-8); min-width: 0; }
+/* The model's kind, as the link panel's quality chip is drawn: a surface
+   model carries the accent because it changes what Buildings should be. */
+.settings-dem-kind {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.6px;
+  padding: 2px 5px; border-radius: 999px;
+  border: 1px solid currentColor;
+  color: var(--text-3); flex: 0 0 auto;
+}
+.settings-dem-kind[data-kind="surface"] { color: var(--accent); }
+.settings-dem-what { color: var(--text-2); }
+.settings-dem-crs { display: flex; flex-direction: column; gap: var(--space-8); }
+.settings-dem-field + .settings-dem-field,
+.settings-dem-load { margin-top: var(--space-14); }
+.settings-dem-note { display: block; margin-top: var(--space-8); }
 
 /* Settings > Export and import (settings-transfer.js). The buttons get the
    12px every card with actions puts under its text. */
@@ -865,3 +886,159 @@ svg { display: block; }
 .settings-path-row > .btn,
 .settings-path-row > .settings-plugin-buttons { flex: 0 0 auto; }
 .settings-plugin-dir > .settings-path-row { margin-top: var(--space-2); }
+
+/* ===== VEHICLES (js/fleet.js) =====
+   The Vehicle block opens the vehicle list. The swatch in its caption is the
+   flown vehicle's colour on the map, shown once there is more than one. */
+.tb-fleet-swatch {
+  display: inline-block;
+  width: 8px; height: 8px; margin-right: 5px;
+  border-radius: 50%;
+  vertical-align: 0;
+  box-shadow: 0 0 0 1.5px rgb(255 255 255 / 0.85);
+}
+.tb-fleet-swatch[hidden] { display: none; }
+
+.fleet-dialog { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.modal:has(.fleet-dialog):focus { outline: none; }
+.fleet-section-head {
+  font-size: var(--text-xs); font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-3);
+  margin-top: 4px;
+}
+.fleet-list { display: flex; flex-direction: column; gap: 6px; }
+.fleet-empty, .fleet-hint { margin: 0; font-size: var(--text-sm); color: var(--text-3); line-height: 1.45; }
+.fleet-empty[hidden] { display: none; }
+
+/* The rows wear the material of the settings cards and option cards, and the
+   vehicle being flown carries the ring of a chosen option card. */
+.fleet-row, .fleet-link {
+  background: var(--panel-fill);
+  backdrop-filter: var(--blur-fine);
+  -webkit-backdrop-filter: var(--blur-fine);
+  border: 1px solid var(--panel-hairline);
+  border-radius: var(--radius);
+  transition: background 130ms, border-color 130ms;
+}
+.fleet-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 10px 12px;
+}
+.fleet-row:hover, .fleet-link:hover { border-color: var(--panel-hairline-hover); }
+.fleet-row.is-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.fleet-link.is-active { border-color: var(--accent); }
+.fleet-row.is-focus { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+.fleet-row.is-stale .fleet-main, .fleet-row.is-stale .fleet-swatch { opacity: 0.55; }
+
+.fleet-swatch, .fleet-chip {
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid rgb(255 255 255 / 0.92);
+  box-shadow: 0 0 0 1px rgb(var(--tint-rgb) / 0.12), var(--shadow-soft);
+  cursor: pointer;
+  transition: transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.fleet-swatch { width: 20px; height: 20px; }
+.fleet-chip { width: 18px; height: 18px; }
+.fleet-swatch:hover, .fleet-chip:hover { transform: scale(1.12); }
+.fleet-chip.is-selected { box-shadow: 0 0 0 2px var(--accent-bright); }
+.fleet-swatch:focus-visible, .fleet-chip:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+.fleet-palette {
+  grid-column: 1 / -1;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--panel-hairline);
+}
+
+.fleet-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+/* The name reads as the row's title and only turns into a field when it is
+   pointed at or typed in. */
+.fleet-name.field-input {
+  height: 24px;
+  padding: 0 6px; margin-left: -7px;
+  background: transparent;
+  border-color: transparent;
+  font-size: var(--text-md); font-weight: 600;
+}
+.fleet-name.field-input:hover { border-color: var(--panel-hairline-hover); }
+.fleet-name.field-input:focus {
+  background: rgb(var(--input-rgb) / 0.6);
+  border-color: var(--accent);
+}
+.fleet-name.field-input::placeholder { color: var(--text-1); opacity: 1; }
+.fleet-detail, .fleet-readout {
+  font-size: var(--text-xs); color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fleet-readout { color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+.fleet-side { display: flex; align-items: center; gap: 8px; }
+.fleet-status {
+  font-size: var(--text-2xs); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--text-3);
+}
+.fleet-status[data-state="armed"] { color: var(--warning); }
+.fleet-status[data-state="lost"] { color: var(--critical); }
+.fleet-flying {
+  font-size: var(--text-xs); font-weight: 600; color: var(--accent-bright);
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgb(var(--tint-rgb) / 0.06);
+  border: 1px solid var(--panel-hairline);
+  white-space: nowrap;
+}
+.fleet-flying[hidden], .fleet-side .btn[hidden] { display: none; }
+
+.fleet-links { display: flex; flex-direction: column; gap: 6px; }
+.fleet-link {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+  align-items: center; gap: 8px;
+  padding: 8px 12px;
+  font-size: var(--text-sm);
+}
+.fleet-link-label { font-weight: 600; color: var(--text-1); }
+.fleet-link-conn {
+  font-family: var(--mono); color: var(--text-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fleet-link-count { color: var(--text-3); font-size: var(--text-xs); white-space: nowrap; }
+.fleet-links-panel { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.fleet-offer {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  padding: 8px 12px;
+  background: var(--panel-fill);
+  backdrop-filter: var(--blur-fine);
+  -webkit-backdrop-filter: var(--blur-fine);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  font-size: var(--text-sm); color: var(--text-1);
+}
+.fleet-offer[hidden], .fleet-free[hidden] { display: none; }
+.fleet-offer-text { flex: 1 1 200px; min-width: 0; }
+.fleet-free { display: flex; flex-direction: column; gap: 4px; }
+.fleet-free-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: var(--text-xs); color: var(--text-3);
+}
+.fleet-free-list { display: flex; flex-direction: column; gap: 4px; }
+.fleet-free-row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center; gap: 8px;
+  padding: 4px 4px 4px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+}
+.fleet-free-row .fleet-link-count { overflow: hidden; text-overflow: ellipsis; }
+.fleet-add { display: flex; gap: 6px; align-items: center; }
+.fleet-add .field-input { flex: 1 1 auto; min-width: 0; }
+.fleet-add .btn { flex: none; white-space: nowrap; }
+.fleet-error { font-size: var(--text-sm); color: var(--critical); }
+.fleet-error[hidden] { display: none; }
+.fleet-confirm p { margin: 0 0 8px; line-height: 1.45; }
+

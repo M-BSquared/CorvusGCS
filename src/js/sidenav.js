@@ -373,6 +373,7 @@ Corvus.sidenav = (function () {
     body.appendChild(pagesCard(cfg));
     body.appendChild(sidePanelCard(cfg));
     body.appendChild(mapServiceCard(cfg, gen));
+    body.appendChild(elevationDataCard(gen));
     body.appendChild(trackCard(cfg));
     body.appendChild(controlsCard(cfg));
     // The flight bar, the top-bar dots, the notification marks and the Dock
@@ -510,6 +511,17 @@ Corvus.sidenav = (function () {
       hint: "Two-stick pad over the map: left is throttle and yaw, right is " +
             "pitch and roll. Drag it by the grip bar, double-click the bar to " +
             "send it back.",
+    }));
+    card.appendChild(controlSwitch({
+      id: "settingsGamepad",
+      key: "gamepad",
+      label: "USB gamepad",
+      apply: "setGamepadEnabled",
+      value: !!(cfg.controls && cfg.controls.gamepad),
+      hint: "Flies from a game controller plugged in by USB, with the same " +
+            "layout as the virtual joystick. To arm, push both sticks inward, " +
+            "toward each other, and hold them there for one second. After " +
+            "arming, the sticks do nothing until both are let go.",
     }));
     card.appendChild(controlSwitch({
       id: "settingsArrowKeys",
@@ -954,6 +966,32 @@ Corvus.sidenav = (function () {
           "window of its own when you drag it past the edge."
         : "Only the desktop app can give a window one of its own. In a " +
           "browser, camera and terminal windows always open inside.",
+    }));
+
+    // The Corvus bar drawn by the page on a window of its own, rather than
+    // the system's title bar. The desktop app reads the switch from the
+    // config (corvus/app.py, system_title_bar) and reframes the open windows
+    // itself.
+    const corvusBar = !!(cfg.ui && cfg.ui.corvus_title_bar);
+    const barSw = Corvus.ui.toggle({
+      id: "settingsCorvusTitleBar",
+      value: corvusBar,
+      disabled: !desktop,
+      ariaLabel: "Corvus title bar",
+      title: desktop ? "" : "Only a window of its own in the desktop app has a title bar.",
+      onChange: (next) => postConfig({ ui: { corvus_title_bar: next } }, { strict: true }),
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Corvus title bar",
+      control: barSw.el,
+      className: "field-switch",
+      hint: desktop
+        ? "Off (the default): a window of its own has the title bar of the " +
+          "operating system, with its own buttons to close, minimize and " +
+          "maximize it. The name, the status, the pin and the power button " +
+          "stay in the Corvus bar. On: the Corvus bar is the whole title " +
+          "bar, with its own buttons, as inside the app."
+        : "Only the desktop app gives a camera or terminal a window of its own.",
     }));
 
     // Solid terminals. Off by default: a terminal window is frosted glass. A
@@ -1689,6 +1727,379 @@ Corvus.sidenav = (function () {
     }
   }
 
+  // The operator's own elevation models (corvus/custom_dem.py). Files are
+  // uploaded one request each, all into one model, so a folder of 1 km tiles
+  // becomes one entry under Elevation in the 3D panel. The backend converts
+  // and serves them; nothing here touches the network beyond this server.
+  const DEM_CRS_CHOICES = [
+    { value: "auto", label: "From the file" },
+    { value: "25832", label: "ETRS89 / UTM zone 32N (25832)" },
+    { value: "25833", label: "ETRS89 / UTM zone 33N (25833)" },
+    { value: "4647", label: "ETRS89 / UTM 32N, zone in easting (4647)" },
+    { value: "31468", label: "DHDN / Gauss-Krüger zone 4 (31468)" },
+    { value: "31467", label: "DHDN / Gauss-Krüger zone 3 (31467)" },
+    { value: "2056", label: "Swiss LV95 (2056)" },
+    { value: "2154", label: "France Lambert-93 (2154)" },
+    { value: "27700", label: "British National Grid (27700)" },
+    { value: "3035", label: "ETRS89 / LAEA Europe (3035)" },
+    { value: "4326", label: "WGS 84 longitude and latitude (4326)" },
+    { value: "other", label: "Other EPSG code…" },
+  ];
+  const DEM_ACCEPT = ".tif,.tiff,.txt,.xyz,.asc,.csv";
+
+  function elevationDataCard(gen) {
+    const card = Corvus.ui.card({ title: "Elevation data" });
+    const stale = () => gen !== undefined && gen !== navGeneration;
+    const list = document.createElement("div");
+    list.className = "settings-plugin-list settings-dem-list";
+    card.appendChild(list);
+
+    let crsChoice = "auto";
+    const crsOther = Corvus.ui.input({
+      id: "settingsDemEpsg",
+      ariaLabel: "EPSG code",
+      placeholder: "EPSG code, for example 25832",
+      mono: true,
+      autocomplete: false,
+      spellcheck: false,
+    });
+    crsOther.inputMode = "numeric";
+    crsOther.hidden = true;
+    const crsSelect = Corvus.ui.select({
+      id: "settingsDemCrs",
+      ariaLabel: "Coordinate system",
+      value: crsChoice,
+      options: DEM_CRS_CHOICES,
+      onChange: (v) => {
+        crsChoice = v;
+        crsOther.hidden = v !== "other";
+        if (v === "other") crsOther.focus();
+      },
+    });
+    const crsWrap = document.createElement("div");
+    crsWrap.className = "settings-dem-crs";
+    crsWrap.append(crsSelect, crsOther);
+
+    const nameInput = Corvus.ui.input({
+      id: "settingsDemName",
+      ariaLabel: "Model name",
+      placeholder: "From the first file name",
+      autocomplete: false,
+    });
+
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.multiple = true;
+    fileInput.accept = DEM_ACCEPT;
+    fileInput.className = "brand-logo-input";
+    fileInput.setAttribute("aria-hidden", "true");
+    fileInput.tabIndex = -1;
+
+    const status = Corvus.ui.message({});
+    const loadBtn = Corvus.ui.button({
+      variant: "secondary",
+      shape: "block",
+      icon: "mountain",
+      label: "LOAD ELEVATION FILES…",
+      onClick: () => fileInput.click(),
+    });
+
+    function crsParam() {
+      if (crsChoice === "other") return (crsOther.value || "").trim();
+      return crsChoice;
+    }
+
+    // Sequential on purpose: each file is converted on the backend as it
+    // arrives, and the first one decides which model the rest join.
+    async function load(files, intoModel) {
+      const crs = crsParam();
+      if (crsChoice === "other" && !/^\d{4,6}$/.test(crs)) {
+        status.show("Enter the EPSG code of the coordinate system, for example 25832.", "err");
+        return;
+      }
+      let modelId = intoModel || null;
+      let done = 0;
+      const failures = [];
+      Corvus.ui.setBusy(loadBtn, true);
+      for (const file of files) {
+        status.show(`Loading ${done + failures.length + 1} of ${files.length}: ${file.name}…`);
+        const query = new URLSearchParams({ filename: file.name, crs });
+        if (modelId) query.set("model", modelId);
+        else if (nameInput.value.trim()) query.set("name", nameInput.value.trim());
+        try {
+          const res = await Corvus.telemetry.requestJson(`/api/dem/import?${query}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/octet-stream" },
+            body: file,
+          });
+          if (res && res.model) modelId = res.model.id;
+          done += 1;
+        } catch (error) {
+          failures.push(`${file.name}: ${error.message || "could not be loaded"}`);
+        }
+      }
+      Corvus.ui.setBusy(loadBtn, false);
+      if (done) nameInput.value = "";
+      if (failures.length) {
+        const head = done
+          ? `${done} of ${files.length} files loaded. `
+          : "";
+        status.show(head + failures.join(" · "), "err");
+      } else {
+        status.show(done === 1
+          ? "Loaded. Choose it in the 3D view under Elevation."
+          : `${done} files loaded. Choose the model in the 3D view under Elevation.`, "ok");
+      }
+      if (done) changed();
+    }
+
+    // The 3D panel's catalogue comes from /api/tiles/sources, so a model
+    // added or removed here has to reach the map too.
+    function changed() {
+      if (Corvus.map && typeof Corvus.map.refreshSources === "function") {
+        Corvus.map.refreshSources();
+      }
+      return fill();
+    }
+
+    let addTo = null;
+    fileInput.addEventListener("change", () => {
+      const files = Array.from(fileInput.files || []);
+      fileInput.value = "";
+      const target = addTo;
+      addTo = null;
+      if (files.length) load(files, target);
+    });
+
+    function describe(m) {
+      const U = Corvus.units;
+      const files = m.files || [];
+      const res = Number(m.resolution_m);
+      const resText = res >= 10 ? `${Math.round(res)} m` : `${res.toFixed(res < 1 ? 2 : 1)} m`;
+      const range = (U && typeof U.formatLength === "function")
+        ? `${U.formatLength(m.min)} to ${U.formatLength(m.max)}`
+        : `${Math.round(m.min)} to ${Math.round(m.max)} m`;
+      const parts = [files.length === 1 ? "1 file" : `${files.length} files`,
+                     `${resText} grid`, range];
+      return parts.join(" · ");
+    }
+
+    // What the heights contain, judged on import (corvus/custom_dem.classify),
+    // and what that means for the Buildings switch in 3D: the OSM blocks
+    // belong on bare ground and would stand twice on a surface model.
+    const DEM_KINDS = {
+      terrain: {
+        chip: "TERRAIN",
+        text: "Terrain model: bare ground, without buildings or trees. Turn on " +
+              "Buildings in the 3D view to see them as blocks.",
+      },
+      surface: {
+        chip: "SURFACE",
+        text: "Surface model: buildings and trees are part of the heights. Turn " +
+              "off Buildings in the 3D view, or they stand twice.",
+      },
+      mixed: {
+        chip: "MIXED",
+        text: "Some files are terrain models (bare ground), others surface models " +
+              "(with buildings and trees).",
+      },
+    };
+
+    function detail(m) {
+      const files = m.files || [];
+      const systems = Array.from(new Set(files.map((f) => f.crs_name).filter(Boolean)));
+      const names = files.map((f) => f.file_name).filter(Boolean);
+      const shown = names.slice(0, 4).join(", ") + (names.length > 4 ? `, and ${names.length - 4} more` : "");
+      const mb = (Number(m.bytes) || 0) / (1024 * 1024);
+      return [systems.join(", "), shown, `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB on disk`]
+        .filter(Boolean).join(" · ");
+    }
+
+    function row(m) {
+      const el = document.createElement("div");
+      el.className = "settings-plugin settings-dem";
+      el.dataset.demId = m.id;
+      const head = document.createElement("div");
+      head.className = "settings-plugin-head";
+      const n = document.createElement("span");
+      n.className = "settings-plugin-name";
+      n.textContent = m.name;
+      const meta = document.createElement("span");
+      meta.className = "settings-plugin-meta";
+      const info = document.createElement("span");
+      info.className = "settings-plugin-origin";
+      info.textContent = describe(m);
+      meta.appendChild(info);
+      const b = m.bounds || [];
+      meta.appendChild(Corvus.ui.iconButton("map-pin", {
+        className: "icon-btn settings-plugin-gear",
+        title: `Show ${m.name} on the map`,
+        size: 15,
+        onClick: () => {
+          switchTo("home");
+          if (Corvus.map && typeof Corvus.map.fitBounds === "function") {
+            Corvus.map.fitBounds({ w: b[0], s: b[1], e: b[2], n: b[3] });
+          }
+        },
+      }));
+      meta.appendChild(Corvus.ui.iconButton("file-plus", {
+        className: "icon-btn settings-plugin-gear",
+        title: `Add files to ${m.name}`,
+        size: 15,
+        onClick: () => { addTo = m.id; fileInput.click(); },
+      }));
+      meta.appendChild(Corvus.ui.iconButton("pencil", {
+        className: "icon-btn settings-plugin-gear",
+        title: `Rename ${m.name}`,
+        size: 15,
+        onClick: () => openDemRename(m, changed),
+      }));
+      meta.appendChild(Corvus.ui.iconButton("trash-2", {
+        className: "icon-btn settings-plugin-gear",
+        title: `Remove ${m.name}`,
+        size: 15,
+        onClick: () => openDemRemove(m, changed),
+      }));
+      const kind = DEM_KINDS[m.kind];
+      const title = document.createElement("span");
+      title.className = "settings-dem-title";
+      title.appendChild(n);
+      if (kind) {
+        const chip = document.createElement("span");
+        chip.className = "settings-dem-kind";
+        chip.dataset.kind = m.kind;
+        chip.textContent = kind.chip;
+        title.appendChild(chip);
+      }
+      head.append(title, meta);
+      el.appendChild(head);
+      if (kind) {
+        const what = document.createElement("div");
+        what.className = "settings-plugin-desc settings-dem-what";
+        what.textContent = kind.text;
+        el.appendChild(what);
+      }
+      const desc = document.createElement("div");
+      desc.className = "settings-plugin-desc";
+      desc.textContent = detail(m);
+      el.appendChild(desc);
+      return el;
+    }
+
+    function fill() {
+      return Corvus.telemetry.requestJson("/api/dem").then((data) => {
+        if (stale()) return;
+        const models = (data && data.models) || [];
+        Corvus.ui.clear(list);
+        if (!models.length) {
+          list.appendChild(Corvus.ui.empty("No elevation data loaded yet."));
+        } else {
+          models.forEach((m) => list.appendChild(row(m)));
+        }
+        Corvus.ui.refreshIcons();
+      }).catch(() => {
+        if (stale()) return;
+        Corvus.ui.clear(list).appendChild(Corvus.ui.empty("Elevation data unavailable."));
+      });
+    }
+
+    card.appendChild(Corvus.ui.field({
+      className: "settings-dem-field",
+      label: "Coordinate system",
+      control: crsWrap,
+      hint: "A GeoTIFF names its own. XYZ and ASCII files do not: German state " +
+            "data is usually ETRS89 / UTM zone 32N.",
+    }));
+    card.appendChild(Corvus.ui.field({
+      className: "settings-dem-field", label: "Name", control: nameInput,
+    }));
+    loadBtn.classList.add("settings-dem-load");
+    card.appendChild(loadBtn);
+    card.appendChild(fileInput);
+    card.appendChild(status.el);
+    const note = Corvus.ui.empty(
+      "Your own surface or terrain model as GeoTIFF, XYZ text or ESRI ASCII grid. " +
+      "Several files load into one model. Corvus stores and serves it on this " +
+      "computer, so it works offline. Choose it in the 3D view under Elevation; " +
+      "around your data the free elevation fills in.");
+    note.className = "field-hint settings-dem-note";
+    card.appendChild(note);
+    fill();
+    return card;
+  }
+
+  function openDemRename(m, onDone) {
+    const body = document.createElement("div");
+    const input = Corvus.ui.input({ id: "settingsDemRename", value: m.name, ariaLabel: "Model name" });
+    const error = Corvus.ui.message();
+    body.appendChild(Corvus.ui.field({ label: "Name", control: input }));
+    body.appendChild(error.el);
+    async function save() {
+      const name = (input.value || "").trim();
+      if (!name) { error.show("Enter a name.", "err"); return; }
+      try {
+        await Corvus.telemetry.requestJson("/api/dem/rename", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: m.id, name }),
+        });
+        dialog.close();
+        onDone();
+      } catch (err) {
+        error.show(err.message || "Could not rename the model.", "err");
+      }
+    }
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
+    const dialog = Corvus.ui.modal({
+      title: "Rename elevation model",
+      body,
+      actions: [
+        Corvus.ui.button({ variant: "secondary", label: "CANCEL", onClick: () => dialog.close() }),
+        Corvus.ui.button({ variant: "primary", icon: "save", label: "SAVE", onClick: save }),
+      ],
+    });
+    dialog.open();
+  }
+
+  function openDemRemove(m, onDone) {
+    const error = Corvus.ui.message();
+    const body = document.createElement("div");
+    const text = Corvus.ui.empty(
+      `${m.name} and its converted files are deleted from this computer. ` +
+      "The files you loaded it from are not touched.");
+    text.className = "field-hint";
+    body.append(text, error.el);
+    const removeBtn = Corvus.ui.button({
+      variant: "danger",
+      icon: "trash-2",
+      label: "REMOVE",
+      onClick: async () => {
+        Corvus.ui.setBusy(removeBtn, true);
+        try {
+          await Corvus.telemetry.requestJson("/api/dem/remove", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: m.id }),
+          });
+          dialog.close();
+          onDone();
+        } catch (err) {
+          Corvus.ui.setBusy(removeBtn, false);
+          error.show(err.message || "Could not remove the model.", "err");
+        }
+      },
+    });
+    const dialog = Corvus.ui.modal({
+      title: "Remove elevation model",
+      body,
+      actions: [
+        Corvus.ui.button({ variant: "secondary", label: "CANCEL", onClick: () => dialog.close() }),
+        removeBtn,
+      ],
+    });
+    dialog.open();
+  }
+
   // --- Section B: SSH Connections (saved-connection manager) ---
   // `gen` (optional, from renderSettingsPage) gates the async list population
   // so a navigation that repurposes pageView mid-fetch can't append into a
@@ -1851,6 +2262,58 @@ Corvus.sidenav = (function () {
     card.appendChild(row("MAVLink", cfg.mavlink_connection || "\u2014"));
     card.appendChild(row("HTTP Port", cfg.http_port != null ? String(cfg.http_port) : "\u2014"));
     container.appendChild(Corvus.ui.section({ title: "Connection", body: card }));
+  }
+
+  // --- Vehicles: several at once (js/fleet.js, corvus/fleet.py) ---
+  // The switch for vehicles that share a link, and the links themselves. The
+  // links list is the Vehicles dialog's own panel, kept live from the fleet
+  // stream for as long as this page is open.
+  function renderVehiclesSection(container, gen) {
+    const fleet = Corvus.fleet;
+    if (!fleet) return;
+    const snap = fleet.get();
+
+    const shared = Corvus.ui.toggle({
+      id: "settingsSharedLinks",
+      value: snap.shared_links !== false,
+      ariaLabel: "Several vehicles on one link",
+      onChange: (next) => fleet.setSharedLinks(next),
+    });
+    const sharedCard = Corvus.ui.card({ title: "Several vehicles on one link" });
+    sharedCard.appendChild(Corvus.ui.field({
+      label: "Show every vehicle a link carries",
+      control: shared.el,
+      className: "field-switch",
+      hint: "On (the default): a link that carries several vehicles, such as " +
+            "mavlink-router, a mesh radio or PX4's multi-vehicle simulation, " +
+            "lists every one of them, and you can take control of any. Each " +
+            "needs its own MAV_SYS_ID. Off: every link is one vehicle, the " +
+            "first autopilot it hears, and the rest of the link is ignored. " +
+            "A radio link carries one vehicle either way.",
+    }));
+
+    const linksCard = Corvus.ui.card({ title: "Links" });
+    const panel = fleet.buildLinksPanel();
+    linksCard.appendChild(panel.el);
+    const openList = Corvus.ui.button({
+      label: "Open the vehicle list", icon: "list", size: "sm",
+      onClick: () => fleet.openDialog(),
+    });
+    linksCard.appendChild(Corvus.ui.actions([openList]));
+
+    const off = fleet.subscribe(() => {
+      if (gen !== navGeneration || !panel.el.isConnected) {
+        if (gen !== navGeneration) off();
+        return;
+      }
+      shared.setValue(fleet.get().shared_links !== false);
+      panel.render();
+    });
+
+    const body = document.createDocumentFragment();
+    body.appendChild(sharedCard);
+    body.appendChild(linksCard);
+    container.appendChild(Corvus.ui.section({ title: "Vehicles", body }));
   }
 
   // --- Section D: Files (where Corvus writes what it saves) ---
@@ -2412,6 +2875,7 @@ Corvus.sidenav = (function () {
       renderAppearanceSection(container, cfg, gen);
       renderSSHSection(container, gen);
       renderConnectionSection(container, cfg);
+      renderVehiclesSection(container, gen);
       renderFilesSection(container, cfg);
       renderAnalysisSection(container, cfg);
       renderPluginsSection(container, cfg, gen);

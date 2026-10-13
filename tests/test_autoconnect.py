@@ -1002,3 +1002,60 @@ def test_a_port_is_present_when_enumerated_or_on_disk(tmp_path):
 def test_serial_connection_strings_split_on_the_last_numeric_field(conn, expected):
     from corvus.serial_ports import split_serial_connection
     assert split_serial_connection(conn) == expected
+
+
+# ---------------------------------------------------------------------------
+# A port another vehicle's link holds (corvus.fleet's extra links)
+# ---------------------------------------------------------------------------
+
+SIK_PORT_2 = {
+    "device": "/dev/ttyUSB1",
+    "description": "FT232R USB UART",
+    "hwid": "USB VID:PID=0403:6001 SER=B",
+}
+
+
+def test_a_lost_main_link_does_not_dial_a_radio_another_link_holds(store):
+    """Two drones, two radios. The main drone's link drops; the only radio left
+    on the laptop is the second drone's, held by its own link. Taking it would
+    cut that drone off and still not bring the first one back."""
+    bridge = FakeBridge()
+    store.update(link_status="reconnecting")
+    w = ac.AutoConnectWatcher(
+        bridge=bridge, store=store, session=ac.SessionState(),
+        list_ports_fn=lambda: [SIK_PORT],
+        busy_devices_fn=lambda: ["/dev/ttyUSB0"],
+    )
+    assert w.tick() == f"noop: {ac.REASON_NO_CANDIDATE}"
+    assert bridge.calls == []
+
+
+def test_a_radio_another_link_holds_is_not_offered(store):
+    bridge = FakeBridge()
+    store.update(link_status="connected", link_connection="udpin:0.0.0.0:14550")
+    rows = [SIK_PORT_2]
+    busy = ["/dev/ttyUSB1"]
+    w = ac.AutoConnectWatcher(
+        bridge=bridge, store=store, session=ac.SessionState(),
+        list_ports_fn=lambda: list(rows), busy_devices_fn=lambda: list(busy),
+    )
+    store.heartbeat()
+    w.tick()
+    assert store.get_snapshot()["link_suggestion"] is None
+    busy.clear()
+    w.tick()
+    assert store.get_snapshot()["link_suggestion"]["device"] == "/dev/ttyUSB1"
+
+
+def test_a_failing_busy_list_excludes_nothing(store):
+    bridge = FakeBridge()
+    store.update(link_status="reconnecting")
+
+    def broken():
+        raise RuntimeError("boom")
+
+    w = ac.AutoConnectWatcher(
+        bridge=bridge, store=store, session=ac.SessionState(),
+        list_ports_fn=lambda: [SIK_PORT], busy_devices_fn=broken,
+    )
+    assert w.tick() == f"dialled: {ac.REASON_SIK}"

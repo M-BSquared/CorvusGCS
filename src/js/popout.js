@@ -10,9 +10,10 @@ window.Corvus = window.Corvus || {};
   and wrong for one on a second monitor. So:
 
     desktop app  By default a camera or terminal opens straight away in a
-                 native window of its own (corvus/app.py, MainBridge):
-                 frameless, drawing the very same frame, and free to go
-                 anywhere. With Settings, "Open inside the Corvus window" on
+                 native window of its own (corvus/app.py, MainBridge),
+                 free to go anywhere: with the system's title bar, or
+                 frameless and drawing the very same frame with Settings,
+                 "Corvus title bar", on. With Settings, "Open inside the Corvus window" on
                  (setInApp), it opens as a frame in the app instead, and
                  dragging it past the edge carries it on outside as that
                  native window; let go of it over the app again and it is a
@@ -349,6 +350,11 @@ Corvus.popouts = (function () {
     if (known.delete(key)) emit();
   }
 
+  /** A native window the system's own button closed (corvus/app.py, closeEvent). */
+  function gone(key) {
+    if (known.delete(key)) emit();
+  }
+
   /** Close every popped-out window of one kind ("video", "terminal"). */
   function closeKind(kind) {
     keys(kind).forEach((key) => close(key));
@@ -428,9 +434,13 @@ Corvus.popouts = (function () {
   }
 
   return {
-    open, isOpen, focus, close, closeKind, reattach, keys, count, stateOf,
+    open, isOpen, focus, close, gone, closeKind, reattach, keys, count, stateOf,
     onDock, onChange, announce, url, features, native, dragOut,
     setInApp, opensOutside, openNative, keyOk, canPlace,
     STALE_MS, HEARTBEAT_MS,
+    // A plugin may have a window of its own (kind "plugin:<id>", filled by
+    // its spec's popout(ctx) in js/popout-page.js). Older versions had none,
+    // and a plugin asks this before it opens one.
+    PLUGIN_WINDOWS: true,
   };
 })();

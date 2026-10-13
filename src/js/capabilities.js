@@ -101,8 +101,21 @@ Corvus.capabilities = (function () {
    * Re-fetched when the stack changes and not otherwise, so a page that asks
    * on every render costs one request per aircraft rather than one per paint.
    */
+  /** What the cached document is for: the stack, and which vehicle, since a
+   *  switch between two vehicles on one stack (a copter and a rover) changes
+   *  what can be offered as much as a change of stack does. */
+  function cacheKey() {
+    let vehicle = "";
+    try {
+      const snapshot = Corvus.telemetry && Corvus.telemetry.getState
+        ? Corvus.telemetry.getState() : null;
+      vehicle = (snapshot && snapshot.vehicle_id) || "";
+    } catch (_err) { vehicle = ""; }
+    return `${stack()}|${vehicle}`;
+  }
+
   async function get() {
-    const now = stack();
+    const now = cacheKey();
     if (cached && cachedStack === now) return cached;
     if (inflight && cachedStack === now) return inflight;
     cachedStack = now;
@@ -112,7 +125,7 @@ Corvus.capabilities = (function () {
         cached = Object.assign({}, DEFAULT, data || {});
       } catch (_err) {
         // Permissive, deliberately. See the module note.
-        cached = Object.assign({}, DEFAULT, { stack: now });
+        cached = Object.assign({}, DEFAULT, { stack: stack() });
       } finally {
         inflight = null;
       }

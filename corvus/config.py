@@ -75,6 +75,7 @@ _CONFIG_FIELD_ORDER: tuple[str, ...] = (
     "parameters",
     "review",
     "checklists",
+    "fleet",
 )
 
 # Required keys on a saved ssh_connections entry; missing keys default to a
@@ -104,6 +105,7 @@ class CorvusConfig:
     company logo (``{"logo": "<original filename>"}``; the bytes live beside
     the config file, never in it), and the optional input controls
     (``{"virtual_joystick": true}``, the on-screen stick over the map, plus
+    ``gamepad`` for a USB game controller's sticks,
     ``arrow_keys``/``wasd_keys`` for the two key clusters beside it and
     ``key_gain`` for how much stick one held key is worth), and
     the interface size, desktop app icon and top bar (``{"scale": 1.25,
@@ -111,6 +113,7 @@ class CorvusConfig:
     "topbar_status_dots": false, "mission_page": false,
     "notification_marks": false, "flight_bar_shrink": false,
     "compass_nose_up": false, "solid_terminals": false,
+    "corvus_title_bar": false,
     "topbar_altitude": "amsl",
     "track_earlier_flights": true, "track_clear_on_restart": false,
     "flight_hud": true, "console_tab": true, "ssh_tab": true,
@@ -164,6 +167,8 @@ class CorvusConfig:
     ``checklists`` holds the operator's preflight checklists and whether
     they are shown (``{"enabled": false, "home_window": true, "active":
     "<id>", "lists": [...]}``; see ``corvus/checklists.py``).
+    ``fleet`` holds the extra MAVLink links and the names and colours given to
+    vehicles (see ``corvus/fleet.py``).
 
     They default to empty/None so an old config file with none of these keys
     still loads cleanly.
@@ -206,6 +211,7 @@ class CorvusConfig:
     parameters: dict[str, Any] | None = None
     review: dict[str, Any] | None = None
     checklists: dict[str, Any] | None = None
+    fleet: dict[str, Any] | None = None
 
     def apply_overrides(self, **kwargs: Any) -> CorvusConfig:
         """Return a copy with non-None kwargs overriding matching fields.
@@ -412,10 +418,10 @@ def _coerce_branding(raw: Any) -> dict[str, Any] | None:
     return _coerce_str_keys(raw, ("logo",))
 
 
-# The on-screen manual-control surfaces, each its own switch: the stick pair,
-# the four arrow keys (pitch and roll) and the four WASD keys (thrust and
-# yaw). All three feed the same MANUAL_CONTROL stream.
-_CONTROL_KEYS: tuple[str, ...] = ("virtual_joystick", "arrow_keys", "wasd_keys")
+# The manual-control surfaces, each its own switch: the on-screen stick pair,
+# a USB gamepad's two sticks, the four arrow keys (pitch and roll) and the four
+# WASD keys (thrust and yaw). All of them feed the same MANUAL_CONTROL stream.
+_CONTROL_KEYS: tuple[str, ...] = ("virtual_joystick", "gamepad", "arrow_keys", "wasd_keys")
 
 # How much stick one held key is worth, as a fraction of full travel
 # (``controls.key_gain``; the frontend's GAIN_STEPS in src/js/joystick.js).
@@ -428,7 +434,7 @@ _KEY_GAIN_MAX = 1.0
 
 
 def _coerce_controls(raw: Any) -> dict[str, Any] | None:
-    """Keep the three boolean surface switches and the numeric ``key_gain``; else None.
+    """Keep the boolean surface switches and the numeric ``key_gain``; else None.
 
     The switches are real safety-relevant ones, so only genuine booleans count:
     a config carrying a string ``"true"`` reads as "not set", i.e. off, rather
@@ -635,6 +641,13 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     nothing can be blurred (a window of its own on Linux or Windows) it is
     solid whatever this says.
 
+    ``corvus_title_bar`` frames a camera's or terminal's window of its own
+    with the Corvus bar the page draws, close and maximize buttons included,
+    rather than the operating system's title bar (see ``popout_frame`` in
+    ``corvus/app.py``). Off unless asked for: by default such a window has
+    the system's bar, with the name, status, pin and power button kept in the
+    page's. A browser has no such windows, so there it changes nothing.
+
     ``track_earlier_flights`` draws the track of every earlier flight in a
     second, quieter colour, so the flight in progress stands out from the ones
     before it. On unless turned off, so its absent key reads as true.
@@ -678,7 +691,7 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
             out["scale"] = min(max(scale, _UI_SCALE_MIN), _UI_SCALE_MAX)
     for key in ("inverted_app_icon", "app_icon_backplate", "topbar_status_dots",
                 "mission_page", "notification_marks", "flight_bar_shrink",
-                "compass_nose_up", "windows_in_app", "solid_terminals",
+                "compass_nose_up", "windows_in_app", "solid_terminals", "corvus_title_bar",
                 "track_earlier_flights", "track_clear_on_restart", "flight_hud",
                 "console_tab", "ssh_tab", "plugin_tabs"):
         if isinstance(raw.get(key), bool):
@@ -904,6 +917,8 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
     parameters = _coerce_parameters(data.get("parameters"))
     review = _coerce_review(data.get("review"))
     checklists = _coerce_checklists(data.get("checklists"))
+    from .fleet import coerce_config as coerce_fleet
+    fleet = coerce_fleet(data.get("fleet"))
 
     return CorvusConfig(
         mavlink_connection=mavlink_connection,
@@ -934,6 +949,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         parameters=parameters,
         review=review,
         checklists=checklists,
+        fleet=fleet,
     )
 
 
@@ -1037,6 +1053,11 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
         # items to mutate.
         from .checklists import copy as copy_checklists
         out["checklists"] = copy_checklists(cfg.checklists)
+    if cfg.fleet is not None:
+        from .fleet import coerce_config as coerce_fleet
+        fleet = coerce_fleet(cfg.fleet)
+        if fleet is not None:
+            out["fleet"] = fleet
     # Stable key order for a readable on-disk diff.
     return {k: out[k] for k in _CONFIG_FIELD_ORDER if k in out}
 

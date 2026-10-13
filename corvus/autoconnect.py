@@ -440,8 +440,12 @@ class AutoConnectWatcher:
         list_ports_fn: Callable[[], list[dict]] | None = None,
         poll_s: float = DEFAULT_POLL_S,
         stale_after_s: float = STALE_AFTER_S,
+        busy_devices_fn: Callable[[], Iterable[str]] | None = None,
     ) -> None:
         self._bridge = bridge
+        # Serial ports another link holds (corvus.fleet's extra links). Never
+        # dialled and never offered: the port is somebody else's aircraft.
+        self._busy_devices = busy_devices_fn or (lambda: ())
         self._store = store
         self._session = session
         self._list_ports = list_ports_fn or MavlinkBridge.list_serial_ports
@@ -511,6 +515,9 @@ class AutoConnectWatcher:
         snapshot = self._snapshot()
         status = str(snapshot.get("link_status", "") or "").lower()
         ports = classify_ports(self._list_ports())
+        busy = [d for d in self._busy() if d]
+        if busy:
+            ports = [p for p in ports if not any(same_port(p.device, d) for d in busy)]
         self._publish_bootloader(ports)
 
         link = self._link_connection(snapshot)
@@ -659,6 +666,13 @@ class AutoConnectWatcher:
             and _usable(p)
         ]
         return matches[0] if len(matches) == 1 else None
+
+    def _busy(self) -> list[str]:
+        try:
+            return list(self._busy_devices() or ())
+        except Exception:  # noqa: BLE001 - an unreadable list excludes nothing
+            logger.debug("autoconnect: busy device list failed", exc_info=True)
+            return []
 
     def _publish_suggestion(self, suggestion: Suggestion | None) -> bool:
         """Push (or clear) ``link_suggestion``; True when the store changed.

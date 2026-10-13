@@ -4543,7 +4543,9 @@ Corvus.mission = (function () {
       {
         x: line.x, y: line.y,
         type: "scatter", mode: "lines",
-        line: { color: colors.accent, width: 2 },
+        line: { color: colors.accent, width: 2.5, shape: "linear" },
+        fill: "tozeroy",
+        fillcolor: withAlpha(colors.accent, 0.1),
         hoverinfo: "skip",
         name: "Route",
       },
@@ -4551,9 +4553,9 @@ Corvus.mission = (function () {
         x: marks.map((m) => m.distance / 1000), y: marks.map((m) => m.alt),
         type: "scatter", mode: "markers",
         marker: {
-          size: 9,
+          size: 10,
           color: marks.map((m) => markerColor(m, colors)),
-          line: { color: token("--bg", "#0B0E12"), width: 1.5 },
+          line: { color: token("--bg", "#0B0E12"), width: 2 },
         },
         hovertemplate: "%{customdata}<extra></extra>",
         customdata: marks.map((m) => hoverText(m, m.number)),
@@ -4569,16 +4571,30 @@ Corvus.mission = (function () {
       showlegend: false,
       hovermode: "closest",
       dragmode: false,
+      hoverlabel: {
+        bgcolor: token("--surface-2", "#161B22"),
+        bordercolor: token("--border", "#2A3038"),
+        font: { color: token("--text-1", "#E6E9ED"), family: token("--mono", "monospace"), size: 11 },
+      },
       annotations: profileAnnotations(points, marks, colors),
       xaxis: Object.assign({}, theme.xaxis, {
-        title: `Distance (${Corvus.units.distanceSymbol()})`,
+        title: { text: `Distance (${Corvus.units.distanceSymbol()})`, standoff: 6, font: { size: 10 } },
         fixedrange: true,
         rangemode: "tozero",
+        showgrid: false,
+        showline: false,
+        zeroline: false,
+        ticks: "outside", ticklen: 4, tickcolor: token("--border", "#2A3038"),
       }),
       yaxis: Object.assign({}, theme.yaxis, {
-        title: `${symbolOf("length")} above home`,
+        title: { text: `${symbolOf("length")} above home`, standoff: 6, font: { size: 10 } },
         fixedrange: true,
         range: range,
+        showline: false,
+        gridcolor: withAlpha(token("--text-3", "#69737F"), 0.22),
+        zeroline: true,
+        zerolinewidth: 1,
+        zerolinecolor: withAlpha(token("--text-3", "#69737F"), 0.6),
       }),
     });
     // The chart's x data is kilometres and its y data metres whatever is
@@ -4607,7 +4623,7 @@ Corvus.mission = (function () {
     }).catch(() => { /* a chart that will not draw must not break the page */ });
   }
 
-  const PROFILE_MARGIN = { l: 52, r: 16, t: 10, b: 38 };
+  const PROFILE_MARGIN = { l: 60, r: 18, t: 12, b: 40 };
 
   /** The y-range the chart is drawn at: everything that has to be visible,
    *  plus headroom so a point dragged to the top is not against the frame. */
@@ -4625,6 +4641,20 @@ Corvus.mission = (function () {
     return [low - pad, high + pad];
   }
 
+  /** A resolved CSS colour (hex or rgb) at an opacity, for the chart's fills.
+   *  Anything it cannot read comes back unchanged. */
+  function withAlpha(color, alpha) {
+    const c = String(color || "").trim();
+    let m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c);
+    if (m) {
+      const h = m[1].length === 3 ? m[1].replace(/./g, "$&$&") : m[1];
+      const n = parseInt(h, 16);
+      return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+    }
+    m = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i.exec(c);
+    return m ? `rgba(${m[1]},${m[2]},${m[3]},${alpha})` : c;
+  }
+
   function terrainFillTrace(range) {
     if (!ground) return { x: [], y: [], type: "scatter", mode: "lines", hoverinfo: "skip" };
     const xs = ground.distances.map((d) => d / 1000);
@@ -4635,7 +4665,7 @@ Corvus.mission = (function () {
       type: "scatter",
       mode: "lines",
       fill: "toself",
-      fillcolor: token("--surface-3", "#2A3038"),
+      fillcolor: withAlpha(token("--text-3", "#69737F"), 0.28),
       line: { width: 0 },
       hoverinfo: "skip",
       name: "Ground",
@@ -4649,7 +4679,7 @@ Corvus.mission = (function () {
       y: ground.elevations,
       type: "scatter",
       mode: "lines",
-      line: { color: colors.warning, width: 1 },
+      line: { color: withAlpha(token("--text-2", "#A5ADB8"), 0.85), width: 1.5 },
       hovertemplate: "Ground %{y:.0f} m<extra></extra>",
       name: "Ground",
     };
@@ -5192,7 +5222,11 @@ Corvus.mission = (function () {
 
   /** This plan is now what the vehicle holds, at the backend's `revision`. */
   function syncWith(revision) {
-    synced = typeof revision === "number" ? { revision, key: planKey() } : null;
+    // Which vehicle holds it, too: each link counts its revisions from zero,
+    // so two vehicles can hold the same number and different missions.
+    const state = (Corvus.telemetry && Corvus.telemetry.getState && Corvus.telemetry.getState()) || {};
+    synced = typeof revision === "number"
+      ? { revision, key: planKey(), vehicle: state.vehicle_id || "" } : null;
     applyProgress();
   }
 
@@ -5209,6 +5243,7 @@ Corvus.mission = (function () {
       total: numberOr(frame.mission_total, -1),
       known: !!frame.mission_known,
       revision: numberOr(frame.mission_revision, 0),
+      vehicle: typeof frame.vehicle_id === "string" ? frame.vehicle_id : "",
       item: numberOr(frame.mission_item, -1),
       reached: numberOr(frame.mission_reached_item, -1),
     };
@@ -5221,7 +5256,8 @@ Corvus.mission = (function () {
 
   function isSynced() {
     const v = vehicleMission;
-    return !!(v && synced && v.known && v.revision === synced.revision);
+    return !!(v && synced && v.known && v.revision === synced.revision &&
+      (!synced.vehicle || !v.vehicle || v.vehicle === synced.vehicle));
   }
 
   function currentProgress() {

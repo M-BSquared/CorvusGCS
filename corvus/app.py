@@ -472,6 +472,95 @@ def window_support(platform_name: str) -> dict[str, bool]:
     return {"place": not wayland, "pin": not wayland, "frost": name == "cocoa"}
 
 
+# Qt 6.9 gave this bit a second name, ExpandedClientAreaHint, which PySide6
+# 6.11 does not export yet; it knows it only by its older one,
+# MaximizeUsingFullscreenGeometryHint. On macOS it runs the window's content
+# under the title bar, and NoTitleBarBackgroundHint makes that bar see-through.
+QT_EXPANDED_CLIENT_AREA = 0x00400000
+QT_NO_TITLE_BAR_BACKGROUND = 0x00800000
+QT_FRAMELESS = 0x00000800
+# The width the traffic lights take at the left of a macOS title bar, gap to
+# the page's bar included, in points. The same from macOS 15 to 26.
+MAC_TITLE_CONTROLS_W = 72
+# A macOS title bar's height, for as long as Qt has not measured it yet.
+MAC_TITLE_BAR_H = 28
+
+
+def system_title_bar(cfg) -> bool:
+    """Whether windows of their own get the system's title bar: the default.
+
+    Settings, "Corvus title bar", turns it off for the bar the page draws
+    itself. Read from the live config object the HTTP handlers mutate in
+    place, like the app icon, so the switch reaches open windows without a
+    restart. Anything but a genuine ``True`` there is the system's bar.
+    """
+    ui = getattr(cfg, "ui", None)
+    return not (isinstance(ui, dict) and ui.get("corvus_title_bar") is True)
+
+
+# A window's own answer to "which title bar" (``popout_title_bar``): the
+# system's, the Corvus bar, or, for anything else, whatever Settings says.
+TITLE_BAR_CHOICES = ("system", "corvus")
+
+
+def popout_title_bar(choice: str, system_by_default: bool) -> bool:
+    """Whether one window of its own gets the system's title bar.
+
+    *choice* is the window's own setting, given by what it shows: a plugin's
+    terminal can have its own in the plugin's options (``bar`` in the
+    window's address, then ``PopoutBridge.setTitleBar``). ``"system"`` and
+    ``"corvus"`` decide; anything else follows Settings, *system_by_default*.
+    """
+    if choice == "system":
+        return True
+    if choice == "corvus":
+        return False
+    return bool(system_by_default)
+
+
+def popout_bar_choice(url: str) -> str:
+    """The ``bar`` a popout.html address asks for, or ``""`` for Settings'."""
+    try:
+        values = parse_qs(urlsplit(url).query).get("bar") or [""]
+    except ValueError:
+        return ""
+    return values[0] if values[0] in TITLE_BAR_CHOICES else ""
+
+
+def popout_frame(system: bool, platform_name: str) -> dict:
+    """How a camera's or terminal's window of its own is framed.
+
+    By default the operating system draws its own frame and its own close,
+    minimize and maximize buttons, and the page keeps what the system bar has
+    no place for: the name, the status, the pin and the power button. With
+    Settings, "Corvus title bar", it is frameless and the page draws all of
+    it (``native`` false).
+
+    On macOS the page runs on under the system bar (``overlay``): the traffic
+    lights sit at the left of the page's own bar, which keeps ``inset``
+    points clear for them, and the name follows them. Elsewhere the page
+    starts below the system bar, which carries the name as the window title;
+    the page's bar becomes a strip under it, the status at the left and the
+    buttons at the right, below the system's own (``controls``).
+
+    ``flags`` are the Qt window flags beyond ``Qt.Window``, and
+    ``translucent`` whether the window is see-through around the page: a
+    frameless window for its rounded corners, a macOS one for the blur behind
+    a frosted terminal. A Windows or Linux frame is never see-through, as a
+    framed window with a transparent client area draws black there.
+    """
+    if not system:
+        return {"native": False, "overlay": False, "controls": "", "inset": 0,
+                "flags": QT_FRAMELESS, "translucent": True}
+    if str(platform_name or "").lower() == "cocoa":
+        return {"native": True, "overlay": True, "controls": "left",
+                "inset": MAC_TITLE_CONTROLS_W,
+                "flags": QT_EXPANDED_CLIENT_AREA | QT_NO_TITLE_BAR_BACKGROUND,
+                "translucent": True}
+    return {"native": True, "overlay": False, "controls": "right", "inset": 0,
+            "flags": 0, "translucent": False}
+
+
 def popout_geometry(rect: tuple[int, int, int, int],
                     available: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
     """Where a pop-out opens: the rect the page asked for, kept on the screen.
@@ -528,7 +617,7 @@ def set_windows_app_id(app_id: str) -> bool:
 
 def main() -> int:
     from PySide6.QtCore import (
-        QFile, QIODevice, QObject, QPoint, QRect, QSize, Qt, QTimer, QUrl, Slot,
+        QEvent, QFile, QIODevice, QObject, QPoint, QRect, QSize, Qt, QTimer, QUrl, Slot,
     )
     from PySide6.QtGui import QGuiApplication
     from PySide6.QtWebChannel import QWebChannel
@@ -671,11 +760,12 @@ def main() -> int:
     #
     # A camera or terminal frame dragged past the edge of the app goes on in a
     # native window of its own (src/js/popout.js), which the operating system
-    # lets the operator put anywhere, another screen included. The window is
-    # frameless and transparent: the page draws the very same frame the app
+    # lets the operator put anywhere, another screen included. By default it
+    # has the system's title bar and buttons, and the page's bar keeps the
+    # rest (popout_frame). With Settings, "Corvus title bar", it is frameless
+    # and transparent instead: the page draws the very same frame the app
     # does, bar, buttons and grip, so the frame does not change as it crosses
-    # the edge, and there is no second, native title bar with its three
-    # buttons. The page moves and sizes its window through PopoutBridge.
+    # the edge. The page moves its window through PopoutBridge either way.
     #
     # Parented to the main window so it closes with it and never keeps the app
     # running on its own (only a window without a parent counts as the last
@@ -759,6 +849,11 @@ def main() -> int:
 
     app.applicationStateChanged.connect(on_app_state)
 
+    platform_name = QGuiApplication.platformName()
+    # Settings, "Corvus title bar": what the windows of their own were last
+    # framed with, so the timer below only reframes them when it changes.
+    frame_pref = {"system": system_title_bar(cfg)}
+
     class PopoutWindow(QWidget):
         """The native window a camera or terminal gets. Remembers where it was."""
 
@@ -768,6 +863,32 @@ def main() -> int:
             self.normal = None      # the geometry before a maximize
             self.pinned = False     # the pin in its bar (see apply_pin)
             self.blur = 0           # the blur behind it (MacBlur), while frosted
+            self.frame = popout_frame(False, platform_name)
+            self.page = None        # its PopoutPage, to tell it the frame changed
+            self.bar = ""           # its own title bar choice (popout_title_bar)
+            # Under a macOS title bar the page draws its own bar, so the page
+            # fills the window rather than starting below the system's bar.
+            self.setAttribute(Qt.WidgetAttribute.WA_ContentsMarginsRespectsSafeArea, False)
+
+        def hide_title(self) -> None:
+            """Under a macOS title bar the page's bar carries the name; the
+            system's would be drawn over it. Qt shows it again whenever the
+            window is shown or retitled, so this follows both."""
+            if not self.frame["overlay"] or mac is None:
+                return
+            try:
+                mac.hide_title(int(self.winId()))
+            except Exception:  # noqa: BLE001 - a doubled name beats no window
+                logger.debug("could not hide a window's own title", exc_info=True)
+
+        def showEvent(self, event):  # noqa: N802 - Qt's name
+            super().showEvent(event)
+            self.hide_title()
+
+        def changeEvent(self, event):  # noqa: N802 - Qt's name
+            super().changeEvent(event)
+            if event.type() == QEvent.Type.WindowTitleChange:
+                self.hide_title()
 
         def unfrost(self) -> None:
             if self.blur and mac is not None:
@@ -779,9 +900,59 @@ def main() -> int:
 
         def closeEvent(self, event):  # noqa: N802 - Qt's name
             if self.key:
-                popout_last[self.key] = QRect(self.normal or self.geometry())
+                popout_last[self.key] = QRect(
+                    self.normal or (self.normalGeometry() if self.isMaximized() else self.geometry()))
+                # The system's own close button closes the window without its
+                # page saying so first (js/popout-page.js, closeWindow): the
+                # app is told here instead, or it would count the window as
+                # open until its heartbeat goes stale.
+                try:
+                    web.page().runJavaScript(
+                        "window.Corvus && Corvus.popouts && Corvus.popouts.gone && "
+                        f"Corvus.popouts.gone({json.dumps(self.key)});")
+                except RuntimeError:     # the app's page is already gone
+                    pass
             self.unfrost()
             super().closeEvent(event)
+
+    def dress(holder, system: bool) -> None:
+        """Frame a window of its own with the system's title bar, or with none.
+
+        Changing a window's frame makes Qt build its native window anew, so
+        the blur behind it goes first (the page asks for it again once it
+        hears of the new frame), and a pin is carried over. A window that is
+        showing is shown again where its content was.
+        """
+        frame = popout_frame(system, platform_name)
+        if frame == holder.frame and holder.windowHandle() is not None:
+            return
+        shown = holder.isVisible()
+        geometry = holder.geometry()
+        holder.unfrost()
+        holder.frame = frame
+        flags = Qt.WindowType.Window | Qt.WindowType(frame["flags"])
+        flags |= holder.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+        holder.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, frame["translucent"])
+        holder.setWindowFlags(flags)
+        if shown:
+            holder.setGeometry(geometry)
+            holder.show()
+            holder.raise_()
+        if holder.page is not None:
+            holder.page.runJavaScript(
+                "window.dispatchEvent(new CustomEvent('corvus:native-frame'));")
+
+    def sync_frames() -> None:
+        """Settings, "Corvus title bar", turned on or off: every window follows."""
+        want = system_title_bar(getattr(server, "config", None))
+        if want == frame_pref["system"]:
+            return
+        frame_pref["system"] = want
+        for holder in list(popout_windows.values()):
+            try:
+                dress(holder, popout_title_bar(holder.bar, want))
+            except RuntimeError:     # a window deleted a moment ago
+                pass
 
     def screen_area_at(point) -> tuple[int, int, int, int]:
         screen = (QGuiApplication.screenAt(point) or window.screen()
@@ -894,8 +1065,41 @@ def main() -> int:
             return json.dumps({"inside": True, "left": origin.x(), "top": origin.y(),
                                "width": self._holder.width(), "height": self._holder.height()})
 
+        @Slot(result=str)
+        def frame(self) -> str:
+            """How this window is framed (:func:`popout_frame`), for its page.
+
+            ``top`` is the height of the system's title bar over an
+            ``overlay`` page, which its own bar matches so the system's
+            buttons sit in the middle of it.
+            """
+            frame = self._holder.frame
+            top = 0
+            if frame["overlay"]:
+                handle = self._holder.windowHandle()
+                top = handle.safeAreaMargins().top() if handle is not None else 0
+                top = top or MAC_TITLE_BAR_H
+            return json.dumps({"native": frame["native"], "overlay": frame["overlay"],
+                               "controls": frame["controls"], "inset": frame["inset"],
+                               "top": top})
+
+        @Slot(str)
+        def setTitleBar(self, choice: str) -> None:
+            """This window's own title bar: "system", "corvus", or "" for Settings'."""
+            holder = self._holder
+            holder.bar = choice if choice in TITLE_BAR_CHOICES else ""
+            dress(holder, popout_title_bar(holder.bar, frame_pref["system"]))
+
         @Slot(result=bool)
         def toggleMaximize(self) -> bool:
+            if self._holder.frame["native"]:
+                # In the system's frame the system maximizes it, and its own
+                # button may undo that, so nothing is kept here to go stale.
+                if self._holder.isMaximized():
+                    self._holder.showNormal()
+                    return False
+                self._holder.showMaximized()
+                return True
             if not support["place"]:
                 # Where a window may not place itself, the compositor maximizes it.
                 if self._holder.isMaximized():
@@ -986,12 +1190,14 @@ def main() -> int:
             holder.show()
             holder.raise_()
 
-    def open_popout(page_profile):
+    def open_popout(page_profile, bar: str = ""):
         holder = PopoutWindow()
+        holder.bar = bar
         holder.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-        # The page draws the frame, rounded corners included; around them the
-        # window has to be see-through, or the corners would be square again.
-        holder.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        # Frameless, the page draws the frame, rounded corners included, and
+        # around them the window has to be see-through, or the corners would
+        # be square again. With the system's title bar, see popout_frame.
+        dress(holder, popout_title_bar(bar, frame_pref["system"]))
         holder.setWindowTitle("CORVUS GCS")
         holder.setMinimumSize(POPOUT_MIN_W, POPOUT_MIN_H)
         holder.resize(640, 400)
@@ -1000,6 +1206,7 @@ def main() -> int:
         box.setSpacing(0)
         view = QWebEngineView(holder)
         page = PopoutPage(page_profile, view, holder)
+        holder.page = page
         page.setBackgroundColor(Qt.GlobalColor.transparent)
         channel = QWebChannel(page)
         channel.registerObject("corvusNative", PopoutBridge(holder))
@@ -1022,7 +1229,7 @@ def main() -> int:
         url = f"http://localhost:{port}/popout.html?{query}"
         if not popout_url_allowed(url, port) or popout_key(url) != key:
             return None, False
-        page = open_popout(web.page().profile())
+        page = open_popout(web.page().profile(), popout_bar_choice(url))
         holder = page.holder
         holder.key = key
         if popout_pinned.get(key):
@@ -1298,6 +1505,7 @@ def main() -> int:
     # actually changed, which is why polling here beats plumbing an event out
     # of the HTTP thread into the Qt loop.
     timer.timeout.connect(sync_app_icon)
+    timer.timeout.connect(sync_frames)
 
     window.show()
     logger.info("CORVUS GCS v%s: standalone window ready", get_version())

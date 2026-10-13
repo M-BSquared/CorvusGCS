@@ -127,6 +127,17 @@ class VehicleRoutes:
         except ValueError as exc:
             self._send_json({"ok": False, "error": str(exc)}, 400)
             return
+        fleet = self.fleet
+        extra_link = fleet is not None and not fleet.active_is_main()
+        if fleet is not None:
+            # Two bridges on one port each get half the frames, and neither
+            # says so. See MavlinkBridge._claim_serial_exclusive.
+            in_use = fleet.connection_in_use(conn, except_link=fleet.active_link().id)
+            if in_use:
+                self._send_json(
+                    {"ok": False, "error": f"{conn} is already open as {in_use}"}, 409,
+                )
+                return
         try:
             self.mavlink.stop()
             self.mavlink.set_connection(conn)
@@ -139,7 +150,13 @@ class VehicleRoutes:
         # never persisted, so the next field launch starts from the hardware
         # again). Set only now, after the dial actually went through: a string
         # the bridge refused is not a choice, it is a typo.
-        self._note_manual_link(conn)
+        if extra_link:
+            # The LINK tab follows the selected vehicle. Its link is one the
+            # fleet opened, so the fleet remembers where it now points, and
+            # auto-connect, which only ever drives the main link, is left out.
+            fleet.link_changed()
+        else:
+            self._note_manual_link(conn)
         self._send_json({"ok": True, "connection": conn})
 
     @route("POST", "/api/mavlink/disconnect")
@@ -172,7 +189,8 @@ class VehicleRoutes:
         # override it was given (and takes one now if it had none), so nothing
         # dials the link back open behind the operator who just freed the
         # radio. The way back is another connect, or a restart.
-        self._note_manual_link("")
+        if self.fleet is None or self.fleet.active_is_main():
+            self._note_manual_link("")
         self._send_json({"ok": True})
 
     @route("POST", "/api/mavlink/arm")

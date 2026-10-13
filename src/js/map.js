@@ -17,6 +17,14 @@ Corvus.map = (function () {
   // The armed flag of the last sample, null until one arrives. Disarmed to
   // armed is where a new flight begins.
   let lastArmed = null;
+  // Which vehicle the track above belongs to ("<link>:<system id>", the
+  // telemetry's vehicle_id), null until the first one is heard. When the
+  // operator flies another vehicle, the track goes to Corvus.mapFleet with the
+  // vehicle it belongs to and the new vehicle's track comes back from there.
+  let trackOwner = null;
+  // The flown vehicle's colour from the vehicle list, "" for the theme's own.
+  let vehicleColor = "";
+  let vehicleLabelEl = null;
   // Settings (ui.track_earlier_flights / ui.track_clear_on_restart), applied
   // by app.js once the config lands. Earlier flights get their own colour
   // unless turned off; the track outlives a restart unless asked otherwise.
@@ -147,13 +155,34 @@ Corvus.map = (function () {
   let vehTarget = null;
   let vehDisplay = null;
   let vehAnimator = null;
-  // Track retention. The old 500-point cap held under a minute of flight at
-  // 5-10 Hz, so a track quietly ate its own beginning mid-sortie. Points are
-  // decimated by DISTANCE instead — a hovering aircraft adds nothing, a moving
-  // one adds a point every few metres — which makes the cap an hours-long
-  // budget rather than a stopwatch.
-  const TRACK_MIN_MOVE_M = 2.0;   // metres before a new point is recorded
-  const TRACK_MAX_POINTS = 20000; // ~40 km of track at the spacing above, all flights
+  // Track recording keeps the SHAPE of the flight, not a point every so
+  // many metres (see recordTrackPoint). A fixed spacing was coarse in a turn
+  // and wasteful on a straight leg, and it left the line ending up to that
+  // spacing behind the aircraft.
+  //
+  // A sample closer than this to the end of the line is noise, not movement:
+  // a hover adds nothing.
+  const TRACK_JITTER_M = 0.3;
+  // How far the drawn line may stray from where the aircraft actually flew:
+  // a quarter of the position's own reported uncertainty (gps_h_acc), within
+  // these bounds. Finer than that adds points, not truth. A straight leg is
+  // two points however long it is, a turn gets as many as its curve needs.
+  // With RTK the line is within a decimetre of the flight; on an orbit of
+  // 30 m that is about as many points as the old fixed 2 m spacing took,
+  // on a wide one half of them.
+  const TRACK_TOLERANCE_MIN_M = 0.1;
+  const TRACK_TOLERANCE_MAX_M = 0.5;
+  const TRACK_TOLERANCE_M = 0.25;   // when the receiver does not say
+  // Samples held while one segment is open. Bounds the per-sample work; a
+  // segment that outgrows it is closed where it is.
+  const TRACK_WINDOW_MAX = 400;
+  const TRACK_MAX_POINTS = 20000; // fixed vertices, all flights: hours of flying
+  // Drawing the line is what costs, above all in 3D, where every update
+  // re-renders it into each terrain tile's texture. It is redrawn only when
+  // the change is visible, and at most this often.
+  const TRACK_PAINT_MIN_PX = 1.5;
+  const TRACK_PAINT_MS = 100;
+  const TRACK_PAINT_MS_3D = 250;
   // The track survives a restart of the app in localStorage. History, not a
   // setting, so it is in settings-transfer.js's NOT_SETTINGS.
   const TRACK_KEY = "corvus.map.track";
@@ -519,38 +548,93 @@ Corvus.map = (function () {
   }
 
   /**
-   * Append *position* to the track if the aircraft has actually moved.
-   * Returns true when the track changed.
-   *
-   * Distance decimation is what lets the track cover a whole sortie: a hover
-   * contributes one point, not six hundred, so the cap is an hours-long budget
-   * instead of a stopwatch.
+   * Distance in metres from *p* to the segment *a*-*b*, in a flat frame
+   * around *a*. Clamped to the segment, so flying back along a line counts as
+   * leaving it.
    */
-  function recordTrackPoint(position) {
+  function metresFromSegment(p, a, b) {
+    const R = 6371000;
+    const k = Math.cos((a[1] * Math.PI) / 180);
+    const toXY = (c) => [((c[0] - a[0]) * Math.PI / 180) * k * R, ((c[1] - a[1]) * Math.PI / 180) * R];
+    const [bx, by] = toXY(b);
+    const [px, py] = toXY(p);
+    const len2 = bx * bx + by * by;
+    const t = len2 > 0 ? Math.max(0, Math.min(1, (px * bx + py * by) / len2)) : 0;
+    return Math.hypot(px - t * bx, py - t * by);
+  }
+
+  // The samples since the last fixed vertex, and which track they belong to.
+  // Every way the track is replaced (a new flight, a restore, another vehicle,
+  // a clear) assigns a new pathCoords array, and the segment closes with it.
+  let trackWindow = [];
+  let trackWindowOf = null;
+
+  /**
+   * Extend the track with *position*. Returns true when the track changed.
+   *
+   * The last point of the line is the aircraft itself and follows every
+   * sample, so the line ends where the aircraft is. It becomes a fixed vertex
+   * only when the straight line from the vertex before it to the newest
+   * sample would miss one of the samples in between by more than the
+   * tolerance (trackTolerance, from *hAcc*): the drawn line is never further than that from where
+   * the aircraft flew, with as few points as the shape allows. A hover adds
+   * nothing (TRACK_JITTER_M), a straight leg two points, a turn as many as its
+   * curve needs, which makes TRACK_MAX_POINTS hours rather than minutes.
+   */
+  /** The tolerance for a position whose horizontal accuracy is *hAcc* metres. */
+  function trackTolerance(hAcc) {
+    const acc = Number(hAcc);
+    if (!(acc > 0) || !isFinite(acc)) return TRACK_TOLERANCE_M;
+    return Math.min(TRACK_TOLERANCE_MAX_M, Math.max(TRACK_TOLERANCE_MIN_M, acc / 4));
+  }
+
+  function recordTrackPoint(position, hAcc) {
     if (!position || position.length < 2) return false;
     const lng = position[0], lat = position[1];
     if (!isFinite(lng) || !isFinite(lat)) return false;
     // [0,0] is the state store's "no fix yet" default, not the Gulf of Guinea.
     if (lng === 0 && lat === 0) return false;
+    const p = [lng, lat];
+    if (trackWindowOf !== pathCoords) {
+      trackWindow = [];
+      trackWindowOf = pathCoords;
+    }
 
-    const last = pathCoords[pathCoords.length - 1];
-    if (last && metresBetween(last, [lng, lat]) < TRACK_MIN_MOVE_M) return false;
+    const tip = pathCoords[pathCoords.length - 1];
+    if (tip && metresBetween(tip, p) < TRACK_JITTER_M) return false;
 
-    pathCoords.push([lng, lat]);
-    // Over the cap, the OLDEST point goes, which is the first flight's before
-    // it is the current one's. shift() rather than slice: one point per
-    // sample, not a re-allocation of the whole array.
-    if (trackPointCount() > TRACK_MAX_POINTS) {
-      if (pastFlights.length) {
-        pastFlights[0].shift();
-        if (pastFlights[0].length < 2) pastFlights.shift();
-        paintPast();
+    if (!trackWindow.length) {
+      pathCoords.push(p);   // the first point, or a new segment after a fixed vertex
+    } else {
+      const anchor = pathCoords[pathCoords.length - 2];
+      const tolerance = trackTolerance(hAcc);
+      const strays = trackWindow.length >= TRACK_WINDOW_MAX
+        || trackWindow.some((s) => metresFromSegment(s, anchor, p) > tolerance);
+      if (strays) {
+        // The tip so far becomes a fixed vertex, and a new segment opens at it.
+        trackWindow = [];
+        pathCoords.push(p);
+        trimTrack();
       } else {
-        pathCoords.shift();
+        pathCoords[pathCoords.length - 1] = p;
       }
     }
+    if (pathCoords.length > 1) trackWindow.push(p);
     scheduleTrackSave();
     return true;
+  }
+
+  /** Over the cap, the OLDEST point goes: the first flight's before the
+   *  current one's. shift() rather than slice, one point per new vertex. */
+  function trimTrack() {
+    if (trackPointCount() <= TRACK_MAX_POINTS) return;
+    if (pastFlights.length) {
+      pastFlights[0].shift();
+      if (pastFlights[0].length < 2) pastFlights.shift();
+      paintPast();
+    } else {
+      pathCoords.shift();
+    }
   }
 
   function trackPointCount() {
@@ -600,12 +684,75 @@ Corvus.map = (function () {
     };
   }
 
+  // What was last handed to MapLibre, for requestTrackPaint.
+  let trackPaintTimer = null;
+  let trackPaintedAt = 0;
+  let trackPaintedTip = null;
+  let trackPaintedLength = 0;
+  // An operator's drag or zoom is under way (movestart with an input event).
+  let operatorMoving = false;
+
   function paintCurrent() {
+    if (trackPaintTimer !== null) window.clearTimeout(trackPaintTimer);
+    trackPaintTimer = null;
+    trackPaintedAt = Date.now();
+    trackPaintedLength = pathCoords.length;
+    const tip = pathCoords[pathCoords.length - 1];
+    trackPaintedTip = tip ? tip.slice() : null;
     if (pathSource) pathSource.setData(currentGeometry());
+  }
+
+  /** Metres one screen pixel covers at *lat* in the current view. */
+  function metresPerPixel(lat) {
+    const zoom = map && typeof map.getZoom === "function" ? Number(map.getZoom()) : NaN;
+    if (!isFinite(zoom)) return 0;
+    return 40075016.686 * Math.cos((lat * Math.PI) / 180) / (512 * Math.pow(2, zoom));
+  }
+
+  /**
+   * Redraw the flight in progress when the operator would see a difference.
+   *
+   * A new fixed vertex always counts. A tip that moved less than
+   * TRACK_PAINT_MIN_PX on screen does not, which is most samples when zoomed
+   * out. What does count is drawn at most every TRACK_PAINT_MS
+   * (TRACK_PAINT_MS_3D in 3D), and not while the operator drags the map,
+   * where a re-cut line costs the frames the drag needs; it catches up once
+   * the map is let go.
+   */
+  function requestTrackPaint() {
+    if (!pathSource) return;
+    const tip = pathCoords[pathCoords.length - 1];
+    // One new corner since the last draw is the tip that was drawn, fixed
+    // where it stood: unseen unless it or the new tip is a visible distance
+    // from what is on screen. More than one, or fewer points (the cap), is.
+    const added = pathCoords.length - trackPaintedLength;
+    const mpp = tip ? metresPerPixel(tip[1]) : 0;
+    if (tip && trackPaintedTip && mpp > 0 && (added === 0 || added === 1)) {
+      const px = (c) => metresBetween(trackPaintedTip, c) / mpp;
+      const corner = added === 1 ? pathCoords[pathCoords.length - 2] : null;
+      if (px(tip) < TRACK_PAINT_MIN_PX && (!corner || px(corner) < TRACK_PAINT_MIN_PX)) return;
+    }
+    if (trackPaintTimer !== null) return;
+    const interval = threeD ? TRACK_PAINT_MS_3D : TRACK_PAINT_MS;
+    const wait = Math.max(0, interval - (Date.now() - trackPaintedAt));
+    trackPaintTimer = window.setTimeout(flushTrackPaint, wait);
+  }
+
+  function flushTrackPaint() {
+    trackPaintTimer = null;
+    if (operatorMoving) {
+      trackPaintTimer = window.setTimeout(flushTrackPaint, TRACK_PAINT_MS_3D);
+      return;
+    }
+    paintCurrent();
   }
 
   function paintPast() {
     if (pastSource) pastSource.setData(pastGeometry());
+  }
+
+  function fleetHasTracks() {
+    return !!(Corvus.mapFleet && Corvus.mapFleet.hasTracks());
   }
 
   function trackStorage() {
@@ -623,7 +770,7 @@ Corvus.map = (function () {
     trackSaveTimer = null;
     const storage = trackStorage();
     if (!storage) return;
-    // Seven decimals is about a centimetre, far below the 2 m spacing, and
+    // Seven decimals is about a centimetre, below the finest tolerance, and
     // keeps a full track well inside the storage quota.
     const round = (flight) => flight.map((c) => [+c[0].toFixed(7), +c[1].toFixed(7)]);
     try {
@@ -632,6 +779,7 @@ Corvus.map = (function () {
       } else {
         storage.setItem(TRACK_KEY, JSON.stringify({
           v: 1, past: pastFlights.map(round), current: round(pathCoords),
+          owner: trackOwner || undefined,
         }));
       }
     } catch (_e) { /* quota or storage off: the track still lives in memory */ }
@@ -649,6 +797,72 @@ Corvus.map = (function () {
     pastFlights = (Array.isArray(saved.past) ? saved.past : [])
       .filter((f) => valid(f) && f.length >= 2);
     pathCoords = valid(saved.current) ? saved.current : [];
+    trackOwner = typeof saved.owner === "string" && saved.owner ? saved.owner : null;
+  }
+
+  /**
+   * Is this sample about another vehicle than the track is? Then the track
+   * goes with the vehicle it belongs to, and the new one's comes back.
+   *
+   * The first vehicle ever heard simply takes the track as it is, so a single
+   * aircraft keeps the track it always had.
+   */
+  function noteVehicle(state) {
+    const id = state && typeof state.vehicle_id === "string" ? state.vehicle_id : "";
+    if (!id || id === trackOwner) return false;
+    if (trackOwner === null) {
+      trackOwner = id;
+      applyVehicleColor();
+      return false;
+    }
+    const fleetMap = Corvus.mapFleet;
+    if (fleetMap) fleetMap.stashTrack(trackOwner, { current: pathCoords, past: pastFlights });
+    const next = fleetMap ? fleetMap.takeTrack(id) : null;
+    pathCoords = next ? next.current : [];
+    pastFlights = next ? next.past : [];
+    trackOwner = id;
+    // The new vehicle's own uptime and armed state are the baseline, not the
+    // last vehicle's: comparing the two would read as a reboot or a takeoff.
+    lastBootMs = null;
+    lastArmed = null;
+    // Nor is the marker eased across from where the last one was: it is
+    // hidden until this one reports a position, and its first one snaps.
+    vehTarget = null;
+    vehDisplay = null;
+    const markerEl = vehicleMarker && vehicleMarker.getElement();
+    if (markerEl) markerEl.hidden = true;
+    paintCurrent();
+    paintPast();
+    saveTrack();
+    updateTrackControl();
+    applyVehicleColor();
+    return true;
+  }
+
+  /** Paint the flown vehicle's marker and track in its colour from the list. */
+  function applyVehicleColor() {
+    const fleet = Corvus.fleet;
+    const color = fleet && trackOwner ? fleet.colorOf(trackOwner) : "";
+    const name = fleet && trackOwner ? fleet.nameOf(trackOwner) : "";
+    const multi = !!(fleet && fleet.isMulti());
+    const markerEl = vehicleMarker && vehicleMarker.getElement();
+    if (markerEl && fleet) {
+      if (!vehicleLabelEl) {
+        vehicleLabelEl = document.createElement("span");
+        vehicleLabelEl.className = "v-label";
+        markerEl.appendChild(vehicleLabelEl);
+      }
+      vehicleLabelEl.textContent = name;
+      vehicleLabelEl.hidden = !multi || !name;
+    }
+    if (fleet) {
+      [markerEl, veh3dEl, veh3dShadowEl, veh3dLeadEl, veh3dAltEl].forEach((el) => {
+        fleet.paintElement(el, color);
+      });
+    }
+    if (color === vehicleColor) return;
+    vehicleColor = color;
+    repaintTrack();
   }
 
   /**
@@ -669,6 +883,7 @@ Corvus.map = (function () {
   function clearTrack() {
     pathCoords = [];
     pastFlights = [];
+    if (Corvus.mapFleet) Corvus.mapFleet.clearTracks();
     paintCurrent();
     paintPast();
     saveTrack();
@@ -681,7 +896,7 @@ Corvus.map = (function () {
   /** Show the clear-track control only while there is a track to clear. */
   function updateTrackControl() {
     if (!trackClearEl) return;
-    trackClearEl.hidden = pathCoords.length < 2 && pastFlights.length === 0;
+    trackClearEl.hidden = pathCoords.length < 2 && pastFlights.length === 0 && !fleetHasTracks();
   }
 
   /**
@@ -801,8 +1016,10 @@ Corvus.map = (function () {
   /** Push the current theme's track colours onto the track layers. */
   function repaintTrack() {
     if (!map) return;
-    const track = Corvus.ui.token("--track", "#E4322F");
-    const past = trackEarlierFlights ? Corvus.ui.token("--track-past", "#E88A7E") : track;
+    const track = vehicleColor || Corvus.ui.token("--track", "#E4322F");
+    const pastTone = vehicleColor && Corvus.fleet
+      ? Corvus.fleet.tint(vehicleColor, 0.45) : Corvus.ui.token("--track-past", "#E88A7E");
+    const past = trackEarlierFlights ? pastTone : track;
     // The casing is the page background, not black: on the light theme a black
     // outline would be heavier than the track it is meant to support.
     const casing = Corvus.ui.token("--bg", "#0B0E12");
@@ -2381,6 +2598,8 @@ Corvus.map = (function () {
     const lng = state.position[0];
     const lat = state.position[1];
     const heading = state.heading || 0;
+    // No fix yet, and nothing drawn yet: there is nowhere to draw it.
+    if (!vehTarget && !realFix(state.position)) return;
     if (!vehTarget) {
       vehTarget = { lng, lat, heading };
       vehDisplay = { lng, lat, heading };   // first sample snaps (preserves old behavior)
@@ -2463,6 +2682,9 @@ Corvus.map = (function () {
   }
 
   function updateVehicle(state) {
+    // Before the connected check: the sample that names a new vehicle is
+    // often the first one after a disconnected one.
+    noteVehicle(state);
     if (!vehicleMarker || !state.connected) return;
     setVehicleTarget(state);
     updateVehicleAltitude(state);
@@ -2501,8 +2723,8 @@ Corvus.map = (function () {
 
     // Track recording stays on the TARGET (latest telemetry) so the track is
     // accurate; interpolation is purely a rendering concern.
-    if (recordTrackPoint(state.position)) {
-      paintCurrent();
+    if (recordTrackPoint(state.position, state.gps_h_acc)) {
+      requestTrackPaint();
       updateTrackControl();
       // The plan line's first segment starts at the vehicle, so it must track
       // the vehicle too. Only when a plan exists — avoids repainting the route
@@ -2997,6 +3219,9 @@ Corvus.map = (function () {
   // invisible; the interval keeps a burst of arriving DEM tiles from
   // recomputing it on every one.
   const TERRAIN_SYNC_EPSILON_M = 2.0;
+  // How far MapLibre's own clamped ground height may sit from ours before it
+  // counts as wrong rather than as another DEM zoom (syncTerrainElevation).
+  const TERRAIN_SYNC_CLAMPED_M = 30.0;
   const TERRAIN_SYNC_MIN_MS = 250;
   // The zoom the camera-seeding elevation probe reads. Coarse on purpose:
   // it only has to place a camera above the ground, the DEM query refines it
@@ -3134,6 +3359,9 @@ Corvus.map = (function () {
   // whether MapLibre's own ground clamp is set aside while it lands.
   let terrainSeedKey = null;
   let clampSuspended = false;
+  // The last ground height syncTerrainElevation wrote, so it can tell that
+  // MapLibre has taken the camera back and stop arguing with it.
+  let terrainSyncWritten = null;
   let buildingSource = null;
   // "z/x/y" -> feature array. An empty array is a cell that is either genuinely
   // empty or still in flight; either way it must not be requested twice.
@@ -3614,8 +3842,13 @@ Corvus.map = (function () {
     if (!map || !terrainOn) return false;
     if (typeof map.setCenterElevation !== "function") return true;   // nothing to do
     // Never mid-animation: MapLibre interpolates the elevation itself across
-    // an ease, and a write here would fight its next frame.
+    // an ease, and a write here would fight its next frame. Nor mid-drag:
+    // MapLibre freezes the height while the operator pans and settles it on
+    // release, and a DEM tile landing under a moving centre used to move the
+    // camera's focus by hundreds of metres in the middle of the drag. The
+    // moveend handler asks again once the map is still.
     if (typeof map.isEasing === "function" && map.isEasing()) return false;
+    if (typeof map.isMoving === "function" && map.isMoving()) return false;
     let centre;
     try { centre = map.getCenter(); } catch (_error) { return false; }
     if (!centre || !isFinite(centre.lng) || !isFinite(centre.lat)) return false;
@@ -3637,8 +3870,26 @@ Corvus.map = (function () {
     if (ground === 0) return false;
     const current = Number(map.getCenterElevation());
     if (isFinite(current) && Math.abs(ground - current) < TERRAIN_SYNC_EPSILON_M) return true;
+    // While MapLibre clamps the centre to the ground it is the one holding the
+    // camera, and a few metres between its reading and this one is only two
+    // DEM zooms disagreeing. What this exists for is the camera hundreds of
+    // metres underground, and that is never within this margin.
+    const clamped = !clampSuspended && typeof map.getCenterClampedToGround === "function"
+      && map.getCenterClampedToGround();
+    if (clamped && isFinite(current) && current !== 0
+        && Math.abs(ground - current) < TERRAIN_SYNC_CLAMPED_M) return true;
+    // Already written, and MapLibre put its own height back. With the centre
+    // clamped to the ground it holds the camera on the terrain itself, read
+    // from the DEM tile of ITS zoom, which can differ from this reading by
+    // several metres in steep ground. Writing again only starts the next
+    // round: every write moved the camera and fired a burst of data events,
+    // every burst brought this back, four times a second for as long as the
+    // map stood still. That was the stutter.
+    if (terrainSyncWritten !== null && !clampSuspended
+        && Math.abs(terrainSyncWritten - ground) < TERRAIN_SYNC_EPSILON_M) return true;
     try {
       map.setCenterElevation(ground);
+      terrainSyncWritten = ground;
       return true;
     } catch (_error) {
       return false;   // a camera mid-change; the retry below tries again
@@ -3892,6 +4143,7 @@ Corvus.map = (function () {
     // nobody is waiting for on a field laptop's battery.
     stopTerrainSync();
     resumeCenterClamp();
+    terrainSyncWritten = null;
     if (!map || !terrainOn) return;
     map.off("data", onTerrainData);
     removeHillshade();
@@ -4741,6 +4993,7 @@ Corvus.map = (function () {
     map.on("movestart", (e) => {
       const source = e && e.originalEvent;
       if (!source) return;
+      operatorMoving = true;
       // The operator has the camera now: nothing we asked for earlier is
       // taken back from them. A wheel only zooms, so only the zoom goes.
       cameraGoal.zoom = null;
@@ -4757,6 +5010,7 @@ Corvus.map = (function () {
     // interrupts a follow pan must not leave it stuck on.
     map.on("moveend", () => {
       followEasing = false;
+      operatorMoving = false;
       settleCameraGoal();
       // The camera landed somewhere new: it may have crossed the zoom where
       // the globe hands over to the flat map, and its ground height may be
@@ -4777,6 +5031,8 @@ Corvus.map = (function () {
       addRegionLayer();
       addPathLayer();
       addWaypointRouteLayer();
+      // The vehicles not being flown, under this one's track.
+      if (Corvus.mapFleet) Corvus.mapFleet.attach(map);
 
       homeMarker = new maplibregl.Marker({ element: buildHomeMarker(), anchor: "center" })
         .setLngLat(DEFAULT_CENTER).addTo(map);
@@ -4811,6 +5067,7 @@ Corvus.map = (function () {
       Corvus.anim.add(vehAnimator);
 
       Corvus.telemetry.subscribe(updateVehicle);
+      if (Corvus.fleet) Corvus.fleet.subscribe(applyVehicleColor);
       started = true;
       Corvus.mapOverlays.markStarted();
       // Whatever a plugin drew while the style was still loading.
@@ -4947,6 +5204,10 @@ Corvus.map = (function () {
     // Downloaded-area overlay, driven by the offline-map dialog.
     clearTrack,
     getTrack: () => pathCoords.map((c) => c.slice()),
+    // Which vehicle the track and the marker are drawn for; Corvus.mapFleet
+    // draws every other one.
+    trackOwner: () => trackOwner,
+    updateTrackControl,
     getEarlierFlights: () => pastFlights.map((f) => f.map((c) => c.slice())),
     // Settings' two track switches; app.js applies the config's answer with
     // startup = true once that fetch lands.
@@ -5009,6 +5270,9 @@ Corvus.map = (function () {
     // is what keeps the map from going white over high ground, and it is
     // plain arithmetic, so it is assertable without a canvas.
     _decodeDemPixel: (r, g, b) => decodeDemPixel(r, g, b),
+    // test hook: one ground-height reconciliation, and whether it settled.
+    // It is what kept writing the camera height four times a second.
+    _syncTerrainElevation: () => syncTerrainElevation(),
     _setTerrainSpec: (spec) => {
       terrainSpec = spec;
       terrainCatalogue = spec ? [spec] : [];
@@ -5026,7 +5290,7 @@ Corvus.map = (function () {
     }),
     // test hooks: the pure track rules — distance decimation and the reboot
     // edge — assertable without a map.
-    _recordTrackPoint: (pos) => recordTrackPoint(pos),
+    _recordTrackPoint: (pos, hAcc) => recordTrackPoint(pos, hAcc),
     _realFix: (pos) => realFix(pos),
     // test hook: the home-marker rule — a marker is drawn only for a home the
     // aircraft actually reported. Takes the marker so the rule is assertable
@@ -5038,6 +5302,7 @@ Corvus.map = (function () {
     },
     _checkForReboot: (ms) => checkForReboot(ms),
     _checkForTakeoff: (armed) => checkForTakeoff(armed),
+    _noteVehicle: (state) => noteVehicle(state),
     _updateTrack: (state) => updateTrack(state),
     _saveTrack: () => saveTrack(),
     _restoreTrack: () => restoreTrack(),
@@ -5050,10 +5315,13 @@ Corvus.map = (function () {
     _contextPoint: () => (contextPoint ? { lng: contextPoint.lng, lat: contextPoint.lat } : null),
     _openContextMenu: (lngLat) => openContextMenu(lngLat),
     _resetTrackState: () => {
+      if (trackPaintTimer !== null) window.clearTimeout(trackPaintTimer);
+      trackPaintTimer = null;
       pathCoords = [];
       pastFlights = [];
       lastBootMs = null;
       lastArmed = null;
+      trackOwner = null;
       trackEarlierFlights = true;
       trackClearOnRestart = false;
       if (trackSaveTimer !== null) window.clearTimeout(trackSaveTimer);

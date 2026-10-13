@@ -752,6 +752,9 @@
   padding: 6px 14px 2px;
 }
 .mission-profile.is-ground .mission-profile-head { padding: 8px 14px; }
+/* Folded, the heading is the whole card, so the room above and below it has
+   to be the same; the open card keeps its tighter bottom for the chart. */
+.mission-profile.is-collapsed:not(.is-folding) .mission-profile-head { padding: 8px 14px; }
 /* What flies the plan, at the heading's right end. Sized to the heading's
    own small caps so the row does not grow and take height from the chart. */
 .mission-aircraft {
@@ -774,7 +777,7 @@
   font-variant-numeric: tabular-nums;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.mission-profile-plot { flex: 1 1 auto; min-height: 0; }
+.mission-profile-plot { flex: 1 1 auto; min-height: 0; padding: 0 6px 4px 0; }
 /* The chart is a control surface, so it says so under the pointer — and while
    a point is being dragged the whole plot keeps the grabbing cursor rather
    than handing it back every time the pointer leaves the marker. */

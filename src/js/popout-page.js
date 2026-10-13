@@ -10,8 +10,10 @@ window.Corvus = window.Corvus || {};
   bar, so a window out of the app is the frame it came from with the edges of
   the app's window taken away.
 
-  In the desktop app the window is frameless (corvus/app.py) and this page is
-  all of it: the bar moves it, the corner grip sizes it, the bar's own buttons
+  In the desktop app the window has the system's title bar and buttons by
+  default, and this bar keeps the rest (see goNative). With Settings, "Corvus
+  title bar", on, the window is frameless (corvus/app.py) and this page is all
+  of it: the bar moves it, the corner grip sizes it, the bar's own buttons
   maximize and close it, exactly as in the app, and one more that a frame
   inside the app does not need: the pin, which keeps the window above the
   Corvus window. Only above Corvus: with another program in front, its windows
@@ -22,7 +24,8 @@ window.Corvus = window.Corvus || {};
   the pop-up has the browser's own frame, and the bar offers the way back.
 
   Everything the page needs comes from its address (see Corvus.popouts.url):
-  a camera's id, name, address and kind, or a terminal's session. No
+  a camera's id, name, address and kind, a terminal's session, or the plugin
+  whose window it is (kind "plugin:<id>", see pluginWindow). No
   credential is in it; the backend holds those, as it does for the frames.
 */
 Corvus.popoutPage = (function () {
@@ -164,16 +167,62 @@ Corvus.popoutPage = (function () {
     grip.className = "term-win-grip";
     grip.setAttribute("aria-hidden", "true");
     rec.el.appendChild(grip);
+    // What the system's own frame does instead, when Settings asks for it.
+    [maxBtn, closeBtn, grip].forEach((el) => el.classList.add("popout-own-frame"));
     ui.refreshIcons();
+
+    // The default, unless Settings, "Corvus title bar", is on (corvus/app.py,
+    // popout_frame): the system's frame closes, minimizes, maximizes and sizes the window, and
+    // this bar keeps the name, the status, the pin and the power button. On
+    // macOS the page runs on under the system's bar, and this one matches its
+    // height and keeps clear of the traffic lights.
+    let frame = { native: false };
+    function setFrame(f) {
+      frame = (f && typeof f === "object") ? f : { native: false };
+      const root = document.documentElement;
+      const overlay = !!(frame.native && frame.overlay);
+      const k = ui.uiScale();
+      if (root) {
+        root.classList.toggle("system-frame", !!frame.native);
+        root.classList.toggle("system-frame-overlay", overlay);
+        if (root.style && typeof root.style.setProperty === "function") {
+          root.style.setProperty("--system-bar-h", overlay ? (Number(frame.top) || 28) / k + "px" : "");
+          root.style.setProperty("--system-controls-w", overlay ? (Number(frame.inset) || 0) / k + "px" : "");
+        }
+      }
+      if (frame.native && maximized) paintMax(false);
+      if (typeof opts.onFrame === "function") opts.onFrame(frame);
+    }
+    function readFrame() {
+      if (typeof n.frame !== "function") return;
+      n.frame((answer) => {
+        let f = null;
+        try { f = JSON.parse(answer); } catch (_e) { f = null; }
+        setFrame(f);
+      });
+    }
+    window.addEventListener("corvus:native-frame", readFrame);
+    readFrame();
+
+    function paintMax(isMax) {
+      maximized = !!isMax;
+      rec.el.classList.toggle("is-max", maximized);
+      maxBtn.title = maximized ? "Restore" : "Maximize";
+      maxBtn.setAttribute("aria-label", `${maximized ? "Restore" : "Maximize"} the ${opts.noun}`);
+      ui.clear(maxBtn).appendChild(ui.icon(maximized ? "minimize-2" : "maximize-2", 13));
+      ui.refreshIcons();
+    }
 
     function toggleMax() {
       n.toggleMaximize((isMax) => {
-        maximized = !!isMax;
-        rec.el.classList.toggle("is-max", maximized);
-        maxBtn.title = maximized ? "Restore" : "Maximize";
-        maxBtn.setAttribute("aria-label", `${maximized ? "Restore" : "Maximize"} the ${opts.noun}`);
-        ui.clear(maxBtn).appendChild(ui.icon(maximized ? "minimize-2" : "maximize-2", 13));
-        ui.refreshIcons();
+        // In the system's frame its own button can undo a maximize without
+        // this page hearing of it, so the page keeps no state that would
+        // then hold the bar still.
+        if (frame.native) {
+          if (typeof opts.onMaximize === "function") opts.onMaximize(!!isMax);
+          return;
+        }
+        paintMax(isMax);
         if (typeof opts.onMaximize === "function") opts.onMaximize(maximized);
       });
     }
@@ -235,7 +284,7 @@ Corvus.popoutPage = (function () {
       if (e.target.closest(".icon-btn")) return;
       toggleMax();
     });
-    return { toggleMax, pinBtn };
+    return { toggleMax, pinBtn, setFrame, frame: () => frame };
   }
 
   // ---- frosted glass ------------------------------------------------------------
@@ -489,11 +538,164 @@ Corvus.popoutPage = (function () {
           closeWindow();
         } : null,
         onMaximize: () => { if (frost) frost.refresh(); },
+        // A new frame is a new native window: the blur behind the old one
+        // went with it.
+        onFrame: () => { if (frost) frost.refresh(); },
       });
       frost = followFrosted(rec, n);
     });
     window.addEventListener("pagehide", () => { dispose(); link.stop(); });
     return { rec, link };
+  }
+
+  // ---- a plugin's window ----------------------------------------------------------
+
+  /** The plugins this page has loaded, by id, as they registered. */
+  const pluginSpecs = new Map();
+
+  /**
+   * This page has no plugin registry (js/plugins.js); a plugin's script calls
+   * Corvus.plugins.register as it runs, so a stand-in keeps what it says.
+   */
+  function pluginShim() {
+    if (Corvus.plugins && typeof Corvus.plugins.register === "function") return;
+    Corvus.plugins = {
+      register(id, spec) {
+        if (typeof id === "string" && id && spec && typeof spec === "object") pluginSpecs.set(id, spec);
+      },
+    };
+  }
+
+  function pluginAsset(id, rel) {
+    const path = String(rel).split("/").map(encodeURIComponent).join("/");
+    return `/api/plugins/asset/${encodeURIComponent(id)}/${path}`;
+  }
+
+  function appendScript(src) {
+    return new Promise((resolve, reject) => {
+      const el = document.createElement("script");
+      el.async = false;
+      el.src = src;
+      el.onload = () => resolve();
+      el.onerror = () => reject(new Error(`could not load ${src}`));
+      document.head.appendChild(el);
+    });
+  }
+
+  /** A plugin's registration, its styles and scripts loaded into this page. */
+  function loadPlugin(id) {
+    pluginShim();
+    if (pluginSpecs.has(id)) return Promise.resolve(pluginSpecs.get(id));
+    return fetch("/api/plugins")
+      .then((r) => r.json())
+      .then((data) => {
+        const list = data && Array.isArray(data.plugins) ? data.plugins : [];
+        const p = list.find((x) => x && x.id === id);
+        if (!p) return null;
+        (Array.isArray(p.styles) ? p.styles : []).forEach((href) => {
+          const link = document.createElement("link");
+          link.rel = "stylesheet";
+          link.href = pluginAsset(id, href);
+          document.head.appendChild(link);
+        });
+        let chain = Promise.resolve();
+        (Array.isArray(p.scripts) ? p.scripts : []).forEach((src) => {
+          chain = chain.then(() => appendScript(pluginAsset(id, src)));
+        });
+        return chain.then(() => pluginSpecs.get(id) || null);
+      });
+  }
+
+  /**
+   * A plugin's window of its own (kind "plugin:<id>"): the plugin's script is
+   * loaded here, and its `popout(ctx)` fills the frame. Everything else, the
+   * bar, the pin, the title bar, docking and closing, is this page's, as for
+   * a terminal. What the plugin gets:
+   *
+   *   ctx.params        the window's address (what the app opened it with)
+   *   ctx.frame(opts)   the frame: {title, subtitle, icon, className,
+   *                     bodyClass, noun, closeTitle, tools}. Returns
+   *                     {body, setStatus(text, tone, title)}. Once.
+   *   ctx.onClose(fn)   run as the window goes, however it goes
+   *   ctx.setTitleBar(choice)  this window's own title bar: "system",
+   *                     "corvus", or "" for Settings' (corvus/app.py)
+   *   ctx.close()       close the window
+   */
+  function pluginWindow(root, key, params, id) {
+    const kind = "plugin:" + id;
+    const closers = [];
+    let rec = null;
+    let opts = {};
+    let link = null;
+    let frost = null;
+    let finished = false;
+
+    function finish() {
+      if (finished) return;
+      finished = true;
+      closers.splice(0).forEach((fn) => { try { fn(); } catch (_e) { /* keep going */ } });
+    }
+    function done() { finish(); closeWindow(); }
+
+    const dockBtn = params.get("dock") === "1" ? dockButton("window", () => {
+      if (link) link.dock({});
+      done();
+    }) : null;
+
+    const ctx = {
+      params,
+      frame(o) {
+        if (rec) return { body: rec.bodyEl, setStatus: (t, tone, title) => F.setStatus(rec, t, tone, title) };
+        opts = o || {};
+        rec = frame(root, {
+          icon: opts.icon || "app-window",
+          title: opts.title || params.get("title") || id,
+          subtitle: opts.subtitle != null ? opts.subtitle : (params.get("subtitle") || ""),
+          className: opts.className || "",
+          bodyClass: opts.bodyClass || "",
+          tools: [dockBtn].concat(Array.isArray(opts.tools) ? opts.tools : []).filter(Boolean),
+        });
+        return { body: rec.bodyEl, setStatus: (t, tone, title) => F.setStatus(rec, t, tone, title) };
+      },
+      onClose(fn) { if (typeof fn === "function") closers.push(fn); },
+      setTitleBar(choice) {
+        const n = bridge();
+        if (n && typeof n.setTitleBar === "function") n.setTitleBar(String(choice || ""));
+      },
+      close: done,
+    };
+
+    return loadPlugin(id).then((spec) => {
+      if (!spec || typeof spec.popout !== "function") {
+        root.textContent = "This plugin has no window to show here.";
+        return null;
+      }
+      spec.popout(ctx);
+      if (!rec) ctx.frame({});
+      link = activeLink = Corvus.popouts.announce(key, kind, {
+        state: () => null,
+        onClose: done,
+        onFocus: raiseWindow,
+      });
+      whenNative((n) => {
+        goNative(rec, n, {
+          noun: opts.noun || "window",
+          closeTitle: opts.closeTitle,
+          onClose: done,
+          dockBtn,
+          onDrop: dockBtn ? (at) => { link.dock({ at }); done(); } : null,
+          onMaximize: () => { if (frost) frost.refresh(); },
+          onFrame: () => { if (frost) frost.refresh(); },
+        });
+        if (rec.el.classList.contains("term-win--terminal")) frost = followFrosted(rec, n);
+      });
+      window.addEventListener("pagehide", () => { finish(); if (link) link.stop(); });
+      return { rec, link };
+    }).catch((err) => {
+      console.error("plugin window failed:", id, err);
+      root.textContent = "This plugin's window could not be loaded.";
+      return null;
+    });
   }
 
   /** Build the page from its address. Exported for the tests. */
@@ -504,6 +706,9 @@ Corvus.popoutPage = (function () {
     followTheme();
     if (kind === "video" && params.get("id")) return camera(root, key, params);
     if (kind === "terminal" && params.get("name")) return terminal(root, key, params);
+    if (kind && kind.indexOf("plugin:") === 0 && kind.length > 7) {
+      return pluginWindow(root, key, params, kind.slice(7));
+    }
     root.textContent = "There is nothing to show in this window.";
     return null;
   }
@@ -512,5 +717,5 @@ Corvus.popoutPage = (function () {
     boot(document.getElementById("popout"), window.location.search);
   }
 
-  return { boot, goNative, followFrosted, darkGlass, FROSTED_KEY };
+  return { boot, goNative, followFrosted, darkGlass, FROSTED_KEY, pluginSpecs };
 })();

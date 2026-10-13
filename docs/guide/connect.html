@@ -188,6 +188,7 @@
 <ul>
   <li><strong>It never takes a link that is up.</strong> Plug a second device in while connected and the LINK tab offers it as a row with a <strong>Connect</strong> button instead of switching, because the link it would replace may be carrying an aircraft that is flying. It only dials by itself when the current link is down and has had no heartbeat for 8 seconds.</li>
   <li><strong>Your choice wins for the session.</strong> Once you connect or disconnect by hand, nothing is dialled automatically until the next launch. Then it starts fresh, so tomorrow's cable wins again on its own. The one thing it still does is follow the device you chose when it comes back under a new port name (see below).</li>
+  <li><strong>It never takes a radio another vehicle's link holds.</strong> With one radio per vehicle (see <a href="flying.html#vehicle-links">One radio per vehicle</a>) auto-connect drives the main link only, and a plugged-in radio can be opened as a link of its own with <strong>Open as another vehicle</strong> instead of replacing the main one.</li>
   <li><strong>It never picks PX4's onboard ports</strong> (14540 to 14549), which belong to MAVSDK and MAVROS. A saved connection on one of them is honoured but warned about.</li>
 </ul>
 <p>
@@ -337,7 +338,10 @@
   aircraft to command is taken from the first heartbeat sent by an actual
   autopilot, not the first heartbeat of any kind. An identical frame arriving
   twice within 0.3 s (the signature of a routing loop) is dropped before it is
-  read, so a looped acknowledgement cannot confirm a command twice.
+  read, so a looped acknowledgement cannot confirm a command twice. Other
+  vehicles on the link are listed and drawn on the map, and you can take
+  control of one of them; see
+  <a href="flying.html#vehicles">Several vehicles</a>.
 </p>
 
 <h2 id="one-at-a-time">One Corvus at a time</h2>

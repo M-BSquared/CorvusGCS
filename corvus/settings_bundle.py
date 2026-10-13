@@ -71,7 +71,9 @@ SECTIONS: dict[str, tuple[str, ...]] = {
 
 # Config keys a bundle never carries. ``plugins`` is the legacy home of plugin
 # settings; they travel as the bundle's own ``plugins`` block instead.
-EXCLUDED_KEYS: frozenset[str] = frozenset({"plugins"})
+# ``fleet`` names this machine's serial ports and is owned at runtime by
+# corvus.fleet, which would write its own copy back over an imported one.
+EXCLUDED_KEYS: frozenset[str] = frozenset({"plugins", "fleet"})
 
 
 def section_of(key: str) -> str | None:

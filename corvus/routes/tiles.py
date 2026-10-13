@@ -105,6 +105,20 @@ class TileRoutes:
                 "token_required": tile_sources.needs_token(entry["id"]),
                 "token_set": entry["provider"] in keys_set,
             })
+        # The operator's own models (corvus/custom_dem.py), after the public
+        # ones. Never cached or downloaded: they are on disk already.
+        custom = getattr(self, "custom_dem", None)
+        if custom is not None:
+            for entry in custom.terrain_entries():
+                terrain.append({
+                    **entry,
+                    "minzoom": 0,
+                    "cached_count": 0,
+                    "cached_minzoom": None,
+                    "cached_maxzoom": None,
+                    "token_required": False,
+                    "token_set": False,
+                })
         buildings = (self.buildings.stats()
                      if self.buildings is not None else {"cells": 0, "bytes": 0})
         # A keyed service reports whether the operator has given it a key —

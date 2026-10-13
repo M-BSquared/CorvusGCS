@@ -559,6 +559,101 @@ async function reset() {
     map._setTerrainSpec(DEM);
   });
 
+  await check("the camera height is left to MapLibre while the map moves", async () => {
+    await reset();
+    map._setTerrainSpec(DEM);
+    map.set3DMode("simple");
+    await settle();
+    const writes = [];
+    let held = 900;
+    fakeMap.getCenterElevation = () => held;
+    fakeMap.getCenterClampedToGround = () => true;
+    fakeMap.setCenterElevation = (h) => { writes.push(h); };
+    fakeMap.isMoving = () => true;
+    try {
+      assert.equal(map._syncTerrainElevation(), false, "mid-drag is not settled, only postponed");
+      assert.deepEqual(writes, [], "a drag is never moved under the operator's hand");
+      fakeMap.isMoving = () => false;
+      // Far out (the blank-map case): written once.
+      assert.equal(map._syncTerrainElevation(), true);
+      assert.deepEqual(writes, [1500]);
+      // MapLibre puts its own reading back, several metres off ours and
+      // still outside the clamped margin: no second write, however often asked.
+      held = 1460;
+      for (let i = 0; i < 10; i++) map._syncTerrainElevation();
+      assert.deepEqual(writes, [1500], "writing again only starts the next round of the fight");
+    } finally {
+      fakeMap.isMoving = () => false;
+      delete fakeMap.getCenterElevation;
+      delete fakeMap.getCenterClampedToGround;
+      delete fakeMap.setCenterElevation;
+    }
+  });
+
+  await check("a clamped camera a few metres off is two DEM zooms, not an error", async () => {
+    await reset();
+    map.set3DMode("simple");
+    await settle();
+    const writes = [];
+    fakeMap.getCenterElevation = () => 1494;
+    fakeMap.getCenterClampedToGround = () => true;
+    fakeMap.setCenterElevation = (h) => { writes.push(h); };
+    try {
+      assert.equal(map._syncTerrainElevation(), true);
+      assert.deepEqual(writes, []);
+      // A camera at sea level over 1500 m of ground is still lifted.
+      fakeMap.getCenterElevation = () => 0;
+      map._syncTerrainElevation();
+      assert.deepEqual(writes, [1500]);
+    } finally {
+      delete fakeMap.getCenterElevation;
+      delete fakeMap.getCenterClampedToGround;
+      delete fakeMap.setCenterElevation;
+    }
+  });
+
+  await check("the flown track is redrawn when it shows, not on every sample", async () => {
+    await reset();
+    map._resetTrackState();
+    let draws = 0;
+    let drawn = null;
+    Object.defineProperty(painted, "vehicle-path", {
+      configurable: true,
+      get: () => drawn,
+      set: (data) => { draws++; drawn = data; },
+    });
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const at = (m) => ({ armed: true, position: [11.0, 47.4 + m / 111320], gps_h_acc: 0.02 });
+    try {
+      zoom = 13;   // about 6.5 m per pixel
+      map._updateTrack(at(0));
+      await wait(130);
+      const base = draws;
+      for (let m = 1; m <= 8; m++) map._updateTrack(at(m));
+      await wait(130);
+      assert.equal(draws, base, "eight metres of straight flight is not a pixel at zoom 13");
+      zoom = 19;   // about 0.1 m per pixel: every metre shows
+      for (let m = 9; m <= 30; m++) map._updateTrack(at(m));
+      await wait(130);
+      assert.equal(draws, base + 1, "a burst of samples is one redraw, not one each");
+      const line = drawn.geometry.coordinates;
+      assert.deepEqual(line[line.length - 1], at(30).position, "and it shows the latest");
+      // While the operator drags, nothing is redrawn; letting go catches up.
+      (mapEvents.movestart || []).forEach((cb) => cb({ originalEvent: { type: "mousedown" } }));
+      for (let m = 31; m <= 40; m++) map._updateTrack(at(m));
+      await wait(300);
+      assert.equal(draws, base + 1, "no redraw under a drag");
+      (mapEvents.moveend || []).forEach((cb) => cb({}));
+      await wait(300);
+      assert.equal(draws, base + 2, "the drag is over and the track catches up");
+      assert.deepEqual(drawn.geometry.coordinates.slice(-1)[0], at(40).position);
+    } finally {
+      delete painted["vehicle-path"];
+      map._resetTrackState();
+      zoom = 13;
+    }
+  });
+
   console.log(`\n${passed} checks passed`);
 })().catch((error) => {
   console.error(error);

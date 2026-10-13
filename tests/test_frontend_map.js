@@ -309,30 +309,74 @@ function testHoveringDoesNotGrowTheTrack() {
 }
 
 function testSlowDriftIsStillRecorded() {
-  // The threshold rejects jitter, not slow flight: a steady crawl past 2 m
-  // must still lay down track, or a slow approach would leave a gap.
+  // The jitter gate rejects noise, not slow flight: a steady crawl must still
+  // lay down track, and the line must reach the aircraft.
   map._resetTrackState();
   map._recordTrackPoint([8.5, 47.3]);
   for (let i = 1; i <= 60; i++) map._recordTrackPoint([8.5, 47.3 + i * 5e-6]);  // ~0.55 m/sample
-  const n = map.getTrack().length;
-  assert.ok(n > 5 && n < 61,
-    `slow drift should be decimated but recorded, got ${n} points from 60 samples`);
+  const track = map.getTrack();
+  assert.equal(track.length, 2, "a straight crawl is one segment");
+  assert.deepEqual(track[1], [8.5, 47.3 + 60 * 5e-6], "and it ends where the aircraft is");
 }
 
-function testMovingGrowsTheTrack() {
+function testAStraightLegIsTwoPointsHoweverLong() {
   map._resetTrackState();
   map._recordTrackPoint([8.5, 47.3]);
-  // ~0.0001 deg of latitude is ~11 m — comfortably past the 2 m threshold.
-  for (let i = 1; i <= 5; i++) map._recordTrackPoint([8.5, 47.3 + i * 0.0001]);
-  assert.equal(map.getTrack().length, 6, "each real move adds a point");
+  // ~11 m per sample, 50 samples: over half a kilometre in a straight line.
+  for (let i = 1; i <= 50; i++) map._recordTrackPoint([8.5, 47.3 + i * 0.0001]);
+  assert.equal(map.getTrack().length, 2, "a straight line needs no points in between");
+  assert.deepEqual(map.getTrack()[1], [8.5, 47.3 + 50 * 0.0001]);
 }
 
-function testTrackThresholdIsAboutTwoMetres() {
-  // Just under and just over, on latitude where 1e-5 deg ~ 1.11 m.
+function testTheJitterGateIsAFewDecimetres() {
+  // On latitude, 1e-6 deg is about 0.11 m.
   map._resetTrackState();
   map._recordTrackPoint([8.5, 47.3]);
-  assert.equal(map._recordTrackPoint([8.5, 47.3 + 0.0000135]), false, "~1.5 m is below the threshold");
-  assert.equal(map._recordTrackPoint([8.5, 47.3 + 0.000027]), true, "~3 m is above it");
+  assert.equal(map._recordTrackPoint([8.5, 47.3 + 0.0000018]), false, "~0.2 m is noise");
+  assert.equal(map._recordTrackPoint([8.5, 47.3 + 0.0000045]), true, "~0.5 m is movement");
+}
+
+function orbitTrack(hAcc) {
+  // An orbit of 30 m radius sampled every metre.
+  map._resetTrackState();
+  const R = 30, lat0 = 47.3, lng0 = 8.5;
+  const mLat = 111320, mLng = 111320 * Math.cos(lat0 * Math.PI / 180);
+  const samples = [];
+  for (let i = 0; i <= 188; i++) {
+    const a = i / R;
+    samples.push([lng0 + (R * Math.sin(a)) / mLng, lat0 + (R - R * Math.cos(a)) / mLat]);
+  }
+  samples.forEach((p) => map._recordTrackPoint(p, hAcc));
+  const track = map.getTrack();
+  const xy = (c) => [(c[0] - lng0) * mLng, (c[1] - lat0) * mLat];
+  const segDist = (p, a, b) => {
+    const [px, py] = xy(p), [ax, ay] = xy(a), [bx, by] = xy(b);
+    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
+    return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+  };
+  const worst = Math.max(...samples.map((p) => Math.min(...track.slice(1).map((b, k) => segDist(p, track[k], b)))));
+  return { track, samples, worst };
+}
+
+function testATurnKeepsItsShape() {
+  // The drawn line is never further than the tolerance from any sample, with
+  // far fewer points than samples: dense where the shape needs it, and only
+  // there. Unknown accuracy: a quarter of a metre.
+  const { track, samples, worst } = orbitTrack(-1);
+  assert.ok(worst <= 0.26, `the line strays ${worst.toFixed(2)} m from the flight`);
+  assert.ok(track.length > 10 && track.length < samples.length / 3,
+    `an orbit needs points, not one per sample: got ${track.length} from ${samples.length}`);
+  assert.deepEqual(track[track.length - 1], samples[samples.length - 1], "the line ends at the aircraft");
+}
+
+function testTheToleranceFollowsThePositionAccuracy() {
+  const rtk = orbitTrack(0.02);
+  assert.ok(rtk.worst <= 0.11, `with RTK the line is within a decimetre, strays ${rtk.worst.toFixed(2)} m`);
+  const plain = orbitTrack(2.0);
+  assert.ok(plain.worst <= 0.51, `strays ${plain.worst.toFixed(2)} m`);
+  assert.ok(plain.track.length < rtk.track.length,
+    "an uncertain position is not drawn to a precision it does not have");
 }
 
 function testClearTrackEmptiesIt() {
@@ -387,7 +431,9 @@ function testLinkDropDoesNotLookLikeAReboot() {
 // landing moves it to the earlier flights, and nothing but the clear button
 // (or the opt-in "clear on restart") discards a flight.
 // ---------------------------------------------------------------------------
-const north = (i) => [8.5, 47.3 + i * 0.0001];  // ~11 m apart
+// ~11 m apart, alternating ~7 m east and back: every sample is a corner, so
+// these tests count samples the way the recording keeps them.
+const north = (i) => [8.5 + (i % 2) * 0.0001, 47.3 + i * 0.0001];
 
 function flyFlight(armedFrom, n, boot) {
   for (let i = 0; i < n; i++) {
@@ -972,8 +1018,10 @@ const tests = [
   testTrackIgnoresNonFiniteAndMalformedPositions,
   testHoveringDoesNotGrowTheTrack,
   testSlowDriftIsStillRecorded,
-  testMovingGrowsTheTrack,
-  testTrackThresholdIsAboutTwoMetres,
+  testAStraightLegIsTwoPointsHoweverLong,
+  testTheJitterGateIsAFewDecimetres,
+  testATurnKeepsItsShape,
+  testTheToleranceFollowsThePositionAccuracy,
   testClearTrackEmptiesIt,
   testGetTrackReturnsACopy,
   testRebootIsDetectedWhenUptimeGoesBackwards,

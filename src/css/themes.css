@@ -356,6 +356,17 @@
   /* The wash a bare (transparent) control gets on hover — .fa-btn's move. */
   --panel-wash: rgb(var(--tint-rgb) / 0.04);
 
+  /* --- Dialogs ---
+     A modal is the thickest glass in the app. The cards inside it already sit
+     on frost, so a second blur behind them has nothing left to soften: they
+     lift off the sheet with a fill instead. --glass-edge is the lit top rim
+     that makes a translucent sheet read as glass rather than as tinted paint. */
+  --modal-fill: rgb(var(--glass-rgb) / 0.7);
+  --modal-blur: blur(32px) saturate(180%);
+  --modal-card-fill: rgb(var(--glass-rgb) / 0.82);
+  --modal-card-fill-hover: rgb(var(--glass-rgb) / 0.95);
+  --glass-edge: inset 0 1px 0 rgb(255 255 255 / 0.6);
+
   /* --- Brand mark ---
      The logo is artwork, not a tintable glyph, so it ships in two cuts: white
      for dark surfaces and black for light ones. Making it a token means a
@@ -479,13 +490,26 @@
   --glass-rgb: 17 22 29;
   --input-rgb: 11 14 18;
   --tint-rgb: 255 255 255;
-  --scrim: rgba(0, 0, 0, 0.5);
+  /* Lighter than a blackout: the frost needs some colour behind it to show. */
+  --scrim: rgba(0, 0, 0, 0.3);
+  /* Dark glass over a dark map is dark on dark, and the blur alone cannot be
+     seen. Brightening what is behind it is what lets the frost come through. */
+  --blur: blur(28px) saturate(190%) brightness(1.1);
+  --blur-soft: blur(24px) saturate(190%) brightness(1.1);
 
   --panel-fill: rgb(var(--glass-rgb) / 0.55);
   --panel-fill-hover: rgb(var(--glass-rgb) / 0.78);
   --panel-hairline: rgb(var(--tint-rgb) / 0.10);
   --panel-hairline-hover: rgb(var(--tint-rgb) / 0.18);
   --panel-wash: rgb(var(--tint-rgb) / 0.06);
+
+  --modal-fill: rgb(var(--glass-rgb) / 0.6);
+  --modal-blur: blur(60px) saturate(200%) brightness(1.15);
+  /* A white wash, not more of the dark glass: on a dark sheet a darker card
+     reads as a hole, a lighter one as a pane in front of it. */
+  --modal-card-fill: rgb(var(--tint-rgb) / 0.05);
+  --modal-card-fill-hover: rgb(var(--tint-rgb) / 0.08);
+  --glass-edge: inset 0 1px 0 rgb(255 255 255 / 0.08);
 
   /* The black mark is invisible on a dark top bar; use the white cut. */
   --logo-mark: url("../assets/CorvusGCS_logo.png");

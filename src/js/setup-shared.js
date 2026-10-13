@@ -101,7 +101,7 @@ Corvus.setupShared = (function () {
     return r;
   }
 
-  /** Back button used at the top of each sub-page (apple-design: same path in
+  /** Back button used at the top of each sub-page (same path in
    *  and out — back returns along the entry path).
    *
    *  `label` names where back goes; it defaults to "Setup" because that is

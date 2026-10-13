@@ -26,7 +26,7 @@ window.Corvus = window.Corvus || {};
  * stores as `activeDestroy`. `render()` always tears the active view down first
  * (idempotent, no leaks on left-nav re-entry), then shows the tile grid. The
  * back button in each sub-page calls its own destroy() then asks the orchestrator
- * to return to the grid. apple-design materials/motion; reduced-motion is
+ * to return to the grid. Materials and motion follow the shared styles; reduced-motion is
  * handled per sub-page (Plotly transitions zeroed).
  */
 Corvus.setup = (function () {
@@ -175,7 +175,7 @@ Corvus.setup = (function () {
   }
 
   /**
-   * Build one setup tile. apple-design: lift on hover, scale on press, focus
+   * Build one setup tile. Lift on hover, scale on press, focus
    * ring, spring-eased motion (handled in CSS via transform/opacity only).
    */
   function makeTile(viewId, iconId, title, desc) {

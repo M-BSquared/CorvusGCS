@@ -362,6 +362,29 @@ def transcode(png: bytes, from_encoding: str, to_encoding: str, size: int) -> by
     return encode(size, size, _pack(values))
 
 
+def heights(png: bytes, encoding: str, dz: int = 0, sub_x: int = 0, sub_y: int = 0,
+            size: int | None = None) -> list[float] | None:
+    """Metres for every pixel of *png*, or of the square *dz* zooms below it.
+
+    *size* re-cuts the result to that many pixels a side. None when the tile
+    is unreadable or its packing unknown.
+    """
+    if encoding not in ENCODINGS:
+        return None
+    grid = decode(png)
+    if grid is None:
+        return None
+    values = _resample_float(grid, dz, sub_x, sub_y, size, size)
+    scale, offset = ENCODINGS[encoding]
+    return [v * scale + offset for v in values]
+
+
+def encode_heights(size: int, values: list[float], encoding: str) -> bytes:
+    """A *size* square PNG of metres *values*, row-major, in *encoding*."""
+    scale, offset = ENCODINGS[encoding]
+    return encode(size, size, _pack([(v - offset) / scale for v in values]))
+
+
 def overzoom(ancestor_png: bytes, dz: int, sub_x: int, sub_y: int) -> bytes | None:
     """One-shot: derive a child tile from an ancestor PNG. None if unreadable."""
     if dz < 1 or not (0 <= sub_x < (1 << dz)) or not (0 <= sub_y < (1 << dz)):

@@ -6,7 +6,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Map, HUD and flight controls · Corvus GCS documentation</title>
-<meta name="description" content="The live map, the flown track, click to fly, the flight HUD, the flight bar, notifications, manual controls and the preflight checklist.">
+<meta name="description" content="The live map, the flown track, several vehicles at once, click to fly, the flight HUD, the flight bar, notifications, manual controls and the preflight checklist.">
 <link rel="canonical" href="https://m-bsquared.github.io/CorvusGCS/guide/flying.html">
 <meta name="theme-color" content="#0B0E12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
@@ -14,7 +14,7 @@
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Corvus GCS">
 <meta property="og:title" content="Map, HUD and flight controls · Corvus GCS documentation">
-<meta property="og:description" content="The live map, the flown track, click to fly, the flight HUD, the flight bar, notifications, manual controls and the preflight checklist.">
+<meta property="og:description" content="The live map, the flown track, several vehicles at once, click to fly, the flight HUD, the flight bar, notifications, manual controls and the preflight checklist.">
 <meta property="og:url" content="https://m-bsquared.github.io/CorvusGCS/guide/flying.html">
 <meta property="og:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
@@ -189,6 +189,109 @@
   <li><strong>Clear the track whenever Corvus starts or the autopilot reboots</strong>, off by default.</li>
 </ul>
 
+<h2 id="vehicles">Several vehicles</h2>
+<p>
+  Corvus flies one vehicle at a time and shows every other one it hears. Click
+  the <strong>Vehicle</strong> block at the left of the status bar to open the
+  vehicle list. Each entry has the vehicle's name and colour, its system ID and
+  link, its mode, battery and height, and a <strong>Take control</strong>
+  button.
+</p>
+<p>
+  The vehicle in control is the one the whole interface is about: the status
+  bar, the HUD, the flight bar, the joystick, the mission planner and every
+  setup page. The others are drawn on the map in their own colour, with their
+  name under the marker and a track of their own. Click one on the map to open
+  the list at that vehicle. A vehicle that has not been heard for 5 s is drawn
+  faded and marked lost.
+</p>
+
+<h3 id="vehicle-names">Names and colours</h3>
+<p>
+  Click the name at the top of a vehicle's entry and type a new one. An empty
+  field goes back to the default, "Vehicle" and the system ID. Click the
+  coloured circle to choose the colour of its marker and track: the theme's own
+  red or one of the suggested colours. A vehicle
+  alone on the map keeps the theme's red. When a second one appears, the one in
+  control keeps it and the others get a colour each. Names and colours are
+  saved and come back the next time that vehicle connects.
+</p>
+
+<h3 id="take-control">Taking control of another vehicle</h3>
+<p>
+  Press <strong>Take control</strong>. If the vehicle in control is armed,
+  Corvus asks first, because that vehicle keeps flying in its current mode and
+  is not sent anything to stop it. Give it a mode that flies on its own (Hold,
+  Mission or Return) before you switch. From then on commands, the joystick and
+  every page go to the new vehicle. The switch takes about a second, during
+  which the status bar shows the link connecting.
+</p>
+<p>
+  The flown track belongs to its vehicle. Switching hands the old vehicle's
+  track over to it, drawn in its colour, and picks up the new vehicle's track
+  where it left off.
+</p>
+
+<h3 id="vehicle-links">One radio per vehicle</h3>
+<p>
+  The usual field setup: every vehicle has a telemetry radio of its own, and
+  every radio is a link of its own in Corvus. The main link is the one on the
+  <strong>LINK</strong> tab; every further radio is opened under
+  <strong>Links</strong>, in the vehicle list or in <strong>Settings,
+  Vehicles</strong>. Both list the serial ports no link uses yet, each with an
+  <strong>Open</strong> button, and a field for any other connection, such as
+  <code>serial:/dev/ttyUSB1:57600</code> or <code>udpin:0.0.0.0:14560</code>.
+  A radio plugged in while Corvus is running is offered on the LINK tab and in
+  the list with <strong>Open as another vehicle</strong>. Extra links are
+  saved and opened again at the next start, and the cross beside one closes
+  it. Every vehicle on a link of its own may keep system ID 1.
+</p>
+<p>
+  Each link is a complete connection with its own heartbeat to the vehicle, so
+  a vehicle you are not controlling never sees its ground station go quiet.
+  Switching between vehicles on separate links is immediate. Auto-connect only
+  ever drives the main link, and never takes a radio another link holds.
+</p>
+<p>
+  On Linux a radio can come back under another <code>/dev/ttyUSB</code>
+  number after it is unplugged. For an extra link, use its stable name from
+  <code>/dev/serial/by-id/</code> instead; macOS and Windows keep the same name
+  for the same adapter.
+</p>
+
+<h3 id="vehicle-shared">Several vehicles on one link</h3>
+<p>
+  A router, a mesh radio or PX4's multi-vehicle simulation carries several
+  vehicles down one link, and they appear by themselves. On a shared link every
+  vehicle needs its own <code>MAV_SYS_ID</code> (<code>SYSID_THISMAV</code> on
+  ArduPilot), and taking control of another one takes about a second while
+  the link latches it. A vehicle there that does not send its position
+  (ArduPilot sends nothing a station has not asked for) is asked for it at
+  2 Hz, and for nothing else. <strong>Settings, Vehicles, Show every vehicle a
+  link carries</strong> switches this off: every link is then one vehicle, the
+  first autopilot it hears, as it was before Corvus had a vehicle list.
+</p>
+
+<h3 id="vehicle-warnings">Warnings from the other vehicles</h3>
+<p>
+  The vehicles you are not controlling still report to the notification board:
+  every warning or error they send (low battery, a failsafe, a refused
+  preflight check) appears there and as a toast, with the vehicle's name in
+  front. A vehicle that stops sending heartbeats for 5 s is reported lost, and
+  heard again when it comes back. The same line from the same vehicle is told
+  once in 30 s.
+</p>
+
+<h3 id="vehicle-limits">What follows the vehicle in control</h3>
+<p>
+  The <strong>LINK</strong> tab always shows the link of the vehicle in
+  control. Downloading on-board logs, flashing firmware over USB and
+  programming a SiK radio work with the vehicle on the main link only; with a
+  vehicle on another link in control they say so. RTK corrections go to every
+  link. The Remote ID identity from Settings is sent on the main link only,
+  because it belongs to one aircraft.
+</p>
+
 <h3 id="click-menu">Click the map</h3>
 <p>Click anywhere on the map to open a small menu for that spot:</p>
 <dl>
@@ -354,12 +457,14 @@
 
 <h2 id="manual-control">Manual controls on screen</h2>
 <p>
-  Three optional input methods can be switched on under
-  <strong>Settings, Controls</strong>. All three are off by default.
+  Four optional input methods can be switched on under
+  <strong>Settings, Controls</strong>. All four are off by default.
 </p>
 <dl>
   <dt>Virtual joystick</dt>
   <dd>Two sticks on screen: throttle and yaw on the left, pitch and roll on the right.</dd>
+  <dt>USB gamepad</dt>
+  <dd>A game controller plugged in by USB, with the same layout as the virtual joystick. Press any button on it once so the app can see it.</dd>
   <dt>Arrow keys</dt>
   <dd>Your keyboard's arrow keys fly pitch and roll.</dd>
   <dt>WASD</dt>
@@ -373,9 +478,20 @@
   dash. The on-screen sticks are not affected by either; they always reach
   their own stops.
 </p>
+<p id="gamepad-arm">
+  <strong>Arming from the gamepad.</strong> With the vehicle disarmed and the
+  link up, push both sticks inward, toward each other, and hold them there.
+  A bar under the gamepad fills, and after one second Corvus asks the vehicle
+  to arm. While you hold the gesture on the ground the gamepad sends centred
+  sticks, and after the arm it keeps sending centred sticks until you let go of
+  both. Once armed, Corvus asks for the stack's position mode (Position on PX4,
+  PosHold on an ArduPilot copter) if the vehicle is in a mode that ignores the
+  sticks. There is no disarm gesture: land and disarm with the ARM button, or
+  let the vehicle disarm itself after landing.
+</p>
 <div class="callout">
   <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-info"></use></svg>
-  <div><p>These are input sources only. They never arm, change mode or override a failsafe. On ArduPilot they only work when the aircraft accepts stick input from Corvus's system ID; see <a href="compatibility.html#sysid-mygcs">One setting on ArduPilot</a>.</p></div>
+  <div><p>Apart from the gamepad's arm gesture, these are input sources only. They never arm, change mode or override a failsafe. On ArduPilot they only work when the aircraft accepts stick input from Corvus's system ID; see <a href="compatibility.html#sysid-mygcs">One setting on ArduPilot</a>.</p></div>
 </div>
 
 <h2 id="checklist">Preflight checklist</h2>
@@ -413,6 +529,7 @@
   <p class="guide-toc-title" id="toc-title">On this page</p>
   <ul>
     <li><a href="#map">The map</a></li>
+    <li><a href="#vehicles">Several vehicles</a></li>
     <li><a href="#flight-bar">The flight bar</a></li>
     <li><a href="#hud">The flight HUD</a></li>
     <li><a href="#notifications">Notifications and toasts</a></li>

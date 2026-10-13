@@ -159,7 +159,7 @@
   flex: 1 1 160px; min-width: 0;
   font-size: 10.5px; color: var(--text-2); line-height: 1.35;
 }
-.link-suggestion-actions { display: flex; gap: 4px; flex: 0 0 auto; }
+.link-suggestion-actions { display: flex; flex-wrap: wrap; gap: 4px; flex: 0 1 auto; }
 
 /* Disconnect used to be grey ghost text, which on a live link read as
    decoration: the one control an operator reaches for when a port has moved

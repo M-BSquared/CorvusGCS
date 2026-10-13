@@ -8,7 +8,7 @@
 /* ===== SETUP PAGE (tile grid + sub-pages) ===== */
 .setup-page { display: flex; flex-direction: column; gap: 4px; }
 
-/* Back button: same path in and out (apple-design §7). Now .btn ghost sm;
+/* Back button: same path in and out. Now .btn ghost sm;
    keep only the layout (top-left placement + spacing) and icon size. */
 .setup-back { margin-bottom: 18px; align-self: flex-start; }
 .setup-back svg, .setup-back i { width: 14px; height: 14px; }
@@ -1564,7 +1564,7 @@
 .fs-offer-reasons { margin: 0 0 10px; padding-left: 18px; font-size: 12px; color: var(--text-2); }
 .fs-offer-note { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-2); }
 
-/* Reduced transparency: make translucent/animated surfaces frostier (apple-design §14). */
+/* Reduced transparency: make translucent/animated surfaces frostier. */
 @media (prefers-reduced-transparency: reduce) {
   .autotune-live-dot { animation: none; }
 }

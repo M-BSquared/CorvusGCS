@@ -214,12 +214,13 @@ Corvus.tiles = (function () {
   }
 
   /** The elevation model 3D is drawing from right now, as the catalogue
-   *  describes it, or null. The download carries it along with the free one. */
+   *  describes it, or null. The download carries it along with the free one.
+   *  An operator's own model is on this computer already, so it never is. */
   function chosenTerrain() {
     const spec = Corvus.map && typeof Corvus.map.getTerrainSpec === "function"
       ? Corvus.map.getTerrainSpec() : null;
     const id = spec && spec.id;
-    return (id && terrainSources.find((d) => d.id === id)) || null;
+    return (id && terrainSources.find((d) => d.id === id && !d.custom)) || null;
   }
 
   /** True when the operator has asked for elevation with this download. */

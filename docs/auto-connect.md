@@ -224,6 +224,10 @@ These are guarantees, not current behaviour that might drift:
 - **It never takes a link that is up.** Dialling requires both an idle
   `link_status` and a stale heartbeat. A connected link, or a degraded one
   still receiving heartbeats, is left alone and gets a suggestion at most.
+- **It never takes another vehicle's radio.** A serial port one of the extra
+  links holds (`corvus/fleet.py`, one link per radio) is never dialled and
+  never offered: the watcher gets those ports from `busy_devices_fn` and
+  leaves them out before it picks.
 - **Manual wins the session.** After a manual connect or disconnect, nothing
   auto-dials and nothing is suggested until the process restarts.
 - **It never opens a port to find out what is behind it.**

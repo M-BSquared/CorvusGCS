@@ -292,6 +292,22 @@ Corvus.link = (function () {
     const actions = document.createElement("div");
     actions.className = "link-suggestion-actions";
     actions.appendChild(connectIt);
+    // The other answer to a second radio: keep this link, and fly the vehicle
+    // behind the new one as well (js/fleet.js).
+    if (Corvus.fleet && typeof Corvus.fleet.addLink === "function") {
+      const another = Corvus.ui.button({
+        label: "Open as another vehicle", size: "sm", variant: "secondary",
+        onClick: () => {
+          dismissedSuggestion = conn;
+          Corvus.ui.setBusy(another, true);
+          Corvus.fleet.addLink(conn)
+            .then(() => renderSuggestion(state))
+            .catch((err) => Corvus.ui.toast({ level: "critical", message: err.message }))
+            .finally(() => Corvus.ui.setBusy(another, false));
+        },
+      });
+      actions.appendChild(another);
+    }
     actions.appendChild(dismiss);
 
     suggestionHost.appendChild(text);

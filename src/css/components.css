@@ -42,7 +42,7 @@
 */
 
 /* ===== .glass — one translucent material for every floating surface =====
-   apple-design §12: translucency conveys hierarchy. A single definition keeps
+   Translucency conveys hierarchy. A single definition keeps
    the flight-action bar, planning panels, popovers, and the HUD reading as
    one family. Each surface keeps its own positioning/size in main.css; this
    class supplies the shared blur, border, and shadow depth only. */
@@ -51,10 +51,10 @@
   backdrop-filter: var(--blur);
   -webkit-backdrop-filter: var(--blur);
   border: 1px solid rgb(var(--tint-rgb) / 0.08);
-  box-shadow: var(--shadow-glass);
+  box-shadow: var(--glass-edge), var(--shadow-glass);
 }
 /* Reduced transparency: frost the material to a solid surface so text stays
-   legible without the blur (apple-design §14). */
+   legible without the blur. */
 @media (prefers-reduced-transparency: reduce) {
   .glass {
     background: var(--surface-2);
@@ -82,7 +82,7 @@
 
 /* ===== .btn — single button foundation =====
    Driven by data-variant / data-size / data-shape attributes and state
-   classes (.is-active, .is-busy, .armed). apple-design: instant press
+   classes (.is-active, .is-busy, .armed). Instant press
    feedback on :active, no overshoot (critically-damped cubic-bezier),
    reduced-motion safe. */
 /* The hidden attribute must win over the display below. Without this a .btn
@@ -127,8 +127,8 @@
 .btn:hover:not(:disabled):not(.is-busy) {
   transform: translateY(-1px);
 }
-/* Instant feedback on press — respond on the press, not the release
-   (apple-design §1). Declared after the lift so the press wins while held.
+/* Instant feedback on press — respond on the press, not the release.
+   Declared after the lift so the press wins while held.
    No scale while disabled or busy. */
 .btn:active:not(:disabled):not(.is-busy) {
   transform: scale(0.97);
@@ -400,7 +400,7 @@
 .status-dot[data-level="off"],
 .status-dot.off { color: var(--text-disabled); box-shadow: var(--dot-ring); }
 
-/* ===== Reduced motion (apple-design §14) =====
+/* ===== Reduced motion =====
    No press scale, no transitions, no busy pulse. */
 @media (prefers-reduced-motion: reduce) {
   .btn,
@@ -925,7 +925,7 @@
 .ui-actions + .ui-msg { margin-top: 10px; }
 
 /* ===== .tile — large clickable tile (Setup grid, Plugins grid) =====
-   apple-design: lift on hover, scale on press, keyboard focus ring,
+   Lift on hover, scale on press, keyboard focus ring,
    transform/opacity only. The two grids differ solely in flow direction, icon
    size and padding, so those are the only things their own classes set. */
 .tile {
@@ -1398,12 +1398,14 @@
   max-width: 420px;
   padding: 22px;
   border-radius: 14px;
-  background: rgb(var(--glass-rgb) / 0.7);
-  backdrop-filter: blur(32px) saturate(180%);
-  -webkit-backdrop-filter: blur(32px) saturate(180%);
-  border: 1px solid rgb(var(--tint-rgb) / 0.08);
-  box-shadow: var(--shadow-modal);
+  background: var(--modal-fill);
+  backdrop-filter: var(--modal-blur);
+  -webkit-backdrop-filter: var(--modal-blur);
+  border: 1px solid var(--panel-hairline);
+  box-shadow: var(--glass-edge), var(--shadow-modal);
   animation: corvus-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --panel-fill: var(--modal-card-fill);
+  --panel-fill-hover: var(--modal-card-fill-hover);
 }
 .modal[data-size="sm"] { max-width: 360px; }
 .modal[data-size="lg"] { max-width: 560px; }

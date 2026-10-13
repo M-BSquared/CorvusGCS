@@ -50,7 +50,7 @@ PAGES: tuple[Page, ...] = (
     Page("connect.html", "Start", "Connect to the aircraft",
          "How Corvus finds a link on its own, connecting by hand over serial, UDP or TCP, sharing the link with QGroundControl, and what the status bar says."),
     Page("flying.html", "Fly", "Map, HUD and flight controls",
-         "The live map, the flown track, click to fly, the flight HUD, the flight bar, notifications, manual controls and the preflight checklist."),
+         "The live map, the flown track, several vehicles at once, click to fly, the flight HUD, the flight bar, notifications, manual controls and the preflight checklist."),
     Page("3d-offline.html", "Fly", "3D, terrain and offline maps",
          "The 3D view and the globe, elevation models, OpenStreetMap buildings, and preparing maps and terrain for a field with no internet."),
     Page("mission.html", "Fly", "Mission planner",

@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.10.14-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.14" />
+  <img src="https://img.shields.io/badge/Version-2026.10.15-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.15" />
   <img width="8" />
   <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -32,7 +32,7 @@
   <br>
   <!-- <img src="https://img.shields.io/badge/%F0%9F%A4%96-Vibe%20Coded-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded" />
   <img width="8" /> -->
-  <img src="https://img.shields.io/badge/Lines%20of%20Code-231k-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 231k" />
+  <img src="https://img.shields.io/badge/Lines%20of%20Code-259k-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 259k" />
   <img width="8" />
   <img src="https://img.shields.io/badge/Tests-98k%20lines%20%C2%B7%20218%20files-18a4de?style=for-the-badge" height="28" alt="Tests: 98k lines across 218 files" />
   <br>
@@ -126,7 +126,8 @@ the documentation that explains it.
 |---|---|
 | ⚡ **Ready fast** | Flight telemetry only on connect; parameters when *you* ask for them. [More](https://m-bsquared.github.io/CorvusGCS/guide/index.html#ready-in-seconds) |
 | 🛩️ **Fly** | Live map, floating flight HUD, arm / takeoff / land / return, flight modes, click the map to fly there, on-screen joystick and keyboard control, and an optional preflight checklist. [More](https://m-bsquared.github.io/CorvusGCS/guide/flying.html) |
-| 🌍 **See in 3D** | A spinnable globe, real terrain at true scale, OpenStreetMap buildings, and the aircraft drawn at its real altitude. [More](https://m-bsquared.github.io/CorvusGCS/guide/3d-offline.html) |
+| 🚁 **Several vehicles** | Every vehicle on the link, and on extra links such as a second radio, on one map: each with its own name, colour, marker and track. Take control of any of them from the vehicle list. [More](https://m-bsquared.github.io/CorvusGCS/guide/flying.html#vehicles) |
+| 🌍 **See in 3D** | A spinnable globe, real terrain at true scale (or your own GeoTIFF or XYZ surface model, served by Corvus itself), OpenStreetMap buildings, and the aircraft drawn at its real altitude. [More](https://m-bsquared.github.io/CorvusGCS/guide/3d-offline.html) |
 | 📴 **Work offline** | Nothing loads from the internet. Download named areas with their elevation and buildings in advance. [More](https://m-bsquared.github.io/CorvusGCS/guide/3d-offline.html#offline) |
 | 🧭 **Plan a mission** | Draw it on the map, read it as an altitude profile against the terrain, drag heights on the chart, save, upload, and fly on a second press. [More](https://m-bsquared.github.io/CorvusGCS/guide/mission.html) |
 | 📡 **Connect** | Connects on its own to what is plugged in; serial, UDP and TCP by hand; link quality; automatic reconnect; mirror the link to QGroundControl. [More](https://m-bsquared.github.io/CorvusGCS/guide/connect.html) |
@@ -298,7 +299,7 @@ imposition here, they are the most useful input there is.
 
 Corvus GCS is developed with the **Universität der Bundeswehr München** (University
 of the German Federal Armed Forces, Munich), in the context of the work at
-**Chair LRT 1.1 of Prof. Dr. Matthias Gerdts**.
+**[Chair LRT 1.1 of Prof. Dr. Matthias Gerdts](https://www.unibw.de/ingmathe/members/team)**.
 
 It is an **AI-assisted project**, built under my direction and review,
 and it is built for real field use rather than for demonstrations. See

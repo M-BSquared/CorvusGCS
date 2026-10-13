@@ -179,6 +179,17 @@ Corvus.topbar = (function () {
     return ap ? `${ap} ${type}` : type;
   }
 
+  /** The vehicle as the operator named it, once there is a choice of them
+   *  (or a name at all). One unnamed aircraft reads as it always has. */
+  function fleetVehicleLabel(state) {
+    const base = vehicleLabel(state);
+    const fleet = Corvus.fleet;
+    if (!state.connected || !fleet) return base;
+    const v = fleet.vehicle(state.vehicle_id);
+    if (!v || (!fleet.isMulti() && !v.custom_name)) return base;
+    return v.name;
+  }
+
   /** The narrow bar's vehicle: the stack alone, which is what the version
    *  beside it belongs to. The airframe is on the setup pages. */
   function vehicleShortLabel(state) {
@@ -678,7 +689,7 @@ Corvus.topbar = (function () {
 
     return [
       { type: "logo" },
-      { key: "vehicle", label: "Vehicle", value: vehicleLabel(state), short: vehicleShortLabel(state), cls: state.connected ? "" : "critical", dot: conn, sub: fw.text, subCls: fw.cls, title: fw.title, priority: "high" },
+      { key: "vehicle", label: "Vehicle", value: fleetVehicleLabel(state), short: vehicleShortLabel(state), cls: state.connected ? "" : "critical", dot: conn, sub: fw.text, subCls: fw.cls, title: fw.title, priority: "high" },
       { key: "mode", label: "Mode", value: modeLabel(state), cls: "accent", priority: "high" },
       { key: "armed", label: "Status", value: ready.value, short: ready.short || ready.value, sub: ready.sub || "", cls: ready.cls, dot: ready.cls, tone: ready.tone, title: ready.title, priority: "high" },
       { key: "gps", label: "GPS", value: state.connected ? "GPS" : "—", sub: gpsSub, cls: gpsCls, dot: gpsCls, detail: true, priority: "high" },
@@ -947,6 +958,7 @@ Corvus.topbar = (function () {
         if (b.detail) attachDetail(root, b.key);
       });
       topBarBuilt = true;
+      wireVehicleBlock();
       applyCompanyLogo();
       updateTopBarValues(state);
     } else {
@@ -954,7 +966,50 @@ Corvus.topbar = (function () {
     }
   }
 
+  /* The Vehicle block opens the vehicle list: names, colours, which one is
+     flown, and the links. A swatch in the caption shows the flown vehicle's
+     colour once there is more than one to tell apart. */
+  let vehicleSwatch = null;
+
+  function wireVehicleBlock() {
+    const cached = blockEls.vehicle;
+    if (!cached || !Corvus.fleet) return;
+    const root = cached.root;
+    root.classList.add("clickable", "tb-vehicle");
+    root.tabIndex = 0;
+    root.setAttribute("role", "button");
+    root.setAttribute("aria-haspopup", "dialog");
+    const open = () => Corvus.fleet.openDialog();
+    root.addEventListener("click", open);
+    root.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+    });
+    const label = root.querySelector(".tb-label");
+    if (label) {
+      vehicleSwatch = document.createElement("span");
+      vehicleSwatch.className = "tb-fleet-swatch";
+      vehicleSwatch.hidden = true;
+      label.insertBefore(vehicleSwatch, label.firstChild);
+    }
+    Corvus.fleet.subscribe(() => {
+      if (lastState) updateTopBarValues(lastState);
+    });
+  }
+
+  function updateVehicleSwatch(state) {
+    const fleet = Corvus.fleet;
+    if (!vehicleSwatch || !fleet) return;
+    const multi = fleet.isMulti();
+    vehicleSwatch.hidden = !multi || !state.connected;
+    if (vehicleSwatch.hidden) return;
+    vehicleSwatch.style.background = fleet.colorOf(state.vehicle_id) || fleet.themeColor();
+    const count = fleet.get().vehicles.length;
+    const root = blockEls.vehicle && blockEls.vehicle.root;
+    if (root) root.setAttribute("aria-label", `Vehicle: ${fleetVehicleLabel(state)}, ${count} vehicles`);
+  }
+
   function updateTopBarValues(state) {
+    updateVehicleSwatch(state);
     const blkData = blocks(state);
     blkData.forEach((b) => {
       if (!b.key || b.type === "warnings") return;

@@ -549,6 +549,7 @@ Corvus.app = (function () {
       // aircraft is opt-in, and an unreachable backend must leave both off
       // rather than guess from a cached value.
       Corvus.joystick.setEnabled(!!(cfg.controls && cfg.controls.virtual_joystick));
+      Corvus.joystick.setGamepadEnabled(!!(cfg.controls && cfg.controls.gamepad));
       Corvus.joystick.setKeysEnabled(!!(cfg.controls && cfg.controls.arrow_keys));
       Corvus.joystick.setWasdEnabled(!!(cfg.controls && cfg.controls.wasd_keys));
       // How much stick a held key is worth. Unlike the switches this is not a
@@ -643,6 +644,9 @@ Corvus.app = (function () {
     Corvus.checklist.init(document.getElementById("checklistPanel"));
 
     Corvus.telemetry.connect();
+    // Every vehicle the station hears, on the shared event stream. Started
+    // with the telemetry so the stream's topic set settles at boot.
+    if (Corvus.fleet) Corvus.fleet.start();
     Corvus.ui.refreshIcons();
 
     Corvus.telemetry.requestJson("/api/version").then((v) => {

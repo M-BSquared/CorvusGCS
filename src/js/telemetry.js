@@ -84,6 +84,29 @@ Corvus.telemetry = (function () {
     });
   }
 
+  /**
+   * The operator switched to another vehicle (js/fleet.js). Every panel was
+   * written for one aircraft per link, and learns that the aircraft changed
+   * from a disconnect followed by a connect: the notifications clear, the
+   * modes and capabilities are fetched again, a setup page reloads. A switch
+   * between two connected vehicles has no disconnect in it, so one is handed
+   * to every subscriber here, at once and in order, before the new vehicle's
+   * first state. Nothing happens while the vehicle stays the same.
+   */
+  function handOver(prev, next) {
+    if (!prev || !next || !prev.connected) return;
+    const before = prev.vehicle_id;
+    const after = next.vehicle_id;
+    if (!before || !after || before === after) return;
+    const gap = Object.assign({}, prev, {
+      connected: false, armed: false, mode: "DISCONNECTED", mode_label: "DISCONNECTED",
+      link_status: "disconnected", prearm_ok: null, prearm_reasons: [], landed_state: 0,
+    });
+    subscribers.forEach((fn) => {
+      try { fn(gap); } catch (err) { console.error("telemetry subscriber failed:", err); }
+    });
+  }
+
   function publishTransportError(message) {
     window.dispatchEvent(new CustomEvent("corvus:notification", {
       detail: { level: "critical", message },
@@ -101,7 +124,9 @@ Corvus.telemetry = (function () {
     eventSource.addEventListener("state", (e) => {
       if (generation !== connectionGeneration) return;
       try {
-        state = JSON.parse(e.data);
+        const next = JSON.parse(e.data);
+        handOver(state, next);
+        state = next;
         streamErrorReported = false;
         parseErrorReported = false;
         notifySubscribers();

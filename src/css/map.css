@@ -715,6 +715,31 @@
 .vehicle-marker .v-fill { fill: var(--vehicle); }
 .vehicle-marker .v-centre { fill: #fff; }
 
+/* The vehicle's name under its marker, once there is more than one on the
+   map (js/fleet.js). Not rotated with the body: it is read, not pointed. */
+.vehicle-marker .v-label {
+  position: absolute;
+  top: 44px; left: 50%;
+  transform: translateX(-50%);
+  max-width: 160px;
+  padding: 1px 6px 1px 5px;
+  border-left: 3px solid var(--vehicle);
+  border-radius: 3px;
+  background: rgb(0 0 0 / 0.62);
+  color: #fff;
+  font-size: 11px; font-weight: 600; line-height: 16px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none;
+}
+.vehicle-marker .v-label[hidden] { display: none; }
+/* The vehicles not being flown: the same aircraft, a little smaller and
+   without the halo, so the one under command is the one the eye finds. */
+.vehicle-marker.fleet-marker { cursor: pointer; }
+.vehicle-marker.fleet-marker .v-halo { display: none; }
+.vehicle-marker.fleet-marker .v-body { width: 40px; height: 40px; }
+.vehicle-marker.fleet-marker .v-label { top: 40px; }
+.vehicle-marker.fleet-marker.is-stale { opacity: 0.45; }
+
 /* ===== THE AIRCRAFT IN 3D =====
    In 3D mode the aircraft is not a MapLibre marker: a marker takes a lngLat
    and drapes onto the terrain, which is the one thing a flying aircraft does
@@ -958,18 +983,21 @@
    edge minus its own radius, and Corvus.joystick moves it by that variable so
    the JS geometry and this stylesheet cannot drift apart. */
 .joystick-pad {
-  --js-size: 116px;
-  --js-knob: 42px;
+  --js-size: 76px;
+  --js-knob: 28px;
   --js-travel: calc((var(--js-size) - var(--js-knob)) / 2);
-  --js-key: 34px;
+  --js-key: 26px;
+  --gp-size: 30px;
+  --gp-dot: 10px;
+  --gp-travel: calc((var(--gp-size) - var(--gp-dot)) / 2);
   position: absolute; left: 16px; bottom: 16px;
   /* One step above the HUD, which shares --z-map-panel. Both are movable
      windows and they can be dragged over each other; when they overlap, the
      control the operator is flying with wins over a readout. */
   z-index: calc(var(--z-map-panel) + 1);
-  display: flex; flex-direction: column; gap: 6px;
-  border-radius: 14px;
-  padding: 4px 10px 10px;
+  display: flex; flex-direction: column; gap: 5px;
+  border-radius: 12px;
+  padding: 3px 8px 7px;
   /* The pad is a control surface, not a map surface: a drag that starts here
      must move a stick or the pad, never pan the map underneath it. */
   touch-action: none;
@@ -1022,9 +1050,53 @@
 .js-grip .js-collapse:hover { color: var(--text-1); background: var(--panel-wash); }
 .js-grip .js-collapse svg, .js-grip .js-collapse i { width: 13px; height: 13px; }
 
-.js-surfaces { display: flex; align-items: flex-start; gap: 14px; }
-.js-sticks { display: flex; gap: 14px; }
+.js-surfaces { display: flex; align-items: flex-start; gap: 10px; }
+.js-sticks { display: flex; gap: 10px; }
 .js-sticks[hidden] { display: none; }
+
+/* The USB gamepad: two small rings whose dots follow the physical sticks, the
+   arm status in words, and a bar that fills while the arm gesture is held. */
+.js-gamepad {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  width: 104px;
+  align-self: stretch; justify-content: flex-end;
+}
+.js-gamepad[hidden] { display: none; }
+.js-gp-sticks { display: flex; gap: 10px; }
+.js-gp-stick {
+  position: relative;
+  width: var(--gp-size); height: var(--gp-size);
+  border-radius: 50%;
+  background: rgb(var(--input-rgb) / 0.5);
+  border: 1px solid var(--border);
+}
+.js-gp-dot {
+  position: absolute;
+  top: calc(50% - var(--gp-dot) / 2);
+  left: calc(50% - var(--gp-dot) / 2);
+  width: var(--gp-dot); height: var(--gp-dot);
+  border-radius: 50%;
+  background: var(--accent);
+  /* One poll interval, so the dot glides between reads instead of stepping. */
+  transition: transform 50ms linear;
+}
+.js-gamepad.is-missing .js-gp-dot { background: var(--text-3); }
+.js-gp-status {
+  font-size: 9.5px; line-height: 1.25; text-align: center;
+  color: var(--text-2);
+}
+.js-gamepad.is-missing .js-gp-status { color: var(--text-3); }
+.js-gamepad.is-arming .js-gp-status { color: var(--warning); }
+.js-gp-arm {
+  width: 100%; height: 3px; border-radius: 2px;
+  background: var(--border-soft);
+  overflow: hidden;
+}
+.js-gp-arm-fill {
+  display: block; height: 100%; width: 0;
+  background: var(--warning);
+}
+.js-gamepad.is-armed .js-gp-arm-fill { background: var(--accent); }
 
 /* ===== PREFLIGHT CHECKLIST WINDOW =====
    A movable window over the map with the operator's own checklist. Hidden
@@ -1161,7 +1233,7 @@
 }
 .checklist-edit-row .icon-btn[disabled] { opacity: 0.35; pointer-events: none; }
 
-.js-stick { display: flex; flex-direction: column; align-items: center; gap: 7px; }
+.js-stick { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .js-base {
   position: relative;
   width: var(--js-size); height: var(--js-size);
@@ -1203,7 +1275,7 @@
 }
 .js-stick.active .js-knob { transition: background 140ms; background: var(--accent); border-color: var(--accent); }
 .js-caption {
-  font-size: 9px; font-weight: 600; letter-spacing: 0.9px;
+  font-size: 8.5px; font-weight: 600; letter-spacing: 0.7px;
   color: var(--text-3); text-transform: uppercase;
 }
 
@@ -1213,20 +1285,20 @@
    same buttons and light them up, which is what makes the mapping
    self-evident without a legend. */
 .js-keys {
-  display: flex; align-items: flex-end; gap: 12px;
+  display: flex; align-items: flex-end; gap: 8px;
   /* Bottom-aligned with the sticks: every surface ends on its caption. */
   align-self: stretch; justify-content: flex-end;
 }
 .js-keys[hidden] { display: none; }
 .js-keys-cluster {
-  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
 }
 .js-keys-cluster[hidden] { display: none; }
 .js-keys-grid {
   display: grid;
   grid-template-columns: repeat(3, var(--js-key));
   grid-template-rows: repeat(2, var(--js-key));
-  gap: 5px;
+  gap: 4px;
 }
 .js-key {
   display: grid; place-items: center;
@@ -1245,12 +1317,12 @@
 .js-key-left,  .js-key-a { grid-column: 1; grid-row: 2; }
 .js-key-down,  .js-key-s { grid-column: 2; grid-row: 2; }
 .js-key-right, .js-key-d { grid-column: 3; grid-row: 2; }
-.js-key i, .js-key svg { width: 15px; height: 15px; }
+.js-key i, .js-key svg { width: 13px; height: 13px; }
 /* WASD carries its letters instead of an icon: the letter IS the mapping, and
    the caption below the cluster is what says the axes they move. */
 .js-key-letter {
   font-family: var(--mono);
-  font-size: 12px; font-weight: 600; line-height: 1;
+  font-size: 11px; font-weight: 600; line-height: 1;
 }
 .js-key:hover { color: var(--text-1); border-color: var(--border-strong); }
 .js-key:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
@@ -1294,6 +1366,6 @@
 /* The spring-back and the key press are the only motion here, and both are
    decorative: the axis values are already updated by the time they play. */
 @media (prefers-reduced-motion: reduce) {
-  .js-knob, .js-base, .js-key { transition: none !important; }
+  .js-knob, .js-base, .js-key, .js-gp-dot { transition: none !important; }
   .js-key.active { transform: none; }
 }

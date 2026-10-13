@@ -1614,6 +1614,103 @@ Corvus.panel = (function () {
     }, 280);
   }
 
+  const WIDTH_KEY = "corvus.panel.width";
+  const WIDTH_MIN = 320;
+  const WIDTH_MAX = 560;
+  const WIDTH_STEP = 16;
+
+  /** Keep a dragged panel width inside the range that leaves the map room.
+   *  `room` is the width of the page the panel sits in (its own pixels). */
+  function clampPanelWidth(px, room) {
+    const ceiling = Math.max(WIDTH_MIN, Math.min(WIDTH_MAX, Math.floor((room || WIDTH_MAX) * 0.6)));
+    const n = Number(px);
+    if (!Number.isFinite(n)) return WIDTH_MIN;
+    return Math.round(Math.min(ceiling, Math.max(WIDTH_MIN, n)));
+  }
+
+  function readStoredWidth() {
+    try {
+      const n = Number(localStorage.getItem(WIDTH_KEY));
+      return Number.isFinite(n) && n > 0 ? n : null;
+    } catch (err) { return null; }
+  }
+
+  function storeWidth(px) {
+    try {
+      if (px == null) localStorage.removeItem(WIDTH_KEY);
+      else localStorage.setItem(WIDTH_KEY, String(px));
+    } catch (err) { /* private mode: the width just does not persist */ }
+  }
+
+  /** The grip on the panel's left edge: drag, arrow keys, or double click to
+   *  reset. --panel-w is set on the panel itself, so the page's default (and
+   *  the narrow-window one) stays what an unset width falls back to. */
+  function initResize() {
+    const grip = document.getElementById("panelGrip");
+    if (!grip || !panel) return;
+    const room = () => document.body.clientWidth || window.innerWidth;
+    let width = null;
+
+    const apply = (px) => {
+      width = px == null ? null : clampPanelWidth(px, room());
+      if (width == null) panel.style.removeProperty("--panel-w");
+      else panel.style.setProperty("--panel-w", `${width}px`);
+      grip.setAttribute("aria-valuenow", String(width == null ? panel.offsetWidth : width));
+    };
+    const settle = () => window.dispatchEvent(new Event("resize"));
+
+    const stored = readStoredWidth();
+    if (stored) apply(stored);
+
+    let drag = null;
+    grip.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || panel.classList.contains("collapsed")) return;
+      const start = panel.offsetWidth;
+      const scale = panel.getBoundingClientRect().width / (start || 1) || 1;
+      drag = { x: e.clientX, start, scale, id: e.pointerId };
+      panel.classList.add("is-resizing");
+      try { grip.setPointerCapture(e.pointerId); } catch (err) { /* synthetic event */ }
+      e.preventDefault();
+    });
+    grip.addEventListener("pointermove", (e) => {
+      if (!drag) return;
+      apply(drag.start + (drag.x - e.clientX) / drag.scale);
+    });
+    const end = () => {
+      if (!drag) return;
+      drag = null;
+      storeWidth(width);
+      // One frame later, so the final width is already computed and the
+      // width transition has nothing left to animate.
+      const raf = typeof window.requestAnimationFrame === "function"
+        ? window.requestAnimationFrame.bind(window)
+        : (cb) => setTimeout(cb, 16);
+      raf(() => {
+        panel.classList.remove("is-resizing");
+        settle();
+      });
+    };
+    grip.addEventListener("pointerup", end);
+    grip.addEventListener("pointercancel", end);
+    grip.addEventListener("dblclick", () => {
+      apply(null);
+      storeWidth(null);
+      settle();
+    });
+    grip.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      const delta = e.key === "ArrowLeft" ? WIDTH_STEP : -WIDTH_STEP;
+      apply((width == null ? panel.offsetWidth : width) + delta);
+      storeWidth(width);
+      settle();
+    });
+    // A smaller window must not leave the panel wider than the clamp allows.
+    window.addEventListener("resize", () => {
+      if (width != null && clampPanelWidth(width, room()) !== width) apply(width);
+    });
+  }
+
   function init() {
     panel = document.getElementById("rightPanel");
     handle = document.getElementById("panelHandle");
@@ -1638,6 +1735,7 @@ Corvus.panel = (function () {
     panelContent = panel.querySelector(".panel-content");
 
     handle.addEventListener("click", toggle);
+    initResize();
     setupTabScroll();
 
     document.getElementById("addSsh").addEventListener("click", addSSHConnection);
@@ -1725,6 +1823,7 @@ Corvus.panel = (function () {
     // The transcript, for screens outside the CONSOLE tab (the Logs page).
     consoleText, consoleLineCount, exportLog,
     sshAddress,
+    clampPanelWidth,
     transcript,
     matchesFilter,
     levelClass,

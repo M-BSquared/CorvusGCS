@@ -292,9 +292,19 @@
 <h3 id="nuttx-terminal">The terminal window</h3>
 <p>
   The terminal button at the start of the toolbar opens the same shell in a
-  terminal window, the frame the SSH terminals open in: drag it by its bar,
-  size it from the corner, maximize it, put it away with &times;. There the
-  prompt is NSH's own and <code>top</code> redraws in place.
+  terminal window, the way the SSH terminals open: in the desktop app a
+  <a href="video.html#windows">window of its own</a>, free to go to another
+  screen, with the pin that keeps it above Corvus; inside the Corvus window
+  when Settings asks for that, or in a browser. There the prompt is NSH's own
+  and <code>top</code> redraws in place.
+</p>
+<p>
+  Its title bar follows <a href="video.html#title-bar">Corvus title bar</a>
+  in Settings, unless <strong>Title bar of the terminal window</strong> in
+  the plugin's settings (<a href="settings.html#plugins">Settings,
+  Plugins</a>, its gear) says otherwise: <strong>System title bar</strong> or
+  <strong>Corvus title bar</strong> for this window alone. An open window
+  changes as soon as the setting does.
 </p>
 <ul>
   <li>The line is edited here and sent whole when you press Enter, as PX4's own <code>mavlink_shell.py</code> and QGroundControl do it, so a slow radio link does not make typing lag. Arrow keys, Home, End and Delete move and edit in the line; Up and Down bring back earlier commands.</li>
@@ -304,7 +314,8 @@
 <p>
   The console and the window show one shell: what you type in either reaches
   it, and what it prints appears in both. It opens when a PX4 autopilot
-  connects and is closed when the last of the two is closed, so a
+  connects and is closed when the last of the two is closed (a window of its
+  own included), so a
   <code>top</code> left running does not keep the telemetry link busy for
   nobody. With nothing connected both say so and the shell opens as soon as
   an autopilot is there. On ArduPilot they say <em>Not available on this

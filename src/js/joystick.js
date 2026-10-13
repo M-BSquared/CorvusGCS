@@ -4,10 +4,12 @@ window.Corvus = window.Corvus || {};
 /*
   Corvus.joystick — the on-screen manual-control pad over the map.
 
-  Three input surfaces, each with its own switch in Settings > Appearance >
+  Four input surfaces, each with its own switch in Settings > Appearance >
   Controls, all feeding ONE MANUAL_CONTROL stream:
 
     Virtual joystick   two spring-return sticks — full four-axis control
+    USB gamepad        a game controller's two thumbsticks, read through the
+                       browser's Gamepad API — the same four axes, same layout
     Arrow keys         a four-key cluster, and the keyboard's own arrow keys —
                        forward / back / left / right only
     WASD keys          a second four-key cluster in the SAME panel, and the
@@ -42,6 +44,20 @@ window.Corvus = window.Corvus || {};
                   Y -> x  pitch  (-1 back .. +1 forward)
     arrow keys    up/down  -> x  pitch      left/right -> y  roll
     WASD keys     W/S      -> z  thrust    A/D        -> r  yaw
+
+  The gamepad is the virtual joystick in the operator's hands: its left stick
+  sums into the on-screen left stick and its right into the right, clamped to
+  the circle the same way. It carries the one gesture on the pad that does
+  more than move a stick: pushing BOTH sticks inward, toward each other, and
+  holding them there for ARM_HOLD_MS arms a disarmed vehicle. While that
+  gesture is held on the ground the gamepad flies nothing, and once the arm
+  has been asked for it keeps flying nothing until both sticks are back at
+  centre, so the full yaw and roll the gesture is made of never reaches an
+  aircraft that has just spun up. A gesture-armed vehicle is then asked for
+  the stick mode once, as an unlocked keyboard asks for it, because arming to
+  fly from the gamepad is exactly that request. There is no disarm gesture:
+  the same sticks in the air are a legitimate input, and a disarm on them
+  would drop the aircraft.
 
   Thrust is the one axis a key cannot simply spring back on: releasing W parks
   it at the hover detent, not at zero, exactly as letting go of the left stick
@@ -106,6 +122,11 @@ Corvus.joystick = (function () {
   const UNLOCK_WINDOW_MS = 800; // between the two Shift + W presses
   const MODE_RETRY_MS = 2000; // between mode requests from key presses
   const DEADZONE = 0.06;     // fraction of stick travel that still reads as centre
+  const GAMEPAD_POLL_MS = 50; // the Gamepad API has no events for axes, only reads
+  // A thumbstick rests further off centre than a pointer, and worn ones drift.
+  const GAMEPAD_DEADZONE = 0.12;
+  const ARM_INWARD = 0.7;    // how far each stick must lean toward the other
+  const ARM_HOLD_MS = 1000;  // how long both must stay there before arming
 
   /* How much stick one held key is worth, as a fraction of full travel. A
      short ordered list rather than a continuous range, for the same reason the
@@ -173,6 +194,29 @@ Corvus.joystick = (function () {
   let showSticks = false;
   let showKeys = false;
   let showWasd = false;
+  let showGamepad = false;
+  let gamepadEl = null;
+  let gamepadStatusEl = null;
+  let gamepadArmFill = null;
+  const gamepadDots = [];
+  let gamepadTimer = null;
+  let idleScheduled = false;
+  /* What the gamepad contributes to the frame, and what its dots show. The
+     two differ while the arm gesture or the post-arm gate holds the gamepad
+     silent: the dots still follow the physical sticks so the operator sees
+     why nothing moves. */
+  const gamepad = {
+    present: false,
+    name: "",
+    left: { x: 0, y: 0 },
+    right: { x: 0, y: 0 },
+    shownLeft: { x: 0, y: 0 },
+    shownRight: { x: 0, y: 0 },
+  };
+  let armSince = 0;          // when both sticks went inward, 0 while they are not
+  let armSent = false;       // this hold has already asked for an arm
+  let gamepadGated = false;  // after an arm, until both sticks are back at centre
+  let stickModeAfterArm = false;
   let keyGain = KEY_DEFLECTION;
   let boost = false;
   let collapsed = false;
@@ -541,13 +585,218 @@ Corvus.joystick = (function () {
   }
 
   /* ------------------------------------------------------------------ */
+  /* gamepad                                                             */
+  /* ------------------------------------------------------------------ */
+
+  /* A compact block rather than a second pair of full-size sticks: the sticks
+     are in the operator's hands, so the pad only has to show that the
+     controller is seen, where its sticks are, and what the arm gesture is
+     doing. */
+  function buildGamepad() {
+    const wrap = document.createElement("div");
+    wrap.className = "js-gamepad";
+
+    const pair = document.createElement("div");
+    pair.className = "js-gp-sticks";
+    gamepadDots.length = 0;
+    ["Gamepad left stick", "Gamepad right stick"].forEach((label) => {
+      const ring = document.createElement("span");
+      ring.className = "js-gp-stick";
+      ring.setAttribute("aria-label", label);
+      const dot = document.createElement("span");
+      dot.className = "js-gp-dot";
+      ring.appendChild(dot);
+      gamepadDots.push(dot);
+      pair.appendChild(ring);
+    });
+
+    const caption = document.createElement("span");
+    caption.className = "js-caption";
+    caption.textContent = "GAMEPAD";
+
+    gamepadStatusEl = document.createElement("span");
+    gamepadStatusEl.className = "js-gp-status";
+    gamepadStatusEl.setAttribute("role", "status");
+
+    const bar = document.createElement("span");
+    bar.className = "js-gp-arm";
+    gamepadArmFill = document.createElement("span");
+    gamepadArmFill.className = "js-gp-arm-fill";
+    bar.appendChild(gamepadArmFill);
+
+    wrap.append(pair, caption, gamepadStatusEl, bar);
+    return wrap;
+  }
+
+  function num(v) {
+    const n = Number(v);
+    return isFinite(n) ? n : 0;
+  }
+
+  function gamepadDeadzone(v) {
+    if (Math.abs(v) <= GAMEPAD_DEADZONE) return 0;
+    const scaled = (Math.abs(v) - GAMEPAD_DEADZONE) / (1 - GAMEPAD_DEADZONE);
+    return v < 0 ? -scaled : scaled;
+  }
+
+  /* Gamepad axes grow DOWN, like the screen, so y is inverted here once. */
+  function gamepadStick(ax, ay) {
+    const c = clampToCircle(num(ax), -num(ay));
+    return { x: round(gamepadDeadzone(c.x)), y: round(gamepadDeadzone(c.y)) };
+  }
+
+  function centred(v) { return v.x === 0 && v.y === 0; }
+
+  /* The first connected controller with two sticks, preferring one the
+     browser maps to the standard layout (axes 0/1 left, 2/3 right). A
+     controller it does not recognise is read on the same four axes, which is
+     where nearly every two-stick pad puts them. */
+  function findGamepad() {
+    const nav = window.navigator;
+    if (!nav || typeof nav.getGamepads !== "function") return null;
+    let list;
+    try { list = nav.getGamepads() || []; } catch (_e) { return null; }
+    let fallback = null;
+    for (let i = 0; i < list.length; i++) {
+      const pad = list[i];
+      if (!pad || pad.connected === false || !pad.axes || pad.axes.length < 4) continue;
+      if (pad.mapping === "standard") return pad;
+      if (!fallback) fallback = pad;
+    }
+    return fallback;
+  }
+
+  function gamepadLive() { return showGamepad && !!pad && !collapsed; }
+
+  function clearGamepad() {
+    gamepad.present = false;
+    gamepad.name = "";
+    gamepad.left = { x: 0, y: 0 };
+    gamepad.right = { x: 0, y: 0 };
+    gamepad.shownLeft = { x: 0, y: 0 };
+    gamepad.shownRight = { x: 0, y: 0 };
+    armSince = 0;
+    armSent = false;
+  }
+
+  /* One read of the controller. The arm gesture is judged on the RAW axes,
+     before the deadzone and the circle, so a square gate and a round one
+     reach it alike. */
+  function pollGamepad() {
+    gamepadTimer = null;
+    if (!gamepadLive()) { clearGamepad(); paintGamepad(); return; }
+    const found = findGamepad();
+    if (!found) {
+      clearGamepad();
+    } else {
+      const a = found.axes;
+      const left = gamepadStick(a[0], a[1]);
+      const right = gamepadStick(a[2], a[3]);
+      const inward = num(a[0]) >= ARM_INWARD && num(a[2]) <= -ARM_INWARD;
+      gamepad.present = true;
+      gamepad.name = String(found.id || "");
+      gamepad.shownLeft = left;
+      gamepad.shownRight = right;
+
+      if (inward && connected && !vehicle.armed) {
+        const now = Date.now();
+        if (!armSince) armSince = now;
+        if (!armSent && now - armSince >= ARM_HOLD_MS) armFromGamepad();
+      } else {
+        armSince = 0;
+        armSent = false;
+      }
+      if (gamepadGated && centred(left) && centred(right)) gamepadGated = false;
+
+      // Silent while the gesture is held on the ground and after an arm until
+      // both sticks are let go. In the air, inward on both is a real input
+      // and flies as one.
+      const silent = gamepadGated || (inward && !vehicle.armed);
+      gamepad.left = silent ? { x: 0, y: 0 } : left;
+      gamepad.right = silent ? { x: 0, y: 0 } : right;
+    }
+    paintGamepad();
+    kickStream();
+    gamepadTimer = window.setTimeout(pollGamepad, GAMEPAD_POLL_MS);
+  }
+
+  function stopGamepad() {
+    if (gamepadTimer !== null) { window.clearTimeout(gamepadTimer); gamepadTimer = null; }
+  }
+
+  /* The gate goes up with the request, not with the answer: the operator is
+     still holding full yaw and full roll when the motors start. */
+  function armFromGamepad() {
+    armSent = true;
+    gamepadGated = true;
+    stickModeAfterArm = true;
+    const topbar = Corvus.topbar || {};
+    const attempt = typeof topbar.beginCommand === "function" ? topbar.beginCommand("arm") : null;
+    Corvus.telemetry.postAction("/api/mavlink/arm", { arm: true }).then(() => {
+      if (attempt && typeof topbar.succeedCommand === "function") topbar.succeedCommand(attempt);
+    }).catch((error) => {
+      stickModeAfterArm = false;
+      if (attempt && typeof topbar.failCommand === "function") topbar.failCommand(attempt);
+      if (typeof topbar.notifyError === "function") {
+        topbar.notifyError((error && error.message) || "Arm failed", attempt);
+      }
+    });
+  }
+
+  function gamepadMessage() {
+    if (!gamepad.present) return "Plug in a gamepad and press any button on it.";
+    if (!connected) return "Gamepad ready. No link.";
+    if (vehicle.armed) {
+      return gamepadGated ? "Armed. Let go of both sticks to fly." : "Armed.";
+    }
+    if (armSent) return "Arming.";
+    if (armSince) return "Keep holding to arm.";
+    return "Push both sticks inward to arm.";
+  }
+
+  function paintGamepad() {
+    if (!gamepadEl) return;
+    [gamepad.shownLeft, gamepad.shownRight].forEach((v, i) => {
+      const dot = gamepadDots[i];
+      if (!dot) return;
+      dot.style.transform =
+        `translate(calc(${v.x} * var(--gp-travel)), calc(${-v.y} * var(--gp-travel)))`;
+    });
+    if (gamepadStatusEl) gamepadStatusEl.textContent = gamepadMessage();
+    const progress = (armSince && !armSent && !vehicle.armed)
+      ? Math.min(1, (Date.now() - armSince) / ARM_HOLD_MS) : (armSent ? 1 : 0);
+    if (gamepadArmFill) gamepadArmFill.style.width = Math.round(progress * 100) + "%";
+    gamepadEl.title = gamepad.name;
+    gamepadEl.classList.toggle("is-missing", !gamepad.present);
+    gamepadEl.classList.toggle("is-arming", !!armSince && !vehicle.armed);
+    gamepadEl.classList.toggle("is-armed", !!vehicle.armed);
+  }
+
+  /* The stream idles at IDLE_HZ while everything is centred, and a pointer or
+     a key wakes it from its own event. A gamepad has no events for its sticks,
+     so the poll wakes it instead, rather than letting the first 200 ms of a
+     stick movement wait for the idle tick. */
+  function kickStream() {
+    if (!streaming() || timer === null || !idleScheduled) return;
+    if (isNeutral(frame())) return;
+    stopStream();
+    tick();
+  }
+
+  /* ------------------------------------------------------------------ */
   /* the frame                                                           */
   /* ------------------------------------------------------------------ */
 
   /** The four MAVLink axes for the current state of every surface. */
   function frame() {
-    const left = (showSticks && sticks[0]) ? sticks[0].value : { x: 0, y: 0 };
-    const right = (showSticks && sticks[1]) ? sticks[1].value : { x: 0, y: 0 };
+    let left = (showSticks && sticks[0]) ? sticks[0].value : { x: 0, y: 0 };
+    let right = (showSticks && sticks[1]) ? sticks[1].value : { x: 0, y: 0 };
+    // The gamepad's sticks are the on-screen ones in the operator's hands, so
+    // each sums into its own side and is clamped to the circle like a key.
+    if (gamepadLive()) {
+      left = clampToCircle(left.x + gamepad.left.x, left.y + gamepad.left.y);
+      right = clampToCircle(right.x + gamepad.right.x, right.y + gamepad.right.y);
+    }
 
     // Both halves are worked in STICK units — thrust included, where 0 is the
     // hover detent and ±1 the stops — so the keys sum with their stick and
@@ -612,8 +861,9 @@ Corvus.joystick = (function () {
       text = "NO LINK";
     } else {
       const parts = [];
-      if (showSticks || showKeys) parts.push(`P ${fmt(f.x)}`, `R ${fmt(f.y)}`);
-      if (showSticks || showWasd) parts.push(`T ${f.z.toFixed(2)}`, `Y ${fmt(f.r)}`);
+      const allAxes = showSticks || showGamepad;
+      if (allAxes || showKeys) parts.push(`P ${fmt(f.x)}`, `R ${fmt(f.y)}`);
+      if (allAxes || showWasd) parts.push(`T ${f.z.toFixed(2)}`, `Y ${fmt(f.r)}`);
       // Named, not implied: the axes read the same held at 50% as at 100%
       // until a key is actually down, so the modifier says itself.
       if (boost) parts.push("BOOST");
@@ -650,15 +900,17 @@ Corvus.joystick = (function () {
 
   function schedule(f) {
     if (!streaming()) return;
-    const hz = isNeutral(f) ? IDLE_HZ : ACTIVE_HZ;
+    idleScheduled = isNeutral(f);
+    const hz = idleScheduled ? IDLE_HZ : ACTIVE_HZ;
     timer = window.setTimeout(tick, Math.round(1000 / hz));
   }
 
   function stopStream() {
     if (timer !== null) { window.clearTimeout(timer); timer = null; }
+    idleScheduled = false;
   }
 
-  function streaming() { return showSticks || showKeys || showWasd; }
+  function streaming() { return showSticks || showGamepad || showKeys || showWasd; }
 
   /* ------------------------------------------------------------------ */
   /* dragging                                                            */
@@ -898,6 +1150,17 @@ Corvus.joystick = (function () {
     if (pad) apply();
   }
 
+  /* Switching the gamepad off or on drops any arm gesture in progress and the
+     post-arm gate with it: a fresh switch is a fresh start. */
+  function setGamepadEnabled(on) {
+    if (!!on === showGamepad) return;
+    showGamepad = !!on;
+    gamepadGated = false;
+    stickModeAfterArm = false;
+    clearGamepad();
+    if (pad) apply();
+  }
+
   function setKeysEnabled(on) {
     if (!!on === showKeys) return;
     showKeys = !!on;
@@ -930,6 +1193,7 @@ Corvus.joystick = (function () {
 
   function apply() {
     if (sticksEl) sticksEl.hidden = !showSticks || collapsed;
+    if (gamepadEl) gamepadEl.hidden = !showGamepad || collapsed;
     // The panel is up while EITHER cluster is on; each cluster answers only to
     // its own switch, which is what puts WASD and the arrows side by side in
     // one window instead of giving each a pad of its own.
@@ -950,7 +1214,10 @@ Corvus.joystick = (function () {
     }
     paintLock();
     stopStream();
+    stopGamepad();
     releaseAll();
+    if (gamepadLive()) pollGamepad();
+    else { clearGamepad(); paintGamepad(); }
     if (streaming()) {
       // A pad that just changed width must not sit half off the map.
       applyPosition();
@@ -1013,8 +1280,9 @@ Corvus.joystick = (function () {
     }));
     sticksEl.append(sticks[0].el, sticks[1].el);
 
+    gamepadEl = buildGamepad();
     keysEl = buildKeys();
-    surfaces.append(sticksEl, keysEl);
+    surfaces.append(sticksEl, gamepadEl, keysEl);
     lockEl = document.createElement("div");
     lockEl.className = "js-lock";
     lockEl.setAttribute("role", "status");
@@ -1023,7 +1291,16 @@ Corvus.joystick = (function () {
     Corvus.telemetry.subscribe((s) => {
       connected = !!(s && s.connected);
       vehicle = s || {};
+      if (!connected) stickModeAfterArm = false;
+      // A gesture-armed vehicle is asked for the stick mode once, as soon as
+      // it reports armed.
+      if (stickModeAfterArm && vehicle.armed) {
+        stickModeAfterArm = false;
+        modeRequestedAt = 0;
+        ensureStickMode();
+      }
       if (streaming()) paintStatus(frame());
+      if (showGamepad) paintGamepad();
     });
 
     loadPosition();
@@ -1059,8 +1336,10 @@ Corvus.joystick = (function () {
     setEnabled,
     setKeysEnabled,
     setWasdEnabled,
+    setGamepadEnabled,
     setKeyGain,
     isEnabled: () => showSticks,
+    isGamepadEnabled: () => showGamepad,
     isKeysEnabled: () => showKeys,
     isWasdEnabled: () => showWasd,
     keyGain: () => keyGain,

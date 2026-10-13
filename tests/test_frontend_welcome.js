@@ -69,7 +69,7 @@ function testTheConfigOutranksTheScreen() {
   assert.deepEqual(c, {
     theme: "blue", units: AVIATION, sensitivity: "strict", missionPage: true,
     consoleTab: false, sshTab: true,
-    virtualJoystick: true, arrowKeys: false, wasdKeys: false, updates: false,
+    virtualJoystick: true, gamepad: false, arrowKeys: false, wasdKeys: false, updates: false,
   });
 }
 
@@ -78,7 +78,7 @@ function testTheScreenFillsInWhatTheConfigLeavesOut() {
   assert.deepEqual(c, {
     theme: "green", units: AVIATION, sensitivity: "normal", missionPage: false,
     consoleTab: true, sshTab: true,
-    virtualJoystick: false, arrowKeys: false, wasdKeys: false, updates: true,
+    virtualJoystick: false, gamepad: false, arrowKeys: false, wasdKeys: false, updates: true,
   });
 }
 
@@ -113,14 +113,14 @@ function testFinishPostsOnlyTheKeysTheSetupOwns() {
   const patch = W.configPatch({
     theme: "pink", units: AVIATION, sensitivity: "relaxed", missionPage: true,
     consoleTab: false, sshTab: true,
-    virtualJoystick: true, arrowKeys: false, wasdKeys: true, updates: false,
+    virtualJoystick: true, gamepad: true, arrowKeys: false, wasdKeys: true, updates: false,
   });
   // No `ui.scale` and no `controls.key_gain`: those are not part of the setup,
   // so Finish must leave the size and key strength the station already has.
   assert.deepEqual(patch, {
     theme: { name: "pink" },
     ui: { units: AVIATION, mission_page: true, console_tab: false, ssh_tab: true },
-    controls: { virtual_joystick: true, arrow_keys: false, wasd_keys: true },
+    controls: { virtual_joystick: true, gamepad: true, arrow_keys: false, wasd_keys: true },
     review: { sensitivity: "relaxed" },
     updates: { check: false },
   });

@@ -63,6 +63,20 @@
 .right-panel.collapsed .panel-handle svg {
   transform: rotate(180deg);
 }
+.right-panel.is-resizing { transition: none; user-select: none; }
+.right-panel.collapsed .panel-grip { display: none; }
+.panel-grip {
+  position: absolute; top: 0; bottom: 0;
+  left: calc(var(--panel-w-collapsed) - 3px); width: 7px;
+  z-index: 2; cursor: col-resize; touch-action: none;
+}
+.panel-grip::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px;
+  background: var(--accent); opacity: 0; transition: opacity 150ms ease;
+}
+.panel-grip:hover::after, .panel-grip:focus-visible::after,
+.right-panel.is-resizing .panel-grip::after { opacity: 0.7; }
+.panel-grip:focus-visible { outline: none; }
 .panel-body {
   width: calc(var(--panel-w) - var(--panel-w-collapsed));
   min-width: calc(var(--panel-w) - var(--panel-w-collapsed));
@@ -356,8 +370,8 @@
   background: var(--surface-2);
 }
 .popout-win .term-win-bar { cursor: default; }
-/* In the desktop app the window itself is frameless and see-through, and this
-   page is all of it: the frame as it is in the app, rounded corners and all,
+/* With Settings, "Corvus title bar", the window itself is frameless and
+   see-through, and this page is all of it: the frame as it is in the app, rounded corners and all,
    and a bar that moves the window. The shadow is the operating system's. */
 :root.native-window, :root.native-window .popout-page { background: transparent; }
 :root.native-window .term-win.popout-win {
@@ -367,6 +381,21 @@
 :root.native-window .popout-win.is-dragging .term-win-bar { cursor: grabbing; }
 :root.native-window .popout-win.is-max { border-radius: 0; }
 :root.native-window .popout-win.is-max .term-win-bar { cursor: default; }
+
+/* The default, the system's title bar: the system draws the frame, its corners, and
+   its own close, minimize and maximize buttons (js/popout-page.js). On macOS
+   the page runs on under the system's bar, so this bar takes its height and
+   leaves the traffic lights their room; elsewhere the system's bar carries
+   the name, and this one is the strip under it with the rest. */
+:root.native-window.system-frame .term-win.popout-win { border: none; border-radius: 0; }
+:root.system-frame .popout-win .popout-own-frame { display: none; }
+:root.system-frame-overlay .popout-win .term-win-bar {
+  height: var(--system-bar-h, 28px);
+  padding-left: var(--system-controls-w, 72px);
+}
+:root.system-frame:not(.system-frame-overlay) .popout-win .term-win-bar { height: 30px; }
+:root.system-frame:not(.system-frame-overlay) .popout-win .term-win-icon,
+:root.system-frame:not(.system-frame-overlay) .popout-win .term-win-name { display: none; }
 
 /* A frame whose content has gone on in a window outside the app. */
 .term-win.is-out { visibility: hidden; }
@@ -484,7 +513,7 @@
    than under a back button, so it needs the gap the header does not give. */
 .plugin-tab-container { padding-top: 12px; }
 
-/* Reduced motion: disable card/view/popover transitions (apple-design §14). */
+/* Reduced motion: disable card/view/popover transitions. */
 @media (prefers-reduced-motion: reduce) {
   .plugin-view,
   .plugin-back,

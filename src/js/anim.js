@@ -14,11 +14,11 @@ window.Corvus = window.Corvus || {};
  * while the vehicle is idle) and is woken again the moment a new target lands.
  *
  * The easing is exponential approach (a frame-rate-independent, critically
- * damped ease-out — no overshoot, per apple-design defaults). Heading uses the
+ * damped ease-out — no overshoot). Heading uses the
  * shortest angular path so 350° ↔ 10° animates through 0°, not back through 180°.
  *
  * prefers-reduced-motion: animators snap directly to the target and never wake
- * the loop, satisfying the apple-design reduced-motion contract.
+ * the loop, satisfying the reduced-motion contract.
  */
 Corvus.anim = (function () {
   const animators = new Set();

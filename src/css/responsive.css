@@ -43,7 +43,7 @@
 :where(:root[data-vw~="max-959"]) .right-panel:not(.collapsed) { width: var(--panel-w); }
 :where(:root[data-vw~="max-959"]) .flight-overlay { --hud-w: 270px; bottom: 12px; right: 12px; }
 :where(:root[data-vw~="max-959"]) .tb-block[data-priority="low"] { display: none; }
-:where(:root[data-vw~="max-959"]) .joystick-pad { --js-size: 96px; --js-knob: 36px; --js-key: 30px; left: 12px; bottom: 12px; }
+:where(:root[data-vw~="max-959"]) .joystick-pad { --js-size: 68px; --js-knob: 26px; --js-key: 24px; left: 12px; bottom: 12px; }
 :where(:root[data-vw~="max-600"]) .top-bar { height: 52px; padding: 0 6px; }
 :where(:root[data-vw~="max-600"]) .tb-logo-sub { display: none; }
 :where(:root[data-vw~="max-600"]) .tb-company-logo { height: 24px; max-width: 90px; padding-left: 8px; margin-left: 6px; }
@@ -51,7 +51,13 @@
 :where(:root[data-vw~="max-600"]) .flight-overlay { --hud-w: 240px; }
 :where(:root[data-vw~="max-600"]) .flight-overlay .instruments { grid-template-columns: 1fr; }
 :where(:root[data-vw~="max-600"]) .nav-item .nav-label { display: none; }
-:where(:root[data-vw~="max-600"]) .joystick-pad { --js-size: 84px; --js-knob: 32px; --js-key: 28px; padding: 4px 8px 8px; }
-:where(:root[data-vw~="max-600"]) .js-surfaces { gap: 10px; }
-:where(:root[data-vw~="max-600"]) .js-sticks { gap: 10px; }
-:where(:root[data-vw~="max-600"]) .js-keys { gap: 8px; }
+:where(:root[data-vw~="max-600"]) .joystick-pad { --js-size: 64px; --js-knob: 24px; --js-key: 24px; padding: 3px 6px 6px; }
+:where(:root[data-vw~="max-600"]) .js-surfaces { gap: 8px; }
+:where(:root[data-vw~="max-600"]) .js-sticks { gap: 8px; }
+:where(:root[data-vw~="max-600"]) .js-keys { gap: 6px; }
+
+/* The vehicle list on a phone-width window: the controls drop under the name. */
+:where(:root[data-vw~="max-600"]) .fleet-row { grid-template-columns: auto minmax(0, 1fr); }
+:where(:root[data-vw~="max-600"]) .fleet-side { grid-column: 1 / -1; justify-content: flex-end; }
+:where(:root[data-vw~="max-600"]) .fleet-link { grid-template-columns: auto auto minmax(0, 1fr) auto; }
+:where(:root[data-vw~="max-600"]) .fleet-link-count { display: none; }

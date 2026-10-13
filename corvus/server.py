@@ -90,8 +90,10 @@ from .http_paths import (  # noqa: F401 - re-exported, tests import them from he
 )
 from .http_routes import CLIENT_GONE_ERRORS, _config_write_lock, _pending_routes, route
 from .routes.console import ConsoleRoutes
+from .routes.dem import DemRoutes
 from .routes.control import ControlRoutes
 from .routes.firmware import FirmwareRoutes
+from .routes.fleet import FleetRoutes
 from .routes.first_setup import FirstSetupRoutes
 from .routes.geofence import GeofenceRoutes
 from .routes.logs import LogRoutes
@@ -112,6 +114,7 @@ from .tile_http import (  # noqa: F401 - re-exported, tests import them from her
     _UpstreamBreaker,
 )
 from .state_store import VehicleStateStore, _sanitize
+from .fleet import Fleet, RtcmFanout
 from .paths import corvus_path
 from .tile_cache import TileCache, default_cache_dir
 from .version import get_version
@@ -439,6 +442,23 @@ def _build_building_service(cache_dir: str) -> Any:
         return None
 
 
+def _build_custom_dem_store(cache_dir: str) -> Any:
+    """The operator's own elevation models, next to the tile caches, or None.
+
+    Beside the ``.mbtiles`` files so a ``tile_cache_dir`` override moves them
+    too. None when the folder cannot be used: 3D then offers the public
+    models only, which is the right failure for an optional data source.
+    """
+    try:
+        from .custom_dem import CustomDemStore
+        root = os.path.join(cache_dir, "custom-dem")
+        os.makedirs(root, exist_ok=True)
+        return CustomDemStore(root)
+    except Exception:  # noqa: BLE001 - an unwritable folder must not stop launch
+        logger.exception("custom elevation store init failed")
+        return None
+
+
 def _build_geocoder() -> Any:
     """Construct the place-search service, or None.
 
@@ -710,6 +730,49 @@ def _build_forwarder(mavlink: Any, config: Any) -> Any:
     return forwarder
 
 
+def build_fleet(mavlink: Any, store: Any, config: Any, cfg_path: str | None) -> Fleet:
+    """The vehicle list around the main link, with the extra links configured.
+
+    An extra link is a full bridge of its own and gets the operator's battery
+    settings like the main one. It does not get the Remote ID identity: that
+    is one aircraft's, and broadcasting it from a second would be false.
+    """
+    def bridge_factory(extra_store: Any, connection: str) -> Any:
+        bridge = MavlinkBridge(extra_store, connection)
+        bridge.set_battery_settings(getattr(config, "battery", None))
+        return bridge
+
+    def persist(block: dict[str, Any] | None) -> None:
+        with _config_write_lock:
+            config.fleet = block
+            try:
+                save_config(config, cfg_path)
+            except OSError as exc:
+                logger.error("config save to %s failed: %s", cfg_path, exc)
+
+    fleet = Fleet(
+        mavlink, store,
+        bridge_factory=bridge_factory,
+        store_factory=VehicleStateStore,
+        persist=persist,
+    )
+    fleet.load(getattr(config, "fleet", None))
+    return fleet
+
+
+def stop_fleet(server: Any, log: Any = None) -> None:
+    """Close the extra links and stop the vehicle list. Never raises."""
+    fleet = getattr(server, "fleet", None)
+    if fleet is None:
+        return
+    try:
+        (log or logger).info("stopping extra links …")
+        fleet.stop()
+        (log or logger).info("extra links stopped")
+    except Exception:
+        (log or logger).exception("fleet shutdown failed")
+
+
 def build_autoconnect_session(config: Any) -> Any:
     """The per-process auto-connect state, seeded from the operator config.
 
@@ -727,7 +790,9 @@ def build_autoconnect_session(config: Any) -> Any:
     return session
 
 
-def start_autoconnect_watcher(mavlink: Any, store: Any, session: Any) -> Any:
+def start_autoconnect_watcher(
+    mavlink: Any, store: Any, session: Any, busy_devices: Callable[[], Any] | None = None,
+) -> Any:
     """Start the auto-connect watcher, or return None when it is off.
 
     Returns None rather than a stopped object when disabled: unlike the
@@ -739,7 +804,9 @@ def start_autoconnect_watcher(mavlink: Any, store: Any, session: Any) -> Any:
         return None
     try:
         from .autoconnect import AutoConnectWatcher
-        watcher = AutoConnectWatcher(bridge=mavlink, store=store, session=session)
+        watcher = AutoConnectWatcher(
+            bridge=mavlink, store=store, session=session, busy_devices_fn=busy_devices,
+        )
         watcher.start()
     except Exception:  # noqa: BLE001 - never block server creation
         logger.exception("autoconnect: watcher unavailable")
@@ -850,6 +917,9 @@ def stop_backend(server: Any, log: Any = None) -> None:
     # so it is joined before the bridge goes away: a tick landing after
     # mavlink.stop() would start the link the shutdown just closed.
     stop_autoconnect_watcher(server)
+    # The extra links are bridges of their own, with the same threads, sockets
+    # and tlogs as the main one, so they go with it.
+    stop_fleet(server, log)
     mavlink = getattr(server, "mavlink", None)
     if mavlink is not None:
         try:
@@ -1055,8 +1125,10 @@ def _serialize_telemetry_snapshot(
 class CorvusHandler(
     ConsoleRoutes,
     ControlRoutes,
+    DemRoutes,
     FirmwareRoutes,
     FirstSetupRoutes,
+    FleetRoutes,
     GeofenceRoutes,
     LogRoutes,
     MissionRoutes,
@@ -1455,8 +1527,9 @@ class CorvusHandler(
         # ``merged``, and _save_live_config serializes the live config object.
         # Plugin settings are not in the main config at all any more; each
         # plugin keeps a file of its own (corvus/plugin_config.py), written by
-        # POST /api/plugins/settings.
-        owned_elsewhere = {"forwarding", "map_tokens", "plugins"}
+        # POST /api/plugins/settings. The fleet block is written by
+        # corvus.fleet, which holds the links it names open.
+        owned_elsewhere = {"forwarding", "map_tokens", "plugins", "fleet"}
 
         for key, value in partial.items():
             if key not in known:
@@ -1766,6 +1839,10 @@ class CorvusHandler(
         # as its own bytes.
         if path == "/api/logs/review/upload":
             self._api_logs_review_upload_raw()
+            return
+        # Same reason: an elevation grid arrives as its own file, often tens of MB.
+        if path == "/api/dem/import":
+            self._api_dem_import_raw()
             return
         if path.startswith("/api/"):
             self._handle_api_post(path)
@@ -2474,6 +2551,8 @@ class CorvusHandler(
         if path.startswith("/api/"):
             method_name = self._POST_ROUTES.get(path)
             if method_name is not None:
+                if self._fleet_refuses(path):
+                    return
                 getattr(self, method_name)(payload)
             else:
                 self._send_json({"error": "not found"}, 404)
@@ -4103,15 +4182,18 @@ class CorvusHandler(
         ``_api_forwarding_set``. Returns the new forwarder, or None when
         forwarding is off.
         """
+        # The main link's bridge, never the selected vehicle's: forwarding
+        # mirrors the main link, whichever vehicle is being flown.
+        main = self.fleet.link("main").bridge if self.fleet is not None else self.mavlink
         old = getattr(self, "forwarder", None)
         if old is not None:
             try:
-                if self.mavlink is not None:
-                    self.mavlink.set_frame_sink(None)
+                if main is not None:
+                    main.set_frame_sink(None)
                 old.stop()
             except Exception:  # noqa: BLE001 - a stuck old forwarder never blocks the new one
                 logger.exception("stopping the previous forwarder failed")
-        forwarder = _build_forwarder(self.mavlink, self.config) if self.mavlink else None
+        forwarder = _build_forwarder(main, self.config) if main else None
         type(self).forwarder = forwarder
         server = getattr(self, "server", None)
         if server is not None:
@@ -4315,6 +4397,15 @@ class CorvusHandler(
         })
         return (lambda: self.flash.remove_listener(listener)), initial
 
+    def _bind_fleet(self, buf: _BoundedSseBuffer, job_id: str | None = None):
+        # Latest wins: each event is the whole list, so one that was
+        # overtaken by the next is worth nothing.
+        if self.fleet is None:
+            return (lambda: None), None
+        listener = buf.put_latest
+        self.fleet.add_listener(listener)
+        return (lambda: self.fleet.remove_listener(listener)), _sanitize(self.fleet.snapshot())
+
     def _bind_tiles(self, buf: _BoundedSseBuffer, job_id: str | None = None):
         # The only topic that is per-object rather than per-server: it follows
         # one download job, and without an id there is nothing to follow.
@@ -4349,6 +4440,7 @@ class CorvusHandler(
             })),
             "tiles": (self._bind_tiles, TILES_PROGRESS_SSE_CAPACITY, _sanitize),
             "shell": (self._bind_shell, SHELL_SSE_CAPACITY, lambda e: e),
+            "fleet": (self._bind_fleet, 1, _sanitize),
         }
 
     _SSE_TERMINAL_STATES = ("done", "cancelled", "failed")
@@ -4423,7 +4515,7 @@ class CorvusHandler(
 
     @route("GET", "/api/events")
     def _sse_events(self) -> None:
-        """One stream carrying any of console, params, firmware, tiles and shell.
+        """One stream carrying any of console, params, firmware, tiles, shell and fleet.
 
         ``?topics=console,params`` selects them; ``?job=<id>`` is the download
         job the ``tiles`` topic follows. Unknown names are ignored rather than
@@ -4746,6 +4838,9 @@ class CorvusHandler(
         elevation tile with a coarser ancestor on disk, which is derived from
         it (see corvus/dem_tiles.py) so 3D terrain has no holes.
         """
+        if self.custom_dem is not None and self.custom_dem.has(source):
+            self._serve_custom_dem(source, z, x, y)
+            return
         if tile_sources.get(source) is None:
             self._send_json({"error": "not found"}, 404)
             return
@@ -4837,11 +4932,25 @@ class CorvusHandler(
         operator still gets the free heights rather than a hole. Cached,
         fetched or derived, in that order, then re-packed for *source*.
         """
+        spec = tile_sources.get(source)
+        base_spec = tile_sources.get(tile_sources.DEFAULT_TERRAIN)
+        if spec is None or base_spec is None:
+            return None
+        base = self._default_terrain_png(z, x, y)
+        if base is None:
+            return None
+        return dem_tiles.transcode(base, base_spec["encoding"], spec["encoding"],
+                                   int(spec.get("tile_size", 256)))
+
+    def _default_terrain_png(self, z: int, x: int, y: int) -> bytes | None:
+        """The free default elevation tile: cached, fetched or derived, in that order.
+
+        Also what a custom elevation model is surrounded with
+        (corvus/routes/dem.py), so it never ends at sea level.
+        """
         base_id = tile_sources.DEFAULT_TERRAIN
         base_cache = (self.tile_caches or {}).get(base_id)
-        spec = tile_sources.get(source)
-        base_spec = tile_sources.get(base_id)
-        if base_cache is None or spec is None or base_spec is None:
+        if base_cache is None:
             return None
         try:
             base = base_cache.get_tile(z, x, y)
@@ -4856,10 +4965,7 @@ class CorvusHandler(
                     logger.exception("tile cache write failed")
         if base is None and self.dem_fallback is not None:
             base = self.dem_fallback.tile(base_id, z, x, y, base_cache.get_tile)
-        if base is None:
-            return None
-        return dem_tiles.transcode(base, base_spec["encoding"], spec["encoding"],
-                                   int(spec.get("tile_size", 256)))
+        return base
 
     def _fetch_upstream_tile(self, source: str, z: int, x: int, y: int) -> bytes | None:
         """Best-effort online cache-fill for a single tile; None on any failure.
@@ -5310,9 +5416,16 @@ class CorvusServer(socketserver.ThreadingTCPServer):
                 buildings.close()
             except Exception:  # noqa: BLE001 - shutdown must not raise
                 logger.exception("building cache close failed")
+        custom_dem = getattr(self, "custom_dem", None)
+        if custom_dem is not None:
+            try:
+                custom_dem.close()
+            except Exception:  # noqa: BLE001 - shutdown must not raise
+                logger.exception("custom elevation close failed")
         self.tile_downloader = None
         self.tile_caches = {}
         self.buildings = None
+        self.custom_dem = None
 
 
 # How many consecutive ports a launch will try before giving up. Twenty is
@@ -5569,6 +5682,8 @@ def create_server(
     # broadcast a false one, which is worse than having broadcast nothing.
     mavlink.set_remote_id(config.remote_id)
 
+    fleet = build_fleet(mavlink, store, config, cfg_path)
+
     autoconnect_session = build_autoconnect_session(config)
     apply_startup_connection(
         mavlink, mavlink_conn,
@@ -5589,10 +5704,14 @@ def create_server(
     tile_caches, tile_progress_bus, tile_downloader, tile_breaker = \
         _build_tile_resources(cache_dir)
     buildings = _build_building_service(cache_dir)
+    custom_dem = _build_custom_dem_store(cache_dir)
     geocoder = _build_geocoder()
 
-    CorvusHandler.store = store
-    CorvusHandler.mavlink = mavlink
+    # The HTTP layer talks to whichever vehicle is selected. With one vehicle
+    # these are the main store and bridge, and they never move.
+    CorvusHandler.store = fleet.store
+    CorvusHandler.mavlink = fleet.bridge
+    CorvusHandler.fleet = fleet
     CorvusHandler.ssh = ssh
     CorvusHandler.config = config
     CorvusHandler.config_path = cfg_path
@@ -5603,6 +5722,7 @@ def create_server(
     CorvusHandler.tile_progress_bus = tile_progress_bus
     CorvusHandler.tile_breaker = tile_breaker
     CorvusHandler.buildings = buildings
+    CorvusHandler.custom_dem = custom_dem
     CorvusHandler.geocoder = geocoder
 
     # Create ~/.corvus/plugins (with its README) at startup rather than only
@@ -5622,7 +5742,7 @@ def create_server(
 
     # RTK corrections. Built through the shared builder like everything else,
     # and started by it: the default is that a base plugged in is found.
-    rtk_svc = _build_rtk_service(mavlink, store, config)
+    rtk_svc = _build_rtk_service(RtcmFanout(mavlink, fleet), store, config)
     CorvusHandler.rtk = rtk_svc
 
     # Flight-log service: on-board ULog download over MAVLink plus the local
@@ -5670,12 +5790,18 @@ def create_server(
     server.tile_caches = tile_caches
     server.tile_downloader = tile_downloader
     server.buildings = buildings
+    server.custom_dem = custom_dem
     server.geocoder = geocoder
     server.autoconnect_session = autoconnect_session
+    server.fleet = fleet
     mavlink.start()
+    # The extra links, if the operator opened any, and the vehicle list.
+    fleet.start()
     # After mavlink.start(), never before: the resolver above already decided
     # the first link synchronously, and the watcher exists only for what is
     # plugged in afterwards. Starting it earlier would let it dial a bridge
     # that has not been started yet.
-    server.autoconnect = start_autoconnect_watcher(mavlink, store, autoconnect_session)
+    server.autoconnect = start_autoconnect_watcher(
+        mavlink, store, autoconnect_session, busy_devices=fleet.extra_serial_devices,
+    )
     return server

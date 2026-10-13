@@ -24,7 +24,10 @@
  *    spring back to centre;
  *  - the stream keeps running at neutral (a gap reads as RC loss to PX4) but
  *    never overlaps itself and never fires while the link is down;
- *  - the pad drags by its grip bar only, clamps into the map, and persists.
+ *  - the pad drags by its grip bar only, clamps into the map, and persists;
+ *  - a USB gamepad flies the same four axes as the sticks, arms only from both
+ *    sticks held inward for a second on a disarmed vehicle with a link, and
+ *    flies nothing after that until both sticks are let go.
  *
  * Run:
  *   node tests/test_frontend_joystick.js
@@ -146,6 +149,16 @@ global.Corvus.telemetry = {
   },
 };
 
+// Gamepad API stub: the test sets `gamepads` to what getGamepads() returns.
+let gamepads = [];
+Object.defineProperty(global, "navigator", {
+  value: { getGamepads: () => gamepads },
+  configurable: true, writable: true,
+});
+function setPad(axes, extra) {
+  gamepads = [Object.assign({ id: "Test Pad", mapping: "standard", connected: true, axes, buttons: [] }, extra || {})];
+}
+
 const modeCalls = [];
 global.Corvus.telemetry.postAction = async (url, body) => { modeCalls.push({ url, body }); return { ok: true }; };
 global.Corvus.capabilities = {
@@ -173,6 +186,8 @@ async function reset() {
   Corvus.joystick.setEnabled(false);
   Corvus.joystick.setKeysEnabled(false);
   Corvus.joystick.setWasdEnabled(false);
+  Corvus.joystick.setGamepadEnabled(false);
+  gamepads = [];
   Corvus.joystick.setKeyGain(Corvus.joystick.DEFAULT_GAIN);
   if (pendingResolve) { pendingResolve.resolve({ ok: true }); pendingResolve = null; }
   await new Promise((r) => setImmediate(r));
@@ -186,7 +201,7 @@ async function reset() {
  *  drive. `sticks` / `keys` / `wasd` switch the three surfaces on after init,
  *  which is the order the real app uses (build hidden, then apply the
  *  config). */
-async function mount({ connected = true, sticks = true, keys = false, wasd = false, unlocked = true } = {}) {
+async function mount({ connected = true, sticks = true, keys = false, wasd = false, gamepad = false, unlocked = true } = {}) {
   await reset();
   const host = makeEl("div");                 // stands in for .map-view
   // clientWidth === rect width means an interface scale of 1; the scaled case
@@ -205,6 +220,7 @@ async function mount({ connected = true, sticks = true, keys = false, wasd = fal
   if (sticks) Corvus.joystick.setEnabled(true);
   if (keys) Corvus.joystick.setKeysEnabled(true);
   if (wasd) Corvus.joystick.setWasdEnabled(true);
+  if (gamepad) Corvus.joystick.setGamepadEnabled(true);
   if (unlocked && (keys || wasd)) unlock();
   return {
     host, pad,
@@ -216,6 +232,8 @@ async function mount({ connected = true, sticks = true, keys = false, wasd = fal
     keysPanel: pad.querySelector("js-keys"),
     arrows: pad.querySelector("js-cluster-arrows"),
     wasd: pad.querySelector("js-cluster-wasd"),
+    gamepad: pad.querySelector("js-gamepad"),
+    gamepadStatus: pad.querySelector("js-gp-status"),
     // Takes the key's own class suffix: "up"/"left"/... for the arrows,
     // "w"/"a"/"s"/"d" for WASD.
     key: (dir) => pad.querySelector("js-key-" + dir),
@@ -266,6 +284,25 @@ function settle() {
 }
 
 function lastFrame() { return posts[posts.length - 1].body; }
+
+/** Run the pending gamepad read once, leaving the stream timer alone. */
+function pollGamepad() {
+  const due = timers.filter((t) => t.fn.name === "pollGamepad");
+  timers = timers.filter((t) => t.fn.name !== "pollGamepad");
+  due.forEach((t) => t.fn());
+  return due.length;
+}
+
+/** Read the gamepad, then send one frame from what it read. */
+async function gamepadFrame() {
+  await settle();
+  pollGamepad();
+  await settle();
+  flushTimers();
+  return lastFrame();
+}
+
+const armCalls = () => modeCalls.filter((c) => c.url === "/api/mavlink/arm");
 
 // ===========================================================================
 
@@ -1283,6 +1320,223 @@ async function testEdgeTrackingSurvivesAHiddenMap() {
     "the whole pad is on the narrowed map");
 }
 
+async function testTheGamepadIsOffByDefaultAndReadsNothing() {
+  setPad([1, 0, 0, 0]);
+  const { gamepad } = await mount({ sticks: false });
+  assert.equal(Corvus.joystick.isGamepadEnabled(), false);
+  assert.equal(gamepad.hidden, true, "gamepad block hidden while its switch is off");
+  assert.equal(timers.length, 0, "no gamepad read scheduled while off");
+  assert.equal(posts.length, 0);
+}
+
+async function testTheGamepadSwitchShowsItsBlockAndStreams() {
+  const { pad, gamepad, gamepadStatus } = await mount({ sticks: false, gamepad: true });
+  assert.equal(pad.hidden, false, "the pad comes up for the gamepad alone");
+  assert.equal(gamepad.hidden, false);
+  assert.equal(posts.length, 1, "the stream starts with the surface");
+  assert.ok(timers.some((t) => t.fn.name === "pollGamepad"), "the gamepad is being read");
+  assert.match(gamepadStatus.textContent, /press any button/i, "a missing controller says what to do");
+  assert.ok(gamepad.classList.contains("is-missing"));
+}
+
+async function testGamepadSticksMapToTheTransmitterFrame() {
+  await mount({ sticks: false, gamepad: true, connected: true });
+  stateSubscriber({ connected: true, armed: true, mode: "POSCTL" });
+  // Gamepad y grows downward: -1 on axis 1 is the left stick pushed UP.
+  setPad([1, 0, 0, 0]);
+  assert.deepEqual(await gamepadFrame(), { x: 0, y: 0, z: 0.5, r: 1 }, "left X is yaw");
+  setPad([0, -1, 0, 0]);
+  assert.deepEqual(await gamepadFrame(), { x: 0, y: 0, z: 1, r: 0 }, "left up is full thrust");
+  setPad([0, 1, 0, 0]);
+  assert.deepEqual(await gamepadFrame(), { x: 0, y: 0, z: 0, r: 0 }, "left down is zero thrust");
+  setPad([0, 0, -1, 0]);
+  assert.deepEqual(await gamepadFrame(), { x: 0, y: -1, z: 0.5, r: 0 }, "right X is roll");
+  setPad([0, 0, 0, -1]);
+  assert.deepEqual(await gamepadFrame(), { x: 1, y: 0, z: 0.5, r: 0 }, "right up is pitch forward");
+}
+
+async function testGamepadDriftInsideTheDeadzoneReadsAsCentre() {
+  await mount({ sticks: false, gamepad: true });
+  setPad([0.1, -0.09, 0.08, 0.1]);
+  assert.deepEqual(await gamepadFrame(), { x: 0, y: 0, z: 0.5, r: 0 });
+}
+
+async function testAGamepadDiagonalIsClampedToTheCircle() {
+  await mount({ sticks: false, gamepad: true });
+  stateSubscriber({ connected: true, armed: true });
+  setPad([0, 0, 1, -1]);   // a square gate's corner
+  const f = await gamepadFrame();
+  assert.ok(Math.hypot(f.x, f.y) <= 1.001, "travel never exceeds one stick");
+}
+
+async function testAGamepadMovementWakesTheIdleStream() {
+  await mount({ sticks: false, gamepad: true });
+  stateSubscriber({ connected: true, armed: true });
+  await settle();
+  flushTimers();                         // idle tick scheduled at IDLE_HZ
+  await settle();
+  const before = posts.length;
+  setPad([0, 0, 0, -1]);
+  pollGamepad();
+  assert.equal(posts.length, before + 1, "the frame went out on the read, not on the idle tick");
+  assert.equal(lastFrame().x, 1);
+}
+
+async function testHoldingBothSticksInwardArmsAfterOneSecond() {
+  const { gamepadStatus } = await mount({ sticks: false, gamepad: true });
+  stateSubscriber({ connected: true, armed: false });
+  setPad([1, 0, -1, 0]);
+  pollGamepad();
+  assert.equal(armCalls().length, 0, "not on the first read");
+  assert.match(gamepadStatus.textContent, /holding/i);
+  clock += 600;
+  pollGamepad();
+  assert.equal(armCalls().length, 0, "not before the hold time");
+  clock += 500;
+  pollGamepad();
+  assert.equal(armCalls().length, 1, "armed once the sticks were held a second");
+  assert.deepEqual(armCalls()[0].body, { arm: true });
+  clock += 2000;
+  pollGamepad();
+  assert.equal(armCalls().length, 1, "one hold is one arm request");
+}
+
+async function testTheArmGestureFliesNothingOnTheGround() {
+  await mount({ sticks: false, gamepad: true });
+  stateSubscriber({ connected: true, armed: false });
+  setPad([1, 0, -1, 0]);
+  assert.deepEqual(await gamepadFrame(), { x: 0, y: 0, z: 0.5, r: 0 },
+    "full yaw and roll are the gesture, not an input");
+}
+
+async function testAfterArmingTheGamepadIsSilentUntilBothSticksAreLetGo() {
+  const { gamepadStatus } = await mount({ sticks: false, gamepad: true });
+  stateSubscriber({ connected: true, armed: false });
+  setPad([1, 0, -1, 0]);
+  pollGamepad();
+  clock += 1100;
+  pollGamepad();
+  assert.equal(armCalls().length, 1);
+  stateSubscriber({ connected: true, armed: true, mode: "POSCTL" });
+  assert.deepEqual(await gamepadFrame(), { x: 0, y: 0, z: 0.5, r: 0 },
+    "the motors spin up with centred sticks, not the gesture");
+  assert.match(gamepadStatus.textContent, /let go/i);
+  setPad([0.5, 0, 0, 0]);
+  assert.equal((await gamepadFrame()).r, 0, "one stick let go is not both");
+  setPad([0, 0, 0, 0]);
+  await gamepadFrame();
+  setPad([0, 0, 0, -1]);
+  assert.equal((await gamepadFrame()).x, 1, "flies once both were back at centre");
+}
+
+async function testAGestureArmAsksForTheStickMode() {
+  await mount({ sticks: false, gamepad: true });
+  stateSubscriber({ connected: true, armed: false, mode: "AUTO.LOITER" });
+  setPad([1, 0, -1, 0]);
+  pollGamepad();
+  clock += 1100;
+  pollGamepad();
+  stateSubscriber({ connected: true, armed: true, mode: "AUTO.LOITER" });
+  await new Promise((r) => setImmediate(r));
+  const modes = modeCalls.filter((c) => c.url === "/api/mavlink/mode");
+  assert.deepEqual(modes.map((c) => c.body), [{ mode: "POSCTL" }]);
+  stateSubscriber({ connected: true, armed: true, mode: "AUTO.LOITER" });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(modeCalls.filter((c) => c.url === "/api/mavlink/mode").length, 1, "asked once");
+}
+
+async function testAShortOrOneSidedGestureDoesNotArm() {
+  await mount({ sticks: false, gamepad: true });
+  stateSubscriber({ connected: true, armed: false });
+  setPad([1, 0, -1, 0]);
+  pollGamepad();
+  clock += 700;
+  setPad([0, 0, 0, 0]);
+  pollGamepad();
+  setPad([1, 0, -1, 0]);
+  clock += 700;
+  pollGamepad();
+  assert.equal(armCalls().length, 0, "letting go restarts the hold");
+  setPad([1, 0, 1, 0]);                  // both to the right: not inward
+  pollGamepad();
+  clock += 2000;
+  pollGamepad();
+  setPad([-1, 0, 1, 0]);                 // outward
+  pollGamepad();
+  clock += 2000;
+  pollGamepad();
+  assert.equal(armCalls().length, 0);
+}
+
+async function testNoArmWithoutALinkOrWhenAlreadyArmed() {
+  await mount({ sticks: false, gamepad: true });
+  stateSubscriber({ connected: false });
+  setPad([1, 0, -1, 0]);
+  pollGamepad();
+  clock += 2000;
+  pollGamepad();
+  assert.equal(armCalls().length, 0, "no link, no arm");
+
+  stateSubscriber({ connected: true, armed: true });
+  setPad([0, 0, 0, 0]);
+  pollGamepad();
+  setPad([1, 0, -1, 0]);
+  pollGamepad();
+  clock += 2000;
+  const f = await gamepadFrame();
+  assert.equal(armCalls().length, 0, "an armed vehicle is not armed again");
+  assert.equal(f.r, 1, "in the air, inward on both sticks is a real input");
+  assert.equal(f.y, -1);
+}
+
+async function testAFailedGestureArmIsReported() {
+  await mount({ sticks: false, gamepad: true });
+  stateSubscriber({ connected: true, armed: false });
+  const errors = [];
+  Corvus.topbar = { notifyError: (m) => errors.push(m) };
+  const original = Corvus.telemetry.postAction;
+  Corvus.telemetry.postAction = async () => { throw new Error("Arming denied: no GPS"); };
+  try {
+    setPad([1, 0, -1, 0]);
+    pollGamepad();
+    clock += 1100;
+    pollGamepad();
+    await new Promise((r) => setImmediate(r));
+    assert.deepEqual(errors, ["Arming denied: no GPS"]);
+  } finally {
+    Corvus.telemetry.postAction = original;
+    delete Corvus.topbar;
+  }
+}
+
+async function testTheGamepadAndTheOnScreenSticksSumIntoOne() {
+  const { left } = await mount({ sticks: true, gamepad: true });
+  stateSubscriber({ connected: true, armed: true });
+  setPad([0.6, 0, 0, 0]);
+  drag(left, 0.6, 0);
+  const f = await gamepadFrame();
+  assert.equal(f.r, 1, "summed and clamped at the stop");
+  release(left);
+}
+
+async function testACollapsedPadStandsTheGamepadDown() {
+  const { collapse } = await mount({ sticks: false, gamepad: true });
+  stateSubscriber({ connected: true, armed: true });
+  setPad([0, 0, 0, -1]);
+  assert.equal((await gamepadFrame()).x, 1);
+  fire(collapse, "click", {});
+  await settle();
+  assert.equal(timers.filter((t) => t.fn.name === "pollGamepad").length, 0, "no reads while collapsed");
+  flushTimers();
+  assert.deepEqual(lastFrame(), { x: 0, y: 0, z: 0.5, r: 0 }, "neutral, but still streaming");
+}
+
+async function testSwitchingTheGamepadOffStopsReadingIt() {
+  await mount({ sticks: false, gamepad: true });
+  Corvus.joystick.setGamepadEnabled(false);
+  assert.equal(timers.filter((t) => t.fn.name === "pollGamepad").length, 0);
+}
+
 async function testShrinkingTheMapPullsThePadBackIntoView() {
   const { host, pad, grip } = await mount();
   fire(grip, "pointerdown", { clientX: PAD_X, clientY: PAD_Y, button: 0 });
@@ -1370,6 +1624,22 @@ const tests = [
   testShiftIsAnOrdinaryModifierWhileNoKeySurfaceIsOn,
   testAHiddenMapLeavesThePadWhereItWas,
   testEdgeTrackingSurvivesAHiddenMap,
+  testTheGamepadIsOffByDefaultAndReadsNothing,
+  testTheGamepadSwitchShowsItsBlockAndStreams,
+  testGamepadSticksMapToTheTransmitterFrame,
+  testGamepadDriftInsideTheDeadzoneReadsAsCentre,
+  testAGamepadDiagonalIsClampedToTheCircle,
+  testAGamepadMovementWakesTheIdleStream,
+  testHoldingBothSticksInwardArmsAfterOneSecond,
+  testTheArmGestureFliesNothingOnTheGround,
+  testAfterArmingTheGamepadIsSilentUntilBothSticksAreLetGo,
+  testAGestureArmAsksForTheStickMode,
+  testAShortOrOneSidedGestureDoesNotArm,
+  testNoArmWithoutALinkOrWhenAlreadyArmed,
+  testAFailedGestureArmIsReported,
+  testTheGamepadAndTheOnScreenSticksSumIntoOne,
+  testACollapsedPadStandsTheGamepadDown,
+  testSwitchingTheGamepadOffStopsReadingIt,
 ];
 
 (async () => {

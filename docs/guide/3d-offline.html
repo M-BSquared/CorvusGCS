@@ -216,6 +216,20 @@
   never gives you a worse picture. Google publishes no elevation tiles.
 </p>
 
+<h3 id="own-elevation">Your own elevation data</h3>
+<p>
+  A survey office's surface model (a DOM or DSM, often 1 m) shows trees,
+  buildings and masts that the 30 m models smooth away. Load it under
+  <strong>Settings, Appearance, Elevation data</strong> and it appears in the
+  3D panel under <strong>Elevation</strong> like any other model.
+</p>
+<ul>
+  <li><strong>Formats.</strong> GeoTIFF (one band of heights, LZW, Deflate or uncompressed), XYZ text with one <code>x y z</code> line per grid point, and ESRI ASCII grids (<code>.asc</code>). Several files, such as a folder of 1 km tiles, load into one model in one go, and the add button on a model puts more files into it later.</li>
+  <li><strong>Coordinate system.</strong> A GeoTIFF names its own. An XYZ or ASCII file does not, so choose it before loading: German state data is usually ETRS89 / UTM zone 32N (EPSG 25832). Supported are WGS 84, ETRS89 and NAD83 UTM zones, Web Mercator, DHDN Gauss-Krüger, the British National Grid, Lambert-93, LAEA Europe and the Swiss LV95 and LV03 grids. Any other system is refused with that list rather than guessed.</li>
+  <li><strong>Served by Corvus itself.</strong> The files are converted once and kept next to the offline map cache. Corvus cuts elevation tiles from them as the map asks, so there is no separate server to run, and it works with no connection at all.</li>
+  <li><strong>Around your data.</strong> Outside the area your files cover, the free SRTM model fills in, so the surrounding country never drops to sea level.</li>
+</ul>
+
 <h2 id="aircraft-in-3d">The aircraft in the scene</h2>
 <p>
   The aircraft flies in the scene rather than sliding along the ground. It is

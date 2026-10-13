@@ -9,7 +9,7 @@ window.Corvus = window.Corvus || {};
  * cards; clicking a card swaps the grid for the plugin's container and hands
  * it a lean `api`. Only one plugin is open at a time; opening another first
  * closes the current so destroy() runs exactly once (no listener leaks —
- * apple-design "interruptible by default").
+ * "interruptible by default").
  *
  * Plugin `api` contract (built once in init(), handed to every plugin.init):
  *

@@ -120,6 +120,7 @@ class MacBlur:
     _POPOVER = 6             # the material that lets the most colour through
     _SIZABLE = 2 | 16        # NSViewWidthSizable | NSViewHeightSizable
     _BELOW = -1              # NSWindowBelow
+    _TITLE_HIDDEN = 1        # NSWindowTitleHidden
 
     def __init__(self) -> None:
         import ctypes
@@ -213,6 +214,20 @@ class MacBlur:
         # the blur as well.
         self._send(window, "invalidateShadow")
         return effect
+
+    def hide_title(self, view_id: int) -> None:
+        """Leave the title out of the title bar of the window *view_id* is in.
+
+        A window of its own in the system's frame runs its page on under the
+        title bar (corvus/app.py, popout_frame), and the page's bar carries
+        the name next to the traffic lights; macOS would draw the title over
+        it again. The title itself stays, for the Window menu and Mission
+        Control.
+        """
+        window = self._obj(view_id, "window")
+        if not window:
+            raise OSError("the view is not in a window")
+        self._send(window, "setTitleVisibility:", None, (self._ct.c_long,), self._TITLE_HIDDEN)
 
     def clear(self, effect: int) -> None:
         """Take the blur away, and let go of the view :meth:`frost` returned."""

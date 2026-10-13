@@ -276,6 +276,7 @@ def test_controls_defaults_to_absent(tmp_path: pathlib.Path) -> None:
     {"virtual_joystick": 1},
     {"virtual_joystick": None},
     {"arrow_keys": "yes"},
+    {"gamepad": "true"},           # nor a truthy string the gamepad
     {"wasd_keys": 1},               # nor a truthy int the throttle keys
     {"unknown_control": True},
     {},
@@ -288,7 +289,7 @@ def test_only_a_real_boolean_enables_a_control(raw: Any) -> None:
 
 def test_every_control_switch_round_trips_independently(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "config.json"
-    stored = {"virtual_joystick": False, "arrow_keys": True, "wasd_keys": True}
+    stored = {"virtual_joystick": False, "gamepad": True, "arrow_keys": True, "wasd_keys": True}
     path.write_text(json.dumps({"controls": stored}), encoding="utf-8")
 
     cfg = config_mod.load_config(str(path))

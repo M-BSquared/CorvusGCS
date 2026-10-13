@@ -1234,6 +1234,142 @@ async function testAWindowOfItsOwnFrostsOnlyOnceTheBlurIsThere() {
 }
 
 // ---------------------------------------------------------------------------
+// The system's title bar (the default), the rest in the Corvus bar
+// ---------------------------------------------------------------------------
+
+async function testInTheSystemsFrameTheBarKeepsNameStatusPinAndPower() {
+  await reset();
+  const stage = frostStage({});
+  const props = {};
+  stage.root.style.setProperty = (k, v) => { props[k] = v; };
+  let answer = { native: true, overlay: true, controls: "left", inset: 72, top: 28 };
+  const asked = [];
+  const calls = [];
+  window.corvusNative = {
+    dragStart() {}, dragTo() {}, resizeTo() {}, dragEnd(x, y, cb) { cb("{}"); },
+    toggleMaximize(cb) { calls.push("max"); cb(true); }, raiseWindow() {}, closeWindow() {},
+    isPinned(cb) { cb(false); }, setPinned(on, cb) { cb(on); },
+    setFrosted(on, dark, radius, cb) { asked.push(on); cb(on); },
+    frame(cb) { cb(JSON.stringify(answer)); },
+  };
+  const root = makeEl("div");
+  body.appendChild(root);
+  try {
+    Corvus.popoutPage.boot(root, "?kind=terminal&key=term%3Assh-launcher%2Fs1&name=ssh-launcher%2Fs1&title=Shell");
+    await flush(10);
+    const win = root.children[0];
+    assert.equal(stage.root.classList.contains("system-frame"), true);
+    assert.equal(stage.root.classList.contains("system-frame-overlay"), true,
+      "macOS: the page runs on under the system's bar");
+    assert.equal(props["--system-bar-h"], "28px", "the bar is as tall as the system's");
+    assert.equal(props["--system-controls-w"], "72px", "and leaves the traffic lights their room");
+
+    const own = (label) => toolOf(win, label).classList.contains("popout-own-frame");
+    assert.equal(own("Maximize the terminal"), true, "the system maximizes it");
+    assert.equal(own("Close the terminal window"), true, "and closes it");
+    assert.equal(partOf(win, "term-win-grip").classList.contains("popout-own-frame"), true,
+      "and sizes it");
+    assert.equal(own("Disconnect the session"), false, "the power button stays");
+    assert.equal(own("Keep the terminal above the Corvus window"), false, "and so does the pin");
+    assert.ok(partOf(win, "ssh-status"), "and the status");
+    assert.ok(partOf(win, "term-win-name"), "and the name");
+
+    // Maximized the system's way: the bar keeps no state its own button
+    // could leave stale.
+    fire(partOf(win, "term-win-bar"), "dblclick", { target: partOf(win, "term-win-bar") });
+    assert.deepEqual(calls, ["max"]);
+    assert.equal(win.classList.contains("is-max"), false);
+
+    // Settings, "Corvus title bar", on: the page draws the whole frame, and
+    // the blur, which went with the old native window, is asked for again.
+    const before = asked.length;
+    answer = { native: false, overlay: false, controls: "", inset: 0, top: 0 };
+    (windowListeners["corvus:native-frame"] || []).forEach((cb) => cb({}));
+    assert.equal(stage.root.classList.contains("system-frame"), false);
+    assert.equal(stage.root.classList.contains("system-frame-overlay"), false);
+    assert.equal(props["--system-bar-h"], "");
+    assert.equal(asked.length, before + 1);
+  } finally {
+    body.removeChild(root);
+    delete window.corvusNative;
+    stage.restore();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// A plugin's window of its own (kind "plugin:<id>")
+// ---------------------------------------------------------------------------
+
+async function testAPluginFillsAWindowOfItsOwn() {
+  await reset();
+  const stage = frostStage({});
+  const bars = [];
+  let closes = 0;
+  window.corvusNative = {
+    dragStart() {}, dragTo() {}, resizeTo() {}, dragEnd(x, y, cb) { cb("{}"); },
+    toggleMaximize(cb) { cb(false); }, raiseWindow() {}, closeWindow() { closes += 1; },
+    isPinned(cb) { cb(false); }, setPinned(on, cb) { cb(on); },
+    setFrosted(on, dark, radius, cb) { cb(on); },
+    setTitleBar: (choice) => bars.push(choice),
+  };
+  let ctx = null;
+  let cleaned = 0;
+  Corvus.popoutPage.pluginSpecs.set("demo", {
+    popout(c) {
+      ctx = c;
+      const f = c.frame({
+        title: "Demo shell", subtitle: "over MAVLink", icon: "square-terminal",
+        className: "term-win--terminal", bodyClass: "ssh-term", noun: "terminal",
+        tools: [Corvus.ui.iconButton("rotate-ccw", { ariaLabel: "Start over" })],
+      });
+      f.body.textContent = "hello";
+      f.setStatus("CONNECTED", "on");
+      c.onClose(() => { cleaned += 1; });
+    },
+  });
+  const root = makeEl("div");
+  body.appendChild(root);
+  try {
+    await Corvus.popoutPage.boot(root, "?kind=plugin%3Ademo&key=term%3Ademo&title=Demo&dock=1");
+    await flush(10);
+    const win = root.children[0];
+    assert.equal(ctx.params.get("title"), "Demo", "the plugin reads its window's address");
+    assert.equal(partOf(win, "term-win-name").textContent, "Demo shell");
+    assert.ok(win.classList.contains("term-win--terminal"));
+    assert.equal(partOf(win, "term-win-body").textContent, "hello");
+    assert.deepEqual(
+      Array.from(partOf(win, "term-win-tools").children).map((b) => b.getAttribute("aria-label")),
+      ["Put the window back into the Corvus window", "Keep the terminal above the Corvus window",
+        "Maximize the terminal", "Start over", "Close the terminal window"],
+      "the page's own buttons around the plugin's");
+    assert.equal(stage.root.classList.contains("frosted-terminals"), true, "a terminal is frosted");
+    ctx.setTitleBar("corvus");
+    assert.deepEqual(bars, ["corvus"], "its own title bar, through the desktop app");
+
+    fire(toolOf(win, "Close the terminal window"), "click");
+    assert.equal(cleaned, 1, "the plugin let go of what it holds");
+    assert.equal(closes, 1);
+  } finally {
+    Corvus.popoutPage.pluginSpecs.delete("demo");
+    body.removeChild(root);
+    delete window.corvusNative;
+    stage.restore();
+  }
+}
+
+async function testAPluginWithNoWindowSaysSo() {
+  await reset();
+  Corvus.popoutPage.pluginSpecs.set("plain", { init() {}, destroy() {} });
+  const root = makeEl("div");
+  try {
+    await Corvus.popoutPage.boot(root, "?kind=plugin%3Aplain&key=term%3Aplain");
+    assert.equal(root.textContent, "This plugin has no window to show here.");
+  } finally {
+    Corvus.popoutPage.pluginSpecs.delete("plain");
+  }
+}
+
+// ---------------------------------------------------------------------------
 // The SSH Launcher's terminals: the same windows, and as reliable as before
 // ---------------------------------------------------------------------------
 
@@ -1406,6 +1542,9 @@ const tests = [
   testTheSwitchFrostsTheTerminalsInTheApp,
   testAWindowOfItsOwnIsFrostedByDefault,
   testAWindowOfItsOwnFrostsOnlyOnceTheBlurIsThere,
+  testInTheSystemsFrameTheBarKeepsNameStatusPinAndPower,
+  testAPluginFillsAWindowOfItsOwn,
+  testAPluginWithNoWindowSaysSo,
   testALaunchersTerminalOpensAsAWindowOfItsOwnThroughTheSharedCode,
   testAKeyTheDesktopAppWouldRefuseStaysInTheAppRatherThanNowhere,
   testANewShellReachesAWindowTheAppHasNotHeardFromLately,
