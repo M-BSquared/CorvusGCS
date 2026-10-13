@@ -35,6 +35,8 @@
   <img src="https://img.shields.io/badge/Lines%20of%20Code-259k-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 259k" />
   <img width="8" />
   <img src="https://img.shields.io/badge/Tests-98k%20lines%20%C2%B7%20218%20files-18a4de?style=for-the-badge" height="28" alt="Tests: 98k lines across 218 files" />
+  <img width="8" />
+  <img src="https://img.shields.io/badge/%F0%9F%A4%96-Vibe%20Coded-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded" />
   <br>
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-6E7681?style=for-the-badge" height="28" alt="Platform: macOS | Linux | Windows" />
   <img width="8" />
