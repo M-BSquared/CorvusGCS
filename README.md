@@ -16,8 +16,8 @@
 <div align="center">
   <!-- corvus:version-badge -->
   <img src="https://img.shields.io/badge/Version-2026.10.15-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.15" />
-  <!--<img width="8" />
-  <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
+  <img width="8" />
+  <!-- <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
   <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript" target="_blank"><img src="https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black" height="28" alt="JavaScript" /></a>
   <img width="8" />
