@@ -199,6 +199,89 @@ def test_an_item_that_never_arrives_ends_the_download_and_cancels_it(
     assert bridge._store.get_snapshot()["mission_known"] is False
 
 
+def test_a_lost_item_restarts_the_handshake_from_the_list_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fast(monkeypatch)
+    bridge = ready_bridge()
+    vehicle = FakeVehicle(bridge, vehicle_items(sample_plan()), drop={2})
+    attach(bridge, vehicle)
+
+    assert bridge.download_mission() is not None
+    assert vehicle.list_requests == 2, "the list is asked for again, not only the item"
+    assert vehicle.item_requests.count(2) == 2
+
+
+def test_a_request_the_vehicle_calls_unexpected_restarts_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("corvus.mavlink_missions.MISSION_DOWNLOAD_WAIT_S", 30.0)
+    monkeypatch.setattr("corvus.mavlink_missions.MISSION_DOWNLOAD_WAIT_S_SLOW", 30.0)
+    bridge = ready_bridge()
+    vehicle = FakeVehicle(bridge, vehicle_items(sample_plan()))
+    attach(bridge, vehicle)
+    plain = vehicle.mission_request_int_send
+    state = {"refused": False}
+
+    def request(_sys: int, _comp: int, seq: int, mission_type: int = 0) -> None:
+        if seq == 1 and not state["refused"]:
+            state["refused"] = True
+            vehicle.item_requests.append(seq)
+            bridge._console_publish(
+                "STATUSTEXT", "WPM: REJ. CMD: Req. WP was unexpected", "critical")
+            return
+        plain(_sys, _comp, seq, mission_type)
+
+    vehicle.mission_request_int_send = request  # type: ignore[method-assign]
+    lines: list[dict[str, Any]] = []
+    bridge.add_console_sub(lines.append)
+
+    assert bridge.download_mission() is not None
+    assert vehicle.list_requests == 2
+    assert any("reported the request as unexpected" in str(line["text"]) for line in lines)
+
+
+def test_a_vehicle_that_keeps_refusing_the_request_names_the_likely_cause(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fast(monkeypatch)
+    bridge = ready_bridge()
+    vehicle = FakeVehicle(bridge, vehicle_items(sample_plan()))
+    attach(bridge, vehicle)
+
+    def refuse(_sys: int, _comp: int, seq: int, mission_type: int = 0) -> None:
+        vehicle.item_requests.append(seq)
+        bridge._console_publish(
+            "STATUSTEXT", "WPM: REJ. CMD: Req. WP was unexpected", "critical")
+
+    vehicle.mission_request_int_send = refuse  # type: ignore[method-assign]
+
+    assert bridge.download_mission() is None
+    assert "another station" in bridge.get_last_command_error()
+    assert vehicle.acks == [MAV_MISSION_OPERATION_CANCELLED]
+
+
+def test_a_mission_replaced_during_the_download_is_not_mixed_with_the_old_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fast(monkeypatch)
+    bridge = ready_bridge()
+    items = vehicle_items(sample_plan())
+    vehicle = FakeVehicle(bridge, items, drop={2})
+    attach(bridge, vehicle)
+    plain = vehicle.mission_request_list_send
+
+    def relist(_sys: int, _comp: int, mission_type: int = 0) -> None:
+        if vehicle.list_requests >= 1:
+            vehicle.items = items[:-1]
+        plain(_sys, _comp, mission_type)
+
+    vehicle.mission_request_list_send = relist  # type: ignore[method-assign]
+
+    assert bridge.download_mission() is None
+    assert "changed while it was being read" in bridge.get_last_command_error()
+
+
 def test_a_vehicle_that_never_answers_the_list_request_is_reported(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -86,6 +86,12 @@ MISSION_UPLOAD_MAX_S = 120.0
 MISSION_DOWNLOAD_WAIT_S = 1.5
 MISSION_DOWNLOAD_WAIT_S_SLOW = 3.0
 MISSION_DOWNLOAD_TRIES = 4
+# An item that does not arrive is not asked for again as it stands: the vehicle
+# may have dropped the transfer (PX4 answers a request outside one with "Req. WP
+# was unexpected"), and a request it does not expect is never answered. The
+# whole handshake starts again from MISSION_REQUEST_LIST, this many times.
+MISSION_DOWNLOAD_RESTARTS = 3
+_UNEXPECTED_REQUEST = "req. wp was unexpected"
 
 # MAV_MISSION_RESULT a GCS sends to end a transfer it is abandoning, so the
 # vehicle's mission manager is not left waiting for the next request.
@@ -138,6 +144,7 @@ class _MissionDownload:
         self.count: int | None = None
         self.waiting_for: int = -1
         self.items: dict[int, dict[str, Any]] = {}
+        self.drops = 0
 
 
 def _finite_or_none(value: Any) -> float | None:
@@ -405,6 +412,17 @@ class MissionProtocolMixin:
                 self._command_failure("Mission download", -2)
                 return None
             download = _MissionDownload()
+
+            def watch(entry: dict[str, Any]) -> None:
+                if (entry.get("name") == "STATUSTEXT"
+                        and _UNEXPECTED_REQUEST in str(entry.get("text") or "").lower()):
+                    download.drops += 1
+                    download.event.set()
+
+            add = getattr(self, "add_console_sub", None)
+            remove = getattr(self, "remove_console_sub", None)
+            if callable(add):
+                add(watch)
             with self._mission_lock:
                 self._mission_download = download
             try:
@@ -413,6 +431,8 @@ class MissionProtocolMixin:
                 with self._mission_lock:
                     if self._mission_download is download:
                         self._mission_download = None
+                if callable(remove):
+                    remove(watch)
             if items is None:
                 return None
             known = self._home_lat_lon()
@@ -433,12 +453,13 @@ class MissionProtocolMixin:
         """The handshake itself. None on failure, with the reason set."""
         target = (self._target_system, self._target_component)
 
-        def ask(send: Any, answered: Any) -> bool | None:
+        def ask(send: Any, answered: Any, tries: int) -> bool | None:
             """Send, wait, repeat. True answered, False lost, None interrupted."""
-            for _attempt in range(MISSION_DOWNLOAD_TRIES):
+            for _attempt in range(tries):
                 if self._stop_event.is_set() or not self._connection_ready():
                     return None
                 download.event.clear()
+                drops = download.drops
                 conn = self._conn
                 try:
                     with self._send_lock:
@@ -454,12 +475,19 @@ class MissionProtocolMixin:
                         return True
                     if self._operation_lock.abort_waiting():
                         return None
+                    if download.drops != drops:
+                        break
                 if answered():
                     return True
             return False
 
-        got = ask(lambda conn: conn.mav.mission_request_list_send(*target, 0),
-                  lambda: download.count is not None)
+        def ask_list() -> bool | None:
+            with self._mission_lock:
+                download.count = None
+            return ask(lambda conn: conn.mav.mission_request_list_send(*target, 0),
+                       lambda: download.count is not None, MISSION_DOWNLOAD_TRIES)
+
+        got = ask_list()
         if got is None:
             self._cancel_mission_download()
             self._set_command_error("mission download interrupted")
@@ -478,14 +506,48 @@ class MissionProtocolMixin:
         for seq in range(total):
             with self._mission_lock:
                 download.waiting_for = seq
-            got = ask(lambda conn, seq=seq: conn.mav.mission_request_int_send(*target, seq, 0),
-                      lambda seq=seq: seq in download.items)
-            if not got:
-                self._cancel_mission_download()
-                self._set_command_error(
-                    "mission download interrupted" if got is None
-                    else f"mission item {seq + 1} of {total} never arrived")
-                return None
+            restarts = 0
+            while True:
+                got = ask(lambda conn, seq=seq: conn.mav.mission_request_int_send(*target, seq, 0),
+                          lambda seq=seq: seq in download.items, 1)
+                if got:
+                    break
+                if got is None:
+                    self._cancel_mission_download()
+                    self._set_command_error("mission download interrupted")
+                    return None
+                if restarts >= MISSION_DOWNLOAD_RESTARTS:
+                    self._cancel_mission_download()
+                    reason = (
+                        ". The vehicle keeps reporting the request as unexpected, so another "
+                        "station (a companion computer or a second ground station) is "
+                        "probably reading the mission at the same time"
+                        if download.drops else "")
+                    self._set_command_error(
+                        f"mission item {seq + 1} of {total} never arrived{reason}")
+                    return None
+                restarts += 1
+                self._console_publish(
+                    "MISSION",
+                    ("The vehicle ended the transfer and reported the request as unexpected. "
+                     if download.drops else f"Mission item {seq + 1} did not arrive. ")
+                    + "Reading the mission again from the start", "info")
+                with self._mission_lock:
+                    download.waiting_for = -1
+                got = ask_list()
+                if not got:
+                    self._cancel_mission_download()
+                    self._set_command_error(
+                        "mission download interrupted" if got is None
+                        else "the vehicle did not answer the mission request")
+                    return None
+                if int(download.count or 0) != total:
+                    self._cancel_mission_download()
+                    self._set_command_error(
+                        "the mission on the vehicle changed while it was being read")
+                    return None
+                with self._mission_lock:
+                    download.waiting_for = seq
         if total:
             self._send_mission_ack(mavutil.mavlink.MAV_MISSION_ACCEPTED)
         return [download.items[seq] for seq in range(offset, total)]
