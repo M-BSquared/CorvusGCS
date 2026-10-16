@@ -612,7 +612,7 @@ def test_the_3d_picture_uses_the_map_s_own_3d_door() -> None:
     assert '"full"' in payloads[three_d]
 
     for other in library.SCENES.values():
-        if other.id != "three_d":
+        if other.map_3d == "off":
             assert not any("set3DMode" in s.payload
                            for s in recipe.steps(other, "http://127.0.0.1:8777/")), other.id
 
@@ -646,7 +646,7 @@ def test_the_parameter_picture_shows_the_modified_rows() -> None:
     press = next(s.payload for s in steps if ".params-filter-opt" in s.payload)
     assert '"modified"' in press and "disabled" in press
     for other in library.SCENES.values():
-        if other.id != "parameters":
+        if other.param_filter == "all":
             assert not any(".params-filter-opt" in s.payload
                            for s in recipe.steps(other, "http://127.0.0.1:8777/")), other.id
 
@@ -683,3 +683,158 @@ def test_the_link_preview_is_made_from_a_picture_that_exists() -> None:
         encoding="utf-8")
     assert f"assets/images/{web.SOCIAL.name}" in index
     assert (web.REPO_ROOT / "assets" / "CorvusGCS.png").is_file()
+
+
+# --------------------------------------------------------------------------
+# The plugin pictures: a NuttShell, a launcher's companion, saved settings
+# --------------------------------------------------------------------------
+
+
+def test_the_nuttshell_echoes_answers_and_prompts() -> None:
+    from scene_kit import nsh
+
+    shell = nsh.Nsh()
+    out = shell.feed(b"ver al") + shell.feed(b"l\n")
+    assert out.startswith("ver all\r\n")
+    assert "PX4 version: 1.18.0" in out, "the aircraft the scenes fly runs PX4 1.18"
+    assert out.endswith(nsh.PROMPT)
+    assert "command not found" in shell.feed(b"reboot\n")
+    assert shell.feed(b"ab\x7f\x03") == "ab\b \b^C\r\n" + nsh.PROMPT
+
+
+def test_shell_output_is_cut_into_whole_characters() -> None:
+    from scene_kit import nsh
+
+    text = "nsh> " + "°" * 80
+    chunks = nsh.chunks(text)
+    assert all(len(c) <= 70 for c in chunks)
+    assert b"".join(chunks).decode("utf-8") == text
+    for chunk in chunks:
+        chunk.decode("utf-8")
+
+
+def test_the_vehicle_answers_the_shell_over_serial_control() -> None:
+    from pymavlink.dialects.v20 import common as m
+
+    sent: list[tuple] = []
+
+    class _Mav:
+        def serial_control_send(self, *args):
+            sent.append(args)
+
+    class _Conn:
+        mav = _Mav()
+
+    sim = vehicle.SimVehicle("udpout:127.0.0.1:1")
+    sim._conn = _Conn()
+    msg = m.MAVLink_serial_control_message(
+        m.SERIAL_CONTROL_DEV_SHELL,
+        m.SERIAL_CONTROL_FLAG_RESPOND | m.SERIAL_CONTROL_FLAG_EXCLUSIVE, 0, 0, 5,
+        list(b"free\n".ljust(70, b"\x00")))
+    sim._handle(msg)
+    text = b"".join(bytes(a[5])[:a[4]] for a in sent).decode("utf-8")
+    assert all(a[0] == m.SERIAL_CONTROL_DEV_SHELL and a[1] == m.SERIAL_CONTROL_FLAG_REPLY
+               for a in sent)
+    assert "Umem:" in text and text.endswith("nsh> ")
+    sim._handle(m.MAVLink_serial_control_message(
+        m.SERIAL_CONTROL_DEV_SHELL, 0, 0, 0, 0, [0] * 70))
+    assert sim._nsh is None, "a release ends the session"
+
+
+def test_the_nuttx_picture_types_commands_the_shell_knows() -> None:
+    from scene_kit import nsh
+
+    js = recipe.STAGES["nuttx"][1]
+    typed = json.loads(re.search(r"for \(const c of (\[.*?\])\)", js).group(1))
+    assert typed and all(c in nsh.COMMANDS for c in typed)
+
+
+def test_a_launcher_button_runs_in_the_folder_it_names() -> None:
+    from scene_kit import companion
+
+    out: list[str] = []
+    shell = companion._Shell.__new__(companion._Shell)
+    shell.machine, shell.line, shell.cwd, shell.busy = companion.MISSION, "", "~", ""
+    shell.write = out.append
+    assert shell.run_command("cd -- '~/mission' && ./start_mission.sh")
+    assert shell.cwd == "~/mission"
+    assert "campus_hop.yaml" in "".join(out)
+    assert shell.busy == "./start_mission.sh", "a launched program keeps running"
+    out.clear()
+    shell.busy = ""
+    shell.run_command("cd -- '/nowhere' && ./start_mission.sh")
+    assert "No such file or directory" in "".join(out) and "campus_hop" not in "".join(out)
+
+
+def test_every_connection_a_plugin_picture_names_is_one_the_sandbox_saves() -> None:
+    for scene in library.SCENES.values():
+        for settings in scene.plugin_settings.values():
+            for button in settings.get("buttons", []):
+                if button.get("connection"):
+                    assert scene.ssh, scene.id
+                    assert button["connection"] == recipe.SSH_MISSION, scene.id
+
+
+def test_plugin_settings_land_in_each_plugin_s_own_file(tmp_path: Path) -> None:
+    from scene_kit.runner import RunnerOptions, SceneRunner
+
+    from corvus import plugin_config
+
+    sandbox = tmp_path / "home"
+    stale = sandbox / ".corvus" / "plugins" / "left-over" / "config.json"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("{}")
+    scene = library.get("plugin_map_entities")
+    SceneRunner(scene, RunnerOptions(sandbox=sandbox))._write_config()
+    saved = plugin_config.load("map-entities", str(sandbox / ".corvus" / "plugins"))
+    assert saved == json.loads(json.dumps(scene.plugin_settings["map-entities"]))
+    assert not stale.exists(), "one picture's settings must not leak into the next"
+
+
+def test_every_plugin_has_a_picture_on_the_website() -> None:
+    plugins_dir = Path(__file__).resolve().parents[1] / "plugins"
+    names = {json.loads((d / "plugin.json").read_text())["name"]
+             for d in plugins_dir.iterdir() if (d / "plugin.json").is_file()}
+    shown = {s.plugin for s in library.SCENES.values() if s.plugin and s.web}
+    assert names <= shown, f"plugins without a picture: {sorted(names - shown)}"
+
+
+def test_every_stage_is_known_and_the_gate_is_on_the_sortie() -> None:
+    for scene in library.SCENES.values():
+        for name in scene.stage:
+            assert name in recipe.STAGES, (scene.id, name)
+    entities = library.get("plugin_map_entities").plugin_settings["map-entities"]["entities"]
+    assert any(e["name"] == "Field gate" for e in entities), "the entity stage selects it"
+    gate = next(e for e in entities if e["kind"] == "gate")
+    assert gate["base"] < 40 < gate["base"] + gate["height"], "the sortie flies at 40 m"
+
+
+def test_the_geofence_holds_the_sortie_and_is_a_valid_area() -> None:
+    from corvus import geofence as geofence_mod
+
+    fence = [list(c) for c in library.get("geofence").geofence]
+    polygon, error = geofence_mod.validate_polygon(fence)
+    assert polygon and not error, error
+    path = flight.make_path(library.SORTIE_PATH, home=library.SORTIE_HOME)
+    for p in path.points + [path.points[-1]]:
+        lon, lat = p.lon, p.lat
+        inside = False
+        for i in range(len(fence)):
+            (x1, y1), (x2, y2) = fence[i], fence[i - 1]
+            if (y1 > lat) != (y2 > lat) and lon < (x2 - x1) * (lat - y1) / (y2 - y1) + x1:
+                inside = not inside
+        assert inside, (lat, lon)
+
+
+def test_the_3d_geofence_reads_the_surface_model(tmp_path: Path) -> None:
+    from scene_kit.runner import RunnerOptions, SceneRunner
+
+    scene = library.get("geofence_3d")
+    assert scene.map_3d == "full" and scene.terrain_source == library.NEUBIBERG_DOM
+    sandbox = tmp_path / "home"
+    config = json.loads(SceneRunner(scene, RunnerOptions(sandbox=sandbox))._write_config().read_text())
+    assert config["map"]["terrain_source"] == library.NEUBIBERG_DOM
+    stored = json.loads((sandbox / ".corvus" / "geofence.json").read_text())
+    assert len(stored["polygon"]) == len(scene.geofence) and stored["show_on_map"] is True
+    SceneRunner(library.get("flight"), RunnerOptions(sandbox=sandbox))._write_config()
+    assert not (sandbox / ".corvus" / "geofence.json").exists(), "a fence must not leak"

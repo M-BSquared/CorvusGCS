@@ -44,12 +44,14 @@ RC_BINDINGS: dict[str, dict[str, int]] = {
 NAV_IDS = ("home", "mission", "setup", "analysis", "logs", "settings")
 SETUP_VIEWS = ("calibration", "control", "tuning", "motors", "safety", "battery",
                "sik", "rtk", "remoteid", "parameters", "firmware", "video")
-ANALYSIS_VIEWS = ("ulog", "tlog", "review")
+ANALYSIS_VIEWS = ("ulog", "tlog", "review", "scope")
 
 # The SSH connections an ``ssh`` scene saves, by the name the card shows. The
 # first opens in the SSH tab, the second in a terminal window over the map.
 SSH_TAB = "Companion computer"
 SSH_WINDOW = "Payload computer"
+# The connection the launcher plugins' buttons name (companion.MISSION).
+SSH_MISSION = "Mission computer"
 # Where that window sits: the upper left of the map, which the sortie's track
 # leaves empty.
 SSH_WINDOW_AT = {"left": 86, "top": 150, "width": 620, "height": 318}
@@ -412,6 +414,170 @@ def three_d_js(scene: Scene) -> str:
     )
 
 
+def _press_js(selector: str, indices: tuple[int, ...], settle_ms: int = 1800) -> str:
+    """Wait for the *selector* buttons, then press the ones at *indices*."""
+    return (
+        "(async () => { const w = (ms) => new Promise((r) => setTimeout(r, ms)); "
+        f"const sel = {json.dumps(selector)}; let all = []; "
+        "for (let i = 0; i < 60 && !all.length; i++) { "
+        "all = [...document.querySelectorAll(sel)]; if (!all.length) await w(250); } "
+        "if (!all.length) return 'nothing matches ' + sel; let n = 0; "
+        f"for (const i of {json.dumps(list(indices))}) {{ "
+        "const b = [...document.querySelectorAll(sel)][i]; "
+        f"if (b && !b.disabled) {{ b.click(); n++; await w({settle_ms}); }} }} "
+        "return n + ' of ' + all.length + ' pressed'; })()"
+    )
+
+
+def nsh_js(commands: tuple[str, ...]) -> str:
+    """Type *commands* into the NuttShell, the way the console's Enter sends them.
+
+    Through the endpoint the NuttX Console itself posts to, once the plugin
+    has opened the shell (its first newline asks for a prompt).
+    """
+    return (
+        "(async () => { const w = (ms) => new Promise((r) => setTimeout(r, ms)); "
+        "for (let i = 0; i < 40 && !document.querySelector('.nx-root, [class^=\"nx-\"]'); i++) "
+        "await w(250); await w(1500); "
+        f"for (const c of {json.dumps(list(commands))}) {{ "
+        "await fetch('/api/mavlink/shell/send', { method: 'POST', "
+        "headers: { 'Content-Type': 'application/json' }, "
+        "body: JSON.stringify({ data: c + '\\n' }) }); await w(1400); } "
+        f"return {json.dumps(str(len(commands)))} + ' commands typed'; }})()"
+    )
+
+
+def scope_js(message: str) -> str:
+    """Pick one message in Live Messages, so its fields fill the right side."""
+    return (
+        "(async () => { const w = (ms) => new Promise((r) => setTimeout(r, ms)); "
+        "let row = null; for (let i = 0; i < 60 && !row; i++) { "
+        "row = [...document.querySelectorAll('.scope-row.scope-item')].find((r) => "
+        f"(r.firstChild && r.firstChild.textContent) === {json.dumps(message)}); "
+        "if (!row) await w(250); } "
+        f"if (!row) return 'no row for ' + {json.dumps(message)}; row.click(); await w(2500); "
+        "return document.querySelectorAll('.scope-field').length + ' fields shown'; })()"
+    )
+
+
+def param_hint_js(name: str) -> str:
+    """Open the info hint beside one parameter's name in the editor."""
+    return (
+        "(async () => { const w = (ms) => new Promise((r) => setTimeout(r, ms)); "
+        "let btn = null; for (let i = 0; i < 80 && !btn; i++) { "
+        "const line = [...document.querySelectorAll('.params-name-line')].find((l) => "
+        f"(l.textContent || '').trim() === {json.dumps(name)}); "
+        "btn = line && line.querySelector('.ui-info'); if (!btn) await w(250); } "
+        f"if (!btn) return 'no hint for ' + {json.dumps(name)}; "
+        "btn.scrollIntoView({ block: 'center' }); await w(400); "
+        "if (btn.corvusPopover && btn.corvusPopover.show) btn.corvusPopover.show(); else btn.click(); "
+        "await w(800); return 'hint open'; })()"
+    )
+
+
+def entity_js(name: str) -> str:
+    """Select one placed entity in Map Entities, so its editor is shown."""
+    return (
+        "(async () => { const w = (ms) => new Promise((r) => setTimeout(r, ms)); "
+        "let row = null; for (let i = 0; i < 60 && !row; i++) { "
+        "row = [...document.querySelectorAll('.ent-row')].find((r) => "
+        f"(r.textContent || '').includes({json.dumps(name)})); if (!row) await w(250); }} "
+        f"if (!row) return 'no entity ' + {json.dumps(name)}; row.click(); await w(800); "
+        "return 'selected ' + " + json.dumps(name) + "; })()"
+    )
+
+
+def place_window_js(at: dict[str, int] = SSH_WINDOW_AT) -> str:
+    """Move the newest floating window to *at*, over the map's empty corner.
+
+    A plugin opens its terminal where the app puts new windows, the upper
+    right, which is over the plugin itself in a picture of the side panel.
+    """
+    return (
+        "(async () => { const w = (ms) => new Promise((r) => setTimeout(r, ms)); "
+        "const fw = window.Corvus && Corvus.floatWindows; if (!fw) return 'no windows'; "
+        "const keys = fw.keys(); if (!keys.length) return 'no window open'; "
+        "const rec = fw.get(keys[keys.length - 1]); "
+        f"const at = {json.dumps(at)}; "
+        "rec.rect = { x: at.left, y: at.top, w: at.width, h: at.height }; "
+        "Object.assign(rec.el.style, { left: at.left + 'px', top: at.top + 'px', "
+        "width: at.width + 'px', height: at.height + 'px' }); "
+        "if (typeof rec.onResize === 'function') rec.onResize(rec); "
+        "await w(800); return 'window at ' + at.left + ',' + at.top; })()"
+    )
+
+
+def geofence_upload_js() -> str:
+    """Put the stored area on the vehicle, the way the card's button does.
+
+    Through ``Corvus.geofence.upload``, so the card and the Home map hear the
+    answer and say the vehicle has this area.
+    """
+    return (
+        "(async () => { const w = (ms) => new Promise((r) => setTimeout(r, ms)); "
+        "for (let i = 0; i < 40 && !(window.Corvus && Corvus.geofence "
+        "&& Corvus.geofence.get().polygon.length); i++) await w(250); "
+        "if (!(window.Corvus && Corvus.geofence)) return 'no geofence module'; "
+        "try { const g = await Corvus.geofence.upload(); await w(1200); "
+        "return 'on the vehicle: ' + g.on_vehicle; } "
+        "catch (e) { return 'upload failed: ' + e; } })()"
+    )
+
+
+def geofence_card_js() -> str:
+    """Bring the Geofence card to the middle of the page once its map has drawn."""
+    return (
+        "(async () => { const w = (ms) => new Promise((r) => setTimeout(r, ms)); "
+        "let card = null; for (let i = 0; i < 60 && !card; i++) { "
+        "card = document.querySelector('.geofence-card'); if (!card) await w(250); } "
+        "if (!card) return 'no geofence card'; "
+        "const pv = document.getElementById('pageView'); "
+        "if (pv) pv.scrollTop += card.getBoundingClientRect().top - pv.getBoundingClientRect().top - 24; "
+        "else card.scrollIntoView({ block: 'start' }); await w(2500); "
+        "const st = card.querySelector('.geofence-status'); "
+        "return 'card in view' + (st ? ': ' + st.textContent : ''); })()"
+    )
+
+
+def geofence_large_js() -> str:
+    """Open the card's large map, the editor an operator draws the area on."""
+    return (
+        "(async () => { const w = (ms) => new Promise((r) => setTimeout(r, ms)); "
+        "let btn = null; for (let i = 0; i < 60 && !btn; i++) { "
+        "btn = document.querySelector('.geofence-expand'); if (!btn) await w(250); } "
+        "if (!btn) return 'no large map button'; btn.click(); await w(3500); "
+        "const s = document.querySelector('.geofence-editor-summary'); "
+        "return 'large map open' + (s ? ': ' + s.textContent : ''); })()"
+    )
+
+
+# The named staging steps a scene may ask for (Scene.stage), each a step's
+# description and its snippet.
+STAGES: dict[str, tuple[str, str]] = {
+    "launcher": ("Press the first two SSH Launcher buttons; each starts its "
+                 "program in a terminal session of its own.",
+                 _press_js(".sshl-launch", (0, 1))),
+    "launcher_window": ("Open the first button's terminal window over the map.",
+                        _press_js(".sshl-open", (0,), 2500)),
+    "place_window": ("Move that window to the upper left of the map, clear of "
+                     "the side panel.", place_window_js()),
+    "schwalby": ("Press the Schwalby buttons that run over SSH.",
+                 _press_js(".schw-launch", (0, 2))),
+    "nuttx": ("Type a few commands into the NuttShell.",
+              nsh_js(("ver all", "param show MPC_XY_VEL_MAX", "listener sensor_combined"))),
+    "scope": ("Pick ATTITUDE in Live Messages, so its fields are listed.",
+              scope_js("ATTITUDE")),
+    "param_hint": ("Open the info hint beside COM_LOW_BAT_ACT.",
+                   param_hint_js("COM_LOW_BAT_ACT")),
+    "entity": ("Select the gate in Map Entities, so its editor is shown.",
+               entity_js("Field gate")),
+    "geofence_upload": ("Upload the stored area to the aircraft as its fence.",
+                        geofence_upload_js()),
+    "geofence_card": ("Scroll the Geofence card into view.", geofence_card_js()),
+    "geofence_large": ("Open the Geofence card's large map.", geofence_large_js()),
+}
+
+
 def steps(scene: Scene, url: str) -> list[Step]:
     """The whole recipe, in order."""
     width, height = scene.viewport
@@ -489,6 +655,9 @@ def steps(scene: Scene, url: str) -> list[Step]:
                         "Wait for the demonstrated turn to rest, solid, at the "
                         "side the aircraft is asked for.",
                         calibration_hold_js()))
+    for name in scene.stage:
+        detail, js = STAGES[name]
+        out.append(Step("evaluate", detail, js))
     out.append(Step("evaluate",
                     "Take any company logo out of the top bar. The pictures "
                     "never carry one.",

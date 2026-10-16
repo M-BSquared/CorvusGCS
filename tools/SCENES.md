@@ -39,12 +39,34 @@ same recipe as machine-readable steps, which is the form an agent should use.
 | `map_3d`, `map_bearing`, `map_zoom` | the map's 3D mode, where the tilted camera looks, and how much closer than the fitted frame |
 | `calibration`, `calibration_pause_after` | which calibration runs, and where it stops |
 | `logs`, `chatter` | the Analysis page's log card and the console's traffic |
+| `language`, `ui` | the interface language (`de`, `fr`, `dl`) and any other key of the config's `ui` object |
+| `plugin`, `plugin_settings` | the plugin opened on the PLUGINS tab, and each plugin's saved settings, written to its own `config.json` in the sandbox |
+| `stage` | named browser steps run just before the shot (`recipe.STAGES`): pressing a launcher's buttons, typing into the NuttShell, opening a parameter's hint |
 | `settle`, `notes` | how long the picture needs to build, and what to look for |
 | `web` | the picture's name on the website, or empty when the site does not show it |
 
 Airframes: `quad_x`, `quad_x_heavy`, `hexa_x`, `octo_x`, `vtol_quad`,
 `fixed_wing`. Paths: `hover`, `orbit`, `survey`, `figure_eight`, `out_and_back`.
 Themes: the six in `src/css/themes.css`.
+
+## The plugins
+
+Every plugin has a picture of its own (`plugin_*`, and `plugins` for the
+Vibration Monitor). What a plugin needs to look in use is part of its scene:
+
+* **SSH Launcher and Schwalby** press buttons that name the connection
+  "Mission computer", the `MISSION` account of the simulated companion
+  computer. Its shell understands the `cd -- <folder> && <command>` line a
+  button types, and the programs it knows keep running until Ctrl-C, the way
+  a launched program does. Schwalby's local buttons are never pressed: they
+  would open a shell on the machine taking the picture.
+* **NuttX Console** types into the aircraft's own NuttShell. The simulated
+  PX4 answers SERIAL_CONTROL with `nsh.py`: an echo, a prompt and canned
+  output for `ver all`, `free`, `top once`, `listener sensor_combined` and a
+  few more.
+* **Map Entities** and the **Trajectory Viewer** start from saved settings:
+  a gate across the sortie at the height it is flown, and the hop as planned,
+  a few metres off the flown curve.
 
 ## The website
 

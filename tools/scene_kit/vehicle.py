@@ -52,6 +52,7 @@ from pymavlink import mavutil  # noqa: E402  (must follow the MAVLINK20 line)
 from pymavlink.dialects.v20 import common as mavlink2  # noqa: E402
 
 from . import flight as flight_mod  # noqa: E402
+from . import nsh as nsh_mod  # noqa: E402
 from . import params as params_mod  # noqa: E402
 
 # PX4's custom_mode layout: main mode in bits 16-23, sub mode in 24-31, and
@@ -259,6 +260,9 @@ class SimVehicle:
         # first request from the table the vehicle booted with.
         self._ftp_open: bytes | None = None
         self._param_metadata: bytes | None = None
+        # The NuttShell session the NuttX Console types into, opened by the
+        # first SERIAL_CONTROL for it.
+        self._nsh: nsh_mod.Nsh | None = None
 
     # -- lifecycle --------------------------------------------------------
 
@@ -583,9 +587,34 @@ class SimVehicle:
             self._on_event("log erase requested")
         elif kind == "FILE_TRANSFER_PROTOCOL":
             self._answer_ftp(msg)
+        elif kind == "SERIAL_CONTROL":
+            self._answer_shell(msg)
         elif kind == "SET_MODE":
             self.mode = _requested_mode(int(getattr(msg, "custom_mode", 0) or 0))
             self._on_event(f"mode -> {self.mode}")
+
+    # -- the NuttShell ----------------------------------------------------
+
+    def _answer_shell(self, msg: Any) -> None:
+        """Answer NSH over SERIAL_CONTROL the way PX4 does (see nsh.py).
+
+        A packet with no flags is the ground station letting the shell go;
+        the session ends with it, so the next one starts on a clean line.
+        """
+        if int(getattr(msg, "device", -1)) != mavlink2.SERIAL_CONTROL_DEV_SHELL:
+            return
+        if not int(getattr(msg, "flags", 0)):
+            self._nsh = None
+            return
+        count = max(0, min(int(getattr(msg, "count", 0)), 70))
+        if self._nsh is None:
+            self._nsh = nsh_mod.Nsh()
+        text = self._nsh.feed(bytes(msg.data)[:count])
+        for chunk in nsh_mod.chunks(text):
+            self._send(self._conn.mav.serial_control_send,
+                       mavlink2.SERIAL_CONTROL_DEV_SHELL,
+                       mavlink2.SERIAL_CONTROL_FLAG_REPLY, 0, 0,
+                       len(chunk), chunk.ljust(70, b"\x00"))
 
     # -- parameters -------------------------------------------------------
 

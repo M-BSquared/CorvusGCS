@@ -39,6 +39,11 @@ SORTIE_PATH = "swoop"
 # all readable in one frame.
 DEFAULT_VIEWPORT = (1600, 1000)
 
+# The operator's own 20 cm surface model of the Neubiberg field (three 1 km
+# DOM tiles, ETRS89 / UTM 32N, imported under Settings > Elevation). It lives
+# in the shared tile cache, so it is only on a machine that imported it.
+NEUBIBERG_DOM = "dem_11e6db89d6"
+
 
 @dataclass
 class Scene:
@@ -81,6 +86,15 @@ class Scene:
     map_3d: str = "off"
     map_bearing: float = 0.0
     map_zoom: float = 0.0
+    # The elevation model 3D reads: "auto", or the id of a model imported
+    # under Settings (a surface model of the field, say). A model the tile
+    # cache does not hold falls back to the automatic one.
+    terrain_source: str = "auto"
+    # The interface language by its code in src/lang ("de", "fr"), None for
+    # English, and any other key of the config's "ui" object (hud_square,
+    # plugin_tabs, ...), as Settings would save them.
+    language: str | None = None
+    ui: dict[str, Any] = field(default_factory=dict)
 
     # --- the aircraft ---------------------------------------------------
     airframe: str = params_mod.DEFAULT_AIRFRAME
@@ -120,6 +134,17 @@ class Scene:
     ssh: bool = False
     # The mission planner is seeded with a plan over the sortie's points.
     mission_plan: bool = False
+    # Each plugin's saved settings, by plugin id, written to its own
+    # config.json in the sandbox before the backend starts: a launcher's
+    # shelf, the entities on the map, a trajectory file already read.
+    plugin_settings: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Named steps (recipe.STAGES) run once the scene has built and before the
+    # map is framed: pressing a plugin's buttons, typing into a shell. Each one
+    # is the browser half of a picture that no field above can describe.
+    stage: tuple[str, ...] = ()
+    # The geofence area kept on this station, as (lon, lat) corners, written
+    # to the sandbox's geofence.json and shown on the Home map. Empty: none.
+    geofence: tuple[tuple[float, float], ...] = ()
     chatter: bool = True                    # scripted STATUSTEXT traffic
     settle: float = 20.0                    # seconds to let the scene build
     notes: str = ""                         # what to look for before shooting
@@ -144,13 +169,14 @@ class Scene:
     def bounds(self) -> tuple[float, float, float, float]:
         """(west, south, east, north) around everything the picture must hold.
 
-        The flown track, the home point, and a margin. The map framing step in
+        The flown track, the home point, the geofence if there is one, and a
+        margin. The map framing step in
         the recipe fits to this, which is what stops a survey from being
         photographed with two of its legs off the side of the window.
         """
         path = flight_mod.make_path(self.path, home=self.home, **self.path_options)
-        lats = [p.lat for p in path.points] + [self.home[0]]
-        lons = [p.lon for p in path.points] + [self.home[1]]
+        lats = [p.lat for p in path.points] + [self.home[0]] + [c[1] for c in self.geofence]
+        lons = [p.lon for p in path.points] + [self.home[1]] + [c[0] for c in self.geofence]
         pad_lat = max(0.0006, (max(lats) - min(lats)) * 0.18)
         pad_lon = max(0.0009, (max(lons) - min(lons)) * 0.18)
         return (min(lons) - pad_lon, min(lats) - pad_lat,
@@ -316,14 +342,17 @@ _register(Scene(
     asset="docs/assets/images/map-3d.jpg",
     web="map-3d",
     title="The map in 3D",
-    caption="The ground with its real shape, extruded OpenStreetMap buildings, "
-            "and the aircraft drawn at the altitude it is flying.",
+    caption="The field from a 20 cm surface model, every tree in the ground, "
+            "extruded OpenStreetMap buildings, and the aircraft drawn at the "
+            "altitude it is flying.",
     theme="blue",
     page="home", workspace="collapsed",
     map_3d="full", map_bearing=20.0, map_zoom=0.6,
+    terrain_source=NEUBIBERG_DOM,
     **_SORTIE,
     settle=50.0,
-    notes=_SORTIE_NOTE + " Terrain and buildings come from the tile cache on "
+    notes=_SORTIE_NOTE + " The ground is the imported DOM, the buildings come "
+          "from OpenStreetMap; both are read from the tile cache on "
           "disk; over ground that was never cached the map is only tilted.",
 ))
 
@@ -504,6 +533,324 @@ _register(Scene(
     notes=_SORTIE_NOTE + " The vibration chart needs about twenty seconds of "
           "data to read as a trace.",
 ))
+
+# --- the new pages --------------------------------------------------------
+
+_register(Scene(
+    id="live_messages",
+    asset="assets/screenshot_live_messages.png",
+    web="live-messages",
+    title="Live Messages: every MAVLink message on the link",
+    caption="Every message type the aircraft sends, with its rate, its age and "
+            "how often it came, and the fields of the one you pick.",
+    page="analysis", view="scope", workspace="collapsed",
+    **_SORTIE,
+    stage=("scope",),
+    settle=20.0,
+    notes="The aircraft is flying, so the attitude, position and status "
+          "streams all run at their real rates. ATTITUDE is picked so its "
+          "fields fill the right side.",
+))
+
+_register(Scene(
+    id="parameter_help",
+    asset="docs/assets/images/parameter-help.jpg",
+    web="parameter-help",
+    title="Every parameter explained",
+    caption="The circled i beside a name says what the parameter does, its "
+            "default, its range and its values.",
+    theme="blue",
+    page="setup", view="parameters", workspace="collapsed",
+    full_param_table=True, param_filter="modified",
+    armed=False, mode="POSCTL", path="parked", takeoff_time=0.0,
+    stage=("param_hint",),
+    settle=30.0,
+    notes="The same editor as the parameters picture, in the blue theme, with "
+          "the hint of the battery failsafe open: its default and its values.",
+))
+
+_register(Scene(
+    id="german",
+    asset="assets/screenshot_german.jpg",
+    web="flight-german",
+    title="The interface in German",
+    caption="English, German, French and Drachensprech, one file each. The map, "
+            "the instruments and every page follow the language you pick.",
+    theme="light",
+    language="de",
+    page="home", workspace="open", tab="link",
+    **_SORTIE,
+    settle=50.0,
+    notes=_SORTIE_NOTE + " The language comes from the config, as Settings "
+          "would save it.",
+))
+
+
+# --- one picture per plugin -----------------------------------------------
+#
+# Every plugin opens on the PLUGINS tab beside the sortie, with the settings an
+# operator would have saved for it written into its own config.json first.
+
+def _offset(lat: float, lon: float, east_m: float, north_m: float) -> tuple[float, float]:
+    """A point *east_m* and *north_m* metres from (lat, lon)."""
+    import math
+
+    return (round(lat + north_m / 111_195.0, 7),
+            round(lon + east_m / (111_195.0 * math.cos(math.radians(lat))), 7))
+
+
+def _sortie_point(fraction: float) -> tuple[float, float]:
+    path = flight_mod.make_path(SORTIE_PATH, home=SORTIE_HOME)
+    point = path.points[min(len(path.points) - 1, int(len(path.points) * fraction))]
+    return point.lat, point.lon
+
+
+def _entities() -> list[dict[str, Any]]:
+    """What Map Entities has placed: a gate across the hop, trees beside it,
+    a radar's reach south of the start and the people at the start."""
+    gate_lat, gate_lon = _sortie_point(0.5)
+    a = _offset(gate_lat, gate_lon, -5.0, 11.0)
+    b = _offset(gate_lat, gate_lon, 5.0, -11.0)
+    home_lat, home_lon = SORTIE_HOME
+
+    def point(kind: str, name: str, at: tuple[float, float], **extra: Any) -> dict[str, Any]:
+        return {"id": name.lower().replace(" ", "-"), "kind": kind, "name": name,
+                "lat": at[0], "lng": at[1], "note": "", **extra}
+
+    end_lat, end_lon = _sortie_point(1.0)
+    return [
+        {"id": "field-gate", "kind": "gate", "name": "Field gate", "color": "#FFD60A",
+         "lat": a[0], "lng": a[1], "lat2": b[0], "lng2": b[1], "base": 30, "height": 20,
+         "note": "Fly through at 40 m"},
+        point("tree", "Oak", _offset(gate_lat, gate_lon, -38.0, 24.0), radius=6, height=18),
+        point("tree", "Lime", _offset(gate_lat, gate_lon, 32.0, 30.0), radius=5, height=14),
+        point("radar", "Radar", _offset(home_lat, home_lon, 70.0, -55.0),
+              radius=70, alert=True, angle=110, bearing=15),
+        point("pad", "Pad", (home_lat, home_lon)),
+        point("person", "Pilot", _offset(home_lat, home_lon, -8.0, -14.0)),
+        point("vehicle", "Ground station", _offset(home_lat, home_lon, -35.0, -5.0)),
+        point("camera", "Survey camera", _offset(end_lat, end_lon, 18.0, 14.0),
+              radius=35, alert=False, angle=360, bearing=0),
+    ]
+
+
+def _reference_route() -> str:
+    """The route the Trajectory Viewer reads: the hop as planned, a few metres
+    off the curve the aircraft flies, as WGS84 longitude, latitude, altitude."""
+    import math
+
+    path = flight_mod.make_path(SORTIE_PATH, home=SORTIE_HOME, points=60)
+    lines = []
+    for i, p in enumerate(path.points):
+        swing = 7.0 * math.sin(i / (len(path.points) - 1) * math.pi * 2.0)
+        lat, lon = _offset(p.lat, p.lon, -swing * 0.4, swing)
+        lines.append(f"{lon} {lat} 40")
+    return "\n".join(lines)
+
+
+_PLUGIN_NOTE = (_SORTIE_NOTE + " The plugin's settings are written to its "
+                "config.json in the sandbox before the backend starts.")
+
+_register(Scene(
+    id="plugin_ssh_launcher",
+    asset="docs/assets/images/plugin-ssh-launcher.jpg",
+    web="plugin-ssh-launcher",
+    title="SSH Launcher: programs on the companion computer, one press each",
+    caption="A shelf of buttons that start the mission script, the recorder or "
+            "the gimbal on the companion computer, each in a terminal of its own.",
+    page="home", workspace="open", tab="future", plugin="SSH Launcher", ssh=True,
+    plugin_settings={"ssh-launcher": {"buttons": [
+        {"id": "mission", "label": "Mission script", "connection": "Mission computer",
+         "directory": "~/mission", "command": "./start_mission.sh", "mode": "terminal"},
+        {"id": "recorder", "label": "Recorder", "connection": "Mission computer",
+         "directory": "~/payload", "command": "python3 record.py --out /data/flights",
+         "mode": "terminal", "restart": True},
+        {"id": "gimbal", "label": "Gimbal", "connection": "Mission computer",
+         "directory": "~/ws", "command": "ros2 launch payload gimbal.launch.py",
+         "mode": "terminal"},
+        {"id": "router", "label": "Restart MAVLink router", "connection": "Mission computer",
+         "directory": "~", "command": "systemctl restart mavlink-router", "mode": "background"},
+    ]}},
+    stage=("launcher", "launcher_window", "place_window"),
+    **_SORTIE,
+    settle=50.0,
+    notes=_PLUGIN_NOTE + " The first two buttons are pressed and the first "
+          "one's terminal is opened over the map.",
+))
+
+_register(Scene(
+    id="plugin_schwalby",
+    asset="docs/assets/images/plugin-schwalby.jpg",
+    web="plugin-schwalby",
+    title="Schwalby: programs here or over SSH",
+    caption="Buttons that start a program on this laptop or on the companion "
+            "computer, with the companion's status above them.",
+    theme="green",
+    page="home", workspace="open", tab="future", plugin="Schwalby", ssh=True,
+    plugin_settings={"schwalby": {
+        "companion": {"name": "Companion", "host": "127.0.0.1", "interval_s": 2,
+                      "timeout_s": 6, "connection": "Mission computer"},
+        "buttons": [
+            {"id": "mission", "label": "Mission script", "target": "ssh",
+             "connection": "Mission computer", "directory": "~/mission",
+             "command": "./start_mission.sh", "mode": "terminal"},
+            {"id": "sync", "label": "Copy logs to the NAS", "target": "local",
+             "directory": "~/flights", "command": "./sync_logs.sh", "mode": "background"},
+            {"id": "recorder", "label": "Recorder", "target": "ssh",
+             "connection": "Mission computer", "directory": "~/payload",
+             "command": "python3 record.py --out /data/flights", "mode": "terminal",
+             "restart": True},
+            {"id": "disk", "label": "Free space on /data", "target": "ssh",
+             "connection": "Mission computer", "directory": "~",
+             "command": "df -h /data", "mode": "terminal"},
+        ]}},
+    stage=("schwalby",),
+    **_SORTIE,
+    settle=50.0,
+    notes=_PLUGIN_NOTE + " Only the buttons that run over SSH are pressed: a "
+          "local one would open a shell on the machine taking the picture.",
+))
+
+_register(Scene(
+    id="plugin_map_entities",
+    asset="assets/screenshot_map_entities.jpg",
+    web="plugin-map-entities",
+    title="Map Entities: a gate, trees and a radar on the map",
+    caption="Gates, trees and devices with a range, placed on the map. The "
+            "aircraft's pass through the gate is checked as it flies.",
+    page="home", workspace="open", tab="future", plugin="Map Entities",
+    plugin_settings={"map-entities": {"entities": _entities()}},
+    stage=("entity",),
+    **_SORTIE,
+    settle=50.0,
+    notes=_PLUGIN_NOTE + " The gate stands across the hop with its opening "
+          "from 30 to 50 m, so the aircraft at 40 m flies through it.",
+))
+
+_register(Scene(
+    id="plugin_nuttx_console",
+    asset="docs/assets/images/plugin-nuttx-console.jpg",
+    web="plugin-nuttx-console",
+    title="NuttX Console: the PX4 shell over MAVLink",
+    caption="NSH on the flight controller, over the telemetry link: ver, free, "
+            "listener and every other builtin, with no cable.",
+    theme="orange",
+    page="home", workspace="open", tab="future", plugin="NuttX Console",
+    stage=("nuttx",),
+    **_SORTIE,
+    settle=50.0,
+    notes=_PLUGIN_NOTE + " The aircraft answers SERIAL_CONTROL with the shell "
+          "in nsh.py.",
+))
+
+_register(Scene(
+    id="plugin_trajectory_viewer",
+    asset="docs/assets/images/plugin-trajectory-viewer.jpg",
+    web="plugin-trajectory-viewer",
+    title="Trajectory Viewer: a reference route under the flown track",
+    caption="A route from a file, drawn under the flown track, so you see at a "
+            "glance where the aircraft leaves it.",
+    page="home", workspace="open", tab="future", plugin="Trajectory Viewer",
+    plugin_settings={"trajectory-viewer": {
+        "file": "campus_hop_planned.txt", "points": _reference_route(),
+        "frame": "wgs84", "color": "magenta", "drawn": True}},
+    **_SORTIE,
+    settle=50.0,
+    notes=_PLUGIN_NOTE + " The route is the hop as planned, swinging a few "
+          "metres either side of the curve the aircraft flies.",
+))
+
+# --- the geofence ---------------------------------------------------------
+
+def _sortie_fence() -> tuple[tuple[float, float], ...]:
+    """The area the sortie is flown in: the field the hop crosses, traced
+    along the inside of the track around it, as (lon, lat) corners.
+
+    Eight corners, east and north of the start point in metres, the way an
+    operator would click them along the field's edge on the large map.
+    """
+    home_lat, home_lon = SORTIE_HOME
+    corners = ((-47.0, 142.0), (72.0, 123.0), (172.0, 157.0), (200.0, 145.0),
+               (223.0, 92.0), (221.0, 26.0), (-21.0, -46.0), (-54.0, 57.0))
+    out = []
+    for east, north in corners:
+        lat, lon = _offset(home_lat, home_lon, east, north)
+        out.append((lon, lat))
+    return tuple(out)
+
+
+_FENCE_NOTE = ("The area is eight corners along the field the hop crosses, "
+               "kept in the sandbox's geofence.json and uploaded to the "
+               "simulated aircraft over the mission protocol (FENCE).")
+
+_register(Scene(
+    id="geofence",
+    asset="docs/assets/images/geofence.jpg",
+    web="geofence",
+    title="The geofence: the area the aircraft may fly in",
+    caption="The area on a map of its own, uploaded to the aircraft as an "
+            "inclusion fence, with the action when it is left.",
+    page="setup", view="safety", workspace="collapsed",
+    armed=False, mode="POSCTL", path="parked", takeoff_time=0.0,
+    geofence=_sortie_fence(),
+    stage=("geofence_upload", "geofence_card"),
+    settle=14.0,
+    notes=_FENCE_NOTE + " The card is scrolled into view after the upload, "
+          "so the line under its map says the vehicle has this area.",
+))
+
+_register(Scene(
+    id="geofence_edit",
+    asset="docs/assets/images/geofence-edit.jpg",
+    web="geofence-edit",
+    title="Drawing the geofence on the large map",
+    caption="Drag a corner, add one in the middle of an edge, or draw the area "
+            "again, on a map that fills the window.",
+    theme="blue",
+    page="setup", view="safety", workspace="collapsed",
+    armed=False, mode="POSCTL", path="parked", takeoff_time=0.0,
+    geofence=_sortie_fence(),
+    stage=("geofence_upload", "geofence_large"),
+    settle=14.0,
+    notes=_FENCE_NOTE + " The large editor is opened with the card's own "
+          "button and framed on the area.",
+))
+
+_register(Scene(
+    id="geofence_3d",
+    asset="docs/assets/images/geofence-3d.jpg",
+    web="geofence-3d",
+    title="The geofence in 3D, over a 20 cm surface model",
+    caption="The field in 3D from the survey office's 20 cm surface model, "
+            "trees and buildings included, with the geofence around it and "
+            "the aircraft at its altitude.",
+    page="home", workspace="collapsed",
+    map_3d="full", map_bearing=25.0, map_zoom=0.5,
+    terrain_source=NEUBIBERG_DOM,
+    geofence=_sortie_fence(),
+    stage=("geofence_upload",),
+    **_SORTIE,
+    settle=50.0,
+    notes=_SORTIE_NOTE + " " + _FENCE_NOTE + " The ground is the imported DOM "
+          "(" + NEUBIBERG_DOM + "), read from the tile cache; without it the "
+          "picture falls back to the free 30 m model and the trees go flat.",
+))
+
+_register(Scene(
+    id="geofence_map",
+    asset="docs/assets/images/geofence-map.jpg",
+    web="geofence-map",
+    title="The geofence on the Home map, in flight",
+    caption="The area drawn as a dashed outline under the flown track, so the "
+            "edge is in sight while you fly.",
+    page="home", workspace="collapsed",
+    geofence=_sortie_fence(),
+    stage=("geofence_upload",),
+    **_SORTIE,
+    settle=50.0,
+    notes=_SORTIE_NOTE + " " + _FENCE_NOTE,
+))
+
 
 _register(Scene(
     id="dark",

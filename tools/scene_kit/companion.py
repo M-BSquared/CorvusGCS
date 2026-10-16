@@ -53,6 +53,11 @@ class Machine:
     # Typed into the session as soon as it opens, so the terminal in the
     # picture shows a shell in use rather than a bare prompt.
     autotype: tuple[str, ...] = ()
+    # Commands that keep running after their output, the way a launched
+    # program does: no prompt until Ctrl-C ends them.
+    running: frozenset[str] = frozenset()
+    # The folders `cd` accepts; anything else is "No such file or directory".
+    folders: frozenset[str] = frozenset()
 
 
 def _crlf(text: str) -> str:
@@ -134,7 +139,41 @@ RASPBERRY = Machine(
     autotype=("ls payload", "python3 payload/camera.py --status", "vcgencmd measure_temp"),
 )
 
-MACHINES: dict[str, Machine] = {m.username: m for m in (JETSON, RASPBERRY)}
+# The machine the launcher plugins (SSH Launcher, Schwalby) start programs
+# on. Its own account, so a button's session opens on a bare prompt instead of
+# the commands the SSH tab's picture types on login.
+MISSION = Machine(
+    username="uav",
+    hostname="companion",
+    banner="Ubuntu 22.04.4 LTS, Jetson Orin Nano\n",
+    commands={
+        "./start_mission.sh": (
+            "[mission] loading missions/campus_hop.yaml\n"
+            "[mission] 6 items, 1.1 km, 40 m AGL\n"
+            f"[mission] waiting for {_GREEN}offboard ready{_RESET} from PX4 ..."
+        ),
+        "python3 record.py --out /data/flights": (
+            "[recorder] camera IMX477 at 30 fps, rosbag on /data/flights\n"
+            f"[recorder] {_GREEN}recording{_RESET} 2026-09-24_10-41-07.bag"
+        ),
+        "ros2 launch payload gimbal.launch.py": (
+            "[INFO] [launch]: All log files can be found below /home/uav/.ros/log\n"
+            "[INFO] [gimbal_node-1]: process started with pid [2417]\n"
+            "[gimbal_node-1] [INFO] SIYI A8 mini on 192.168.144.25, locked"
+        ),
+        "systemctl restart mavlink-router": "",
+        "df -h /data": (
+            "Filesystem      Size  Used Avail Use% Mounted on\n"
+            "/dev/nvme0n1p2  465G  112G  353G  25% /data"
+        ),
+    },
+    running=frozenset({"./start_mission.sh", "python3 record.py --out /data/flights",
+                       "ros2 launch payload gimbal.launch.py"}),
+    folders=frozenset({"~", "/home/uav", "/home/uav/mission", "/home/uav/payload",
+                       "/home/uav/ws", "/data"}),
+)
+
+MACHINES: dict[str, Machine] = {m.username: m for m in (JETSON, RASPBERRY, MISSION)}
 
 
 class _Server(paramiko.ServerInterface):
@@ -287,13 +326,30 @@ class _Shell:
         self.machine = machine
         self.stop = stop
         self.line = ""
+        self.cwd = "~"
+        # The command still running in the foreground, or "".
+        self.busy = ""
 
     def write(self, text: str) -> None:
         self.channel.sendall(_crlf(text).encode("utf-8"))
 
     def prompt(self) -> None:
         m = self.machine
-        self.write(f"{_GREEN}{m.username}@{m.hostname}{_RESET}:{_BLUE}~{_RESET}$ ")
+        self.write(f"{_GREEN}{m.username}@{m.hostname}{_RESET}:{_BLUE}{self.cwd}{_RESET}$ ")
+
+    def change_dir(self, args: list[str]) -> bool:
+        """`cd`, against the machine's folders; False when the folder is missing."""
+        args = [a.replace("'", "") for a in args if a != "--"]
+        target = args[0] if args else "~"
+        home = f"/home/{self.machine.username}"
+        if target.startswith("~"):
+            target = home + target[1:]
+        target = target.rstrip("/") or "/"
+        if target not in self.machine.folders and target != home:
+            self.write(f"-bash: cd: {args[0]}: No such file or directory\n")
+            return False
+        self.cwd = "~" + target[len(home):] if target.startswith(home) else target
+        return True
 
     def run_command(self, command: str) -> bool:
         command = command.strip()
@@ -305,11 +361,31 @@ class _Shell:
         if command == "clear":
             self.write("\x1b[H\x1b[2J")
             return True
+        # `cd -- <folder> && <command>`, the line a launcher button types.
+        if "&&" in command:
+            for part in command.split("&&"):
+                part = part.strip()
+                words = part.split()
+                if words and words[0] == "cd":
+                    if not self.change_dir(words[1:]):
+                        return True
+                elif not self.run_command(part):
+                    return False
+                if self.busy:
+                    return True
+            return True
+        words = command.split()
+        if words[0] == "cd":
+            self.change_dir(words[1:])
+            return True
         out = self.machine.commands.get(command)
         if out is None:
             name = command.split()[0]
             out = f"{name}: command not found"
-        self.write(out + "\n")
+        if out:
+            self.write(out + "\n")
+        if command in self.machine.running:
+            self.busy = command
         return True
 
     def run(self) -> None:
@@ -340,16 +416,20 @@ class _Shell:
             if not data:
                 return
             for char in data.decode("utf-8", "replace"):
+                if self.busy and char != "\x03":
+                    continue
                 if char in ("\r", "\n"):
                     self.write("\n")
                     keep = self.run_command(self.line)
                     self.line = ""
                     if not keep:
                         return
-                    self.prompt()
+                    if not self.busy:
+                        self.prompt()
                 elif char == "\x03":
                     self.write("^C\n")
                     self.line = ""
+                    self.busy = ""
                     self.prompt()
                 elif char in ("\x7f", "\b"):
                     if self.line:

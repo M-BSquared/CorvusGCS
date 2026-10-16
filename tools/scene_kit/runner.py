@@ -106,9 +106,10 @@ class SceneRunner:
             "firmware_dir": str(corvus_dir / "firmware"),
             "log_download_dir": str(corvus_dir / "flightlogs"),
             "theme": {"name": scene.theme},
-            "map": {"provider": scene.map_provider, "base_layer": scene.map_layer},
+            "map": {"provider": scene.map_provider, "base_layer": scene.map_layer,
+                    "terrain_source": scene.terrain_source},
             "ui": {"scale": scene.scale, "topbar_status_dots": scene.topbar_dots,
-                   "mission_page": scene.mission_page},
+                   "mission_page": scene.mission_page, **scene.ui},
             "controls": {"virtual_joystick": scene.virtual_joystick},
             # No release check: a screenshot run must not reach the network, and
             # an update dialog across the frame is the one thing that would
@@ -116,18 +117,44 @@ class SceneRunner:
             "updates": {"check": False},
             "forwarding": {"enabled": False},
         }
+        if scene.language:
+            config["language"] = scene.language
         if self.companion is not None:
-            from .companion import JETSON, PASSWORD, RASPBERRY
+            from .companion import JETSON, MISSION, PASSWORD, RASPBERRY
 
             config["ssh_connections"] = [
                 {"name": name, "host": "127.0.0.1", "port": self.companion.port,
                  "username": machine.username, "password": PASSWORD, "key_path": ""}
                 for name, machine in ((recipe_mod.SSH_TAB, JETSON),
-                                      (recipe_mod.SSH_WINDOW, RASPBERRY))
+                                      (recipe_mod.SSH_WINDOW, RASPBERRY),
+                                      (recipe_mod.SSH_MISSION, MISSION))
             ]
+        self._write_plugin_settings(corvus_dir / "plugins")
+        fence = corvus_dir / "geofence.json"
+        if scene.geofence:
+            fence.write_text(json.dumps({"polygon": [list(c) for c in scene.geofence],
+                                         "show_on_map": True}, indent=2) + "\n")
+        elif fence.exists():
+            fence.unlink()
         path = corvus_dir / "config.json"
         path.write_text(json.dumps(config, indent=2) + "\n")
         return path
+
+    def _write_plugin_settings(self, folder: Path) -> None:
+        """Each plugin's settings, where corvus/plugin_config.py reads them.
+
+        Every plugin the scene does not name has its file removed, so a
+        reused sandbox does not carry one picture's shelf into the next.
+        """
+        settings = self.scene.plugin_settings
+        if folder.is_dir():
+            for stale in folder.glob("*/config.json"):
+                if stale.parent.name not in settings:
+                    stale.unlink()
+        for plugin_id, value in settings.items():
+            target = folder / plugin_id / "config.json"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(json.dumps(value, indent=2) + "\n")
 
     # -- lifecycle --------------------------------------------------------
 
