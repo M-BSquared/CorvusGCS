@@ -42,6 +42,13 @@ Corvus.mapOverlays = (function () {
   ];
   const OVERLAY_DEFAULT_COLOR = "#2BC4E4";
   const OVERLAY_TEXT_MAX = 200;
+  // A marker's glyph is a few SVG path strings on a 24 by 24 grid. Path data
+  // only (letters of the path grammar, numbers, separators): the glyph is a
+  // plugin's, and must never be able to carry markup into the page.
+  const MARKER_ICON_MAX = 12;
+  const MARKER_PATH_MAX = 600;
+  const MARKER_PATH_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9\s.,eE+-]+$/;
+  const SVG_NS = "http://www.w3.org/2000/svg";
 
   function overlayIds(id) {
     const source = OVERLAY_PREFIX + id;
@@ -119,6 +126,80 @@ Corvus.mapOverlays = (function () {
     return el;
   }
 
+  /** A marker's glyph as path strings: a symbol's name (Corvus.mapIcons), or
+   *  path strings of the plugin's own, kept only where they are plain SVG path
+   *  data. Pure. */
+  function cleanMarkerIcon(icon) {
+    if (typeof icon === "string") {
+      const icons = Corvus.mapIcons;
+      return icons && typeof icons.get === "function" ? icons.get(icon) || [] : [];
+    }
+    if (!Array.isArray(icon)) return [];
+    return icon
+      .filter((d) => typeof d === "string" && d.length > 0 && d.length <= MARKER_PATH_MAX && MARKER_PATH_RE.test(d))
+      .slice(0, MARKER_ICON_MAX);
+  }
+
+  /** The DOM marker a marker overlay is drawn as: a round badge with the
+   *  glyph in it, the label hanging below. The badge is centred on the
+   *  point, so the label never moves it. textContent and path data only. */
+  function buildOverlayMarker(o) {
+    const el = document.createElement("div");
+    el.className = "map-overlay-marker"
+      + (o.icon.length ? "" : " is-dot")
+      + (o.selected ? " is-selected" : "")
+      + (o.onClick ? " is-clickable" : "")
+      + (o.draggable ? " is-draggable" : "");
+    el.style.setProperty("--overlay-color", o.color);
+    el.style.setProperty("--marker-size", o.size + "px");
+    el.style.opacity = String(o.opacity);
+    if (o.title) {
+      el.title = o.title;
+      el.setAttribute("aria-label", o.title);
+    }
+    if (o.onClick) {
+      el.setAttribute("role", "button");
+      el.tabIndex = 0;
+    }
+    const badge = document.createElement("span");
+    badge.className = "map-overlay-marker-badge";
+    if (o.icon.length) {
+      const svg = document.createElementNS(SVG_NS, "svg");
+      svg.setAttribute("viewBox", "0 0 24 24");
+      svg.setAttribute("fill", "none");
+      svg.setAttribute("stroke", "currentColor");
+      svg.setAttribute("stroke-width", "2");
+      svg.setAttribute("stroke-linecap", "round");
+      svg.setAttribute("stroke-linejoin", "round");
+      svg.setAttribute("aria-hidden", "true");
+      o.icon.forEach((d) => {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute("d", d);
+        svg.appendChild(path);
+      });
+      badge.appendChild(svg);
+    }
+    el.appendChild(badge);
+    if (o.text) {
+      const label = document.createElement("span");
+      label.className = "map-overlay-marker-label";
+      label.textContent = o.text;
+      el.appendChild(label);
+    }
+    // A draggable marker has to see the pointer go down (the marker library
+    // starts the drag from it); the others keep it from the map beneath.
+    const stop = (event) => { if (event && event.stopPropagation) event.stopPropagation(); };
+    const types = o.draggable ? ["dblclick"] : ["mousedown", "dblclick", "touchstart", "pointerdown"];
+    types.forEach((type) => el.addEventListener(type, stop));
+    el.addEventListener("click", (event) => {
+      stop(event);
+      if (o.justDragged || typeof o.onClick !== "function") return;
+      try { o.onClick(); } catch (error) { console.warn("Corvus: map marker handler failed", error); }
+    });
+    el.hidden = !o.visible;
+    return el;
+  }
+
   /** The DOM button a button overlay is drawn as. textContent only, and the
    *  click never reaches the map beneath it (no pan, no waypoint dropped). */
   function buildOverlayButton(o) {
@@ -145,6 +226,30 @@ Corvus.mapOverlays = (function () {
     return el;
   }
 
+  /** Report a dragged marker's new place to its owner, and keep it there:
+   *  the overlay's own data follows the marker, so a redraw does not put it
+   *  back. A click that ends a drag is not a click. */
+  function wireMarkerDrag(id, marker) {
+    const report = (name) => {
+      const o = overlays.get(id);
+      if (!o) return;
+      const at = marker.getLngLat();
+      o.coords = [[at.lng, at.lat]];
+      const handler = o[name];
+      if (typeof handler !== "function") return;
+      try { handler([at.lng, at.lat]); } catch (error) { console.warn("Corvus: map marker drag handler failed", error); }
+    };
+    marker.on("drag", () => report("onDrag"));
+    marker.on("dragend", () => {
+      const o = overlays.get(id);
+      if (o) {
+        o.justDragged = true;
+        setTimeout(() => { o.justDragged = false; }, 0);
+      }
+      report("onDragEnd");
+    });
+  }
+
   /**
    * Put one overlay into the style as it is stored now. The layers are rebuilt
    * rather than patched: a change of colour, width or dash is rare, and a
@@ -154,16 +259,18 @@ Corvus.mapOverlays = (function () {
     if (!map || !started) return;
     const o = overlays.get(id);
     if (!o) { undrawOverlay(id); return; }
-    if (o.kind === "text" || o.kind === "button") {
+    if (o.kind === "text" || o.kind === "button" || o.kind === "marker") {
       undrawOverlay(id);
       try {
-        const el = o.kind === "button" ? buildOverlayButton(o) : buildOverlayLabel(o);
+        const el = o.kind === "button" ? buildOverlayButton(o)
+          : o.kind === "marker" ? buildOverlayMarker(o) : buildOverlayLabel(o);
         // With a dot the point is the dot's centre and the text runs off to
         // its right; without one the text is centred on the point.
         const marker = new maplibregl.Marker(o.kind === "text" && o.dot
           ? { element: el, anchor: "left", offset: [-5, 0] }
-          : { element: el, anchor: "center" })
+          : { element: el, anchor: "center", draggable: o.kind === "marker" && !!o.draggable })
           .setLngLat(o.coords[0]).addTo(map);
+        if (o.kind === "marker" && o.draggable && typeof marker.on === "function") wireMarkerDrag(id, marker);
         overlayMarkers.set(id, { marker, el });
       } catch (error) {
         console.warn("Corvus: could not draw overlay", id, error);
@@ -342,6 +449,118 @@ Corvus.mapOverlays = (function () {
     return true;
   }
 
+  /**
+   * Draw (or redraw) an icon marker at one [lng, lat] point: a round badge
+   * with a glyph in it, an optional label below, optionally clickable and
+   * draggable. Without an icon it is a plain dot. Returns false for an
+   * unusable point.
+   *
+   * @param {string} id
+   * @param {[number, number]} point [lng, lat]
+   * @param {Object} [opts] {icon (a symbol's name from Corvus.mapIcons, or
+   *   SVG path strings on a 24 grid), label,
+   *   title, color, size (px, 10 to 48), selected, draggable, onClick,
+   *   onDrag(point), onDragEnd(point), opacity, visible}
+   * @returns {boolean}
+   */
+  function setMarkerOverlay(id, point, opts) {
+    if (typeof id !== "string" || !id) return false;
+    const clean = cleanOverlayCoords([point]);
+    if (!clean.length) return false;
+    const o = opts || {};
+    const size = Number(o.size);
+    const style = overlayStyle(o);
+    if (o.opacity == null) style.opacity = 1;
+    const fn = (f) => (typeof f === "function" ? f : null);
+    overlays.set(id, Object.assign({ kind: "marker", coords: clean }, style, {
+      icon: cleanMarkerIcon(o.icon),
+      text: String(o.label == null ? "" : o.label).replace(/\s+/g, " ").trim().slice(0, OVERLAY_TEXT_MAX),
+      title: typeof o.title === "string" ? o.title.slice(0, OVERLAY_TEXT_MAX) : "",
+      size: isFinite(size) ? Math.min(Math.max(Math.round(size), 10), 48) : 28,
+      selected: !!o.selected,
+      draggable: !!o.draggable,
+      onClick: fn(o.onClick),
+      onDrag: fn(o.onDrag),
+      onDragEnd: fn(o.onDragEnd),
+      justDragged: false,
+    }));
+    drawOverlay(id);
+    return true;
+  }
+
+  // ---- Picking a point on the map ------------------------------------------
+  //
+  // One pick at a time. While it is armed the map's own click (the context
+  // menu) and right click must stay quiet; js/map.js asks isPicking() first.
+  // That check relies on this handler being registered after the map's own,
+  // so the flag is still set when theirs run.
+  let picker = null;   // {cb, onCancel}
+
+  function endPick() {
+    const p = picker;
+    picker = null;
+    if (!p) return null;
+    if (map) {
+      try {
+        map.off("click", p.onClick);
+        map.off("contextmenu", p.onContext);
+        map.getCanvas().style.cursor = "";
+      } catch (_e) { /* the map is going away */ }
+    }
+    document.removeEventListener("keydown", p.onKey);
+    return p;
+  }
+
+  /** Give up the pick in progress, if any. Tells its owner. */
+  function cancelPick() {
+    const p = endPick();
+    if (p && typeof p.onCancel === "function") {
+      try { p.onCancel(); } catch (error) { console.warn("Corvus: map pick cancel handler failed", error); }
+    }
+    return !!p;
+  }
+
+  /**
+   * Wait for one click on the map and hand its [lng, lat] to `onPick`. The
+   * cursor is a crosshair meanwhile; Escape or a right click gives up and
+   * calls `onCancel`. A new pick replaces one in progress (which is told it
+   * was cancelled). Returns a function that cancels this pick without
+   * telling anyone, or null when the map is not ready or there is nothing
+   * to call.
+   *
+   * @param {function([number, number])} onPick
+   * @param {Object} [opts] {onCancel}
+   * @returns {?function()}
+   */
+  function pickPoint(onPick, opts) {
+    if (!map || !started || typeof onPick !== "function") return null;
+    cancelPick();
+    const o = opts || {};
+    const p = {
+      onCancel: typeof o.onCancel === "function" ? o.onCancel : null,
+      onClick(event) {
+        if (picker !== p || !event || !event.lngLat) return;
+        endPick();
+        const point = [event.lngLat.lng, event.lngLat.lat];
+        try { onPick(point); } catch (error) { console.warn("Corvus: map pick handler failed", error); }
+      },
+      onContext(event) {
+        if (picker !== p) return;
+        if (event && event.preventDefault) event.preventDefault();
+        cancelPick();
+      },
+      onKey(event) {
+        if (picker === p && event && event.key === "Escape") cancelPick();
+      },
+    };
+    picker = p;
+    map.getCanvas().style.cursor = "crosshair";
+    map.on("click", p.onClick);
+    map.on("contextmenu", p.onContext);
+    document.addEventListener("keydown", p.onKey);
+    return () => { if (picker === p) endPick(); };
+  }
+
   /** Remove an overlay. Returns whether there was one. */
   function removeOverlay(id) {
     const had = overlays.delete(id);
@@ -375,6 +594,11 @@ Corvus.mapOverlays = (function () {
     setPolygonOverlay,
     setTextOverlay,
     setButtonOverlay,
+    setMarkerOverlay,
+    cleanMarkerIcon,
+    pickPoint,
+    cancelPick,
+    isPicking: () => !!picker,
     removeOverlay,
     setOverlayVisible,
   };

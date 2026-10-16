@@ -157,6 +157,38 @@ window.Corvus = window.Corvus || {};
  *                                 name), disabled, color, size, opacity,
  *                                 visible}. A click never reaches the map; a
  *                                 throwing handler is contained.
+ *     drawMarker(key, point, opts)
+ *                                 Draw or replace an icon marker at [lng,
+ *                                 lat]: a round badge with a glyph in it and
+ *                                 a label below. `opts` {icon (the name of a
+ *                                 symbol from icons() such as "tree", or an
+ *                                 array of your own SVG path strings on a 24
+ *                                 by 24 grid, drawn as strokes; none gives a
+ *                                 plain dot), label
+ *                                 (plain text), title, color, size (px, 10
+ *                                 to 48, default 28), selected (a ring round
+ *                                 it), draggable, onClick, onDrag(point)
+ *                                 while it moves, onDragEnd(point) when let
+ *                                 go, opacity, visible}. A click never
+ *                                 reaches the map; a throwing handler is
+ *                                 contained. A dragged marker keeps its new
+ *                                 place if redrawn without one.
+ *     icons()                     The symbols drawMarker knows by name:
+ *                                 [{name, label}, ...].
+ *     iconPaths(name)             A symbol's SVG path strings on the 24 by 24
+ *                                 grid (a copy), for drawing the same glyph in
+ *                                 the plugin's own view; null for an unknown
+ *                                 name.
+ *     pickPoint(onPick, opts)     Wait for one click on the map and call
+ *                                 onPick([lng, lat]) with it; the cursor is a
+ *                                 crosshair meanwhile. Escape or a right
+ *                                 click gives up and calls opts.onCancel().
+ *                                 A new pick replaces one in progress.
+ *                                 Returns a function that drops this pick
+ *                                 without calling onCancel, or null when the
+ *                                 map is not ready.
+ *     track()                     The track flown so far, [[lng, lat], ...]
+ *                                 (a copy); [] before there is one.
  *     remove(key)                 Take a shape off the map.
  *     setVisible(key, on)         Hide or show a shape without forgetting it.
  *     has(key)                    Whether this plugin has a shape under `key`.
@@ -629,6 +661,44 @@ Corvus.plugins = (function () {
           ? () => { try { handler(); } catch (err) { console.error("plugin map button failed:", id, err); } }
           : null;
         return draw("setButtonOverlay", key, [point, label, o]);
+      },
+      drawMarker(key, point, opts) {
+        const o = Object.assign({}, opts);
+        // The plugin's handlers are its own code: a throw must not travel
+        // into the map.
+        ["onClick", "onDrag", "onDragEnd"].forEach((name) => {
+          const handler = o[name];
+          o[name] = typeof handler === "function"
+            ? (arg) => { try { handler(arg); } catch (err) { console.error("plugin map marker failed:", id, name, err); } }
+            : null;
+        });
+        return draw("setMarkerOverlay", key, [point, o]);
+      },
+      icons() {
+        const icons = window.Corvus && window.Corvus.mapIcons;
+        return icons && typeof icons.list === "function" ? icons.list() : [];
+      },
+      iconPaths(name) {
+        const icons = window.Corvus && window.Corvus.mapIcons;
+        return icons && typeof icons.get === "function" ? icons.get(name) : null;
+      },
+      pickPoint(onPick, opts) {
+        const m = liveMap();
+        if (!m || typeof m.pickPoint !== "function" || typeof onPick !== "function") return null;
+        const o = Object.assign({}, opts);
+        const guard = (name, fn) => (typeof fn === "function"
+          ? (arg) => { try { fn(arg); } catch (err) { console.error("plugin map pick failed:", id, name, err); } }
+          : null);
+        try {
+          return m.pickPoint(guard("onPick", onPick), { onCancel: guard("onCancel", o.onCancel) });
+        } catch (_e) {
+          return null;
+        }
+      },
+      track() {
+        const m = liveMap();
+        if (!m || typeof m.getTrack !== "function") return [];
+        try { return m.getTrack(); } catch (_e) { return []; }
       },
       remove(key) {
         const m = liveMap();
@@ -1266,6 +1336,11 @@ Corvus.plugins = (function () {
         drawCircle: () => false,
         drawText: () => false,
         drawButton: () => false,
+        drawMarker: () => false,
+        icons: () => [],
+        iconPaths: () => null,
+        pickPoint: () => null,
+        track: () => [],
         remove: () => false,
         setVisible: () => false,
         has: () => false,

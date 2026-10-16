@@ -152,6 +152,8 @@ global.maplibregl = {
       addTo() { m.added = true; markers.push(m); return m; },
       remove() { m.added = false; const i = markers.indexOf(m); if (i >= 0) markers.splice(i, 1); },
       setRotation() { return m; }, getElement: () => (m.opts.element || makeEl("div")),
+      handlers: {},
+      on(type, cb) { m.handlers[type] = cb; return m; },
     };
     return m;
   },
@@ -165,6 +167,7 @@ Corvus.telemetry = {
 
 require("../src/js/ui.js");
 require("../src/js/anim.js");
+require("../src/js/map-icons.js");
 require("../src/js/map-overlays.js");
 require("../src/js/map.js");
 const map = Corvus.map;
@@ -386,6 +389,127 @@ function testAButtonIsAClickableMarker() {
   assert.equal(markers.length, before, "remove takes the marker away");
 }
 
+function svgPaths(el) {
+  const badge = el.children[0];
+  return badge && badge.children[0] ? badge.children[0].children.map((p) => p._attrs.d) : [];
+}
+
+function testAMarkerIsABadgeWithAGlyphAndALabel() {
+  const before = markers.length;
+  let clicks = 0;
+  assert.equal(map.setMarkerOverlay("g", [11.5, 48.5], {
+    icon: ["M5 21V4", "<script>", "M5 4h14"], label: "<b>Gate 1</b>", title: "Gate 1",
+    color: "#FFD60A", size: 99, onClick: () => { clicks++; },
+  }), true);
+  assert.equal(markers.length, before + 1);
+  const m = markers[markers.length - 1];
+  const el = m.opts.element;
+  assert.equal(m.opts.anchor, "center", "the badge sits on the point, whatever the label");
+  assert.equal(m.opts.draggable, false);
+  assert.deepEqual(svgPaths(el), ["M5 21V4", "M5 4h14"], "path data only, markup dropped");
+  assert.equal(el.children[1].textContent, "<b>Gate 1</b>", "the label is plain text");
+  assert.ok(el.classList.contains("is-clickable"));
+  assert.equal(el.title, "Gate 1");
+  let stopped = 0;
+  el._listeners.click[0]({ stopPropagation() { stopped++; } });
+  assert.equal(clicks, 1);
+  assert.equal(stopped, 1, "the click does not reach the map");
+  assert.ok(el._listeners.mousedown, "a marker that cannot be dragged keeps the pointer from the map");
+  assert.equal(map.setMarkerOverlay("g", [11.5, 48.5], {}), true);
+  const again = markers[markers.length - 1].opts.element;
+  assert.ok(again.classList.contains("is-dot"), "without a glyph it is a dot");
+  assert.equal(markers.length, before + 1, "redrawn, not added");
+  assert.equal(map.setMarkerOverlay("bad", [11, 95], {}), false);
+  map.removeOverlay("g");
+  assert.equal(markers.length, before, "remove takes the marker away");
+}
+
+function testAMarkerTakesASymbolByName() {
+  assert.equal(map.setMarkerOverlay("n", [11.5, 48.5], { icon: "tree" }), true);
+  const el = markers[markers.length - 1].opts.element;
+  assert.deepEqual(svgPaths(el), Corvus.mapIcons.get("tree"), "the named symbol is drawn");
+  map.setMarkerOverlay("n", [11.5, 48.5], { icon: "no-such-icon" });
+  assert.ok(markers[markers.length - 1].opts.element.classList.contains("is-dot"), "an unknown name is a dot, not an error");
+  const saved = Corvus.mapIcons;
+  Corvus.mapIcons = undefined;
+  try {
+    assert.doesNotThrow(() => map.setMarkerOverlay("n", [11.5, 48.5], { icon: "tree" }), "without the symbol module");
+  } finally {
+    Corvus.mapIcons = saved;
+  }
+  map.removeOverlay("n");
+}
+
+function testADraggableMarkerReportsAndKeepsItsNewPlace() {
+  const dragged = [];
+  const ended = [];
+  map.setMarkerOverlay("d", [11.5, 48.5], {
+    draggable: true, selected: true,
+    onDrag: (p) => dragged.push(p), onDragEnd: (p) => ended.push(p),
+  });
+  const m = markers[markers.length - 1];
+  assert.equal(m.opts.draggable, true);
+  assert.ok(m.opts.element.classList.contains("is-selected"));
+  assert.ok(!m.opts.element._listeners.mousedown, "a draggable marker must see the pointer go down");
+  assert.ok(m.handlers && m.handlers.drag && m.handlers.dragend, "drag events are wired");
+  m.lngLat = [11.6, 48.6];
+  m.getLngLat = () => ({ lng: m.lngLat[0], lat: m.lngLat[1] });
+  m.handlers.drag();
+  m.handlers.dragend();
+  assert.deepEqual(dragged[0], [11.6, 48.6]);
+  assert.deepEqual(ended[0], [11.6, 48.6]);
+  assert.deepEqual(map._overlays().d.coords[0], [11.6, 48.6], "the overlay follows the marker");
+  const suppressed = [];
+  map.setMarkerOverlay("d", [11.6, 48.6], { draggable: true, onClick: () => suppressed.push(1) });
+  const next = markers[markers.length - 1];
+  next.lngLat = [11.7, 48.7];
+  next.getLngLat = () => ({ lng: next.lngLat[0], lat: next.lngLat[1] });
+  next.handlers.dragend();
+  next.opts.element._listeners.click[0]({});
+  assert.equal(suppressed.length, 0, "the click that ends a drag is not a click");
+  map.removeOverlay("d");
+}
+
+function testAMarkerKeepsTheLibrarysAbsolutePosition() {
+  const css = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "src", "css", "map.css"), "utf8");
+  const rule = /\.map-overlay-marker\s*\{([^}]*)\}/.exec(css);
+  assert.ok(rule, "the marker has a rule");
+  assert.ok(!/(^|[;\s])position\s*:/.test(rule[1]),
+    "a position here overrides the library's absolute one, and the marker drops into the page flow, "
+    + "each one further from its coordinate than the last");
+}
+
+function testPickingTakesOneClickAndSilencesTheMapsOwn() {
+  const before = (mapEvents.click || []).length;
+  let got = null;
+  const drop = map.pickPoint((p) => { got = p; });
+  assert.equal(typeof drop, "function");
+  assert.equal(Corvus.mapOverlays.isPicking(), true);
+  const handlers = mapEvents.click;
+  assert.equal(handlers.length, before + 1, "one click handler added");
+  handlers[handlers.length - 1]({ lngLat: { lng: 11.3, lat: 48.3 } });
+  assert.deepEqual(got, [11.3, 48.3]);
+  assert.equal(Corvus.mapOverlays.isPicking(), false, "one pick, one click");
+  assert.equal(map.pickPoint(null), null, "nothing to call, nothing armed");
+}
+
+function testPickingIsCancelledByEscapeAndAReplacement() {
+  let cancelled = 0;
+  let picked = 0;
+  map.pickPoint(() => { picked++; }, { onCancel: () => { cancelled++; } });
+  map.pickPoint(() => { picked++; }, { onCancel: () => { cancelled++; } });
+  assert.equal(cancelled, 1, "a new pick tells the one it replaced");
+  assert.equal(Corvus.mapOverlays.cancelPick(), true);
+  assert.equal(cancelled, 2);
+  assert.equal(Corvus.mapOverlays.isPicking(), false);
+  assert.equal(Corvus.mapOverlays.cancelPick(), false, "nothing to cancel");
+  const drop = map.pickPoint(() => { picked++; }, { onCancel: () => { cancelled++; } });
+  drop();
+  assert.equal(Corvus.mapOverlays.isPicking(), false);
+  assert.equal(cancelled, 2, "dropping a pick does not tell anyone");
+  assert.equal(picked, 0);
+}
+
 const tests = [
   testALineDrawnBeforeLoadIsDrawnOnLoadUnderTheTrack,
   testALineDrawnAfterLoadIsStillUnderTheTrack,
@@ -400,6 +524,12 @@ const tests = [
   testOneKeyHoldsOneShapeOfAnyKind,
   testTextIsAPlainLabelAtItsPoint,
   testAButtonIsAClickableMarker,
+  testAMarkerIsABadgeWithAGlyphAndALabel,
+  testAMarkerTakesASymbolByName,
+  testADraggableMarkerReportsAndKeepsItsNewPlace,
+  testAMarkerKeepsTheLibrarysAbsolutePosition,
+  testPickingTakesOneClickAndSilencesTheMapsOwn,
+  testPickingIsCancelledByEscapeAndAReplacement,
 ];
 
 let failed = 0;

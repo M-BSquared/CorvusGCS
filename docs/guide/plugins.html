@@ -6,7 +6,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Plugins · Corvus GCS documentation</title>
-<meta name="description" content="The Vibration Monitor, the SSH Launcher and Schwalby, the NuttX Console and the Trajectory Viewer to install, and writing a plugin of your own.">
+<meta name="description" content="The Vibration Monitor, the SSH Launcher, Schwalby and Map Entities, the NuttX Console and the Trajectory Viewer to install, and writing a plugin of your own.">
 <link rel="canonical" href="https://m-bsquared.github.io/CorvusGCS/guide/plugins.html">
 <meta name="theme-color" content="#0B0E12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
@@ -14,7 +14,7 @@
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Corvus GCS">
 <meta property="og:title" content="Plugins · Corvus GCS documentation">
-<meta property="og:description" content="The Vibration Monitor, the SSH Launcher and Schwalby, the NuttX Console and the Trajectory Viewer to install, and writing a plugin of your own.">
+<meta property="og:description" content="The Vibration Monitor, the SSH Launcher, Schwalby and Map Entities, the NuttX Console and the Trajectory Viewer to install, and writing a plugin of your own.">
 <meta property="og:url" content="https://m-bsquared.github.io/CorvusGCS/guide/plugins.html">
 <meta property="og:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
@@ -153,7 +153,7 @@
 <p class="doc-lead">
   The <strong>PLUGINS</strong> tab in the side workspace is an extension point.
   A plugin adds its own view there without a fork and without touching the
-  rest of the app, settings of its own, and, when you allow it, a tab of its own. Three ship with
+  rest of the app, settings of its own, and, when you allow it, a tab of its own. Four ship with
   Corvus, two more are a download away, and a folder dropped into your plugin
   folder adds your own.
 </p>
@@ -235,6 +235,60 @@
   settings (the gear beside it in <a href="settings.html#plugins">Settings,
   Plugins</a>) and its shelf is the <strong>SCHWALBY</strong> tab, one press
   from anywhere, instead of a card under PLUGINS.
+</p>
+
+<h2 id="map-entities">Map Entities</h2>
+<p>
+  A tactical layer for the Home map. You place things by hand, at an exact
+  coordinate, and the plugin watches the aircraft against them: trees and
+  gates first, but also people, vehicles, an explosion, a radar or a camera with
+  the area it covers. It is laid out like the Mission planner's side panel: a
+  row of figures, the list of what is on the map, and the editor for the one
+  you picked.
+</p>
+<h3 id="entities-placing">Placing</h3>
+<p>
+  Pick a kind under <strong>Place</strong>, then click the map. It keeps going,
+  so a row of trees is a row of clicks. <kbd>Esc</kbd>, a right click or
+  <strong>Done</strong> stops. A gate takes two clicks, one for each post.
+  Whatever you place is selected, and only the selected entity can be dragged,
+  so a stray drag never moves the others. For an exact position, type the
+  latitude and longitude in the editor (a pasted <code>48.1234, 11.5678</code>
+  fills both), or press the crosshair beside them and click the map once. The
+  entities are saved as you change them and come back on the map when Corvus
+  starts. The bin on a row deletes at once; <strong>Undo</strong> appears for a
+  few seconds and puts it back where it was.
+</p>
+<dl>
+  <dt>Gate</dt>
+  <dd>Two posts and the opening between them. <strong>Opening from</strong> and <strong>Opening height</strong> are metres above the takeoff point, the way the aircraft's own altitude is read. The editor shows the width and the heading of the line.</dd>
+  <dt>Tree</dt>
+  <dd>A position, a crown radius and a height. The crown is drawn as a light area under the tree's mark.</dd>
+  <dt>Radar, camera, antenna, explosion, fire</dt>
+  <dd>A mark with a radius, drawn as a dashed, lightly filled circle: a radar's reach, the area a camera sees, a blast's danger zone. Set the radius to 0 for none. Set <strong>Angle</strong> below 360 for a sector instead of a full circle, a camera's field of view or a radar that only looks one way. <strong>Direction</strong> says where it faces, in degrees with 0 as north, or press the crosshair beside it and click the map to aim it at that point.</dd>
+  <dt>Person, vehicle, building, hazard, target, landing pad, flag</dt>
+  <dd>A mark with a name and a note, and a radius if you want one.</dd>
+</dl>
+<h3 id="entities-checking">What it checks</h3>
+<p>
+  While the aircraft is armed, every step of its track is compared with every
+  entity. This is done on the track itself, not on the single positions, so a
+  fast aircraft cannot jump over a gate between two samples.
+</p>
+<ul>
+  <li>A <strong>gate</strong> is flown through when the track crosses the line between the posts at a height inside the opening. Crossing it above or below the opening is a miss. The line turns green after a pass and amber after a miss, and the editor lists each crossing with its time, height and distance from the centre.</li>
+  <li>A <strong>tree</strong> is hit when the track enters its crown below its height. It turns red.</li>
+  <li>Any other entity with a radius counts an entry when the aircraft comes inside it (inside the sector, if it has an angle), and turns amber while it is there.</li>
+</ul>
+<p>
+  Passes, misses and entries are shown in the figures at the top and in the list,
+  and, unless you switch it off, announced as a notification. They are kept for the
+  session; <strong>Reset results</strong> starts again. Carrying the aircraft
+  through a gate on the ground is not a flight, which is why it only counts while
+  armed; the setting <strong>Only check while armed</strong> in the plugin's
+  settings turns that off. The same settings switch the names on the map and the
+  notifications. Map Entities can have a tab of its own, with <strong>Own tab</strong>
+  in the same place.
 </p>
 
 <h2 id="more">Plugins to install</h2>
@@ -414,6 +468,7 @@
     plugin.json
     my-plugin.js
     my-plugin.css      (optional)
+    lang/              (optional, see Translations below)
     tests/             (optional, see Tests below)</code></pre>
 
 <h3 id="manifest">plugin.json</h3>
@@ -512,8 +567,8 @@
 
 <h3 id="map">Drawing on the map</h3>
 <p>
-  <code>api.map</code> draws lines, areas, text and buttons on the Home map. Lines and
-  areas lie under the flown track; text and buttons sit over it. Keys are the plugin's
+  <code>api.map</code> draws lines, areas, text, buttons and icon markers on the Home map. Lines and
+  areas lie under the flown track; text, buttons and markers sit over it. Keys are the plugin's
   own, so two plugins can both use <code>"path"</code>, and one key holds one
   shape: drawing it again replaces it.
 </p>
@@ -536,6 +591,24 @@ api.map.drawText("home-label", [11.642, 48.0755], "Landing zone", { color, size:
 // A button at a point. The handler is the plugin's; a click never reaches the map.
 api.map.drawButton("go", [11.642, 48.0755], "Start survey", { color, title: "Fly the survey", onClick() { startSurvey(); } });
 
+// An icon marker: a round badge with a symbol in it and a label below. It can be clicked and
+// dragged; a dragged marker keeps its new place. The icon is a name from api.map.icons(), or
+// an array of your own SVG path strings on a 24 by 24 grid.
+api.map.drawMarker("tree-1", [11.642, 48.0755], {
+  icon: "tree",
+  label: "Tree 1", color, size: 28, selected: false, draggable: true,
+  onClick() { select("tree-1"); },
+  onDragEnd(point) { save("tree-1", point); },   // point is [lng, lat]
+});
+
+// Wait for one click on the map. Esc or a right click calls onCancel.
+const cancel = api.map.pickPoint((point) => place(point), { onCancel() { stopPlacing(); } });
+
+const flown = api.map.track();   // [[lng, lat], ...] flown so far
+
+api.map.icons();            // [{name: "gate", label: "Gate"}, {name: "tree", ...}, ...]
+api.map.iconPaths("tree");  // the symbol's SVG paths, to draw the same glyph in your own view
+
 api.map.setVisible("zone", false);
 api.map.fit([[11.641, 48.075], [11.643, 48.076]]);   // bring Home forward and frame it
 api.map.remove("route");</code></pre>
@@ -555,12 +628,37 @@ api.map.remove("route");</code></pre>
   <li><code>plugins/ssh-launcher</code>: a form, saved settings and a backend call.</li>
   <li><code>plugins/schwalby</code>: the same, with a control and a stylesheet of its own.</li>
   <li><code>plugins/vibration</code>: a live chart on the telemetry stream.</li>
+  <li><code>plugins/map-entities</code>: placing things on the map by clicking, markers that can be dragged, and watching the aircraft's track against them.</li>
 </ul>
 <p>
   The two plugins to install are worked examples too:
   <a href="https://github.com/M-BSquared/corvus-trajectory-viewer">the Trajectory Viewer</a> for reading a file, a start hook and
   a line on the map, <a href="https://github.com/M-BSquared/corvus-nuttx-console">the NuttX Console</a> for a tab of its own
   and a stream from <code>/api/events</code>.
+</p>
+
+<h3 id="translations">Translations</h3>
+<p>
+  A plugin brings its own translations the way it brings its own tests: one
+  file per language in a <code>lang</code> folder inside its folder, named after
+  the language code (<code>lang/de.json</code>, <code>lang/fr.json</code>). The
+  format is the one the interface languages use, with the English text as the
+  key and <code>meta</code> left out, because the language itself is named by
+  the main file:
+</p>
+<pre><code>{
+  "strings": {
+    "Live vibration": "Live-Vibration",
+    "Settings of {name}": "Einstellungen von {name}"
+  }
+}</code></pre>
+<p>
+  When a language is loaded, Corvus merges the files of every plugin into it. If
+  the main language file and a plugin both translate the same English text, the
+  main file wins, so a plugin cannot change what the application itself says. A
+  plugin file that cannot be read costs that plugin its translation and nothing
+  else. In a checkout, <code>python3 tools/i18n.py check</code> reads the plugin
+  files too.
 </p>
 
 <h3 id="tests">Tests</h3>
@@ -626,6 +724,7 @@ require("../my-plugin.js");</code></pre>
     <li><a href="#vibration">Vibration Monitor</a></li>
     <li><a href="#ssh-launcher">SSH Launcher</a></li>
     <li><a href="#schwalby">Schwalby</a></li>
+    <li><a href="#map-entities">Map Entities</a></li>
     <li><a href="#more">Plugins to install</a></li>
     <li><a href="#nuttx-console">NuttX Console</a></li>
     <li><a href="#trajectory-viewer">Trajectory Viewer</a></li>

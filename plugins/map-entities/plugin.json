@@ -1,0 +1,15 @@
+{
+  "id": "map-entities",
+  "name": "Map Entities",
+  "icon": "map-pin",
+  "description": "Gates, trees, people and devices with a range, placed exactly on the Home map",
+  "version": "1.0.0",
+  "author": "Maximilian Böck",
+  "order": 35,
+  "scripts": [
+    "map-entities.js"
+  ],
+  "styles": [
+    "map-entities.css"
+  ]
+}

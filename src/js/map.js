@@ -1278,8 +1278,17 @@ Corvus.map = (function () {
   const {
     overlays, overlayIds, cleanOverlayCoords, drawOverlay,
     setOverlay, setPolygonOverlay, setTextOverlay,
-    setButtonOverlay, removeOverlay, setOverlayVisible,
+    setButtonOverlay, setMarkerOverlay, removeOverlay, setOverlayVisible,
   } = Corvus.mapOverlays;
+
+  /** Wait for one click on the map (a plugin placing something). Planning
+   *  mode would take the same click for a waypoint, so it ends first. */
+  function pickPoint(onPick, opts) {
+    if (!map || !started) return null;
+    setWaypointMode(false);
+    closeContextMenu();
+    return Corvus.mapOverlays.pickPoint(onPick, opts);
+  }
 
   /** Bring the Home map onto these [lng, lat] points, and stop following the
    *  aircraft so the view is not pulled straight back to it. */
@@ -3211,7 +3220,7 @@ Corvus.map = (function () {
      drag-only. Planning mode owns the click while it is on (a click there
      places a waypoint), so the menu stands down rather than competing. */
   function onMapClick(e) {
-    if (waypointMode || !e || !e.lngLat) return;
+    if (waypointMode || Corvus.mapOverlays.isPicking() || !e || !e.lngLat) return;
     openContextMenu(e.lngLat);
   }
 
@@ -3219,7 +3228,7 @@ Corvus.map = (function () {
      operators will try first. Outside planning mode there is no browser menu
      worth keeping over the canvas. */
   function onMapRightClick(e) {
-    if (waypointMode || !e || !e.lngLat) return;
+    if (waypointMode || Corvus.mapOverlays.isPicking() || !e || !e.lngLat) return;
     if (e.preventDefault) e.preventDefault();
     openContextMenu(e.lngLat);
   }
@@ -5389,6 +5398,8 @@ Corvus.map = (function () {
     setPolygonOverlay,
     setTextOverlay,
     setButtonOverlay,
+    setMarkerOverlay,
+    pickPoint,
     removeOverlay,
     setOverlayVisible,
     hasOverlay: (id) => overlays.has(id),

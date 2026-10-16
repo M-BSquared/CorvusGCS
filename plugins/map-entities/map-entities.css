@@ -1,0 +1,180 @@
+/* Map Entities: the plugin's own styles. Laid out like the Mission planner's
+   side panel (summary cells, a list of rows, an editor under it) so the two
+   read as one family. Every selector is prefixed (ent-) and nothing here
+   restyles an app class. */
+
+.ent-root { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+.ent-summary {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px;
+}
+.ent-cell {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  min-width: 0;
+  padding: 4px 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-btn);
+  background: var(--surface-2);
+}
+.ent-cell-label {
+  flex: 0 0 auto;
+  font-size: 9.5px; letter-spacing: 0.7px; text-transform: uppercase;
+  color: var(--text-2);
+}
+.ent-cell-value {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.ent-cell[data-level="warn"] { border-color: color-mix(in srgb, var(--warning) 55%, var(--border-soft)); }
+.ent-cell[data-level="warn"] .ent-cell-value { color: var(--warning); }
+.ent-cell[data-level="bad"] { border-color: color-mix(in srgb, var(--critical) 55%, var(--border-soft)); }
+.ent-cell[data-level="bad"] .ent-cell-value { color: var(--critical); }
+
+.ent-list-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10px; letter-spacing: 0.9px; text-transform: uppercase;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border-soft);
+  padding-bottom: 3px;
+}
+.ent-head-tools { display: flex; gap: 1px; }
+.ent-list-head .icon-btn { width: 24px; height: 24px; }
+
+/* Gate and Tree get a row of their own; the rest sit in an even grid whose
+   columns follow the width of the panel, always a divisor of the twelve
+   symbols so the last row is never left with holes. */
+.ent-root { container-type: inline-size; }
+.ent-palette-wrap { display: flex; flex-direction: column; gap: 5px; }
+.ent-palette-main { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+.ent-palette { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+@container (min-width: 520px) { .ent-palette { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+@container (max-width: 330px) { .ent-palette { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (max-width: 210px) { .ent-palette { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ent-kind {
+  appearance: none;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 7px 4px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-btn);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-family: var(--sans); font-size: 11px;
+  cursor: pointer;
+}
+.ent-kind:hover { background: var(--surface-hover); color: var(--text-1); }
+.ent-kind:focus-visible { outline: 2px solid var(--nav); outline-offset: -2px; }
+.ent-kind.is-main { flex-direction: row; justify-content: center; gap: 8px; padding: 10px 6px; font-size: 12px; font-weight: 600; color: var(--text-1); }
+.ent-kind.is-active {
+  border-color: color-mix(in srgb, var(--nav) 70%, var(--border));
+  background: color-mix(in srgb, var(--nav) 14%, var(--surface-2));
+  color: var(--text-1);
+}
+.ent-kind-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+.ent-hint {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  padding: 7px 9px; border-radius: var(--radius-btn);
+  border: 1px solid color-mix(in srgb, var(--nav) 55%, var(--border));
+  background: color-mix(in srgb, var(--nav) 10%, transparent);
+  font-size: 12px; color: var(--text-1);
+}
+.ent-hint[hidden] { display: none; }
+.ent-hint-text { flex: 1 1 12em; min-width: 0; }
+.ent-hint-sub { flex: 1 0 100%; font-size: 10.5px; color: var(--text-3); }
+
+.ent-empty { font-size: 11.5px; color: var(--text-3); line-height: 1.5; padding: 4px 2px; }
+.ent-empty[hidden] { display: none; }
+
+.ent-list { display: flex; flex-direction: column; gap: 2px; max-height: 280px; overflow-y: auto; scrollbar-gutter: stable; }
+/* The entity's colour as a light tint, with the rim and the glyph pulled
+   towards the text colour: dark on the light theme, pale on the dark one, so
+   yellow and white stay readable on either without a heavy dark disc. */
+.ent-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 auto;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: color-mix(in srgb, currentColor 16%, var(--surface-1));
+  border: 1.5px solid color-mix(in srgb, currentColor 58%, var(--text-1));
+}
+.ent-badge svg { color: color-mix(in srgb, currentColor 48%, var(--text-1)); }
+.ent-row {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto auto;
+  align-items: center; gap: 7px;
+  padding: 5px 6px;
+  border-radius: var(--radius-btn);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.ent-row:hover { background: var(--surface-hover); }
+.ent-row:focus-visible { outline: 2px solid var(--nav); outline-offset: -2px; }
+.ent-row.is-selected {
+  background: var(--surface-2);
+  border-color: color-mix(in srgb, var(--nav) 50%, var(--border));
+}
+.ent-row-label { font-size: 12.5px; font-weight: 500; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ent-row-value {
+  font-family: var(--mono); font-size: 11px; color: var(--text-2);
+  white-space: nowrap; text-align: right;
+}
+.ent-row-value[data-level="good"] { color: var(--healthy); }
+.ent-row-value[data-level="warn"] { color: var(--warning); }
+.ent-row-value[data-level="bad"] { color: var(--critical); }
+.ent-row-tools { display: flex; gap: 2px; opacity: 0.7; transition: opacity 120ms; }
+.ent-row:hover .ent-row-tools,
+.ent-row:focus-within .ent-row-tools,
+.ent-row.is-selected .ent-row-tools { opacity: 1; }
+.ent-row-tools .icon-btn { width: 24px; height: 24px; }
+
+.ent-detail-wrap[hidden] { display: none; }
+.ent-detail {
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.ent-detail-head { display: flex; align-items: center; gap: 7px; }
+.ent-detail .ent-detail-name { flex: 1 1 auto; min-width: 0; width: auto; font-weight: 600; }
+.ent-remove:hover {
+  color: var(--critical);
+  background: color-mix(in srgb, var(--critical) 16%, transparent);
+}
+
+.ent-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: end; }
+.ent-wide { grid-column: 1 / -1; }
+.ent-detail .field { gap: 3px; }
+.ent-detail .field-input, .ent-detail .field-select { font-size: 12px; padding: 5px 8px; }
+.ent-point { display: flex; flex-direction: column; gap: 4px; }
+.ent-point-head { display: flex; align-items: center; justify-content: space-between; }
+.ent-point-head .icon-btn { width: 22px; height: 22px; }
+.ent-point-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ent-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+.ent-check { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); cursor: pointer; }
+
+.ent-log { display: flex; flex-direction: column; gap: 2px; max-height: 160px; overflow-y: auto; }
+.ent-log:empty { display: none; }
+.ent-log-head {
+  font-size: 10px; letter-spacing: 0.9px; text-transform: uppercase; color: var(--text-3);
+  padding-bottom: 3px; border-bottom: 1px solid var(--border-soft);
+}
+.ent-log-line { display: flex; gap: 10px; font-size: 11px; color: var(--text-2); padding: 2px 0; }
+.ent-log-time { font-family: var(--mono); color: var(--text-3); flex: 0 0 auto; }
+.ent-log-line.is-bad .ent-log-text { color: var(--warning); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ent-row-tools { transition: none; }
+}
+
+.ent-undo {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 9px; border-radius: var(--radius-btn);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 12px; color: var(--text-2);
+}
+.ent-undo[hidden] { display: none; }
+.ent-undo-name { color: var(--text-1); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ent-undo .btn { margin-left: auto; }
+.ent-aim { display: flex; align-items: center; gap: 6px; }
+.ent-aim .field-input { flex: 1 1 auto; min-width: 0; }

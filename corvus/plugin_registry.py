@@ -66,6 +66,7 @@ in Settings > Plugins (or restart Corvus).
         plugin.json
         my-plugin.js
         my-plugin.css      (optional)
+        lang/de.json       (optional, translations of the plugin's own texts)
 
 `plugin.json` describes the plugin:
 
@@ -118,7 +119,11 @@ The types are toggle, select, text and number; read them with
 (the area the points span) and `api.map.drawCircle(key, [lng, lat], metres,
 opts)`. `api.map.drawText(key, [lng, lat], "text", {color, size, dot})` puts a
 label there. `api.map.drawButton(key, [lng, lat], "label", {onClick, title, color, size, disabled})`
-puts a clickable button there. `api.map.remove(key)`, `api.map.setVisible(key, on)`,
+puts a clickable button there. `api.map.drawMarker(key, [lng, lat], {icon, label, color, size, selected, draggable, onClick, onDrag, onDragEnd})`
+puts a round icon badge there (`icon` is a symbol name from `api.map.icons()`,
+such as "tree", or your own SVG path strings on a 24 by 24 grid).
+`api.map.pickPoint(onPick, {onCancel})` waits for one click on the map and
+`api.map.track()` returns the track flown so far. `api.map.remove(key)`, `api.map.setVisible(key, on)`,
 `api.map.fit(coords)` and `api.map.colors` for the colours to offer. The keys
 are the plugin's own.
 

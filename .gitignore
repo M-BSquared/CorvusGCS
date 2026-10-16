@@ -23,6 +23,7 @@ __pycache__/
 
 # plugins besides the ones that ship with Corvus
 /plugins/*/
+!/plugins/map-entities/
 !/plugins/schwalby/
 !/plugins/ssh-launcher/
 !/plugins/vibration/

@@ -805,6 +805,14 @@ Corvus.ui = (function () {
       const t = opt.textContent;
       return String(t == null || t === "" ? opt.value : t);
     }
+    /* An option may carry data-color="#RRGGBB": a choice that is a colour
+       shows it in its dot, in the list and in the closed control. Hex only,
+       because the value ends up in a style. */
+    function colorOf(opt) {
+      const c = opt && opt.dataset ? opt.dataset.color : "";
+      return typeof c === "string" && /^#[0-9a-f]{3,8}$/i.test(c) ? c : "";
+    }
+    let triggerDot = null;
 
     function syncTrigger() {
       const chosen = options().filter((o) => String(o.value) === String(sel.value))[0];
@@ -813,6 +821,16 @@ Corvus.ui = (function () {
          text node, which wakes every subtree observer above it. */
       const label = chosen ? textOf(chosen) : "";
       if (labelEl.textContent !== label) labelEl.textContent = label;
+      const color = colorOf(chosen);
+      if (color && !triggerDot) {
+        triggerDot = document.createElement("span");
+        triggerDot.className = "ui-select-dot";
+        trigger.insertBefore(triggerDot, labelEl);
+      } else if (!color && triggerDot) {
+        if (triggerDot.parentNode) triggerDot.parentNode.removeChild(triggerDot);
+        triggerDot = null;
+      }
+      if (triggerDot) triggerDot.style.setProperty("--option-color", color);
       /* An empty value is the placeholder row ("SELECT MODE"), which is a
          prompt and not a choice, so it is dimmed like one. */
       const placeholder = !chosen || String(chosen.value) === "" ? "true" : "false";
@@ -835,6 +853,11 @@ Corvus.ui = (function () {
           disabled: !!o.disabled,
           onSelect: () => choose(o.value),
         });
+        const color = colorOf(o);
+        if (color) {
+          row.classList.add("has-option-color");
+          row.style.setProperty("--option-color", color);
+        }
         surface.appendChild(row);
         return row;
       });
@@ -1795,6 +1818,7 @@ Corvus.ui = (function () {
       if (openPopover && openPopover !== handle) openPopover.hide();
       if (openDropdown) openDropdown.close();
       document.body.appendChild(el);
+      if (window.Corvus && Corvus.i18n && Corvus.i18n.sync) Corvus.i18n.sync(el);
       opened = true;
       openPopover = handle;
       /* Described-by only while it is on screen: a reference to a node that

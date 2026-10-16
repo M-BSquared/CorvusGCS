@@ -55,7 +55,7 @@ function makeEl(tag) {
   const e = {
     tagName: String(tag || "div").toUpperCase(),
     nodeType: 1,
-    className: "", children: [], dataset: {}, style: {},
+    className: "", children: [], dataset: {}, style: { setProperty(k, v) { this[k] = v; } },
     type: "", hidden: false, disabled: false, value: "", id: "", title: "",
     tabIndex: 0, _attrs: {}, _listeners: {}, _text: "", _isEl: true,
     parentNode: null, parentElement: null,
@@ -243,6 +243,42 @@ function labelOf(h) { return h.trigger.textContent; }
   assert.equal(host.children.length, 1);
   assert.equal(host.children[0].className, "ui-select");
   assert.equal(ui.enhanceSelect(sel), h, "enhancing twice returns the same handle");
+  host.parentNode.removeChild(host);
+}
+
+// ---------------------------------------------------------------------------
+// A choice that is a colour shows it in its dot, in the list and when closed
+// ---------------------------------------------------------------------------
+{
+  const { host, sel, h } = mount([["#7BD389", "Green"], ["#5B8DEF", "Blue"], ["x", "Plain"], ["y", "Hostile"]], { value: "#5B8DEF" });
+  sel.options[0].dataset.color = "#7BD389";
+  sel.options[1].dataset.color = "#5B8DEF";
+  sel.options[3].dataset.color = "red; background: url(x)";
+  const dot = () => h.trigger.children.find((c) => c.className === "ui-select-dot");
+  sel.value = "#7BD389";
+  h.refresh();
+  assert.ok(dot(), "the closed control shows the chosen colour as a dot");
+  assert.equal(dot().style["--option-color"], "#7BD389");
+  assert.equal(h.trigger.children.indexOf(dot()), 0, "in front of the label");
+  sel.value = "#5B8DEF";
+  h.refresh();
+  assert.equal(dot().style["--option-color"], "#5B8DEF", "and follows the choice");
+  assert.equal(h.trigger.children.filter((c) => c.className === "ui-select-dot").length, 1, "one dot, not one per change");
+  sel.value = "x";
+  h.refresh();
+  assert.equal(dot(), undefined, "a plain choice has none");
+  sel.value = "y";
+  h.refresh();
+  assert.equal(dot(), undefined, "nor does a colour that is not a hex colour");
+  sel.value = "#7BD389";
+  h.open();
+  const items = rows(h);
+  assert.equal(items[0].classList.contains("has-option-color"), true, "a coloured option is marked");
+  assert.equal(items[0].style["--option-color"], "#7BD389", "and its row carries the colour for the dot");
+  assert.equal(items[1].style["--option-color"], "#5B8DEF");
+  assert.equal(items[2].classList.contains("has-option-color"), false, "a plain option stays a plain row");
+  assert.equal(items[3].style["--option-color"], undefined, "anything that is not a hex colour is ignored, it would end up in a style");
+  h.close(false);
   host.parentNode.removeChild(host);
 }
 

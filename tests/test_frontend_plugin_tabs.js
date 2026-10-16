@@ -257,6 +257,18 @@ Corvus.map = {
     overlays[id] = { coords: [point], text, opts, kind: "button" };
     return true;
   },
+  setMarkerOverlay(id, point, opts) {
+    mapCalls.push(["marker", id]);
+    if (!Array.isArray(point) || point[1] > 90) return false;
+    overlays[id] = { coords: [point], opts, kind: "marker" };
+    return true;
+  },
+  pickPoint(onPick, opts) {
+    mapCalls.push(["pick"]);
+    Corvus.map._pick = { onPick, opts };
+    return () => { Corvus.map._pick = null; };
+  },
+  getTrack: () => [[11, 48], [11.001, 48.001]],
   removeOverlay(id) { mapCalls.push(["remove", id]); const had = !!overlays[id]; delete overlays[id]; return had; },
   setOverlayVisible(id, on) { mapCalls.push(["visible", id, on]); return !!overlays[id]; },
   hasOverlay: (id) => !!overlays[id],
@@ -270,6 +282,7 @@ Corvus.sidenav = {
 };
 
 require("../src/js/ui.js");
+require("../src/js/map-icons.js");
 require("../src/js/plugins.js");
 require("../src/js/panel.js");
 
@@ -616,6 +629,62 @@ function testPolygonCircleAndTextAreThePluginsOwn() {
     "every shape goes with the plugin, whatever its kind");
 }
 
+function testMarkersPickingAndTheTrackAreThePluginsOwn() {
+  let api = null;
+  plugins.register("t-marks", spyPlugin({ start(a) { api = a; } }).spec);
+  let clicks = 0;
+  let moved = null;
+  assert.equal(api.map.drawMarker("m", [11, 48], {
+    icon: ["M0 0h4"], label: "Gate 1", draggable: true,
+    onClick() { clicks++; }, onDragEnd(p) { moved = p; },
+  }), true);
+  const o = overlays["plugin-t-marks-m"];
+  assert.equal(o.kind, "marker");
+  o.opts.onClick();
+  o.opts.onDragEnd([11.5, 48.5]);
+  assert.equal(clicks, 1, "the plugin's click handler is called");
+  assert.deepEqual(moved, [11.5, 48.5], "and its drag handler gets the new point");
+  assert.equal(api.map.drawMarker("boom", [11, 48], { onClick() { throw new Error("x"); }, onDrag() { throw new Error("y"); } }), true);
+  assert.doesNotThrow(() => overlays["plugin-t-marks-boom"].opts.onClick(), "a throwing click stays in the plugin");
+  assert.doesNotThrow(() => overlays["plugin-t-marks-boom"].opts.onDrag([1, 2]), "a throwing drag stays in the plugin");
+  assert.equal(overlays["plugin-t-marks-boom"].opts.onDragEnd, null, "a handler that was not given is none");
+  assert.equal(api.map.drawMarker("bad", [11, 95], {}), false, "no point off the globe");
+
+  let picked = null;
+  let cancelled = 0;
+  const drop = api.map.pickPoint((p) => { picked = p; }, { onCancel() { cancelled++; } });
+  assert.equal(typeof drop, "function", "a way to drop the pick");
+  Corvus.map._pick.onPick([11.2, 48.2]);
+  assert.deepEqual(picked, [11.2, 48.2]);
+  Corvus.map._pick.opts.onCancel();
+  assert.equal(cancelled, 1);
+  assert.doesNotThrow(() => {
+    api.map.pickPoint(() => { throw new Error("x"); }, { onCancel() { throw new Error("y"); } });
+    Corvus.map._pick.onPick([1, 2]);
+    Corvus.map._pick.opts.onCancel();
+  }, "throwing pick handlers stay in the plugin");
+  assert.equal(api.map.pickPoint("not a function"), null, "nothing to call, nothing to arm");
+
+  const track = api.map.track();
+  assert.equal(track.length, 2);
+  const symbols = api.map.icons();
+  assert.ok(symbols.some((i) => i.name === "tree" && i.label), "the symbols a marker knows by name");
+  assert.ok(api.map.iconPaths("tree").length > 0, "and their paths, to draw the same glyph elsewhere");
+  assert.equal(api.map.iconPaths("no-such-icon"), null);
+  plugins.unregister("t-marks");
+  assert.ok(!Object.keys(overlays).some((k) => k.startsWith("plugin-t-marks")), "markers go with the plugin");
+
+  const saved = Corvus.map;
+  Corvus.map = undefined;
+  try {
+    assert.equal(api.map.drawMarker("x", [1, 2], {}), false);
+    assert.equal(api.map.pickPoint(() => {}), null);
+    assert.deepEqual(api.map.track(), []);
+  } finally {
+    Corvus.map = saved;
+  }
+}
+
 async function testOptionsAreDeclaredReadAndSaved() {
   let api = null;
   const changes = [];
@@ -750,6 +819,7 @@ const tests = [
   testFitBringsHomeForward,
   testApiMapWithoutAMapAnswersFalse,
   testPolygonCircleAndTextAreThePluginsOwn,
+  testMarkersPickingAndTheTrackAreThePluginsOwn,
   testOptionsAreDeclaredReadAndSaved,
   testTheOperatorsTabChoiceBeatsTheOldSwitch,
   testReloadLoadsThePluginFoldersAgain,
