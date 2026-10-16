@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.10.24-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.24" />
+  <img src="https://img.shields.io/badge/Version-2026.10.25-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.25" />
   <img width="8" />
   <!-- <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -163,6 +163,14 @@ never shown as applied.
   <tr>
     <td width="50%"><img src="assets/screenshot_flight_review.png" alt="Flight Review: flight mode timeline and ground track"><br><sub><strong>Flight Review, built in.</strong> A ULog reduced to the plots that matter.</sub></td>
     <td width="50%"><img src="assets/screenshot_ssh.jpg" alt="SSH terminals to the companion and payload computers"><br><sub><strong>On the companion computer.</strong> Real SSH terminals beside the map or on another screen.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="assets/screenshot_live_messages.png" alt="Live Messages: every MAVLink message on the link with its rate, and the fields of ATTITUDE"><br><sub><strong>See every message.</strong> Each MAVLink message on the link with its rate, and the live fields of the one you pick.</sub></td>
+    <td width="50%"><img src="assets/screenshot_map_entities.jpg" alt="The Map Entities plugin: a gate, trees and a radar placed on the map beside the flown track"><br><sub><strong>Map Entities.</strong> Gates, trees and devices with a range on the map, checked as the aircraft flies.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="assets/screenshot_german.jpg" alt="Corvus GCS in German during a flight"><br><sub><strong>In your language.</strong> English, German, French and Drachensprech, one file each.</sub></td>
+    <td width="50%"><img src="assets/screenshot_dark.jpg" alt="Corvus GCS in flight in a dark theme"><br><sub><strong>Six themes.</strong> Two light and four dark, switched instantly.</sub></td>
   </tr>
 </table>
 
