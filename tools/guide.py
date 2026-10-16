@@ -70,7 +70,7 @@ PAGES: tuple[Page, ...] = (
     Page("video.html", "Set up", "Video and windows",
          "Cameras over RTSP or WebRTC, floating camera and terminal windows, second screens, and how camera passwords are kept."),
     Page("analysis.html", "Review", "Logs and Flight Review",
-         "Downloading vehicle logs, the tlogs Corvus records, and reading either in Flight Review or Telemetry Review."),
+         "Downloading vehicle logs, the tlogs Corvus records, reading either in Flight Review or Telemetry Review, and every message on the live link."),
     Page("workspace.html", "Tools", "Console and SSH",
          "The MAVLink console and its commands, and the SSH terminal to a companion computer."),
     Page("plugins.html", "Tools", "Plugins",

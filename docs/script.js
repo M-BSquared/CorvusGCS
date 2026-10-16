@@ -271,8 +271,10 @@
      otherwise the line keeps the text it was served with.
      --------------------------------------------------------------- */
   var releaseLine = document.getElementById('release-line');
+  var heroRelease = document.getElementById('hero-release');
+  var heroTag = document.getElementById('hero-release-tag');
 
-  if (releaseLine && 'fetch' in window) {
+  if ((releaseLine || heroRelease) && 'fetch' in window) {
     fetch('https://api.github.com/repos/' + REPO + '/releases/latest', {
       headers: { Accept: 'application/vnd.github+json' }
     })
@@ -283,6 +285,15 @@
       .then(function (release) {
         var tag = typeof release.tag_name === 'string' ? release.tag_name : '';
         if (!tag) return;
+
+        // The hero names the newest release and links to its notes.
+        if (heroRelease && heroTag) {
+          heroTag.textContent = tag;
+          var notes = typeof release.html_url === 'string' ? release.html_url : '';
+          if (/^https:\/\/github\.com\//.test(notes)) heroRelease.href = notes;
+          heroRelease.hidden = false;
+        }
+        if (!releaseLine) return;
 
         var text = 'Latest release ';
         var published = release.published_at ? new Date(release.published_at) : null;
@@ -307,7 +318,7 @@
         }
       })
       .catch(function () {
-        releaseLine.textContent = releaseLine.getAttribute('data-fallback') || '';
+        if (releaseLine) releaseLine.textContent = releaseLine.getAttribute('data-fallback') || '';
       });
   }
 

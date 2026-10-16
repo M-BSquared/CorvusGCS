@@ -6,7 +6,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Logs and Flight Review · Corvus GCS documentation</title>
-<meta name="description" content="Downloading vehicle logs, the tlogs Corvus records, and reading either in Flight Review or Telemetry Review.">
+<meta name="description" content="Downloading vehicle logs, the tlogs Corvus records, reading either in Flight Review or Telemetry Review, and every message on the live link.">
 <link rel="canonical" href="https://m-bsquared.github.io/CorvusGCS/guide/analysis.html">
 <meta name="theme-color" content="#0B0E12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
@@ -14,7 +14,7 @@
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Corvus GCS">
 <meta property="og:title" content="Logs and Flight Review · Corvus GCS documentation">
-<meta property="og:description" content="Downloading vehicle logs, the tlogs Corvus records, and reading either in Flight Review or Telemetry Review.">
+<meta property="og:description" content="Downloading vehicle logs, the tlogs Corvus records, reading either in Flight Review or Telemetry Review, and every message on the live link.">
 <meta property="og:url" content="https://m-bsquared.github.io/CorvusGCS/guide/analysis.html">
 <meta property="og:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
@@ -325,6 +325,29 @@
   reported as configured but not healthy, and the glitches its estimator
   flagged.
 </p>
+<h2 id="live-messages">Live Messages</h2>
+<p>
+  The fourth tile on the Analysis page is not a log but the link itself.
+  <strong>Live Messages</strong> lists every MAVLink message type the aircraft
+  and anything else on the link is sending: its name and id, which system and
+  component sent it, how many arrive per second, how long ago the last one
+  came, and how many there were. A message that has gone quiet is dimmed.
+</p>
+<p>
+  Select a row and the fields of its newest message are listed beside the
+  table and refresh while you watch. The filter narrows the table by name.
+  <strong>Pause</strong> holds the picture still, and <strong>Clear</strong>
+  starts the counting again from zero. Nothing is counted while the page is
+  closed or paused, so the view costs the link nothing when you are not using it.
+</p>
+
+<figure class="doc-shot">
+  <a href="../assets/images/live-messages.jpg"><img src="../assets/images/live-messages-800.jpg"
+     srcset="../assets/images/live-messages-800.jpg 800w, ../assets/images/live-messages.jpg 1600w"
+     sizes="(max-width: 900px) calc(100vw - 40px), 760px" width="1600" height="1000" loading="lazy" decoding="async"
+     alt="The Live Messages view of the Analysis page: every MAVLink message type on the link with its rate, age and count, and the fields of ATTITUDE listed beside the table."></a>
+  <figcaption>Live Messages during a flight, with the fields of ATTITUDE beside the table.</figcaption>
+</figure>
 <!-- /guide:content -->
 </article>
 
@@ -345,6 +368,7 @@
     <li><a href="#tlogs">Recorded telemetry (tlogs)</a></li>
     <li><a href="#flight-review">Flight Review</a></li>
     <li><a href="#telemetry-review">Telemetry Review</a></li>
+    <li><a href="#live-messages">Live Messages</a></li>
   </ul>
 </aside>
 </div>

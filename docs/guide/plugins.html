@@ -183,6 +183,14 @@
   itself; they are saved and there again at the next launch.
 </p>
 
+<figure class="doc-shot">
+  <a href="../assets/images/plugin-ssh-launcher.jpg"><img src="../assets/images/plugin-ssh-launcher-800.jpg"
+     srcset="../assets/images/plugin-ssh-launcher-800.jpg 800w, ../assets/images/plugin-ssh-launcher.jpg 1600w"
+     sizes="(max-width: 900px) calc(100vw - 40px), 760px" width="1600" height="1000" loading="lazy" decoding="async"
+     alt="The SSH Launcher plugin with four buttons, two of them running on the companion computer, and the mission script's terminal open in a window over the map."></a>
+  <figcaption>Two programs running on the companion computer, the mission script's terminal open over the map.</figcaption>
+</figure>
+
 <h3 id="launcher-running">How a button runs its program</h3>
 <ul>
   <li><strong>In its own SSH session.</strong> Pressing the button again runs the program again <strong>in that same terminal</strong>: one run under the last, in one scrollback, with nothing thrown away in between. (It is a real shell: if the last program is still running in the foreground, what you send goes to it, just as if you had typed it. Press <kbd>Ctrl</kbd>+<kbd>C</kbd> first, or let it finish.)</li>
@@ -217,6 +225,14 @@
   <strong>Local / SSH</strong> switch at the top of its settings decides where
   it runs:
 </p>
+
+<figure class="doc-shot">
+  <a href="../assets/images/plugin-schwalby.jpg"><img src="../assets/images/plugin-schwalby-800.jpg"
+     srcset="../assets/images/plugin-schwalby-800.jpg 800w, ../assets/images/plugin-schwalby.jpg 1600w"
+     sizes="(max-width: 900px) calc(100vw - 40px), 760px" width="1600" height="1000" loading="lazy" decoding="async"
+     alt="The Schwalby plugin in the dark green theme: the companion computer's status above a shelf of buttons that run on this laptop or over SSH, two of them running."></a>
+  <figcaption>The companion's status above the shelf, with two buttons running over SSH.</figcaption>
+</figure>
 <dl>
   <dt>Local</dt>
   <dd>Runs the command on this computer, as you, in your own login shell. In a terminal it gets a window of its own like any other (arrow, pin, disconnect, <kbd>Ctrl</kbd>+<kbd>C</kbd>, and the stop button on its row); in the background it starts without one. Either way it is stopped when Corvus closes, so nothing is left running after you shut down. Only this computer can start anything locally, even when Corvus is reachable from the network. On Windows a local terminal is not available and the switch says so; local background buttons work there too.</dd>
@@ -246,6 +262,14 @@
   row of figures, the list of what is on the map, and the editor for the one
   you picked.
 </p>
+
+<figure class="doc-shot">
+  <a href="../assets/images/plugin-map-entities.jpg"><img src="../assets/images/plugin-map-entities-800.jpg"
+     srcset="../assets/images/plugin-map-entities-800.jpg 800w, ../assets/images/plugin-map-entities.jpg 1600w"
+     sizes="(max-width: 900px) calc(100vw - 40px), 760px" width="1600" height="1000" loading="lazy" decoding="async"
+     alt="The Map Entities plugin beside the map: a gate across the flown track, two trees beside it, a radar sector and the people at the start, with the gate selected in the plugin's list and editor."></a>
+  <figcaption>A gate across the hop, flown through once, with trees, a radar and the start around it.</figcaption>
+</figure>
 <h3 id="entities-placing">Placing</h3>
 <p>
   Pick a kind under <strong>Place</strong>, then click the map. It keeps going,
@@ -331,6 +355,14 @@
   <code>dmesg</code>, <code>free</code>, <code>param</code>,
   <code>ver all</code>.
 </p>
+
+<figure class="doc-shot">
+  <a href="../assets/images/plugin-nuttx-console.jpg"><img src="../assets/images/plugin-nuttx-console-800.jpg"
+     srcset="../assets/images/plugin-nuttx-console-800.jpg 800w, ../assets/images/plugin-nuttx-console.jpg 1600w"
+     sizes="(max-width: 900px) calc(100vw - 40px), 760px" width="1600" height="1000" loading="lazy" decoding="async"
+     alt="The NuttX Console plugin in the orange theme: the PX4 shell over MAVLink showing the output of ver all, param show and listener sensor_combined beside the map."></a>
+  <figcaption>The PX4 shell over the telemetry link, beside the map.</figcaption>
+</figure>
 <p>
   It looks and works like the <a href="workspace.html#console">MAVLink
   console</a>: the shell's output as lines, your commands in the accent
@@ -396,6 +428,14 @@
   own path is always the line on top and you see at a glance where it leaves
   the reference.
 </p>
+
+<figure class="doc-shot">
+  <a href="../assets/images/plugin-trajectory-viewer.jpg"><img src="../assets/images/plugin-trajectory-viewer-800.jpg"
+     srcset="../assets/images/plugin-trajectory-viewer-800.jpg 800w, ../assets/images/plugin-trajectory-viewer.jpg 1600w"
+     sizes="(max-width: 900px) calc(100vw - 40px), 760px" width="1600" height="1000" loading="lazy" decoding="async"
+     alt="The Trajectory Viewer plugin: a planned route read from a file drawn in pink under the flown track, with the file, its coordinate frame and colour in the side panel."></a>
+  <figcaption>A planned route from a file, under the track the aircraft flew.</figcaption>
+</figure>
 <h3 id="trajectory-file">The file</h3>
 <p>
   Plain text, one point per line, two or three numbers each: x, y and, if you
