@@ -1003,7 +1003,20 @@ async function testDefaultsAreShownAndModifiedFilters() {
   assert.ok(vel.classList.contains("is-modified"), "a value off its default is marked");
   assert.equal(findOneByClass(vel, "params-unit").textContent, "m/s", "with its unit");
   assert.equal(findOneByClass(vel, "params-hint").textContent, "Maximum horizontal velocity");
+  const popoverText = (r) => {
+    const btn = findOneByClass(r, "ui-info");
+    return (btn.corvusPopover.el.children || btn.corvusPopover.el.childNodes).map((n) => n.textContent).slice(1);
+  };
+  assert.deepEqual(popoverText(vel),
+    ["Maximum horizontal velocity", "Default: 12 m/s", "Range: 0 to 20 m/s"],
+    "a described parameter explains itself, with its default and range");
   const roll = rowByName(container, "MC_ROLL_P");
+  assert.deepEqual(popoverText(roll),
+    ["Multicopter attitude and rate control.", "The firmware gives no description for this parameter.", "Default: 6.5"],
+    "one the firmware does not describe still says what family it belongs to");
+  const unknown = popoverText(rowByName(container, "COM_RC_IN_MODE"));
+  assert.ok(unknown.includes("Changing it needs a reboot."), "a reboot is called out");
+  assert.ok(unknown.some((l) => l.startsWith("Values: 0 RC only, 1 Joystick only")), "named values are listed");
   assert.ok(!roll.classList.contains("is-modified"), "a value at its default is not marked");
   assert.ok(findOneByClass(roll, "params-reset").hidden, "nothing to reset at the default");
   const mode = rowByName(container, "COM_RC_IN_MODE");

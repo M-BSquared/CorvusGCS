@@ -1250,6 +1250,103 @@ Corvus.setupParameters = (function () {
     view.discardBtn.disabled = view.busy || n === 0;
   }
 
+  // What a parameter family is for, by name prefix: the answer for the many
+  // parameters whose firmware ships no description (all of ArduPilot's).
+  const FAMILIES = [
+    [/^MPC_/, "Multicopter position and velocity control."],
+    [/^MC_/, "Multicopter attitude and rate control."],
+    [/^FW_/, "Fixed wing control."],
+    [/^VT_/, "VTOL transition and control."],
+    [/^(EKF2|EK2|EK3)_/, "State estimator: how sensors are fused into position and attitude."],
+    [/^COM_/, "Commander: arming, failsafes and general vehicle behaviour."],
+    [/^NAV_/, "Navigator: mission, loiter and failsafe behaviour."],
+    [/^(RTL|LAND)_/, "Return to launch and landing behaviour."],
+    [/^(GF|FENCE)_/, "Geofence."],
+    [/^(BAT\d*|BATT\d*)_/, "Battery measurement and limits."],
+    [/^CAL_/, "Sensor calibration data."],
+    [/^SENS_/, "Sensor drivers and settings."],
+    [/^SYS_/, "System configuration."],
+    [/^MAV_/, "MAVLink communication."],
+    [/^RC\d+_/, "Settings of one RC input channel."],
+    [/^RCMAP_/, "Which RC channel controls which axis."],
+    [/^RC_/, "RC input."],
+    [/^PWM_/, "PWM outputs."],
+    [/^(SDLOG|LOG)_/, "Logging."],
+    [/^LNDMC_/, "Multicopter land detection."],
+    [/^CA_/, "Control allocation: how motors and servos are driven."],
+    [/^FD_/, "Failure detector."],
+    [/^IMU_/, "IMU processing and filtering."],
+    [/^ATC_/, "Attitude control: the angle and rate controllers."],
+    [/^PSC_/, "Position control."],
+    [/^WPNAV_/, "Waypoint navigation speeds and accelerations."],
+    [/^LOIT_/, "Loiter mode."],
+    [/^COMPASS_/, "Compass."],
+    [/^INS_/, "Inertial sensors: accelerometers and gyros."],
+    [/^AHRS_/, "Attitude and heading reference."],
+    [/^ARMING_/, "Arming checks."],
+    [/^FS_/, "Failsafe."],
+    [/^GPS\d*_/, "GPS receiver settings."],
+    [/^MOT_/, "Motor output."],
+    [/^SERVO\d+_/, "Settings of one servo or motor output."],
+    [/^SERIAL\d+_/, "Settings of one serial port."],
+    [/^SR\d+_/, "Telemetry stream rates of one serial port."],
+    [/^RNGFND\d*_/, "Rangefinder."],
+    [/^TERRAIN_/, "Terrain following."],
+    [/^Q_/, "QuadPlane (VTOL)."],
+    [/^TECS_/, "Plane altitude and speed control."],
+    [/^ARSPD\d*_/, "Airspeed sensor."],
+    [/^NTF_/, "Notifications: LEDs and buzzer."],
+    [/^BRD_/, "Board settings."],
+    [/^SCHED_/, "Scheduler."],
+    [/^SYSID_/, "System and ground station identity."],
+    [/^AUTOTUNE_/, "Autotune."],
+    [/^FLTMODE\d/, "Flight mode slot."],
+    [/^FRAME_/, "Frame type."],
+    [/^MIS_/, "Mission."],
+  ];
+
+  function familyOf(name) {
+    const hit = FAMILIES.find(([re]) => re.test(name));
+    return hit ? hit[1] : "";
+  }
+
+  /**
+   * The circled "i" beside a name. Every parameter has one: the firmware's own
+   * description where it ships one, else what its family is for, with what is
+   * known about its default, range and values.
+   */
+  function makeInfoHint(name, meta, param) {
+    if (!Corvus.ui || typeof Corvus.ui.infoHint !== "function") return null;
+    const fmt = (v) => formatValue(v, param.type);
+    const unit = meta && meta.units ? " " + meta.units : "";
+    const lines = [];
+    const short = meta && meta.short_desc || "";
+    const long = meta && meta.long_desc || "";
+    if (short) lines.push(short);
+    if (long && long !== short) lines.push(long);
+    if (!short && !long) {
+      const family = familyOf(name);
+      if (family) lines.push(family);
+      lines.push("The firmware gives no description for this parameter.");
+    }
+    if (hasDefault(meta)) lines.push(`Default: ${fmt(meta.default)}${unit}`);
+    if (meta && (typeof meta.min === "number" || typeof meta.max === "number")) {
+      const lo = typeof meta.min === "number" ? fmt(meta.min) : "";
+      const hi = typeof meta.max === "number" ? fmt(meta.max) + unit : "";
+      lines.push(`Range: ${lo} to ${hi}`);
+    } else if (meta && meta.units) {
+      lines.push(`Unit: ${meta.units}`);
+    }
+    if (meta && Array.isArray(meta.values) && meta.values.length) {
+      lines.push("Values: " + meta.values.map(([v, label]) => label ? `${fmt(v)} ${label}` : fmt(v)).join(", "));
+    }
+    if (meta && Array.isArray(meta.bitmask) && meta.bitmask.length) {
+      lines.push("Bits: " + meta.bitmask.map(([i, label]) => `${i} ${label}`).join(", "));
+    }
+    if (meta && meta.reboot_required) lines.push("Changing it needs a reboot.");
+    return Corvus.ui.infoHint({ title: name, text: lines.join("\n") });
+  }
+
   /** One editable row: name and description, value, default, Apply, status. */
   function makeRow(state, view, param) {
     const name = param.name || "";
@@ -1260,9 +1357,12 @@ Corvus.setupParameters = (function () {
     row.dataset.name = name;
 
     const nameCell = S.el("div", "params-name-cell");
-    nameCell.appendChild(S.el("span", "params-name", name));
+    const nameLine = S.el("div", "params-name-line");
+    nameLine.appendChild(S.el("span", "params-name", name));
+    const infoBtn = makeInfoHint(name, meta, param);
+    if (infoBtn) nameLine.appendChild(infoBtn);
+    nameCell.appendChild(nameLine);
     if (meta && meta.short_desc) nameCell.appendChild(S.el("span", "params-hint", meta.short_desc));
-    if (meta && (meta.long_desc || meta.short_desc)) nameCell.title = meta.long_desc || meta.short_desc;
     row.appendChild(nameCell);
 
     const valueCell = S.el("div", "params-value-cell");

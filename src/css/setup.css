@@ -601,6 +601,7 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--nav) 18%, transparent);
 }
 .params-name-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.params-name-line { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .params-name { font-family: var(--mono); font-size: 12px; color: var(--text-1); word-break: break-all; }
 .params-hint {
   font-size: 11px; color: var(--text-3); line-height: 1.35;
