@@ -603,13 +603,14 @@ def test_the_3d_picture_uses_the_map_s_own_3d_door() -> None:
     assert "set3DMode," in map_js and "hasTerrain:" in map_js
 
     scene = library.get("three_d")
-    assert scene.map_3d == "full" and scene.page == "home"
+    assert scene.map_3d == "simple" and scene.page == "home"
+    assert scene.terrain_source == library.NEUBIBERG_DOM, "the surface model has the trees"
     steps = recipe.steps(scene, "http://127.0.0.1:8777/")
     payloads = [s.payload for s in steps]
     three_d = next(i for i, p in enumerate(payloads) if "set3DMode" in p)
     frame = next(i for i, p in enumerate(payloads) if "fitBounds" in p)
     assert frame < three_d, "tilting before the fit frames the flight from the side"
-    assert '"full"' in payloads[three_d]
+    assert '"simple"' in payloads[three_d]
 
     for other in library.SCENES.values():
         if other.map_3d == "off":
@@ -669,7 +670,7 @@ def test_every_website_picture_is_made_by_a_scene() -> None:
     assert shown <= set(names), f"no scene makes {sorted(shown - set(names))}"
 
     full, small = web.targets(library.get("three_d"))
-    assert full.name == "map-3d.jpg" and small.name == "map-3d-800.jpg"
+    assert full.name == "map-3d-dom.jpg" and small.name == "map-3d-dom-800.jpg"
     assert full.parent == web.WEB_DIR
 
 
@@ -830,7 +831,7 @@ def test_the_3d_geofence_reads_the_surface_model(tmp_path: Path) -> None:
     from scene_kit.runner import RunnerOptions, SceneRunner
 
     scene = library.get("geofence_3d")
-    assert scene.map_3d == "full" and scene.terrain_source == library.NEUBIBERG_DOM
+    assert scene.map_3d == "simple" and scene.terrain_source == library.NEUBIBERG_DOM
     sandbox = tmp_path / "home"
     config = json.loads(SceneRunner(scene, RunnerOptions(sandbox=sandbox))._write_config().read_text())
     assert config["map"]["terrain_source"] == library.NEUBIBERG_DOM

@@ -339,21 +339,21 @@ _register(Scene(
 
 _register(Scene(
     id="three_d",
-    asset="docs/assets/images/map-3d.jpg",
-    web="map-3d",
+    asset="docs/assets/images/map-3d-dom.jpg",
+    web="map-3d-dom",
     title="The map in 3D",
-    caption="The field from a 20 cm surface model, every tree in the ground, "
-            "extruded OpenStreetMap buildings, and the aircraft drawn at the "
-            "altitude it is flying.",
+    caption="The field from a 20 cm surface model: every tree, every roof and "
+            "the aircraft drawn at the altitude it is flying.",
     theme="blue",
     page="home", workspace="collapsed",
-    map_3d="full", map_bearing=20.0, map_zoom=0.6,
+    map_3d="simple", map_bearing=20.0, map_zoom=0.6,
     terrain_source=NEUBIBERG_DOM,
     **_SORTIE,
     settle=50.0,
-    notes=_SORTIE_NOTE + " The ground is the imported DOM, the buildings come "
-          "from OpenStreetMap; both are read from the tile cache on "
-          "disk; over ground that was never cached the map is only tilted.",
+    notes=_SORTIE_NOTE + " The ground is the imported DOM, buildings and trees "
+          "included, so the simple 3D (terrain without the OpenStreetMap "
+          "blocks) is the one that shows it best. Without the model the "
+          "picture falls back to the free 30 m model and the field is flat.",
 ))
 
 _register(Scene(
@@ -818,14 +818,14 @@ _register(Scene(
 
 _register(Scene(
     id="geofence_3d",
-    asset="docs/assets/images/geofence-3d.jpg",
-    web="geofence-3d",
+    asset="docs/assets/images/geofence-dom.jpg",
+    web="geofence-dom",
     title="The geofence in 3D, over a 20 cm surface model",
     caption="The field in 3D from the survey office's 20 cm surface model, "
-            "trees and buildings included, with the geofence around it and "
+            "trees and roofs included, with the geofence around it and "
             "the aircraft at its altitude.",
     page="home", workspace="collapsed",
-    map_3d="full", map_bearing=25.0, map_zoom=0.5,
+    map_3d="simple", map_bearing=25.0, map_zoom=0.5,
     terrain_source=NEUBIBERG_DOM,
     geofence=_sortie_fence(),
     stage=("geofence_upload",),
