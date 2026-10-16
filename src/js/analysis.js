@@ -40,6 +40,10 @@ window.Corvus = window.Corvus || {};
  *                            one recorded tlog, in the same payload shape
  *   POST /api/logs/erase     erase EVERY on-board log (no per-log delete exists)
  *   POST /api/logs/cancel
+ *   GET  /api/mavlink/scope?select=<sys:comp:NAME>
+ *                            {rows,total,dropped,since,selected,fields,connected}
+ *                            the Live Messages table; fields only for `select`
+ *   POST /api/mavlink/scope/clear
  *   POST /api/logs/dir       {dir} set + persist the download folder
  *
  * Exposes render(container) -> destroy(). The caller (sidenav) owns the
@@ -53,6 +57,8 @@ Corvus.analysis = (function () {
    *  of the six connections this app can hold. */
   const POLL_BUSY_MS = 700;
   const POLL_IDLE_MS = 5000;
+  /** Live Messages refresh while its view is open. */
+  const SCOPE_POLL_MS = 500;
 
   /* A colour per flight mode, stable across plots and the timeline strip so
      the same band always means the same mode. Manual/Stabilized are warm
@@ -317,7 +323,7 @@ Corvus.analysis = (function () {
     let timer = null;
     let destroyed = false;
     let inFlight = false;
-    let view = "tiles";        // "tiles" | "ulog" | "tlog" | "review"
+    let view = "tiles";        // "tiles" | "ulog" | "tlog" | "review" | "scope"
     // Per-list, and remembered: an operator who works oldest-first works that
     // way every time, and re-picking it on every visit is the kind of small
     // friction this page exists to remove.
@@ -325,6 +331,8 @@ Corvus.analysis = (function () {
     let tlogSort = readSort("tlog", "time-desc", TLOG_SORT_OPTIONS);
     let reviewToken = 0;       // so a slow read cannot paint over a newer one
     let eraseModal = null;     // open confirm dialog, so destroy() can drop it
+    let scopeTimer = null;     // Live Messages refresh
+    let scopeToken = 0;        // so a slow answer cannot paint over a newer view
 
     // Elements of whichever view is mounted; rebuilt on every view swap and
     // repainted in place on every poll.
@@ -406,10 +414,18 @@ Corvus.analysis = (function () {
         chevron: true, onClick: () => setView("review"),
       });
       reviewTile.dataset.view = "review";
+      const scopeTile = Corvus.ui.tile({
+        className: "logs-tile", icon: "radar",
+        title: "Live Messages",
+        desc: "Every MAVLink message on the link, live: rate, age and fields.",
+        chevron: true, onClick: () => setView("scope"),
+      });
+      scopeTile.dataset.view = "scope";
       grid.appendChild(ulogTile);
       grid.appendChild(tlogTile);
       grid.appendChild(reviewTile);
-      ui = { kind: "tiles", ulogTile, tlogTile, reviewTile };
+      grid.appendChild(scopeTile);
+      ui = { kind: "tiles", ulogTile, tlogTile, reviewTile, scopeTile };
       S.refreshIcons();
     }
 
@@ -712,6 +728,239 @@ Corvus.analysis = (function () {
         rowEl.appendChild(open);
         ui.list.appendChild(rowEl);
       });
+    }
+
+    /* ---------------- Live Messages ---------------- */
+
+    /**
+     * Every MAVLink message type on the link, live.
+     *
+     * The backend counts frames as they come off the wire and keeps only the
+     * newest message per (system, component, type); this view polls that table
+     * and repaints rows in place, so a selection, the filter text and the
+     * scroll position survive every refresh. Fields are fetched for the one
+     * selected row only, never for the whole stream.
+     */
+    function stopScope() {
+      if (scopeTimer) { try { window.clearTimeout(scopeTimer); } catch (_e) {} }
+      scopeTimer = null;
+      scopeToken++;
+    }
+
+    function formatRate(rate) {
+      const n = Number(rate) || 0;
+      if (n <= 0) return "0";
+      return n >= 10 ? String(Math.round(n)) : n.toFixed(1);
+    }
+
+    function formatAge(age) {
+      const n = Number(age) || 0;
+      return n < 10 ? n.toFixed(1) + " s" : Math.round(n) + " s";
+    }
+
+    function formatFieldValue(value) {
+      if (value === null || value === undefined) return "n/a";
+      if (Array.isArray(value)) return value.map(formatFieldValue).join(", ");
+      if (typeof value === "number" && !Number.isInteger(value)) {
+        return String(+value.toPrecision(7));
+      }
+      return String(value);
+    }
+
+    function buildScope() {
+      Corvus.ui.clear(body);
+      body.appendChild(S.backButton(() => setView("tiles"), "Analysis"));
+
+      const split = S.el("div", "scope-split");
+      body.appendChild(split);
+      const card = S.el("div", "page-card logs-card scope-main");
+      const head = S.el("div", "logs-head");
+      head.appendChild(S.sectionTitle("Live Messages"));
+      const actions = S.el("div", "scope-actions");
+      const pauseBtn = Corvus.ui.button({
+        variant: "secondary", size: "sm", icon: "pause", label: "Pause",
+        onClick: () => togglePause(),
+      });
+      const clearBtn = Corvus.ui.button({
+        variant: "secondary", size: "sm", icon: "eraser", label: "Clear",
+        onClick: () => clearScope(),
+      });
+      actions.appendChild(pauseBtn);
+      actions.appendChild(clearBtn);
+      head.appendChild(actions);
+      card.appendChild(head);
+
+      const desc = S.el("div", "params-desc");
+      desc.textContent =
+        "Every MAVLink message type heard on the link, with how often it "
+        + "arrives and how long ago the last one came. Select a row to read "
+        + "the fields of its newest message. Messages are only counted while "
+        + "this page is open and not paused.";
+      card.appendChild(desc);
+
+      const filter = Corvus.ui.input({
+        placeholder: "Filter by name, for example ATTITUDE",
+        ariaLabel: "Filter messages", className: "scope-filter",
+        mono: true, autocomplete: false, spellcheck: false,
+        onInput: () => applyFilter(),
+      });
+      card.appendChild(filter);
+      const summary = S.el("div", "logs-status");
+      card.appendChild(summary);
+
+      const table = S.el("div", "scope-table");
+      const headRow = S.el("div", "scope-row scope-head");
+      ["Message", "ID", "From", "Hz", "Age", "Count"].forEach((label, i) => {
+        headRow.appendChild(S.el("span", "scope-cell scope-c" + i, label));
+      });
+      table.appendChild(headRow);
+      const rowsHost = S.el("div", "scope-rows");
+      table.appendChild(rowsHost);
+      card.appendChild(table);
+      split.appendChild(card);
+
+      const detail = S.el("div", "page-card logs-card scope-detail");
+      const detailTitle = S.sectionTitle("Fields");
+      detail.appendChild(detailTitle);
+      const detailBody = S.el("div", "scope-fields");
+      detail.appendChild(detailBody);
+      split.appendChild(detail);
+
+      const rowMap = new Map();
+      const sc = {
+        kind: "scope", rowsHost, rowMap, summary, detailTitle, detailBody,
+        selected: "", paused: false, signature: "", fieldSig: "", fieldMap: new Map(),
+        pauseBtn, filter,
+      };
+      ui = sc;
+
+      function applyFilter() {
+        const q = String(filter.value || "").trim().toLowerCase();
+        rowMap.forEach((r) => { r.el.hidden = !!q && r.name.toLowerCase().indexOf(q) < 0; });
+      }
+
+      function paintDetail(data) {
+        const fields = data && data.fields;
+        if (!sc.selected || !fields) {
+          if (sc.fieldSig !== "none") {
+            sc.fieldSig = "none";
+            sc.fieldMap = new Map();
+            Corvus.ui.clear(detailBody);
+            detailBody.appendChild(S.el("div", "guidance-empty",
+              sc.selected ? "This message has not been heard yet."
+                : "Select a message above to read its fields."));
+          }
+          return;
+        }
+        const sig = sc.selected + "|" + fields.map((f) => f.name).join(",");
+        if (sig !== sc.fieldSig) {
+          sc.fieldSig = sig;
+          sc.fieldMap = new Map();
+          Corvus.ui.clear(detailBody);
+          fields.forEach((f) => {
+            const row = S.el("div", "scope-field");
+            row.appendChild(S.el("span", "scope-field-name", f.name));
+            const val = S.el("span", "scope-field-value");
+            row.appendChild(val);
+            row.appendChild(S.el("span", "scope-field-unit", f.unit || ""));
+            detailBody.appendChild(row);
+            sc.fieldMap.set(f.name, val);
+          });
+        }
+        fields.forEach((f) => {
+          const val = sc.fieldMap.get(f.name);
+          if (val) val.textContent = formatFieldValue(f.value);
+        });
+      }
+
+      function paintRows(data) {
+        const rows = data.rows || [];
+        const signature = rows.map((r) => r.key).join("|");
+        if (signature !== sc.signature) {
+          sc.signature = signature;
+          const live = new Set(rows.map((r) => r.key));
+          rowMap.forEach((r, key) => { if (!live.has(key)) { r.el.remove(); rowMap.delete(key); } });
+          rows.forEach((r) => {
+            let entry = rowMap.get(r.key);
+            if (!entry) {
+              const el = S.el("button", "scope-row scope-item");
+              el.type = "button";
+              const cells = [];
+              for (let i = 0; i < 6; i++) {
+                const c = S.el("span", "scope-cell scope-c" + i);
+                el.appendChild(c);
+                cells.push(c);
+              }
+              cells[0].textContent = r.name;
+              cells[1].textContent = String(r.id);
+              cells[2].textContent = r.system + ":" + r.component;
+              el.addEventListener("click", () => select(r.key));
+              entry = { el, cells, name: r.name };
+              rowMap.set(r.key, entry);
+            }
+            rowsHost.appendChild(entry.el);
+          });
+          applyFilter();
+        }
+        rows.forEach((r) => {
+          const entry = rowMap.get(r.key);
+          if (!entry) return;
+          entry.cells[3].textContent = formatRate(r.rate);
+          entry.cells[4].textContent = formatAge(r.age);
+          entry.cells[5].textContent = String(r.count);
+          entry.el.classList.toggle("scope-quiet", !(r.rate > 0));
+          entry.el.classList.toggle("scope-selected", r.key === sc.selected);
+        });
+        const total = Number(data.total) || 0;
+        sc.summary.textContent = !data.connected
+          ? "Connect to a vehicle to see its messages."
+          : (rows.length
+            ? rows.length + " message type(s), " + total + " received"
+              + (data.dropped ? ", " + data.dropped + " not tracked (table full)" : "")
+            : "Nothing heard yet.");
+      }
+
+      function select(key) {
+        sc.selected = sc.selected === key ? "" : key;
+        sc.fieldSig = "";
+        rowMap.forEach((r, k) => r.el.classList.toggle("scope-selected", k === sc.selected));
+        scopePoll();
+      }
+
+      function togglePause() {
+        sc.paused = !sc.paused;
+        sc.pauseBtn.querySelector("span").textContent = sc.paused ? "Resume" : "Pause";
+        if (sc.paused) stopScope(); else scopePoll();
+      }
+
+      async function clearScope() {
+        try {
+          await Corvus.telemetry.postAction("/api/mavlink/scope/clear", {});
+        } catch (_e) { /* the next poll shows what is true */ }
+        if (!sc.paused) scopePoll(); else { sc.signature = ""; }
+      }
+
+      function scopePoll() {
+        stopScope();
+        const token = scopeToken;
+        const url = "/api/mavlink/scope" + (sc.selected
+          ? "?select=" + encodeURIComponent(sc.selected) : "");
+        Corvus.telemetry.requestJson(url)
+          .then((data) => {
+            if (destroyed || token !== scopeToken || ui !== sc) return;
+            paintRows(data);
+            paintDetail(data);
+          })
+          .catch(() => {})
+          .then(() => {
+            if (destroyed || token !== scopeToken || ui !== sc || sc.paused) return;
+            scopeTimer = window.setTimeout(scopePoll, SCOPE_POLL_MS);
+          });
+      }
+
+      paintDetail(null);
+      S.refreshIcons();
+      scopePoll();
     }
 
     /* ---------------- Telemetry Review (a tlog) ---------------- */
@@ -1758,7 +2007,8 @@ Corvus.analysis = (function () {
     function setView(next, file) {
       view = next;
       const sub = next === "ulog" || next === "tlog" || next === "review"
-        || next === "tlogreview";
+        || next === "tlogreview" || next === "scope";
+      stopScope();
       // The swap, not a fold-out: the landing view goes away entirely so the
       // sub-page owns the screen and Back is the only way out.
       landing.hidden = sub;
@@ -1768,6 +2018,7 @@ Corvus.analysis = (function () {
       else if (next === "tlog") buildTlog();
       else if (next === "review") buildReview(file);
       else if (next === "tlogreview") buildTlogReview(file);
+      else if (next === "scope") buildScope();
       else { Corvus.ui.clear(body); buildTiles(); }
       if (container && typeof container.scrollTop === "number") container.scrollTop = 0;
       apply(status);
@@ -1994,6 +2245,7 @@ Corvus.analysis = (function () {
       if (unsub) { try { unsub(); } catch (_e) {} unsub = null; }
       closeEraseModal();
       purgeReview();
+      stopScope();
       try { telemetry.destroy(); } catch (_e) {}
     };
   }

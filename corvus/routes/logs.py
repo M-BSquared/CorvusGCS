@@ -17,6 +17,29 @@ logger = logging.getLogger("corvus.server")
 
 
 class LogRoutes:
+    # ---- Live Messages: live per-message statistics of the MAVLink link ----
+    @route("GET", "/api/mavlink/scope")
+    def _api_mavlink_scope(self) -> None:
+        """Every message type seen on the link, plus the fields of one."""
+        scope = getattr(self.mavlink, "message_scope", None)
+        if scope is None:
+            self._send_json({"rows": [], "total": 0, "dropped": 0, "since": 0,
+                             "selected": "", "fields": None, "connected": False})
+            return
+        select = (parse_qs(urlparse(self.path).query).get("select") or [""])[0]
+        data = scope.snapshot(select[:128])
+        data["connected"] = True
+        self._send_json(data)
+
+    @route("POST", "/api/mavlink/scope/clear")
+    def _api_mavlink_scope_clear(self, payload: dict) -> None:
+        """Forget all counters and start counting from zero."""
+        del payload
+        scope = getattr(self.mavlink, "message_scope", None)
+        if scope is not None:
+            scope.clear()
+        self._send_json({"ok": True})
+
     # ---- Flight logs (on-board ULogs + local tlogs) ----
     @route("GET", "/api/logs/status")
     def _api_logs_status(self) -> None:

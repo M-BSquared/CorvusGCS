@@ -117,6 +117,7 @@ from .serial_ports import (  # noqa: F401 - re-exported
     split_serial_connection,
 )
 from .state_store import VehicleStateStore
+from .mavlink_inspector import MessageScope
 from .tlog import TlogWriter
 
 logger = logging.getLogger("corvus.mavlink")
@@ -450,6 +451,9 @@ class MavlinkBridge(
         # the bridge so a reconnect or a disarm closes the old file and starts
         # a fresh one. None = inactive.
         self._tlog: TlogWriter | None = None
+        # Per-message statistics for the Analysis page's Live Messages. Plain
+        # counters behind a lock: no thread, so nothing to tear down.
+        self.message_scope = MessageScope()
         # The armed flag the last autopilot heartbeat carried, None until the
         # first one of a connect cycle. Only an armed to disarmed edge that
         # this cycle saw itself rolls the tlog over.
@@ -2293,6 +2297,7 @@ class MavlinkBridge(
                 # blocks the recv loop (TlogWriter.enqueue is non-blocking) and
                 # never breaks the link (guarded).
                 self._write_tlog(msg)
+                self.message_scope.record(msg)
                 self._dispatch(msg)
                 if self._store.is_stale(timeout=self._warn_timeout()):
                     if self._store.is_stale(timeout=self._drop_timeout()):

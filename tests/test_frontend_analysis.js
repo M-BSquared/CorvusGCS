@@ -283,6 +283,9 @@ function makeFakeTelemetry(status) {
             ? Promise.reject(reviewResponse)
             : Promise.resolve(reviewResponse);
         }
+        if (String(url).startsWith("/api/mavlink/scope")) {
+          return Promise.resolve(scopeResponse(url));
+        }
         return Promise.resolve({ ok: true });
       },
       postAction(url, payload) {
@@ -297,6 +300,27 @@ function makeFakeTelemetry(status) {
     get unsubCalls() { return unsubCalls; },
     setStatus(s) { current = s; },
     getSubCb: () => subCb,
+  };
+}
+
+const SCOPE_ROWS = [
+  { key: "1:1:ATTITUDE", system: 1, component: 1, name: "ATTITUDE", id: 30,
+    count: 120, rate: 24.4, age: 0.1, size: 40 },
+  { key: "1:1:HEARTBEAT", system: 1, component: 1, name: "HEARTBEAT", id: 0,
+    count: 6, rate: 1, age: 0.4, size: 17 },
+  { key: "1:1:SYS_STATUS", system: 1, component: 1, name: "SYS_STATUS", id: 1,
+    count: 3, rate: 0, age: 9.2, size: 43 },
+];
+
+function scopeResponse(url) {
+  const select = decodeURIComponent((String(url).split("select=")[1] || ""));
+  return {
+    rows: SCOPE_ROWS, total: 129, dropped: 0, since: 1, connected: true,
+    selected: select,
+    fields: select === "1:1:ATTITUDE"
+      ? [{ name: "roll", value: 0.1234567891, unit: "rad" },
+         { name: "pitch", value: -0.5, unit: "rad" }]
+      : null,
   };
 }
 
@@ -385,8 +409,8 @@ async function testTheLandingViewIsTwoTilesWithCounts() {
   await flush();
 
   const tiles = findByClass(container, "logs-tile");
-  assert.equal(tiles.length, 3, "one tile per log kind, plus Flight Review");
-  assert.deepEqual(tiles.map((t) => t.dataset.view), ["ulog", "tlog", "review"]);
+  assert.equal(tiles.length, 4, "one tile per log kind, Flight Review and the Live Messages");
+  assert.deepEqual(tiles.map((t) => t.dataset.view), ["ulog", "tlog", "review", "scope"]);
   assert.match(findOneByClass(tiles[2], "tile-desc").textContent,
     /1 downloaded log\(s\) ready to review/);
   // The landing view answers "is there anything to fetch?" without opening
@@ -468,7 +492,7 @@ async function testBackReturnsToTheTiles() {
   openTile(container, "ulog");
   assert.ok(findOneByClass(container, "logs-list"), "sub-page open");
   fire(findOneByClass(container, "setup-back"), "click");
-  assert.equal(findByClass(container, "logs-tile").length, 3, "back at the tiles");
+  assert.equal(findByClass(container, "logs-tile").length, 4, "back at the tiles");
   assert.ok(!findOneByClass(container, "logs-landing").hidden, "landing view restored");
   destroy();
 }
@@ -896,6 +920,53 @@ async function testAnOpenEraseDialogIsDroppedOnTeardown() {
   destroy();
   assert.equal(findOneByClass(container, "modal-overlay"), null,
     "no dialog left behind on a page that is gone");
+}
+
+async function testMessageScopeListsEveryMessageTypeAndItsFields() {
+  const { container, fake } = reset();
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "scope");
+  await flush();
+
+  const items = findByClass(container, "scope-item");
+  assert.deepEqual(items.map((r) => findByClass(r, "scope-c0")[0].textContent),
+    ["ATTITUDE", "HEARTBEAT", "SYS_STATUS"]);
+  assert.equal(findByClass(items[0], "scope-c3")[0].textContent, "24");
+  assert.equal(findByClass(items[1], "scope-c3")[0].textContent, "1.0");
+  assert.equal(findByClass(items[2], "scope-c3")[0].textContent, "0",
+    "a message that stopped arriving shows no rate");
+  assert.equal(findByClass(container, "scope-field").length, 0,
+    "no fields until a row is selected");
+
+  fire(items[0], "click");
+  await flush();
+  assert.ok(fake.requests.some((r) => r.url === "/api/mavlink/scope?select=1%3A1%3AATTITUDE"),
+    "the selected row is asked for by its key");
+  const fields = findByClass(container, "scope-field");
+  assert.equal(fields.length, 2);
+  assert.equal(findByClass(fields[0], "scope-field-value")[0].textContent, "0.1234568");
+  assert.equal(findByClass(fields[0], "scope-field-unit")[0].textContent, "rad");
+  destroy();
+}
+
+async function testMessageScopeStopsPollingWhenLeftOrDestroyed() {
+  const { container, fake } = reset();
+  const destroy = Corvus.analysis.render(container);
+  await flush();
+  openTile(container, "scope");
+  await flush();
+  const scopeCalls = () => fake.requests.filter((r) => String(r.url).startsWith("/api/mavlink/scope")).length;
+  const before = scopeCalls();
+  assert.ok(before >= 1);
+  assert.ok(timeouts.some((t) => !clearedTimeouts.has(t.id) && t.ms === 500),
+    "the scope refreshes itself while open");
+
+  fire(buttonByLabel(container, "Analysis"), "click");
+  assert.ok(!timeouts.some((t) => !clearedTimeouts.has(t.id) && t.ms === 500),
+    "leaving the page stops the scope refresh");
+  destroy();
+  assert.equal(scopeCalls(), before);
 }
 
 async function testFlightReviewListsDownloadedLogsAndPlotsOne() {
@@ -1664,6 +1735,8 @@ async function run() {
     testAFindingWithNothingBehindItIsNotAButton,
     testObservationsAreFoldedAwayBehindTheProblems,
     testTheReviewSaysWhichSensitivityItWasReadAt,
+    testMessageScopeListsEveryMessageTypeAndItsFields,
+    testMessageScopeStopsPollingWhenLeftOrDestroyed,
     testDestroyStopsPollingAndUnsubscribes,
   ];
   for (const t of tests) {

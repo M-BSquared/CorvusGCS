@@ -101,6 +101,7 @@ _EXPECTED_GET = {
     # Whether a terminal on this computer is possible here (a launcher's local buttons).
     "/api/local/status",
     "/api/logs/status",
+    "/api/mavlink/scope",
     "/api/logs/review",
     "/api/logs/tlog-review",
     "/api/forwarding",
@@ -111,6 +112,7 @@ _EXPECTED_GET = {
 
 _EXPECTED_POST = {
     "/api/console/command",
+    "/api/mavlink/scope/clear",
     "/api/console/save",
     "/api/mavlink/connect",
     "/api/mavlink/disconnect",
