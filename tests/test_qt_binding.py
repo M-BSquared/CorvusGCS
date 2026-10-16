@@ -67,10 +67,14 @@ def test_every_bundle_carries_the_qt_licences():
     assert lgpl.lstrip().startswith("GNU LESSER GENERAL PUBLIC LICENSE")
     assert gpl.lstrip().startswith("GNU GENERAL PUBLIC LICENSE")
     assert "Version 3, 29 June 2007" in lgpl and "Version 3, 29 June 2007" in gpl
-    # assets/ is what all three builds copy whole.
-    for script in ("build-appimage.sh", "build-macos-app.sh"):
-        assert '"$REPO_DIR/assets/"' in (ROOT / script).read_text(encoding="utf-8"), script
-    assert "'assets');assets" in (ROOT / "build-windows.ps1").read_text(encoding="utf-8")
+    # All three builds copy assets through tools/bundle_assets.py, which keeps licenses/.
+    for script in ("build-appimage.sh", "build-macos-app.sh", "build-windows.ps1"):
+        assert "bundle_assets.py" in (ROOT / script).read_text(encoding="utf-8"), script
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("corvus_bundle_assets_tool", ROOT / "tools" / "bundle_assets.py")
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    assert "licenses" in tool.SHIPPED
 
 
 def test_both_unix_builds_trim_pyside6():

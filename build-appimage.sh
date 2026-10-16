@@ -212,7 +212,9 @@ python3 "$REPO_DIR/tools/appimage_libs.py" bundle "$APPDIR"
 echo ">>> Copying application code ..."
 rsync -a --exclude '__pycache__' "$REPO_DIR/corvus/" "$APPDIR/corvus/"
 rsync -a --exclude '__pycache__' "$REPO_DIR/src/" "$APPDIR/src/"
-rsync -a "$REPO_DIR/assets/" "$APPDIR/assets/"
+# Only what the app reads: the logos and licences. The README and website
+# screenshots stay in the repository (tools/bundle_assets.py).
+python3 "$REPO_DIR/tools/bundle_assets.py" "$APPDIR/assets"
 # The bundled plugins, beside corvus/ and src/ for the same reason those are
 # (corvus/plugin_registry.py resolves this root as a sibling of the package).
 # Only the ones .gitignore lets back in, and without their tests/: a plugin

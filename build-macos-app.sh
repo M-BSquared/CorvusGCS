@@ -524,7 +524,9 @@ echo ">>> Copying application code ..."
 mkdir -p "$APPROOT"
 rsync -a --exclude '__pycache__' "$REPO_DIR/corvus/" "$APPROOT/corvus/"
 rsync -a --exclude '__pycache__' "$REPO_DIR/src/" "$APPROOT/src/"
-rsync -a "$REPO_DIR/assets/" "$APPROOT/assets/"
+# Only what the app reads: the logos and licences. The README and website
+# screenshots stay in the repository (tools/bundle_assets.py).
+"$PYBIN" "$REPO_DIR/tools/bundle_assets.py" "$APPROOT/assets"
 # The plugins that ship with Corvus. corvus/plugin_registry.py resolves this
 # root as a sibling of the corvus package, exactly like src/, so it has to land
 # beside it. Operator plugins live in ~/.corvus/plugins and are never bundled,

@@ -248,6 +248,12 @@ $PluginStage = Join-Path $BuildDir "plugins"
 & $VenvPy (Join-Path $RepoDir "tools\bundle_plugins.py") $PluginStage
 if ($LASTEXITCODE -ne 0) { throw "bundling the plugins failed" }
 
+# Only what the app reads from assets: the logos and licences. The README and
+# website screenshots stay in the repository.
+$AssetStage = Join-Path $BuildDir "assets"
+& $VenvPy (Join-Path $RepoDir "tools\bundle_assets.py") $AssetStage
+if ($LASTEXITCODE -ne 0) { throw "bundling the assets failed" }
+
 $PyiArgs = @(
     "--noconfirm", "--clean", "--windowed",
     "--name", $AppName,
@@ -262,7 +268,7 @@ $PyiArgs = @(
     # artifact the one that did not satisfy its own licence.
     "--add-data", "$(Join-Path $RepoDir 'LICENSE.md');.",
     "--add-data", "$(Join-Path $RepoDir 'src');src",
-    "--add-data", "$(Join-Path $RepoDir 'assets');assets",
+    "--add-data", "$AssetStage;assets",
     # The plugins that ship with Corvus. plugin_registry.py resolves this root
     # as a sibling of the package, the same way server.py resolves src\, so it
     # lands beside them. Operator plugins live in %USERPROFILE%\.corvus\plugins
