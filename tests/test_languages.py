@@ -39,6 +39,7 @@ def _handler(tmp_path, path: str = "/api/languages"):
     handler.config_path = str(tmp_path / "config.json")
     handler.language_user_dir = str(tmp_path / "user")
     handler.language_bundled_dir = str(tmp_path / "bundled")
+    handler.language_plugin_dirs = []
     handler.path = path
     responses: list[tuple[dict, int]] = []
     handler._send_json = lambda data, status=200: responses.append((data, status))  # type: ignore[method-assign]
@@ -48,6 +49,58 @@ def _handler(tmp_path, path: str = "/api/languages"):
 # ---------------------------------------------------------------------------
 # Codes
 # ---------------------------------------------------------------------------
+
+def test_last_flag_sorts_a_language_to_the_end(tmp_path):
+    _write(tmp_path, "aa", "Aaa", {"A": "B"}, last=True)
+    _write(tmp_path, "de", "German", {"A": "B"})
+    _write(tmp_path, "fr", "French", {"A": "B"})
+    codes = [r["code"] for r in languages.discover(None, str(tmp_path))]
+    assert codes == ["en", "fr", "de", "aa"]
+    assert all("last" not in r for r in languages.discover(None, str(tmp_path)))
+
+
+def _plugin_lang(root: Path, plugin: str, code: str, strings: Any) -> None:
+    folder = root / plugin / "lang"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{code}.json").write_text(json.dumps({"strings": strings}), encoding="utf-8")
+
+
+def test_plugin_strings_are_merged_and_the_main_file_wins(tmp_path):
+    _write(tmp_path / "bundled", "de", "German", {"Settings": "Einstellungen"})
+    plugins = tmp_path / "plugins"
+    _plugin_lang(plugins, "gauge", "de", {"Clipping": "Übersteuerung", "Settings": "Optionen"})
+    _plugin_lang(plugins, "launcher", "de", {"Launch": "Starten"})
+    entry = languages.load("de", None, str(tmp_path / "bundled"), [str(plugins)])
+    assert entry["strings"] == {"Settings": "Einstellungen", "Clipping": "Übersteuerung", "Launch": "Starten"}
+
+
+def test_a_later_plugin_root_replaces_an_earlier_one(tmp_path):
+    _write(tmp_path / "bundled", "de", "German", {})
+    _plugin_lang(tmp_path / "a", "p", "de", {"Launch": "Starten"})
+    _plugin_lang(tmp_path / "b", "p", "de", {"Launch": "Los"})
+    entry = languages.load("de", None, str(tmp_path / "bundled"), [str(tmp_path / "a"), str(tmp_path / "b")])
+    assert entry["strings"] == {"Launch": "Los"}
+
+
+def test_a_broken_plugin_language_file_is_skipped(tmp_path):
+    _write(tmp_path / "bundled", "de", "German", {"A": "B"})
+    plugins = tmp_path / "plugins"
+    _plugin_lang(plugins, "good", "de", {"C": "D"})
+    bad = plugins / "bad" / "lang"
+    bad.mkdir(parents=True)
+    (bad / "de.json").write_text("{not json", encoding="utf-8")
+    entry = languages.load("de", None, str(tmp_path / "bundled"), [str(plugins), str(tmp_path / "missing")])
+    assert entry["strings"] == {"C": "D", "A": "B"}
+
+
+def test_the_strings_endpoint_merges_plugin_strings(tmp_path):
+    _write(tmp_path / "bundled", "de", "German", {"Settings": "Einstellungen"})
+    _plugin_lang(tmp_path / "plugins", "gauge", "de", {"Clipping": "Übersteuerung"})
+    handler, responses = _handler(tmp_path, "/api/languages/strings?code=de")
+    handler.language_plugin_dirs = [str(tmp_path / "plugins")]
+    handler._api_language_strings()
+    assert responses[0][0]["strings"] == {"Settings": "Einstellungen", "Clipping": "Übersteuerung"}
+
 
 @pytest.mark.parametrize("code", ["en", "de", "fr", "pt-BR", "zh-Hant", "sr-Latn-RS", "fil"])
 def test_valid_codes(code):

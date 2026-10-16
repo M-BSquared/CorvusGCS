@@ -32,6 +32,13 @@ too large, is not JSON, or carries no usable strings is skipped with a warning.
 A field laptop must start with a broken translation on disk, minus that
 language, never not at all.
 
+A plugin brings its own translations the way it brings its own tests:
+``<plugin>/lang/<code>.json``, in the same format (``meta`` is optional there).
+Those files are merged into the language of the same code when it is loaded,
+from the bundled and the operator's plugin folders. An entry in the main file
+wins over a plugin's entry for the same English text, so a plugin can never
+change what the application itself says.
+
 Nothing here touches the network. stdlib only.
 """
 from __future__ import annotations
@@ -44,6 +51,7 @@ import re
 from typing import Any
 
 from .paths import corvus_path
+from .plugin_registry import bundled_plugins_dir, user_plugins_dir
 
 logger = logging.getLogger("corvus.languages")
 
@@ -181,6 +189,7 @@ def read_file(path: str | os.PathLike[str], source: str = "bundled") -> dict[str
         "name": name,
         "native_name": _text(meta.get("native_name"), MAX_NAME_CHARS) or name,
         "source": source,
+        "last": meta.get("last") is True,
         "strings": _clean_strings(data.get("strings")),
     }
 
@@ -200,6 +209,39 @@ def _scan(directory: str | None, source: str) -> dict[str, dict[str, Any]]:
     return found
 
 
+def plugin_language_roots() -> list[str]:
+    """The plugin folders whose ``lang/`` files are merged: bundled, then user."""
+    return [bundled_plugins_dir(), user_plugins_dir()]
+
+
+def _plugin_strings(code: str, roots: Any) -> dict[str, str]:
+    """The strings every plugin under *roots* has for *code*.
+
+    A later root wins over an earlier one, which is how a user plugin replaces
+    a bundled plugin of the same id. A missing, oversized or broken file is
+    skipped: a plugin's bad translation costs that plugin its text, never the
+    language.
+    """
+    out: dict[str, str] = {}
+    for root in roots or ():
+        try:
+            folders = sorted(os.listdir(root))
+        except OSError:
+            continue
+        for folder in folders:
+            path = pathlib.Path(root) / folder / "lang" / f"{code}.json"
+            try:
+                if not path.is_file() or path.stat().st_size > MAX_FILE_BYTES:
+                    continue
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError, RecursionError) as exc:
+                logger.warning("plugin language file %s unreadable; skipped: %s", path, exc)
+                continue
+            if isinstance(data, dict):
+                out.update(_clean_strings(data.get("strings")))
+    return out
+
+
 def _all(user_dir: str | None, bundled_dir: str | None) -> dict[str, dict[str, Any]]:
     found = _scan(bundled_dir, "bundled")
     found.update(_scan(user_dir, "user"))
@@ -210,22 +252,36 @@ def _all(user_dir: str | None, bundled_dir: str | None) -> dict[str, dict[str, A
 
 
 def discover(user_dir: str | None = None, bundled_dir: str | None = None) -> list[dict[str, Any]]:
-    """The installed languages, English first, then by name.
+    """The installed languages, English first, then by name; a file whose
+    ``meta`` has ``"last": true`` (a joke or experimental language) sorts to the end.
 
     Each entry carries ``code``, ``name``, ``native_name``, ``source``
     (``builtin``, ``bundled`` or ``user``) and ``count``, the number of texts
     it translates. The strings themselves are fetched per language.
     """
     found = _all(user_dir, bundled_dir)
-    rows = [{**{k: v for k, v in e.items() if k != "strings"}, "count": len(e["strings"])}
+    rows = [{**{k: v for k, v in e.items() if k not in ("strings", "last")}, "count": len(e["strings"])}
             for e in found.values()]
-    rows.sort(key=lambda r: (r["code"] != DEFAULT_CODE, r["name"].lower(), r["code"]))
+    rows.sort(key=lambda r: (r["code"] != DEFAULT_CODE, found[r["code"]].get("last", False),
+                             r["name"].lower(), r["code"]))
     return rows
 
 
 def load(code: str, user_dir: str | None = None,
-         bundled_dir: str | None = None) -> dict[str, Any] | None:
-    """The language *code* with its strings, or None when it is not installed."""
+         bundled_dir: str | None = None, plugin_dirs: Any = ()) -> dict[str, Any] | None:
+    """The language *code* with its strings, or None when it is not installed.
+
+    *plugin_dirs* are plugin folders (see :func:`plugin_language_roots`) whose
+    ``<plugin>/lang/<code>.json`` strings are merged in under the language's
+    own. Empty by default, so a caller that does not ask gets the language file
+    alone.
+    """
     if not is_valid_code(code):
         return None
-    return _all(user_dir, bundled_dir).get(code)
+    entry = _all(user_dir, bundled_dir).get(code)
+    if entry is None:
+        return None
+    extra = _plugin_strings(code, plugin_dirs)
+    if not extra:
+        return entry
+    return {**entry, "strings": {**extra, **entry["strings"]}}

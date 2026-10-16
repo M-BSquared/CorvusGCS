@@ -40,6 +40,8 @@ in Settings after copying one in.
 * An empty translation counts as not translated.
 * Write plain prose: no em dash, no en dash, and no hyphen standing between
   words as a dash. Write number ranges with the word for "to".
+* `meta.last` set to `true` sorts the language to the end of the list, after the
+  others. Without it, languages are listed by name.
 * The file name is the code (`pt-BR.json`). A `code` inside `meta` is ignored.
 
 ## Starting a language
@@ -71,6 +73,18 @@ python3 tools/i18n.py check
 It reads every file and reports a text whose `{placeholders}` differ from the
 translation, a translation with a dash in it, and how many known texts a
 language lacks.
+
+## Plugins
+
+A plugin keeps its own translations in its own folder, the way it keeps its own
+tests: `plugins/<id>/lang/<code>.json`, with the same `strings` map (`meta` is
+optional there, the main file names the language). When a language is loaded,
+the files of every bundled and installed plugin are merged into it. If the main
+file and a plugin translate the same English text, the main file wins. Texts
+that only one plugin shows belong in that plugin's folder, not here.
+
+`python3 tools/i18n.py check` reads the plugin files as well and compares each
+plugin's languages with one another.
 
 ## Keeping buttons short
 

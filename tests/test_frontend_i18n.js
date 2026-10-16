@@ -260,6 +260,34 @@ async function testSwitchingLanguagesSwapsTextAndAttributesAndComesBack() {
   body.childNodes.length = 0;
 }
 
+// A popover leaves the document when it closes, and the observer neither sees
+// it then nor runs at all in English: sync() is how it catches up on opening.
+async function testASubtreeThatWasOffThePageCatchesUpWithTheLanguage() {
+  const sheet = element("div", {}, [element("p", {}, ["Settings"])]);
+  await I.refresh();
+  await I.use("de");
+  body.appendChild(sheet);
+  I.translateTree(sheet);
+  assert.equal(text(sheet), "Einstellungen");
+  body.childNodes.length = 0;
+  sheet.parentNode = null;
+
+  await I.use("fr");
+  assert.equal(text(sheet), "Einstellungen", "off the page, nothing reaches it");
+  body.appendChild(sheet);
+  I.sync(sheet);
+  assert.equal(text(sheet), "Réglages", "on opening it follows the language, not the one it was last shown in");
+  body.childNodes.length = 0;
+  sheet.parentNode = null;
+
+  await I.use("de");
+  await I.use("en");
+  body.appendChild(sheet);
+  I.sync(sheet);
+  assert.equal(text(sheet), "Settings", "and English comes back exactly");
+  body.childNodes.length = 0;
+}
+
 async function testWhatIsNotInterfaceIsLeftAlone() {
   const script = element("script", {}, ["Settings"]);
   const area = element("textarea", {}, ["Settings"]);
@@ -507,6 +535,21 @@ function testTheShippedLanguagesTranslateTheComposedTexts() {
   assert.match(say(fr, "Press START and click where the vehicle starts driving."), /le véhicule démarre/);
   assert.equal(say(de, "The plan reaches 120 m."), "Der Plan erreicht 120 m.");
   assert.equal(say(fr, "Step 2 of 4"), "Étape 2 sur 4");
+  // The parameter info popover: its lines, and every family sentence in the editor.
+  const dl = load("dl");
+  const params = fs.readFileSync(path.join(SRC, "js", "setup-parameters.js"), "utf8");
+  const families = [...params.matchAll(/^\s+\[\/\^[^\n]*?\/, "([^"\n]+)"\],$/gm)].map((m) => m[1]);
+  assert.ok(families.length > 40, "the family table was found");
+  const lines = ["The firmware gives no description for this parameter.", "Changing it needs a reboot.",
+    "Default: 12 m/s", "Range: 0 to 20 m/s", "Unit: m/s", "Values: 0 RC only, 1 Joystick only", "Bits: 0 Gyro"];
+  for (const [name, tbl] of [["de", de], ["fr", fr], ["dl", dl]]) {
+    for (const text of lines.concat(families)) {
+      assert.ok(say(tbl, text), `${name} translates: ${text}`);
+    }
+  }
+  assert.equal(say(de, "Range: 0 to 20 m/s"), "Bereich: 0 bis 20 m/s");
+  assert.equal(say(fr, "Range: 0 to 20 m/s"), "Plage : 0 à 20 m/s");
+  assert.equal(say(de, "Default: 12 m/s"), "Standard: 12 m/s");
   // A dialog question keeps its line breaks.
   assert.equal(say(de, 'Delete the connection Drone?\n\nIts session is open and will be closed.'),
     "Die Verbindung Drone löschen?\n\nIhre Sitzung ist offen und wird geschlossen.");
@@ -531,7 +574,8 @@ function testTheLanguageFilesShip() {
     testMatchCode, testDetectTakesTheFirstInstalledPreference, testFromConfigDefaultsToEnglish,
   ];
   const asyncTests = [
-    testSwitchingLanguagesSwapsTextAndAttributesAndComesBack, testWhatIsNotInterfaceIsLeftAlone,
+    testSwitchingLanguagesSwapsTextAndAttributesAndComesBack, testASubtreeThatWasOffThePageCatchesUpWithTheLanguage,
+    testWhatIsNotInterfaceIsLeftAlone,
     testAnUnknownLanguageLeavesTheCurrentOneAlone, testAFailedLoadLeavesTheCurrentOneAlone,
     testTheLastRequestWins, testSwitchingTellsTheRestOfTheApp,
     testAStorageThatRefusesDoesNotBreakSwitching, testWhatThePageBuildsLaterIsTranslatedToo,

@@ -46,6 +46,7 @@ Corvus.i18n = (function () {
 
   let code = DEFAULT;
   let table = null;
+  let generation = 0;
   let languages = [BUILTIN];
   let userDir = "";
   let observer = null;
@@ -221,12 +222,20 @@ Corvus.i18n = (function () {
   }
 
   function translateText(node) {
-    const raw = node.nodeValue;
+    let raw = node.nodeValue;
     if (!raw || !LETTER.test(raw)) return;
     const rec = node.__i18n;
-    if (rec && raw === rec.out) return;
+    let stale = false;
+    if (rec && raw === rec.out) {
+      if (rec.gen === generation) return;
+      // Translated under an earlier language while off the page (a closed
+      // popover): the English it came from is the only honest source.
+      raw = rec.src;
+      stale = true;
+    }
     const out = translate(raw);
     if (out === null || !table) {
+      if (stale) node.nodeValue = raw;
       if (rec) node.__i18n = undefined;
       return;
     }
@@ -234,22 +243,28 @@ Corvus.i18n = (function () {
     const trail = raw.match(/\s*$/)[0];
     const next = lead + out + trail;
     node.nodeValue = next;
-    node.__i18n = { src: raw, out: next };
+    node.__i18n = { src: raw, out: next, gen: generation };
   }
 
   function translateAttr(el, name) {
-    const raw = el.getAttribute(name);
+    let raw = el.getAttribute(name);
     if (!raw || !LETTER.test(raw)) return;
     const recs = el.__i18nAttr || (el.__i18nAttr = {});
     const rec = recs[name];
-    if (rec && raw === rec.out) return;
+    let stale = false;
+    if (rec && raw === rec.out) {
+      if (rec.gen === generation) return;
+      raw = rec.src;
+      stale = true;
+    }
     const out = translate(raw);
     if (out === null || !table) {
+      if (stale) el.setAttribute(name, raw);
       if (rec) recs[name] = undefined;
       return;
     }
     el.setAttribute(name, out);
-    recs[name] = { src: raw, out };
+    recs[name] = { src: raw, out, gen: generation };
   }
 
   /** Translate *root* and everything under it. */
@@ -385,6 +400,7 @@ Corvus.i18n = (function () {
     code = next;
     table = (entry && entry.strings) ? compile(entry.strings) : null;
     cache.clear();
+    generation += 1;
     try { document.documentElement.setAttribute("lang", code); } catch (_e) { /* optional */ }
     if (table || collecting) {
       startObserver();
@@ -486,6 +502,18 @@ Corvus.i18n = (function () {
     return collecting;
   }
 
+  /**
+   * Bring a subtree that sat off the page (a closed popover) into the current
+   * language. The observer only sees what is attached while it runs, and not
+   * at all in English, so such a node keeps the language it was last shown in.
+   */
+  function sync(node) {
+    if (!node) return;
+    if (!active()) { restoreTree(node); return; }
+    pause();
+    try { translateTree(node); } finally { if (active()) resume(); }
+  }
+
   /** The English texts seen on screen that the current language lacks, sorted. */
   function missing() {
     return Array.from(missed.keys()).sort();
@@ -499,7 +527,7 @@ Corvus.i18n = (function () {
   }
 
   return {
-    init, use, reload, refresh, options, t, collect, missing, template,
+    init, use, reload, refresh, options, t, collect, missing, template, sync,
     current: () => code,
     available: () => languages.slice(),
     userDir: () => userDir,

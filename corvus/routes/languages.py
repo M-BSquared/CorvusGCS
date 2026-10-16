@@ -15,6 +15,7 @@ class LanguageRoutes:
     # Tests point these at a temporary folder; None means the real ones.
     language_user_dir: str | None = None
     language_bundled_dir: str | None = None
+    language_plugin_dirs: list[str] | None = None
 
     def _language_roots(self) -> tuple[str, str]:
         return (self.language_user_dir or languages.user_languages_dir(),
@@ -50,7 +51,9 @@ class LanguageRoutes:
             self._send_json({"error": "code must be a language code such as de or pt-BR"}, 400)
             return
         user_dir, bundled_dir = self._language_roots()
-        entry = languages.load(code, user_dir, bundled_dir)
+        plugin_dirs = (languages.plugin_language_roots()
+                       if self.language_plugin_dirs is None else self.language_plugin_dirs)
+        entry = languages.load(code, user_dir, bundled_dir, plugin_dirs)
         if entry is None:
             self._send_json({"error": f"language {code} is not installed"}, 404)
             return
