@@ -44,6 +44,8 @@ Corvus.hudPanel = (function () {
   // Margin kept between the panel and the map edge when the MAP moves under
   // it, rather than the panel over the map. See contain().
   const EDGE = 8;
+  // The control bar stands this far above the panel's top edge.
+  const BAR_RISE = 10;
 
   let panelEl = null;
   let bodyEl = null;
@@ -62,6 +64,7 @@ Corvus.hudPanel = (function () {
   // Whether the panel is on the map at all. The config owns this (Settings >
   // Appearance > Flight HUD), not localStorage, so it stays out of `state`.
   let shown = true;
+  let square = false;
   let drag = null;   // {pointerId, dx, dy} while a drag is in flight
   // The map's size at the last reflow, so a change in it can be told from a
   // re-render. See onHostResize.
@@ -132,7 +135,7 @@ Corvus.hudPanel = (function () {
     const maxY = Math.max(0, host.clientHeight - MIN_VISIBLE);
     return {
       x: Math.min(Math.max(x, MIN_VISIBLE - panelEl.offsetWidth), maxX),
-      y: Math.min(Math.max(y, 0), maxY),   // never above the top edge
+      y: Math.min(Math.max(y, BAR_RISE), maxY),   // the control bar must stay on the map
     };
   }
 
@@ -374,6 +377,13 @@ Corvus.hudPanel = (function () {
     return shown;
   }
 
+  /** Square corners (true) or the rounded top (false, the default). */
+  function setSquare(on) {
+    square = !!on;
+    if (panelEl) panelEl.classList.toggle("is-square", square);
+    return square;
+  }
+
   function togglePin() { state.pinned = !state.pinned; applyState(); save(); }
   function toggleCompact() { state.compact = !state.compact; applyState(); save(); }
   function toggleReadouts() { state.readouts = !state.readouts; applyState(); save(); }
@@ -412,6 +422,7 @@ Corvus.hudPanel = (function () {
 
     lastHost = hostSize();
     panelEl.hidden = !shown;
+    panelEl.classList.toggle("is-square", square);
     applyState();
 
     // A map that shrinks must not strand the panel outside it — or, when the
@@ -434,6 +445,8 @@ Corvus.hudPanel = (function () {
     init,
     resetPosition,
     setShown,
+    setSquare,
+    square: () => square,
     shown: () => shown,
     // test hooks: the persisted state and the clamp, both pure enough to
     // assert on without a layout engine.

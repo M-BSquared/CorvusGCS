@@ -718,6 +718,7 @@ Corvus.app = (function () {
       Corvus.instruments.setNoseUp(!!(cfg.ui && cfg.ui.compass_nose_up));
       // The flight HUD is on the Home map unless the config takes it off.
       Corvus.hudPanel.setShown(!(cfg.ui && cfg.ui.flight_hud === false));
+      Corvus.hudPanel.setSquare(!!(cfg.ui && cfg.ui.hud_square));
       // The optional Mission entry in the left rail. Off unless the config
       // asks for it, and asked for here rather than inside sidenav.init()
       // because the rail is built before this fetch can land — the rail

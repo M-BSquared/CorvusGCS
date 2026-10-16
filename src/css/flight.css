@@ -16,9 +16,16 @@
   --hud-w: 320px;
   position: absolute; right: 16px; bottom: 16px; z-index: var(--z-map-panel);
   width: var(--hud-w);
-  border-radius: var(--radius);
-  padding: 12px;
+  /* An even 8px frame; the dials shrink to fit inside it. The square look
+     keeps its 12px. */
+  padding: 8px;
   display: flex; flex-direction: column;
+  /* The top corners are concentric with the dials: the frame plus the dial's
+     radius. The dial is a quarter of the width left after the frame and the
+     gap between the two (10px; 8px compact), hence the divide by four. The
+     bottom corners are the square look's. */
+  --hud-corner: calc((var(--hud-w) - 26px) / 4 + 8px);
+  border-radius: var(--hud-corner) var(--hud-corner) var(--radius) var(--radius);
   /* The whole panel is the drag handle — there is no title bar to grab. */
   cursor: grab;
   touch-action: none;
@@ -35,20 +42,24 @@
 }
 /* Dragged at least once: positioned from the top-left corner instead. */
 .flight-overlay.is-placed { right: auto; bottom: auto; }
+.flight-overlay.is-square:not(.is-collapsed) { border-radius: var(--radius); padding: 12px; }
 /* A ratio, not a fixed width: the base --hud-w changes per breakpoint, and
    compact has to stay smaller than all of them. */
-.flight-overlay.is-compact { width: calc(var(--hud-w) * 0.72); }
+.flight-overlay.is-compact { width: calc(var(--hud-w) * 0.72); --hud-corner: calc((var(--hud-w) * 0.72 - 24px) / 4 + 8px); }
+/* One column: a single big dial, and corners concentric with it would close
+   the whole top into a semicircle. */
+:where(:root[data-vw~="max-600"]) .flight-overlay { --hud-corner: calc(var(--radius) + 14px); }
+:where(:root[data-vw~="max-600"]) .flight-overlay.is-compact { --hud-corner: calc(var(--radius) + 14px); }
 
-/* The controls float over the panel's top-right corner and stay out of the way
-   until reached for. No title bar: a permanent strip saying "FLIGHT" would cost
+/* The controls sit on the panel's top edge and stay out of the way until
+   reached for. No title bar: a permanent strip saying "FLIGHT" would cost
    map for something the compass and horizon under it already say. */
 .hud-actions {
   position: absolute;
-  /* Top centre, in the gap between the compass and the attitude indicator.
-     Both dials are circles, so the space above and between them is dead area
-     the cluster can occupy without covering a reading — unlike the top-right
-     corner, where it sat over the attitude indicator's scale. */
-  top: 6px;
+  /* Straddles the top edge, centred between the two dials: the rounded
+     corners leave a flat stretch there that nothing else uses, and half the
+     bar stands clear of the panel so the dials keep their full circles. */
+  top: -10px;
   left: 50%;
   transform: translateX(-50%);
   /* Local to the HUD's own stacking context — this only has to beat the
@@ -105,7 +116,7 @@
 /* Compact: the instruments carry the size change, since the dials are what
    dominate the panel. The readouts and telemetry cells only tighten. */
 .is-compact .instruments { gap: 8px; }
-.is-compact .instrument { gap: 3px; }
+.is-compact .instrument { gap: 2px; }
 .is-compact .readout-label { font-size: 7.5px; letter-spacing: 0.7px; }
 .is-compact .readout-value { font-size: 11px; }
 .is-compact .ft-cell { padding: 5px 7px; }
@@ -117,7 +128,7 @@
   .flight-overlay { transition: none !important; }
 }
 .instruments { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.instrument { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.instrument { display: flex; flex-direction: column; align-items: center; gap: 5px; }
 .compass, .attitude { width: 100%; aspect-ratio: 1; }
 
 /* --- Compass ---
@@ -189,6 +200,10 @@
    has to restate it — the same trap .hud-body and the joystick surfaces are
    in. Corvus.hudPanel sets both this and .is-readouts-off. */
 .flight-telemetry[hidden] { display: none; }
+/* Inset from the frame, so the six cells sit in a margin of their own
+   instead of running out to the dials' edges. The square look keeps the grid
+   full width. */
+.flight-overlay:not(.is-square) .flight-telemetry { margin: 0 3px 3px; }
 .ft-cell { background: rgb(var(--glass-rgb) / 0.4); padding: 7px 9px; display: flex; flex-direction: column; gap: 2px; }
 .ft-cell .ft-label { font-size: 8.5px; font-weight: 600; letter-spacing: 0.7px; color: var(--text-3); text-transform: uppercase; }
 .ft-cell .ft-value { font-size: 15px; font-weight: 600; color: var(--text-1); font-variant-numeric: tabular-nums; line-height: 1.1; }

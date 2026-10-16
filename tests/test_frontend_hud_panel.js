@@ -301,7 +301,7 @@ function testDragIsClampedSoThePanelStaysReachable() {
   const y = parseInt(panel.style.top, 10);
   // 64px of a 320px-wide panel must remain inside the host: x >= 64 - 320.
   assert.equal(x, 64 - 320, "left edge clamped so a strip stays on screen");
-  assert.equal(y, 0, "never dragged above the top of the map");
+  assert.equal(y, 10, "never dragged so high that the control bar leaves the map");
 
   // ...and equally far the other way.
   fire(h, "pointerdown", { clientX: -5000 + 40, clientY: 10 });
@@ -324,6 +324,20 @@ function testDoubleClickReturnsThePanelToItsDefaultCorner() {
   assert.equal(panel.style.left, "", "position cleared");
   assert.ok(!panel.classList.contains("is-placed"), "back to the CSS default corner");
   assert.equal(persisted().x, null, "cleared position persisted");
+}
+
+function testSquareCornersAreAChoiceThatSurvivesInitAndTouchesNothingElse() {
+  Corvus.hudPanel.setSquare(true);
+  const { panel } = mount();
+  Corvus.hudPanel.init(panel);
+  assert.ok(panel.classList.contains("is-square"), "set before init, applied on build");
+  Corvus.hudPanel.setSquare(false);
+  assert.ok(!panel.classList.contains("is-square"), "off again");
+  assert.equal(Corvus.hudPanel.square(), false);
+  assert.equal(Corvus.hudPanel.setSquare(true), true);
+  assert.ok(panel.classList.contains("is-square"));
+  assert.ok(!panel.classList.contains("is-placed"), "the position is not touched");
+  Corvus.hudPanel.setSquare(false);
 }
 
 function testStateIsRestoredOnTheNextLaunch() {
@@ -586,6 +600,7 @@ const tests = [
   testDragTracksThePointerAtANonDefaultInterfaceSize,
   testClampUsesTheMapsOwnPixelsNotItsScreenSize,
   testDoubleClickReturnsThePanelToItsDefaultCorner,
+  testSquareCornersAreAChoiceThatSurvivesInitAndTouchesNothingElse,
   testStateIsRestoredOnTheNextLaunch,
   testCorruptStoredStateFallsBackToDefaults,
   testShrinkingTheWindowPullsThePanelBackIntoView,

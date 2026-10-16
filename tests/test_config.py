@@ -816,3 +816,12 @@ def test_corvus_title_bar_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
     assert (load_config(str(p)).ui or {}).get("corvus_title_bar") is None
     p.write_text(json.dumps({"ui": {"corvus_title_bar": True}}), encoding="utf-8")
     assert load_config(str(p)).ui == {"corvus_title_bar": True}
+
+
+def test_hud_square_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"ui": {"hud_square": "true"}}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("hud_square") is None
+    for value in (True, False):
+        p.write_text(json.dumps({"ui": {"hud_square": value}}), encoding="utf-8")
+        assert load_config(str(p)).ui == {"hud_square": value}

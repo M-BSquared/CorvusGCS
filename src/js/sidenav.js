@@ -776,6 +776,30 @@ Corvus.sidenav = (function () {
             "gone until you turn it back on, and it comes back where you " +
             "left it.",
     }));
+
+    const square = !!((cfg.ui || {}).hud_square);
+    Corvus.hudPanel.setSquare(square);
+    const squareSw = Corvus.ui.toggle({
+      id: "settingsFlightHudSquare",
+      value: square,
+      ariaLabel: "Square HUD corners",
+      onChange: (next) => {
+        Corvus.hudPanel.setSquare(next);
+        return postConfig({ ui: { hud_square: next } }, { strict: true })
+          .catch((error) => {
+            Corvus.hudPanel.setSquare(!next);
+            throw error;
+          });
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Square HUD corners",
+      control: squareSw.el,
+      className: "field-switch",
+      hint: "Off (the default), the window has a rounded top. On, all four " +
+            "corners are square. The bar with the pin and size buttons " +
+            "stays where it is.",
+    }));
     return card;
   }
 

@@ -119,7 +119,7 @@ class CorvusConfig:
     "corvus_title_bar": false,
     "topbar_altitude": "amsl",
     "track_earlier_flights": true, "track_clear_on_restart": false,
-    "flight_hud": true, "console_tab": true, "ssh_tab": true,
+    "flight_hud": true, "hud_square": false, "console_tab": true, "ssh_tab": true,
     "plugin_tabs": false, "units": {"length":
     "m", "distance": "km", "speed": "ms", "temperature": "c"}}`` — the multiplier
     the frontend puts on every length in the UI, which cut of the mark the
@@ -676,6 +676,10 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     ``track_earlier_flights``: a config that has never been asked must not
     take the instruments away.
 
+    ``hud_square`` gives the flight HUD square corners instead of the rounded
+    top the window has by default. Off unless asked for. It changes only the
+    corners, never where the HUD or its control bar sit.
+
     ``console_tab`` and ``ssh_tab`` keep the side panel's MAVLink console
     and SSH tabs. On unless turned off, like ``flight_hud``: a config that has
     never been asked must not take a tab away.
@@ -707,7 +711,7 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     for key in ("inverted_app_icon", "app_icon_backplate", "topbar_status_dots",
                 "mission_page", "notification_marks", "flight_bar_shrink",
                 "compass_nose_up", "windows_in_app", "solid_terminals", "corvus_title_bar",
-                "track_earlier_flights", "track_clear_on_restart", "flight_hud",
+                "track_earlier_flights", "track_clear_on_restart", "flight_hud", "hud_square",
                 "console_tab", "ssh_tab", "plugin_tabs"):
         if isinstance(raw.get(key), bool):
             out[key] = raw[key]

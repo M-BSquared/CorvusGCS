@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.10.18-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.18" />
+  <img src="https://img.shields.io/badge/Version-2026.10.19-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.19" />
   <img width="8" />
   <!-- <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -138,7 +138,7 @@ the documentation that explains it.
 | 🛰️ **RTK and Remote ID** | Plug in a base station and corrections flow; NTRIP too. Program SiK radios. Broadcast Remote ID. [More](https://m-bsquared.github.io/CorvusGCS/guide/hardware.html) |
 | 🎥 **Watch the camera** | RTSP or WebRTC cameras in floating windows you can put on a second screen. A frozen picture is never passed off as live. [More](https://m-bsquared.github.io/CorvusGCS/guide/video.html) |
 | 📊 **Review flights** | Flight Review for a ULog, Telemetry Review for the recording that always exists, radio link included. [More](https://m-bsquared.github.io/CorvusGCS/guide/analysis.html) |
-| 🖥️ **Tools** | MAVLink console, SSH terminal to a companion computer, and plugins: the Vibration Monitor, the SSH Launcher and Schwalby ship with it. Two more install from their own repositories: the [NuttX Console](https://github.com/M-BSquared/corvus-nuttx-console) (the PX4 shell over MAVLink, as a console or in a terminal window) and the [Trajectory Viewer](https://github.com/M-BSquared/corvus-trajectory-viewer) (a reference route from a file, drawn under the flown track). A plugin can have a tab of its own, and the console and SSH tabs can be switched off. [More](https://m-bsquared.github.io/CorvusGCS/guide/plugins.html) |
+| 🖥️ **Tools** | MAVLink console, SSH terminal to a companion computer, and plugins: the Vibration Monitor, the SSH Launcher, Schwalby and Map Entities (trees, gates and devices with a range, placed on the map) ship with it. Two more install from their own repositories: the [NuttX Console](https://github.com/M-BSquared/corvus-nuttx-console) (the PX4 shell over MAVLink, as a console or in a terminal window) and the [Trajectory Viewer](https://github.com/M-BSquared/corvus-trajectory-viewer) (a reference route from a file, drawn under the flown track). A plugin can have a tab of its own, and the console and SSH tabs can be switched off. [More](https://m-bsquared.github.io/CorvusGCS/guide/plugins.html) |
 | 🎨 **Personalise** | Six colour themes, interface scale from 80 % to 150 %, units, your own logo, and English, German, French or Drachensprech. A language is one file, so more can be added. [More](https://m-bsquared.github.io/CorvusGCS/guide/settings.html) |
 | 💻 **Just run it** | One standalone app for macOS, Linux and Windows. No install, no server, no browser, clean shutdown every time. [More](https://m-bsquared.github.io/CorvusGCS/guide/install.html) |
 
