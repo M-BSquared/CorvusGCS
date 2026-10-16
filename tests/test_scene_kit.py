@@ -839,3 +839,49 @@ def test_the_3d_geofence_reads_the_surface_model(tmp_path: Path) -> None:
     assert len(stored["polygon"]) == len(scene.geofence) and stored["show_on_map"] is True
     SceneRunner(library.get("flight"), RunnerOptions(sandbox=sandbox))._write_config()
     assert not (sandbox / ".corvus" / "geofence.json").exists(), "a fence must not leak"
+
+
+# --------------------------------------------------------------------------
+# Several vehicles
+# --------------------------------------------------------------------------
+
+def test_the_fleet_scene_opens_one_extra_link_per_vehicle(tmp_path: Path) -> None:
+    from corvus import fleet as fleet_mod
+    from scene_kit.runner import RunnerOptions, SceneRunner
+
+    scene = library.get("fleet")
+    assert [v.kind for v in scene.fleet] == ["drone", "rover"]
+    runner = SceneRunner(scene, RunnerOptions(sandbox=tmp_path / "home", mav_port=14620))
+    config = json.loads(runner._write_config().read_text())
+    block = fleet_mod.coerce_config(config["fleet"])
+    assert block is not None
+    assert [link["id"] for link in block["links"]] == ["link-2", "link-3"]
+    ports = [link["connection"] for link in block["links"]]
+    assert ports == ["udpin:127.0.0.1:14621", "udpin:127.0.0.1:14622"]
+    assert config["mavlink_connection"] == "udpin:127.0.0.1:14620"
+    assert block["vehicles"]["main:1"]["name"] == "Bumble"
+    assert block["vehicles"]["link-3:1"]["name"] == "Rollo"
+
+
+def test_a_scene_without_a_fleet_writes_no_fleet_block(tmp_path: Path) -> None:
+    from scene_kit.runner import RunnerOptions, SceneRunner
+
+    runner = SceneRunner(library.get("flight"), RunnerOptions(sandbox=tmp_path / "home"))
+    assert "fleet" not in json.loads(runner._write_config().read_text())
+
+
+def test_the_fleet_picture_frames_every_vehicle() -> None:
+    scene = library.get("fleet")
+    west, south, east, north = scene.bounds()
+    for other in scene.fleet:
+        points = flight.make_path(other.path, home=other.home, **other.path_options).points
+        assert all(south <= p.lat <= north and west <= p.lon <= east for p in points)
+    assert recipe.STAGES["vehicles_dialog"]
+    assert "vehicles_dialog" in library.get("fleet_list").stage
+
+
+def test_the_rover_stays_on_the_ground() -> None:
+    rover = next(v for v in library.get("fleet").fleet if v.kind == "rover")
+    model = rover.build_model()
+    for second in (1.0, 20.0, 40.0):
+        assert model.sample(second).alt_agl == 0.0

@@ -41,12 +41,14 @@ same recipe as machine-readable steps, which is the form an agent should use.
 | `logs`, `chatter` | the Analysis page's log card and the console's traffic |
 | `language`, `ui` | the interface language (`de`, `fr`, `dl`) and any other key of the config's `ui` object |
 | `plugin`, `plugin_settings` | the plugin opened on the PLUGINS tab, and each plugin's saved settings, written to its own `config.json` in the sandbox |
+| `fleet`, `vehicle_name`, `vehicle_color` | more vehicles, each a simulated PX4 on a UDP port of its own (`drone` or `rover`, with its own path), opened as an extra link with the name and colour the Vehicles dialog would save; the main aircraft's own name and colour |
 | `stage` | named browser steps run just before the shot (`recipe.STAGES`): pressing a launcher's buttons, typing into the NuttShell, opening a parameter's hint |
 | `settle`, `notes` | how long the picture needs to build, and what to look for |
 | `web` | the picture's name on the website, or empty when the site does not show it |
 
 Airframes: `quad_x`, `quad_x_heavy`, `hexa_x`, `octo_x`, `vtol_quad`,
-`fixed_wing`. Paths: `hover`, `orbit`, `survey`, `figure_eight`, `out_and_back`.
+`fixed_wing`. Paths: `hover`, `orbit`, `survey`, `figure_eight`, `out_and_back`, `swoop`, `slalom`
+(a rover's snaking lines at zero height).
 Themes: the six in `src/css/themes.css`.
 
 ## The plugins

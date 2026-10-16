@@ -45,6 +45,32 @@ DEFAULT_VIEWPORT = (1600, 1000)
 NEUBIBERG_DOM = "dem_11e6db89d6"
 
 
+@dataclass(frozen=True)
+class FleetVehicle:
+    """One more vehicle on its own link, beside the scene's main aircraft.
+
+    Corvus flies one autopilot per link, so each of these is a second
+    simulated PX4 on a UDP port of its own, opened as an extra link with the
+    name and colour the picture shows. ``kind`` is ``drone`` (a quadrotor) or
+    ``rover`` (a ground vehicle, which stays at zero height).
+    """
+
+    name: str
+    color: str
+    kind: str = "drone"
+    home: tuple[float, float] = SORTIE_HOME
+    path: str = "orbit"
+    path_options: dict[str, Any] = field(default_factory=dict)
+    takeoff_time: float = 8.0
+    armed: bool = True
+    mode: str = "MISSION"
+
+    def build_model(self) -> flight_mod.FlightModel:
+        path = flight_mod.make_path(self.path, home=self.home, **self.path_options)
+        return flight_mod.FlightModel(path, home=self.home,
+                                      takeoff_time=self.takeoff_time)
+
+
 @dataclass
 class Scene:
     """One reproducible picture."""
@@ -145,6 +171,12 @@ class Scene:
     # The geofence area kept on this station, as (lon, lat) corners, written
     # to the sandbox's geofence.json and shown on the Home map. Empty: none.
     geofence: tuple[tuple[float, float], ...] = ()
+    # More vehicles, each on a link of its own (see FleetVehicle), and the
+    # name and colour the main aircraft carries beside them. Empty: one
+    # vehicle, and the interface behaves exactly as it does for one.
+    fleet: tuple[FleetVehicle, ...] = ()
+    vehicle_name: str = ""
+    vehicle_color: str = ""
     chatter: bool = True                    # scripted STATUSTEXT traffic
     settle: float = 20.0                    # seconds to let the scene build
     notes: str = ""                         # what to look for before shooting
@@ -177,6 +209,11 @@ class Scene:
         path = flight_mod.make_path(self.path, home=self.home, **self.path_options)
         lats = [p.lat for p in path.points] + [self.home[0]] + [c[1] for c in self.geofence]
         lons = [p.lon for p in path.points] + [self.home[1]] + [c[0] for c in self.geofence]
+        for other in self.fleet:
+            points = flight_mod.make_path(other.path, home=other.home,
+                                          **other.path_options).points
+            lats += [p.lat for p in points] + [other.home[0]]
+            lons += [p.lon for p in points] + [other.home[1]]
         pad_lat = max(0.0006, (max(lats) - min(lats)) * 0.18)
         pad_lon = max(0.0009, (max(lons) - min(lons)) * 0.18)
         return (min(lons) - pad_lon, min(lats) - pad_lat,
@@ -849,6 +886,70 @@ _register(Scene(
     **_SORTIE,
     settle=50.0,
     notes=_SORTIE_NOTE + " " + _FENCE_NOTE,
+))
+
+
+# --- several vehicles ----------------------------------------------------
+
+def _fleet() -> tuple[FleetVehicle, ...]:
+    """A second quadrotor and a rover on the field the sortie crosses.
+
+    Each is its own link, as it is in the field: one radio per vehicle. The
+    quadrotor flies one gentle curve along the north of the field, short of
+    the buildings behind it, and the rover drives snaking lines across the
+    meadow at walking pace, at zero height.
+    """
+    home_lat, home_lon = SORTIE_HOME
+    scout_start = _offset(home_lat, home_lon, -10.0, 105.0)
+    scout_end = _offset(home_lat, home_lon, 185.0, 125.0)
+    rover_start = _offset(home_lat, home_lon, 25.0, 62.0)
+    rover_end = _offset(home_lat, home_lon, 130.0, 76.0)
+    return (
+        FleetVehicle("Zippy", "#2F7DF6", kind="drone", home=scout_start, path="swoop",
+                     path_options={"end": list(scout_end), "bulge": -15.0,
+                                   "alt": 45.0, "speed": 7.0}),
+        FleetVehicle("Rollo", "#1FA971", kind="rover", home=rover_start,
+                     path="slalom", takeoff_time=0.2,
+                     path_options={"end": list(rover_end), "amplitude": 6.0,
+                                   "wavelength": 26.0, "speed": 2.5}),
+    )
+
+
+_FLEET_NOTE = ("Three vehicles on three links: the main aircraft on the main "
+               "link, a second quadrotor and a rover on extra links, each a "
+               "simulated PX4 on a UDP port of its own. Names and colours are "
+               "saved in the sandbox's config the way the Vehicles dialog "
+               "saves them.")
+
+_register(Scene(
+    id="fleet",
+    asset="docs/assets/images/fleet.jpg",
+    web="fleet",
+    title="Several vehicles on one map",
+    caption="Two drones and a rover on one map, each in its own colour with "
+            "its name under the marker and a track of its own.",
+    page="home", workspace="collapsed",
+    fleet=_fleet(), vehicle_name="Bumble",
+    **_SORTIE,
+    settle=50.0,
+    notes=_SORTIE_NOTE + " " + _FLEET_NOTE,
+))
+
+_register(Scene(
+    id="fleet_list",
+    asset="docs/assets/images/fleet-vehicles.jpg",
+    web="fleet-vehicles",
+    title="The Vehicles dialog: drones and a rover in one list",
+    caption="Every vehicle the station hears, with its name, colour, mode and "
+            "battery, and the button that takes control of it.",
+    theme="blue",
+    page="home", workspace="collapsed",
+    fleet=_fleet(), vehicle_name="Bumble",
+    stage=("vehicles_dialog",),
+    **_SORTIE,
+    settle=50.0,
+    notes=_SORTIE_NOTE + " " + _FLEET_NOTE + " The dialog is opened from the "
+          "top bar's Vehicle block once all three are listed.",
 ))
 
 

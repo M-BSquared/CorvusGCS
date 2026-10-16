@@ -593,7 +593,6 @@ a:hover { color: var(--accent); }
   margin-top: 18px;
   padding: 20px 22px;
   border: 1px solid var(--border);
-  border-left: 2px solid var(--healthy);
   border-radius: var(--radius);
   background: var(--surface-1);
 }

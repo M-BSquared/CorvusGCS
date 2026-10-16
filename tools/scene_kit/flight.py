@@ -211,6 +211,35 @@ def swoop(home: tuple[float, float] = CAMPUS_HOP_START,
     return Path("swoop", pts, speed=speed, loop=False)
 
 
+def slalom(home: tuple[float, float] = CAMPUS_HOP_START,
+           end: Iterable[float] = CAMPUS_HOP_END, amplitude: float = 6.0,
+           wavelength: float = 26.0, alt: float = 0.0, speed: float = 2.5,
+           points_per_wave: int = 24) -> Path:
+    """From *home* to *end* in snaking lines, driven once and held there.
+
+    The track swings *amplitude* metres to either side of the straight line,
+    a whole number of times so it leaves and reaches the line itself: the
+    way a rover is driven across a meadow.
+    """
+    end = tuple(end)
+    mn, me = _metres_per_degree(home[0])
+    dn = (end[0] - home[0]) * mn
+    de = (end[1] - home[1]) * me
+    length = math.hypot(dn, de) or 1.0
+    waves = max(1, round(length / wavelength))
+    count = waves * points_per_wave
+    along_n, along_e = dn / length, de / length
+    pts = []
+    for i in range(count + 1):
+        u = i / count
+        side = amplitude * math.sin(2 * math.pi * waves * u)
+        north = u * dn + side * along_e
+        east = u * de - side * along_n
+        lat, lon = _offset(home, north, east)
+        pts.append(Point(lat, lon, alt))
+    return Path("slalom", pts, speed=speed, loop=False)
+
+
 def waypoints(coords: Iterable[Iterable[float]], speed: float = 10.0,
               loop: bool = True) -> Path:
     """A path from explicit ``[lat, lon, alt]`` triples — for a real sortie."""
@@ -227,6 +256,7 @@ PATHS: dict[str, Callable[..., Path]] = {
     "figure_eight": figure_eight,
     "out_and_back": out_and_back,
     "swoop": swoop,
+    "slalom": slalom,
 }
 
 

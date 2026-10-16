@@ -524,6 +524,17 @@ def geofence_upload_js() -> str:
     )
 
 
+def vehicles_dialog_js() -> str:
+    """Open the Vehicles dialog the top bar's Vehicle block opens."""
+    return (
+        "(async () => { const w = (ms) => new Promise((r) => setTimeout(r, ms)); "
+        "for (let i = 0; i < 40 && !(window.Corvus && Corvus.fleet && "
+        "Corvus.fleet.get().vehicles.length > 1); i++) await w(250); "
+        "if (!Corvus.fleet) return 'no fleet'; Corvus.fleet.openDialog(); await w(1500); "
+        "return 'dialog open, ' + Corvus.fleet.get().vehicles.length + ' vehicles'; })()"
+    )
+
+
 def geofence_card_js() -> str:
     """Bring the Geofence card to the middle of the page once its map has drawn."""
     return (
@@ -574,6 +585,8 @@ STAGES: dict[str, tuple[str, str]] = {
     "geofence_upload": ("Upload the stored area to the aircraft as its fence.",
                         geofence_upload_js()),
     "geofence_card": ("Scroll the Geofence card into view.", geofence_card_js()),
+    "vehicles_dialog": ("Open the Vehicles dialog from the top bar, with every "
+                        "vehicle listed.", vehicles_dialog_js()),
     "geofence_large": ("Open the Geofence card's large map.", geofence_large_js()),
 }
 

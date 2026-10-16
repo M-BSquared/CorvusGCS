@@ -40,7 +40,7 @@ from typing import Any, Callable
 
 from . import recipe as recipe_mod
 from .library import CHATTER, Scene
-from .vehicle import LogEntry, SimVehicle, VehicleOptions
+from .vehicle import LogEntry, SimVehicle, VehicleOptions, mavlink2
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_HTTP_PORT = 8777
@@ -69,6 +69,7 @@ class SceneRunner:
         self.sandbox = self.opts.sandbox or _default_sandbox(scene.id)
         self.backend: subprocess.Popen | None = None
         self.vehicle: SimVehicle | None = None
+        self.fleet_vehicles: list[SimVehicle] = []
         self.companion: Any = None
         self._backend_log: Any = None
         self._logs: tuple[LogEntry, ...] = ()
@@ -119,6 +120,9 @@ class SceneRunner:
         }
         if scene.language:
             config["language"] = scene.language
+        fleet = self._fleet_config()
+        if fleet:
+            config["fleet"] = fleet
         if self.companion is not None:
             from .companion import JETSON, MISSION, PASSWORD, RASPBERRY
 
@@ -139,6 +143,31 @@ class SceneRunner:
         path = corvus_dir / "config.json"
         path.write_text(json.dumps(config, indent=2) + "\n")
         return path
+
+    def _fleet_config(self) -> dict[str, Any]:
+        """The ``fleet`` block: one extra link per further vehicle, and names.
+
+        One link is one vehicle, so each further aircraft gets a UDP port of
+        its own next to the main one, and the names and colours are saved the
+        way the Vehicles dialog saves them, keyed by link and system id.
+        """
+        scene = self.scene
+        if not scene.fleet:
+            return {}
+        links = []
+        vehicles: dict[str, dict[str, str]] = {}
+        if scene.vehicle_name or scene.vehicle_color:
+            vehicles["main:1"] = {k: v for k, v in (
+                ("name", scene.vehicle_name), ("color", scene.vehicle_color)) if v}
+        for index, other in enumerate(scene.fleet, start=2):
+            link_id = f"link-{index}"
+            links.append({"id": link_id,
+                          "connection": f"udpin:127.0.0.1:{self._fleet_port(index - 2)}"})
+            vehicles[f"{link_id}:1"] = {"name": other.name, "color": other.color}
+        return {"links": links, "vehicles": vehicles}
+
+    def _fleet_port(self, index: int) -> int:
+        return self.opts.mav_port + 1 + index
 
     def _write_plugin_settings(self, folder: Path) -> None:
         """Each plugin's settings, where corvus/plugin_config.py reads them.
@@ -183,6 +212,7 @@ class SceneRunner:
             self.log("backend    (not started — using the Corvus already running)")
 
         self._start_vehicle()
+        self._start_fleet()
 
         if self.opts.start_backend and not self._wait_for_link(timeout=25.0):
             self.log("warning    the link did not come up within 25 s; the "
@@ -235,6 +265,30 @@ class SceneRunner:
         self.log(f"vehicle    {scene.airframe}, {len(options.params)} parameters, "
                  f"flying {scene.path} from {scene.home[0]:.5f},{scene.home[1]:.5f}")
 
+    def _start_fleet(self) -> None:
+        """One simulated PX4 per further vehicle, each on its own port."""
+        for index, other in enumerate(self.scene.fleet):
+            rover = other.kind == "rover"
+            options = VehicleOptions(
+                params=self.scene.build_params(),
+                model=other.build_model(),
+                armed=other.armed,
+                mode=other.mode,
+                vehicle_type=(mavlink2.MAV_TYPE_GROUND_ROVER if rover
+                              else mavlink2.MAV_TYPE_QUADROTOR),
+                chatter=(),
+                seed=VehicleOptions.seed + index + 1,
+            )
+            vehicle = SimVehicle(
+                f"udpout:127.0.0.1:{self._fleet_port(index)}", options,
+                on_event=(lambda text, name=other.name: self.log(f"{name:<10} {text}"))
+                if self.opts.verbose else (lambda _text: None),
+            )
+            vehicle.start()
+            self.fleet_vehicles.append(vehicle)
+            self.log(f"vehicle    {other.name} ({other.kind}) on link-{index + 2}, "
+                     f"port {self._fleet_port(index)}")
+
     def _wait_for_link(self, timeout: float) -> bool:
         """Poll ``/api/state`` until the backend says it has the aircraft."""
         deadline = time.monotonic() + timeout
@@ -271,6 +325,9 @@ class SceneRunner:
         return target
 
     def stop(self) -> None:
+        for vehicle in self.fleet_vehicles:
+            vehicle.stop()
+        self.fleet_vehicles.clear()
         if self.vehicle is not None:
             self.vehicle.stop()
             self.vehicle = None
